@@ -9,15 +9,16 @@ bytes, because the things that go wrong are the ones that touch more than they w
 
 * only fragments the branch ADDED are swept (not ones it edited, not ones main already carries; a new file git pairs with a deleted one as a
   rename is still an addition; a branch stacked on another passes that branch as ``--base``);
-* markdown is swept in prose only (fenced blocks and inline code keep a quoted placeholder), the case of the token does not matter, ``\\r\\n``
-  line ends and the file mode survive;
+* markdown is swept in prose only (fenced blocks and inline code keep a quoted placeholder, where "fenced" and "inline code" are the ledger's
+  own rule, ``ledger_fold.outside_fences`` and ``_INLINE_CODE``, and not a copy of it), the case of the token does not matter, ``\\r\\n``
+  line ends and the file mode survive; ``#PRNUMBER`` is swept like ``#NNNN``;
 * a ``shipped.d`` csv is swept in its ``refs`` cell only, whatever quoting the file was written with (every cell quoted, a cell that holds a
   newline), and every other byte stays;
 * everything that is not a plain case is a REFUSAL (exit 2) that writes nothing, even when another fragment in the batch was fine: a number
   that is not a positive integer, a base that does not resolve or looks like an option, no added fragment, a symlink (or a path that runs
   through one), text or a file name that is not UTF-8, an unclosed fence, a csv that is not the header plus one row or that the csv module
   cannot read, and any placeholder the ledger would still refuse after the rewrite (a token the script has no rule for, one split by a line
-  break, a code span or a quote, `#NNNN` run on into more letters, a `pending` the shipped.d guard refuses in any form);
+  break, a code span or a quote, `#NNNN` run on into more letters, a `pending` word that ``ledger_shipped.check`` refuses in ``refs``);
 * a second run says there is nothing to sweep and exits 0; a write that fails part-way exits 1 and names what was replaced; a failed replace
   leaves no temporary file beside the fragment.
 """
@@ -257,6 +258,7 @@ _SPLIT = {_D + "lessons.d/2026-10-29-sp.md": "## 2026-10-29 — x\nSee PR `a` pe
 _BROKEN = {_D + "lessons.d/2026-10-29-br.md": "## 2026-10-29 — wrapped\n\nThis shipped in PR\npending and the rest of the sentence.\n"}
 _BROKEN_BY_A_FENCE = {_D + "lessons.d/2026-10-29-fb.md": "## 2026-10-29 — fenced\n\nShipped in PR\n```\nquoted\n```\npending now.\n"}
 _UNCLOSED = {_D + "lessons.d/2026-10-29-un.md": "## 2026-10-29 — unclosed\n\n```\nsome code\n\nShipped in PR pending.\n"}
+_CLOSED_BY_THE_WRONG_CHARACTER = {_D + "lessons.d/2026-10-29-wc.md": "## 2026-10-29 — wrong closer\n\n```\nPR pending\n~~~\n"}
 _TYPO = {_D + "lessons.d/2026-10-29-ty.md": "## 2026-10-29 — typo (PR #NNNNN)\n"}
 
 
@@ -290,7 +292,12 @@ _REFUSALS = {
     "a batch with one good fragment and one that would survive": ({_D + "lessons.d/2026-10-29-ok.md": _LESSON, **_SPLIT}, ["5"], "would remain"),
     "a placeholder broken across a line": (_BROKEN, ["5"], "would remain"),
     "a placeholder broken across a line by a fenced block": (_BROKEN_BY_A_FENCE, ["5"], "would remain"),
-    "an unclosed code fence": (_UNCLOSED, ["5"], "unclosed"),
+    "an unclosed code fence, named by the line it opened at": (_UNCLOSED, ["5"], "an unclosed code fence opened at line 3"),
+    "a backtick fence a tilde line does not close (the ledger's rule, not a toggle)": (
+        _CLOSED_BY_THE_WRONG_CHARACTER,
+        ["5"],
+        "an unclosed code fence opened at line 3",
+    ),
     "a #NNNN run on into more letters": (_TYPO, ["5"], "would remain"),
     "a refs cell the csv reader joins into PR pending": (_refs('"PR" pending'), ["5"], "would remain"),
     "a refs cell with a colon after PR": (_refs("PR: pending"), ["5"], "would remain"),
@@ -531,3 +538,109 @@ def test_an_output_stream_that_cannot_encode_the_text_does_not_crash_the_sweep(t
     assert done.returncode == 0 and "Traceback" not in done.stderr, (done.returncode, done.stdout, done.stderr)
     assert "\\u2192" in done.stdout, done.stdout
     assert (root / _D / "lessons.d/2026-10-29-t.md").read_text(encoding="utf-8") == "## 2026-10-29 → an arrow (PR #17)\n"
+
+
+# --- the ledger's rule, not a copy of it (ledger_fold.outside_fences / _INLINE_CODE) and the `#PRNUMBER` token ---
+# QUOTED must come out byte-for-byte; LIVE must come out with the number. Each shape also asserts the LEDGER'S OWN reading of it (below),
+# so a fixture cannot drift from the rule it claims to test.
+_FENCE_SHAPES = {
+    "a ~~~ line inside a backtick fence is text": ["```", "~~~", "QUOTED PR pending", "```", "LIVE PR pending"],
+    "a whole ~~~ block quoted inside a backtick fence": ["```", "~~~", "QUOTED PR pending", "~~~", "```", "LIVE PR pending"],
+    "a closer with text after it is text": ["```", "QUOTED PR pending", "``` still text", "QUOTED PR pending", "```", "LIVE PR pending"],
+    "a shorter run does not close a longer fence": ["````", "```", "QUOTED PR pending", "````", "LIVE PR pending"],
+    "a backtick run does not close a tilde fence": ["~~~", "```", "QUOTED PR pending", "~~~", "LIVE PR pending"],
+    "a longer closing run closes": ["```", "QUOTED PR pending", "`````", "LIVE PR pending"],
+    "```a``` on a line is a code span, not a fence": ["```a``` and LIVE PR pending", "LIVE PR pending"],
+    "an info string after the opening run": ["```text", "QUOTED PR pending", "```", "LIVE PR pending"],
+    "an indented fence": ["  ~~~", "QUOTED PR pending", "  ~~~", "LIVE PR pending"],
+    "a double-backtick span": ["``QUOTED PR pending`` and LIVE PR pending", "a `QUOTED PR pending` and LIVE PR pending"],
+    "a double-backtick span holding a single backtick": ["``a ` QUOTED PR pending`` and LIVE PR pending"],
+}
+
+
+@pytest.mark.parametrize("eol", ["\n", "\r\n"], ids=["lf", "crlf"])
+@pytest.mark.parametrize("name", list(_FENCE_SHAPES))
+def test_the_fence_and_code_span_rule_is_the_ledgers_so_a_quoted_placeholder_stays_and_a_live_one_is_swept(tmp_path, name, eol):
+    text = ("## 2026-10-29 — a shape" + eol + eol + eol.join(_FENCE_SHAPES[name]) + eol)
+    module = _load()
+    prose = module._fold._prose(text)
+    assert "QUOTED PR pending" not in prose and "LIVE PR pending" in prose, f"the fixture is not what the ledger reads as quoted/live:\n{prose}"
+    root = _repo(tmp_path, {_D + "lessons.d/2026-10-29-shape.md": text}, _OLD_MAIN)
+    done = _sweep(root, "5")
+    assert done.returncode == 0, (done.stdout, done.stderr)
+    swept = (root / _D / "lessons.d/2026-10-29-shape.md").read_bytes().decode("utf-8")
+    assert swept == text.replace("LIVE PR pending", "LIVE PR #5"), swept
+    assert not module._fold._PLACEHOLDER.search(module._fold._prose(swept))
+
+
+def test_a_changed_line_is_reported_at_its_real_line_number_after_a_fence():
+    module = _load()
+    text = "## t\n\n```\nPR pending\n```\n\nShipped in PR pending.\n"
+    new, changes = module.sweep_markdown("x.md", text, "5")
+    assert changes == [(7, "Shipped in PR pending.", "Shipped in PR #5.")], changes
+    assert new == "## t\n\n```\nPR pending\n```\n\nShipped in PR #5.\n"
+
+
+_PRNUMBER_LESSON = (
+    "## 2026-10-29 — a lesson (PR #PRNUMBER)\n\n"
+    "Shipped in #prnumber, see #PRNUMBER. Quoted `#PRNUMBER` and ``PR #PRNUMBER`` stay.\n"
+    "```\nPR #PRNUMBER\n```\n"
+    "Not the token: #PRNUMBERS and #PRNUMBER_X.\n"
+)
+
+
+def test_prnumber_is_swept_like_nnnn_in_prose_only_and_not_when_it_runs_on_into_more_word_characters(tmp_path):
+    root = _repo(tmp_path, {_D + "lessons.d/2026-10-29-pn.md": _PRNUMBER_LESSON}, _OLD_MAIN)
+    done = _sweep(root, "5")
+    assert done.returncode == 0, (done.stdout, done.stderr)
+    swept = (root / _D / "lessons.d/2026-10-29-pn.md").read_text(encoding="utf-8")
+    assert swept == (
+        "## 2026-10-29 — a lesson (PR #5)\n\n"
+        "Shipped in #5, see #5. Quoted `#PRNUMBER` and ``PR #PRNUMBER`` stay.\n"
+        "```\nPR #PRNUMBER\n```\n"
+        "Not the token: #PRNUMBERS and #PRNUMBER_X.\n"
+    ), swept
+    assert "swept 3 placeholder(s) in 1 file(s) to #5" in done.stdout, done.stdout
+    module = _load()
+    assert not module._fold._PLACEHOLDER.search(module._fold._prose(swept)), "the ledger would still refuse the swept text"
+
+
+_REFS_SWEEPS = {
+    "PR #PRNUMBER": ("PR #PRNUMBER", "PR #5"),
+    "the token in lower case among other refs": ("R9; PR #prnumber", "R9; PR #5"),
+    "the token beside a word that merely contains pending": ("PR #PRNUMBER; depending on #1637", "PR #5; depending on #1637"),
+    "PR pending beside a word that merely contains pending": ("depending on #1637; PR pending", "depending on #1637; PR #5"),
+    "the template token": ("PR #NNNN, R9", "PR #5, R9"),
+}
+
+
+@pytest.mark.parametrize("name", list(_REFS_SWEEPS))
+def test_a_refs_cell_is_judged_by_the_predicate_ledger_shipped_check_applies(tmp_path, name):
+    refs, expected = _REFS_SWEEPS[name]
+    root = _repo(tmp_path, _refs(f'"{refs}"', "r"), {})
+    done = _sweep(root, "5")
+    assert done.returncode == 0, (done.stdout, done.stderr)
+    assert (root / _D / "shipped.d/2026-10-29-r.csv").read_text(encoding="utf-8") == _HEADER + f'2026-10-29,a,i,shipped,"{expected}",k,s\n'
+    assert _load()._shipped.check(root / _D / "shipped.csv") == [], "ledger_shipped.py check would still refuse the swept row"
+
+
+def test_a_refs_cell_the_check_accepts_is_left_alone(tmp_path):
+    text = _HEADER + "2026-10-29,a,i,shipped,R12; #PRNUMBERS is not the token,k,s\n"
+    root = _repo(tmp_path, {_D + "shipped.d/2026-10-29-ok.csv": text}, {})
+    done = _sweep(root, "5")
+    assert done.returncode == 0 and "nothing to sweep" in done.stdout, (done.stdout, done.stderr)
+    assert (root / _D / "shipped.d/2026-10-29-ok.csv").read_text(encoding="utf-8") == text
+
+
+_TOKEN_SAMPLES = ("#NNNN", "#PRNUMBER", "PR pending")
+
+
+def test_every_token_the_ledger_refuses_has_a_rule_here():
+    """The day ``ledger_fold._PLACEHOLDER`` learns a token this goes red, not the first sweep that meets it."""
+    module = _load()
+    alternatives = module._fold._PLACEHOLDER.pattern.split("|")
+    assert len(alternatives) == len(_TOKEN_SAMPLES), f"ledger_fold._PLACEHOLDER now reads {alternatives}: add a sample here and a rule to _RULES"
+    for sample in _TOKEN_SAMPLES:
+        assert module._fold._PLACEHOLDER.search(sample) and module._shipped.REFS_PLACEHOLDER.search(sample), sample
+        swept = module._sub(sample, "5")
+        assert swept != sample and not module._fold._PLACEHOLDER.search(swept), f"{sample!r} -> {swept!r}"

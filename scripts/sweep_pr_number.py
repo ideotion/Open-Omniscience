@@ -14,13 +14,16 @@ script is that sweep, so nobody rewrites the same three tokens by hand across a 
     python scripts/sweep_pr_number.py 1636 --base REF   # REF defaults to origin/main (see WHICH FILES)
 
 WHAT IT REWRITES, and only this: the placeholders ``scripts/ledger_fold.py`` and the ledger tests already
-refuse -- ``PR pending`` becomes ``PR #1636`` and ``#NNNN`` becomes ``#1636``.
+refuse -- ``PR pending`` becomes ``PR #1636``, ``#NNNN`` becomes ``#1636`` and ``#PRNUMBER`` becomes ``#1636``
+(so ``PR #PRNUMBER`` becomes ``PR #1636``).
 
     docs/ledger/lessons.d/*.md and docs/ledger/shipped_log.d/*.md   prose only, where "prose" is exactly
-        ``ledger_fold._prose``'s rule and no better: a line that starts with three backticks or three tildes
-        opens or closes a fence (whatever the character or length, so a backtick fence quoted inside a ``~~~``
-        block is read as prose), and `inline code` is one pair of single backticks (a double-backtick span is
-        read as prose). A lesson may quote a placeholder inside what that rule keeps; anything else is rewritten.
+        ``ledger_fold._prose``'s rule, and that rule is CALLED here, not copied: ``ledger_fold.outside_fences``
+        says which lines are inside a fence (a fence opens on a run of three or more backticks or tildes and
+        closes only on a run of the SAME character at least as long with nothing after it, so a ``~~~`` line
+        inside a backtick block is text, and so is ```a``` on one line), and ``ledger_fold._INLINE_CODE`` says
+        which stretches of a line are `inline code` (equal runs of backticks pair, so a double-backtick span
+        is code). A lesson may quote a placeholder inside what that rule keeps; anything else is rewritten.
     docs/ledger/shipped.d/*.csv                                      the ``refs`` cell only (protocol rule
         (5b) and ``test_the_real_fragments_are_well_formed_and_carry_no_placeholder`` both look nowhere
         else). The other cells are byte-for-byte what they were, whatever quoting the row was written with.
@@ -35,11 +38,13 @@ choice is visible. ``origin/main`` is whatever the clone last fetched: ``git fet
 IT REFUSES, touching nothing, when the number is not a positive integer (``1636``, not ``#1636``); when BASE
 does not resolve; when the branch added no fragment at all; when a fragment is a symlink, not UTF-8, or (a
 csv) not the ledger's header plus exactly one row or one the csv module cannot read; when a path runs through
-a symlink or a file name is not UTF-8; when a markdown fence is never closed; when a placeholder would SURVIVE the
-rewrite -- judged by the ledger's own test, ``ledger_fold._PLACEHOLDER`` over the WHOLE prose (so a token split
-by a line break is found) and, in a csv, by the shipped.d guard's rule that no ``pending`` stays in ``refs``: a
-token this script has no rule for (add it to ``_RULES``), or one split by a line break, a code span or a quote
-(edit it by hand); or when the rewritten csv differs from the original in any cell other than ``refs``. A branch
+a symlink or a file name is not UTF-8; when a markdown fence is never closed (the message names the line it opened
+at, as ``ledger_fold.py check`` does); when a placeholder would SURVIVE the rewrite -- judged by the ledger's own
+tests, ``ledger_fold._PLACEHOLDER`` over the WHOLE prose (so a token split by a line break is found) and, in a csv,
+``ledger_shipped.REFS_PLACEHOLDER`` over the ``refs`` cell (the predicate ``ledger_shipped.py check`` applies: a
+``pending`` WORD, ``#NNNN`` or ``#PRNUMBER``): a token this script has no rule for (add it to ``_RULES``), or one
+split by a line break, a code span or a quote (edit it by hand); or when the rewritten csv differs from the original
+in any cell other than ``refs``. A branch
 whose fragments carry no placeholder is not an error: it says so and exits 0, so the script is safe to run twice.
 
 EXIT: 0 swept (or nothing to sweep), 2 refused before writing anything, 1 a write failed part-way (the
@@ -74,6 +79,7 @@ _NUMBER = re.compile(r"[1-9][0-9]{0,8}")
 _RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\bPR\s+pending\b", re.IGNORECASE), "PR #{n}"),
     (re.compile(r"#NNNN(?!\w)", re.IGNORECASE), "#{n}"),  # not `#NNNNN`: a typo is refused by name, never turned into `#1636N`
+    (re.compile(r"#PRNUMBER(?!\w)", re.IGNORECASE), "#{n}"),  # the ledger's `#PRNUMBER\b`, so `PR #PRNUMBER` becomes `PR #1636`; `#PRNUMBERS` is no token
 )
 _REFS = _shipped.HEADER.index("refs")
 _SHOWN = 110  # characters of a survivor printed in a refusal
@@ -164,19 +170,20 @@ def added_fragments(root: Path, merge_base: str) -> list[str]:
 
 
 def sweep_markdown(name: str, text: str, number: str) -> tuple[str, list[tuple[int, str, str]]]:
-    """The text with each placeholder outside a fence and outside `inline code` rewritten, plus the changed lines."""
+    """The text with each placeholder outside a fence and outside `inline code` rewritten, plus the changed lines.
+
+    Which lines are outside a fence is ``ledger_fold.outside_fences``'s answer and which stretches of a line are code is
+    ``ledger_fold._INLINE_CODE``'s: the ledger's one rule, called, never re-implemented here (a copy of it was the way
+    this script and ``ledger_fold.py check`` came to read the same file two ways)."""
+    lines = text.split("\n")
+    outside, unclosed_at = _fold.outside_fences(lines)
+    if unclosed_at:
+        raise Refused(
+            f"{name}: an unclosed code fence opened at line {unclosed_at}; the rest of the file cannot be told from quoted text"
+        )
     changes: list[tuple[int, str, str]] = []
-    out: list[str] = []
-    in_fence = False
-    for n, line in enumerate(text.split("\n"), 1):
-        if _fold._FENCE.match(line):
-            in_fence = not in_fence
-            out.append(line)
-            continue
-        if in_fence:
-            out.append(line)
-            continue
-        new, pos, parts = line, 0, []
+    for n, line in outside:
+        parts, pos = [], 0
         for code in _fold._INLINE_CODE.finditer(line):
             parts += [_sub(line[pos:code.start()], number), code.group(0)]
             pos = code.end()
@@ -184,10 +191,8 @@ def sweep_markdown(name: str, text: str, number: str) -> tuple[str, list[tuple[i
         new = "".join(parts)
         if new != line:
             changes.append((n, line, new))
-        out.append(new)
-    if in_fence:
-        raise Refused(f"{name}: an unclosed code fence; the rest of the file cannot be told from quoted text")
-    return "\n".join(out), changes
+            lines[n - 1] = new
+    return "\n".join(lines), changes
 
 
 def _spans(text: str) -> list[list[tuple[int, int]]]:
@@ -295,8 +300,8 @@ def plan(root: Path, rels: list[str], number: str) -> list[tuple[str, bytes, byt
             except csv.Error as exc:
                 raise Refused(f"{rel}: not readable as csv ({exc})") from None
             left = [c[2] for c in changes] or [_rows(new)[1][_REFS]]
-            # the shipped.d guard (tests/test_ledger_shipped_fragments.py) refuses ANY `pending` in refs, not only `PR pending`
-            survivors = [x for x in left if _fold._PLACEHOLDER.search(x) or "pending" in x.lower()]
+            # the predicate `ledger_shipped.py check` applies to a refs cell: any `pending` WORD, `#NNNN` or `#PRNUMBER`
+            survivors = [x for x in left if _shipped.REFS_PLACEHOLDER.search(x)]
         else:
             new, changes = sweep_markdown(rel, text, number)
             survivors = _prose_placeholders(new)
