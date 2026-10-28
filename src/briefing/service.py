@@ -89,7 +89,6 @@ def _bg_refresh(cache_path: Path) -> None:
     ``cache_path`` is where the caller meant the cache to be when it started this thread, and every read and write of the cache in this run
     goes there. A thread that asked ``data_dir()`` again at its write could land the cache in a different folder than the one it started in
     (a data folder changed while it ran, a test that moved ``OO_DATA_DIR`` and left the thread behind)."""
-    _run_cache_path.set(cache_path)
     from src.database.session import session_scope
 
     def _progress(done: int, total: int, _name: str) -> None:
@@ -97,6 +96,7 @@ def _bg_refresh(cache_path: Path) -> None:
             _refresh_state["done"] = done
             _refresh_state["total"] = total
 
+    token = _run_cache_path.set(cache_path)
     try:
         # A rebuild is a run of whole-corpus scans, the readers that hold the write-ahead log's checkpoint back (the 16 Oct 2026 pin
         # reports named them). While the LOG latch is engaged it does not start: the thread ends at once and the view says ``paused``,
@@ -113,6 +113,7 @@ def _bg_refresh(cache_path: Path) -> None:
     except Exception as exc:  # noqa: BLE001 - a background refresh must never crash the app
         log_failure(_LOG, "background briefing refresh failed", exc, level=logging.WARNING)
     finally:
+        _run_cache_path.reset(token)  # a dedicated thread's context dies with it; a pooled one would keep the pin for its next task
         with _refresh_lock:
             _refresh_state["refreshing"] = False
 
@@ -134,7 +135,14 @@ def _ensure_background_refresh() -> None:
         _refresh_state["total"] = 0
         thread = threading.Thread(target=_bg_refresh, args=(cache_path,), name="oo-briefing-refresh", daemon=True)
         _refresh_thread = thread
-    thread.start()
+    try:
+        thread.start()
+    except RuntimeError as exc:  # no thread could be started: leave the state as it was, or ``refreshing`` stays true for good
+        with _refresh_lock:
+            _refresh_state["refreshing"] = False
+            if _refresh_thread is thread:
+                _refresh_thread = None
+        log_failure(_LOG, "background briefing refresh not started: no thread could be started", exc, level=logging.WARNING)
 
 
 def _refresh_status() -> dict:

@@ -33,15 +33,28 @@ def fresh_state(monkeypatch):
     monkeypatch.setattr(service, "_refresh_thread", None)
 
 
+class _ThreadingWithoutEnumerate:
+    """``threading`` as ``service`` sees it, with ``enumerate`` refused: the handle must be found without walking every thread. A copy bound to
+    the one name the module reads, not a patch of ``threading`` for the whole process."""
+
+    def enumerate(self):  # noqa: A003 - the name under test
+        pytest.fail("the handle must be found without walking every thread")
+
+    def __getattr__(self, name):
+        return getattr(threading, name)
+
+
 def test_the_thread_is_kept_and_found_without_enumerating_threads(monkeypatch, fresh_state):
     release = threading.Event()
     monkeypatch.setattr(service, "refresh_briefing", lambda session, on_progress=None: release.wait(HANG_GUARD_S))
-    monkeypatch.setattr(threading, "enumerate", lambda: pytest.fail("the handle must be found without walking every thread"))
+    monkeypatch.setattr(service, "threading", _ThreadingWithoutEnumerate())
     assert service._refresh_thread is None
-    service._ensure_background_refresh()
-    handle = service._refresh_thread
-    assert handle is not None and handle.name == "oo-briefing-refresh" and handle.is_alive()
-    release.set()
+    try:
+        service._ensure_background_refresh()
+        handle = service._refresh_thread
+        assert handle is not None and handle.name == "oo-briefing-refresh" and handle.is_alive()
+    finally:
+        release.set()
     handle.join(HANG_GUARD_S)
     assert not handle.is_alive()
     assert service._refresh_thread is handle, "the handle stays set after the thread ends; is_alive() says whether it still runs"
@@ -50,11 +63,13 @@ def test_the_thread_is_kept_and_found_without_enumerating_threads(monkeypatch, f
 def test_a_second_start_while_one_runs_keeps_the_first_handle(monkeypatch, fresh_state):
     release = threading.Event()
     monkeypatch.setattr(service, "refresh_briefing", lambda session, on_progress=None: release.wait(HANG_GUARD_S))
-    service._ensure_background_refresh()
-    first = service._refresh_thread
-    service._ensure_background_refresh()
-    assert service._refresh_thread is first
-    release.set()
+    try:
+        service._ensure_background_refresh()
+        first = service._refresh_thread
+        service._ensure_background_refresh()
+        assert service._refresh_thread is first
+    finally:
+        release.set()
     first.join(HANG_GUARD_S)
 
 
@@ -70,22 +85,44 @@ def test_the_cache_is_written_where_the_thread_started_even_if_the_data_folder_m
         release.wait(HANG_GUARD_S)
 
     monkeypatch.setattr("src.analytics.watches.evaluate_watches", hold)
-    service._ensure_background_refresh()
-    handle = service._refresh_thread
-    assert in_the_run.wait(HANG_GUARD_S), "the rebuild never began"
-    monkeypatch.setenv("OO_DATA_DIR", str(moved))
-    release.set()
+    monkeypatch.setattr("src.api.insights.warm_cache", lambda session: None)  # the cache write is what is under test, not the warm-up threads
+    try:
+        service._ensure_background_refresh()
+        handle = service._refresh_thread
+        assert in_the_run.wait(HANG_GUARD_S), "the rebuild never began"
+        monkeypatch.setenv("OO_DATA_DIR", str(moved))
+    finally:
+        release.set()
     handle.join(HANG_GUARD_S)
     assert not handle.is_alive()
     assert (started / "briefing_cache.json").exists(), "the cache did not land where the thread started"
     assert not (moved / "briefing_cache.json").exists(), "the cache followed the data folder to where a later test had moved it"
 
 
-def test_a_caller_in_another_thread_still_resolves_the_path_from_the_data_folder_each_time(monkeypatch, tmp_path):
+def test_a_caller_outside_the_rebuild_thread_still_resolves_the_path_from_the_data_folder_each_time(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "a"))
     assert service._cache_path() == tmp_path / "a" / "briefing_cache.json"
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "b"))
     assert service._cache_path() == tmp_path / "b" / "briefing_cache.json"
+
+
+def test_a_thread_that_cannot_be_started_leaves_the_state_as_it_was(monkeypatch, fresh_state):
+    """Review finding 8: ``refreshing`` was set before ``start()``, so a failed start left it true for good and the kept handle unstarted."""
+
+    class _CannotStart(threading.Thread):
+        def start(self):
+            raise RuntimeError("can't start new thread")
+
+    class _ThreadingThatCannotStart:
+        Thread = _CannotStart
+
+        def __getattr__(self, name):
+            return getattr(threading, name)
+
+    monkeypatch.setattr(service, "threading", _ThreadingThatCannotStart())
+    service._ensure_background_refresh()  # does not raise
+    assert service._refresh_state["refreshing"] is False
+    assert service._refresh_thread is None, "an unstarted Thread is not a handle"
 
 
 def test_the_pin_does_not_leak_to_the_main_thread_after_a_rebuild_ran(monkeypatch, tmp_path, fresh_state):

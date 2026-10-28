@@ -144,7 +144,7 @@ def _exits_round(tmp: Path, n: int, **kw) -> tuple[list[int], Path]:
 #: WHAT THIS BOUND PROTECTS: the wait for a row that a launcher handed to its deferred writer. A launcher that cannot get the lock inside
 #: ``OO_REC_LOCK_WAIT_MS`` (100) defers the row to a detached child (``OO_REC_LOCK_FOREVER=1``) that writes it AFTER the launcher has exited
 #: (R174, by design), so a look taken at the launcher's exit can honestly miss a row that arrives moments later. Measured (R335, probe in
-#: /mnt/project-files/audit-0.5.0/inputs/r335-launcher-race/): with the wait forced to 1 ms, 4 to 7 of 8 rows were present at exit and 8 of 8
+#: /mnt/project-files/audit-0.5.0/inputs/r335-launcher-race/): with the wait forced to 1 ms, 4 to 8 of 8 rows were present at exit (mkdir lock 4-7, flock 6-8) and 8 of 8
 #: within 0.1 s. The bound is far above that and exists only so a row that NEVER arrives (a child that hung or died) fails the test, with the wait named.
 DEFERRED_ROW_WAIT_S = 30.0
 

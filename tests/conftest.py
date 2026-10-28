@@ -408,8 +408,8 @@ def _stop_leaked_liveness_thread(timeout: float = 5.0) -> None:
 
 
 #: WHAT THIS BOUND PROTECTS: the wait for a briefing rebuild a test started (a GET of /api/briefing on a stale cache, a scheduler pass) to
-#: finish before the next test begins. A rebuild is a run of whole-corpus scans on a test database, seconds at most; the bound is far above
-#: that and exists so a thread that never ends fails the test that left it, by name, instead of silently running into the next ones (R332: a
+#: finish before the next test begins. A rebuild is a run of whole-corpus scans on a test database (its time is not measured); the bound is
+#: generous and exists so a thread that never ends fails the test that left it, by name, instead of silently running into the next ones (R332: a
 #: leaked ``oo-briefing-refresh`` was alive in later tests and resolved its cache folder lazily, from whatever ``OO_DATA_DIR`` they had set).
 _BRIEFING_THREAD_JOIN_S = 30.0
 _BRIEFING_THREAD_NAMES = ("oo-briefing-refresh", "oo-briefing-bg")
@@ -428,7 +428,10 @@ def _quiesce_briefing_threads(nodeid: str, timeout: float = _BRIEFING_THREAD_JOI
     live = [
         t
         for t in threading.enumerate()
-        if t.name in _BRIEFING_THREAD_NAMES and t is not threading.current_thread() and t not in _BRIEFING_THREADS_REPORTED
+        if t.name in _BRIEFING_THREAD_NAMES
+        and t.ident is not None  # a thread between start() and its first instruction cannot be joined yet
+        and t is not threading.current_thread()
+        and t not in _BRIEFING_THREADS_REPORTED
     ]
     end = time.monotonic() + timeout
     for t in live:
