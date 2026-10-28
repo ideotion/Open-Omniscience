@@ -426,4 +426,24 @@ test("a job with no unit at all is a plain count, never bytes", () => {
   assert(!/\bB\b|KB|MB/.test(row.replace(/[⁨⁩]/g, "")), `no byte unit is invented (got ${row})`);
 });
 
+// --------------------------------------------------------------------------- //
+//  R360: the dialog says collection is paused only while no restore has found otherwise
+// --------------------------------------------------------------------------- //
+const PAUSED_SENTENCE = "Background collection is paused for this whole import";
+
+test("R360: a running import says collection is paused", () => {
+  const note = render(Object.assign({}, TAIL_RUN, { collection_exit_unconfirmed: false }));
+  assert(note.indexOf(PAUSED_SENTENCE) !== -1, "the claim is still made where nothing contradicts it: " + note);
+});
+
+test("R360: ...and does not say it where a restore copied the library with a pass still running", () => {
+  const note = render(Object.assign({}, TAIL_RUN, { collection_exit_unconfirmed: true }));
+  assert(note.indexOf(PAUSED_SENTENCE) === -1, "a restore found a pass still writing; the dialog must not claim a pause: " + note);
+});
+
+test("R360: an older server that sends no such field keeps the sentence", () => {
+  const note = render(TAIL_RUN);
+  assert(note.indexOf(PAUSED_SENTENCE) !== -1, "an absent field is not a contradiction: " + note);
+});
+
 console.log(`\n${passed} passed`);

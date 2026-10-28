@@ -154,6 +154,21 @@ def _refusal_of(summary: dict) -> str | None:
     return None
 
 
+def _collector_exit_of(summary: object) -> dict | None:
+    """The restore's own account of whether background collection had left the corpus when it was copied, or None.
+
+    ``run_restore`` records ``collector_exit`` on a committing restore that owns the machine (``merge.py``,
+    ``collector_exit.py``): ``confirmed`` True, False (a pass was still running when the copy was taken) or None (the
+    scheduler could not be read). Absent when the restore had no copy to protect, which says nothing either way. The same
+    TWO SHAPES as :func:`_refusal_of`: the corpus path wraps the report, the legacy path returns it."""
+    if not isinstance(summary, dict):
+        return None
+    for candidate in (summary, summary.get("report")):
+        if isinstance(candidate, dict) and isinstance(candidate.get("collector_exit"), dict):
+            return candidate["collector_exit"]
+    return None
+
+
 def stage_for_phase(phase: str | None) -> int | None:
     """Which of the four stages ``phase`` belongs to, or ``None``.
 
@@ -1426,6 +1441,10 @@ class ImportQueueManager:
         done = sum(1 for it in items if it["state"] in ("done", "skipped", "staged"))
         committed = sum(1 for it in items if it["state"] in ("done", "skipped"))
         staged = sum(1 for it in items if it["state"] == "staged")
+        # "Collection is paused" is only said while no restore of this run has told the opposite: a restore that copied
+        # the corpus while a collection pass was still running (or that could not look) recorded it (``collector_exit``).
+        exits = [_collector_exit_of(it.get("summary")) for it in items]
+        exit_unconfirmed = any(e is not None and e.get("confirmed") is not True for e in exits)
         return {
             "stages": self._stage_rows(items, live, tuning_done, state),
             "state": state,
@@ -1472,6 +1491,10 @@ class ImportQueueManager:
             "ended_at": ended,
             "elapsed_s": round((ended or now) - started, 1) if started else None,
             "collection_paused": paused,
+            # True when a restore of this run copied the corpus without having confirmed that collection had left it
+            # (a pass was still running after the wait, or the scheduler could not be read). The dialog then does not
+            # say collection is paused.
+            "collection_exit_unconfirmed": exit_unconfirmed,
             # What the one post-run tuning pass actually managed (FTS segment merge +
             # planner statistics). None while the run is still going; a False half is
             # reported as such rather than quietly presented as done.

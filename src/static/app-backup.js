@@ -1979,7 +1979,7 @@
       const headHtml = `<b>${head}</b>${st.elapsed_s != null ? ` · ${esc(_uxImDur(st.elapsed_s))}` : ""}`;
       const bodyHtml = stagedLine
         + tailLine
-        + (st.state === "running" && st.collection_paused ? `<div>${esc(t("Background collection is paused for this whole import and resumes when it finishes."))}</div>` : "")
+        + (st.state === "running" && st.collection_paused && !st.collection_exit_unconfirmed ? `<div>${esc(t("Background collection is paused for this whole import and resumes when it finishes."))}</div>` : "")
         + (st.state === "interrupted" ? _uxImInterruptedHtml(t) : "");
       if (note) {
         _uxPatchRow(note, "head", headHtml, headHtml);

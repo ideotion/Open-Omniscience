@@ -7762,6 +7762,21 @@ def run_restore(
     # and it is swept by the ordinary ``.restore-*`` janitor.
     from src.database.connect import snapshot_preserving
 
+    # THE COLLECTOR MUST BE OFF THE CORPUS BEFORE IT IS COPIED. The exclusive window stops the collector with
+    # a bounded join, so a pass deep in a write can still be committing (and a "Run now" pass that began
+    # before the window was never touched). Everything it commits after the copy below is discarded by the
+    # swap. Waiting here lands a pass that finishes inside the bound in the copy; one that does not is named
+    # in the report and the restore goes on (the pause is a courtesy). Only a restore that will swap
+    # (``commit``) and takes the copy itself (a CARRIED copy was taken by the group's first item) has a
+    # copy to protect; a restore that does not own the machine claimed no pause to confirm.
+    collector_exit: dict | None = None
+    if commit and _owned and not carried:
+        from src.backup import runlog
+        from src.backup.collector_exit import wait_for_collector_exit
+
+        collector_exit = wait_for_collector_exit(should_stop=should_stop)
+        runlog.milestone("collector_exit", **collector_exit)
+
     _abort_point("snapshot_working_copy")
     # The Q701-note trust answer, resolved ONCE per restore (the per-import override
     # if the operator made one for this import, else their first-launch answer) and
@@ -7920,6 +7935,10 @@ def run_restore(
         "verification": verification,
         "committed": False,
     }
+    if collector_exit is not None:
+        # What the wait before the copy found. ``confirmed`` False means a collection pass was still running when
+        # the corpus was copied: what it saved to the live corpus after that is not in the restored one.
+        report["collector_exit"] = collector_exit
 
     if not verification["ok"]:
         report["refused"] = "post-merge verification failed; live database untouched"
