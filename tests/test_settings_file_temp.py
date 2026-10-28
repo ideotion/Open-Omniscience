@@ -9,14 +9,16 @@ import os
 import pytest
 
 from src.config import app_settings
+from src.safety import file_lock
 from src.safety import settings as safety_settings
 from src.scheduler import settings as scheduler_settings
+from tests.os_scope import scope_os
 
 
 def _spy(monkeypatch):
     seen: list[str] = []
     real = os.replace
-    monkeypatch.setattr("src.safety.file_lock.os.replace", lambda a, b: (seen.append(os.fspath(a)), real(a, b))[1])
+    scope_os(monkeypatch, file_lock, replace=lambda a, b: (seen.append(os.fspath(a)), real(a, b))[1])
     return seen
 
 

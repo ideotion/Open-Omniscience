@@ -30,6 +30,7 @@ import pytest
 
 import src.llm.vllm_lifecycle as V
 from tests.js_source_helper import app_js
+from tests.os_scope import scope_os
 
 
 @pytest.fixture(autouse=True)
@@ -341,7 +342,7 @@ def test_a_failed_start_whose_log_could_not_be_kept_says_why_in_the_journal(gpu8
             return broken()
         return real_replace(src, dst, *a, **k)
 
-    monkeypatch.setattr(V.os, "replace", only_the_copy)
+    scope_os(monkeypatch, V, replace=only_the_copy)
     V.start_outcome()
     V._wait_for_exit_copies()
     out = V.start_outcome()

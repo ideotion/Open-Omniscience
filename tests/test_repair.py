@@ -33,6 +33,7 @@ from src.database import damage, repair, salvage, verify
 from src.database.damage import FILE_CORPUS, DamageRegistry
 
 from . import damaged_store_helpers as H
+from tests.os_scope import scope_os
 
 UNCLEAN = {"clean": False, "at": "2026-10-06T01:00:00+00:00", "basis": "the liveness file"}
 
@@ -237,7 +238,7 @@ def test_a_drive_that_cannot_make_the_second_name_at_the_swap_leaves_the_live_fi
             raise OSError(1, "Operation not permitted")
         return real_link(src, dst, **kw)
 
-    monkeypatch.setattr(os, "link", link)
+    scope_os(monkeypatch, repair, link=link)
     with pytest.raises(repair.Declined) as caught:
         repair.run(repair.plan())
     assert caught.value.code == "no-hard-links"
@@ -2167,7 +2168,7 @@ def test_the_record_can_be_made_durable_on_demand_and_says_false_when_the_drive_
     synced: list[int] = []
     folders: list[Path] = []
     real_fsync = os.fsync
-    monkeypatch.setattr(os, "fsync", lambda fd: synced.append(fd) or real_fsync(fd))
+    scope_os(monkeypatch, damage, fsync=lambda fd: synced.append(fd) or real_fsync(fd))
     monkeypatch.setattr(damage, "fsync_folder", lambda folder: folders.append(folder))
     assert reg.flush_durable() is True
     assert synced, "the record's data was not synced before the rename"
@@ -2177,7 +2178,7 @@ def test_the_record_can_be_made_durable_on_demand_and_says_false_when_the_drive_
     def refuse(src, dst):
         raise OSError(28, "No space left on device")
 
-    monkeypatch.setattr(os, "replace", refuse)
+    scope_os(monkeypatch, damage, replace=refuse)
     reg.repair_upsert("a", kept_rows=5)
     assert reg.flush_durable() is False, "a record that is not on the drive was reported as durable"
 

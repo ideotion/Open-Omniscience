@@ -53,6 +53,7 @@ from sqlalchemy.orm import sessionmaker
 from src.analytics import keyword_log_export as kle
 from src.analytics import keyword_log_scan as kls
 from src.database.models import Base
+from tests.os_scope import hide_os, scope_os
 
 LANGS = ["en", "fr", "de", None, "", "zh"]
 
@@ -543,7 +544,7 @@ def test_a_write_error_is_a_507_only_when_the_drive_itself_says_it_is_read_only(
         # here, and a fake that called the real ``statvfs`` on ``"None"`` would raise and say False.
         return types.SimpleNamespace(f_flag=os.ST_RDONLY)
 
-    monkeypatch.setattr(os, "statvfs", read_only)
+    scope_os(monkeypatch, kls, statvfs=read_only)
     with pytest.raises(kls.ExportRefused) as err, kls._refuse_when_the_disk_is_full(tmp_path):
         raise _io_error_on_write()
     assert err.value.status == 507 and "read-only" in str(err.value)
@@ -551,13 +552,13 @@ def test_a_write_error_is_a_507_only_when_the_drive_itself_says_it_is_read_only(
     with pytest.raises(sqlite3.OperationalError, match="disk I/O error"), kls._refuse_when_the_disk_is_full():
         raise _io_error_on_write()
     # A writable drive: the same bare error may be a failing disk or a quota SQLite cannot name.
-    monkeypatch.setattr(os, "statvfs", real)
+    scope_os(monkeypatch, kls, statvfs=real)
     with pytest.raises(sqlite3.OperationalError, match="disk I/O error"), kls._refuse_when_the_disk_is_full(tmp_path):
         raise _io_error_on_write()
     # A different extended code on a read-only drive is not a write refusal: the plain IOERR, a
     # failed READ and a failed fsync are all "disk I/O error" too, and a drive that cannot be read
     # or synced is not one that is merely read-only.
-    monkeypatch.setattr(os, "statvfs", read_only)
+    scope_os(monkeypatch, kls, statvfs=read_only)
     for code in (
         sqlite3.SQLITE_IOERR, sqlite3.SQLITE_IOERR_READ, sqlite3.SQLITE_IOERR_FSYNC,
         kls._SQLITE_IOERR_WRITE + 1,
@@ -571,21 +572,21 @@ def test_a_write_error_is_a_507_only_when_the_drive_itself_says_it_is_read_only(
 def test_a_drive_that_cannot_be_asked_is_not_called_read_only(tmp_path, monkeypatch):
     """Nothing is guessed: no ``statvfs`` on the platform, no ``ST_RDONLY`` flag, or a folder the
     call cannot read all say False, and only the flag set on a real answer says True."""
-    monkeypatch.setattr(os, "statvfs", lambda path: types.SimpleNamespace(f_flag=1), raising=False)
-    monkeypatch.setattr(os, "ST_RDONLY", 1, raising=False)
+    scope_os(monkeypatch, kls, statvfs=lambda path: types.SimpleNamespace(f_flag=1))
+    scope_os(monkeypatch, kls, ST_RDONLY=1)
     assert kls._drive_is_read_only(tmp_path) is True
-    monkeypatch.setattr(os, "statvfs", lambda path: types.SimpleNamespace(f_flag=0), raising=False)
+    scope_os(monkeypatch, kls, statvfs=lambda path: types.SimpleNamespace(f_flag=0))
     assert kls._drive_is_read_only(tmp_path) is False
 
     def cannot_read(path):
         raise FileNotFoundError(path)
 
-    monkeypatch.setattr(os, "statvfs", cannot_read, raising=False)
+    scope_os(monkeypatch, kls, statvfs=cannot_read)
     assert kls._drive_is_read_only(tmp_path / "gone") is False
-    monkeypatch.delattr(os, "statvfs", raising=False)
+    hide_os(monkeypatch, kls, "statvfs")
     assert kls._drive_is_read_only(tmp_path) is False
-    monkeypatch.setattr(os, "statvfs", lambda path: types.SimpleNamespace(f_flag=1), raising=False)
-    monkeypatch.delattr(os, "ST_RDONLY", raising=False)
+    scope_os(monkeypatch, kls, statvfs=lambda path: types.SimpleNamespace(f_flag=1))
+    hide_os(monkeypatch, kls, "ST_RDONLY")
     assert kls._drive_is_read_only(tmp_path) is False
 
 
@@ -599,10 +600,7 @@ def test_every_write_the_ranker_makes_asks_its_own_drive_whether_it_is_read_only
     r = kls.Ranker(0, 3, heap_rows=2, spill_dir=tmp_path, disk_check=None)
     # Read-only only for the SPILL'S folder: a site that asked about another one (the ranker's
     # fallback temp folder, say) must not be refused.
-    monkeypatch.setattr(
-        os, "statvfs",
-        lambda path: types.SimpleNamespace(f_flag=os.ST_RDONLY if path == str(tmp_path) else 0),
-    )
+    scope_os(monkeypatch, kls, statvfs=lambda path: types.SimpleNamespace(f_flag=os.ST_RDONLY if path == str(tmp_path) else 0))
     try:
         if where == "to_spill":
             def fail(*args, **kwargs):

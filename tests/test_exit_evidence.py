@@ -35,6 +35,7 @@ from src.monitoring import exit_evidence as ee
 from src.monitoring import forensics, kernel_log, session_hwm
 from src.monitoring import session_history as sh
 from tests.js_source_helper import python_function_source
+from tests.os_scope import scope_os
 from tests.wallclock_helpers import HANG_GUARD_S
 
 REPO = Path(__file__).resolve().parents[1]
@@ -1262,18 +1263,18 @@ def test_root_and_a_primary_group_count_as_able_to_read_the_journal(monkeypatch)
 
     names = {0: "root", 4: "adm", 1000: "plain"}
     monkeypatch.setattr(grp, "getgrgid", lambda g: types.SimpleNamespace(gr_name=names[g]))
-    monkeypatch.setattr(kernel_log.os, "getgroups", lambda: [])  # root's list is often empty
+    scope_os(monkeypatch, kernel_log, getgroups=lambda: [])  # root's list is often empty
     # Root whose primary group is NOT a journal group: only the root rule can say yes here (the
     # test box runs as root with egid 0, which would answer through the "root" GROUP otherwise).
-    monkeypatch.setattr(kernel_log.os, "getegid", lambda: 1000)
-    monkeypatch.setattr(kernel_log.os, "geteuid", lambda: 0)
+    scope_os(monkeypatch, kernel_log, getegid=lambda: 1000)
+    scope_os(monkeypatch, kernel_log, geteuid=lambda: 0)
     assert kernel_log._in_journal_group() is True
-    monkeypatch.setattr(kernel_log.os, "geteuid", lambda: 1000)
-    monkeypatch.setattr(kernel_log.os, "getegid", lambda: 4)  # adm as the PRIMARY group
+    scope_os(monkeypatch, kernel_log, geteuid=lambda: 1000)
+    scope_os(monkeypatch, kernel_log, getegid=lambda: 4)  # adm as the PRIMARY group
     assert kernel_log._in_journal_group() is True
-    monkeypatch.setattr(kernel_log.os, "getegid", lambda: 1000)
+    scope_os(monkeypatch, kernel_log, getegid=lambda: 1000)
     assert kernel_log._in_journal_group() is False
-    monkeypatch.setattr(kernel_log.os, "getgroups", lambda: [4])  # adm as a supplementary group
+    scope_os(monkeypatch, kernel_log, getgroups=lambda: [4])  # adm as a supplementary group
     assert kernel_log._in_journal_group() is True
 
 

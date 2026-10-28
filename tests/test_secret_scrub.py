@@ -23,6 +23,7 @@ import sys
 import pytest
 
 from src.monitoring import secret_scrub as ss
+from tests.os_scope import scope_os
 
 NEEDLE = "hunter2-never-on-disk"
 
@@ -230,7 +231,7 @@ def test_a_rewrite_that_fails_leaves_the_old_file_whole_and_no_copy_behind(tmp_p
     def boom(src, dst):
         raise OSError("disk full")
 
-    monkeypatch.setattr(ss.os, "replace", boom)
+    scope_os(monkeypatch, ss, replace=boom)
     with pytest.raises(OSError, match="disk full"):
         ss.scrub_file(p, NEEDLE)
     assert p.read_text(encoding="utf-8") == body, "the old file is whole; the caller decides about it"

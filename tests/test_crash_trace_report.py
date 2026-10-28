@@ -27,6 +27,7 @@ from src.monitoring import build_marker as bm
 from src.monitoring import exit_evidence as ee
 from src.monitoring import forensics, session_hwm
 from src.monitoring import session_history as sh
+from tests.os_scope import scope_os
 
 BOOT = "11111111-aaaa-bbbb-cccc-000000000001"
 
@@ -798,7 +799,7 @@ def test_the_trace_rotation_and_header_run_under_the_files_lock_and_a_fatal_note
     seen_while_held = []
     real_replace = os.replace
     monkeypatch.setattr(ee, "file_lock", Spy)
-    monkeypatch.setattr(ee.os, "replace", lambda a, b: (seen_while_held.append(bool(held)), real_replace(a, b))[1])
+    scope_os(monkeypatch, ee, replace=lambda a, b: (seen_while_held.append(bool(held)), real_replace(a, b))[1])
     monkeypatch.setattr(ee, "_TRACE_HANDLE", None)
     monkeypatch.setattr(faulthandler, "enable", lambda **kw: None)
     ee.crash_trace_path().write_text("x" * (ee._TRACE_MAX_BYTES + 1), encoding="utf-8")

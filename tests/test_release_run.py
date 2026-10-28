@@ -27,6 +27,7 @@ from pathlib import Path
 import pytest
 
 from src.monitoring import release_run as rr
+from tests.os_scope import scope_os
 from tests.wallclock_helpers import call_on_thread, wait_until
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -2683,7 +2684,7 @@ def test_a_missing_file_error_from_the_rewrite_is_not_mistaken_for_a_file_that_i
 
     fresh2, out2, journal2, beat2, report2, _ = _kept_install_with(tmp_path / "b")
     with monkeypatch.context() as m:
-        m.setattr(secret_scrub.os, "replace", no_target)
+        scope_os(m, secret_scrub, replace=no_target)
         done2 = rr._scrub_kept_install(fresh2, out2, NEEDLE)
     assert done2["removed"] == ["imp-1.jsonl", "restore-1.json"] and done2["failed"] == [], done2
     assert not journal2.exists() and not report2.exists()

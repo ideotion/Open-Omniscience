@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import src.analytics.reindex_parallel as rp
 from src.analytics.extract import BaselineExtractor
+from tests.os_scope import scope_os
 
 
 def _sorted_terms(terms):
@@ -39,11 +40,11 @@ def test_worker_count_env_override(monkeypatch):
 
 def test_worker_count_default_leaves_one_core_and_caps(monkeypatch):
     monkeypatch.delenv("OO_REINDEX_WORKERS", raising=False)
-    monkeypatch.setattr(rp.os, "cpu_count", lambda: 6)
+    scope_os(monkeypatch, rp, cpu_count=lambda: 6)
     assert rp.worker_count() == 5  # cpu_count - 1
-    monkeypatch.setattr(rp.os, "cpu_count", lambda: 64)
+    scope_os(monkeypatch, rp, cpu_count=lambda: 64)
     assert rp.worker_count() == rp._MAX_WORKERS_CAP  # capped, not dozens of workers
-    monkeypatch.setattr(rp.os, "cpu_count", lambda: 1)
+    scope_os(monkeypatch, rp, cpu_count=lambda: 1)
     assert rp.worker_count() == 0  # a single-core box never parallelises
 
 
@@ -56,16 +57,16 @@ def test_all_cores_worker_count_ignores_the_conservative_cap(monkeypatch):
     ceiling (a data-loss-lens skeptic finding, 2026-07-24, MEDIUM: the first
     cut had no ceiling at all -- a huge box would spawn an equally huge
     process pool, stacking with the concurrently-enlarged SQLite cache)."""
-    monkeypatch.setattr(rp.os, "cpu_count", lambda: 6)
+    scope_os(monkeypatch, rp, cpu_count=lambda: 6)
     assert rp.all_cores_worker_count() == 6  # not 5 (worker_count's cpu-1)
-    monkeypatch.setattr(rp.os, "cpu_count", lambda: 20)
+    scope_os(monkeypatch, rp, cpu_count=lambda: 20)
     assert rp.all_cores_worker_count() == 20  # well above worker_count's cap of 8
-    monkeypatch.setattr(rp.os, "cpu_count", lambda: 64)
+    scope_os(monkeypatch, rp, cpu_count=lambda: 64)
     assert rp.all_cores_worker_count() == rp._MAX_EXCLUSIVE_WORKERS_CAP  # capped, not 64
     assert rp._MAX_EXCLUSIVE_WORKERS_CAP > rp._MAX_WORKERS_CAP  # a HIGHER ceiling than the default
-    monkeypatch.setattr(rp.os, "cpu_count", lambda: 1)
+    scope_os(monkeypatch, rp, cpu_count=lambda: 1)
     assert rp.all_cores_worker_count() == 1  # never 0 -- always at least one worker
-    monkeypatch.setattr(rp.os, "cpu_count", lambda: None)
+    scope_os(monkeypatch, rp, cpu_count=lambda: None)
     assert rp.all_cores_worker_count() == 1  # honest fallback, never a crash
 
 

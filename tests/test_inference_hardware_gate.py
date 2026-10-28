@@ -21,6 +21,7 @@ import pytest
 
 from src.config.app_settings import load_settings as _REAL_LOAD_SETTINGS
 from src.llm import backend as B
+from tests.os_scope import scope_os
 
 _APPLE = {"available": True, "name": "Apple Silicon (arm64)", "unified_ram_gb": 32.0}
 _NO_GPU = {"available": False, "reason": "nvidia-smi not found or timed out"}
@@ -46,7 +47,7 @@ def _neutral_override(monkeypatch):
         llm_allow_impractical_hw = False
 
     monkeypatch.setattr("src.config.app_settings.load_settings", lambda: _S())
-    monkeypatch.setattr(B.os, "cpu_count", lambda: 2)
+    scope_os(monkeypatch, B, cpu_count=lambda: 2)
     monkeypatch.setattr(B, "total_ram_gb", lambda: 3.2)
     yield
 
@@ -145,7 +146,7 @@ def _stub_cpu(monkeypatch, *, cores, ram_gb):
     """NB: backend.py binds total_ram_gb at import, so the patch must target ITS
     namespace -- patching src.llm.ollama would leave the bound name untouched and
     the test would pass without ever simulating the machine it claims to."""
-    monkeypatch.setattr(B.os, "cpu_count", lambda: cores)
+    scope_os(monkeypatch, B, cpu_count=lambda: cores)
     monkeypatch.setattr(B, "total_ram_gb", lambda: ram_gb)
 
 

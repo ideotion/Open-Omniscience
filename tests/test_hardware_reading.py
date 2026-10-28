@@ -16,7 +16,6 @@ What this pins:
 
 from __future__ import annotations
 
-import os
 import shutil
 import socket
 from pathlib import Path
@@ -25,6 +24,7 @@ import pytest
 
 from src.config import hardware_reading as H
 from tests.js_source_helper import python_function_source
+from tests.os_scope import scope_os
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -51,7 +51,7 @@ def test_a_reading_on_this_machine_is_whole_and_says_how_it_was_taken():
 
 
 def test_each_unreadable_figure_is_none_and_named(monkeypatch):
-    monkeypatch.setattr(os, "cpu_count", lambda: None)
+    scope_os(monkeypatch, H, cpu_count=lambda: None)
     monkeypatch.setattr("src.config.memory_budget.total_ram_mb", lambda: None)
 
     def broken(_path):
@@ -67,7 +67,7 @@ def test_cpu_count_raising_is_unreadable_not_one(monkeypatch):
     def boom():
         raise NotImplementedError
 
-    monkeypatch.setattr(os, "cpu_count", boom)
+    scope_os(monkeypatch, H, cpu_count=boom)
     assert H.cores() is None
 
 

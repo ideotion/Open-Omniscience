@@ -20,6 +20,8 @@ import pytest
 
 from src.monitoring import chronology as ch
 from src.monitoring import session_history as sh
+from src.safety import file_lock
+from tests.os_scope import scope_os
 
 T0 = 1_700_000_000.0  # 2023-11-14T22:13:20Z
 
@@ -582,7 +584,7 @@ def test_the_liveness_file_is_replaced_through_a_unique_temp(tmp_path, monkeypat
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     seen = []
     real = os.replace
-    monkeypatch.setattr("src.safety.file_lock.os.replace", lambda a, b: (seen.append(os.fspath(a)), real(a, b))[1])
+    scope_os(monkeypatch, file_lock, replace=lambda a, b: (seen.append(os.fspath(a)), real(a, b))[1])
     sh._SESSION_ID, sh._STARTED_MONO = "s", 0.0
     sh._write_liveness(1.0, 1.0)
     assert seen and all(f".tmp.{os.getpid()}." in n for n in seen), seen

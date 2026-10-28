@@ -28,6 +28,7 @@ import pytest
 from src.safety import data_location as dl
 from src.safety.data_location import DATA_SUBDIR
 from tests.js_source_helper import function_body, read_static, strip_comments
+from tests.os_scope import scope_os
 
 
 @pytest.fixture()
@@ -104,7 +105,7 @@ def test_a_created_parent_that_filled_meanwhile_is_kept(tmp_path, monkeypatch) -
 def test_a_refused_path_leaves_no_parent_folders_either(tmp_path, monkeypatch) -> None:
     """The refusal paths clean up the same way: a "no" is not a reason to leave folders."""
     typed = tmp_path / "x" / "y"
-    monkeypatch.setattr(dl.os, "access", lambda *_a, **_k: False)
+    scope_os(monkeypatch, dl, access=lambda *_a, **_k: False)
     out = dl.preflight(str(typed))
     assert out["usable"] is False and out["reason_code"] == "not_writable"
     assert not (tmp_path / "x").exists()
@@ -282,7 +283,7 @@ def test_a_previous_choice_survives_a_failed_write(tmp_path, env_file, monkeypat
     def boom(*a, **k):
         raise OSError("disk full")
 
-    monkeypatch.setattr(dl.os, "replace", boom)
+    scope_os(monkeypatch, dl, replace=boom)
     out = dl.persist(str(tmp_path))
     assert out["saved"] is False
     assert env_file.read_text(encoding="utf-8") == "export OO_DATA_DIR=/kept\n"

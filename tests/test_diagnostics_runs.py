@@ -22,6 +22,8 @@ import anyio
 import pytest
 
 from src.monitoring import diagnostics_runs as r
+from src.safety import file_lock
+from tests.os_scope import scope_os
 
 
 @pytest.fixture(autouse=True)
@@ -134,7 +136,7 @@ def test_no_clock_and_no_process_start_time_decides_what_is_this_process(_data, 
     running after the clock moved by a day."""
     rid = r.begin_run("a.zip", profile="full")
     monkeypatch.setattr(r, "_now_iso", lambda: "2031-01-01T00:00:00Z")
-    monkeypatch.setattr(os, "getpid", lambda: 4242)
+    scope_os(monkeypatch, r, getpid=lambda: 4242)
     rows = {row["id"]: row for row in r.diagnostics_member()["runs"]}
     assert rows[rid]["state"] == "running"
     assert "psutil" not in r.__dict__ and "_process_start" not in r.__dict__
@@ -585,7 +587,7 @@ def test_a_run_begun_many_times_over_never_leaves_an_end_without_its_begin(_data
 def test_every_line_is_synced_to_disk_so_a_kill_cannot_take_the_begin_with_it(_data, monkeypatch):
     synced: list[int] = []
     real = os.fsync
-    monkeypatch.setattr(os, "fsync", lambda fd: synced.append(fd) or real(fd))
+    scope_os(monkeypatch, r, fsync=lambda fd: synced.append(fd) or real(fd))
     rid = r.begin_run("a.zip", profile="full")
     assert len(synced) == 1  # the begin line is on disk before the build does anything else
     r.end_run(rid, outcome="done", seconds=1.0)
@@ -599,8 +601,9 @@ def test_the_rewrite_is_synced_aside_before_it_replaces_the_file_and_the_folder_
         _run(i)
     order: list[str] = []
     real_fsync, real_replace = os.fsync, os.replace
-    monkeypatch.setattr(os, "fsync", lambda fd: order.append("fsync") or real_fsync(fd))
-    monkeypatch.setattr(os, "replace", lambda a, b: order.append("replace") or real_replace(a, b))
+    sync_and_record = lambda fd: order.append("fsync") or real_fsync(fd)  # noqa: E731
+    scope_os(monkeypatch, file_lock, fsync=sync_and_record, replace=lambda a, b: order.append("replace") or real_replace(a, b))
+    scope_os(monkeypatch, r, fsync=sync_and_record)  # the appended line is synced by the module itself
     r.begin_run("go.zip", profile="full")
     # the file synced, the move, the folder synced, then the one appended line synced
     assert order == ["fsync", "replace", "fsync", "fsync"], order

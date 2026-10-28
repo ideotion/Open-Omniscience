@@ -41,6 +41,7 @@ from src.database.models import Base
 from src.monitoring import forensics, session_hwm
 from src.monitoring import soak_window as sw
 from tests import previous_identity
+from tests.os_scope import scope_os
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -1026,17 +1027,17 @@ def test_a_real_jemalloc_the_machine_has_is_read_as_replacing_malloc_and_leaves_
 
 
 def test_the_glibc_version_is_asked_of_the_c_library_and_anything_else_is_not_glibc(monkeypatch):
-    monkeypatch.setattr(os, "confstr", lambda name: "glibc 2.39", raising=False)
+    scope_os(monkeypatch, session_hwm, confstr=lambda name: "glibc 2.39")
     assert session_hwm._glibc_version() == "glibc 2.39"
     for failing in (ValueError("unrecognized configuration name"), OSError("x")):
         def boom(name, failing=failing):
             raise failing
 
-        monkeypatch.setattr(os, "confstr", boom, raising=False)
+        scope_os(monkeypatch, session_hwm, confstr=boom)
         assert session_hwm._glibc_version() is None
-    monkeypatch.setattr(os, "confstr", lambda name: "NPTL 2.5", raising=False)
+    scope_os(monkeypatch, session_hwm, confstr=lambda name: "NPTL 2.5")
     assert session_hwm._glibc_version() is None, "only glibc's own answer counts"
-    monkeypatch.setattr(os, "confstr", lambda name: None, raising=False)
+    scope_os(monkeypatch, session_hwm, confstr=lambda name: None)
     assert session_hwm._glibc_version() is None
 
 

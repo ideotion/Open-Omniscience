@@ -23,6 +23,7 @@ import pytest
 
 from src.database import damage, repair
 from src.database.damage import FILE_CORPUS, DamageRegistry
+from tests.os_scope import scope_os
 
 CLEAN_AT = "2026-10-06T03:00:00+00:00"
 DUE = datetime(2026, 11, 5, 3, 0, 0, tzinfo=UTC)  # CLEAN_AT plus KEPT_COPY_DAYS
@@ -317,12 +318,12 @@ def test_a_failed_unlink_is_tried_again_at_the_next_start_and_records_nothing(wo
             raise PermissionError(13, "Permission denied")
         return real(path, *a, **k)
 
-    monkeypatch.setattr(os, "unlink", refuse)
+    scope_os(monkeypatch, repair, unlink=refuse)
     result = _only(repair.sweep_kept_copies(now=DUE))
     assert (result["outcome"], result["reason"]) == ("failed", "unlink") and world.kept.exists()
     rec = world.rec()
     assert "kept_file_removed_at" not in rec and "kept_file_removal_refused" not in rec
-    monkeypatch.setattr(os, "unlink", real)
+    scope_os(monkeypatch, repair, unlink=real)
     assert _only(repair.sweep_kept_copies(now=DUE + timedelta(days=1)))["outcome"] == "removed"
 
 
