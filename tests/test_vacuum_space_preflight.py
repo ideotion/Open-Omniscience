@@ -46,7 +46,7 @@ from pathlib import Path
 
 import pytest
 
-from src.database import article_indexes
+from src.database import article_indexes, maintenance
 from src.database.maintenance import (
     VACUUM_HEADROOM,
     VACUUM_RAM_FACTOR,
@@ -55,6 +55,7 @@ from src.database.maintenance import (
     vacuum_preflight,
 )
 from tests.js_source_helper import python_function_source
+from tests.os_scope import scope_os_path
 
 
 @pytest.fixture(autouse=True)
@@ -548,7 +549,7 @@ def _wal_getsize_raises(monkeypatch, exc):
             raise exc
         return real(path, *a, **k)
 
-    monkeypatch.setattr(os.path, "getsize", _size)
+    scope_os_path(monkeypatch, maintenance, getsize=_size)
 
 
 def test_a_log_that_is_not_there_is_a_log_of_nothing_and_says_nothing(sqlite_engine, monkeypatch) -> None:

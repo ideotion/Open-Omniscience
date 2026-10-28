@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from tests.os_scope import hide_os, scope_os
+from tests.os_scope import hide_os, scope_os, scope_os_path
 
 MISSING = "oo_a_name_this_platform_does_not_have"
 
@@ -60,5 +60,19 @@ def test_a_name_hidden_and_then_scoped_again_is_visible_again():
     hide_os(mp, mod, "statvfs")
     scope_os(mp, mod, statvfs=lambda p: "again")
     assert mod.os.statvfs("x") == "again"
+    mp.undo()
+    assert mod.os is os
+
+
+def test_a_scoped_os_path_function_is_replaced_for_the_module_only_and_put_back_at_undo():
+    mod, mp = _module(), pytest.MonkeyPatch()
+    real_getsize = os.path.getsize
+    scope_os_path(mp, mod, getsize=lambda _p: 7)
+    scope_os(mp, mod, replace=lambda *_a: None)  # a second scope on the same module keeps the path namespace
+    assert mod.os.path.getsize("anything") == 7
+    assert mod.os.path.join("a", "b") == os.path.join("a", "b"), "an unreplaced os.path name must be the real one"
+    assert os.path.getsize is real_getsize, "the process-wide os.path was touched"
+    scope_os_path(mp, mod, exists=lambda _p: True)  # a second path scope adds to the first
+    assert mod.os.path.getsize("anything") == 7 and mod.os.path.exists("nope")
     mp.undo()
     assert mod.os is os
