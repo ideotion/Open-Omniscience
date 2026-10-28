@@ -275,16 +275,22 @@ def import_all_feeds(
     2026-06-12). Best-effort: each feed is attempted; failures are reported
     per-key with a TRANSPORT-AWARE verdict ("refused over Tor" ≠ "robots
     disallows" ≠ "dead series" ≠ "unreachable") rather than aborting the
-    batch, so a single retired series doesn't block the rest.
+    batch, so a single retired series doesn't block the rest. A Stop does end it:
+    the feed the Stop cut and the ones after it are not results and not failures;
+    ``skipped_offline`` (present only then) says how many were not answered (R377).
     """
+    from src.ingest import kill_switch_active
     from src.markets.csv_feeds import import_feed
     from src.markets.feed_catalog import feeds_for_category
 
     wanted = {k.strip() for k in keys.split(",") if k.strip()} if keys else None
-    results, imported, failed = [], 0, 0
-    for feed in feeds_for_category(category):
-        if wanted is not None and feed.key not in wanted:
-            continue
+    todo = [f for f in feeds_for_category(category) if wanted is None or f.key in wanted]
+    results, imported, failed, skipped_offline = [], 0, 0, 0
+    for i, feed in enumerate(todo):
+        if kill_switch_active():
+            # A Stop: the feeds not yet asked for are neither results nor failures, and the response says how many were not answered (R377).
+            skipped_offline = len(todo) - i
+            break
         try:
             r = import_feed(
                 db,
@@ -298,6 +304,13 @@ def import_all_feeds(
                 market=feed.market,
                 source=f"feed:{feed.key}:{feed.url}",
             )
+            if r.verdict == "offline":
+                # ``import_feed`` reads the switch after the failed check (R320) and files it ``offline`` whatever shape the error took (a Stop inside
+                # the request arrives as the raw requests error, which no sentence match recognises, R298): the host did not answer, so this
+                # feed is not a result and not a failure; it counts with the ones not answered. Host answers (robots, an HTTP status) keep their own
+                # verdict and stay failures. The cost is a genuine failure coinciding with a Stop going unrecorded (R320).
+                skipped_offline = len(todo) - i
+                break
             results.append({"key": feed.key, **r.to_dict()})
             if r.status == "imported":
                 imported += r.imported
@@ -305,6 +318,9 @@ def import_all_feeds(
                 failed += 1
         except Exception as exc:  # noqa: BLE001 - one feed must never 500 the whole batch
             db.rollback()
+            if kill_switch_active():
+                skipped_offline = len(todo) - i  # the Stop cut this feed's check in whatever shape the error took (R320)
+                break
             failed += 1
             results.append(
                 {
@@ -327,6 +343,8 @@ def import_all_feeds(
         "retryable_failed_keys": retryable_failed,
         "results": results,
     }
+    if skipped_offline:
+        summary["skipped_offline"] = skipped_offline  # present ONLY when the kill switch caused it (the verify_due_feeds idiom)
     # Persist the outcome for the debug bundle (maintainer-ruled 2026-06-10):
     # what every Load/Refresh click actually did, with per-feed verdicts.
     try:
