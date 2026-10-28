@@ -119,6 +119,10 @@ def _pair(tmp_path, rows=4000, blob_kb=8):
 _BULK = ("INSERT INTO articles(hash,content) SELECT hash,content FROM inc.articles"
          " WHERE NOT EXISTS (SELECT 1 FROM articles m WHERE m.hash=inc.articles.hash)")
 
+# A statement long enough for SQLite's progress handler (every _STEP_WATCH_OPS VDBE operations) to fire inside it: ``SELECT 1`` is a
+# handful of operations, so a tick test that runs it never reaches the tick at all.
+_LONG = "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<50000) SELECT count(*) FROM c"
+
 
 def test_an_open_transaction_does_not_pin_its_dirty_pages(tmp_path):
     """THE measurement the whole cache fix rests on, run for real rather than
@@ -276,10 +280,14 @@ def test_a_foreign_driver_error_is_NOT_claimed_as_a_stop_when_none_was_asked_for
 # --------------------------------------------------------------------------- #
 #  The tick: liveness, never a fabricated percentage
 # --------------------------------------------------------------------------- #
-def test_the_tick_reports_elapsed_seconds_and_never_a_fraction():
+def test_the_tick_reports_elapsed_seconds_and_never_a_fraction(monkeypatch):
     """The handler counts VDBE operations, which bear no honest relation to rows
     remaining. A percentage derived from them would be invented."""
     import inspect
+
+    # The tick is throttled to one report per _STEP_WATCH_INTERVAL_S: at its 2 s default a test statement that takes milliseconds never
+    # reports, and every assertion below ran over an empty list (found by running the test with the sink counted: 0 calls).
+    monkeypatch.setattr(m, "_STEP_WATCH_INTERVAL_S", 0.0)
 
     # Behavioural, not a word-grep: the prose legitimately DISCUSSES percentages
     # in order to rule them out. What matters is the payload.
@@ -293,7 +301,8 @@ def test_the_tick_reports_elapsed_seconds_and_never_a_fraction():
     seen: list[tuple] = []
     with sqlite3.connect(":memory:") as c:
         with m._step_watch(c, 3, 19, "articles", None, lambda *a: seen.append(a)):
-            c.execute("SELECT 1")
+            c.execute(_LONG)
+    assert seen, "the tick never reported, so nothing below was checked"
     for call in seen:
         assert len(call) == 4 and isinstance(call[3], float), call
         assert 0 <= call[3] < 10, "the 4th argument is elapsed SECONDS, nothing else"
@@ -305,14 +314,23 @@ def test_the_tick_reports_elapsed_seconds_and_never_a_fraction():
     with sqlite3.connect(":memory:") as c:
         with m._step_watch(c, 3, 19, "articles", None, lambda *a: decorated.append(a),
                            detail=lambda: "1/2 articles"):
-            c.execute("SELECT 1")
+            c.execute(_LONG)
+    assert decorated, "the tick never reported, so the decorated name was never checked"
     for call in decorated:
         assert len(call) == 4 and isinstance(call[3], float), call
-        assert isinstance(call[2], str)
+        assert call[2] == "articles \u2014 1/2 articles", call
+    asked: list[int] = []
+    delivered: list[tuple] = []
+
+    def broken_detail():
+        asked.append(1)
+        raise RuntimeError("boom")
+
     with sqlite3.connect(":memory:") as c:
-        with m._step_watch(c, 3, 19, "articles", None, lambda *a: None,
-                           detail=lambda: (_ for _ in ()).throw(RuntimeError("boom"))):
-            c.execute("SELECT 1")  # a raising detail is swallowed, like every report here
+        with m._step_watch(c, 3, 19, "articles", None, lambda *a: delivered.append(a), detail=broken_detail):
+            c.execute(_LONG)  # a raising detail is swallowed, like every report here
+    assert asked, "the detail was never asked for, so its failure was never swallowed"
+    assert delivered and all(call[2] == "articles" for call in delivered), delivered
 
     caller = inspect.getsource(m.run_restore)
     assert "merge_step_tick" in caller
@@ -337,10 +355,15 @@ def test_a_raising_stop_predicate_never_aborts_an_hours_long_import(tmp_path):
         con.close()
 
 
-def test_a_raising_tick_sink_never_breaks_a_merge(tmp_path):
+def test_a_raising_tick_sink_never_breaks_a_merge(tmp_path, monkeypatch):
+    # The sink is only called once per _STEP_WATCH_INTERVAL_S (2 s): without this the 200-row statement ends first and the sink is never
+    # reached, which a mutant that stopped swallowing its failure proved (the test stayed green).
+    monkeypatch.setattr(m, "_STEP_WATCH_INTERVAL_S", 0.0)
     con = _pair(tmp_path, rows=200)
+    asked: list[int] = []
 
     def _boom(*_a):
+        asked.append(1)
         raise RuntimeError("journal is on fire")
 
     try:
@@ -351,6 +374,7 @@ def test_a_raising_tick_sink_never_breaks_a_merge(tmp_path):
         assert con.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 200
     finally:
         con.close()
+    assert asked, "the sink was never called, so its failure was never survived"
 
 
 def test_a_driver_without_a_progress_handler_still_merges(tmp_path):

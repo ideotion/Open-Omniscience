@@ -269,6 +269,7 @@ def test_the_framework_s_real_worker_threads_have_a_family():
         names["asyncio executor"] = await asyncio.get_running_loop().run_in_executor(None, name_of)
 
     asyncio.run(main())
+    assert len(names) == 3, names
     for who, name in names.items():
         assert open_stats.thread_family(name) != open_stats.OTHER, (who, name)
 
