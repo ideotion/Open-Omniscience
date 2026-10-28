@@ -258,15 +258,24 @@ def test_the_session_double_implements_everything_the_guard_reads():
 def test_releasing_never_raises_on_a_broken_session():
     """The hot path must never pay for a release that cannot happen."""
 
+    asked: list[str] = []
+
     class _Broken:
+        # every attribute the helper reads before it asks the session whether a transaction is open, so the question is reached
         new: tuple = ()
         dirty: tuple = ()
         deleted: tuple = ()
+        info: dict = {}
+
+        def in_nested_transaction(self):
+            return False
 
         def in_transaction(self):
+            asked.append("in_transaction")
             raise RuntimeError("no")
 
     assert release_idle_connection(_Broken()) is False
+    assert asked == ["in_transaction"], "the session was never asked, so its failure was never met"
 
 
 # --------------------------------------------------------------------------- #
