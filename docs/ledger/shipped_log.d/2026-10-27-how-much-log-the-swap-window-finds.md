@@ -1,4 +1,4 @@
-## 2026-10-27 — how much log the swap window finds: measured on real restores and repairs of two plaintext stores, the "NOT measured" sentence of `swap_window` replaced by ranges, and the stale writer list corrected (coordinator item 1 of 20:42Z; ruled R341, a stated limit; comment-only src and ledger fragments)
+## 2026-10-27 — how much log the swap window finds: measured on real restores and repairs of two plaintext stores, the "NOT measured" sentence of `swap_window` replaced by ranges, and the stale writer list corrected (coordinator item 1 of 20:42Z; ruled R341, a stated limit; comment-only src and ledger fragments) (PR #1598)
 
 **The question.** `swap_window`'s docstring said the restore and the repair fold the log into the file before the window, so the window finds only what was written between the fold and the window, and that how many frames a real restore leaves there was NOT measured. Item 1 of 20:42Z: measure it on a named mid-size store, with and without a writer.
 
