@@ -3158,7 +3158,15 @@ def resume_after_exclusive_operation(
         # collection stayed off for FIVE DAYS. The resume now stays PENDING on a watcher
         # that waits for that pass to actually exit -- and says so where the operator
         # looks (the task manager's Schedule tab), not only in a log line.
-        _watch_for_resume(get_scheduler())
+        try:
+            _watch_for_resume(get_scheduler())
+        except Exception as exc:  # noqa: BLE001 - a courtesy call never raises into the operation's own finally
+            log_failure(_LOG, "pending collection resume: the watcher thread could not be started", exc, level=logging.WARNING)
+            _LOG.warning(
+                "could not resume background collection after an exclusive operation, and nothing is waiting to -- collection "
+                "stays stopped until it is started again (the Start button, or going online)"
+            )
+            return
         _LOG.warning(
             "could not resume background collection after an exclusive operation yet "
             "-- the previous pass is still winding down; collection resumes on its own "
@@ -3221,7 +3229,18 @@ def _watch_for_resume(sched: BackgroundScheduler, *, poll_s: float | None = None
         }
     t = threading.Thread(target=_resume_watch, args=(sched, old, gen, poll_s or RESUME_POLL_S),
                          name="oo-resume-watch", daemon=True)
-    t.start()
+    try:
+        t.start()
+    except BaseException:
+        # ``Thread.start()`` raises before the target runs when the process is out of threads, so the claim above would stay for the life of
+        # the process with nothing waiting behind it (the Schedule tab would keep promising a resume). Retract it, unless a newer watcher
+        # has published its own, and let the caller say that nothing will resume the collector. ``ident`` is None only for a thread that never
+        # ran: ``start()`` can also be interrupted AFTER the OS thread exists (while it waits for the thread to report in), and that watcher
+        # is alive and still owns the claim.
+        with _RESUME_LOCK:
+            if gen == _RESUME_GEN and t.ident is None:
+                _RESUME_PENDING = None
+        raise
     return t
 
 
