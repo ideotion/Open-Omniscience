@@ -187,11 +187,14 @@ jobs:
         # EDIT: this branch read 442, then 447, then 443, then 441 as files were added and
         # fixed -- only the base measurement (445) ever said which findings were its own.
         #
-        # 2026-10-28 (Export lane): 417 -> 414, MEASURED ON origin/main@7033552e7, the tree that carries it
-        # (the script, run at the old ceiling, printed "can be lowered: set --max 414"). There is no spare slot now:
-        # CI measures the MERGE, so a finding another PR lands first reddens whichever PR merges second. Re-measure on
-        # the fetched tip before merging, never from this comment. (This comment must not spell out the script's
-        # command line: guards_for_diff.py and test_ruff_ratchet.py read the first such line as THE step.)
+        # 2026-10-28: 417 -> 414, MEASURED ON origin/main@7033552e7, the tree that carries it
+        # (the script, run at the old ceiling, said the ceiling can be lowered to 414). There is
+        # no spare slot now: CI measures the merge of the PR into the base tip as it stands when
+        # the run starts, so a finding another PR lands first reddens the next run of whichever
+        # PR merges second (and main's push run, if that PR was already green). Re-measure on
+        # the fetched tip before merging, never from this comment. (This comment must not spell
+        # out the script's command line: guards_for_diff.py refuses a ci.yml with a second such
+        # line, and test_ruff_ratchet.py reads the number from the first one.)
         run: python scripts/ruff_ratchet.py --max 414
 
       # THE PLANNED-WORK REVERSE INDEX (maintainer-asked 2026-09-22): "find a way so that
