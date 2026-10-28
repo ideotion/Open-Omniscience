@@ -226,16 +226,32 @@ def test_a_start_refused_during_the_hold_is_honoured_when_the_operation_ends(mon
         sch.stop(timeout=HANG_GUARD_S)
 
 
+def test_a_second_claim_inside_a_hold_does_not_erase_the_first_ones_deferral():
+    """The hold is one boolean, so a diagnostics bundle (or any window) that claims it while a standalone restore holds it must not erase the
+    Start that was refused during the restore: only a FRESH claim starts with nothing deferred."""
+    sch = _scheduler(run_once_fn=lambda: {"stored": 0})
+    sch.hold_exclusive()
+    try:
+        assert sch.start() is False
+        sch.hold_exclusive()  # a second operation claims it inside the first
+        assert sch.status()["start_deferred"] is True
+    finally:
+        sch.release_exclusive()
+
+
 def test_a_deferred_start_does_not_outlive_the_operation_it_was_made_during(monkeypatch):
     """A start refused during one hold must not start collection after a LATER operation that nobody asked to start anything during."""
     sch = _scheduler(run_once_fn=lambda: {"stored": 0})
     monkeypatch.setattr(runner_mod, "get_scheduler", lambda: sch)
-    sch.hold_exclusive()
-    assert sch.start() is False
-    sch.release_exclusive()  # the first operation ended without a resume (an early return)
-    was_paused = runner_mod.pause_for_exclusive_operation(timeout=HANG_GUARD_S)
-    runner_mod.resume_after_exclusive_operation(was_paused, retries=0, retry_delay=0.0)
-    assert sch.is_running() is False, "a start refused during an earlier operation was honoured after a later one"
+    try:
+        sch.hold_exclusive()
+        assert sch.start() is False
+        sch.release_exclusive()  # the first operation ended without a resume (an early return)
+        was_paused = runner_mod.pause_for_exclusive_operation(timeout=HANG_GUARD_S)
+        runner_mod.resume_after_exclusive_operation(was_paused, retries=0, retry_delay=0.0)
+        assert sch.is_running() is False, "a start refused during an earlier operation was honoured after a later one"
+    finally:
+        sch.stop(timeout=HANG_GUARD_S)
 
 
 def test_a_deferred_start_never_overrides_the_operators_airplane_mode(monkeypatch):

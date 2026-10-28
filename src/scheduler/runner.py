@@ -1964,8 +1964,9 @@ class BackgroundScheduler:
         operation began, since a manual "Run now" would otherwise still compete
         for CPU/the single-writer gate with it regardless of the loop's state."""
         with self._state_lock:
-            self._exclusive_hold = True
-            self._start_deferred = False  # only a start refused during THIS hold is the operation's to honour
+            if not self._exclusive_hold:
+                self._start_deferred = False  # a FRESH claim: only a start refused during this hold is the operation's to honour
+            self._exclusive_hold = True  # one boolean, so an operation that claims it inside another's hold must not erase the other's deferral
 
     def release_exclusive(self) -> None:
         """The other half of :meth:`hold_exclusive` -- always call this in a
