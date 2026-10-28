@@ -18,6 +18,7 @@ import threading
 import pytest
 
 from src.scheduler import runner
+from tests.wallclock_helpers import wait_until
 
 _NAME = "oo-resume-watch"
 
@@ -41,12 +42,14 @@ class _Sched:
         self.released += 1
 
 
-def _refuse_start(monkeypatch, *, newer_watcher_takes_over=False):
+def _refuse_start(monkeypatch, *, newer_watcher_takes_over=False, after_it_ran=False):
     real = threading.Thread.start
 
     def start(self):
         if self.name != _NAME:
             return real(self)
+        if after_it_ran:  # the OS thread exists and runs; the start() call is interrupted while it waits for the thread to report in
+            real(self)
         if newer_watcher_takes_over:  # another watcher was published between the claim and the failed start
             with runner._RESUME_LOCK:
                 runner._RESUME_GEN += 1
@@ -74,6 +77,18 @@ def test_a_newer_watchers_claim_is_not_retracted(monkeypatch):
         runner._watch_for_resume(_Sched(), poll_s=0.01)
     pending = runner.resume_pending()
     assert pending is not None and pending["basis"] == "newer watcher"
+
+
+def test_a_watcher_that_did_start_keeps_its_claim(monkeypatch):
+    _refuse_start(monkeypatch, after_it_ran=True)
+    try:
+        with pytest.raises(RuntimeError):
+            runner._watch_for_resume(_Sched(), poll_s=0.01)
+        assert runner.resume_pending() is not None, "a live watcher's claim was retracted"
+        assert _watchers(), "the watcher the claim belongs to is gone"
+    finally:
+        runner.cancel_pending_resume()  # retires the watcher at its next poll
+        assert wait_until(lambda: not _watchers())
 
 
 def test_the_failure_does_not_escape_the_resume_into_the_operations_finally(monkeypatch, caplog):

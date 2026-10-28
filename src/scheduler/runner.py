@@ -3234,9 +3234,11 @@ def _watch_for_resume(sched: BackgroundScheduler, *, poll_s: float | None = None
     except BaseException:
         # ``Thread.start()`` raises before the target runs when the process is out of threads, so the claim above would stay for the life of
         # the process with nothing waiting behind it (the Schedule tab would keep promising a resume). Retract it, unless a newer watcher
-        # has published its own, and let the caller say that nothing will resume the collector.
+        # has published its own, and let the caller say that nothing will resume the collector. ``ident`` is None only for a thread that never
+        # ran: ``start()`` can also be interrupted AFTER the OS thread exists (while it waits for the thread to report in), and that watcher
+        # is alive and still owns the claim.
         with _RESUME_LOCK:
-            if gen == _RESUME_GEN:
+            if gen == _RESUME_GEN and t.ident is None:
                 _RESUME_PENDING = None
         raise
     return t
