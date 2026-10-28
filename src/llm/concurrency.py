@@ -107,7 +107,7 @@ def run_concurrent(
 
     workers = min(max_workers, len(items))
     out = [ConcurrentResult(ok=False, error=RuntimeError("not scheduled"))] * len(items)
-    with ThreadPoolExecutor(max_workers=workers) as ex:
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="oo-llmbatch") as ex:
         futures = {ex.submit(fn, it): i for i, it in enumerate(items)}
         for fut, i in futures.items():
             try:
