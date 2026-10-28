@@ -7651,10 +7651,14 @@ def run_restore(
     (:mod:`src.backup.collector_exit`), and records what it found as
     ``report["collector_exit"]``. WHAT IT IS NOT: a lock on the corpus. The housekeeping
     lane, the Wikipedia drain, AI sweeps, boot upkeep and every API write route are not
-    stopped; the registered background jobs park at their next batch boundary, so a batch
-    already in flight can still commit; and the collection loop itself can be started
-    again while the window is open (``BackgroundScheduler.start`` does not check the
-    hold: the Start button, the network toggle and the unattended start all call it).
+    stopped; neither are most registered background jobs (tags backfill, language
+    detection, the governments jobs, bulk source qualification, the mailbox import: the
+    job registry has no exclusive-hold check). A few workers do park at their next batch
+    boundary and resume after the import (re-index, keyword fold, quarantine, FTS
+    re-index, newsletter import, off-peak maintenance), so a batch already in flight can
+    still commit. And the collection loop itself can be started again while the window
+    is open (``BackgroundScheduler.start`` does not check the hold: the Collection
+    switch, the Start button, the network toggle and the unattended start all call it).
     Anything they commit between the working copy and the swap is discarded by the swap
     (only ``settings.``/``agenda.``/``ui.`` keys and the search history are carried). The
     import dialog says so in the same terms. It is passed to the two whole-corpus

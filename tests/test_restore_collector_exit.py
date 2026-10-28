@@ -497,20 +497,36 @@ def test_the_queue_status_says_whether_any_restore_copied_the_corpus_unconfirmed
     assert q.status()["collection_exit_unconfirmed"] is unconfirmed
 
 
+def _committed(exit_) -> dict:
+    return {"held": False, "report": {"committed": True, "collector_exit": exit_}}
+
+
+def _held(exit_) -> dict:
+    return {"held": True, "report": {"committed": False, "held": True, "collector_exit": exit_}}
+
+
+def _refused(exit_) -> dict:
+    return {"held": False, "report": {"committed": False, "refused": "verification failed", "collector_exit": exit_}}
+
+
 @pytest.mark.parametrize(
-    ("state", "unconfirmed"),
+    ("state", "summary", "unconfirmed"),
     [
-        pytest.param("done", True, id="swapped-in"),
-        pytest.param("staged", True, id="carried-toward-the-groups-swap"),
-        pytest.param("error", False, id="refused-by-verification-the-live-corpus-was-untouched"),
-        pytest.param("discarded", False, id="its-group-was-thrown-away"),
-        pytest.param("stopped", False, id="stopped"),
-        pytest.param("skipped", False, id="skipped"),
+        pytest.param("done", _committed(_STILL), True, id="swapped-in"),
+        pytest.param("staged", _held(_STILL), True, id="carried-toward-the-groups-swap"),
+        pytest.param("error", _refused(_STILL), False, id="refused-by-verification-the-live-corpus-was-untouched"),
+        pytest.param("discarded", _held(_STILL), False, id="its-group-was-thrown-away"),
+        pytest.param("skipped", {"held": False}, False, id="skipped"),
+        # N1: a Stop pressed AFTER the swap labels the item "stopped" (the queue labels by the flag, not by the verdict),
+        # yet its report says committed: the discarded writes are real and the dialog must go on saying so.
+        pytest.param("stopped", _committed(_STILL), True, id="stopped-after-the-swap-the-loss-happened"),
+        pytest.param("stopped", _held(_STILL), False, id="stopped-while-only-held"),
+        pytest.param("stopped", None, False, id="stopped-before-any-report"),
     ],
 )
-def test_only_a_restore_whose_copy_reaches_the_corpus_makes_the_dialog_withdraw_its_pause(tmp_path, state, unconfirmed):
-    """A restore that found a pass still running and was then REFUSED (or discarded) changed nothing in the live file."""
-    q = _queue(tmp_path, [_volume(_STILL)], states=[state])
+def test_only_a_restore_whose_copy_reaches_the_corpus_makes_the_dialog_withdraw_its_pause(tmp_path, state, summary, unconfirmed):
+    """The rule is read from the restore's own report, not from the item's label alone."""
+    q = _queue(tmp_path, [summary], states=[state])
     assert q.status()["collection_exit_unconfirmed"] is unconfirmed
 
 
@@ -550,6 +566,54 @@ def test_the_answer_of_a_run_that_is_over_is_read_from_the_summaries_only(tmp_pa
     q._state = "done"
     q._items[0]["state"] = "done"
     assert q.status()["collection_exit_unconfirmed"] is False, "a later, unrelated run's published answer is nobody's"
+
+
+def test_the_answer_of_a_stop_is_not_the_answer_of_a_copy(tmp_path, monkeypatch):
+    """N3: a Stop during the wait publishes confirmed False with stopped True and NO copy is ever taken; the running item
+    (which stays "running" until the volume job reports) must not make the dialog say a copy lost writes."""
+    _answered(monkeypatch, dict(_STILL, stopped=True), at=150.0)
+    assert _running_queue(tmp_path).status()["collection_exit_unconfirmed"] is False
+
+
+def test_a_stop_during_the_wait_does_not_log_that_the_import_goes_on(monkeypatch, caplog):
+    import logging
+
+    monkeypatch.setattr(runner_mod, "get_scheduler", lambda: _Lingering())
+    with caplog.at_level(logging.INFO, logger="src.backup.collector_exit"):
+        collector_exit.wait_for_collector_exit(should_stop=lambda: True)
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING], "a Stop is not a pass that outlived the bound"
+    assert any("stopped" in r.getMessage() and "no copy was taken" in r.getMessage() for r in caplog.records)
+
+
+def test_a_new_run_forgets_the_last_runs_failed_window(tmp_path, monkeypatch):
+    """N4: one failed window must not make every later run in the process say it could not be paused."""
+    q = _queue(tmp_path, [], states=[])
+    q._collection_window_failed = True
+    monkeypatch.setattr(q, "_run", lambda: None)
+    q.start([{"kind": "corpus", "path": str(tmp_path / "a.oobak"), "label": "a"}], passphrase="")
+    assert q.status()["collection_window_failed"] is False
+
+
+def test_a_drive_that_raises_inside_an_open_window_is_not_a_window_that_failed_to_open(tmp_path, monkeypatch):
+    import contextlib
+
+    import src.backup.volume_job as volume_job
+
+    q = _queue(tmp_path, [None], states=["queued"])
+
+    @contextlib.contextmanager
+    def window_that_opens():
+        yield True
+
+    def drive_that_raises():
+        raise RuntimeError("item failed")
+
+    monkeypatch.setattr(runner_mod, "exclusive_window", window_that_opens)
+    monkeypatch.setattr(volume_job, "start_reindex_drain", lambda: (False, "test"))
+    monkeypatch.setattr(q, "_drive", drive_that_raises)
+    q._state = "running"
+    q._run()
+    assert q.status()["collection_window_failed"] is False, "the window opened; the pause WAS in place"
 
 
 def test_the_status_carries_the_wait_while_it_waits_and_not_otherwise(tmp_path, monkeypatch):
@@ -641,7 +705,7 @@ def test_the_dialog_does_not_claim_a_pause_that_a_restore_found_was_not_yet_true
     js = _js()
     unconfirmed = re.search(r"if \(st\.collection_exit_unconfirmed\) \{\s*collLines\.push\(t\(\"It could not be confirmed", js)
     failed = re.search(r"\} else if \(running && st\.collection_window_failed\) \{\s*collLines\.push\(t\(\"Background collection could not be paused", js)
-    paused = re.search(r"\} else if \(running && st\.collection_paused\) \{\s*collLines\.push\(t\(\"Background collection is paused", js)
+    paused = re.search(r"\} else if \(running && st\.collection_paused && !exitWait\) \{\s*collLines\.push\(t\(\"Background collection is paused", js)
     assert unconfirmed and failed and paused and unconfirmed.start() < failed.start() < paused.start()
 
 
@@ -677,21 +741,50 @@ def test_the_hover_names_every_writer_class_the_window_does_not_stop():
     for named in (
         "the background tasks (markets, calendars, law, hazards, crawling and backfill)",
         "Wikipedia updates",
+        "other background jobs",
         "AI sweeps",
         "start-up upkeep",
         "anything you change in the app",
     ):
         assert named in hover
     assert "settings, agenda and interface choices" in hover, "what the swap carries over is stated beside what it discards"
-    # F7: jobs that park at a batch boundary are not "not paused" outright; F5: Start / the network toggle restart the loop.
-    assert "stop at their next batch" in hover and "a batch that is already running can still save" in hover
-    assert "Starting collection again yourself while the import runs" in hover and "is not blocked" in hover
+    # N2: the other jobs are listed as NOT paused (most have no hold check); only some wait at a batch boundary and resume.
+    assert "Some background jobs wait at their next batch and carry on after the import" in hover
+    assert "a batch that is already running can still save to your corpus" in hover
+    # F5/N6: every way the person restarts collection during an import, the main switch included.
+    assert "(the Collection switch, the Start button, or switching the network back on) is not blocked" in hover
+    assert "Before it makes each copy" in hover, "the 10 minutes apply to every copy, not once per import"
 
 
-def test_the_queue_note_and_the_restores_own_text_no_longer_claim_that_nothing_else_writes():
-    q = _queue(Path("."), [])  # the note is a constant of the status, whatever the run
+def test_the_merge_docstring_does_not_say_registered_jobs_park():
+    """N2: the job registry has no exclusive-hold check; the workers that park are not registry jobs."""
+    src = " ".join(_MERGE_PY.read_text(encoding="utf-8").split())
+    assert "the registered background jobs park at their next batch boundary" not in src
+    assert "the job registry has no exclusive-hold check" in src
+
+
+def test_the_queue_note_and_the_restores_own_text_no_longer_claim_that_nothing_else_writes(tmp_path):
+    q = _running_queue(tmp_path)
     note = q.status()["collection_note"]
     assert "paused" in note.lower() and "not paused" in note.lower()
     merge_src = _MERGE_PY.read_text(encoding="utf-8")
     assert "nothing else is expected to write" not in merge_src, "the unqualified claim about the exclusive window is gone"
     assert "WHAT IT IS NOT: a lock on the corpus" in merge_src
+
+
+def test_the_queue_note_says_what_the_dialog_says(tmp_path, monkeypatch):
+    """N7: the served note is built from the same facts as the dialog, not a constant that claims a pause regardless."""
+    q = _running_queue(tmp_path)
+    assert "is paused for this whole import" in q.status()["collection_note"]
+    q._collection_window_failed = True
+    failed = q.status()["collection_note"]
+    assert "could not be paused" in failed and "is paused for this whole import" not in failed
+    q._collection_window_failed = False
+    _answered(monkeypatch, _STILL, at=150.0)
+    unconfirmed = q.status()["collection_note"]
+    assert "could not be confirmed" in unconfirmed and "is paused for this whole import" not in unconfirmed
+    q._state = "done"
+    q._items[0]["state"] = "done"
+    q._items[0]["summary"] = _committed(_STILL)
+    over = q.status()["collection_note"]
+    assert "could not be confirmed" in over and "Other background work is not paused" not in over, "a finished run has no work still running"

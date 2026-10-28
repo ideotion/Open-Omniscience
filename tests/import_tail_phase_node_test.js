@@ -446,7 +446,7 @@ test("R360: the long form rides on the line as its hover", () => {
   const at = note.indexOf('title="' + HOVER_START);
   assert(at !== -1, "the line carries the long form as its translated title: " + note);
   const title = note.slice(at, note.indexOf('"', at + 7));
-  for (const word of ["Not paused:", "AI sweeps", "start-up upkeep", "up to 10 minutes", "settings, agenda and interface choices"]) {
+  for (const word of ["Not paused:", "other background jobs", "AI sweeps", "start-up upkeep", "(the Collection switch, the Start button, or switching the network back on) is not blocked", "Before it makes each copy", "up to 10 minutes", "settings, agenda and interface choices"]) {
     assert(title.indexOf(word) !== -1, "the hover names " + word + ": " + title);
   }
 });
@@ -498,7 +498,14 @@ test("R360: the wait for a running pass is said while it happens, with the time 
   assert(note.indexOf("up to 10 minutes") !== -1, "with the bound that applies: " + note);
   assert(/2\s*min\s*5\s*s/.test(note.slice(note.indexOf(WAITING))), "and the time spent so far: " + note);
   assert(!/left|remaining|ETA/i.test(note.slice(note.indexOf(WAITING))), "never an estimate of the time left: " + note);
-  assert(note.indexOf(PAUSED_SENTENCE) !== -1, "the pause claim stands beside it: the wait is the pause being completed: " + note);
+  assert(note.indexOf(PAUSED_SENTENCE) === -1, "while the stage waits, the pause is not yet true and the dialog does not say it is: " + note);
+  assert(note.indexOf(OTHER_WORK) !== -1, "the caveat about the rest of the background work stays on the line: " + note);
+  assert(note.split(OTHER_WORK).length === 2, "and is said once, not once per line: " + note);
+});
+
+test("R360: a wait that ended, with the pass gone, goes back to the pause sentence", () => {
+  const note = render(Object.assign({}, TAIL_RUN, { collection_exit_wait: null }));
+  assert(note.indexOf(PAUSED_SENTENCE) !== -1 && note.indexOf(WAITING) === -1, note);
 });
 
 test("R360: nothing is said about waiting when no wait is in progress", () => {

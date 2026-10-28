@@ -170,10 +170,29 @@ def _collector_exit_of(summary: object) -> dict | None:
     return None
 
 
-#: The item states whose restore took a copy that reaches (or is on its way to) the live corpus. A refused, stopped,
-#: errored, discarded or skipped item changed nothing in the live file, so a pass it found still running cost nothing and
-#: the dialog must not say it did. ``staged`` counts: its copy is the one the group's last item swaps in.
-_EXIT_COUNTED_STATES = ("done", "staged")
+def _restore_report_of(summary: object) -> dict | None:
+    """The restore's own report inside a queue summary (the corpus path wraps it, the legacy path IS it), or None."""
+    if not isinstance(summary, dict):
+        return None
+    inner = summary.get("report")
+    return inner if isinstance(inner, dict) else summary
+
+
+def _reaches_the_corpus(state: object, summary: object) -> bool:
+    """Whether the copy this item's restore took is, or is on its way to being, the live corpus.
+
+    Read from the restore's own report and not from the item's state alone, because the state is not the restore's
+    verdict: ``_drive`` labels an item ``stopped`` whenever a Stop is set when the item returns, including one pressed
+    AFTER the swap, whose report says ``committed``. So: a swapped (``committed``) restore counts whatever the state
+    says; a ``staged`` item counts (its copy is the one the group's last item swaps in); a ``done`` item counts
+    unless its report is a refusal; a refused, errored or discarded item changed nothing in the live file."""
+    report = _restore_report_of(summary)
+    refused = isinstance(report, dict) and bool(report.get("refused"))
+    if state == "staged":
+        return True
+    if isinstance(report, dict) and report.get("committed") is True and not refused:
+        return True
+    return state == "done" and not refused
 
 
 def _exit_unconfirmed(items: list[dict], live_answer: dict | None) -> bool:
@@ -181,20 +200,40 @@ def _exit_unconfirmed(items: list[dict], live_answer: dict | None) -> bool:
 
     Two sources, because the answer exists long before the summary does: ``item["summary"]`` is written only after the
     merge, the verification and the swap, hours after the wait on a large import, so the item in flight is read from the
-    wait's own published answer (``collector_exit.last_answer``) when that answer was made after the item began. Finished
-    items are read from their summary and only when they are ``done`` or ``staged`` (:data:`_EXIT_COUNTED_STATES`)."""
+    wait's own published answer (``collector_exit.last_answer``) when that answer was made after the item began, and
+    when it is not the answer of a Stop (a Stop during the wait means no copy was taken). Finished items are read from
+    their summary when :func:`_reaches_the_corpus`."""
     for it in items:
         state = it.get("state")
-        if state in _EXIT_COUNTED_STATES:
-            answer = _collector_exit_of(it.get("summary"))
-        elif state == "running" and it.get("summary") is None and live_answer is not None:
+        if state == "running" and it.get("summary") is None:
             began = it.get("started_at")
-            answer = live_answer if isinstance(began, (int, float)) and live_answer.get("at", 0) >= began else None
+            fresh = live_answer is not None and isinstance(began, (int, float)) and live_answer.get("at", 0) >= began
+            answer = live_answer if fresh and not live_answer.get("stopped") else None  # type: ignore[union-attr]
+        elif _reaches_the_corpus(state, it.get("summary")):
+            answer = _collector_exit_of(it.get("summary"))
         else:
             answer = None
         if answer is not None and answer.get("confirmed") is not True:
             return True
     return False
+
+
+def _collection_note(exit_unconfirmed: bool, window_failed: bool, running: bool) -> str:
+    """The sentence the status serves about the pause, built from the same facts the dialog reads (it said "paused"
+    whatever the run found, beside a dialog that had stopped saying so). Like the dialog, it tells a run that is over
+    nothing about work that is still running."""
+    other = " Other background work is not paused: what it, or you, saves to your corpus while the import runs can be lost." if running else ""
+    if exit_unconfirmed:
+        return (
+            "It could not be confirmed that background collection had stopped when the import copied your corpus, "
+            "so what collection saved after that copy is not kept." + other
+        )
+    if window_failed:
+        return (
+            "Background collection could not be paused for this import, and other background work is not paused "
+            "either: what they, or you, save to your corpus while the import runs can be lost."
+        )
+    return "Background collection is paused for this whole import and resumes when it finishes." + other
 
 
 def stage_for_phase(phase: str | None) -> int | None:
@@ -1551,11 +1590,7 @@ class ImportQueueManager:
             "tuned": dict(tuned) if isinstance(tuned, dict) else None,
             # Stated so the UI can say it rather than the user having to infer it
             # (ruling item 12).
-            "collection_note": (
-                "Background collection is paused for this whole import and resumes "
-                "when it finishes. Other background work is not paused: what it, or "
-                "you, saves to your corpus while the import runs can be lost."
-            ),
+            "collection_note": _collection_note(exit_unconfirmed, window_failed, state == "running"),
         }
 
     def clear(self) -> dict:

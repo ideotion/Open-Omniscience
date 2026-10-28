@@ -32,7 +32,9 @@ summary, which exists after the merge, the verification and the swap: hours afte
 also publishes itself in this module (``wait_state`` while it waits, ``last_answer`` once it has
 answered), which ``ImportQueueManager.status()`` reads, and the dialog can say "waiting for a collection
 pass" during the wait and "could not confirm a pause" from the moment the wait gave up. It is
-in-process state only (a restore and its dialog are one process); nothing is persisted from here.
+in-process state only; nothing is persisted from here. It belongs to the last restore that waited in this process, not
+to one restore: a direct ``/api/backup/legacy/restore`` call made during a queue run would have its wait and its answer
+shown as the queue item's (a stated limit; the app's own page calls only the import-queue endpoints).
 
 STATED LIMITS (``runner.py``, which another lane owns). A pass started by "Run now" on a loop that was not running is
 not signalled to stop (``BackgroundScheduler.stop`` returns before it sets the flag), so the wait watches it and spends its
@@ -175,6 +177,9 @@ def wait_for_collector_exit(
         _LOG.warning("could not confirm that background collection has left the corpus: %s", why)
     elif not still:
         out["confirmed"] = True
+    elif stopped:
+        out["confirmed"] = False
+        _LOG.info("the import was stopped while %s was still running; no copy was taken", " and ".join(still))
     else:
         out["confirmed"] = False
         _LOG.warning(
