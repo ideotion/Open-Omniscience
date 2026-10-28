@@ -327,6 +327,22 @@ jobs:
       - name: Test (pytest)
         run: python -m pytest -q
 
+      # WHAT WAS INSTALLED WHEN THE SUITE RAN, kept on a red run as well as a green one (`if: always()`), written to the end of the job log and
+      # to the step summary. The install output sits at the HEAD of a long log, which a reader that returns only the last lines never reaches, so
+      # two runs that disagree could be compared only through sibling jobs (R349: a green and a red job differed by one pytest minor, released
+      # between them). Straight after the suite and BEFORE the steps below install bandit and pip-audit into this same environment, so the list
+      # is the test environment and not the audit's. A report only: it pins nothing and changes no result.
+      - name: Installed versions (kept on red as well as green)
+        if: always()
+        run: |
+          {
+            echo "### Installed versions"
+            echo "python $(python -c 'import platform; print(platform.python_version())'), runner image ${ImageOS:-unknown} ${ImageVersion:-unknown}, $(uname -sr)"
+            echo '```'
+            python -m pip list --format=freeze
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
       # Type check (0.0.8 WP7 / MAINT-03), BLOCKING since 2026-08-20.
       #
       # History, because the number mattered for two years: the Mapped[] ORM
@@ -383,6 +399,18 @@ jobs:
 
       - name: Test (pytest, analysis modules must skip)
         run: python -m pytest -q
+
+      # The same report as the `test` job's (see there): the versions this suite ran against, kept on red as well as green, at the log's tail.
+      - name: Installed versions (kept on red as well as green)
+        if: always()
+        run: |
+          {
+            echo "### Installed versions"
+            echo "python $(python -c 'import platform; print(platform.python_version())'), runner image ${ImageOS:-unknown} ${ImageVersion:-unknown}, $(uname -sr)"
+            echo '```'
+            python -m pip list --format=freeze
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
   crypto:
     if: github.event_name != 'schedule'
