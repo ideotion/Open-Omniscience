@@ -83,6 +83,32 @@ for a branch that does, merge REF into the branch and run the plain `--run` in t
 so it needs that much disk while it exists; a SIGTERM or SIGHUP during a step removes it too, a SIGKILL cannot (then `git worktree list` shows the
 leftover, and `git worktree remove --force <path>` removes it).
 
+## After the PR is opened: `scripts/sweep_pr_number.py`
+
+A PR's number exists only once the PR does, and a number read off GitHub's counter before that is a guess. So the ledger fragments
+(`lessons.d`, `shipped_log.d`, `shipped.d`) carry the template placeholder (`PR pending`, `#NNNN`) on the first push, and the number goes in
+straight after: open the PR, run `python scripts/sweep_pr_number.py <number>` (`--dry-run` prints the changes and writes nothing), then
+`python scripts/ledger_fold.py check`, `python scripts/ledger_shipped.py check` and `python -m pytest -q tests/test_ledger_shipped_fragments.py`
+(the last is the only guard that looks at a csv row's `refs` for a leftover `pending`), commit and push. A branch pushed without a PR starts no CI, and the push to the PR cancels the run that
+opening it started, so the sweep costs one effective CI run.
+
+**What it rewrites:** `PR pending` becomes `PR #<number>` and `#NNNN` becomes `#<number>`, in the fragments this branch **added**
+(`git merge-base BASE HEAD`, renames off; BASE is `origin/main` unless `--base REF`, which is what a branch stacked on another unmerged branch
+passes). In the two markdown directories only prose is touched, where "prose" is `ledger_fold._prose`'s rule and no better: a line that starts
+with three backticks or three tildes opens or closes a fence (any character, any length, so a backtick fence quoted inside a `~~~` block is
+read as prose), and `inline code` is one pair of single backticks (a double-backtick span is read as prose too). A lesson may quote a
+placeholder inside what that rule keeps; anywhere else it is rewritten.
+In a `shipped.d` csv only the `refs` cell is touched, and every other byte of the file stays as it was whatever quoting it was written with.
+**What it refuses** (exit 2, nothing written): a number that is not a positive integer (`1636`, not `#1636`), a base that does not resolve or
+shares no history with `HEAD` (a shallow clone: `git fetch --unshallow`), a branch that added no fragment, a symlink or a path that runs
+through one, a file name or text that is not UTF-8, a markdown fence that is never closed, a csv that is not the ledger's header plus one row
+or that the `csv` module cannot read, a rewrite that would change any cell but `refs`, and **any placeholder still there after the rewrite**,
+judged the way the ledger judges it (`ledger_fold._PLACEHOLDER` over the whole prose, so `PR` at the end of a line and `pending` at the start of
+the next counts; in a csv also any `pending` left in `refs`, which is what `test_ledger_shipped_fragments.py` refuses). That covers a token the
+script has no rule for (`_RULES` is the list, so a token added to `ledger_fold._PLACEHOLDER` needs its line in both), one split by a line
+break, a code span or a quote (edit those by hand), and `#NNNN` run on into more letters, which is a typo and is never turned into `#1636N`. A second run says there is nothing to sweep and exits 0. **What it does not do:** it reads what the
+branch has *committed* as added (commit the fragments, then sweep), it does not fetch (`git fetch origin main` first), and CI never runs it on a real PR (`tests/test_sweep_pr_number.py` runs it against throwaway repositories).
+
 ## When CI is red or the environment moved: compare, do not eyeball
 
 A check that went red on a tree that was green, with no source change in between, is an environment change until a diff says otherwise, and
