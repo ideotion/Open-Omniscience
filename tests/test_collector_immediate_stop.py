@@ -208,5 +208,7 @@ def test_the_scheduler_hands_its_own_stop_event_to_the_pass():
     assert "run_scrape_once(session, fetcher, settings, should_stop=self._pass_should_stop)" in body
     # The pass-scoped decider must still read the loop's own stop event, or
     # the wiring above would hand the pass something that cannot say Stop.
-    decider = src.split("def _pass_should_stop(")[1].split("\n    def ", 1)[0]
+    from tests.js_source_helper import python_function_source
+
+    decider = python_function_source(src, "_pass_should_stop")
     assert "self._stop.is_set()" in decider
