@@ -136,7 +136,9 @@ def test_every_name_a_test_gives_the_os_helpers_is_an_attribute_of_os():
     offenders: list[str] = []
     seen = dict.fromkeys(_HELPERS, 0)
     for path in sorted(_TESTS.rglob("*.py")):
-        if path.resolve() == Path(__file__).resolve() or "__pycache__" in path.parts:
+        # not this file (its cases misspell names on purpose) and not the helper (``scope_os_path`` and ``hide_os`` call ``scope_os``
+        # inside, so its count could never reach zero and the "read nothing" check below would prove nothing)
+        if path.resolve() in {Path(__file__).resolve(), (_TESTS / "os_scope.py").resolve()} or "__pycache__" in path.parts:
             continue
         source = path.read_text(encoding="utf-8")
         if not any(h in source for h in _HELPERS):
