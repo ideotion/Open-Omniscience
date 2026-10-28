@@ -138,12 +138,20 @@ def test_the_standalone_pages_scripts_are_scanned_as_files():
     )
 
 
-def test_aux_inline_js_excludes_the_external_i18n_script_tag():
+def test_aux_inline_js_excludes_the_external_i18n_script_tag(tmp_path, monkeypatch):
     """Both shells carry ``<script src="/static/i18n.js"></script>`` -- the negative
-    lookahead must skip a src'd tag rather than capturing an empty inline body for it."""
+    lookahead must skip a src'd tag rather than capturing an empty inline body for it.
+    Driven on a page that HAS an inline block: the real pages have none now (the test above
+    pins that), so a loop over their result checks nothing."""
     mod = _module()
-    for text in mod._aux_inline_js().values():
-        assert "i18n.js" not in text
+    (tmp_path / "taskmanager.html").write_text(
+        '<script src="/static/i18n.js"></script>\n<script>var inline_marker = 1;</script>\n<script src="/static/taskmanager.js"></script>',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mod, "_static_dir", lambda: tmp_path)
+    got = mod._aux_inline_js()
+    assert list(got) == ["taskmanager.html#inline"], got
+    assert got["taskmanager.html#inline"] == "var inline_marker = 1;", "only the inline block, with no empty body added for a src'd tag"
 
 
 def test_removing_the_page_scripts_measurably_lowers_both_gates():

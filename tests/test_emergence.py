@@ -107,9 +107,10 @@ def test_silent_when_not_new(db):
 
 def test_no_score_and_caveat_present(db):
     _kw(db, 1, "novelterm")
-    for i, sid in enumerate([1, 2, 3]):
+    for i, sid in enumerate([1, 2, 3, 4, 5]):  # the same shape as the firing case: fewer than min_recent_articles (4) fires nothing
         _mention(db, 1, 500 + i, sid, RECENT)
     res = find_manufactured_emergence(db)
     assert res["caveat"] and res["method"]
+    assert res["items"], "the term must fire, or the loop below checks nothing"
     for it in res["items"]:
         assert not any("score" in k.lower() for k in it)
