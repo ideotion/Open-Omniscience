@@ -2707,6 +2707,7 @@ class BackgroundScheduler:
                 "running": self.is_running(),
                 "active": self._active,
                 "exclusive_hold": bool(self._exclusive_hold),  # why a start is refused: an import or restore owns the machine
+                "start_deferred": bool(self._start_deferred),  # a refused start is queued behind the hold and starts when it ends
                 "started_at": self._started_at.isoformat() if self._started_at else None,
                 "last_run": self._last_run.isoformat() if self._last_run else None,
                 "next_run": self._next_run.isoformat() if self._next_run else None,

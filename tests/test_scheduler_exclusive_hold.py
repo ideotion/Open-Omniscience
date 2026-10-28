@@ -311,3 +311,19 @@ def test_a_hold_claimed_while_the_loop_is_starting_still_stops_it(monkeypatch):
         monkeypatch.setattr(runner_mod.threading, "Thread", real_thread)
         sch.release_exclusive()
         sch.stop(timeout=HANG_GUARD_S)
+
+
+def test_status_says_a_refused_start_is_queued_behind_the_hold_and_that_it_is_consumed():
+    """``exclusive_hold`` alone says the hold stands, not that a Start is waiting behind it: ``start_deferred`` is the honest field, and it is false
+    again once the resume's ``take_deferred_start()`` has consumed it."""
+    sch = _scheduler(run_once_fn=lambda: {"stored": 0})
+    assert sch.status()["start_deferred"] is False
+    sch.hold_exclusive()
+    try:
+        assert sch.start() is False
+        assert sch.status()["start_deferred"] is True
+        assert sch.take_deferred_start() is True
+        assert sch.status()["start_deferred"] is False, "consumed by the resume"
+        assert sch.take_deferred_start() is False
+    finally:
+        sch.release_exclusive()
