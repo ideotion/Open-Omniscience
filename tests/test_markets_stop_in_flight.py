@@ -9,8 +9,10 @@ reached after the failed check. The tests drive the REAL ``import_feed`` with a 
 
 from __future__ import annotations
 
+import time as _time
 from dataclasses import dataclass
 from datetime import date
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine
@@ -28,6 +30,7 @@ from src.markets.feed_catalog import Feed
 RAW_STOP = "request error for https://f.example/f3.csv: ('Connection aborted.', AirplaneModeError('network kill switch engaged'))"
 CSV = "date,value\n2026-06-01,1.5\n2026-06-02,1.6\n"
 TODAY = date(2026, 6, 17)
+_REAL_SLEEP = _time.sleep  # captured at import, before any fixture can patch it
 
 
 @dataclass
@@ -71,7 +74,10 @@ def _sess():
 @pytest.fixture(autouse=True)
 def _isolated(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    monkeypatch.setattr("src.markets.csv_feeds.time.sleep", lambda s: None)  # the feed-level retry pause is not what these tests are about
+    import src.markets.csv_feeds as csv_feeds
+
+    # the feed-level retry pause is not what these tests are about; scoped to csv_feeds' own name, never the shared ``time`` module (R376)
+    monkeypatch.setattr(csv_feeds, "time", SimpleNamespace(sleep=lambda s: None))
     yield
     clear_kill_switch()
 
@@ -141,7 +147,8 @@ def test_pass_a_stop_inside_the_only_feed_is_no_failure_by_the_except_branch_alo
     assert calls == ["S1"]
     assert tally == {"checked": 0, "imported": 0, "fresh": 0, "failed": 0}
     assert rolled == [True], "the session is rolled back before the pass ends"
-    assert "market feed f1 import failed" in caplog.text, "a real exception during a Stop is not made to disappear"
+    assert "market feed f1 raised during a Stop" in caplog.text, "a real exception during a Stop is logged, and not labelled a failure"
+    assert "import failed" not in caplog.text
 
 
 # ---- the import-all route -----------------------------------------------------------------------------------------------------------------------------------
@@ -201,7 +208,7 @@ def test_route_the_hosts_own_answer_is_still_the_hosts_when_the_stop_lands_with_
     assert out["skipped_offline"] == 3, "the three after it were not asked"
 
 
-def test_route_a_stop_inside_the_only_feed_is_no_failure_by_the_except_branch_alone(catalog, route_fetcher, monkeypatch):
+def test_route_a_stop_inside_the_only_feed_is_no_failure_by_the_except_branch_alone(catalog, route_fetcher, monkeypatch, caplog):
     """The except branch: ``import_feed`` raising out of the loop body with the switch engaged (a store error) is the Stop's, so a one-feed batch ends there."""
 
     def _raises(session, **kw):
@@ -210,5 +217,16 @@ def test_route_a_stop_inside_the_only_feed_is_no_failure_by_the_except_branch_al
 
     route_fetcher["f"] = _Fetcher()
     monkeypatch.setattr("src.markets.csv_feeds.import_feed", _raises)
-    out = _import_all(_sess(), keys="f1")
+    with caplog.at_level("WARNING"):
+        out = _import_all(_sess(), keys="f1")
     assert out["failed"] == 0 and out["results"] == [] and out["skipped_offline"] == 1
+    assert "market feed f1 raised during a Stop" in caplog.text, "the route logs it too, as the pass does"
+
+
+def test_the_retry_pause_patch_is_scoped_to_csv_feeds_and_never_the_shared_time_module():
+    """R376's class: a process-wide patch of a shared module is a defect in a test. The autouse fixture replaces the NAME ``time`` inside ``csv_feeds`` only; the real
+    ``time.sleep`` every other module and thread reads stays the real one for the whole test."""
+    import src.markets.csv_feeds as csv_feeds
+
+    assert _time.sleep is _REAL_SLEEP, "the shared time module must not be patched"
+    assert csv_feeds.time is not _time and csv_feeds.time.sleep(1.5) is None, "csv_feeds' own name is what carries the stub"

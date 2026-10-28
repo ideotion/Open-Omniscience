@@ -222,9 +222,11 @@ def import_due_feeds(session: Session, *, fetcher: EthicalFetcher, now=None) -> 
                 break
             tally["imported" if getattr(result, "status", "") == "imported" else "failed"] += 1
         except Exception as exc:  # noqa: BLE001 - one feed must not abort the markets pass
-            log_failure(_LOG, f"market feed {feed.key} import failed", exc, level=logging.WARNING)
+            stopped = kill_switch_active()
+            # Logged either way (a real exception during a Stop must not disappear), but a Stop's is not labelled a failure (R317).
+            log_failure(_LOG, f"market feed {feed.key} {'raised during a Stop' if stopped else 'import failed'}", exc, level=logging.WARNING)
             session.rollback()
-            if kill_switch_active():
+            if stopped:
                 tally["checked"] -= 1
                 break  # the Stop cut this feed's check in whatever shape the error took (R320); it is not a failure
             tally["failed"] += 1

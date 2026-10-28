@@ -13,6 +13,7 @@ number is shown without a real series behind it.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -23,8 +24,10 @@ from src.database.models import CommodityPrice, MarketExtractionRule, Source
 from src.database.session import get_db
 from src.database.stand_in import not_a_stand_in_source
 from src.ingest import EthicalFetcher  # noqa: F401 (kept for type/back-compat)
-from src.monitoring.secret_scrub import record_text
+from src.monitoring.secret_scrub import log_failure, record_text
 from src.safety.fetcher import following_fetcher
+
+_LOG = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/markets", tags=["markets"])
 
@@ -319,7 +322,9 @@ def import_all_feeds(
         except Exception as exc:  # noqa: BLE001 - one feed must never 500 the whole batch
             db.rollback()
             if kill_switch_active():
-                skipped_offline = len(todo) - i  # the Stop cut this feed's check in whatever shape the error took (R320)
+                # the Stop cut this feed's check in whatever shape the error took (R320); the exception is still logged, as the markets pass does
+                log_failure(_LOG, f"market feed {feed.key} raised during a Stop", exc, level=logging.WARNING)
+                skipped_offline = len(todo) - i
                 break
             failed += 1
             results.append(
