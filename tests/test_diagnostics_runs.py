@@ -136,6 +136,9 @@ def test_no_clock_and_no_process_start_time_decides_what_is_this_process(_data, 
     running after the clock moved by a day."""
     rid = r.begin_run("a.zip", profile="full")
     monkeypatch.setattr(r, "_now_iso", lambda: "2031-01-01T00:00:00Z")
+    # a GUARD, not a steering: correct code never reads the pid here (a run is "running" because it is in ``_RUNNING``), so this
+    # replacement is reached only if a pid ever decides, which then reads 4242 and turns the test red (measured, R385: the mutant
+    # ``elif begin.get("pid") == os.getpid()`` is red with this line and green without it)
     scope_os(monkeypatch, r, getpid=lambda: 4242)
     rows = {row["id"]: row for row in r.diagnostics_member()["runs"]}
     assert rows[rid]["state"] == "running"
