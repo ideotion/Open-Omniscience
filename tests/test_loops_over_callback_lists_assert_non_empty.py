@@ -11,6 +11,11 @@ a nested ``def`` or ``lambda`` (the callback), iterated by a ``for`` whose body 
 the collection as a whole (``assert seen``, ``assert len(seen) == 3``, ``assert seen == [...]``, ``assert x in seen``). A mention that only
 iterates it inside a generator (``assert all(... for c in seen)``) is as empty-proof as the loop and does not count. A collection the test fills
 itself (a ``for`` that appends, a ``+=`` at the test's own level) is not this shape and is not flagged.
+
+A bound method handed over as the callback (``run(seen.append)``) counts as a callback fill. Stated limits, none of which has an instance in
+tests/ today (checked): a test that is itself ``async def``; iteration through a slice or an attribute (``seen[1:]``, ``self.calls``); a
+container created by tuple unpacking (``a, b = [], []``) or held in a dict; a whole-mention that proves nothing about size
+(``assert seen is not None``) clears the guard; a collection handed to a helper that asserts over it is flagged (the strict side).
 """
 
 from __future__ import annotations
@@ -49,7 +54,7 @@ def _is_empty_collection(value: ast.AST | None) -> bool:
         return not value.elts
     if isinstance(value, ast.Dict):
         return not value.keys
-    if isinstance(value, ast.Call) and isinstance(value.func, ast.Name) and value.func.id in {"list", "dict", "set"}:
+    if isinstance(value, ast.Call) and isinstance(value.func, ast.Name) and value.func.id in {"list", "dict", "set", "deque"}:
         return not value.args and not value.keywords
     return False
 
@@ -73,8 +78,17 @@ def _mutates(node: ast.AST, name: str) -> bool:
     return False
 
 
+def _bound_mutator_names(nodes: list[ast.AST]) -> set[str]:
+    """Names whose mutator is mentioned at the test's own level (``run(seen.append)``): the callback IS the method.
+
+    A direct call (``seen.append(1)``) is also a mention; the caller treats that as the test filling it itself, which wins."""
+    return {n.value.id for n in nodes if isinstance(n, ast.Attribute) and n.attr in _MUTATORS and isinstance(n.value, ast.Name)}
+
+
 def _iterated_name(loop: ast.For) -> str | None:
     it = loop.iter
+    if isinstance(it, ast.Call) and isinstance(it.func, ast.Name) and it.func.id in {"enumerate", "sorted", "reversed", "list", "tuple"} and it.args:
+        it = it.args[0]  # for i, x in enumerate(seen)
     if isinstance(it, ast.Name):
         return it.id
     if isinstance(it, ast.Call) and isinstance(it.func, ast.Attribute) and it.func.attr in _VIEWS and isinstance(it.func.value, ast.Name):
@@ -100,8 +114,10 @@ def empty_proof_loops(source: str) -> list[tuple[int, str]]:
         own = list(_own_nodes(fn))
         callbacks = list(_callback_nodes(fn))
         names = {n for n in map(_target, own) if n}
+        handed_over = _bound_mutator_names(own)
         for name in sorted(names):
-            if any(_mutates(n, name) for n in own) or not any(_mutates(n, name) for n in callbacks):
+            fills_itself = any(_mutates(n, name) for n in own)
+            if fills_itself or not (name in handed_over or any(_mutates(n, name) for n in callbacks)):
                 continue  # the test fills it itself, or nothing fills it: not a callback-filled collection
             for loop in (n for n in own if isinstance(n, ast.For) and _iterated_name(n) == name):
                 if not any(isinstance(n, ast.Assert) for n in ast.walk(loop)):
@@ -145,6 +161,13 @@ def test_a():
         ("def test_a():\n    seen = list()\n    run(lambda *a: seen.extend(a))\n    for call in seen:\n        assert call\n", [(4, "seen")]),
         ("def test_a():\n    seen = {}\n    def cb(k, v):\n        seen[k] = v\n    run(cb)\n    for k, v in seen.items():\n        assert v\n", [(6, "seen")]),
         ("def test_a():\n    seen = []\n    def cb(x):\n        seen.append(x)\n    run(cb)\n    for x in seen:\n        assert x\n    for y in seen:\n        assert y\n", [(6, "seen"), (8, "seen")]),
+        # the callback is the bound method itself, a deque, a wrapped iteration
+        ("def test_a():\n    seen = []\n    run(seen.append)\n    for call in seen:\n        assert call\n", [(4, "seen")]),
+        ("def test_a():\n    seen = deque()\n    run(lambda *a: seen.appendleft(a))\n    for call in seen:\n        assert call\n", [(4, "seen")]),
+        ("def test_a():\n    seen = []\n    run(lambda *a: seen.append(a))\n    for i, call in enumerate(seen):\n        assert call\n", [(4, "seen")]),
+        ("def test_a():\n    seen = []\n    run(lambda *a: seen.append(a))\n    for call in sorted(seen):\n        assert call\n", [(4, "seen")]),
+        # calling the method at the test's own level is the test filling it itself, whatever else hands it over
+        ("def test_a():\n    seen = []\n    seen.append(1)\n    run(seen.append)\n    for call in seen:\n        assert call\n", []),
         # a mention that only walks it inside a generator is as empty-proof as the loop
         ("def test_a():\n    seen = []\n    run(lambda *a: seen.append(a))\n    assert all(c for c in seen)\n    for call in seen:\n        assert call\n", [(5, "seen")]),
         # filled by a callback and also asserted non-empty: fine, whichever way it is said

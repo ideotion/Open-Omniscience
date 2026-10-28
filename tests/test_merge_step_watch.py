@@ -298,6 +298,24 @@ def test_the_tick_reports_elapsed_seconds_and_never_a_fraction(monkeypatch):
     # before -- and it was never the load-bearing half: the assertions below
     # already pin the payload, which is the thing that must not become a
     # fraction. Dropped rather than re-typed.
+    #
+    # On a real clock every elapsed value here is 0.0, which any fraction also satisfies (a mutant sending 0.5 passed). So the module's clock
+    # is scoped to one that steps a whole second per reading: each report must then be the previous one plus one, because the 4th argument is
+    # the difference of two readings and nothing else (a constant, a ratio or an operation count fails).
+    import time as real_time
+
+    class _SteppedClock:
+        def __init__(self) -> None:
+            self.now = 0.0
+
+        def monotonic(self) -> float:
+            self.now += 1.0
+            return self.now
+
+        def __getattr__(self, name):
+            return getattr(real_time, name)
+
+    monkeypatch.setattr(m, "time", _SteppedClock())  # the module's name only; the real time module is untouched
     seen: list[tuple] = []
     with sqlite3.connect(":memory:") as c:
         with m._step_watch(c, 3, 19, "articles", None, lambda *a: seen.append(a)):
@@ -305,7 +323,8 @@ def test_the_tick_reports_elapsed_seconds_and_never_a_fraction(monkeypatch):
     assert seen, "the tick never reported, so nothing below was checked"
     for call in seen:
         assert len(call) == 4 and isinstance(call[3], float), call
-        assert 0 <= call[3] < 10, "the 4th argument is elapsed SECONDS, nothing else"
+    elapsed = [call[3] for call in seen]
+    assert elapsed[0] >= 1.0 and elapsed == [elapsed[0] + i for i in range(len(elapsed))], "the 4th argument is the clock's elapsed seconds, nothing else"
 
     # A `detail` may decorate the step NAME (the search-index step reports rows
     # that way) -- but it must never turn the elapsed-seconds payload into
