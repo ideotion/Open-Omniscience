@@ -4498,9 +4498,12 @@ def _ring_load_worker(ctx, *, limit: int = 20, languages: list[str] | None = Non
 # inside the 10 s rate wait, so Cancel stops within a quarter-second rather than leaving
 # the operator watching a dead button for ten (the no-theater rule for cancel buttons).
 #: NOT A WRITER in the database sense (``is_writer=False``, the ``bulletin`` precedent):
-#: the only writes are the local ring YAML on disk and the job's own state. Claiming the
-#: flag would put this in the DB-writer arbitration set, where it would ask the operator
-#: to stop a collection pass for a contention that does not exist.
+#: the only writes are the local ring YAML on disk and the job's own state (the worker's
+#: one session reads the keyword index and commits nothing). The flag's only consumer is
+#: ``offline_maintenance.yield_reason``, which skips the whole maintenance window (orphan
+#: prune, counter and language reconcile, incremental vacuum, hourly snapshot) while a
+#: flagged job runs; claiming it would hold that window off for a contention that does
+#: not exist.
 _RING_LOAD_JOB = register_job(
     BackgroundJob(
         "wikidata-rings", "Loading keyword translations from Wikidata", _ring_load_worker,
