@@ -956,6 +956,12 @@ def _set_meta(con, key: str, value) -> None:
     con.execute("INSERT INTO oo_meta VALUES (?, ?)", [key, str(value)])
 
 
+#: The ``built_epoch`` of a store that is NOT vouched for: written before an incremental merge's first write (and by the serving layer
+#: when its final comparison fails), put back after the watermark moves. It is no corpus epoch (those start at 0 and only grow), so
+#: ``refresh_keyword_daily`` finds it unequal to the corpus epoch and rebuilds in full.
+VOIDED_BUILT_EPOCH = -1
+
+
 def _get_meta(con, key: str) -> str | None:
     try:
         row = con.execute("SELECT v FROM oo_meta WHERE k = ?", [key]).fetchone()
@@ -2028,6 +2034,9 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
     and while ``keyword_meta`` is being rebuilt, so a stop there would leave a store that is served with most terms missing; that stage is not
     hooked here (a stated limit: the caller's final comparison stops the store being RECORDED as serving and voids ``built_epoch``, so the next
     refresh is a full rebuild even at an equal corpus epoch; the ``keyword_meta`` rows read after the swap stay written until then).
+
+    The incremental merge voids ``built_epoch`` before its first write and restores it after the watermark moves, so a merge that stops
+    half-way (an error, MemoryError, a kill) is followed by a full rebuild, never by a second addition of the same tail.
     """
     ensure_store_meta(con)
     built_epoch = _get_meta(con, "keyword_daily.built_epoch")
@@ -2035,6 +2044,7 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
         built_epoch is None
         or not _table_present(con, "keyword_daily")
         or not _table_present(con, "keyword_meta")
+        or int(built_epoch) == VOIDED_BUILT_EPOCH
         or int(built_epoch) != int(corpus_epoch)
     )
     if needs_full:
@@ -2168,6 +2178,11 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
         "COUNT(DISTINCT article_id) AS articles_on_day "
         "FROM keyword_daily_stage GROUP BY keyword_id, CAST(day AS DATE)"
     )
+    # The merge below is not transactional (each statement autocommits) and the watermark moves last, so a failure -- or a kill -- after
+    # the UPDATE and before the watermark leaves rows added that the next refresh would add AGAIN. ``built_epoch`` is voided before the
+    # first write and put back after the watermark: whatever stops the merge in between (a DuckDB error, MemoryError, a SQLAlchemy error
+    # in the keyword_meta upsert, a process kill) leaves it voided, so the next refresh is a full rebuild. If the voiding write itself fails, the merge never starts.
+    _set_meta(con, "keyword_daily.built_epoch", VOIDED_BUILT_EPOCH)
     # Portable MERGE: add to matched (keyword, day) rows, insert the rest.
     con.execute(
         "UPDATE keyword_daily d SET mentions = d.mentions + t.mentions, "
@@ -2187,6 +2202,7 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
     con.execute("DROP TABLE keyword_daily_stage")
     con.execute("DROP TABLE keyword_daily_tail")
     _set_meta(con, "keyword_daily.last_mention_id", max_streamed_id)
+    _set_meta(con, "keyword_daily.built_epoch", int(corpus_epoch))  # equal to the stored one: this branch runs only when it matched
     return {"mode": "incremental", "merged_days": int(merged_days),
             "new_keywords": int(new_keywords), "last_mention_id": max_streamed_id,
             "corpus_epoch": int(corpus_epoch)}
