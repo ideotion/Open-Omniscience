@@ -541,20 +541,27 @@ def test_a_refusal_for_the_figure_that_was_read_still_names_the_one_that_was_not
 # --------------------------------------------------------------------------- #
 #  the log: absent is a reading of nothing, unreadable is not
 # --------------------------------------------------------------------------- #
-def _wal_getsize_raises(monkeypatch, exc):
+def _wal_getsize_raises(monkeypatch, exc) -> list[str]:
+    """Make the log's size unmeasurable as ``maintenance`` sees it. Returns the log paths the code asked about, so a test can
+    say the replacement was REACHED: a test store has no ``-wal`` file, so the real ``getsize`` raises ``FileNotFoundError`` by
+    itself and a not-there test passes with this replacement removed."""
     real = os.path.getsize
+    asked: list[str] = []
 
     def _size(path, *a, **k):
         if str(path).endswith("-wal"):
+            asked.append(str(path))
             raise exc
         return real(path, *a, **k)
 
     scope_os_path(monkeypatch, maintenance, getsize=_size)
+    return asked
 
 
 def test_a_log_that_is_not_there_is_a_log_of_nothing_and_says_nothing(sqlite_engine, monkeypatch) -> None:
-    _wal_getsize_raises(monkeypatch, FileNotFoundError("no log"))
+    asked = _wal_getsize_raises(monkeypatch, FileNotFoundError("no log"))
     report = vacuum_preflight(sqlite_engine)
+    assert len(asked) == 1, "the replacement was never reached: this test would pass without it"
     assert report["wal_bytes"] == 0 and report["not_read"] == [], report
     assert report["detail"] == "enough free space and memory for this VACUUM"
 
