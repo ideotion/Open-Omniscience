@@ -22,6 +22,7 @@ from sqlalchemy.orm import sessionmaker
 from src.api import governments
 from src.database.models import Base, StatSubscription
 from src.ingest import activate_kill_switch, clear_kill_switch
+from src.ingest.fetch_verdict import NETWORK_REFUSED
 from src.stats import indicators as ind
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -159,7 +160,7 @@ def test_airplane_engaged_mid_loop_stops_the_rest_of_the_batch(db, monkeypatch):
         calls.append(code)
         if len(calls) == 1:
             return {"indicator": code, "status": "ok", "fetched": 1, "stored": 1}
-        raise RuntimeError("network refused: airplane mode is engaged")
+        raise RuntimeError(NETWORK_REFUSED)
 
     monkeypatch.setattr(governments, "_fetch_and_store_indicator", racing_fetch)
     out = governments.advance_country_data(db, per_pass=5)

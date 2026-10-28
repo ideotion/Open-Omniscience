@@ -25,6 +25,7 @@ from src.api import backup_v2 as v2
 from src.api import safety as safety_mod
 from src.api import unlock as unlock_mod
 from src.database import connect as connect_mod
+from src.ingest.fetch_verdict import NETWORK_REFUSED
 from src.monitoring import secret_scrub as ss
 
 #: The key typed into the request: an apostrophe, so that the statement that carries it quotes it twice. Not held: the process
@@ -442,11 +443,11 @@ def test_the_airplane_refusal_is_still_a_409_and_a_refusal_that_quotes_the_passw
     caplog.set_level(logging.DEBUG, logger="api.ingestion")
 
     def refuse(*args, **kwargs):
-        raise RuntimeError("network refused: airplane mode is engaged")
+        raise RuntimeError(NETWORK_REFUSED)
 
     with pytest.raises(HTTPException) as err:
         _the_ingest_email_route(monkeypatch, refuse)()
-    assert err.value.status_code == 409 and err.value.detail == "network refused: airplane mode is engaged"
+    assert err.value.status_code == 409 and err.value.detail == NETWORK_REFUSED
     assert not [r for r in caplog.records if r.name == "api.ingestion"], "an answer the code wrote is not logged as a failure"
 
     def chatter(*args, **kwargs):
