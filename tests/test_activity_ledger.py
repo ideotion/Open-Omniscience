@@ -260,6 +260,10 @@ _RESULT_KEYS_NOT_ACTIONS = {
     # The operator's own opt-in export of the articles the pass just stored (export_dir,
     # off by default): the pass's own output, counted in the collection-pass entry.
     "delta_export",
+    # A notice that the pass tail did not evaluate its detached launches because an exclusive
+    # operation held the machine: it names what was skipped, it is not something the pass did.
+    # The launches are ledgered when they run (at the next pass).
+    "tail_launches_skipped_by_exclusive_operation",
 }
 #: Background tasks the scheduler registers, and their action.
 _BG_TASKS = {
