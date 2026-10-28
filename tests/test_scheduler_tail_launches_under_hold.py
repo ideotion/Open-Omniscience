@@ -73,13 +73,13 @@ def test_every_launch_is_held_back_while_the_hold_stands(tail):
     result = tail._default_run_once()
     assert tail._answered == [True], "premise: the pass was told to wind down"
     assert tail._calls == [], f"launched under the hold: {tail._calls}"
-    assert result["held_back_by_exclusive_operation"] == _LAUNCHES, "a held-back launch is reported, not silently dropped"
+    assert result["tail_launches_skipped_by_exclusive_operation"] == _LAUNCHES, "a skipped launch is reported, not silently dropped"
 
 
 def test_without_the_hold_every_launch_runs_and_nothing_is_reported(tail):
     result = tail._default_run_once()
     assert tail._calls == _LAUNCHES
-    assert "held_back_by_exclusive_operation" not in result
+    assert "tail_launches_skipped_by_exclusive_operation" not in result
 
 
 @pytest.mark.parametrize("claimed_before", range(len(_LAUNCHES)))
@@ -90,7 +90,7 @@ def test_each_launch_reads_the_hold_for_itself(tail, claimed_before):
     tail._hooks[trigger] = tail.hold_exclusive
     result = tail._default_run_once()
     assert tail._calls == _LAUNCHES[:claimed_before]
-    assert result.get("held_back_by_exclusive_operation") == _LAUNCHES[claimed_before:]
+    assert result.get("tail_launches_skipped_by_exclusive_operation") == _LAUNCHES[claimed_before:]
 
 
 def test_a_plain_stop_without_a_hold_keeps_todays_behaviour(tail):
@@ -103,8 +103,8 @@ def test_a_plain_stop_without_a_hold_keeps_todays_behaviour(tail):
 def test_the_launches_are_due_again_once_the_hold_is_released(tail):
     tail.hold_exclusive()
     first = tail._default_run_once()
-    assert tail._calls == [] and first["held_back_by_exclusive_operation"] == _LAUNCHES
+    assert tail._calls == [] and first["tail_launches_skipped_by_exclusive_operation"] == _LAUNCHES
     tail.release_exclusive()
     second = tail._default_run_once()
     assert tail._calls == _LAUNCHES
-    assert "held_back_by_exclusive_operation" not in second
+    assert "tail_launches_skipped_by_exclusive_operation" not in second

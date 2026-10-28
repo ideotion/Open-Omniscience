@@ -8787,7 +8787,8 @@ def test_housekeeping_lane_runs_in_a_background_thread_not_inline():
     )[0]
     assert "acquire(blocking=False)" in lane_body
     assert "_bgtasks.register(" in lane_body and '"housekeeping"' in lane_body
-    assert "threading.Thread(" in lane_body and ".start()" in lane_body
+    # The slice above also takes in ``_start_detached``, so ``.start()`` would be found there however the lane started its thread: pin the call.
+    assert "threading.Thread(" in lane_body and "_start_detached(self._lane_thread, self._lane_lock" in lane_body
     assert "run_housekeeping_lane(session, fetcher, settings)" in lane_body
     assert "kill_switch_active()" in lane_body  # airplane-aware: refuses up front
 

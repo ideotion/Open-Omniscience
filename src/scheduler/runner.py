@@ -2512,7 +2512,7 @@ class BackgroundScheduler:
         try:
             thread.start()
         except Exception as exc:  # noqa: BLE001 - a background launch must never crash the pass tail
-            log_failure(_LOG, f"{what} not started: its thread could not be started", exc, level=logging.WARNING)
+            log_failure(_LOG, f"{what}: Thread.start() failed", exc, level=logging.WARNING)
             if thread.ident is None:
                 lock.release()
 
@@ -2520,8 +2520,9 @@ class BackgroundScheduler:
         """Is this detached launch of the pass tail held back by an exclusive operation? The hold winds a pass down but a pass's tail
         still ran whole, and four of its steps start threads or jobs that OUTLIVE the pass (the first-run preflight job, the housekeeping lane,
         the langdetect job, the briefing refresh): they would run on into the restore's working-copy span, past the wait that sees only the
-        pass's own thread. Held back, each is simply due again at the next pass (every one re-evaluates its own condition), so nothing is
-        lost; the hold only (a plain Stop keeps today's behaviour: it trips the kill switch, which the lane already honours). Check-then-act:
+        pass's own thread. A skipped launch is not evaluated (whether it was due is not asked: the preflight runs once ever, the langdetect
+        watchdog has an opt-out), so what is reported is "skipped", never "due and held back"; each re-evaluates its own condition at the next
+        pass, so nothing is lost. The hold only (a plain Stop keeps today's behaviour: it trips the kill switch, which the lane already honours). Check-then-act:
         a hold claimed between this read and the launch still lets that one launch through, which is the same window the pass thread itself
         has before it reads the stop."""
         if not self.holds_exclusive():
@@ -2737,8 +2738,8 @@ class BackgroundScheduler:
                 if not self._held_back("briefing-refresh", held):
                     self._refresh_briefing_async()
             if held:
-                result["held_back_by_exclusive_operation"] = held
-                _LOG.info("pass tail: %s not started, an exclusive operation holds the machine (due again next pass)", ", ".join(held))
+                result["tail_launches_skipped_by_exclusive_operation"] = held
+                _LOG.info("pass tail: %s not evaluated, an exclusive operation holds the machine (each is evaluated again at the next pass)", ", ".join(held))
             return result
 
     # -- introspection ----------------------------------------------------- #
