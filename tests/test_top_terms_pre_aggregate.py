@@ -135,8 +135,18 @@ def test_the_corpus_tells_the_shapes_apart(con):
 
 def _walk(node):
     yield node
-    for child in node.get("children", []):
+    # DuckDB 1.x nests the plan under "children"; 2.x puts the root operators in an "operator" list and then nests under "children".
+    for child in node.get("children", []) + node.get("operator", []):
         yield from _walk(child)
+
+
+def _kind(node):
+    # The operator's name is "operator_type" in 1.x and "type" in 2.x; the rows it produced are "operator_cardinality" and "intermediate_rows".
+    return node.get("operator_type") or node.get("type")
+
+
+def _rows_out(node):
+    return int(node["operator_cardinality"] if "operator_cardinality" in node else node["intermediate_rows"])
 
 
 def _plan(con, sql, params):
@@ -147,12 +157,19 @@ def _plan(con, sql, params):
 
 
 def test_the_join_feeds_the_text_grouping_one_row_per_keyword_not_one_per_keyword_and_day(con):
+    # The control: the shipped (join-first) query. DuckDB 2.x moves the aggregate below that join by itself, and then no plan can tell the
+    # two shapes apart, so this test would pass for either; it only means something where the engine leaves the shipped shape alone.
+    old_sql, old_params = _shipped_query(None, None, None, 80)
+    old_joins = [n for n in _walk(_plan(con, old_sql, old_params)) if _kind(n) == "HASH_JOIN"]
+    assert old_joins, "the control query has no hash join"
+    if max(_rows_out(j) for j in old_joins) <= len(_META):
+        pytest.skip("this DuckDB aggregates below the join itself, so the join's row count cannot tell the two query shapes apart")
     sql, params = columnar._top_terms_query(None, None, None, 80)
     plan = _plan(con, sql, params)
     nodes = list(_walk(plan))
-    joins = [n for n in nodes if n.get("operator_type") == "HASH_JOIN"]
-    assert joins, [n.get("operator_type") for n in nodes]
-    rows_out = [int(j["operator_cardinality"]) for j in joins]
+    joins = [n for n in nodes if _kind(n) == "HASH_JOIN"]
+    assert joins, [_kind(n) for n in nodes]
+    rows_out = [_rows_out(j) for j in joins]
     # nine keywords; the daily table holds many more rows than that
     assert max(rows_out) == len(_META), rows_out
     assert len(_rows()) > 5 * len(_META)
