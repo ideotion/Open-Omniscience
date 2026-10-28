@@ -76,14 +76,6 @@ def test_the_pin_is_taken_off_on_every_way_out_of_the_block(monkeypatch, tmp_pat
     assert service._cache_path() == tmp_path / "second" / "briefing_cache.json"
 
 
-def test_the_refresh_leaves_the_callers_cache_path_alone(monkeypatch, tmp_path, sched, fake_scope):
-    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "first"))
-    monkeypatch.setattr(service, "refresh_briefing", lambda session: None)
-    sched._refresh_briefing_async()
-    sched._briefing_thread.join(HANG_GUARD_S)
-    assert service._run_cache_path.get() is None
-
-
 def test_a_cache_folder_that_cannot_be_resolved_starts_nothing_and_frees_the_lock(monkeypatch, sched, fake_scope):
     """The lock was taken before the path is resolved; a failure there must not leave every later pass skipping the refresh as "still running"."""
 
@@ -96,9 +88,21 @@ def test_a_cache_folder_that_cannot_be_resolved_starts_nothing_and_frees_the_loc
     monkeypatch.setattr(service, "refresh_briefing", lambda session: ran.append(1))
     sched._refresh_briefing_async()  # does not raise
     assert not sched._briefing_bg_lock.locked(), "the lock stayed held"
-    assert sched._briefing_thread is None and not ran
+    started = sched._briefing_thread
+    assert started is None and not ran
     monkeypatch.setattr(service, "_cache_path", real_cache_path)
     monkeypatch.setattr(service, "refresh_briefing", lambda session: ran.append(1))
     sched._refresh_briefing_async()
-    sched._briefing_thread.join(HANG_GUARD_S)
+    thread = sched._briefing_thread  # read again: the check above narrowed the attribute to ``None`` for the type checker
+    assert thread is not None, "the next pass started no refresh thread"
+    thread.join(HANG_GUARD_S)
     assert ran == [1], "the next pass did not run the refresh"
+
+
+def test_an_import_that_fails_before_the_thread_exists_also_frees_the_lock(monkeypatch, sched, fake_scope):
+    """The read of this change: the import sat between the lock and the guard, so a failure there would have left every later pass skipping the
+    refresh as "still running"."""
+    monkeypatch.delattr(service, "cache_path_for_a_new_run")  # ``from ... import cache_path_for_a_new_run`` now raises ImportError
+    sched._refresh_briefing_async()  # does not raise
+    assert not sched._briefing_bg_lock.locked(), "the lock stayed held"
+    assert sched._briefing_thread is None

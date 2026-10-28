@@ -2359,9 +2359,10 @@ class BackgroundScheduler:
             _LOG.info("background briefing refresh still running; skipping this cycle")
             return
 
-        from src.briefing.service import cache_path_for_a_new_run, pinned_cache_path
-
         try:
+            # The import is inside the guard too: a failure here must free the lock like any other (the module is long loaded in practice).
+            from src.briefing.service import cache_path_for_a_new_run, pinned_cache_path
+
             # Resolved here, before the thread exists, and pinned inside it: a thread that asked ``data_dir()`` at each read and write could land
             # the cache in a different folder than the one it started in (R355; the same mechanism as ``service._bg_refresh``).
             cache_path = cache_path_for_a_new_run()
