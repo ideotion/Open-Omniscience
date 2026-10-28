@@ -706,7 +706,13 @@ class VolumeBackupManager:
             # (reassemble + merge + re-index) and resumed afterward. A
             # THROUGHPUT courtesy, never a correctness requirement -- a
             # pause/resume hiccup must never abort or corrupt an otherwise-
-            # good restore, so both sides are best-effort.
+            # good restore, so both sides are best-effort. What the pause
+            # is: the collection loop and "Run now" (merge.py then waits,
+            # bounded, for a pass in flight before it copies). What it is
+            # not: the housekeeping lane, the Wikipedia drain, background
+            # jobs, AI sweeps, boot upkeep and the API write routes keep
+            # running, and what they commit between the copy and the swap is
+            # discarded by the swap (see the ``exclusive`` note in merge.py).
             from src.scheduler.runner import (
                 owns_the_machine,
                 pause_for_exclusive_operation,

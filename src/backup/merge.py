@@ -7644,9 +7644,27 @@ def run_restore(
     undo.
 
     ``exclusive`` (import-speed fix 2026-07-30): the caller asserts that this restore
-    OWNS the machine -- background collection is paused and nothing else is expected to
-    write the live corpus. It is passed to the two whole-corpus snapshots below as
-    ``allow_file_copy``, which lets them copy the corpus's bytes instead of
+    OWNS the machine -- background collection is paused. WHAT THAT PAUSE IS (R360): the
+    exclusive window stops the collection loop (a bounded join) and refuses the next
+    "Run now"; a restore that owns the machine then waits, bounded, for the loop and for
+    a pass already in flight to be gone before it takes the working copy
+    (:mod:`src.backup.collector_exit`), and records what it found as
+    ``report["collector_exit"]``. WHAT IT IS NOT: a lock on the corpus. The housekeeping
+    lane, the Wikipedia drain, AI sweeps, boot upkeep and every API write route are not
+    stopped; neither are most registered background jobs (tags backfill, language
+    detection, the governments jobs, bulk source qualification, the mailbox import: the
+    job registry has no exclusive-hold check; two registered jobs look at the window in
+    their own workers: the re-index drain stops inside its article loop and the queue
+    restarts it after the run, and the preflight check declines to start). A few
+    workers that are not registry jobs do park at their next batch boundary and resume
+    after the import (keyword fold, quarantine, FTS re-index, newsletter import,
+    off-peak maintenance), so a batch already in flight can still commit. And the collection loop itself can be started again while the window
+    is open (``BackgroundScheduler.start`` does not check the hold: the Collection
+    switch, the Start button, the network toggle and the unattended start all call it).
+    Anything they commit between the working copy and the swap is discarded by the swap
+    (only ``settings.``/``agenda.``/``ui.`` keys and the search history are carried). The
+    import dialog says so in the same terms. It is passed to the two whole-corpus
+    snapshots below as ``allow_file_copy``, which lets them copy the corpus's bytes instead of
     re-encrypting it row by row through the SQLCipher codec. Purely a resource decision
     with no behavioural difference: the fast path itself refuses unless it can PROVE the
     copy is complete (see :func:`~src.database.connect._quiesced_file_copy`), so passing
@@ -7761,6 +7779,25 @@ def run_restore(
     # plaintext staging tree would be: it is encrypted whenever the live corpus is,
     # and it is swept by the ordinary ``.restore-*`` janitor.
     from src.database.connect import snapshot_preserving
+
+    # THE COLLECTOR MUST BE OFF THE CORPUS BEFORE IT IS COPIED. The exclusive window stops the collector with
+    # a bounded join, so a pass deep in a write can still be committing (and a "Run now" pass that began
+    # before the window was never touched). Everything it commits after the copy below is discarded by the
+    # swap. Waiting here lands a pass that finishes inside the bound in the copy; one that does not is named
+    # in the report and the restore goes on (the pause is a courtesy). Only a restore that will swap
+    # (``commit``) and takes the copy itself (a CARRIED copy was taken by the group's first item) has a
+    # copy to protect; a restore that does not own the machine claimed no pause to confirm.
+    collector_exit: dict | None = None
+    if commit and _owned and not carried:
+        from src.backup import runlog
+        from src.backup.collector_exit import wait_for_collector_exit
+
+        # A SUB-stage, not a phase (a phase would break restore_stage_plan()'s denominator): it is timed, it is in
+        # the timings table, and the journal gets its begin, so a run killed or hung inside the wait names it. The
+        # dialog says the same while it waits (``collector_exit.wait_state``).
+        with _sub_timer(timings)("snapshot_working_copy:wait_for_collector"):
+            collector_exit = wait_for_collector_exit(should_stop=should_stop)
+        runlog.milestone("collector_exit", **collector_exit)
 
     _abort_point("snapshot_working_copy")
     # The Q701-note trust answer, resolved ONCE per restore (the per-import override
@@ -7920,6 +7957,10 @@ def run_restore(
         "verification": verification,
         "committed": False,
     }
+    if collector_exit is not None:
+        # What the wait before the copy found. ``confirmed`` False means a collection pass was still running when
+        # the corpus was copied: what it saved to the live corpus after that is not in the restored one.
+        report["collector_exit"] = collector_exit
 
     if not verification["ok"]:
         report["refused"] = "post-merge verification failed; live database untouched"

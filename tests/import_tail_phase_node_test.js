@@ -426,4 +426,106 @@ test("a job with no unit at all is a plain count, never bytes", () => {
   assert(!/\bB\b|KB|MB/.test(row.replace(/[⁨⁩]/g, "")), `no byte unit is invented (got ${row})`);
 });
 
+// --------------------------------------------------------------------------- //
+//  R360: what the pause is and is not, said where the person is looking
+// --------------------------------------------------------------------------- //
+const PAUSED_SENTENCE = "Background collection is paused for this whole import";
+const OTHER_WORK = "Other background work is not paused";
+const UNCONFIRMED = "It could not be confirmed that background collection had stopped";
+const HOVER_START = "Paused: the collection loop and the Collect now button.";
+
+test("R360: a running import says collection is paused AND that other work is not", () => {
+  const note = render(Object.assign({}, TAIL_RUN, { collection_exit_unconfirmed: false }));
+  assert(note.indexOf(PAUSED_SENTENCE) !== -1, "the claim is still made where nothing contradicts it: " + note);
+  assert(note.indexOf(OTHER_WORK) !== -1, "the caveat is on the same visible line as the claim, never behind a toggle: " + note);
+  assert(note.indexOf(UNCONFIRMED) === -1, "nothing was left unconfirmed: " + note);
+});
+
+test("R360: the long form rides on the line as its hover", () => {
+  const note = render(TAIL_RUN);
+  const at = note.indexOf('title="' + HOVER_START);
+  assert(at !== -1, "the line carries the long form as its translated title: " + note);
+  const title = note.slice(at, note.indexOf('"', at + 7));
+  for (const word of ["Not paused:", "other background jobs", "AI sweeps", "start-up upkeep", "(the Collection switch, the Start button, or switching the network back on) is not blocked", "Before it makes each copy", "up to 10 minutes", "settings, agenda and interface choices"]) {
+    assert(title.indexOf(word) !== -1, "the hover names " + word + ": " + title);
+  }
+});
+
+test("R360: ...and a restore that copied the library with a pass still running does not claim a pause", () => {
+  const note = render(Object.assign({}, TAIL_RUN, { collection_exit_unconfirmed: true }));
+  assert(note.indexOf(PAUSED_SENTENCE) === -1, "a restore found a pass still writing; the dialog must not claim a pause: " + note);
+  assert(note.indexOf(UNCONFIRMED) !== -1, "it says instead that a pause could not be confirmed: " + note);
+  assert(note.indexOf(OTHER_WORK) !== -1, "and still says other work is not paused: " + note);
+});
+
+test("R360: the unconfirmed statement outlives the run (the loss does)", () => {
+  const note = render(Object.assign({}, TAIL_RUN, { state: "done", collection_paused: false, collection_exit_unconfirmed: true, live: null }));
+  assert(note.indexOf(UNCONFIRMED) !== -1, "a finished run keeps saying it: " + note);
+  assert(note.indexOf(OTHER_WORK) === -1, "but does not tell a finished run that work is still running: " + note);
+});
+
+test("R360: a finished, confirmed run says nothing about a pause", () => {
+  const note = render(Object.assign({}, TAIL_RUN, { state: "done", collection_paused: false, live: null }));
+  assert(note.indexOf(PAUSED_SENTENCE) === -1 && note.indexOf(UNCONFIRMED) === -1 && note.indexOf(OTHER_WORK) === -1,
+    "nothing to say once the run is over and nothing was left unconfirmed: " + note);
+});
+
+const NOT_PAUSED_AT_ALL = "Background collection could not be paused for this import";
+const WAITING = "Waiting for background collection to finish what it is writing";
+
+test("R360: the dialog withdraws its pause during the item that found otherwise, not only after it", () => {
+  // collection_exit_unconfirmed is true while the item is STILL RUNNING (live set, no summary): the loss is happening now.
+  const note = render(Object.assign({}, TAIL_RUN, { state: "running", collection_exit_unconfirmed: true }));
+  assert(note.indexOf(PAUSED_SENTENCE) === -1 && note.indexOf(UNCONFIRMED) !== -1 && note.indexOf(OTHER_WORK) !== -1, note);
+});
+
+test("R360: a pause that could not be established is said, with the caveat, where the risk is largest", () => {
+  const note = render(Object.assign({}, TAIL_RUN, { collection_paused: false, collection_window_failed: true }));
+  assert(note.indexOf(NOT_PAUSED_AT_ALL) !== -1, "the dialog says collection was not paused: " + note);
+  assert(note.indexOf(PAUSED_SENTENCE) === -1, "and does not claim it was: " + note);
+  assert(note.indexOf("can be lost") !== -1, "the caveat is on the same visible line: " + note);
+  assert(note.indexOf('title="' + HOVER_START) !== -1, "the long form is its hover: " + note);
+});
+
+test("R360: a window failure said about a run that is over is not repeated", () => {
+  const note = render(Object.assign({}, TAIL_RUN, { state: "done", collection_paused: false, collection_window_failed: true, live: null }));
+  assert(note.indexOf(NOT_PAUSED_AT_ALL) === -1, "the run is over; there is nothing still running to warn about: " + note);
+});
+
+test("R360: the wait for a running pass is said while it happens, with the time spent and no promise of the rest", () => {
+  const note = render(Object.assign({}, TAIL_RUN, { collection_exit_wait: { elapsed_s: 125, bound_s: 600, still: ["a collection pass or maintenance run"] } }));
+  assert(note.indexOf(WAITING) !== -1, "the person is told what the stage is waiting for: " + note);
+  assert(note.indexOf("up to 10 minutes") !== -1, "with the bound that applies: " + note);
+  assert(/2\s*min\s*5\s*s/.test(note.slice(note.indexOf(WAITING))), "and the time spent so far: " + note);
+  assert(!/left|remaining|ETA/i.test(note.slice(note.indexOf(WAITING))), "never an estimate of the time left: " + note);
+  assert(note.indexOf(PAUSED_SENTENCE) === -1, "while the stage waits, the pause is not yet true and the dialog does not say it is: " + note);
+  assert(note.indexOf(OTHER_WORK) !== -1, "the caveat about the rest of the background work stays on the line: " + note);
+  assert(note.split(OTHER_WORK).length === 2, "and is said once, not once per line: " + note);
+});
+
+test("R360: a failed window with a wait beside it says the caveat once (inside the failure line), not twice", () => {
+  const note = render(Object.assign({}, TAIL_RUN, { collection_window_failed: true, collection_paused: false,
+    collection_exit_wait: { elapsed_s: 30, bound_s: 600, still: ["a collection pass or maintenance run"] } }));
+  assert(note.indexOf(NOT_PAUSED_AT_ALL) !== -1 && note.indexOf(WAITING) !== -1, note);
+  assert(note.indexOf(OTHER_WORK) === -1, "the failure line already carries the caveat; the waiting line must not repeat it: " + note);
+  assert(note.indexOf(PAUSED_SENTENCE) === -1, note);
+});
+
+test("R360: a wait that ended, with the pass gone, goes back to the pause sentence", () => {
+  const note = render(Object.assign({}, TAIL_RUN, { collection_exit_wait: null }));
+  assert(note.indexOf(PAUSED_SENTENCE) !== -1 && note.indexOf(WAITING) === -1, note);
+});
+
+test("R360: nothing is said about waiting when no wait is in progress", () => {
+  assert(render(TAIL_RUN).indexOf(WAITING) === -1);
+  assert(render(Object.assign({}, TAIL_RUN, { collection_exit_wait: null })).indexOf(WAITING) === -1);
+  assert(render(Object.assign({}, TAIL_RUN, { state: "done", collection_exit_wait: { elapsed_s: 5, bound_s: 600, still: [] } })).indexOf(WAITING) === -1,
+    "a finished run is not waiting for anything");
+});
+
+test("R360: an older server that sends no such field keeps the sentence", () => {
+  const note = render(TAIL_RUN);
+  assert(note.indexOf(PAUSED_SENTENCE) !== -1, "an absent field is not a contradiction: " + note);
+});
+
 console.log(`\n${passed} passed`);

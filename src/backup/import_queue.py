@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from src.backup import collector_exit
 from src.monitoring.secret_scrub import log_failure, record_text, scrubbed, scrubbed_value
 from src.paths import data_dir
 
@@ -152,6 +153,108 @@ def _refusal_of(summary: dict) -> str | None:
         if isinstance(candidate, dict) and candidate.get("refused"):
             return str(candidate["refused"])
     return None
+
+
+def _collector_exit_of(summary: object) -> dict | None:
+    """The restore's own account of whether background collection had left the corpus when it was copied, or None.
+
+    ``run_restore`` records ``collector_exit`` on a committing restore that owns the machine (``merge.py``,
+    ``collector_exit.py``): ``confirmed`` True, False (a pass was still running when the copy was taken) or None (the
+    scheduler could not be read). Absent when the restore had no copy to protect, which says nothing either way. The same
+    TWO SHAPES as :func:`_refusal_of`: the corpus path wraps the report, the legacy path returns it."""
+    if not isinstance(summary, dict):
+        return None
+    for candidate in (summary, summary.get("report")):
+        if isinstance(candidate, dict) and isinstance(candidate.get("collector_exit"), dict):
+            return candidate["collector_exit"]
+    return None
+
+
+def _restore_report_of(summary: object) -> dict | None:
+    """The restore's own report inside a queue summary (the corpus path wraps it, the legacy path IS it), or None."""
+    if not isinstance(summary, dict):
+        return None
+    inner = summary.get("report")
+    return inner if isinstance(inner, dict) else summary
+
+
+def _reaches_the_corpus(state: object, summary: object) -> bool:
+    """Whether the copy this item's restore took is, or is on its way to being, the live corpus.
+
+    Read from the restore's own report and not from the item's state alone, because the state is not the restore's
+    verdict: ``_drive`` labels an item ``stopped`` whenever a Stop is set when the item returns, including one pressed
+    AFTER the swap, whose report says ``committed``. So: a swapped (``committed``) restore counts whatever the state
+    says; a ``staged`` item counts (its copy is the one the group's last item swaps in); a ``done`` item counts
+    unless its report is a refusal; a refused, errored or discarded item changed nothing in the live file."""
+    report = _restore_report_of(summary)
+    refused = isinstance(report, dict) and bool(report.get("refused"))
+    if state == "staged":
+        return True
+    if isinstance(report, dict) and report.get("committed") is True and not refused:
+        return True
+    return state == "done" and not refused
+
+
+def _exit_unconfirmed(items: list[dict], live_answer: dict | None) -> bool:
+    """True when a restore of this run that reaches the corpus copied it without having confirmed that collection had left.
+
+    Two sources, because the answer exists long before the summary does: ``item["summary"]`` is written only after the
+    merge, the verification and the swap, hours after the wait on a large import, so the item in flight is read from the
+    wait's own published answer (``collector_exit.last_answer``) when that answer was made after the item began, and
+    when it is not the answer of a Stop (a Stop during the wait means no copy was taken). Finished items are read from
+    their summary when :func:`_reaches_the_corpus`."""
+    for it in items:
+        state = it.get("state")
+        if state == "running" and it.get("summary") is None:
+            began = it.get("started_at")
+            fresh = live_answer is not None and isinstance(began, (int, float)) and live_answer.get("at", 0) >= began
+            answer = live_answer if fresh and not live_answer.get("stopped") else None  # type: ignore[union-attr]
+        elif _reaches_the_corpus(state, it.get("summary")):
+            answer = _collector_exit_of(it.get("summary"))
+        else:
+            answer = None
+        if answer is not None and answer.get("confirmed") is not True:
+            return True
+    return False
+
+
+def _collection_note(state: str, exit_unconfirmed: bool, window_failed: bool, paused: bool, waiting: bool) -> str:
+    """The sentences the status serves about the pause, built from the same facts the dialog reads and in the same order
+    (it said "paused" whatever the run found, beside a dialog that had stopped saying so). Like the dialog: while the
+    wait for a pass runs the pause is not claimed (it is being completed), the caveat about other background work is
+    said once, and a run that is over is told nothing about work that is still running. Where the dialog says nothing
+    (an idle queue, a finished run with nothing unconfirmed) the note states the rule in a tense that is true of any
+    time, because it is served beside the status of a run that may not exist."""
+    running = state == "running"
+    other = " Other background work is not paused: what it, or you, saves to your corpus while the import runs can be lost." if running else ""
+    parts: list[str] = []
+    other_said = False
+    if exit_unconfirmed:
+        parts.append(
+            "It could not be confirmed that background collection had stopped when the import copied your corpus, "
+            "so what collection saved after that copy is not kept." + other
+        )
+        other_said = running
+    elif window_failed:
+        if running:
+            parts.append(
+                "Background collection could not be paused for this import, and other background work is not paused "
+                "either: what they, or you, save to your corpus while the import runs can be lost."
+            )
+            other_said = True
+        else:
+            parts.append("Background collection could not be paused for that import.")
+    elif running and paused and not waiting:
+        parts.append("Background collection is paused for this whole import and resumes when it finishes." + other)
+        other_said = True
+    elif not running:
+        parts.append("Background collection is paused only while an import is running, and resumes when it finishes.")
+    if running and waiting:
+        parts.append(
+            "Waiting for background collection to finish what it is writing before your corpus is copied."
+            + ("" if other_said else other)
+        )
+    return " ".join(parts)
 
 
 def stage_for_phase(phase: str | None) -> int | None:
@@ -284,6 +387,9 @@ class ImportQueueManager:
         self._ended_at: float | None = None
         self._passphrase: str = ""  # memory only, never persisted
         self._collection_paused = False
+        # True when the exclusive window could not be established for the run in flight: collection was NOT paused, so the
+        # dialog says that instead of staying silent (the case where the risk is largest).
+        self._collection_window_failed = False
         # What the post-run tuning pass actually did ({"fts", "planner"} bools), or None
         # while a run is still going -- reported, never assumed to have succeeded.
         self._tuned: dict[str, bool] | None = None
@@ -491,6 +597,7 @@ class ImportQueueManager:
             self._items = queued
             self._tuning_done = False
             self._tuned = None
+            self._collection_window_failed = False
             self._run_id = secrets.token_hex(6)
             self._cursor = -1
             self._passphrase = passphrase or ""
@@ -551,6 +658,9 @@ class ImportQueueManager:
                 self._drive()
         except Exception as exc:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
             log_failure(_LOG, "the exclusive window for the import failed", exc, self._passphrase, level=logging.WARNING)
+            if not drove:
+                with self._lock:
+                    self._collection_window_failed = True
         finally:
             with self._lock:
                 self._collection_paused = False
@@ -1396,6 +1506,7 @@ class ImportQueueManager:
             state = self._state
             started, ended = self._started_at, self._ended_at
             paused = self._collection_paused
+            window_failed = self._collection_window_failed
             tuned = self._tuned
             tuning_done = self._tuning_done
             k = self._checkpoint_k
@@ -1426,6 +1537,18 @@ class ImportQueueManager:
         done = sum(1 for it in items if it["state"] in ("done", "skipped", "staged"))
         committed = sum(1 for it in items if it["state"] in ("done", "skipped"))
         staged = sum(1 for it in items if it["state"] == "staged")
+        # "Collection is paused" is only said while no restore of this run has told the opposite: a restore that copied
+        # the corpus while a collection pass was still running (or that could not look) recorded it (``collector_exit``).
+        # The running item is read from the wait's own answer, not its summary, which does not exist until the swap.
+        exit_unconfirmed = _exit_unconfirmed(items, collector_exit.last_answer() if state == "running" else None)
+        # The wait itself, while it is happening: up to ten minutes the phase bar sits on one stage. ``elapsed_s`` is
+        # measured here, from the wait's own start, and the bound is the wait's own.
+        waiting = collector_exit.wait_state() if state == "running" else None
+        exit_wait = (
+            {"elapsed_s": round(max(0.0, now - waiting["since"]), 1), "bound_s": waiting["bound_s"], "still": waiting["still"]}
+            if waiting
+            else None
+        )
         return {
             "stages": self._stage_rows(items, live, tuning_done, state),
             "state": state,
@@ -1472,16 +1595,23 @@ class ImportQueueManager:
             "ended_at": ended,
             "elapsed_s": round((ended or now) - started, 1) if started else None,
             "collection_paused": paused,
+            # True when a restore of this run copied the corpus without having confirmed that collection had left it
+            # (a pass was still running after the wait, or the scheduler could not be read). The dialog then does not
+            # say collection is paused.
+            "collection_exit_unconfirmed": exit_unconfirmed,
+            # While the restore waits for a collection pass to finish before it copies the corpus: how long, out of how
+            # long, and what is still running. None otherwise.
+            "collection_exit_wait": exit_wait,
+            # True when the run could not pause collection at all (the exclusive window failed to open). Not the same as
+            # "unconfirmed": nothing was paused, so nothing was waited for either.
+            "collection_window_failed": window_failed,
             # What the one post-run tuning pass actually managed (FTS segment merge +
             # planner statistics). None while the run is still going; a False half is
             # reported as such rather than quietly presented as done.
             "tuned": dict(tuned) if isinstance(tuned, dict) else None,
             # Stated so the UI can say it rather than the user having to infer it
             # (ruling item 12).
-            "collection_note": (
-                "Background collection is paused for this whole import and resumes "
-                "when it finishes."
-            ),
+            "collection_note": _collection_note(state, exit_unconfirmed, window_failed, paused, exit_wait is not None),
         }
 
     def clear(self) -> dict:
