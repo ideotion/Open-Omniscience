@@ -14,8 +14,10 @@ bytes, because the things that go wrong are the ones that touch more than they w
 * a ``shipped.d`` csv is swept in its ``refs`` cell only, whatever quoting the file was written with (every cell quoted, a cell that holds a
   newline), and every other byte stays;
 * everything that is not a plain case is a REFUSAL (exit 2) that writes nothing, even when another fragment in the batch was fine: a number
-  that is not a positive integer, a base that does not resolve or looks like an option, no added fragment, a symlink, text that is not UTF-8, a
-  csv that is not the header plus one row, a placeholder the script has no rule for;
+  that is not a positive integer, a base that does not resolve or looks like an option, no added fragment, a symlink (or a path that runs
+  through one), text or a file name that is not UTF-8, an unclosed fence, a csv that is not the header plus one row or that the csv module
+  cannot read, and any placeholder the ledger would still refuse after the rewrite (a token the script has no rule for, one split by a line
+  break, a code span or a quote, `#NNNN` run on into more letters, a `pending` the shipped.d guard refuses in any form);
 * a second run says there is nothing to sweep and exits 0; a write that fails part-way exits 1 and names what was replaced; a failed replace
   leaves no temporary file beside the fragment.
 """
@@ -182,7 +184,7 @@ def test_sweeps_markdown_and_csv_in_every_shape_and_touches_only_added_fragments
     assert after[_D + "shipped.d/2026-10-29-c3.csv"] == before[_D + "shipped.d/2026-10-29-c3.csv"]
     for key in _OLD_MAIN:
         assert after[key] == before[key], "a fragment already on main was touched"
-    assert "swept" in done.stdout and "5 file(s)" in done.stdout, done.stdout
+    assert "swept 10 placeholder(s) in 5 file(s) to #1636" in done.stdout, done.stdout
     assert not [p for p in after if p.endswith(".tmp")], "a temporary file was left behind"
 
 
@@ -252,6 +254,17 @@ def test_refuses_a_number_that_is_not_a_positive_integer(tmp_path, bad):
 
 
 _SPLIT = {_D + "lessons.d/2026-10-29-sp.md": "## 2026-10-29 — x\nSee PR `a` pending now.\n"}
+_BROKEN = {_D + "lessons.d/2026-10-29-br.md": "## 2026-10-29 — wrapped\n\nThis shipped in PR\npending and the rest of the sentence.\n"}
+_BROKEN_BY_A_FENCE = {_D + "lessons.d/2026-10-29-fb.md": "## 2026-10-29 — fenced\n\nShipped in PR\n```\nquoted\n```\npending now.\n"}
+_UNCLOSED = {_D + "lessons.d/2026-10-29-un.md": "## 2026-10-29 — unclosed\n\n```\nsome code\n\nShipped in PR pending.\n"}
+_TYPO = {_D + "lessons.d/2026-10-29-ty.md": "## 2026-10-29 — typo (PR #NNNNN)\n"}
+
+
+def _refs(raw: str, name: str = "x") -> dict:
+    """A shipped.d fragment whose refs cell is written exactly as ``raw`` (``_row`` would re-quote it)."""
+    return {_D + f"shipped.d/2026-10-29-{name}.csv": _HEADER + f"2026-10-29,a,i,shipped,{raw},k,s\n"}
+
+
 _REFUSALS = {
     "an unknown base": (_GOOD, ["5", "--base", "nope"], "does not resolve"),
     "a base that looks like an option": (_GOOD, ["5", "--base=--all"], "is not a ref"),
@@ -275,6 +288,18 @@ _REFUSALS = {
     ),
     "a placeholder split by inline code, which would survive": (_SPLIT, ["5"], "would remain"),
     "a batch with one good fragment and one that would survive": ({_D + "lessons.d/2026-10-29-ok.md": _LESSON, **_SPLIT}, ["5"], "would remain"),
+    "a placeholder broken across a line": (_BROKEN, ["5"], "would remain"),
+    "a placeholder broken across a line by a fenced block": (_BROKEN_BY_A_FENCE, ["5"], "would remain"),
+    "an unclosed code fence": (_UNCLOSED, ["5"], "unclosed"),
+    "a #NNNN run on into more letters": (_TYPO, ["5"], "would remain"),
+    "a refs cell the csv reader joins into PR pending": (_refs('"PR" pending'), ["5"], "would remain"),
+    "a refs cell with a colon after PR": (_refs("PR: pending"), ["5"], "would remain"),
+    "a refs cell with a pending the placeholder pattern does not name": (_refs("PRs pending (R12)"), ["5"], "would remain"),
+    "a csv cell past the csv module's field limit": (
+        {_D + "shipped.d/2026-10-29-big.csv": _HEADER + "2026-10-29,a,i,shipped,PR pending,k," + "x" * 200_000 + "\n"},
+        ["5"],
+        "not readable as csv",
+    ),
 }
 
 
@@ -297,7 +322,7 @@ def test_refuses_a_symlinked_fragment(tmp_path):
 
 def test_not_a_git_repository_is_refused(tmp_path):
     done = _sweep(tmp_path, "5")
-    assert done.returncode == 2 and "refused" in done.stderr, (done.returncode, done.stderr)
+    assert done.returncode == 2 and "refused" in done.stderr and "does not resolve" in done.stderr, (done.returncode, done.stderr)
 
 
 def test_a_fragment_deleted_from_the_working_tree_is_skipped_and_the_rest_is_swept(tmp_path):
@@ -323,7 +348,9 @@ def test_a_write_failing_part_way_exits_one_names_what_was_replaced_and_the_reru
     err = io.StringIO()
     with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
         code = module.run(root, "40", "origin/main", False)
-    assert code == 1 and "disk full" in err.getvalue() and "2026-10-29-a.md" in err.getvalue(), (code, err.getvalue(), calls)
+    said = err.getvalue()
+    assert code == 1 and "disk full" in said and "replaced: " in said and "2026-10-29-a.md" in said, (code, said, calls)
+    assert "2026-10-29-b.md" not in said, "the file whose write FAILED was reported as replaced"
     module._replace = real
     with contextlib.redirect_stdout(io.StringIO()):
         assert module.run(root, "40", "origin/main", False) == 0
@@ -355,3 +382,152 @@ def test_the_file_mode_survives_the_rewrite(tmp_path):
     path.chmod(0o640)
     assert _sweep(root, "50").returncode == 0
     assert (path.stat().st_mode & 0o777) == 0o640
+
+
+_CSV_SHAPES = {
+    "CRLF line ends": _HEADER.replace("\n", "\r\n") + "2026-10-29,a,i,shipped,PR pending,k,s\r\n",
+    "a doubled quote inside a quoted cell": _HEADER + '2026-10-29,a,i,shipped,PR pending,"a ""b, c"" d",s\n',
+    "a quote in the middle of an unquoted cell": _HEADER + '2026-10-29,a,i,shipped,PR pending,a"b,c"d\n',
+    "no final newline": _HEADER + "2026-10-29,a,i,shipped,PR pending,k,s",
+}
+
+
+@pytest.mark.parametrize("name", list(_CSV_SHAPES))
+def test_a_csv_is_swept_in_its_refs_cell_whatever_its_line_ends_and_quoting(tmp_path, name):
+    text = _CSV_SHAPES[name]
+    root = _repo(tmp_path, {_D + "shipped.d/2026-10-29-shape.csv": text.encode("utf-8")}, _OLD_MAIN)
+    done = _sweep(root, "16")
+    assert done.returncode == 0, (done.stdout, done.stderr)
+    swept = (root / _D / "shipped.d/2026-10-29-shape.csv").read_bytes()
+    assert swept == text.replace("PR pending", "PR #16", 1).encode("utf-8"), swept
+
+
+_NOT_ONE_ROW = {
+    "an empty text": "",
+    "another header": "date,area,item,status,refs,key_paths,other\n2026-10-29,a,i,shipped,PR pending,k,s\n",
+    "two rows": _HEADER + "2026-10-29,a,i,shipped,PR pending,k,s\n2026-10-29,a,j,shipped,PR pending,k,s\n",
+    "a short row": _HEADER + "2026-10-29,a,i,shipped,PR pending\n",
+}
+
+
+@pytest.mark.parametrize("name", list(_NOT_ONE_ROW))
+def test_sweep_csv_refuses_a_text_that_is_not_the_header_plus_one_row_on_its_own(name):
+    """``read_fragment`` refuses these first in a real run; ``sweep_csv`` is also a function of its own and says so itself."""
+    module = _load()
+    with pytest.raises(module.Refused, match="exactly one"):
+        module.sweep_csv("x.csv", _NOT_ONE_ROW[name], "5")
+
+
+def test_sweep_csv_refuses_when_the_spans_it_found_are_not_the_records_csv_read():
+    module = _load()
+    text = _HEADER + "2026-10-29,a,i,shipped,PR pending,k,s\n"
+    real = module._spans
+    module._spans = lambda text: real(text)[:1]  # a field locator that lost the row
+    with pytest.raises(module.Refused, match="could not be located"):
+        module.sweep_csv("x.csv", text, "5")
+
+
+def test_sweep_csv_refuses_when_the_span_does_not_cover_the_whole_refs_cell():
+    module = _load()
+    text = _HEADER + "2026-10-29,a,i,shipped,PR pending PR pending,k,s\n"
+    real = module._spans
+
+    def short(text):  # the refs span stops after the first `PR pending`: every other cell is still equal, refs is not what it should be
+        spans = real(text)
+        a, _ = spans[1][module._REFS]
+        spans[1][module._REFS] = (a, a + len("PR pending"))
+        return spans
+
+    module._spans = short
+    with pytest.raises(module.Refused, match="more than the refs cell"):
+        module.sweep_csv("x.csv", text, "5")
+
+
+def test_a_fragment_named_with_a_space_and_an_accent_is_swept_and_one_in_a_subdirectory_is_not(tmp_path):
+    odd = _D + "lessons.d/2026-10-29-sp ace é.md"
+    sub = _D + "lessons.d/sub/2026-10-29-s.md"
+    root = _repo(tmp_path, {odd: _LESSON, sub: _LESSON, _D + "lessons.d/2026-10-29-t.md": _LESSON}, _OLD_MAIN)
+    done = _sweep(root, "15")
+    assert done.returncode == 0, (done.stdout, done.stderr)
+    assert (root / odd).read_text(encoding="utf-8").startswith("## 2026-10-29 — a lesson about #15 handling (PR #15)\n"), "the odd name was not seen"
+    assert (root / _D / "lessons.d/2026-10-29-t.md").read_text(encoding="utf-8").startswith("## 2026-10-29 — a lesson about #15 handling")
+    assert (root / sub).read_text(encoding="utf-8") == _LESSON, "a fragment in a subdirectory is not one the ledger reads, and was swept"
+
+
+def test_a_root_below_the_repository_top_level_is_swept(tmp_path):
+    main = {"sub/" + k: v for k, v in _OLD_MAIN.items()}
+    root = _repo(tmp_path, {"sub/" + _D + "lessons.d/2026-10-29-t.md": _LESSON}, main)
+    done = _sweep(root / "sub", "14")
+    assert done.returncode == 0, (done.stdout, done.stderr)
+    assert "(PR #14)" in (root / "sub" / _D / "lessons.d/2026-10-29-t.md").read_text(encoding="utf-8")
+
+
+def test_a_fragment_main_removed_since_the_cut_is_not_the_branchs(tmp_path):
+    root = _repo(tmp_path, _GOOD, _OLD_MAIN)
+    old = _D + "lessons.d/2026-10-01-old.md"
+    _git(root, "checkout", "-q", "main")
+    _git(root, "rm", "-q", old)  # a release fold removes fragments from main after the branch was cut
+    _git(root, "commit", "-q", "-m", "fold")
+    _git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
+    _git(root, "checkout", "-q", "feat")
+    kept = (root / old).read_text(encoding="utf-8")
+    assert "#NNNN" in kept
+    done = _sweep(root, "13")
+    assert done.returncode == 0, (done.stdout, done.stderr)
+    assert (root / old).read_text(encoding="utf-8") == kept, "a fragment main removed was swept with this PR's number"
+    assert "#13" in (root / _D / "lessons.d/2026-10-29-t.md").read_text(encoding="utf-8")
+
+
+def test_histories_with_nothing_in_common_are_a_refusal_that_says_why(tmp_path):
+    root = _repo(tmp_path, _GOOD, _OLD_MAIN)
+    _git(root, "checkout", "-q", "--orphan", "island")
+    _git(root, "commit", "-q", "-m", "island")
+    done = _sweep(root, "5")
+    assert done.returncode == 2 and "common ancestor" in done.stderr and "unshallow" in done.stderr, (done.returncode, done.stderr)
+
+
+def test_a_symlinked_ledger_directory_is_refused_and_the_file_behind_it_is_not_rewritten(tmp_path):
+    root = _repo(tmp_path, {_D + "lessons.d/2026-10-29-t.md": _LESSON}, _OLD_MAIN)
+    outside = tmp_path / "outside"
+    shutil.move(str(root / _D / "lessons.d"), str(outside))
+    try:
+        os.symlink(outside, root / _D / "lessons.d", target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available here")
+    before = (outside / "2026-10-29-t.md").read_bytes()
+    done = _sweep(root, "18")
+    assert done.returncode == 2 and "symlink" in done.stderr, (done.returncode, done.stdout, done.stderr)
+    assert (outside / "2026-10-29-t.md").read_bytes() == before, "a file outside the repository was rewritten"
+
+
+def test_a_file_name_that_is_not_utf8_is_a_refusal_not_a_traceback(tmp_path):
+    root = _repo(tmp_path, {_D + "lessons.d/2026-10-29-ok.md": _LESSON}, _OLD_MAIN)
+    odd = os.fsencode(str(root / _D / "lessons.d")) + b"/2026-10-29-\xff.md"
+    try:
+        with open(odd, "wb") as fh:
+            fh.write(b"## 2026-10-29 - x (PR #NNNN)\n")
+    except (OSError, ValueError):
+        pytest.skip("this filesystem will not hold a file name that is not UTF-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "odd name")
+    done = _sweep(root, "19")
+    assert done.returncode == 2 and "UTF-8" in done.stderr and "Traceback" not in done.stderr, (done.returncode, done.stderr)
+    assert (root / _D / "lessons.d/2026-10-29-ok.md").read_text(encoding="utf-8") == _LESSON, "a refusal wrote something"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the interpreter needs the system environment on Windows")
+def test_git_missing_from_the_path_is_a_refusal_not_a_traceback(tmp_path):
+    env = {**os.environ, "PATH": str(tmp_path / "no-such-bin")}
+    done = subprocess.run(
+        [sys.executable, "-I", str(_SCRIPT), "5", "--root", str(tmp_path)], capture_output=True, text=True, env=env, timeout=120
+    )
+    assert done.returncode == 2 and "git could not be run" in done.stderr and "Traceback" not in done.stderr, (done.returncode, done.stderr)
+
+
+def test_an_output_stream_that_cannot_encode_the_text_does_not_crash_the_sweep(tmp_path):
+    root = _repo(tmp_path, {_D + "lessons.d/2026-10-29-t.md": "## 2026-10-29 → an arrow (PR #NNNN)\n"}, _OLD_MAIN)
+    env = {**os.environ, "PYTHONIOENCODING": "cp1252"}  # a Windows console redirected to a file; `-I` would ignore the variable
+    done = subprocess.run([sys.executable, str(_SCRIPT), "17", "--root", str(root)], capture_output=True, text=True, env=env, timeout=120)
+    assert done.returncode == 0 and "Traceback" not in done.stderr, (done.returncode, done.stdout, done.stderr)
+    assert "\\u2192" in done.stdout, done.stdout
+    assert (root / _D / "lessons.d/2026-10-29-t.md").read_text(encoding="utf-8") == "## 2026-10-29 → an arrow (PR #17)\n"

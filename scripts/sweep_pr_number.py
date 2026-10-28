@@ -16,9 +16,11 @@ script is that sweep, so nobody rewrites the same three tokens by hand across a 
 WHAT IT REWRITES, and only this: the placeholders ``scripts/ledger_fold.py`` and the ledger tests already
 refuse -- ``PR pending`` becomes ``PR #1636`` and ``#NNNN`` becomes ``#1636``.
 
-    docs/ledger/lessons.d/*.md and docs/ledger/shipped_log.d/*.md   prose only: fenced blocks and
-        `inline code` are left alone, because a lesson may QUOTE a placeholder (``ledger_fold._prose`` is the
-        same rule, and the same function judges the result).
+    docs/ledger/lessons.d/*.md and docs/ledger/shipped_log.d/*.md   prose only, where "prose" is exactly
+        ``ledger_fold._prose``'s rule and no better: a line that starts with three backticks or three tildes
+        opens or closes a fence (whatever the character or length, so a backtick fence quoted inside a ``~~~``
+        block is read as prose), and `inline code` is one pair of single backticks (a double-backtick span is
+        read as prose). A lesson may quote a placeholder inside what that rule keeps; anything else is rewritten.
     docs/ledger/shipped.d/*.csv                                      the ``refs`` cell only (protocol rule
         (5b) and ``test_the_real_fragments_are_well_formed_and_carry_no_placeholder`` both look nowhere
         else). The other cells are byte-for-byte what they were, whatever quoting the row was written with.
@@ -32,10 +34,13 @@ choice is visible. ``origin/main`` is whatever the clone last fetched: ``git fet
 
 IT REFUSES, touching nothing, when the number is not a positive integer (``1636``, not ``#1636``); when BASE
 does not resolve; when the branch added no fragment at all; when a fragment is a symlink, not UTF-8, or (a
-csv) not the ledger's header plus exactly one row; when a placeholder would SURVIVE the rewrite (a token
-this script does not know -- add it to ``_RULES`` next to ``ledger_fold._PLACEHOLDER``); or when the rewritten
-csv differs from the original in any cell other than ``refs``. A branch whose fragments carry no
-placeholder is not an error: it says so and exits 0, so the script is safe to run twice.
+csv) not the ledger's header plus exactly one row or one the csv module cannot read; when a path runs through
+a symlink or a file name is not UTF-8; when a markdown fence is never closed; when a placeholder would SURVIVE the
+rewrite -- judged by the ledger's own test, ``ledger_fold._PLACEHOLDER`` over the WHOLE prose (so a token split
+by a line break is found) and, in a csv, by the shipped.d guard's rule that no ``pending`` stays in ``refs``: a
+token this script has no rule for (add it to ``_RULES``), or one split by a line break, a code span or a quote
+(edit it by hand); or when the rewritten csv differs from the original in any cell other than ``refs``. A branch
+whose fragments carry no placeholder is not an error: it says so and exits 0, so the script is safe to run twice.
 
 EXIT: 0 swept (or nothing to sweep), 2 refused before writing anything, 1 a write failed part-way (the
 files already replaced are named; run it again, which finishes the rest).
@@ -68,7 +73,7 @@ _NUMBER = re.compile(r"[1-9][0-9]{0,8}")
 # refuses it by name instead of leaving it.
 _RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\bPR\s+pending\b", re.IGNORECASE), "PR #{n}"),
-    (re.compile(r"#NNNN", re.IGNORECASE), "#{n}"),
+    (re.compile(r"#NNNN(?!\w)", re.IGNORECASE), "#{n}"),  # not `#NNNNN`: a typo is refused by name, never turned into `#1636N`
 )
 _REFS = _shipped.HEADER.index("refs")
 _SHOWN = 110  # characters of a survivor printed in a refusal
@@ -77,6 +82,10 @@ _CONTEXT = 45  # characters printed on each side of the first change in a change
 
 class Refused(Exception):
     """A precondition failed; nothing was written."""
+
+
+class GitMissing(Refused):
+    """``git`` itself could not be started: no later message may blame the ref."""
 
 
 def _constant(value: str) -> Callable[[re.Match[str]], str]:
@@ -95,9 +104,17 @@ def _count(text: str) -> int:
 
 
 def _git(root: Path, *args: str) -> str:
-    done = subprocess.run(  # nosec B603 B607 -- fixed argv, no shell; the one user-supplied ref is checked below
-        ["git", "-C", str(root), *args], capture_output=True, text=True, encoding="utf-8", check=False
-    )
+    try:
+        done = subprocess.run(  # nosec B603 B607 -- fixed argv, no shell; the one user-supplied ref is checked below
+            ["git", "-C", str(root), *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="surrogateescape",  # a file name that is not UTF-8 reaches added_fragments, which refuses it by name
+            check=False,
+        )
+    except OSError as exc:
+        raise GitMissing(f"git could not be run ({exc.strerror or exc})") from None
     if done.returncode:
         raise Refused(f"git {' '.join(args[:2])} failed: {done.stderr.strip() or 'no message'}")
     return done.stdout
@@ -108,9 +125,18 @@ def _base_sha(root: Path, base: str) -> str:
         raise Refused(f"--base {base!r} is not a ref")
     try:
         _git(root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}")
+    except GitMissing:
+        raise
     except Refused:
         raise Refused(f"{base!r} does not resolve to a commit here; `git fetch origin main` or pass --base REF") from None
-    return _git(root, "merge-base", base, "HEAD").strip()
+    try:
+        return _git(root, "merge-base", base, "HEAD").strip()
+    except GitMissing:
+        raise
+    except Refused:
+        raise Refused(
+            f"{base!r} and HEAD have no common ancestor here: a shallow clone (`git fetch --unshallow`) or the wrong --base"
+        ) from None
 
 
 def _kinds() -> dict[str, str]:
@@ -131,11 +157,13 @@ def added_fragments(root: Path, merge_base: str) -> list[str]:
     for rel in sorted(p for p in out.split("\0") if p):
         parent, _, name = rel.rpartition("/")
         if kinds.get(parent) and name.endswith(kinds[parent]):
+            if any("\udc80" <= ch <= "\udcff" for ch in rel):
+                raise Refused(f"{rel!r}: the file name is not valid UTF-8; rename it")
             keep.append(rel)
     return keep
 
 
-def sweep_markdown(text: str, number: str) -> tuple[str, list[tuple[int, str, str]]]:
+def sweep_markdown(name: str, text: str, number: str) -> tuple[str, list[tuple[int, str, str]]]:
     """The text with each placeholder outside a fence and outside `inline code` rewritten, plus the changed lines."""
     changes: list[tuple[int, str, str]] = []
     out: list[str] = []
@@ -157,6 +185,8 @@ def sweep_markdown(text: str, number: str) -> tuple[str, list[tuple[int, str, st
         if new != line:
             changes.append((n, line, new))
         out.append(new)
+    if in_fence:
+        raise Refused(f"{name}: an unclosed code fence; the rest of the file cannot be told from quoted text")
     return "\n".join(out), changes
 
 
@@ -218,6 +248,12 @@ def sweep_csv(name: str, text: str, number: str) -> tuple[str, list[tuple[int, s
     return new_text, [(2, before[1][_REFS], after[1][_REFS])]
 
 
+def _prose_placeholders(text: str) -> list[str]:
+    """What the ledger's own check finds: ``_PLACEHOLDER`` over the whole prose, so ``PR`` at the end of a line
+    and ``pending`` at the start of the next is found as the ledger finds it."""
+    return [m.group(0) for m in _fold._PLACEHOLDER.finditer(_fold._prose(text))]
+
+
 def _shown(text: str) -> str:
     text = text.replace("\n", " ")
     return text if len(text) <= _SHOWN else text[: _SHOWN - 1] + "…"
@@ -240,8 +276,8 @@ def plan(root: Path, rels: list[str], number: str) -> list[tuple[str, bytes, byt
     out = []
     for rel in rels:
         path = root / rel
-        if path.is_symlink():
-            raise Refused(f"{rel}: a symlink; a fragment is a regular file and a link is never followed")
+        if path.is_symlink() or os.path.normcase(path.resolve()) != os.path.normcase(root.resolve() / rel):
+            raise Refused(f"{rel}: a symlink, or reached through one; a fragment is a regular file and a link is never followed")
         if not path.is_file():
             print(f"skipped {rel}: added by the branch but no longer in the working tree")
             continue
@@ -253,16 +289,22 @@ def plan(root: Path, rels: list[str], number: str) -> list[tuple[str, bytes, byt
         if rel.endswith(".csv"):
             try:
                 _shipped.read_fragment(path)
+                new, changes = sweep_csv(rel, text, number)
             except ValueError as exc:
                 raise Refused(str(exc)) from None
-            new, changes = sweep_csv(rel, text, number)
+            except csv.Error as exc:
+                raise Refused(f"{rel}: not readable as csv ({exc})") from None
             left = [c[2] for c in changes] or [_rows(new)[1][_REFS]]
-            survivors = [x for x in left if _fold._PLACEHOLDER.search(x)]
+            # the shipped.d guard (tests/test_ledger_shipped_fragments.py) refuses ANY `pending` in refs, not only `PR pending`
+            survivors = [x for x in left if _fold._PLACEHOLDER.search(x) or "pending" in x.lower()]
         else:
-            new, changes = sweep_markdown(text, number)
-            survivors = [ln for ln in _fold._prose(new).split("\n") if _fold._PLACEHOLDER.search(ln)]
+            new, changes = sweep_markdown(rel, text, number)
+            survivors = _prose_placeholders(new)
         if survivors:
-            raise Refused(f"{rel}: a placeholder this script does not rewrite would remain: {_shown(survivors[0])!r}")
+            raise Refused(
+                f"{rel}: a placeholder would remain after the rewrite: {_shown(survivors[0])!r} (a token this script has no rule for, "
+                "or one split by a line break, a code span or a quote: add the rule to _RULES, or edit it by hand)"
+            )
         out.append((rel, raw, new.encode("utf-8"), changes))
     return out
 
@@ -314,7 +356,8 @@ def run(root: Path, number: str, base: str, dry_run: bool) -> int:
               "run it again to finish", file=sys.stderr)
         return 1
     print(f"swept {placeholders} placeholder(s) in {len(changed)} file(s) to #{number}; {clean} already clean")
-    print("next: python scripts/ledger_fold.py check && python scripts/ledger_shipped.py check, then commit the sweep")
+    print("next: python scripts/ledger_fold.py check && python scripts/ledger_shipped.py check "
+          "&& python -m pytest -q tests/test_ledger_shipped_fragments.py, then commit the sweep")
     return 0
 
 
@@ -325,6 +368,10 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--dry-run", action="store_true", help="print the changes, write nothing")
     ap.add_argument("--root", default=str(ROOT), help="the repository to sweep (default: the one this script is in)")
     args = ap.parse_args(argv)
+    for stream in (sys.stdout, sys.stderr):  # a console or pipe that cannot encode a changed line must not turn a sweep into a crash
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="backslashreplace")
     try:
         return run(Path(args.root).resolve(), args.number, args.base, args.dry_run)
     except Refused as exc:
