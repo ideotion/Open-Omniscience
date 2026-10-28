@@ -246,6 +246,10 @@ def test_an_encrypted_store_is_refused_and_leaves_nothing(client, data_dir, monk
     import src.database.connect as connect
 
     monkeypatch.setattr(connect, "is_encrypted_file", lambda p: True)
+    # The lock gate reads the same header through a 5 s cache. Left alone, a request that arrives after the entry went stale
+    # (the app boots slowly on a loaded runner) would read the patched answer, find the store locked, answer 503 before the
+    # route runs, and cache "encrypted" for the next tests too. The gate sees a plaintext store; only the route sees the file as encrypted.
+    monkeypatch.setattr(connect, "main_header_state", lambda p: False)
     r = client.get("/api/database/backup", headers=OWN_PAGE)
     assert r.status_code == 400
     assert "never decrypts the corpus" in r.json()["detail"]
