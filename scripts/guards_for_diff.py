@@ -8,6 +8,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
     python scripts/guards_for_diff.py --run            # run it; exit 1 if any step fails
     python scripts/guards_for_diff.py --base origin/main --files   # the test files only, one per line
     python scripts/guards_for_diff.py --since ORIG_HEAD            # a rebased branch: also main's tests since that state
+    python scripts/guards_for_diff.py --onto origin/main --run     # the same picks, run on this branch MERGED onto main, in a scratch worktree
 
 WHY (2026-10-16, a measured miss). A branch that changes a call site is red in CI for a test it never touched: the test
 belongs to somebody else's PR, or walks the whole tree. The branch had run "the tests I changed" and "the tests about my
@@ -31,6 +32,28 @@ And the two lint steps CI runs before the tests, so a red there does not cost th
 (correctness) and the style ratchet, whose ceiling is READ from ``.github/workflows/ci.yml`` rather than copied here, so
 lowering it in one place cannot leave the other behind.
 
+THE MERGED TREE (``--onto REF``, 2026-10-28). Everything above judges THIS branch's tree, and says so when the base is ahead
+("merge it first"). At the moment a PR is merged the question is the other one: does the tree that will exist after the merge pass what
+guards the tree? ``main`` moves every ten minutes or so, a push of a merge of ``main`` while CI runs costs the cycle again, and the answer used to
+be a hand-built scratch worktree: merge, pick the files, run (20 files and 164 s on 2026-10-28, and the picking by hand is where a guard is
+forgotten). ``--onto REF`` does it in one command: a scratch ``git worktree`` at REF, this branch's HEAD merged into it (a commit of the
+worktree's own, never in a branch), the plan built there (so "tests main added since this branch left it" are the ones REF changed, and "tests this
+branch adds" the ones the merge result differs from REF in), the steps run there, the worktree removed afterwards (``--keep`` leaves it, for a red).
+A conflict is a named stop that lists the files. The steps run with ``PYTHONPATH`` led by the tree they run in (see :func:`tree_env`), in this
+mode and in the plain one: measured on 2026-10-28, on ONE tree, four ``tests/test_restore_collector_exit.py`` tests that start a child
+process went red in a scratch worktree AND in the checkout itself, because the child imported ``src`` from wherever the editable install points
+(here a stale worktree), and all 115 tests of the eight restore/WAL files that spawn children were green with the tree on ``PYTHONPATH``.
+
+WHAT ``--onto`` PROVES: that the guards this script picks pass on the committed HEAD merged onto REF as REF was when it was fetched, with the tree's own
+``src`` imported by the children tests spawn that inherit the environment (a child started with ``-I``, or with ``PYTHONPATH`` removed, still imports
+the installed package). WHAT IT DOES NOT: it runs the committed HEAD (uncommitted changes are named and left out), not the
+whole suite (CI does), not a test no pattern finds, and it is a scratch-worktree run: the project accepts that as the merged-tree check only for a
+branch that touches no ``src/`` (a worktree is not the checkout the app runs from), and says so in the NOTE when this one does. A green run is
+also not CI: the runner, the Python patch level and the installed versions are the machine's own. The merge is git's own on the committed HEAD:
+it has no hook, no signing, no signature check and no rerere of yours, but the rest of your git configuration (rename detection, merge drivers) and the
+repository's ``merge=union`` rule still apply, and the latter is named in a NOTE when both sides changed such a file, because GitHub does not apply it.
+A SIGTERM or SIGHUP during a step still removes the worktree; a SIGKILL cannot, and ``git worktree list`` shows what it left.
+
 WHAT IT DOES NOT DO. It does not run the whole suite (CI does; that is the point of picking), it does not know a test that
 fails for a reason no pattern finds (a test that imports the module under change is one you pick by hand), and an empty
 group means "nothing matched the rule", not "nothing is affected". When the base is ahead of the branch it says so: the
@@ -40,12 +63,19 @@ tests ``main`` has added since are not in this tree, and a green run here is a r
 from __future__ import annotations
 
 import argparse
+import contextlib
+import os
 import re
 import shlex
+import shutil
+import signal
 import subprocess
 import sys
+import tempfile
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -56,10 +86,13 @@ ROOT = Path(__file__).resolve().parent.parent
 #: a one-directory walk of the modules in it (``(ROOT / "src" / "bulletin").glob("*.py")``) or of the directories in it
 #: (``(ROOT / "src").glob("*/data")``): a guard that fails for a module anyone adds to that directory, and the receiver is a
 #: variable often enough (``_PKG``, ``api_dir``) that no receiver rule finds them. It picks a scratch ``tmp_path.glob("*.py")`` too,
-#: which costs one cheap test file and loses nothing.
+#: which costs one cheap test file and loses nothing. The last is a walk of the TEST files (``glob("test_*.py")``): a guard of the tests
+#: themselves, which fails for a test file anyone adds, and which a merge of ``main`` brings new files to (three such files were missed by
+#: the others on 2026-10-28).
 TREE_WIDE = re.compile(
     r"""rglob\("\*\.py"\)|os\.walk|glob.*src|(?:ROOT|REPO|_SRC|SRC_|_STATIC|\bSRC\b)[^\n]*\.rglob\(\s*["']\*"""
     r"""|\.glob\(\s*["']\*(?:\.py["']|/)"""
+    r"""|\.r?glob\(\s*["']test_\*"""
 )
 
 #: What ``pytest`` is given when a ``conftest.py`` / ``__init__.py`` at ``tests/`` or the repository root changed.
@@ -95,6 +128,9 @@ class Plan:
     #: a ``conftest.py`` / ``__init__.py`` at ``tests/`` or the repository root changed, on the branch or in a merge.
     conftest_changed: bool = False
     since: str | None = None
+    #: ``--onto``: what the tree is (REF and this branch's HEAD, where), and what the reader must know about it, printed before the groups.
+    merged: str | None = None
+    notes: list[str] = field(default_factory=list)
 
     def uses_changed_support(self) -> list[str]:
         seen: dict[str, None] = {}
@@ -303,6 +339,174 @@ def build_plan(root: Path = ROOT, base: str = "origin/main", since: str | None =
     )
 
 
+def tree_env(root: Path, environ: dict[str, str] | None = None) -> dict[str, str]:
+    """The environment the steps run in: ``PYTHONPATH`` led by the tree they run in, the rest unchanged.
+
+    A test that starts a child process (a restore run, a boot, a helper) imports ``src`` in the child from ``sys.path``, which is the working
+    directory only for ``-c`` and ``-m`` children started in it; any other child gets whatever the installed (editable) package points at, which
+    is a different tree on a machine whose install was made in another checkout (measured 2026-10-28: four tests red on one tree, in a scratch
+    worktree and in the checkout, 115 of 115 green with this). It is what ``ci.yml`` gets for free, where the install points at the checkout."""
+    env = dict(os.environ if environ is None else environ)
+    env["PYTHONPATH"] = os.pathsep.join(p for p in (str(root), env.get("PYTHONPATH", "")) if p)
+    return env
+
+
+@dataclass
+class MergedTree:
+    """The scratch worktree ``--onto`` builds: REF's commit with this branch's HEAD merged into it."""
+
+    path: Path
+    onto: str  # the commit REF names, in full
+    head: str  # this branch's commit, in full
+    merged: bool  # False when HEAD is already inside REF: the tree is REF's own
+    kept: bool = False
+
+
+#: What the scratch worktree is made and merged with: its own identity, no signing, no signature check on the commits merged, no rerere (it writes
+#: the repository's shared rr-cache), and no hook of any kind (``post-checkout`` runs at ``worktree add``, the others at the merge and its commit).
+#: The rest of the user's git configuration still applies (rename detection, merge drivers they defined): this is not a sandbox.
+_SCRATCH_SETTINGS = (
+    "user.name=guards_for_diff",
+    "user.email=guards_for_diff@localhost",
+    "commit.gpgsign=false",
+    "merge.verifySignatures=false",
+    "rerere.enabled=false",
+    f"core.hooksPath={os.devnull}",
+)
+_SCRATCH_GIT = tuple(arg for setting in _SCRATCH_SETTINGS for arg in ("-c", setting))
+
+
+def _merge_into(tree: Path, head: str, ref: str) -> bool:
+    """Merge ``head`` into the worktree at ``ref`` and commit it there. False when there was nothing to merge (``head`` is inside ``ref``)."""
+    done = subprocess.run(["git", *_SCRATCH_GIT, "merge", "--no-ff", "--no-commit", head], cwd=tree, capture_output=True,
+                          text=True, encoding="utf-8", errors="surrogateescape")
+    if done.returncode != 0:
+        conflicted = [p for p in _git(tree, "diff", "--name-only", "-z", "--diff-filter=U").split("\0") if p]
+        if conflicted:
+            raise PlanError(
+                f"this branch does not merge onto {ref}: {len(conflicted)} file(s) conflict ({', '.join(conflicted)}). "
+                f"Merge {ref} into the branch and resolve it there first; a merged-tree run of a tree that cannot be merged proves nothing."
+            )
+        raise PlanError(f"git merge of this branch onto {ref} failed: {done.stderr.strip() or done.stdout.strip() or done.returncode}")
+    if not _succeeds(tree, "rev-parse", "-q", "--verify", "MERGE_HEAD"):
+        return False
+    _git(tree, *_SCRATCH_GIT, "commit", "-q", "--no-edit")
+    return True
+
+
+def _discard(root: Path, scratch: Path, tree: Path, admin: Path | None) -> None:
+    """Remove the scratch worktree, its directory and its administrative entry. Never raises: a leftover is named, not hidden.
+
+    No ``git worktree prune``: it drops the entry of EVERY worktree whose folder is missing (one on an unmounted disk, say), and only the
+    scratch one is ours. When ``worktree remove`` could not do it, the entry is removed by the path it was recorded at."""
+    subprocess.run(["git", "worktree", "remove", "--force", str(tree)], cwd=root, capture_output=True)
+    shutil.rmtree(scratch, ignore_errors=True)
+    if admin is not None:
+        shutil.rmtree(admin, ignore_errors=True)
+    if scratch.exists():
+        print(f"guards_for_diff: could not remove the scratch worktree {tree}; remove it with `git worktree remove --force {tree}`", file=sys.stderr)
+
+
+@contextlib.contextmanager
+def _exit_on_termination() -> Iterator[None]:
+    """While inside, SIGTERM and SIGHUP (a closed terminal) end the process through ``SystemExit``, so the ``finally`` that removes the scratch
+    worktree runs; by default Python dies at once and leaves the worktree behind. ``subprocess.run`` kills the step it was waiting on. Handlers can
+    only be set from the main thread, and SIGHUP does not exist everywhere: where one cannot be set, it is left alone."""
+
+    def stop(signum: int, _frame: object) -> None:
+        raise SystemExit(128 + signum)
+
+    saved: dict[int, Any] = {}
+    for name in ("SIGTERM", "SIGHUP"):
+        number = getattr(signal, name, None)
+        if number is None:
+            continue
+        try:
+            saved[number] = signal.signal(number, stop)
+        except ValueError:  # not the main thread
+            break
+    try:
+        yield
+    finally:
+        for number, previous in saved.items():
+            signal.signal(number, previous)
+
+
+@contextlib.contextmanager
+def merged_worktree(root: Path, ref: str, keep: bool = False) -> Iterator[MergedTree]:
+    """A scratch worktree at ``ref`` with this branch's committed HEAD merged into it; removed on exit unless ``keep`` (and it got that far).
+
+    The merge is committed in the worktree only, on a detached HEAD: no branch, no ref of the repository moves, and the commit is unreachable
+    once the worktree is gone. ``root``'s working tree is not read: uncommitted changes are not in the result (see :func:`describe_merged`)."""
+    try:
+        onto = _git(root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}").strip()
+    except PlanError:
+        raise PlanError(f"no such ref `{ref}` for --onto: fetch it first (git fetch origin main) or name another") from None
+    head = _git(root, "rev-parse", "--verify", "HEAD^{commit}").strip()
+    with _exit_on_termination():
+        scratch = Path(tempfile.mkdtemp(prefix="guards-onto-"))
+        tree = scratch / "onto"
+        admin: Path | None = None
+        ready = False
+        try:
+            _git(root, *_SCRATCH_GIT, "worktree", "add", "--detach", "--quiet", str(tree), onto)
+            admin = Path(_git(tree, "rev-parse", "--absolute-git-dir").strip())
+            merged = _merge_into(tree, head, ref)
+            ready = True
+            yield MergedTree(tree, onto, head, merged, keep)
+        finally:
+            if keep and ready:
+                print(f"\nkept: {tree}  (remove it with `git worktree remove --force {tree}`)", file=sys.stderr)
+            else:
+                _discard(root, scratch, tree, admin)
+
+
+def _union_merged(tree: Path, paths: list[str]) -> list[str]:
+    """The ``paths`` whose ``merge`` attribute is ``union`` in ``tree``: git keeps both sides' lines of such a file, where GitHub reports a conflict."""
+    if not paths:
+        return []
+    done = subprocess.run(["git", "check-attr", "-z", "--stdin", "merge"], cwd=tree, input="\0".join(paths) + "\0", capture_output=True, text=True,
+                          encoding="utf-8", errors="surrogateescape")
+    if done.returncode != 0:
+        raise PlanError(f"git check-attr merge failed: {done.stderr.strip() or done.returncode}")
+    fields = done.stdout.split("\0")
+    return [path for path, _attr, value in zip(fields[0::3], fields[1::3], fields[2::3], strict=False) if value == "union"]
+
+
+def describe_merged(plan: Plan, root: Path, tree: MergedTree, ref: str) -> None:
+    """Say what ``plan`` was built on, and what the reader must know before trusting a green run of it."""
+    plan.base = ref
+    join = f"{ref} ({tree.onto[:9]}) + this branch's HEAD ({tree.head[:9]})" if tree.merged else f"{ref} ({tree.onto[:9]}); this branch's HEAD ({tree.head[:9]}) is already inside it"
+    plan.merged = f"merged tree: {join}, in the scratch worktree {tree.path}" + (" (kept: `git worktree remove --force` it when done)" if tree.kept else " (removed when the run ends)")
+    dirty = [p for p in _git(root, "status", "--porcelain", "-z", "--untracked-files=all").split("\0") if p]
+    if dirty:
+        plan.notes.append(
+            f"NOTE: {len(dirty)} path(s) of the working tree are uncommitted or untracked and are NOT in the merged tree, which is the committed HEAD "
+            "and nothing else: commit them first, or this is a run of a tree that is not the one you will push."
+        )
+    fork = _git(root, "merge-base", tree.head, tree.onto).strip()
+    if tree.merged:
+        unioned = _union_merged(
+            tree.path,
+            sorted(
+                set(_paths(root, "diff", "--name-only", "-z", _NO_RENAMES, _ANY_STATUS, fork, tree.head))
+                & set(_paths(root, "diff", "--name-only", "-z", _NO_RENAMES, _ANY_STATUS, fork, tree.onto))
+            ),
+        )
+        if unioned:
+            plan.notes.append(
+                f"NOTE: {', '.join(unioned)} changed on both sides and is merged here with the `merge=union` rule of .gitattributes, which GitHub does not apply "
+                "(it reports a conflict where this keeps both sides' lines): the merged tree may not be the one GitHub would make."
+            )
+    in_src = _paths(root, "diff", "--name-only", "-z", _NO_RENAMES, _ANY_STATUS, fork, tree.head, "--", "src")
+    if in_src:
+        plan.notes.append(
+            f"NOTE: this branch changes {len(in_src)} file(s) under src/. A scratch worktree is not the checkout the app runs from, and the project accepts "
+            f"a worktree run as the merged-tree check only for a branch that touches no src/: for this one, merge {ref} into the branch and run the plain "
+            "`--run` there."
+        )
+
+
 def commands(plan: Plan) -> list[list[str]]:
     """The steps, in the order CI runs them: blocking lint, the style ratchet, then the picked tests."""
     steps = [
@@ -317,6 +521,9 @@ def commands(plan: Plan) -> list[list[str]]:
 
 def render(plan: Plan) -> str:
     out: list[str] = []
+    if plan.merged:
+        out.append(plan.merged)
+    out += plan.notes
     if plan.behind:
         out.append(
             f"WARNING: {plan.base} is {plan.behind} commit(s) ahead of this branch. The tests main added since are not in this tree, "
@@ -349,11 +556,14 @@ def render(plan: Plan) -> str:
 
 
 def run(plan: Plan, root: Path = ROOT) -> int:
-    """Run every step, in order, even after one fails (so one run names every red), and return 1 if any did."""
+    """Run every step, in order, even after one fails (so one run names every red), and return 1 if any did. The steps run in ``root`` with
+    ``root`` first on ``PYTHONPATH`` (:func:`tree_env`)."""
     failed: list[str] = []
+    env = tree_env(root)
+    print(f"PYTHONPATH is led by {root}: a child process a test starts imports this tree's src, not the installed package's", flush=True)
     for step in commands(plan):
         print(f"\n$ {shlex.join(step)}", flush=True)
-        if subprocess.run(step, cwd=root).returncode != 0:
+        if subprocess.run(step, cwd=root, env=env).returncode != 0:
             failed.append(step[1] if step[1] != "-m" else step[2])
     if failed:
         print(f"\nFAILED: {', '.join(failed)}", file=sys.stderr)
@@ -362,27 +572,47 @@ def run(plan: Plan, root: Path = ROOT) -> int:
     return 0
 
 
+def emit(plan: Plan, root: Path, files_only: bool, do_run: bool) -> int:
+    if files_only:
+        print("\n".join(plan.files()))
+        return 0
+    print(render(plan))
+    return run(plan, root) if do_run else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0] if __doc__ else None)
-    parser.add_argument("--base", default="origin/main", help="the ref this branch will merge into (default origin/main)")
+    parser.add_argument("--base", help="the ref this branch will merge into (default origin/main)")
     parser.add_argument(
         "--since",
         metavar="REF",
         help="the state you last tested (after a rebase: ORIG_HEAD or the old remote branch); also pick what the base changed from there",
     )
+    parser.add_argument(
+        "--onto",
+        metavar="REF",
+        help="build a scratch worktree of REF with this branch's committed HEAD merged into it, and pick (and with --run, run) there; replaces --base and --since",
+    )
+    parser.add_argument("--keep", action="store_true", help="with --onto: leave the scratch worktree in place and name it (to look at a red)")
     parser.add_argument("--run", action="store_true", help="run the steps instead of printing them")
     parser.add_argument("--files", action="store_true", help="print only the picked test files, one per line")
     args = parser.parse_args(argv)
+    if args.onto and (args.base or args.since):
+        parser.error("--onto builds the merged tree on REF itself: it replaces --base and --since")
+    if args.keep and not args.onto:
+        parser.error("--keep belongs to --onto")
     try:
-        plan = build_plan(ROOT, args.base, args.since)
+        if args.onto:
+            with merged_worktree(ROOT, args.onto, args.keep) as tree:
+                plan = build_plan(tree.path, tree.onto)
+                describe_merged(plan, ROOT, tree, args.onto)
+                code = emit(plan, tree.path, args.files, args.run)
+            return code
+        plan = build_plan(ROOT, args.base or "origin/main", args.since)
     except PlanError as exc:
         print(f"guards_for_diff: {exc}", file=sys.stderr)
         return 2
-    if args.files:
-        print("\n".join(plan.files()))
-        return 0
-    print(render(plan))
-    return run(plan, ROOT) if args.run else 0
+    return emit(plan, ROOT, args.files, args.run)
 
 
 if __name__ == "__main__":

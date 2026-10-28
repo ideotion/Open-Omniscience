@@ -11,6 +11,7 @@ python scripts/guards_for_diff.py --run      # run them; exit 1 if any step fail
 python scripts/guards_for_diff.py --files    # only the picked test files, one per line
 python scripts/guards_for_diff.py --base origin/main
 python scripts/guards_for_diff.py --since ORIG_HEAD   # after a rebase (see group 1)
+python scripts/guards_for_diff.py --onto origin/main --run   # the same picks, run on this branch MERGED onto main (see below)
 ```
 
 It picks four groups of test files and prints, in the order CI runs them, the blocking `ruff` lane, the style ratchet and one
@@ -43,6 +44,58 @@ pattern names (a test that imports the module you changed, without naming a chan
 group means "nothing matched the rule", not "nothing is affected". When the base is ahead of the branch it says so, because the
 tests `main` has added since are not in your tree: merge first, then run it, or a green run is a run of a tree that is not the
 one that will merge.
+
+## At merge time: `--onto REF`, the merged tree
+
+Everything above judges *this branch's* tree. When a PR is about to be merged the question is the other one: does the tree that
+will exist after the merge pass what guards the tree? `main` moves every ten minutes or so, and merging it into the branch while CI runs
+costs the cycle again, so the head CI green-lit is not the tree that merges. `--onto REF` answers it without touching the branch:
+
+```
+python scripts/guards_for_diff.py --onto origin/main            # print the plan of the merged tree
+python scripts/guards_for_diff.py --onto origin/main --run      # run it there; exit 1 if any step fails
+python scripts/guards_for_diff.py --onto origin/main --files    # the picked files, one per line (paths in the merged tree)
+python scripts/guards_for_diff.py --onto origin/main --run --keep   # leave the worktree in place, to look at a red
+```
+
+It makes a scratch `git worktree` of REF in the temporary directory, merges this branch's **committed HEAD** into it (the merge is a
+commit of the worktree alone, on a detached HEAD, with a scratch identity and no hook, signing, signature check or rerere of yours; no branch or ref
+of the repository moves), builds the plan there (so "tests main added" are the files REF changed since the branch left it, and "tests this branch adds" the
+files the merge result differs from REF in), runs it there, and removes the worktree. `--onto` replaces `--base` and `--since`. A branch that
+does not merge is a named stop that lists the conflicting files (merge REF into the branch and resolve it first). The rest of your git
+configuration (rename detection, merge drivers) still applies, and a file that both sides changed and that `.gitattributes` marks `merge=union`
+(`docs/ledger/shipped.csv`) is merged with that rule here but not by GitHub, which reports a conflict: a NOTE names such a file.
+
+**The steps run with the tree they run in first on `PYTHONPATH`** (in the plain mode too). A test that starts a child process (a restore, a
+boot, a helper) imports `src` in the child from wherever the editable install points, which on a machine whose install was made in another
+checkout is another tree. Measured on 2026-10-28, on ONE tree: four `tests/test_restore_collector_exit.py` tests were red in a scratch
+worktree and red in the checkout itself, and the eight restore and WAL files that start children were 115 of 115 green with the tree on
+`PYTHONPATH`. CI gets that for free, because there the install points at the checkout.
+
+**What the merged-tree run proves:** the guards this script picks (the four groups above, with the guards that walk the *test files*
+(`glob("test_*.py")`) among the tree-wide ones) pass on the committed HEAD merged onto REF as REF was when you fetched it, with the tree's own `src`
+imported by the children the tests start *that inherit the environment* (a child started with `-I`, or with `PYTHONPATH` removed, still imports the
+installed package). **What it does not:**
+it is not the whole suite (CI is); uncommitted changes are named in a NOTE and are not in the merged tree; it is a scratch-worktree run, which
+the project accepts as the merged-tree check **only for a branch that touches no `src/`** (a worktree is not the checkout the app runs from;
+for a branch that does, merge REF into the branch and run the plain `--run` in the checkout, and the NOTE says so); and a green run is not CI
+(the runner, the Python patch level and the installed versions are the machine's own). The worktree is a full checkout of the tracked tree,
+so it needs that much disk while it exists; a SIGTERM or SIGHUP during a step removes it too, a SIGKILL cannot (then `git worktree list` shows the
+leftover, and `git worktree remove --force <path>` removes it).
+
+## When CI is red or the environment moved: compare, do not eyeball
+
+A check that went red on a tree that was green, with no source change in between, is an environment change until a diff says otherwise, and
+the first thing to look at is the package versions. Two scripts take the by-eye work out of it; neither touches the network.
+
+* `python scripts/diff_installed_versions.py OLD NEW` compares the `### Installed versions` blocks that the `test` and Core-only jobs print
+  at the end of their logs (`ci.yml`, step "Installed versions (kept on red as well as green)"). Each argument is a log file, the JSON that
+  the log API returns, or `-` for standard input. It prints the packages changed, added and removed under pip's own name rule, and which of
+  Python, the runner image and the kernel moved. **Exit 0: identical. Exit 1: different. Exit 2: not comparable** (no block, a block that
+  was cut off, an unreadable file), with the reason, and never a comparison against an empty list. Read the environment line as well as the
+  package list: two Core-only runs on 2026-10-28 had the same 87 pins and three different environment fields.
+* `python scripts/check_wheel_layout.py dist/<wheel>.whl` is the other triage step of that kind, for a built wheel: exit 0 clean, 1 with one
+  sentence per missing file, 2 on a usage error. CI runs it in the lock-file job on the wheel built from the sdist.
 
 Also run before a push, as CI does and this script does not: `python -m mypy src/` for the modules you changed, and
 `python scripts/planned.py --diff`. The selection is tested in `tests/test_guards_for_diff.py` against a throwaway git repository.
