@@ -446,3 +446,102 @@ def test_the_index_is_aligned_and_show_refuses_a_path(tree, capsys):
     _write(sub / "x.md", "## 2026-02-01 — X\nb\n")
     assert lessons.main(["--show", "sub/x.md"]) == 1, "a path is not a fragment name"
     assert lessons.main(["--show", "..\\x.md"]) == 1
+
+
+def _lesson_problems(tree, body, name="2026-02-01-probe.md"):
+    """The problems ``check`` reports for ONE lesson fragment whose body (after the heading) is ``body``."""
+    _write(tree / "docs" / "ledger" / "lessons.d" / name, "## 2026-02-01 — PROBE\n" + body)
+    return "\n".join(ledger_fold.problems())
+
+
+@pytest.mark.parametrize("token", ["PR #PRNUMBER", "(PR #prnumber)", "#PRNUMBER, then more"])
+def test_the_pr_number_placeholder_a_lane_writes_before_its_number_exists_is_refused(tree, token):
+    assert "probe.md: a placeholder ('#NNNN', '#PRNUMBER' or 'PR pending')" in _lesson_problems(tree, f"refs: {token}\n")
+
+
+@pytest.mark.parametrize("body", [
+    "Quoted as code: `PR #PRNUMBER`.\n",
+    "```\nPR #PRNUMBER\n```\n",
+    "A longer word is not the token: #PRNUMBERS.\n",
+])
+def test_a_quoted_or_longer_pr_number_token_is_not_a_placeholder(tree, body):
+    assert _lesson_problems(tree, body) == ""
+
+
+@pytest.mark.parametrize("body", [
+    "```\n~~~\nPR pending\n```\n",                       # a tilde line is TEXT inside a backtick fence
+    "````\n```\nPR pending\n````\n",                     # a shorter run does not close a longer one
+    "```\ntext\n``` not a closer\nPR pending\n```\n",    # a closer has nothing after the run
+    "~~~\n```\nPR pending\n~~~\n",                       # and the same the other way round
+])
+def test_a_fence_closes_only_on_its_own_character_at_least_as_long_and_alone(tree, body):
+    assert _lesson_problems(tree, body) == "", "everything between the fence lines is quoted, so nothing is a placeholder"
+
+
+@pytest.mark.parametrize("body", [
+    "```\nx\n~~~\n## 2026-02-02 — Phantom entry\n```\n",                  # a tilde line inside a backtick fence
+    "```\nx\n``` not a closer\n## 2026-02-02 — Phantom entry\n```\n",    # a closer with text after the run
+    "````\nx\n```\n## 2026-02-02 — Phantom entry\n````\n",               # a shorter run
+])
+def test_check_and_the_lessons_index_read_the_same_fences(tree, body):
+    """A heading that ``check`` takes for quoted must not become an index entry: both read ONE fence rule."""
+    assert _lesson_problems(tree, "\nbody\n" + body) == ""
+    _, entries = lessons.load()
+    assert [e.title for e in entries if e.source == "2026-02-01-probe.md"] == ["2026-02-01 — PROBE"], \
+        "the quoted heading was indexed as a second entry"
+
+
+@pytest.mark.parametrize("body", [
+    "` PR pending ``\n",                       # a run of 1 does not close on a run of 2 (the closing lookahead)
+    "`` PR pending ```\n",                     # nor a run of 2 on a run of 3 (the closing lookbehind)
+    "`a` PR pending `b`\n",                    # the SHORTEST text up to the closer: two spans, not one
+])
+def test_a_code_span_closes_on_the_next_run_of_exactly_its_own_length_and_no_further(tree, body):
+    assert "a placeholder" in _lesson_problems(tree, body), "the placeholder sits outside every span, so it is prose"
+
+
+@pytest.mark.parametrize("body", [
+    "```\nx\n   ```\nPR pending\n",          # an indented closer still closes
+    "```\nx\n```   \nPR pending\n",          # trailing spaces after the closing run are allowed
+])
+def test_an_indented_or_space_padded_closing_fence_still_closes(tree, body):
+    got = _lesson_problems(tree, body)
+    assert "a placeholder" in got and "unclosed code fence" not in got
+
+
+def test_the_backtick_rule_for_an_info_string_is_for_backtick_fences_only(tree):
+    assert _lesson_problems(tree, "~~~ a`b\nPR pending\n~~~\n") == "", "a tilde fence may carry a backtick in its info string"
+
+
+def test_a_longer_run_of_the_same_character_does_close_a_shorter_fence(tree):
+    got = _lesson_problems(tree, "```\nquoted\n````\nPR pending\n")
+    assert "a placeholder" in got, "the fence closed on the longer run, so the line after it is prose"
+    assert "unclosed code fence" not in got
+
+
+def test_a_backtick_fence_with_a_backtick_in_its_info_string_is_a_code_span_not_a_fence(tree):
+    got = _lesson_problems(tree, "```a``` PR pending\n")
+    assert "a placeholder" in got, "the text after the span is prose, so the placeholder is seen"
+    assert "unclosed code fence" not in got, "no fence was opened"
+
+
+def test_an_unclosed_fence_is_named_with_the_line_it_opened_on(tree):
+    got = _lesson_problems(tree, "text\n```\nmore\n")
+    assert "probe.md: an unclosed code fence opened at line 3" in got
+
+
+def test_outside_fences_returns_the_prose_lines_with_their_numbers_and_the_open_fence():
+    lines = ["a", "```", "b", "```", "c", "~~~~", "d"]
+    kept, unclosed_at = ledger_fold.outside_fences(lines)
+    assert kept == [(1, "a"), (5, "c")] and unclosed_at == 6
+    assert ledger_fold.outside_fences(["x", "```", "y", "```"]) == ([(1, "x")], 0)
+
+
+@pytest.mark.parametrize("body, expect_placeholder", [
+    ("Double-backtick span with a lone one inside: ``PR pending`` and ``a`b``.\n", False),
+    ("Equal-length runs only: ``` PR pending ``` is quoted.\n", False),
+    ("A lone backtick is literal text: a ` PR pending\n", True),
+    ("Unequal runs do not pair: ``PR pending` still prose\n", True),
+])
+def test_inline_code_pairs_backtick_runs_of_equal_length(tree, body, expect_placeholder):
+    assert ("a placeholder" in _lesson_problems(tree, body)) is expect_placeholder

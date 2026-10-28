@@ -24,7 +24,7 @@ for ``shipped.csv``; this is the same convention for the other two archives:
 FORMAT of a fragment (``check`` enforces it; a fragment that fails ``check`` fails the PR's tests): the file
 name is ``<YYYY-MM-DD>-<slug>.md`` with a real date; the FIRST line is ``## <date> — <title>`` (a lesson's
 heading starts with the file's own date) and a lesson has no second heading outside a code fence; UTF-8, LF line
-ends, a trailing newline, balanced code fences, no conflict markers, no ``#NNNN`` or ``PR pending`` placeholder,
+ends, a trailing newline, balanced code fences, no conflict markers, no ``#NNNN``, ``#PRNUMBER`` or ``PR pending`` placeholder,
 none of the untouched ``--new`` / ``new-log`` template text, and a title no other fragment or archive entry has.
 
 FOLD IS CRASH-SAFE AND RE-RUNNABLE: it checks everything before touching anything, writes each archive to a
@@ -72,9 +72,15 @@ LESSON_FRAGMENT_MAX_LINES = 200
 _NAME = re.compile(r"^([0-9]{4}-[0-9]{2}-[0-9]{2})-(" + _lessons.SLUG.pattern + r")\.md$")
 _MARKER = re.compile(r"^(<<<<<<<|=======$|>>>>>>>)")
 _CEILING = re.compile(r"^(_LESSONS_LINE_CEILING = )([0-9]+)$", re.MULTILINE)
-_FENCE = re.compile(r"^\s*(```|~~~)")
-_PLACEHOLDER = re.compile(r"#NNNN|\bPR\s+pending\b", re.IGNORECASE)
-_INLINE_CODE = re.compile(r"`[^`\n]*`")
+# The fence rule lives in lessons.py, which the lessons index reads too, so ``check`` and the index cannot disagree
+# about what is quoted. These names stay here because other scripts reach them through this module.
+_FENCE = _lessons._FENCE
+_FENCE_CLOSE = _lessons._FENCE_CLOSE
+outside_fences = _lessons.outside_fences
+_PLACEHOLDER = re.compile(r"#NNNN|#PRNUMBER\b|\bPR\s+pending\b", re.IGNORECASE)
+# One code span: a run of N backticks, then the SHORTEST text up to the next run of exactly N (CommonMark's rule,
+# one line at a time), so ``a`b`` is one span and a lone backtick is literal text.
+_INLINE_CODE = re.compile(r"(?<!`)(`+)(?!`).+?(?<!`)\1(?!`)")
 LOG_TEMPLATE_BODY = "(The verbatim shipped-log entry. Put the real PR number in the heading once it exists.)"
 
 
@@ -84,16 +90,10 @@ def _files(d: Path) -> list[Path]:
 
 
 def _prose(text: str) -> str:
-    """The text with fenced blocks and `inline code` removed: a lesson may QUOTE a placeholder."""
-    keep: list[str] = []
-    in_fence = False
-    for ln in text.split("\n"):
-        if _FENCE.match(ln):
-            in_fence = not in_fence
-            continue
-        if not in_fence:
-            keep.append(_INLINE_CODE.sub("", ln))
-    return "\n".join(keep)
+    """The text with fenced blocks and `inline code` removed: a lesson may QUOTE a placeholder. A fence that
+    never closes hides every later line here, and ``problems`` refuses that fragment by name instead."""
+    kept, _ = outside_fences(text.split("\n"))
+    return "\n".join(_INLINE_CODE.sub("", ln) for _, ln in kept)
 
 
 def _archive(path: Path) -> tuple[bytes, set[str]]:
@@ -135,16 +135,16 @@ def _fragment_problems(
         seen.setdefault(title, where)
     if lesson and not lines[0].startswith("## " + m.group(1)):
         out.append(f"{where}: the heading must start with the file's date ({m.group(1)})")
-    in_fence = False
     second = 0
-    for n, ln in enumerate(lines, 1):
-        if _FENCE.match(ln):
-            in_fence = not in_fence
-            continue
-        if not in_fence and n > 1 and ln.startswith("#") and not ln.startswith("# ") and not second:
+    outside, unclosed_at = outside_fences(lines)
+    for n, ln in outside:
+        if n > 1 and ln.startswith("#") and not ln.startswith("# ") and not second:
             second = n  # test_lessons_index's rule: a line starting with # (not "# ") is a heading
-    if in_fence:
-        out.append(f"{where}: an unclosed code fence (after a fold it would swallow every later entry)")
+    if unclosed_at:
+        out.append(
+            f"{where}: an unclosed code fence opened at line {unclosed_at} "
+            "(after a fold it would swallow every later entry)"
+        )
     if second and lesson:
         out.append(f"{where}: one lesson per file; a second heading at line {second} belongs in its own file")
     if lesson and len(lines) > LESSON_FRAGMENT_MAX_LINES:
@@ -157,7 +157,7 @@ def _fragment_problems(
     if not text.endswith("\n"):
         out.append(f"{where}: must end with a newline")
     if _PLACEHOLDER.search(_prose(text)):
-        out.append(f"{where}: a placeholder ('#NNNN' or 'PR pending'); write the real PR number")
+        out.append(f"{where}: a placeholder ('#NNNN', '#PRNUMBER' or 'PR pending'); write the real PR number")
     if _lessons.TEMPLATE_BODY in text or LOG_TEMPLATE_BODY in text:
         out.append(f"{where}: the untouched template text; write the entry")
     return out
