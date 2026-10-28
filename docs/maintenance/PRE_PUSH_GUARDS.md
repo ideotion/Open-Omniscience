@@ -88,8 +88,9 @@ leftover, and `git worktree remove --force <path>` removes it).
 A PR's number exists only once the PR does, and a number read off GitHub's counter before that is a guess. So the ledger fragments
 (`lessons.d`, `shipped_log.d`, `shipped.d`) carry the template placeholder (`PR pending`, `#NNNN`) on the first push, and the number goes in
 straight after: open the PR, run `python scripts/sweep_pr_number.py <number>` (`--dry-run` prints the changes and writes nothing), then
-`python scripts/ledger_fold.py check` and `python scripts/ledger_shipped.py check` (the second is the guard that looks at a csv row's `refs` for a
-leftover `pending` word, `#NNNN` or `#PRNUMBER`; `python -m pytest -q tests/test_ledger_shipped_fragments.py` runs it too), commit and push. A branch pushed without a PR starts no CI, and the push to the PR cancels the run that
+`python scripts/ledger_fold.py check` and `python scripts/ledger_shipped.py check` (the second looks at a csv row's `refs` for a
+leftover `pending` word, `#NNNN` or `#PRNUMBER`; `python -m pytest -q tests/test_ledger_shipped_fragments.py` runs it too; the release-notes
+test applies `release_notes.refs_carry_placeholder` to the same cell and the sweep does not call it, so `python -m pytest -q tests/test_release_notes_generator.py` is worth a run as well), commit and push. A branch pushed without a PR starts no CI, and the push to the PR cancels the run that
 opening it started, so the sweep costs one effective CI run.
 
 **What it rewrites:** `PR pending` becomes `PR #<number>`, `#NNNN` becomes `#<number>` and so does `#PRNUMBER` (`PR #PRNUMBER` becomes
@@ -97,8 +98,12 @@ opening it started, so the sweep costs one effective CI run.
 (`git merge-base BASE HEAD`, renames off; BASE is `origin/main` unless `--base REF`, which is what a branch stacked on another unmerged branch
 passes). In the two markdown directories only prose is touched, where "prose" is `ledger_fold._prose`'s rule, and that rule is called, not
 copied (`ledger_fold.outside_fences` for the fences, `ledger_fold._INLINE_CODE` for the code spans): a fence opens on a run of three or more
-backticks or tildes and closes only on a run of the same character, at least as long, with nothing after it, so a `~~~` line inside a backtick
+backticks or tildes (a backtick run followed by more text on the same line that holds a backtick, as in ```` ```a``` ````, is a code span, not a fence)
+and closes only on a run of the same character, at least as long, with nothing after it, so a `~~~` line inside a backtick
 block is text, and a double-backtick span is code. A lesson may quote a placeholder inside what that rule keeps; anywhere else it is rewritten.
+One difference remains: the sweep reads the stretches between code spans one at a time, while the ledger deletes the spans first and so
+fuses their neighbours, so a token that touches a span (``PR pending`x`s``) is rewritten by the sweep where `check` would have read it as
+a longer word and not flagged it (a harmless extra rewrite, never a missed one).
 In a `shipped.d` csv only the `refs` cell is touched, and every other byte of the file stays as it was whatever quoting it was written with.
 **What it refuses** (exit 2, nothing written): a number that is not a positive integer (`1636`, not `#1636`), a base that does not resolve or
 shares no history with `HEAD` (a shallow clone: `git fetch --unshallow`), a branch that added no fragment, a symlink or a path that runs
