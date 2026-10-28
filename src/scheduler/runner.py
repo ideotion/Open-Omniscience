@@ -1887,9 +1887,21 @@ class BackgroundScheduler:
             if self.is_running():  # a second start() that got here first
                 return False
             self._stop.clear()
+            previous = (self._thread, self._started_at)
             self._started_at = datetime.now(UTC)
             self._thread = threading.Thread(target=self._loop_recorded, name="oo-scheduler", daemon=True)
-            self._thread.start()
+            try:
+                self._thread.start()
+            except Exception:
+                # ``Thread.start()`` raises RuntimeError ("can't start new thread") before the target runs when the process is out of
+                # threads: nothing was started, so ``status()`` keeps saying when the loop LAST started rather than a start that never
+                # happened, and no never-started thread is held as the loop. Only an ``Exception`` says that: CPython catches nothing
+                # else around the thread's creation, and an interrupt (a ``BaseException``) that lands while ``start()`` waits for the new
+                # thread to report in leaves ``ident`` still None although the OS thread exists and is about to run the loop. The record
+                # then stays, because dropping it would let the next ``start()`` run a second loop beside the first.
+                if self._thread.ident is None:
+                    self._thread, self._started_at = previous
+                raise
         return True
 
     def take_deferred_start(self) -> bool:
@@ -3231,12 +3243,12 @@ def _watch_for_resume(sched: BackgroundScheduler, *, poll_s: float | None = None
                          name="oo-resume-watch", daemon=True)
     try:
         t.start()
-    except BaseException:
+    except Exception:
         # ``Thread.start()`` raises before the target runs when the process is out of threads, so the claim above would stay for the life of
         # the process with nothing waiting behind it (the Schedule tab would keep promising a resume). Retract it, unless a newer watcher
-        # has published its own, and let the caller say that nothing will resume the collector. ``ident`` is None only for a thread that never
-        # ran: ``start()`` can also be interrupted AFTER the OS thread exists (while it waits for the thread to report in), and that watcher
-        # is alive and still owns the claim.
+        # has published its own, and let the caller say that nothing will resume the collector. Only an ``Exception`` says no thread was
+        # created: ``start()`` can also be interrupted (a ``BaseException``) AFTER the OS thread exists, while it waits for the thread to
+        # report in, and then ``ident`` is still None although the watcher is about to run and owns the claim.
         with _RESUME_LOCK:
             if gen == _RESUME_GEN and t.ident is None:
                 _RESUME_PENDING = None
