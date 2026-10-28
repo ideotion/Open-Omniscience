@@ -83,6 +83,24 @@ for a branch that does, merge REF into the branch and run the plain `--run` in t
 so it needs that much disk while it exists; a SIGTERM or SIGHUP during a step removes it too, a SIGKILL cannot (then `git worktree list` shows the
 leftover, and `git worktree remove --force <path>` removes it).
 
+## After the PR is opened: `scripts/sweep_pr_number.py`
+
+A PR's number exists only once the PR does, and a number read off GitHub's counter before that is a guess. So the ledger fragments
+(`lessons.d`, `shipped_log.d`, `shipped.d`) carry the template placeholder (`PR pending`, `#NNNN`) on the first push, and the number goes in
+straight after: open the PR, run `python scripts/sweep_pr_number.py <number>` (`--dry-run` prints the changes and writes nothing), then
+`python scripts/ledger_fold.py check`, commit and push. A branch pushed without a PR starts no CI, and the push to the PR cancels the run that
+opening it started, so the sweep costs one effective CI run.
+
+**What it rewrites:** `PR pending` becomes `PR #<number>` and `#NNNN` becomes `#<number>`, in the fragments this branch **added**
+(`git merge-base BASE HEAD`, renames off; BASE is `origin/main` unless `--base REF`, which is what a branch stacked on another unmerged branch
+passes). In the two markdown directories only prose is touched: fenced blocks and `inline code` stay, because a lesson may quote a placeholder.
+In a `shipped.d` csv only the `refs` cell is touched, and every other byte of the file stays as it was whatever quoting it was written with.
+**What it refuses** (exit 2, nothing written): a number that is not a positive integer (`1636`, not `#1636`), a base that does not resolve, a
+branch that added no fragment, a symlink, non-UTF-8 text, a csv that is not the ledger's header plus one row, a rewrite that would change any cell
+but `refs`, and a placeholder it has no rule for (`_RULES` in the script is the list; `ledger_fold._PLACEHOLDER` is what the ledger refuses, so a
+token added there needs its line in both). A second run says there is nothing to sweep and exits 0. **What it does not do:** it reads what the
+branch has *committed* as added (commit the fragments, then sweep), it does not fetch (`git fetch origin main` first), and CI never runs it on a real PR (`tests/test_sweep_pr_number.py` runs it against throwaway repositories).
+
 ## When CI is red or the environment moved: compare, do not eyeball
 
 A check that went red on a tree that was green, with no source change in between, is an environment change until a diff says otherwise, and
