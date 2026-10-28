@@ -228,12 +228,17 @@ def test_a_full_rebuild_that_stops_after_its_swap_in_is_not_followed_by_an_incre
         columnar.refresh_keyword_daily(con, faulty, corpus_epoch=1, batch_size=2)
     assert faulty.fired
 
-    fresh = _counts(_fresh_full(session))
+    fresh_con = _fresh_full(session)
+    fresh = _counts(fresh_con)
+    fresh_meta_rows = fresh_con.execute("SELECT COUNT(*) FROM keyword_meta").fetchone()[0]
     assert _counts(con) == fresh, "premise: the new keyword_daily was swapped in before the stop"
-    assert columnar._table_present(con, "keyword_meta"), "premise: keyword_meta exists, part-filled, so every table is present again"
+    assert columnar._table_present(con, "keyword_meta"), "premise: keyword_meta exists, so every table is present again"
+    part_filled = con.execute("SELECT COUNT(*) FROM keyword_meta").fetchone()[0]
+    assert 0 < part_filled < fresh_meta_rows, "premise: keyword_meta is part-filled"
     assert columnar._get_meta(con, WATERMARK) == old_watermark, "premise: the watermark was not moved"
 
     res = columnar.refresh_keyword_daily(con, session, corpus_epoch=1)
     assert res["mode"] == "full", "an incremental refresh merged a tail the swapped-in table already holds"
     assert _counts(con) == fresh
-    assert con.execute("SELECT COUNT(*) FROM keyword_meta").fetchone()[0] > 2, "keyword_meta was left part-filled"
+    assert con.execute("SELECT COUNT(*) FROM keyword_meta").fetchone()[0] == fresh_meta_rows, "keyword_meta was left part-filled"
+    assert columnar._get_meta(con, BUILT) == "1", "the stamp is restored once the rebuild completes"

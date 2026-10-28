@@ -556,7 +556,7 @@ def _persisted_declined(why: str) -> bool:
 def _void_built_epoch(con) -> None:
     """Make the persisted store's next refresh a full rebuild: ``columnar.VOIDED_BUILT_EPOCH`` is no corpus epoch, so ``refresh_keyword_daily`` finds it unequal.
 
-    Called only when the final comparison of a refresh that ran its merge fails; a stop BEFORE the merge changed nothing and clears nothing. A
+    Called only when the final comparison of a refresh that ran its merge fails; a stop BEFORE the merge changed nothing and clears nothing here (the merge itself voids the stamp before its first write, and a full rebuild does so before its swap-in). A
     failure here is logged, not raised: the stop that called it is the error the caller must see.
     """
     from src.analytics import columnar

@@ -26,6 +26,7 @@ import pathlib
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import requests
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -74,10 +75,16 @@ class _Stub:
         pass
 
 
-def _fetcher(tmp_path, calls, *, cut_on=None, feed=False, sitemap_urls=()):
+RAW_STOP = "('Connection aborted.', AirplaneModeError('airplane mode is engaged: refusing a network connection to a.example:443'))"
+RAW_HOST = "('Connection aborted.', ConnectionResetError(104, 'Connection reset by peer'))"
+
+
+def _fetcher(tmp_path, calls, *, cut_on=None, feed=False, sitemap_urls=(), raw_on=None, raw_stop=True):
     """The production fetcher over a stubbed ``session.get``: a request made with the switch engaged goes to the REAL ``get`` and is cut by the
-    airplane socket guard; ``cut_on`` engages the switch during the first request whose URL ends with it."""
-    f = make_fetcher(retry_backoff_s=0, robots_cache_path=pathlib.Path(tmp_path) / "robots.json")
+    airplane socket guard; ``cut_on`` engages the switch during the first request whose URL ends with it. ``raw_on`` is the LAST-request shape
+    (no retries are left, so the fetcher's own switch check never runs after it): the first request whose URL ends with it raises the raw
+    requests error through an HTTP proxy -- with the switch engaged first when ``raw_stop`` (a Stop in flight), without it (a host's reset)."""
+    f = make_fetcher(retry_backoff_s=0, robots_cache_path=pathlib.Path(tmp_path) / "robots.json", **({"max_retries": 0} if raw_on else {}))
 
     def guard(host, *a, **k):  # the first line of ``_guard_target``: no lookup is ever made
         if kill_switch_active():
@@ -92,6 +99,10 @@ def _fetcher(tmp_path, calls, *, cut_on=None, feed=False, sitemap_urls=()):
     def get(url, **kw):
         hdrs = kw.get("headers") or {}
         calls.append((url, hdrs.get("If-None-Match")))
+        if raw_on is not None and url.endswith(raw_on):
+            if raw_stop:
+                activate_kill_switch()
+            raise requests.exceptions.ProxyError(RAW_STOP if raw_stop else RAW_HOST)
         if cut_on is not None and url.endswith(cut_on):
             activate_kill_switch()
         if kill_switch_active():
@@ -306,3 +317,115 @@ def test_a_stop_before_the_feed_get_with_no_row_writes_none(db, tmp_path):
     activate_kill_switch()
     ingest_source(db, row, fetcher=_fetcher(tmp_path, [], feed=True))
     assert _state(db, row.id) is None
+
+
+# ---------------------------------------------------------------------- the same Stop, arriving as the raw error of the LAST request (R320, R298)
+#
+# With retries left, the fetcher's next attempt sees the switch and words the failure as OUR refusal sentence, which the anchored match
+# recognises. On the LAST request nothing follows, so the raw requests error (here the HTTP-proxy shape) is what the collector classifies, and
+# the anchored match rightly does not read it as ours: the failure was filed as the host's (``ff:connect``) and the feed not counted refused.
+
+
+def test_a_stop_in_the_feed_get_with_no_retries_left_is_still_counted_as_a_refused_feed(db, tmp_path):
+    row = _source(db, seed=True)
+    tally = ingest_source(db, row, fetcher=_fetcher(tmp_path, [], feed=True, raw_on="/feed.xml"))
+    assert kill_switch_active()
+    assert tally.get("skipped_offline") == 1, "a Stop that arrived as the raw error was not counted as the person's setting"
+    st = _state(db, row.id)
+    assert st.etag == "old" and st.consecutive_unchanged == 4, "the backoff history was touched"
+
+
+def test_a_host_reset_in_the_feed_get_is_not_counted_as_a_refused_feed_the_control(db, tmp_path):
+    row = _source(db)
+    tally = ingest_source(db, row, fetcher=_fetcher(tmp_path, [], feed=True, raw_on="/feed.xml", raw_stop=False))
+    assert not kill_switch_active()
+    assert "skipped_offline" not in tally, "a host's own failure was filed as the person's Stop"
+
+
+def test_a_stop_in_an_article_request_with_no_retries_left_is_filed_as_offline_not_connect(db, tmp_path):
+    row = _source(db)
+    tally = ingest_source(db, row, fetcher=_fetcher(tmp_path, [], feed=True, raw_on="/story-1"))
+    assert kill_switch_active()
+    assert tally.get("ff:offline") == 1 and "ff:connect" not in tally, f"the Stop was filed as the host's: {tally}"
+    assert tally["fetch_failed"] == 1 and tally.get("stopped_unwalked") == 2
+
+
+def test_a_host_reset_in_an_article_request_is_still_filed_as_connect_the_control(db, tmp_path):
+    row = _source(db)
+    tally = ingest_source(db, row, fetcher=_fetcher(tmp_path, [], feed=True, raw_on="/story-1", raw_stop=False))
+    assert not kill_switch_active()
+    assert tally.get("ff:connect") == 1 and "ff:offline" not in tally, tally
+
+
+def test_an_http_status_stays_the_hosts_answer_whatever_the_switch_says():
+    from src.ingest.pipeline import _failure_reason
+
+    activate_kill_switch()
+    assert _failure_reason("HTTP 503 for https://a.example/x") == "http_5xx", "a status line cannot be produced by a Stop"
+    assert _failure_reason("HTTP 403 for https://a.example/x") == "http_403"
+    assert _failure_reason(f"request error for https://a.example/x: {RAW_STOP}") == "offline"
+    clear_kill_switch()
+    assert _failure_reason(f"request error for https://a.example/x: {RAW_STOP}") == "connect", "with the switch off the raw shape is a connect failure"
+
+
+#: The sentences ``EthicalFetcher`` really raises (src/ingest/__init__.py), one per shape that the classifier files under a response answer.
+_RESPONSE_SENTENCES = [
+    ("non-HTML content ('application/pdf') for https://a.example/x", "not_html"),
+    ("declared length 99999999 exceeds 5000000 bytes for https://a.example/x", "too_large"),
+    ("response exceeds 5000000 bytes for https://a.example/x", "too_large"),
+    ("body read exceeded 30s for https://a.example/x (after 12 bytes)", "slow_body"),
+    ("unsupported or malformed URL: 'ftp://a.example/x'", "bad_url"),
+    ("missing host", "bad_url"),
+    ("redirect to unsupported URL: 'ftp://a.example/y'", "bad_url"),
+    ("too many redirects for https://a.example/x", "bad_url"),
+]
+
+#: What a Stop CAN produce, or what we cannot tell from it: the shapes the switch reclaims. ``other`` is any sentence the classifier does not know.
+_RECLAIMED_SENTENCES = [
+    ("cannot resolve host 'a.example': [Errno -2] Name or service not known", "dns"),
+    (f"request error for https://a.example/x: {RAW_STOP}", "connect"),
+    ("a sentence nobody classified", "other"),
+]
+
+
+@pytest.mark.parametrize(("detail", "reason"), _RESPONSE_SENTENCES)
+def test_a_response_that_arrived_stays_the_hosts_answer_whatever_the_switch_says(detail, reason):
+    """The switch acts at name resolution and connect, so a content-type, length, slow-body or redirect verdict was formed from a response that
+    had arrived: a Stop that lands afterwards did not produce it."""
+    from src.ingest.fetch_verdict import classify_fetch_failure
+    from src.ingest.pipeline import _failure_reason
+
+    assert classify_fetch_failure(detail) == reason, "premise: the shape is the one the classifier files under this reason"
+    activate_kill_switch()
+    assert _failure_reason(detail) == reason
+
+
+@pytest.mark.parametrize(("detail", "reason"), _RECLAIMED_SENTENCES)
+def test_what_a_stop_can_produce_is_reclaimed_by_the_switch_and_only_while_it_is_engaged(detail, reason):
+    """The other half of the boundary: a name-resolution, connect or unclassified failure under an engaged switch is the switch's. Adding any of
+    ``dns``, ``connect`` or ``other`` to the host's answers makes the first assertion fail."""
+    from src.ingest.fetch_verdict import classify_fetch_failure
+    from src.ingest.pipeline import _failure_reason
+
+    assert classify_fetch_failure(detail) == reason, "premise: the shape is the one the classifier files under this reason"
+    activate_kill_switch()
+    assert _failure_reason(detail) == "offline"
+    clear_kill_switch()
+    assert _failure_reason(detail) == reason, "with the switch off nothing is reclaimed"
+
+
+def test_a_robots_disallow_in_the_feed_get_is_the_hosts_answer_even_if_a_stop_lands_after(db, tmp_path):
+    row = _source(db)
+    f = _fetcher(tmp_path, [], feed=True)
+    real = f.session.get
+
+    def get(url, **kw):
+        if url.endswith("/robots.txt"):
+            activate_kill_switch()  # a Stop pressed just as the robots read returns its Disallow
+            return _Stub(url, 200, b"User-agent: *\nDisallow: /\n", {"Content-Type": "text/plain"})
+        return real(url, **kw)
+
+    f.session.get = get
+    tally = ingest_source(db, row, fetcher=f)
+    assert kill_switch_active()
+    assert "skipped_offline" not in tally, "the host's disallow was filed as the person's Stop"
