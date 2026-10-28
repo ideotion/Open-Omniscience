@@ -503,6 +503,14 @@ test("R360: the wait for a running pass is said while it happens, with the time 
   assert(note.split(OTHER_WORK).length === 2, "and is said once, not once per line: " + note);
 });
 
+test("R360: a failed window with a wait beside it says the caveat once (inside the failure line), not twice", () => {
+  const note = render(Object.assign({}, TAIL_RUN, { collection_window_failed: true, collection_paused: false,
+    collection_exit_wait: { elapsed_s: 30, bound_s: 600, still: ["a collection pass or maintenance run"] } }));
+  assert(note.indexOf(NOT_PAUSED_AT_ALL) !== -1 && note.indexOf(WAITING) !== -1, note);
+  assert(note.indexOf(OTHER_WORK) === -1, "the failure line already carries the caveat; the waiting line must not repeat it: " + note);
+  assert(note.indexOf(PAUSED_SENTENCE) === -1, note);
+});
+
 test("R360: a wait that ended, with the pass gone, goes back to the pause sentence", () => {
   const note = render(Object.assign({}, TAIL_RUN, { collection_exit_wait: null }));
   assert(note.indexOf(PAUSED_SENTENCE) !== -1 && note.indexOf(WAITING) === -1, note);

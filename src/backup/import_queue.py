@@ -218,22 +218,43 @@ def _exit_unconfirmed(items: list[dict], live_answer: dict | None) -> bool:
     return False
 
 
-def _collection_note(exit_unconfirmed: bool, window_failed: bool, running: bool) -> str:
-    """The sentence the status serves about the pause, built from the same facts the dialog reads (it said "paused"
-    whatever the run found, beside a dialog that had stopped saying so). Like the dialog, it tells a run that is over
-    nothing about work that is still running."""
+def _collection_note(state: str, exit_unconfirmed: bool, window_failed: bool, paused: bool, waiting: bool) -> str:
+    """The sentences the status serves about the pause, built from the same facts the dialog reads and in the same order
+    (it said "paused" whatever the run found, beside a dialog that had stopped saying so). Like the dialog: while the
+    wait for a pass runs the pause is not claimed (it is being completed), the caveat about other background work is
+    said once, and a run that is over is told nothing about work that is still running. Where the dialog says nothing
+    (an idle queue, a finished run with nothing unconfirmed) the note states the rule in a tense that is true of any
+    time, because it is served beside the status of a run that may not exist."""
+    running = state == "running"
     other = " Other background work is not paused: what it, or you, saves to your corpus while the import runs can be lost." if running else ""
+    parts: list[str] = []
+    other_said = False
     if exit_unconfirmed:
-        return (
+        parts.append(
             "It could not be confirmed that background collection had stopped when the import copied your corpus, "
             "so what collection saved after that copy is not kept." + other
         )
-    if window_failed:
-        return (
-            "Background collection could not be paused for this import, and other background work is not paused "
-            "either: what they, or you, save to your corpus while the import runs can be lost."
+        other_said = running
+    elif window_failed:
+        if running:
+            parts.append(
+                "Background collection could not be paused for this import, and other background work is not paused "
+                "either: what they, or you, save to your corpus while the import runs can be lost."
+            )
+            other_said = True
+        else:
+            parts.append("Background collection could not be paused for that import.")
+    elif running and paused and not waiting:
+        parts.append("Background collection is paused for this whole import and resumes when it finishes." + other)
+        other_said = True
+    elif not running:
+        parts.append("Background collection is paused only while an import is running, and resumes when it finishes.")
+    if running and waiting:
+        parts.append(
+            "Waiting for background collection to finish what it is writing before your corpus is copied."
+            + ("" if other_said else other)
         )
-    return "Background collection is paused for this whole import and resumes when it finishes." + other
+    return " ".join(parts)
 
 
 def stage_for_phase(phase: str | None) -> int | None:
@@ -1590,7 +1611,7 @@ class ImportQueueManager:
             "tuned": dict(tuned) if isinstance(tuned, dict) else None,
             # Stated so the UI can say it rather than the user having to infer it
             # (ruling item 12).
-            "collection_note": _collection_note(exit_unconfirmed, window_failed, state == "running"),
+            "collection_note": _collection_note(state, exit_unconfirmed, window_failed, paused, exit_wait is not None),
         }
 
     def clear(self) -> dict:

@@ -7653,10 +7653,12 @@ def run_restore(
     lane, the Wikipedia drain, AI sweeps, boot upkeep and every API write route are not
     stopped; neither are most registered background jobs (tags backfill, language
     detection, the governments jobs, bulk source qualification, the mailbox import: the
-    job registry has no exclusive-hold check). A few workers do park at their next batch
-    boundary and resume after the import (re-index, keyword fold, quarantine, FTS
-    re-index, newsletter import, off-peak maintenance), so a batch already in flight can
-    still commit. And the collection loop itself can be started again while the window
+    job registry has no exclusive-hold check; two registered jobs look at the window in
+    their own workers: the re-index drain stops inside its article loop and the queue
+    restarts it after the run, and the preflight check declines to start). A few
+    workers that are not registry jobs do park at their next batch boundary and resume
+    after the import (keyword fold, quarantine, FTS re-index, newsletter import,
+    off-peak maintenance), so a batch already in flight can still commit. And the collection loop itself can be started again while the window
     is open (``BackgroundScheduler.start`` does not check the hold: the Collection
     switch, the Start button, the network toggle and the unattended start all call it).
     Anything they commit between the working copy and the swap is discarded by the swap

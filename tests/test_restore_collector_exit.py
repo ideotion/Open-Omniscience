@@ -520,6 +520,10 @@ def _refused(exit_) -> dict:
         # N1: a Stop pressed AFTER the swap labels the item "stopped" (the queue labels by the flag, not by the verdict),
         # yet its report says committed: the discarded writes are real and the dialog must go on saying so.
         pytest.param("stopped", _committed(_STILL), True, id="stopped-after-the-swap-the-loss-happened"),
+        # The legacy path hands back the restore's report itself, with no wrapper: the same rule must read it.
+        pytest.param("done", {"committed": True, "collector_exit": _STILL}, True, id="legacy-path-swapped-in"),
+        pytest.param("stopped", {"committed": True, "collector_exit": _STILL}, True, id="legacy-path-stopped-after-the-swap"),
+        pytest.param("error", {"committed": False, "refused": "verification failed", "collector_exit": _STILL}, False, id="legacy-path-refused"),
         pytest.param("stopped", _held(_STILL), False, id="stopped-while-only-held"),
         pytest.param("stopped", None, False, id="stopped-before-any-report"),
     ],
@@ -534,6 +538,7 @@ def _running_queue(tmp_path, started_at=100.0):
     q = _queue(tmp_path, [None], states=["running"])
     q._items[0]["started_at"] = started_at
     q._state = "running"
+    q._collection_paused = True
     return q
 
 
@@ -773,18 +778,50 @@ def test_the_queue_note_and_the_restores_own_text_no_longer_claim_that_nothing_e
 
 
 def test_the_queue_note_says_what_the_dialog_says(tmp_path, monkeypatch):
-    """N7: the served note is built from the same facts as the dialog, not a constant that claims a pause regardless."""
+    """N7/P1: the served note is built from the same facts as the dialog, in the same order, not a constant that claims a pause."""
+    monkeypatch.setattr(collector_exit, "_LAST", None)
+    monkeypatch.setattr(collector_exit, "_WAITING", None)
+    paused = "is paused for this whole import"
+    other = "Other background work is not paused"
+    wait = {"since": time.time() - 12.0, "still": [_PASS], "bound_s": 600.0}
     q = _running_queue(tmp_path)
-    assert "is paused for this whole import" in q.status()["collection_note"]
+    assert paused in q.status()["collection_note"] and other in q.status()["collection_note"]
+    # The wait: the pause is being completed, so it is not claimed; the caveat is said once.
+    monkeypatch.setattr(collector_exit, "_WAITING", wait)
+    waiting = q.status()["collection_note"]
+    assert "Waiting for background collection" in waiting and paused not in waiting and waiting.count(other) == 1, waiting
+    monkeypatch.setattr(collector_exit, "_WAITING", None)
+    # The window could not open: said, with the caveat; a wait beside it does not repeat the caveat.
     q._collection_window_failed = True
     failed = q.status()["collection_note"]
-    assert "could not be paused" in failed and "is paused for this whole import" not in failed
+    assert "could not be paused" in failed and paused not in failed
+    monkeypatch.setattr(collector_exit, "_WAITING", wait)
+    both = q.status()["collection_note"]
+    assert "could not be paused" in both and "Waiting for background collection" in both and other not in both, both
+    monkeypatch.setattr(collector_exit, "_WAITING", None)
     q._collection_window_failed = False
+    # A running import whose window has not opened yet claims nothing.
+    q._collection_paused = False
+    assert q.status()["collection_note"] == ""
+    q._collection_paused = True
+    # The wait found a pass still there: not kept, and the caveat while the run goes on.
     _answered(monkeypatch, _STILL, at=150.0)
     unconfirmed = q.status()["collection_note"]
-    assert "could not be confirmed" in unconfirmed and "is paused for this whole import" not in unconfirmed
+    assert "could not be confirmed" in unconfirmed and paused not in unconfirmed and other in unconfirmed
+    # Once the run is over: the loss stays said, the caveat about work still running does not, and a failed window
+    # or an untouched queue is told in a tense that is true of any time (the dialog says nothing there).
     q._state = "done"
     q._items[0]["state"] = "done"
     q._items[0]["summary"] = _committed(_STILL)
     over = q.status()["collection_note"]
-    assert "could not be confirmed" in over and "Other background work is not paused" not in over, "a finished run has no work still running"
+    assert "could not be confirmed" in over and other not in over, "a finished run has no work still running"
+    monkeypatch.setattr(collector_exit, "_LAST", None)
+    q._items[0]["summary"] = _committed(_OK)
+    q._collection_window_failed = True
+    failed_over = q.status()["collection_note"]
+    assert "could not be paused for that import" in failed_over and "can be lost" not in failed_over, failed_over
+    q._collection_window_failed = False
+    finished = q.status()["collection_note"]
+    assert "only while an import is running" in finished and paused not in finished, finished
+    idle = _queue(tmp_path, [])
+    assert "only while an import is running" in idle.status()["collection_note"]
