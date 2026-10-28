@@ -4499,7 +4499,7 @@ def _ring_load_worker(ctx, *, limit: int = 20, languages: list[str] | None = Non
 # the operator watching a dead button for ten (the no-theater rule for cancel buttons).
 #: NOT A WRITER in the database sense (``is_writer=False``, the ``bulletin`` precedent):
 #: the only writes are the local ring YAML on disk and the job's own state (the worker's
-#: one session reads the keyword index and commits nothing). The flag's only consumer is
+#: one session reads the keyword index and writes nothing). The flag's only consumer is
 #: ``offline_maintenance.yield_reason``, which skips the whole maintenance window (orphan
 #: prune, counter and language reconcile, incremental vacuum, hourly snapshot) while a
 #: flagged job runs; claiming it would hold that window off for a contention that does

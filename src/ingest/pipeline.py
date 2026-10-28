@@ -510,15 +510,23 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
             note_failed(article_id, error=record_text(exc, typed=True))
 
 
+#: The reasons ``classify_fetch_failure`` gives for something a Stop cannot produce: the kill switch acts at name resolution and connect, so a
+#: response that already arrived (its Content-Type, its declared or counted length, its slow body, a redirect chain, a URL we refuse) is the
+#: host's, whatever the switch says afterwards. ``http_*`` joins them by prefix. ``dns``, ``connect`` and ``other`` are what a cut connection
+#: looks like (or what we cannot tell), so those are the ones a Stop reclaims.
+_RESPONSE_ANSWERS = frozenset({"not_html", "too_large", "slow_body", "bad_url"})
+
+
 def _failure_reason(detail: str | None) -> str:
     """``fetch_verdict.classify_fetch_failure`` plus the switch read AFTER the failure (R320): a failure while the kill switch is engaged is
     the switch's, whatever shape the error took. A Stop that lands inside the LAST request of a fetch (the retries having run out, or none
     left) arrives as the raw requests error (``request error for <url>: ('Connection aborted.', AirplaneModeError(...))`` through an HTTP
     proxy, or ``HTTPSConnectionPool(...)``), which is not OUR sentence at the start, so the anchored match in ``classify_fetch_failure``
-    rightly refuses it (R298) and the failure was filed as the host's (``ff:connect``). An HTTP status is kept as the host's: a Stop cuts a
-    connection and can never produce a status line. The cost, stated: a genuine transport failure coinciding with a Stop reads offline."""
+    rightly refuses it (R298) and the failure was filed as the host's (``ff:connect``). A response that arrived (an HTTP status, a content-type
+    or length verdict, a slow body, a redirect or URL verdict) is kept as the host's: a Stop cuts a connection and can never produce one. The
+    cost, stated: a genuine transport failure coinciding with a Stop reads offline."""
     reason = classify_fetch_failure(detail)
-    if reason != "offline" and not reason.startswith("http_") and kill_switch_active():
+    if reason != "offline" and not reason.startswith("http_") and reason not in _RESPONSE_ANSWERS and kill_switch_active():
         return "offline"
     return reason
 

@@ -368,6 +368,26 @@ def test_an_http_status_stays_the_hosts_answer_whatever_the_switch_says():
     assert _failure_reason(f"request error for https://a.example/x: {RAW_STOP}") == "connect", "with the switch off the raw shape is a connect failure"
 
 
+@pytest.mark.parametrize(
+    ("detail", "reason"),
+    [
+        ("non-HTML content type 'application/pdf' for https://a.example/x", "not_html"),
+        ("declared length 99999999 exceeds 5000000 bytes for https://a.example/x", "too_large"),
+        ("body read exceeded 30s for https://a.example/x", "slow_body"),
+        ("too many redirects for https://a.example/x", "bad_url"),
+    ],
+)
+def test_a_response_that_arrived_stays_the_hosts_answer_whatever_the_switch_says(detail, reason):
+    """The switch acts at name resolution and connect, so a content-type, length, slow-body or redirect verdict was formed from a response that
+    had arrived: a Stop that lands afterwards did not produce it."""
+    from src.ingest.fetch_verdict import classify_fetch_failure
+    from src.ingest.pipeline import _failure_reason
+
+    assert classify_fetch_failure(detail) == reason, "premise: the shape is the one the classifier files under this reason"
+    activate_kill_switch()
+    assert _failure_reason(detail) == reason
+
+
 def test_a_robots_disallow_in_the_feed_get_is_the_hosts_answer_even_if_a_stop_lands_after(db, tmp_path):
     row = _source(db)
     f = _fetcher(tmp_path, [], feed=True)
