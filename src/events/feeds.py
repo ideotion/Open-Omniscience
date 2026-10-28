@@ -692,8 +692,12 @@ def auto_import_due_feeds(fetcher, *, batch: int = 8, min_interval_hours: float 
     (``import_feed`` dedups). The kill switch / robots / per-host politeness / proxy
     are all inherited from ``fetcher`` (the guarded path) — this adds no new fetch
     surface, just schedules the existing operator import. Per-feed timestamps live in
-    a per-machine store. Returns a tally; never raises for a single bad feed.
+    a per-machine store. Returns a tally; never raises for a single bad feed. A Stop (the kill switch) ends the batch at the feed in flight:
+    that feed and the rest are not counted as failed and are not stamped, so the next pass asks them first (``picked`` then exceeds
+    ``imported`` + ``failed``: the difference is the feeds the Stop kept from being asked).
     """
+    from src.ingest import kill_switch_active
+
     state = _load_json("calendar_autoimport.json")
     attempts = load_attempts()
     now = datetime.now(UTC)
@@ -733,10 +737,18 @@ def auto_import_due_feeds(fetcher, *, batch: int = 8, min_interval_hours: float 
     picked = [fid for _, fid in due[: max(0, batch)]]
     imported = failed = 0
     for fid in picked:
+        if kill_switch_active():
+            break  # a Stop: the feeds not yet asked for are neither failures nor attempts, and stay exactly as due as they were
         try:
             import_feed(fetcher, fid)
             imported += 1
         except Exception:  # noqa: BLE001 - one bad feed must not abort the batch
+            if kill_switch_active():
+                # The Stop cut THIS feed's check, in whatever shape the error took (a Stop inside the request arrives as the raw requests
+                # error, which no sentence match recognises, R298): nothing was asked of the host, so it is not a failure and, because the
+                # stamp below means "this feed was checked", it is not stamped either (R293/R294). The next pass asks it first. The cost is a
+                # genuine failure coinciding with a Stop going unrecorded (R320). No new tally key: a Stop is not an outcome.
+                break
             failed += 1
         # Record the ATTEMPT either way, so a failing feed backs off too.
         state[fid] = now.isoformat(timespec="seconds")
