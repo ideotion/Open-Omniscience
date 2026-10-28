@@ -86,7 +86,7 @@ def segmented_fetch(
     if len(segs) < 2:
         return None
     parts: list[tuple[int, bytes]] = []
-    with ThreadPoolExecutor(max_workers=len(segs)) as ex:
+    with ThreadPoolExecutor(max_workers=len(segs), thread_name_prefix="oo-segfetch") as ex:
         futures = {ex.submit(fetch_segment, url, s, e): (s, e) for s, e in segs}
         for fut in as_completed(futures):
             start, _end = futures[fut]

@@ -128,7 +128,9 @@ _AMBIENT_THREAD = re.compile(r"AnyIO worker thread|oo-boot-sequence|oo-boot-slow
 
 # Route -> (files it may create or change, thread names it may start, reason). A route can appear only if the effect was
 # MEASURED on 2026-10-27; the reason says why it is acceptable or names the finding that routes it.
-_DIAG_THREADS = frozenset({"dbg:*", "ThreadPoolExecutor-*", "all-diag-member"})
+_DIAG_THREADS = frozenset({"dbg:*", "all-diag-member"})
+# oo-llmbatch_N: llm.concurrency.run_concurrent (named since R324), reached by the three diagnostics GETs that run the local model
+_LLM_POOL_THREADS = _DIAG_THREADS | {"oo-llmbatch_*"}
 _ROUTES: dict[str, tuple[frozenset[str], frozenset[str], str]] = {
     "/api/annotations/export": (
         frozenset({"annotations_ed25519.pem"}), frozenset(),
@@ -145,16 +147,16 @@ _ROUTES: dict[str, tuple[frozenset[str], frozenset[str], str]] = {
     "/api/briefing": (frozenset(), frozenset({"oo-briefing-refresh"}), "starts the briefing refresh in a daemon thread: derived data, de-duplicated by its slot"),
     "/api/scheduler/activity": (frozenset(), frozenset({"oo-plan-preview"}), "computes the plan preview in a daemon thread: derived, cached by its key"),
     "/api/diagnostics/all": (
-        frozenset({"keyword-coverage.json"}), _DIAG_THREADS,
+        frozenset({"keyword-coverage.json"}), _LLM_POOL_THREADS,
         "FINDING F1 (routed to RC2, R278): collector threads and diagnostics files from one GET; #1526's cross-site guard now stops another site triggering it; a same-origin call still does",
     ),
     "/api/diagnostics/debug-bundle": (frozenset(), _DIAG_THREADS, "FINDING F1 (routed): the bundle's collectors, one thread each"),
     "/api/diagnostics/keyword-engine": (frozenset({"keyword-coverage.json"}), frozenset(), "writes the keyword coverage record it reports"),
     "/api/diagnostics/llm-throughput-selftest": (
-        frozenset(), _DIAG_THREADS, "FINDING F1 (routed): a thread pool against the local model, loopback only",
+        frozenset(), _LLM_POOL_THREADS, "FINDING F1 (routed): a thread pool against the local model, loopback only",
     ),
     "/api/diagnostics/recursive-loop": (
-        frozenset(), _DIAG_THREADS, "FINDING F1 (routed): a thread pool against the local model, loopback only",
+        frozenset(), _LLM_POOL_THREADS, "FINDING F1 (routed): a thread pool against the local model, loopback only",
     ),
 }
 # Routes allowed to attempt a LOOPBACK connect (the local model servers: Ollama 11434, vLLM 8001). Nothing else may open a socket,

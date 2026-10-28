@@ -56,6 +56,7 @@ from src.analytics.wikidata_rings import (
     wbsearch_url,
 )
 from src.monitoring.secret_scrub import log_failure
+from src.utils.safe_yaml import load_safe_yaml
 
 _LOG = logging.getLogger(__name__)
 
@@ -443,7 +444,7 @@ def merge_local_rings(rings: list[dict], path: Path | None = None) -> int:
         existing: dict[str, dict] = {}
         if target.exists():
             try:
-                doc = yaml.safe_load(target.read_text("utf-8")) or {}
+                doc = load_safe_yaml(target.read_text("utf-8")) or {}
                 for r in doc.get("rings") or []:
                     rid = str(r.get("id") or "").strip()
                     if rid:
