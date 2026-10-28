@@ -101,3 +101,22 @@ def test_an_ordinary_transport_failure_with_the_switch_clear_is_still_a_refused_
         rep["gave_up_after_refusals"] is True
         and rep["refused"] == G.BATCH_MAX * G.CONSECUTIVE_REFUSED_MAX
     )
+
+
+def test_a_stop_inside_a_retry_request_is_also_the_switch_s():
+    switch = {"on": False}
+    calls: list[str] = []
+
+    def getter(url):
+        calls.append(url)
+        if len(calls) == 1:
+            return G.GetResult(
+                429, None, 1.0
+            )  # the server asks us to wait; the retry is the request the Stop cuts
+        switch["on"] = True
+        raise RuntimeError(RAW_STOP)
+
+    _items, rep = _run(_qids(1), getter, switch)
+    assert len(calls) == 2
+    assert rep["stopped_by_airplane_mode"] is True and rep["refused"] == 0
+    assert rep["not_asked"] == rep["asked"] and rep["gave_up_after_refusals"] is False

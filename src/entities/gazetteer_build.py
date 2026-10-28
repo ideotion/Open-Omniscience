@@ -432,7 +432,8 @@ def fetch_wikidata(
     failure. The pace gate is waited on before EVERY request, retries included. A
     ``Retry-After`` (or the ``maxlag`` answer's) is waited out, at most :data:`RETRY_CAP_S` per
     wait and :data:`RETRY_MAX` waits per batch; a batch that still fails is counted ``refused`` and
-    the run goes on. The three counts add up to what was asked.
+    the run goes on, unless the kill switch is engaged by then: that stop is the switch's, so the batch is
+    ``not_asked`` and ``stopped_by_airplane_mode`` is true (R353). The counts add up to what was asked.
     """
     from src.analytics.ring_loader import RateGate
     from src.ingest.fetch_verdict import NETWORK_REFUSED
