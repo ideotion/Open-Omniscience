@@ -368,15 +368,27 @@ def test_an_http_status_stays_the_hosts_answer_whatever_the_switch_says():
     assert _failure_reason(f"request error for https://a.example/x: {RAW_STOP}") == "connect", "with the switch off the raw shape is a connect failure"
 
 
-@pytest.mark.parametrize(
-    ("detail", "reason"),
-    [
-        ("non-HTML content type 'application/pdf' for https://a.example/x", "not_html"),
-        ("declared length 99999999 exceeds 5000000 bytes for https://a.example/x", "too_large"),
-        ("body read exceeded 30s for https://a.example/x", "slow_body"),
-        ("too many redirects for https://a.example/x", "bad_url"),
-    ],
-)
+#: The sentences ``EthicalFetcher`` really raises (src/ingest/__init__.py), one per shape that the classifier files under a response answer.
+_RESPONSE_SENTENCES = [
+    ("non-HTML content ('application/pdf') for https://a.example/x", "not_html"),
+    ("declared length 99999999 exceeds 5000000 bytes for https://a.example/x", "too_large"),
+    ("response exceeds 5000000 bytes for https://a.example/x", "too_large"),
+    ("body read exceeded 30s for https://a.example/x (after 12 bytes)", "slow_body"),
+    ("unsupported or malformed URL: 'ftp://a.example/x'", "bad_url"),
+    ("missing host", "bad_url"),
+    ("redirect to unsupported URL: 'ftp://a.example/y'", "bad_url"),
+    ("too many redirects for https://a.example/x", "bad_url"),
+]
+
+#: What a Stop CAN produce, or what we cannot tell from it: the shapes the switch reclaims. ``other`` is any sentence the classifier does not know.
+_RECLAIMED_SENTENCES = [
+    ("cannot resolve host 'a.example': [Errno -2] Name or service not known", "dns"),
+    (f"request error for https://a.example/x: {RAW_STOP}", "connect"),
+    ("a sentence nobody classified", "other"),
+]
+
+
+@pytest.mark.parametrize(("detail", "reason"), _RESPONSE_SENTENCES)
 def test_a_response_that_arrived_stays_the_hosts_answer_whatever_the_switch_says(detail, reason):
     """The switch acts at name resolution and connect, so a content-type, length, slow-body or redirect verdict was formed from a response that
     had arrived: a Stop that lands afterwards did not produce it."""
@@ -386,6 +398,20 @@ def test_a_response_that_arrived_stays_the_hosts_answer_whatever_the_switch_says
     assert classify_fetch_failure(detail) == reason, "premise: the shape is the one the classifier files under this reason"
     activate_kill_switch()
     assert _failure_reason(detail) == reason
+
+
+@pytest.mark.parametrize(("detail", "reason"), _RECLAIMED_SENTENCES)
+def test_what_a_stop_can_produce_is_reclaimed_by_the_switch_and_only_while_it_is_engaged(detail, reason):
+    """The other half of the boundary: a name-resolution, connect or unclassified failure under an engaged switch is the switch's. Adding any of
+    ``dns``, ``connect`` or ``other`` to the host's answers makes the first assertion fail."""
+    from src.ingest.fetch_verdict import classify_fetch_failure
+    from src.ingest.pipeline import _failure_reason
+
+    assert classify_fetch_failure(detail) == reason, "premise: the shape is the one the classifier files under this reason"
+    activate_kill_switch()
+    assert _failure_reason(detail) == "offline"
+    clear_kill_switch()
+    assert _failure_reason(detail) == reason, "with the switch off nothing is reclaimed"
 
 
 def test_a_robots_disallow_in_the_feed_get_is_the_hosts_answer_even_if_a_stop_lands_after(db, tmp_path):
