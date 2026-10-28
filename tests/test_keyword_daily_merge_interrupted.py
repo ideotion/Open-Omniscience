@@ -192,3 +192,48 @@ def test_the_voided_epoch_is_no_corpus_epoch_and_the_reader_refuses_it_by_name(c
     columnar._set_meta(con, BUILT, columnar.VOIDED_BUILT_EPOCH)
     # even a (hypothetical) caller epoch equal to the marker is refused: the reader compares against the constant
     assert columnar.refresh_keyword_daily(con, session, corpus_epoch=columnar.VOIDED_BUILT_EPOCH)["mode"] == "full"
+
+
+class _FaultySession:
+    """A session whose ``execute`` raises ``exc`` once, on the ``nth`` statement containing ``needle``; everything else passes through."""
+
+    def __init__(self, session, needle, nth, exc):
+        self._s, self._needle, self._nth, self._exc = session, needle, nth, exc
+        self._seen = 0
+        self.fired = False
+
+    def execute(self, stmt, *a, **k):
+        if self._needle in str(stmt):
+            self._seen += 1
+            if self._seen == self._nth and not self.fired:
+                self.fired = True
+                raise self._exc
+        return self._s.execute(stmt, *a, **k)
+
+    def __getattr__(self, name):
+        return getattr(self._s, name)
+
+
+def test_a_full_rebuild_that_stops_after_its_swap_in_is_not_followed_by_an_incremental_refresh(ctx):
+    """THE OLDER GAP, found by the read of the incremental fix. The full branch is entered at an EQUAL epoch only when a table is missing
+    (here ``keyword_meta`` is dropped: the store of a build from before that table existed). The build swaps the new ``keyword_daily`` in,
+    fills ``keyword_meta`` and only then moves the watermark; the stop is induced in the keyword_meta fill, after its first batch. Cause
+    induced: the session raising ``OperationalError`` on the second keywords SELECT; in the field a DuckDB error, MemoryError or a kill
+    there is inferred."""
+    session, con = _world(ctx)
+    con.execute("DROP TABLE keyword_meta")
+    old_watermark = columnar._get_meta(con, WATERMARK)
+    faulty = _FaultySession(session, "FROM keywords WHERE", 2, OperationalError("SELECT keywords", {}, Exception("injected: database is locked")))
+    with pytest.raises(OperationalError):
+        columnar.refresh_keyword_daily(con, faulty, corpus_epoch=1, batch_size=2)
+    assert faulty.fired
+
+    fresh = _counts(_fresh_full(session))
+    assert _counts(con) == fresh, "premise: the new keyword_daily was swapped in before the stop"
+    assert columnar._table_present(con, "keyword_meta"), "premise: keyword_meta exists, part-filled, so every table is present again"
+    assert columnar._get_meta(con, WATERMARK) == old_watermark, "premise: the watermark was not moved"
+
+    res = columnar.refresh_keyword_daily(con, session, corpus_epoch=1)
+    assert res["mode"] == "full", "an incremental refresh merged a tail the swapped-in table already holds"
+    assert _counts(con) == fresh
+    assert con.execute("SELECT COUNT(*) FROM keyword_meta").fetchone()[0] > 2, "keyword_meta was left part-filled"
