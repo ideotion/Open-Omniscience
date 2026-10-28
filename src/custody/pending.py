@@ -266,9 +266,17 @@ def _not_settled(pending: list[dict[str, Any]], done: set[Any]) -> list[dict[str
 def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = None,
           prefs: Any = None) -> dict[str, Any]:
     """Record up to ``limit`` pending entries now, each marked late. An entry whose article
-    already has an INGEST entry is dropped (it was written after all); one whose article is
-    gone is dropped and counted; one whose columns cannot be read yet stays pending, and a
-    failed read is tried ONCE per drain, never once per entry.
+    already has an INGEST entry FOR THE SAME CONTENT HASH is dropped (it was written after
+    all); one whose article is gone is dropped and counted; one whose columns cannot be read
+    yet stays pending, and a failed read is tried ONCE per drain, never once per entry.
+
+    An INGEST entry at the id for OTHER content does not settle the entry (R365): ids are not
+    unique over time (``articles.id`` has no AUTOINCREMENT, so a deletion, or a restore's swap
+    discarding the articles committed after its working copy, hands the same ids out again),
+    while the log is append-only and keeps the entry of the article that held the id before.
+    Such an entry is written, marked ``earlier_ingest_other_hash``. When the hash cannot be
+    learned yet (no hash on the record and the rows cannot be read) an entry already at the id
+    cannot be judged, so the owed one stays queued instead of being dropped as present.
 
     Two locks, so a slow drain never holds up a failing ingest: ``_DRAIN_LOCK`` lets one
     drain run at a time (two could otherwise both find an entry missing and both record
@@ -311,10 +319,19 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
                 aid = int(it["article_id"])
                 item_id = f"article:{aid}"
                 try:
-                    if any(e.action == CustodyAction.INGEST.value for e in log.entries_for(item_id)):
-                        already += 1
-                        settled.append(it)
-                        continue
+                    other_hash_at_id = False
+                    ingests = [e for e in log.entries_for(item_id) if e.action == CustodyAction.INGEST.value]
+                    if ingests:
+                        # The hash this entry is owed for: the record's own, else the stored row's (the read above;
+                        # absent when the article is gone, or when the read failed -- ``read`` is then None).
+                        want = it.get("item_hash") or ((read or {}).get(aid) or {}).get("item_hash")
+                        if not want and read is None:
+                            continue  # cannot tell whose entry this is: stays queued
+                        if not want or any(e.item_hash == want for e in ingests):
+                            already += 1
+                            settled.append(it)
+                            continue
+                        other_hash_at_id = True
                     cols = {k: it.get(k) for k in ("item_hash", "url", "canonical_url", "source_id")}
                     if not cols.get("item_hash"):
                         if read is None:
@@ -336,6 +353,7 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
                             "recorded_late_at": _now_iso(),
                             "late_reason": it.get("error") or it.get("found_by"),
                             "found_by": it.get("found_by"),
+                            **({"earlier_ingest_other_hash": True} if other_hash_at_id else {}),
                         },
                     )
                     recorded += 1
