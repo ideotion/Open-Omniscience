@@ -708,3 +708,18 @@ jobs:
 
       - name: Smoke-check the installed package imports
         run: python -c "import src.api.main; print('ok:', src.api.main.__name__)"
+
+      # R380 (R353). The wheel is built only by release.yml, at tag time, so a data file the code reads and the wheel does not carry
+      # (pyproject lists the data by glob and MANIFEST.in by graft, and a file kind nobody remembered to list simply does not ship) used to
+      # be found after the tag. Build it here with the command release.yml runs (python -m build: the sdist first, then the wheel FROM the
+      # sdist, so MANIFEST.in decides what the wheel can carry here as it does there) and read the wheel's OWN file list:
+      # scripts/check_wheel_layout.py wants every tracked file under src/, configs/, migrations/, docs/legal/ and docs/i18n/ in it (an
+      # exempt path is named there with its reason) plus a short list of anchors. It reads a file list: it does not install the wheel or
+      # boot the app from it. setuptools is resolved unpinned in the isolated build, as it is at tag time (R381), so a setuptools release
+      # that breaks the build reddens this step first; `python -m build` prints "Installed build dependency versions" with the setuptools
+      # version just before it builds, so the version sits next to the error, and the checker's last line repeats it as Generator.
+      - name: Wheel carries the runtime data trees (built as release.yml builds it, read from its own file list)
+        run: |
+          python -m pip install --upgrade build
+          python -m build --outdir "$RUNNER_TEMP/oo-dist"
+          python scripts/check_wheel_layout.py "$RUNNER_TEMP"/oo-dist/*.whl
