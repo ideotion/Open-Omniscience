@@ -46,6 +46,26 @@ def scope_os(monkeypatch: pytest.MonkeyPatch, module: ModuleType, **replaced) ->
     return seen
 
 
+class _ScopedPath:
+    """``os.path`` with some attributes replaced; every other name is the real ``os.path``'s."""
+
+    def __getattr__(self, name):
+        return getattr(os.path, name)
+
+
+def scope_os_path(monkeypatch: pytest.MonkeyPatch, module: ModuleType, **replaced) -> _ScopedPath:
+    """Replace ``os.path.<name>`` as ``module`` sees it (``module.os.path``), for the rest of the test. ``monkeypatch.setattr(os.path, "getsize", f)``
+    replaces ``posixpath.getsize`` for the whole process, for the same reason ``module.os.<name>`` does."""
+    seen = scope_os(monkeypatch, module)
+    path = seen.__dict__.get("path")
+    if not isinstance(path, _ScopedPath):
+        path = _ScopedPath()
+        monkeypatch.setattr(seen, "path", path, raising=False)
+    for name, fn in replaced.items():
+        monkeypatch.setattr(path, name, fn, raising=False)
+    return path
+
+
 def hide_os(monkeypatch: pytest.MonkeyPatch, module: ModuleType, *names: str) -> _ScopedOs:
     """Make ``os.<name>`` missing as ``module`` sees it (a platform without ``statvfs``), for the rest of the test."""
     seen = scope_os(monkeypatch, module)
