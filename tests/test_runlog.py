@@ -18,6 +18,7 @@ import time
 import pytest
 
 from src.backup import runlog
+from tests.os_scope import scope_os
 
 
 @pytest.fixture(autouse=True)
@@ -407,7 +408,7 @@ def test_a_forked_child_can_never_write_to_the_parents_journal(monkeypatch):
     checked BEFORE the lock for exactly that reason."""
     rl = runlog.begin("import", label="x")
     before = len(_lines(rl.milestone_path))
-    monkeypatch.setattr(runlog.os, "getpid", lambda: rl._pid + 1)
+    scope_os(monkeypatch, runlog, getpid=lambda: rl._pid + 1)
     rl._m_lock.acquire()  # as an unrelated thread would have held it across fork
     try:
         rl.milestone("stage_begin", name="in-the-child")  # must return, not block

@@ -44,6 +44,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.countries import config_country, country_payload_iso3
+from tests.os_scope import scope_os
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIGS = sorted((ROOT / "configs").glob("*.yml"))
@@ -469,7 +470,7 @@ def test_a_write_that_fails_part_way_leaves_every_original_byte_identical(tmp_pa
             raise OSError("disk went away")
         return real(src, dst)
 
-    monkeypatch.setattr(mod.os, "replace", flaky)
+    scope_os(monkeypatch, mod, replace=flaky)
     assert mod.main() == 2
     assert _bytes(tmp_path) == before, "an original was left rewritten or truncated"
     assert not list((tmp_path / "configs").glob(".*.tmp")), "a temporary file was left behind"
@@ -487,7 +488,7 @@ def test_a_failure_while_staging_touches_no_original_and_leaves_no_temporary(tmp
             raise OSError(28, "no space left on device")
         return real(fd)
 
-    monkeypatch.setattr(mod.os, "fsync", flaky)
+    scope_os(monkeypatch, mod, fsync=flaky)
     assert mod.main() == 2
     assert _bytes(tmp_path) == before
     assert not list((tmp_path / "configs").glob(".*.tmp"))
@@ -589,7 +590,7 @@ def test_a_file_that_cannot_be_put_back_is_named_in_the_report_too(tmp_path, mon
             raise OSError("disk went away")
         return real(src, dst)
 
-    monkeypatch.setattr(mod.os, "replace", flaky)
+    scope_os(monkeypatch, mod, replace=flaky)
     assert mod.main() == 2
     refused = json.loads(report.read_text(encoding="utf-8"))["refused"]
     assert refused["write_failed"] == "PutBackFailed" and refused["not_put_back"] == ["a.yml"]
@@ -693,7 +694,7 @@ def test_an_interrupt_during_the_put_back_does_not_skip_the_files_still_to_be_pu
             raise KeyboardInterrupt
         return real_one(path, data)
 
-    monkeypatch.setattr(mod.os, "replace", flaky)
+    scope_os(monkeypatch, mod, replace=flaky)
     monkeypatch.setattr(mod, "_write_one", interrupted_on_a)
     assert mod.main() == 2
     assert (tmp_path / "configs" / "b.yml").read_bytes() == B_OLD.encode(), "the put-back stopped at the interrupted file"
@@ -713,7 +714,7 @@ def test_an_interrupt_right_after_a_rename_still_puts_that_file_back(tmp_path, m
         if calls["n"] == 2:  # b is already replaced when the interrupt lands
             raise KeyboardInterrupt
 
-    monkeypatch.setattr(mod.os, "replace", replace_then_interrupt)
+    scope_os(monkeypatch, mod, replace=replace_then_interrupt)
     with pytest.raises(KeyboardInterrupt):
         mod.main()
     assert _bytes(tmp_path) == before, "the file replaced just before the interrupt was left rewritten"
@@ -742,7 +743,7 @@ def test_the_write_failed_line_never_prints_a_temporary_files_path(tmp_path, mon
     def refuse(src, dst):
         raise OSError(f"cannot rename {src}")
 
-    monkeypatch.setattr(mod.os, "replace", refuse)
+    scope_os(monkeypatch, mod, replace=refuse)
     assert mod.main() == 2
     assert str(tmp_path) not in capsys.readouterr().err
 

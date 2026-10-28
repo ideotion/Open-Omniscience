@@ -36,12 +36,13 @@ import pytest
 from src.backup import merge as merge_mod
 from src.backup.merge import (
     _checkpoint_before_swap,
-    _lock_holder_note,
-    _replace_live_corpus,
     _clear_stale_side_files,
     _file_is_locked,
+    _lock_holder_note,
+    _replace_live_corpus,
     classify_restore_error,
 )
+from tests.os_scope import scope_os
 from tests.wallclock_helpers import HANG_GUARD_S, SteppedClock, call_on_thread
 
 
@@ -516,7 +517,7 @@ def test_the_replace_waits_out_a_lock_on_the_destination(tmp_path, monkeypatch):
             raise _win_error(32, "utilise par un autre processus")
         return real_replace(src, dst)
 
-    monkeypatch.setattr(merge_mod.os, "replace", flaky)
+    scope_os(monkeypatch, merge_mod, replace=flaky)
 
     _replace_live_corpus(working, target, wait_s=5.0)
 
@@ -538,11 +539,7 @@ def test_the_replace_gives_up_at_the_budget_and_leaves_both_files(tmp_path, monk
 
     import src.backup.merge as merge_mod
 
-    monkeypatch.setattr(
-        merge_mod.os,
-        "replace",
-        lambda src, dst: (_ for _ in ()).throw(_win_error(32, "utilise")),
-    )
+    scope_os(monkeypatch, merge_mod, replace=lambda src, dst: (_ for _ in ()).throw(_win_error(32, "utilise")))
 
     clock = SteppedClock()
     monkeypatch.setattr(merge_mod, "time", clock)
@@ -567,7 +564,7 @@ def test_the_replace_does_not_retry_a_non_lock_error(tmp_path, monkeypatch):
     def cross_device(src, dst):
         raise OSError(errno.EXDEV, "Invalid cross-device link")
 
-    monkeypatch.setattr(merge_mod.os, "replace", cross_device)
+    scope_os(monkeypatch, merge_mod, replace=cross_device)
     clock = SteppedClock()
     monkeypatch.setattr(merge_mod, "time", clock)
 
@@ -597,11 +594,7 @@ def test_a_lock_retry_re_disposes_the_engine(tmp_path, monkeypatch):
     target = tmp_path / "corpus.db"
     working.write_bytes(b"new")
     target.write_bytes(b"old")
-    monkeypatch.setattr(
-        merge_mod.os,
-        "replace",
-        lambda src, dst: (_ for _ in ()).throw(_win_error(32, "utilise")),
-    )
+    scope_os(monkeypatch, merge_mod, replace=lambda src, dst: (_ for _ in ()).throw(_win_error(32, "utilise")))
 
     with pytest.raises(PermissionError):
         _replace_live_corpus(working, target, wait_s=3.0)

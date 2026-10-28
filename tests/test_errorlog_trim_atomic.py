@@ -16,6 +16,8 @@ from pathlib import Path
 import pytest
 
 from src.monitoring import errorlog
+from src.safety import file_lock
+from tests.os_scope import scope_os
 
 
 def _big(path: Path, n: int = 6000) -> bytes:
@@ -79,9 +81,9 @@ def test_two_writers_never_share_a_temp_name(journal, monkeypatch):
     _big(journal)
     seen: list[str] = []
     real = os.replace
-    monkeypatch.setattr(os, "replace", lambda a, b: (seen.append(Path(a).name), real(a, b))[1])
+    scope_os(monkeypatch, file_lock, replace=lambda a, b: (seen.append(Path(a).name), real(a, b))[1])
     errorlog._trim(journal)
-    monkeypatch.setattr(os, "getpid", lambda: 999_999_001)
+    scope_os(monkeypatch, file_lock, getpid=lambda: 999_999_001)
     _big(journal)
     errorlog._trim(journal)
     assert len(seen) == 2 and seen[0] != seen[1]
@@ -94,7 +96,7 @@ def test_a_failed_swap_removes_its_own_temp_and_the_journal_stays(journal, monke
     def boom(a, b):
         raise OSError("disk full")
 
-    monkeypatch.setattr(os, "replace", boom)
+    scope_os(monkeypatch, file_lock, replace=boom)
     with pytest.raises(OSError):
         errorlog._trim(journal)
     assert journal.read_bytes() == data

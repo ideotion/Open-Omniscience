@@ -16,6 +16,7 @@ import pytest
 
 from src.monitoring import core_guard, engine_text
 from src.monitoring import secret_scrub as S
+from tests.os_scope import scope_os
 
 ROOT = Path(__file__).resolve().parents[1]
 PASS = "Qv9#taken-from-the-environment'Lm2"
@@ -130,7 +131,7 @@ def test_a_data_drive_restart_hands_the_new_process_what_was_taken_and_nothing_e
 
     seen: dict = {}
     monkeypatch.setenv("OO_TEST_KEEP", "kept")
-    monkeypatch.setattr(data_volume.os, "execve", lambda exe, argv, env: seen.update(exe=exe, argv=argv, env=env))
+    scope_os(monkeypatch, data_volume, execve=lambda exe, argv, env: seen.update(exe=exe, argv=argv, env=env))
     data_volume._restart_process()
     assert seen["env"]["OO_DB_PASSPHRASE"] == PASS and seen["env"]["OO_KEY_PASSPHRASE"] == KEY_PASS and seen["env"]["OO_TEST_KEEP"] == "kept"
     import os
@@ -145,7 +146,7 @@ def test_a_key_typed_into_the_unlock_page_is_not_handed_to_the_restarted_process
     monkeypatch.delenv("OO_DB_PASSPHRASE", raising=False)
     monkeypatch.setattr("src.database.connect._passphrase", "typed-into-the-page-91")
     seen: dict = {}
-    monkeypatch.setattr(data_volume.os, "execve", lambda exe, argv, env: seen.update(env=env))
+    scope_os(monkeypatch, data_volume, execve=lambda exe, argv, env: seen.update(env=env))
     data_volume._restart_process()
     assert "typed-into-the-page-91" not in repr(seen["env"]) and "OO_DB_PASSPHRASE" not in seen["env"]
 
@@ -171,7 +172,7 @@ def test_a_pop_that_raises_is_recorded_by_its_class_and_never_by_its_text(monkey
             raise PermissionError(f"cannot pop {PASS}")
 
     monkeypatch.setattr(S, "_TAKE_FAILED", [])
-    monkeypatch.setattr(S.os, "environ", Env(OO_DB_PASSPHRASE=PASS))
+    scope_os(monkeypatch, S, environ=Env(OO_DB_PASSPHRASE=PASS))
     S.take_from_environment()
     assert S.take_failed() == ["PermissionError", "PermissionError"]
     assert PASS not in repr(S.take_failed())

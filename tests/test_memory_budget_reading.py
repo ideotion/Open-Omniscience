@@ -45,6 +45,7 @@ from src.monitoring import forensics, session_hwm
 from src.monitoring import session_history as sh
 from src.monitoring import soak_window as sw
 from tests import previous_identity
+from tests.os_scope import scope_os
 
 ROOT = Path(__file__).resolve().parent.parent
 T0 = 1_700_000_000.0
@@ -91,17 +92,17 @@ def test_the_cores_are_the_ones_the_machine_reported_and_unreadable_ones_are_not
     """MUTATION TARGET. ``cores`` is the logical CPU count at the resolve: a count the
     platform cannot give is None, never 1 (one core is a finding, not an absence)."""
     _total(monkeypatch, 5000.0)
-    monkeypatch.setattr(mb.os, "cpu_count", lambda: 6)
+    scope_os(monkeypatch, mb, cpu_count=lambda: 6)
     assert mb.resolved_reading()["cores"] == 6
     mb.reset_for_tests()
-    monkeypatch.setattr(mb.os, "cpu_count", lambda: None)
+    scope_os(monkeypatch, mb, cpu_count=lambda: None)
     assert mb.resolved_reading()["cores"] is None
     mb.reset_for_tests()
 
     def refuse() -> int:
         raise NotImplementedError
 
-    monkeypatch.setattr(mb.os, "cpu_count", refuse)
+    scope_os(monkeypatch, mb, cpu_count=refuse)
     assert mb.resolved_reading()["cores"] is None
 
 

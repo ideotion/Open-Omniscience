@@ -25,6 +25,8 @@ from pathlib import Path
 import pytest
 
 from src.monitoring import forensics
+from src.safety import file_lock
+from tests.os_scope import scope_os
 
 _ROOT = Path(__file__).resolve().parents[1]
 _OLD = {"state": "clean", "pid": 1, "started_at": "2026-10-26T00:00:00+00:00"}
@@ -106,7 +108,7 @@ def test_a_second_writer_in_another_thread_does_not_cost_the_first_its_swap(tmp_
             assert forensics._read_state() == second, "the second writer's swap landed first"
         return real_replace(src, dst)
 
-    monkeypatch.setattr(os, "replace", replace)
+    scope_os(monkeypatch, file_lock, replace=replace)
     with caplog.at_level(logging.WARNING):
         forensics._write_state(first)
     assert forensics._read_state() == first, "the last swap wins"
@@ -198,7 +200,7 @@ def test_a_refused_swap_leaves_the_old_sentinel_whole_and_no_copy(tmp_path, monk
     def refuse(*_a, **_k):
         raise PermissionError("the sentinel is held open")  # Windows, when another handle has it
 
-    monkeypatch.setattr(os, "replace", refuse)
+    scope_os(monkeypatch, file_lock, replace=refuse)
     with caplog.at_level(logging.WARNING):
         forensics._write_state(_NEW)  # warns, never raises
     assert _state(tmp_path).read_bytes() == before and _parts(tmp_path) == []
@@ -209,7 +211,7 @@ def test_the_sentinel_is_not_synced(tmp_path, monkeypatch):
     """It is rewritten at every lifecycle step, a sync could block the shutdown path on a wedged device, and the writer this one
     replaced did not sync either: the choice (``fsync=False``) is pinned so a later change to the helper's default does not make it."""
     synced: list[int] = []
-    monkeypatch.setattr(os, "fsync", lambda fd: synced.append(fd))
+    scope_os(monkeypatch, file_lock, fsync=lambda fd: synced.append(fd))
     forensics._write_state(_NEW)
     assert synced == [] and forensics._read_state() == _NEW
 
@@ -223,7 +225,7 @@ def test_the_copy_is_named_for_the_process_and_the_thread(tmp_path, monkeypatch)
         names.append(Path(a).name)
         real_replace(a, b)
 
-    monkeypatch.setattr(os, "replace", spy)
+    scope_os(monkeypatch, file_lock, replace=spy)
     forensics._write_state(_NEW)
     worker = threading.Thread(target=forensics._write_state, args=(_NEW,))
     worker.start()

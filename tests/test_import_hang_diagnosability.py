@@ -27,6 +27,7 @@ import threading
 
 import pytest
 
+from tests.os_scope import scope_os
 
 # --------------------------------------------------------------------------- #
 #  1. The aggregate must not invent a child-CPU measurement it never took.
@@ -276,7 +277,7 @@ def test_request_shutdown_reaps_before_it_signals(monkeypatch):
         order.append("sigterm")
         done.set()
 
-    monkeypatch.setattr(shutdown.os, "kill", _fake_kill)
+    scope_os(monkeypatch, shutdown, kill=_fake_kill)
 
     # ISOLATE the process-global registry. Other suites in the same pytest process
     # legitimately leave real pools in it (the start-method probe registers one), and

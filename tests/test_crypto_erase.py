@@ -31,6 +31,7 @@ from src.database.connect import (
     set_passphrase,
 )
 from src.safety import crypto_erase
+from tests.os_scope import scope_os
 
 sqlcipher_only = pytest.mark.skipif(not have_driver(), reason="sqlcipher3 not installed")
 
@@ -98,7 +99,7 @@ def test_shred_does_not_report_overwrite_success_when_write_fails(tmp_path, monk
     def _boom(fd):
         raise OSError("ENOSPC (simulated)")
 
-    monkeypatch.setattr(crypto_erase.os, "fsync", _boom)
+    scope_os(monkeypatch, crypto_erase, fsync=_boom)
     seen, overwritten, unlinked = crypto_erase._shred(f)
     # The unlink still succeeds (directory-entry removal needs no new block), but the
     # overwrite must be reported as failed -- not folded into "destroyed".

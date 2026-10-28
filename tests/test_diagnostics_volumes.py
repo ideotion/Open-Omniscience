@@ -30,6 +30,7 @@ from pathlib import Path
 import pytest
 
 from src.api import diagnostics_volumes as dv
+from tests.os_scope import scope_os
 
 #: The shipped default cap, read before any test changes it (4,000,000 since R119).
 _REAL_CAP = dv.UPLOAD_PART_BYTES
@@ -1012,7 +1013,7 @@ def test_publishing_moves_the_sidecar_last_and_retires_only_what_nothing_names(t
         events.append(("unlink", self.name))
         return real_unlink(self, *args, **kw)
 
-    monkeypatch.setattr(os, "replace", _recording_replace)
+    scope_os(monkeypatch, dv, replace=_recording_replace)
     monkeypatch.setattr(Path, "unlink", _recording_unlink)
     got = dv.publish_volume_set(build, out)
     assert got == manifest
