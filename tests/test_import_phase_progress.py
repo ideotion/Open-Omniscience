@@ -246,10 +246,12 @@ def test_a_deferred_import_never_pings_a_reindex_phase(tmp_path, monkeypatch):
     assert _wait(mgr)["state"] == "done"
 
     assert seen_flag["reindex_imported"] is False, "the import must ask run_restore to skip it"
+    assert seen, "no progress was reported, so nothing below was checked"
     assert not [p for p in seen if p.get("phase") == "reindexing"], (
         "a deferred re-index is not one of this restore's phases"
     )
     plan = restore_stage_plan(commit=True, reindex_imported=False)
+    assert any(p.get("phase_total") for p in seen), "no report carried a phase_total, so the total below was never compared"
     for p in seen:
         if p.get("phase_total"):
             assert p["phase_total"] == len(_RESTORE_MANAGER_PHASES) + len(plan)

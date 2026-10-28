@@ -44,20 +44,23 @@ def test_active_model_prefers_stored_setting(tmp_path, monkeypatch):
 
 def test_models_endpoint_and_put_report_active(tmp_path, monkeypatch):
     import src.config.app_settings as aps
-    from src.api.llm import get_llm_client
+    from src.api.llm import get_ollama_client
     from src.api.main import app
     from src.llm.ollama import OllamaClient
 
     monkeypatch.setattr(aps, "_settings_path", lambda: tmp_path / "s.json")
 
+    asked: list[int] = []
+
     def _down(_req):
+        asked.append(1)
         raise httpx.ConnectError("ollama down")
 
     def _mk():
         http = httpx.Client(transport=httpx.MockTransport(_down), base_url="http://t")
         return OllamaClient(client=http, base_url="http://t")
 
-    app.dependency_overrides[get_llm_client] = _mk
+    app.dependency_overrides[get_ollama_client] = _mk  # the dependency /api/llm/models actually uses
     try:
         with TestClient(app) as c:
             # PUT the setting through the normal settings API.
@@ -66,6 +69,8 @@ def test_models_endpoint_and_put_report_active(tmp_path, monkeypatch):
             # /api/llm/models reports it as `active` even when Ollama is down
             # (the active model is a stored choice, not read from Ollama).
             d = c.get("/api/llm/models").json()
+            assert asked, "the injected Ollama was never asked, so 'down' was never reached"
+            assert d["available"] is False and d["installed"] == []
             assert d["active"] == "qwen2.5:3b"
             # An invalid model name is rejected at the API boundary.
             assert c.put("/api/settings", json={"llm_model": "bad name!"}).status_code == 400
