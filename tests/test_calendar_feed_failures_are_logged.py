@@ -11,7 +11,7 @@ Three sites in ``src/events/feeds.py`` swallowed an exception and left NO trace:
   under ``suppress(Exception)``: if THAT write failed too, the feed never advanced its rung and was re-picked on every pass, silently.
 * ``auto_import_due_feeds``: ``failed += 1`` with nothing about the failure.
 
-A feed URL can carry credentials (a user-added feed), and the exception text of a fetch failure quotes the URL, so every line is checked to carry neither the URL nor
+A feed URL could carry credentials (the bundled catalogue has none today: this is defence in depth), and the exception text of a fetch failure quotes the URL, so every line is checked to carry neither the URL nor
 the credentials in it. Behaviour and tallies are unchanged: these tests pin only that the failure is now on the record, and the "never advances" consequence.
 """
 
@@ -35,7 +35,7 @@ def _first_feed_ids(n: int) -> list[str]:
 
 
 def _hold_credentials_in(monkeypatch) -> None:
-    """Make every feed one whose URL carries credentials, as a user-added feed can (whichever feed a pass picks first, its URL is the credentialed one)."""
+    """Make every feed one whose URL carries credentials (whichever feed a pass picks first, its URL is the credentialed one)."""
     monkeypatch.setattr(F, "feed_by_id", lambda feed_id: ({"name": "x"}, {"id": feed_id, "url": CRED_URL}))
 
 
@@ -95,7 +95,7 @@ def test_a_failed_attempt_write_is_logged_and_the_feed_is_repicked_the_next_pass
         F.verify_due_feeds(object(), batch=1)
         F.verify_due_feeds(object(), batch=1)
     assert picked == [fid, fid], "no attempt recorded, so the same never-checked feed is first in line again"
-    assert caplog.text.count("OSError") >= 2 and "could not be written" in caplog.text, "the failed ladder write is no longer silent"
+    assert caplog.text.count("could not be written") == 2, "the failed ladder write is no longer silent, on both passes"
 
 
 def test_with_the_attempt_written_the_next_pass_moves_on_to_another_feed(monkeypatch):
@@ -156,3 +156,34 @@ def test_a_feed_the_catalogue_does_not_know_is_also_class_only(monkeypatch, capl
         F.verify_due_feeds(object(), batch=1)
     _assert_clean(caplog.text)
     assert "RuntimeError" in caplog.text
+
+
+def _fail_both(monkeypatch):
+    monkeypatch.setattr(F, "verify_feed", lambda fetcher, feed_id: (_ for _ in ()).throw(_fetch_error()))
+
+    def _no_write(feed_id, status, *, at=None):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(F, "record_attempt", _no_write)
+
+
+def test_a_failed_attempt_write_does_not_carry_the_fetch_failures_text_by_chaining(monkeypatch, caplog):
+    """The write fails INSIDE the verification's handler, so it is chained to the fetch failure and its traceback prints that failure's text and URL as well. The write's
+    own line is scrubbed with the same secrets."""
+    _hold_credentials_in(monkeypatch)
+    _fail_both(monkeypatch)
+    with caplog.at_level("WARNING"):
+        F.verify_due_feeds(object(), batch=1)
+    assert "could not be written" in caplog.text and "OSError" in caplog.text
+    _assert_clean(caplog.text)
+
+
+def test_a_failed_attempt_write_is_class_only_when_the_feed_cannot_be_looked_up(monkeypatch, caplog):
+    monkeypatch.setattr(F, "feed_by_id", lambda feed_id: None)
+    _fail_both(monkeypatch)
+    with caplog.at_level("WARNING"):
+        F.verify_due_feeds(object(), batch=1)
+    assert caplog.text.count("its text is withheld") == 2, "both lines, the verification's and the write's, are class only"
+    assert "OSError" in caplog.text and "RuntimeError" in caplog.text
+    _assert_clean(caplog.text)
+    assert "request error" not in caplog.text and "Traceback" not in caplog.text

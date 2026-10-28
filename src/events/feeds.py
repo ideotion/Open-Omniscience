@@ -489,8 +489,9 @@ def verify_feed(fetcher, feed_id: str) -> dict:
 
 
 def _feed_secrets(fid: str) -> tuple[str | None, ...] | None:
-    """What a log line about feed ``fid`` must not carry: its URL and any credentials in it. A user-added feed can hold some, and the text of a fetch failure quotes the
-    URL, so the scrubbing log sink is told to take them out (the line names the feed by id). ``None`` when the feed cannot be looked up: then nothing is known to take out."""
+    """What a log line about feed ``fid`` must not carry: its URL and any credentials in it. A fetch failure's text quotes the
+    URL, so the scrubbing log sink is told to take them out (the line names the feed by id). The bundled catalogue holds no credentials today, so this is defence in depth: a catalogue
+    entry that gains some must not start leaking them into a log. ``None`` when the feed cannot be looked up: then nothing is known to take out."""
     try:
         hit = feed_by_id(fid)
         if not hit:
@@ -540,7 +541,12 @@ def verify_due_feeds(fetcher, *, batch: int = 5) -> dict:
             try:
                 record_attempt(fid, "unreachable")
             except Exception as write_exc:  # noqa: BLE001 - and if THAT write fails too, the feed is picked again next pass: say so (R386)
-                log_failure(_LOG, f"calendar feed {fid}: the attempt could not be written, so its rung does not advance", write_exc, level=logging.WARNING)
+                # the failed write is chained to ``exc`` (raised inside its handler), so its traceback prints the fetch failure's text too: the same secrets, or the class only
+                what = f"calendar feed {fid}: the attempt could not be written, so its rung does not advance"
+                if secrets is None:
+                    _log_class_only(what, type(write_exc).__name__)
+                else:
+                    log_failure(_LOG, what, write_exc, *secrets, level=logging.WARNING)
             failed += 1
             continue
         if verdict.get("status") == "ok":
