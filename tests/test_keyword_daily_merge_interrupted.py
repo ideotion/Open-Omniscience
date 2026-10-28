@@ -12,7 +12,7 @@ store voided, so the next refresh is a full rebuild.
 THE FAULTS ARE INDUCED, NOT OBSERVED, and each test names its cause. The proxy raises on one chosen statement of the real refresh over a real
 in-memory store; what raised in the field would be a DuckDB error (out of memory or disk), MemoryError, a SQLAlchemy error reading the
 keyword rows, or a kill, and those causes are inferred, not reproduced. What the tests prove is the property that does not depend on the cause:
-after a stop at that statement, the partial merge IS in the store (the premise, asserted) and the next refresh does not add it again.
+after a stop at that statement, the partial merge IS in the store (the premise, asserted where a statement changes counts; the kill-at-watermark test asserts instead that the watermark did not advance) and the next refresh does not add it again.
 """
 
 from __future__ import annotations
