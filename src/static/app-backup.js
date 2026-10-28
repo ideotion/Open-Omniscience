@@ -1977,9 +1977,25 @@
       // every tick; everything under it changes only when the run's facts do, and is not
       // touched in between.
       const headHtml = `<b>${head}</b>${st.elapsed_s != null ? ` · ${esc(_uxImDur(st.elapsed_s))}` : ""}`;
+      // What the pause is and is not (R360). The visible line carries the caveat (informed consent:
+      // never behind a toggle); the hover carries the long form. A restore that copied the library
+      // with a collection pass still running (collection_exit_unconfirmed) does NOT claim a pause: it
+      // says it could not confirm one, and keeps saying so after the run (the loss outlives it).
+      let collLine = "";
+      if (st.collection_exit_unconfirmed) {
+        collLine = t("It could not be confirmed that background collection had stopped when the import copied your corpus, so what collection saved after that copy is not kept.");
+      } else if (st.state === "running" && st.collection_paused) {
+        collLine = t("Background collection is paused for this whole import and resumes when it finishes.");
+      }
+      if (collLine && st.state === "running") {
+        collLine += " " + t("Other background work is not paused: what it, or you, saves to your corpus while the import runs can be lost.");
+      }
+      const collHtml = collLine
+        ? `<div title="${esc(t("Paused: the collection loop and the Collect now button. Not paused: the background tasks (markets, calendars, law, hazards, crawling and backfill), Wikipedia updates, other background jobs, AI sweeps, start-up upkeep and anything you change in the app. The import merges the backup into a copy of your corpus and then replaces your corpus with that copy. Whatever is saved to your corpus after the copy was made and before it is replaced is not in the copy, except your settings, agenda and interface choices, which are carried over. Before it makes the copy, the import waits up to 10 minutes for a collection pass that was still running; if one is still running after that, the import goes on and says so."))}">${esc(collLine)}</div>`
+        : "";
       const bodyHtml = stagedLine
         + tailLine
-        + (st.state === "running" && st.collection_paused && !st.collection_exit_unconfirmed ? `<div>${esc(t("Background collection is paused for this whole import and resumes when it finishes."))}</div>` : "")
+        + collHtml
         + (st.state === "interrupted" ? _uxImInterruptedHtml(t) : "");
       if (note) {
         _uxPatchRow(note, "head", headHtml, headHtml);

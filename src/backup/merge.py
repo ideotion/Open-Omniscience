@@ -7644,8 +7644,17 @@ def run_restore(
     undo.
 
     ``exclusive`` (import-speed fix 2026-07-30): the caller asserts that this restore
-    OWNS the machine -- background collection is paused and nothing else is expected to
-    write the live corpus. It is passed to the two whole-corpus snapshots below as
+    OWNS the machine -- background collection is paused. WHAT THAT PAUSE IS (R360): the
+    exclusive window stops the collection loop (a bounded join) and refuses the next
+    "Run now"; a restore that owns the machine then waits, bounded, for the loop and for
+    a pass already in flight to be gone before it takes the working copy
+    (:mod:`src.backup.collector_exit`), and records what it found as
+    ``report["collector_exit"]``. WHAT IT IS NOT: a lock on the corpus. The housekeeping
+    lane, the Wikipedia drain, registered background jobs, AI sweeps, boot upkeep and
+    every API write route are not stopped, and anything they commit between the working
+    copy and the swap is discarded by the swap (only ``settings.``/``agenda.``/``ui.``
+    keys and the search history are carried). The import dialog says so in the same
+    terms. It is passed to the two whole-corpus snapshots below as
     ``allow_file_copy``, which lets them copy the corpus's bytes instead of
     re-encrypting it row by row through the SQLCipher codec. Purely a resource decision
     with no behavioural difference: the fast path itself refuses unless it can PROVE the

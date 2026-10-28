@@ -1503,7 +1503,8 @@ class ImportQueueManager:
             # (ruling item 12).
             "collection_note": (
                 "Background collection is paused for this whole import and resumes "
-                "when it finishes."
+                "when it finishes. Other background work is not paused: what it, or "
+                "you, saves to your corpus while the import runs can be lost."
             ),
         }
 

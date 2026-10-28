@@ -361,8 +361,79 @@ def test_the_queue_status_says_whether_any_restore_copied_the_corpus_unconfirmed
     assert q.status()["collection_exit_unconfirmed"] is unconfirmed
 
 
+_ROOT = Path(__file__).resolve().parents[1]
+_LOCALES = ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh")
+_PAUSED = "Background collection is paused for this whole import and resumes when it finishes."
+_OTHER = "Other background work is not paused: what it, or you, saves to your corpus while the import runs can be lost."
+_UNCONFIRMED = (
+    "It could not be confirmed that background collection had stopped when the import copied your corpus, "
+    "so what collection saved after that copy is not kept."
+)
+
+
+def _js() -> str:
+    return (_ROOT / "src" / "static" / "app-backup.js").read_text(encoding="utf-8")
+
+
+def _hover_key() -> str:
+    import json
+
+    keys = [k for k in json.loads((_ROOT / "src/static/locales/en.json").read_text(encoding="utf-8")) if k.startswith("Paused: the collection loop")]
+    assert len(keys) == 1, keys
+    return keys[0]
+
+
 def test_the_dialog_does_not_claim_a_pause_that_a_restore_found_was_not_yet_true():
-    """The static twin of tests/import_tail_phase_node_test.js: the claim is gated on the field."""
-    js = (Path(__file__).resolve().parents[1] / "src" / "static" / "app-backup.js").read_text(encoding="utf-8")
-    line = next(ln for ln in js.splitlines() if "Background collection is paused for this whole import" in ln)
-    assert "!st.collection_exit_unconfirmed" in line
+    """The static twin of tests/import_tail_phase_node_test.js: the claim is the ELSE of the unconfirmed test."""
+    import re
+
+    js = _js()
+    unconfirmed = re.search(r"if \(st\.collection_exit_unconfirmed\) \{\s*collLine = t\(\"It could not be confirmed", js)
+    paused = re.search(r'\} else if \(st\.state === "running" && st\.collection_paused\) \{\s*collLine = t\("Background collection is paused', js)
+    assert unconfirmed and paused and unconfirmed.start() < paused.start()
+
+
+def test_every_line_the_dialog_says_about_the_pause_is_a_translated_key_in_every_language():
+    """x12: the three new strings are keys of every locale, carried by the JS literally, and translated (not the English copied)."""
+    import json
+
+    js = _js()
+    hover = _hover_key()
+    for text in (_PAUSED, _OTHER, _UNCONFIRMED, hover):
+        assert f't("{text}")' in js, f"the dialog must look this up by its exact key: {text[:60]}"
+    for lang in _LOCALES:
+        table = json.loads((_ROOT / "src" / "static" / "locales" / f"{lang}.json").read_text(encoding="utf-8"))
+        for text in (_OTHER, _UNCONFIRMED, hover):
+            assert text in table, f"{lang}: missing"
+            if lang != "en":
+                assert table[text] != text and len(table[text]) > 20, f"{lang}: left in English"
+
+
+def test_the_ten_minutes_the_hover_promises_are_the_bound_the_wait_has():
+    """The hover is a statement about the code: 'up to N minutes' must be COLLECTOR_EXIT_WAIT_S, in every language's digits."""
+    import json
+    import re
+
+    assert "up to 10 minutes" in _hover_key()
+    assert collector_exit.COLLECTOR_EXIT_WAIT_S == 10 * 60
+    # the other languages state the same number (ASCII digits, or Bengali digits for bn)
+    for lang in _LOCALES:
+        table = json.loads((_ROOT / "src" / "static" / "locales" / f"{lang}.json").read_text(encoding="utf-8"))
+        text = table[_hover_key()]
+        assert re.search(r"(?<![0-9\u09e6-\u09ef])10(?![0-9])|\u09e7\u09e6", text), f"{lang}: the bound is not stated"
+
+
+def test_the_hover_names_every_writer_class_the_window_does_not_stop():
+    hover = _hover_key()
+    for named in ("the background tasks (markets, calendars, law, hazards, crawling and backfill)", "Wikipedia updates", "other background jobs", "AI sweeps", "start-up upkeep", "anything you change in the app"):
+        assert named in hover
+    assert "settings, agenda and interface choices" in hover, "what the swap carries over is stated beside what it discards"
+
+
+def test_the_queue_note_and_the_restores_own_text_no_longer_claim_that_nothing_else_writes():
+    q = _queue(Path("."), [])  # the note is a constant of the status, whatever the run
+    note = q.status()["collection_note"]
+    assert "paused" in note.lower() and "not paused" in note.lower()
+    merge_src = _MERGE_PY.read_text(encoding="utf-8")
+    assert "nothing else is expected to write" not in merge_src, "the unqualified claim about the exclusive window is gone"
+    assert "WHAT IT IS NOT: a lock on the corpus" in merge_src

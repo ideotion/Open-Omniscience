@@ -427,18 +427,47 @@ test("a job with no unit at all is a plain count, never bytes", () => {
 });
 
 // --------------------------------------------------------------------------- //
-//  R360: the dialog says collection is paused only while no restore has found otherwise
+//  R360: what the pause is and is not, said where the person is looking
 // --------------------------------------------------------------------------- //
 const PAUSED_SENTENCE = "Background collection is paused for this whole import";
+const OTHER_WORK = "Other background work is not paused";
+const UNCONFIRMED = "It could not be confirmed that background collection had stopped";
+const HOVER_START = "Paused: the collection loop and the Collect now button.";
 
-test("R360: a running import says collection is paused", () => {
+test("R360: a running import says collection is paused AND that other work is not", () => {
   const note = render(Object.assign({}, TAIL_RUN, { collection_exit_unconfirmed: false }));
   assert(note.indexOf(PAUSED_SENTENCE) !== -1, "the claim is still made where nothing contradicts it: " + note);
+  assert(note.indexOf(OTHER_WORK) !== -1, "the caveat is on the same visible line as the claim, never behind a toggle: " + note);
+  assert(note.indexOf(UNCONFIRMED) === -1, "nothing was left unconfirmed: " + note);
 });
 
-test("R360: ...and does not say it where a restore copied the library with a pass still running", () => {
+test("R360: the long form rides on the line as its hover", () => {
+  const note = render(TAIL_RUN);
+  const at = note.indexOf('title="' + HOVER_START);
+  assert(at !== -1, "the line carries the long form as its translated title: " + note);
+  const title = note.slice(at, note.indexOf('"', at + 7));
+  for (const word of ["Not paused:", "AI sweeps", "start-up upkeep", "up to 10 minutes", "settings, agenda and interface choices"]) {
+    assert(title.indexOf(word) !== -1, "the hover names " + word + ": " + title);
+  }
+});
+
+test("R360: ...and a restore that copied the library with a pass still running does not claim a pause", () => {
   const note = render(Object.assign({}, TAIL_RUN, { collection_exit_unconfirmed: true }));
   assert(note.indexOf(PAUSED_SENTENCE) === -1, "a restore found a pass still writing; the dialog must not claim a pause: " + note);
+  assert(note.indexOf(UNCONFIRMED) !== -1, "it says instead that a pause could not be confirmed: " + note);
+  assert(note.indexOf(OTHER_WORK) !== -1, "and still says other work is not paused: " + note);
+});
+
+test("R360: the unconfirmed statement outlives the run (the loss does)", () => {
+  const note = render(Object.assign({}, TAIL_RUN, { state: "done", collection_paused: false, collection_exit_unconfirmed: true, live: null }));
+  assert(note.indexOf(UNCONFIRMED) !== -1, "a finished run keeps saying it: " + note);
+  assert(note.indexOf(OTHER_WORK) === -1, "but does not tell a finished run that work is still running: " + note);
+});
+
+test("R360: a finished, confirmed run says nothing about a pause", () => {
+  const note = render(Object.assign({}, TAIL_RUN, { state: "done", collection_paused: false, live: null }));
+  assert(note.indexOf(PAUSED_SENTENCE) === -1 && note.indexOf(UNCONFIRMED) === -1 && note.indexOf(OTHER_WORK) === -1,
+    "nothing to say once the run is over and nothing was left unconfirmed: " + note);
 });
 
 test("R360: an older server that sends no such field keeps the sentence", () => {
