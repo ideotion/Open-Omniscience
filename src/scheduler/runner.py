@@ -1853,6 +1853,14 @@ class BackgroundScheduler:
         # even when the loop was already stopped before the restore began, e.g. under
         # airplane mode) -- see hold_exclusive/release_exclusive below.
         self._exclusive_hold = False
+        # R367 (F2 of the read of #1607): the stop signal of a pass that no loop owns. ``_stop`` belongs to the loop thread and ``stop()`` used to
+        # return before setting it when that thread was not running, so a "Run now" pass (the shape on a machine that booted in airplane mode) was
+        # never asked to wind down and an exclusive operation's wait spent its whole bound on it. Set by ``stop()`` only while a pass is in
+        # flight and the loop is not running; cleared at the start of every pass, under the same lock, so it can never outlive the pass it was for.
+        self._pass_stop = threading.Event()
+        # A ``start()`` refused during an exclusive hold is remembered, not lost: the operation began with the loop stopped (``was_paused`` False),
+        # so its resume would otherwise never start anything, and the machine would end up online and not collecting. Consumed by the resume.
+        self._start_deferred = False
 
     # -- lifecycle --------------------------------------------------------- #
 
@@ -1860,15 +1868,35 @@ class BackgroundScheduler:
         return self._thread is not None and self._thread.is_alive()
 
     def start(self) -> bool:
-        """Start the scheduling loop. Returns False if it was already running."""
+        """Start the scheduling loop. Returns False if it was already running, or while an exclusive operation holds the machine.
+
+        The hold (R367, F5 of the read of #1607) is refused here exactly as :meth:`run_now` refuses it: the Start button, the network toggle going
+        online and the unattended start would otherwise put the loop back in the middle of an import, whose dialog says collection is paused. A
+        refused start is REMEMBERED (:meth:`take_deferred_start`) and the operation's resume honours it, so it is delayed, never lost. The resume
+        releases the hold BEFORE it calls this (:func:`resume_after_exclusive_operation`), and ``status()["exclusive_hold"]`` says why a start was
+        refused (the API; the UI does not read it). The hold is checked and the thread created in ONE lock region, so a pause that claims the hold
+        cannot find the loop not yet running and leave it starting under the operation.
+        """
         if self.is_running():
             return False
         _ensure_storage_supervisor()
-        self._stop.clear()
-        self._started_at = datetime.now(UTC)
-        self._thread = threading.Thread(target=self._loop_recorded, name="oo-scheduler", daemon=True)
-        self._thread.start()
+        with self._state_lock:
+            if self._exclusive_hold:
+                self._start_deferred = True
+                return False
+            if self.is_running():  # a second start() that got here first
+                return False
+            self._stop.clear()
+            self._started_at = datetime.now(UTC)
+            self._thread = threading.Thread(target=self._loop_recorded, name="oo-scheduler", daemon=True)
+            self._thread.start()
         return True
+
+    def take_deferred_start(self) -> bool:
+        """Was a start refused during the hold that has just ended? Reads and clears the memory (the resume's one question)."""
+        with self._state_lock:
+            deferred, self._start_deferred = self._start_deferred, False
+        return deferred
 
     def _loop_recorded(self) -> None:
         """The loop, bracketed by the two ledger events the chronology reads its bar from
@@ -1893,6 +1921,9 @@ class BackgroundScheduler:
     def stop(self, timeout: float = 10.0) -> bool:
         """Signal the loop to stop and join it. Returns False if it wasn't running."""
         if not self.is_running():
+            with self._state_lock:
+                if self._active:
+                    self._pass_stop.set()  # a "Run now" pass: see ``_pass_stop``; the return value stays "the loop was not running"
             return False
         self._stop.set()
         if self._thread is not None:
@@ -1933,7 +1964,9 @@ class BackgroundScheduler:
         operation began, since a manual "Run now" would otherwise still compete
         for CPU/the single-writer gate with it regardless of the loop's state."""
         with self._state_lock:
-            self._exclusive_hold = True
+            if not self._exclusive_hold:
+                self._start_deferred = False  # a FRESH claim: only a start refused during this hold is the operation's to honour
+            self._exclusive_hold = True  # one boolean, so an operation that claims it inside another's hold must not erase the other's deferral
 
     def release_exclusive(self) -> None:
         """The other half of :meth:`hold_exclusive` -- always call this in a
@@ -1941,6 +1974,10 @@ class BackgroundScheduler:
         (regardless of whether the continuous loop itself resumed)."""
         with self._state_lock:
             self._exclusive_hold = False
+
+    def _pass_should_stop(self) -> bool:
+        """What the pass asks before each source: the loop's stop, or the stop aimed at a pass no loop owns."""
+        return self._stop.is_set() or self._pass_stop.is_set()
 
     def holds_exclusive(self) -> bool:
         """Is the machine currently claimed for an exclusive operation?"""
@@ -2113,6 +2150,12 @@ class BackgroundScheduler:
         if not self._run_lock.acquire(blocking=False):
             return
         with self._state_lock:
+            # Before ``_active``: a stop() that finds the pass active signals THIS pass, never the previous one. A pass that begins UNDER the hold (a
+            # "Run now" that passed its check an instant before it was claimed, after ``stop()`` had seen no pass) starts already stopped.
+            if self._exclusive_hold:
+                self._pass_stop.set()
+            else:
+                self._pass_stop.clear()
             self._active = True
         started = datetime.now(UTC)
         started_mono = time.monotonic()
@@ -2473,7 +2516,7 @@ class BackgroundScheduler:
             # rather than one whole pass (field report 2026-07-29 -- importing while
             # collecting ran 3-5x slower because the pause could not actually reach
             # an in-flight pass).
-            result = run_scrape_once(session, fetcher, settings, should_stop=self._stop.is_set)
+            result = run_scrape_once(session, fetcher, settings, should_stop=self._pass_should_stop)
             _activity("collection-pass", result, settings)
             # Opt-in drop-folder export (WP3/RM-06): write the new-articles
             # delta into the operator's local folder. Best-effort; off when
@@ -2664,6 +2707,8 @@ class BackgroundScheduler:
             return {
                 "running": self.is_running(),
                 "active": self._active,
+                "exclusive_hold": bool(self._exclusive_hold),  # why a start is refused: an import or restore owns the machine
+                "start_deferred": bool(self._start_deferred),  # a refused start is queued behind the hold and starts when it ends
                 "started_at": self._started_at.isoformat() if self._started_at else None,
                 "last_run": self._last_run.isoformat() if self._last_run else None,
                 "next_run": self._next_run.isoformat() if self._next_run else None,
@@ -3047,9 +3092,15 @@ def resume_after_exclusive_operation(
     """
     if exclusive_window_open():
         return
+    released = False
     try:
-        if not was_paused:
+        take = getattr(get_scheduler(), "take_deferred_start", None)
+        deferred = bool(take()) if callable(take) else False  # a Start or go-online that was refused during the hold is still wanted
+        if not (was_paused or deferred):
             return
+        # The hold ends BEFORE the start attempts: ``start()`` refuses while it stands (R367, F5), and the operation is done.
+        get_scheduler().release_exclusive()
+        released = True
         if _start_or_stand_down(retries, retry_delay):
             return
         # SCHED-1 (field round 2026-09-24): the retry budget ran out with the old pass
@@ -3066,7 +3117,8 @@ def resume_after_exclusive_operation(
             "the moment it exits (task manager -> Schedule shows it as pending)"
         )
     finally:
-        get_scheduler().release_exclusive()
+        if not released:
+            get_scheduler().release_exclusive()
 
 
 # --------------------------------------------------------------------------- #

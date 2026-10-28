@@ -205,4 +205,10 @@ def test_the_scheduler_hands_its_own_stop_event_to_the_pass():
     body = src.split("def _default_run_once(")[1]
     nxt = re.search(r"\n    (?:async )?def ", body)
     body = body[: nxt.start()] if nxt else body
-    assert "run_scrape_once(session, fetcher, settings, should_stop=self._stop.is_set)" in body
+    assert "run_scrape_once(session, fetcher, settings, should_stop=self._pass_should_stop)" in body
+    # The pass-scoped decider must still read the loop's own stop event, or
+    # the wiring above would hand the pass something that cannot say Stop.
+    from tests.js_source_helper import python_function_source
+
+    decider = python_function_source(src, "_pass_should_stop")
+    assert "self._stop.is_set()" in decider
