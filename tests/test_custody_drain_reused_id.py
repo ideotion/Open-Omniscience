@@ -26,6 +26,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from src.custody.log import CustodyAction, CustodyLog
 from src.database.models import Article, Base, Source
 
 
@@ -76,16 +77,12 @@ def _article(db, n: int, article_hash: str) -> Article:
 
 
 def _log_ingest(article_id: int, item_hash: str) -> None:
-    from src.custody.log import CustodyAction, CustodyLog
-
     with CustodyLog() as log:
         log.record(f"article:{article_id}", item_hash, CustodyAction.INGEST, actor="ingest-pipeline",
                    metadata={"url": f"https://old.example/{article_id}"})
 
 
 def _ingests(article_id: int):
-    from src.custody.log import CustodyLog
-
     with CustodyLog() as log:
         return [e for e in log.entries_for(f"article:{article_id}") if e.action == "ingest"]
 
@@ -177,5 +174,67 @@ def test_an_owed_entry_whose_article_is_gone_is_still_settled_without_a_write(cu
     db.delete(a)
     db.commit()
     res = pending.drain()
-    assert res["recorded"] == 0 and res["still_pending"] == 0, res
+    assert res == {"recorded": 0, "already_present": 0, "article_gone": 1, "still_pending": 0}, (
+        "a gone article is counted as gone, not as 'already present', even with an earlier article's entry at its id")
     assert len(_ingests(a.id)) == 1, "no entry was written for an article that is not there"
+
+
+def test_a_record_with_a_hash_is_judged_by_that_hash_even_when_a_hashless_record_at_the_same_id_loads_the_row(custody, db):
+    """The rows are read per ID, so one hashless record at an id loads the stored row for every record at that id, including
+    one that carries its own hash: the carried hash still decides. Here hA was never logged (only the row's hB was), so
+    the entry owed for hA is written, marked; the hashless record is judged by the row's hB and is settled as present."""
+    from src.custody import pending
+
+    a = _article(db, 1, "hB")
+    _log_ingest(a.id, "hB")
+    pending.note_failed(a.id, item_hash="hA", error="TimeoutError: pool")
+    pending.note_failed(a.id, error="TimeoutError: pool")
+    res = pending.drain()
+    assert res["recorded"] == 1 and res["already_present"] == 1, res
+    got = _ingests(a.id)
+    assert [e.item_hash for e in got] == ["hB", "hA"]
+    assert got[1].metadata["earlier_ingest_other_hash"] is True
+
+
+def test_the_articles_own_entry_settles_it_wherever_it_sits_among_the_entries_at_the_id(custody, db):
+    """Any INGEST entry at the id with the article's hash settles it, not only the first or the last one."""
+    from src.custody import pending
+
+    a = _article(db, 1, "mine")
+    _log_ingest(a.id, "earlier-holder")
+    _log_ingest(a.id, "mine")
+    _log_ingest(a.id, "later-holder")
+    pending.note_failed(a.id, error="TimeoutError: pool")
+    res = pending.drain()
+    assert res["recorded"] == 0 and res["already_present"] == 1, res
+    assert len(_ingests(a.id)) == 3 and pending.read_pending() == []
+
+
+def test_only_an_ingest_entry_counts_as_the_articles_entry(custody, db):
+    """An ACCESS entry (the generic custody API writes them) carrying the article's hash is not the ingest it is owed."""
+    from src.custody import pending
+
+    a = _article(db, 1, "mine")
+    _log_ingest(a.id, "earlier-holder")
+    with CustodyLog() as log:
+        log.record(f"article:{a.id}", "mine", CustodyAction.ACCESS, actor="operator")
+    pending.note_failed(a.id, error="TimeoutError: pool")
+    res = pending.drain()
+    assert res["recorded"] == 1 and res["already_present"] == 0, res
+    assert [e.item_hash for e in _ingests(a.id)] == ["earlier-holder", "mine"]
+
+
+def test_the_mark_is_on_the_entry_that_found_another_hash_at_its_id_and_on_no_other(custody, db):
+    """One drain, two owed entries: a reused id (marked) and a first-time id (written exactly as before, unmarked)."""
+    from src.custody import pending
+
+    a = _article(db, 1, "new")
+    b = _article(db, 2, "first-time")
+    _log_ingest(a.id, "old")
+    pending.note_failed(a.id, error="TimeoutError: pool")
+    pending.note_failed(b.id, error="TimeoutError: pool")
+    res = pending.drain()
+    assert res["recorded"] == 2, res
+    assert _ingests(a.id)[-1].metadata["earlier_ingest_other_hash"] is True
+    assert "earlier_ingest_other_hash" not in _ingests(b.id)[-1].metadata
+    assert _ingests(b.id)[-1].metadata["late"] is True

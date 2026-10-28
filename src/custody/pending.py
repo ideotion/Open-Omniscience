@@ -263,11 +263,17 @@ def _not_settled(pending: list[dict[str, Any]], done: set[Any]) -> list[dict[str
     return [it for it in pending if _key(it) not in done]
 
 
+def _ingests_at(log: Any, item_id: str, ingest: str) -> list[Any]:
+    """The INGEST entries at ``item_id`` (a helper, for the reason :func:`_ids_missing_columns` gives)."""
+    return [e for e in log.entries_for(item_id) if e.action == ingest]
+
+
 def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = None,
           prefs: Any = None) -> dict[str, Any]:
     """Record up to ``limit`` pending entries now, each marked late. An entry whose article
     already has an INGEST entry FOR THE SAME CONTENT HASH is dropped (it was written after
-    all); one whose article is gone is dropped and counted; one whose columns cannot be read
+    all); one whose article is gone is dropped and counted (``article_gone``, whether or not an
+    INGEST entry of some earlier article sits at its id); one whose columns cannot be read
     yet stays pending, and a failed read is tried ONCE per drain, never once per entry.
 
     An INGEST entry at the id for OTHER content does not settle the entry (R365): ids are not
@@ -320,18 +326,19 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
                 item_id = f"article:{aid}"
                 try:
                     other_hash_at_id = False
-                    ingests = [e for e in log.entries_for(item_id) if e.action == CustodyAction.INGEST.value]
+                    ingests = _ingests_at(log, item_id, CustodyAction.INGEST.value)
                     if ingests:
                         # The hash this entry is owed for: the record's own, else the stored row's (the read above;
                         # absent when the article is gone, or when the read failed -- ``read`` is then None).
                         want = it.get("item_hash") or ((read or {}).get(aid) or {}).get("item_hash")
-                        if not want and read is None:
-                            continue  # cannot tell whose entry this is: stays queued
-                        if not want or any(e.item_hash == want for e in ingests):
-                            already += 1
-                            settled.append(it)
-                            continue
-                        other_hash_at_id = True
+                        if want:
+                            if any(e.item_hash == want for e in ingests):
+                                already += 1
+                                settled.append(it)
+                                continue
+                            other_hash_at_id = True
+                        # No hash to compare: the read failed (the entry stays queued, below, whoever is at the id) or
+                        # the article is gone (counted gone, below), never "present".
                     cols = {k: it.get(k) for k in ("item_hash", "url", "canonical_url", "source_id")}
                     if not cols.get("item_hash"):
                         if read is None:
