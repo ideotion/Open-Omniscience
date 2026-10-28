@@ -57,7 +57,9 @@ def _isolated_store(monkeypatch, tmp_path):
 def test_a_stop_inside_an_import_is_not_a_failure_and_is_not_stamped():
     f = _Fetcher(stop_at=3)
     r = F.auto_import_due_feeds(f, batch=5)
-    assert len(f.urls) == 3, "the batch must end at the feed the Stop cut, not walk the rest through refusals"
+    assert len(f.urls) == 3, (
+        "the batch must end at the feed the Stop cut, not walk the rest through refusals"
+    )
     assert r["imported"] == 2
     assert r["failed"] == 0, "a Stop is not the feed's failure"
     stamped = F._load_json("calendar_autoimport.json")
@@ -66,7 +68,9 @@ def test_a_stop_inside_an_import_is_not_a_failure_and_is_not_stamped():
     clear_kill_switch()
     again = _Fetcher()
     F.auto_import_due_feeds(again, batch=1)
-    assert again.urls == [cut_url], "the feed the Stop cut is asked FIRST on the next pass, not skipped for the interval"
+    assert again.urls == [cut_url], (
+        "the feed the Stop cut is asked FIRST on the next pass, not skipped for the interval"
+    )
 
 
 def test_a_stop_engaged_before_the_batch_asks_no_feed_and_stamps_none():
