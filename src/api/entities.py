@@ -49,14 +49,17 @@ def _items_worker(ctx, *, limit: int = 500) -> dict:
                           should_stop=lambda: ctx.stopping, progress=_progress)
 
 
-#: NOT a writer in the arbitration sense (the ``wikidata-rings`` precedent): it writes one
-#: small batch of cache rows every ten seconds at most, which is an ordinary short write,
-#: and claiming the flag would ask the operator to stop a collection pass for a contention
-#: that does not exist. ``cancellable`` is honest: the rate gate checks the stop flag.
+#: A WRITER: ``store_items`` commits ``WikidataItem`` rows to the corpus file (``entities/items.py``), a
+#: batch every ten seconds at most. The flag's one consumer is the offline maintenance hold-off
+#: (``yield_reason`` in ``offline_maintenance.py``: the whole maintenance window, orphan prune included, is skipped under a writer job),
+#: and it was False here on the argument that the flag would "ask the operator to stop a collection pass".
+#: It never does: the arbitration ask reads the kind list ``_DB_WRITER_KINDS`` in ``api/jobs.py``, which this
+#: job is not in and which this flag does not change. ``wikidata-rings`` stays False: its writes are YAML on disk.
+#: ``cancellable`` is honest: the rate gate checks the stop flag.
 _ITEMS_JOB = register_job(
     BackgroundJob(
         "wikidata-items", "Fetching Wikidata items for the places and people in your corpus",
-        _items_worker, is_writer=False, cancellable=True,
+        _items_worker, is_writer=True, cancellable=True,
     )
 )
 
@@ -70,10 +73,12 @@ def _places_worker(ctx) -> dict:
         return resolve_mentioned(db, should_stop=lambda: ctx.stopping)
 
 
+#: A WRITER for the same reason as ``wikidata-items``: ``resolve_mentioned`` commits ``Place`` rows to the corpus
+#: file (``entities/places.py``), every thousand rows and at the end.
 _PLACES_JOB = register_job(
     BackgroundJob(
         "resolve-places", "Resolving mentioned places through the gazetteer", _places_worker,
-        is_writer=False, cancellable=True,
+        is_writer=True, cancellable=True,
     )
 )
 
