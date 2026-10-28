@@ -24,6 +24,9 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
+import time
+import weakref
 
 _ISOLATED = tempfile.mkdtemp(prefix="oo-tests-")
 # Audit finding 2026-07-17: this directory backs SQLite DBs, keys, caches, and
@@ -410,22 +413,31 @@ def _stop_leaked_liveness_thread(timeout: float = 5.0) -> None:
 #: leaked ``oo-briefing-refresh`` was alive in later tests and resolved its cache folder lazily, from whatever ``OO_DATA_DIR`` they had set).
 _BRIEFING_THREAD_JOIN_S = 30.0
 _BRIEFING_THREAD_NAMES = ("oo-briefing-refresh", "oo-briefing-bg")
+#: Threads already reported as survivors, so a thread that outlives the bound fails the ONE test that left it and is not waited on (up to the
+#: bound again) and blamed on every test after it. Weak: a thread that ends is forgotten.
+_BRIEFING_THREADS_REPORTED: weakref.WeakSet[threading.Thread] = weakref.WeakSet()
 
 
 def _quiesce_briefing_threads(nodeid: str, timeout: float = _BRIEFING_THREAD_JOIN_S) -> None:
     """Join the briefing rebuild threads a test left running, for at most ``timeout`` seconds in all; raise, naming the thread and the test,
-    for one that is still alive after that."""
-    import threading
-    import time
+    for one that is still alive after that. A thread reported once is not waited on or reported again.
 
-    live = [t for t in threading.enumerate() if t.name in _BRIEFING_THREAD_NAMES and t is not threading.current_thread()]
+    Stated limits: this runs at the LAST teardown (autouse fixtures are torn down in reverse order of setup and this one is set up first), so
+    a thread still running then sees the suite's own folder and the real functions, not the test's patches; and it covers the thread the
+    briefing service starts and the scheduler's ``oo-briefing-bg`` by NAME only."""
+    live = [
+        t
+        for t in threading.enumerate()
+        if t.name in _BRIEFING_THREAD_NAMES and t is not threading.current_thread() and t not in _BRIEFING_THREADS_REPORTED
+    ]
     end = time.monotonic() + timeout
     for t in live:
         t.join(timeout=max(0.0, end - time.monotonic()))
-    left = sorted(t.name for t in live if t.is_alive())
+    left = [t for t in live if t.is_alive()]
     if left:
+        _BRIEFING_THREADS_REPORTED.update(left)
         raise AssertionError(
-            f"{nodeid}: {', '.join(left)} still running {timeout:g} s after the test ended; a briefing rebuild must not outlive the test that started it"
+            f"{nodeid}: {', '.join(sorted(t.name for t in left))} still running {timeout:g} s after the test ended; a briefing rebuild must not outlive the test that started it"
         )
 
 

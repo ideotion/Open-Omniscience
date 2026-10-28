@@ -15,6 +15,7 @@ resolve their own paths.
 from __future__ import annotations
 
 import threading
+import time
 
 import pytest
 
@@ -132,6 +133,22 @@ def test_the_quiesce_ignores_threads_that_are_not_briefing_threads():
     t.start()
     try:
         _quiesce_briefing_threads("tests/x.py::other", timeout=0.2)
+    finally:
+        release.set()
+        t.join(HANG_GUARD_S)
+
+
+def test_a_thread_that_outlives_the_bound_is_blamed_on_the_test_that_left_it_and_on_no_other():
+    """Red before (the read of #1596): the next teardown listed the same thread again, waited the bound again and failed an innocent test."""
+    release = threading.Event()
+    t = threading.Thread(target=release.wait, args=(HANG_GUARD_S,), name=_BRIEFING_THREAD_NAMES[0], daemon=True)
+    t.start()
+    try:
+        with pytest.raises(AssertionError, match="tests/x.py::first"):
+            _quiesce_briefing_threads("tests/x.py::first", timeout=0.2)
+        started = time.monotonic()
+        _quiesce_briefing_threads("tests/x.py::second", timeout=5)  # the same thread, already reported: not waited on, not blamed again
+        assert time.monotonic() - started < 2, "the reported thread was waited on again"
     finally:
         release.set()
         t.join(HANG_GUARD_S)
