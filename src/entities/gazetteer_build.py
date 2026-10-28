@@ -432,7 +432,8 @@ def fetch_wikidata(
     failure. The pace gate is waited on before EVERY request, retries included. A
     ``Retry-After`` (or the ``maxlag`` answer's) is waited out, at most :data:`RETRY_CAP_S` per
     wait and :data:`RETRY_MAX` waits per batch; a batch that still fails is counted ``refused`` and
-    the run goes on. The three counts add up to what was asked.
+    the run goes on, unless the kill switch is engaged by then: that stop is the switch's, so the batch is
+    ``not_asked`` and ``stopped_by_airplane_mode`` is true (R353). The counts add up to what was asked.
     """
     from src.analytics.ring_loader import RateGate
     from src.ingest.fetch_verdict import NETWORK_REFUSED
@@ -473,6 +474,12 @@ def fetch_wikidata(
                 res = getter(url)
             except Exception as exc:  # noqa: BLE001 - one failed batch is counted, never fatal ...
                 _reraise_refusal(exc)  # ... except a refusal by the transport or the kill switch
+                if kill_switch():
+                    # A Stop that lands INSIDE the request arrives as the raw transport error, which the refusals above do not recognise: read the
+                    # switch after the failed request (R320). The batch was neither answered nor refused by the server, so it is `not_asked`, and it
+                    # does not feed `refused_in_a_row` (a third such batch would end the run as "gave up after refusals" for a server that never
+                    # refused). On the last batch there is no next turn to read the switch, so without this it was counted refused (R337).
+                    airplane = True
                 break
             if res.status == 200 and res.body is not None and not _asks_to_wait(res):
                 # An answer that mentions none of the asked ids (an error body behind a 200, ``{}``) is a
