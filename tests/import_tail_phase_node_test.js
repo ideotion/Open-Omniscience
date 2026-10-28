@@ -470,6 +470,44 @@ test("R360: a finished, confirmed run says nothing about a pause", () => {
     "nothing to say once the run is over and nothing was left unconfirmed: " + note);
 });
 
+const NOT_PAUSED_AT_ALL = "Background collection could not be paused for this import";
+const WAITING = "Waiting for background collection to finish what it is writing";
+
+test("R360: the dialog withdraws its pause during the item that found otherwise, not only after it", () => {
+  // collection_exit_unconfirmed is true while the item is STILL RUNNING (live set, no summary): the loss is happening now.
+  const note = render(Object.assign({}, TAIL_RUN, { state: "running", collection_exit_unconfirmed: true }));
+  assert(note.indexOf(PAUSED_SENTENCE) === -1 && note.indexOf(UNCONFIRMED) !== -1 && note.indexOf(OTHER_WORK) !== -1, note);
+});
+
+test("R360: a pause that could not be established is said, with the caveat, where the risk is largest", () => {
+  const note = render(Object.assign({}, TAIL_RUN, { collection_paused: false, collection_window_failed: true }));
+  assert(note.indexOf(NOT_PAUSED_AT_ALL) !== -1, "the dialog says collection was not paused: " + note);
+  assert(note.indexOf(PAUSED_SENTENCE) === -1, "and does not claim it was: " + note);
+  assert(note.indexOf("can be lost") !== -1, "the caveat is on the same visible line: " + note);
+  assert(note.indexOf('title="' + HOVER_START) !== -1, "the long form is its hover: " + note);
+});
+
+test("R360: a window failure said about a run that is over is not repeated", () => {
+  const note = render(Object.assign({}, TAIL_RUN, { state: "done", collection_paused: false, collection_window_failed: true, live: null }));
+  assert(note.indexOf(NOT_PAUSED_AT_ALL) === -1, "the run is over; there is nothing still running to warn about: " + note);
+});
+
+test("R360: the wait for a running pass is said while it happens, with the time spent and no promise of the rest", () => {
+  const note = render(Object.assign({}, TAIL_RUN, { collection_exit_wait: { elapsed_s: 125, bound_s: 600, still: ["a collection pass or maintenance run"] } }));
+  assert(note.indexOf(WAITING) !== -1, "the person is told what the stage is waiting for: " + note);
+  assert(note.indexOf("up to 10 minutes") !== -1, "with the bound that applies: " + note);
+  assert(/2\s*min\s*5\s*s/.test(note.slice(note.indexOf(WAITING))), "and the time spent so far: " + note);
+  assert(!/left|remaining|ETA/i.test(note.slice(note.indexOf(WAITING))), "never an estimate of the time left: " + note);
+  assert(note.indexOf(PAUSED_SENTENCE) !== -1, "the pause claim stands beside it: the wait is the pause being completed: " + note);
+});
+
+test("R360: nothing is said about waiting when no wait is in progress", () => {
+  assert(render(TAIL_RUN).indexOf(WAITING) === -1);
+  assert(render(Object.assign({}, TAIL_RUN, { collection_exit_wait: null })).indexOf(WAITING) === -1);
+  assert(render(Object.assign({}, TAIL_RUN, { state: "done", collection_exit_wait: { elapsed_s: 5, bound_s: 600, still: [] } })).indexOf(WAITING) === -1,
+    "a finished run is not waiting for anything");
+});
+
 test("R360: an older server that sends no such field keeps the sentence", () => {
   const note = render(TAIL_RUN);
   assert(note.indexOf(PAUSED_SENTENCE) !== -1, "an absent field is not a contradiction: " + note);

@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from src.backup import collector_exit
 from src.monitoring.secret_scrub import log_failure, record_text, scrubbed, scrubbed_value
 from src.paths import data_dir
 
@@ -167,6 +168,33 @@ def _collector_exit_of(summary: object) -> dict | None:
         if isinstance(candidate, dict) and isinstance(candidate.get("collector_exit"), dict):
             return candidate["collector_exit"]
     return None
+
+
+#: The item states whose restore took a copy that reaches (or is on its way to) the live corpus. A refused, stopped,
+#: errored, discarded or skipped item changed nothing in the live file, so a pass it found still running cost nothing and
+#: the dialog must not say it did. ``staged`` counts: its copy is the one the group's last item swaps in.
+_EXIT_COUNTED_STATES = ("done", "staged")
+
+
+def _exit_unconfirmed(items: list[dict], live_answer: dict | None) -> bool:
+    """True when a restore of this run that reaches the corpus copied it without having confirmed that collection had left.
+
+    Two sources, because the answer exists long before the summary does: ``item["summary"]`` is written only after the
+    merge, the verification and the swap, hours after the wait on a large import, so the item in flight is read from the
+    wait's own published answer (``collector_exit.last_answer``) when that answer was made after the item began. Finished
+    items are read from their summary and only when they are ``done`` or ``staged`` (:data:`_EXIT_COUNTED_STATES`)."""
+    for it in items:
+        state = it.get("state")
+        if state in _EXIT_COUNTED_STATES:
+            answer = _collector_exit_of(it.get("summary"))
+        elif state == "running" and it.get("summary") is None and live_answer is not None:
+            began = it.get("started_at")
+            answer = live_answer if isinstance(began, (int, float)) and live_answer.get("at", 0) >= began else None
+        else:
+            answer = None
+        if answer is not None and answer.get("confirmed") is not True:
+            return True
+    return False
 
 
 def stage_for_phase(phase: str | None) -> int | None:
@@ -299,6 +327,9 @@ class ImportQueueManager:
         self._ended_at: float | None = None
         self._passphrase: str = ""  # memory only, never persisted
         self._collection_paused = False
+        # True when the exclusive window could not be established for the run in flight: collection was NOT paused, so the
+        # dialog says that instead of staying silent (the case where the risk is largest).
+        self._collection_window_failed = False
         # What the post-run tuning pass actually did ({"fts", "planner"} bools), or None
         # while a run is still going -- reported, never assumed to have succeeded.
         self._tuned: dict[str, bool] | None = None
@@ -506,6 +537,7 @@ class ImportQueueManager:
             self._items = queued
             self._tuning_done = False
             self._tuned = None
+            self._collection_window_failed = False
             self._run_id = secrets.token_hex(6)
             self._cursor = -1
             self._passphrase = passphrase or ""
@@ -566,6 +598,9 @@ class ImportQueueManager:
                 self._drive()
         except Exception as exc:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
             log_failure(_LOG, "the exclusive window for the import failed", exc, self._passphrase, level=logging.WARNING)
+            if not drove:
+                with self._lock:
+                    self._collection_window_failed = True
         finally:
             with self._lock:
                 self._collection_paused = False
@@ -1411,6 +1446,7 @@ class ImportQueueManager:
             state = self._state
             started, ended = self._started_at, self._ended_at
             paused = self._collection_paused
+            window_failed = self._collection_window_failed
             tuned = self._tuned
             tuning_done = self._tuning_done
             k = self._checkpoint_k
@@ -1443,8 +1479,16 @@ class ImportQueueManager:
         staged = sum(1 for it in items if it["state"] == "staged")
         # "Collection is paused" is only said while no restore of this run has told the opposite: a restore that copied
         # the corpus while a collection pass was still running (or that could not look) recorded it (``collector_exit``).
-        exits = [_collector_exit_of(it.get("summary")) for it in items]
-        exit_unconfirmed = any(e is not None and e.get("confirmed") is not True for e in exits)
+        # The running item is read from the wait's own answer, not its summary, which does not exist until the swap.
+        exit_unconfirmed = _exit_unconfirmed(items, collector_exit.last_answer() if state == "running" else None)
+        # The wait itself, while it is happening: up to ten minutes the phase bar sits on one stage. ``elapsed_s`` is
+        # measured here, from the wait's own start, and the bound is the wait's own.
+        waiting = collector_exit.wait_state() if state == "running" else None
+        exit_wait = (
+            {"elapsed_s": round(max(0.0, now - waiting["since"]), 1), "bound_s": waiting["bound_s"], "still": waiting["still"]}
+            if waiting
+            else None
+        )
         return {
             "stages": self._stage_rows(items, live, tuning_done, state),
             "state": state,
@@ -1495,6 +1539,12 @@ class ImportQueueManager:
             # (a pass was still running after the wait, or the scheduler could not be read). The dialog then does not
             # say collection is paused.
             "collection_exit_unconfirmed": exit_unconfirmed,
+            # While the restore waits for a collection pass to finish before it copies the corpus: how long, out of how
+            # long, and what is still running. None otherwise.
+            "collection_exit_wait": exit_wait,
+            # True when the run could not pause collection at all (the exclusive window failed to open). Not the same as
+            # "unconfirmed": nothing was paused, so nothing was waited for either.
+            "collection_window_failed": window_failed,
             # What the one post-run tuning pass actually managed (FTS segment merge +
             # planner statistics). None while the run is still going; a False half is
             # reported as such rather than quietly presented as done.

@@ -221,6 +221,17 @@ def cmd_merge(args) -> None:
 
         merge_mod.reindex_imported_articles = _crash_reindex  # type: ignore[assignment]
 
+    # The collector-exit wait (R360), driven through the REAL run_restore: ``--exclusive`` is the claim that the caller owns
+    # the machine (what the import queue's window and the volume job make), which is what makes a restore wait for the
+    # collector at all. ``--collector-busy`` stands in a collector that never leaves, with the wait's bound cut from ten
+    # minutes to a fraction of a second so the answer ("a pass was still there") is reached in a test.
+    if args.collector_busy:
+        from src.backup import collector_exit as _ce
+
+        _ce.collector_activity = lambda: (["a collection pass or maintenance run"], None)  # type: ignore[assignment]
+        _ce.COLLECTOR_EXIT_WAIT_S = 0.3
+        _ce.COLLECTOR_EXIT_POLL_S = 0.05
+
     pw = args.passphrase if args.passphrase != "-" else None
     try:
         staged = read_artifact(Path(args.artifact).read_bytes(), passphrase=pw)
@@ -241,6 +252,7 @@ def cmd_merge(args) -> None:
             # corpus, and only a real run_restore against a real corpus can show it.
             working_copy=Path(args.working_copy) if args.working_copy else None,
             hold_after_merge=bool(args.hold),
+            exclusive=bool(args.exclusive),
         )
         _emit({"report": report})
     except Exception as exc:  # noqa: BLE001
@@ -450,6 +462,8 @@ def main() -> None:
     m.add_argument("--crash-reindex", action="store_true")
     m.add_argument("--working-copy", default=None)
     m.add_argument("--hold", action="store_true")
+    m.add_argument("--exclusive", action="store_true")
+    m.add_argument("--collector-busy", action="store_true")
     bs = sub.add_parser("build-scoped")
     bs.add_argument("--role", required=True, choices=["live", "one", "two"])
     bs.add_argument("--artifact", default=None)

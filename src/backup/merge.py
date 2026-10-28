@@ -7650,12 +7650,15 @@ def run_restore(
     a pass already in flight to be gone before it takes the working copy
     (:mod:`src.backup.collector_exit`), and records what it found as
     ``report["collector_exit"]``. WHAT IT IS NOT: a lock on the corpus. The housekeeping
-    lane, the Wikipedia drain, registered background jobs, AI sweeps, boot upkeep and
-    every API write route are not stopped, and anything they commit between the working
-    copy and the swap is discarded by the swap (only ``settings.``/``agenda.``/``ui.``
-    keys and the search history are carried). The import dialog says so in the same
-    terms. It is passed to the two whole-corpus snapshots below as
-    ``allow_file_copy``, which lets them copy the corpus's bytes instead of
+    lane, the Wikipedia drain, AI sweeps, boot upkeep and every API write route are not
+    stopped; the registered background jobs park at their next batch boundary, so a batch
+    already in flight can still commit; and the collection loop itself can be started
+    again while the window is open (``BackgroundScheduler.start`` does not check the
+    hold: the Start button, the network toggle and the unattended start all call it).
+    Anything they commit between the working copy and the swap is discarded by the swap
+    (only ``settings.``/``agenda.``/``ui.`` keys and the search history are carried). The
+    import dialog says so in the same terms. It is passed to the two whole-corpus
+    snapshots below as ``allow_file_copy``, which lets them copy the corpus's bytes instead of
     re-encrypting it row by row through the SQLCipher codec. Purely a resource decision
     with no behavioural difference: the fast path itself refuses unless it can PROVE the
     copy is complete (see :func:`~src.database.connect._quiesced_file_copy`), so passing
@@ -7783,7 +7786,11 @@ def run_restore(
         from src.backup import runlog
         from src.backup.collector_exit import wait_for_collector_exit
 
-        collector_exit = wait_for_collector_exit(should_stop=should_stop)
+        # A SUB-stage, not a phase (a phase would break restore_stage_plan()'s denominator): it is timed, it is in
+        # the timings table, and the journal gets its begin, so a run killed or hung inside the wait names it. The
+        # dialog says the same while it waits (``collector_exit.wait_state``).
+        with _sub_timer(timings)("snapshot_working_copy:wait_for_collector"):
+            collector_exit = wait_for_collector_exit(should_stop=should_stop)
         runlog.milestone("collector_exit", **collector_exit)
 
     _abort_point("snapshot_working_copy")

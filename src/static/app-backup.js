@@ -1977,22 +1977,35 @@
       // every tick; everything under it changes only when the run's facts do, and is not
       // touched in between.
       const headHtml = `<b>${head}</b>${st.elapsed_s != null ? ` · ${esc(_uxImDur(st.elapsed_s))}` : ""}`;
-      // What the pause is and is not (R360). The visible line carries the caveat (informed consent:
+      // What the pause is and is not (R360). The visible lines carry the caveat (informed consent:
       // never behind a toggle); the hover carries the long form. A restore that copied the library
       // with a collection pass still running (collection_exit_unconfirmed) does NOT claim a pause: it
-      // says it could not confirm one, and keeps saying so after the run (the loss outlives it).
-      let collLine = "";
+      // says it could not confirm one, and keeps saying so after the run (the loss outlives it). The
+      // server answers that from the moment the wait gives up, not from the item's summary (which
+      // does not exist until the swap), so the line is there during the copy, when the loss happens.
+      // A run whose pause could not be established at all (collection_window_failed) says that, with
+      // the same caveat, instead of staying silent where the risk is largest.
+      const collLines = [];
+      const running = st.state === "running";
       if (st.collection_exit_unconfirmed) {
-        collLine = t("It could not be confirmed that background collection had stopped when the import copied your corpus, so what collection saved after that copy is not kept.");
-      } else if (st.state === "running" && st.collection_paused) {
-        collLine = t("Background collection is paused for this whole import and resumes when it finishes.");
+        collLines.push(t("It could not be confirmed that background collection had stopped when the import copied your corpus, so what collection saved after that copy is not kept.")
+          + (running ? " " + t("Other background work is not paused: what it, or you, saves to your corpus while the import runs can be lost.") : ""));
+      } else if (running && st.collection_window_failed) {
+        collLines.push(t("Background collection could not be paused for this import, and other background work is not paused either: what they, or you, save to your corpus while the import runs can be lost."));
+      } else if (running && st.collection_paused) {
+        collLines.push(t("Background collection is paused for this whole import and resumes when it finishes.")
+          + " " + t("Other background work is not paused: what it, or you, saves to your corpus while the import runs can be lost."));
       }
-      if (collLine && st.state === "running") {
-        collLine += " " + t("Other background work is not paused: what it, or you, saves to your corpus while the import runs can be lost.");
+      // The wait for a pass that was still running when the pause was asked for: up to ten minutes in
+      // which the stage does not move. Said while it happens, with the time spent (a number from the
+      // server's own clock on the wait, never an estimate of the time left).
+      const exitWait = running ? st.collection_exit_wait : null;
+      if (exitWait) {
+        collLines.push(t("Waiting for background collection to finish what it is writing before your corpus is copied (up to 10 minutes).")
+          + (exitWait.elapsed_s != null ? ` · ${_uxImDur(exitWait.elapsed_s)}` : ""));
       }
-      const collHtml = collLine
-        ? `<div title="${esc(t("Paused: the collection loop and the Collect now button. Not paused: the background tasks (markets, calendars, law, hazards, crawling and backfill), Wikipedia updates, other background jobs, AI sweeps, start-up upkeep and anything you change in the app. The import merges the backup into a copy of your corpus and then replaces your corpus with that copy. Whatever is saved to your corpus after the copy was made and before it is replaced is not in the copy, except your settings, agenda and interface choices, which are carried over. Before it makes the copy, the import waits up to 10 minutes for a collection pass that was still running; if one is still running after that, the import goes on and says so."))}">${esc(collLine)}</div>`
-        : "";
+      const collHover = esc(t("Paused: the collection loop and the Collect now button. Not paused: the background tasks (markets, calendars, law, hazards, crawling and backfill), Wikipedia updates, AI sweeps, start-up upkeep and anything you change in the app. Some other background jobs stop at their next batch, so a batch that is already running can still save to your corpus. Starting collection again yourself while the import runs (the Start button, or switching the network back on) is not blocked. The import merges the backup into a copy of your corpus and then replaces your corpus with that copy. Whatever is saved to your corpus after the copy was made and before it is replaced is not in the copy, except your settings, agenda and interface choices, which are carried over. Before it makes the copy, the import waits up to 10 minutes for a collection pass that was still running; if one is still running after that, the import goes on and says so."));
+      const collHtml = collLines.map((line) => `<div title="${collHover}">${esc(line)}</div>`).join("");
       const bodyHtml = stagedLine
         + tailLine
         + collHtml
