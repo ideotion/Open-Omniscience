@@ -488,16 +488,24 @@ def verify_feed(fetcher, feed_id: str) -> dict:
     return verdict
 
 
-def _feed_secrets(fid: str) -> tuple[str | None, ...]:
+def _feed_secrets(fid: str) -> tuple[str | None, ...] | None:
     """What a log line about feed ``fid`` must not carry: its URL and any credentials in it. A user-added feed can hold some, and the text of a fetch failure quotes the
-    URL, so the scrubbing log sink is told to take them out (the line names the feed by id)."""
+    URL, so the scrubbing log sink is told to take them out (the line names the feed by id). ``None`` when the feed cannot be looked up: then nothing is known to take out."""
     try:
         hit = feed_by_id(fid)
-        url = str((hit[1] or {}).get("url") or "") if hit else ""
+        if not hit:
+            return None
+        url = str((hit[1] or {}).get("url") or "")
         parts = urlparse(url)
         return (url or None, parts.username, parts.password)
-    except Exception:  # noqa: BLE001 - a lookup that fails here must not cost the batch its next feed; the line then carries the scrubbed text as ever
-        return ()
+    except Exception:  # noqa: BLE001 - a lookup that fails here must not cost the batch its next feed; the caller then logs the class only
+        return None
+
+
+def _log_class_only(what: str, exc_class: str) -> None:
+    """The line for a failure about a feed that could not be looked up. Fail closed: with nothing known to take out of the exception's text (which quotes the URL), the line
+    carries the feed id (in ``what``) and the exception CLASS only (R386)."""
+    _LOG.warning("%s: %s (its text is withheld: the feed's URL could not be looked up to take it out)", what, exc_class)
 
 
 def verify_due_feeds(fetcher, *, batch: int = 5) -> dict:
@@ -524,7 +532,11 @@ def verify_due_feeds(fetcher, *, batch: int = 5) -> dict:
             # verify_feed records its own attempt for a fetch-level failure; an
             # exception here is a LOOKUP/store failure, so record the attempt
             # ourselves or this feed would never advance its rung.
-            log_failure(_LOG, f"calendar feed {fid}: verification raised", exc, *_feed_secrets(fid), level=logging.WARNING)
+            secrets = _feed_secrets(fid)
+            if secrets is None:
+                _log_class_only(f"calendar feed {fid}: verification raised", type(exc).__name__)
+            else:
+                log_failure(_LOG, f"calendar feed {fid}: verification raised", exc, *secrets, level=logging.WARNING)
             try:
                 record_attempt(fid, "unreachable")
             except Exception as write_exc:  # noqa: BLE001 - and if THAT write fails too, the feed is picked again next pass: say so (R386)
@@ -768,7 +780,11 @@ def auto_import_due_feeds(fetcher, *, batch: int = 8, min_interval_hours: float 
                 # stamp below means "this feed was checked", it is not stamped either (R293/R294). The next pass asks it first. The cost is a
                 # genuine failure coinciding with a Stop going unrecorded (R320). No new tally key: a Stop is not an outcome.
                 break
-            log_failure(_LOG, f"calendar feed {fid}: auto-import failed", exc, *_feed_secrets(fid), level=logging.WARNING)
+            secrets = _feed_secrets(fid)
+            if secrets is None:
+                _log_class_only(f"calendar feed {fid}: auto-import failed", type(exc).__name__)
+            else:
+                log_failure(_LOG, f"calendar feed {fid}: auto-import failed", exc, *secrets, level=logging.WARNING)
             failed += 1
         # Record the ATTEMPT either way, so a failing feed backs off too.
         state[fid] = now.isoformat(timespec="seconds")

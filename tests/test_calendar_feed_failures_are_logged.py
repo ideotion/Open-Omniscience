@@ -128,3 +128,31 @@ def test_an_auto_import_failure_is_counted_and_now_logged_without_its_url(monkey
     assert fid in caplog.text and "RuntimeError" in caplog.text
     _assert_clean(caplog.text)
     assert fid in F._load_json("calendar_autoimport.json"), "the attempt is still stamped so a failing feed backs off"
+
+
+def test_when_the_feed_cannot_be_looked_up_the_line_carries_the_class_only_never_the_message(monkeypatch, caplog):
+    """Fail closed: with nothing known to take out, the exception's text (which quotes the URL) is not logged at all, at either site that holds a fetch error."""
+
+    def _lookup_fails(feed_id):
+        raise OSError("catalogue unreadable")
+
+    monkeypatch.setattr(F, "feed_by_id", _lookup_fails)
+    monkeypatch.setattr(F, "verify_feed", lambda fetcher, feed_id: (_ for _ in ()).throw(_fetch_error()))
+    monkeypatch.setattr(F, "import_feed", lambda fetcher, feed_id: (_ for _ in ()).throw(_fetch_error()))
+    with caplog.at_level("WARNING"):
+        v = F.verify_due_feeds(object(), batch=1)
+        a = F.auto_import_due_feeds(object(), batch=1)
+    assert v["failed"] == 1 and a["failed"] == 1, "tallies unchanged"
+    assert caplog.text.count("RuntimeError") >= 2 and "its text is withheld" in caplog.text, "the class is on the record"
+    _assert_clean(caplog.text)
+    assert "request error" not in caplog.text and "Connection aborted" not in caplog.text, "none of the exception's words are kept"
+    assert "Traceback" not in caplog.text, "nor a traceback, whose last line is the message"
+
+
+def test_a_feed_the_catalogue_does_not_know_is_also_class_only(monkeypatch, caplog):
+    monkeypatch.setattr(F, "feed_by_id", lambda feed_id: None)
+    monkeypatch.setattr(F, "verify_feed", lambda fetcher, feed_id: (_ for _ in ()).throw(_fetch_error()))
+    with caplog.at_level("WARNING"):
+        F.verify_due_feeds(object(), batch=1)
+    _assert_clean(caplog.text)
+    assert "RuntimeError" in caplog.text
