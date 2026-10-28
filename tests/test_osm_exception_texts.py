@@ -143,12 +143,20 @@ def test_a_state_save_that_fails_after_a_download_failure_leaves_nothing_to_chai
     m = OsmDownloadManager(base_dir=tmp_path, http_get=lambda url, headers: _Resp())
     entry = m._entry_for("europe")
 
+    real_save, saves = m._save, []
+
     def _full_disk():
+        # The first save is the one inside the download (status "downloading"); it must pass, or the download fails on the DISK
+        # and the transfer, whose error names the passphrase, is never reached. The save after the failure is the one that fails.
+        saves.append(1)
+        if len(saves) == 1:
+            return real_save()
         raise OSError(28, "No space left on device")
 
     monkeypatch.setattr(m, "_save", _full_disk)
     res = m._download(entry)  # raises nothing: there is no exception left to print
-    assert res.status == "error" and HELD not in res.error
+    assert len(saves) == 2, "the transfer must fail first and the save after it second, or this is not the case described"
+    assert res.status == "error" and "the transfer said" in res.error and HELD not in res.error
     assert "could not be saved" in caplog.text and "OSM region download failed for europe" in caplog.text
     assert HELD not in caplog.text
 
