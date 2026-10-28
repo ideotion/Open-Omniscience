@@ -69,6 +69,13 @@ def fragment_rows(csv_path: Path) -> list[list[str]]:
     return out
 
 
+# A `refs` cell that still holds a placeholder: the ledger's `PR pending` (rule 5b), the `new-log` template's `#NNNN`
+# and the literal `#PRNUMBER` a lane writes before its PR number exists. `pending` is a WORD, so a refs value that
+# says "depending on #1637" is not one. This is the predicate `check` below applies to a fragment; the release-notes
+# gate (`release_notes.refs_carry_placeholder`) keeps its own, broader `pending` test over every ledger row.
+REFS_PLACEHOLDER = re.compile(r"\bpending\b|#NNNN|#PRNUMBER\b", re.IGNORECASE)
+
+
 def check(csv_path: Path = LEDGER / "shipped.csv") -> list[str]:
     problems: list[str] = []
     seen: set[tuple[str, str, str]] = set()
@@ -83,6 +90,8 @@ def check(csv_path: Path = LEDGER / "shipped.csv") -> list[str]:
             problems.append(str(exc))
             continue
         key = (rows[0][0], rows[0][1], rows[0][2])
+        if REFS_PLACEHOLDER.search(rows[0][4]):
+            problems.append(f"{p.name}: an unswept placeholder in refs ({rows[0][4]!r}); write the real PR number")
         if key in seen:
             problems.append(f"{p.name}: (date, area, item) already in the ledger: {key}")
         seen.add(key)

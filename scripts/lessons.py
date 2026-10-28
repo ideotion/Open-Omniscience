@@ -51,7 +51,8 @@ LESSONS = Path(__file__).resolve().parent.parent / "docs" / "ledger" / "LESSONS.
 FRAGMENTS = LESSONS.parent / "lessons.d"
 _ENTRY = re.compile(r"^(\s*)- \*\*(.*)$")
 _HEADING = re.compile(r"^#{2,6}\s+(.*\S)\s*$")
-_FENCE = re.compile(r"^\s*(```|~~~)")
+_FENCE = re.compile(r"^\s*((`{3,})|(~{3,}))(.*)$")  # what OPENS a fence; the run is group 1, its info string group 4
+_FENCE_CLOSE = re.compile(r"^\s*(`{3,}|~{3,})\s*$")  # what CLOSES one: the run alone on its line
 _TITLE_MAX = 150
 SLUG = re.compile(r"[a-z0-9][a-z0-9-]{2,80}")  # the ONE slug rule, shared with ledger_fold.py
 TEMPLATE_BODY = "(One lesson, one file. Say what was found, what it cost, and the rule it gives; name the PR once it exists.)"
@@ -77,16 +78,37 @@ def _title(lines: list[str], i: int, first: str) -> str:
     return text if len(text) <= _TITLE_MAX else text[: _TITLE_MAX - 1].rstrip() + "…"
 
 
+def outside_fences(lines: list[str]) -> tuple[list[tuple[int, str]], int]:
+    """The ``(1-based line number, line)`` pairs outside every fenced block, and the line number of a fence
+    that never closes (0 when none does that).
+
+    The ONE fence rule of the ledger tools: this index, ``ledger_fold.py check`` and its placeholder scan all
+    call it, so a fragment that passes ``check`` is indexed exactly as ``check`` read it. A fence opens on a run
+    of three or more backticks or tildes (a backtick fence's info string may not itself hold a backtick, so
+    ```a``` is a code span, not a fence) and closes only on a run of the SAME character, at least as long,
+    with nothing after it: a ``~~~`` line inside a ``` block is text, and so is a shorter run. The fence lines
+    themselves are not returned."""
+    out: list[tuple[int, str]] = []
+    open_char, open_len, open_at = "", 0, 0
+    for n, ln in enumerate(lines, 1):
+        if open_char:
+            m = _FENCE_CLOSE.match(ln)
+            if m and m.group(1)[0] == open_char and len(m.group(1)) >= open_len:
+                open_char, open_len, open_at = "", 0, 0
+            continue
+        m = _FENCE.match(ln)
+        if m and not (m.group(2) and "`" in m.group(4)):
+            open_char, open_len, open_at = m.group(1)[0], len(m.group(1)), n
+            continue
+        out.append((n, ln))
+    return out, open_at
+
+
 def parse(text: str) -> list[Entry]:
     lines = text.split("\n")
     starts: list[tuple[int, str]] = []
-    in_fence = False
-    for i, ln in enumerate(lines):
-        if _FENCE.match(ln):
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            continue
+    for n, ln in outside_fences(lines)[0]:
+        i = n - 1
         m = _ENTRY.match(ln)
         if m:
             starts.append((i, _title(lines, i, m.group(2))))

@@ -78,9 +78,21 @@ def test_a_fragment_repeating_a_ledger_key_is_refused(tmp_path):
 
 def test_the_real_fragments_are_well_formed_and_carry_no_placeholder():
     csv_path = _ROOT / "docs" / "ledger" / "shipped.csv"
+    assert ls.check(csv_path) == [], "check() carries the one refs-placeholder predicate"
+
+
+@pytest.mark.parametrize("refs", ["PR pending", "pr PENDING", "R12; PR #NNNN", "PR #PRNUMBER", "PR #prnumber (draft)"])
+def test_check_refuses_a_placeholder_still_in_refs(tmp_path, refs):
+    csv_path = _ledger(tmp_path)
+    ls.new({**_ROW, "refs": refs}, csv_path)
+    assert any("an unswept placeholder in refs" in p for p in ls.check(csv_path))
+
+
+@pytest.mark.parametrize("refs", ["R12; PR #1637", "depending on #1637", "R12; #PRNUMBERS is not the token"])
+def test_check_accepts_a_real_pr_number_and_a_word_that_merely_contains_pending_in_refs(tmp_path, refs):
+    csv_path = _ledger(tmp_path)
+    ls.new({**_ROW, "refs": refs}, csv_path)
     assert ls.check(csv_path) == []
-    for row in ls.fragment_rows(csv_path):
-        assert "pending" not in row[4].lower(), f"unswept `PR pending` in {row[0]} {row[1]}"
 
 
 def test_release_notes_reads_fragments_after_the_file(tmp_path):
