@@ -69,6 +69,7 @@ from __future__ import annotations
 import argparse
 import ast
 import csv
+import functools
 import io
 import json
 import re
@@ -78,6 +79,7 @@ from collections import OrderedDict
 from datetime import UTC, datetime
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 _ROOT = Path(__file__).resolve().parents[1]
 _CSV = _ROOT / "docs" / "ledger" / "shipped.csv"
@@ -256,9 +258,9 @@ def read_rows(path: Path) -> list[dict[str, str]]:
     return rows
 
 
-def _fragment_rows(path: Path, header: list[str]) -> list[dict[str, str]]:
-    """Rows in ``<ledger dir>/shipped.d/*.csv`` (scripts/ledger_shipped.py): one file per row,
-    so a PR never edits the shared file. Read after the file's own rows, in file-name order."""
+@functools.cache
+def _ledger_shipped() -> Any:
+    """``scripts/ledger_shipped.py``, loaded once: the fragment reader and the refs predicate both live there."""
     import importlib.util
 
     spec = importlib.util.spec_from_file_location(
@@ -267,6 +269,13 @@ def _fragment_rows(path: Path, header: list[str]) -> list[dict[str, str]]:
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+    return mod
+
+
+def _fragment_rows(path: Path, header: list[str]) -> list[dict[str, str]]:
+    """Rows in ``<ledger dir>/shipped.d/*.csv`` (scripts/ledger_shipped.py): one file per row,
+    so a PR never edits the shared file. Read after the file's own rows, in file-name order."""
+    mod = _ledger_shipped()
     if mod.fragment_files(path) and header[: len(mod.HEADER)] != mod.HEADER:
         raise ReleaseNotesError(
             f"{path} has columns {header}, but the fragments in shipped.d use {mod.HEADER}"
@@ -278,13 +287,17 @@ def _fragment_rows(path: Path, header: list[str]) -> list[dict[str, str]]:
 
 
 def refs_carry_placeholder(row: dict[str, str]) -> bool:
-    """Does this row's ``refs`` FIELD still carry the rule-(5b) placeholder?
+    """Does this row's ``refs`` FIELD still carry a placeholder (``PR pending``, ``#NNNN`` or ``#PRNUMBER``)?
 
     Column-aware on purpose. The 2026-09-11 lesson: a whole-file grep for the phrase
     matches the ledger row whose SUMMARY records the phrase being retired, so the check
     has to read the field the defect lives in, never the file.
+
+    The predicate is ``ledger_shipped.REFS_PLACEHOLDER``, the one ``ledger_shipped.py check`` applies to a
+    fragment: this gate used to keep its own test (the substring ``pending``), which saw neither
+    ``#NNNN`` nor ``#PRNUMBER`` and so passed a row the fragment check refuses.
     """
-    return "pending" in (row.get("refs") or "").lower()
+    return bool(_ledger_shipped().REFS_PLACEHOLDER.search(row.get("refs") or ""))
 
 
 @dataclass
@@ -329,8 +342,8 @@ def refuse_placeholders(sel: Selection) -> None:
             for r in offenders
         )
         raise ReleaseNotesError(
-            f"{len(offenders)} row(s) this release would cite still carry a `PR pending` "
-            "placeholder in their `refs` column. Protocol rule (5b): that is a "
+            f"{len(offenders)} row(s) this release would cite still carry a placeholder "
+            "(`PR pending`, `#NNNN` or `#PRNUMBER`) in their `refs` column. Protocol rule (5b): that is a "
             "PLACEHOLDER, not a value — sweep it to the real PR number before the tag, "
             "or the release notes make a permanent citation out of a to-do.\n" + lines
         )
