@@ -849,6 +849,7 @@ def import_mailbox(req: MailboxFetchRequest) -> dict:
     its whole run.
     """
     from src.ingest import kill_switch_active
+    from src.ingest.fetch_verdict import NETWORK_REFUSED
 
     proto = (req.protocol or "").strip().lower()
     if proto not in ("imap", "pop3"):
@@ -858,9 +859,7 @@ def import_mailbox(req: MailboxFetchRequest) -> dict:
     if not (req.host or "").strip() or not (req.user or "").strip():
         raise HTTPException(status_code=422, detail="host and user are required")
     if kill_switch_active():
-        raise HTTPException(
-            status_code=409, detail="network refused: airplane mode is engaged (kill switch)"
-        )
+        raise HTTPException(status_code=409, detail=f"{NETWORK_REFUSED} (kill switch)")
     started = {
         "protocol": proto,
         "host": req.host.strip(),

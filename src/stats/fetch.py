@@ -36,6 +36,7 @@ from typing import Any, Callable
 from urllib.parse import quote, urlencode
 
 from src.ingest import DEFAULT_USER_AGENT, kill_switch_active
+from src.ingest.fetch_verdict import NETWORK_REFUSED
 from src.safety.fetcher import guarded_session
 from src.stats.sdmx import (
     StatFigure,
@@ -223,7 +224,7 @@ def fetch_worldbank(
     # without a real network (the guarded session also refuses, but the up-front guard
     # covers the default path AND any injected getter).
     if kill_switch_active():
-        raise RuntimeError("network refused: airplane mode is engaged")
+        raise RuntimeError(NETWORK_REFUSED)
     extracted_at = extracted_at or _now_iso()
     getter = get or _default_getter
 
@@ -271,7 +272,7 @@ def fetch_eurostat(
     SDMX path serve other SDMX-JSON producers (e.g. IMF) under their own agency code.
     """
     if kill_switch_active():
-        raise RuntimeError("network refused: airplane mode is engaged")
+        raise RuntimeError(NETWORK_REFUSED)
     extracted_at = extracted_at or _now_iso()
     getter = get or _default_getter
     resp = getter(eurostat_url(dataset, params))
@@ -311,7 +312,7 @@ def fetch_owid(
     surfaced verbatim, never inferred — OWID CSVs carry no machine-readable unit metadata.
     """
     if kill_switch_active():
-        raise RuntimeError("network refused: airplane mode is engaged")
+        raise RuntimeError(NETWORK_REFUSED)
     extracted_at = extracted_at or _now_iso()
     getter = get or _default_getter
     resp = getter(owid_grapher_url(slug))
@@ -355,7 +356,7 @@ def fetch_jsonstat(
     ``series_id`` to pin a single-series slice for unambiguous rows (the parser's contract).
     """
     if kill_switch_active():
-        raise RuntimeError("network refused: airplane mode is engaged")
+        raise RuntimeError(NETWORK_REFUSED)
     u = (url or "").strip()
     if not (u.startswith("https://") or u.startswith("http://")):
         raise ValueError("fetch_jsonstat: url must be an http(s) JSON-stat endpoint")

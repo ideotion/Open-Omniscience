@@ -450,13 +450,14 @@ def resolve_qid_names(
     )
     from src.database.models import Source
     from src.ingest import kill_switch_active
+    from src.ingest.fetch_verdict import NETWORK_REFUSED
 
     if kill_switch_active():
         # Named as the kill switch, before anything is built.
         raise HTTPException(
             status_code=409,
             detail=(
-                "network refused: airplane mode is engaged, so Wikidata labels cannot be "
+                f"{NETWORK_REFUSED}, so Wikidata labels cannot be "
                 "resolved. Nothing was fetched and no row was declined for it."
             ),
         )
@@ -600,9 +601,10 @@ async def qualify_sources_bulk(
     explicit value always wins over the profile."""
     from src.config.power_profiles import qualification_batch_size
     from src.ingest import kill_switch_active
+    from src.ingest.fetch_verdict import NETWORK_REFUSED
 
     if kill_switch_active():
-        raise HTTPException(status_code=409, detail="network refused: airplane mode is engaged")
+        raise HTTPException(status_code=409, detail=NETWORK_REFUSED)
     resolved = batch_size if batch_size is not None else qualification_batch_size()
     try:
         return {"started": True, "job": _BULK_QUALIFICATION_JOB.start(batch_size=resolved)}

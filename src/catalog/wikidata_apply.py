@@ -28,6 +28,7 @@ from src.catalog.wikidata_enrich import (
     wbsearch_url,
 )
 from src.ingest import DEFAULT_USER_AGENT, kill_switch_active
+from src.ingest.fetch_verdict import NETWORK_REFUSED
 
 _TIMEOUT_S = 20
 Getter = Callable[[str], Any]
@@ -60,7 +61,7 @@ def apply_source_types(session, *, limit: int = 200, get: Getter | None = None) 
     """
     # Defense in depth: refuse before any socket, so the refusal is testable offline.
     if kill_switch_active():
-        raise RuntimeError("network refused: airplane mode is engaged")
+        raise RuntimeError(NETWORK_REFUSED)
 
     from sqlalchemy import or_
 

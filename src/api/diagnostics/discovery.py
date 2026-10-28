@@ -70,9 +70,10 @@ def enrich_source_types(limit: int = Query(200, ge=1, le=2000)) -> JSONResponse:
     costs two lookups; click again to continue. Poll ``/enrich-source-types/status`` or the
     task manager for progress."""
     from src.ingest import kill_switch_active
+    from src.ingest.fetch_verdict import NETWORK_REFUSED
 
     if kill_switch_active():
-        raise HTTPException(status_code=409, detail="network refused: airplane mode is engaged")
+        raise HTTPException(status_code=409, detail=NETWORK_REFUSED)
     try:
         return JSONResponse({"mode": "wikidata", "started": True, "job": _ENRICH_JOB.start(limit=limit)})
     except RuntimeError:
@@ -151,9 +152,10 @@ def discover_world_sources(
     progress persists per country, so cancel / airplane / crash all RESUME instead of
     re-querying the world. Cancellable from the task manager; 409 under airplane mode."""
     from src.ingest import kill_switch_active
+    from src.ingest.fetch_verdict import NETWORK_REFUSED
 
     if kill_switch_active():
-        raise HTTPException(status_code=409, detail="network refused: airplane mode is engaged")
+        raise HTTPException(status_code=409, detail=NETWORK_REFUSED)
     codes = None
     if countries:
         from src.catalog.countries import ISO_3166_1_ALPHA2, to_iso2

@@ -8,11 +8,19 @@ writer says the constant, and the reader's first alternative is built from the h
 
 A subclass of ``FetchFailed`` was considered and refused: most callers classify STORED strings (verdict JSON, queue state, diagnostics) and the
 wrapped shapes carry the sentence inside another exception's text, so the text match has to stay; this only stops the copies from drifting.
+
+The same defect in a second place (ruling R328): nineteen routes and loaders that refuse UP FRONT, before any request is built, each spelled
+``network refused: airplane mode is engaged`` as a literal of their own, and the one reader of the text in ``src/``
+(``_wikidataRefusedByAirplaneMode`` in ``src/static/app-insights.js``, its branch for a message with no HTTP status) kept a copy that nothing tied
+to them. ``NETWORK_REFUSED`` is that sentence, defined beside the fetcher's, and the second half of this file pins it the way the first half pins
+the fetcher's: no other file spells it, every use is the constant imported from its definition (through whatever alias), the count of uses is a
+number that names what it protects, and the shipped JS reader is driven with the constant (``test_wikidata_refusal_toast.py``).
 """
 
 from __future__ import annotations
 
 import ast
+import json
 import re
 from pathlib import Path
 
@@ -29,6 +37,7 @@ from src.ingest import (
 from src.ingest.fetch_verdict import (
     KILL_SWITCH_REFUSAL,
     KILL_SWITCH_REFUSAL_HEAD,
+    NETWORK_REFUSED,
     classify_fetch_failure,
     is_kill_switch_refusal,
 )
@@ -66,10 +75,24 @@ def _switch_clear():
     (activate_kill_switch if was else clear_kill_switch)()
 
 
+def _folded(node: ast.AST) -> str | None:
+    """The text a string EXPRESSION builds when every piece of it is a constant: a literal, ``"a" + "b"``, an f-string (each placeholder is a
+    NUL, which no sentence contains, so a sentence cut by a placeholder is not one). ``None`` for anything that needs a value to be known."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _folded(node.left), _folded(node.right)
+        return None if left is None or right is None else left + right
+    if isinstance(node, ast.JoinedStr):
+        return "".join("\x00" if isinstance(v, ast.FormattedValue) else (_folded(v) or "") for v in node.values)
+    return None
+
+
 def _string_constants(path: Path):
     """Every string (and bytes) constant in the code of ``path``, lower-cased, docstrings left out: a docstring quotes the sentence, it does not
-    raise it, and a lesson or a comment that quotes it must not fail the scan. What it does NOT see: a sentence assembled from pieces (``+``, an
-    f-string placeholder in the middle), which a reader of the diff has to catch."""
+    raise it, and a lesson or a comment that quotes it must not fail the scan. A sentence assembled from constant pieces (``+`` on strings, the
+    pieces of an f-string) is read as the text it builds. What it does NOT see, stated so nobody assumes it does: a sentence assembled from a VALUE
+    (a variable, ``.join``, ``.format``) or by ``%``, ``+=`` or ``b"..." + b"..."``, which a reader of the diff has to catch."""
     tree = ast.parse(path.read_text(encoding="utf-8"))
     docstrings = {
         id(node.body[0].value)
@@ -83,9 +106,13 @@ def _string_constants(path: Path):
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and id(node) not in docstrings:
             if isinstance(node.value, bytes):
-                yield node.value.decode("latin-1").lower()
+                yield node.value.decode("utf-8", errors="replace").lower()
             elif isinstance(node.value, str):
                 yield node.value.lower()
+        elif isinstance(node, (ast.BinOp, ast.JoinedStr)):
+            folded = _folded(node)
+            if folded is not None:
+                yield folded.lower()
 
 
 def test_the_constants_say_what_the_sentence_always_said():
@@ -94,23 +121,39 @@ def test_the_constants_say_what_the_sentence_always_said():
     assert is_kill_switch_refusal(KILL_SWITCH_REFUSAL) and classify_fetch_failure(KILL_SWITCH_REFUSAL) == "offline"
 
 
-def _holders(needle: str) -> list[str]:
+def _squashed(text: str) -> str:
+    """``text`` without any whitespace: the JS reader matches ``network refused:\\s*airplane``, so a copy with a space dropped at a line wrap, or doubled,
+    is still a copy of the sentence for the one reader that matters."""
+    return "".join(text.split())
+
+
+def _holders(needle: str, root: Path = _SRC, squash: bool = False) -> list[str]:
+    needle = _squashed(needle) if squash else needle
     return sorted(
-        str(path.relative_to(_SRC.parent)).replace("\\", "/")
-        for path in _SRC.rglob("*.py")
-        if any(needle in value for value in _string_constants(path))
+        str(path.relative_to(root.parent)).replace("\\", "/")
+        for path in root.rglob("*.py")
+        if any(needle in (_squashed(value) if squash else value) for value in _string_constants(path))
     )
+
+
+def _non_python_holders(needle: str, root: Path = _SRC, squash: bool = False) -> list[str]:
+    """A JS, HTML, JSON or YAML file under ``root`` that holds ``needle`` (case-folded) anywhere in its text, docstring-free rule not applying:
+    those files have no docstrings to exempt."""
+    needle = _squashed(needle) if squash else needle
+    out = []
+    for path in root.rglob("*"):
+        if path.suffix in {".js", ".html", ".json", ".yml", ".yaml"}:
+            text = path.read_text(encoding="utf-8", errors="replace").lower()
+            if needle in (_squashed(text) if squash else text):
+                out.append(str(path.relative_to(root.parent)).replace("\\", "/"))
+    return sorted(out)
 
 
 def test_no_other_file_under_src_spells_the_sentence_out():
     """A literal copy of the sentence is where the drift would start. The scan reads code, case-folded, bytes included, so a docstring or a
     comment that quotes the sentence does not fail it and a capitalised or bytes copy does not slip past it."""
     assert _holders(_TAIL) == [_DEFINITION], "the refusal sentence is spelled out outside its definition"
-    elsewhere = [  # a JS, HTML, JSON or YAML file under src/ is not a Python module, but it could carry the sentence as well
-        str(path.relative_to(_SRC.parent)).replace("\\", "/")
-        for path in _SRC.rglob("*")
-        if path.suffix in {".js", ".html", ".json", ".yml", ".yaml"} and _TAIL in path.read_text(encoding="utf-8", errors="replace").lower()
-    ]
+    elsewhere = _non_python_holders(_TAIL)  # a JS, HTML, JSON or YAML file under src/ is not a Python module, but it could carry the sentence as well
     assert elsewhere == [], f"the refusal sentence is spelled out in a non-Python file: {elsewhere}"
 
 
@@ -255,3 +298,141 @@ def test_the_law_tracker_reads_the_head_and_not_the_wider_predicate():
     out = track_document(db, _Raises(FetchFailed(KILL_SWITCH_REFUSAL)), doc)
     db.refresh(doc)
     assert out["offline"] is True and doc.last_checked_at == before
+
+
+# --- THE PRE-CHECK SENTENCE (R328) ---------------------------------------------------------------------------------------------------------
+# What the count below protects: the routes and loaders that refuse UP FRONT (``if kill_switch_active(): raise ...``) and say ``NETWORK_REFUSED``,
+# measured on 2026-10-27 at 854610514 (main) and at 1fd3040f8 (the same sites, one more commit): eight HTTP 409 details (governments,
+# source_management x2, entities, insights, discovery x2, ingestion), four statistics fetchers, three catalogue loaders, two entity loaders, the
+# ring loader and the mailbox import. A twentieth site that says the constant is a conscious change of this number, which is the point of pinning
+# it; a site that goes back to a literal fails the scan above it.
+_PRE_CHECK_SITES = 19
+_CONSTANT = "NETWORK_REFUSED"
+_DEFINING_MODULE = "src.ingest.fetch_verdict"
+
+
+def _constant_uses(path: Path) -> tuple[int, set[str], list[str]]:
+    """How many times ``path`` READS the constant, by whatever name it bound it to, where it imported it from, and which names it rebinds.
+
+    Aliases are followed in the three ways code can bring the constant in: ``from src.ingest.fetch_verdict import NETWORK_REFUSED [as X]`` (the
+    name is X), ``from src.ingest import fetch_verdict [as M]`` and ``import src.ingest.fetch_verdict [as M]`` (the read is ``M.NETWORK_REFUSED``,
+    or the whole dotted path when there is no alias). A relative import of the name is returned as its dots and so fails the source check even
+    inside ``src/ingest/``: the nineteen sites import it by its absolute name, and a relative spelling is a choice to make on purpose. The count
+    is of READS BY NAME; it does not drive the sites (the fetcher's half of this file does), so a dead read beside a raise of other text still
+    counts, which the literal scan and the byte-for-byte comparison in the lesson cover."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    names: set[str] = set()
+    modules: set[str] = set()
+    sources: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            source = "." * node.level + (node.module or "")
+            for alias in node.names:
+                if alias.name == _CONSTANT:
+                    names.add(alias.asname or alias.name)
+                    sources.add(source)
+                elif f"{source}.{alias.name}" == _DEFINING_MODULE:
+                    modules.add(alias.asname or alias.name)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == _DEFINING_MODULE:
+                    modules.add(alias.asname or alias.name)
+    uses = 0
+    rebound: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id in names:
+            if isinstance(node.ctx, ast.Load):
+                uses += 1
+            else:
+                rebound.append(node.id)
+        elif isinstance(node, ast.Attribute) and node.attr == _CONSTANT and ast.unparse(node.value) in modules:
+            uses += 1
+    return uses, sources, rebound
+
+
+def test_the_constant_is_the_sentence_the_nineteen_sites_said_and_the_verdict_reader_leaves_it_alone():
+    assert NETWORK_REFUSED == "network refused: airplane mode is engaged"
+    # Not the fetcher's sentence and not read by its reader: a route that refuses before it builds a request is not a failed fetch, and the
+    # verdict reader keeps bucketing it as "other" exactly as it did when the sentence was nineteen literals.
+    assert not is_kill_switch_refusal(NETWORK_REFUSED) and classify_fetch_failure(NETWORK_REFUSED) == "other"
+    assert not NETWORK_REFUSED.startswith(KILL_SWITCH_REFUSAL_HEAD)
+
+
+def test_no_file_under_src_spells_the_pre_check_sentence_but_its_definition():
+    """Read as code, case-folded, bytes and ``"a" + "b"`` and f-string pieces included, and with every run of whitespace squeezed out on both
+    sides (the JS reader matches ``network refused:\\s*airplane``, so a space lost at a line wrap is the same copy). NO exclusion list: the
+    sentence has no second home, and a longer sentence a writer builds on it (``f"{NETWORK_REFUSED}, so Wikidata labels ..."``) does not contain
+    it as a literal."""
+    needle = NETWORK_REFUSED.lower()
+    assert _holders(needle, squash=True) == [_DEFINITION], "the pre-check sentence is spelled out outside its definition; say NETWORK_REFUSED"
+    elsewhere = _non_python_holders(needle, squash=True)
+    assert elsewhere == [], f"the pre-check sentence is spelled out in a non-Python file: {elsewhere}"
+
+
+def test_every_pre_check_site_says_the_constant_and_imports_it_from_its_definition():
+    total = 0
+    for path in sorted(_SRC.rglob("*.py")):
+        uses, sources, rebound = _constant_uses(path)
+        rel = str(path.relative_to(_SRC.parent)).replace("\\", "/")
+        assert sources <= {_DEFINING_MODULE}, f"{rel} imports {_CONSTANT} from {sources}; the one definition is {_DEFINING_MODULE}"
+        assert not rebound, f"{rel} rebinds {rebound}"
+        total += uses
+    assert total == _PRE_CHECK_SITES, f"{total} reads of {_CONSTANT} under src/, not the {_PRE_CHECK_SITES} pre-check sites this pins"
+
+
+def _unparsed(node: ast.AST) -> str:
+    return ast.unparse(ast.fix_missing_locations(node)) + "\n"
+
+
+def test_the_pre_check_detectors_detect(tmp_path):
+    """The empty-X trap: a scan that finds nothing also finds no stray copy. Each way a copy can come back is PLANTED in a scratch tree.
+
+    The plants are written by ``ast.unparse`` from pieces of the constant itself, split at a position (never at a separator) and quoted by ``repr``,
+    so ANY reader-compatible rewording of the constant (no colon, a non-ASCII dash, a quote or a brace in it) changes the plants and does not break
+    this test: a test that fails for a second reason hides the first."""
+    root = tmp_path / "src"
+    root.mkdir()
+    k = len(NETWORK_REFUSED) // 2
+    first, second = NETWORK_REFUSED[:k], NETWORK_REFUSED[k:]
+    constant = ast.Constant
+    placeholder = ast.FormattedValue(value=ast.Name(id="x", ctx=ast.Load()), conversion=-1)
+    stmt = lambda value: _unparsed(ast.Assign(targets=[ast.Name(id="MSG", ctx=ast.Store())], value=value, lineno=1))  # noqa: E731
+    planted = {
+        "literal.py": stmt(constant(NETWORK_REFUSED[:1].upper() + NETWORK_REFUSED[1:])),  # case-folded by the scan
+        "bytes_copy.py": stmt(constant(NETWORK_REFUSED.encode("utf-8"))),
+        "plus.py": stmt(ast.BinOp(left=constant(first), op=ast.Add(), right=constant(second))),
+        "fstring.py": stmt(ast.JoinedStr(values=[constant(NETWORK_REFUSED + ", so "), placeholder, constant(" cannot be read")])),
+        "split_by_placeholder.py": stmt(ast.JoinedStr(values=[constant(first), placeholder, constant(second)])),  # a different text: NOT a copy
+        "docstring_only.py": _unparsed(ast.Expr(value=constant(NETWORK_REFUSED))),  # quotes it, does not raise it
+        "whitespace_dropped.py": stmt(ast.BinOp(left=constant(NETWORK_REFUSED.replace(" ", "", 1)), op=ast.Add(), right=constant(""))),
+    }
+    for name, body in planted.items():
+        (root / name).write_text(body, encoding="utf-8")
+    needle = NETWORK_REFUSED.lower()
+    assert _holders(needle, root) == ["src/bytes_copy.py", "src/fstring.py", "src/literal.py", "src/plus.py"]
+    # with whitespace squeezed out (what the real scan does) the copy that lost a space is caught as well
+    assert _holders(needle, root, squash=True) == ["src/bytes_copy.py", "src/fstring.py", "src/literal.py", "src/plus.py", "src/whitespace_dropped.py"]
+
+    # the non-Python half: a copy in a .js, a .json and a .html is found, a .txt (not scanned) and a different text are not
+    (root / "reader.js").write_text(f"const m = {NETWORK_REFUSED!r};\n", encoding="utf-8")
+    (root / "strings.json").write_text(json.dumps({"k": NETWORK_REFUSED.upper()}, ensure_ascii=False), encoding="utf-8")
+    (root / "page.html").write_text(f"<p>{first}   {second}</p>", encoding="utf-8")
+    (root / "notes.txt").write_text(NETWORK_REFUSED, encoding="utf-8")
+    (root / "other.js").write_text("const m = 'something else entirely';\n", encoding="utf-8")
+    assert _non_python_holders(needle, root, squash=True) == ["src/page.html", "src/reader.js", "src/strings.json"]
+    assert _non_python_holders(needle, root) == ["src/reader.js", "src/strings.json"]  # the squeezed-out whitespace is what finds page.html
+
+    uses = {
+        "plain.py": ("from src.ingest.fetch_verdict import NETWORK_REFUSED\nraise RuntimeError(NETWORK_REFUSED)\n", (1, {_DEFINING_MODULE}, [])),
+        "aliased.py": ("from src.ingest.fetch_verdict import NETWORK_REFUSED as REFUSED\nraise RuntimeError(f'{REFUSED}, x')\nREFUSED\n", (2, {_DEFINING_MODULE}, [])),
+        "module_alias.py": ("from src.ingest import fetch_verdict as fv\nraise RuntimeError(fv.NETWORK_REFUSED)\n", (1, set(), [])),
+        "dotted.py": ("import src.ingest.fetch_verdict\nraise RuntimeError(src.ingest.fetch_verdict.NETWORK_REFUSED)\n", (1, set(), [])),
+        "import_as.py": ("import src.ingest.fetch_verdict as fv\nraise RuntimeError(fv.NETWORK_REFUSED)\n", (1, set(), [])),
+        "relative.py": ("from .fetch_verdict import NETWORK_REFUSED\nraise RuntimeError(NETWORK_REFUSED)\n", (1, {".fetch_verdict"}, [])),
+        "reexport.py": ("from src.ingest import NETWORK_REFUSED\nraise RuntimeError(NETWORK_REFUSED)\n", (1, {"src.ingest"}, [])),
+        "rebinds.py": ("from src.ingest.fetch_verdict import NETWORK_REFUSED\nNETWORK_REFUSED = 'x'\n", (0, {_DEFINING_MODULE}, ["NETWORK_REFUSED"])),
+        "unrelated.py": ("NETWORK_REFUSED = 'x'\nprint(NETWORK_REFUSED)\n", (0, set(), [])),
+    }
+    for name, (body, expected) in uses.items():
+        (root / name).write_text(body, encoding="utf-8")
+        assert _constant_uses(root / name) == expected, name

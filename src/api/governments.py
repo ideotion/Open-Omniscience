@@ -476,13 +476,14 @@ def load_standard(body: LoadStandardBody | None = None) -> dict:
     collection is never blocked for the whole run. Poll ``/load-standard/status`` or the
     task manager (``/api/jobs``) for progress; the tab reads stored figures as they land."""
     from src.ingest import kill_switch_active
+    from src.ingest.fetch_verdict import NETWORK_REFUSED
 
     wanted = [c for c in (body.indicators if body else None) or ind.indicator_ids() if ind.is_curated(c)]
     if not wanted:
         raise HTTPException(status_code=422, detail="no curated indicators selected")
     # Refuse up front, before starting the job, so airplane mode is a clean 409.
     if kill_switch_active():
-        raise HTTPException(status_code=409, detail="network refused: airplane mode is engaged")
+        raise HTTPException(status_code=409, detail=NETWORK_REFUSED)
     try:
         return {"started": True, "job": _GOV_JOB.start(wanted=wanted)}
     except RuntimeError:

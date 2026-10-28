@@ -176,9 +176,10 @@ def items_fetch(body: _FetchBody) -> dict:
     and without ``consent: true`` with a 400 -- see the module docstring.
     """
     from src.ingest import kill_switch_active
+    from src.ingest.fetch_verdict import NETWORK_REFUSED
 
     if kill_switch_active():
-        raise HTTPException(status_code=409, detail="network refused: airplane mode is engaged")
+        raise HTTPException(status_code=409, detail=NETWORK_REFUSED)
     if not body.consent:
         raise HTTPException(
             status_code=400,

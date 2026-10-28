@@ -291,9 +291,10 @@ def _refuse_if_offline() -> None:
     import-order coupling, matching the pattern used elsewhere.
     """
     from src.ingest import kill_switch_active
+    from src.ingest.fetch_verdict import NETWORK_REFUSED
 
     if kill_switch_active():
-        raise RuntimeError("network refused: airplane mode is engaged")
+        raise RuntimeError(NETWORK_REFUSED)
 
 
 def fetch_imap(

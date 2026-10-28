@@ -32,6 +32,12 @@ function extract(name) {
 
 const REAL_JOB_ERROR = "AirplaneRefusal: network refused: airplane mode is engaged (the Wikidata item fetch makes no request while the kill switch is on)";
 const REFUSED = "Refused: airplane mode is on. Turn the network on to fetch Wikidata items.";
+// THE SENTENCE THE ROUTES RAISE, as the Python side defines it (`NETWORK_REFUSED` in src/ingest/fetch_verdict.py; R328). The pytest driver passes
+// it in, so a rewording of the constant that leaves the reader's pattern behind turns this red. Only the cases that carry NO status reach the text
+// (the route's own refusal is a 409, taken by status before the text is read), so those are the ones that go red; a direct `node` run falls back
+// to this copy and says so.
+const FROM_CONSTANT = typeof process.env.OO_NETWORK_REFUSED === "string" && process.env.OO_NETWORK_REFUSED.length > 0;
+const SENTENCE = FROM_CONSTANT ? process.env.OO_NETWORK_REFUSED : "network refused: airplane mode is engaged";
 
 async function press(err) {
   const st = { textContent: "" };
@@ -60,16 +66,17 @@ function http(status, message) {
 
 (async () => {
   // The refusals: the route's own 409, and a message that starts with our sentences (bare, or the socket guard's).
-  assert.strictEqual(await press(http(409, "network refused: airplane mode is engaged")), REFUSED);
+  assert.strictEqual(await press(http(409, SENTENCE)), REFUSED);
   assert.strictEqual(await press(http(409, "anything at all")), REFUSED, "a 409 from this route is the kill switch");
-  assert.strictEqual(await press(new Error("network refused: airplane mode is engaged")), REFUSED);
+  assert.strictEqual(await press(new Error(SENTENCE)), REFUSED, "a message that STARTS with the constant's sentence is the kill switch");
+  assert.strictEqual(await press(new Error(SENTENCE + " (kill switch)")), REFUSED, "a writer that builds on the sentence keeps it as its opening words");
   assert.strictEqual(await press(new Error("  Airplane mode is engaged: refusing a network connection to 'www.wikidata.org'")), REFUSED);
 
   // The controls: the same words INSIDE another failure stay that failure's text.
   for (const msg of [
     "502 Bad Gateway: the page said airplane mode is engaged: refusing a network connection",
     "Redirect to https://h.test/airplane mode is engaged",
-    "the upstream answered: network refused: airplane mode is engaged",
+    "the upstream answered: " + SENTENCE,
     "please turn airplane mode off",
   ]) {
     const got = await press(http(502, msg));
@@ -79,15 +86,15 @@ function http(status, message) {
 
   // A job that errors after the switch engaged: the refusal state, not the raw server sentence (R334); any other job error is still an error.
   // The strings a job REALLY carries: ``record_text(exc, typed=True)`` puts the class in front (tests/test_wikidata_refusal_toast.py pins the first against the live constant).
-  for (const msg of [REAL_JOB_ERROR, "AirplaneModeError: airplane mode is engaged: refusing a network connection to 'www.wikidata.org'", "network refused: airplane mode is engaged", "airplane mode is engaged: refusing a network connection to 'www.wikidata.org'"]) {
+  for (const msg of [REAL_JOB_ERROR, "AirplaneModeError: airplane mode is engaged: refusing a network connection to 'www.wikidata.org'", SENTENCE, "airplane mode is engaged: refusing a network connection to 'www.wikidata.org'"]) {
     assert.strictEqual(await pressJob({ state: "error", error: msg }), REFUSED, "a refusal sentence as job.error is the kill switch: " + msg);
   }
   assert.strictEqual(await pressJob({ state: "error", error: "HTTP 503 for https://www.wikidata.org/x" }), "Wikidata fetch failed: HTTP 503 for https://www.wikidata.org/x");
   assert.strictEqual(await pressJob({ state: "error", error: "the page said airplane mode is engaged: refusing" }), "Wikidata fetch failed: the page said airplane mode is engaged: refusing", "a quoted phrase in a job error is not a refusal");
   // A class name other than ours in front does not make a quoted phrase a refusal.
-  for (const msg of ["HTTPError: airplane mode is engaged: refusing", "ValueError: network refused: airplane mode is engaged"]) {
+  for (const msg of ["HTTPError: airplane mode is engaged: refusing", "ValueError: " + SENTENCE]) {
     assert.strictEqual(await pressJob({ state: "error", error: msg }), "Wikidata fetch failed: " + msg, "another class in front is that failure: " + msg);
   }
   assert.strictEqual(await pressJob({ state: "error" }), "Wikidata fetch failed: ", "a job error with no text keeps the old empty tail");
-  console.log("wikidata_refusal_node_test.js: OK");
+  console.log("wikidata_refusal_node_test.js: OK (sentence from " + (FROM_CONSTANT ? "the constant" : "this file's own copy") + ")");
 })().catch((e) => { console.error(e); process.exit(1); });
