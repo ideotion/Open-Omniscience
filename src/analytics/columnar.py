@@ -2035,7 +2035,8 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
     hooked here (a stated limit: the caller's final comparison stops the store being RECORDED as serving and voids ``built_epoch``, so the next
     refresh is a full rebuild even at an equal corpus epoch; the ``keyword_meta`` rows read after the swap stay written until then).
 
-    The incremental merge voids ``built_epoch`` before its first write and restores it after the watermark moves, so a merge that stops
+    The full rebuild voids a standing ``built_epoch`` before it starts, for the same reason (its swap-in, ``keyword_meta`` fill and watermark are
+    separate commits). The incremental merge voids ``built_epoch`` before its first write and restores it after the watermark moves, so a merge that stops
     half-way (an error, MemoryError, a kill) is followed by a full rebuild, never by a second addition of the same tail.
     """
     ensure_store_meta(con)
@@ -2052,6 +2053,12 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
             if on_batch is not None and stage != "keywords":
                 on_batch(stage, rows_done)
 
+        # A stamp that vouches (here: equal to the corpus epoch, with a table missing, e.g. a store from before ``keyword_meta`` existed) must
+        # not outlive the first write. The build swaps the new ``keyword_daily`` in, then fills ``keyword_meta`` and only then moves the
+        # watermark: a stop in between would leave the stamp valid over the OLD watermark and tables that are both present, and the next
+        # refresh would merge the tail the new table already holds. The stamp is put back below, after the build.
+        if built_epoch is not None and int(built_epoch) != VOIDED_BUILT_EPOCH:
+            _set_meta(con, "keyword_daily.built_epoch", VOIDED_BUILT_EPOCH)
         tally = build_keyword_daily(con, session, batch_size=batch_size, on_batch=_before_swap_in)
         _set_meta(con, "keyword_daily.built_epoch", int(corpus_epoch))
         return {"mode": "full", "corpus_epoch": int(corpus_epoch), **tally}
