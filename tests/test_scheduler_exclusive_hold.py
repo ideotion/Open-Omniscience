@@ -204,3 +204,110 @@ def test_the_resume_that_ends_an_exclusive_operation_still_starts_the_loop(monke
         assert sch.holds_exclusive() is False
     finally:
         sch.stop(timeout=HANG_GUARD_S)
+
+
+# -- the read of #1617: a refused Start is deferred, not lost; the windows around the hold ------------------------------------------------ #
+
+
+def test_a_start_refused_during_the_hold_is_honoured_when_the_operation_ends(monkeypatch):
+    """The operation began with the loop stopped (airplane mode at boot, the normal case), so ``was_paused`` is False. The operator then presses Start
+    or goes online mid-import: that start is refused, and the operation's resume must still start the loop, or the machine ends up online and not
+    collecting (``online`` is meant to imply ``collecting``)."""
+    sch = _scheduler(run_once_fn=lambda: {"stored": 0})
+    monkeypatch.setattr(runner_mod, "get_scheduler", lambda: sch)
+    try:
+        was_paused = runner_mod.pause_for_exclusive_operation(timeout=HANG_GUARD_S)
+        assert was_paused is False
+        assert sch.start() is False and sch.is_running() is False
+        runner_mod.resume_after_exclusive_operation(was_paused, retries=0, retry_delay=0.0)
+        assert sch.is_running() is True, "the Start pressed during the operation was lost"
+        assert sch.holds_exclusive() is False
+    finally:
+        sch.stop(timeout=HANG_GUARD_S)
+
+
+def test_a_deferred_start_does_not_outlive_the_operation_it_was_made_during(monkeypatch):
+    """A start refused during one hold must not start collection after a LATER operation that nobody asked to start anything during."""
+    sch = _scheduler(run_once_fn=lambda: {"stored": 0})
+    monkeypatch.setattr(runner_mod, "get_scheduler", lambda: sch)
+    sch.hold_exclusive()
+    assert sch.start() is False
+    sch.release_exclusive()  # the first operation ended without a resume (an early return)
+    was_paused = runner_mod.pause_for_exclusive_operation(timeout=HANG_GUARD_S)
+    runner_mod.resume_after_exclusive_operation(was_paused, retries=0, retry_delay=0.0)
+    assert sch.is_running() is False, "a start refused during an earlier operation was honoured after a later one"
+
+
+def test_a_deferred_start_never_overrides_the_operators_airplane_mode(monkeypatch):
+    from src.ingest import activate_kill_switch, clear_kill_switch
+
+    sch = _scheduler(run_once_fn=lambda: {"stored": 0})
+    monkeypatch.setattr(runner_mod, "get_scheduler", lambda: sch)
+    try:
+        was_paused = runner_mod.pause_for_exclusive_operation(timeout=HANG_GUARD_S)
+        assert sch.start() is False
+        activate_kill_switch()  # the operator went offline again before the operation ended
+        runner_mod.resume_after_exclusive_operation(was_paused, retries=0, retry_delay=0.0)
+        assert sch.is_running() is False
+    finally:
+        clear_kill_switch()
+        sch.stop(timeout=HANG_GUARD_S)
+
+
+def test_a_pass_that_begins_under_the_hold_is_told_to_stop_at_once(the_pass):
+    """A "Run now" that passed its check an instant before the hold was claimed reaches ``_do_run`` after ``stop()`` saw no pass: the pass must start
+    already stopped, not run unsignalled through the operation."""
+    sch = _scheduler()
+    sch.hold_exclusive()
+    t = threading.Thread(target=sch._do_run)
+    t.start()
+    assert the_pass.entered.wait(HANG_GUARD_S)
+    the_pass.release.set()
+    t.join(timeout=HANG_GUARD_S)
+    assert the_pass.seen == [True, True]
+
+
+def test_an_idle_stop_sets_no_pass_signal():
+    """Control for ``stop()``'s ``_active`` condition: with no pass in flight there is nothing to signal, and the flag stays down."""
+    sch = _scheduler()
+    assert sch.stop() is False
+    assert sch._pass_stop.is_set() is False
+
+
+def test_a_hold_claimed_while_the_loop_is_starting_still_stops_it(monkeypatch):
+    """``start()`` checks the hold and creates the thread in one lock region: a pause that claims the hold in between would otherwise find no running
+    loop (``was_paused`` False) and leave one running for the whole operation."""
+    sch = _scheduler(run_once_fn=lambda: {"stored": 0})
+    real_thread = threading.Thread
+    results: dict = {}
+
+    class _RacingThread(real_thread):
+        def start(self):
+            if self.name == "oo-scheduler":
+
+                def _pause():
+                    sch.hold_exclusive()
+                    results["stopped"] = sch.stop(timeout=HANG_GUARD_S)
+
+                racer = real_thread(target=_pause)
+                racer.start()
+                racer.join(timeout=0.3)  # blocked on the lock if start() holds it; finished if it does not
+                results["racer_done_early"] = not racer.is_alive()
+                results["racer"] = racer
+                super().start()
+                return
+            super().start()
+
+    monkeypatch.setattr(runner_mod.threading, "Thread", _RacingThread)
+    try:
+        assert sch.start() is True
+        results["racer"].join(timeout=HANG_GUARD_S)  # after start() has released its lock
+        deadline = time.monotonic() + HANG_GUARD_S
+        while sch.is_running() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert results["racer_done_early"] is False, "the hold was claimed between start()'s check and its thread"
+        assert sch.is_running() is False, "a loop was left running under the hold"
+    finally:
+        monkeypatch.setattr(runner_mod.threading, "Thread", real_thread)
+        sch.release_exclusive()
+        sch.stop(timeout=HANG_GUARD_S)

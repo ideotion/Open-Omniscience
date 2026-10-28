@@ -1858,6 +1858,9 @@ class BackgroundScheduler:
         # never asked to wind down and an exclusive operation's wait spent its whole bound on it. Set by ``stop()`` only while a pass is in
         # flight and the loop is not running; cleared at the start of every pass, under the same lock, so it can never outlive the pass it was for.
         self._pass_stop = threading.Event()
+        # A ``start()`` refused during an exclusive hold is remembered, not lost: the operation began with the loop stopped (``was_paused`` False),
+        # so its resume would otherwise never start anything, and the machine would end up online and not collecting. Consumed by the resume.
+        self._start_deferred = False
 
     # -- lifecycle --------------------------------------------------------- #
 
@@ -1868,21 +1871,32 @@ class BackgroundScheduler:
         """Start the scheduling loop. Returns False if it was already running, or while an exclusive operation holds the machine.
 
         The hold (R367, F5 of the read of #1607) is refused here exactly as :meth:`run_now` refuses it: the Start button, the network toggle going
-        online and the unattended start would otherwise put the loop back in the middle of an import, whose dialog says collection is paused. The
-        operation's own resume releases the hold BEFORE it calls this (:func:`resume_after_exclusive_operation`), and ``status()["exclusive_hold"]``
-        says why a start was refused.
+        online and the unattended start would otherwise put the loop back in the middle of an import, whose dialog says collection is paused. A
+        refused start is REMEMBERED (:meth:`take_deferred_start`) and the operation's resume honours it, so it is delayed, never lost. The resume
+        releases the hold BEFORE it calls this (:func:`resume_after_exclusive_operation`), and ``status()["exclusive_hold"]`` says why a start was
+        refused (the API; the UI does not read it). The hold is checked and the thread created in ONE lock region, so a pause that claims the hold
+        cannot find the loop not yet running and leave it starting under the operation.
         """
         if self.is_running():
             return False
+        _ensure_storage_supervisor()
         with self._state_lock:
             if self._exclusive_hold:
+                self._start_deferred = True
                 return False
-        _ensure_storage_supervisor()
-        self._stop.clear()
-        self._started_at = datetime.now(UTC)
-        self._thread = threading.Thread(target=self._loop_recorded, name="oo-scheduler", daemon=True)
-        self._thread.start()
+            if self.is_running():  # a second start() that got here first
+                return False
+            self._stop.clear()
+            self._started_at = datetime.now(UTC)
+            self._thread = threading.Thread(target=self._loop_recorded, name="oo-scheduler", daemon=True)
+            self._thread.start()
         return True
+
+    def take_deferred_start(self) -> bool:
+        """Was a start refused during the hold that has just ended? Reads and clears the memory (the resume's one question)."""
+        with self._state_lock:
+            deferred, self._start_deferred = self._start_deferred, False
+        return deferred
 
     def _loop_recorded(self) -> None:
         """The loop, bracketed by the two ledger events the chronology reads its bar from
@@ -1951,6 +1965,7 @@ class BackgroundScheduler:
         for CPU/the single-writer gate with it regardless of the loop's state."""
         with self._state_lock:
             self._exclusive_hold = True
+            self._start_deferred = False  # only a start refused during THIS hold is the operation's to honour
 
     def release_exclusive(self) -> None:
         """The other half of :meth:`hold_exclusive` -- always call this in a
@@ -2134,7 +2149,12 @@ class BackgroundScheduler:
         if not self._run_lock.acquire(blocking=False):
             return
         with self._state_lock:
-            self._pass_stop.clear()  # before ``_active``: a stop() that finds the pass active signals THIS pass, never the previous one
+            # Before ``_active``: a stop() that finds the pass active signals THIS pass, never the previous one. A pass that begins UNDER the hold (a
+            # "Run now" that passed its check an instant before it was claimed, after ``stop()`` had seen no pass) starts already stopped.
+            if self._exclusive_hold:
+                self._pass_stop.set()
+            else:
+                self._pass_stop.clear()
             self._active = True
         started = datetime.now(UTC)
         started_mono = time.monotonic()
@@ -3072,7 +3092,9 @@ def resume_after_exclusive_operation(
         return
     released = False
     try:
-        if not was_paused:
+        take = getattr(get_scheduler(), "take_deferred_start", None)
+        deferred = bool(take()) if callable(take) else False  # a Start or go-online that was refused during the hold is still wanted
+        if not (was_paused or deferred):
             return
         # The hold ends BEFORE the start attempts: ``start()`` refuses while it stands (R367, F5), and the operation is done.
         get_scheduler().release_exclusive()
