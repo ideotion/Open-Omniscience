@@ -1887,9 +1887,19 @@ class BackgroundScheduler:
             if self.is_running():  # a second start() that got here first
                 return False
             self._stop.clear()
+            previous = (self._thread, self._started_at)
             self._started_at = datetime.now(UTC)
             self._thread = threading.Thread(target=self._loop_recorded, name="oo-scheduler", daemon=True)
-            self._thread.start()
+            try:
+                self._thread.start()
+            except BaseException:
+                # ``Thread.start()`` raises RuntimeError ("can't start new thread") before the target runs when the process is out of
+                # threads: nothing was started, so ``status()`` keeps saying when the loop LAST started rather than a start that never
+                # happened, and no never-started thread is held as the loop. If the OS thread does exist (``ident`` is set) it owns the
+                # loop and stays recorded -- dropping it would let the next ``start()`` run a second loop beside it.
+                if self._thread.ident is None:
+                    self._thread, self._started_at = previous
+                raise
         return True
 
     def take_deferred_start(self) -> bool:
