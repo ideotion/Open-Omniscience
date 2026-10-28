@@ -192,22 +192,18 @@ def test_a_thread_that_outlives_the_bound_is_blamed_on_the_test_that_left_it_and
 
 
 class _NotYetRunning:
-    """A thread ``start()`` has been called on that has not run its first instruction: ``threading.enumerate()`` lists it, ``ident`` is ``None``
-    for the first ``polls_until_started`` reads, and it cannot be joined until it has one."""
+    """A thread ``start()`` has been called on that has not run its first instruction: ``threading.enumerate()`` lists it and ``join`` raises
+    ``RuntimeError`` (as ``Thread.join`` does before the thread has started) for the first ``join_attempts_refused`` attempts."""
 
     name = _BRIEFING_THREAD_NAMES[0]
 
-    def __init__(self, polls_until_started):
-        self._left, self.joined = polls_until_started, False
-
-    @property
-    def ident(self):
-        if self._left > 0:
-            self._left -= 1
-            return None
-        return 77
+    def __init__(self, join_attempts_refused):
+        self._refused, self.joined = join_attempts_refused, False
 
     def join(self, timeout=None):
+        if self._refused > 0:
+            self._refused -= 1
+            raise RuntimeError("cannot join thread before it is started")
         self.joined = True
 
     def is_alive(self):
@@ -227,24 +223,24 @@ class _ThreadingListing:
         return getattr(threading, name)
 
 
-def test_the_quiesce_waits_for_a_thread_that_has_not_run_its_first_instruction_and_then_joins_it(monkeypatch):
-    """Review note 2 of #1596: a thread with no ident yet used to be skipped, so a rebuild started a moment before the teardown ran into the next test."""
+def test_the_quiesce_retries_a_thread_that_cannot_be_joined_yet_and_then_joins_it(monkeypatch):
+    """Review note 2 of #1596: a thread that had not started yet used to be skipped (and, after the first fix, one with an ident but not yet started still raised from the fixture), so a rebuild started a moment before the teardown ran into the next test."""
     import tests.conftest as conftest_module
 
-    t = _NotYetRunning(polls_until_started=3)
+    t = _NotYetRunning(join_attempts_refused=3)
     monkeypatch.setattr(conftest_module, "threading", _ThreadingListing([t]))
     _quiesce_briefing_threads("tests/x.py::limbo", timeout=10)
     assert t.joined, "a thread that was about to run was not joined"
 
 
-def test_a_thread_that_never_gets_an_ident_inside_the_bound_is_reported_not_skipped(monkeypatch):
+def test_a_thread_that_cannot_be_joined_inside_the_bound_is_reported_not_skipped(monkeypatch):
     import tests.conftest as conftest_module
 
-    t = _NotYetRunning(polls_until_started=10**9)
+    t = _NotYetRunning(join_attempts_refused=10**9)
     monkeypatch.setattr(conftest_module, "threading", _ThreadingListing([t]))
     with pytest.raises(AssertionError, match="tests/x.py::stuck"):
         _quiesce_briefing_threads("tests/x.py::stuck", timeout=0.1)
-    assert not t.joined, "an unstarted thread cannot be joined"
+    assert not t.joined, "a thread that never became joinable was reported as joined"
 
 
 @pytest.mark.parametrize("paused", [False, True], ids=["ran", "paused-by-the-log-latch"])

@@ -8,7 +8,9 @@ else to the real ``os``, and ``monkeypatch`` puts the real module back at teardo
 
 Two consequences, both wanted. Code that reaches ``os`` any other way (a local ``import os`` inside a function, ``pathlib`` calling ``os.replace``
 for ``Path.replace``) no longer sees the replacement, so a test that depended on that fails loudly instead of passing by accident. And a second
-``scope_os`` on the same module adds to the first one's namespace instead of replacing it.
+``scope_os`` on the same module adds to the first one's namespace instead of replacing it. Use ONE ``monkeypatch`` (or ``monkeypatch.context()``) for
+one module in a test: the namespace is bound by whichever object created it, and leaving a ``context()`` that created it puts the real ``os`` back,
+dropping what another ``monkeypatch`` added to it.
 """
 
 from __future__ import annotations
@@ -48,6 +50,9 @@ def hide_os(monkeypatch: pytest.MonkeyPatch, module: ModuleType, *names: str) ->
     """Make ``os.<name>`` missing as ``module`` sees it (a platform without ``statvfs``), for the rest of the test."""
     seen = scope_os(monkeypatch, module)
     for name in names:
-        seen.__dict__.pop(name, None)
+        if name in seen.__dict__:
+            # through ``monkeypatch``, not ``__dict__.pop``: the undo of the ``setattr`` that put it there is a ``delattr`` (or a restore), and it
+            # must find the attribute where it left it, or the teardown stops half-way and ``module.os`` stays replaced for the session
+            monkeypatch.delattr(seen, name)
         seen._hidden.add(name)
     return seen

@@ -431,13 +431,18 @@ def _quiesce_briefing_threads(nodeid: str, timeout: float = _BRIEFING_THREAD_JOI
         if t.name in _BRIEFING_THREAD_NAMES and t is not threading.current_thread() and t not in _BRIEFING_THREADS_REPORTED
     ]
     end = time.monotonic() + timeout
+    joined: list[threading.Thread] = []
     for t in live:
-        # a thread between ``start()`` and its first instruction is listed but has no ident yet, and cannot be joined until it has one
-        while t.ident is None and time.monotonic() < end:
-            time.sleep(0.005)
-        if t.ident is not None:
-            t.join(timeout=max(0.0, end - time.monotonic()))
-    left = [t for t in live if t.ident is None or t.is_alive()]
+        while True:
+            try:
+                t.join(timeout=max(0.0, end - time.monotonic()))
+                joined.append(t)
+                break
+            except RuntimeError:  # listed by ``enumerate`` but not yet running its first instruction: it cannot be joined until it has started
+                if time.monotonic() >= end:
+                    break
+                time.sleep(0.005)
+    left = [t for t in live if t not in joined or t.is_alive()]
     if left:
         _BRIEFING_THREADS_REPORTED.update(left)
         raise AssertionError(
