@@ -87,7 +87,7 @@ def process_wide_os_patches(source: str) -> list[int]:
             text = _string(first)
             if name in _PATCHERS and first is not None and names.is_process_module(first):
                 found.append(node.lineno)
-            elif name in {"setattr", "patch"} and text is not None and _STRING_TARGET.search(text):
+            elif name in {"setattr", "delattr", "patch"} and text is not None and _STRING_TARGET.search(text):
                 found.append(node.lineno)  # monkeypatch.setattr("os.kill", f), mock.patch("pkg.mod.os.path.getsize")
             elif name == "object" and first is not None and names.is_process_module(first):
                 found.append(node.lineno)  # mock.patch.object(os, "replace", ...)
@@ -147,6 +147,8 @@ def test_every_allowlisted_file_still_has_the_replacement_it_is_excused_for(name
         ('import os\n\nmonkeypatch.setattr("os.path.getsize", f)\n', [3]),
         ('import os\n\nmonkeypatch.setattr("posixpath.exists", f)\n', [3]),
         ('import os\n\nmock.patch("pkg.mod.os.path.exists", f)\n', [3]),
+        ('import os\n\nmonkeypatch.delattr("os.statvfs", raising=False)\n', [3]),
+        ('import os\n\nmonkeypatch.delattr("src.x.os.path.getsize")\n', [3]),
         # aliases
         ('import os as _os\n\nmonkeypatch.setattr(_os, "replace", f)\n', [3]),
         ('import os.path as osp\n\nmonkeypatch.setattr(osp, "getsize", f)\n', [3]),
