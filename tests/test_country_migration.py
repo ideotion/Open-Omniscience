@@ -872,18 +872,30 @@ def test_a_failed_existence_check_in_the_fallback_still_leaves_no_partial(tmp_pa
     a = _new_store(tmp_path / "a.db", articles=12)
     dest = tmp_path / "bk" / "plain.db"
 
+    linked: list[object] = []
+    asked: list[object] = []
+    real_path_exists = cm._path_exists
+
     def no_link(src, dst, *args, **kwargs):
+        linked.append(dst)
         raise OSError(errno.EPERM, "no hard links here")
 
     def unanswerable(path, *args, **kwargs):
+        # the FIRST question ("is the name taken?", asked before anything is written) is answered for real; only the one asked
+        # after the link failed cannot be answered. Failing the first one refuses before a byte is copied and the fallback is never
+        # reached (the test then passed with the cleanup it names removed).
+        asked.append(path)
+        if len(asked) == 1:
+            return real_path_exists(path, *args, **kwargs)
         raise cm.MigrationRefused("cannot tell whether the copy's final name is taken (OSError)")
 
     scope_os(monkeypatch, cm, link=no_link)
     monkeypatch.setattr(cm, "_path_exists", unanswerable)
     con = _live(a)
     try:
-        with pytest.raises(cm.MigrationRefused):
+        with pytest.raises(cm.MigrationRefused, match="cannot tell whether the copy's final name is taken"):
             cm.take_verified_backup(con, a, dest)
     finally:
         con.close()
+    assert len(linked) == 1 and len(asked) == 2, (linked, asked)  # the copy was made and checked, the link failed, THEN the question failed
     assert not dest.exists() and not list(dest.parent.glob("*.partial"))
