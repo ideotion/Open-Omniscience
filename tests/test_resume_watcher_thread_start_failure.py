@@ -91,6 +91,30 @@ def test_a_watcher_that_did_start_keeps_its_claim(monkeypatch):
         assert wait_until(lambda: not _watchers())
 
 
+def test_a_watcher_created_before_an_interrupt_keeps_its_claim(monkeypatch):
+    """The OS thread exists but ``ident`` is still None when an interrupt escapes ``start()`` (it lands while ``start`` waits for the thread to
+    report in): that watcher runs and owns the claim, so only an ``Exception`` may retract it."""
+    real = threading.Thread.start
+
+    def interrupt(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    def start(self):
+        if self.name == _NAME:
+            self._started.wait = interrupt
+        return real(self)
+
+    monkeypatch.setattr(threading.Thread, "start", start)
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            runner._watch_for_resume(_Sched(), poll_s=0.01)
+        assert runner.resume_pending() is not None, "a live watcher's claim was retracted"
+        assert wait_until(lambda: bool(_watchers())), "the watcher the claim belongs to never ran"
+    finally:
+        runner.cancel_pending_resume()
+        assert wait_until(lambda: not _watchers())
+
+
 def test_the_failure_does_not_escape_the_resume_into_the_operations_finally(monkeypatch, caplog):
     sched = _Sched()
     monkeypatch.setattr(runner, "get_scheduler", lambda: sched)

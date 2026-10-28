@@ -40,17 +40,22 @@ def sched(monkeypatch, tmp_path):
 
 
 def _fail_start(monkeypatch, how, *, times=None):
-    """``never``: ``start`` raises before the thread runs (an out-of-threads process). ``after``: the thread really starts, then ``start``
-    raises anyway. ``times`` limits how many starts fail."""
+    """``never``: ``start`` raises before the thread runs (an out-of-threads process). ``interrupted``: the OS thread is created and then
+    an interrupt lands while ``start`` waits for it to report in (CPython 3.13's ``self._started.wait()``), the one way ``start`` raises
+    with a live thread whose ``ident`` is still None. ``times`` limits how many starts fail."""
     real = threading.Thread.start
     failed = [0]
+
+    def interrupt(*args, **kwargs):
+        raise KeyboardInterrupt
 
     def start(self):
         if self.name != "oo-scheduler" or (times is not None and failed[0] >= times):
             return real(self)
         failed[0] += 1
-        if how == "after":
-            real(self)
+        if how == "interrupted":
+            self._started.wait = interrupt
+            return real(self)
         raise RuntimeError("can't start new thread")
 
     monkeypatch.setattr(threading.Thread, "start", start)
@@ -88,12 +93,16 @@ def test_the_next_start_after_a_failed_one_starts(sched, monkeypatch):
     assert sched.status()["started_at"] is not None
 
 
-def test_a_thread_that_did_start_is_recorded_even_if_start_raised(sched, monkeypatch):
-    """``start`` raising AFTER the OS thread exists (exotic, and the case that tells recording-only-on-success from the right fix): the
-    thread owns the loop, so it is the one recorded."""
-    _fail_start(monkeypatch, "after")
-    with pytest.raises(RuntimeError):
+def test_a_thread_created_before_an_interrupt_is_recorded(sched, monkeypatch):
+    """The OS thread exists and will run the loop, but ``ident`` is still None when the interrupt escapes ``start``: only an
+    ``Exception`` (CPython's "no thread was created" path) may restore the previous record. Restoring here would leave ``is_running()``
+    False beside a live loop, so ``stop()`` could not stop it and the next ``start()`` would run a second one."""
+    ran = threading.Event()
+    sched._loop = ran.set
+    _fail_start(monkeypatch, "interrupted")
+    with pytest.raises(KeyboardInterrupt):
         sched.start()
-    assert sched._thread is not None and sched._thread.ident is not None
+    assert sched._thread is not None, "the live loop's thread was dropped"
     assert sched.status()["started_at"] is not None
+    assert ran.wait(HANG_GUARD_S), "the loop never ran, so the premise of this test (a live thread with ident None) did not hold"
     sched._thread.join(HANG_GUARD_S)
