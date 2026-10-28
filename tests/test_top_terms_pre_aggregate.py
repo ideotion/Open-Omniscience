@@ -162,7 +162,9 @@ def test_the_join_feeds_the_text_grouping_one_row_per_keyword_not_one_per_keywor
     old_sql, old_params = _shipped_query(None, None, None, 80)
     old_joins = [n for n in _walk(_plan(con, old_sql, old_params)) if _kind(n) == "HASH_JOIN"]
     assert old_joins, "the control query has no hash join"
-    if max(_rows_out(j) for j in old_joins) <= len(_META):
+    control_rows = max(_rows_out(j) for j in old_joins)
+    assert control_rows > 0, "the control join reports no rows: this reader does not understand this DuckDB's profile"
+    if control_rows <= len(_META):
         pytest.skip("this DuckDB aggregates below the join itself, so the join's row count cannot tell the two query shapes apart")
     sql, params = columnar._top_terms_query(None, None, None, 80)
     plan = _plan(con, sql, params)
