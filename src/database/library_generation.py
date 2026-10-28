@@ -31,9 +31,12 @@ WHAT IT DOES NOT COVER. A raw DBAPI cursor on a pooled connection (``engine.raw_
 users of it (the log checkpoint, ``PRAGMA shrink_memory``, the data-version probe) run no DML. A statement already past its own check
 and not yet at SQLite when the bump lands is the window's width (microseconds), and the repair's data-version check sees a save that
 landed before the bump. A statement that COMMITS ITSELF is wider: Core DDL and Core writes under pysqlite's legacy transaction mode, which
-no gate holds (``analytics/spell_index.py``, ``database/fts.py``, ``database/maintenance.py``, ``database/migrate.py``), can wait out
-``busy_timeout`` PAST the probe's rollback and land in the set-aside file. Those are boot and derived-store steps, never a user's save,
-and ``write_lock()`` at those sites (the write-gate holds PR) is what closes them.
+no gate holds (the DDL steps of ``init_db``: ``database/maintenance.py`` ``ensure_*``, ``database/migrate.py``, ``database/fts.py``
+``ensure_fts``, and ``database/source_identity.py``, which opens ``BEGIN IMMEDIATE`` on a Core connection), can wait out
+``busy_timeout`` PAST the probe's rollback and land in the set-aside file. Those are boot steps, never a user's save, and ``write_lock()``
+at those sites (the write-gate holds PR) is what closes them. ``analytics/spell_index.py`` (``text()`` statements in a ``session_scope``) and
+the ``database/fts.py`` rebuilds (under ``write_lock()``) are gated, and the settings saves (``config/kv_store.py``: ``write_lock()``, then a
+raw ``connect()``) are gated and never pass ``connecting()``.
 """
 
 from __future__ import annotations
@@ -358,11 +361,28 @@ def swap_window(source: Path, *, timeout: float = WINDOW_WAIT_S) -> Iterator[Non
     (``sqlcipher3``'s ``close()`` keeps the GIL for the checkpoint it runs on the last connection: in the six encrypted cells with a log the
     worst gap of a ticker thread equalled the dispose to within 0.009 s). The field's 90.8 s for a 1.41 GB log (``shutdown_checkpoint.py``) was
     the NEXT OPEN paying the write-back at an unlock, another operation as well as another disk, and was NOT reproduced; nothing here is
-    extrapolated to a size, a disk or a load nobody measured. The restore and the repair fold the log into the file BEFORE the window and refuse
-    when they cannot (``backup.merge._checkpoint_before_swap``, the repair's ``_empty_the_log``), so the window should find only the frames
-    written between that fold and the window; how many a real restore leaves there is NOT measured. The one place the code ITSELF can leave the
-    window held for good is the call that gives it back (the residual named above); a stopped pool there is expected to be loud (the pool's waits
-    and ``pool_timeout``), which the MemoryError report reasoned and did not measure, and a detector that names it is a proposal, not built."""
+    extrapolated to a size, a disk or a load nobody measured.
+    The restore and the repair fold the log into the file BEFORE the window and refuse when they cannot
+    (``backup.merge._checkpoint_before_swap``, the repair's ``_empty_the_log``), so the window finds only the frames written between that
+    fold and the window. HOW MANY, MEASURED (27 Oct 2026; real committed restores and real repairs; plaintext SQLite 3.45.1, this box of 4
+    vCPU and 15 GiB on a virtual disk; a 214.2 MiB store of 60,000 articles and 358,402 mentions and a 1,055.4 MiB store of 300,000
+    articles and 1,792,904 mentions; the log read as frames, mxFrame minus nBackfill of the wal-index, not as the file's size, which is a
+    high-water mark): with nothing else writing the corpus, none (0 frames in every run: three restores on each store, three repairs of a
+    damaged copy of the smaller one); with an ORM writer outside the corpus lease (the quiescence wait only waits for registered jobs)
+    committing one row every 20 ms or 200 rows at a time, 0 to 1,174 frames (4.6 MiB of frames) at window entry in 21 restores,
+    which is that writer's rate times the 0.25 to 0.59 s between the fold and the window (with no writer that gap was 0.29 to 0.36 s on
+    both stores, so it did not grow with the store), folded by the first ``dispose_engine()`` in 0.001 to 0.03 s warm and 0.41 s once cold
+    (379 frames); the repair's window found none, or the repair declined (a gated writer queues behind the gate; an ungated committer made
+    it decline ``saved-during-the-copy`` in all three runs, nothing switched). The body's other cost at a large store is the file replace,
+    ``_replace_live_corpus``: 0.012 s at 214 MiB, 0.39 s warm and 0.46 s cold at 1,055 MiB, with no log (the cause is not isolated), so
+    the hold there was 0.40 to 0.60 s with no log, with the one-row writer's log, and in the cold run of the 200-row writer (1 to 2 ms in the
+    two warm runs of that writer, where its open connection kept the old file alive, so the replace freed nothing at once).
+    NOT MEASURED: encrypted stores, a bigger store, a heavier writer.
+    A writer outside the lease also loses what it commits after the restore's working copy was taken (known design, a comment in
+    ``backup.merge``). The raw outputs are the WAL lane's ``swap-window-log-at-entry-data/``, outside the repository. The one place the
+    code ITSELF can leave the window held for good is the call that gives it back (the residual named above); a stopped pool there is
+    expected to be loud (the pool's waits and ``pool_timeout``), which the MemoryError report reasoned and did not measure, and a detector
+    that names it is a proposal, not built."""
     global _DISK_CHANGED
     # Everything after the identity is inside the outer ``try``, and what the outer ``finally`` releases is read from the lock itself
     # (``held_here``), not from a flag set after ``exclusive`` returned: an interrupt between "the holder was set" and "the caller saw the
