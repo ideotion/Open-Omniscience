@@ -693,7 +693,8 @@ def auto_import_due_feeds(fetcher, *, batch: int = 8, min_interval_hours: float 
     are all inherited from ``fetcher`` (the guarded path) — this adds no new fetch
     surface, just schedules the existing operator import. Per-feed timestamps live in
     a per-machine store. Returns a tally; never raises for a single bad feed. A Stop (the kill switch) ends the batch at the feed in flight:
-    that feed and the rest are not counted as failed and are not stamped, so the next pass asks them first.
+    that feed and the rest are not counted as failed and are not stamped, so the next pass asks them first (``picked`` then exceeds
+    ``imported`` + ``failed``: the difference is the feeds the Stop kept from being asked).
     """
     from src.ingest import kill_switch_active
 

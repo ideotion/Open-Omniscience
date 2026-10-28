@@ -87,3 +87,11 @@ def test_an_ordinary_failure_is_still_counted_and_stamped():
     r = F.auto_import_due_feeds(f, batch=3)
     assert r["failed"] == 3 and r["imported"] == 0
     assert len(F._load_json("calendar_autoimport.json")) == 3
+
+
+def test_a_stop_inside_the_only_feed_of_a_batch_is_not_stamped_by_the_except_branch_alone():
+    """With ``batch=1`` the top-of-loop check never runs after the cut, so only the except-branch check keeps the feed unstamped."""
+    f = _Fetcher(stop_at=1)
+    r = F.auto_import_due_feeds(f, batch=1)
+    assert r["imported"] == 0 and r["failed"] == 0
+    assert F._load_json("calendar_autoimport.json") == {}
