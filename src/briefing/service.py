@@ -13,11 +13,13 @@ can be restored and a later recompute re-applies the user's choice, not overwrit
 
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import json
 import logging
 import threading
 import time
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -173,6 +175,23 @@ def _cache_path():
     from src.paths import data_dir
 
     return data_dir() / "briefing_cache.json"
+
+
+def cache_path_for_a_new_run() -> Path:
+    """The cache file a rebuild started NOW reads and writes. A caller that starts a rebuild on a thread of its own (the scheduler's pass tail)
+    resolves it before the thread exists and hands it to ``pinned_cache_path`` inside the thread, for the reason ``_bg_refresh`` gives."""
+    return _cache_path()
+
+
+@contextlib.contextmanager
+def pinned_cache_path(path: Path) -> Iterator[None]:
+    """Inside the block, ``_cache_path()`` answers ``path`` in the calling thread, whatever the data folder is meanwhile. The pin is reset on the
+    way out, so a pooled thread does not carry it into its next task."""
+    token = _run_cache_path.set(path)
+    try:
+        yield
+    finally:
+        _run_cache_path.reset(token)
 
 
 # A cache is STALE once the corpus has grown by this fraction AND this many

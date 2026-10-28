@@ -2359,6 +2359,18 @@ class BackgroundScheduler:
             _LOG.info("background briefing refresh still running; skipping this cycle")
             return
 
+        try:
+            # The import is inside the guard too: a failure here must free the lock like any other (the module is long loaded in practice).
+            from src.briefing.service import cache_path_for_a_new_run, pinned_cache_path
+
+            # Resolved here, before the thread exists, and pinned inside it: a thread that asked ``data_dir()`` at each read and write could land
+            # the cache in a different folder than the one it started in (R355; the same mechanism as ``service._bg_refresh``).
+            cache_path = cache_path_for_a_new_run()
+        except Exception as exc:  # noqa: BLE001 - a background refresh must never crash the scheduler
+            log_failure(_LOG, "background briefing refresh not started: the cache folder could not be resolved", exc, level=logging.WARNING)
+            self._briefing_bg_lock.release()
+            return
+
         def _run() -> None:
             from src.database.session import session_scope
             from src.monitoring import tasks as _bgtasks
@@ -2371,7 +2383,7 @@ class BackgroundScheduler:
                 if not self._acquire_heavy_tail("briefing refresh"):
                     return
                 try:
-                    with session_scope() as session:
+                    with pinned_cache_path(cache_path), session_scope() as session:
                         refreshed = refresh_briefing(session)
                         # A refresh that kept the cached feed (memory short, or an enclosing
                         # deadline that left no cards) did not act: a ledger line saying N cards
