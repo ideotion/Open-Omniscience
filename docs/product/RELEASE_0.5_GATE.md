@@ -261,14 +261,17 @@ H–Q, S, U, V and W carry their own remaining clause, an operator or maintainer
   long members, not queries over the corpus, so neither grows with it and neither is cut by a statement deadline. WAL's walk on the
   encrypted 9.9 M-row store (WAL's figures, not re-measured here): `selftests.json` 8.49 s cold and 7.2 to 11.4 s warm, `merge-diag.json`
   7.28 s cold and 5.6 to 8.3 s warm, so the cold figures sit inside the warm spread and are not a cold cost. RC2's own
-  profile, plain store, cold process, one run: `selftests.json` 13.25 s, of which `keyword-selftest` 11.51 s, `recursive-loop` 1.4 s,
-  `llm-throughput-selftest` 0.32 s, the other ten about 0; inside `keyword-selftest` 9.64 s of 12.8 s is simplemma's
-  `_load_dictionary_from_disk` (9 dictionaries, reached through `lemma.py` `lemmatize`), and a second call in the same process takes
-  0.02 s, so the time is the one-time lemma dictionary load (keyword measured it at 4.27 s wall cold on its box, 625 MiB resident, pure CPU), the same cold load as the 6.6 s inside `GET /api/insights/associations`; a
-  warm or lazy once-per-process load is the keyword lane's file, not this one. `merge-diag.json` (`merge_diag(download=False, probe=True)`):
-  9.19 s, of which 6.19 s is `sqlcipher3` `Connection.execute` (48 calls), 0.92 s `executemany`, 1.0 s opening 8 connections; `walk_probe`
-  5.28 s (two arms) and `cost_probe` 3.40 s (two arms) are the probe's own bounded synthetic `INSERT ... SELECT` (about 50 MB written per
-  arm, temp store in RAM and on disk), fixed by the probe's constants. A deadline would cut the measurement the member exists to take.
+  figures, plain store, on the 4-vCPU lab sandbox (not the CI runner), unprofiled, one fresh process: `selftests.json` 13.25 s, of which `keyword-selftest` 11.51 s,
+  `recursive-loop` 1.4 s, `llm-throughput-selftest` 0.32 s, the other ten about 0. Three further fresh processes (same sandbox), unprofiled:
+  `keyword-selftest` 11.58, 8.58 and 8.73 s (the first read the dictionaries from a cold file cache), of which simplemma's
+  `_load_dictionary_from_disk` (9 dictionaries, reached through `lemma.py` `lemmatize`) is 9.12, 7.14 and 7.27 s, and a second call in the
+  same process takes 0.02 s, so the time is the one-time lemma dictionary load (keyword measured it at 4.27 s wall cold on its box, 625 MiB resident, pure CPU), the same cold load as the 6.6 s inside `GET /api/insights/associations`; a
+  warm or lazy once-per-process load is the keyword lane's file, not this one. `merge-diag.json` (`merge_diag(download=False, probe=True)`),
+  unprofiled, three fresh processes on the same sandbox: 8.42 (first, cold file cache), 5.90 and 5.86 s. The split below was taken under cProfile, which
+  costs 10 to 30 percent on these two members (`keyword-selftest` 12.8 s profiled against 11.58 s; `merge_diag` 9.19 s profiled against 8.42 s on a
+  first run), so it is a proportion under cProfile and not a wall (the unprofiled split was not taken): 6.19 s of the 9.19 s is `sqlcipher3` `Connection.execute` (48 calls), 0.92 s
+  `executemany`, 1.0 s opening 8 connections; `walk_probe` 5.28 s (two arms) and `cost_probe` 3.40 s (two arms) are the probe's own bounded
+  synthetic `INSERT ... SELECT` (about 50 MB written per arm, temp store in RAM and on disk), fixed by the probe's constants. A deadline would cut the measurement the member exists to take.
   Not measured: either member on an encrypted store by RC2, or on a second box.
 ---
 
