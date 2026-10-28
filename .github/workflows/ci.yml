@@ -187,15 +187,17 @@ jobs:
         # EDIT: this branch read 442, then 447, then 443, then 441 as files were added and
         # fixed -- only the base measurement (445) ever said which findings were its own.
         #
-        # 2026-10-28: 417 -> 414, MEASURED ON origin/main@7033552e7, the tree that carries it
-        # (the script, run at the old ceiling, said the ceiling can be lowered to 414). There is
-        # no spare slot now: CI measures the merge of the PR into the base tip as it stands when
-        # the run starts, so a finding another PR lands first reddens the next run of whichever
-        # PR merges second (and main's push run, if that PR was already green). Re-measure on
-        # the fetched tip before merging, never from this comment. (This comment must not spell
+        # 2026-10-28: 417 -> 412, MEASURED ON origin/main@3af9f1fc9, the tree that carries it, with
+        # the ruff that CI installs from pyproject's range (0.17.3 that day). THE COUNT DEPENDS ON
+        # THE TOOL VERSION: the same tree reads 414 on ruff 0.16.9 and 412 on 0.17.3 (the script, run
+        # at the old ceiling, said the ceiling can be lowered to 412). There is no spare slot now:
+        # CI measures the merge of the PR into the base tip as it stands when the run starts, so a
+        # finding another PR lands first reddens the next run of whichever PR merges second (and
+        # main's push run, if that PR was already green). Re-measure on the fetched tip, with the
+        # ruff CI installs, before merging, never from this comment. (This comment must not spell
         # out the script's command line: guards_for_diff.py refuses a ci.yml with a second such
         # line, and test_ruff_ratchet.py reads the number from the first one.)
-        run: python scripts/ruff_ratchet.py --max 414
+        run: python scripts/ruff_ratchet.py --max 412
 
       # THE PLANNED-WORK REVERSE INDEX (maintainer-asked 2026-09-22): "find a way so that
       # future bug discovery would not contradict what has been planned ... to help future
