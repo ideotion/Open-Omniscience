@@ -33,6 +33,19 @@ from collections.abc import Iterable
 
 from src.database.stand_in import is_a_stand_in_source, not_a_stand_in_source
 
+#: Sources read and written per statement. WHAT IT PROTECTS: the read binds one variable per id, and SQLite's default ceiling is 999
+#: variables per statement (3.32+ and SQLCipher 4 allow 32766, but the constant must hold on the old ceiling); it is also the size of
+#: one ``executemany`` batch inside the write window, so no single statement grows with the source table.
+SOURCE_TOPICS_CHUNK = 900
+
+
+def _union_topics(tags: str | None, topics: Iterable[str]) -> tuple[str, int] | None:
+    """``tags`` with the topics it lacks appended (additive, order kept), and how many were added; ``None`` when there is nothing to add."""
+    existing = [t.strip() for t in (tags or "").split(",") if t.strip()]
+    have = set(existing)
+    fresh = [t for t in topics if t not in have]
+    return (",".join(existing + fresh), len(fresh)) if fresh else None
+
 
 def aggregate_source_topics(
     rows: Iterable[tuple[str, str, int]],
@@ -157,8 +170,8 @@ def source_topic_candidates(session, *, min_articles: int = 5, top_n: int = 4) -
 
     domains = list(proposed)
     candidates: list[dict] = []
-    for i in range(0, len(domains), 900):
-        batch = domains[i : i + 900]
+    for i in range(0, len(domains), SOURCE_TOPICS_CHUNK):
+        batch = domains[i : i + SOURCE_TOPICS_CHUNK]
         rows = session.query(Source.id, Source.domain).filter(Source.domain.in_(batch), not_a_stand_in_source())  # a stand-in is given no tags
         for sid, domain in rows:
             candidates.append({"id": sid, "topics": proposed[domain]})
@@ -192,15 +205,63 @@ def _apply_source_topics_on_a_shared_session(session, *, min_articles: int, top_
             topics = proposed.get(src.domain)
             if not topics:
                 continue
-            existing = [t.strip() for t in (src.tags or "").split(",") if t.strip()]
-            have = set(existing)
-            fresh = [t for t in topics if t not in have]
-            if fresh:
-                src.tags = ",".join(existing + fresh)
+            merged = _union_topics(src.tags, topics)
+            if merged:
+                src.tags = merged[0]
                 updated += 1
-                added += len(fresh)
+                added += merged[1]
         session.commit()
     return {"sources_updated": updated, "tags_added": added}
+
+
+def _write_topics_in_bulk(session, candidates: list[dict]) -> tuple[int, int]:
+    """Union each candidate's topics into its source's tags, :data:`SOURCE_TOPICS_CHUNK` sources per statement. Returns ``(sources_updated,
+    tags_added)``. Runs INSIDE the write window of :func:`apply_source_topics`; the caller commits.
+
+    WHY NOT ``session.get`` PER SOURCE (R390, measured 2026-10-28): that shape cost one SELECT per candidate and one UPDATE per changed
+    source inside the window. Harness ``/mnt/project-files/keyword-lane/st_measure.py`` (not in the repo), 86,470 sources (the field
+    corpus's count) each given 3 topics, fresh copy of one database per run, 4 cores, 3 runs: the window was held 26.7 / 28.9 / 27.5 s with
+    86,472 statements (encrypted store, one run: 29.9 s), and 17.7 / 18.6 s with 86,471 statements when there was nothing to add. This
+    shape reads ``(id, domain, tags, rss_url)`` in chunks and writes by primary key with ``executemany``: 1.6 to 1.8 s with 195 statements
+    (this function, five runs, two of them on the encrypted store: 1.77 / 1.79 s), 0.37 / 0.40 s and 98 statements when there is nothing to
+    add, and the same final state as the per-source path, a hash over ``(id, tags, feed_key)`` of every row. Every writer queues behind the window, so those seconds were a stall of the whole app once a day
+    (the scheduler tail's enrichment) and on every call of the Diagnostics ``enrich-sources`` endpoint. 86,470 is the upper bound: a real
+    run writes only the sources that qualify.
+
+    WHAT THE ORM PATH DID THAT A BULK UPDATE SKIPS, AND WHERE EACH IS KEPT. The Source model has ONE mapper event, ``before_update``
+    (``models._derive_source_feed_key``: ``feed_key`` is re-derived from ``rss_url`` on every ORM write of the row), so the same
+    ``feed_key(rss_url)`` is written in the same UPDATE (a stale value is healed exactly as before; ``tests/test_source_topics_bulk.py``).
+    There is no ``@validates``, no ``after_update``, no ``onupdate`` column and no versioned row on Source; the three database triggers on
+    ``sources`` fire on ``UPDATE OF domain, id`` (or insert / delete) and this writes neither. The session-level events are kept because the
+    statement is still an ORM one (``session.execute(update(Source), rows)``, not Core): the write gate's ``do_orm_execute`` and
+    ``database.session._wrote_on_bulk_dml`` both see ``is_update``. The stand-in skip is the same predicate (:func:`is_a_stand_in_source`, read on
+    the row), a source deleted since the decide phase is simply absent from the read, and the union is computed against the tags AS THEY ARE
+    NOW, inside the window, so an edit made in the gap is never clobbered.
+    """
+    from sqlalchemy import select, update
+
+    from src.database.feed_key import feed_key
+    from src.database.models import Source
+
+    by_id = {c["id"]: c["topics"] for c in candidates}
+    ids = list(by_id)
+    updated = added = 0
+    for i in range(0, len(ids), SOURCE_TOPICS_CHUNK):
+        rows = session.execute(
+            select(Source.id, Source.domain, Source.tags, Source.rss_url).where(Source.id.in_(ids[i : i + SOURCE_TOPICS_CHUNK]))
+        ).all()
+        writes = []
+        for row in rows:
+            if is_a_stand_in_source(row):
+                continue  # tags are never written onto a stand-in source
+            merged = _union_topics(row.tags, by_id[row.id])
+            if merged:
+                writes.append({"id": row.id, "tags": merged[0], "feed_key": feed_key(row.rss_url)})
+                updated += 1
+                added += merged[1]
+        if writes:
+            session.execute(update(Source), writes)  # ORM bulk UPDATE by primary key
+    return updated, added
 
 
 def apply_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> dict:
@@ -238,7 +299,6 @@ def apply_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> di
     if session.in_transaction():
         return _apply_source_topics_on_a_shared_session(session, min_articles=min_articles, top_n=top_n)
 
-    from src.database.models import Source
     from src.database.writer import connection_first, write_lock
 
     decided = source_topic_candidates(session, min_articles=min_articles, top_n=top_n)
@@ -249,23 +309,12 @@ def apply_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> di
     # End the read snapshot before taking the write gate -- see the docstring above.
     session.rollback()
 
-    updated = added = 0
     connection_first(session)  # the rollback gave the connection back: check one out BEFORE the gate, not under it
     with write_lock():
-        for cand in candidates:
-            src = session.get(Source, cand["id"])
-            if src is None or is_a_stand_in_source(src):
-                continue  # the row vanished between decide and apply (skip honestly), or is a stand-in source: tags are never written onto one
-            # Re-derive `fresh` against Source.tags AS IT IS NOW, not the decide-phase
-            # snapshot -- the row could have been curated in the gap between the read
-            # and the gate, and recomputing here means that edit is never clobbered.
-            existing = [t.strip() for t in (src.tags or "").split(",") if t.strip()]
-            have = set(existing)
-            fresh = [t for t in cand["topics"] if t not in have]
-            if fresh:
-                src.tags = ",".join(existing + fresh)
-                updated += 1
-                added += len(fresh)
+        # Re-derive the union against Source.tags AS IT IS NOW, not the decide-phase snapshot -- the row could have been curated in the gap
+        # between the read and the gate, and recomputing here means that edit is never clobbered. A source that vanished in the gap is
+        # skipped honestly.
+        updated, added = _write_topics_in_bulk(session, candidates)
         session.commit()
     return {"sources_updated": updated, "tags_added": added}
 

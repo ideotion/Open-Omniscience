@@ -432,7 +432,6 @@ def _worker_only_loops() -> dict:
     return {
         "keyword_fold.fold_page": (keyword_fold.fold_page, why + " (thread keyword-fold-job)"),
         "source_topics._apply_source_topics_on_a_shared_session": (source_topics._apply_source_topics_on_a_shared_session, why + " (sync route, scheduler threads)"),
-        "source_topics.apply_source_topics": (source_topics.apply_source_topics, why + " (sync route, scheduler threads)"),
         "article_indexes._refresh_stats": (article_indexes._refresh_stats, why + " (index-build BackgroundJob)"),
         "maintenance.maybe_incremental_vacuum": (maintenance.maybe_incremental_vacuum, why + " (oo-scheduler, oo-offline-maintenance)"),
         "coordinator.run_coordinator": (coordinator.run_coordinator, why + " (BackgroundJob ai-coordinator)"),
