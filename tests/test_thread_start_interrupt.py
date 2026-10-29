@@ -19,18 +19,20 @@ import threading
 
 import pytest
 
+from src.database import writer
 from src.database.damage import DamageRegistry
 from src.jobs.background import BackgroundJob
 from src.scheduler.runner import BackgroundScheduler
 from tests.wallclock_helpers import HANG_GUARD_S, wait_until
 
 _KEY = ("sweep-key",)
+_REAL_START = threading.Thread.start
 
 
 def _start_fails(monkeypatch, name_prefix, how):
     """``never``: ``start`` raises before the thread exists (an out-of-threads process). ``interrupted``: the OS thread is created, then an
     interrupt lands while ``start`` waits for it to report in (CPython 3.13's ``self._started.wait()``)."""
-    real = threading.Thread.start
+    real = _REAL_START
 
     def interrupt(*args, **kwargs):
         raise KeyboardInterrupt
@@ -44,6 +46,11 @@ def _start_fails(monkeypatch, name_prefix, how):
         raise RuntimeError("can't start new thread")
 
     monkeypatch.setattr(threading.Thread, "start", start)
+
+
+def _start_works_again(monkeypatch):
+    """Only ``Thread.start`` is put back: ``monkeypatch.undo()`` would also undo the fixtures' other patches."""
+    monkeypatch.setattr(threading.Thread, "start", _REAL_START)
 
 
 class _Workers:
@@ -94,7 +101,7 @@ def test_a_job_whose_thread_could_not_be_created_is_marked_failed_and_can_start_
     with pytest.raises(RuntimeError, match="can't start new thread"):
         job.start()
     assert job.status()["state"] == "error" and job._thread is None
-    monkeypatch.undo()
+    _start_works_again(monkeypatch)
     job.start()
     job.join()
     assert job.status()["state"] != "error"
@@ -156,3 +163,47 @@ def test_a_detached_launch_interrupted_after_its_thread_exists_leaves_the_lock_t
         assert wait_until(lambda: not lock.locked())
     thread.join(HANG_GUARD_S)
     assert errors == [], f"the thread died on a double release: {errors}"
+
+
+# -- writer.start_write_gate_watchdog --------------------------------------- #
+
+
+def _watchdogs():
+    return [t for t in threading.enumerate() if t.name == "oo-write-gate-watchdog"]
+
+
+@pytest.fixture()
+def watchdog(monkeypatch):
+    """The process may already run the real watchdog (the first gate acquisition of any earlier test arms it): only the ones started here
+    are counted."""
+    hold = threading.Event()
+    before = set(_watchdogs())
+    monkeypatch.setattr(writer, "_WATCHDOG_STARTED", False)
+    monkeypatch.setattr(writer, "_watchdog_loop", lambda stop: hold.wait(HANG_GUARD_S))
+    monkeypatch.delenv("OO_WRITE_GATE_WATCHDOG", raising=False)
+
+    def mine():
+        return [t for t in _watchdogs() if t not in before]
+
+    yield mine
+    hold.set()
+    assert wait_until(lambda: not mine())
+
+
+def test_a_watchdog_created_before_an_interrupt_is_not_started_twice(monkeypatch, watchdog):
+    _start_fails(monkeypatch, "oo-write-gate-watchdog", "interrupted")
+    with pytest.raises(KeyboardInterrupt):
+        writer.start_write_gate_watchdog()
+    assert wait_until(lambda: len(watchdog()) == 1), "the watchdog never ran, so the premise of this test (a live thread with ident None) did not hold"
+    _start_works_again(monkeypatch)  # the next call is an ordinary one
+    assert writer.start_write_gate_watchdog() is False, "a second watchdog was started beside the live one"
+    assert len(watchdog()) == 1
+
+
+def test_a_watchdog_that_could_not_be_created_can_be_started_again(monkeypatch, watchdog):
+    _start_fails(monkeypatch, "oo-write-gate-watchdog", "never")
+    with pytest.raises(RuntimeError, match="can't start new thread"):
+        writer.start_write_gate_watchdog()
+    assert not watchdog()
+    _start_works_again(monkeypatch)
+    assert writer.start_write_gate_watchdog() is True
