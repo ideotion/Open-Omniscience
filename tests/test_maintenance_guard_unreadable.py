@@ -131,16 +131,34 @@ def test_the_first_failure_of_a_guard_is_a_warning_repeats_are_debug_and_a_clean
 
 
 def test_each_guard_has_its_own_first_warning(sched, ran, monkeypatch, caplog):
+    """Two guards down at once: the second guard's FIRST failure is a WARNING although the first guard is already marked down (one shared
+    flag would make it DEBUG). A guard stays down until it is itself read cleanly."""
     for fn in _GUARDS.values():
         monkeypatch.setattr(R, fn, lambda: None)
-    monkeypatch.setattr(R, "_maint_memory_refusal", _boom)
     with caplog.at_level(logging.DEBUG, logger=R._LOG.name):
-        sched._run_off_peak_maintenance()
-        monkeypatch.setattr(R, "_maint_memory_refusal", lambda: None)
         monkeypatch.setattr(R, "_maint_storage_refusal", _boom)
-        sched._run_off_peak_maintenance()
+        sched._run_off_peak_maintenance()  # storage down: its first failure
+        monkeypatch.setattr(R, "_maint_memory_refusal", _boom)
+        sched._run_off_peak_maintenance()  # memory down too: memory is read first and refuses, storage is not asked
+        monkeypatch.setattr(R, "_maint_memory_refusal", lambda: None)
+        sched._run_off_peak_maintenance()  # memory reads clean, storage fails AGAIN: still down, so DEBUG
     assert _levels(caplog, "memory") == [logging.WARNING]
-    assert _levels(caplog, "storage") == [logging.WARNING]
+    assert _levels(caplog, "storage") == [logging.WARNING, logging.DEBUG]
+
+
+def test_a_read_that_works_re_arms_the_guard_also_when_it_reports_a_refusal(sched, ran, monkeypatch, caplog):
+    """A clean read that finds a PROBLEM (the guard works and says memory pressure) is still a read that worked."""
+    for fn in _GUARDS.values():
+        monkeypatch.setattr(R, fn, lambda: None)
+    with caplog.at_level(logging.DEBUG, logger=R._LOG.name):
+        monkeypatch.setattr(R, "_maint_memory_refusal", _boom)
+        sched._run_off_peak_maintenance()
+        monkeypatch.setattr(R, "_maint_memory_refusal", lambda: "memory_pressure")
+        sched._run_off_peak_maintenance()
+        monkeypatch.setattr(R, "_maint_memory_refusal", _boom)
+        sched._run_off_peak_maintenance()
+    assert _levels(caplog, "memory") == [logging.WARNING, logging.WARNING]
+    assert sched.status()["maintenance_skips"] == {"guard_unreadable": 2, "memory_pressure": 1}
 
 
 def test_readable_guards_still_let_the_window_run(sched, ran, monkeypatch):
