@@ -179,8 +179,9 @@ def test_a_kept_store_is_readable_by_the_gazetteer_build_and_cleanup_deletes_it(
     assert not list(kept.rglob(".throwaway-passphrase"))  # the runner wrote no secret to disk
     secret = key.read_text("utf-8").strip()
     assert secret not in json.dumps(report)
-    for log in (kept / "logs").glob("*"):
-        assert secret not in log.read_text("utf-8", errors="replace")
+    # The children's raw logs hold their words unscrubbed, so a kept store carries none (test_the_childs_raw_logs_do_not_stay_on_disk_in_a_kept_store
+    # drives that); a loop over a folder that is not there checked nothing.
+    assert not (kept / "logs").exists()
 
     out = tmp_path / "g.yml"
     env = {k: v for k, v in os.environ.items() if k not in ("OO_DB_PLAINTEXT", "OO_DB_PASSPHRASE")}

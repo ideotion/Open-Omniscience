@@ -229,7 +229,18 @@ def test_f1_producers_carry_article_ids():
 def test_lonely_signal_card_carries_its_article_when_it_fires(corpus):
     """Runtime check where the fixture allows it: if lonely_signal fires, its card carries
     the representative article id (a non-empty, hard-linked corpus), not an empty set."""
-    for card in P.lonely_signal(corpus) or []:
+    # The fixture's articles are shorter than story_prominence's min_chars (200), so on its own it forms no story and the loop below
+    # would check nothing: add one long article from the second source that no other source repeats.
+    now = datetime.now(UTC)
+    lone = Article(
+        url="https://x.test/lone", canonical_url="https://x.test/lone", source_id=2, title="A lone story", hash="hlone",
+        language="en", content=" ".join(f"unrepeated{i} detail{i} account{i}" for i in range(40)), published_at=now, created_at=now,
+    )
+    corpus.add(lone)
+    corpus.commit()
+    cards = P.lonely_signal(corpus)
+    assert cards, "the lone article must fire the producer, or the loop below checks nothing"
+    for card in cards:
         assert card.article_ids and all(isinstance(i, int) for i in card.article_ids), (
             "a lonely_signal card must hard-link its single article (F1)"
         )

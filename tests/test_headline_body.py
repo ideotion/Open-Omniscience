@@ -100,17 +100,18 @@ def test_thin_headline_never_fires(db):
 def test_sentiment_gap_is_english_only(db):
     _src(db, 1, "a.test")
     # A non-English article never computes a sentiment gap (VADER English-only),
-    # never a fabricated neutral. Lexically on-topic (German), so it does not fire.
+    # never a fabricated neutral. The headline shares ONE word with the body (d_lex 0.8, below the method-failure ceiling of 1.0), so it
+    # fires on the lexical test alone and the item exists to be checked.
     de_body = (
         "Die Zentralbank teilte am Montag mit, dass sie die Zinsen für den Rest des "
         "Quartals unverändert lassen werde. Beamte sagten, sie würden die Haltung bei "
         "der nächsten Sitzung im Herbst erneut bewerten, bevor weitere Entscheidungen fallen."
     )
-    _art(db, 1, "Zentralbank lässt die Zinsen im Quartal unverändert", de_body, lang="de")
+    _art(db, 1, "Zentralbank Aliens Pentagon Raumschiff Landung gestern", de_body, lang="de")
     res = find_headline_body_mismatch(db)
+    assert res["count"] == 1 and [it["lang"] for it in res["items"]] == ["de"], res["items"]
     for it in res["items"]:
-        if it["lang"] != "en":
-            assert it["sentiment_gap"] is None
+        assert it["sentiment_gap"] is None
 
 
 def test_item_carries_components_never_a_score(db):

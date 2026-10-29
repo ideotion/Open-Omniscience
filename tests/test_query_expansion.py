@@ -176,13 +176,13 @@ def test_a_multi_word_ring_member_is_emitted_as_a_phrase() -> None:
     )
     if multi is None:
         pytest.skip("no multi-word ring member in this table")
-    x = QueryExpander()
-    match = build_match(multi.split()[0], expand=x) or ""
-    for exp in x.expansions:
-        for sib in exp.siblings:
-            if " " in sib:
-                assert f'"{sib}"' in match, "a multi-word sibling must be quoted as a phrase"
-                return
+    x = QueryExpander(cap=None)  # every sibling is in the match: under the default cap the match holds only the first 39, the property lists all
+    # The member itself, as a phrase: its first word alone is not the ring's member, so it expands to nothing and the loop below checked nothing.
+    match = build_match(f'"{multi}"', expand=x) or ""
+    siblings = [sib for exp in x.expansions for sib in exp.siblings if " " in sib]
+    assert siblings, f"{multi!r} must expand to a multi-word sibling, or this checks nothing"
+    for sib in siblings:
+        assert f'"{sib}"' in match, "a multi-word sibling must be quoted as a phrase"
 
 
 def test_exclusions_expand_too() -> None:

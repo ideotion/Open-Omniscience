@@ -224,16 +224,31 @@ def test_the_report_publishes_the_window_BESIDE_the_history_and_can_be_turned_of
         rw = body["recency_window"]
         assert rw["window_days"] == RECENCY_WINDOW_DAYS
         assert "ASSUMPTION" in rw["assumption"] and "Q1108" in rw["assumption"]
-        # BESIDE: the historical rows must not have grown a windowed field, which is what
-        # "never replacing" means in the payload rather than in prose.
-        for row in body.get("sources", [])[:5]:
-            assert "window" not in row and "recency" not in row
+        # (The route's own store is empty here, so the rows are checked on a seeded one in the next test.)
 
         off = c.get("/api/diagnostics/source-audit?with_furniture=0&recency_window=0")
         assert off.status_code == 200, off.text
         assert "recency_window" not in off.json(), (
             "recency_window=0 must omit the second pass, not run it and hide it"
         )
+
+
+def test_the_historical_rows_do_not_grow_a_windowed_field(db: Session) -> None:
+    """BESIDE, in the payload: the whole-history rows carry no windowed field, which is what "never replacing" means in the report rather than in prose.
+    Called with a seeded store, because the route test above runs on an empty one and an empty ``sources`` list checks nothing."""
+    import json
+
+    from src.api.diagnostics.sources import source_audit
+
+    for i in range(10):
+        s = _source(db, f"s{i}.example")
+        _articles(db, s, n=40, when=OLD, links=0)
+        _articles(db, s, n=40, when=RECENT, links=40)
+    body = json.loads(source_audit(download=False, with_furniture=False, recency_window=True, db=db).body)
+    assert len(body["sources"]) == 10, "the seeded sources must be audited, or the loop below checks nothing"
+    assert "recency_window" in body
+    for row in body["sources"]:
+        assert "window" not in row and "recency" not in row
 
 
 def test_a_scoped_paired_verdict_is_refused_rather_than_answered(db: Session) -> None:
