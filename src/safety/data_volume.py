@@ -439,6 +439,7 @@ class VolumeMonitor:
         self.misses = 0
         self.last_ok_at: str | None = None
         self.detected_by: str | None = None
+        self._reconnect_recorded = False
 
     # -- public ---------------------------------------------------------------
 
@@ -509,10 +510,20 @@ class VolumeMonitor:
                 return
             if self.phase in ("reconnect", "shutdown"):
                 if state == "ok":
-                    record_incident("reconnected", during=self.phase)
+                    during, left = self.phase, self.deadline
+                    if not self._reconnect_recorded:
+                        record_incident("reconnected", during=during)
+                        self._reconnect_recorded = True
                     self.phase, self.deadline = "restarting", None
-                    self._restart()
+                    try:
+                        self._restart()
+                    except Exception as exc:  # noqa: BLE001 - the watchdog must outlive its own bugs
+                        # "restarting" with no restart thread is a page that never ends: stay
+                        # where we were, and the next tick tries again.
+                        log_failure(_LOG, "data drive: could not start the restart", exc, level=logging.WARNING)
+                        self.phase, self.deadline = during, left
                     return
+                self._reconnect_recorded = False
                 if self.deadline is not None and now >= self.deadline:
                     if self.phase == "reconnect":
                         record_incident("shutdown_countdown", seconds=SHUTDOWN_SECONDS)
@@ -532,7 +543,12 @@ class VolumeMonitor:
             last_ok_at=self.last_ok_at,
             activity=_activity(),
         )
-        threading.Thread(target=self._pause, name="oo-data-volume-pause", daemon=True).start()
+        try:
+            threading.Thread(target=self._pause, name="oo-data-volume-pause", daemon=True).start()
+        except Exception as exc:  # noqa: BLE001 - the countdown above is already running; the pause is a courtesy
+            # Raising here would leave the phase moved and the writers running, and hand the
+            # error to whoever poked (a disk-error handler) instead of the disk error.
+            log_failure(_LOG, "data drive: could not start the thread that pauses collection", exc, level=logging.WARNING)
 
     def _close(self, why: str) -> None:
         self.phase, self.deadline = "closing", None
