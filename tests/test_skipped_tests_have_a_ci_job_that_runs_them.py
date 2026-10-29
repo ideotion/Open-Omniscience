@@ -5,9 +5,9 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Why it exists. A test that starts with ``pytest.importorskip("duckdb")`` (or a ``skipif(not columnar.duckdb_available())``) is green in
 every job that does not install the package, and it is green BY SKIPPING. The ``columnar`` job installs ``[columnar]`` but runs a named
-list of nine files, and the rollup work since then added nineteen more gated files that nobody named there: measured on 2026-10-28 by making
-``duckdb`` unimportable and running them (230 tests collected with duckdb; 29 pass without it and 201 never run, reported as 151 skips
-because three files skip once at module level), they skip in ``test``, ``core-only`` and the portability lane alike, and
+list of nine files, and the rollup work since then added nineteen more gated files that nobody named there (the step names them since
+R392): measured on 2026-10-28 by making ``duckdb`` unimportable and running them (230 tests collected with duckdb; 29 pass without it and
+201 never run, reported as 151 skips because three files skip once at module level), they skip in ``test``, ``core-only`` and the portability lane alike, and
 install [columnar] in none of them. Those 201 tests had never run in CI. One of them, once run, was red (``test_top_terms_pre_aggregate``
 read DuckDB 1.x's profile JSON and DuckDB 2.0.0, which pip resolves today, writes another).
 
@@ -69,28 +69,10 @@ _NOT_A_SKIP = {
     ),
 }
 
-#: The gap, measured 2026-10-28: file -> the package(s) it skips on. Naming the duckdb ones in the ``columnar`` job is a ci.yml change
-#: (Export's), recorded in docs/ledger/lessons.d/2026-10-28-tests-no-ci-job-runs.md. Delete a line when a job starts running the file; the test below fails until you do.
+#: The gap, measured 2026-10-28: file -> the package(s) it skips on. What is left is the two playwright files; the nineteen duckdb ones were named
+#: in the ``columnar`` job's first pytest step (R392) and their lines deleted, as docs/ledger/lessons.d/2026-10-28-tests-no-ci-job-runs.md asked.
+#: Delete a line when a job starts running the file; the test below fails until you do.
 KNOWN_UNCOVERED = {
-    "tests/test_corpus_epoch.py": "duckdb",
-    "tests/test_keyword_daily_merge_interrupted.py": "duckdb",
-    "tests/test_keyword_daily_refresh.py": "duckdb",
-    "tests/test_keyword_daily_refresh_wal_pinning.py": "duckdb",
-    "tests/test_keyword_daily_scan_bound_race.py": "duckdb",
-    "tests/test_map_serve.py": "duckdb",
-    "tests/test_rollup_benchmark.py": "duckdb",
-    "tests/test_rollup_benchmark_guard.py": "duckdb",
-    "tests/test_rollup_generation_check.py": "duckdb",
-    "tests/test_rollup_parity_bound.py": "duckdb",
-    "tests/test_rollup_persisted_generation.py": "duckdb",
-    "tests/test_rollup_scan_plan.py": "duckdb",
-    "tests/test_rollup_shard_checkpoint.py": "duckdb",
-    "tests/test_rollup_sharded_build.py": "duckdb",
-    "tests/test_rollup_store_kind.py": "duckdb",
-    "tests/test_serve_change_gate.py": "duckdb",
-    "tests/test_serve_out_of_memory_goes_live.py": "duckdb",
-    "tests/test_top_terms_pre_aggregate.py": "duckdb",
-    "tests/test_wave7_poll_cache.py": "duckdb",
     # [uiwalk] (playwright) needs a Chromium download as well; no job installs either, the UI click-through runs by hand per release
     "tests/test_analytics45_generate.py": "playwright",
     "tests/test_ui_walk_playwright.py": "playwright",
