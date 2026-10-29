@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 
 from src.database import salvage
+from src.database.connect import WrongPassphraseError
 from src.database.salvage import Salvage, SalvageFailed, SalvageRefused, SalvageStopped
 
 from . import damaged_store_helpers as H
@@ -1098,7 +1099,7 @@ def test_an_encrypted_file_with_damaged_pages_is_salvaged_into_an_encrypted_file
     finally:
         con.close()
     assert out.stat().st_size % H.CIPHER_PAGE == 0
-    with pytest.raises(Exception):  # noqa: B017, PT011 - a wrong key fails whichever way the driver words it
+    with pytest.raises(WrongPassphraseError, match="does not open"):
         con = H.open_store(out, key="not the passphrase at all")
         try:
             con.execute("SELECT count(*) FROM articles").fetchone()

@@ -313,9 +313,13 @@ def _corpus() -> Session:
     add_article(sources["news_letter"], content="PRIVATE newsletter body that must not leak by default.",
                 word_count=200, lang="en", mentions={"election": 3, "policy": 2})
     # an UNSEGMENTED (zh) source: v2 must mark it NOT ASSESSED and flag none of its articles
-    for _ in range(5):
+    # (ten ordinary articles and one pathological one, so that it lies beyond the cohort's 90th percentile: a cohort of five identical articles has no spread and flags nothing even when
+    # assessed, which would leave "none of its articles are flagged" true of any code)
+    for _ in range(10):
         add_article(sources["cjk"], content="中文文章内容示例。", word_count=100, lang="zh",
-                    mentions={"election": 30, "policy": 1})  # would be a "pathology" IF assessed
+                    mentions={"election": 3, "policy": 3, "court": 2, "budget": 2, "senate": 2})
+    add_article(sources["cjk"], content="中文文章内容示例。", word_count=100, lang="zh",
+                mentions={"election": 30, "policy": 1})  # would be a "pathology" IF assessed
     s.commit()
     return s
 
@@ -328,7 +332,7 @@ def test_build_report_end_to_end_and_newsletter_text_gate():
                           "README.md"}
     manifest = json.loads(files["manifest.json"])
     assert manifest["schema"] == sq.SCHEMA and manifest["temporary"] is True
-    assert manifest["corpus_totals"]["articles"] == 16  # 11 en/newsletter + 5 zh
+    assert manifest["corpus_totals"]["articles"] == 22  # 11 en/newsletter + 11 zh
 
     # v2: the unsegmented (zh) language is NOT ASSESSED — pct_flagged null, and NONE of its articles
     # are flagged (the live-run defect where zh/ja/th read 100% flagged is gone).

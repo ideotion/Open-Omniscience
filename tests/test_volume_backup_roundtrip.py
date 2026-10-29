@@ -21,6 +21,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from src.backup.artifact import BACKUP_SCHEMA, read_volume_backup
 from src.backup.volumes import write_volume_set
 from src.reporting.evidence import canonical_bytes
+from src.safety.crypto import EncryptionError
 
 
 def _signed_backup_zip(tmp: Path, corpus: bytes) -> Path:
@@ -74,7 +75,7 @@ def test_volume_backup_wrong_passphrase_fails(tmp_path):
     z = _signed_backup_zip(tmp_path, _corpus())
     dest = tmp_path / "vols"
     write_volume_set(z, dest, "pw", volume_size=2048, chunk_size=1024)
-    with pytest.raises(Exception):  # noqa: B017 - EncryptionError/VolumeError, both loud
+    with pytest.raises(EncryptionError, match="wrong passphrase"):
         read_volume_backup(dest, "WRONG", staging_root=tmp_path / "stage")
 
 

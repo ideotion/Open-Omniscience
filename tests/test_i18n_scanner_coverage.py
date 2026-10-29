@@ -53,6 +53,11 @@ _SCRIPT = _ROOT / "scripts" / "i18n_report.py"
 _CI = _ROOT / ".github" / "workflows" / "ci.yml"
 
 
+# A genuine constant chrome string appended to the samples whose point is what is NOT captured: without it a scanner that returns
+# nothing at all passes all of them.
+_CONTROL = '\nel.textContent = "A real constant";'
+
+
 def _module():
     spec = importlib.util.spec_from_file_location("i18n_report_scanner_coverage", _SCRIPT)
     mod = importlib.util.module_from_spec(spec)
@@ -271,9 +276,9 @@ def test_backtick_literal_with_real_interpolation_is_never_captured():
     key (it is not a constant) -- the fix must not have widened the character
     class so far that it starts swallowing these."""
     mod = _module()
-    sample = "el.textContent = `Loaded ${n} articles`; toast(`Failed: ${err}`);"
+    sample = "el.textContent = `Loaded ${n} articles`; toast(`Failed: ${err}`); " + _CONTROL
     found = mod._js_chrome(sample)
-    assert not any("${" in s or "Loaded" in s or "Failed" in s for s in found), (
+    assert found == {"A real constant"}, (  # the control is captured, so an empty answer is not a scanner that finds nothing
         f"an interpolated backtick literal was captured as if it were a constant: {found}"
     )
 
@@ -553,9 +558,9 @@ def test_a_concatenated_fragment_is_never_captured_as_a_key():
     one string, so no key added for it could ever match. Reporting it here -- where
     the only available fix cannot work -- is how a gate starts crying wolf."""
     mod = _module()
-    sample = """html += '<p class="r-muted">No ' + word + " stored yet at all.</p>";"""
+    sample = """html += '<p class="r-muted">No ' + word + " stored yet at all.</p>"; """ + _CONTROL
     found = mod._js_chrome(sample)
-    assert not any("stored yet" in s for s in found), (
+    assert found == {"A real constant"}, (
         f"a concatenated fragment was captured as if it were a constant key: {found}"
     )
 
@@ -567,9 +572,9 @@ def test_prose_inside_a_comment_is_not_chrome():
     sample = """
     /* Renders like: <p>This sentence lives only in a comment.</p> */
     // <h4>So does this one.</h4>
-    """
+    """ + _CONTROL
     found = mod._js_chrome(sample)
-    assert not any("only in a comment" in s or "So does this one" in s for s in found), (
+    assert found == {"A real constant"}, (
         f"prose inside a comment was captured as chrome: {found}"
     )
 

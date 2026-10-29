@@ -22,6 +22,7 @@ from src.backup.volumes import (
     verify_volume_set,
     write_volume_set,
 )
+from src.safety.crypto import EncryptionError
 
 VOL = 2048  # tiny volumes to force a multi-volume set on a few KB
 CS = 1024
@@ -103,7 +104,7 @@ def test_recover_hook_repairs_then_restore_completes(tmp_path):
 
 def test_wrong_passphrase_fails_loudly(tmp_path):
     _src, out, _m = _make(tmp_path, os.urandom(3000))
-    with pytest.raises(Exception):  # noqa: B017 - EncryptionError or VolumeError, both loud
+    with pytest.raises(EncryptionError, match="wrong passphrase"):
         read_volume_set(out, "WRONG", tmp_path / "out.bin")
 
 
