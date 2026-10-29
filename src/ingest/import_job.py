@@ -242,8 +242,27 @@ class NewsletterImportManager:
             self._thread = threading.Thread(
                 target=self._run, args=(files, _session_factory), daemon=True, name="newsletter-import"
             )
-            self._thread.start()
+            self._start_worker(self._thread)
             return self.status()
+
+    def _start_worker(self, thread: threading.Thread) -> None:
+        """Start the worker a start has just set the import to ``running`` (and saved) for. Call under ``self._lock``.
+
+        ``Thread.start()`` raises ``RuntimeError("can't start new thread")`` when the process or the machine is out of threads, and then no
+        worker runs. Left alone the task manager lists a running import with a Pause and a Cancel that act on nothing, and a restart reads
+        the saved file as an interrupted run. The import says ``error`` with the exception's CLASS and nothing it said, and saves it as the
+        worker's own failure does (a restart does not restore an ``error`` import); ``resume()`` accepts ``error`` and continues from the
+        cursor the start set. The error goes on.
+
+        Only an ``Exception`` is taken (R393): an interrupt that lands while ``start()`` waits for the new thread leaves the OS thread
+        created and about to run the worker, and calling the job ``error`` would let a second start run a second worker beside it."""
+        try:
+            thread.start()
+        except Exception as exc:
+            self._state = "error"
+            self._error = f"{type(exc).__name__}: could not start the worker thread"
+            self._save()
+            raise
 
     def _run(self, files: list[Path], session_factory) -> None:
         # A 20 GB folder of .eml is an import like any other, and its worker can

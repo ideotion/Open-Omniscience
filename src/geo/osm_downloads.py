@@ -318,7 +318,23 @@ class OsmDownloadManager:
 
         t = threading.Thread(target=_run, name=f"oo-osm-{entry.key}", daemon=True)
         self._threads[entry.key] = t
-        t.start()
+        try:
+            t.start()
+        except Exception as exc:
+            # R393. The slot was claimed ("downloading", saved) before this call, and no worker will ever end it: left as it
+            # is, the entry counts against ``max_concurrent`` for the life of the process and its retry queues behind it.
+            # Only an Exception is taken: an interrupt that lands while start() waits for the new thread leaves the OS
+            # thread created and about to run the worker, and freeing the slot then would let a second start run a second
+            # worker for the same file. The text is the class and nothing it said.
+            self._threads.pop(entry.key, None)
+            self._stops.pop(entry.key, None)
+            entry.status = "error"
+            entry.error = f"{type(exc).__name__}: could not start the worker thread"
+            try:
+                self._save()
+            except Exception as save_exc:  # noqa: BLE001 - the start's own error is the one to raise
+                log_failure(_LOG, f"OSM region download state for {entry.key} could not be saved", save_exc, level=logging.WARNING)
+            raise
 
     def _pump(self) -> None:
         """Start QUEUED entries until ``max_concurrent`` are in flight, FIFO over
@@ -342,7 +358,12 @@ class OsmDownloadManager:
             if to_launch:
                 self._save()
         for entry in to_launch:
-            self._launch(entry)
+            try:
+                self._launch(entry)
+            except Exception as exc:  # noqa: BLE001 - one entry that cannot start must not strand the ones claimed after it
+                # ``_launch`` has already said "error" on the entry and given its slot back. This runs on the thread of a
+                # download that has just finished, so raising would also end that thread with the rest still unlaunched.
+                log_failure(_LOG, f"OSM region download for {entry.key} could not start a worker", exc, level=logging.WARNING)
 
     def reorder(self, keys: list[str]) -> list[str]:
         """Reorder the QUEUED downloads (the same prioritisation control as the
