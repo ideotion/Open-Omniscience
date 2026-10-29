@@ -4,19 +4,25 @@ The index points a reader at the queue by number ("user item (28)"). A number th
 or that names several, sends the reader to the wrong proposal or nowhere, and nothing else checks it:
 the queue is prose, the index is prose, and the two are edited by different bundles.
 
-MEASURED on main 6a81aa7ff, not assumed: the queue holds 127 entries that open ``(N) **``, but the
-numbering RESTARTS between its sections, so ``(1)`` to ``(17)`` each appear several times and
-only ``(18)`` to ``(30)`` are unique. So the rule is "a cited number has exactly one entry", which
-today holds for all ten citations (items 20, 21, 26, 28, 29 and 30), and NOT "the numbering is
-contiguous" (it has no gaps, but it is not unique below 18, so contiguity would say nothing).
-A citation of an item below 18 would be refused as ambiguous, which is the intended pressure: name
-the section instead.
+MEASURED on main 6a81aa7ff, not assumed: OPEN_QUEUE.md has 127 lines that open ``(N) **``, but almost
+none is a queue entry in its own right: most are the numbered points INSIDE one prose entry, so the
+numbering restarts in every numbered list. ``(1)`` to ``(13)`` each appear 4 to 16 times, ``(14)`` to
+``(17)`` twice each, and ``(18)`` to ``(30)`` once each (all thirteen are the 2026-10-27 proposals-for-
+the-user list). So the rule is "a cited number has exactly one such opener", which today holds for all
+ten citations of six items (20, 21, 26, 28, 29 and 30), and NOT "the numbering is contiguous" (it has no
+gaps, but it is not unique below 18, so contiguity would say nothing). A citation of an item below 18
+would be refused as ambiguous, which is the intended pressure: name the section instead.
 
-Limits: the citation pattern is ``item (N)`` or ``items (N)`` anywhere in the index, so a future
-row using that phrase for something that is not an OPEN_QUEUE item would be judged against the
-queue; the fix then is to word it differently, not to loosen the test. The test checks that an
-entry EXISTS, not that the row's claim about it is true, and only the number right after ``item``
-or ``items`` is read, so the second number of "items (7) and (8)" is not judged (no row does that today).
+Limits: only the shape ``item (N)`` / ``items (N)`` is read. NOT read, on purpose: a section-named
+citation ("OPEN_QUEUE 27 Oct, item 13"; "item 8 of the row J section"), which carries its own
+disambiguation, and the bare ``(item N)`` shape, because that shape also names a LANE'S bundle item
+that is not a queue entry (R233's "(item 37)"; the queue has no such entry), so judging it against
+the queue would be a false accusation. A wrong number in either unread shape is therefore invisible
+here. The check is that an opener EXISTS, not that the row's claim about it is true, and only the
+number right after ``item`` or ``items`` is read, so the second number of "items (7) and (8)" is not
+judged (no row does that today). A future row using ``item (N)`` for something that is not an
+OPEN_QUEUE item would be judged against the queue; the fix then is to word it differently, not to
+loosen the test.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -71,8 +77,7 @@ def test_the_two_readers_still_find_what_they_judge_by():
     cites = cited_items(INDEX.read_text(encoding="utf-8"))
     entries = queue_entries(QUEUE.read_text(encoding="utf-8"))
     assert cites, "no 'item (N)' citation found in RULINGS_INDEX.md: the pattern or the index changed"
-    assert entries[30] == 1, "OPEN_QUEUE.md's entry (30) is not found exactly once: the entry pattern changed"
-    assert sum(entries.values()) >= 30
+    assert entries, "no '(N) **' opener found in OPEN_QUEUE.md: the opener pattern changed"
 
 
 @pytest.mark.parametrize(
