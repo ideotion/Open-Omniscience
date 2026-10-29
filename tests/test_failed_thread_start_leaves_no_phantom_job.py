@@ -4,15 +4,16 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Why it exists. ``threading.Thread.start()`` raises ``RuntimeError("can't start new thread")`` when the process or the machine is out of
-threads. Five managers set their job to "running" (the import queue and the search re-index also SAVE it) and then called ``start()``
-with nothing around it, so the failure left a job that is running and has no worker: the Task Manager listed it as running, with a Pause
-and a Cancel that act on nothing. The volume-backup manager and the import queue were worse: the next start joins the previous thread
+threads. Four managers (the volume-backup manager's three starts, the import queue, the folder backup and the search re-index) set their
+job to "running" (the import queue and the search re-index also SAVE it) and then called ``start()`` with nothing around it, so the
+failure left a job that is running and has no worker: the status read "running" (the folder backup's and the re-index's Task Manager rows
+carried a Pause and a Cancel that act on nothing). The volume-backup manager and the import queue were worse: the next start joins the previous thread
 before it reuses the manager, and joining a thread that was never started raises ``RuntimeError("cannot join thread before it is
 started")``, so EVERY later export, import, verify or queued import was refused for the life of the process (measured 2026-10-28 and
 2026-10-29; ``wal-lane/measure-start-failure-g-sites-2026-10-29.md``).
 
-What it pins, per manager: the start that fails raises what ``start()`` raised (the API turns a ``RuntimeError`` into a 409 with its
-text), the job is not "running" afterwards, what was saved says so, and the next start is accepted and runs. The volume manager and the
+What it pins, per manager: the start that fails raises what ``start()`` raised (the backup routes turn a ``RuntimeError`` into a 409 with
+its text; the search re-index routes catch only their own refusal, so there it reaches the caller as a 500), the job is not "running" afterwards, what was saved says so, and the next start is accepted and runs. The volume manager and the
 folder backup say "error" and name the exception's CLASS (no text: a start's arguments carry a passphrase); the import queue puts back
 the run it had before (a half-built queue of items that never began would be read as "skipped", and ``items_committed`` counts
 "skipped"); the search re-index says "error" with the same code its worker uses, which ``resume`` and ``start`` both accept.
@@ -135,6 +136,9 @@ _ITEMS = [{"kind": "corpus", "path": "/b/one", "label": "one"}, {"kind": "corpus
 def test_import_queue_start_that_cannot_make_a_thread_puts_back_the_run_it_had(queue, monkeypatch, tmp_path):
     queue.start(_ITEMS[:1])
     assert wait_until(lambda: queue.status()["state"] == "done")
+    # The worker sets "done" inside its drive and clears the scheduler's collection pause only after it: the snapshot is taken once the
+    # worker has ended, or the two reads differ by a flag that is still being put back.
+    assert wait_until(lambda: queue._thread is None or not queue._thread.is_alive())
     before = queue.status()
     run_id = queue._run_id
     assert before["state"] == "done" and run_id is not None
@@ -235,6 +239,27 @@ def test_search_reindex_start_that_cannot_make_a_thread_is_saved_as_an_error_tha
     assert wait_until(lambda: not mgr.status()["running"])
 
 
+def test_search_reindex_resume_that_cannot_make_a_thread_keeps_the_place_it_was_at(monkeypatch, tmp_path):
+    """A paused run is not a fresh one: the failed start must not move the cursor, the ceiling or the tally, and the resume after it
+    continues from the same cursor."""
+    state_file = tmp_path / "reindex.json"
+    paused = {"state": "paused", "cursor": 120, "max_id": 500, "total": 500, "tally": {"articles_checked": 120}}
+    state_file.write_text(json.dumps(paused), encoding="utf-8")
+    mgr = fts_reindex.SearchReindexJobManager(state_path=state_file, report_path=tmp_path / "report.json")
+    assert mgr.status()["state"] == "paused"
+    resumed_from: list[tuple[int | None, int, dict]] = []
+    monkeypatch.setattr(mgr, "_run", lambda: resumed_from.append((mgr._cursor, mgr._max_id, dict(mgr._tally))))
+    _cannot_start(monkeypatch, fts_reindex)
+    with pytest.raises(RuntimeError, match=_CANNOT_START):
+        mgr.resume()
+    assert mgr.status()["state"] == "error"
+    saved = json.loads(state_file.read_text(encoding="utf-8"))
+    assert (saved["state"], saved["cursor"], saved["max_id"], saved["tally"]) == ("error", 120, 500, {"articles_checked": 120})
+    mgr.resume()
+    assert wait_until(lambda: resumed_from), "the resume after the failed start should run"
+    assert resumed_from == [(120, 500, {"articles_checked": 120})]
+
+
 # --------------------------------------------------------------------------- #
 #  an interrupt is not "the thread never ran" (R393)
 # --------------------------------------------------------------------------- #
@@ -263,7 +288,9 @@ def _reindex_start(tmp_path):
 def test_an_interrupt_during_start_is_not_taken_for_a_thread_that_never_ran(monkeypatch, tmp_path, make):
     """``Thread.start()`` waits for the new thread to report in; an interrupt that lands there leaves the OS thread created and about to run
     the worker. Calling that job "error" (or putting the old run back) would let a second start run a second worker beside it, so only an
-    ``Exception`` is taken and the job stays "running"."""
+    ``Exception`` is taken and the job stays "running". The shim here raises BEFORE the real ``start()``, so no OS thread exists in this test:
+    it pins the class of the catch (a ``BaseException`` would take the interrupt), not the shape with a thread that really started, which
+    ``tests/test_thread_start_interrupt.py`` injects after the real start for the managers it covers."""
     mgr, module, start = make(tmp_path)
     _cannot_start(monkeypatch, module, error=KeyboardInterrupt())
     with pytest.raises(KeyboardInterrupt):
