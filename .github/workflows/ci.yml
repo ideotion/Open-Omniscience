@@ -496,8 +496,9 @@ jobs:
       # written; each skipped in every other job (no other job installs [columnar]) and so had never run in CI. A new
       # file gated on duckdb belongs HERE, or in a job that installs it and runs the whole suite:
       # tests/test_skipped_tests_have_a_ci_job_that_runs_them.py fails for one that no blocking job names.
-      # tests/test_external_freshness.py is named for its one DuckDB test (the installed duckdb meets the registered floor); the other
-      # fourteen are registry checks that also run in the test job.
+      # tests/test_external_freshness.py is named for its two DuckDB-dependent tests: the version coupling test, and test_nothing_is_stale,
+      # whose registry check compares the installed duckdb with the floor of both track-duckdb-version entries. Without duckdb that
+      # branch reports "info", so both pass vacuously. The other thirteen are registry, pin and bundled-data checks that run in the test job too.
       - name: Columnar rollup + D1 loader (in-memory + fixture verify)
         run: |
           python -m pytest -q \
