@@ -250,6 +250,26 @@ class VolumeBackupManager:
             self._thread.join(timeout=5)  # instant once the work is done; a safety cap
             self._thread = None
 
+    def _start_worker(self, thread: threading.Thread) -> None:
+        """Start the worker a start has just set the job to ``running`` for. Call under ``self._lock``.
+
+        ``Thread.start()`` raises ``RuntimeError("can't start new thread")`` when the process or the machine is out of threads, and then
+        no worker runs. Left alone that is a job that is running and never will be: the Task Manager lists it with a Pause and a Cancel
+        that act on nothing, and the next start joins the thread that was never started (``_reap_or_reject``), which raises, so every
+        later export, import and verify is refused until the process restarts. The job says ``error`` with the exception's CLASS (the
+        text of an exception a start raises is not this manager's to repeat: a passphrase is in scope) and the error goes on.
+
+        Only an ``Exception`` is taken (R393): an interrupt that lands while ``start()`` waits for the new thread to report in leaves the OS
+        thread created and about to run the worker, and calling that job ``error`` would let a second start run a second worker beside it.
+        STATED LIMIT: an interrupt before the OS thread exists leaves ``running`` with no worker, and the next start's join raises."""
+        try:
+            thread.start()
+        except Exception as exc:
+            self._thread = None
+            self._state = "error"
+            self._error = f"{type(exc).__name__}: could not start the worker thread"
+            raise
+
     def _on_prog(self, p: dict) -> None:
         with self._lock:
             self._progress = p
@@ -306,7 +326,7 @@ class VolumeBackupManager:
                 daemon=True,
                 name="volume-backup",
             )
-            self._thread.start()
+            self._start_worker(self._thread)
             return self.status()
 
     def _verify_after_write(self, destp, enabled: bool) -> dict:
@@ -587,7 +607,7 @@ class VolumeBackupManager:
                 daemon=True,
                 name="volume-restore",
             )
-            self._thread.start()
+            self._start_worker(self._thread)
             return self.status()
 
     def _run_restore(
@@ -1091,7 +1111,7 @@ class VolumeBackupManager:
                 daemon=True,
                 name="volume-verify",
             )
-            self._thread.start()
+            self._start_worker(self._thread)
             return self.status()
 
     def _run_verify(self, srcp, passphrase, verify_fn):

@@ -289,7 +289,20 @@ class SearchReindexJobManager:
                 self._budget_s = float(_budget_s)
             self._save()
             self._thread = threading.Thread(target=self._run, daemon=True, name="search-reindex-job")
-            self._thread.start()
+            try:
+                self._thread.start()
+            except Exception:
+                # ``Thread.start()`` raises RuntimeError ("can't start new thread") when the process or the machine is out of threads, and
+                # then no worker runs. The run was already saved as "running": left alone, the state says a run is going that has no
+                # worker, and ``resume`` is refused ("nothing paused") until the next ``start``. "error" is the state a worker that fails
+                # leaves (``start`` and ``resume`` both continue from the cursor it kept), saved, and the error goes on. Only an
+                # ``Exception`` is taken (R393): an interrupt that lands while ``start()`` waits for the new thread leaves the OS thread
+                # created and about to run the worker.
+                self._thread = None
+                self._state = "error"
+                self._error = "failed"
+                self._save()
+                raise
             return self.status()
 
     def resume(self) -> dict:

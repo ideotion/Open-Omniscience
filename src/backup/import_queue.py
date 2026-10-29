@@ -593,6 +593,11 @@ class ImportQueueManager:
                 })
             if not queued:
                 raise ValueError("nothing to import")
+            # What this start overwrites, for a start that cannot make its worker thread (below).
+            before = (
+                self._state, self._items, self._cursor, self._started_at, self._ended_at,
+                self._tuning_done, self._tuned, self._collection_window_failed, self._run_id,
+            )
             self._stop.clear()
             self._items = queued
             self._tuning_done = False
@@ -606,7 +611,25 @@ class ImportQueueManager:
             self._state = "running"
             self._save()
             self._thread = threading.Thread(target=self._run, daemon=True, name="import-queue")
-            self._thread.start()
+            try:
+                self._thread.start()
+            except Exception:
+                # ``Thread.start()`` raises RuntimeError ("can't start new thread") when the process or the machine is out of threads,
+                # and then no worker runs. The queue was already saved as "running": left alone, the dialog shows a run that never
+                # began, a restart reads it back as "interrupted", and the next start joins the thread that was never started (above),
+                # which raises, so every later import is refused until the process restarts. The run it had before is put back, saved
+                # again, and the error goes on. Items that never began are not left as "skipped" (``items_committed`` counts those).
+                # Only an ``Exception`` is taken (R393): an interrupt that lands while ``start()`` waits for the new thread to report in
+                # leaves the OS thread created and about to run the worker, and putting the old run back would let a second start run a
+                # second worker beside it. The passphrase was kept for the run and is dropped here the way a run's end drops it.
+                self._thread = None
+                (
+                    self._state, self._items, self._cursor, self._started_at, self._ended_at,
+                    self._tuning_done, self._tuned, self._collection_window_failed, self._run_id,
+                ) = before
+                self._passphrase = ""
+                self._save()
+                raise
             return self.status()
 
     def stop(self) -> None:
