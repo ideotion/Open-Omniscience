@@ -327,3 +327,62 @@ def test_a_restart_that_cannot_start_is_retried_not_stranded(drive, monkeypatch)
     assert done.wait(5), "the retried restart never ran"
     assert restarted == ["restart"] and m.phase == "restarting"
     assert _events().count("reconnected") == 1, "a retry is not a second reconnection"
+
+
+def test_a_failed_restart_does_not_hide_the_next_reconnection(drive, monkeypatch) -> None:
+    """The once-only 'reconnected' flag belongs to ONE disconnection: after a restart that failed to start, the id is
+    forgotten (a deliberate wipe), then restored, and a later disconnection that comes back is a reconnection of its own."""
+    import threading
+
+    clock = _Clock()
+    m = dv.VolumeMonitor(pause_fn=lambda: None, clock=clock)
+    monkeypatch.setattr(dv, "_restart_process", lambda: None)
+    monkeypatch.setattr(dv.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(dv, "_reap", lambda: None)
+    marker = drive / dv.MARKER_NAME
+    kept = drive / "marker.kept"
+    marker.rename(kept)
+    m.tick()
+    m.tick()
+    kept.rename(marker)
+    monkeypatch.setattr(dv, "threading", _ThreadsThatCannotStart("oo-data-volume-restart"))
+    m.tick()  # the restart cannot start: back to 'reconnect', 'reconnected' written once
+    assert m.phase == "reconnect" and _events().count("reconnected") == 1
+    monkeypatch.setattr(dv, "threading", threading)
+    vid = dv.os.environ[dv.ENV_ID]
+    monkeypatch.delenv(dv.ENV_ID)
+    m.tick()  # the id was forgotten: back to 'ok'
+    assert m.phase == "ok"
+    monkeypatch.setenv(dv.ENV_ID, vid)
+    marker.rename(kept)
+    m.poke("database error: disk i/o error")
+    assert m.phase == "reconnect"
+    kept.rename(marker)
+    m.tick()
+    assert _events().count("reconnected") == 2, "the second disconnection's reconnection went unrecorded"
+
+
+def test_a_start_that_keeps_failing_warns_once(drive, monkeypatch, caplog) -> None:
+    """The retry runs every tick; only the first failure of a streak is a warning (the error ring is finite)."""
+    import logging
+
+    clock = _Clock()
+    m = dv.VolumeMonitor(pause_fn=lambda: None, clock=clock)
+    marker = drive / dv.MARKER_NAME
+    kept = drive / "marker.kept"
+    marker.rename(kept)
+    m.tick()
+    m.tick()
+    kept.rename(marker)
+
+    class _AlwaysFails(_ThreadsThatCannotStart):
+        def Thread(self, *args, **kwargs):  # noqa: N802
+            self.failed = 0   # every start fails
+            return super().Thread(*args, **kwargs)
+
+    monkeypatch.setattr(dv, "threading", _AlwaysFails("oo-data-volume-restart"))
+    with caplog.at_level(logging.DEBUG, logger="safety.data_volume"):
+        for _ in range(4):
+            m.tick()
+    warns = [r for r in caplog.records if r.levelno == logging.WARNING and "could not start the restart" in r.getMessage()]
+    assert len(warns) == 1 and m.phase == "reconnect"

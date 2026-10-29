@@ -440,6 +440,7 @@ class VolumeMonitor:
         self.last_ok_at: str | None = None
         self.detected_by: str | None = None
         self._reconnect_recorded = False
+        self._restart_failure_logged = False
 
     # -- public ---------------------------------------------------------------
 
@@ -520,10 +521,16 @@ class VolumeMonitor:
                     except Exception as exc:  # noqa: BLE001 - the watchdog must outlive its own bugs
                         # "restarting" with no restart thread is a page that never ends: stay
                         # where we were, and the next tick tries again.
-                        log_failure(_LOG, "data drive: could not start the restart", exc, level=logging.WARNING)
+                        # Retried every tick: the first failure of a streak is the warning, the repeats are not,
+                        # or a start that keeps failing fills the error ring and pushes out the disconnection.
+                        log_failure(
+                            _LOG, "data drive: could not start the restart", exc,
+                            level=logging.DEBUG if self._restart_failure_logged else logging.WARNING,
+                        )
+                        self._restart_failure_logged = True
                         self.phase, self.deadline = during, left
                     return
-                self._reconnect_recorded = False
+                self._reconnect_recorded = self._restart_failure_logged = False
                 if self.deadline is not None and now >= self.deadline:
                     if self.phase == "reconnect":
                         record_incident("shutdown_countdown", seconds=SHUTDOWN_SECONDS)
@@ -535,6 +542,7 @@ class VolumeMonitor:
         # The phase moves FIRST, so a poke that re-enters from inside the recording
         # below finds a disconnection already being handled.
         self.detected_by = reason
+        self._reconnect_recorded = self._restart_failure_logged = False   # a new disconnection owes its own "reconnected"
         self.phase, self.deadline = "reconnect", self._clock() + RECONNECT_SECONDS
         record_incident(
             "disconnected",
