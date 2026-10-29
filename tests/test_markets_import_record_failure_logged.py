@@ -5,7 +5,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 ``POST /api/markets/feeds/import-all`` appends the outcome of every Load/Refresh click to ``import_results.jsonl`` (the debug bundle's ``imports`` member, ruled
 2026-06-10). That append sat under ``except Exception: pass``: with a full disk or an unwritable file the click simply never appeared in the bundle, and nothing said why.
-The file is made unwritable here by being a DIRECTORY (a real ``IsADirectoryError`` from the real ``open``, no patch of a shared module, R376).
+The file is made unwritable here by being a DIRECTORY (a real ``IsADirectoryError`` (``PermissionError`` on Windows) from the real ``open``, no patch of a shared module, R376).
 """
 
 from __future__ import annotations
@@ -42,7 +42,9 @@ def test_a_record_that_cannot_be_appended_is_logged_and_the_import_result_is_unc
     with caplog.at_level("WARNING"):
         out = _run()
     assert out["feeds"] == 1 and out["failed"] == 1, "the import's own result is untouched"
-    assert "import_results.jsonl could not be appended" in caplog.text and "IsADirectoryError" in caplog.text, "the lost record is on the record"
+    # opening a directory is IsADirectoryError on Linux and macOS and PermissionError on Windows: the code's own words are the claim, the class is accepted either way
+    assert "import_results.jsonl could not be appended" in caplog.text, "the lost record is on the record"
+    assert "IsADirectoryError" in caplog.text or "PermissionError" in caplog.text, "with the exception's class"
 
 
 def test_with_a_writable_file_nothing_is_logged_and_the_record_is_written(tmp_path, caplog):
