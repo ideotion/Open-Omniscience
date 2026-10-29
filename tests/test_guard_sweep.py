@@ -47,10 +47,18 @@ def test_link_stats_is_correct_through_the_guard():
                         normalized_url="https://o.example/y", link_type="external"),
         ])
         db.commit()
-        out = link_analysis.stats(db=db)
-        assert out["external_links"] == 2
-        assert out["distinct_links"] == 2
-        assert out["articles_with_links"] == 1
+        try:
+            out = link_analysis.stats(db=db)
+            assert out["external_links"] == 2
+            assert out["distinct_links"] == 2
+            assert out["articles_with_links"] == 1
+        finally:
+            # the app engine is shared process-wide: article_links has no ON DELETE
+            # CASCADE, so rows left here make the next bulk `DELETE FROM articles` fail
+            db.query(ArticleLink).filter(ArticleLink.article_id == a.id).delete()
+            db.query(Article).filter(Article.id == a.id).delete()
+            db.query(Source).filter(Source.id == src.id).delete()
+            db.commit()
 
 
 def test_omni_returns_groups_through_the_guard():
