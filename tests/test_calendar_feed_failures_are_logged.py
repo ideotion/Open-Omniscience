@@ -215,6 +215,7 @@ def test_a_store_that_cannot_be_opened_is_on_the_record(caplog):
         assert F._load_json("calendar_feed_attempts.json") == {}
     assert "calendar_feed_attempts.json exists but could not be read" in caplog.text
     assert "IsADirectoryError" in caplog.text or "PermissionError" in caplog.text
+    assert "replaces" not in caplog.text, "the line makes no claim about a save, which cannot succeed where the store is a directory"
 
 
 def test_an_absent_or_healthy_store_logs_nothing(caplog):
