@@ -382,8 +382,9 @@ def _law_client(monkeypatch, tmp_path):
 @pytest.fixture()
 def _law_api_rows_removed():
     """The API tests below add documents to the process-wide app engine, which every later test shares:
-    a backup made by a later test then carries them (their legacy lowercase jurisdiction is exported as
-    alpha-3, so a self-merge counts them as new). Their revisions and summaries go with them (ON DELETE CASCADE)."""
+    a backup made by a later test then carries them (test_backup_v2_api's self-merge reported them as new,
+    a fixture artefact of a store holding a lowercase jurisdiction, not what a real install does). Their
+    revisions and summaries go with them (ON DELETE CASCADE)."""
     from src.database.session import SessionLocal
 
     urls = ("https://law.example/api-fr", "https://law.example/api-es")
