@@ -289,15 +289,44 @@ class DumpDownloadManager:
 
     def _launch(self, entry: DownloadEntry) -> None:
         stop = threading.Event()
-        self._stops[entry.key] = stop
 
         def _run() -> None:
             self._download(entry, stop)
             self._pump()  # a finished/paused/errored slot frees the queue
 
         t = threading.Thread(target=_run, name=f"oo-dump-{entry.key}", daemon=True)
-        self._threads[entry.key] = t
-        t.start()
+        with self._lock:
+            # Registered together and under the lock, so that the failed launch below can tell whether the registration it finds
+            # is still its own: a second start() of the same key registers both in one step or not yet.
+            self._stops[entry.key] = stop
+            self._threads[entry.key] = t
+        try:
+            t.start()
+        except Exception as exc:
+            # R393. The slot was claimed ("downloading", saved) before this call and no worker will ever end it: left as it is,
+            # the entry counts against ``max_concurrent`` until it is retried or deleted or the process restarts, the other
+            # entries queue behind it, and a retry at capacity is itself queued with nothing to launch it. Only an Exception is
+            # taken: an interrupt that lands while start() waits for the new thread leaves the OS thread created and about to
+            # run the worker, and freeing the slot then would let a second start run a second worker for the same file. The
+            # text is the class and nothing it said, as every neighbouring start says it.
+            with self._lock:
+                # Put back only what THIS launch registered. A second start() of the same key (it finds a thread that is not
+                # alive and a status of "downloading") registers its own stop event and thread, together and under this lock,
+                # and its worker is then the entry's: dropping its stop event would leave a live download that pause() cannot
+                # reach. The stop event tells whose registration this is. ``_threads`` keeps the thread that never started:
+                # ``is_alive()`` reads False for it, which is all start() asks of it.
+                if self._stops.get(entry.key) is stop:
+                    del self._stops[entry.key]
+                    # A second start() that got in first may have queued the entry (capacity) or paused it (airplane mode):
+                    # that status is its answer to its caller, and it is not ours to overwrite.
+                    if entry.status == "downloading":
+                        entry.status = "error"
+                        entry.error = f"{type(exc).__name__}: could not start the worker thread"
+                        try:
+                            self._save()
+                        except Exception as save_exc:  # noqa: BLE001 - the start's own error is the one to raise
+                            log_failure(_LOG, f"dump download state for {entry.key} could not be saved", save_exc, level=logging.WARNING)
+            raise
 
     def _pump(self) -> None:
         """Start QUEUED entries until ``max_concurrent`` are in flight, FIFO over
@@ -322,7 +351,13 @@ class DumpDownloadManager:
             if to_launch:
                 self._save()
         for entry in to_launch:
-            self._launch(entry)
+            try:
+                self._launch(entry)
+            except Exception as exc:  # noqa: BLE001 - one entry that cannot start must not strand the ones claimed after it
+                # When the failure came from ``start()``, ``_launch`` has already said "error" on the entry and given its slot
+                # back. One raised before it (the Event or the Thread could not be built) leaves the claim as it was, and this log
+                # line is then the only trace. Raising from here would leave the entries claimed after this one with no thread.
+                log_failure(_LOG, f"dump download for {entry.key} could not start a worker", exc, level=logging.WARNING)
 
     def reorder(self, keys: list[str]) -> list[str]:
         """Reorder the QUEUED downloads (the fr-before-en acceptance case).

@@ -62,7 +62,25 @@ class ModelPullManager:
             self._queue.append(model)
             if self._thread is None or not self._thread.is_alive():
                 self._thread = threading.Thread(target=self._pump, daemon=True, name="model-pull")
-                self._thread.start()
+                try:
+                    self._thread.start()
+                except Exception as exc:
+                    # R393. This pump never runs, so the model would sit in the queue until another model's enqueue started a pump,
+                    # and enqueueing the same model again would return at "already queued" without starting one. It leaves the queue
+                    # and the history says why. Only an Exception is taken: an interrupt that lands while start() waits for the new
+                    # thread leaves the OS thread created and about to run the pump, and taking the model out then would let it
+                    # be pulled without a trace. The text is the class and nothing it said.
+                    self._queue.remove(model)
+                    self._history.append(
+                        {
+                            "model": model,
+                            "status": "error",
+                            "at": time.time(),
+                            "error": f"{type(exc).__name__}: could not start the worker thread",
+                        }
+                    )
+                    self._history = self._history[-20:]
+                    raise
             return self.status()
 
     def cancel(self, model: str) -> dict:

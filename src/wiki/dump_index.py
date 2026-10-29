@@ -315,7 +315,16 @@ class DumpIndexManager:
                 target=self._run, args=(wiki, base_dir), name="dump-index", daemon=True
             )
             self._thread = t
-            t.start()
+            try:
+                t.start()
+            except Exception as exc:
+                # R393. "running" was set above and no worker will ever end it, so the build would read as running with nothing
+                # behind it until another start replaced it. Only an Exception is taken: an interrupt that lands while start()
+                # waits for the new thread leaves the OS thread created and about to run the worker, and calling the build an
+                # error then would let a second start run a second build beside it. The text is the class and nothing it said.
+                self._state = "error"
+                self._error = f"{type(exc).__name__}: could not start the worker thread"
+                raise
         return self.status()
 
     def _run(self, wiki: str, base_dir: Path | None) -> None:
