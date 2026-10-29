@@ -72,7 +72,7 @@ def fragment_rows(csv_path: Path) -> list[list[str]]:
 # A `refs` cell that still holds a placeholder: the ledger's `PR pending` (rule 5b), the `new-log` template's `#NNNN`
 # and the literal `#PRNUMBER` a lane writes before its PR number exists. `pending` is a WORD, so a refs value that
 # says "depending on #1637" is not one. This is the predicate `check` below applies to a fragment; the release-notes
-# gate (`release_notes.refs_carry_placeholder`) keeps its own, broader `pending` test over every ledger row.
+# gate (`release_notes.refs_carry_placeholder`) applies it too, to every ledger row.
 REFS_PLACEHOLDER = re.compile(r"\bpending\b|#NNNN|#PRNUMBER\b", re.IGNORECASE)
 
 

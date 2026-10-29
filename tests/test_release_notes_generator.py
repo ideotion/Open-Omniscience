@@ -326,6 +326,55 @@ def test_the_placeholder_check_reads_the_refs_COLUMN_never_the_file(tmp_path):
     assert b"PR pending" in path.read_bytes(), "the fixture must really contain the phrase"
 
 
+@pytest.mark.parametrize(
+    "refs",
+    ["PR pending", "pr  PENDING", "R9; PR pending", "PR #NNNN", "#nnnn", "PR #PRNUMBER", "R9; pr #prnumber"],
+)
+def test_every_placeholder_the_fragment_check_refuses_is_refused_in_a_cited_row_too(tmp_path, refs):
+    """The release gate used to test the substring ``pending`` alone, so a cited row whose refs said
+    ``#NNNN`` or ``#PRNUMBER`` (both refused by ``ledger_shipped.py check``) went into a release body as a
+    citation. Red on that predicate for the four ``#`` forms."""
+    rows = list(_ROWS) + [("2026-02-20", "held/row", "swept later", "shipped", refs)]
+    sel = rn.select(rn.read_rows(_write_csv(tmp_path / "shipped.csv", rows)), _selection())
+    with pytest.raises(rn.ReleaseNotesError) as exc:
+        rn.refuse_placeholders(sel)
+    assert "held/row" in str(exc.value), "the refusal names the row"
+
+
+def test_the_refusal_names_all_three_tokens_it_judges_by(tmp_path):
+    """The message is what an operator reads when a tag is refused, so it names every token the predicate
+    refuses, not only the one in the row at hand (a mutant that kept just ``#PRNUMBER`` passed the
+    parametrized test above, whose ``PR #PRNUMBER`` case repeats the token through the offender line)."""
+    rows = list(_ROWS) + [("2026-02-20", "held/row", "swept later", "shipped", "PR pending")]
+    sel = rn.select(rn.read_rows(_write_csv(tmp_path / "shipped.csv", rows)), _selection())
+    with pytest.raises(rn.ReleaseNotesError) as exc:
+        rn.refuse_placeholders(sel)
+    message = str(exc.value).split("refs=")[0]  # the sentence, not the offender line that repeats the value
+    for token in ("PR pending", "#NNNN", "#PRNUMBER"):
+        assert token in message, (token, message)
+
+
+@pytest.mark.parametrize("refs", ["PR #8", "R9; PR #8", "depending on #1637", "R12; #PRNUMBERS is not the token"])
+def test_a_refs_value_the_fragment_check_accepts_is_not_refused_either(tmp_path, refs):
+    """The negative twin, and a deliberate narrowing: ``pending`` is a WORD, so "depending on #1637" is not a
+    placeholder here for the same reason it is not one to ``ledger_shipped.py check`` (the substring test refused
+    it). Measured on the real ledger before the change: 0 rows differed between the two predicates."""
+    rows = list(_ROWS) + [("2026-02-20", "held/row", "swept later", "shipped", refs)]
+    sel = rn.select(rn.read_rows(_write_csv(tmp_path / "shipped.csv", rows)), _selection())
+    rn.refuse_placeholders(sel)  # must not raise
+
+
+def test_the_refs_predicate_is_the_one_ledger_shipped_applies_not_a_copy(monkeypatch):
+    """The reader FOLLOWS its source (family 3 above): swap the regex ``ledger_shipped`` owns and the gate's
+    answer swaps with it. A private copy in this script passes every fixed-token test above and fails this.
+    It pins one cached, live attribute lookup: binding the regex once at import, or dropping the cache so each
+    call builds a module the patch never reaches, also turns it red."""
+    monkeypatch.setattr(rn._ledger_shipped(), "REFS_PLACEHOLDER", re.compile("zzz"))
+    assert not rn.refs_carry_placeholder({"refs": "PR pending"})
+    assert rn.refs_carry_placeholder({"refs": "PR zzz"})
+    assert not rn.refs_carry_placeholder({})
+
+
 def test_a_dirty_tree_is_refused(monkeypatch):
     """Notes name a SHA, so they must describe that SHA."""
     monkeypatch.setattr(rn, "_git", lambda *a, **k: " M src/x.py")
@@ -636,7 +685,7 @@ def test_the_real_ledger_carries_no_placeholder_any_release_would_cite():
     rows = rn.read_rows(_REAL_CSV)
     offenders = [r for r in rows if rn.refs_carry_placeholder(r)]
     assert not offenders, (
-        "unswept `PR pending` placeholder(s) in shipped.csv's refs column: "
+        "unswept placeholder(s) (`PR pending`, `#NNNN` or `#PRNUMBER`) in shipped.csv's refs column: "
         + ", ".join(f"{r['date']} {r['area']}" for r in offenders)
     )
 
