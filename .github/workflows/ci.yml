@@ -429,8 +429,10 @@ jobs:
       - name: Boot check
         run: python -c "from src.api.main import app; print(sum(1 for _ in app.routes), 'routes')"
 
+      # `-rfEs`, the same flags as the `test` job's (see there): every skip's file, line and reason in the log, so which tests this job did not run is read from it.
+      # This job installs core + dev only, so it skips the analysis-module tests on purpose; `-r` REPLACES pytest's default `fE`, so `-rs` alone would drop the FAILED and ERROR lines.
       - name: Test (pytest, analysis modules must skip)
-        run: python -m pytest -q
+        run: python -m pytest -q -rfEs
 
       # The same report as the `test` job's (see there): the versions this suite ran against, kept on red as well as green, at the log's tail.
       - name: Installed versions (kept on red as well as green)

@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
-# preflight.sh — run the CI `test` job's BLOCKING gates locally BEFORE pushing.
+# preflight.sh — run three of the CI `test` job's gates locally BEFORE pushing.
 #
-# Mirrors .github/workflows/ci.yml (the `test` job) with the EXACT commands. Written after the
-# 2026-07-15 opt-tail CI cycle, where three gates each masked the next (ruff-blocking F401 hid a
-# pytest break hid a mypy-ratchet rise), costing ~9 min per CI round to peel one layer. Running
-# all three locally in one pass collapses that cycle.
+# Mirrors .github/workflows/ci.yml (the `test` job): the ruff correctness and mypy commands are the
+# job's own, verbatim. The pytest command is the job's WITHOUT its `-rfEs` flags (`-r` replaces
+# pytest's default `fE`, so the job adds the skip listing `s` to it): a bare sandbox skips hundreds
+# of tests and that block would bury the failures this advisory run is read for, which `-q` already
+# prints. tests/test_ci_pytest_flags_and_preflight.py fails when any of this stops being true.
+# NOT run here: the job's other steps (the ruff style ratchet, planned-work index, i18n, migration
+# drift, bandit and pip-audit among them); `python scripts/guards_for_diff.py --run` covers the
+# style ratchet and the tests a diff picks.
+# Written after the 2026-07-15 opt-tail CI cycle, where three gates each masked the next
+# (ruff-blocking F401 hid a pytest break hid a mypy-ratchet rise), costing ~9 min per CI round to
+# peel one layer. Running all three locally in one pass collapses that cycle.
 #
 # The mypy ratchet is DETERMINISTIC only with the pinned mypy + the full extras installed:
 #     pip install -e ".[analysis,dev,segmentation,pdf,ocr]"
@@ -82,7 +89,7 @@ fi
 
 hr
 if [ "${fail}" -eq 0 ]; then
-  echo "PREFLIGHT PASSED — the reproducible hard gates (ruff + mypy) are green. Safe to push."
+  echo "PREFLIGHT PASSED — the reproducible hard gates (ruff + mypy) are green. The job's other steps were not run (see the header)."
   echo "  (If you ran --tests, confirm any pytest reds are all environmental first.)"
 else
   echo "PREFLIGHT FAILED — fix the FAIL gate(s) above before pushing."
