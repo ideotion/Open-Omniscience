@@ -3,10 +3,11 @@
 #
 # Mirrors .github/workflows/ci.yml (the `test` job): the ruff correctness and mypy commands are the
 # job's own, verbatim, and the mypy gate means what the job's means (BLOCKING: any error fails). The
-# pytest command is the job's WITHOUT its `-rsfE` flags (`-r` replaces pytest's default `fE`, so the
-# job names the skip listing `s` first and `fE` after it, which puts the FAILED and ERROR lines last,
-# at the tail of its log): a bare sandbox skips hundreds of tests and that block would bury the
-# failures this advisory run is read for, which pytest's default `-rfE` already prints.
+# pytest command is the job's WITHOUT its `-rsfE` flags and its `--junitxml` report (`-r` replaces
+# pytest's default `fE`, so the job names the skip listing `s` first and `fE` after it, which puts the
+# FAILED and ERROR lines last, at the tail of its log; the report feeds the job's skip-summary step,
+# which this script does not run): a bare sandbox skips hundreds of tests and that block would bury
+# the failures this advisory run is read for, which pytest's default `-rfE` already prints.
 # tests/test_ci_pytest_flags_and_preflight.py pins the commands and that one difference.
 # NOT run here: the job's other steps (the ruff style ratchet, planned-work index, i18n, migration
 # drift, bandit and pip-audit among them); `python scripts/guards_for_diff.py --run` covers the
