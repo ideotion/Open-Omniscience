@@ -492,6 +492,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[analysis,dev,columnar]"
 
+      # 2026-10-28 (R392): the list below grew by the nineteen DuckDB-gated files the rollup work had added since it was
+      # written; each skipped in every other job (no other job installs [columnar]) and so had never run in CI. A new
+      # file gated on duckdb belongs HERE, or in a job that installs it and runs the whole suite:
+      # tests/test_skipped_tests_have_a_ci_job_that_runs_them.py fails for one that no blocking job names.
       - name: Columnar rollup + D1 loader (in-memory + fixture verify)
         run: |
           python -m pytest -q \
@@ -499,7 +503,17 @@ jobs:
             tests/test_keyword_daily_rollup.py tests/test_source_coverage_rollup.py \
             tests/test_rollup_serve.py tests/test_columnar_httpfs_loader.py \
             tests/test_rollup_build_streaming.py tests/test_rollup_serve_persisted.py \
-            tests/test_columnar_key_derivation.py
+            tests/test_columnar_key_derivation.py \
+            tests/test_corpus_epoch.py tests/test_keyword_daily_merge_interrupted.py \
+            tests/test_keyword_daily_refresh.py tests/test_keyword_daily_refresh_wal_pinning.py \
+            tests/test_keyword_daily_scan_bound_race.py tests/test_map_serve.py \
+            tests/test_rollup_benchmark.py tests/test_rollup_benchmark_guard.py \
+            tests/test_rollup_generation_check.py tests/test_rollup_parity_bound.py \
+            tests/test_rollup_persisted_generation.py tests/test_rollup_scan_plan.py \
+            tests/test_rollup_shard_checkpoint.py tests/test_rollup_sharded_build.py \
+            tests/test_rollup_store_kind.py tests/test_serve_change_gate.py \
+            tests/test_serve_out_of_memory_goes_live.py tests/test_top_terms_pre_aggregate.py \
+            tests/test_wave7_poll_cache.py
 
       - name: D1 persisted-encrypted round trip (CI-only httpfs trust path)
         env:
