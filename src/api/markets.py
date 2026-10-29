@@ -371,8 +371,9 @@ def import_all_feeds(
                 )
                 + "\n"
             )
-    except Exception:  # noqa: BLE001 - logging must never fail the import
-        pass
+    except Exception as exc:  # noqa: BLE001 - logging must never fail the import
+        # The import itself stands; what is lost is this click's line in the debug bundle's ``imports`` member, which would otherwise just lack it with no word why (R386).
+        log_failure(_LOG, "import_results.jsonl could not be appended, so this click is absent from the debug bundle's imports", exc, level=logging.WARNING)
     return summary
 
 
