@@ -443,6 +443,32 @@ def test_a_read_parses_outside_the_file_lock(custody, db, monkeypatch):
     assert held[:2] == [False, False], held  # read_pending, and the drain's first read; the final re-read holds it by design
 
 
+def test_every_read_of_the_queue_bytes_holds_the_file_lock(custody, db, monkeypatch):
+    """The bytes are a consistent snapshot only if no append is in progress while they are read: ``read_pending``, ``pending_count``,
+    the first read of a ``drain`` and its final re-read all read them with the lock held."""
+    a = _article(db, 1)
+    assert pending.note_failed(a.id, error="E")
+    real, held = pending._read_bytes, []
+
+    def read_bytes():
+        held.append(pending._LOCK.locked())
+        return real()
+
+    monkeypatch.setattr(pending, "_read_bytes", read_bytes)
+    pending.read_pending()
+    pending.pending_count()
+    assert pending.note_failed(a.id, error="E")
+    pending.drain()  # its first read, then its final re-read
+    assert len(held) == 4 and all(held), held
+
+
+def test_the_largest_id_a_column_holds_is_a_record_and_the_next_is_not():
+    assert pending.note_failed(1, error="E")
+    with open(pending.pending_path(), "ab") as fh:
+        fh.write(b'{"article_id":9223372036854775807}\n{"article_id":9223372036854775808}\n')
+    assert _ids() == [1, 2**63 - 1]
+
+
 def test_a_permission_error_is_not_an_empty_queue(monkeypatch):
     assert pending.note_failed(1, error="E")
     _read_bytes_refused(monkeypatch)

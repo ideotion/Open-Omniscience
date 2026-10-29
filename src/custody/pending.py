@@ -67,8 +67,8 @@ _SQLITE_MAX_INT = 2**63 - 1
 _REPORTED_UNREADABLE: set[tuple[int, int, int]] = set()
 _REPORT_LOCK = threading.Lock()
 #: Guards the pending FILE: every append, every rewrite and every read of its bytes (so an append in progress is never read half
-#: written), and only that. NOT re-entrant: :func:`read_pending` and :func:`pending_count` take it, so they must never be called
-#: while holding it (that is a hang, not an error).
+#: written), and only that. NOT re-entrant: :func:`read_pending`, :func:`pending_count` and :func:`_read_locked` take it, so they
+#: must never be called while holding it (that is a hang, not an error; the tail of :func:`drain` calls :func:`_read_all`).
 _LOCK = threading.Lock()
 #: One drain at a time: two could otherwise both find an entry missing and both record it.
 _DRAIN_LOCK = threading.Lock()
