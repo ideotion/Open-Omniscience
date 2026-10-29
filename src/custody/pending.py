@@ -15,6 +15,11 @@ WHAT THIS DOES
 - :func:`note_failed` records the failure in a small append-only file,
   ``data/custody_pending.jsonl``, WITHOUT touching the database -- the failure it exists
   for is the database being unreachable.
+- A queue line that cannot be read (a write cut short by a full disk or a power cut, bytes that are not text, JSON that is
+  not a record) is never read as a record, never glued to the next one (:func:`_append` closes a file that ends mid-line
+  first), and never erased unseen: it is reported once per process by line number and byte length (never its text) and,
+  when the queue is rewritten, kept byte for byte in ``data/custody_pending.unreadable`` (left in the queue instead if
+  that file cannot be written). A file that cannot be READ is not an empty queue: it is left exactly as it is.
 - :func:`drain` records every pending entry it can, each MARKED LATE in its own signed
   metadata (``late: true``, when the article was stored, when the entry was finally
   written, and why it was late). The entry's position in the chain is its true position:
@@ -41,6 +46,7 @@ import logging
 import os
 import threading
 import time
+import zlib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -50,7 +56,19 @@ from src.monitoring.secret_scrub import log_failure, record_text
 _LOG = logging.getLogger(__name__)
 
 PENDING_FILE = "custody_pending.jsonl"
-#: Guards every read-modify-write of the pending FILE, and only that.
+#: Where a queue line that is not a usable record is kept, byte for byte, when the queue is rewritten (beside the queue,
+#: same sensitivity: a line can hold a url).
+UNREADABLE_FILE = "custody_pending.unreadable"
+#: The largest integer a SQLite column holds, and so the largest ``article_id`` the drain's column read can bind: a larger one
+#: raises ``OverflowError`` there and would stop every entry that has no hash from being written.
+_SQLITE_MAX_INT = 2**63 - 1
+#: ``(line number, byte length, crc32)`` of each unreadable line already reported by this process, so a queue read on every
+#: pass logs it once. Pruned to the lines the file holds now, so it never outgrows the file.
+_REPORTED_UNREADABLE: set[tuple[int, int, int]] = set()
+_REPORT_LOCK = threading.Lock()
+#: Guards the pending FILE: every append, every rewrite and every read of its bytes (so an append in progress is never read half
+#: written), and only that. NOT re-entrant: :func:`read_pending`, :func:`pending_count` and :func:`_read_locked` take it, so they
+#: must never be called while holding it (that is a hang, not an error; the tail of :func:`drain` calls :func:`_read_all`).
 _LOCK = threading.Lock()
 #: One drain at a time: two could otherwise both find an entry missing and both record it.
 _DRAIN_LOCK = threading.Lock()
@@ -76,16 +94,35 @@ def pending_path() -> Path:
     return data_dir() / PENDING_FILE
 
 
+def _ends_mid_line(p: Path) -> bool:
+    """Whether ``p`` holds bytes and does not end in a newline: a write that was cut short (a full disk, a power cut) left its tail."""
+    try:
+        with open(p, "rb") as fh:
+            fh.seek(-1, os.SEEK_END)  # an empty file has no last byte (OSError), as a missing one has none
+            return fh.read(1) != b"\n"
+    except OSError:  # no file, an empty one, or one that cannot be read: nothing to close off
+        return False
+
+
+def _append_bytes(p: Path, data: bytes) -> None:
+    """The one place this module appends to a file (the caller holds ``_LOCK``): the queue, and the file unreadable lines are set aside in."""
+    with open(p, "ab") as fh:
+        fh.write(data)
+
+
 def _append(records: list[dict[str, Any]]) -> bool:
-    """One append for any number of records; a file write, never a database one."""
+    """One append for any number of records; a file write, never a database one.
+
+    A file that ends mid-line is closed with a newline first, so the cut-short text stays a line of its own and the record
+    appended now is not glued onto it (both would be unreadable)."""
     if not records:
         return True
     try:
         with _LOCK:
             p = pending_path()
             p.parent.mkdir(parents=True, exist_ok=True)
-            with open(p, "a", encoding="utf-8", newline="\n") as fh:
-                fh.write("".join(json.dumps(r, separators=(",", ":")) + "\n" for r in records))
+            lead = "\n" if _ends_mid_line(p) else ""
+            _append_bytes(p, (lead + "".join(json.dumps(r, separators=(",", ":")) + "\n" for r in records)).encode("utf-8"))
         return True
     except OSError as exc:
         log_failure(_LOG, f"custody: could not queue {len(records)} late entr(ies)", exc, level=logging.WARNING)
@@ -111,40 +148,112 @@ def note_failed(article_id: int, *, item_hash: str | None = None, url: str | Non
                             source_id=source_id, error=error, found_by=found_by)])
 
 
-def read_pending() -> list[dict[str, Any]]:
+def _read_bytes() -> bytes:
+    """The queue file's bytes, empty when it is not there; the caller holds ``_LOCK``. A file that is there and cannot be read
+    raises ``OSError``, never reads as an empty queue (a rewrite from an "empty" read deletes every record still owed)."""
     try:
-        text = pending_path().read_text(encoding="utf-8")
-    except OSError:
-        return []
+        return pending_path().read_bytes()
+    except FileNotFoundError:
+        return b""
+
+
+def _parse(data: bytes) -> tuple[list[dict[str, Any]], list[tuple[int, bytes]]]:
+    """``(records, unreadable)``: the usable records of the queue and, as ``(line number, bytes)``, every non-blank line that is
+    not one (cut short, not JSON, not text, or JSON without a positive integer ``article_id`` a column can hold). The file is read
+    as bytes so that a line that is not text is one unreadable line, not an error that stops the whole queue from being read."""
     out: list[dict[str, Any]] = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
+    unreadable: list[tuple[int, bytes]] = []
+    for number, raw in enumerate(data.split(b"\n"), start=1):
+        if not raw.strip():
             continue
         try:
-            rec = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(rec, dict) and rec.get("article_id") is not None:
+            rec = json.loads(raw)
+        except (ValueError, RecursionError):  # a JSON error, bytes that are not text, or nesting too deep to parse
+            rec = None
+        aid = rec.get("article_id") if isinstance(rec, dict) else None
+        # the writers store int(article_id) of a real row; a bool is an int to Python
+        if isinstance(aid, int) and not isinstance(aid, bool) and 0 < aid <= _SQLITE_MAX_INT:
             out.append(rec)
-    return out
+        else:
+            unreadable.append((number, raw))
+    return out, unreadable
+
+
+def _read_all() -> tuple[list[dict[str, Any]], list[tuple[int, bytes]]]:
+    """:func:`_read_bytes` then :func:`_parse`, for a caller that holds ``_LOCK`` (the drain's final re-read, which must see the
+    file it then replaces)."""
+    return _parse(_read_bytes())
+
+
+def _read_locked() -> tuple[list[dict[str, Any]], list[tuple[int, bytes]]]:
+    """As :func:`_read_all` for a caller that does not hold ``_LOCK``: the lock is held for the bytes only, so a parse of a large
+    queue never makes an ingest thread's :func:`note_failed` wait for it."""
+    with _LOCK:
+        data = _read_bytes()
+    return _parse(data)
+
+
+def _report_unreadable(unreadable: list[tuple[int, bytes]]) -> None:
+    """One warning per unreadable line this process has not reported yet. It is handed the lines and passes on only their line
+    number, byte length and crc32: the text of a line never reaches a log record."""
+    keys = {(number, len(raw), zlib.crc32(raw)) for number, raw in unreadable}
+    with _REPORT_LOCK:
+        fresh = sorted(k for k in keys if k not in _REPORTED_UNREADABLE)
+        _REPORTED_UNREADABLE.intersection_update(keys)
+        _REPORTED_UNREADABLE.update(fresh)
+    for number, size, _crc in fresh:
+        _LOG.warning(
+            "custody: line %d of the pending queue (%d bytes) is not a usable record and is not read; a drain that rewrites the "
+            "queue keeps it, whole, in %s (its text is not logged)", number, size, UNREADABLE_FILE)
+
+
+def read_pending() -> list[dict[str, Any]]:
+    """The usable records of the queue, read under the file lock so that an append in progress is never read half written (and
+    reported as an unreadable line). A file that cannot be read is logged and reads as no records here; the rewrite does not
+    take that reading for an empty queue (:func:`drain`)."""
+    try:
+        records, unreadable = _read_locked()
+    except OSError as exc:
+        log_failure(_LOG, "custody: could not read the pending file", exc, level=logging.WARNING)
+        return []
+    _report_unreadable(unreadable)
+    return records
 
 
 def pending_count() -> int:
     return len(read_pending())
 
 
-def _rewrite(items: list[dict[str, Any]]) -> None:
+def _set_aside(unreadable: list[tuple[int, bytes]]) -> bool:
+    """Append the unreadable lines, byte for byte, to :data:`UNREADABLE_FILE`; whether that was done."""
+    side = pending_path().with_name(UNREADABLE_FILE)
+    try:
+        lead = b"\n" if _ends_mid_line(side) else b""  # a copy that stopped part way must not take the next one onto its line
+        _append_bytes(side, lead + b"".join(raw + b"\n" for _number, raw in unreadable))
+    except OSError as exc:
+        log_failure(_LOG, f"custody: {len(unreadable)} unreadable line(s) of the pending queue could not be set aside", exc,
+                    level=logging.WARNING)
+        return False
+    _LOG.warning("custody: set aside %d unreadable line(s) of the pending queue into %s (line(s) %s; byte length(s) %s; text not logged)",
+                 len(unreadable), side.name, ", ".join(str(n) for n, _raw in unreadable),
+                 ", ".join(str(len(raw)) for _n, raw in unreadable))
+    return True
+
+
+def _rewrite(items: list[dict[str, Any]], unreadable: list[tuple[int, bytes]] | None = None) -> None:
+    """The queue file becomes ``items``. The unreadable lines it held are set aside first (:func:`_set_aside`); if that cannot be
+    done they are written back into the queue, so no line is ever erased unseen."""
     p = pending_path()
-    if not items:
+    kept = unreadable if unreadable and not _set_aside(unreadable) else []
+    if not items and not kept:
         try:
             p.unlink(missing_ok=True)
         except OSError as exc:
             log_failure(_LOG, "custody: could not remove the empty pending file", exc, level=logging.DEBUG)
         return
     tmp = p.with_suffix(".jsonl.tmp")
-    tmp.write_text("".join(json.dumps(i, separators=(",", ":")) + "\n" for i in items),
-                   encoding="utf-8", newline="\n")
+    tmp.write_bytes("".join(json.dumps(i, separators=(",", ":")) + "\n" for i in items).encode("utf-8")
+                    + b"".join(raw + b"\n" for _number, raw in kept))
     os.replace(tmp, p)
 
 
@@ -291,8 +400,14 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
     from src.custody.log import CustodyAction
 
     with _DRAIN_LOCK:
-        with _LOCK:
-            todo = read_pending()[:limit]
+        try:
+            first, first_unreadable = _read_locked()
+        except OSError as exc:  # not an empty queue: nothing is recorded and the file is left as it is
+            log_failure(_LOG, "custody: could not read the pending file; nothing was drained", exc, level=logging.WARNING)
+            return {"recorded": 0, "already_present": 0, "article_gone": 0, "still_pending": 0,
+                    "queue_read_error": type(exc).__name__}
+        _report_unreadable(first_unreadable)
+        todo = first[:limit]
         if not todo:
             return {"recorded": 0, "already_present": 0, "article_gone": 0, "still_pending": 0}
         settled: list[dict[str, Any]] = []
@@ -371,16 +486,26 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
             with contextlib.suppress(Exception):
                 log.close()
         done = {_key(it) for it in settled}
+        queue_error: str | None = None
         with _LOCK:
-            remaining = _not_settled(read_pending(), done)
             try:
-                _rewrite(remaining)
-            except OSError as exc:
-                log_failure(_LOG, "custody: could not rewrite the pending file", exc, level=logging.WARNING)
+                records, unreadable = _read_all()
+            except OSError as exc:  # not an empty queue: the file is left exactly as it is
+                log_failure(_LOG, "custody: could not re-read the pending file; it is left as it is", exc, level=logging.WARNING)
+                queue_error = type(exc).__name__
+                remaining = _not_settled(todo, done)  # what this drain read; the file may hold more
+            else:
+                remaining = _not_settled(records, done)
+                try:
+                    _rewrite(remaining, unreadable)
+                except OSError as exc:
+                    log_failure(_LOG, "custody: could not rewrite the pending file", exc, level=logging.WARNING)
     out: dict[str, Any] = {"recorded": recorded, "already_present": already, "article_gone": gone,
                            "still_pending": len(remaining)}
     if read_error:
         out["read_error"] = read_error
+    if queue_error:
+        out["queue_read_error"] = queue_error  # still_pending is then a lower bound
     return out
 
 
