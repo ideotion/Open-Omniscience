@@ -379,6 +379,21 @@ def _law_client(monkeypatch, tmp_path):
     return TestClient(app)
 
 
+@pytest.fixture()
+def _law_api_rows_removed():
+    """The API tests below add documents to the process-wide app engine, which every later test shares:
+    a backup made by a later test then carries them (test_backup_v2_api's self-merge reported them as new,
+    a fixture artefact of a store holding a lowercase jurisdiction, not what a real install does). Their
+    revisions and summaries go with them (ON DELETE CASCADE)."""
+    from src.database.session import SessionLocal
+
+    urls = ("https://law.example/api-fr", "https://law.example/api-es")
+    yield
+    with SessionLocal() as s:
+        s.query(LawDocument).filter(LawDocument.url.in_(urls)).delete(synchronize_session=False)
+        s.commit()
+
+
 class _ApiStubFetcher:
     def __init__(self, body):
         self.body = body
@@ -393,7 +408,7 @@ class _ApiStubFetcher:
         )
 
 
-def test_summarize_endpoint_stores_and_law_changes_then_shows_it(monkeypatch, tmp_path):
+def test_summarize_endpoint_stores_and_law_changes_then_shows_it(monkeypatch, tmp_path, _law_api_rows_removed):
     c = _law_client(monkeypatch, tmp_path)
     body_v1 = "word " * 60
     monkeypatch.setattr("src.safety.fetcher.make_fetcher", lambda: _ApiStubFetcher(body_v1))
@@ -453,7 +468,7 @@ def test_summarize_endpoint_404s_on_an_unknown_revision(monkeypatch, tmp_path):
         assert r.status_code == 404
 
 
-def test_summarize_endpoint_422s_on_a_baseline_with_no_diff(monkeypatch, tmp_path):
+def test_summarize_endpoint_422s_on_a_baseline_with_no_diff(monkeypatch, tmp_path, _law_api_rows_removed):
     c = _law_client(monkeypatch, tmp_path)
     monkeypatch.setattr("src.safety.fetcher.make_fetcher", lambda: _ApiStubFetcher("word " * 60))
     with c:

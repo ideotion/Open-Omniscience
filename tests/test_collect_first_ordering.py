@@ -31,6 +31,13 @@ def order(monkeypatch):
 
     monkeypatch.setattr("src.database.session.session_scope", _fake_scope)
     monkeypatch.setattr("src.safety.fetcher.make_fetcher", lambda: object())
+    # The lane's ladder is process-global and its order moves with every earlier invocation; the test
+    # doubles below stub only the steps it asserts on, so a step it does not stub (country_data, on a
+    # session that is an `object()`) fails, and when the ladder puts it ahead of the calendar step the
+    # lane stops before "calendars" is reached.
+    monkeypatch.setattr(
+        runner, "_LANE_LADDER", runner.KindLadder(rates=runner._LANE_RATES, floors=runner._LANE_FLOORS)
+    )
 
     def _scrape(session, fetcher, settings, **kw):
         # **kw so this double tracks run_scrape_once's real signature as it grows
