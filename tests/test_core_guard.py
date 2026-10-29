@@ -614,12 +614,15 @@ def test_a_pattern_reader_that_raises_does_not_break_the_status(kernel, monkeypa
 
 def test_the_places_of_a_real_machine_are_the_labelled_ones_and_only_those_that_exist(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
+    (tmp_path / "core.4242").write_bytes(b"1234567")  # a machine with no dump lists none, and the shape check below would see nothing
     got = G.list_core_dumps()
     labels = {"working directory", "crash-report directory", "systemd-coredump store", "cores directory",
               "core-pattern directory", "crash-dump directory"}
     assert {p["where"] for p in got["places"]} <= labels
     assert set(got) == {"handler", "places", "dumps"}
+    assert [d["name"] for d in got["dumps"] if d["where"] == "working directory"] == ["core.4242"]
     assert all(set(d) == {"where", "name", "bytes", "modified"} for d in got["dumps"])
+    assert [d["bytes"] for d in got["dumps"] if d["name"] == "core.4242"] == [7]
 
 
 # --------------------------------------------------------------------------- #

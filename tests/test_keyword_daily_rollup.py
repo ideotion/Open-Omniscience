@@ -29,7 +29,7 @@ from sqlalchemy.orm import sessionmaker
 from src.analytics import columnar
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article
-from src.database.models import Article, Base, Source
+from src.database.models import Article, Base, Keyword, Source
 
 pytestmark = pytest.mark.skipif(
     not columnar.duckdb_available(), reason="duckdb not installed (optional [columnar] extra)"
@@ -170,12 +170,18 @@ def test_cold_or_missing_rollup_returns_empty(session):
 def test_kind_filter_reproduces_apply_kind(session):
     # The served rows honour the kind filter the same way queries._apply_kind does:
     # 'term' excludes entities, 'entity' keeps only entities.
+    # The fixture's keywords are all plain terms, so mark one as an entity first: otherwise the 'entity' answer is empty and
+    # "keeps only entities" is asserted over nothing (a filter returning nothing for 'entity' would pass).
+    marked = session.query(Keyword).filter(Keyword.normalized_term == "senate").one()
+    marked.is_entity, marked.entity_type = True, "entity"
+    session.commit()
     con = _con()
     columnar.build_keyword_daily(session=session, con=con)
     terms = columnar.windowed_top_terms_raw(con, kind="term", limit=100)
     assert terms and all(r["kind"] == "term" for r in terms)
     entities = columnar.windowed_top_terms_raw(con, kind="entity", limit=100)
-    assert all(r["kind"] != "term" for r in entities)
+    assert [r["normalized"] for r in entities] == ["senate"] and all(r["kind"] != "term" for r in entities)
+    assert "senate" not in {r["normalized"] for r in terms}, "the entity is not also served as a term"
 
 
 def test_parity_probe_reports_exact_on_the_real_corpus(session):

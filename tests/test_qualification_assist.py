@@ -90,7 +90,9 @@ def test_classify_happy_path():
 
 
 def test_classify_propagates_client_errors_for_the_caller_to_handle():
-    with pytest.raises(Exception):  # noqa: B017 - LLMUnavailable, imported lazily above
+    from src.llm.ollama import LLMUnavailable
+
+    with pytest.raises(LLMUnavailable, match="simulated outage"):
         QA.classify_article_for_qualification(_RaisingClient(), "T", "c", model="stub:test")
 
 

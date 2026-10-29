@@ -118,7 +118,7 @@ def test_the_window_closes_however_the_route_ends(monkeypatch, route):
         raise RuntimeError("the engine failed")
 
     monkeypatch.setattr(encrypt_tool, "encrypt_all", broken)
-    with pytest.raises(Exception):  # noqa: B017 - the route converts it; the class is not the point here
+    with pytest.raises(RuntimeError, match="the engine failed"):  # the route converts it to a RuntimeError that still carries the cause
         unlock_mod.encrypt_db(_body())
     assert runner.owns_the_machine() is False
 

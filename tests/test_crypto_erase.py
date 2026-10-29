@@ -24,6 +24,7 @@ import sys
 import pytest
 
 from src.database.connect import (
+    WrongPassphraseError,
     connect,
     get_passphrase,
     have_driver,
@@ -61,7 +62,7 @@ def test_salt_page_overwrite_makes_encrypted_db_unopenable(tmp_path):
     assert head_after != head_before, "the salt page must be overwritten"
 
     # Salt gone -> the PBKDF2 key can never be re-derived: the correct passphrase fails.
-    with pytest.raises(Exception):  # noqa: B017 - WrongPassphraseError / sqlcipher DatabaseError
+    with pytest.raises(WrongPassphraseError, match="does not open"):
         bad = connect(db, key=_PW)
         bad.execute("SELECT x FROM t").fetchone()
 

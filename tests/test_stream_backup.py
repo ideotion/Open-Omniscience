@@ -42,6 +42,7 @@ from src.backup.stream_backup import (
     write_stream_backup,
 )
 from src.backup.volumes import MANIFEST_NAME, VolumeError, VolumeStopped, load_manifest
+from src.safety.crypto import EncryptionError
 
 VOL = 65536  # small volumes so a tiny corpus spans many
 
@@ -178,7 +179,7 @@ def test_new_passphrase_disables_reuse_and_the_set_stays_single_key(tmp_path):
     # the finished set decrypts wholly with the NEW passphrase (no mixed volumes)
     deep = verify_stream_backup(dest, passphrase="new-pw")
     assert deep["ok"] is True and deep["decrypted"] is True
-    with pytest.raises(Exception):  # noqa: B017 - old passphrase must fail loudly
+    with pytest.raises(EncryptionError, match="wrong passphrase"):  # the old passphrase must fail loudly, and as that
         read_stream_backup(dest, "old-pw", staging_root=tmp_path / "st")
 
 
@@ -578,7 +579,7 @@ def test_wrong_backup_passphrase_fails_loudly(tmp_path):
     _make_corpus(corpus)
     dest = tmp_path / "dest"
     _backup(tmp_path, dest, corpus)
-    with pytest.raises(Exception):  # noqa: B017 - EncryptionError, loud
+    with pytest.raises(EncryptionError, match="wrong passphrase"):
         read_stream_backup(dest, "WRONG", staging_root=tmp_path / "st")
     deep = verify_stream_backup(dest, passphrase="WRONG")
     assert deep["ok"] is False

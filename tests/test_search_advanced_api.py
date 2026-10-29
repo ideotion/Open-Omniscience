@@ -235,8 +235,10 @@ def test_non_latin1_query_exports(reference) -> None:
 
 def test_saved_search_reruns_identically_and_never_fires(small) -> None:
     filters = {"langs": ["en"], "lang_basis": "asserted", "include_quarantined": True}
+    # the window reaches the fixture's articles (made in August 2026; 3650 days is the API's maximum, so this holds until 2036), so a watch
+    # that were evaluated would match them
     r = small.post("/api/watches", json={"name": "english energy", "query": "energy",
-                                         "threshold": 0, "filters": filters})
+                                         "threshold": 0, "window_days": 3650, "filters": filters})
     assert r.status_code == 200, r.text
     assert r.json()["saved_search"] is True
     # "after a restart": nothing but the stored row -- read it back fresh.
@@ -248,8 +250,12 @@ def test_saved_search_reruns_identically_and_never_fires(small) -> None:
     again = small.get("/api/articles", params=params).json()
     assert [x["id"] for x in first["results"]] == [x["id"] for x in again["results"]]
     assert sorted(x["title"] for x in first["results"]) == ["energy four", "energy two"]
+    # the positive control: the same query, window and filters with a real threshold DOES fire, so "did not fire" is not "cannot fire here"
+    live = small.post("/api/watches", json={"name": "english energy live", "query": "energy",
+                                            "threshold": 1, "window_days": 3650, "filters": filters})
+    assert live.status_code == 200, live.text
     fired = small.post("/api/watches/evaluate").json()
-    assert all(f["name"] != "english energy" for f in fired["fired"])
+    assert [f["name"] for f in fired["fired"]] == ["english energy live"]
 
 
 def test_saved_search_rejects_a_filter_no_search_could_mean(small) -> None:

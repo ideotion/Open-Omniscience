@@ -209,7 +209,13 @@ def corpus(api):
             return api
         fr = Source(name="ParamFr", domain="param-fr.example", country="fr", source_type="news", enabled=True)
         de = Source(name="ParamDe", domain="param-de.example", country="de", source_type="news", enabled=True)
-        db.add_all([fr, de])
+        # `/api/stats/sources` lists only the registered statistics sources, so the news sources above are invisible to it. The app's engine
+        # outlives this test and the statistics tests read EVERY statistics source in it, so these look the way a registered one does:
+        # tagged `official-statistics` and not enabled for collection.
+        db.add_all([fr, de, Source(name="StatsFr", domain="stats-param-fr.example", country="fr", source_type="statistics", enabled=False,
+                                   tags="official-statistics"),
+                    Source(name="StatsDe", domain="stats-param-de.example", country="de", source_type="statistics", enabled=False,
+                           tags="official-statistics")])
         db.flush()
         texts = {
             "fr": "The wildfire response and the wildfire funding dominated the wildfire debate across the region this week.",
@@ -292,15 +298,16 @@ def test_the_sources_listing_filters_by_every_spelling(corpus):
 
 
 def test_the_registered_statistics_sources_filter_by_every_spelling(corpus):
-    def domains(value):
+    def rows(value):
         body = _remember(_get(corpus, "/api/stats/sources", country=value))
-        return {r["domain"] for r in body["sources"] if r["domain"].startswith("param-")}
+        return [r for r in body["sources"] if r["domain"].startswith("stats-param-")]
 
-    want = domains("fr")
+    want = {r["domain"] for r in rows("fr")}
+    assert want == {"stats-param-fr.example"}, want  # the listing holds the statistics sources only: the news sources are not in it
     for spelling in _SPELLINGS:
-        assert domains(spelling) == want, spelling
-    assert domains(_GARBAGE) == set()
-    assert all(r["country"] == "FRA" for r in _get(corpus, "/api/stats/sources", country="FRA")["sources"] if r["domain"].startswith("param-"))
+        assert {r["domain"] for r in rows(spelling)} == want, spelling
+    assert rows(_GARBAGE) == []
+    assert [r["country"] for r in rows("FRA")] == ["FRA"]
 
 
 def test_the_law_filter_takes_every_spelling_of_both_the_stored_and_the_displayed_code(corpus):
