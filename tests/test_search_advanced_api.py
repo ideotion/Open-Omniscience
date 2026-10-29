@@ -235,7 +235,8 @@ def test_non_latin1_query_exports(reference) -> None:
 
 def test_saved_search_reruns_identically_and_never_fires(small) -> None:
     filters = {"langs": ["en"], "lang_basis": "asserted", "include_quarantined": True}
-    # the window reaches the fixture's articles (made in September 2026), so a watch that were evaluated would match them
+    # the window reaches the fixture's articles (made in August 2026; 3650 days is the API's maximum, so this holds until 2036), so a watch
+    # that were evaluated would match them
     r = small.post("/api/watches", json={"name": "english energy", "query": "energy",
                                          "threshold": 0, "window_days": 3650, "filters": filters})
     assert r.status_code == 200, r.text

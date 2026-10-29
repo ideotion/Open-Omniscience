@@ -209,9 +209,13 @@ def corpus(api):
             return api
         fr = Source(name="ParamFr", domain="param-fr.example", country="fr", source_type="news", enabled=True)
         de = Source(name="ParamDe", domain="param-de.example", country="de", source_type="news", enabled=True)
-        # `/api/stats/sources` lists only the registered statistics sources, so the news sources above are invisible to it
-        db.add_all([fr, de, Source(name="StatsFr", domain="stats-param-fr.example", country="fr", source_type="statistics", enabled=True),
-                    Source(name="StatsDe", domain="stats-param-de.example", country="de", source_type="statistics", enabled=True)])
+        # `/api/stats/sources` lists only the registered statistics sources, so the news sources above are invisible to it. The app's engine
+        # outlives this test and the statistics tests read EVERY statistics source in it, so these look the way a registered one does:
+        # tagged `official-statistics` and not enabled for collection.
+        db.add_all([fr, de, Source(name="StatsFr", domain="stats-param-fr.example", country="fr", source_type="statistics", enabled=False,
+                                   tags="official-statistics"),
+                    Source(name="StatsDe", domain="stats-param-de.example", country="de", source_type="statistics", enabled=False,
+                           tags="official-statistics")])
         db.flush()
         texts = {
             "fr": "The wildfire response and the wildfire funding dominated the wildfire debate across the region this week.",
