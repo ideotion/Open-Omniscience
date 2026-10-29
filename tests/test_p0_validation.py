@@ -982,7 +982,19 @@ _GUARDED_MODULES = {
             )
         },
     ),
-    "backup/import_queue": ({"start", "_drive", "_run_corpus", "_run_legacy"}, 4, False, {}),
+    "backup/import_queue": (
+        {"start", "_drive", "_run_corpus", "_run_legacy"},
+        4,
+        False,
+        {
+            "start": (
+                "its `except Exception` around `Thread.start()` puts the earlier run back, drops the passphrase it kept for the run, "
+                "and raises the thread-start failure again as it was (a RuntimeError out of the interpreter's thread creation, "
+                "which carries none of the run's text); its only caller, import_queue_start, is read by this guard and wraps the "
+                "call in a `scrub_and_reraise` that names the passphrase"
+            )
+        },
+    ),
     "api/backup_v2": (
         {"_stage_upload", "restore_legacy_path", "volume_backup_start", "import_queue_start"},
         14,

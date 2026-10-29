@@ -1095,6 +1095,21 @@ class FolderBackupManager:
         with self._lock:
             self._progress = p
 
+    def _start_worker(self, thread: threading.Thread) -> None:
+        """Start the worker a start has just set the job to ``running`` for. Call under ``self._lock``.
+
+        ``Thread.start()`` raises ``RuntimeError("can't start new thread")`` when the process or the machine is out of threads, and then no
+        worker runs. Left alone the job stays ``running``: ``/api/jobs`` lists it with a Pause and a Cancel that act on nothing. It says
+        ``error`` with the exception's CLASS (the dialog and ``resume`` both take that state, from the destination and mode the start
+        recorded) and the error goes on. Only an ``Exception`` is taken (R393): an interrupt that lands while ``start()`` waits for the new
+        thread leaves the OS thread created and about to run the worker."""
+        try:
+            thread.start()
+        except Exception as exc:
+            self._state = "error"
+            self._error = f"{type(exc).__name__}: could not start the worker thread"
+            raise
+
     def start(
         self,
         dest: str,
@@ -1169,7 +1184,7 @@ class FolderBackupManager:
             self._thread = threading.Thread(
                 target=target, args=(destp, items, cats), daemon=True, name="folder-backup"
             )
-            self._thread.start()
+            self._start_worker(self._thread)
             return self.status()
 
     def _run_backup(self, destp: Path, items: list[BackupItem], _cats: list[str]) -> None:

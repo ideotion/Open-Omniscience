@@ -320,7 +320,8 @@ def test_every_sub_manager_is_running_before_its_worker_is_spawned():
         src = (root / rel).read_text(encoding="utf-8")
         body = src.split(f"def {fn}(", 1)[1].split("\n    def ", 1)[0]
         run_at = body.index('self._state')
-        spawn_at = body.index("self._thread.start()")
+        # a start that hands the thread to its ``_start_worker`` (which undoes the state if the thread cannot be made) spawns there
+        spawn_at = min(i for i in (body.find("self._thread.start()"), body.find("self._start_worker(")) if i >= 0)
         assert run_at < spawn_at, (
             f"{rel}:{fn} spawns its worker before publishing its state — the import "
             "queue would race past it"
