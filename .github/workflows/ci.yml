@@ -496,6 +496,9 @@ jobs:
       # written; each skipped in every other job (no other job installs [columnar]) and so had never run in CI. A new
       # file gated on duckdb belongs HERE, or in a job that installs it and runs the whole suite:
       # tests/test_skipped_tests_have_a_ci_job_that_runs_them.py fails for one that no blocking job names.
+      # tests/test_external_freshness.py is named for its two DuckDB-dependent tests: the version coupling test, and test_nothing_is_stale,
+      # whose registry check compares the installed duckdb with the floor of both track-duckdb-version entries. Without duckdb that
+      # branch reports "info", so both pass vacuously. The other thirteen are registry, pin and bundled-data checks that run in the test job too.
       - name: Columnar rollup + D1 loader (in-memory + fixture verify)
         run: |
           python -m pytest -q \
@@ -513,7 +516,7 @@ jobs:
             tests/test_rollup_shard_checkpoint.py tests/test_rollup_sharded_build.py \
             tests/test_rollup_store_kind.py tests/test_serve_change_gate.py \
             tests/test_serve_out_of_memory_goes_live.py tests/test_top_terms_pre_aggregate.py \
-            tests/test_wave7_poll_cache.py
+            tests/test_wave7_poll_cache.py tests/test_external_freshness.py
 
       - name: D1 persisted-encrypted round trip (CI-only httpfs trust path)
         env:
