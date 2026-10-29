@@ -256,3 +256,133 @@ def test_recording_a_disconnection_can_reach_data_dir_without_hanging(drive, mon
     t.join(5)
     assert done, "the watchdog deadlocked on its own re-entry"
     assert m.phase == "reconnect" and _events().count("disconnected") == 1
+
+
+class _ThreadsThatCannotStart:
+    """A stand-in for the ``threading`` the module sees: the first ``name`` thread it builds fails to start."""
+
+    def __init__(self, name: str) -> None:
+        self._name, self.failed = name, 0
+
+    def __getattr__(self, attr):
+        import threading
+
+        return getattr(threading, attr)
+
+    def Thread(self, *args, **kwargs):  # noqa: N802 - mirrors threading.Thread
+        import threading
+
+        t = threading.Thread(*args, **kwargs)
+        if kwargs.get("name") == self._name and not self.failed:
+            self.failed += 1
+
+            def refuse():
+                raise RuntimeError("can't start new thread")
+
+            t.start = refuse
+        return t
+
+
+def test_a_pause_thread_that_cannot_start_never_raises_into_the_caller(drive, monkeypatch) -> None:
+    """The pause is a courtesy; the countdown is the safety. A failed start used to raise out of
+    _trigger with the phase already moved: into the disk-error handler that poked, instead of its error."""
+    clock, calls = _Clock(), []
+    m = _monitor(clock, calls)
+    shim = _ThreadsThatCannotStart("oo-data-volume-pause")
+    monkeypatch.setattr(dv, "threading", shim)
+    (drive / dv.MARKER_NAME).unlink()
+    m.poke("database error: disk i/o error")
+    assert shim.failed == 1, "the start did not fail, so this proved nothing"
+    assert m.phase == "reconnect" and _events() == ["disconnected"]
+    clock.now += dv.RECONNECT_SECONDS + 1
+    m.tick()
+    clock.now += dv.SHUTDOWN_SECONDS + 1
+    m.tick()
+    assert calls == ["exit"], "the countdown still ends the session"
+
+
+def test_a_restart_that_cannot_start_is_retried_not_stranded(drive, monkeypatch) -> None:
+    """A returned drive moved the phase to 'restarting' before the restart thread started: a failed
+    start left the page saying 'restarting' for ever, with nothing to restart."""
+    import threading
+
+    clock, restarted, done = _Clock(), [], threading.Event()
+    m = dv.VolumeMonitor(pause_fn=lambda: None, clock=clock)
+    monkeypatch.setattr(dv, "_restart_process", lambda: (restarted.append("restart"), done.set()))
+    monkeypatch.setattr(dv.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(dv, "_reap", lambda: None)
+    marker = drive / dv.MARKER_NAME
+    kept = drive / "marker.kept"
+    marker.rename(kept)
+    m.tick()
+    m.tick()
+    assert m.phase == "reconnect"
+    kept.rename(marker)
+    shim = _ThreadsThatCannotStart("oo-data-volume-restart")
+    monkeypatch.setattr(dv, "threading", shim)
+    m.tick()
+    assert shim.failed == 1 and m.phase == "reconnect", "a failed start must leave the countdown where it was"
+    assert not restarted
+    m.tick()  # the next tick tries again; the shim only fails the first start
+    assert done.wait(5), "the retried restart never ran"
+    assert restarted == ["restart"] and m.phase == "restarting"
+    assert _events().count("reconnected") == 1, "a retry is not a second reconnection"
+
+
+def test_a_failed_restart_does_not_hide_the_next_reconnection(drive, monkeypatch) -> None:
+    """The once-only 'reconnected' flag belongs to ONE disconnection: after a restart that failed to start, the id is
+    forgotten (a deliberate wipe), then restored, and a later disconnection that comes back is a reconnection of its own."""
+    import threading
+
+    clock = _Clock()
+    m = dv.VolumeMonitor(pause_fn=lambda: None, clock=clock)
+    monkeypatch.setattr(dv, "_restart_process", lambda: None)
+    monkeypatch.setattr(dv.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(dv, "_reap", lambda: None)
+    marker = drive / dv.MARKER_NAME
+    kept = drive / "marker.kept"
+    marker.rename(kept)
+    m.tick()
+    m.tick()
+    kept.rename(marker)
+    monkeypatch.setattr(dv, "threading", _ThreadsThatCannotStart("oo-data-volume-restart"))
+    m.tick()  # the restart cannot start: back to 'reconnect', 'reconnected' written once
+    assert m.phase == "reconnect" and _events().count("reconnected") == 1
+    monkeypatch.setattr(dv, "threading", threading)
+    vid = dv.os.environ[dv.ENV_ID]
+    monkeypatch.delenv(dv.ENV_ID)
+    m.tick()  # the id was forgotten: back to 'ok'
+    assert m.phase == "ok"
+    monkeypatch.setenv(dv.ENV_ID, vid)
+    marker.rename(kept)
+    m.poke("database error: disk i/o error")
+    assert m.phase == "reconnect"
+    kept.rename(marker)
+    m.tick()
+    assert _events().count("reconnected") == 2, "the second disconnection's reconnection went unrecorded"
+
+
+def test_a_start_that_keeps_failing_warns_once(drive, monkeypatch, caplog) -> None:
+    """The retry runs every tick; only the first failure of a streak is a warning (the error ring is finite)."""
+    import logging
+
+    clock = _Clock()
+    m = dv.VolumeMonitor(pause_fn=lambda: None, clock=clock)
+    marker = drive / dv.MARKER_NAME
+    kept = drive / "marker.kept"
+    marker.rename(kept)
+    m.tick()
+    m.tick()
+    kept.rename(marker)
+
+    class _AlwaysFails(_ThreadsThatCannotStart):
+        def Thread(self, *args, **kwargs):  # noqa: N802
+            self.failed = 0   # every start fails
+            return super().Thread(*args, **kwargs)
+
+    monkeypatch.setattr(dv, "threading", _AlwaysFails("oo-data-volume-restart"))
+    with caplog.at_level(logging.DEBUG, logger="safety.data_volume"):
+        for _ in range(4):
+            m.tick()
+    warns = [r for r in caplog.records if r.levelno == logging.WARNING and "could not start the restart" in r.getMessage()]
+    assert len(warns) == 1 and m.phase == "reconnect"
