@@ -355,9 +355,11 @@ jobs:
 
       # `-rs` puts every skip's file, line and reason in the pytest summary, so which tests this job did not run is read from its log
       # instead of re-run locally (the 2026-10-29 skip-reason audit had to do exactly that). `-r` REPLACES pytest's default `fE` rather than
-      # adding to it, so `-rs` alone would drop the FAILED and ERROR lines from a red run's summary: the flags are `-rfEs`, the default plus skips.
+      # adding to it, so `-rs` alone would drop the FAILED and ERROR lines from a red run's summary, and the summary is printed in the ORDER
+      # of the letters: the flags are `-rsfE`, skips first and the failures LAST, because the last lines of a log are the ones a reader of a
+      # red run gets and the skip block runs to hundreds of lines (`-rfEs` put the failures BEFORE it, out of that tail's reach).
       - name: Test (pytest)
-        run: python -m pytest -q -rfEs
+        run: python -m pytest -q -rsfE
 
       # WHAT WAS INSTALLED WHEN THE SUITE RAN, kept on a red run as well as a green one (`if: always()`), written to the log straight after the
       # suite (the tail of a red run's log) and to the step summary. The install output sits at the HEAD of a long log, which a reader that returns only the last lines never reaches, so
@@ -429,8 +431,10 @@ jobs:
       - name: Boot check
         run: python -c "from src.api.main import app; print(sum(1 for _ in app.routes), 'routes')"
 
+      # `-rsfE`, the same flags as the `test` job's (see there for why `s` comes first): every skip's file, line and reason in the log, so which tests this job did not run is read from it.
+      # This job installs core + dev only, so it skips the analysis-module tests on purpose; `-r` REPLACES pytest's default `fE`, so `-rs` alone would drop the FAILED and ERROR lines.
       - name: Test (pytest, analysis modules must skip)
-        run: python -m pytest -q
+        run: python -m pytest -q -rsfE
 
       # The same report as the `test` job's (see there): the versions this suite ran against, kept on red as well as green, at the log's tail.
       - name: Installed versions (kept on red as well as green)
