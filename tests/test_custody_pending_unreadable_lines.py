@@ -26,6 +26,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.custody import pending
+from src.custody.log import CustodyLog
 from src.database.models import Article, Base, Source
 
 _MARKER = "token-ZZTOP-must-not-be-logged"
@@ -99,6 +100,17 @@ def test_the_same_line_is_reported_once_however_often_the_queue_is_read(caplog):
     assert len(_warnings(caplog)) == 1
 
 
+def test_a_line_of_only_whitespace_is_blank_not_unreadable(caplog):
+    """A hand-edited file (CRLF endings, a stray space) is not reported as damaged."""
+    assert pending.note_failed(1, error="E")
+    with open(pending.pending_path(), "ab") as fh:
+        fh.write(b"   \n\r\n\t\n")
+    assert pending.note_failed(2, error="E")
+    with caplog.at_level(logging.DEBUG):
+        assert _ids() == [1, 2]
+    assert _warnings(caplog) == []
+
+
 def test_a_line_that_is_json_but_not_a_record_is_reported_too(caplog):
     assert pending.note_failed(1, error="E")
     with open(pending.pending_path(), "ab") as fh:
@@ -109,14 +121,72 @@ def test_a_line_that_is_json_but_not_a_record_is_reported_too(caplog):
     assert len(got) == 2 and "line 2" in got[0] and "line 3" in got[1], got
 
 
-def test_a_line_that_is_not_text_does_not_stop_the_queue_from_being_read(caplog):
+@pytest.mark.parametrize("line", [b'\xff{"article_id":9}\n', b'\xff\xfe{"article_id":9}\n'], ids=["invalid-utf8", "utf16-bom-lookalike"])
+def test_a_line_that_is_not_text_does_not_stop_the_queue_from_being_read(caplog, line):
+    """The first is bytes ``json.loads`` cannot decode at all (UnicodeDecodeError); ``FF FE`` it reads as a UTF-16 byte-order mark and
+    fails as a JSON error instead, which is why both are here: a tidy-up of ``except ValueError`` to ``except JSONDecodeError`` must
+    fail on the first."""
     assert pending.note_failed(1, error="E")
     with open(pending.pending_path(), "ab") as fh:
-        fh.write(b'\xff\xfe{"article_id":9}\n')
+        fh.write(line)
     assert pending.note_failed(2, error="E")
     with caplog.at_level(logging.DEBUG):
         assert _ids() == [1, 2]
     assert len(_warnings(caplog)) == 1 and "line 2" in _warnings(caplog)[0]
+
+
+def test_a_line_nested_too_deep_to_parse_is_one_unreadable_line_not_an_error(caplog):
+    assert pending.note_failed(1, error="E")
+    with open(pending.pending_path(), "ab") as fh:
+        fh.write(b"[" * 200000 + b"\n")
+    with caplog.at_level(logging.DEBUG):
+        assert _ids() == [1]
+    assert len(_warnings(caplog)) == 1 and "line 2" in _warnings(caplog)[0]
+
+
+@pytest.mark.parametrize("line", [b'{"article_id":"x"}', b'{"article_id":true}', b'{"article_id":1.5}', b'{"article_id":null}', b'{"id":1}'])
+def test_a_line_whose_article_id_is_not_an_integer_is_not_a_record(line):
+    """``{"article_id":true}`` used to be drained as article 1, and a text id stopped every drain at its ``int()``."""
+    assert pending.note_failed(1, error="E")
+    with open(pending.pending_path(), "ab") as fh:
+        fh.write(line + b"\n")
+    assert _ids() == [1]
+
+
+def test_the_log_lines_the_queue_writes_carry_numbers_and_the_file_name_only(caplog):
+    """The log call is handed the text of nothing: every argument is a number or a digit list or the side file's name."""
+    _torn_after(1, 2)
+    with caplog.at_level(logging.DEBUG, logger=pending._LOG.name):
+        pending.read_pending()
+    assert caplog.records
+    for r in caplog.records:
+        for arg in (r.args if isinstance(r.args, tuple) else ()):
+            assert isinstance(arg, int) or arg == pending.UNREADABLE_FILE or str(arg).replace(", ", "").isdigit(), (r.msg, arg)
+
+
+def test_a_read_in_progress_waits_for_an_append_in_progress(monkeypatch, caplog):
+    """An append of many records is several writes; a read between two of them would see a half line and report an unreadable
+    one that is not there. The read takes the file lock, so it waits for the append to finish."""
+    import threading
+
+    real = pending._append_bytes
+    seen: dict = {}
+    reader = threading.Thread(target=lambda: seen.setdefault("ids", _ids()))
+
+    def two_writes(p, data):
+        half = len(data) // 2
+        real(p, data[:half])
+        reader.start()
+        reader.join(0.3)
+        seen["reader_waited"] = reader.is_alive()  # it must still be waiting for the lock this append holds
+        real(p, data[half:])
+
+    monkeypatch.setattr(pending, "_append_bytes", two_writes)
+    with caplog.at_level(logging.DEBUG):
+        assert pending.note_failed(1, error="E")
+        reader.join(5)  # the append has returned and released the lock, so the read can run now
+    assert seen["reader_waited"] is True and seen["ids"] == [1]
+    assert _warnings(caplog) == []
 
 
 # -- drain: what happens to the line when the queue is rewritten ------------------------------------------------------
@@ -231,3 +301,117 @@ def test_lines_set_aside_by_different_drains_accumulate_in_the_side_file(custody
     assert pending.note_failed(b.id, error="E")
     assert pending.drain()["recorded"] == 1
     assert _side().read_bytes() == _TORN.encode() + b"\n" + b'{"article_id":9,"item_h' + b"\n"
+
+
+def test_a_clean_drain_sets_nothing_aside_and_logs_nothing(custody, db, caplog):
+    a = _article(db, 1)
+    assert pending.note_failed(a.id, error="E")
+    with caplog.at_level(logging.DEBUG):
+        assert pending.drain()["recorded"] == 1
+    assert not _side().exists() and _warnings(caplog) == []
+
+
+def test_a_line_cut_short_while_a_drain_runs_is_set_aside_with_the_others(custody, db):
+    """The final re-read exists to honour what changed while the drain ran: an ingest thread's write cut short after the drain's
+    first read must end up in the side file, not be dropped with the settled entries."""
+    a = _article(db, 1)
+    assert pending.note_failed(a.id, error="E")
+
+    def factory():
+        with open(pending.pending_path(), "ab") as fh:
+            fh.write(b'{"article_id":77,"cut')
+        return CustodyLog()
+
+    assert pending.drain(log_factory=factory)["recorded"] == 1
+    assert _side().read_bytes() == b'{"article_id":77,"cut\n'
+
+
+def test_a_cut_short_copy_in_the_side_file_does_not_take_the_next_copy_onto_its_line(custody, db):
+    a = _article(db, 1)
+    _side().write_bytes(b'{"article_id":7,"c')  # an earlier copy that stopped part way (a full disk)
+    _torn_after(a.id)
+    assert pending.drain()["recorded"] == 1
+    assert _side().read_bytes().split(b"\n") == [b'{"article_id":7,"c', _TORN.encode(), b""]
+
+
+def test_a_drain_with_a_limit_keeps_the_entries_it_did_not_take(custody, db):
+    a, b = _article(db, 1), _article(db, 2)
+    _torn_after(a.id, b.id)
+    res = pending.drain(limit=1)
+    assert res["recorded"] == 1 and res["still_pending"] == 1, res
+    assert _ids() == [b.id]
+    assert _side().read_bytes() == _TORN.encode() + b"\n"
+
+
+def test_an_entry_queued_while_a_drain_runs_survives_the_rewrite(custody, db):
+    """The rewrite works from a re-read of the file, not from what the drain read at its start."""
+    a = _article(db, 1)
+    assert pending.note_failed(a.id, error="E")
+
+    def factory():
+        assert pending.note_failed(99, error="E")
+        return CustodyLog()
+
+    assert pending.drain(log_factory=factory)["recorded"] == 1
+    assert _ids() == [99]
+
+
+def test_a_file_that_cannot_be_read_at_the_final_re_read_is_left_as_it_is(custody, db, monkeypatch, caplog):
+    """A transient read error used to read as an empty queue, and the rewrite then deleted every record still owed and every
+    unreadable line, with no log line and a clean-looking result."""
+    a, b = _article(db, 1), _article(db, 2)
+    _torn_after(a.id, b.id)
+    before = pending.pending_path().read_bytes()
+    real, calls = pending._read_all, []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) == 2:  # the first is the drain's own read, the second its re-read before the rewrite
+            raise OSError(5, "Input/output error")
+        return real()
+
+    monkeypatch.setattr(pending, "_read_all", flaky)
+    with caplog.at_level(logging.DEBUG):
+        res = pending.drain(limit=1)
+    monkeypatch.setattr(pending, "_read_all", real)
+    assert res["recorded"] == 1 and res["queue_read_error"] == "OSError", res
+    assert pending.pending_path().read_bytes() == before, "the queue file is exactly as it was"
+    assert not _side().exists()
+    assert any("re-read the pending file" in m for m in _warnings(caplog))
+
+
+def test_a_file_that_cannot_be_read_reads_as_no_records_and_says_so(monkeypatch, caplog):
+    assert pending.note_failed(1, error="E")
+
+    def boom():
+        raise OSError(13, "Permission denied")
+
+    monkeypatch.setattr(pending, "_read_all", boom)
+    with caplog.at_level(logging.DEBUG):
+        assert pending.read_pending() == []
+    assert any("could not read the pending file" in m for m in _warnings(caplog))
+
+
+def test_a_queue_path_that_cannot_be_read_is_not_an_empty_queue(caplog):
+    """Only a file that is not there is an empty queue: any other read error reaches the callers as an error (a rewrite from an
+    "empty" read deletes every record still owed). A directory at the path is a read error that needs no patching."""
+    pending.pending_path().mkdir()
+    with pytest.raises(OSError) as err:
+        pending._read_all()
+    assert not isinstance(err.value, FileNotFoundError)
+    with caplog.at_level(logging.DEBUG):
+        assert pending.read_pending() == []
+    assert any("could not read the pending file" in m for m in _warnings(caplog))
+
+
+def test_the_text_of_a_line_with_a_text_article_id_never_reaches_a_log_or_stops_the_drain(custody, db, caplog):
+    a = _article(db, 1)
+    assert pending.note_failed(a.id, error="E")
+    line = b'{"article_id":"https://c.example/' + _MARKER.encode() + b'"}\n'
+    with open(pending.pending_path(), "ab") as fh:
+        fh.write(line)
+    with caplog.at_level(logging.DEBUG):
+        res = pending.drain()
+    assert res["recorded"] == 1, res
+    assert _side().read_bytes() == line
+    assert _MARKER not in caplog.text
