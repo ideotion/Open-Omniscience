@@ -1845,6 +1845,9 @@ class BackgroundScheduler:
         # indistinguishable from an hour in which nothing happened, so the gaps could
         # not be explained by anything in the bundle. Counted by reason, so they can.
         self._maint_skips: dict[str, int] = {}
+        # The guards whose last read FAILED (``_read_maint_guard``): the first failure of each is a WARNING, repeats are DEBUG, and a clean
+        # read re-arms it.
+        self._maint_unreadable: set[str] = set()
         # S4.1 duty-cycle fix (field-feedback 2026-07-23): the whole-corpus
         # briefing recompute runs in its own background thread (see
         # _refresh_briefing_async); this lock makes overlapping refreshes
@@ -2272,12 +2275,24 @@ class BackgroundScheduler:
     def _read_maint_guard(self, guard: str, refusal: Callable[[], str | None]) -> str | None:
         """The reason ``guard`` refuses this maintenance window, ``None`` when it does not. A guard that cannot be read refuses
         (``guard_unreadable``) and is named in the log: the guards keep vacuum, cleanup and checkpoints off a damaged file and a full
-        drive, so an unreadable one is not read as clear."""
+        drive, so an unreadable one is not read as clear. The first failure of a guard is a WARNING (a guard that keeps failing stops
+        off-peak maintenance for good, and the window asks again every loop), the repeats are DEBUG, and a read that works re-arms it."""
         try:
-            return refusal()
+            reason = refusal()
         except Exception as exc:  # noqa: BLE001 - never raises into the loop; the window is skipped instead
-            log_failure(_LOG, f"off-peak maintenance skipped: the {guard} guard could not be read", exc, level=logging.DEBUG)
+            with self._state_lock:
+                first = guard not in self._maint_unreadable
+                self._maint_unreadable.add(guard)
+            log_failure(
+                _LOG,
+                f"off-peak maintenance skipped: the {guard} guard could not be read",
+                exc,
+                level=logging.WARNING if first else logging.DEBUG,
+            )
             return "guard_unreadable"
+        with self._state_lock:
+            self._maint_unreadable.discard(guard)
+        return reason
 
     def _run_off_peak_maintenance(
         self, *, should_stop: Callable[[], bool] | None = None, continuation: bool = False
