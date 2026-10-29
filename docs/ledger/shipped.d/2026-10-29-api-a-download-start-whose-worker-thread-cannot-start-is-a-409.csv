@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-10-29,api/downloads,"a wiki dump, OSM download or OSM resume whose worker thread cannot start answers 409 with a named detail, not a 500",shipped,PR pending,src/api/wiki.py;src/api/geo.py;tests/test_thread_start_refusal_routes.py,"The managers raise RuntimeError when the worker thread cannot start (R393/R398); the three routes mapped only ValueError, so the caller got an unhandled 500. Each now maps RuntimeError to 409 through http_detail. Three tests with a refusing manager fail (500) without the change."
