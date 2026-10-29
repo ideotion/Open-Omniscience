@@ -59,11 +59,16 @@ PENDING_FILE = "custody_pending.jsonl"
 #: Where a queue line that is not a usable record is kept, byte for byte, when the queue is rewritten (beside the queue,
 #: same sensitivity: a line can hold a url).
 UNREADABLE_FILE = "custody_pending.unreadable"
+#: The largest integer a SQLite column holds, and so the largest ``article_id`` the drain's column read can bind: a larger one
+#: raises ``OverflowError`` there and would stop every entry that has no hash from being written.
+_SQLITE_MAX_INT = 2**63 - 1
 #: ``(line number, byte length, crc32)`` of each unreadable line already reported by this process, so a queue read on every
 #: pass logs it once. Pruned to the lines the file holds now, so it never outgrows the file.
 _REPORTED_UNREADABLE: set[tuple[int, int, int]] = set()
 _REPORT_LOCK = threading.Lock()
-#: Guards every read-modify-write of the pending FILE, and only that.
+#: Guards the pending FILE: every append, every rewrite and every read of its bytes (so an append in progress is never read half
+#: written), and only that. NOT re-entrant: :func:`read_pending` and :func:`pending_count` take it, so they must never be called
+#: while holding it (that is a hang, not an error).
 _LOCK = threading.Lock()
 #: One drain at a time: two could otherwise both find an entry missing and both record it.
 _DRAIN_LOCK = threading.Lock()
@@ -143,16 +148,19 @@ def note_failed(article_id: int, *, item_hash: str | None = None, url: str | Non
                             source_id=source_id, error=error, found_by=found_by)])
 
 
-def _read_all() -> tuple[list[dict[str, Any]], list[tuple[int, bytes]]]:
-    """``(records, unreadable)``: the usable records of the queue and, as ``(line number, bytes)``, every non-blank line that is
-    not one (cut short, not JSON, not text, or JSON without an integer ``article_id``). The file is read as bytes so that a line
-    that is not text is one unreadable line, not an error that stops the whole queue from being read. A file that is not there is
-    an empty queue; a file that could not be read is an ``OSError``, never an empty queue (a rewrite from an "empty" read would
-    delete every record still owed)."""
+def _read_bytes() -> bytes:
+    """The queue file's bytes, empty when it is not there; the caller holds ``_LOCK``. A file that is there and cannot be read
+    raises ``OSError``, never reads as an empty queue (a rewrite from an "empty" read deletes every record still owed)."""
     try:
-        data = pending_path().read_bytes()
+        return pending_path().read_bytes()
     except FileNotFoundError:
-        return [], []
+        return b""
+
+
+def _parse(data: bytes) -> tuple[list[dict[str, Any]], list[tuple[int, bytes]]]:
+    """``(records, unreadable)``: the usable records of the queue and, as ``(line number, bytes)``, every non-blank line that is
+    not one (cut short, not JSON, not text, or JSON without a positive integer ``article_id`` a column can hold). The file is read
+    as bytes so that a line that is not text is one unreadable line, not an error that stops the whole queue from being read."""
     out: list[dict[str, Any]] = []
     unreadable: list[tuple[int, bytes]] = []
     for number, raw in enumerate(data.split(b"\n"), start=1):
@@ -163,11 +171,26 @@ def _read_all() -> tuple[list[dict[str, Any]], list[tuple[int, bytes]]]:
         except (ValueError, RecursionError):  # a JSON error, bytes that are not text, or nesting too deep to parse
             rec = None
         aid = rec.get("article_id") if isinstance(rec, dict) else None
-        if isinstance(aid, int) and not isinstance(aid, bool):  # the writers store int(article_id); a bool is an int to Python
+        # the writers store int(article_id) of a real row; a bool is an int to Python
+        if isinstance(aid, int) and not isinstance(aid, bool) and 0 < aid <= _SQLITE_MAX_INT:
             out.append(rec)
         else:
             unreadable.append((number, raw))
     return out, unreadable
+
+
+def _read_all() -> tuple[list[dict[str, Any]], list[tuple[int, bytes]]]:
+    """:func:`_read_bytes` then :func:`_parse`, for a caller that holds ``_LOCK`` (the drain's final re-read, which must see the
+    file it then replaces)."""
+    return _parse(_read_bytes())
+
+
+def _read_locked() -> tuple[list[dict[str, Any]], list[tuple[int, bytes]]]:
+    """As :func:`_read_all` for a caller that does not hold ``_LOCK``: the lock is held for the bytes only, so a parse of a large
+    queue never makes an ingest thread's :func:`note_failed` wait for it."""
+    with _LOCK:
+        data = _read_bytes()
+    return _parse(data)
 
 
 def _report_unreadable(unreadable: list[tuple[int, bytes]]) -> None:
@@ -189,8 +212,7 @@ def read_pending() -> list[dict[str, Any]]:
     reported as an unreadable line). A file that cannot be read is logged and reads as no records here; the rewrite does not
     take that reading for an empty queue (:func:`drain`)."""
     try:
-        with _LOCK:
-            records, unreadable = _read_all()
+        records, unreadable = _read_locked()
     except OSError as exc:
         log_failure(_LOG, "custody: could not read the pending file", exc, level=logging.WARNING)
         return []
@@ -378,7 +400,14 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
     from src.custody.log import CustodyAction
 
     with _DRAIN_LOCK:
-        todo = read_pending()[:limit]
+        try:
+            first, first_unreadable = _read_locked()
+        except OSError as exc:  # not an empty queue: nothing is recorded and the file is left as it is
+            log_failure(_LOG, "custody: could not read the pending file; nothing was drained", exc, level=logging.WARNING)
+            return {"recorded": 0, "already_present": 0, "article_gone": 0, "still_pending": 0,
+                    "queue_read_error": type(exc).__name__}
+        _report_unreadable(first_unreadable)
+        todo = first[:limit]
         if not todo:
             return {"recorded": 0, "already_present": 0, "article_gone": 0, "still_pending": 0}
         settled: list[dict[str, Any]] = []

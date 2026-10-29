@@ -144,13 +144,22 @@ def test_a_line_nested_too_deep_to_parse_is_one_unreadable_line_not_an_error(cap
     assert len(_warnings(caplog)) == 1 and "line 2" in _warnings(caplog)[0]
 
 
-@pytest.mark.parametrize("line", [b'{"article_id":"x"}', b'{"article_id":true}', b'{"article_id":1.5}', b'{"article_id":null}', b'{"id":1}'])
-def test_a_line_whose_article_id_is_not_an_integer_is_not_a_record(line):
-    """``{"article_id":true}`` used to be drained as article 1, and a text id stopped every drain at its ``int()``."""
+@pytest.mark.parametrize("line", [b'{"article_id":"x"}', b'{"article_id":"7"}', b'{"article_id":true}', b'{"article_id":1.5}',
+                                  b'{"article_id":null}', b'{"id":1}', b'{"article_id":0}', b'{"article_id":-3}',
+                                  b'{"article_id":9223372036854775808}'],
+                         ids=["text", "digit-text", "bool", "float", "null", "no-id", "zero", "negative", "over-sqlite-int"])
+def test_a_line_whose_article_id_is_not_a_row_id_is_not_a_record(line):
+    """``{"article_id":true}`` used to be drained as article 1, a text id stopped every drain at its ``int()``, and an id past
+    SQLite's integer made every drain's column read raise ``OverflowError`` (no entry without a hash was ever written)."""
     assert pending.note_failed(1, error="E")
     with open(pending.pending_path(), "ab") as fh:
         fh.write(line + b"\n")
     assert _ids() == [1]
+
+
+def _number_or_file_name(arg) -> bool:
+    """A log argument that cannot carry the text of a line: a number, a list of numbers ("2, 3") or the side file's name."""
+    return isinstance(arg, int) or arg == pending.UNREADABLE_FILE or str(arg).replace(", ", "").isdigit()
 
 
 def test_the_log_lines_the_queue_writes_carry_numbers_and_the_file_name_only(caplog):
@@ -161,7 +170,7 @@ def test_the_log_lines_the_queue_writes_carry_numbers_and_the_file_name_only(cap
     assert caplog.records
     for r in caplog.records:
         for arg in (r.args if isinstance(r.args, tuple) else ()):
-            assert isinstance(arg, int) or arg == pending.UNREADABLE_FILE or str(arg).replace(", ", "").isdigit(), (r.msg, arg)
+            assert _number_or_file_name(arg), (r.msg, arg)
 
 
 def test_a_read_in_progress_waits_for_an_append_in_progress(monkeypatch, caplog):
@@ -245,6 +254,7 @@ def test_drain_sets_the_unreadable_line_aside_whole_and_says_so(custody, db, cap
     assert _side().read_bytes() == _TORN.encode() + b"\n", "the line is kept byte for byte"
     said = [m for m in _warnings(caplog) if "set aside" in m]
     assert len(said) == 1 and _side().name in said[0] and "line(s) 2;" in said[0], said
+    assert len([m for m in _warnings(caplog) if "is not a usable record" in m]) == 1, "the drain's own read reports the line once"
     assert _MARKER not in caplog.text
 
 
@@ -362,7 +372,7 @@ def test_a_file_that_cannot_be_read_at_the_final_re_read_is_left_as_it_is(custod
     a, b = _article(db, 1), _article(db, 2)
     _torn_after(a.id, b.id)
     before = pending.pending_path().read_bytes()
-    real, calls = pending._read_all, []
+    real, calls = pending._read_bytes, []
 
     def flaky():
         calls.append(1)
@@ -370,10 +380,10 @@ def test_a_file_that_cannot_be_read_at_the_final_re_read_is_left_as_it_is(custod
             raise OSError(5, "Input/output error")
         return real()
 
-    monkeypatch.setattr(pending, "_read_all", flaky)
+    monkeypatch.setattr(pending, "_read_bytes", flaky)
     with caplog.at_level(logging.DEBUG):
         res = pending.drain(limit=1)
-    monkeypatch.setattr(pending, "_read_all", real)
+    monkeypatch.setattr(pending, "_read_bytes", real)
     assert res["recorded"] == 1 and res["queue_read_error"] == "OSError", res
     assert pending.pending_path().read_bytes() == before, "the queue file is exactly as it was"
     assert not _side().exists()
@@ -386,7 +396,7 @@ def test_a_file_that_cannot_be_read_reads_as_no_records_and_says_so(monkeypatch,
     def boom():
         raise OSError(13, "Permission denied")
 
-    monkeypatch.setattr(pending, "_read_all", boom)
+    monkeypatch.setattr(pending, "_read_bytes", boom)
     with caplog.at_level(logging.DEBUG):
         assert pending.read_pending() == []
     assert any("could not read the pending file" in m for m in _warnings(caplog))
@@ -402,6 +412,108 @@ def test_a_queue_path_that_cannot_be_read_is_not_an_empty_queue(caplog):
     with caplog.at_level(logging.DEBUG):
         assert pending.read_pending() == []
     assert any("could not read the pending file" in m for m in _warnings(caplog))
+
+
+def _read_bytes_refused(monkeypatch) -> None:
+    """Reading the queue file raises ``PermissionError`` (``chmod`` does not do it when the tests run as root)."""
+    real = Path.read_bytes
+
+    def read_bytes(self):
+        if self == pending.pending_path():
+            raise PermissionError(13, "Permission denied")
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+
+
+def test_a_read_parses_outside_the_file_lock(custody, db, monkeypatch):
+    """The lock is held for the bytes only: parsing a large queue under it made every ingest thread's ``note_failed`` wait (measured
+    211 ms against 47 ms with 60,000 records)."""
+    a = _article(db, 1)
+    assert pending.note_failed(a.id, error="E")
+    real, held = pending._parse, []
+
+    def parse(data):
+        held.append(pending._LOCK.locked())
+        return real(data)
+
+    monkeypatch.setattr(pending, "_parse", parse)
+    pending.read_pending()
+    pending.drain()
+    assert held[:2] == [False, False], held  # read_pending, and the drain's first read; the final re-read holds it by design
+
+
+def test_a_permission_error_is_not_an_empty_queue(monkeypatch):
+    assert pending.note_failed(1, error="E")
+    _read_bytes_refused(monkeypatch)
+    with pytest.raises(PermissionError):
+        pending._read_all()
+
+
+def test_a_drain_of_a_queue_that_cannot_be_read_says_so_and_leaves_the_file(custody, db, monkeypatch, caplog):
+    """The first read of a drain used to come back as an empty queue: a clean-looking result and nothing in it to say the owed
+    entries were not looked at."""
+    a = _article(db, 1)
+    _torn_after(a.id)
+    before = pending.pending_path().read_bytes()
+    with monkeypatch.context() as m, caplog.at_level(logging.DEBUG):
+        _read_bytes_refused(m)
+        res = pending.drain()
+    assert res == {"recorded": 0, "already_present": 0, "article_gone": 0, "still_pending": 0,
+                   "queue_read_error": "PermissionError"}, res
+    assert pending.pending_path().read_bytes() == before and not _side().exists()
+    assert any("nothing was drained" in m for m in _warnings(caplog))
+
+
+def test_still_pending_after_a_failed_re_read_counts_what_the_drain_read_and_did_not_settle(custody, db, monkeypatch):
+    """Two entries are read: one carries the hash it needs and is recorded; the other needs a column read, which fails, so it
+    stays. The final re-read then fails: what is left is the one entry, neither none nor both."""
+    assert pending.note_failed(1, item_hash="hash-1", error="E")
+    assert pending.note_failed(2, error="E")
+
+    def pool_timeout():
+        raise RuntimeError("pool timeout")
+
+    def refused():
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(pending, "_read_all", refused)
+    res = pending.drain(session_factory=pool_timeout)
+    assert res["recorded"] == 1 and res["still_pending"] == 1, res
+    assert res["queue_read_error"] == "OSError" and res["read_error"], res
+
+
+def _windows(line: bytes, size: int = 12) -> set[str]:
+    return {line[i:i + size].decode("latin-1") for i in range(len(line) - size + 1)}
+
+
+def test_no_log_record_of_a_read_or_a_drain_carries_any_part_of_an_unreadable_line(custody, db, monkeypatch, caplog):
+    """A marker past the first bytes of a line lets a log of the line's PREFIX pass, so every 12-byte window of each unreadable
+    line is looked for in every message, argument and traceback: a read, a drain that sets the lines aside, a drain whose
+    set-aside fails, and a drain whose final re-read fails."""
+    a = _article(db, 1)
+    lines = [_TORN.encode(), b'{"article_id":"https://c.example/' + _MARKER.encode() + b'"}']
+    assert pending.note_failed(a.id, error="E")
+    with open(pending.pending_path(), "ab") as fh:
+        fh.write(lines[0] + b"\n" + lines[1] + b"\n")
+    with caplog.at_level(logging.DEBUG):
+        pending.read_pending()
+        _side().mkdir()  # the set-aside fails, and both lines stay in the queue
+        pending.drain()
+        _side().rmdir()
+        assert pending.note_failed(a.id, error="E")
+        pending.drain()  # the set-aside succeeds
+        assert _side().read_bytes() == b"".join(line + b"\n" for line in lines)
+        assert pending.note_failed(a.id, error="E")
+        with monkeypatch.context() as m:
+            m.setattr(pending, "_read_all", lambda: (_ for _ in ()).throw(OSError(5, "Input/output error")))
+            pending.drain()
+    logged = "\n".join(f"{r.getMessage()} {r.args} {r.exc_info} {r.exc_text}" for r in caplog.records)
+    for line in lines:
+        leaked = sorted(w for w in _windows(line) if w in logged)
+        assert not leaked, leaked[:3]
+    said = [r for r in caplog.records if "set aside" in r.getMessage() and "could not" not in r.getMessage()]
+    assert len(said) == 1 and all(_number_or_file_name(x) for x in said[0].args), said[0].args
 
 
 def test_the_text_of_a_line_with_a_text_article_id_never_reaches_a_log_or_stops_the_drain(custody, db, caplog):
