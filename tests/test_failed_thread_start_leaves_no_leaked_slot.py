@@ -20,7 +20,8 @@ thread. This file pins the five that were left (the WAL lane's sweep, ``wal-lane
 What it pins, per manager: the start that fails raises what ``start()`` raised, the job is not running afterwards, what was saved says so
 (or, for the pull queue, what the history says), and the next start is accepted and runs. For the two downloaders also that the put-back
 touches only what the failed launch registered (a second start of the same key that took the entry over keeps its thread, its stop event
-and its status), and that a save that fails during the put-back does not hide the start's own error. Only an ``Exception`` is caught
+and its status; one that queued the entry keeps it queued; one that has claimed the entry but not yet registered keeps the stop event it
+then registers), and that a save that fails during the put-back does not hide the start's own error. Only an ``Exception`` is caught
 (R393): an interrupt that lands while ``start()`` waits for the new thread leaves the OS thread created and about to run the worker, so
 calling the job an error, or freeing its slot, would let a second start run a second worker beside it.
 
@@ -39,7 +40,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from src.database.models import Base
+from src.database.models import Article, Base
 from src.geo import osm_downloads
 from src.ingest import import_job
 from src.llm import pull_queue
@@ -55,12 +56,17 @@ _ERROR = "RuntimeError: could not start the worker thread"
 class _Threading:
     """What a module sees as ``threading``: the real one, except that the first ``fail_first`` threads it makes refuse to start."""
 
-    def __init__(self, fail_first: int = 1, error: BaseException | None = None, on_refuse=None) -> None:
+    def __init__(self, fail_first: int = 1, error: BaseException | None = None, on_refuse=None, on_construct=None) -> None:
         self.refusals_left = fail_first
         self.error = error
         outer = self
 
         class Thread(threading.Thread):
+            def __init__(self, *args, **kwargs) -> None:
+                if on_construct is not None:
+                    on_construct()  # a start() that is between claiming the entry and registering its thread stops here
+                super().__init__(*args, **kwargs)
+
             def start(self) -> None:
                 if outer.refusals_left > 0:
                     outer.refusals_left -= 1
@@ -75,8 +81,10 @@ class _Threading:
         return getattr(threading, name)
 
 
-def _cannot_start(monkeypatch, module, fail_first: int = 1, error: BaseException | None = None, on_refuse=None) -> _Threading:
-    shim = _Threading(fail_first, error, on_refuse)
+def _cannot_start(
+    monkeypatch, module, fail_first: int = 1, error: BaseException | None = None, on_refuse=None, on_construct=None
+) -> _Threading:
+    shim = _Threading(fail_first, error, on_refuse, on_construct)
     monkeypatch.setattr(module, "threading", shim)
     return shim
 
@@ -141,6 +149,7 @@ def test_a_launch_that_cannot_start_gives_the_slot_back(monkeypatch, tmp_path, m
     assert mgr._downloading_now() == 0
     assert k not in mgr._stops, "a stop event left behind would make pause() answer True for a download that is not running"
     assert not mgr._threads[k].is_alive()
+    assert mgr.pause(k) is False, "there is no worker to pause"
     # What was saved says so too: a restart must not read a slot it never held back as a download that was interrupted.
     assert _saved_status(mgr, k) == "error"
     assert cls(base_dir=tmp_path, http_get=None, max_concurrent=1).list()[0]["status"] == "error"
@@ -199,6 +208,77 @@ def test_a_second_start_that_took_the_entry_over_keeps_its_worker(monkeypatch, t
             mgr.start(code)
         assert _status_of(mgr, k) == "downloading"
         assert k in mgr._stops, "the second start's stop event is what pause() reaches"
+        assert mgr._threads[k].is_alive()
+    finally:
+        gate.set()
+    assert wait_until(lambda: _status_of(mgr, k) == "done"), "the second start's worker should run to the end"
+
+
+@pytest.mark.parametrize(("module", "cls", "codes", "entry_for", "key"), _DOWNLOADERS)
+def test_a_second_start_that_queued_the_entry_keeps_it_queued(monkeypatch, tmp_path, module, cls, codes, entry_for, key):
+    # At capacity the second start() of the key answers "queued" to its caller and puts the key in the queue. The failed launch must not
+    # overwrite that with "error": it gives back the stop event it registered and leaves the status alone.
+    mgr = cls(base_dir=tmp_path, http_get=lambda u, h: _Resp(), max_concurrent=1)
+    code, k = codes[0], key(codes[0])
+    _cannot_start(monkeypatch, module, on_refuse=lambda: mgr.start(code))
+    with pytest.raises(RuntimeError, match=_CANNOT_START):
+        mgr.start(code)
+    assert _status_of(mgr, k) == "queued"
+    assert k in mgr._order
+    assert k not in mgr._stops
+
+
+#: How long the put-back may hold the lock against a second start that is waiting for it. The fixed code always waits this long (the
+#: second start cannot finish while the put-back holds the lock); only a put-back that does NOT hold the lock lets it finish sooner.
+_LOCK_WAIT = 1.0
+
+
+@pytest.mark.parametrize(("module", "cls", "codes", "entry_for", "key"), _DOWNLOADERS)
+def test_a_second_start_between_its_claim_and_its_registration_keeps_its_stop_event(
+    monkeypatch, tmp_path, module, cls, codes, entry_for, key
+):
+    # The window the lock closes. A second start() has claimed the entry (it found a thread that is not alive) and is about to register
+    # its stop event and its thread. The failed launch has read its own stop event as still registered and is about to drop it. If the
+    # second start's registration could land between that read and the drop, the drop would remove the SECOND start's stop event and
+    # leave a live download that pause() cannot reach. The registration and the put-back take the same lock, so it lands after.
+    gate = threading.Event()  # holds the second start's worker in its fetch
+
+    def gated_get(_url, _headers):
+        gate.wait(20)
+        return _Resp()
+
+    mgr = cls(base_dir=tmp_path, http_get=gated_get, max_concurrent=3)
+    code, k = codes[0], key(codes[0])
+    armed, in_ctor, go = threading.Event(), threading.Event(), threading.Event()
+    second: list[threading.Thread] = []
+
+    class _Stops(dict):
+        def __delitem__(self, item) -> None:
+            # The failed launch is about to drop its stop event: let the second start go on to register its own.
+            go.set()
+            second[0].join(_LOCK_WAIT)
+            super().__delitem__(item)
+
+    mgr._stops = _Stops()
+
+    def on_construct() -> None:
+        if armed.is_set() and threading.current_thread() is second[0]:
+            in_ctor.set()
+            assert go.wait(5)
+
+    def on_refuse() -> None:
+        second.append(threading.Thread(target=lambda: mgr.start(code), name="second-start", daemon=True))
+        armed.set()
+        second[0].start()
+        assert in_ctor.wait(5), "the second start should have claimed the entry and reached its thread"
+
+    _cannot_start(monkeypatch, module, on_refuse=on_refuse, on_construct=on_construct)
+    try:
+        with pytest.raises(RuntimeError, match=_CANNOT_START):
+            mgr.start(code)
+        second[0].join(20)
+        assert not second[0].is_alive()
+        assert k in mgr._stops, "the second start's stop event must survive the failed launch's put-back"
         assert mgr._threads[k].is_alive()
     finally:
         gate.set()
@@ -305,7 +385,8 @@ def test_a_resume_that_cannot_start_keeps_its_place(monkeypatch, newsletter):
     mgr.resume()
     assert wait_until(lambda: mgr.status()["state"] == "done")
     assert mgr.status()["files_done"] == 3
-    assert mgr.status()["tally"]["stored"] == 2, "it continued from the file it stopped at (1), not from the first"
+    with session() as db:
+        assert db.query(Article).count() == 2, "it continued from the file it stopped at (1), not from the first"
 
 
 def test_an_interrupt_from_the_import_start_leaves_it_running(monkeypatch, newsletter):

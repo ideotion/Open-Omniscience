@@ -310,14 +310,17 @@ class OsmDownloadManager:
 
     def _launch(self, entry: OsmDownloadEntry) -> None:
         stop = threading.Event()
-        self._stops[entry.key] = stop
 
         def _run() -> None:
             self._download(entry, stop)
             self._pump()  # a finished/paused/errored slot frees the queue
 
         t = threading.Thread(target=_run, name=f"oo-osm-{entry.key}", daemon=True)
-        self._threads[entry.key] = t
+        with self._lock:
+            # Registered together and under the lock, so that the failed launch below can tell whether the registration it finds
+            # is still its own: a second start() of the same key registers both in one step or not yet.
+            self._stops[entry.key] = stop
+            self._threads[entry.key] = t
         try:
             t.start()
         except Exception as exc:
@@ -329,18 +332,21 @@ class OsmDownloadManager:
             # text is the class and nothing it said, as every neighbouring start says it.
             with self._lock:
                 # Put back only what THIS launch registered. A second start() of the same key (it finds a thread that is not
-                # alive and a status of "downloading") may have registered its own stop event, and then its thread, since; its
-                # worker is then the entry's, and saying "error" or dropping its stop event would leave a live download that
-                # pause() cannot reach. ``_launch`` registers the stop event first, so the stop event alone tells. ``_threads``
-                # keeps the thread that never started: ``is_alive()`` reads False for it, which is all start() asks of it.
+                # alive and a status of "downloading") registers its own stop event and thread, together and under this lock,
+                # and its worker is then the entry's: dropping its stop event would leave a live download that pause() cannot
+                # reach. The stop event tells whose registration this is. ``_threads`` keeps the thread that never started:
+                # ``is_alive()`` reads False for it, which is all start() asks of it.
                 if self._stops.get(entry.key) is stop:
                     del self._stops[entry.key]
-                    entry.status = "error"
-                    entry.error = f"{type(exc).__name__}: could not start the worker thread"
-                    try:
-                        self._save()
-                    except Exception as save_exc:  # noqa: BLE001 - the start's own error is the one to raise
-                        log_failure(_LOG, f"OSM region download state for {entry.key} could not be saved", save_exc, level=logging.WARNING)
+                    # A second start() that got in first may have queued the entry (capacity) or paused it (airplane mode):
+                    # that status is its answer to its caller, and it is not ours to overwrite.
+                    if entry.status == "downloading":
+                        entry.status = "error"
+                        entry.error = f"{type(exc).__name__}: could not start the worker thread"
+                        try:
+                            self._save()
+                        except Exception as save_exc:  # noqa: BLE001 - the start's own error is the one to raise
+                            log_failure(_LOG, f"OSM region download state for {entry.key} could not be saved", save_exc, level=logging.WARNING)
             raise
 
     def _pump(self) -> None:
