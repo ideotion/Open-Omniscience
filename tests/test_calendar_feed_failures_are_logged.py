@@ -187,3 +187,39 @@ def test_a_failed_attempt_write_is_class_only_when_the_feed_cannot_be_looked_up(
     assert "OSError" in caplog.text and "RuntimeError" in caplog.text
     _assert_clean(caplog.text)
     assert "request error" not in caplog.text and "Traceback" not in caplog.text
+
+
+# ---- a store that exists but cannot be read (R397) -----------------------------------------------------------------------------------------------------------
+
+
+def _store(name: str):
+    return F._store_path(name)
+
+
+def test_a_damaged_store_is_on_the_record_and_the_next_save_still_replaces_it(caplog):
+    """The reproduction: a torn ``calendar_feed_imports.json`` holding one imported event, then a restore-merge of one new event. The merge stands as before (added 1) and
+    the file afterwards holds ONLY the new event: that residual is pinned here so the day the damaged bytes are kept (proposal item 31) this test changes on purpose."""
+    p = _store("calendar_feed_imports.json")
+    p.write_text('{"fam": {"name": "F", "events": {"fp1": {"title": "kept?"}}}  <-- torn', "utf-8")
+    with caplog.at_level("WARNING"):
+        out = F.merge_imported_store("calendar_feed_imports.json", {"fam2": {"name": "G", "events": {"fp2": {"title": "new"}}}})
+    assert out["added"] == 1, "behaviour unchanged"
+    assert "calendar_feed_imports.json exists but could not be read" in caplog.text and "JSONDecodeError" in caplog.text
+    assert "kept?" not in caplog.text and "torn" not in caplog.text, "the class only: nothing of the store's content or the parser's words"
+    assert list(F._load_json("calendar_feed_imports.json")) == ["fam2"], "the residual: the damaged store is gone after the save"
+
+
+def test_a_store_that_cannot_be_opened_is_on_the_record(caplog):
+    _store("calendar_feed_attempts.json").mkdir()  # a directory where the file belongs: IsADirectoryError on Linux and macOS, PermissionError on Windows
+    with caplog.at_level("WARNING"):
+        assert F._load_json("calendar_feed_attempts.json") == {}
+    assert "calendar_feed_attempts.json exists but could not be read" in caplog.text
+    assert "IsADirectoryError" in caplog.text or "PermissionError" in caplog.text
+
+
+def test_an_absent_or_healthy_store_logs_nothing(caplog):
+    _store("calendar_autoimport.json").write_text('{"a": "2026-01-01T00:00:00+00:00"}', "utf-8")
+    with caplog.at_level("WARNING"):
+        assert F._load_json("calendar_feed_imports.json") == {}, "absent"
+        assert F._load_json("calendar_autoimport.json") == {"a": "2026-01-01T00:00:00+00:00"}, "healthy"
+    assert "could not be read" not in caplog.text

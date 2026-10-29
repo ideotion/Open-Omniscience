@@ -141,7 +141,10 @@ def _load_json(name: str) -> dict:
     p = _store_path(name)
     try:
         return json.loads(p.read_text("utf-8")) if p.exists() else {}
-    except (OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError) as exc:
+        # A store that EXISTS but cannot be read reads as empty, exactly as before, and the next save replaces it: that used to happen with no word anywhere (R386, R397).
+        # The class only: the store holds the user's imported events, and what is wrong with it is not worth a line of its words.
+        _LOG.warning("%s exists but could not be read, so it reads as empty and the next save replaces it: %s", name, type(exc).__name__)
         return {}
 
 
