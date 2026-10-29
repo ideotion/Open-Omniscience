@@ -193,11 +193,15 @@ def gated_packages(source: str) -> set[str]:
 
 
 def _guarded_imports(node: ast.Try) -> set[str]:
-    """The packages ``try: import X`` / ``except ...: return`` (or ``pytest.skip``) leaves a test to pass, or skip, without."""
+    """The packages ``try: import X`` / ``except ...: return`` (or ``pytest.skip``) leaves a test to pass, or skip, without.
+
+    Reads a plain ``return`` as leaving, so a fallback that returns a default and carries on is read as a gate too: harmless for a core
+    package (``uncovered`` drops those), a false demand for a CI job if an extra package did it. It does not see ``import a, b`` past ``a``,
+    ``except*``, an import nested under ``with``/``if`` inside the ``try``, or a handler raising ``unittest.SkipTest``."""
     mods = {
         (b.names[0].name if isinstance(b, ast.Import) else b.module or "").split(".")[0].lower()
         for b in node.body
-        if isinstance(b, (ast.Import, ast.ImportFrom))
+        if isinstance(b, ast.Import) or (isinstance(b, ast.ImportFrom) and not b.level)  # a relative import is no package
     }
     leaves = False
     for handler in node.handlers:
@@ -386,6 +390,12 @@ _DUCK = 'import pytest\npytest.importorskip("duckdb")\n'
                 "tests/test_i.py": "def test_x():\n    try:\n        from duckdb import connect\n    except ImportError:\n        pytest.skip('x')\n",
             },
             {"tests/test_h.py": "duckdb", "tests/test_i.py": "duckdb"},
+        ),
+        # a relative import is not a package, whatever its handler does
+        (
+            _wf(_job("t", 'python -m pip install -e ".[dev]"', "python -m pytest -q")),
+            {"tests/test_k.py": "def test_x():\n    try:\n        from .helpers import x\n    except ImportError:\n        return\n"},
+            {},
         ),
         # an import that is allowed to fail by raising something else, or by being the thing under test, is not a gate
         (
