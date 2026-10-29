@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
 from src.maintenance import registry as R
 
 _ROOT = R.repo_root()
@@ -215,10 +217,7 @@ def test_fastapi_floor_in_pyproject_matches_the_registry_and_the_lock_is_not_bel
 def test_duckdb_version_coupling_holds_when_installed():
     """When duckdb is installed, it must satisfy the registered floor (else the bundled
     extension + storage format would mismatch)."""
-    try:
-        import duckdb
-    except Exception:  # noqa: BLE001 - optional [columnar] extra absent -> nothing to check
-        return
+    duckdb = pytest.importorskip("duckdb")  # optional [columnar] extra absent -> nothing to check
     entry = next(a for a in R.load_registry() if a["id"] == "duckdb-crypto-extension")
     assert R._ver_ge(str(duckdb.__version__), str(entry["pin"]["floor"]))
 
