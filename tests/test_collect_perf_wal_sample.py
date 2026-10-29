@@ -32,19 +32,22 @@ def _clean_pool_watch():
     pool_watch._reset_for_tests()
 
 
-def test_the_hourly_gauge_is_skipped_under_pressure_which_is_why_this_exists():
-    """The premise, asserted rather than assumed: the scheduler really does return
-    before running idle maintenance when the guard is engaged."""
-    import inspect
-
+def test_the_hourly_gauge_is_skipped_under_pressure_which_is_why_this_exists(tmp_path, monkeypatch):
+    """The premise, asserted rather than assumed: the scheduler really does return before running idle maintenance when the guard is
+    engaged. If this stops being a return, the per-sample reading is redundant rather than load-bearing. (Asserted by running the
+    window, not by reading its source: the guard reads moved into their own functions with R396.)"""
+    from src.scheduler import maintenance, memguard
     from src.scheduler.runner import BackgroundScheduler
 
-    src = inspect.getsource(BackgroundScheduler._run_off_peak_maintenance)
-    assert "memory_guard.engaged" in src
-    # The early return is what makes the hourly series blind; if this stops being a
-    # return, the per-sample reading is redundant rather than load-bearing.
-    head = src.split("memory_guard.engaged", 1)[1][:120]
-    assert "return" in head, "the guard no longer short-circuits idle maintenance"
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    ran: list[dict] = []
+    monkeypatch.setattr(maintenance, "run_idle_maintenance", lambda **kw: ran.append(kw) or {})
+    monkeypatch.setattr(type(memguard.memory_guard), "engaged", property(lambda self: True))
+    sched = BackgroundScheduler()
+    sched._last_maint = 0.0  # due
+    assert sched._run_off_peak_maintenance() is False, "the guard no longer short-circuits idle maintenance"
+    assert ran == [], "idle maintenance (which records the hourly gauge) ran under memory pressure"
+    assert sched.status()["maintenance_skips"] == {"memory_pressure": 1}
 
 
 def test_every_sample_carries_the_wal_bytes_reading(monkeypatch):
