@@ -86,12 +86,17 @@ jobs:
       # tests/test_launcher_stderr.py::test_the_filter_gives_the_same_record_under_every_awk_it_may_meet needs two of mawk, gawk, original-awk
       # and busybox. With mawk alone both skip (skip-reason audit, 2026-10-29); that the runner image has mawk alone is inferred, so the step
       # prints what was already installed. The default `awk` is put back afterwards: gawk registers itself as the `awk` alternative at
-      # priority 10 against mawk's 5, which would move every other launcher test to gawk.
+      # priority 10 against mawk's 5, which would move every other launcher test to gawk. The update, the install and the two `command -v`
+      # checks are separate lines on purpose: under GitHub's `bash -e` a failing command inside an `&&` chain does not stop the step, so a
+      # failed `apt-get update` would leave it green with nothing installed and both tests skipping again without a sound.
       - name: Install two more awk implementations (for the launcher filter tests)
         run: |
           prev="$(readlink -f /usr/bin/awk)"
           echo "already installed: $(command -v original-awk gawk busybox | tr '\n' ' ')(default awk $prev)"
-          sudo apt-get update -qq && sudo apt-get install -y -qq original-awk gawk
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq original-awk gawk
+          command -v original-awk
+          command -v gawk
           sudo update-alternatives --set awk "$prev"
           echo "default awk: $(readlink -f /usr/bin/awk) (was $prev)"
 
@@ -349,10 +354,10 @@ jobs:
           alembic check
 
       # `-rs` puts every skip's file, line and reason in the pytest summary, so which tests this job did not run is read from its log
-      # instead of re-run locally (the 2026-10-29 skip-reason audit had to do exactly that). It adds a grouped block of lines before the
-      # result line and changes no outcome.
+      # instead of re-run locally (the 2026-10-29 skip-reason audit had to do exactly that). `-r` REPLACES pytest's default `fE` rather than
+      # adding to it, so `-rs` alone would drop the FAILED and ERROR lines from a red run's summary: the flags are `-rfEs`, the default plus skips.
       - name: Test (pytest)
-        run: python -m pytest -q -rs
+        run: python -m pytest -q -rfEs
 
       # WHAT WAS INSTALLED WHEN THE SUITE RAN, kept on a red run as well as a green one (`if: always()`), written to the log straight after the
       # suite (the tail of a red run's log) and to the step summary. The install output sits at the HEAD of a long log, which a reader that returns only the last lines never reaches, so
