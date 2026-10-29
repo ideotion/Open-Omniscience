@@ -65,9 +65,9 @@ class ModelPullManager:
                 try:
                     self._thread.start()
                 except Exception as exc:
-                    # R393. No pump will ever drain the queue, so the model would sit in it for the life of the process, and
-                    # enqueueing it again would return at "already queued" without a pump ever running. It leaves the queue and
-                    # the history says why. Only an Exception is taken: an interrupt that lands while start() waits for the new
+                    # R393. This pump never runs, so the model would sit in the queue until another model's enqueue started a pump,
+                    # and enqueueing the same model again would return at "already queued" without starting one. It leaves the queue
+                    # and the history says why. Only an Exception is taken: an interrupt that lands while start() waits for the new
                     # thread leaves the OS thread created and about to run the pump, and taking the model out then would let it
                     # be pulled without a trace. The text is the class and nothing it said.
                     self._queue.remove(model)

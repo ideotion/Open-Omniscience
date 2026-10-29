@@ -8,18 +8,21 @@ threads. ``tests/test_failed_thread_start_leaves_no_phantom_job.py`` pins the ma
 thread. This file pins the five that were left (the WAL lane's sweep, ``wal-lane/measure-start-failure-sweep-2026-10-29.md``):
 
 - the Wikipedia dump manager and the OSM region manager CLAIM A SLOT first (status "downloading", saved) and launch after it, outside
-  the lock. A launch that fails left a "downloading" row with no worker that counted against ``max_concurrent`` (3 dumps, 2 OSM regions
-  by default) for the life of the process, and the retry queued behind it at capacity. ``_pump`` launched every entry it had claimed in a
-  row, so the first launch that raised also left the entries claimed after it with no thread, and killed the worker thread that ran it;
-- the newsletter folder import said "running" in memory and in its saved file with ``running`` false in its status, and the retry was
-  accepted only because nothing joined the dead thread;
+  the lock. A launch that fails left a "downloading" row with no worker that counted against ``max_concurrent`` (3 dumps, the Optimized
+  profile's default; 2 OSM regions) until the entry was retried or deleted or the process restarted, the other entries queued behind
+  it, and a retry at capacity was itself queued with nothing to launch it. ``_pump`` launched every entry it had claimed in a row, so
+  the first launch that raised also left the entries claimed after it with no thread (and the exception escaped the pump's own thread);
+- the newsletter folder import said "running" in memory and in its saved file with ``running`` false in its status;
 - the dump index build said "running" with no worker;
-- the model pull queue kept the model queued, so enqueueing the same model again returned at "already queued" and no pump ever ran.
+- the model pull queue kept the model queued, so enqueueing the same model again returned at "already queued" and started no pump
+  (another model's enqueue would have started one, which drains both).
 
 What it pins, per manager: the start that fails raises what ``start()`` raised, the job is not running afterwards, what was saved says so
-(or, for the pull queue, what the history says), and the next start is accepted and runs. Only an ``Exception`` is caught (R393): an
-interrupt that lands while ``start()`` waits for the new thread leaves the OS thread created and about to run the worker, so calling the
-job an error, or freeing its slot, would let a second start run a second worker beside it.
+(or, for the pull queue, what the history says), and the next start is accepted and runs. For the two downloaders also that the put-back
+touches only what the failed launch registered (a second start of the same key that took the entry over keeps its thread, its stop event
+and its status), and that a save that fails during the put-back does not hide the start's own error. Only an ``Exception`` is caught
+(R393): an interrupt that lands while ``start()`` waits for the new thread leaves the OS thread created and about to run the worker, so
+calling the job an error, or freeing its slot, would let a second start run a second worker beside it.
 
 The failure is injected in the module under test (its ``threading`` is replaced by one whose ``Thread`` refuses to start), never on the
 process-wide ``threading.Thread``.
@@ -52,7 +55,7 @@ _ERROR = "RuntimeError: could not start the worker thread"
 class _Threading:
     """What a module sees as ``threading``: the real one, except that the first ``fail_first`` threads it makes refuse to start."""
 
-    def __init__(self, fail_first: int = 1, error: BaseException | None = None) -> None:
+    def __init__(self, fail_first: int = 1, error: BaseException | None = None, on_refuse=None) -> None:
         self.refusals_left = fail_first
         self.error = error
         outer = self
@@ -61,6 +64,8 @@ class _Threading:
             def start(self) -> None:
                 if outer.refusals_left > 0:
                     outer.refusals_left -= 1
+                    if on_refuse is not None:
+                        on_refuse()  # what happens in the window between the machine's refusal and the caller seeing it
                     raise outer.error or RuntimeError(_CANNOT_START)
                 super().start()
 
@@ -70,8 +75,8 @@ class _Threading:
         return getattr(threading, name)
 
 
-def _cannot_start(monkeypatch, module, fail_first: int = 1, error: BaseException | None = None) -> _Threading:
-    shim = _Threading(fail_first, error)
+def _cannot_start(monkeypatch, module, fail_first: int = 1, error: BaseException | None = None, on_refuse=None) -> _Threading:
+    shim = _Threading(fail_first, error, on_refuse)
     monkeypatch.setattr(module, "threading", shim)
     return shim
 
@@ -134,7 +139,8 @@ def test_a_launch_that_cannot_start_gives_the_slot_back(monkeypatch, tmp_path, m
     assert row["status"] == "error"
     assert row["error"] == _ERROR
     assert mgr._downloading_now() == 0
-    assert k not in mgr._threads and k not in mgr._stops
+    assert k not in mgr._stops, "a stop event left behind would make pause() answer True for a download that is not running"
+    assert not mgr._threads[k].is_alive()
     # What was saved says so too: a restart must not read a slot it never held back as a download that was interrupted.
     assert _saved_status(mgr, k) == "error"
     assert cls(base_dir=tmp_path, http_get=None, max_concurrent=1).list()[0]["status"] == "error"
@@ -171,6 +177,52 @@ def test_a_pump_whose_every_launch_fails_leaves_nothing_downloading(monkeypatch,
     assert {_status_of(mgr, key(c)) for c in codes} == {"error"}
     assert mgr._downloading_now() == 0
     assert {_saved_status(mgr, key(c)) for c in codes} == {"error"}
+
+
+@pytest.mark.parametrize(("module", "cls", "codes", "entry_for", "key"), _DOWNLOADERS)
+def test_a_second_start_that_took_the_entry_over_keeps_its_worker(monkeypatch, tmp_path, module, cls, codes, entry_for, key):
+    # Between the machine's refusal and the failed launch looking at the entry, another start() of the same key finds a thread that is
+    # not alive and a status of "downloading", registers its own thread and stop event and starts a worker that DOES run. The failed
+    # launch must then leave all of it alone: calling the entry "error" or dropping the stop event would leave a live download that
+    # pause() cannot reach.
+    gate = threading.Event()
+
+    def gated_get(_url, _headers):
+        gate.wait(20)
+        return _Resp()
+
+    mgr = cls(base_dir=tmp_path, http_get=gated_get, max_concurrent=3)
+    code, k = codes[0], key(codes[0])
+    _cannot_start(monkeypatch, module, on_refuse=lambda: mgr.start(code))
+    try:
+        with pytest.raises(RuntimeError, match=_CANNOT_START):
+            mgr.start(code)
+        assert _status_of(mgr, k) == "downloading"
+        assert k in mgr._stops, "the second start's stop event is what pause() reaches"
+        assert mgr._threads[k].is_alive()
+    finally:
+        gate.set()
+    assert wait_until(lambda: _status_of(mgr, k) == "done"), "the second start's worker should run to the end"
+
+
+@pytest.mark.parametrize(("module", "cls", "codes", "entry_for", "key"), _DOWNLOADERS)
+def test_a_save_that_fails_while_the_slot_is_given_back_does_not_hide_the_starts_own_error(
+    monkeypatch, tmp_path, module, cls, codes, entry_for, key
+):
+    mgr = cls(base_dir=tmp_path, http_get=lambda u, h: _Resp(), max_concurrent=1)
+    real_save = mgr._save
+
+    def save() -> None:
+        if any(e.status == "error" for e in mgr._entries.values()):
+            raise OSError("disk full")  # only the put-back's save sees an entry in "error"
+        real_save()
+
+    mgr._save = save
+    _cannot_start(monkeypatch, module)
+    with pytest.raises(RuntimeError, match=_CANNOT_START):
+        mgr.start(codes[0])
+    assert _status_of(mgr, key(codes[0])) == "error"
+    assert mgr._downloading_now() == 0
 
 
 @pytest.mark.parametrize(("module", "cls", "codes", "entry_for", "key"), _DOWNLOADERS)
@@ -253,6 +305,7 @@ def test_a_resume_that_cannot_start_keeps_its_place(monkeypatch, newsletter):
     mgr.resume()
     assert wait_until(lambda: mgr.status()["state"] == "done")
     assert mgr.status()["files_done"] == 3
+    assert mgr.status()["tally"]["stored"] == 2, "it continued from the file it stopped at (1), not from the first"
 
 
 def test_an_interrupt_from_the_import_start_leaves_it_running(monkeypatch, newsletter):
@@ -311,6 +364,16 @@ def test_a_pull_that_cannot_start_does_not_stay_queued(monkeypatch):
     mgr.enqueue("tiny:1b")
     mgr._thread.join(5)
     assert pumps == ["ran"]
+
+
+def test_a_pull_that_cannot_start_leaves_the_other_queued_models_alone(monkeypatch):
+    mgr = pull_queue.ModelPullManager()
+    mgr._pump = lambda: None
+    mgr._queue.append("other:1b")  # queued by an earlier enqueue whose pump has since ended
+    _cannot_start(monkeypatch, pull_queue)
+    with pytest.raises(RuntimeError, match=_CANNOT_START):
+        mgr.enqueue("tiny:1b")
+    assert mgr.status()["queue"] == ["other:1b"]
 
 
 def test_an_interrupt_from_the_pull_start_keeps_the_model_queued(monkeypatch):
