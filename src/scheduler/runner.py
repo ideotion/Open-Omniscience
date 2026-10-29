@@ -98,8 +98,8 @@ def _tail_journal_trim() -> None:
         from src.scheduler.pass_journal import trim
 
         trim()
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 - housekeeping; the pass end goes on
+        log_failure(_LOG, "pass journal could not be trimmed at this pass end", exc, level=logging.DEBUG)
 
 
 # Inter-pass gap in CONTINUOUS mode: short enough that passes are effectively
@@ -1773,6 +1773,31 @@ def _ensure_storage_supervisor() -> None:
         log_failure(_LOG, "storage guard supervisor could not be started", exc, level=logging.WARNING)
 
 
+def _maint_memory_refusal() -> str | None:
+    from src.scheduler import memguard
+
+    # A property, not a call. Under memory pressure no write-gate work is added.
+    return "memory_pressure" if memguard.memory_guard.engaged else None
+
+
+def _maint_storage_refusal() -> str | None:
+    # A pinned WAL or a nearly full drive: maintenance writes are exactly the work that must not start (they append to the file the
+    # guard is bounding), even while the operator's override lets collection itself continue.
+    engaged = storage_guard.storage_guard.enabled() and storage_guard.storage_guard.engaged
+    return "storage_pressure" if engaged else None
+
+
+def _maint_damage_refusal() -> str | None:
+    # The database reported the corpus file damaged: vacuum, cleanup and checkpoints rewrite pages of exactly the file that cannot be
+    # read in full.
+    return "database_damage" if damage.registry.corpus_latched() else None
+
+
+def _maint_check_refusal() -> str | None:
+    # The check after an unexpected stop is still reading the files: not a moment to rewrite them.
+    return "database_check" if damage.registry.verifying() else None
+
+
 class BackgroundScheduler:
     """Daemon-thread scheduler with explicit start/stop and non-overlapping run-now.
 
@@ -1820,6 +1845,9 @@ class BackgroundScheduler:
         # indistinguishable from an hour in which nothing happened, so the gaps could
         # not be explained by anything in the bundle. Counted by reason, so they can.
         self._maint_skips: dict[str, int] = {}
+        # The guards whose last read FAILED (``_read_maint_guard``): the first failure of each is a WARNING, repeats are DEBUG, and a clean
+        # read re-arms it.
+        self._maint_unreadable: set[str] = set()
         # S4.1 duty-cycle fix (field-feedback 2026-07-23): the whole-corpus
         # briefing recompute runs in its own background thread (see
         # _refresh_briefing_async); this lock makes overlapping refreshes
@@ -2085,8 +2113,8 @@ class BackgroundScheduler:
                     from src.scheduler.hygiene import release_pass_state
 
                     release_pass_state()
-                except Exception:  # noqa: BLE001 - reclaim is best-effort, never blocks resume
-                    pass
+                except Exception as exc:  # noqa: BLE001 - reclaim is best-effort, never blocks resume
+                    log_failure(_LOG, "memory-pause reclaim failed", exc, level=logging.DEBUG)
             self._stop.wait(max(0.01, self._mem_pause_poll_s))
         if waited and current_phase() == "paused-low-memory":
             # Guarded clear: never wipe a phase a just-started pass owns.
@@ -2244,6 +2272,28 @@ class BackgroundScheduler:
         with self._state_lock:
             self._maint_skips[reason] = self._maint_skips.get(reason, 0) + 1
 
+    def _read_maint_guard(self, guard: str, refusal: Callable[[], str | None]) -> str | None:
+        """The reason ``guard`` refuses this maintenance window, ``None`` when it does not. A guard that cannot be read refuses
+        (``guard_unreadable``) and is named in the log: the guards keep vacuum, cleanup and checkpoints off a damaged file and a full
+        drive, so an unreadable one is not read as clear. The first failure of a guard is a WARNING (a guard that keeps failing stops
+        off-peak maintenance for good, and the window asks again every loop), the repeats are DEBUG, and a read that works re-arms it."""
+        try:
+            reason = refusal()
+        except Exception as exc:  # noqa: BLE001 - never raises into the loop; the window is skipped instead
+            with self._state_lock:
+                first = guard not in self._maint_unreadable
+                self._maint_unreadable.add(guard)
+            log_failure(
+                _LOG,
+                f"off-peak maintenance skipped: the {guard} guard could not be read",
+                exc,
+                level=logging.WARNING if first else logging.DEBUG,
+            )
+            return "guard_unreadable"
+        with self._state_lock:
+            self._maint_unreadable.discard(guard)
+        return reason
+
     def _run_off_peak_maintenance(
         self, *, should_stop: Callable[[], bool] | None = None, continuation: bool = False
     ) -> bool:
@@ -2285,29 +2335,18 @@ class BackgroundScheduler:
         ):
             self._note_maint_skip("throttled")
             return False  # off-peak throttle: not due yet
-        try:
-            from src.scheduler import memguard
-
-            if memguard.memory_guard.engaged:  # property, not a call
-                self._note_maint_skip("memory_pressure")
-                return False  # under memory pressure — do not add write-gate work now
-            if storage_guard.storage_guard.enabled() and storage_guard.storage_guard.engaged:
-                # A pinned WAL or a nearly full drive: maintenance writes are exactly the
-                # work that must not start (they append to the file the guard is bounding),
-                # even while the operator's override lets collection itself continue.
-                self._note_maint_skip("storage_pressure")
-                return False
-            if damage.registry.corpus_latched():
-                # The database reported the corpus file damaged: vacuum, cleanup and checkpoints
-                # rewrite pages of exactly the file that cannot be read in full.
-                self._note_maint_skip("database_damage")
-                return False
-            if damage.registry.verifying():
-                # The check after an unexpected stop is still reading the files: not a moment to rewrite them.
-                self._note_maint_skip("database_check")
-                return False
-        except Exception:  # noqa: BLE001 - guard read must never block maintenance
-            pass
+        # In order: memory, storage, a damaged corpus file, the check after an unexpected stop. A guard that cannot be READ refuses the
+        # window and is named (``guard_unreadable`` here, the guard in the log): they exist to keep maintenance off a file or a drive that
+        # is already in trouble, so "could not tell" is not read as "clear".
+        refusal = (
+            self._read_maint_guard("memory", _maint_memory_refusal)
+            or self._read_maint_guard("storage", _maint_storage_refusal)
+            or self._read_maint_guard("database damage", _maint_damage_refusal)
+            or self._read_maint_guard("database check", _maint_check_refusal)
+        )
+        if refusal is not None:
+            self._note_maint_skip(refusal)
+            return False
         if not self._run_lock.acquire(blocking=False):
             # THE ONE THAT EXPLAINS THE FIELD GAP: a continuously-collecting machine
             # holds this lock essentially always, so this window -- and the hourly
