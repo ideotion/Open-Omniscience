@@ -17,12 +17,17 @@ What this pins:
   ``fE`` (reproduced on pytest 9.1.1: ``-rs`` alone prints only SKIPPED lines), and the summary is printed in the ORDER of the letters
   (``-rfEs``: FAILED, ERROR, SKIPPED; ``-rsfE``: SKIPPED, FAILED, ERROR). The last lines of a log are the ones a reader of a red run gets, and
   the skip block runs to hundreds of lines, so the skips come first and the failures last: ``-rfEs`` would put the failures out of the tail's reach;
-* EVERY whole-suite pytest line of ``ci.yml`` and ``release.yml`` (no path, no ``-k`` / ``-m`` / ``--deselect`` / ``--ignore``: the lines that
-  skip the tests whose package is missing) carries ``-rsfE``, so a skip count that differs between two jobs is read from their logs, and a NEW
-  whole-suite line cannot come back bare. The four there today are named, so a deleted line cannot make the scan pass on nothing;
-* the report is READ: straight after each full-suite job's installed-versions step comes one step that runs ``scripts/ci_skip_summary.py`` on
-  that report, ``if: always()`` (a red suite is when "what did it not run" is asked), ``continue-on-error`` (an observation never turns a job red),
-  and with no ``pytest`` in its command (tests/test_ci_installed_versions_step.py finds "the last pytest step" by that word);
+* EVERY whole-suite pytest line of ``ci.yml`` and ``release.yml`` carries ``-rsfE``, so a skip count that differs between two jobs is read from
+  their logs, and a NEW whole-suite line cannot come back bare. "Whole suite" is judged as tests/test_skipped_tests_have_a_ci_job_that_runs_them.py
+  judges it (a ``tests/`` path, a ``.py`` file or a ``::`` id names tests; ``-k``, ``-m``, ``--deselect``, ``--ignore``, ``--lf`` select them), except
+  that ``--ff`` only reorders and so does not exempt a line, and the line is read as a SHELL command: a wrapper before it (``timeout 3000``, ``env
+  X=1``, ``cd src &&``, ``coverage run -m``), a redirect, a pipe, ``|| true`` or a trailing comment after it do not hide it, and an option with a
+  value (``-p no:cacheprovider``, ``-n auto``) is not a test path. The four lines there today are named, so a deleted line cannot make the scan pass
+  on nothing;
+* the report is READ: after each full-suite job's installed-versions step, as the job's LAST step (the steps between run on a green suite and print
+  more than a log's tail holds), comes one step that runs ``scripts/ci_skip_summary.py`` on that report, ``if: always()`` (a red suite is when "what
+  did it not run" is asked), ``continue-on-error`` (an observation never turns a job red), and with no ``pytest`` in its command
+  (tests/test_ci_installed_versions_step.py finds "the last pytest step" by that word);
 * ``scripts/preflight.sh`` CALLS the ``test`` job's ruff correctness command and its mypy command unchanged (the calls are read out of its code
   lines, not its ``echo`` display lines and not its comments, and cut at the first ``;``, ``|``, ``)``, ``&&`` or redirection, so a flag appended to
   the call or a different path is a different call), gates mypy on its exit status and compares no count to a baseline, and its pytest command is
@@ -63,9 +68,16 @@ _MYPY = "python -m mypy src/"
 _TOOLS = (("ruff correctness", "ruff check", _RUFF), ("mypy", "python -m mypy src", _MYPY))
 _CALL_END = re.compile(r";|\||\)|&&|\s2>|\s>")
 _EXIT_STATUS = re.compile(r"\w+=\$\?")
-_PYTEST_LINE = re.compile(r"^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*(?:python3?\s+-m\s+pytest|pytest)\b")
-#: The options that choose which tests run: a command carrying one is a partial run, whatever else it says.
-_SELECTING = re.compile(r"(?:^|\s)(?:-k|-m|--deselect|--ignore|--ignore-glob|--lf|--ff|--co|--collect-only)(?:[=\s]|$)")
+#: What may stand before the interpreter in one shell command: variable assignments, a few wrappers, and the words that open a conditional.
+_WRAPPERS = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S+|env|time|nice|timeout\s+\S+|if|then|elif|while|until|!)"
+_PYTEST_LINE = re.compile(rf"^\s*(?:{_WRAPPERS}\s+)*(?:(?:python[\d.]*|coverage\s+run)\s+-m\s+pytest|pytest)\b")
+_SEGMENTS = re.compile(r"&&|\|\||;|\|")
+_REDIRECT = re.compile(r"\d*>>?\s*&?\S+")
+_COMMENT = re.compile(r"(?:^|\s)#.*$")
+#: The options that choose which tests run: a command carrying one is a partial run, whatever else it says. ``--ff`` is not one: it runs everything.
+_SELECTING = re.compile(r"(?:^|\s)(?:-k|-m|--deselect|--ignore|--ignore-glob|--lf|--co|--collect-only)(?:[=\s]|$)")
+#: A word that names tests: a path under ``tests/``, a ``.py`` file, or a node id.
+_NAMES_TESTS = re.compile(r"(?:^|/)tests?(?:/|$)|\.py\b|::")
 
 
 def _workflow() -> dict:
@@ -121,8 +133,10 @@ def _summary_problems(name: str, job: dict) -> list[str]:
     if step.get("continue-on-error") is not True:
         found.append(f"{name}: the skip-summary step must say `continue-on-error: true` (an observation never turns the job red), it says {step.get('continue-on-error')!r}")
     versions_at = [i for i, s in enumerate(steps) if _VERSIONS in str(s.get("run") or "")]
-    if len(versions_at) != 1 or summary_at[0] != versions_at[0] + 1:
-        found.append(f"{name}: the skip-summary step must come straight after the installed-versions step (tests/test_ci_installed_versions_step.py keeps that one straight after pytest)")
+    if len(versions_at) != 1 or summary_at[0] < versions_at[0]:
+        found.append(f"{name}: the skip-summary step must come after the installed-versions step (tests/test_ci_installed_versions_step.py keeps that one straight after pytest)")
+    if summary_at[0] != len(steps) - 1:
+        found.append(f"{name}: the skip-summary step must be the job's LAST step: the steps after it print more than a log's tail holds, and the tail is what a reader gets")
     return found
 
 
@@ -136,19 +150,28 @@ def _ci_problems(workflow: dict) -> list[str]:
     return found
 
 
+def _commands(run: str) -> list[str]:
+    """The pytest commands of a ``run`` script, each cut out of its shell line: continuations joined, the comment, the redirections and everything
+    around the command (``cd src &&``, ``| tee``, ``|| true``) removed, a wrapper such as ``timeout 3000`` kept in front."""
+    found: list[str] = []
+    for line in run.replace("\\\n", " ").splitlines():
+        for segment in _SEGMENTS.split(_COMMENT.sub("", line)):
+            if _PYTEST_LINE.match(segment):
+                found.append(_REDIRECT.sub("", segment).strip())
+    return found
+
+
 def _whole_suite_commands(workflows: dict[str, dict]) -> list[tuple[str, str, str]]:
-    """(workflow, job, command) of every pytest command that runs the whole suite: no test path and none of the options that choose tests."""
+    """(workflow, job, command) of every pytest command that runs the whole suite: it names no tests and carries no option that chooses them."""
     found: list[tuple[str, str, str]] = []
     for which, workflow in workflows.items():
         for job_name, job in (workflow.get("jobs") or {}).items():
             for step in job.get("steps") or []:
-                for line in str(step.get("run") or "").replace("\\\n", " ").splitlines():
-                    if not _PYTEST_LINE.match(line) or _SELECTING.search(_PYTEST_LINE.sub("", line, count=1)):
+                for command in _commands(str(step.get("run") or "")):
+                    rest = _PYTEST_LINE.sub("", command, count=1)
+                    if _SELECTING.search(rest) or any(_NAMES_TESTS.search(word) for word in rest.split() if not word.startswith("-")):
                         continue
-                    words = _PYTEST_LINE.sub("", line, count=1).split()
-                    if any(not word.startswith("-") for word in words):  # a path (or any positional argument) names its tests
-                        continue
-                    found.append((which, job_name, line.strip()))
+                    found.append((which, job_name, command))
     return found
 
 
@@ -301,7 +324,12 @@ def _drop_summary(steps):
 
 def _summary_before_versions(steps):
     at = _summary_index(steps)
-    steps.insert(at - 1, steps.pop(at))
+    versions_at = next(i for i, s in enumerate(steps) if _VERSIONS in str(s.get("run") or ""))
+    steps.insert(versions_at, steps.pop(at))
+
+
+def _step_after_the_summary(steps):
+    steps.append({"name": "a later step", "run": "echo later"})
 
 
 def _drop_condition(steps):
@@ -331,7 +359,8 @@ def _second_summary(steps):
         ("the step runs twice", _second_summary, "exactly one step must run"),
         ("the step loses `if: always()`", _drop_condition, "`if: always()`"),
         ("the step loses `continue-on-error`", _drop_continue, "`continue-on-error: true`"),
-        ("the step moves before the installed-versions step", _summary_before_versions, "straight after the installed-versions step"),
+        ("the step moves before the installed-versions step", _summary_before_versions, "after the installed-versions step"),
+        ("a step is added after the summary", _step_after_the_summary, "LAST step"),
         ("the step reads a report nobody writes", _set_run('python scripts/ci_skip_summary.py "$RUNNER_TEMP/other.xml" | tee -a "$GITHUB_STEP_SUMMARY"'), "must run exactly"),
         ("the step stops writing the step summary", _set_run('python scripts/ci_skip_summary.py "$RUNNER_TEMP/junit.xml"'), "must run exactly"),
         # tests/test_ci_installed_versions_step.py finds the last pytest step by that word in `run`: the summary must not carry it
@@ -378,6 +407,39 @@ def test_the_scan_names_a_new_job_that_runs_the_whole_suite_bare():
     assert any(p.startswith("ci/brand-new:") for p in problems), problems
 
 
+@pytest.mark.parametrize(
+    "run",
+    [
+        "python -m pytest -q -p no:cacheprovider",
+        "python -m pytest -q -n auto",
+        "python -m pytest -q --durations 20",
+        "python -m pytest -q 2>&1 | tee pytest.log",
+        "python -m pytest -q > out.txt",
+        "python -m pytest -q || true",
+        "python -m pytest -q  # the whole suite",
+        "python -m pytest -q  # everything under tests/",
+        "python -m pytest -q > tests/pytest.log",
+        "python -m pytest -q 2> tests/pytest.err",
+        "timeout 3000 python -m pytest -q",
+        "cd src && python -m pytest -q",
+        "env X=1 python -m pytest -q",
+        "python3.13 -m pytest -q",
+        "coverage run -m pytest -q",
+        "python -m pytest -q --ff",
+        "pytest -q",
+        "if python -m pytest -q; then echo ok; fi",
+        "python -m pytest -q \\\n  --maxfail=1",
+    ],
+)
+def test_the_scan_names_a_bare_whole_suite_line_in_every_common_shape(run):
+    workflows = _workflows()
+    workflows["ci"]["jobs"]["brand-new"] = {"steps": [{"run": "python -m pip install -e .\n" + run}]}
+    problems = _flag_problems(workflows)
+    assert any(p.startswith("ci/brand-new:") for p in problems), (run, problems)
+    workflows["ci"]["jobs"]["brand-new"] = {"steps": [{"run": run.replace("pytest -q", "pytest -q -rsfE", 1)}]}
+    assert not any(p.startswith("ci/brand-new:") for p in _flag_problems(workflows)), run
+
+
 def test_the_scan_names_a_whole_suite_line_that_has_gone_missing():
     problems = _flag_problems(_with_job_run(_workflows(), "release", "test", "python -m pytest -q tests/test_a.py"))
     assert any(p.startswith("release/test:") and "no whole-suite pytest line" in p for p in problems), problems
@@ -394,10 +456,15 @@ def test_the_scan_names_a_whole_suite_line_that_has_gone_missing():
         "python -m pytest -q --ignore=tests/test_a.py",
         "python -m pytest -q --lf",
         "python -m pytest --collect-only -q",
+        "python -m pytest -q tests/test_a.py 2>&1 | tee pytest.log",
+        "timeout 600 python -m pytest -q tests/test_a.py::test_b",
         "# python -m pytest -q",
         "echo python -m pytest -q",
+        "python -m pip install pytest-timeout",
+        "python -m pip install 'pytest>=8.2'",
+        "tee pytest.log",
     ],
 )
-def test_the_scan_leaves_alone_a_partial_run_a_comment_and_an_echo(run):
+def test_the_scan_leaves_alone_a_partial_run_a_comment_an_echo_and_an_install(run):
     workflows = {"ci": {"jobs": {"j": {"steps": [{"run": run}]}}}}
     assert _whole_suite_commands(workflows) == [], run

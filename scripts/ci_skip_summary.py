@@ -8,20 +8,22 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 WHY. "What did this job NOT run?" could only be answered by re-running the suite locally (the 2026-10-29 skip audit did exactly that), because the
 only reader of a CI job log that works from a session returns the last few kilobytes, and ``pytest -rsfE``'s skip block is hundreds of lines long.
-The two full-suite jobs (``test`` and ``core-only``) now write a junit report and run this straight after their installed-versions step, on red as well
-as green: a handful of short lines that fit in any tail. It is an OBSERVATION. It never fails a job (exit status 0 whatever it finds), because a count
+The two full-suite jobs (``test`` and ``core-only``) now write a junit report and run this as the LAST step of the job, on red as well as green: a few
+dozen short lines (at most about sixty: the lists below are capped) that fit in any tail. It is an OBSERVATION. It never fails a job (exit status 0 whatever it finds), because a count
 that changes is a question for a reader, not a verdict (R350: no pins for pytest reds).
 
 WHAT IT PRINTS, AND WHAT IT NEVER DOES. A skip's reason is free text written by a test author, and pytest puts it into the report next to an
 absolute path (a skip at COLLECTION time, such as a module-level ``importorskip``, carries ``('/home/runner/.../tests/test_x.py', 2, "Skipped: could not
-import 'duckdb': ...")`` as its element text). None of that text is ever printed. The output is made of fixed words, integers, and two kinds of name
-that must match a strict identifier pattern before they are used at all:
+import 'duckdb': ...")`` as its element text). No free text is ever printed. The output is made of fixed words, integers, and two kinds of name
+that must match a strict identifier pattern, and stay under a length bound, before they are used at all. That is a LIMIT on what can get through, not
+a promise about every string: anything shaped like an identifier passes (a module named in an ``importorskip`` is printed as the module it names, and
+``tests/test_ci_skip_summary.py`` says so in a test of its own), and these names come from the repository's own source, never from the environment:
 
 * the class ``import MODULE``: the module an ``importorskip`` named (``could not import 'duckdb'``), the one reason that has a machine-readable shape;
   every other skip is the class ``other`` (``skip()`` / ``skipif`` with a reason: the full text is in the pytest summary above, in the web log);
 * the TEST MODULE a skip belongs to (``tests.test_x``), largest first.
 
-Expected failures (``pytest.xfail``) are counted on their own line and are not skips.
+Expected failures (``pytest.xfail``) are not skips: they are counted apart from them, in the first line.
 """
 
 from __future__ import annotations
@@ -32,19 +34,21 @@ from collections import Counter
 from pathlib import Path
 
 #: A module named by ``pytest.importorskip``: the message is ``could not import 'NAME': ...`` (test level) or the same text inside the element body
-#: (collection level, where the message is only ``collection skipped``). Only an identifier of a plausible length is taken from it.
+#: (collection level, where the message is only ``collection skipped``). Only an identifier of at most 64 characters is taken from it.
 _IMPORT = re.compile(r"could not import '([A-Za-z_][A-Za-z0-9_.]{0,63})'")
 _DOTTED = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*")
-#: Lines of the by-module list kept in the log: the job's tail is read through a window of a few kilobytes, and this list shares it with the installed
-#: versions of the step before. The rest is summed in one line, never dropped silently.
-_MODULE_LINES = 25
+#: Lines of each list (by class, by test module) kept in the log: the job's tail is read through a window of a few kilobytes. The rest of a list is
+#: summed in one line, never dropped silently.
+_LIST_LINES = 25
+#: The longest name taken from a report. A longer one is not a module of this repository (a line must stay short whatever the report says).
+_NAME_MAX = 200
 _COLLECTION = "collection skipped"
 
 
 def _test_module(classname: str, name: str) -> str:
     """The test module a testcase belongs to, as a dotted name, or a fixed word when it cannot be told safely."""
     dotted = classname or name  # a collection-time skip has no classname; its name is the module
-    if not _DOTTED.fullmatch(dotted or ""):
+    if len(dotted) > _NAME_MAX or not _DOTTED.fullmatch(dotted):
         return "(unnamed)"
     parts = dotted.split(".")
     for at, part in enumerate(parts):
@@ -56,6 +60,16 @@ def _test_module(classname: str, name: str) -> str:
 def _skip_class(message: str, text: str) -> str:
     found = _IMPORT.search(text if message == _COLLECTION else message)
     return f"import {found.group(1)}" if found else "other"
+
+
+def _list(counts: Counter[str], noun: str) -> list[str]:
+    """The ``_LIST_LINES`` largest entries, then one line summing the rest (never a silent cut)."""
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    lines = [f"  {name}  {count}" for name, count in ranked[:_LIST_LINES]]
+    rest = sum(count for _, count in ranked[_LIST_LINES:])
+    if rest:
+        lines.append(f"  (and {len(ranked) - _LIST_LINES} more {noun}, {rest} skips)")
+    return lines
 
 
 def summarize(path: Path) -> list[str]:
@@ -91,13 +105,9 @@ def summarize(path: Path) -> list[str]:
     lines = [f"{total} test cases: {total - skipped - xfailed} ran, {skipped} skipped, {xfailed} expected failures"]
     if skipped:
         lines.append("skipped, by class (counts only; the reasons are in the pytest summary in the job's web log):")
-        lines += [f"  {name}  {count}" for name, count in sorted(classes.items(), key=lambda kv: (-kv[1], kv[0]))]
-        ranked = sorted(modules.items(), key=lambda kv: (-kv[1], kv[0]))
-        lines.append(f"skipped, by test module (largest first, {min(len(ranked), _MODULE_LINES)} of {len(ranked)}):")
-        lines += [f"  {name}  {count}" for name, count in ranked[:_MODULE_LINES]]
-        rest = sum(count for _, count in ranked[_MODULE_LINES:])
-        if rest:
-            lines.append(f"  (and {len(ranked) - _MODULE_LINES} more modules, {rest} skips)")
+        lines += _list(classes, "classes")
+        lines.append(f"skipped, by test module (largest first, {min(len(modules), _LIST_LINES)} of {len(modules)}):")
+        lines += _list(modules, "modules")
     return lines
 
 

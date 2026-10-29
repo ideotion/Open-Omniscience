@@ -2,11 +2,11 @@
 
 Why. The only reader of a CI job log that works from a session returns the last few kilobytes, and ``pytest -rsfE``'s skip block is hundreds of
 lines long, so "what did this job not run" could only be answered by re-running the suite locally (the 2026-10-29 skip audit did exactly that).
-The two full-suite jobs now write a junit report and run this script on it, on red as well as green. A skip's reason is free text that a test
-author wrote and pytest stores beside an ABSOLUTE PATH (a skip at collection time, such as a module-level ``importorskip``, carries
+The two full-suite jobs now write a junit report and run this script on it as their last step, on red as well as green. A skip's reason is free text
+that a test author wrote and pytest stores beside an ABSOLUTE PATH (a skip at collection time, such as a module-level ``importorskip``, carries
 ``('/home/runner/.../tests/test_x.py', 2, "Skipped: could not import 'duckdb': ...")`` as its element text), so this output is built from fixed
-words, integers and two kinds of name that must match a strict identifier pattern, and the tests below plant a path and a secret in every field a
-reason can reach and read the output for them.
+words, integers and two kinds of name that must match a strict identifier pattern and stay under a length bound, and the tests below plant a path
+and a secret in every field a reason can reach and read the output for them.
 
 What this pins:
 
@@ -14,7 +14,9 @@ What this pins:
   level, an expected failure that is not a skip), and the shapes are the ones pytest WRITES: one test runs a real pytest on a tiny project and
   summarizes the report it produced, so a pytest release that moves the shape fails here and not silently in CI;
 * every output line has one of a few fixed shapes (``_line_problems``): a planted path, secret, newline or workflow command (``::error::``) in a
-  message, an element text, a class name or a test name appears in NO line, whatever the text says;
+  message, an element text, a class name or a test name appears in NO line. The one thing that passes by design is a name that IS an identifier
+  (a module an ``importorskip`` names is printed as that module; a test says so), and a name over the length bound becomes a fixed word, so a
+  line, and each list, stays short whatever the report says;
 * it never fails a job: a missing report, a truncated one, a hostile one (an entity-expansion document, refused by ``defusedxml``) and an empty one
   each become one honest line and exit status 0; only a wrong command line is an error;
 * the guard proves itself: a variant that prints the message, or the element text, is caught by the same line check.
@@ -54,7 +56,7 @@ _ALLOWED_LINES = (
     re.compile(rf"  import {_IDENT}  \d+"),
     re.compile(r"skipped, by test module \(largest first, \d+ of \d+\):"),
     re.compile(rf"  (?:{_IDENT}|\(unnamed\)|\(not a test module\))  \d+"),
-    re.compile(r"  \(and \d+ more modules, \d+ skips\)"),
+    re.compile(r"  \(and \d+ more (?:classes|modules), \d+ skips\)"),
     re.compile(r"skip summary: [a-z][a-z ()]*[a-z)]"),
     re.compile(r"skip summary: the junit report could not be read \([A-Za-z]+\)"),
 )
@@ -129,7 +131,7 @@ def test_no_reason_path_or_secret_reaches_the_output(tmp_path):
         ("a line break inside a module name", _report(_case("tests.test_a", "test_x", _skip("could not import 'ok&#10;::error::pwned'")))),
         ("a secret as the module name's tail", _report(_case("tests.test_a", "test_x", _skip(f"could not import 'a b {_SECRET}'")))),
         ("a path as the imported module", _report(_case("tests.test_a", "test_x", _skip(f"could not import '{_PATH}': No module")))),
-        ("a name over the length bound", _report(_case("tests.test_a", "test_x", _skip("could not import '" + "a" * 80 + "'")))),
+        ("a workflow command inside the name's tail", _report(_case("tests.test_a", "test_x", _skip("could not import 'a'::error::pwned")))),
         ("a workflow command as the class name", _report(_case("tests.test_a&#10;::error::pwned", "test_x", _skip("x")))),
         ("a path as the class name", _report(_case(_PATH, "test_x", _skip("x")))),
         ("a workflow command as a collection name", _report(_case("", "::error::pwned", _skip("collection skipped", "::error::pwned")))),
@@ -168,12 +170,47 @@ def test_names_that_cannot_be_told_safely_become_fixed_words(tmp_path):
 
 
 def test_the_module_list_is_bounded_and_the_rest_is_summed_not_dropped(tmp_path):
-    many = _report(*(_case(f"tests.test_m{i:03d}", "test_x", _skip("r")) for i in range(ci_skip_summary._MODULE_LINES + 7)))
+    many = _report(*(_case(f"tests.test_m{i:03d}", "test_x", _skip("r")) for i in range(ci_skip_summary._LIST_LINES + 7)))
     lines = _output(tmp_path, many).splitlines()
-    assert f"skipped, by test module (largest first, {ci_skip_summary._MODULE_LINES} of {ci_skip_summary._MODULE_LINES + 7}):" in lines
+    assert f"skipped, by test module (largest first, {ci_skip_summary._LIST_LINES} of {ci_skip_summary._LIST_LINES + 7}):" in lines
     assert lines[-1] == "  (and 7 more modules, 7 skips)"
-    assert sum(1 for line in lines if re.fullmatch(r"  tests\.test_m\d+  1", line)) == ci_skip_summary._MODULE_LINES
+    assert sum(1 for line in lines if re.fullmatch(r"  tests\.test_m\d+  1", line)) == ci_skip_summary._LIST_LINES
     assert _line_problems("\n".join(lines)) == []
+
+
+def test_the_class_list_is_bounded_too_and_a_hostile_report_cannot_make_the_log_long(tmp_path):
+    limit = ci_skip_summary._LIST_LINES
+    many = _report(*(_case(f"tests.test_m{i:03d}", "test_x", _skip(f"could not import 'mod_{i:03d}'")) for i in range(limit + 40)))
+    lines = _output(tmp_path, many).splitlines()
+    assert "  (and 40 more classes, 40 skips)" in lines
+    assert sum(1 for line in lines if re.fullmatch(r"  import mod_\d+  1", line)) == limit
+    assert len(lines) <= 2 * (limit + 1) + 4, len(lines)  # two lists of at most `limit` lines and their rest line, the counts line and three headings
+    assert _line_problems("\n".join(lines)) == []
+
+
+def test_a_name_over_its_length_bound_becomes_a_fixed_word_not_a_long_line(tmp_path):
+    # the import name is bound by the pattern (64 characters), the test module by _NAME_MAX; 2 MB of identifier characters once made a 2 MB line
+    out = _output(
+        tmp_path,
+        _report(
+            _case("tests.test_a", "test_x", _skip("could not import '" + "a" * 80 + "'")),
+            _case("tests.test_" + "A" * 2_000_000, "test_x", _skip("y")),
+            _case("tests.test_" + "B" * (ci_skip_summary._NAME_MAX - len("tests.test_")), "test_x", _skip("z")),
+        ),
+    )
+    lines = out.splitlines()
+    assert "  other  3" in lines and "  (unnamed)  1" in lines, lines
+    assert "  tests.test_" + "B" * (ci_skip_summary._NAME_MAX - len("tests.test_")) + "  1" in lines  # exactly at the bound is still taken
+    assert max(len(line) for line in lines) <= ci_skip_summary._NAME_MAX + 8, max(len(line) for line in lines)
+    assert _line_problems(out) == []
+
+
+def test_a_name_that_is_an_identifier_is_printed_as_the_module_it_names(tmp_path):
+    # the limit of the strict patterns, stated and pinned rather than left unsaid: they keep out free text, paths and line breaks, not an identifier.
+    # A module name comes from a test's own source (``importorskip("NAME")``), never from the environment, and pytest's own -rs block prints it too.
+    out = _output(tmp_path, _report(_case("tests.test_a", "test_x", _skip(f"could not import '{_SECRET}': No module named"))))
+    assert f"  import {_SECRET}  1" in out.splitlines()
+    assert _PATH not in out and "/" not in out
 
 
 def test_a_report_with_no_skip_prints_one_line_of_counts(tmp_path):

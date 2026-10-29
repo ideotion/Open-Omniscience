@@ -358,7 +358,7 @@ jobs:
       # adding to it, so `-rs` alone would drop the FAILED and ERROR lines from a red run's summary, and the summary is printed in the ORDER
       # of the letters: the flags are `-rsfE`, skips first and the failures LAST, because the last lines of a log are the ones a reader of a
       # red run gets and the skip block runs to hundreds of lines (`-rfEs` put the failures BEFORE it, out of that tail's reach).
-      # `--junitxml` writes the report that the skip-summary step below reads: the skips by CLASS and COUNT, a few short lines that fit in any
+      # `--junitxml` writes the report that the skip-summary step below reads: the skips by CLASS and COUNT, a few dozen short lines that fit in any
       # tail, because the `-rs` block above is hundreds of lines (see the step).
       - name: Test (pytest)
         run: python -m pytest -q -rsfE --junitxml="$RUNNER_TEMP/junit.xml"
@@ -378,18 +378,6 @@ jobs:
             python -m pip list --format=freeze
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
-
-      # WHAT THIS JOB SKIPPED, by class and count, kept on a red run as well as a green one (`if: always()`), written to the log and to the step
-      # summary. The `-rs` block in the pytest step is hundreds of lines and a reader that returns only the last lines of a job log never reaches
-      # it, so "what did this job not run" was answered by re-running the suite locally. This is a handful of short lines, and an OBSERVATION: it
-      # gates nothing (a count that moves is a question for a reader), never prints a skip's reason (free text that pytest stores beside an absolute
-      # path) and never turns the job red (the script exits 0 whatever it finds, and `continue-on-error` covers the day it crashes). It must not
-      # name the test runner in its command: tests/test_ci_installed_versions_step.py finds "the last test step" by that word, and the
-      # installed-versions step above has to stay straight after it. tests/test_ci_pytest_flags_and_preflight.py pins the order and the report path.
-      - name: Skipped tests by class (counts only, no gate)
-        if: always()
-        continue-on-error: true
-        run: python scripts/ci_skip_summary.py "$RUNNER_TEMP/junit.xml" | tee -a "$GITHUB_STEP_SUMMARY"
 
       # Type check (0.0.8 WP7 / MAINT-03), BLOCKING since 2026-08-20.
       #
@@ -421,6 +409,20 @@ jobs:
         run: |
           python -m pip install pip-audit==2.10.1  # pinned (OO-D15-004): an unpinned audit tool can redden PRs through no code change, exactly like bandit/mypy
           pip-audit --skip-editable
+
+      # WHAT THIS JOB SKIPPED, by class and by test module, counts only, kept on a red run as well as a green one (`if: always()`), written to the log
+      # and to the step summary. The `-rs` block in the pytest step is hundreds of lines and a reader that returns only the last lines of a job log never
+      # reaches it, so "what did this job not run" was answered by re-running the suite locally. This is a few dozen short lines (the lists are capped),
+      # and an OBSERVATION: it gates nothing (a count that moves is a question for a reader), prints no free-text reason (pytest stores a skip's reason
+      # beside an absolute path) and never turns the job red (the script exits 0 whatever it finds, and `continue-on-error` covers the day it crashes).
+      # It is the LAST step of the job, after the installed-versions step: the steps between (mypy, bandit, pip-audit) run on a green suite and print
+      # more than the log's tail holds, and it is the tail that a reader gets. It must not name the test runner in its command:
+      # tests/test_ci_installed_versions_step.py finds "the last test step" by that word, and the installed-versions step has to stay straight after it.
+      # tests/test_ci_pytest_flags_and_preflight.py pins the order and the report path.
+      - name: Skipped tests by class and module (counts only, no gate)
+        if: always()
+        continue-on-error: true
+        run: python scripts/ci_skip_summary.py "$RUNNER_TEMP/junit.xml" | tee -a "$GITHUB_STEP_SUMMARY"
 
   # The "extras are optional" contract (audit finding TEST-06): a core-only
   # install must boot and its suite must be green, with analysis-dependent tests
@@ -462,9 +464,9 @@ jobs:
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
-      # The same skip summary as the `test` job's (see there): counts by class and by test module, no reasons, no gate. Here it shows what the
-      # analysis-module skips on purpose came to, so a count that moves is a question for a reader.
-      - name: Skipped tests by class (counts only, no gate)
+      # The same skip summary as the `test` job's (see there): counts by class and by test module, no free-text reasons, no gate. Here it shows what the
+      # analysis-module skips on purpose came to, so a count that moves is a question for a reader. The job's last step, as there.
+      - name: Skipped tests by class and module (counts only, no gate)
         if: always()
         continue-on-error: true
         run: python scripts/ci_skip_summary.py "$RUNNER_TEMP/junit.xml" | tee -a "$GITHUB_STEP_SUMMARY"
@@ -619,7 +621,7 @@ jobs:
         run: python -c "from src.api.main import app; print(sum(1 for _ in app.routes), 'routes')"
 
       # `-rsfE`, the same flags as the `test` job's (see there for why `s` comes first and why `-r` needs `fE` beside it): a macOS skip count that differs from
-      # Linux's is read from this log. No junit report here: the matrix has a Windows leg whose default shell does not expand `$RUNNER_TEMP`.
+      # Linux's is read from this log. No junit report here: the matrix has a Windows leg whose default shell is PowerShell, which reads `$RUNNER_TEMP` as one of its own (unset) variables.
       - name: Test (pytest)
         run: python -m pytest -q -rsfE
 
