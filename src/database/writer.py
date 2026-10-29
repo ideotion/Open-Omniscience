@@ -1052,8 +1052,15 @@ def start_write_gate_watchdog() -> bool:
         t = threading.Thread(
             target=_watchdog_loop, args=(stop,), daemon=True, name="oo-write-gate-watchdog"
         )
-        t.start()
+        # Claimed BEFORE ``start()``: an interrupt that lands while ``start()`` waits for the new thread to report in leaves the OS thread
+        # created and about to run, so the claim must stand or the next call starts a second watchdog. Given back only for an
+        # ``Exception`` ("can't start new thread": no thread was created).
         _WATCHDOG_STARTED = True
+        try:
+            t.start()
+        except Exception:
+            _WATCHDOG_STARTED = False
+            raise
     return True
 
 

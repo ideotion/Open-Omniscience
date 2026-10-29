@@ -930,7 +930,10 @@ class DamageRegistry:
             self._jobs[key] = t
             try:
                 t.start()
-            except BaseException:
+            except Exception:
+                # Only an ``Exception`` says no thread was created ("can't start new thread"). An interrupt that lands while
+                # ``start()`` waits for the new thread to report in leaves the thread created and about to run: its key must
+                # stay, or the next call for the same key starts a second thread instead of counting itself in ``_pending``.
                 self._jobs.pop(key, None)
                 raise
         t.join(RECORD_WAIT_S)

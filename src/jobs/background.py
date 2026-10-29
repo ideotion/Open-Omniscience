@@ -194,9 +194,13 @@ class BackgroundJob:
             self._thread = t
             try:
                 t.start()
-            except BaseException as exc:
+            except Exception as exc:
                 # The worker never ran: leave no phantom "running" job (it would hold ``db_writers_busy`` for the life
-                # of the process, and a caller that joins it would raise).
+                # of the process, and a caller that joins it would raise). Only an ``Exception`` says so: CPython catches
+                # nothing else around the thread's creation, and an interrupt (a ``BaseException``) that lands while
+                # ``start()`` waits for the new thread to report in leaves the OS thread created and about to run the
+                # worker, with ``is_alive()`` still False. Marking that job "error" would let a second ``start()`` run a
+                # second worker of the same kind beside it, so the job stays "running" and the interrupt propagates.
                 self._thread = None
                 self._state = "error"
                 self._error = f"{type(exc).__name__}: could not start the worker thread"[:300]
