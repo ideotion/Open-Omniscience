@@ -44,8 +44,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[analysis,dev]"
+      # `-rsfE`: the skip listing first and the FAILED/ERROR lines last (see ci.yml's `test` job); `-r` replaces pytest's default `fE`.
       - name: Test (pytest)
-        run: python -m pytest -q
+        run: python -m pytest -q -rsfE
 
   release:
     name: Build + publish release
