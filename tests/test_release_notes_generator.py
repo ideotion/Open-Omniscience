@@ -338,7 +338,20 @@ def test_every_placeholder_the_fragment_check_refuses_is_refused_in_a_cited_row_
     sel = rn.select(rn.read_rows(_write_csv(tmp_path / "shipped.csv", rows)), _selection())
     with pytest.raises(rn.ReleaseNotesError) as exc:
         rn.refuse_placeholders(sel)
-    assert "held/row" in str(exc.value) and "#PRNUMBER" in str(exc.value), "the refusal names the row and all three tokens"
+    assert "held/row" in str(exc.value), "the refusal names the row"
+
+
+def test_the_refusal_names_all_three_tokens_it_judges_by(tmp_path):
+    """The message is what an operator reads when a tag is refused, so it names every token the predicate
+    refuses, not only the one in the row at hand (a mutant that kept just ``#PRNUMBER`` passed the
+    parametrized test above, whose ``PR #PRNUMBER`` case repeats the token through the offender line)."""
+    rows = list(_ROWS) + [("2026-02-20", "held/row", "swept later", "shipped", "PR pending")]
+    sel = rn.select(rn.read_rows(_write_csv(tmp_path / "shipped.csv", rows)), _selection())
+    with pytest.raises(rn.ReleaseNotesError) as exc:
+        rn.refuse_placeholders(sel)
+    message = str(exc.value).split("refs=")[0]  # the sentence, not the offender line that repeats the value
+    for token in ("PR pending", "#NNNN", "#PRNUMBER"):
+        assert token in message, (token, message)
 
 
 @pytest.mark.parametrize("refs", ["PR #8", "R9; PR #8", "depending on #1637", "R12; #PRNUMBERS is not the token"])
@@ -353,7 +366,9 @@ def test_a_refs_value_the_fragment_check_accepts_is_not_refused_either(tmp_path,
 
 def test_the_refs_predicate_is_the_one_ledger_shipped_applies_not_a_copy(monkeypatch):
     """The reader FOLLOWS its source (family 3 above): swap the regex ``ledger_shipped`` owns and the gate's
-    answer swaps with it. A private copy in this script passes every fixed-token test above and fails this."""
+    answer swaps with it. A private copy in this script passes every fixed-token test above and fails this.
+    It pins one cached, live attribute lookup: binding the regex once at import, or dropping the cache so each
+    call builds a module the patch never reaches, also turns it red."""
     monkeypatch.setattr(rn._ledger_shipped(), "REFS_PLACEHOLDER", re.compile("zzz"))
     assert not rn.refs_carry_placeholder({"refs": "PR pending"})
     assert rn.refs_carry_placeholder({"refs": "PR zzz"})
@@ -670,7 +685,7 @@ def test_the_real_ledger_carries_no_placeholder_any_release_would_cite():
     rows = rn.read_rows(_REAL_CSV)
     offenders = [r for r in rows if rn.refs_carry_placeholder(r)]
     assert not offenders, (
-        "unswept `PR pending` placeholder(s) in shipped.csv's refs column: "
+        "unswept placeholder(s) (`PR pending`, `#NNNN` or `#PRNUMBER`) in shipped.csv's refs column: "
         + ", ".join(f"{r['date']} {r['area']}" for r in offenders)
     )
 

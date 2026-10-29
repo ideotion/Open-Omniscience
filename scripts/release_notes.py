@@ -27,7 +27,8 @@ WHAT IT REFUSES, AND WHY EACH REFUSAL IS THE SAFE DIRECTION:
   truncation would move the *previous tag* and therefore the whole row selection. The
   generator unshallows once and REFUSES if the clone is still shallow — never quietly
   produces a range computed from a boundary artifact.
-* **A ``PR pending`` placeholder in a row it would cite.** Protocol rule (5b): the
+* **A placeholder in a row it would cite** (``PR pending``, ``#NNNN`` or ``#PRNUMBER``, the
+  predicate ``ledger_shipped.REFS_PLACEHOLDER``). Protocol rule (5b): the
   placeholder is "a PLACEHOLDER, not a value". Publishing one into a release body makes a
   permanent citation out of a to-do. The check is COLUMN-AWARE, per the 2026-09-11 lesson
   that a line-grep for the phrase matches the ledger row that records the phrase's own
