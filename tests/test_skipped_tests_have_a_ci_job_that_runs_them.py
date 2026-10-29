@@ -59,8 +59,9 @@ _IMPORT_NAME = {
     "pypdfium2": "pypdfium2",
 }
 
-#: A name that gates a test on a package without an ``importorskip`` of it.
-_GATE_NAMES = {"duckdb_available": "duckdb"}
+#: A name that gates a test on a package without an ``importorskip`` of it (``_duckdb_minor()`` is None where duckdb is absent: the
+#: httpfs loader file skips on it).
+_GATE_NAMES = {"duckdb_available": "duckdb", "_duckdb_minor": "duckdb"}
 
 #: Files that mention a gate name without skipping on it, each with why.
 _NOT_A_SKIP = {
@@ -186,7 +187,32 @@ def gated_packages(source: str) -> set[str]:
         name = node.attr if isinstance(node, ast.Attribute) else node.id if isinstance(node, ast.Name) else ""
         if name in _GATE_NAMES:
             found.add(_GATE_NAMES[name])
+        if isinstance(node, ast.Try):
+            found |= _guarded_imports(node)
     return found
+
+
+def _guarded_imports(node: ast.Try) -> set[str]:
+    """The packages ``try: import X`` / ``except ...: return`` (or ``pytest.skip``) leaves a test to pass, or skip, without.
+
+    Reads a plain ``return`` as leaving, so a fallback that returns a default and carries on is read as a gate too: harmless for a core
+    package (``uncovered`` drops those), a false demand for a CI job if an extra package did it. It does not see ``import a, b`` past ``a``,
+    ``except*``, an import nested under ``with``/``if`` inside the ``try``, or a handler raising ``unittest.SkipTest``."""
+    mods = {
+        (b.names[0].name if isinstance(b, ast.Import) else b.module or "").split(".")[0].lower()
+        for b in node.body
+        if isinstance(b, ast.Import) or (isinstance(b, ast.ImportFrom) and not b.level)  # a relative import is no package
+    }
+    leaves = False
+    for handler in node.handlers:
+        for sub in ast.walk(handler):
+            if isinstance(sub, ast.Return):
+                leaves = True
+            elif isinstance(sub, ast.Call):
+                fn = sub.func
+                if (fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")) == "skip":
+                    leaves = True
+    return {m for m in mods if m} if leaves else set()
 
 
 def uncovered(runs: list[Run], core: set[str], extras: dict[str, set[str]], gated: dict[str, set[str]]) -> dict[str, str]:
@@ -349,6 +375,39 @@ _DUCK = 'import pytest\npytest.importorskip("duckdb")\n'
                 "tests/test_f.py": "def test_x():\n    if not columnar.duckdb_available():\n        pytest.skip('x')\n",
             },
             {"tests/test_e.py": "duckdb", "tests/test_f.py": "duckdb"},
+        ),
+        # the version probe is a gate too: ``MINOR = columnar._duckdb_minor()`` is None without duckdb, and a file skipping on it is skipped there
+        (
+            _wf(_job("t", 'python -m pip install -e ".[dev]"', "python -m pytest -q")),
+            {"tests/test_g.py": "MINOR = columnar._duckdb_minor()\npytestmark = pytest.mark.skipif(MINOR is None, reason='x')\n"},
+            {"tests/test_g.py": "duckdb"},
+        ),
+        # ``try: import X`` / ``except ...: return`` (or pytest.skip) passes, or skips, without X: the same gap, and a return does not even say so
+        (
+            _wf(_job("t", 'python -m pip install -e ".[dev]"', "python -m pytest -q")),
+            {
+                "tests/test_h.py": "def test_x():\n    try:\n        import duckdb\n    except Exception:\n        return\n    assert duckdb\n",
+                "tests/test_i.py": "def test_x():\n    try:\n        from duckdb import connect\n    except ImportError:\n        pytest.skip('x')\n",
+            },
+            {"tests/test_h.py": "duckdb", "tests/test_i.py": "duckdb"},
+        ),
+        # a relative import is not a package, whatever its handler does
+        (
+            _wf(_job("t", 'python -m pip install -e ".[dev]"', "python -m pytest -q")),
+            {"tests/test_k.py": "def test_x():\n    try:\n        from .helpers import x\n    except ImportError:\n        return\n"},
+            {},
+        ),
+        # an import that is allowed to fail by raising something else, or by being the thing under test, is not a gate
+        (
+            _wf(_job("t", 'python -m pip install -e ".[dev]"', "python -m pytest -q")),
+            {"tests/test_j.py": "def test_x():\n    try:\n        import duckdb\n    except ImportError as exc:\n        raise RuntimeError('x') from exc\n"},
+            {},
+        ),
+        # and when a job installs the extra and names the file, the guarded import is covered like any other gate
+        (
+            _wf(_job("c", 'python -m pip install -e ".[dev,columnar]"', "python -m pytest -q tests/test_h.py")),
+            {"tests/test_h.py": "def test_x():\n    try:\n        import duckdb\n    except Exception:\n        return\n"},
+            {},
         ),
         # a file list continued over backslash lines is read whole
         (
