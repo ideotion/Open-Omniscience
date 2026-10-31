@@ -6,6 +6,7 @@ The managers raise ``RuntimeError`` when the worker thread cannot be started; th
 
 from __future__ import annotations
 
+import logging
 import threading
 
 import pytest
@@ -87,3 +88,44 @@ def test_real_dump_manager_thread_refusal_reaches_the_caller_as_409(client, monk
     assert r.status_code == 409
     assert "start new thread" in r.json()["detail"]
     assert "error" in [e["status"] for e in mgr.list()]
+
+
+def _refusals(caplog, logger):
+    return [r for r in caplog.records if r.name == logger and r.levelno == logging.WARNING]
+
+
+def test_wiki_dump_start_refusal_is_logged_once_with_the_reason(client, monkeypatch, caplog):
+    from src.wiki import dumps
+
+    monkeypatch.setattr(dumps, "get_manager", lambda: _RefusingManager())
+    with caplog.at_level(logging.WARNING, logger="api.wiki"):
+        assert client.post("/api/wiki/dumps/start", json={"wiki": "fr", "kind": "pages-articles-multistream"}).status_code == 409
+    rows = _refusals(caplog, "api.wiki")
+    assert len(rows) == 1 and "dump download for fr was refused at start" in rows[0].getMessage()
+    assert "could not start" in rows[0].getMessage()
+
+
+def test_wiki_index_build_refusal_is_logged_once_with_the_reason(client, monkeypatch, caplog):
+    from src.wiki import dump_index, dumpread
+
+    monkeypatch.setattr(dumpread, "readable_wikis", lambda: {"fr"})
+    monkeypatch.setattr(dump_index, "get_manager", lambda: _RefusingManager())
+    with caplog.at_level(logging.WARNING, logger="api.wiki"):
+        assert client.post("/api/wiki/dumps/index", json={"wiki": "fr"}).status_code == 409
+    rows = _refusals(caplog, "api.wiki")
+    assert len(rows) == 1 and "dump index build for fr was refused at start" in rows[0].getMessage()
+    assert "could not start" in rows[0].getMessage()
+
+
+def test_osm_start_and_resume_refusals_are_each_logged_with_the_reason(client, monkeypatch, caplog):
+    from src.geo import osm_downloads
+
+    monkeypatch.setattr(osm_downloads, "get_manager", lambda: _RefusingManager())
+    with caplog.at_level(logging.WARNING, logger="api.geo"):
+        assert client.post("/api/geo/downloads/start", json={"code": "europe"}).status_code == 409
+        assert client.post("/api/geo/downloads/resume", params={"key": "europe"}).status_code == 409
+    messages = [r.getMessage() for r in _refusals(caplog, "api.geo")]
+    assert len(messages) == 2
+    assert "download for europe was refused at start" in messages[0]
+    assert "download resume for europe was refused" in messages[1]
+    assert all("could not start" in m for m in messages)

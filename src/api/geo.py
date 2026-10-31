@@ -13,11 +13,15 @@ the Wikipedia dumps) is a follow-up slice.
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from src.api.cross_site import refuse_cross_site_get
-from src.monitoring.secret_scrub import http_detail
+from src.monitoring.secret_scrub import http_detail, log_failure
+
+_LOG = logging.getLogger("api.geo")
 
 router = APIRouter(prefix="/api/geo", tags=["geo"])
 
@@ -85,7 +89,9 @@ def osm_download_start(payload: StartRegion) -> dict:
     except ValueError as exc:  # path-unsafe code (defense in depth)
         raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     except RuntimeError as exc:
-        # The worker thread could not start (R393/R398): a named conflict the caller can retry, never a 500.
+        # The worker thread could not start (R393/R398): a named conflict the caller can retry, never a 500. Logged because the 409 reaches
+        # only the caller (R386).
+        log_failure(_LOG, f"the OSM region download for {region.code} was refused at start", exc, level=logging.WARNING)
         raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
@@ -129,7 +135,9 @@ def osm_download_resume(key: str = Query(..., description="region code of the do
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     except RuntimeError as exc:
-        # The worker thread could not start (R393/R398): a named conflict the caller can retry, never a 500.
+        # The worker thread could not start (R393/R398): a named conflict the caller can retry, never a 500. Logged because the 409 reaches
+        # only the caller (R386).
+        log_failure(_LOG, f"the OSM region download resume for {region.code} was refused", exc, level=logging.WARNING)
         raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
