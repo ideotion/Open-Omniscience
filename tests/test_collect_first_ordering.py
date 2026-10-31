@@ -11,13 +11,23 @@ network.
 from __future__ import annotations
 
 import contextlib
-from unittest.mock import MagicMock
 
 import pytest
 
 import src.scheduler.runner as runner
 from src.scheduler.runner import BackgroundScheduler, current_phase
 from src.scheduler.settings import SchedulerSettings
+
+
+class _NoopSession:
+    """A session for a stubbed lane: it only has to take the lane's ``commit`` and ``rollback`` (a ``MagicMock`` would let an un-stubbed step
+    run real code against it instead of failing fast, which changes what the ordering assertions see)."""
+
+    def commit(self) -> None:
+        pass
+
+    def rollback(self) -> None:
+        pass
 
 
 @pytest.fixture()
@@ -28,7 +38,7 @@ def order(monkeypatch):
     # Stub the heavy/networked collaborators _default_run_once reaches for.
     @contextlib.contextmanager
     def _fake_scope():
-        yield MagicMock()  # a session: the lane commits after each step
+        yield _NoopSession()  # the lane commits after each step
 
     monkeypatch.setattr("src.database.session.session_scope", _fake_scope)
     monkeypatch.setattr("src.safety.fetcher.make_fetcher", lambda: object())

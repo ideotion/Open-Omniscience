@@ -25,7 +25,6 @@ import sqlite3
 import sys
 import threading
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy import create_engine, event, text
@@ -55,6 +54,17 @@ SECRET = "S3CR3T-TITLE-VALUE-42"
 # --------------------------------------------------------------------------- #
 #  fixtures: a real store, and a real damaged copy of it
 # --------------------------------------------------------------------------- #
+class _NoopSession:
+    """A session for a stubbed lane: it only has to take the lane's ``commit`` and ``rollback`` (a ``MagicMock`` would let an un-stubbed step
+    run real code against it instead of failing fast, which changes what the ordering assertions see)."""
+
+    def commit(self) -> None:
+        pass
+
+    def rollback(self) -> None:
+        pass
+
+
 def _build_store(path: Path, rows: int = 3000) -> None:
     con = sqlite3.connect(path)
     con.execute(f"PRAGMA page_size={PAGE}")
@@ -1199,7 +1209,7 @@ def test_the_law_housekeeping_step_waits_on_its_own_file(registry, monkeypatch):
     monkeypatch.setattr(rn, "_activity", lambda *a, **k: shown.append(a))
     monkeypatch.setattr(fr, "wrap_fetcher", lambda f, s: f)
     _note(registry, "law")
-    out = rn.run_housekeeping_lane(MagicMock(), object(), object())
+    out = rn.run_housekeeping_lane(_NoopSession(), object(), object())
     assert ran == ["backfill"], "the law step ran into a damaged law file, or its neighbour was stopped"
     assert out["law"] == {"skipped": "database-damaged"} and out["backfill"] == {"ran": True}
     assert any(a[0] == "lane:law" and a[1] == {"skipped": "database-damaged"} for a in shown), (
@@ -1207,7 +1217,7 @@ def test_the_law_housekeeping_step_waits_on_its_own_file(registry, monkeypatch):
     )
     registry.retry(reason="test", files=("law",))
     ran.clear()
-    out = rn.run_housekeeping_lane(MagicMock(), object(), object())
+    out = rn.run_housekeeping_lane(_NoopSession(), object(), object())
     assert ran == ["law", "backfill"]
 
 
