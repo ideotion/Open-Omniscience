@@ -6,10 +6,11 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 Why it exists. 54 test files skip when ``node`` is missing (measured 2026-10-31 by running them with no node on PATH: 99 tests skip, 590 pass, and
 one, ``test_release_run_panel_node_suite``, fails because it calls node without a probe), five more files skip on ``bash``, three on ``git``, one on
 ``unzip``, one on a C compiler. ``ci.yml`` installs none of them: they come with the ``ubuntu-latest`` image, and nothing in the repository says so,
-pins them or asserts them. If the image dropped one, those tests would turn into GREEN skips and the job would say nothing (the skip summary of the
-``test`` and ``core-only`` jobs, 353 and 419 skips in 44 and 73 modules, shows the node-gated files are not among them, so today they run). The
-repository already answered this for PowerShell: ``test_installer_windows.py`` asserts the tool when ``CI`` is set and skips on a developer machine. This
-is the same shape for the rest.
+pins them or asserts them. A node-less runner is mostly LOUD already: 89 further files call ``node`` with no probe and fail with ``FileNotFoundError``.
+What is SILENT is the 99 node skips and every skip on bash, git, unzip and a C compiler: if the image dropped one, those tests would turn into green
+skips and no failure would name the tool (the skip summary of the ``test`` and ``core-only`` jobs, 353 and 419 skips in 44 and 73 modules, shows the
+node-gated files are not among them, so today they run). The repository already answered this for PowerShell: ``test_installer_windows.py`` asserts the
+tool when ``CI`` is set and skips on a developer machine. This is the same shape for the rest.
 
 What this pins:
 
@@ -76,7 +77,7 @@ def probed_tools(source: str) -> set[str]:
 
 def missing_on_runner(which=shutil.which) -> list[str]:
     """What a runner lacks, one sentence per tool. ``which`` is a parameter so the self-proof can hide a tool without touching the machine."""
-    out = [f"{tool}: tests that skip without it would all turn green by skipping" for tool in _REQUIRED if not which(tool)]
+    out = [f"{tool}: tests that skip without it would skip silently" for tool in _REQUIRED if not which(tool)]
     if not any(which(cc) for cc in _C_COMPILERS):
         out.append(f"a C compiler ({', '.join(_C_COMPILERS)}): the malloc-arena stand-in library test would skip")
     return out
