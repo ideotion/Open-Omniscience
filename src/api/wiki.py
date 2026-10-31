@@ -588,6 +588,9 @@ def dumps_start(payload: StartDump) -> dict:
         return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
+    except RuntimeError as exc:
+        # The worker thread could not start (R393/R398): a named conflict the caller can retry, never a 500.
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
 @router.post("/dumps/pause")

@@ -84,6 +84,9 @@ def osm_download_start(payload: StartRegion) -> dict:
         return get_manager().start(region.code, region.name)
     except ValueError as exc:  # path-unsafe code (defense in depth)
         raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
+    except RuntimeError as exc:
+        # The worker thread could not start (R393/R398): a named conflict the caller can retry, never a 500.
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
 @router.get("/downloads/size", dependencies=[Depends(refuse_cross_site_get)])
@@ -125,6 +128,9 @@ def osm_download_resume(key: str = Query(..., description="region code of the do
         return get_manager().start(region.code, region.name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
+    except RuntimeError as exc:
+        # The worker thread could not start (R393/R398): a named conflict the caller can retry, never a 500.
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
 @router.delete("/downloads")
