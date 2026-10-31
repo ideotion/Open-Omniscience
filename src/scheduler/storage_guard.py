@@ -178,6 +178,7 @@ import re
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
@@ -288,6 +289,24 @@ PHASE_DAMAGE = "paused-damaged"
 #: The check after an unexpected stop is reading the data files (``database/verify.py``): collection waits for
 #: it, and the pause ends by itself when it ends. Not a storage reading either: the registry's ``verifying()``.
 PHASE_VERIFY = "paused-verifying"
+
+#: What a background writer that stands aside (:meth:`StorageGuard.wait_if_engaged`) says on its job's row, as the keyed frames the task
+#: managers write in the UI language (keyed x12 in the locale files). Said for the latch ``kind()`` names, the drive first when both hold.
+FRAME_STAND_ASIDE_LOG = (
+    "Paused: a reader holds the database's working file (its write-ahead log) open, so it cannot be reset, "
+    "and writing more would only make it bigger. It resumes by itself as soon as it can be reset."
+)
+FRAME_STAND_ASIDE_DISK = "Paused: the data drive is nearly full. It resumes by itself once there is room."
+
+
+def stand_aside_detail(kind: str | None) -> str:
+    """The job-row line for a writer standing aside while the guard's ``kind`` latch holds: a ``Framed`` (an English sentence that also
+    carries its keyed frame), the drive's for ``"disk"`` and the log's for anything else a storage latch can be."""
+    from src.jobs.background import Framed
+
+    frame = FRAME_STAND_ASIDE_DISK if kind == "disk" else FRAME_STAND_ASIDE_LOG
+    return Framed(frame, frame)
+
 
 #: The plain-words sentences, as frames the page fills with the numbers in its own
 #: language (the pattern of ``estimate_method_i18n``). Each is also a locale key, x12.
@@ -1767,18 +1786,31 @@ class StorageGuard:
         *,
         poll_s: float = 2.0,
         max_wait_s: float | None = None,
+        should_stop: Callable[[], bool] | None = None,
+        on_wait: Callable[[str | None], None] | None = None,
     ) -> bool:
         """Block, interruptibly, while engaged. For a long background writer at a chunk
         boundary; holds no session, gate or permit here. Returns whether it waited.
 
         It follows the LATCH, not the operator's override: "Resume anyway" forces COLLECTION on
         (:meth:`admit`), and a background rewrite (the keyword boot recompute) is not collection.
+        Engaged is either storage latch, the log or the drive (``kind()`` says which); the
+        damage and verifying holds ``admit`` also reports are not a storage reading and are not
+        waited on here.
 
         Without a supervisor thread it takes the readings and the drain itself each turn
         (:meth:`poll_and_drain_unsupervised`), so the wait ends when the cause does. It ends
-        when ``stop`` is set, or after ``max_wait_s`` seconds when one is given (a pause lasts
-        as long as whatever holds the log lives, so a caller that cannot wait for ever says
-        how long it can); with neither it waits as long as the pause lasts.
+        when ``stop`` is set, when ``should_stop()`` answers True (a caller whose own stop is a
+        condition and not an Event; read every turn, so the reaction time is ``poll_s``, and a
+        callable that raises ends the wait with its error), or after ``max_wait_s`` seconds when
+        one is given (a pause lasts as long as whatever holds the log lives, so a caller that
+        cannot wait for ever says how long it can); with none of these it waits as long as the
+        pause lasts.
+
+        ``on_wait(kind)`` is called at the start of every turn that goes on to wait, with
+        ``kind()``, so a caller can say on its own row why it stands still (:func:`stand_aside_detail`
+        builds the line). A callback that raises never ends the wait: it is logged once (the type
+        only) and the wait goes on.
         """
         waited = False
         deadline = None if max_wait_s is None else self._clock() + max(0.0, max_wait_s)
@@ -1789,9 +1821,16 @@ class StorageGuard:
                 break
             if stop is not None and stop.is_set():
                 break
+            if should_stop is not None and should_stop():
+                break
             if deadline is not None and self._clock() >= deadline:
                 break
             waited = True
+            if on_wait is not None:
+                try:
+                    on_wait(self.kind())
+                except Exception as exc:  # noqa: BLE001 - a progress line is never a reason to end, or to fail, the wait
+                    self.log_failure_once("a wait's progress callback", exc)
             pause.wait(poll_s if deadline is None else max(0.0, min(poll_s, deadline - self._clock())))
         return waited
 

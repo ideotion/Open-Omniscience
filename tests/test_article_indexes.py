@@ -37,7 +37,10 @@ from src.database.damage import FILE_CORPUS, DamageRegistry
 from src.database.maintenance import DEFERRED_INDEXES, HOT_INDEXES, ensure_hot_indexes
 from src.database.models import Article, Base, Source
 from src.jobs.background import Framed
+from src.scheduler import storage_guard as sg
 from tests.js_source_helper import python_function_source
+from tests.stand_aside_helpers import engage, engaged_guard, healthy, healthy_guard, install
+from tests.wallclock_helpers import HANG_GUARD_S, wait_until
 
 ROOT = Path(__file__).resolve().parents[1]
 _REAL_AVAILABLE_RAM = ai._available_ram_bytes  # the reader the autouse fixture below replaces
@@ -155,6 +158,7 @@ class _Ctx:
 
     def __init__(self) -> None:
         self.calls: list[dict] = []
+        self.stopping = False  # the real context's flag; a cancel (programmatic: the build offers no Cancel) sets it
 
     def set_progress(self, **kw):
         self.calls.append(kw)
@@ -961,6 +965,156 @@ def test_a_serve_kicked_build_during_the_window_is_told_the_index_build_may_be_w
     monkeypatch.setitem(boot_sequence._STATE, "warm", "running")
     verdict = boot_sequence.heavy_step_verdict()
     assert verdict and verdict["reason"] == "boot_order" and "index build" in verdict["detail"], verdict
+
+
+# --------------------------------------------------------------------------- #
+#  standing aside while the storage guard is engaged (R398, B1)
+# --------------------------------------------------------------------------- #
+# A statement that writes an index to the write-ahead log is the last thing to start while a reader pins the log. The build waits
+# BEFORE each statement, holding no connection, gate or transaction, and a pause is not a build that brought the process down.
+def _says(ctx, frame: str) -> bool:
+    return any(getattr(c.get("detail"), "i18n", None) == frame for c in list(ctx.calls))
+
+
+def _build_on_a_thread(eng, ctx):
+    out: list = []
+
+    def run():
+        try:
+            out.append(ai.build_missing(eng, ctx))
+        except BaseException as exc:  # noqa: BLE001 - handed to the test's thread
+            out.append(exc)
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    return t, out
+
+
+def test_the_build_waits_before_its_first_statement_while_the_log_is_pinned_and_records_no_attempt_meanwhile(eng, monkeypatch):
+    g, readings = engaged_guard(monkeypatch, "wal")
+    install(monkeypatch, g)
+    readings_taken: list[int] = []
+    real_preflight = ai.preflight
+    monkeypatch.setattr(ai, "preflight", lambda *a, **k: readings_taken.append(1) or real_preflight(*a, **k))
+    ctx = _Ctx()
+    t, out = _build_on_a_thread(eng, ctx)
+    assert wait_until(lambda: _says(ctx, sg.FRAME_STAND_ASIDE_LOG)), "the row says why it stands still"
+    assert not ({LANG, TITLE} & _names(eng)), "no index statement ran while the latch held"
+    assert _marker() is None, "a pause is not a build that brought the process down: nothing recorded as unfinished"
+    assert readings_taken == [], "the free-space and memory readings are taken right before the build, not hours before it"
+    healthy(readings)
+    t.join(HANG_GUARD_S)
+    assert not t.is_alive() and out[0]["outcome"] == "built" and list(out[0]["built"]) == [LANG, TITLE]
+    assert readings_taken == [1] and out[0]["preflight"]["sufficient"] is True and _marker() is None
+
+
+def test_the_drive_latch_is_followed_too_and_the_row_says_the_drive(eng, monkeypatch):
+    g, readings = engaged_guard(monkeypatch, "disk")
+    install(monkeypatch, g)
+    ctx = _Ctx()
+    t, out = _build_on_a_thread(eng, ctx)
+    assert wait_until(lambda: _says(ctx, sg.FRAME_STAND_ASIDE_DISK))
+    assert not ({LANG, TITLE} & _names(eng))
+    healthy(readings)
+    t.join(HANG_GUARD_S)
+    assert not t.is_alive() and out[0]["outcome"] == "built"
+
+
+def _engage_before_the_second_statement(eng, g, readings, seen_attempts):
+    """Engage the latch as the first CREATE INDEX starts, so the wait falls between the two statements; record the attempt record
+    each statement sees."""
+
+    @event.listens_for(eng, "before_cursor_execute")
+    def _look(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("CREATE INDEX"):
+            seen_attempts.append((LANG in statement, (_marker() or {}).get("attempts")))
+            if LANG in statement:
+                engage(g, readings)
+
+
+def test_the_build_waits_between_its_two_statements_and_gives_the_attempt_back_for_the_wait(eng, monkeypatch):
+    g, readings = healthy_guard(monkeypatch)
+    install(monkeypatch, g)
+    seen: list = []
+    _engage_before_the_second_statement(eng, g, readings, seen)
+    ctx = _Ctx()
+    t, out = _build_on_a_thread(eng, ctx)
+    assert wait_until(lambda: _says(ctx, sg.FRAME_STAND_ASIDE_LOG)), "it stood aside before the second statement"
+    assert LANG in _names(eng) and TITLE not in _names(eng), "the first index is built and the second waits"
+    assert _marker() is None, "the only attempt was this start's and a pause is not a crash: nothing counts while it waits"
+    paused = [c for c in ctx.calls if getattr(c.get("detail"), "i18n", None) == sg.FRAME_STAND_ASIDE_LOG]
+    assert (paused[-1]["done"], paused[-1]["total"]) == (1, 2), "the bar stays at one of two"
+    healthy(readings)
+    t.join(HANG_GUARD_S)
+    assert not t.is_alive() and out[0]["outcome"] == "built" and list(out[0]["built"]) == [LANG, TITLE]
+    assert seen == [(True, 1), (False, 1)], "the second statement runs with the attempt taken again"
+    assert out[0]["attempt_recorded"] is True and _marker() is None
+
+
+def test_an_earlier_unfinished_start_stays_counted_through_the_wait(eng, monkeypatch):
+    ai._write_marker(1)  # an earlier start that was killed
+    g, readings = healthy_guard(monkeypatch)
+    install(monkeypatch, g)
+    seen: list = []
+    _engage_before_the_second_statement(eng, g, readings, seen)
+    ctx = _Ctx()
+    t, out = _build_on_a_thread(eng, ctx)
+    assert wait_until(lambda: _says(ctx, sg.FRAME_STAND_ASIDE_LOG))
+    assert _marker()["attempts"] == 1, "only this start's attempt is given back; the earlier one is still the record"
+    healthy(readings)
+    t.join(HANG_GUARD_S)
+    assert out[0]["outcome"] == "built" and seen == [(True, 2), (False, 2)]
+    assert _marker() is None
+
+
+def test_a_stop_during_the_first_wait_builds_nothing_and_says_stopped(eng, monkeypatch):
+    g, _readings = engaged_guard(monkeypatch, "wal")
+    install(monkeypatch, g)
+    ctx = _Ctx()
+    t, out = _build_on_a_thread(eng, ctx)
+    assert wait_until(lambda: _says(ctx, sg.FRAME_STAND_ASIDE_LOG))
+    ctx.stopping = True
+    t.join(HANG_GUARD_S)
+    assert not t.is_alive(), "a stop reaches a build that is standing aside"
+    assert out[0]["outcome"] == "stopped" and out[0]["built"] == {}
+    assert not ({LANG, TITLE} & _names(eng)) and _marker() is None
+    assert ai.snapshot()["outcome"] == "stopped"
+
+
+def test_a_stop_during_the_wait_between_statements_keeps_what_was_built_and_gives_the_attempt_back(eng, monkeypatch):
+    g, readings = healthy_guard(monkeypatch)
+    install(monkeypatch, g)
+    _engage_before_the_second_statement(eng, g, readings, [])
+    ctx = _Ctx()
+    t, out = _build_on_a_thread(eng, ctx)
+    assert wait_until(lambda: _says(ctx, sg.FRAME_STAND_ASIDE_LOG))
+    ctx.stopping = True
+    t.join(HANG_GUARD_S)
+    assert not t.is_alive()
+    assert out[0]["outcome"] == "stopped" and list(out[0]["built"]) == [LANG]
+    assert LANG in _names(eng) and TITLE not in _names(eng), "the next start builds the rest"
+    assert _marker() is None, "a stop is not a build that brought the process down"
+
+
+def test_a_guard_that_is_off_or_calm_costs_the_build_nothing(eng, monkeypatch):
+    g, _readings = healthy_guard(monkeypatch)
+    install(monkeypatch, g)
+    ctx = _Ctx()
+    assert ai.build_missing(eng, ctx)["outcome"] == "built"
+    assert not _says(ctx, sg.FRAME_STAND_ASIDE_LOG)
+    assert [(c.get("done"), c.get("total")) for c in ctx.calls] == [(0, 2), (1, 2), (2, 2)]
+
+
+def test_a_guard_that_cannot_be_consulted_never_fails_the_build(eng, monkeypatch, caplog):
+    g, _readings = engaged_guard(monkeypatch, "wal")
+
+    def _broken(*_a, **_k):
+        raise RuntimeError("a path the guard must not echo")
+
+    monkeypatch.setattr(sg, "storage_guard", g)
+    monkeypatch.setattr(g, "wait_if_engaged", _broken)
+    assert ai.build_missing(eng, _Ctx())["outcome"] == "built"
+    assert "RuntimeError" in caplog.text and "a path the guard must not echo" not in caplog.text, "the type only"
 
 
 # --------------------------------------------------------------------------- #

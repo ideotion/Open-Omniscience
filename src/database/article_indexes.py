@@ -58,6 +58,17 @@ the next start builds from the beginning. The progress is ``index N of M``; the 
 a percentage of those two statements (not of time: the title index is the larger half) and never an ETA
 (a single statement reports no progress of its own).
 
+STANDING ASIDE (R398, B1). A statement that writes an index to the write-ahead log is the last thing to start while the log is
+pinned by a reader: the storage guard (``scheduler/storage_guard.py``) pauses collection, the housekeeping lane and the heavy
+reads while its log or drive latch holds, and the build waits on the same latch (``wait_if_engaged``). It waits BEFORE each
+statement and holds no connection, gate or transaction while it does, so it is not itself the reader that pins the log. The
+first wait comes before the free-space and memory readings (so they are taken right before the build, not hours before it)
+and before the attempt record, because a pause is not a build that brought the process down; the wait between the two
+statements gives the attempt back and takes it again, for the same reason. The row says why it stands still (keyed, in the
+UI language). It ends by itself when the cause does, or on a stop (the outcome ``stopped``: nothing more is built, the next start
+asks again). Boot's later steps wait behind a paused build, as they do behind a slow one (``boot_sequence``: no timeout, the
+slow step is the fault and has to be seen).
+
 HONEST LIMITS. Both figures are estimates (title length varies; they are sized on titles twice the
 synthetic store's) and the report carries what was measured. A memory estimate that turns out too small is
 not caught by the gate: the build is one opaque statement, and the memory guard it relies on pauses
@@ -79,6 +90,7 @@ import shutil
 import sys
 import threading
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -381,21 +393,27 @@ def _disarm() -> None:
         _marker_path().unlink()
 
 
+def _give_back() -> None:
+    """Take this process's attempt out of the record, leaving the earlier starts' count as it was: a quit, or a pause
+    (:func:`_stand_aside`), is not a build that brought the process down. Nothing to do when this process holds none."""
+    global _ARMED
+    with _LOCK:
+        armed, _ARMED = _ARMED, False
+    if not armed:
+        return
+    left = _unfinished_starts() - 1
+    if left <= 0:
+        with contextlib.suppress(OSError):
+            _marker_path().unlink()
+    else:
+        _write_marker(left, gave_back=True)
+
+
 def stop() -> None:
     """Shutdown (the app is being quit in order): give the attempt back. A quit is not a build that brought the
     process down, and quitting twice in a long build must not stop it from being built. Never raises."""
-    global _ARMED
     try:
-        with _LOCK:
-            armed, _ARMED = _ARMED, False
-        if not armed:
-            return
-        left = _unfinished_starts() - 1
-        if left <= 0:
-            with contextlib.suppress(OSError):
-                _marker_path().unlink()
-        else:
-            _write_marker(left, gave_back=True)
+        _give_back()
     except Exception as exc:  # noqa: BLE001 - best-effort shutdown
         _LOG.debug("article-list index build: could not give an attempt back (%s)", type(exc).__name__)
 
@@ -424,6 +442,37 @@ def _refresh_stats(engine: Engine, names: list[str]) -> None:
         # The TYPE only, never the text or a traceback: an engine's or a driver's message (and the error it was raised from)
         # can carry a statement, and a keyed connection's can carry the passphrase; a record's ``exc_info`` rides the bundle.
         _LOG.warning("planner statistics after the article indexes failed (%s)", type(exc).__name__)
+
+
+def _stand_aside(ctx: JobContext | None, total: int, *, done: int = 0, retake: Callable[[], None] | None = None) -> bool:
+    """Wait, holding no connection, gate or transaction, while the storage guard's latch holds (R398, B1); ``True`` = the build
+    goes on, ``False`` = a stop (``ctx.stopping``) ended the wait.
+
+    It follows the latch (the log's and the drive's), not the operator's "Resume anyway" (see ``StorageGuard.wait_if_engaged``),
+    and the row says why it stands still. ``retake`` is given when the attempt is recorded: a pause is not a build that brought
+    the process down, so the record is given back for the length of a wait and taken again after it (not after a stop: the build
+    is over). Never raises: a guard that cannot be read is not a reason to fail, or to end, the build.
+    """
+    from src.scheduler.storage_guard import stand_aside_detail, storage_guard
+
+    gave_back = False
+
+    def _say(kind: str | None) -> None:
+        nonlocal gave_back
+        if retake is not None and not gave_back:
+            gave_back = True
+            _give_back()
+        if ctx is not None:
+            ctx.set_progress(done=done, total=total, detail=stand_aside_detail(kind))
+
+    try:
+        storage_guard.wait_if_engaged(should_stop=lambda: ctx is not None and ctx.stopping, on_wait=_say)
+    except Exception as exc:  # noqa: BLE001 - the type only (see ``_refresh_stats``)
+        _LOG.warning("article-list index build: the storage guard could not be consulted (%s)", type(exc).__name__)
+    stopped = ctx is not None and ctx.stopping
+    if gave_back and not stopped and retake is not None:
+        retake()
+    return not stopped
 
 
 class Declined(RuntimeError):
@@ -467,6 +516,11 @@ def build_missing(engine: Engine, ctx: JobContext | None = None) -> dict:
             if ctx is not None:
                 ctx.set_progress(done=0, total=len(missing), detail=Framed(FRAME_UNFINISHED, FRAME_UNFINISHED))
             raise Declined(report["reason"])
+        # B1: stand aside while the storage guard is engaged, BEFORE the readings below (they are taken right before the build, not
+        # hours before it) and before the attempt is recorded (a pause is not a build that brought the process down).
+        if not _stand_aside(ctx, len(missing)):
+            report["outcome"] = "stopped"
+            return report
         with engine.connect() as conn:
             rows = int(conn.execute(text("SELECT COALESCE(MAX(id), 0) FROM articles")).scalar() or 0)
         report["rows_bound"] = rows
@@ -497,16 +551,24 @@ def build_missing(engine: Engine, ctx: JobContext | None = None) -> dict:
                     ),
                 )
             raise Declined(room["detail"])
-        armed = report["attempt_recorded"] = _arm(
-            prior + 1,
-            rows_bound=rows,
-            ram_available_mb=None if room.get("ram_available_bytes") is None else round(room["ram_available_bytes"] / 1048576),
-        )
+        attempt_facts = {
+            "rows_bound": rows,
+            "ram_available_mb": None if room.get("ram_available_bytes") is None else round(room["ram_available_bytes"] / 1048576),
+        }
+
+        def _retake() -> None:
+            report["attempt_recorded"] = _arm(prior + 1, **attempt_facts)
+
+        armed = report["attempt_recorded"] = _arm(prior + 1, **attempt_facts)
         began = True
         report["peak_rss_mb_before"] = _peak_rss_mb()
         total = len(missing)
         built: dict[str, float] = report["built"]
+        stopped = False
         for i, name in enumerate(missing):
+            if i > 0 and not _stand_aside(ctx, total, done=i, retake=_retake if armed else None):
+                stopped = True
+                break
             if ctx is not None:
                 ctx.set_progress(
                     done=i,
@@ -527,10 +589,11 @@ def build_missing(engine: Engine, ctx: JobContext | None = None) -> dict:
             report["gate_wait_s"] = round(report.get("gate_wait_s", 0.0) + (got - asked), 2)
             _record(**report)
             _LOG.info("article-list index %s built in %.1f s (%d of %d)", name, done - got, i + 1, total)
-        if ctx is not None:
+        if ctx is not None and not stopped:
             ctx.set_progress(done=total, total=total)
-        _refresh_stats(engine, list(built))
-        report["outcome"] = "built"
+        if built:
+            _refresh_stats(engine, list(built))
+        report["outcome"] = "stopped" if stopped else "built"
         return report
     except Declined:
         raise
