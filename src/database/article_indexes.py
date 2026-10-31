@@ -514,7 +514,7 @@ def build_missing(engine: Engine, ctx: JobContext | None = None) -> dict:
     report: dict[str, Any] = {"outcome": "skipped", "built": {}, "started_at": time.time()}
     _replace(**report)
     with _LOCK:
-        _QUITTING = False  # a quit that came before this build is not this build's (a process that builds again is not exiting)
+        _QUITTING = False  # cleared at a build start: a test client's shutdown also calls stop(), and the flag must not outlive it (see the lesson: a build the boot thread starts after a quit in order still records its attempt)
     armed = False
     began = False  # the build itself ran (or tried to): the peak after is worth reading even when the record could not be kept
     try:

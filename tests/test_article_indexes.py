@@ -1186,7 +1186,7 @@ def test_a_quit_that_lands_while_the_attempt_is_being_written_takes_it_back(monk
 
 
 def test_a_build_that_starts_after_a_quit_records_its_attempt_as_ever(eng):
-    """The quit is process-wide state, and a test client that is shut down says it too: a build that starts later is not exiting."""
+    """The quit is process-wide state, and a test client that is shut down says it too: a build that starts later records its attempt as ever (the flag is cleared at a build start; see the lesson for the production case this leaves)."""
     ai.stop()
     rep = ai.build_missing(eng, _Ctx())
     assert rep["outcome"] == "built" and rep["attempt_recorded"] is True and _marker() is None

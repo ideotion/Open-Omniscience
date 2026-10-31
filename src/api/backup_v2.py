@@ -1131,7 +1131,7 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
     #
     # WHAT IT DOES NOT COVER, said where it stands: the first window of a call, which runs even if the latch engages in that instant
     # (the first poll comes before the call has committed anything and its session holds a checkout; one window is the bound, and
-    # every pass ends in a window that committed), the last window's commit boundary (the run's end is a boundary of its own, and
+    # every call runs its first window), the last window's commit boundary (the run's end is a boundary of its own, and
     # nothing is written after it by this loop), and the whole-corpus counter sweep in the ``finally`` below, which is another
     # writer with its own slices.
     from src.scheduler.storage_guard import stand_aside_detail, storage_guard
@@ -1161,7 +1161,7 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         """The ``should_stop`` of ONE call to :func:`reindex_imported_articles`: the stop and the yield as ever, and from its
         second poll on a latch that holds, which ends the call at that window boundary and says so in ``guard_stopped`` (the caller
         waits outside the call and runs the batch again from its cursor). The second poll comes after the first window's commit;
-        the first comes before any, so every call commits at least one window before it can stand aside."""
+        the first comes before any, so every call runs at least its first window before it can stand aside."""
         polls = 0
 
         def _should_stop() -> bool:
