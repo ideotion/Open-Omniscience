@@ -140,6 +140,10 @@ def test_a_failed_warm_spec_does_not_leave_its_read_open_for_the_next(monkeypatc
 
     monkeypatch.setattr(ins.rm, "trending_windows", _fails_after_reading)
     monkeypatch.setattr(ins.rm, "top_terms", _top)
+    # The steps before the specs are not under test, and poll_cache's would start a rebuild over the process engine.
+    monkeypatch.setattr("src.analytics.rollup_serve.refresh", lambda *a, **kw: None)
+    monkeypatch.setattr("src.analytics.map_serve.refresh", lambda *a, **kw: None)
+    monkeypatch.setattr("src.analytics.poll_cache.refresh", lambda *a, **kw: None)
     try:
         out = ins.warm_cache(s)
     finally:
