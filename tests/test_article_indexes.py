@@ -1081,19 +1081,115 @@ def test_a_stop_during_the_first_wait_builds_nothing_and_says_stopped(eng, monke
     assert ai.snapshot()["outcome"] == "stopped"
 
 
-def test_a_stop_during_the_wait_between_statements_keeps_what_was_built_and_gives_the_attempt_back(eng, monkeypatch):
+def test_a_stop_during_the_wait_between_statements_keeps_what_was_built_and_does_not_take_the_attempt_again(eng, monkeypatch):
     g, readings = healthy_guard(monkeypatch)
     install(monkeypatch, g)
     _engage_before_the_second_statement(eng, g, readings, [])
+    arms: list[int] = []
+    real_arm = ai._arm
+    monkeypatch.setattr(ai, "_arm", lambda attempts, **facts: arms.append(attempts) or real_arm(attempts, **facts))
     ctx = _Ctx()
     t, out = _build_on_a_thread(eng, ctx)
     assert wait_until(lambda: _says(ctx, sg.FRAME_STAND_ASIDE_LOG))
+    assert _marker() is None, "given back for the wait (the build's own closing step would clear the record anyway)"
     ctx.stopping = True
     t.join(HANG_GUARD_S)
     assert not t.is_alive()
     assert out[0]["outcome"] == "stopped" and list(out[0]["built"]) == [LANG]
     assert LANG in _names(eng) and TITLE not in _names(eng), "the next start builds the rest"
+    assert arms == [1], "recorded once, at the start: the build is over, so the wait's end does not take it again"
     assert _marker() is None, "a stop is not a build that brought the process down"
+
+
+def _quit_during(eng, monkeypatch, *, when: str):
+    """A build whose app is quit in order (``ai.stop()``, what ``main`` calls at shutdown) ``when``: ``"statement"`` = while the first
+    statement runs (the latch engages right after the quit), ``"wait"`` = while the row says it stands aside between the two
+    statements. Returns ``(seen, out)`` after the latch has been released and the build has finished: ``seen`` is the attempt each
+    statement saw recorded, which is what a process killed during it would have left behind."""
+    g, readings = healthy_guard(monkeypatch)
+    install(monkeypatch, g)
+    seen: list = []
+
+    @event.listens_for(eng, "before_cursor_execute")
+    def _look(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("CREATE INDEX"):
+            seen.append((LANG in statement, (_marker() or {}).get("attempts")))
+            if LANG in statement:
+                if when == "statement":
+                    ai.stop()
+                engage(g, readings)
+
+    ctx = _Ctx()
+    t, out = _build_on_a_thread(eng, ctx)
+    assert wait_until(lambda: _says(ctx, sg.FRAME_STAND_ASIDE_LOG))
+    if when == "wait":
+        ai.stop()
+    assert _marker() is None, "the quit gave the attempt back"
+    healthy(readings)  # the readers that pinned the log end with the app: the latch releases before the process exits
+    t.join(HANG_GUARD_S)
+    assert not t.is_alive()
+    return seen, out
+
+
+def test_a_quit_during_a_statement_is_not_undone_by_the_wait_that_follows(eng, monkeypatch):
+    seen, out = _quit_during(eng, monkeypatch, when="statement")
+    assert seen == [(True, 1), (False, None)], "the second statement runs with nothing recorded: killed there, the quit is not a crash"
+    assert out[0]["outcome"] == "built" and _marker() is None
+
+
+def test_a_quit_during_the_wait_is_not_undone_when_the_latch_releases(eng, monkeypatch):
+    seen, out = _quit_during(eng, monkeypatch, when="wait")
+    assert seen == [(True, 1), (False, None)], "the retake after the wait finds the app quitting and takes nothing"
+    assert out[0]["outcome"] == "built" and _marker() is None
+
+
+def test_a_quit_during_the_first_wait_leaves_no_attempt_for_the_statements_that_follow(eng, monkeypatch):
+    g, readings = engaged_guard(monkeypatch, "wal")
+    install(monkeypatch, g)
+    seen: list = []
+
+    @event.listens_for(eng, "before_cursor_execute")
+    def _look(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("CREATE INDEX"):
+            seen.append((LANG in statement, (_marker() or {}).get("attempts")))
+
+    ctx = _Ctx()
+    t, out = _build_on_a_thread(eng, ctx)
+    assert wait_until(lambda: _says(ctx, sg.FRAME_STAND_ASIDE_LOG))
+    ai.stop()  # nothing is recorded yet: there is nothing to give back, and the build must not record one after the quit
+    healthy(readings)
+    t.join(HANG_GUARD_S)
+    assert not t.is_alive() and out[0]["outcome"] == "built"
+    assert seen == [(True, None), (False, None)] and out[0]["attempt_recorded"] is False and _marker() is None
+
+
+def test_an_attempt_is_not_even_written_once_the_app_is_quitting(monkeypatch):
+    wrote: list = []
+    monkeypatch.setattr(ai, "_write_marker", lambda *a, **k: wrote.append(a) or True)
+    ai.stop()
+    assert ai._arm(1) is False and wrote == [], "no record is written for a process that is exiting: nothing for a kill to leave behind"
+
+
+def test_a_quit_that_lands_while_the_attempt_is_being_written_takes_it_back(monkeypatch):
+    """``stop()`` between the write and the flag it sets finds nothing armed to give back; the arm reads the quit AFTER the flag, sees it,
+    and gives the attempt back itself. The gap is entered here by a ``stop()`` made inside the write."""
+    real = ai._write_marker
+
+    def write_then_quit(*a, **k):
+        ok = real(*a, **k)
+        ai.stop()
+        return ok
+
+    monkeypatch.setattr(ai, "_write_marker", write_then_quit)
+    assert ai._arm(1) is False
+    assert _marker() is None, "the record the write made is gone"
+
+
+def test_a_build_that_starts_after_a_quit_records_its_attempt_as_ever(eng):
+    """The quit is process-wide state, and a test client that is shut down says it too: a build that starts later is not exiting."""
+    ai.stop()
+    rep = ai.build_missing(eng, _Ctx())
+    assert rep["outcome"] == "built" and rep["attempt_recorded"] is True and _marker() is None
 
 
 def test_a_guard_that_is_off_or_calm_costs_the_build_nothing(eng, monkeypatch):

@@ -172,6 +172,7 @@ def switch_on() -> bool:
 _LOCK = threading.Lock()
 _LAST: dict[str, Any] = {}
 _ARMED = False  # this process wrote the attempt record and the build has not ended (guarded by _LOCK)
+_QUITTING = False  # stop() ran: the app is being quit in order, so no attempt is recorded from here on (guarded by _LOCK; a build start clears it)
 
 
 def _record(**fields: Any) -> None:
@@ -200,10 +201,11 @@ def snapshot() -> dict:
 
 
 def _reset_for_tests() -> None:
-    global _ARMED
+    global _ARMED, _QUITTING
     with _LOCK:
         _LAST.clear()
         _ARMED = False
+        _QUITTING = False
 
 
 # --- what is there, what is missing ------------------------------------------------------------
@@ -376,10 +378,21 @@ def _write_marker(attempts: int, **facts: Any) -> bool:
 
 
 def _arm(attempts: int, **facts: Any) -> bool:
+    """Record this start's attempt; ``False`` when it could not be recorded, and when the app is being quit in order (:func:`stop`)
+    before or while it was: a process that exits in order must not leave an attempt behind for the next start to count as a crash.
+    The quit is read AFTER the record is written and the flag is set, so a ``stop()`` that ran in the gap between the two is seen here
+    and one that runs later finds the attempt armed and gives it back itself (R398, B1 review: a retake used to undo a quit's give-back)."""
     global _ARMED
+    with _LOCK:
+        if _QUITTING:
+            return False  # nothing is written: the common case, and no window in which a kill would leave the record behind
     ok = _write_marker(attempts, **facts)
     with _LOCK:
         _ARMED = ok
+        quitting = _QUITTING
+    if ok and quitting:
+        _give_back()
+        return False
     return ok
 
 
@@ -411,8 +424,14 @@ def _give_back() -> None:
 
 def stop() -> None:
     """Shutdown (the app is being quit in order): give the attempt back. A quit is not a build that brought the
-    process down, and quitting twice in a long build must not stop it from being built. Never raises."""
+    process down, and quitting twice in a long build must not stop it from being built. Never raises.
+
+    It also says so for the rest of the build (``_QUITTING``): a build that is standing aside when the app quits would otherwise take
+    its attempt again when the latch releases (the readers that pinned the log end with the app) and then be killed mid-statement."""
+    global _QUITTING
     try:
+        with _LOCK:
+            _QUITTING = True
         _give_back()
     except Exception as exc:  # noqa: BLE001 - best-effort shutdown
         _LOG.debug("article-list index build: could not give an attempt back (%s)", type(exc).__name__)
@@ -451,7 +470,9 @@ def _stand_aside(ctx: JobContext | None, total: int, *, done: int = 0, retake: C
     It follows the latch (the log's and the drive's), not the operator's "Resume anyway" (see ``StorageGuard.wait_if_engaged``),
     and the row says why it stands still. ``retake`` is given when the attempt is recorded: a pause is not a build that brought
     the process down, so the record is given back for the length of a wait and taken again after it (not after a stop: the build
-    is over). Never raises: a guard that cannot be read is not a reason to fail, or to end, the build.
+    is over, and not after a quit in order: :func:`_arm` takes nothing once :func:`stop` has run, so a latch that releases while the
+    app is exiting does not leave an attempt for the next start to count as a crash). Never raises: a guard that cannot be read
+    is not a reason to fail, or to end, the build.
     """
     from src.scheduler.storage_guard import stand_aside_detail, storage_guard
 
@@ -489,8 +510,11 @@ def build_missing(engine: Engine, ctx: JobContext | None = None) -> dict:
     from src.database.maintenance import HOT_INDEXES
     from src.database.writer import write_lock
 
+    global _QUITTING
     report: dict[str, Any] = {"outcome": "skipped", "built": {}, "started_at": time.time()}
     _replace(**report)
+    with _LOCK:
+        _QUITTING = False  # a quit that came before this build is not this build's (a process that builds again is not exiting)
     armed = False
     began = False  # the build itself ran (or tried to): the peak after is worth reading even when the record could not be kept
     try:

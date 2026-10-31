@@ -2812,6 +2812,24 @@ def test_wait_if_engaged_says_why_each_turn_it_waits_and_a_callback_that_raises_
     assert len(tries) == 3, "the callback raised each turn and the wait went on"
 
 
+def test_engaged_now_takes_the_readings_itself_and_answers_without_waiting():
+    """B1: a caller that checks once between two units of work (the re-index drain, at a window boundary) sees what a waiter would:
+    with no supervisor running it takes the readings itself, so a cause that went away reads as released, and it never blocks."""
+    g = _engaged("wal")
+    assert g.engaged_now() is True
+    g.fake["wal_bytes"] = 0
+    seen = [_returns_within(g.engaged_now) for _ in range(3)]  # two healthy readings release it (resume_after=2)
+    assert seen[-1] is False and g.engaged is False, "the reading it took itself released the latch"
+    assert _returns_within(_guard().engaged_now) is False, "a guard that never engaged answers no"
+
+
+def test_engaged_now_follows_the_switch(monkeypatch):
+    g = _engaged("disk")
+    assert g.engaged_now() is True
+    monkeypatch.setenv("OO_STORAGE_GUARD", "0")
+    assert g.engaged_now() is False, "a guard that is switched off waits for nothing"
+
+
 def test_the_stand_aside_line_is_a_keyed_frame_for_the_latch_that_holds():
     disk = storage_guard.stand_aside_detail("disk")
     assert disk.i18n == storage_guard.FRAME_STAND_ASIDE_DISK and str(disk) == storage_guard.FRAME_STAND_ASIDE_DISK

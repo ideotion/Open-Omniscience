@@ -920,6 +920,14 @@ class StorageGuard:
         with self._lock:
             return self._wal or self._disk
 
+    def engaged_now(self) -> bool:
+        """Whether a storage latch (the log's or the drive's) holds right now, after taking the readings itself when no supervisor
+        thread runs (:meth:`poll_and_drain_unsupervised`), so a caller that asks once between two units of work sees what a waiter
+        would. Non-blocking; the same two reads :meth:`wait_if_engaged` makes at the top of each turn. Follows the LATCH, not the
+        operator's "Resume anyway" (see there). Never raises."""
+        self.poll_and_drain_unsupervised()
+        return self.enabled() and self.engaged
+
     def wal_engaged(self) -> bool:
         """True while the LOG latch is engaged and the guard is on, whether or not the drive latch is too.
 
@@ -1816,8 +1824,7 @@ class StorageGuard:
         deadline = None if max_wait_s is None else self._clock() + max(0.0, max_wait_s)
         pause = stop if stop is not None else threading.Event()  # never set: a plain timed wait
         while True:
-            self.poll_and_drain_unsupervised()
-            if not (self.enabled() and self.engaged):
+            if not self.engaged_now():
                 break
             if stop is not None and stop.is_set():
                 break
