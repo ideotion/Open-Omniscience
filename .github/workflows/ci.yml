@@ -410,8 +410,8 @@ jobs:
           python -m pip install pip-audit==2.10.1  # pinned (OO-D15-004): an unpinned audit tool can redden PRs through no code change, exactly like bandit/mypy
           pip-audit --skip-editable
 
-      # WHAT THIS JOB SKIPPED, by class and by test module, counts only, kept on a red run as well as a green one (`if: always()`), written to the log
-      # and to the step summary. The `-rs` block in the pytest step is hundreds of lines and a reader that returns only the last lines of a job log never
+      # WHAT THIS JOB SKIPPED, by class and by test module, counts only, and its ten SLOWEST test modules in whole seconds (the sum of each module's
+      # junit times, not wall time), kept on a red run as well as a green one (`if: always()`), written to the log and to the step summary. The `-rs` block in the pytest step is hundreds of lines and a reader that returns only the last lines of a job log never
       # reaches it, so "what did this job not run" was answered by re-running the suite locally. This is a few dozen short lines (the lists are capped),
       # and an OBSERVATION: it gates nothing (a count that moves is a question for a reader), prints no free-text reason (pytest stores a skip's reason
       # beside an absolute path) and never turns the job red (the script exits 0 whatever it finds, and `continue-on-error` covers the day it crashes).
@@ -464,8 +464,8 @@ jobs:
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
-      # The same skip summary as the `test` job's (see there): counts by class and by test module, no free-text reasons, no gate. Here it shows what the
-      # analysis-module skips on purpose came to, so a count that moves is a question for a reader. The job's last step, as there.
+      # The same summary as the `test` job's (see there): skip counts by class and by test module, then the ten slowest modules; no free-text reasons, no
+      # gate. Here it shows what the analysis-module skips on purpose came to, so a count that moves is a question for a reader. The job's last step, as there.
       - name: Skipped tests and slowest modules (counts and seconds only, no gate)
         if: always()
         continue-on-error: true

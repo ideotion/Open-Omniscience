@@ -1,4 +1,4 @@
-"""``scripts/ci_skip_summary.py``: what a CI job skipped, by class and by test module, and never a reason.
+"""``scripts/ci_skip_summary.py``: what a CI job skipped, by class and by test module, never a reason, and its slowest test modules in seconds.
 
 Why. The only reader of a CI job log that works from a session returns the last few kilobytes, and ``pytest -rsfE``'s skip block is hundreds of
 lines long, so "what did this job not run" could only be answered by re-running the suite locally (the 2026-10-29 skip audit did exactly that).
@@ -342,12 +342,14 @@ def test_the_slowest_modules_are_summed_per_module_and_ranked(tmp_path):
 
 def test_the_slowest_list_is_bounded_and_the_rest_is_summed_not_dropped(tmp_path):
     limit = ci_skip_summary._SLOWEST_LINES
-    xml = _report(*(_case(f"tests.test_m{i:03d}", "test_x", time="1.0") for i in range(limit + 7)))
+    # the listed modules take 3 s each and the 7 left over 2 s each, so the rest line's seconds (14) differ from its module count (7)
+    xml = _report(*(_case(f"tests.test_m{i:03d}", "test_x", time="3.0" if i < limit else "2.0") for i in range(limit + 7)))
     lines = ci_skip_summary.slowest(_write(tmp_path, xml))
-    assert lines[0] == f"per-test times summed (not the job's wall time): {limit + 7} s in all"
+    assert lines[0] == f"per-test times summed (not the job's wall time): {3 * limit + 14} s in all"
     assert lines[1] == f"slowest test modules (largest first, {limit} of {limit + 7}):"
-    assert lines[-1] == "  (and 7 more modules, 7 s)"
-    assert sum(1 for line in lines if re.fullmatch(r"  tests\.test_m\d+  1 s", line)) == limit
+    assert lines[-1] == "  (and 7 more modules, 14 s)"
+    listed = [line for line in lines if re.fullmatch(r"  tests\.test_m\d+  \d+ s", line)]
+    assert len(listed) == limit and all(line.endswith("  3 s") for line in listed), listed
     assert _line_problems("\n".join(lines)) == []
 
 
@@ -386,6 +388,9 @@ def test_the_longest_plain_decimals_are_taken_and_stay_one_short_line(tmp_path):
 @pytest.mark.parametrize("xml", ["", '<?xml version="1.0"?><testsuites', '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "b">]><testsuites>&a;</testsuites>'])
 def test_a_report_that_cannot_be_read_has_no_timing_block(tmp_path, xml):
     assert ci_skip_summary.slowest(_write(tmp_path, xml)) == []
+
+
+def test_a_report_that_was_never_written_and_a_directory_have_no_timing_block_either(tmp_path):
     assert ci_skip_summary.slowest(tmp_path / "never-written.xml") == []
     assert ci_skip_summary.slowest(tmp_path) == []
 
@@ -418,7 +423,6 @@ def test_the_line_check_names_a_variant_that_prints_an_unvalidated_test_name(tmp
     monkeypatch.setattr(ci_skip_summary, "_test_module", lambda classname, name: classname or name)
     problems = _line_problems(_output(tmp_path, _report(_case(f"{_PATH}", "test_x", _skip("x")), _case("tests.t&#10;::error::pwned", "test_x", _skip("y")))))
     assert problems
-
 
 
 def test_the_time_check_is_what_keeps_a_hostile_time_out_of_the_sum(tmp_path, monkeypatch):

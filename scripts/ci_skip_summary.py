@@ -27,11 +27,12 @@ Expected failures (``pytest.xfail``) are not skips: they are counted apart from 
 
 THE SLOWEST MODULES. A second block adds, per test module, the SUM of its testcases' ``time`` attributes in whole seconds, the ten largest and the
 rest summed in one line. That is a measurement with a stated meaning, not the job's wall time: pytest writes a testcase's time as setup plus call plus
-teardown, a session fixture's setup is charged to the first test that asks for it and its teardown to the last, and collection and the imports of
-a ``conftest.py`` are charged to no test (measured 2026-10-31: two tests with a 0.4 s session fixture and a 0.5 s conftest import summed to 1.61 s
-in a 2.68 s process). A module that is first to use a heavy session fixture therefore carries that fixture's cost. A ``time`` that is not a plain
-decimal number is counted in one line ("N test cases carried no readable time") and added to nothing. It is the number the ~77-minute ``test``
-job's sharding question (a user item) needs on every run instead of once, and it gates nothing.
+teardown, a session fixture's SETUP is charged to the first test that asks for it and its TEARDOWN to the last test of the whole run (even one in a
+module that never used it), and collection and the imports of a ``conftest.py`` are charged to no test (measured 2026-10-31: a session fixture
+with a 0.4 s setup and a 0.2 s teardown, and a 0.5 s conftest import, summed to 1.61 s over two tests in a 2.68 s process). A module that is first to use
+a heavy session fixture, or holds the run's last test, therefore carries that fixture's cost. A ``time`` that is not a plain decimal number is counted in
+one line ("N test cases carried no readable time") and added to nothing. It is the number the sharding question of the 70 to 80 minute full-suite jobs
+(a user item) needs on every run instead of once, and it gates nothing.
 """
 
 from __future__ import annotations

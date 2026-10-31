@@ -3,18 +3,19 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-Why it exists. 54 test files (hundreds of tests) start with ``skipif(shutil.which("node") is None)``, five more on ``bash``, three on ``git``, one on
+Why it exists. 54 test files skip when ``node`` is missing (measured 2026-10-31 by running them with no node on PATH: 99 tests skip, 590 pass, and
+one, ``test_release_run_panel_node_suite``, fails because it calls node without a probe), five more files skip on ``bash``, three on ``git``, one on
 ``unzip``, one on a C compiler. ``ci.yml`` installs none of them: they come with the ``ubuntu-latest`` image, and nothing in the repository says so,
-pins them or asserts them. If the image dropped one, every one of those tests would turn into a GREEN skip and the job would say nothing (measured
-2026-10-31 from the skip summary of the ``test`` and ``core-only`` jobs: 353 and 419 skips, and the node-gated files are not among them, so today
-they run). The repository already answered this for PowerShell: ``test_installer_windows.py`` asserts the tool when ``CI`` is set and skips on a
-developer machine. This is the same shape for the rest.
+pins them or asserts them. If the image dropped one, those tests would turn into GREEN skips and the job would say nothing (the skip summary of the
+``test`` and ``core-only`` jobs, 353 and 419 skips in 44 and 73 modules, shows the node-gated files are not among them, so today they run). The
+repository already answered this for PowerShell: ``test_installer_windows.py`` asserts the tool when ``CI`` is set and skips on a developer machine. This
+is the same shape for the rest.
 
 What this pins:
 
 * on a Linux machine with ``CI`` set, every tool in ``_REQUIRED`` and at least one C compiler is on ``PATH``; a missing one is a red test that
-  names the tool and what skips without it. On a developer machine, and on the macOS and Windows legs of the observation lane (where ``unzip`` is
-  not a given), it skips: the blocking jobs are the Linux ones;
+  names the tool and what skips without it. On a developer machine, and on the macOS and Windows legs of the observation lane, it skips: the blocking
+  jobs are the Linux ones, and a leg that never turns a PR red is not where a runner image is pinned;
 * the lists are COMPLETE in both directions: a test that starts probing a tool this file has not named fails (add it to ``_REQUIRED``, or to
   ``_EXEMPT`` with the reason), and a name here that no test probes any more fails, so the lists can only be as long as the truth;
 * the guard proves itself: the same test, run in a process whose ``PATH`` lacks ``node``, is red and names it, and green when a ``node`` is there.
@@ -43,14 +44,14 @@ _REQUIRED = ("node", "bash", "git", "unzip")
 _C_COMPILERS = ("cc", "gcc", "clang")
 #: Probed by tests, covered by another test that asserts them on a runner.
 _ELSEWHERE = {
-    "pwsh": "tests/test_installer_windows.py asserts pwsh or powershell when CI is set, the same shape as this file",
-    "powershell": "tests/test_installer_windows.py asserts pwsh or powershell when CI is set, the same shape as this file",
+    "pwsh": "tests/test_installer_windows.py asserts pwsh or powershell when CI is set, the same shape as this file (on Linux that means pwsh)",
+    "powershell": "tests/test_installer_windows.py asserts pwsh or powershell when CI is set; Windows has it, Linux does not, and the observation lane is not a pin",
 }
 #: Probed by tests, deliberately not required of a runner, each with why.
 _EXEMPT = {
     "original-awk": (
         "the ``test`` job installs it with its own apt step, whose ``command -v original-awk`` makes a failed install a red job; ``core-only`` does not "
-        "install it and the one test that needs it skips there by design"
+        "install it and the test that names it skips there by design"
     ),
     "flock": "tests/test_launcher_records_race.py asserts flock is ABSENT from a filtered PATH to test the launcher's no-flock path; it is not a skip gate",
 }
@@ -93,7 +94,9 @@ def without_reason(*tables: dict[str, str]) -> list[str]:
 def _all_probed() -> set[str]:
     found: set[str] = set()
     for path in sorted(_TESTS.rglob("*.py")):
-        found |= probed_tools(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        if "which(" in text:  # parse only what can contain a probe: a fixture of deliberately invalid Python elsewhere must not turn this red
+            found |= probed_tools(text)
     return found
 
 
@@ -119,6 +122,20 @@ def test_the_tool_lists_name_exactly_the_tools_the_tests_probe():
 
 
 # --- the guard proves itself ---------------------------------------------------------------------------------------------------------------------
+
+
+def test_the_runner_gate_needs_ci_set_and_linux(monkeypatch):
+    """The gate itself: a developer machine (no ``CI``) and a non-Linux leg skip; only both together ask."""
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.delenv("CI", raising=False)
+    assert _on_a_linux_ci_runner() is False
+    for value, expected in (("true", True), ("TRUE", True), ("1", True), (" true ", True), ("false", False), ("0", False), ("", False)):
+        monkeypatch.setenv("CI", value)
+        assert _on_a_linux_ci_runner() is expected, value
+    monkeypatch.setenv("CI", "true")
+    for platform in ("darwin", "win32"):
+        monkeypatch.setattr(sys, "platform", platform)
+        assert _on_a_linux_ci_runner() is False, platform
 
 
 def test_the_scan_reads_which_calls_with_a_literal_and_nothing_else():
@@ -168,6 +185,7 @@ def test_the_live_check_is_red_in_a_process_that_lacks_node_and_green_when_it_is
     target = f"{Path(__file__).as_posix()}::test_a_linux_ci_runner_has_the_tool_that_tests_skip_without[node]"
     env = {k: v for k, v in os.environ.items() if k not in ("PYTEST_ADDOPTS", "PATH")}
     env["CI"] = "true"
+    env["OO_DATA_DIR"] = str(tmp_path / "data")  # the child's conftest must not bind to the parent's data folder
 
     def run(path: str) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -184,5 +202,7 @@ def test_the_live_check_is_red_in_a_process_that_lacks_node_and_green_when_it_is
     fake = with_node / "node"
     fake.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     fake.chmod(0o755)
+    if not os.access(fake, os.X_OK):
+        pytest.skip("this temporary directory is mounted noexec, so no fake node can be found on PATH")
     green = run(str(with_node))
     assert green.returncode == 0 and "1 passed" in green.stdout, green.stdout + green.stderr
