@@ -18,7 +18,11 @@ import logging
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
-from datetime import date  # noqa: TC003 - used in a runtime annotation string
+from datetime import (  # noqa: TC003 - ``date`` is used in a runtime annotation string
+    UTC,
+    date,
+    datetime,
+)
 
 from src.briefing.card import Card
 from src.monitoring.secret_scrub import log_failure
@@ -83,6 +87,15 @@ _LOG = logging.getLogger(__name__)
 # duration — see ``_drain_pending`` below for why that final pinned window is
 # deliberately never force-closed at the scan's own end.
 _WAL_GUARD_MIN_RELEASE_INTERVAL_S = 30.0
+
+#: How long ONE producer may run before the pass says so (seconds). WHAT IT PROTECTS: the answer to "which producer held the
+#: write-ahead log back?". A producer's reads can hold the log's read mark for as long as it runs (the release between producers
+#: and ``_WalGuardResult``'s in-scan release do not cut a single long statement), and the 2026-10-28 bundle that showed a
+#: briefing-thread read mark 1.6 h old could not name the producer, because nothing recorded how long each one took. 300 s is one
+#: checkpoint cycle (``OO_WAL_CHECKPOINT_MIN_S``'s default, ``hygiene._ckpt_min_interval_s``): a producer that runs longer has
+#: stood in the way of at least one checkpoint attempt, a shorter one cannot have blocked more than one. A reading, never a limit:
+#: nothing is stopped or skipped at this number.
+_SLOW_PRODUCER_S = 300.0
 
 # A producer: given a DB session, return the cards it can honestly produce now.
 Producer = Callable[..., list[Card]]
@@ -558,6 +571,12 @@ def run_all_bounded(
     the leads-quality export, the card audit) print their own words for a short run and know
     only a spent time budget, so a memory stop there would be reported as the wrong cause.
 
+    ``stats["slow_producers"]`` (present only when there is one) lists the producers that ran for at least
+    :data:`_SLOW_PRODUCER_S` as ``{"name", "seconds", "started_at"}``, each also logged as a WARNING when it ends. It is
+    ABSENT, not empty, on a pass with none, so a caller comparing the whole stats dict is unaffected. Measured at the
+    producer's end: a producer still running when the process stops is not in it (its stack is what a diagnostics bundle
+    shows for that).
+
     ``lanes`` runs :data:`LANE_ONLY_PRODUCERS` too. Off by default: the skipped names travel
     in ``stats["held_q823"]`` so a document can say which cards it does not carry and why.
 
@@ -586,6 +605,12 @@ def run_all_bounded(
     anchorable = period_anchorable() if as_of is not None else {}
     anchored_names: list[str] = []
     unanchored_names: list[str] = []
+    slow: list[dict] = []
+    # End whatever the caller's own reads opened before the first producer starts. Without this the first producer shared one
+    # snapshot with everything the caller did before the loop (Home's watch pass ends with a flush, its read of the cache, ...),
+    # since the only commit was after the producer. The same commit the loop issues between producers, so it changes nothing a
+    # producer could see that the boundary after it did not already change.
+    _release_transaction(session)
     for i, (name, producer) in enumerate(registry):
         if deadline is not None and time.monotonic() >= deadline:
             truncated = True
@@ -628,6 +653,8 @@ def run_all_bounded(
             )
             break
         ran += 1
+        began_mono = time.monotonic()
+        began_wall = datetime.now(UTC)
         try:
             # PR-D / W1 fix-forward (mandatory 4-lens skeptic matrix, transactional-
             # semantics finding #1, HIGH): `_wal_guard` is entered PER PRODUCER, not
@@ -663,6 +690,15 @@ def run_all_bounded(
         except Exception as exc:  # noqa: BLE001 - one bad producer must not abort the feed
             log_failure(_LOG, f"briefing producer {name!r} failed", exc, level=logging.WARNING)
             produced = []
+        took = time.monotonic() - began_mono
+        if took >= _SLOW_PRODUCER_S:
+            when = began_wall.isoformat(timespec="seconds")
+            slow.append({"name": name, "seconds": round(took, 1), "started_at": when})
+            _LOG.warning(
+                "briefing producer %r took %.0f s (started %s), at least one checkpoint cycle (%.0f s): its reads can hold "
+                "the write-ahead log back for as long as one statement runs",
+                name, took, when, _SLOW_PRODUCER_S,
+            )
         if as_of is not None and name not in disabled:
             (anchored_names if anchorable.get(name) else unanchored_names).append(name)
         for card in produced:
@@ -715,6 +751,8 @@ def run_all_bounded(
     }
     if truncated_reason is not None:
         stats["truncated_reason"] = truncated_reason
+    if slow:
+        stats["slow_producers"] = slow
     if as_of is not None:
         # Both lists, always, and BY NAME. A count alone would say how many were
         # anchored and not which — and "which" is the only form a document can use

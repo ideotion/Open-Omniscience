@@ -1,0 +1,13 @@
+## 2026-10-31 — A read mark held 1.6 h by the briefing thread was ONE step, and the bundle could not name it (RC2 zip cb070f24, build baecdf3d8)
+
+**The question.** Is the briefing refresh's read snapshot held across the whole refresh? The 10-28 bundle showed `oo-briefing-refresh` as the oldest reader at every kept checkpoint record, 5,720 to 5,780 s, with the checkpointed frame fixed at 1,996,675 while the log end rose from 4.89M to 4.93M (80.3 to 80.8 GB).
+
+**What was measured.** On the real `session_scope()` session, with stub producers, pool checkouts / `in_transaction` were: after the watch pass 1/True; producer 0 start 1/True; producer 1 and 2 start 0/False; `warm_cache` start 1/True. So the connection goes back between producers (`registry._release_transaction`) and `warm_cache` commits between its steps; the pin is per STEP. The same thread's checkout in that bundle was also 30, 63, 119 and 899 s at other times (renewed, so release was working); 131,886 frames behind at 899 s and 64,295 at 119 s match the same ~500 frames/s writer, i.e. the snapshot is as old as the checkout.
+
+**What was inferred, not observed.** That the 5,751 s step was one producer. The bundle's only stack at that moment is the leaf `do_execute`; the stacks that name producers are other times. Nothing recorded per-producer wall time, so the producer is unknown.
+
+**Why the latch did not help.** `_bg_refresh` asks `_log_pinned()` once, before the thread starts. The run began about 20:43:20, after the 19:45 guard trip had cleared. A latch stops a rebuild starting; it cannot end a statement in flight.
+
+**Rule.** A checkout age in a pin report is the age of the step that holds it, not of the pass. To act on one, the pass must say which step ran long: `run_all_bounded` now logs a producer that ran at least one checkpoint cycle (300 s) and puts it in `stats["slow_producers"]` (absent when none). A bound on one producer is a user-level proposal (`proposal-producer-statement-deadline-2026-10-31.md`).
+
+**Not fixed, stated.** A producer still running when the process stops is not named by this (its stack is). A single long statement is not cut by any release, and `statement_deadline` does not stop one-opcode statements.
