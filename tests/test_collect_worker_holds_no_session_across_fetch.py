@@ -359,6 +359,9 @@ class _CountingSession:
         self.rollbacks += 1
         self._in_txn = False
 
+    def commit(self):
+        self._in_txn = False  # the housekeeping lane commits after each step that returned
+
 
 def test_every_wrapped_method_releases_BEFORE_it_reaches_the_network():
     """Ordering, checked from inside the call — and over the real method list.

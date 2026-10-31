@@ -1616,16 +1616,19 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
     sources_crawled = 0
     pages_fetched = 0
     sitemap_urls_ingested = 0
-    for source in candidates:
+    # id and domain read before the first commit: a commit expires every loaded row, and an outlet deleted meanwhile would make ``source.domain``
+    # raise inside the handler below, skipping the outlets after it.
+    batch = [(s, s.id, s.domain) for s in candidates]
+    for source, source_id, domain in batch:
         # A Stop is the person's setting, not an outcome of the outlet: the lane checks the switch once, before it starts, so a Stop pressed
         # between two outlets (or inside one) is read HERE, by the switch itself and never by the words of a refusal (R320). An outlet
         # stopped this way is not stamped, so it keeps its place at the front of the rotation.
         if kill_switch_active():
             break
         try:
-            sm_report = discover_sitemap_urls(fetcher, source.domain, max_urls=max_pages)
+            sm_report = discover_sitemap_urls(fetcher, domain, max_urls=max_pages)
             if update_source_sitemap_url(session, source, sm_report):
-                # Written before the walk below fetches: the commit ends the write now, rather than at the first article the walk stores.
+                # Written before the walk below fetches: the fetcher hands a connection back only for a session with nothing pending, so a staged row would make it decline for the whole walk.
                 session.commit()
             if kill_switch_active():
                 break  # a discovery cut short by the Stop found "no sitemap" only because it was stopped: no BFS fallback either
@@ -1654,7 +1657,7 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
             now = datetime.now(UTC)
             source.last_crawled_at = now
             # The outlet was crawled once; its other feeds are not due again before the rest of the rotation.
-            session.query(Source).filter(Source.domain == source.domain, Source.id != source.id).update(
+            session.query(Source).filter(Source.domain == domain, Source.id != source_id).update(
                 {Source.last_crawled_at: now}, synchronize_session=False)
             sources_crawled += 1
             # The stamp above is a write (the sibling feeds' update is a bulk statement, which takes the single-writer gate at once): commit
@@ -1662,7 +1665,7 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
             # session that has written. Field 9931cffe: this lane held the gate for 2,933 s, 2,666 s of it between statements.
             session.commit()
         except Exception as exc:  # noqa: BLE001 - one source's failure must not skip the rest
-            log_failure(_LOG, f"crawl supplement: source {source.domain!r} failed", exc, level=logging.WARNING)
+            log_failure(_LOG, f"crawl supplement: source {domain!r} failed", exc, level=logging.WARNING)
             # What this outlet had written and not committed goes with it: left, it would carry the gate into the next outlet's fetches.
             session.rollback()
     return {

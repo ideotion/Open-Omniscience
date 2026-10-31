@@ -101,6 +101,7 @@ def test_an_outlet_that_fails_after_writing_leaves_no_gate_for_the_next_outlet(s
     monkeypatch.setattr("src.ingest.sitemap.discover_sitemap_urls", discover)
     monkeypatch.setattr("src.ingest.crawl.crawl_source", lambda *a, **k: _Report())
     out = _lane_step_crawl(session, object(), SchedulerSettings(crawl_per_pass=3))
+    assert held[0][0] == _DOMAINS[0], f"the failing outlet was not the first, so the premise of this test did not hold: {held}"
     assert out["sources_crawled"] == 2
     assert [h for h in held if h[0] != _DOMAINS[0] and h[1]] == [], f"the gate was carried into a later outlet: {held}"
 
@@ -205,3 +206,28 @@ def test_a_recorded_sitemap_is_committed_before_the_walk_fetches(session, monkey
     out = _lane_step_crawl(session, object(), SchedulerSettings(crawl_per_pass=1))
     assert out["sitemap_urls_ingested"] == 1, "the sitemap branch did not run, so the premise of this test did not hold"
     assert pending_at_ingest == [0], "the recorded sitemap was still staged when the walk fetched"
+
+
+def test_an_outlet_deleted_while_the_step_runs_does_not_end_the_step(session, monkeypatch):
+    """Each commit expires the rows the step loaded, so an outlet deleted meanwhile (``source_manager`` can) raised from ``source.domain``
+    inside the failure handler and ended the step for the outlets after it. The domains are read before the first commit."""
+    from datetime import UTC, datetime, timedelta
+
+    base = datetime.now(UTC) - timedelta(days=3)
+    for i, d in enumerate(_DOMAINS):
+        session.query(Source).filter(Source.domain == d).update({Source.last_crawled_at: base + timedelta(hours=i)}, synchronize_session=False)
+    session.commit()
+    order: list[str] = []
+
+    def discover(fetcher, host, *, max_urls=0, **kw):
+        order.append(host)
+        if host == _DOMAINS[0]:  # the first outlet deletes the last one, then goes on
+            session.query(Source).filter(Source.domain == _DOMAINS[2]).delete(synchronize_session=False)
+            session.commit()
+        return SitemapDiscoveryReport(source_host=host)
+
+    monkeypatch.setattr("src.ingest.sitemap.discover_sitemap_urls", discover)
+    monkeypatch.setattr("src.ingest.crawl.crawl_source", lambda *a, **k: _Report())
+    out = _lane_step_crawl(session, object(), SchedulerSettings(crawl_per_pass=3))
+    assert order[:2] == [_DOMAINS[0], _DOMAINS[1]], f"the premise (oldest first) did not hold: {order}"
+    assert out["sources_crawled"] == 2 and order[-1] == _DOMAINS[2], f"the step ended at the deleted outlet instead of skipping it: {order} {out}"
