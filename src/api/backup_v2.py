@@ -29,6 +29,7 @@ and can refuse, never replaces.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
@@ -1085,8 +1086,9 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
     batches = bk.get("batches") or []
     # The same job's first line, keyed too (I-6's class): "starting" matched no key, so it
     # printed in English wherever the task manager looked it up.
-    ctx.set_progress(done=0, total=int(bk.get("articles_pending") or 0),
-                     detail=Framed("starting…", "starting…"))
+    shown: dict[str, str | None] = {"line": None}  # the line the row carries when nothing stands aside, put back after a wait (B1, below)
+    shown["line"] = Framed("starting…", "starting…")
+    ctx.set_progress(done=0, total=int(bk.get("articles_pending") or 0), detail=shown["line"])
     out: dict = {"batches": [], "articles_reindexed": 0, "articles_failed": 0, "stopped": False}
     walked = 0
     # The measured split, accumulated ACROSS batches and republished after each one, so a
@@ -1111,6 +1113,68 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
     # restarts the drain at the end of every run, so the work is deferred, never lost.
     def _yield_to_import() -> bool:
         return exclusive_window_open()
+
+    # STAND ASIDE WHILE THE STORAGE GUARD IS ENGAGED (R398, B1; diagnostics 2026-10-31). The guard pauses collection, the housekeeping
+    # lane and the heavy reads while its log or drive latch holds, and this drain never asked: with a reader pinning the write-ahead
+    # log it went on appending (one commit after another, nothing able to give the log back), and the file reached 80 and 220 GB
+    # in the field. So it waits, and it waits only where it holds NOTHING: before each batch, at the top of the loop below, where the
+    # worker holds no session and no corpus lease. A call that is already running is not waited in: at a window boundary (the commit
+    # that ended the last window has ended its transaction) it is ASKED TO RETURN when a latch holds, like any other stop, the
+    # batch stays unstamped with its cursor exactly where it stopped, and the loop below puts the same batch back in front, waits
+    # at the top and runs it again from the cursor. Waiting INSIDE the call would have parked the drain holding ``corpus_lease``,
+    # which a restore's swap waits on (``wait_for_quiescence``): a restore that had spent hours would have been refused for a
+    # holder that does no work for as long as the latch lasts. It also keeps the pause out of the call's wall time and rate.
+    # A WAIT, NOT A STOP: a stop leaves the backlog until the next boot or the end of an import run, and this one ends by itself
+    # when its cause does; the wait also ends on a stop or on an import claiming the machine, and the checks that follow it read
+    # those and end the run as they always did. It follows the LATCH (both of them, the log and the drive), not the operator's
+    # "Resume anyway", which forces COLLECTION on and is not a licence to rewrite the keywords.
+    #
+    # WHAT IT DOES NOT COVER, said where it stands: the first window of a call, which runs even if the latch engages in that instant
+    # (the first poll comes before the call has committed anything and its session holds a checkout; one window is the bound, and
+    # every call runs its first window), the last window's commit boundary (the run's end is a boundary of its own, and
+    # nothing is written after it by this loop), and the whole-corpus counter sweep in the ``finally`` below, which is another
+    # writer with its own slices.
+    from src.scheduler.storage_guard import stand_aside_detail, storage_guard
+
+    def _stopping_or_yielding() -> bool:
+        return ctx.stopping or _yield_to_import()
+
+    def _stand_aside() -> None:
+        try:
+            waited = storage_guard.wait_if_engaged(
+                should_stop=_stopping_or_yielding,
+                on_wait=lambda kind: ctx.set_progress(detail=stand_aside_detail(kind)),
+            )
+            if waited and shown["line"] is not None:
+                ctx.set_progress(detail=shown["line"])
+        except Exception as exc:  # noqa: BLE001 - a wait is never a reason to end, or to fail, the drain
+            log_failure(_LOG, "the re-index drain could not consult the storage guard", exc, level=logging.WARNING)
+
+    def _guard_engaged_now() -> bool:
+        try:
+            return storage_guard.engaged_now()
+        except Exception as exc:  # noqa: BLE001 - a guard that cannot be read is not a reason to end, or to fail, the drain
+            log_failure(_LOG, "the re-index drain could not consult the storage guard", exc, level=logging.WARNING)
+            return False
+
+    def _batch_should_stop(guard_stopped: dict[str, bool]) -> Callable[[], bool]:
+        """The ``should_stop`` of ONE call to :func:`reindex_imported_articles`: the stop and the yield as ever, and from its
+        second poll on a latch that holds, which ends the call at that window boundary and says so in ``guard_stopped`` (the caller
+        waits outside the call and runs the batch again from its cursor). The second poll comes after the first window's commit;
+        the first comes before any, so every call runs at least its first window before it can stand aside."""
+        polls = 0
+
+        def _should_stop() -> bool:
+            nonlocal polls
+            polls += 1
+            if _stopping_or_yielding():
+                return True
+            if polls > 1 and _guard_engaged_now():
+                guard_stopped["stopped"] = True
+                return True
+            return False
+
+        return _should_stop
 
     # THE DRAIN MAY RUN LIKE THE IMPORT WHEN NOTHING IS COLLECTING (R21, maintainer
     # 2026-09-22, default accepted; F3 in docs/audit/15). Identical work -- the same
@@ -1183,8 +1247,15 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
     if batches:
         _bump("reindex-resume:start")
     clean_end = False  # every batch walked, nothing raised, nothing stopped the run
+    # The batches still to walk. A call the storage guard ended at a window boundary puts its batch back in front (B1, above), so the
+    # same batch is run again, from its cursor, once the wait at the top of the loop is over.
+    queue = list(batches)
     try:
-        for b in batches:
+        while queue:
+            b = queue.pop(0)
+            # B1: stand aside while the storage guard is engaged, here, where this worker holds no session and no lease. It returns at
+            # once when nothing is engaged, and when a stop or an import ends the wait; the check that follows reads which.
+            _stand_aside()
             # Read `stopping` ONCE: re-reading it for the reason would let a cancel that
             # landed in between relabel a yield as a cancel, or the reverse.
             stopping = ctx.stopping
@@ -1198,12 +1269,13 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             # in every language with its count ungrouped. The count is its own one/many
             # phrase (the task manager formats the number); the batch id is data.
             n_art = int(b["articles"])
-            ctx.set_progress(detail=Framed(
+            shown["line"] = Framed(
                 f"import {bid} ({n_art} article(s))", "import {batch} ({articles})",
                 batch=str(bid),
                 articles={"i18n": "{n} article" if n_art == 1 else "{n} articles",
                           "vars": {"n": n_art}},
-            ))
+            )
+            ctx.set_progress(detail=shown["line"])
 
             def _progress(done: int, _total: int, _base: int = walked) -> None:
                 ctx.set_progress(done=_base + done)
@@ -1233,6 +1305,7 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             hold_target = reindex_hold_target_s()
             flush_policy = reindex_flush_policy(hold_target)
             st: dict = {}
+            guard_stopped = {"stopped": False}
             with corpus_lease("reindex-resume"):
                 res = reindex_imported_articles(
                     bid,
@@ -1245,9 +1318,12 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
                     # logical mutation of the derived rows.
                     bump_epoch=False,
                     progress_cb=_progress,
-                    should_stop=lambda: ctx.stopping or _yield_to_import(),
+                    # The stop and the yield as ever, and from the call's second poll on a latch that holds (B1; see _batch_should_stop).
+                    should_stop=_batch_should_stop(guard_stopped),
                 )
-            walked += int(b["articles"])
+            # The batch's articles count toward the bar once, when the batch is over; a call the guard ended is one pass of it.
+            if not guard_stopped["stopped"]:
+                walked += int(b["articles"])
             out["batches"].append(
                 {
                     "batch_id": bid,
@@ -1256,6 +1332,8 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
                     # exclusive_settings is: a batch's numbers cannot be read without
                     # knowing which regime produced them.
                     "counters_deferred": defer,
+                    # This pass ended at a window boundary because a storage latch held; the batch is run again, from its cursor.
+                    **({"ended_for_storage_guard": True} if guard_stopped["stopped"] else {}),
                     **res,
                 }
             )
@@ -1263,6 +1341,8 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             out["articles_failed"] += int(res.get("failed") or 0)
             _accumulate(run, st, commit_batch=commit_batch, idle=idle, hold_target_s=hold_target)
             ctx.set_metrics(_drain_metrics(run))
+            if guard_stopped["stopped"]:
+                queue.insert(0, b)
         clean_end = not out["stopped"]
     finally:
         # In a finally for the same reason as the bump below, and BEFORE it: whatever

@@ -32,9 +32,17 @@ re-index would hide behind hours of work.
 
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 from src.api import backup_v2 as bv2
+from src.database import corpus_lease as _cl
+from src.scheduler import storage_guard as sg
+from tests.stand_aside_helpers import engage, engaged_guard, healthy, healthy_guard, install
+from tests.wallclock_helpers import HANG_GUARD_S, wait_until
+
+_REAL_LEASE = _cl.corpus_lease  # the fixture below replaces the module's; the lease test puts this one back
 
 
 class _Ctx:
@@ -772,3 +780,217 @@ def test_a_drain_of_width_one_batches_publishes_no_longest_hold_rather_than_an_i
     out = bv2._drain_metrics(run)
     assert "longest_batch_s" not in out, "the collector was running: every article held the gate and no batch was timed"
     assert out["batch_commits"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# 5. Standing aside while the storage guard is engaged (R398, B1)             #
+# --------------------------------------------------------------------------- #
+# The field's 80 and 220 GB write-ahead logs: a reader pinned the log, the guard paused collection, the housekeeping lane and the heavy
+# reads, and THIS drain went on committing window after window because it never asked. It now waits where it holds nothing: before
+# each batch, outside the call. A call that is running is asked to return at a window boundary from its second poll on (the first
+# comes before the call has committed anything), the batch stays unstamped with its cursor, and the same batch is run again after
+# the wait. A real guard, readings the test owns; the fake re-index polls ``should_stop`` once per "window" and RESUMES from the
+# cursor the way the real one does (a call that was stopped has committed the windows before the stop).
+
+
+def _windowed_reindex(monkeypatch, *, windows: int = 3, at_start=None, at_window=None) -> list:
+    """Replace the re-index with one that walks ``windows`` windows, polling ``should_stop`` before each as the real one does, and
+    records what happened in order. ``at_start`` / ``at_window(w)`` are the test's hooks for engaging the guard mid-call. A batch that
+    a call left unfinished continues from its cursor at the next call, and ``reindexed`` counts the windows of THIS call."""
+    events: list = []
+    cursor: dict[int, int] = {}
+
+    def _reindex(batch_id, *, should_stop=None, stats=None, progress_cb=None, **_extra):
+        events.append(("call", batch_id))
+        first = cursor.get(batch_id, 0)
+        if at_start is not None:
+            at_start()
+        for w in range(first, windows):
+            if should_stop is not None and should_stop():
+                events.append(("stopped", batch_id, w))
+                return {"reindexed": w - first, "failed": 0}
+            events.append(("window", batch_id, w))
+            cursor[batch_id] = w + 1
+            if progress_cb is not None:
+                progress_cb(w + 1, windows)  # the real one reports the batch's position, not the call's
+            if at_window is not None:
+                at_window(w)
+        return {"reindexed": windows - first, "failed": 0}
+
+    monkeypatch.setattr("src.backup.merge.reindex_imported_articles", _reindex)
+    return events
+
+
+def _start(ctx) -> tuple[threading.Thread, list]:
+    out: list = []
+    t = threading.Thread(target=lambda: out.append(bv2._reindex_resume_worker(ctx)), daemon=True)
+    t.start()
+    return t, out
+
+
+def _says(ctx, frame: str) -> bool:
+    return any(getattr(c.get("detail"), "i18n", None) == frame for c in list(ctx.progress))
+
+
+def test_the_drain_waits_before_a_batch_while_the_log_is_pinned_and_then_goes_on_by_itself(drain, monkeypatch):
+    g, readings = engaged_guard(monkeypatch, "wal")
+    install(monkeypatch, g)
+    events = _windowed_reindex(monkeypatch)
+    ctx = _Ctx()
+
+    t, out = _start(ctx)
+    assert wait_until(lambda: _says(ctx, sg.FRAME_STAND_ASIDE_LOG)), "the row says why it stands still"
+    assert events == [], "no batch started while the latch held"
+    healthy(readings)
+    t.join(HANG_GUARD_S)
+    assert not t.is_alive(), "the pause ended by itself when its cause did"
+    assert [e for e in events if e[0] == "call"] == [("call", 7), ("call", 9)]
+    assert out[0]["articles_reindexed"] == 6 and out[0]["stopped"] is False
+    lines = [getattr(c.get("detail"), "i18n", None) for c in ctx.progress if c.get("detail") is not None]
+    last_pause = max(i for i, frame in enumerate(lines) if frame == sg.FRAME_STAND_ASIDE_LOG)
+    assert lines[last_pause + 1] == "starting…", "after the pause the row reads what it read before it, not the pause"
+    assert lines[last_pause + 2] == "import {batch} ({articles})"
+
+
+def test_the_drive_latch_is_followed_too_and_says_so(drain, monkeypatch):
+    g, readings = engaged_guard(monkeypatch, "disk")
+    install(monkeypatch, g)
+    events = _windowed_reindex(monkeypatch)
+    ctx = _Ctx()
+
+    t, _out = _start(ctx)
+    assert wait_until(lambda: _says(ctx, sg.FRAME_STAND_ASIDE_DISK))
+    assert events == []
+    healthy(readings)
+    t.join(HANG_GUARD_S)
+    assert not t.is_alive() and len([e for e in events if e[0] == "call"]) == 2
+
+
+def test_a_running_call_is_asked_to_return_between_windows_and_the_batch_goes_on_from_its_cursor(drain, monkeypatch):
+    """The first poll comes before the call has committed anything (its session holds a checkout): the guard is not asked THERE. The
+    latch is engaged as the call starts, so window 0 runs engaged, the call is asked to return at window 1, and the batch is run
+    again from its cursor once the pause is over: no window twice, none skipped, and nothing waits inside the call."""
+    g, readings = healthy_guard(monkeypatch)
+    install(monkeypatch, g)
+    engaged_at_window: list[bool] = []
+    events = _windowed_reindex(
+        monkeypatch,
+        at_start=lambda: engage(g, readings) if not engaged_at_window and g.kind() is None else None,
+        at_window=lambda w: engaged_at_window.append(g.engaged) if w == 0 else None,
+    )
+    ctx = _Ctx()
+
+    t, out = _start(ctx)
+    assert wait_until(lambda: _says(ctx, sg.FRAME_STAND_ASIDE_LOG)), "it stood aside once a window had committed"
+    assert ("window", 7, 0) in events and engaged_at_window[:1] == [True], "the first poll did not stand aside, though the latch held"
+    assert ("stopped", 7, 1) in events and ("window", 7, 1) not in events, "the call was asked to return at the second poll"
+    assert [e for e in events if e[0] == "call"] == [("call", 7)], "and no call runs while the latch holds"
+    healthy(readings)
+    t.join(HANG_GUARD_S)
+    assert not t.is_alive()
+    assert [e for e in events if e[0] == "call"] == [("call", 7), ("call", 7), ("call", 9)], "the same batch again, then the next"
+    assert [e[2] for e in events if e[0] == "window" and e[1] == 7] == [0, 1, 2], "every window of the batch ran once, in order"
+    assert out[0]["stopped"] is False and out[0]["articles_reindexed"] == 6
+    done = [c["done"] for c in ctx.progress if "done" in c]
+    assert done == [0, 1, 2, 3, 5, 6, 7], "the bar counts a batch's articles once, though its batch took two passes (4 + 1 at the next batch's first window)"
+    ended = [b for b in out[0]["batches"] if b.get("ended_for_storage_guard")]
+    assert [(b["batch_id"], b["reindexed"]) for b in ended] == [(7, 1)], "the pass the guard ended is published as such"
+
+
+def test_the_drain_holds_no_corpus_lease_while_it_stands_aside(drain, monkeypatch, tmp_path):
+    """The REAL lease, asked the way a restore's swap asks (``wait_for_quiescence``): a drain parked inside its lease would make the
+    swap refuse after hours of work, for a holder that is doing nothing for as long as the latch lasts."""
+    from src.database import corpus_lease as cl
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr("src.database.corpus_lease.corpus_lease", _REAL_LEASE)
+    g, readings = healthy_guard(monkeypatch)
+    install(monkeypatch, g)
+    engaged_once: list[bool] = []
+    _windowed_reindex(monkeypatch, at_window=lambda w: (engaged_once.append(True), engage(g, readings)) if w == 0 and not engaged_once else None)
+    ctx = _Ctx()
+
+    t, _out = _start(ctx)
+    assert wait_until(lambda: _says(ctx, sg.FRAME_STAND_ASIDE_LOG))
+    assert cl.wait_for_quiescence(0.3) == [], "nothing a swap would wait for is held by a drain that waits"
+    healthy(readings)
+    t.join(HANG_GUARD_S)
+    assert not t.is_alive()
+
+
+def test_a_stop_during_the_wait_ends_the_drain_as_a_stop(drain, monkeypatch):
+    g, _readings = engaged_guard(monkeypatch, "wal")
+    install(monkeypatch, g)
+    events = _windowed_reindex(monkeypatch)
+    ctx = _Ctx()
+
+    t, out = _start(ctx)
+    assert wait_until(lambda: _says(ctx, sg.FRAME_STAND_ASIDE_LOG))
+    ctx.stopping = True
+    t.join(HANG_GUARD_S)
+    assert not t.is_alive(), "a stop reaches a drain that is standing aside"
+    assert out[0]["stopped"] is True and out[0]["paused_for_import"] is False
+    assert events == []
+
+
+def test_an_import_claiming_the_machine_ends_the_wait_and_the_drain_yields(drain, monkeypatch):
+    state, _rec = drain
+    g, _readings = engaged_guard(monkeypatch, "wal")
+    install(monkeypatch, g)
+    events = _windowed_reindex(monkeypatch)
+    ctx = _Ctx()
+
+    t, out = _start(ctx)
+    assert wait_until(lambda: _says(ctx, sg.FRAME_STAND_ASIDE_LOG))
+    state["exclusive"] = True
+    t.join(HANG_GUARD_S)
+    assert not t.is_alive(), "the lease the import's swap waits for is not held by a drain that waits"
+    assert out[0]["stopped"] is True and out[0]["paused_for_import"] is True
+    assert events == []
+
+
+def test_a_stop_during_a_wait_between_windows_leaves_the_batch_to_resume(drain, monkeypatch):
+    g, readings = healthy_guard(monkeypatch)
+    install(monkeypatch, g)
+    events = _windowed_reindex(monkeypatch, at_window=lambda w: engage(g, readings) if w == 0 else None)
+    ctx = _Ctx()
+
+    t, out = _start(ctx)
+    assert wait_until(lambda: _says(ctx, sg.FRAME_STAND_ASIDE_LOG))
+    ctx.stopping = True
+    t.join(HANG_GUARD_S)
+    assert not t.is_alive()
+    assert ("stopped", 7, 1) in events, "the re-index was told to stop at the window boundary, as for any stop"
+    assert out[0]["stopped"] is True
+    assert [e for e in events if e[0] == "call"] == [("call", 7)], "and the batch was not run again"
+
+
+def test_a_guard_that_is_off_or_calm_costs_the_drain_nothing(drain, monkeypatch):
+    g, _readings = healthy_guard(monkeypatch)
+    install(monkeypatch, g)
+    events = _windowed_reindex(monkeypatch)
+    out = bv2._reindex_resume_worker(_Ctx())
+    assert out["articles_reindexed"] == 6 and out["stopped"] is False
+    assert len([e for e in events if e[0] == "window"]) == 6
+    # engaged but switched off (OO_STORAGE_GUARD=0): the same
+    engaged, _r = engaged_guard(monkeypatch, "wal")
+    install(monkeypatch, engaged)
+    monkeypatch.setenv("OO_STORAGE_GUARD", "0")
+    events = _windowed_reindex(monkeypatch)
+    assert bv2._reindex_resume_worker(_Ctx())["articles_reindexed"] == 6 and len(events) == 8
+
+
+def test_a_guard_that_cannot_be_consulted_never_fails_the_drain(drain, monkeypatch):
+    g, _readings = engaged_guard(monkeypatch, "wal")
+
+    def _broken(*_a, **_k):
+        raise RuntimeError("the guard is gone")
+
+    monkeypatch.setenv("OO_STORAGE_GUARD", "1")
+    monkeypatch.setattr(sg, "storage_guard", g)
+    monkeypatch.setattr(g, "wait_if_engaged", _broken)
+    monkeypatch.setattr(g, "engaged_now", _broken)  # the reading inside a running call, too
+    events = _windowed_reindex(monkeypatch)
+    out = bv2._reindex_resume_worker(_Ctx())
+    assert out["articles_reindexed"] == 6 and out["stopped"] is False and len(events) == 8
+

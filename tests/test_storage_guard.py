@@ -2762,6 +2762,83 @@ def test_a_background_wait_does_not_follow_the_operators_override():
     assert time.monotonic() - t0 >= 0.15
 
 
+def test_wait_if_engaged_ends_when_the_callers_own_stop_condition_says_so():
+    """B1 (R398): a caller whose stop is a condition and not an Event (a job's ``stopping``, an import claiming the machine) passes it
+    as ``should_stop``; it is read every turn and ends the wait."""
+    g = _engaged("wal")
+    turns: list[int] = []
+
+    def stop_on_the_third_look() -> bool:
+        turns.append(1)
+        return len(turns) >= 3
+
+    assert _returns_within(lambda: g.wait_if_engaged(poll_s=0.01, should_stop=stop_on_the_third_look)) is True
+    assert len(turns) == 3, "it looked once a turn and stopped at the first yes"
+    assert g.engaged, "the wait ended by the caller's condition; the latch is not its to release"
+    # a guard that is not engaged never asks: there is nothing to wait for
+    calm = _guard()
+    asked: list[int] = []
+    assert calm.wait_if_engaged(should_stop=lambda: asked.append(1) or True) is False and asked == []
+
+
+def test_wait_if_engaged_says_why_each_turn_it_waits_and_a_callback_that_raises_never_ends_it():
+    """B1: ``on_wait(kind)`` is how a writer puts the reason on its own job row; a progress line is never a reason to end, or to
+    fail, the wait it describes."""
+    def waited_on(kind: str) -> list[str | None]:
+        g = _engaged(kind)
+        said: list[str | None] = []
+        turns: list[int] = []
+
+        def stop_on_the_third_look() -> bool:
+            turns.append(1)
+            return len(turns) >= 3
+
+        assert _returns_within(lambda: g.wait_if_engaged(poll_s=0.01, should_stop=stop_on_the_third_look, on_wait=said.append)) is True
+        return said
+
+    for kind in ("wal", "disk"):
+        assert waited_on(kind) == [kind, kind], "named at the start of every turn that went on to wait, with the latch that holds"
+    g = _engaged("wal")
+    tries: list[int] = []
+
+    def broken_line(_kind) -> None:
+        tries.append(1)
+        raise RuntimeError("the row could not be written")
+
+    def stop_after_three_tries() -> bool:
+        return len(tries) >= 3
+
+    assert _returns_within(lambda: g.wait_if_engaged(poll_s=0.01, should_stop=stop_after_three_tries, on_wait=broken_line)) is True
+    assert len(tries) == 3, "the callback raised each turn and the wait went on"
+
+
+def test_engaged_now_takes_the_readings_itself_and_answers_without_waiting():
+    """B1: a caller that checks once between two units of work (the re-index drain, at a window boundary) sees what a waiter would:
+    with no supervisor running it takes the readings itself, so a cause that went away reads as released, and it never blocks."""
+    g = _engaged("wal")
+    assert g.engaged_now() is True
+    g.fake["wal_bytes"] = 0
+    seen = [_returns_within(g.engaged_now) for _ in range(3)]  # two healthy readings release it (resume_after=2)
+    assert seen[-1] is False and g.engaged is False, "the reading it took itself released the latch"
+    assert _returns_within(_guard().engaged_now) is False, "a guard that never engaged answers no"
+
+
+def test_engaged_now_follows_the_switch(monkeypatch):
+    g = _engaged("disk")
+    assert g.engaged_now() is True
+    monkeypatch.setenv("OO_STORAGE_GUARD", "0")
+    assert g.engaged_now() is False, "a guard that is switched off waits for nothing"
+
+
+def test_the_stand_aside_line_is_a_keyed_frame_for_the_latch_that_holds():
+    disk = storage_guard.stand_aside_detail("disk")
+    assert disk.i18n == storage_guard.FRAME_STAND_ASIDE_DISK and str(disk) == storage_guard.FRAME_STAND_ASIDE_DISK
+    for kind in ("wal", None):
+        line = storage_guard.stand_aside_detail(kind)
+        assert line.i18n == storage_guard.FRAME_STAND_ASIDE_LOG and str(line) == storage_guard.FRAME_STAND_ASIDE_LOG
+    assert "{" not in storage_guard.FRAME_STAND_ASIDE_LOG + storage_guard.FRAME_STAND_ASIDE_DISK, "no variable: nothing for a locale to place"
+
+
 def test_the_conftest_isolates_the_process_global_latch():
     assert "_storage_guard_not_leaked" in _src("tests/conftest.py")
 
@@ -2790,6 +2867,8 @@ def test_every_storage_string_is_in_the_twelve_locales():
         storage_guard.FRAME_OVERRIDE_HELD,
         storage_guard.FRAME_OVERRIDE_UNREADABLE,
         storage_guard.FRAME_OVERRIDE_NO_SUPERVISOR,
+        storage_guard.FRAME_STAND_ASIDE_LOG,
+        storage_guard.FRAME_STAND_ASIDE_DISK,
     ]
     for gone in ("Try again now", "Trying again. Collection pauses again by itself if the limit is still exceeded."):
         assert gone not in _src("src/static/app-core.js") and gone not in _src("src/static/taskmanager.js")
