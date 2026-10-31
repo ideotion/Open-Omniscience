@@ -1659,11 +1659,11 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
             # The outlet was crawled once; its other feeds are not due again before the rest of the rotation.
             session.query(Source).filter(Source.domain == domain, Source.id != source_id).update(
                 {Source.last_crawled_at: now}, synchronize_session=False)
-            sources_crawled += 1
             # The stamp above is a write (the sibling feeds' update is a bulk statement, which takes the single-writer gate at once): commit
             # it HERE, or the next outlet's sitemap discovery and page walk run with the gate held, and the fetcher's release declines a
             # session that has written. Field 9931cffe: this lane held the gate for 2,933 s, 2,666 s of it between statements.
             session.commit()
+            sources_crawled += 1  # counted once the stamp is durable: an outlet whose commit failed was rolled back and is not crawled
         except Exception as exc:  # noqa: BLE001 - one source's failure must not skip the rest
             log_failure(_LOG, f"crawl supplement: source {domain!r} failed", exc, level=logging.WARNING)
             # What this outlet had written and not committed goes with it: left, it would carry the gate into the next outlet's fetches.
