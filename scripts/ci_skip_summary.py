@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Print how many tests a CI job skipped, by CLASS and by test module: counts only, never a reason.
+"""Print how many tests a CI job skipped, by CLASS and by test module, and its slowest test modules: counts and seconds only, never a reason.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -9,7 +9,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 WHY. "What did this job NOT run?" could only be answered by re-running the suite locally (the 2026-10-29 skip audit did exactly that), because the
 only reader of a CI job log that works from a session returns the last few kilobytes, and ``pytest -rsfE``'s skip block is hundreds of lines long.
 The two full-suite jobs (``test`` and ``core-only``) now write a junit report and run this as the LAST step of the job, on red as well as green: a few
-dozen short lines (at most about sixty: the lists below are capped) that fit in any tail. It is an OBSERVATION. It never fails a job (exit status 0 whatever it finds), because a count
+dozen short lines (at most about seventy-five: the lists below are capped) that fit in any tail. It is an OBSERVATION. It never fails a job (exit status 0 whatever it finds), because a count
 that changes is a question for a reader, not a verdict (R350: no pins for pytest reds).
 
 WHAT IT PRINTS, AND WHAT IT NEVER DOES. A skip's reason is free text written by a test author, and pytest puts it into the report next to an
@@ -24,6 +24,14 @@ a promise about every string: anything shaped like an identifier passes (a modul
 * the TEST MODULE a skip belongs to (``tests.test_x``), largest first.
 
 Expected failures (``pytest.xfail``) are not skips: they are counted apart from them, in the first line.
+
+THE SLOWEST MODULES. A second block adds, per test module, the SUM of its testcases' ``time`` attributes in whole seconds, the ten largest and the
+rest summed in one line. That is a measurement with a stated meaning, not the job's wall time: pytest writes a testcase's time as setup plus call plus
+teardown, a session fixture's setup is charged to the first test that asks for it and its teardown to the last, and collection and the imports of
+a ``conftest.py`` are charged to no test (measured 2026-10-31: two tests with a 0.4 s session fixture and a 0.5 s conftest import summed to 1.61 s
+in a 2.68 s process). A module that is first to use a heavy session fixture therefore carries that fixture's cost. A ``time`` that is not a plain
+decimal number is counted in one line ("N test cases carried no readable time") and added to nothing. It is the number the ~77-minute ``test``
+job's sharding question (a user item) needs on every run instead of once, and it gates nothing.
 """
 
 from __future__ import annotations
@@ -43,6 +51,10 @@ _LIST_LINES = 25
 #: The longest name taken from a report. A longer one is not a module of this repository (a line must stay short whatever the report says).
 _NAME_MAX = 200
 _COLLECTION = "collection skipped"
+#: The slowest modules kept in the log; the rest of the modules are summed in one line.
+_SLOWEST_LINES = 10
+#: A testcase's ``time``: pytest writes plain decimals (``0.123``). Anything else (an exponent, a sign, ``nan``, ``inf``, a digit outside 0-9) is not a time.
+_SECONDS = re.compile(r"[0-9]{1,9}(?:\.[0-9]{1,9})?")
 
 
 def _test_module(classname: str, name: str) -> str:
@@ -72,20 +84,27 @@ def _list(counts: Counter[str], noun: str) -> list[str]:
     return lines
 
 
-def summarize(path: Path) -> list[str]:
-    """The lines to print for one junit report. Never raises: a report that cannot be read becomes one line saying which kind of failure it was."""
+def _load(path: Path):
+    """(the report's root element, None), or (None, the one line that says why it could not be read). Never raises."""
     try:
         from defusedxml import ElementTree as defused
     except ImportError:  # pragma: no cover - defusedxml is a core dependency
-        return ["skip summary: defusedxml is not installed, so the junit report was not read"]
+        return None, "skip summary: defusedxml is not installed, so the junit report was not read"
     try:
-        root = defused.parse(str(path)).getroot()
+        return defused.parse(str(path)).getroot(), None
     except OSError:
-        return ["skip summary: no junit report was written (pytest did not get as far as writing one)"]
+        return None, "skip summary: no junit report was written (pytest did not get as far as writing one)"
     except defused.ParseError:
-        return ["skip summary: the junit report could not be parsed (pytest may have been killed while writing it)"]
+        return None, "skip summary: the junit report could not be parsed (pytest may have been killed while writing it)"
     except Exception as exc:  # noqa: BLE001 - an observation step must not turn a job red; the class name is the whole message
-        return [f"skip summary: the junit report could not be read ({type(exc).__name__})"]
+        return None, f"skip summary: the junit report could not be read ({type(exc).__name__})"
+
+
+def summarize(path: Path) -> list[str]:
+    """The lines to print for one junit report. Never raises: a report that cannot be read becomes one line saying which kind of failure it was."""
+    root, why = _load(path)
+    if root is None:
+        return [why]
 
     total = skipped = xfailed = 0
     classes: Counter[str] = Counter()
@@ -111,6 +130,32 @@ def summarize(path: Path) -> list[str]:
     return lines
 
 
+def slowest(path: Path) -> list[str]:
+    """The slowest test modules by the sum of their testcases' times, in whole seconds; ``[]`` when the report cannot be read (``summarize`` says so)."""
+    root, _ = _load(path)
+    if root is None:
+        return []
+    seconds: dict[str, float] = {}
+    unreadable = 0
+    for case in root.iter("testcase"):
+        raw = case.get("time") or ""
+        if not _SECONDS.fullmatch(raw):
+            unreadable += 1
+            continue
+        module = _test_module(case.get("classname") or "", case.get("name") or "")
+        seconds[module] = seconds.get(module, 0.0) + float(raw)
+    ranked = sorted(seconds.items(), key=lambda kv: (-kv[1], kv[0]))
+    lines = [f"per-test times summed (not the job's wall time): {round(sum(seconds.values()))} s in all"]
+    if ranked:
+        lines.append(f"slowest test modules (largest first, {min(len(ranked), _SLOWEST_LINES)} of {len(ranked)}):")
+        lines += [f"  {name}  {round(value)} s" for name, value in ranked[:_SLOWEST_LINES]]
+        if len(ranked) > _SLOWEST_LINES:
+            lines.append(f"  (and {len(ranked) - _SLOWEST_LINES} more modules, {round(sum(value for _, value in ranked[_SLOWEST_LINES:]))} s)")
+    if unreadable:
+        lines.append(f"  {unreadable} test cases carried no readable time")
+    return lines
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
         print("usage: ci_skip_summary.py JUNIT_XML", file=sys.stderr)
@@ -119,6 +164,12 @@ def main(argv: list[str]) -> int:
     print("```")
     print("\n".join(summarize(Path(argv[1]))))
     print("```")
+    timing = slowest(Path(argv[1]))
+    if timing:
+        print("### Slowest test modules (seconds only, no gate)")
+        print("```")
+        print("\n".join(timing))
+        print("```")
     return 0
 
 
