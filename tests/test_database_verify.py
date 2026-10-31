@@ -28,6 +28,7 @@ import sys
 import threading
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -1104,10 +1105,10 @@ def test_the_housekeeping_lane_waits_for_the_check_and_says_why(registry, monkey
     monkeypatch.setattr(fr, "wrap_fetcher", lambda f, s: f)
     monkeypatch.setattr(sg, "storage_guard", sg.StorageGuard(readings_fn=lambda: {}))
     registry.verification_arm(verify.TRIGGER_UNCLEAN_END)
-    out = rn.run_housekeeping_lane(object(), object(), object())
+    out = rn.run_housekeeping_lane(MagicMock(), object(), object())
     assert ran == [] and out == {"_paused": {"reason": "storage (verifying)", "remaining": ["law", "backfill"]}}
     registry.verification_end()
-    assert rn.run_housekeeping_lane(object(), object(), object()) == {"law": {"ran": True}, "backfill": {"ran": True}}
+    assert rn.run_housekeeping_lane(MagicMock(), object(), object()) == {"law": {"ran": True}, "backfill": {"ran": True}}
 
 
 def test_the_pass_loop_waits_in_the_verifying_phase_and_leaves_when_the_check_ends(registry, monkeypatch):

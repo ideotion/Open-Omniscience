@@ -240,6 +240,9 @@ def test_the_lane_writes_one_entry_per_kind_it_runs(tmp_path, monkeypatch):
         def rollback(self):
             pass
 
+        def commit(self):
+            pass
+
     runner.run_housekeeping_lane(_Session(), object(), runner.SchedulerSettings())
     by_action = {e["action"]: e for e in al.read_entries(limit=100)}
     expected = {f"lane:{k}" for k in steps if k != "law"}

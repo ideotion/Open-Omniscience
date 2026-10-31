@@ -11,6 +11,7 @@ network.
 from __future__ import annotations
 
 import contextlib
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -27,7 +28,7 @@ def order(monkeypatch):
     # Stub the heavy/networked collaborators _default_run_once reaches for.
     @contextlib.contextmanager
     def _fake_scope():
-        yield object()
+        yield MagicMock()  # a session: the lane commits after each step
 
     monkeypatch.setattr("src.database.session.session_scope", _fake_scope)
     monkeypatch.setattr("src.safety.fetcher.make_fetcher", lambda: object())

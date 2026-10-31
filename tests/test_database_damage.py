@@ -25,6 +25,7 @@ import sqlite3
 import sys
 import threading
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy import create_engine, event, text
@@ -1198,7 +1199,7 @@ def test_the_law_housekeeping_step_waits_on_its_own_file(registry, monkeypatch):
     monkeypatch.setattr(rn, "_activity", lambda *a, **k: shown.append(a))
     monkeypatch.setattr(fr, "wrap_fetcher", lambda f, s: f)
     _note(registry, "law")
-    out = rn.run_housekeeping_lane(object(), object(), object())
+    out = rn.run_housekeeping_lane(MagicMock(), object(), object())
     assert ran == ["backfill"], "the law step ran into a damaged law file, or its neighbour was stopped"
     assert out["law"] == {"skipped": "database-damaged"} and out["backfill"] == {"ran": True}
     assert any(a[0] == "lane:law" and a[1] == {"skipped": "database-damaged"} for a in shown), (
@@ -1206,7 +1207,7 @@ def test_the_law_housekeeping_step_waits_on_its_own_file(registry, monkeypatch):
     )
     registry.retry(reason="test", files=("law",))
     ran.clear()
-    out = rn.run_housekeeping_lane(object(), object(), object())
+    out = rn.run_housekeeping_lane(MagicMock(), object(), object())
     assert ran == ["law", "backfill"]
 
 
