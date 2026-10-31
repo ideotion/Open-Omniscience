@@ -1196,8 +1196,10 @@ def vllm_install(req: VllmInstallRequest | None = None) -> dict:
         st = job.status()
         st["started"] = False
         if st.get("state") == "error":
-            # Not "a run is already in flight" (that is the status the caller is meant to read): the worker thread could not start (R393).
-            # The route keeps its contract, the status with ``started: false``; the log now says why, as the 500 handler used to.
+            # A run already in flight reads ``running`` and is the status the caller is meant to read; ``error`` is the worker thread that
+            # could not start (R393). One narrow case reads ``error`` too and is logged here as well: a run that has just failed and is still
+            # writing its own failure when a second start arrives. The route keeps its contract, the status with ``started: false``; the log
+            # now says why, as the 500 handler used to. (A line in ``BackgroundJob.start`` itself would replace this one: the follow-on.)
             log_failure(_LOG, "vLLM install refused: the worker thread could not start", exc, level=logging.WARNING)
     return st
 

@@ -1101,7 +1101,7 @@ def resume_job(job_id: str) -> dict:
         try:
             resumed = get_manager().resume(key)
         except (RuntimeError, ValueError) as exc:  # the worker thread could not start (R393), the shape of the branches below
-            log_failure(_LOG, "dump resume refused: the download worker could not start", exc, level=logging.WARNING)
+            log_failure(_LOG, "dump resume refused: the download could not be resumed", exc, level=logging.WARNING)
             raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
         if resumed is None:
             raise HTTPException(status_code=404, detail=f"unknown dump {key!r}")
@@ -1113,7 +1113,7 @@ def resume_job(job_id: str) -> dict:
         try:
             resumed = get_osm_manager().resume(key)
         except (RuntimeError, ValueError) as exc:  # the worker thread could not start (R393), the shape of the branches below
-            log_failure(_LOG, "OSM download resume refused: the download worker could not start", exc, level=logging.WARNING)
+            log_failure(_LOG, "OSM download resume refused: the download could not be resumed", exc, level=logging.WARNING)
             raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
         if resumed is None:
             raise HTTPException(status_code=404, detail=f"unknown OSM download {key!r}")
