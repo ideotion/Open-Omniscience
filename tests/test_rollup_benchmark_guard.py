@@ -106,7 +106,9 @@ def test_the_benchmark_releases_the_build_lock_after_a_decline_and_after_an_erro
     assert rollup_serve._BUILD_LOCK.acquire(blocking=False), "a decline left the build lock held"
     rollup_serve._BUILD_LOCK.release()
     monkeypatch.setattr(rollup_serve, "_memory_verdict", lambda: None)
-    with pytest.raises(AssertionError):  # the verdicts pass, so the run reaches the (patched) builder, which raises
+    # The verdicts pass, so the run reaches the (patched) builder, whose message is matched: any other AssertionError (one raised before the lock
+    # is taken) would leave the lock free for the wrong reason and make the check below vacuous.
+    with pytest.raises(AssertionError, match="built something past a verdict"):
         run_rollup_benchmark(empty_session, repeats=1)
     assert rollup_serve._BUILD_LOCK.acquire(blocking=False), "an error left the build lock held"
     rollup_serve._BUILD_LOCK.release()
