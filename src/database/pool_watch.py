@@ -115,6 +115,19 @@ def endpoint_template() -> str | None:
     return None
 
 
+def work_label() -> str | None:
+    """The fixed label a background worker set for the work this context is doing ("lane:crawl"), else ``None``.
+
+    A label set WITHOUT a method or an ASGI scope names work the app started itself (:func:`set_endpoint`); a request always carries both,
+    and its fixed label ("GET UNMATCHED") says nothing, so it is never returned here. The write gate's journal reads this when no request
+    template exists, so a ``gate_hold`` held by a worker names the work and not only the thread."""
+    cur = _ENDPOINT.get()
+    if cur is None:
+        return None
+    label, method, scope = cur
+    return label if method is None and scope is None else None
+
+
 def reset_endpoint(token: contextvars.Token) -> None:
     with contextlib.suppress(ValueError):  # a token from another context: leave it, never raise
         _ENDPOINT.reset(token)

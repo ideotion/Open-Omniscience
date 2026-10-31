@@ -919,7 +919,7 @@ def _note_hold_end(
         fields.update(holder_state.fields_for(started))  # the looks up to the release, not the last 15-second sample's
         if breakdown is not None:
             fields["seconds_by"] = breakdown  # exact: taken by the gate at the release, over the whole hold
-        route = pool_watch.endpoint_template()
+        route = pool_watch.endpoint_template() or pool_watch.work_label()  # a request's template, else the worker's own label ("lane:crawl")
         if route is not None:  # no template found: the label the watchdog sampled stays, it is not overwritten with nothing
             fields["route"] = route
         # ``tombstone``: a watchdog sample that was already computing when this hold ended must not open a SECOND entry for it
