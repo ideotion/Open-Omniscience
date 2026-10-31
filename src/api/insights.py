@@ -3109,6 +3109,10 @@ def warm_cache(db: Session) -> dict:
             continue
         except Exception as exc:  # noqa: BLE001 - warming is best-effort, never fatal to a pass
             log_failure(_LOG, f"insights cache warm failed for {key}", exc, level=logging.WARNING)
+            # The `continue` skipped the release below, so a failed spec left the transaction its reads opened (and the log's read
+            # mark with it) standing for every spec after it. Roll it back as the StatementTimeout branch above does: these
+            # specs only read, so nothing is lost, and a session a failure poisoned stops failing the rest.
+            _safe_rollback(db)
             continue
         # PR-D / W1: release the transaction compute()'s DB reads opened before the
         # next spec starts — otherwise the WHOLE specs loop (one shared `db` session,
