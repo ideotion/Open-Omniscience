@@ -115,3 +115,41 @@ def test_a_nested_block_raises_the_size_for_new_checkouts(sess):
         sess.commit()
         sess.rollback()
         assert _cache(sess) == -256 * 1024
+
+
+def test_a_nested_block_restores_the_true_original(sess):
+    sess.execute(text("PRAGMA cache_size=-2000"))
+    with bulk_page_cache(sess, 64):
+        sess.execute(text("SELECT 1"))
+        with bulk_page_cache(sess, 256):
+            assert _cache(sess) == -256 * 1024
+    sess.rollback()
+    sess.close()
+    assert _cache(sess) == -2000
+
+
+def test_a_positive_page_count_is_left_alone(sess):
+    sess.execute(text("PRAGMA cache_size=500000"))
+    with bulk_page_cache(sess, 256):
+        assert _cache(sess) == 500000
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "expected_size"),
+    [({"commit_batch": 200}, None), ({"commit_batch": 1}, 0), ({}, 0), ({"commit_batch": None}, 0)],
+)
+def test_reindex_articles_applies_the_cache_only_for_batched_commits(monkeypatch, kwargs, expected_size):
+    import src.analytics.reindex_cache as rc
+    import src.analytics.store as store
+
+    seen = []
+
+    @__import__("contextlib").contextmanager
+    def fake(session, size_mb=None):
+        seen.append(size_mb)
+        yield 0
+
+    monkeypatch.setattr(rc, "bulk_page_cache", fake)
+    monkeypatch.setattr(store, "_reindex_articles_impl", lambda *a, **k: {"reindexed": 0, "failed": 0})
+    store.reindex_articles(object(), extractor=None, article_ids=[], **kwargs)
+    assert seen == [expected_size]

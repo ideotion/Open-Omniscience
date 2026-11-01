@@ -79,10 +79,11 @@ class _EngineHooks:
         try:
             current = int(_pragma(dbapi_conn, "PRAGMA cache_size")[0][0])
             wanted = -mb * 1024  # negative = KiB
-            if current < 0 and current <= wanted:  # only grow, and only compare like with like
+            # Only grow, and only compare like with like: a size set as a positive PAGE count is left alone.
+            if current >= 0 or current <= wanted:
                 return
             with self.lock:
-                self.saved[record] = current
+                self.saved.setdefault(record, current)  # a nested block must not overwrite the true original with the outer's size
             _pragma(dbapi_conn, f"PRAGMA cache_size={wanted}")
         except Exception as exc:  # noqa: BLE001
             with self.lock:
@@ -156,8 +157,8 @@ def bulk_page_cache(session, size_mb: int | None = None) -> Iterator[int]:
                 entered = True
             # A session already inside a transaction holds a connection checked out before the block: grow that one now.
             # (Never ask a session with no transaction for a connection: that would check one out for nothing.)
-            if session.in_transaction():
-                with contextlib.suppress(Exception):
+            with contextlib.suppress(Exception):
+                if session.in_transaction():
                     fairy = session.connection().connection
                     hooks.grow(fairy.dbapi_connection, fairy._connection_record, mb)
         yield mb
