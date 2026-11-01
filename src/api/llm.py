@@ -1192,15 +1192,11 @@ def vllm_install(req: VllmInstallRequest | None = None) -> dict:
             acknowledge_low_resources=body.acknowledge_low_resources,
         )
         st["started"] = True
-    except RuntimeError as exc:
+    except RuntimeError:
+        # A run already in flight reads ``running`` and is the status the caller is meant to read; a worker thread that could not start
+        # reads ``error`` (R393) and ``BackgroundJob.start`` has already logged it. The route keeps its contract: the status, ``started: false``.
         st = job.status()
         st["started"] = False
-        if st.get("state") == "error":
-            # A run already in flight reads ``running`` and is the status the caller is meant to read; ``error`` is the worker thread that
-            # could not start (R393). One narrow case reads ``error`` too and is logged here as well: a run that has just failed and is still
-            # writing its own failure when a second start arrives. The route keeps its contract, the status with ``started: false``; the log
-            # now says why, as the 500 handler used to. (A line in ``BackgroundJob.start`` itself would replace this one: the follow-on.)
-            log_failure(_LOG, "vLLM install refused: the worker thread could not start", exc, level=logging.WARNING)
     return st
 
 
@@ -1454,9 +1450,8 @@ def default_model_install() -> dict:
         try:
             job.start(model=plan["artifact"])
         except RuntimeError as exc:
-            # The worker thread could not start, or a run began between the check above and this call (R393). BEFORE the preference is
-            # saved: a model whose download did not begin is not the operator's chosen model.
-            log_failure(_LOG, "default model install refused: the vLLM download worker could not start", exc, level=logging.WARNING)
+            # The worker thread could not start (``BackgroundJob.start`` has logged that, once), or a run began between the check above and
+            # this call (R393). BEFORE the preference is saved: a model whose download did not begin is not the operator's chosen model.
             raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
         try:
             from src.config.app_settings import save_settings
@@ -1557,8 +1552,8 @@ def _queue_downloads(backend: str, ok: list[dict], refused: list[dict]) -> dict:
         try:
             job.start(models=[m["identifier"] for m in ok])
         except RuntimeError as exc:
-            # One job downloads every model asked for, so a start that failed refuses all of them: 409 with the words, like the install.
-            log_failure(_LOG, "model download refused: the vLLM download worker could not start", exc, level=logging.WARNING)
+            # One job downloads every model asked for, so a start that failed refuses all of them: 409 with the words, like the install
+            # (``BackgroundJob.start`` has logged a failed thread start itself).
             raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
         return {
             "backend": backend,

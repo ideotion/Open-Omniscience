@@ -15,6 +15,7 @@ later). A handler that reads the escape as 'the thread never ran' and gives its 
 
 from __future__ import annotations
 
+import logging
 import threading
 
 import pytest
@@ -105,6 +106,166 @@ def test_a_job_whose_thread_could_not_be_created_is_marked_failed_and_can_start_
     job.start()
     job.join()
     assert job.status()["state"] != "error"
+
+
+# -- BackgroundJob.start: the refused start is in the log, once, with none of the exception's words -- #
+
+_LOGGER = "jobs.background"
+
+
+def _did_not_start(caplog):
+    return [r for r in caplog.records if r.name == _LOGGER and "did not start" in r.getMessage()]
+
+
+def test_a_job_whose_thread_could_not_be_created_is_logged_once_as_a_warning_with_the_jobs_own_error_text(monkeypatch, caplog):
+    """Every caller of every job kind shares this one line: the routes that map the refusal to an answer used to carry a line each, and most
+    carried none. It says what the job's own ``error`` field says, which is the class and a fixed note."""
+    caplog.set_level(logging.WARNING, logger=_LOGGER)
+    w = _Workers()
+    job = BackgroundJob("sweep-logged", "sweep", w.work)
+    _start_fails(monkeypatch, "bgjob-sweep-logged", "never")
+    with pytest.raises(RuntimeError, match="can't start new thread"):
+        job.start()
+    lines = _did_not_start(caplog)
+    assert len(lines) == 1, "the refused start must be logged exactly once"
+    assert lines[0].levelno == logging.WARNING
+    assert lines[0].getMessage() == f"background job sweep-logged did not start: {job.status()['error']}"
+    assert job.status()["error"] == "RuntimeError: could not start the worker thread"
+
+
+def test_the_refused_start_log_carries_none_of_the_exceptions_words(monkeypatch, caplog):
+    """A start's keyword arguments can hold a passphrase or a mailbox password and this point has not read the job's secrets, so the
+    class and the fixed note are all it writes: whatever the exception says stays out of the log."""
+    caplog.set_level(logging.DEBUG, logger=_LOGGER)
+
+    def start(self):
+        raise RuntimeError("can't start new thread (passphrase=hunter2 mailbox_password=correct-horse)")
+
+    monkeypatch.setattr(threading.Thread, "start", start)
+    job = BackgroundJob("sweep-quiet", "sweep", _Workers().work)
+    with pytest.raises(RuntimeError):
+        job.start(passphrase="hunter2", mailbox_password="correct-horse")
+    assert len(_did_not_start(caplog)) == 1
+    assert "hunter2" not in caplog.text and "correct-horse" not in caplog.text and "passphrase" not in caplog.text
+    assert "hunter2" not in repr(job.status()) and "correct-horse" not in repr(job.status())
+
+
+def test_a_start_that_finds_a_run_in_flight_logs_no_refused_start(monkeypatch, caplog):
+    """The 'already running' refusal is a different fact (the caller reads the live status) and is not a failed thread start."""
+    caplog.set_level(logging.DEBUG, logger=_LOGGER)
+    w = _Workers()
+    job = BackgroundJob("sweep-busy", "sweep", w.work)
+    try:
+        job.start()
+        assert wait_until(lambda: w.running == 1)
+        with pytest.raises(RuntimeError, match="already running"):
+            job.start()
+        assert _did_not_start(caplog) == []
+    finally:
+        w.release.set()
+        job.join()
+
+
+def test_an_interrupt_during_start_logs_no_refused_start(monkeypatch, caplog):
+    """An interrupt leaves a live worker thread behind and the job running; saying it 'did not start' would be false."""
+    caplog.set_level(logging.DEBUG, logger=_LOGGER)
+    w = _Workers()
+    job = BackgroundJob("sweep-interrupt-log", "sweep", w.work)
+    _start_fails(monkeypatch, "bgjob-sweep-interrupt-log", "interrupted")
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            job.start()
+        assert wait_until(lambda: w.running == 1)
+        assert _did_not_start(caplog) == []
+    finally:
+        w.release.set()
+        job.join()
+
+
+def test_a_start_that_is_refused_still_raises_when_the_log_cannot_be_written(monkeypatch):
+    """The line is best effort: a handler that raises must not replace the refusal the caller maps to its answer."""
+    job = BackgroundJob("sweep-broken-log", "sweep", _Workers().work)
+    _start_fails(monkeypatch, "bgjob-sweep-broken-log", "never")
+
+    def broken(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("src.jobs.background._LOG.warning", broken)
+    with pytest.raises(RuntimeError, match="can't start new thread"):
+        job.start()
+    assert job.status()["state"] == "error" and job._thread is None
+
+
+def test_the_refusal_the_caller_catches_is_the_very_exception_the_thread_raised_with_its_chain_as_it_was(monkeypatch):
+    """The callers map the refusal to an answer (and some read its type): the wrapper that writes the line re-raises the original object,
+    never a copy of it, and leaves ``__context__`` and ``__cause__`` as a plain re-raise leaves them, whether or not the caller was
+    already handling another exception."""
+    raised: list[RuntimeError] = []
+
+    def start(self):
+        err = RuntimeError("can't start new thread")
+        raised.append(err)
+        raise err
+
+    monkeypatch.setattr(threading.Thread, "start", start)
+    job = BackgroundJob("sweep-identity", "sweep", _Workers().work)
+    with pytest.raises(RuntimeError) as plain:
+        job.start()
+    assert plain.value is raised[0]
+    assert plain.value.__context__ is None and plain.value.__cause__ is None and not plain.value.__suppress_context__
+
+    outer = ValueError("the caller was handling this")
+    with pytest.raises(RuntimeError) as nested:
+        try:
+            raise outer
+        except ValueError:
+            job.start()
+    assert nested.value is raised[1] and nested.value is not raised[0]
+    assert nested.value.__context__ is outer and nested.value.__cause__ is None and not nested.value.__suppress_context__
+
+
+def test_the_job_lock_is_not_held_while_the_refused_start_is_written(monkeypatch):
+    """A log handler can block (a full pipe, a slow disk). ``status()`` readers wait on the job's lock, so the line is written after it is
+    released: a handler that is stuck must not stop the task manager reading the job."""
+    entered, release = threading.Event(), threading.Event()
+
+    class Stuck(logging.Handler):
+        def emit(self, record):
+            if "did not start" in record.getMessage():
+                entered.set()
+                release.wait(2 * HANG_GUARD_S)  # outlasts the reader's guard below, so a reader held by the lock fails instead of being let go
+
+    logger = logging.getLogger(_LOGGER)
+    handler = Stuck(level=logging.WARNING)
+    old_level = logger.level
+    logger.addHandler(handler)
+    logger.setLevel(logging.WARNING)
+    job = BackgroundJob("sweep-stuck-log", "sweep", _Workers().work)
+    _start_fails(monkeypatch, "bgjob-sweep-stuck-log", "never")
+    raised: list[BaseException] = []
+
+    def starter():
+        try:
+            job.start()
+        except RuntimeError as exc:
+            raised.append(exc)
+
+    t = threading.Thread(target=starter, name="starter-stuck-log", daemon=True)
+    seen: list[dict] = []
+    reader = threading.Thread(target=lambda: seen.append(job.status()), name="reader-stuck-log", daemon=True)
+    try:
+        t.start()
+        assert entered.wait(HANG_GUARD_S), "the refused start was never written"
+        reader.start()
+        assert wait_until(lambda: bool(seen)), "status() waited on the job lock while the log handler was stuck"
+        assert seen[0]["state"] == "error"
+    finally:
+        release.set()
+        t.join(HANG_GUARD_S)
+        reader.join(HANG_GUARD_S)
+        logger.removeHandler(handler)
+        logger.setLevel(old_level)
+    assert len(raised) == 1
 
 
 # -- DamageRegistry._single_flight ------------------------------------------ #

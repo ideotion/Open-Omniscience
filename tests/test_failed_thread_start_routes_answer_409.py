@@ -334,12 +334,12 @@ def _vllm_engine_install(monkeypatch, job: _InstallJob) -> None:
     monkeypatch.setattr("src.api.llm._get_vllm_install_job", lambda: job)
 
 
-def test_a_vllm_engine_install_that_lost_a_race_is_a_status_and_not_logged_as_a_failed_start(client, monkeypatch, caplog):
-    caplog.set_level(logging.WARNING)
+def test_a_vllm_engine_install_that_lost_a_race_is_answered_as_the_running_status(client, monkeypatch):
+    """The route keeps its contract: the status with ``started: false``. That a run in flight logs no refused start is pinned where the line is
+    written, on the real job (tests/test_thread_start_interrupt.py)."""
     _vllm_engine_install(monkeypatch, _InstallJob("a vllm-install job is already running", state_after="running"))
     r = client.post("/api/llm/vllm/install", json={})
     assert r.status_code == 200 and r.json()["started"] is False and r.json()["state"] == "running"
-    assert caplog.text == ""
 
 
 def test_the_vllm_install_does_not_map_an_error_that_is_not_a_failed_start(client, monkeypatch):
@@ -557,18 +557,41 @@ def test_a_refused_start_is_logged_on_every_route_that_maps_it(client, monkeypat
     assert client.post("/api/scheduler/start").status_code == 409
     logged("collection start")
 
-    # the vLLM engine install keeps its contract (the status with ``started: false``) and now logs a refused start
-    _vllm_engine_install(monkeypatch, _InstallJob(_CANNOT_START, state_after="error"))
+    # the vLLM engine install keeps its contract (the status with ``started: false``); its refused start is logged by ``BackgroundJob.start``
+    # itself, once, on the real job: the class and the job's fixed note (never the exception's words), and not by the route as well
+    from src.jobs import background as background_jobs
+
+    install = background_jobs.BackgroundJob("vllm-install", "Installing vLLM", lambda _ctx, **_kw: None, cancellable=True)
+    _vllm_engine_install(monkeypatch, install)
+    _cannot_start(monkeypatch, background_jobs)
     r = client.post("/api/llm/vllm/install", json={})
     assert r.status_code == 200 and r.json()["started"] is False and r.json()["state"] == "error"
-    logged("vLLM engine install")
+    started = [rec for rec in caplog.records if rec.levelno == logging.WARNING and "did not start" in rec.getMessage()]
+    assert [rec.getMessage() for rec in started] == [
+        "background job vllm-install did not start: RuntimeError: could not start the worker thread"
+    ], "the engine install's refused start must be in the log exactly once, from BackgroundJob.start"
+    assert not any(rec.name == "src.api.llm" for rec in caplog.records), "the route must not log the same refusal a second time"
+    caplog.clear()
 
-    # the vLLM install and the vLLM batch
-    _vllm_plan(monkeypatch, _Job(RuntimeError(_CANNOT_START)), [])
-    assert client.post("/api/llm/default-model/install").status_code == 409
-    logged("vLLM install")
+    # the vLLM model install and the vLLM batch run on one real ``BackgroundJob`` each: its refused start is in the log exactly once, written
+    # by ``BackgroundJob.start``, and neither route writes it a second time
     from fastapi import HTTPException
 
-    with pytest.raises(HTTPException):
+    def written_once(label: str) -> None:
+        refused = [rec.getMessage() for rec in caplog.records if rec.levelno == logging.WARNING and "did not start" in rec.getMessage()]
+        assert refused == ["background job vllm-model-download did not start: RuntimeError: could not start the worker thread"], label
+        assert not any(rec.name == "src.api.llm" for rec in caplog.records), f"{label}: the route logged the same refusal again"
+        caplog.clear()
+
+    download = background_jobs.BackgroundJob("vllm-model-download", "Downloading models", lambda _ctx, **_kw: None, cancellable=True)
+    _vllm_plan(monkeypatch, download, [])
+    _cannot_start(monkeypatch, background_jobs)
+    assert client.post("/api/llm/default-model/install").status_code == 409
+    written_once("vLLM install")
+    download = background_jobs.BackgroundJob("vllm-model-download", "Downloading models", lambda _ctx, **_kw: None, cancellable=True)
+    monkeypatch.setattr("src.api.llm._get_vllm_model_job", lambda: download)
+    _cannot_start(monkeypatch, background_jobs)
+    with pytest.raises(HTTPException) as caught:
         llm._queue_downloads("vllm", one, [])
-    logged("vLLM batch")
+    assert caught.value.status_code == 409
+    written_once("vLLM batch")
