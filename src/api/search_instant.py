@@ -121,3 +121,22 @@ def instant_build(rebuild: bool = False) -> dict:
         return _BUILD_JOB.start(rebuild=rebuild)
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail="already-running") from exc
+
+
+def start_build_if_incomplete() -> str:
+    """Queue the backfill unless the index is already complete or a build is already running.
+
+    Called once, after the heavy boot steps (``boot_sequence``), never at unlock itself (P0.4). The job
+    works in bounded steps and takes the writer gate per step, so it yields to ingest. Returns what
+    happened: ``"started"``, ``"complete"`` or ``"running"``."""
+    from src.database.session import session_scope
+
+    with session_scope() as s:
+        st = fts_title._state(s.connection())
+    if st is not None and st[2]:
+        return "complete"
+    try:
+        _BUILD_JOB.start()
+    except RuntimeError:
+        return "running"
+    return "started"

@@ -93,3 +93,15 @@ def test_rebuild_forgets_the_index_and_fills_it_again_from_the_articles(client, 
     st = client.get("/api/search/instant/status").json()
     assert st["complete"] is True and st["covered"] == before
     assert len(client.get("/api/search/instant", params={"q": "zorblax"}).json()["hits"]) >= 1
+
+
+def test_the_boot_queue_starts_the_backfill_once_and_then_reports_complete(client, seeded):
+    from src.api.search_instant import _BUILD_JOB, start_build_if_incomplete
+    from src.database import fts_title
+    from src.database.session import session_scope
+
+    with session_scope() as s:  # earlier tests in this module may already have built it
+        fts_title.reset(s.connection())
+    assert start_build_if_incomplete() == "started"
+    _BUILD_JOB.join(30)
+    assert start_build_if_incomplete() == "complete"
