@@ -503,9 +503,9 @@ def test_verdict_of_classifies_last_status_honestly():
     # ... and only by its prefix: the word inside another message is not a deferral (a real failure keeps its verdict).
     assert _verdict_of("fetch error: the proxy deferred the request and timed out") == "error"
     assert _verdict_of("error: deferred write failed") == "error"
-    # a row written before R406 ("fetch error: " + the one Crawl-delay message) is read by that exact shape, not by the words
-    assert _verdict_of("fetch error: Crawl-delay 3600 s: not before 2026-11-01T12:00:00+00:00") == "deferred"
-    assert _verdict_of("fetch error: the host's Crawl-delay 3600 s: not before later was ignored") == "error"
+    # a row written before R406 keeps reading as an error: builds before #1541 stored the same text for a FAILED request whose retry
+    # met a long Crawl-delay, so the text cannot tell the two apart (see test_a_row_stored_before_the_verdict_existed_...)
+    assert _verdict_of("fetch error: Crawl-delay 3600 s: not before 2026-11-01T12:00:00+00:00") == "error"
 
 
 def test_law_status_reports_last_checked_at(db):

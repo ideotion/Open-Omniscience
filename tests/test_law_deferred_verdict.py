@@ -52,31 +52,43 @@ def test_the_new_strings_are_keyed_and_translated_in_all_twelve_locales():
 
 def test_the_coverage_report_names_every_verdict_its_mix_can_hold_in_its_method():
     """The method text is shown beside the counts, so a verdict that can appear in the mix and is not named there is a count the reader
-    cannot look up. ``never_checked`` is counted in its own field and is the only verdict not in the mix."""
+    cannot look up. The verdicts are read out of ``_verdict_of`` itself (every string it returns), so a verdict added later is checked
+    too; ``never_checked`` is counted in its own field and is the only one not in the mix. Whole words only: «changed» is not
+    satisfied by «unchanged»."""
+    import ast
+    import re
+
     import sqlalchemy as sa
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base
     from src.law.coverage import law_coverage_report
 
+    tree = ast.parse((_ROOT / "src/api/law.py").read_text(encoding="utf-8"))
+    func = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_verdict_of")
+    returned = {
+        n.value.value for n in ast.walk(func) if isinstance(n, ast.Return) and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)
+    }
+    assert {"deferred", "re_extracted", "changed", "unchanged"} <= returned, returned  # the reader found the real returns
     engine = sa.create_engine("sqlite:///:memory:", future=True)
     Base.metadata.create_all(engine)
     method = law_coverage_report(sessionmaker(bind=engine, future=True)())["method"]
-    mix = ("robots_blocked", "error", "empty", "changed", "reverted", "baselined", "unchanged", "re_extracted", "deferred", "other")
-    for verdict in mix:
-        assert verdict in method, f"{verdict!r} can be in the verdict mix and the method text does not name it"
+    for verdict in sorted(returned - {"never_checked"}):
+        assert re.search(rf"(?<![a-z_]){verdict}(?![a-z_])", method), f"{verdict!r} can be in the verdict mix and the method text does not name it"
 
 
-def test_the_message_the_fetcher_really_raises_is_read_as_a_deferral_in_both_stored_shapes(tmp_path):
-    """The old shape is matched by the exact start of the message the one raise site writes (``src/ingest/__init__.py``,
-    ``Crawl-delay {n:g} s: not before <time>``). Drive the real fetcher to get that message, so a reworded raise cannot leave the pattern
-    matching nothing while the hand-written strings in the other tests still pass."""
+def test_the_message_the_fetcher_really_raises_is_read_as_a_deferral_only_with_the_new_prefix(tmp_path, monkeypatch):
+    """Drive the real fetcher to get the message a deferral is raised with (``src/ingest/__init__.py``, ``Crawl-delay {n:g} s: not before
+    <time>``), so a reworded raise cannot leave the hand-written strings of the other tests passing while the real one is read wrongly:
+    behind ``deferred: `` (what the tracker stores now) it is a deferral; behind ``fetch error: `` (what builds before R406 stored, and
+    what builds before #1541 also stored for a FAILED request) it stays an error, because the text cannot tell those apart."""
     from urllib.robotparser import RobotFileParser
 
     from src.api.law import _verdict_of
     from src.ingest import CrawlDelayDeferred, EthicalFetcher
     from src.monitoring.secret_scrub import record_text
 
+    monkeypatch.delenv("OO_CRAWL_DELAY_MAX_WAIT", raising=False)  # the sibling test_crawl_delay_retry_is_a_failure.py does the same
     fetcher = EthicalFetcher(robots_cache_path=tmp_path / "robots_cache.json")
     robots = RobotFileParser()
     robots.parse(["User-agent: *", "Crawl-delay: 3600"])
@@ -86,5 +98,5 @@ def test_the_message_the_fetcher_really_raises_is_read_as_a_deferral_in_both_sto
     with pytest.raises(CrawlDelayDeferred) as raised:
         fetcher._respect_rate_limit("slow.example", "https://slow.example")
     text = record_text(raised.value)
-    assert _verdict_of(f"fetch error: {text}") == "deferred", text  # what the tracker stored before R406
     assert _verdict_of(f"deferred: {text}") == "deferred", text  # what it stores now
+    assert _verdict_of(f"fetch error: {text}") == "error", text  # what it stored before: ambiguous, so not guessed

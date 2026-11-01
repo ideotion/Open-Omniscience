@@ -232,24 +232,23 @@ def test_a_deferral_reads_as_a_deferral_on_the_table_row_and_in_the_coverage_mix
     assert mix == {"deferred": 2}, mix
 
 
-def test_a_row_stored_before_the_verdict_existed_reads_as_a_deferral_at_once_and_a_lookalike_does_not():
-    """R406. ``fetch error: Crawl-delay <n> s: not before <time>`` is what a deferral stored until then, and the pass cannot be waited on to
-    rewrite it: ``auto_track_due`` asks ONE document per host per pass (a host that deferred has its other due documents passed over) and
-    never an unwatched one, so a host's sibling rows would show the old wording for up to (N-1) x its Crawl-delay and an unwatched row for
-    ever (found by the Opus read of #1684). The old shape is read by its exact start of text, the one message the single raise site
-    writes; a message that only MENTIONS a Crawl-delay stays an error."""
+def test_a_row_stored_before_the_verdict_existed_keeps_reading_as_an_error_until_its_next_check():
+    """R406. ``fetch error: Crawl-delay <n> s: not before <time>`` is what a deferral stored before this change, and it is NOT reclassified:
+    the same text was written by builds before #1541 (v0.5.0 included) for a request that had FAILED (503, 429, a timeout) and whose retry
+    met a long Crawl-delay, which those builds raised as a deferral. Nothing in the text tells the two apart, and reading a failed request
+    as «deferred» (a neutral pill, «nothing failed») would hide it, so the row keeps the verdict it always had until a check rewrites it
+    (found by the Opus delta read of #1684, which first read the old shape as a deferral)."""
     from src.api.law import _verdict_of
 
-    assert _verdict_of("fetch error: Crawl-delay 3600 s: not before 2026-11-01T12:00:00+00:00") == "deferred"
-    assert _verdict_of("fetch error: Crawl-delay 0.5 s: not before later") == "deferred"
-    assert _verdict_of("fetch error: connection reset (Crawl-delay 3600 s: not before later)") == "error"
-    assert _verdict_of("fetch error: Crawl-delay exceeded the proxy's patience") == "error"
-    assert _verdict_of("error: Crawl-delay 3600 s: not before later") == "error"
+    assert _verdict_of("fetch error: Crawl-delay 3600 s: not before 2026-11-01T12:00:00+00:00") == "error"
+    assert _verdict_of("fetch error: Crawl-delay 0.5 s: not before later") == "error"
+    assert _verdict_of("deferred: Crawl-delay 3600 s: not before later") == "deferred"
 
 
 def test_a_deferral_rewrites_the_old_wording_on_the_next_pass(db):
-    """The first deferred document of a host is asked again on the next pass and carries the new wording; its siblings are read by the
-    old shape (above) until their own turn."""
+    """A deferred document keeps its old check time, so it heads the due order and carries the new wording after its next pass. The
+    manual «Track changes now» asks every watched document and rewrites them all; the automatic pass asks one document per host per
+    pass and never an unwatched one, so the others keep their old wording (above) until their turn."""
     doc = _doc(db, status="fetch error: Crawl-delay 3600 s: not before earlier")
     track_document(db, _Raises(_deferral()), doc)
     db.refresh(doc)
