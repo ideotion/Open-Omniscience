@@ -10,3 +10,5 @@
 **The rule it gives:** before adding a "search as you type" surface, decide the ordering first. Anything that needs a global ranking needs every match. If the surface can say "newest first, not ranked" and stop at ten, give it its own small index and say so on the surface. Do not size a prefix index for bodies.
 
 **Where it is enforced:** `src/database/fts_title.py` (`ORDER_SQL`, `INDEXED_PREFIX_MAX`, `EXPAND_MAX_TERMS`), `tests/test_fts_title.py`, `tests/test_search_instant.py`, `tests/instant_rung_node_test.js`.
+
+**A contentless_delete FTS5 table needs no `optimize` to forget deleted words (measured, an Opus read suspected otherwise).** On SQLite 3.45.1 and 3.53.1, 1,500 titles' words (last 8 characters of 12-letter terms, since terms are prefix-compressed in the file) were all in the file before and none after a plain DELETE + VACUUM, with or without `optimize`. The external-content `article_fts` does need it. Check the file, not the theory.

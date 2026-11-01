@@ -976,7 +976,11 @@
       const prev = (_palLastRaw === raw && _palSel > 0) ? _palFiltered[_palSel] : null;
       // The instant rows come after the Search/Analysis/Claim rows (Enter keeps running Analysis, Q608 = a)
       // and ahead of the ranked ones: they are the first answer, and the ranked rows follow below.
-      if (inst.length) live.splice(Math.min(2, live.length), 0, ...inst);
+      if (inst.length) {
+        let at = 0;
+        live.forEach((it, i) => { if (it.grp === t("Search")) at = i + 1; });
+        live.splice(at, 0, ...inst);
+      }
       _palFiltered = _palOrder(statics, live, raw);
       _palSel = 0;
       if (prev) {

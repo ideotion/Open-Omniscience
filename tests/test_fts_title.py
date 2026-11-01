@@ -177,3 +177,19 @@ def test_parity_with_the_main_index_for_titles():
         for word in ["climate", "resume", "economie", "energy", "story"]:
             main = set(search_ids(s, f"title:{word}") or [])
             assert main <= set(_ids(eng, word)), word
+
+
+def test_an_untitled_article_does_not_keep_the_index_from_reporting_complete():
+    eng, Session = _store(["Inflation rises"])
+    with eng.begin() as c:
+        c.execute(text("UPDATE articles SET title = NULL WHERE id = 1"))
+    _add(Session, ["Another story"], start=50)
+    with eng.begin() as c:
+        c.execute(text("DELETE FROM article_fts_title_state"))
+    while True:
+        with eng.begin() as c:
+            if fts_title.backfill_step(c)["done"]:
+                break
+    with eng.begin() as c:
+        st = fts_title.status(c)
+    assert st["complete"] and st["articles"] == 1 and st["covered"] == 1
