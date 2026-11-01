@@ -437,7 +437,19 @@ def scheduler_run_now() -> dict:
     storage_guard.storage_guard.reset(reason="operator ran collection now")
     damage.retry_for_collection_start("operator ran collection now")
     """Trigger one immediate run. Returns started=False if a run is already active."""
-    started = get_scheduler().run_now()
+    try:
+        started = get_scheduler().run_now()
+    except RuntimeError as exc:
+        # The run's thread could not start (R393): ``run_now`` raises before it records anything in the scheduler's own state (``_active``,
+        # ``_thread`` and the rest are set on the run's thread, which never began), so there is nothing of the scheduler's to undo, and the
+        # Wikipedia lane below is not resumed as if a run had begun. A conflict the operator can retry, never an unhandled 500.
+        # STATED LIMIT: what the lines above already did stays done, as after a refused ``/start`` -- the kill switch is cleared and the
+        # crossing online noted, the memory-guard and storage-guard latches are reset, the database-damage pauses are released -- and
+        # ``run_now`` may have started the storage-guard supervisor, which keeps running (it needs no run). With no run and no loop
+        # nothing fetches, and the operator's next click retries; re-engaging the kill switch here would also undo an online state the
+        # operator chose before the click.
+        log_failure(_LOG, "run now refused: the scheduler thread could not start", exc, level=logging.WARNING)
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
     _resume_wiki_lane()
     return {"started": started, **_status_payload()}
 
