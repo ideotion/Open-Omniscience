@@ -17,12 +17,13 @@ queries stay single-scan.
 
 from __future__ import annotations
 
+import functools
 import logging
 import time
 from array import array
 from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 
 from sqlalchemy import Table, bindparam, delete, insert, select, text, update
 from sqlalchemy.orm import Session
@@ -1055,7 +1056,7 @@ _PRECOMPUTE_WINDOW = 500
 _ID_CHUNK = 900
 
 
-def reindex_articles(
+def _reindex_articles_impl(
     session: Session,
     *,
     extractor,
@@ -1649,6 +1650,18 @@ def finish_deferral(session: Session, *, should_stop: Callable[[], bool] | None 
             "stopped": bool(rec.get("stopped")),
         }
     return {"reconciled": True, "closed": close_deferral(session), "complete": True}
+
+
+@functools.wraps(_reindex_articles_impl)
+def reindex_articles(*args: Any, **kwargs: Any) -> dict:
+    """Recompute CORE-ENGINE derived metadata for an explicit set of articles (see ``_reindex_articles_impl``, whose signature and
+    docstring this carries via ``functools.wraps``). The one addition is a larger SQLite page cache on the connections this thread
+    uses for the run (:func:`src.analytics.reindex_cache.bulk_page_cache`); nothing else differs."""
+    from src.analytics.reindex_cache import bulk_page_cache
+
+    session = args[0] if args else kwargs["session"]
+    with bulk_page_cache(session):
+        return _reindex_articles_impl(*args, **kwargs)
 
 
 def reindex_all_batch(
