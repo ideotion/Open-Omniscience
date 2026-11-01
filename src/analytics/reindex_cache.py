@@ -125,9 +125,9 @@ def bulk_page_cache(session, size_mb: int | None = None) -> Iterator[int]:
 
     A grown connection is put back as it was when the POOL takes it back, not when the block ends: the block may end (or raise)
     while the session still holds one, and reaching into the session then would check out a connection nobody asked for."""
-    mb = reindex_cache_mb() if size_mb is None else size_mb
-    me = threading.get_ident()
     try:
+        mb = reindex_cache_mb() if size_mb is None else size_mb
+        me = threading.get_ident()
         bind = session.get_bind()
         engine = getattr(bind, "engine", bind)  # a session bound to a Connection resolves to that connection's engine
         if mb <= 0 or engine.dialect.name != "sqlite":
