@@ -244,6 +244,7 @@
   "AI status": "حالة الذكاء الاصطناعي",
   "AI summaries": "ملخصات الذكاء الاصطناعي",
   "AI summary — unreliable, verify against the source.": "ملخّص بالذكاء الاصطناعي — غير موثوق، تحقّق منه بالرجوع إلى المصدر.",
+  "AI sweeps and model bench (advanced)": "عمليات مسح الذكاء الاصطناعي واختبار أداء النموذج (متقدم)",
   "AI syntheses": "توليفات الذكاء الاصطناعي",
   "AI throughput sweep (.json)": "اختبار إنتاجية الذكاء الاصطناعي (.json)",
   "AI translation — unreliable, verify against the source.": "ترجمة بالذكاء الاصطناعي — غير موثوقة، تحقّق منها بالرجوع إلى المصدر.",
@@ -3987,6 +3988,7 @@
   "Resumed.": "تم الاستئناف.",
   "Resuming…": "جارٍ الاستئناف…",
   "Resurfaced after {days} days: {title}": "عاد للظهور بعد {days} يومًا: {title}",
+  "Retired instruments (one-time or exploratory; kept for reference)": "أدوات متقاعدة (لمرة واحدة أو استكشافية؛ محفوظة للمرجعية)",
   "Retry": "إعادة المحاولة",
   "Retry failed feeds": "إعادة محاولة المصادر الفاشلة",
   "Retry finished — new points: {n} · still failing: {k}": "انتهت إعادة المحاولة — نقاط جديدة: {n} · ما زالت تفشل: {k}",
@@ -7170,7 +7172,5 @@
   "＋ zoom": "＋ تكبير",
   "－ zoom": "－ تصغير",
   "📍 places": "📍 أماكن",
-  "🛒 Draft (": "🛒 المسودة (",
-  "Retired instruments (one-time or exploratory; kept for reference)": "أدوات متقاعدة (لمرة واحدة أو استكشافية؛ محفوظة للمرجعية)",
-  "AI sweeps and model bench (advanced)": "عمليات مسح الذكاء الاصطناعي واختبار أداء النموذج (متقدم)"
+  "🛒 Draft (": "🛒 المسودة ("
 }

@@ -244,6 +244,7 @@
   "AI status": "Estado de la IA",
   "AI summaries": "Resúmenes de IA",
   "AI summary — unreliable, verify against the source.": "Resumen de IA — poco fiable, verifícalo con la fuente.",
+  "AI sweeps and model bench (advanced)": "Barridos de IA y prueba del modelo (avanzado)",
   "AI syntheses": "Síntesis de IA",
   "AI throughput sweep (.json)": "Prueba de rendimiento de la IA (.json)",
   "AI translation — unreliable, verify against the source.": "Traducción de IA — poco fiable, verifícala con la fuente.",
@@ -3987,6 +3988,7 @@
   "Resumed.": "Reanudado.",
   "Resuming…": "Reanudando…",
   "Resurfaced after {days} days: {title}": "Reapareció tras {days} días: {title}",
+  "Retired instruments (one-time or exploratory; kept for reference)": "Instrumentos retirados (puntuales o exploratorios; conservados como referencia)",
   "Retry": "Reintentar",
   "Retry failed feeds": "Reintentar los canales fallidos",
   "Retry finished — new points: {n} · still failing: {k}": "Reintento terminado: puntos nuevos: {n} · siguen fallando: {k}",
@@ -7170,7 +7172,5 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lugares",
-  "🛒 Draft (": "🛒 Borrador (",
-  "Retired instruments (one-time or exploratory; kept for reference)": "Instrumentos retirados (puntuales o exploratorios; conservados como referencia)",
-  "AI sweeps and model bench (advanced)": "Barridos de IA y prueba del modelo (avanzado)"
+  "🛒 Draft (": "🛒 Borrador ("
 }

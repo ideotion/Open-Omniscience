@@ -244,6 +244,7 @@
   "AI status": "AI অবস্থা",
   "AI summaries": "AI সারসংক্ষেপ",
   "AI summary — unreliable, verify against the source.": "AI সারসংক্ষেপ — অনির্ভরযোগ্য, উৎসের সাথে যাচাই করুন।",
+  "AI sweeps and model bench (advanced)": "AI স্ক্যান ও মডেল বেঞ্চ (উন্নত)",
   "AI syntheses": "AI সংশ্লেষণ",
   "AI throughput sweep (.json)": "AI থ্রুপুট পরীক্ষা (.json)",
   "AI translation — unreliable, verify against the source.": "AI অনুবাদ — অনির্ভরযোগ্য, উৎসের সাথে যাচাই করুন।",
@@ -3987,6 +3988,7 @@
   "Resumed.": "পুনরায় শুরু হয়েছে।",
   "Resuming…": "পুনরায় শুরু করা হচ্ছে…",
   "Resurfaced after {days} days: {title}": "{days} দিন পরে আবার এসেছে: {title}",
+  "Retired instruments (one-time or exploratory; kept for reference)": "অবসরপ্রাপ্ত যন্ত্র (এককালীন বা অনুসন্ধানমূলক; রেফারেন্সের জন্য রাখা)",
   "Retry": "আবার চেষ্টা করুন",
   "Retry failed feeds": "ব্যর্থ ফিড আবার চেষ্টা করুন",
   "Retry finished — new points: {n} · still failing: {k}": "পুনরায় চেষ্টা শেষ — নতুন বিন্দু: {n} · এখনও ব্যর্থ: {k}",
@@ -7170,7 +7172,5 @@
   "＋ zoom": "＋ জুম",
   "－ zoom": "－ জুম",
   "📍 places": "📍 স্থান",
-  "🛒 Draft (": "🛒 খসড়া (",
-  "Retired instruments (one-time or exploratory; kept for reference)": "অবসরপ্রাপ্ত যন্ত্র (এককালীন বা অনুসন্ধানমূলক; রেফারেন্সের জন্য রাখা)",
-  "AI sweeps and model bench (advanced)": "AI স্वीপ ও মডেল বেঞ্চ (উন্নত)"
+  "🛒 Draft (": "🛒 খসড়া ("
 }

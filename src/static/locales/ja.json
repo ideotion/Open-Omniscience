@@ -244,6 +244,7 @@
   "AI status": "AI の状態",
   "AI summaries": "AI 要約",
   "AI summary — unreliable, verify against the source.": "AI による要約 — 信頼できません。出典で確認してください。",
+  "AI sweeps and model bench (advanced)": "AIスイープとモデルベンチ（上級）",
   "AI syntheses": "AI 統合",
   "AI throughput sweep (.json)": "AI スループット測定（.json）",
   "AI translation — unreliable, verify against the source.": "AI による翻訳 — 信頼できません。出典で確認してください。",
@@ -3987,6 +3988,7 @@
   "Resumed.": "再開しました。",
   "Resuming…": "再開中…",
   "Resurfaced after {days} days: {title}": "{days} 日後に再浮上：{title}",
+  "Retired instruments (one-time or exploratory; kept for reference)": "引退した計測ツール（一回限り・探索用。参照用に保持）",
   "Retry": "再試行",
   "Retry failed feeds": "失敗したフィードを再試行",
   "Retry finished — new points: {n} · still failing: {k}": "再試行完了 — 新規データ点：{n} · 失敗のまま：{k}",
@@ -7170,7 +7172,5 @@
   "＋ zoom": "＋ 拡大",
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
-  "🛒 Draft (": "🛒 草稿 (",
-  "Retired instruments (one-time or exploratory; kept for reference)": "引退した計測ツール（一回限り・探索用。参照用に保持）",
-  "AI sweeps and model bench (advanced)": "AIスイープとモデルベンチ（上級）"
+  "🛒 Draft (": "🛒 草稿 ("
 }

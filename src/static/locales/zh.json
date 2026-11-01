@@ -244,6 +244,7 @@
   "AI status": "AI 状态",
   "AI summaries": "AI 摘要",
   "AI summary — unreliable, verify against the source.": "AI 摘要 — 不可靠，请对照原文核实。",
+  "AI sweeps and model bench (advanced)": "AI 扫描与模型基准测试（高级）",
   "AI syntheses": "AI 综合",
   "AI throughput sweep (.json)": "AI 吞吐量测试（.json）",
   "AI translation — unreliable, verify against the source.": "AI 翻译 — 不可靠，请对照原文核实。",
@@ -3987,6 +3988,7 @@
   "Resumed.": "已继续。",
   "Resuming…": "正在继续…",
   "Resurfaced after {days} days: {title}": "{days} 天后再次出现：{title}",
+  "Retired instruments (one-time or exploratory; kept for reference)": "已退役的工具（一次性或探索性；仅供参考保留）",
   "Retry": "重试",
   "Retry failed feeds": "重试失败的数据源",
   "Retry finished — new points: {n} · still failing: {k}": "重试完成 — 新数据点：{n} · 仍失败：{k}",
@@ -7170,7 +7172,5 @@
   "＋ zoom": "＋ 放大",
   "－ zoom": "－ 缩小",
   "📍 places": "📍 地点",
-  "🛒 Draft (": "🛒 草稿 (",
-  "Retired instruments (one-time or exploratory; kept for reference)": "已退役的工具（一次性或探索性；仅供参考保留）",
-  "AI sweeps and model bench (advanced)": "AI 扫描与模型基准测试（高级）"
+  "🛒 Draft (": "🛒 草稿 ("
 }
