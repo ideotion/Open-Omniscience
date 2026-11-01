@@ -2540,6 +2540,8 @@
         <button class="secondary" data-on-click="ooOpenUrl('/api/diagnostics/ai-check/download')" title="Download the newest AI-check report as one .json — the file to attach to a bug report or hand to a verification session.">Download the last AI check (.json)</button>
       </div>
       <div id="aicheck-result" class="small" style="margin-top:6px"></div>
+    <details class="adv-collect" id="ai-sweeps" style="margin-top:10px">
+      <summary class="muted" style="cursor:pointer">AI sweeps and model bench (advanced)</summary>
       <details class="adv-collect" style="margin-top:8px">
         <summary class="muted" style="cursor:pointer">Run one check on its own</summary>
         <p class="hint" style="margin-top:6px">The button above runs all of these in order and keeps the results together. Each one is still here on its own, for when you want to re-run a single measurement without waiting for the rest.</p>
@@ -2671,6 +2673,7 @@
       <div id="mb-result" class="small" style="margin-top:6px"></div>
       <div id="mb-gates" class="small" style="margin-top:6px"></div>
       </div>
+    </details>
     </section>
     </details>
 
