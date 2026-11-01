@@ -28,7 +28,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 
-from src.database import damage
+from src.database import damage, pool_watch
 from src.database.query import capped
 from src.ingest.tor_throughput import KindLadder
 from src.monitoring.secret_scrub import log_failure
@@ -1616,15 +1616,20 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
     sources_crawled = 0
     pages_fetched = 0
     sitemap_urls_ingested = 0
-    for source in candidates:
+    # id and domain read before the first commit: a commit expires every loaded row, and an outlet deleted meanwhile would make ``source.domain``
+    # raise inside the handler below, skipping the outlets after it.
+    batch = [(s, s.id, s.domain) for s in candidates]
+    for source, source_id, domain in batch:
         # A Stop is the person's setting, not an outcome of the outlet: the lane checks the switch once, before it starts, so a Stop pressed
         # between two outlets (or inside one) is read HERE, by the switch itself and never by the words of a refusal (R320). An outlet
         # stopped this way is not stamped, so it keeps its place at the front of the rotation.
         if kill_switch_active():
             break
         try:
-            sm_report = discover_sitemap_urls(fetcher, source.domain, max_urls=max_pages)
-            update_source_sitemap_url(session, source, sm_report)
+            sm_report = discover_sitemap_urls(fetcher, domain, max_urls=max_pages)
+            if update_source_sitemap_url(session, source, sm_report):
+                # Written before the walk below fetches: the fetcher hands a connection back only for a session with nothing pending, so a staged row would make it decline for the whole walk.
+                session.commit()
             if kill_switch_active():
                 break  # a discovery cut short by the Stop found "no sitemap" only because it was stopped: no BFS fallback either
             if sm_report.urls:
@@ -1652,11 +1657,17 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
             now = datetime.now(UTC)
             source.last_crawled_at = now
             # The outlet was crawled once; its other feeds are not due again before the rest of the rotation.
-            session.query(Source).filter(Source.domain == source.domain, Source.id != source.id).update(
+            session.query(Source).filter(Source.domain == domain, Source.id != source_id).update(
                 {Source.last_crawled_at: now}, synchronize_session=False)
-            sources_crawled += 1
+            # The stamp above is a write (the sibling feeds' update is a bulk statement, which takes the single-writer gate at once): commit
+            # it HERE, or the next outlet's sitemap discovery and page walk run with the gate held, and the fetcher's release declines a
+            # session that has written. Field 9931cffe: this lane held the gate for 2,933 s, 2,666 s of it between statements.
+            session.commit()
+            sources_crawled += 1  # counted once the stamp is durable: an outlet whose commit failed was rolled back and is not crawled
         except Exception as exc:  # noqa: BLE001 - one source's failure must not skip the rest
-            log_failure(_LOG, f"crawl supplement: source {source.domain!r} failed", exc, level=logging.WARNING)
+            log_failure(_LOG, f"crawl supplement: source {domain!r} failed", exc, level=logging.WARNING)
+            # What this outlet had written and not committed goes with it: left, it would carry the gate into the next outlet's fetches.
+            session.rollback()
     return {
         "sources_crawled": sources_crawled,
         "pages_fetched": pages_fetched,
@@ -1742,8 +1753,15 @@ def run_housekeeping_lane(session, fetcher, settings: SchedulerSettings) -> dict
             out[kind] = {"skipped": "database-damaged"}
             _activity(f"lane:{kind}", out[kind], settings)  # said, not silent
             continue
+        # The step is named for the pool watch and the write gate's journal: a connection this thread checks out while the step runs is
+        # listed under ``lane:<kind>``, and a ``gate_hold`` record that names no request names the work instead. A fixed label (the kinds
+        # are a fixed set), never built from a path or a name.
+        label_token = pool_watch.set_endpoint(f"lane:{kind}")
         try:
             out[kind] = step(session, fetcher, settings)
+            # No kind hands the next one a session that still holds the single-writer gate: the next kind's fetches would run with it held
+            # (the fetcher's release declines a session that has written).
+            session.commit()
             _activity(f"lane:{kind}", out[kind], settings)
         except Exception as exc:  # noqa: BLE001 - one kind's failure must not skip the rest
             log_failure(_LOG, f"housekeeping lane: {kind} failed", exc, level=logging.WARNING)
@@ -1757,6 +1775,8 @@ def run_housekeeping_lane(session, fetcher, settings: SchedulerSettings) -> dict
             # 2026-07-25; the same class this file's own docstring already
             # names for the collector's write path).
             session.rollback()
+        finally:
+            pool_watch.reset_endpoint(label_token)
     return out
 
 

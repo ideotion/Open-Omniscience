@@ -38,6 +38,9 @@ class _FakeSession:
     def rollback(self) -> None:
         pass
 
+    def commit(self) -> None:
+        pass  # the lane commits after each step that returned, so a step's write does not ride into the next kind
+
 
 def _fake_scope_factory(monkeypatch):
     @contextlib.contextmanager

@@ -56,6 +56,17 @@ CLEAN = {"clean": True, "at": "2026-10-06T01:00:00+00:00", "basis": "the sentine
 # --------------------------------------------------------------------------- #
 #  fixtures: a real store with a big table and a small one, and a real damaged copy of it
 # --------------------------------------------------------------------------- #
+class _NoopSession:
+    """A session for a stubbed lane: it only has to take the lane's ``commit`` and ``rollback`` (a ``MagicMock`` would let an un-stubbed step
+    run real code against it instead of failing fast, which changes what the ordering assertions see)."""
+
+    def commit(self) -> None:
+        pass
+
+    def rollback(self) -> None:
+        pass
+
+
 def _build_store(path: Path, rows: int = 3000, fts: bool = False) -> None:
     con = sqlite3.connect(path)
     con.execute(f"PRAGMA page_size={PAGE}")
@@ -1104,10 +1115,10 @@ def test_the_housekeeping_lane_waits_for_the_check_and_says_why(registry, monkey
     monkeypatch.setattr(fr, "wrap_fetcher", lambda f, s: f)
     monkeypatch.setattr(sg, "storage_guard", sg.StorageGuard(readings_fn=lambda: {}))
     registry.verification_arm(verify.TRIGGER_UNCLEAN_END)
-    out = rn.run_housekeeping_lane(object(), object(), object())
+    out = rn.run_housekeeping_lane(_NoopSession(), object(), object())
     assert ran == [] and out == {"_paused": {"reason": "storage (verifying)", "remaining": ["law", "backfill"]}}
     registry.verification_end()
-    assert rn.run_housekeeping_lane(object(), object(), object()) == {"law": {"ran": True}, "backfill": {"ran": True}}
+    assert rn.run_housekeeping_lane(_NoopSession(), object(), object()) == {"law": {"ran": True}, "backfill": {"ran": True}}
 
 
 def test_the_pass_loop_waits_in_the_verifying_phase_and_leaves_when_the_check_ends(registry, monkeypatch):
