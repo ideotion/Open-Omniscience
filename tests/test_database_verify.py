@@ -799,7 +799,8 @@ def test_an_error_fts5_reports_as_a_row_is_not_damage_unless_it_is_corruption(an
 
 
 class _RaisingConn(_FakeConn):
-    """A connection whose ``quick_check`` raises: what FTS5 does on SQLite 3.53.1 when its own check runs out of memory (an empty ``MemoryError``)."""
+    """A connection whose ``quick_check`` raises. Measured on SQLite 3.53.1, an FTS5 check under ``PRAGMA hard_heap_limit`` raises an empty ``MemoryError``;
+    this fake only stands in for that shape, so the mapping is pinned on every SQLite, whatever the library under test does."""
 
     def __init__(self, exc):
         self._exc = exc
@@ -848,8 +849,8 @@ def test_fts5_running_out_of_memory_on_the_real_driver_is_unchecked_never_damage
     assert done.returncode == 0, done.stderr[-800:]
     out = json.loads(done.stdout.strip().splitlines()[-1])
     assert out["verdict"] == VERDICT_UNCHECKED, out
-    # One fact in the two shapes the library has had. SQLite up to the 3.4x series answers FTS5's allocation failure as a ROW (parsed into plain
-    # words: measured on 3.45.1); 3.53.1 RAISES an empty MemoryError (named by class). The fakes above pin each mapping on every SQLite; here the
+    # One fact in the two shapes the library has had. SQLite 3.45.1 answers FTS5's allocation failure as a ROW (parsed into plain
+    # words); 3.53.1 RAISES an empty MemoryError (named by class). Other versions were not measured. The fakes above pin each mapping on every SQLite; here the
     # verdict stays strict (unchecked, never damage) and the detail is one of the two documented shapes, nothing else.
     assert out["detail"] in (["the read ran out of memory"], ["MemoryError"]), out
 

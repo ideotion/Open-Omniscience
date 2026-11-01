@@ -1178,7 +1178,7 @@ def test_a_pages_finding_beside_index_only_damage_is_data_scope_not_a_search_ind
 
     Each registry has a store of its own in ``tmp_path``. The store used to be ``Path(os.devnull)``: the registry writes its record by
     replacing the file at that path, which a non-root user cannot do in ``/dev`` (the failure is swallowed) and root CAN, so a root run
-    turned ``/dev/null`` into a regular file holding the registry's JSON (``tests/test_dev_null_is_left_alone.py``)."""
+    turned ``/dev/null`` into a regular file holding the registry's JSON (``tests/test_zz_dev_null_is_left_alone.py`` scans for it)."""
     reg = DamageRegistry(path_fn=lambda: tmp_path / "data.json")
     reg._note_verified_damage(FILE_CORPUS, ["article_fts_data", verify.PAGES_ENTRY], path=None, at="2026-10-06T02:00:00+00:00")
     assert reg.state(detail=True)["files"][FILE_CORPUS]["scope"] == SCOPE_DATA

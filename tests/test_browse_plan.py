@@ -274,8 +274,9 @@ def _selects_body(sql: str) -> bool:
 
 
 #: SQLite's own words for sorting only the TIES of the leading keys, which an index walk that holds the first key in order leaves to do: "RIGHT PART OF
-#: ORDER BY" up to the 3.4x series, "LAST TERM OF ORDER BY" / "LAST n TERMS OF ORDER BY" after it (measured: 3.53.1 prints the second, the same plan). A sort of
-#: EVERY candidate is "USE TEMP B-TREE FOR ORDER BY" in both, and is the regression the plan tests exist to catch.
+#: ORDER BY" (measured on 3.45.1), "LAST TERM OF ORDER BY" / "LAST n TERMS OF ORDER BY" later (measured on 3.50.4 and 3.53.1; 3.46 to 3.49 were not measured, so the
+#: pattern accepts all three wordings and does not guess where the change fell). The VDBE opcodes behind the two wordings were compared and are the same plan. A sort
+#: of EVERY candidate is "USE TEMP B-TREE FOR ORDER BY" in all of them, and is the regression the plan tests exist to catch.
 _PARTIAL_SORT = re.compile(r"^USE TEMP B-TREE FOR (RIGHT PART|LAST (TERM|[0-9]+ TERMS)) OF ORDER BY$")
 
 
