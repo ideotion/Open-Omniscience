@@ -2455,6 +2455,9 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
     stays the exporter's (the capture's de-duplication keys on it); its tag names this restore
     as the arrival and keeps the exporter's own tag whole under ``carried``.
 
+    An alternate this corpus already keeps (same table, origin and field set) is not stored again: by identical identity, and for a law
+    item also when it lands on the same local row, since the jurisdiction spelling an identity carries depends on what else its backup holds.
+
     An alternate whose item this corpus lacks, or that is not well-formed, is counted as
     deferred, never invented a home and never allowed to fail the restore (it happens when the
     item's own insert was refused, when the exporter deleted the item after capturing the
@@ -2479,6 +2482,7 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
     here_origin, here_at, here_version = here[0] if here else ("unsigned", None, None)
     notnull: dict[str, set[str]] = {}
     on_main: dict[str, bool] = {}
+    law_held: dict[str, set[tuple]] = {}
     incoming = _q(
         con,
         "SELECT table_name, identity, fields, provenance, origin FROM inc.metadata_alternates"
@@ -2523,6 +2527,26 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
         if local_id is None:
             r.deferred += 1
             continue
+        if spec["scope"] == "law":
+            # A law alternate keeps the jurisdiction spelling its document had when it was recorded (``convert_alternate_countries``
+            # leaves it with a document that kept that spelling), so one record's identity TEXT differs from one backup to the next
+            # (``gbr`` where the backup also holds ``gb``, ``gb`` where it does not). The same item is therefore the same LOCAL ROW:
+            # the one this identity resolves to, which an alternate of this origin and field set is already kept for (the capture
+            # earlier in this restore stores the same row id), whatever spelling either was recorded under. Two siblings (``gbr``
+            # and ``gb``) are two rows, so an alternate recorded against each stays with each.
+            if table not in law_held:
+                law_held[table] = {
+                    (o, f, rid)
+                    for o, f, rid in _q(
+                        con,
+                        "SELECT origin, fields, local_row_id FROM main.metadata_alternates"
+                        " WHERE table_name = ? AND local_row_id IS NOT NULL",
+                        (table,),
+                    )
+                }
+            if (origin, fields_json, local_id) in law_held[table]:
+                r.duplicate += 1
+                continue
         same = " AND ".join(f"{c} IS ?" for c in spec["differs"])
         if _count(
             con,
@@ -2545,6 +2569,8 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
             " fields, provenance, origin, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
             (batch_id, table, identity_json, local_id, fields_json, json.dumps(tag), origin, now),
         )
+        if spec["scope"] == "law":
+            law_held[table].add((origin, fields_json, local_id))
         r.new += 1
     r.note = "carried with the backup; re-attached to this corpus's own rows by identity"
 
@@ -2593,6 +2619,7 @@ def _alternate_local_match(
         # An alternate recorded before the jurisdiction joined the identity has none (as the
         # resolver in alternates.py allows): the first matching revision is then the home.
         juris = identity.get("jurisdiction")
+        juris = juris if isinstance(juris, str) and juris else None  # a number or a boolean is no spelling (and must not fail the restore)
         rows = _q(
             con,
             "SELECT r.id, d.jurisdiction, d.id FROM law_revisions r JOIN law_documents d ON d.id = r.document_id"
@@ -2601,14 +2628,17 @@ def _alternate_local_match(
         )
         if juris:
             # The same document under another spelling of its jurisdiction is the same document (``law_jurisdiction_key``); the
-            # document spelled exactly as the alternate says comes first, then the oldest one: the home the merge's map gives it
-            # (``_merge_law``), and the row the app resolves later (``alternates._local_row_id``): the same ordering in three places. (The identity's own spelling is converted to the store's form first, as it always was.)
+            # document spelled as the alternate RECORDED it comes first (the staged copy leaves an identity as recorded where its own
+            # document kept that spelling: ``convert_alternate_countries(keep_with_unconverted_document=True)``), then the one spelled
+            # in the store's form, then the oldest: the ordering of the row the app resolves later (``alternates._local_row_id``).
+            # (The map in ``_merge_law`` gives a document the row spelled like it, else the oldest: it has no alternate to follow.)
             from src.backup.country_codes import law_jurisdiction_key
 
             want = _country_in_form_of(con, juris)
             key = law_jurisdiction_key(want)
             rows = sorted(
-                ((rid, j, did) for rid, j, did in rows if law_jurisdiction_key(j) == key), key=lambda row: (row[1] != want, row[2], row[0])
+                ((rid, j, did) for rid, j, did in rows if j == juris or law_jurisdiction_key(j) == key),
+                key=lambda row: (row[1] != juris, row[1] != want, row[2], row[0]),
             )
         rows = rows[:1]
         if not rows:
@@ -4503,7 +4533,7 @@ def _capture_alternates(
     imported row; only ``differs`` decides whether a row is a contradiction at all -- two
     machines that extracted the same date with a different snippet do not contradict, one that
     confirmed it and one that did not, do. A re-import of the same backup records nothing new."""
-    from src.backup.provenance import producer_tag_sql
+    from src.backup.provenance import ALTERNATE_SPECS, producer_tag_sql
 
     if not _local_has_table(con, "metadata_alternates") or not _local_has_table(con, table):
         return 0
@@ -4531,24 +4561,50 @@ def _capture_alternates(
     contradicting = int(_q(con, "SELECT COUNT(*)" + where)[0][0])  # nosec B608 - identifiers come from the app's OWN fixed schema maps, never input
     if not contradicting:
         return 0
-    # GROUP BY the recorded identity: two incoming rows can collapse onto one local item
-    # (map_articles), and NOT EXISTS below cannot see rows this same statement inserts.
-    con.execute(
-        "INSERT INTO main.metadata_alternates (batch_id, table_name, identity, local_row_id, fields,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps, never input
-        " provenance, origin, status, created_at)"
-        f" SELECT :batch, :table, json_object({ident}),"
-        f" (SELECT MIN(t.rowid) FROM main.{tbl} t WHERE {key}), json_object({fields}), {tag},"
-        " :origin, 'pending', :now"
-        f"{where}"
-        " AND NOT EXISTS (SELECT 1 FROM metadata_alternates x"
-        "  WHERE x.table_name = :table AND x.origin = :origin"
-        f"  AND x.identity = json_object({ident}) AND x.fields = json_object({fields}))"
-        f" GROUP BY json_object({ident}), json_object({fields})",
-        {
-            "batch": batch_id, "table": table, "origin": origin, "at": at, "version": version,
-            "now": datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ", timespec="microseconds"),
-        },
-    )
+    # The same record is kept already when its identity text is the same one -- and, for a law item, when an alternate of this origin and
+    # field set is kept for the very row this one contradicts: a carried law alternate keeps the jurisdiction spelling its document had
+    # when it was recorded (``_merge_metadata_alternates``), the capture writes the store's own, so the text of one record differs
+    # between the two and only the row is common to both.
+    kept_for_row = ""
+    is_law = ALTERNATE_SPECS.get(table, {}).get("scope") == "law"
+    try:
+        if is_law:
+            # The kept ones are copied once to an indexed temp table, so a restore does not scan every kept alternate per incoming row.
+            con.execute("DROP TABLE IF EXISTS temp.alt_kept")
+            con.execute("CREATE TEMP TABLE alt_kept (origin TEXT, fields TEXT, local_row_id INTEGER)")
+            con.execute(
+                "INSERT INTO temp.alt_kept SELECT origin, fields, local_row_id FROM main.metadata_alternates"
+                " WHERE table_name = ? AND local_row_id IS NOT NULL",
+                (table,),
+            )
+            con.execute("CREATE INDEX temp.alt_kept_row ON alt_kept (local_row_id)")
+            kept_for_row = (
+                " AND NOT EXISTS (SELECT 1 FROM temp.alt_kept k"  # nosec B608 - as above
+                f"  WHERE k.local_row_id = (SELECT MIN(t.rowid) FROM main.{tbl} t WHERE {key})"
+                f"  AND k.origin = :origin AND k.fields = json_object({fields}))"
+            )
+        # GROUP BY the recorded identity: two incoming rows can collapse onto one local item
+        # (map_articles), and NOT EXISTS below cannot see rows this same statement inserts.
+        con.execute(
+            "INSERT INTO main.metadata_alternates (batch_id, table_name, identity, local_row_id, fields,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps, never input
+            " provenance, origin, status, created_at)"
+            f" SELECT :batch, :table, json_object({ident}),"
+            f" (SELECT MIN(t.rowid) FROM main.{tbl} t WHERE {key}), json_object({fields}), {tag},"
+            " :origin, 'pending', :now"
+            f"{where}"
+            " AND NOT EXISTS (SELECT 1 FROM metadata_alternates x"
+            "  WHERE x.table_name = :table AND x.origin = :origin"
+            f"  AND x.identity = json_object({ident}) AND x.fields = json_object({fields}))"
+            f"{kept_for_row}"
+            f" GROUP BY json_object({ident}), json_object({fields})",
+            {
+                "batch": batch_id, "table": table, "origin": origin, "at": at, "version": version,
+                "now": datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ", timespec="microseconds"),
+            },
+        )
+    finally:
+        if is_law:
+            con.execute("DROP TABLE IF EXISTS temp.alt_kept")
     return contradicting
 
 

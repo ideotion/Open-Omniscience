@@ -86,7 +86,8 @@ def _local_row_id(session: Any, table: str, identity: dict) -> int | None:
         # The jurisdiction is compared by the catalogue's own key (``law_jurisdiction_key``), below, not as text: the same
         # document under another spelling of its jurisdiction is the same document (a row an older route stored as typed, a
         # backup from an install that did).
-        juris = identity.get("jurisdiction") or None
+        juris = identity.get("jurisdiction")
+        juris = juris if isinstance(juris, str) and juris else None  # a number or a boolean is no spelling
         params["document_url"] = identity.get("document_url")
         params["revision_content_hash"] = identity.get("revision_content_hash")
     for i, (name, column) in enumerate(spec["match"].items()):
@@ -106,9 +107,13 @@ def _local_row_id(session: Any, table: str, identity: dict) -> int | None:
 
         want = _in_store_form(juris)
         key = law_jurisdiction_key(want)
-        # The document spelled exactly as the identity says first, then the oldest one (the home the merge gives it: ``_merge_law``,
-        # ``_alternate_local_match``); within one document the rows stay in the readers' order, newest first.
-        rows = sorted((r for r in rows if law_jurisdiction_key(r[1]) == key), key=lambda r: (r[1] != want, r[2]))
+        # The document spelled as the identity RECORDED it first (the spelling of the row the alternate was captured against: where the
+        # copy holds one document under two spellings, ``gbr`` and ``gb`` in an alpha-2 store, converting it to the store's form first would
+        # send an alternate captured from ``gbr`` to ``gb``), then the one spelled in the store's form, then the oldest document (the home
+        # the merge gives it: ``_merge_law``, ``_alternate_local_match``); within one document the rows stay in the readers' order, newest first.
+        rows = sorted(
+            (r for r in rows if r[1] == juris or law_jurisdiction_key(r[1]) == key), key=lambda r: (r[1] != juris, r[1] != want, r[2])
+        )
     return int(rows[0][0]) if rows else None
 
 
