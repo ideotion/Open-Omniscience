@@ -1660,7 +1660,9 @@ def reindex_articles(*args: Any, **kwargs: Any) -> dict:
     from src.analytics.reindex_cache import bulk_page_cache
 
     session = args[0] if args else kwargs["session"]
-    with bulk_page_cache(session):
+    # One commit per article hands the connection back to the pool each time, and the restore then drops the warm pages: no gain.
+    batched = int(kwargs.get("commit_batch", args[1] if len(args) > 1 else 1) or 1) > 1
+    with bulk_page_cache(session, None if batched else 0):
         return _reindex_articles_impl(*args, **kwargs)
 
 

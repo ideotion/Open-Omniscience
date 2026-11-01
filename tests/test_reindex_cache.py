@@ -102,3 +102,16 @@ def test_a_session_bound_to_a_connection_does_not_raise(tmp_path):
             assert applied in (0, 256)
         s.close()
     eng.dispose()
+
+
+@pytest.mark.parametrize("size", [0, 256])
+def test_the_original_exception_comes_through_unchanged(sess, size):
+    with pytest.raises(KeyError, match="orig"), bulk_page_cache(sess, size):
+        raise KeyError("orig")
+
+
+def test_a_nested_block_raises_the_size_for_new_checkouts(sess):
+    with bulk_page_cache(sess, 64), bulk_page_cache(sess, 256):
+        sess.commit()
+        sess.rollback()
+        assert _cache(sess) == -256 * 1024

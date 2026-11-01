@@ -66,7 +66,7 @@ class _EngineHooks:
     mutates the list being iterated), plus what they need: which threads are inside a block, and which connections they grew."""
 
     def __init__(self, engine) -> None:
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()  # a checkin can run inside garbage collection, on a thread that already holds it
         self.growers: dict[int, list[int]] = {}  # thread ident -> [MiB, nesting depth]
         self.saved: dict[Any, int] = {}  # connection RECORD -> the cache_size it had (it outlives an invalidated DBAPI object)
         self.warned = False
@@ -116,6 +116,19 @@ def _hooks_for(engine) -> _EngineHooks:
         return hooks
 
 
+def _prepare(session, size_mb: int | None):
+    """``(hooks, mb)`` for a block, or ``(None, 0)`` when nothing should be applied. Never raises."""
+    try:
+        mb = reindex_cache_mb() if size_mb is None else size_mb
+        bind = session.get_bind()
+        engine = getattr(bind, "engine", bind)  # a session bound to a Connection resolves to that connection's engine
+        if mb > 0 and engine.dialect.name == "sqlite":
+            return _hooks_for(engine), mb
+    except Exception:  # noqa: BLE001 - no bind, a test double, an unlistenable target: nothing to tune
+        pass
+    return None, 0
+
+
 @contextlib.contextmanager
 def bulk_page_cache(session, size_mb: int | None = None) -> Iterator[int]:
     """Enlarge the page cache of every connection THIS THREAD checks out of ``session``'s engine while the block runs.
@@ -123,34 +136,34 @@ def bulk_page_cache(session, size_mb: int | None = None) -> Iterator[int]:
     Yields the MiB applied (0 = nothing, the block runs exactly as before). Never raises for a cache problem: a connection that
     refuses the PRAGMA keeps the cache it had, and the failure is logged once.
 
+    WHEN IT PAYS: a connection handed back to the pool is shrunk at once, which drops the cached pages, so a caller that commits (and
+    so returns its connection) after every article starts each one cold. :func:`~src.analytics.store.reindex_articles` therefore
+    applies this only for ``commit_batch`` above 1 (the restore-merge and the backlog drain both use 200).
+
     A grown connection is put back as it was when the POOL takes it back, not when the block ends: the block may end (or raise)
     while the session still holds one, and reaching into the session then would check out a connection nobody asked for."""
+    hooks = None
+    entered = False
+    me = 0
     try:
-        mb = reindex_cache_mb() if size_mb is None else size_mb
-        me = threading.get_ident()
-        bind = session.get_bind()
-        engine = getattr(bind, "engine", bind)  # a session bound to a Connection resolves to that connection's engine
-        if mb <= 0 or engine.dialect.name != "sqlite":
-            yield 0
-            return
-        hooks = _hooks_for(engine)
-    except Exception:  # noqa: BLE001 - no bind, a test double, an unlistenable target: nothing to tune
-        yield 0
-        return
-
-    with hooks.lock:
-        entry = hooks.growers.setdefault(me, [mb, 0])
-        entry[1] += 1
-    try:
-        # A session already inside a transaction holds a connection checked out before the block: grow that one now. (Never ask a
-        # session with no transaction for a connection: that would check one out for nothing.)
-        if session.in_transaction():
-            with contextlib.suppress(Exception):
-                fairy = session.connection().connection
-                hooks.grow(fairy.dbapi_connection, fairy._connection_record, mb)
+        hooks, mb = _prepare(session, size_mb)
+        if hooks is not None:
+            me = threading.get_ident()
+            with hooks.lock:
+                entry = hooks.growers.setdefault(me, [mb, 0])
+                entry[0] = max(entry[0], mb)  # a nested block asking for more raises the size for this thread's new checkouts
+                entry[1] += 1
+                entered = True
+            # A session already inside a transaction holds a connection checked out before the block: grow that one now.
+            # (Never ask a session with no transaction for a connection: that would check one out for nothing.)
+            if session.in_transaction():
+                with contextlib.suppress(Exception):
+                    fairy = session.connection().connection
+                    hooks.grow(fairy.dbapi_connection, fairy._connection_record, mb)
         yield mb
     finally:
-        with hooks.lock:
-            entry[1] -= 1
-            if entry[1] <= 0:
-                hooks.growers.pop(me, None)
+        if hooks is not None and entered:
+            with hooks.lock:
+                entry[1] -= 1
+                if entry[1] <= 0:
+                    hooks.growers.pop(me, None)
