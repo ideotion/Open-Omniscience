@@ -624,9 +624,10 @@ def test_flip_day_is_REPORTED_when_the_live_corpus_is_still_on_the_other_form(
     """THE SIMULATED CORRUPTION, kept as a test. With the working copy CLAIMING alpha-3
     (its marker) while it still holds alpha-2 -- which the migration cannot produce,
     since it flips the marker in the transaction that verifies there is nothing left -- normalising the staged copy
-    toward alpha-3 makes every value-keyed join miss: one law document really does come
-    out as two rows. Nothing in this slice can decide that automatically -- a real
-    corpus legitimately holds values the converter refuses and can be honestly mixed --
+    toward alpha-3 makes every value-keyed join miss. (A law document used to come out as two rows here; the restore
+    now compares a law document's jurisdiction in the catalogue's own form on both sides, ``law_jurisdiction_key``, so that
+    one table no longer shows the consequence and the last assertion says so.) Nothing in this slice can decide the gap
+    automatically -- a real corpus legitimately holds values the converter refuses and can be honestly mixed --
     so the restore MEASURES the gap and names the ordering S05-02 owns.
 
     This test is also the tripwire for that flip: if a future session flips the constant
@@ -649,9 +650,10 @@ def test_flip_day_is_REPORTED_when_the_live_corpus_is_still_on_the_other_form(
     )
     assert "S05-02" in block["caveat"]
     assert "law_documents.jurisdiction" in block["spellings"]
-    # ...and the duplicate really is there, so the measurement is not theatre.
+    # The measurement above is the evidence. The law document is ONE row: the match reads both sides through ``law_jurisdiction_key``
+    # (``fr`` here, whatever form each side holds it in), so the gap no longer lands this table's duplicate.
     with _corpus(working)() as s:
-        assert s.query(LawDocument).filter_by(url="https://l/1").count() == 2
+        assert s.query(LawDocument).filter_by(url="https://l/1").count() == 1
 
 
 def test_the_measurement_never_counts_a_code_that_HAS_no_canonical_form(tmp_path):

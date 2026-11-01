@@ -2595,12 +2595,22 @@ def _alternate_local_match(
         juris = identity.get("jurisdiction")
         rows = _q(
             con,
-            "SELECT r.id FROM law_revisions r JOIN law_documents d ON d.id = r.document_id"  # nosec B608 - only module-literal fragments are joined, every value is bound
-            " WHERE d.url = ? AND r.content_hash = ?" + (" AND d.jurisdiction = ?" if juris else "")
-            + " ORDER BY r.id LIMIT 1",
-            (identity.get("document_url"), identity.get("revision_content_hash"))
-            + ((_country_in_form_of(con, juris),) if juris else ()),
+            "SELECT r.id, d.jurisdiction, d.id FROM law_revisions r JOIN law_documents d ON d.id = r.document_id"
+            " WHERE d.url = ? AND r.content_hash = ? ORDER BY r.id",
+            (identity.get("document_url"), identity.get("revision_content_hash")),
         )
+        if juris:
+            # The same document under another spelling of its jurisdiction is the same document (``law_jurisdiction_key``); the
+            # document spelled exactly as the alternate says comes first, then the oldest one: the home the merge's map gives it
+            # (``_merge_law``), and the row the app resolves later (``alternates._local_row_id``): the same ordering in three places. (The identity's own spelling is converted to the store's form first, as it always was.)
+            from src.backup.country_codes import law_jurisdiction_key
+
+            want = _country_in_form_of(con, juris)
+            key = law_jurisdiction_key(want)
+            rows = sorted(
+                ((rid, j, did) for rid, j, did in rows if law_jurisdiction_key(j) == key), key=lambda row: (row[1] != want, row[2], row[0])
+            )
+        rows = rows[:1]
         if not rows:
             return None, []
         where.append("revision_id = ?")
@@ -4693,12 +4703,62 @@ def _merge_wiki(con, batch_id, results) -> None:
     results["wiki_revisions"] = rev
 
 
+#: Law documents read from a database at a time while they are keyed (``_key_law_documents``): the rows are three short strings, so this bounds
+#: the Python-side list, not the work.
+_LAW_KEY_CHUNK = 5000
+
+
+def _key_law_documents(con, side: str, schema: str) -> None:
+    """``temp.law_key_<side>(id, jurisdiction, key, url, sib)``: every law document of ``schema`` with its jurisdiction read as a KEY
+    (``law_jurisdiction_key``), indexed on (key, url); on the staged side ``sib`` marks the documents that share their identity with
+    another staged document.
+
+    The match of the law step is on the document's identity, a jurisdiction and a url, and the jurisdiction must be compared in ONE
+    spelling: an install that pasted a document under ``gbr`` and one that holds the catalogue's ``uk`` (or an old backup of either)
+    are the same document. SQLite cannot do that comparison with an index, so the keys are computed once, here, in Python, for both
+    sides, and the statements below join them. The key is for comparing only: the INSERT copies ``i.jurisdiction`` as it is staged."""
+    from src.backup.country_codes import law_jurisdiction_key
+
+    table = f"law_key_{side}"
+    con.execute(f"DROP TABLE IF EXISTS temp.{table}")  # noqa: S608  # nosec B608 - `side` is a module literal ("main" or "inc")
+    con.execute(f"CREATE TEMP TABLE {table} (id INTEGER PRIMARY KEY, jurisdiction TEXT, key TEXT, url TEXT, sib INTEGER NOT NULL DEFAULT 0)")  # noqa: S608  # nosec B608 - as above
+    cur = con.execute(f"SELECT id, jurisdiction, url FROM {schema}.law_documents")  # noqa: S608  # nosec B608 - `schema` is a module literal ("main" or "inc")
+    while True:
+        rows = cur.fetchmany(_LAW_KEY_CHUNK)
+        if not rows:
+            break
+        con.executemany(
+            f"INSERT INTO temp.{table} (id, jurisdiction, key, url) VALUES (?, ?, ?, ?)",  # noqa: S608  # nosec B608 - as above
+            [(i, j, law_jurisdiction_key(j), u) for i, j, u in rows],
+        )
+    con.execute(f"CREATE INDEX temp.{table}_key_url ON {table} (key, url)")  # noqa: S608  # nosec B608 - as above
+    if side == "inc":
+        # A SIBLING: a staged document whose identity another staged document shares (the backup itself holds one document under two
+        # spellings). Such rows are matched as they always were, by the exact spelling, so that two staged rows are never mapped onto one
+        # working-copy row: the children that follow a document (revisions, summaries) are unique per (document, hash) and (revision,
+        # model), and two documents' worth of them cannot land on one.
+        con.execute(
+            "UPDATE temp.law_key_inc SET sib = 1 WHERE EXISTS (SELECT 1 FROM temp.law_key_inc o"
+            " WHERE o.key = temp.law_key_inc.key AND o.url = temp.law_key_inc.url AND o.id <> temp.law_key_inc.id)"
+        )
+
+
+#: "The working copy already holds staged law document ``i``" (``ki`` is its row in ``temp.law_key_inc``): by the KEY of its jurisdiction, so an
+#: old backup's ``gbr`` finds a pasted ``uk``; and, for a staged document that shares its identity with another staged one (a backup that
+#: holds one document under two spellings), by the exact spelling, as it always was.
+_LAW_HELD = (
+    "((ki.sib = 0 AND EXISTS (SELECT 1 FROM temp.law_key_main km WHERE km.key = ki.key AND km.url = i.url))"
+    " OR (ki.sib = 1 AND EXISTS (SELECT 1 FROM main.law_documents m WHERE m.jurisdiction = i.jurisdiction AND m.url = i.url)))"
+)
+
+
 def _merge_law(con, batch_id, results) -> None:
     r = DomainResult()
+    _key_law_documents(con, "main", "main")
+    _key_law_documents(con, "inc", "inc")
     r.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.law_documents i WHERE EXISTS"
-        " (SELECT 1 FROM law_documents m WHERE m.jurisdiction = i.jurisdiction AND m.url = i.url)",
+        "SELECT COUNT(*) FROM inc.law_documents i JOIN temp.law_key_inc ki ON ki.id = i.id WHERE " + _LAW_HELD,
     )
     r.new = _insert_tracked(
         con, batch_id, "law_documents",
@@ -4727,14 +4787,23 @@ def _merge_law(con, batch_id, results) -> None:
         " i.last_size, i.last_checked_at, i.last_status, i.created_at,"
         " i.country, i.language, i.latest_text, i.latest_text_revid, i.enacted_on,"
         " i.lane_key"
-        " FROM inc.law_documents i"
-        " WHERE NOT EXISTS (SELECT 1 FROM law_documents m"
-        "  WHERE m.jurisdiction = i.jurisdiction AND m.url = i.url)",
+        " FROM inc.law_documents i JOIN temp.law_key_inc ki ON ki.id = i.id"
+        " WHERE NOT " + _LAW_HELD,
     )
+    # The documents just inserted are on the working copy now: key it again, so the map finds them too. A staged document is
+    # mapped to the working copy's row for the same identity; where that copy holds the identity under two spellings (a row an
+    # old route stored and the catalogue's, which the unique index lets sit side by side), the one spelled as the staged
+    # document is, and otherwise the oldest, is the home: the same row an exact match found, whenever one existed. A SIBLING (see
+    # ``_key_law_documents``) always has a row spelled exactly like it by now (held by the exact match, or inserted just above), so it
+    # goes there, and the map stays one-to-one: no two staged documents share a home, and no two documents' children meet on one row.
+    _key_law_documents(con, "main", "main")
     _build_map(
         con, "map_law",
-        "SELECT i.id, m.id FROM inc.law_documents i"
-        " JOIN law_documents m ON m.jurisdiction = i.jurisdiction AND m.url = i.url",
+        "SELECT id, home FROM ("
+        " SELECT i.id AS id, (SELECT km.id FROM temp.law_key_main km"
+        "  WHERE km.key = ki.key AND km.url = i.url"
+        "  ORDER BY km.jurisdiction = i.jurisdiction DESC, km.id LIMIT 1) AS home"
+        " FROM inc.law_documents i JOIN temp.law_key_inc ki ON ki.id = i.id) WHERE home IS NOT NULL",
     )
     rev = DomainResult()
     rev.duplicate = _count(

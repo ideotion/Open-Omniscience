@@ -70,6 +70,7 @@ def _local_row_id(session: Any, table: str, identity: dict) -> int | None:
     joins = ""
     where: list[str] = []
     params: dict[str, Any] = {}
+    juris = None
     if spec["scope"] == "article":
         joins = " JOIN articles a ON a.id = t.article_id"
         where.append("a.hash = :article_hash")
@@ -82,9 +83,10 @@ def _local_row_id(session: Any, table: str, identity: dict) -> int | None:
         where.append("d.url = :document_url AND r.content_hash = :revision_content_hash")
         # An alternate recorded before the jurisdiction joined the identity has none: the newest
         # matching row is then the best available answer, never "gone".
-        if identity.get("jurisdiction"):
-            where.append("d.jurisdiction = :jurisdiction")
-            params["jurisdiction"] = _in_store_form(identity["jurisdiction"])
+        # The jurisdiction is compared by the catalogue's own key (``law_jurisdiction_key``), below, not as text: the same
+        # document under another spelling of its jurisdiction is the same document (a row an older route stored as typed, a
+        # backup from an install that did).
+        juris = identity.get("jurisdiction") or None
         params["document_url"] = identity.get("document_url")
         params["revision_content_hash"] = identity.get("revision_content_hash")
     for i, (name, column) in enumerate(spec["match"].items()):
@@ -95,11 +97,19 @@ def _local_row_id(session: Any, table: str, identity: dict) -> int | None:
     # Newest first in the READERS' order: by the row's own stamp, then by rowid.
     stamp = producer_extra_columns(table).get("produced_at")
     order = (f"COALESCE(t.{stamp}, '') DESC, " if stamp and stamp in _columns(session, table) else "") + "t.rowid DESC"
-    row = session.execute(
-        text(f"SELECT t.rowid FROM {table} t{joins} WHERE " + " AND ".join(where) + f" ORDER BY {order} LIMIT 1"),  # noqa: S608  # nosec B608 - table is a key of ALTERNATE_SPECS and PRODUCER_COLUMNS, every column name is a literal from ALTERNATE_SPECS or PRODUCER_COLUMNS; the identity values are bound
+    rows = session.execute(
+        text(f"SELECT t.rowid, {'d.jurisdiction, d.id' if juris else 'NULL, NULL'} FROM {table} t{joins} WHERE " + " AND ".join(where) + f" ORDER BY {order}" + ("" if juris else " LIMIT 1")),  # noqa: S608  # nosec B608 - table is a key of ALTERNATE_SPECS and PRODUCER_COLUMNS, every column name is a literal from ALTERNATE_SPECS or PRODUCER_COLUMNS; the identity values are bound
         params,
-    ).fetchone()
-    return None if row is None else int(row[0])
+    ).fetchall()
+    if juris:
+        from src.backup.country_codes import law_jurisdiction_key
+
+        want = _in_store_form(juris)
+        key = law_jurisdiction_key(want)
+        # The document spelled exactly as the identity says first, then the oldest one (the home the merge gives it: ``_merge_law``,
+        # ``_alternate_local_match``); within one document the rows stay in the readers' order, newest first.
+        rows = sorted((r for r in rows if law_jurisdiction_key(r[1]) == key), key=lambda r: (r[1] != want, r[2]))
+    return int(rows[0][0]) if rows else None
 
 
 def _local_values(session: Any, table: str, row_id: int | None, names: list[str]) -> dict | None:
