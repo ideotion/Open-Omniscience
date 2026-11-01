@@ -864,6 +864,7 @@ def test_a_record_that_cannot_be_written_says_the_class_and_the_errno_name_never
     reg = DamageRegistry(path_fn=lambda: tmp_path / marker / "rec.json")  # a folder that is not there: the write fails with ENOENT and its message names the path
     with caplog.at_level(logging.DEBUG):
         assert _note(reg)
+        _settle(reg)  # note() waits for its record thread at most RECORD_WAIT_S; a late flush of it would put ENOENT over the ENOSPC read below
         reg._flush_latest()
     st = reg.state(detail=True)
     assert st["write_error"] == "FileNotFoundError ENOENT", st["write_error"]
@@ -874,8 +875,10 @@ def test_a_record_that_cannot_be_written_says_the_class_and_the_errno_name_never
         raise OSError(errno.ENOSPC, f"no space {marker}", f"/home/{marker}/rec.json.tmp")
 
     reg._single_flight(("test-record",), disk_full)
+    _settle(reg)  # _single_flight joins its thread for at most RECORD_WAIT_S, and write_error is set by that thread
     assert reg.state()["write_error"] == "OSError ENOSPC"
     reg._single_flight(("test-record-2",), lambda: (_ for _ in ()).throw(RuntimeError(f"an engine said {marker}")))
+    _settle(reg)
     assert reg.state()["write_error"] == "RuntimeError"
     assert marker not in caplog.text and marker not in json.dumps(reg.state(detail=True), default=str)
     # Only the registry's own records are this test's to judge. ``caplog`` sees EVERY logger, and the garbage collector runs between any two lines of
@@ -1639,7 +1642,7 @@ def _settle(reg, timeout: float = HANG_GUARD_S) -> None:
             return not reg._jobs
 
     if not wait_until(idle, timeout):
-        raise AssertionError("a record job is still running")
+        raise AssertionError(f"a record job is still running: {sorted(map(str, reg._jobs))}")
 
 
 def _record_threads() -> list:
