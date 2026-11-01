@@ -4796,13 +4796,16 @@ def _merge_law(con, batch_id, results) -> None:
     # document is, and otherwise the oldest, is the home: the same row an exact match found, whenever one existed. A SIBLING (see
     # ``_key_law_documents``) always has a row spelled exactly like it by now (held by the exact match, or inserted just above), so it
     # goes there, and the map stays one-to-one: no two staged documents share a home, and no two documents' children meet on one row.
+    # Written as the exact spelling's lowest id, else the key's lowest id, and NOT as ``ORDER BY <exact> DESC, id LIMIT 1``: SQLite 3.45.1
+    # (Ubuntu 24.04, what CI runs) answers "no such column" for an outer column named in a subquery's ORDER BY, and 3.53 accepts it.
     _key_law_documents(con, "main", "main")
     _build_map(
         con, "map_law",
         "SELECT id, home FROM ("
-        " SELECT i.id AS id, (SELECT km.id FROM temp.law_key_main km"
-        "  WHERE km.key = ki.key AND km.url = i.url"
-        "  ORDER BY km.jurisdiction = i.jurisdiction DESC, km.id LIMIT 1) AS home"
+        " SELECT i.id AS id, COALESCE("
+        "  (SELECT MIN(km.id) FROM temp.law_key_main km"
+        "   WHERE km.key = ki.key AND km.url = i.url AND km.jurisdiction = i.jurisdiction),"
+        "  (SELECT MIN(km.id) FROM temp.law_key_main km WHERE km.key = ki.key AND km.url = i.url)) AS home"
         " FROM inc.law_documents i JOIN temp.law_key_inc ki ON ki.id = i.id) WHERE home IS NOT NULL",
     )
     rev = DomainResult()
