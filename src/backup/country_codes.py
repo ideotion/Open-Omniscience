@@ -294,8 +294,22 @@ def alternate_country_keys(table: str) -> tuple[tuple[str, ...], tuple[str, ...]
     return (("jurisdiction",) if spec["scope"] == "law" else ()), fields
 
 
+def _law_document_holds(con: sqlite3.Connection, schema: str, jurisdiction: str, url: object) -> bool:
+    """Whether ``schema.law_documents`` holds a document spelled exactly ``jurisdiction`` at ``url`` (the caller has checked that the table
+    and its two columns exist)."""
+    if not isinstance(url, str):
+        return False
+    return (
+        con.execute(
+            f"SELECT 1 FROM {schema}.law_documents WHERE jurisdiction = ? AND url = ? LIMIT 1",  # noqa: S608  # nosec B608 - `schema` is a module-internal literal alias; the values are bound
+            (jurisdiction, url),
+        ).fetchone()
+        is not None
+    )
+
+
 def convert_alternate_countries(
-    con: sqlite3.Connection, *, schema: str, form: Literal["alpha2", "alpha3"]
+    con: sqlite3.Connection, *, schema: str, form: Literal["alpha2", "alpha3"], keep_with_unconverted_document: bool = False
 ) -> dict:
     """Write the country codes inside ``metadata_alternates`` identities and field sets in ``form``.
 
@@ -307,13 +321,23 @@ def convert_alternate_countries(
 
     The JSON is edited by SQLite (``json_set``), so it comes out minified the way ``json_object`` writes it and stays
     byte-comparable with what a capture writes. A value with no ISO meaning stays as it is; a row whose JSON is not valid is
-    left untouched and counted. Idempotent."""
+    left untouched and counted. Idempotent.
+
+    ``keep_with_unconverted_document`` (the restore passes it for the staged copy; the migration does not): a law identity follows its
+    document. The column conversion leaves a document in the spelling it was stored in where it collides with the same document under the
+    store's own spelling (a backup holding ``gbr`` and ``gb`` of one url, in an alpha-2 store: the two rows would become one key), and an
+    identity that named that row would, converted alone, name its sibling instead: the alternate would then be placed on, and later shown
+    against, the other row. So an identity whose exact spelling and document url the staged copy still holds is left as recorded, and
+    counted under ``kept_with_document`` (the key is absent when none was)."""
     out: dict = {"converted": 0, "left_unreadable": 0, "left_as_stored": {}}
     if not _table_exists(con, schema, "metadata_alternates"):
         return out
     present = _columns_of(con, schema, "metadata_alternates")
     if not {"id", "table_name", "identity", "fields"} <= present:
         return out
+    # Asked once: the table and its columns can be missing from an old backup, which then simply has no document to follow.
+    follow_documents = keep_with_unconverted_document and {"jurisdiction", "url"} <= _columns_of(con, schema, "law_documents")
+    kept = 0
     from src.backup.provenance import ALTERNATE_SPECS
 
     for table in sorted(ALTERNATE_SPECS):
@@ -328,7 +352,8 @@ def convert_alternate_countries(
                 ).fetchall()
                 for rid, raw in rows:
                     try:
-                        value = json.loads(raw).get(key)
+                        parsed = json.loads(raw)
+                        value = parsed.get(key)
                     except (TypeError, ValueError, AttributeError):
                         out["left_unreadable"] += 1
                         continue
@@ -341,6 +366,13 @@ def convert_alternate_countries(
                         continue
                     if target == value:
                         continue
+                    if (
+                        follow_documents
+                        and column == "identity"  # a law identity's jurisdiction is the only identity key that holds a code
+                        and _law_document_holds(con, schema, value, parsed.get("document_url"))
+                    ):
+                        kept += 1
+                        continue  # its document kept this spelling (see above): the identity stays with it
                     con.execute(
                         f'UPDATE {schema}.metadata_alternates SET "{column}" = json_set("{column}", ?, ?) WHERE id = ?',  # noqa: S608  # nosec B608 - as above; the path, the value and the id are bound
                         (path, target, rid),
@@ -350,6 +382,8 @@ def convert_alternate_countries(
         f"SELECT COUNT(*) FROM {schema}.metadata_alternates WHERE NOT json_valid(identity) OR NOT json_valid(fields)"  # noqa: S608  # nosec B608 - `schema` is a module-internal literal alias
     ).fetchone()[0]
     out["left_unreadable"] += int(bad)
+    if kept:
+        out["kept_with_document"] = kept
     return out
 
 
@@ -366,8 +400,9 @@ def normalise_staged_country_codes(con: sqlite3.Connection, *, schema: str = "in
     that no caller passes would be a control nothing exercises.
 
     Returns a report block: what was converted, what was left alone because the
-    converter refused it, and what collided with a unique constraint. Every one of the
-    three is a fact a reader needs -- "nothing changed" and "we could not change it"
+    converter refused it, what collided with a unique constraint, and (under
+    ``alternates``) which carried law identities stayed with a document that kept its
+    spelling. Every one of the four is a fact a reader needs -- "nothing changed" and "we could not change it"
     are different answers, and only a report tells them apart.
     """
     converted: dict[str, int] = {}
@@ -433,7 +468,7 @@ def normalise_staged_country_codes(con: sqlite3.Connection, *, schema: str = "in
                 con.execute("RELEASE oo_country_norm")
                 converted[key] = converted.get(key, 0) + int(cur.rowcount or 0)
 
-    alternates = convert_alternate_countries(con, schema=schema, form=form)
+    alternates = convert_alternate_countries(con, schema=schema, form=form, keep_with_unconverted_document=True)
 
     report: dict = {
         "target_form": form,
