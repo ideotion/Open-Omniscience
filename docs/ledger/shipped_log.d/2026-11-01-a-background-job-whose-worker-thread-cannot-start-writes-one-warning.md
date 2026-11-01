@@ -1,0 +1,9 @@
+## 2026-11-01 — a background job whose worker thread cannot start writes one warning of its own, for every caller (R386 / R393; PR #1687)
+
+**What was found.** When the machine or the process was out of threads, `BackgroundJob.start` marked the job failed and re-raised (PRs #1661, #1666), and the routes of PR #1677 turned that into a 409 and a log line. Twenty-five other starts in other files neither answer nor log it, so an out-of-threads event there left no line saying which kind of job did not start.
+
+**What changed.** `BackgroundJob.start` (`src/jobs/background.py`) now writes ONE WARNING, `background job <kind> did not start: <the job's own error text>` (the class and a fixed note), after the job lock is released and under `contextlib.suppress(Exception)`, and re-raises the original exception object with its chain as it was. The text never carries the exception's words (a start's keyword arguments can hold a passphrase or a mailbox password and `start()` has not read the job's secrets). An interrupt and the "already running" refusal log nothing. The three vLLM routes in `src/api/llm.py` (engine install, model install, model batch) lose their own line for the same refusal, so each failed start is one line there; their answers (the status with `started: false`, the 409) are unchanged.
+
+**Pinned by** `tests/test_thread_start_interrupt.py` (seven new tests) and `tests/test_failed_thread_start_routes_answer_409.py` (rewritten to count the lines of a refused vLLM start: one); 18 mutants of the wrapper, the `refused` list, the lock position, the re-raise and the route edits, all killed.
+
+**Stated limits.** `src/database/article_indexes.py:668`, `src/database/repair.py:759` and `src/backup/volume_job.py:173` still log a refused start themselves (other lanes' files), so those starts read twice in the log. The 25 other callers still answer as before. Not observed in the field: driven by tests that inject the failure.
