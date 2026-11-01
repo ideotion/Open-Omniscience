@@ -244,8 +244,7 @@ def test_a_live_launchers_stderr_rows_survive_the_trim_of_a_later_launcher(tmp_p
         p, _ = b.start(name, "exit3")
         p.wait(timeout=60)
     a.wait(timeout=60)
-    time.sleep(0.5)
-    mine = [r for r in _rows(f)[0] if r.get("pid") == _pid(apid)]
+    mine = _filter_rows(f, _pid(apid))
     assert sum(1 for r in mine if "line" in r) == 2 and sum(1 for r in mine if r.get("summary")) == 1, mine
     assert len(_rows(f)[0]) <= 105
 
@@ -271,6 +270,19 @@ def _wait_for(pred, secs: float = 20) -> bool:
             return True
         time.sleep(0.05)
     return pred()
+
+
+def _filter_rows(f: Path, pid: int | None = None, wait_s: float = DEFERRED_ROW_WAIT_S) -> list[dict]:
+    """The stderr filter's rows (of one launcher when ``pid`` is given), read once its SUMMARY row is in the file.
+
+    The filter is a process substitution: it writes its summary row when the pipe CLOSES, after the launcher has exited (scripts/launch.sh says so
+    at the filter), so a look taken at the launcher's exit can honestly miss it (field CI, 2026-11-01: ``0 == 1`` under the one-true-awk). A bounded poll
+    on the row itself, never a sleep: a summary that never arrives returns what is there and the caller's assertion fails naming the rows."""
+    def mine() -> list[dict]:
+        return [r for r in _rows(f)[0] if pid is None or r.get("pid") == pid]
+
+    _wait_for(lambda: any(r.get("summary") for r in mine()), wait_s)
+    return mine()
 
 
 @posix_only
@@ -551,7 +563,7 @@ def test_the_filter_records_under_the_one_true_awk(tmp_path):
     f = b.data / "diagnostics" / "launcher_stderr.jsonl"
     p, pf = b.start("A", "slowerr")
     p.wait(timeout=60)
-    mine = _rows(f)[0]
+    mine = _filter_rows(f)
     assert sum(1 for r in mine if "line" in r) == 2 and sum(1 for r in mine if r.get("summary")) == 1, mine
 
 
@@ -795,3 +807,33 @@ def test_a_takeover_puts_back_a_lock_whose_owner_has_not_written_its_pid_yet_and
                 os.kill(int(held), signal.SIGKILL)
         subprocess.run(["rm", "-rf", str(lock), str(lock) + ".stash"])
     assert _wait_for(lambda: {"pid": 6} in _rows(f)[0], 30), "the deferred row lands once that lock is gone"
+
+
+def test_a_summary_row_that_arrives_after_the_look_is_waited_for(tmp_path):
+    """Red before: the awk test read the file once at the launcher's exit, so a summary row its filter wrote 0.4 s later was missed (``0 == 1``)."""
+    import threading
+
+    f = tmp_path / "launcher_stderr.jsonl"
+    f.write_text("".join(json.dumps({"pid": 5, "line": "x"}) + "\n" for _ in range(2)), encoding="utf-8")
+
+    def late() -> None:
+        time.sleep(0.4)
+        with open(f, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"pid": 5, "summary": True}) + "\n")
+
+    seen_at_exit = [r for r in _rows(f)[0] if r.get("summary")]
+    assert seen_at_exit == [], "the premise: the old single look finds no summary row"
+    t = threading.Thread(target=late, name="late-summary-writer")
+    t.start()
+    try:
+        rows = _filter_rows(f, 5, wait_s=10)
+    finally:
+        t.join()
+    assert sum(1 for r in rows if "line" in r) == 2 and sum(1 for r in rows if r.get("summary")) == 1, rows
+
+
+def test_a_summary_row_that_never_arrives_returns_the_rows_there_are(tmp_path):
+    f = tmp_path / "launcher_stderr.jsonl"
+    f.write_text(json.dumps({"pid": 5, "line": "x"}) + "\n", encoding="utf-8")
+    rows = _filter_rows(f, 5, wait_s=0.3)
+    assert rows == [{"pid": 5, "line": "x"}], rows
