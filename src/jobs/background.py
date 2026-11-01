@@ -173,6 +173,21 @@ class BackgroundJob:
 
         Raises RuntimeError if a run is already in flight (the caller maps it to 409 or
         returns the current status — a single job of a kind runs at a time)."""
+        refused: list[str] = []
+        try:
+            return self._start(kwargs, refused)
+        except Exception:
+            if refused:
+                # A thread that could not be made: written once, here, for every caller of every kind, and after the job's lock is
+                # released (a log handler can block, and ``status()`` readers wait on that lock). It carries the job's own ``error``
+                # text, the class and a fixed note, and nothing of the exception's words: ``kwargs`` can hold a passphrase or a mailbox
+                # password and this point has not read the job's secrets (``_job_secrets``). An interrupt (a ``BaseException``) and the
+                # "already running" refusal leave ``refused`` empty and log nothing.
+                with contextlib.suppress(Exception):
+                    _LOG.warning("background job %s did not start: %s", self.kind, refused[0])
+            raise
+
+    def _start(self, kwargs: dict, refused: list[str]) -> dict:
         with self._lock:
             if self._alive():
                 raise RuntimeError(f"a {self.kind} job is already running")
@@ -205,6 +220,7 @@ class BackgroundJob:
                 self._state = "error"
                 self._error = f"{type(exc).__name__}: could not start the worker thread"[:300]
                 self._ended_at = time.time()
+                refused.append(self._error)
                 raise
         return self.status()
 
