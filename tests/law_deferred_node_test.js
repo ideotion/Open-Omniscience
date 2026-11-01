@@ -91,6 +91,25 @@ const base = { documents: 0, baselines: 0, changed: 0, flagged: 0, errors: 0, un
     assert.deepStrictEqual(log.toasts, [["Tracked 2 law(s): 0 baselines, 0 changed, 0 flagged, 2 errors.", "ok"]], "no deferral, no clause: the old figures are untouched");
   }
   {
+    // both optional clauses, one after the other and apart (they ran together before the Opus read of #1684)
+    const { h, log } = sandbox({ ...base, documents: 3, errors: 1, skipped_offline: 1, deferred: 2 });
+    await h.lawTrack(null);
+    assert.strictEqual(log.toasts[0][0],
+      "Tracked 3 law(s): 0 baselines, 0 changed, 0 flagged, 1 errors. 1 not fetched (airplane mode), 2 deferred (the host's own Crawl-delay)");
+  }
+  {
+    // a Stop pressed mid-pass: every attempted document refused, and two had already deferred. The airplane sentence stays the headline;
+    // the deferrals are still counted after it.
+    const { h, log } = sandbox({ ...base, documents: 1, errors: 1, skipped_offline: 1, deferred: 2 });
+    await h.lawTrack(null);
+    assert.deepStrictEqual(log.toasts, [["Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again. 2 deferred (the host's own Crawl-delay)", "warn"]]);
+  }
+  {
+    const { h, log } = sandbox({ ...base, documents: 1, errors: 1, skipped_offline: 1 });
+    await h.lawTrack(null);
+    assert.deepStrictEqual(log.toasts, [["Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.", "warn"]], "no deferral, the airplane sentence alone as before");
+  }
+  {
     const { h, log } = sandbox({ ...base, deferred: 2 }, true);
     await h.lawTrack(null);
     assert.ok(log.toasts[0][0].endsWith("2 zurückgestellt (das eigene Crawl-delay des Hosts)"), "the clause is a keyed template: " + log.toasts[0][0]);

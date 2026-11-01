@@ -12,6 +12,7 @@ mirror, never legal advice — every record links back to its official source.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -36,6 +37,14 @@ _CAVEAT = (
 )
 
 
+# What the tracker stored for a deferral BEFORE R406: "fetch error: " + the one message `CrawlDelayDeferred` is raised with
+# (src/ingest/__init__.py, `Crawl-delay {n:g} s: not before <time>`; a retry that defers re-raises the failure in hand instead).
+# Matched by that exact start of text and nowhere else, so a row written before the verdict existed reads as what it was without
+# waiting for a check to rewrite it (`auto_track_due` asks one document per host per pass and never an unwatched one), and a
+# message that merely MENTIONS a Crawl-delay stays an error.
+_PRE_R406_DEFERRAL = re.compile(r"fetch error: crawl-delay [0-9.e+-]+ s: not before ")
+
+
 def _verdict_of(last_status: str | None) -> str:
     """Classify the free-text ``last_status`` track.py already writes into a
     small, honest, named set the UI can badge/colour -- never a NEW guess, just
@@ -45,9 +54,9 @@ def _verdict_of(last_status: str | None) -> str:
     if not last_status:
         return "never_checked"
     s = last_status.lower()
-    if s.startswith("deferred"):
-        # The host's own Crawl-delay put this check off (R406, Q1013 = a): nothing failed and no request was made. First,
-        # so no word inside the stored reason can turn it into a verdict about the document.
+    if s.startswith("deferred") or _PRE_R406_DEFERRAL.match(s):
+        # The host's own Crawl-delay put this check off (R406, Q1013 = a): nothing failed and the document itself was not
+        # requested. First, so no word inside the stored reason can turn it into a verdict about the document.
         return "deferred"
     if "robots" in s:
         return "robots_blocked"

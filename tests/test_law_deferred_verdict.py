@@ -17,6 +17,8 @@ import json
 import pathlib
 import subprocess
 
+import pytest
+
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _STRINGS = ("deferred", "{n} deferred (the host's own Crawl-delay)")
 
@@ -48,9 +50,9 @@ def test_the_new_strings_are_keyed_and_translated_in_all_twelve_locales():
         assert "{n}" in json.loads(path.read_text(encoding="utf-8"))[_STRINGS[1]], f"{path.name} lost the {{n}} slot"
 
 
-def test_the_coverage_report_names_the_deferred_verdict_in_its_method():
-    """The method text lists the verdict names the mix can hold (it is shown beside the counts), so a verdict that can appear in the
-    mix and is not named there is a count the reader cannot look up."""
+def test_the_coverage_report_names_every_verdict_its_mix_can_hold_in_its_method():
+    """The method text is shown beside the counts, so a verdict that can appear in the mix and is not named there is a count the reader
+    cannot look up. ``never_checked`` is counted in its own field and is the only verdict not in the mix."""
     import sqlalchemy as sa
     from sqlalchemy.orm import sessionmaker
 
@@ -60,13 +62,29 @@ def test_the_coverage_report_names_the_deferred_verdict_in_its_method():
     engine = sa.create_engine("sqlite:///:memory:", future=True)
     Base.metadata.create_all(engine)
     method = law_coverage_report(sessionmaker(bind=engine, future=True)())["method"]
-    assert "unchanged / deferred / other" in method
+    mix = ("robots_blocked", "error", "empty", "changed", "reverted", "baselined", "unchanged", "re_extracted", "deferred", "other")
+    for verdict in mix:
+        assert verdict in method, f"{verdict!r} can be in the verdict mix and the method text does not name it"
 
 
-def test_what_the_tracker_stores_is_what_the_classifier_reads():
-    """One word on both sides: the prefix ``track.py`` writes is the prefix ``_verdict_of`` judges first."""
+def test_the_message_the_fetcher_really_raises_is_read_as_a_deferral_in_both_stored_shapes(tmp_path):
+    """The old shape is matched by the exact start of the message the one raise site writes (``src/ingest/__init__.py``,
+    ``Crawl-delay {n:g} s: not before <time>``). Drive the real fetcher to get that message, so a reworded raise cannot leave the pattern
+    matching nothing while the hand-written strings in the other tests still pass."""
+    from urllib.robotparser import RobotFileParser
+
     from src.api.law import _verdict_of
+    from src.ingest import CrawlDelayDeferred, EthicalFetcher
+    from src.monitoring.secret_scrub import record_text
 
-    track = (_ROOT / "src/law/track.py").read_text(encoding="utf-8")
-    assert 'doc.last_status = f"deferred: {record_text(exc)}"' in track
-    assert _verdict_of("deferred: anything the reason says, even robots.txt") == "deferred"
+    fetcher = EthicalFetcher(robots_cache_path=tmp_path / "robots_cache.json")
+    robots = RobotFileParser()
+    robots.parse(["User-agent: *", "Crawl-delay: 3600"])
+    fetcher._robots["https://slow.example"] = (robots, fetcher._now() + 9999)
+    fetcher._sleep = lambda _s: None
+    fetcher._respect_rate_limit("slow.example", "https://slow.example")  # the first touch is free
+    with pytest.raises(CrawlDelayDeferred) as raised:
+        fetcher._respect_rate_limit("slow.example", "https://slow.example")
+    text = record_text(raised.value)
+    assert _verdict_of(f"fetch error: {text}") == "deferred", text  # what the tracker stored before R406
+    assert _verdict_of(f"deferred: {text}") == "deferred", text  # what it stores now

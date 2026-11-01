@@ -324,7 +324,7 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
         doc.last_checked_at = prior_checked_at
         # "deferred: ..." is its own verdict (R406, Q1013 = a): ``_verdict_of`` (src/api/law.py) reads the prefix, the Law
         # table and the coverage report badge it as a deferral, and the "Track changes now" toast counts it. A row stored
-        # before R406 says "fetch error: Crawl-delay ..." and reads as an error until its next check rewrites it.
+        # before R406 says "fetch error: Crawl-delay ..." and ``_verdict_of`` reads that exact shape as a deferral too.
         doc.last_status = f"deferred: {record_text(exc)}"
         session.commit()
         return {"document_id": doc.id, "status": "deferred", "detail": record_text(exc)}
