@@ -1277,11 +1277,14 @@ def test_a_storage_phase_still_names_itself_while_both_hold(registry, monkeypatc
     assert g.state()["phase"] == sg.PHASE_DISK
 
 
-def test_a_latch_never_releases_by_itself_however_long_it_stands(monkeypatch):
+def test_a_latch_never_releases_by_itself_however_long_it_stands(tmp_path, monkeypatch):
     """The file is not healed by the clock: a damaged file that is written to is the harm, and only a
-    check (E2) or the operator can say it is not damaged."""
+    check (E2) or the operator can say it is not damaged.
+
+    The store is a file of ``tmp_path``: it used to be ``Path(os.devnull)``, and the registry writes by replacing the file at its store path,
+    which root can do in ``/dev`` (``tests/test_zz_dev_null_is_left_alone.py``)."""
     now = {"t": 1_000_000.0}
-    reg = DamageRegistry(path_fn=lambda: Path(os.devnull), clock=lambda: now["t"], mono=lambda: now["t"])
+    reg = DamageRegistry(path_fn=lambda: tmp_path / "database-damage.json", clock=lambda: now["t"], mono=lambda: now["t"])
     monkeypatch.setattr(damage, "registry", reg)
     g = sg.StorageGuard(readings_fn=lambda: {})
     _note(reg)

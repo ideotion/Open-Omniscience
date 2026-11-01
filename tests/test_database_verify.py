@@ -798,9 +798,27 @@ def test_an_error_fts5_reports_as_a_row_is_not_damage_unless_it_is_corruption(an
         assert out["detail"] == ["the read ran out of memory"] or "disk" in out["detail"][0], out
 
 
+class _RaisingConn(_FakeConn):
+    """A connection whose ``quick_check`` raises: what FTS5 does on SQLite 3.53.1 when its own check runs out of memory (an empty ``MemoryError``)."""
+
+    def __init__(self, exc):
+        self._exc = exc
+
+    def execute(self, sql):
+        raise self._exc
+
+
+@pytest.mark.parametrize("exc", [MemoryError(), MemoryError("out of memory")], ids=["empty", "with-text"])
+def test_an_fts5_check_that_raises_out_of_memory_is_unchecked_never_damage(exc):
+    """The other shape of the fact the row tests above pin, on every SQLite: ``classify_error`` reports the class (``damage.py``: on SQLCipher an
+    empty ``MemoryError`` can also be a failed page tag, so the class alone cannot say the read ran out of memory), and it is not damage."""
+    out = verify.check_table(Path("unused.db"), "article_fts", opener=lambda _p: _RaisingConn(exc))
+    assert out["verdict"] == VERDICT_UNCHECKED and out["detail"] == ["MemoryError"], out
+
+
 @pytest.mark.skipif(sqlite3.sqlite_version_info < (3, 44), reason="the virtual table's own integrity check runs from 3.44")
 def test_fts5_running_out_of_memory_on_the_real_driver_is_unchecked_never_damage(tmp_path):
-    """The fake pins the row parse; this runs it on the real library. The heap limit is a PROCESS-wide setting that cannot
+    """The fakes pin the row parse and the raised shape; this runs the real library. The heap limit is a PROCESS-wide setting that cannot
     be lifted again, so the read runs in a process of its own."""
     import subprocess
 
@@ -830,7 +848,10 @@ def test_fts5_running_out_of_memory_on_the_real_driver_is_unchecked_never_damage
     assert done.returncode == 0, done.stderr[-800:]
     out = json.loads(done.stdout.strip().splitlines()[-1])
     assert out["verdict"] == VERDICT_UNCHECKED, out
-    assert out["detail"] == ["the read ran out of memory"], out
+    # One fact in the two shapes the library has had. SQLite up to the 3.4x series answers FTS5's allocation failure as a ROW (parsed into plain
+    # words: measured on 3.45.1); 3.53.1 RAISES an empty MemoryError (named by class). The fakes above pin each mapping on every SQLite; here the
+    # verdict stays strict (unchecked, never damage) and the detail is one of the two documented shapes, nothing else.
+    assert out["detail"] in (["the read ran out of memory"], ["MemoryError"]), out
 
 
 def test_the_fts5_integrity_check_does_not_compare_the_index_with_the_articles(tmp_path):
