@@ -17,6 +17,8 @@ the credentials in it. Behaviour and tallies are unchanged: these tests pin only
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from src.events import feeds as F
@@ -224,3 +226,26 @@ def test_an_absent_or_healthy_store_logs_nothing(caplog):
         assert F._load_json("calendar_feed_imports.json") == {}, "absent"
         assert F._load_json("calendar_autoimport.json") == {"a": "2026-01-01T00:00:00+00:00"}, "healthy"
     assert "could not be read" not in caplog.text
+
+
+def _cut_mid_character(p) -> None:
+    """A store cut right after the first byte of a two-byte character: the shape of a torn write of ``ensure_ascii=False`` JSON holding "Noël"."""
+    whole = json.dumps({"fam": {"name": "F", "events": {"fp1": {"title": "Noël"}}}}, ensure_ascii=False).encode("utf-8")
+    p.write_bytes(whole[: whole.index("ë".encode()) + 1])
+
+
+def test_a_store_cut_mid_character_reads_as_empty_and_is_on_the_record_instead_of_raising(caplog):
+    """``read_text("utf-8")`` raises UnicodeDecodeError (a ValueError, not a JSONDecodeError) on such a file; that used to escape ``_load_json`` and fail the readers."""
+    _cut_mid_character(_store("calendar_feed_imports.json"))
+    with caplog.at_level("WARNING"):
+        assert F._load_json("calendar_feed_imports.json") == {}
+        assert F.load_imports() == {}, "the reader the API serves from reads it as empty too"
+    assert "calendar_feed_imports.json exists but could not be read" in caplog.text and "UnicodeDecodeError" in caplog.text
+    assert "No" + "ël" not in caplog.text and "fp1" not in caplog.text, "no fragment of the store's text"
+
+
+def test_a_restore_merge_over_a_store_cut_mid_character_merges_instead_of_raising():
+    _cut_mid_character(_store("calendar_feed_imports.json"))
+    out = F.merge_imported_store("calendar_feed_imports.json", {"fam2": {"name": "G", "events": {"fp2": {"title": "new"}}}})
+    assert out["added"] == 1
+    assert list(F._load_json("calendar_feed_imports.json")) == ["fam2"]
