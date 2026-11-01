@@ -861,7 +861,13 @@ def test_a_record_that_cannot_be_written_says_the_class_and_the_errno_name_never
     reg._single_flight(("test-record-2",), lambda: (_ for _ in ()).throw(RuntimeError(f"an engine said {marker}")))
     assert reg.state()["write_error"] == "RuntimeError"
     assert marker not in caplog.text and marker not in json.dumps(reg.state(detail=True), default=str)
-    assert all(r.exc_info is None for r in caplog.records), "a traceback prints the error and the path"
+    # Only the registry's own records are this test's to judge. ``caplog`` sees EVERY logger, and the garbage collector runs between any two lines of
+    # a test: a connection that an EARLIER test abandoned in another thread is finalized here and ``sqlalchemy.pool`` logs it with a traceback
+    # ("SQLite objects created in a thread can only be used in that same thread", seen in CI as a red of this very line). That record is not the
+    # registry's, so it must not decide this test. The filter is by logger, and it is checked to be non-empty: an ``all()`` over nothing passes.
+    mine = [r for r in caplog.records if r.name == "src.database.damage"]
+    assert len([r for r in mine if r.levelno == logging.WARNING and "could not be written" in r.getMessage()]) == 2, [r.getMessage() for r in mine]
+    assert all(r.exc_info is None for r in mine), "a traceback prints the error and the path"
 
 
 def test_no_logging_call_of_the_damage_chain_asks_for_a_traceback():
@@ -1277,11 +1283,14 @@ def test_a_storage_phase_still_names_itself_while_both_hold(registry, monkeypatc
     assert g.state()["phase"] == sg.PHASE_DISK
 
 
-def test_a_latch_never_releases_by_itself_however_long_it_stands(monkeypatch):
+def test_a_latch_never_releases_by_itself_however_long_it_stands(tmp_path, monkeypatch):
     """The file is not healed by the clock: a damaged file that is written to is the harm, and only a
-    check (E2) or the operator can say it is not damaged."""
+    check (E2) or the operator can say it is not damaged.
+
+    The store is a file of ``tmp_path``: it used to be ``Path(os.devnull)``, and the registry writes by replacing the file at its store path,
+    which root can do in ``/dev`` (``tests/test_zz_dev_null_is_left_alone.py``)."""
     now = {"t": 1_000_000.0}
-    reg = DamageRegistry(path_fn=lambda: Path(os.devnull), clock=lambda: now["t"], mono=lambda: now["t"])
+    reg = DamageRegistry(path_fn=lambda: tmp_path / "database-damage.json", clock=lambda: now["t"], mono=lambda: now["t"])
     monkeypatch.setattr(damage, "registry", reg)
     g = sg.StorageGuard(readings_fn=lambda: {})
     _note(reg)
@@ -1589,7 +1598,7 @@ def test_with_the_pause_off_the_log_does_not_say_the_writers_are_paused(registry
     monkeypatch.setenv("OO_DAMAGE_GUARD", "0")
     with caplog.at_level(logging.ERROR, logger="src.database.damage"):
         _note(registry)
-    [line] = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
+    [line] = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR and r.name == "src.database.damage"]  # by logger: a stranger's ERROR (a pool finalizer) is not the registry's line
     assert "OO_DAMAGE_GUARD=0" in line and "carry on" in line and "are paused" not in line
 
 

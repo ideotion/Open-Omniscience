@@ -273,6 +273,52 @@ def _selects_body(sql: str) -> bool:
     return "articles.content" in sql and "count(" not in sql.lower()
 
 
+#: SQLite's own words for sorting only the TIES of the leading keys, which an index walk that holds the first key in order leaves to do: "RIGHT PART OF
+#: ORDER BY" (measured on 3.45.1), "LAST TERM OF ORDER BY" / "LAST n TERMS OF ORDER BY" later (measured on 3.50.4 and 3.53.1; 3.46 to 3.49 were not measured, so the
+#: pattern accepts all three wordings and does not guess where the change fell). The VDBE opcodes behind the two wordings were compared and are the same plan. A sort
+#: of EVERY candidate is "USE TEMP B-TREE FOR ORDER BY" in all of them, and is the regression the plan tests exist to catch.
+_PARTIAL_SORT = re.compile(r"^USE TEMP B-TREE FOR (RIGHT PART|LAST (TERM|[0-9]+ TERMS)) OF ORDER BY$")
+
+
+def _sorts_every_candidate(step: str) -> bool:
+    """Whether a query-plan step is a temporary b-tree that is not the tie-only sort of an ordering the index already delivers in its first key."""
+    return step.startswith("USE TEMP B-TREE") and not _PARTIAL_SORT.match(step)
+
+
+@pytest.mark.parametrize(
+    ("step", "every"),
+    [
+        ("USE TEMP B-TREE FOR ORDER BY", True),
+        ("USE TEMP B-TREE FOR DISTINCT", True),
+        ("USE TEMP B-TREE FOR RIGHT PART OF ORDER BY", False),
+        ("USE TEMP B-TREE FOR LAST TERM OF ORDER BY", False),
+        ("USE TEMP B-TREE FOR LAST 2 TERMS OF ORDER BY", False),
+        ("USE TEMP B-TREE FOR LAST TERM OF ORDER BY AND MORE", True),
+        ("SCAN articles", False),
+        ("SEARCH articles USING COVERING INDEX idx_article_published_at", False),
+    ],
+)
+def test_a_full_sort_is_told_from_a_tie_only_sort_in_both_of_sqlites_wordings(step, every):
+    assert _sorts_every_candidate(step) is every
+
+
+def test_the_running_sqlite_words_its_two_kinds_of_sort_the_way_the_helper_reads_them():
+    """The same classification on the library that runs the suite, so a third wording is a red test here rather than a guess."""
+    import sqlite3
+
+    con = sqlite3.connect(":memory:")
+    con.execute("CREATE TABLE t (a INTEGER, b INTEGER, c INTEGER)")
+    con.execute("CREATE INDEX t_a ON t (a)")
+
+    def steps(sql):
+        return [r[3] for r in con.execute("EXPLAIN QUERY PLAN " + sql)]
+
+    tie_only = steps("SELECT a, b FROM t ORDER BY a, b")
+    every = steps("SELECT a, b FROM t ORDER BY c")
+    assert any(s.startswith("USE TEMP B-TREE") for s in tie_only) and not any(_sorts_every_candidate(s) for s in tie_only), tie_only
+    assert any(_sorts_every_candidate(s) for s in every), every
+
+
 def _plan(db, sql, params):
     with db.get_bind().connect() as conn:
         rows = conn.exec_driver_sql("EXPLAIN QUERY PLAN " + sql, params).fetchall()
@@ -316,9 +362,9 @@ def test_a_language_filter_and_a_title_sort_are_answered_from_their_index(db, st
     sql, params = _page_statement(statements)
     plan = _plan(db, sql, params)
     assert any(f"COVERING INDEX {index}" in p for p in plan), plan
-    # An ascending order with the id still descending sorts the TIES of the first key only ("RIGHT PART OF ORDER BY",
-    # ids in the sorter); a full "USE TEMP B-TREE FOR ORDER BY" is a sort of every candidate.
-    assert not any(p.startswith("USE TEMP B-TREE") and "RIGHT PART" not in p for p in plan), plan
+    # An ascending order with the id still descending sorts the TIES of the first key only (a partial sort: "RIGHT PART OF ORDER BY" or, on
+    # newer SQLite, "LAST TERM OF ORDER BY"; ids in the sorter); a full "USE TEMP B-TREE FOR ORDER BY" is a sort of every candidate.
+    assert not any(_sorts_every_candidate(p) for p in plan), plan
     if kw.get("sort_dir", "desc") == "desc":
         assert not any("TEMP B-TREE" in p for p in plan), plan
 

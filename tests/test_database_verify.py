@@ -798,9 +798,28 @@ def test_an_error_fts5_reports_as_a_row_is_not_damage_unless_it_is_corruption(an
         assert out["detail"] == ["the read ran out of memory"] or "disk" in out["detail"][0], out
 
 
+class _RaisingConn(_FakeConn):
+    """A connection whose ``quick_check`` raises. Measured on SQLite 3.53.1, an FTS5 check under ``PRAGMA hard_heap_limit`` raises an empty ``MemoryError``;
+    this fake only stands in for that shape, so the mapping is pinned on every SQLite, whatever the library under test does."""
+
+    def __init__(self, exc):
+        self._exc = exc
+
+    def execute(self, sql):
+        raise self._exc
+
+
+@pytest.mark.parametrize("exc", [MemoryError(), MemoryError("out of memory")], ids=["empty", "with-text"])
+def test_an_fts5_check_that_raises_out_of_memory_is_unchecked_never_damage(exc):
+    """The other shape of the fact the row tests above pin, on every SQLite: ``classify_error`` reports the class (``damage.py``: on SQLCipher an
+    empty ``MemoryError`` can also be a failed page tag, so the class alone cannot say the read ran out of memory), and it is not damage."""
+    out = verify.check_table(Path("unused.db"), "article_fts", opener=lambda _p: _RaisingConn(exc))
+    assert out["verdict"] == VERDICT_UNCHECKED and out["detail"] == ["MemoryError"], out
+
+
 @pytest.mark.skipif(sqlite3.sqlite_version_info < (3, 44), reason="the virtual table's own integrity check runs from 3.44")
 def test_fts5_running_out_of_memory_on_the_real_driver_is_unchecked_never_damage(tmp_path):
-    """The fake pins the row parse; this runs it on the real library. The heap limit is a PROCESS-wide setting that cannot
+    """The fakes pin the row parse and the raised shape; this runs the real library. The heap limit is a PROCESS-wide setting that cannot
     be lifted again, so the read runs in a process of its own."""
     import subprocess
 
@@ -830,7 +849,10 @@ def test_fts5_running_out_of_memory_on_the_real_driver_is_unchecked_never_damage
     assert done.returncode == 0, done.stderr[-800:]
     out = json.loads(done.stdout.strip().splitlines()[-1])
     assert out["verdict"] == VERDICT_UNCHECKED, out
-    assert out["detail"] == ["the read ran out of memory"], out
+    # One fact in the two shapes the library has had. SQLite 3.45.1 answers FTS5's allocation failure as a ROW (parsed into plain
+    # words); 3.53.1 RAISES an empty MemoryError (named by class). Other versions were not measured. The fakes above pin each mapping on every SQLite; here the
+    # verdict stays strict (unchecked, never damage) and the detail is one of the two documented shapes, nothing else.
+    assert out["detail"] in (["the read ran out of memory"], ["MemoryError"]), out
 
 
 def test_the_fts5_integrity_check_does_not_compare_the_index_with_the_articles(tmp_path):
@@ -2758,14 +2780,18 @@ def test_a_check_or_a_re_read_that_fails_records_the_type_of_the_failure_never_i
     with caplog.at_level(logging.DEBUG):
         assert verify.run_armed() is True
     assert secret not in caplog.text and "PRAGMA key" not in caplog.text, caplog.text
-    assert all(r.exc_info is None for r in caplog.records), "a traceback prints the error a driver's was raised from"
+    # Only the check's own records are judged (``caplog`` sees every logger, and a stranger's record from a garbage-collected connection can land
+    # here: tests/test_database_damage.py has the account), and the set is checked to be non-empty, since an ``all()`` over nothing passes.
+    mine = [r for r in caplog.records if r.name == "src.database.verify"]
+    assert mine and all(r.exc_info is None for r in mine), "a traceback prints the error a driver's was raised from"
     assert "the start-up check failed (RuntimeError)" in caplog.text
     caplog.clear()
     monkeypatch.setattr(verify, "check_table", boom)
     with caplog.at_level(logging.DEBUG):
         verify._recheck_main([(FILE_CORPUS, healthy, ["articles"])], "t", {})
     assert secret not in caplog.text and "PRAGMA key" not in caplog.text, caplog.text
-    assert all(r.exc_info is None for r in caplog.records)
+    mine = [r for r in caplog.records if r.name == "src.database.verify"]
+    assert mine and all(r.exc_info is None for r in mine)
     assert "the re-read of the corpus file failed (RuntimeError)" in caplog.text, caplog.text
 
 
