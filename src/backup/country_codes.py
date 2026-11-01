@@ -39,6 +39,7 @@ WHAT IS EXEMPT, and why it is not an oversight (see :data:`COUNTRY_COLUMNS_EXEMP
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections.abc import Callable
 from typing import Literal
@@ -140,6 +141,30 @@ def canonical_country(value: str | None, form: Literal["alpha2", "alpha3"] | Non
     never written back. Callers leave such a value exactly as they found it.
     """
     return _converter(form)(value)
+
+
+#: What reads as a CODE in a law document's ``jurisdiction``: two or three ASCII letters (``fr``, ``FRA``, ``uk``, ``eu``, ``int``), the shapes
+#: the wire converts. Anything else is a word the operator typed (``france``, ``georgia``, ``congo``) or a sub-national code (``us-ca``) and is
+#: never guessed into a code: the country-name index chooses between a country and a US state, and between the two Congos.
+LAW_JURISDICTION_CODE = re.compile(r"[A-Za-z]{2,3}")
+
+
+def law_jurisdiction_key(value: str | None) -> str | None:
+    """The spelling two ``law_documents.jurisdiction`` values are COMPARED in: the catalogue's own form for a code (``FRA``, ``fra``
+    and ``fr`` are ``fr``; ``GBR``, ``gb`` and ``uk`` are ``uk``; ``EUU`` is ``eu``), the string exactly as stored for anything else.
+
+    The restore matches a document by (jurisdiction, url). The staged copy is converted toward the store's form first (``normalise_staged_country_codes``),
+    but that conversion is ``to_iso2``/``to_iso3``, which refuses the app's own codes (``uk``, ``eu``, ``int``) and which a store written by an older
+    route did not apply to what an operator typed, so two spellings of one jurisdiction stayed two strings to the match and a restore added a second
+    row. Both sides of the match are read through this, so it does not matter which spelling either side holds. It names a KEY, not a stored form:
+    nothing is rewritten with it.
+
+    ``None`` stays ``None``: an absent jurisdiction matches nothing, as ``=`` never matched it."""
+    if isinstance(value, str) and LAW_JURISDICTION_CODE.fullmatch(value):
+        from src.law.catalog import law_jurisdiction
+
+        return law_jurisdiction(value.lower())
+    return value
 
 
 def _table_exists(con: sqlite3.Connection, schema: str, table: str) -> bool:
