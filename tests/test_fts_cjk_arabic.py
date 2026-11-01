@@ -249,7 +249,9 @@ def test_the_heal_swaps_the_triggers_without_touching_the_index():
     assert ensure_fts(eng) == "skipped"
     assert not any("'delete-all'" in x or "'rebuild'" in x for x in stmts)
     with eng.begin() as c:
-        sql = [r[0] for r in c.execute(text("SELECT sql FROM sqlite_master WHERE type='trigger'"))]
+        # The main index's three triggers only: the titles-only index's (article_fts_title_*) call the transform too.
+        sql = [r[0] for r in c.execute(text(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' AND name NOT LIKE 'article_fts_title%'"))]
     assert sum(fts_norm.FN_NORM in x for x in sql) == 3
     assert _hits(s) == before, "the swap changed what the index holds"
     # A document indexed raw is deleted with its raw values: no record, so no transform.

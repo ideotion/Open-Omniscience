@@ -728,6 +728,7 @@
     function openPalette() {
       _palItems = palCommands();
       _omniLive = null;
+      _instLive = null; _instSeq++;      // a fresh palette shows no instant rows from the last one, and drops a reply still in flight
       _palLastRaw = null; _palSel = 0;   // a fresh palette starts on row 0 (Q608)
       _palWireList();
       _palPrevFocus = document.activeElement;  // a11y: restore focus on close (OO-D13-001)
@@ -881,6 +882,44 @@
       });
       return out;
     }
+    // The INSTANT rung (v0.5, perf-5tb): the newest article titles that start with what is typed,
+    // from the first character, answered by the titles-only prefix index. No debounce, because the
+    // answer costs about a millisecond; the previous request is aborted and a sequence number drops
+    // a late reply, so a slow answer can never overwrite a newer one. It is NOT relevance: the group
+    // header says so (informed consent, visible by default) and the ranked /omni answer follows.
+    let _instLive = null, _instSeq = 0, _instAbort = null;
+    async function _instFetch(q) {
+      const seq = ++_instSeq;
+      if (_instAbort) { try { _instAbort.abort(); } catch (_) { /* already settled */ } }
+      _instAbort = (typeof AbortController === "function") ? new AbortController() : null;
+      try {
+        // A raw fetch, not api(): api() counts a network failure as "server unreachable", and an
+        // aborted keystroke is neither a failure nor news. A local read, never the network.
+        const res = await fetch("/api/search/instant?limit=8&q=" + encodeURIComponent(q),
+          _instAbort ? {signal: _instAbort.signal} : undefined);
+        if (!res.ok) return;
+        const d = await res.json();
+        if (seq !== _instSeq) return;
+        _instLive = Object.assign({q}, d);
+        if ($("palette").classList.contains("open") && $("pal-input").value.trim() === q) renderPalette();
+      } catch (_e) { /* aborted by the next keystroke, or the server is busy: the ranked rows still come */ }
+    }
+    function _instItems(q) {
+      if (!_instLive || _instLive.q !== q) return [];
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const grp = t("Newest added titles — not ranked, text not searched");
+      const out = (_instLive.hits || []).map(h => ({grp, label: h.title || ("#" + h.id),
+        sub: [h.source || "", ooIsoDate(h.published_at) || ""].filter(Boolean).join(" · "),
+        run: () => window.open("/api/articles/" + h.id + "/view", "_blank")}));  // the LOCAL reader first (invariant #6)
+      if (out.length && _instLive.more) {
+        out.push({grp, label: t("more titles match — type more to narrow"), sub: "", run: () => {}});
+      }
+      if (_instLive.index_complete === false) {
+        out.push({grp, label: t("The title index does not cover older articles yet — build it"), sub: "",
+          run: () => { api("/api/search/instant/build", {method: "POST"}).catch(() => {}); }});
+      }
+      return out;
+    }
     function _omniFetch(q) {
       clearTimeout(_omniTimer);
       _omniTimer = setTimeout(async () => {
@@ -900,6 +939,11 @@
       const statics = _palItems.filter(it => !q ||
         it.label.toLowerCase().includes(q) || (it.sub || "").toLowerCase().includes(q));
       let live = [];
+      let inst = [];
+      if (raw.length >= 1) {
+        inst = _instItems(raw);
+        if (!_instLive || _instLive.q !== raw) _instFetch(raw);
+      }
       if (raw.length >= 2) {
         live = _omniItems(raw);
         if (!_omniLive || _omniLive.q !== raw) _omniFetch(raw);
@@ -930,6 +974,9 @@
       // when its fetch lands, and resetting to row 0 then would turn "I arrowed to
       // Settings" into an analysis of the word on the next Enter.
       const prev = (_palLastRaw === raw && _palSel > 0) ? _palFiltered[_palSel] : null;
+      // The instant rows come after the Search/Analysis/Claim rows (Enter keeps running Analysis, Q608 = a)
+      // and ahead of the ranked ones: they are the first answer, and the ranked rows follow below.
+      if (inst.length) live.splice(Math.min(2, live.length), 0, ...inst);
       _palFiltered = _palOrder(statics, live, raw);
       _palSel = 0;
       if (prev) {

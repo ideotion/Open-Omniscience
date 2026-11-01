@@ -889,6 +889,10 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
         swap = rebuild == "always" and existed and fts_tokenizer(conn) == "legacy"
         for ddl in _FTS_DDL:
             conn.execute(text(ddl))
+        # The titles-only prefix index the omnibar's first rung reads (DDL, state row and triggers only: never a build, see fts_title).
+        from src.database.fts_title import ensure_title_index
+
+        ensure_title_index(conn)
         if swap:
             rebuild_with_current_tokenizer(conn)
             return "rebuilt"
