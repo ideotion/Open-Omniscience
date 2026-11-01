@@ -1,4 +1,4 @@
-## 2026-11-01 — a writer fix cannot reach what the old writer already wrote, so a match over text that outlives the writer is keyed on BOTH sides (R403 / R399; PR #NNNN)
+## 2026-11-01 — a writer fix cannot reach what the old writer already wrote, so a match over text that outlives the writer is keyed on BOTH sides (R403 / R399; PR #1682)
 
 **What was found.** Fixing a writer so that it stores the one canonical spelling (PR #1679, `POST /api/law/documents`) stops the divergence growing and, in the same breath, moves the mismatch: from "two installs that typed differently" to "an artifact the old writer already produced against what the new writer stores". A backup is a byte copy of the old spelling. The independent read of that fix measured it through the real merge: of every pair of two- and three-letter spellings of one jurisdiction, 6 (alpha-2 store) and 8 (alpha-3 store, every new install) went from one row to two when an old route's backup was restored over a new route's row, with the UK typed `gb` or `gbr` the case that matters, while 506 and 8 went from two to one. The writer fix was right and shipped with the limit stated; it could not remove it.
 
