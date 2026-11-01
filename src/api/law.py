@@ -45,6 +45,10 @@ def _verdict_of(last_status: str | None) -> str:
     if not last_status:
         return "never_checked"
     s = last_status.lower()
+    if s.startswith("deferred"):
+        # The host's own Crawl-delay put this check off (R406, Q1013 = a): nothing failed and no request was made. First,
+        # so no word inside the stored reason can turn it into a verdict about the document.
+        return "deferred"
     if "robots" in s:
         return "robots_blocked"
     if s.startswith("fetch error") or s.startswith("error:"):

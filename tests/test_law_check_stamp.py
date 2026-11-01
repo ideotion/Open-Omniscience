@@ -208,12 +208,45 @@ def test_a_crawl_delay_deferral_is_not_a_check_and_not_an_error(db):
     db.refresh(doc)
     assert out["status"] == "deferred"
     assert doc.last_checked_at == before
-    # The status text stays main's ("fetch error: Crawl-delay ..."), so the Law table pill keeps its verdict:
-    # a "deferred: ..." text would badge as "other" until a ``deferred`` verdict and its label are ruled.
+    # The status text is its own verdict since R406 (it was main's "fetch error: Crawl-delay ..." while the verdict and its
+    # label were unruled): the Law table, the coverage report and the track-now toast all read a deferral as one.
     from src.api.law import _verdict_of
 
-    assert "Crawl-delay" in doc.last_status
-    assert _verdict_of(doc.last_status) == "error"
+    assert doc.last_status.startswith("deferred: ") and "Crawl-delay" in doc.last_status
+    assert _verdict_of(doc.last_status) == "deferred"
+
+
+def test_a_deferral_reads_as_a_deferral_on_the_table_row_and_in_the_coverage_mix_and_is_no_error(db):
+    """R406. Measured before the change, two documents whose host defers: the tally said ``deferred: 2, errors: 0`` while the table row and
+    the coverage report's verdict mix both said ``error``. All three surfaces now say the same thing."""
+    from src.api.law import _doc_dict
+    from src.law.coverage import law_coverage_report
+
+    a, b = _doc(db, 1), _doc(db, 2, host="other.test")
+    tally = track_watched(db, _Raises(_deferral()))
+    assert tally["deferred"] == 2 and tally["errors"] == 0
+    db.refresh(a)
+    db.refresh(b)
+    assert [_doc_dict(d)["verdict"] for d in (a, b)] == ["deferred", "deferred"]
+    mix = law_coverage_report(db)["jurisdictions"][0]["verdicts"]
+    assert mix == {"deferred": 2}, mix
+
+
+def test_a_row_stored_before_the_verdict_existed_still_reads_as_an_error_until_its_next_check():
+    """R406. ``fetch error: Crawl-delay ...`` is what a deferral wrote until then. It is NOT reclassified by the words «Crawl-delay» (a
+    guess over free text, and a real failed request could carry them): the next check rewrites it, and a deferred document keeps its old
+    ``last_checked_at``, so it heads the due order and is asked again on the next pass."""
+    from src.api.law import _verdict_of
+
+    assert _verdict_of("fetch error: Crawl-delay 3600 s: not before later") == "error"
+    assert _verdict_of("deferred: Crawl-delay 3600 s: not before later") == "deferred"
+
+
+def test_a_deferral_rewrites_the_old_wording_on_the_next_pass(db):
+    doc = _doc(db, status="fetch error: Crawl-delay 3600 s: not before earlier")
+    track_document(db, _Raises(_deferral()), doc)
+    db.refresh(doc)
+    assert doc.last_status.startswith("deferred: ")
 
 
 def test_the_tally_counts_a_deferral_under_its_own_key_in_both_trackers(db):
