@@ -1,0 +1,7 @@
+## 2026-11-01 — SQL that a lane's venv accepts can be refused by the SQLite that CI uses, so touched SQL is run under the CI interpreter before a push
+
+**What was found (R405; the WAL lane's PR #1682, head `e3e08ef`).** An `ORDER BY` inside a scalar subquery referenced a column of the outer query. The lane's venv links SQLite 3.53.1, which accepted the statement; the interpreter CI uses (`/usr/bin/python3`, SQLite 3.45.1) refuses it at prepare time. The result was 588 failures in the Core-only job, none of them in a test that looked related to the change, because every database opened through the shared schema path hit the same statement. The fix (`c2a1bff`) replaced the ordered subquery with `COALESCE(MIN(...))`, which both versions accept.
+
+**The rule.** A lane that adds or changes SQL runs the touched tests under `/usr/bin/python3` (check `python -c "import sqlite3; print(sqlite3.sqlite_version)"` first, and expect 3.45.1) before a push, in addition to the venv run. A newer SQLite is more permissive, never stricter, so a green venv run says nothing about what an older SQLite will prepare. Prefer an aggregate (`MIN`, `MAX`, `COALESCE`) to an ordered scalar subquery that reaches into the outer row.
+
+**Where it is pinned.** Nowhere in code: this is a pre-push step, listed in the standing lessons and in R405 of `docs/ledger/RULINGS_INDEX.md`. The version figures (3.45.1 CI, 3.53.1 in the lanes' venvs) and the 588 count are the coordinator's, as relayed; they were not re-measured here.
