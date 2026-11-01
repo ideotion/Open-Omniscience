@@ -14,7 +14,9 @@ unhandled 500. ``src/api/backup_v2.py`` already answers 409 for the same error. 
 - ``POST /api/jobs/{id}/resume`` for a Wikipedia dump, an OSM region and the search re-index;
 - ``POST /api/search/index-job`` and ``POST /api/search/index-job/resume``;
 - ``POST /api/scheduler/start``, the Start button's route: ``BackgroundScheduler.start()`` has undone its state and re-raised since the
-  thread-start change, and the route (in no ownership table, so taken under R307) mapped nothing.
+  thread-start change, and the route (in no ownership table, so taken under R307) mapped nothing;
+- ``POST /api/scheduler/run-now``, the Run now button's route: ``BackgroundScheduler.run_now()`` makes its thread before it records
+  anything in the scheduler's own state, so its refusal leaves nothing of the scheduler's to undo, and the route mapped nothing either.
 
 What it pins: the status (409), what the body carries (the exception's words where the neighbouring routes carry them, a CODE where
 the neighbours answer with codes: the search re-index never puts an exception's text in a response), that nothing the failed start
@@ -363,7 +365,7 @@ def test_a_batch_that_queued_nothing_says_nothing_to_do_and_names_every_refusal(
 #  POST /api/scheduler/start: the collection loop's own thread
 # --------------------------------------------------------------------------- #
 class _Loop:
-    """A scheduler stand-in: ``start()`` answers ``started``, or raises ``error``."""
+    """A scheduler stand-in: ``start()`` and ``run_now()`` answer ``started``, or raise ``error``."""
 
     def __init__(self, error: BaseException | None = None, started: bool = True) -> None:
         self.error, self.started = error, started
@@ -373,12 +375,15 @@ class _Loop:
             raise self.error
         return self.started
 
+    def run_now(self) -> bool:
+        return self.start()
+
     def status(self) -> dict:
         return {"running": self.started and self.error is None}
 
 
 def _scheduler_route(monkeypatch, scheduler) -> list[str]:
-    """``POST /api/scheduler/start`` with ``scheduler`` as the process's one. The route clears the kill switch before it starts; that is
+    """``POST /api/scheduler/start`` or ``/run-now`` with ``scheduler`` as the process's one. The route clears the kill switch before it starts; that is
     process-wide state this file does not need to touch. Returns the record of what the route did AFTER the start."""
     after: list[str] = []
     monkeypatch.setattr("src.api.scheduler.get_scheduler", lambda: scheduler)
@@ -415,6 +420,49 @@ def test_a_collection_start_that_raises_something_else_is_still_the_unhandled_er
     """Only a ``RuntimeError`` is the start's refusal (the manager raises nothing else for it)."""
     _scheduler_route(monkeypatch, _Loop(TypeError("not a refusal")))
     assert client.post("/api/scheduler/start").status_code == 500
+
+
+# --------------------------------------------------------------------------- #
+#  POST /api/scheduler/run-now: the one-off run's own thread
+# --------------------------------------------------------------------------- #
+def test_a_run_now_whose_thread_cannot_start_answers_409_not_500(client, monkeypatch):
+    """The REAL scheduler: ``BackgroundScheduler.run_now()`` makes its thread before it records anything in the scheduler's own state, so a refusal leaves
+    nothing of the scheduler's to undo; the route used to let it through as a 500 (``internal error: can't start new thread``, with no line
+    of the route's own in the log).
+    No run is active afterwards, the loop is not running, and the route did not go on to resume the Wikipedia lane as if a run had begun."""
+    from src.scheduler import runner
+
+    scheduler = runner.BackgroundScheduler(run_once_fn=lambda: {})
+    monkeypatch.setattr(runner, "_ensure_storage_supervisor", lambda: None)  # a real supervisor thread is not this test's business
+    _cannot_start(monkeypatch, runner)
+    after = _scheduler_route(monkeypatch, scheduler)
+    r = client.post("/api/scheduler/run-now")
+    assert r.status_code == 409 and _CANNOT_START in r.json()["detail"]
+    status = scheduler.status()
+    assert status["active"] is False and status["running"] is False
+    assert after == [], "the Wikipedia lane was resumed after a run that did not begin"
+
+
+def test_a_run_now_that_works_is_unchanged(client, monkeypatch):
+    after = _scheduler_route(monkeypatch, _Loop())
+    r = client.post("/api/scheduler/run-now")
+    assert r.status_code == 200 and r.json()["started"] is True and r.json()["running"] is True
+    assert after == ["wiki lane resumed"]
+
+
+def test_a_run_now_that_finds_a_run_in_flight_is_still_a_200_with_started_false(client, monkeypatch):
+    """``run_now()`` answers ``False`` (not an error) for a run already active or an exclusive hold; that answer, and the lane resume that
+    followed it, are what the route did before and still does."""
+    after = _scheduler_route(monkeypatch, _Loop(started=False))
+    r = client.post("/api/scheduler/run-now")
+    assert r.status_code == 200 and r.json()["started"] is False
+    assert after == ["wiki lane resumed"]
+
+
+def test_a_run_now_that_raises_something_else_is_still_the_unhandled_error(client, monkeypatch):
+    """Only a ``RuntimeError`` is the run's refusal (``run_now`` raises nothing else for a thread that cannot start)."""
+    _scheduler_route(monkeypatch, _Loop(TypeError("not a refusal")))
+    assert client.post("/api/scheduler/run-now").status_code == 500
 
 
 # --------------------------------------------------------------------------- #
@@ -484,6 +532,7 @@ def test_an_interrupt_is_not_mapped_to_a_status_by_any_of_the_routes(monkeypatch
         "re-index start": search_omni.search_index_job,
         "re-index resume": lambda: search_omni.search_index_job_action("resume"),
         "collection start": scheduler_api.scheduler_start,
+        "run now": scheduler_api.scheduler_run_now,
     }
     for name, call in calls.items():
         try:
@@ -556,6 +605,11 @@ def test_a_refused_start_is_logged_on_every_route_that_maps_it(client, monkeypat
     _scheduler_route(monkeypatch, runner.BackgroundScheduler(run_once_fn=lambda: {}))
     assert client.post("/api/scheduler/start").status_code == 409
     logged("collection start")
+
+    # the one-off run (the same real scheduler, its run thread refused)
+    _cannot_start(monkeypatch, runner)
+    assert client.post("/api/scheduler/run-now").status_code == 409
+    logged("run now")
 
     # the vLLM engine install keeps its contract (the status with ``started: false``); its refused start is logged by ``BackgroundJob.start``
     # itself, once, on the real job: the class and the job's fixed note (never the exception's words), and not by the route as well
