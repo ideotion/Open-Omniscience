@@ -72,3 +72,33 @@ def test_env_override_and_typo(monkeypatch):
     assert reindex_cache_mb() == 0
     monkeypatch.setattr("src.config.memory_budget.total_ram_mb", lambda: None)
     assert reindex_cache_mb() == 0
+
+
+def test_a_raising_block_still_gives_the_connection_back_as_it_was(sess):
+    before = _cache(sess)
+    sess.rollback()
+    with pytest.raises(RuntimeError), bulk_page_cache(sess, 256):
+        assert _cache(sess) == -256 * 1024
+        raise RuntimeError("boom")
+    sess.rollback()  # the session's connection returns to the pool here
+    sess.close()
+    assert _cache(sess) == before
+
+
+def test_leaving_the_block_checks_out_nothing(sess):
+    assert not sess.in_transaction()
+    with bulk_page_cache(sess, 256):
+        sess.execute(text("SELECT 1"))
+        sess.commit()
+    assert not sess.in_transaction()
+    assert sess.get_bind().pool.checkedout() == 0
+
+
+def test_a_session_bound_to_a_connection_does_not_raise(tmp_path):
+    eng = create_engine(f"sqlite:///{tmp_path}/d.db")
+    with eng.connect() as conn:
+        s = sessionmaker(bind=conn, future=True)()
+        with bulk_page_cache(s, 256) as applied:
+            assert applied in (0, 256)
+        s.close()
+    eng.dispose()

@@ -24,7 +24,9 @@ import contextlib
 import logging
 import os
 import threading
+import weakref
 from collections.abc import Iterator
+from typing import Any
 
 _LOG = logging.getLogger(__name__)
 
@@ -59,69 +61,96 @@ def _pragma(dbapi_conn, sql: str):
         cur.close()
 
 
+class _EngineHooks:
+    """The two pool listeners of ONE engine, registered once and left in place (removing a listener from inside a checkin dispatch
+    mutates the list being iterated), plus what they need: which threads are inside a block, and which connections they grew."""
+
+    def __init__(self, engine) -> None:
+        self.lock = threading.Lock()
+        self.growers: dict[int, list[int]] = {}  # thread ident -> [MiB, nesting depth]
+        self.saved: dict[Any, int] = {}  # connection RECORD -> the cache_size it had (it outlives an invalidated DBAPI object)
+        self.warned = False
+        from sqlalchemy import event
+
+        event.listen(engine, "checkout", self._on_checkout)
+        event.listen(engine, "checkin", self._on_checkin)
+
+    def grow(self, dbapi_conn, record, mb: int) -> None:
+        try:
+            current = int(_pragma(dbapi_conn, "PRAGMA cache_size")[0][0])
+            wanted = -mb * 1024  # negative = KiB
+            if current < 0 and current <= wanted:  # only grow, and only compare like with like
+                return
+            with self.lock:
+                self.saved[record] = current
+            _pragma(dbapi_conn, f"PRAGMA cache_size={wanted}")
+        except Exception as exc:  # noqa: BLE001
+            with self.lock:
+                self.saved.pop(record, None)
+            if not self.warned:
+                self.warned = True
+                _LOG.warning("could not enlarge the re-index page cache: %s", type(exc).__name__)
+
+    def _on_checkout(self, dbapi_conn, record, _proxy) -> None:
+        entry = self.growers.get(threading.get_ident())
+        if entry is not None:
+            self.grow(dbapi_conn, record, entry[0])
+
+    def _on_checkin(self, dbapi_conn, record) -> None:
+        with self.lock:
+            old = self.saved.pop(record, None)
+        if old is not None and dbapi_conn is not None:  # None = invalidated: the connection is gone, nothing to restore
+            with contextlib.suppress(Exception):
+                _pragma(dbapi_conn, f"PRAGMA cache_size={old}")
+
+
+_HOOKS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+_HOOKS_LOCK = threading.Lock()
+
+
+def _hooks_for(engine) -> _EngineHooks:
+    with _HOOKS_LOCK:
+        hooks = _HOOKS.get(engine)
+        if hooks is None:
+            hooks = _HOOKS[engine] = _EngineHooks(engine)
+        return hooks
+
+
 @contextlib.contextmanager
 def bulk_page_cache(session, size_mb: int | None = None) -> Iterator[int]:
     """Enlarge the page cache of every connection THIS THREAD checks out of ``session``'s engine while the block runs.
 
     Yields the MiB applied (0 = nothing, the block runs exactly as before). Never raises for a cache problem: a connection that
-    refuses the PRAGMA keeps the cache it had, and the failure is logged once."""
+    refuses the PRAGMA keeps the cache it had, and the failure is logged once.
+
+    A grown connection is put back as it was when the POOL takes it back, not when the block ends: the block may end (or raise)
+    while the session still holds one, and reaching into the session then would check out a connection nobody asked for."""
     mb = reindex_cache_mb() if size_mb is None else size_mb
+    me = threading.get_ident()
     try:
-        engine = session.get_bind()
+        bind = session.get_bind()
+        engine = getattr(bind, "engine", bind)  # a session bound to a Connection resolves to that connection's engine
         if mb <= 0 or engine.dialect.name != "sqlite":
             yield 0
             return
-        from sqlalchemy import event
-    except Exception:  # noqa: BLE001 - no bind (a test double) means nothing to tune
+        hooks = _hooks_for(engine)
+    except Exception:  # noqa: BLE001 - no bind, a test double, an unlistenable target: nothing to tune
         yield 0
         return
 
-    me = threading.get_ident()
-    saved: dict[int, int] = {}  # id(dbapi connection) -> the cache_size it had, in the PRAGMA's own unit
-    warned = False
-
-    def _grow(dbapi_conn) -> None:
-        nonlocal warned
-        try:
-            current = int(_pragma(dbapi_conn, "PRAGMA cache_size")[0][0])
-            wanted = -mb * 1024  # negative = KiB
-            # pages (positive) or KiB (negative): only grow, and only when we can compare like with like
-            if current < 0 and current <= wanted:
-                return
-            saved[id(dbapi_conn)] = current
-            _pragma(dbapi_conn, f"PRAGMA cache_size={wanted}")
-        except Exception as exc:  # noqa: BLE001
-            if not warned:
-                warned = True
-                _LOG.warning("could not enlarge the re-index page cache: %s", type(exc).__name__)
-
-    def _restore(dbapi_conn) -> None:
-        old = saved.pop(id(dbapi_conn), None)
-        if old is not None:
-            with contextlib.suppress(Exception):
-                _pragma(dbapi_conn, f"PRAGMA cache_size={old}")
-
-    def _on_checkout(dbapi_conn, _record, _proxy) -> None:
-        if threading.get_ident() == me:
-            _grow(dbapi_conn)
-
-    def _on_checkin(dbapi_conn, _record) -> None:
-        _restore(dbapi_conn)  # whichever thread returns it: a connection we grew goes back as it was
-
-    event.listen(engine, "checkout", _on_checkout)
-    event.listen(engine, "checkin", _on_checkin)
+    with hooks.lock:
+        entry = hooks.growers.setdefault(me, [mb, 0])
+        entry[1] += 1
     try:
-        # The session may already hold a connection (it is mid-transaction): grow that one now.
-        with contextlib.suppress(Exception):
-            held = session.connection().connection.dbapi_connection
-            if held is not None:
-                _grow(held)
+        # A session already inside a transaction holds a connection checked out before the block: grow that one now. (Never ask a
+        # session with no transaction for a connection: that would check one out for nothing.)
+        if session.in_transaction():
+            with contextlib.suppress(Exception):
+                fairy = session.connection().connection
+                hooks.grow(fairy.dbapi_connection, fairy._connection_record, mb)
         yield mb
     finally:
-        event.remove(engine, "checkout", _on_checkout)
-        event.remove(engine, "checkin", _on_checkin)
-        # The session's own connection is still checked out and the checkin listener is gone: put it back by hand.
-        with contextlib.suppress(Exception):
-            held = session.connection().connection.dbapi_connection
-            if held is not None:
-                _restore(held)
+        with hooks.lock:
+            entry[1] -= 1
+            if entry[1] <= 0:
+                hooks.growers.pop(me, None)
