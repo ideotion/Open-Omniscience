@@ -46,7 +46,7 @@ from src.llm.ollama import (
     OllamaClient,
 )
 from src.llm.prompts_i18n import PROMPTS as _PROMPTS
-from src.monitoring.secret_scrub import http_detail
+from src.monitoring.secret_scrub import http_detail, log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -845,6 +845,10 @@ def llm_pull_queue(req: ModelRequest) -> dict:
         return get_pull_manager().enqueue(req.model)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
+    except RuntimeError as exc:
+        # The pull worker could not start (R393): a conflict the caller can retry, never an unhandled 500.
+        log_failure(_LOG, "model pull refused: the pull worker could not start", exc, level=logging.WARNING)
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
 @router.get("/pull/status")
@@ -1188,9 +1192,15 @@ def vllm_install(req: VllmInstallRequest | None = None) -> dict:
             acknowledge_low_resources=body.acknowledge_low_resources,
         )
         st["started"] = True
-    except RuntimeError:
+    except RuntimeError as exc:
         st = job.status()
         st["started"] = False
+        if st.get("state") == "error":
+            # A run already in flight reads ``running`` and is the status the caller is meant to read; ``error`` is the worker thread that
+            # could not start (R393). One narrow case reads ``error`` too and is logged here as well: a run that has just failed and is still
+            # writing its own failure when a second start arrives. The route keeps its contract, the status with ``started: false``; the log
+            # now says why, as the 500 handler used to. (A line in ``BackgroundJob.start`` itself would replace this one: the follow-on.)
+            log_failure(_LOG, "vLLM install refused: the worker thread could not start", exc, level=logging.WARNING)
     return st
 
 
@@ -1442,12 +1452,18 @@ def default_model_install() -> dict:
         if job.status().get("running"):
             return {**plan, "action": "downloading", "result": job.status()}
         try:
+            job.start(model=plan["artifact"])
+        except RuntimeError as exc:
+            # The worker thread could not start, or a run began between the check above and this call (R393). BEFORE the preference is
+            # saved: a model whose download did not begin is not the operator's chosen model.
+            log_failure(_LOG, "default model install refused: the vLLM download worker could not start", exc, level=logging.WARNING)
+            raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
+        try:
             from src.config.app_settings import save_settings
 
             save_settings({"llm_model_vllm": plan["artifact"]})
         except Exception as exc:  # noqa: BLE001 - a settings hiccup must not read as a failed install
             _LOG.warning("the chosen model was not saved as a preference (%s)", type(exc).__name__)
-        job.start(model=plan["artifact"])
         return {**plan, "action": "downloading", "result": job.status()}
 
     # The symmetric prerequisite check to the vLLM branch above (field report
@@ -1470,6 +1486,11 @@ def default_model_install() -> dict:
         queued = get_pull_manager().enqueue(plan["artifact"])
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
+    except RuntimeError as exc:
+        # The pull worker could not start (R393). Before ``save_settings`` below: a model whose download did not begin is not the
+        # operator's chosen model.
+        log_failure(_LOG, "default model install refused: the pull worker could not start", exc, level=logging.WARNING)
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
     try:
         from src.config.app_settings import save_settings
 
@@ -1515,7 +1536,10 @@ def _queue_downloads(backend: str, ok: list[dict], refused: list[dict]) -> dict:
     was not, because it is what every model download goes through.
 
     ``refused`` is carried through untouched and added to, never replaced: an operator
-    who selected four models and can have two is owed an account of four.
+    who selected four models and can have two is owed an account of four. One exception,
+    stated: the vLLM path has ONE job for every model, so a job whose worker thread cannot
+    start (R393) refuses the whole request with a 409 and the entries refused before it are
+    not echoed; the caller asks again. A batch that queued nothing answers ``nothing_to_do``.
     """
     if not ok:
         return {"backend": backend, "action": "nothing_to_do", "queued": [], "refused": refused}
@@ -1530,7 +1554,12 @@ def _queue_downloads(backend: str, ok: list[dict], refused: list[dict]) -> dict:
                 "refused": refused,
                 "result": job.status(),
             }
-        job.start(models=[m["identifier"] for m in ok])
+        try:
+            job.start(models=[m["identifier"] for m in ok])
+        except RuntimeError as exc:
+            # One job downloads every model asked for, so a start that failed refuses all of them: 409 with the words, like the install.
+            log_failure(_LOG, "model download refused: the vLLM download worker could not start", exc, level=logging.WARNING)
+            raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
         return {
             "backend": backend,
             "action": "downloading",
@@ -1547,9 +1576,16 @@ def _queue_downloads(backend: str, ok: list[dict], refused: list[dict]) -> dict:
         try:
             manager.enqueue(m["identifier"])
             queued.append(m["identifier"])
-        except ValueError as exc:
-            # A malformed tag is one model's problem, not the batch's.
+        except (ValueError, RuntimeError) as exc:
+            # A malformed tag, or a pull worker that could not start (R393), is one model's problem, not the batch's: the failure is in the
+            # pull history and the next model gets its own try.
+            if isinstance(exc, RuntimeError):
+                log_failure(_LOG, "model pull refused: the pull worker could not start", exc, level=logging.WARNING)
             refused.append({"key": m["key"], "label": m["label"], "reason": http_detail(exc)})
+    if not queued:
+        # Every model was refused (a malformed tag, or a pull worker that could not start): say so, like the empty batch above, so the
+        # panel shows "it was refused" and not "Downloading:" beside an empty list.
+        return {"backend": backend, "action": "nothing_to_do", "queued": [], "refused": refused}
     return {
         "backend": backend,
         "action": "queued",

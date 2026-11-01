@@ -18,12 +18,15 @@ from __future__ import annotations
 
 import functools
 import json
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from src.monitoring.secret_scrub import http_detail
+from src.monitoring.secret_scrub import http_detail, log_failure
+
+_LOG = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -1095,14 +1098,24 @@ def resume_job(job_id: str) -> dict:
         from src.wiki.dumps import get_manager
 
         key = job_id.split(":", 1)[1]
-        if get_manager().resume(key) is None:
+        try:
+            resumed = get_manager().resume(key)
+        except (RuntimeError, ValueError) as exc:  # the worker thread could not start (R393), the shape of the branches below
+            log_failure(_LOG, "dump resume refused: the download could not be resumed", exc, level=logging.WARNING)
+            raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
+        if resumed is None:
             raise HTTPException(status_code=404, detail=f"unknown dump {key!r}")
         return {"resumed": job_id, "detail": "download resumed"}
     if job_id.startswith("osm:"):
         from src.geo.osm_downloads import get_manager as get_osm_manager
 
         key = job_id.split(":", 1)[1]
-        if get_osm_manager().resume(key) is None:
+        try:
+            resumed = get_osm_manager().resume(key)
+        except (RuntimeError, ValueError) as exc:  # the worker thread could not start (R393), the shape of the branches below
+            log_failure(_LOG, "OSM download resume refused: the download could not be resumed", exc, level=logging.WARNING)
+            raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
+        if resumed is None:
             raise HTTPException(status_code=404, detail=f"unknown OSM download {key!r}")
         return {"resumed": job_id, "detail": "download resumed"}
     if job_id == "folder-backup":
@@ -1157,6 +1170,7 @@ def resume_job(job_id: str) -> dict:
     if job_id == "search-reindex":
         # Local DB work — no network/airplane gate; resume continues from the cursor.
         from src.database.fts_reindex import (
+            REFUSED_WORKER_NOT_STARTED,
             SearchReindexRefused,
             get_search_reindex_manager,
         )
@@ -1167,5 +1181,8 @@ def resume_job(job_id: str) -> dict:
             smgr.resume()
         except SearchReindexRefused:
             raise HTTPException(status_code=409, detail={"code": search_refusal_code(smgr)}) from None
+        except RuntimeError as exc:  # the worker thread could not start (R393); after the refusal's clause, which is a RuntimeError too
+            log_failure(_LOG, "search re-index resume refused: the worker thread could not start", exc, level=logging.WARNING)
+            raise HTTPException(status_code=409, detail={"code": REFUSED_WORKER_NOT_STARTED}) from None
         return {"resumed": job_id, "detail": "search re-index resumed"}
     raise HTTPException(status_code=404, detail=f"unknown or unresumable job {job_id!r}")

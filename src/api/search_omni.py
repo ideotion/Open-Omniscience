@@ -697,6 +697,7 @@ def omni(
 def search_index_job() -> dict:
     """Start the search re-index, or continue a paused one. 409 with a code when running."""
     from src.database.fts_reindex import (
+        REFUSED_WORKER_NOT_STARTED,
         SearchReindexRefused,
         get_search_reindex_manager,
         refusal_code,
@@ -707,6 +708,12 @@ def search_index_job() -> dict:
         return mgr.start()
     except SearchReindexRefused:
         raise HTTPException(status_code=409, detail={"code": refusal_code(mgr)}) from None
+    except RuntimeError as exc:
+        # The worker thread could not start (R393). AFTER the refusal's clause: ``SearchReindexRefused`` is a ``RuntimeError``. A code, not the
+        # exception's words: nothing an exception carries reaches a response on these routes, so the words go to the log (the 500 handler
+        # used to put them there, and the diagnostics panel tells the operator "the log has the details").
+        log_failure(_LOG, "search re-index start refused: the worker thread could not start", exc, level=logging.WARNING)
+        raise HTTPException(status_code=409, detail={"code": REFUSED_WORKER_NOT_STARTED}) from None
 
 
 @router.get("/index-job/status")
@@ -732,6 +739,7 @@ def search_index_job_report() -> dict:
 def search_index_job_action(action: str) -> dict:
     """Pause / resume / cancel the search re-index."""
     from src.database.fts_reindex import (
+        REFUSED_WORKER_NOT_STARTED,
         SearchReindexRefused,
         get_search_reindex_manager,
         refusal_code,
@@ -746,6 +754,9 @@ def search_index_job_action(action: str) -> dict:
             return mgr.resume()
         except SearchReindexRefused:
             raise HTTPException(status_code=409, detail={"code": refusal_code(mgr)}) from None
+        except RuntimeError as exc:  # the worker thread could not start (R393); after the refusal's clause, which is a RuntimeError too
+            log_failure(_LOG, "search re-index resume refused: the worker thread could not start", exc, level=logging.WARNING)
+            raise HTTPException(status_code=409, detail={"code": REFUSED_WORKER_NOT_STARTED}) from None
     if action == "cancel":
         mgr.cancel()
         return mgr.status()

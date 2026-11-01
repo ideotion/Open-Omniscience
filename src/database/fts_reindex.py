@@ -62,6 +62,7 @@ _EXCLUSIVE_POLL_S = 2.0
 REFUSED_RUNNING = "already-running"
 REFUSED_NOTHING_PAUSED = "nothing-paused"
 REFUSED_NOT_UPGRADED = "index-not-upgraded"  # the store's triggers still index raw
+REFUSED_WORKER_NOT_STARTED = "worker-not-started"  # the OS refused the worker thread (R393): the run is saved as "error", nothing runs
 
 _BIT_NAMES = {ARABIC: "arabic", ZH_JIEBA: "chinese", JA_SUDACHI: "japanese"}
 

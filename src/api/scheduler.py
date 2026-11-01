@@ -402,7 +402,13 @@ def scheduler_start() -> dict:
     # And the database-damage latch (database/damage.py): a RETRY too. The record of the incident
     # stays, and the first failed read puts the pause back.
     damage.retry_for_collection_start("operator started collection")
-    started = get_scheduler().start()
+    try:
+        started = get_scheduler().start()
+    except RuntimeError as exc:
+        # The loop's thread could not start (R393): ``BackgroundScheduler.start`` has undone its state and re-raised, so nothing runs and
+        # the Wikipedia lane below is not resumed as if collection had begun. A conflict the operator can retry, never an unhandled 500.
+        log_failure(_LOG, "collection start refused: the scheduler thread could not start", exc, level=logging.WARNING)
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
     _resume_wiki_lane()
     return {"started": started, **_status_payload()}
 
