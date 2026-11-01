@@ -589,7 +589,9 @@ def dumps_start(payload: StartDump) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
     except RuntimeError as exc:
-        # The worker thread could not start (R393/R398): a named conflict the caller can retry, never a 500.
+        # The worker thread could not start (R393/R398): a named conflict the caller can retry, never a 500. Logged because the 409 reaches
+        # only the caller, and a refusal nobody sees is a refusal nobody can count (R386).
+        log_failure(_LOG, f"the {payload.kind} dump download for {wiki} was refused at start", exc, level=logging.WARNING)
         raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
@@ -746,6 +748,8 @@ def dumps_index_build(payload: BuildDumpIndex) -> dict:
     try:
         return get_manager().start(wiki)
     except RuntimeError as exc:
+        # Either a build is already running or the worker thread could not start: the exception's own line says which (R386).
+        log_failure(_LOG, f"the dump index build for {wiki} was refused at start", exc, level=logging.WARNING)
         raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
