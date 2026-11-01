@@ -2780,14 +2780,18 @@ def test_a_check_or_a_re_read_that_fails_records_the_type_of_the_failure_never_i
     with caplog.at_level(logging.DEBUG):
         assert verify.run_armed() is True
     assert secret not in caplog.text and "PRAGMA key" not in caplog.text, caplog.text
-    assert all(r.exc_info is None for r in caplog.records), "a traceback prints the error a driver's was raised from"
+    # Only the check's own records are judged (``caplog`` sees every logger, and a stranger's record from a garbage-collected connection can land
+    # here: tests/test_database_damage.py has the account), and the set is checked to be non-empty, since an ``all()`` over nothing passes.
+    mine = [r for r in caplog.records if r.name == "src.database.verify"]
+    assert mine and all(r.exc_info is None for r in mine), "a traceback prints the error a driver's was raised from"
     assert "the start-up check failed (RuntimeError)" in caplog.text
     caplog.clear()
     monkeypatch.setattr(verify, "check_table", boom)
     with caplog.at_level(logging.DEBUG):
         verify._recheck_main([(FILE_CORPUS, healthy, ["articles"])], "t", {})
     assert secret not in caplog.text and "PRAGMA key" not in caplog.text, caplog.text
-    assert all(r.exc_info is None for r in caplog.records)
+    mine = [r for r in caplog.records if r.name == "src.database.verify"]
+    assert mine and all(r.exc_info is None for r in mine)
     assert "the re-read of the corpus file failed (RuntimeError)" in caplog.text, caplog.text
 
 
