@@ -2540,8 +2540,8 @@
         <button class="secondary" data-on-click="ooOpenUrl('/api/diagnostics/ai-check/download')" title="Download the newest AI-check report as one .json — the file to attach to a bug report or hand to a verification session.">Download the last AI check (.json)</button>
       </div>
       <div id="aicheck-result" class="small" style="margin-top:6px"></div>
-    <details class="adv-collect" id="ai-sweeps" style="margin-top:10px">
-      <summary class="muted" style="cursor:pointer">AI sweeps and model bench (advanced)</summary>
+      <details class="adv-collect" id="ai-sweeps" style="margin-top:10px">
+        <summary class="muted" style="cursor:pointer">AI sweeps and model bench (advanced)</summary>
       <details class="adv-collect" style="margin-top:8px">
         <summary class="muted" style="cursor:pointer">Run one check on its own</summary>
         <p class="hint" style="margin-top:6px">The button above runs all of these in order and keeps the results together. Each one is still here on its own, for when you want to re-run a single measurement without waiting for the rest.</p>
@@ -2673,7 +2673,7 @@
       <div id="mb-result" class="small" style="margin-top:6px"></div>
       <div id="mb-gates" class="small" style="margin-top:6px"></div>
       </div>
-    </details>
+      </details>
     </section>
     </details>
 
@@ -3319,8 +3319,8 @@
         <button data-on-click="discoverWorld(this)" title="The same Wikidata discovery over EVERY country (~250), as a long background job — one country at a time through the guarded transport, every find added DISABLED for review, nothing scraped until you enable it. RESUMABLE: progress persists per country, so cancelling (task manager), airplane mode or a restart continues where it stopped instead of re-querying the world. Consent-gated, airplane-refused. This also advances AUTOMATICALLY a few countries per online collection pass (scheduler setting world_discovery_per_pass, 0 disables); this button just runs it all now.">Discover sources worldwide (Wikidata) ↗</button>
         <span id="discover-world-status" class="hint muted"></span>
       </div>
-    <details class="adv-collect" id="diag-retired" style="margin-top:10px">
-      <summary class="muted" style="cursor:pointer">Retired instruments (one-time or exploratory; kept for reference)</summary>
+      <details class="adv-collect" id="diag-retired" style="margin-top:10px">
+        <summary class="muted" style="cursor:pointer">Older and specialist instruments (one-time or exploratory; kept for reference)</summary>
       <!-- UNATTENDED RUN (2026-08-12 field ask): ONE button pressed before a multi-day
            absence, and ONE that hands back a copy-pasteable log. The log is a plain file
            read — safe to press mid-run, with jobs still going, on a slow machine.
@@ -3421,7 +3421,7 @@
       </div>
       <div id="patterns-gate" class="hint" style="margin-top:4px"></div>
       <div class="hint">These are the read-only exploration surfaces behind the statistical manipulation-pattern signals. Every one delegates to a pure analytics module and returns its method + caveat verbatim: distinct SOURCES (not article count) measure breadth, the innocent-twin explanation rides every result, and the whole family of comparisons is multiple-testing corrected so many tests cannot manufacture a finding. They name a SHAPE, never a verdict — a microscope, not a detector. Counts + statistics only, never a composite score.</div>
-    </details>
+      </details>
       <div class="row" style="margin-top:6px">
         <button data-on-click="cleanupKeywords(this)" title="Re-index every article with the current engine, then remove the keywords left with no mentions — the recommended order in one action.">Clean up keywords (re-index, then prune)</button>
         <span id="reindex-all-status" class="muted small"></span>
