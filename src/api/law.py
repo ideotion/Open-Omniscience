@@ -12,6 +12,7 @@ mirror, never legal advice — every record links back to its official source.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -21,13 +22,19 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from src.catalog.countries import country_query_forms
+from src.catalog.countries import config_country, country_query_forms
 from src.database.country_form import order_key
 from src.database.models import LawDocument, LawRevision, LawRevisionSummary
 from src.database.session import get_db
+from src.law.catalog import law_jurisdiction
 from src.monitoring.secret_scrub import http_detail, log_failure
 
 router = APIRouter(prefix="/api/law", tags=["law"])
+
+# What counts as a CODE on the paste route: two or three ASCII letters (`fr`, `FRA`, `uk`, `eu`, `int`), the shapes the wire converts. Anything
+# else is a word the operator typed (`france`, `georgia`, `congo`) and is stored as typed: the country-name index guesses between a country
+# and a US state, between the two Congos, and `england` and `scotland` would land in different places.
+_CODE_SHAPED = re.compile(r"[A-Za-z]{2,3}")
 
 _CAVEAT = (
     "A research mirror, not the authoritative source and not legal advice. Every "
@@ -295,10 +302,15 @@ def add_law_document(body: _AddDocumentBody, db: Session = Depends(get_db)) -> d
     uses) so the maintainer sees a real verdict right away; a robots-blocked or
     unreachable URL is still STORED (so it can be retried later) but its honest
     ``last_status`` is returned — never silently dropped, never fabricated."""
-    jurisdiction = body.jurisdiction.strip().lower()
-    # Matched through EVERY spelling of the typed jurisdiction (`gbr`, `GBR`, `uk`): a
-    # payload shows GBR for a row stored as `uk`, an operator re-adds what they read,
-    # and an exact-spelling match would file a second row for the same document.
+    # A typed CODE is put in the form the rows hold (`FRA`/`fra`/`FR` -> `fr`, `gbr`/`gb`/`uk` -> `uk`, a code nothing can place stays as typed,
+    # lowercased), the same call the catalogue's loader makes, so a document pasted here and the same document read from the catalogue are
+    # one string to a later restore's merge. The column's bind then writes the store's own form. A word is stored as typed (see _CODE_SHAPED).
+    typed = body.jurisdiction.strip().lower()
+    jurisdiction = law_jurisdiction(typed) if _CODE_SHAPED.fullmatch(typed) else typed
+    # Matched through EVERY spelling of the jurisdiction (`gbr`, `GBR`, `uk`): a payload
+    # shows GBR for a row stored as `uk`, an operator re-adds what they read, and an
+    # exact-spelling match would file a second row for the same document. That includes
+    # rows an earlier version of this route stored as typed (`fra`, `gb`).
     dup = (
         db.query(LawDocument)
         .filter(
@@ -325,7 +337,7 @@ def add_law_document(body: _AddDocumentBody, db: Session = Depends(get_db)) -> d
             consolidated=False,
             watched=True,
             language=body.language,
-            country=body.country,
+            country=config_country(body.country) if _CODE_SHAPED.fullmatch((body.country or "").strip()) else body.country,
         )
         db.add(doc)
         db.commit()
