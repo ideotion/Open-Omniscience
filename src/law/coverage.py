@@ -398,7 +398,7 @@ def law_coverage_report(
             "ages (hours since last_checked_at), and -- for documents that have "
             "actually been checked at least once -- their last_status classified "
             "into a small honest verdict set (robots_blocked / error / empty / "
-            "changed / reverted / baselined / unchanged / other — the same "
+            "changed / reverted / baselined / unchanged / re_extracted / deferred / other — the same "
             "classification the Governments -> Law UI shows). A document never yet "
             "checked has no outcome to classify, so it is counted only in "
             "`never_checked`, never smeared into `verdicts` too. Counts and ages "

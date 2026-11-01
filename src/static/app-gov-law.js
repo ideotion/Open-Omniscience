@@ -1037,6 +1037,8 @@
       never_checked: "", robots_blocked: "warn", error: "warn", empty: "warn",
       changed: "ok", reverted: "", baselined: "ok", unchanged: "", other: "",
       re_extracted: "ok",
+      // A deferral (R406, Q1013 = a) is neither a warning nor a success: the host's own Crawl-delay put the check off.
+      deferred: "",
     };
     function lawVerdictBadge(x) {
       const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -1044,7 +1046,7 @@
         never_checked: tr("not checked yet"), robots_blocked: tr("robots-blocked"),
         error: tr("fetch error"), empty: tr("no usable text"), changed: tr("changed"),
         reverted: tr("reverted"), baselined: tr("baselined"), unchanged: tr("unchanged"),
-        other: tr("other"), re_extracted: tr("re-read by us"),
+        other: tr("other"), re_extracted: tr("re-read by us"), deferred: tr("deferred"),
       };
       const cls = _LAW_VERDICT_PILL[x.verdict] || "";
       const label = labels[x.verdict] || x.verdict;
@@ -1142,9 +1144,15 @@
         // The kill switch refused it: `documents` and `errors` still count those, so a clean-looking "23 errors" would
         // blame the documents for the person's own airplane mode (invariant #14e's corollary).
         const off = r.skipped_offline || 0;
-        if (off && off >= r.documents) toast(_govT("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again."), "warn");
-        else toast(`Tracked ${r.documents} law(s): ${r.baselines} baselines, ${r.changed} changed, ${r.flagged} flagged, ${r.errors} errors.`
-          + (off ? " " + _govTf("{n} not fetched (airplane mode)", {n: off}) : ""));
+        // A deferral is no attempt and no error (R293, R406): `documents` and `errors` leave it out, so without its own
+        // clause a pass where every host deferred would read "Tracked 0 law(s) ... 0 errors" and say nothing about why.
+        const dfr = r.deferred || 0;
+        const dfrClause = dfr ? _govTf("{n} deferred (the host's own Crawl-delay)", {n: dfr}) : "";
+        if (off && off >= r.documents) toast(_govT("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.") + (dfrClause ? " " + dfrClause : ""), "warn");
+        else {
+          const extra = [off ? _govTf("{n} not fetched (airplane mode)", {n: off}) : "", dfrClause].filter(Boolean).join(", ");
+          toast(`Tracked ${r.documents} law(s): ${r.baselines} baselines, ${r.changed} changed, ${r.flagged} flagged, ${r.errors} errors.` + (extra ? " " + extra : ""));
+        }
         loadLaw(); loadLawChanges && loadLawChanges();
       } catch (e) { toast(_failMsg("Tracking failed: {error}", e), "err"); if (st) loadLaw(); }
       finally { if (btn) { btn.disabled = false; btn.textContent = label || "Track changes now"; } }

@@ -45,6 +45,14 @@ def _verdict_of(last_status: str | None) -> str:
     if not last_status:
         return "never_checked"
     s = last_status.lower()
+    if s.startswith("deferred"):
+        # The host's own Crawl-delay put this check off (R406, Q1013 = a): nothing failed and the document itself was not
+        # requested. First, so no word inside the stored reason can turn it into a verdict about the document.
+        # A row stored BEFORE R406 says "fetch error: Crawl-delay <n> s: not before <time>" and is deliberately NOT read as a
+        # deferral: builds before #1541 (v0.5.0 included) wrote the same text when a request had FAILED and its retry met a long
+        # Crawl-delay, so the text cannot tell the two apart, and calling a failed request "deferred" would hide it. It keeps
+        # reading as an error until the document is checked again and the row is rewritten.
+        return "deferred"
     if "robots" in s:
         return "robots_blocked"
     if s.startswith("fetch error") or s.startswith("error:"):
