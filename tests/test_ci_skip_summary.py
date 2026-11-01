@@ -1,4 +1,4 @@
-"""``scripts/ci_skip_summary.py``: what a CI job skipped, by class and by test module, and never a reason.
+"""``scripts/ci_skip_summary.py``: what a CI job skipped, by class and by test module, never a reason, and its slowest test modules in seconds.
 
 Why. The only reader of a CI job log that works from a session returns the last few kilobytes, and ``pytest -rsfE``'s skip block is hundreds of
 lines long, so "what did this job not run" could only be answered by re-running the suite locally (the 2026-10-29 skip audit did exactly that).
@@ -17,6 +17,9 @@ What this pins:
   message, an element text, a class name or a test name appears in NO line. The one thing that passes by design is a name that IS an identifier
   (a module an ``importorskip`` names is printed as that module; a test says so), and a name over the length bound becomes a fixed word, so a
   line, and each list, stays short whatever the report says;
+* the SLOWEST-MODULES block (the sum of each module's testcase times in whole seconds, ten largest, the rest summed) is right, bounded, and made
+  of the same kinds of line: a ``time`` that is not a plain decimal (``nan``, ``inf``, a sign, an exponent, a digit outside 0-9, a planted command)
+  is counted in one line and added to nothing, and a permissive variant of the check is shown to break;
 * it never fails a job: a missing report, a truncated one, a hostile one (an entity-expansion document, refused by ``defusedxml``) and an empty one
   each become one honest line and exit status 0; only a wrong command line is an error;
 * the guard proves itself: a variant that prints the message, or the element text, is caught by the same line check.
@@ -59,6 +62,12 @@ _ALLOWED_LINES = (
     re.compile(r"  \(and \d+ more (?:classes|modules), \d+ skips\)"),
     re.compile(r"skip summary: [a-z][a-z ()]*[a-z)]"),
     re.compile(r"skip summary: the junit report could not be read \([A-Za-z]+\)"),
+    re.compile(r"### Slowest test modules \(seconds only, no gate\)"),
+    re.compile(r"per-test times summed \(not the job's wall time\): \d+ s in all"),
+    re.compile(r"slowest test modules \(largest first, \d+ of \d+\):"),
+    re.compile(rf"  (?:{_IDENT}|\(unnamed\)|\(not a test module\))  \d+ s"),
+    re.compile(r"  \(and \d+ more modules, \d+ s\)"),
+    re.compile(r"  \d+ test cases carried no readable time"),
 )
 
 
@@ -73,8 +82,8 @@ def _report(*cases: str) -> str:
     return f'<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest">{"".join(cases)}</testsuite></testsuites>'
 
 
-def _case(classname: str, name: str, skipped: str = "") -> str:
-    return f'<testcase classname="{classname}" name="{name}" time="0.001">{skipped}</testcase>'
+def _case(classname: str, name: str, skipped: str = "", time: str = "0.001") -> str:
+    return f'<testcase classname="{classname}" name="{name}" time="{time}">{skipped}</testcase>'
 
 
 def _skip(message: str, text: str = "", kind: str = "pytest.skip") -> str:
@@ -248,6 +257,11 @@ def test_the_command_line_prints_a_fenced_block_and_exits_zero_whatever_the_repo
         lines = done.stdout.splitlines()
         assert lines[0] == "### Skipped tests (counts only, no gate)" and lines[1] == "```" and lines[-1] == "```", done.stdout
         assert _line_problems(done.stdout) == [], done.stdout
+    # a readable report gets the second block, an unreadable one only the first (its one line already says what happened)
+    readable = _run(str(_write(tmp_path, _MIXED))).stdout.splitlines()
+    assert readable.count("### Slowest test modules (seconds only, no gate)") == 1 and readable.count("```") == 4, readable
+    unreadable = _run(str(_write(tmp_path, _MIXED[:100]))).stdout.splitlines()
+    assert "### Slowest test modules (seconds only, no gate)" not in unreadable and unreadable.count("```") == 2, unreadable
     done = _run(str(tmp_path / "never-written.xml"))
     assert done.returncode == 0 and "no junit report was written" in done.stdout
 
@@ -298,6 +312,94 @@ def test_the_report_a_real_pytest_writes_is_summarized_as_the_fixtures_say(tmp_p
         "  tests.test_cols  1",
     ], lines
     assert _line_problems("\n".join(lines)) == []
+    # the timing block over the same real report: the times are not fixed, the shape and the two modules are
+    timing = ci_skip_summary.slowest(report)
+    assert re.fullmatch(r"per-test times summed \(not the job's wall time\): \d+ s in all", timing[0]), timing
+    assert timing[1] == "slowest test modules (largest first, 2 of 2):", timing
+    assert sorted(re.fullmatch(r"  (\S+)  \d+ s", line).group(1) for line in timing[2:]) == ["tests.test_cols", "tests.test_mixed"], timing
+    assert _line_problems("\n".join(timing)) == []
+
+
+# --- the slowest modules ---------------------------------------------------------------------------------------------------------------------------
+
+
+def test_the_slowest_modules_are_summed_per_module_and_ranked(tmp_path):
+    xml = _report(
+        _case("tests.test_a", "test_1", time="1.4"),
+        _case("tests.test_a", "test_2", time="1.4"),
+        _case("tests.test_b", "test_1", time="2.0"),
+        _case("tests.test_c", "test_1", _skip("r"), time="0.2"),
+        _case("tests.test_a", "test_xfail", _skip("x", kind="pytest.xfail"), time="0.0"),
+    )
+    assert ci_skip_summary.slowest(_write(tmp_path, xml)) == [
+        "per-test times summed (not the job's wall time): 5 s in all",
+        "slowest test modules (largest first, 3 of 3):",
+        "  tests.test_a  3 s",  # 1.4 + 1.4 = 2.8, whole seconds
+        "  tests.test_b  2 s",
+        "  tests.test_c  0 s",
+    ]
+
+
+def test_the_slowest_list_is_bounded_and_the_rest_is_summed_not_dropped(tmp_path):
+    limit = ci_skip_summary._SLOWEST_LINES
+    # the listed modules take 3 s each and the 7 left over 2 s each, so the rest line's seconds (14) differ from its module count (7)
+    xml = _report(*(_case(f"tests.test_m{i:03d}", "test_x", time="3.0" if i < limit else "2.0") for i in range(limit + 7)))
+    lines = ci_skip_summary.slowest(_write(tmp_path, xml))
+    assert lines[0] == f"per-test times summed (not the job's wall time): {3 * limit + 14} s in all"
+    assert lines[1] == f"slowest test modules (largest first, {limit} of {limit + 7}):"
+    assert lines[-1] == "  (and 7 more modules, 14 s)"
+    listed = [line for line in lines if re.fullmatch(r"  tests\.test_m\d+  \d+ s", line)]
+    assert len(listed) == limit and all(line.endswith("  3 s") for line in listed), listed
+    assert _line_problems("\n".join(lines)) == []
+
+
+def test_an_empty_report_has_a_total_and_no_list(tmp_path):
+    assert ci_skip_summary.slowest(_write(tmp_path, '<?xml version="1.0"?><testsuites/>')) == ["per-test times summed (not the job's wall time): 0 s in all"]
+
+
+_NOT_A_TIME = ("nan", "inf", "-inf", "-1", "+1", "1e9", "1E3", "0x10", "1_0", "1 2", "1,5", ".5", "5.", "", "\u0663", "::error::pwned", "ghp_SECRETtoken0123456789",
+               "9" * 10, "1." + "0" * 10)
+
+
+@pytest.mark.parametrize("raw", _NOT_A_TIME)
+def test_a_time_that_is_not_a_plain_decimal_is_counted_and_added_to_nothing(tmp_path, raw):
+    xml = _report(_case("tests.test_a", "test_good", time="3.0"), _case("tests.test_a", "test_bad", time=raw))
+    lines = ci_skip_summary.slowest(_write(tmp_path, xml))
+    assert lines == [
+        "per-test times summed (not the job's wall time): 3 s in all",
+        "slowest test modules (largest first, 1 of 1):",
+        "  tests.test_a  3 s",
+        "  1 test cases carried no readable time",
+    ], (raw, lines)
+    assert _line_problems("\n".join(lines)) == []
+
+
+def test_a_testcase_with_no_time_attribute_at_all_is_counted_the_same_way(tmp_path):
+    xml = _report('<testcase classname="tests.test_a" name="test_x"/>', _case("tests.test_a", "test_y", time="1.0"))
+    assert ci_skip_summary.slowest(_write(tmp_path, xml))[-1] == "  1 test cases carried no readable time"
+
+
+def test_the_longest_plain_decimals_are_taken_and_stay_one_short_line(tmp_path):
+    xml = _report(_case("tests.test_a", "test_x", time="9" * 9 + "." + "9" * 9))
+    lines = ci_skip_summary.slowest(_write(tmp_path, xml))
+    assert lines[2] == "  tests.test_a  1000000000 s" and max(len(line) for line in lines) < 80, lines
+
+
+@pytest.mark.parametrize("xml", ["", '<?xml version="1.0"?><testsuites', '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "b">]><testsuites>&a;</testsuites>'])
+def test_a_report_that_cannot_be_read_has_no_timing_block(tmp_path, xml):
+    assert ci_skip_summary.slowest(_write(tmp_path, xml)) == []
+
+
+def test_a_report_that_was_never_written_and_a_directory_have_no_timing_block_either(tmp_path):
+    assert ci_skip_summary.slowest(tmp_path / "never-written.xml") == []
+    assert ci_skip_summary.slowest(tmp_path) == []
+
+
+def test_a_hostile_module_name_in_the_timing_block_is_a_fixed_word(tmp_path):
+    xml = _report(_case(_PATH, "test_x", time="1.0"), _case("tests.t&#10;::error::pwned", "test_x", time="1.0"), _case("not_a_test_module", "test_x", time="1.0"))
+    lines = ci_skip_summary.slowest(_write(tmp_path, xml))
+    assert "  (unnamed)  2 s" in lines and "  (not a test module)  1 s" in lines, lines
+    assert _line_problems("\n".join(lines)) == []
 
 
 # --- the guard proves itself ---------------------------------------------------------------------------------------------------------------------
@@ -321,3 +423,17 @@ def test_the_line_check_names_a_variant_that_prints_an_unvalidated_test_name(tmp
     monkeypatch.setattr(ci_skip_summary, "_test_module", lambda classname, name: classname or name)
     problems = _line_problems(_output(tmp_path, _report(_case(f"{_PATH}", "test_x", _skip("x")), _case("tests.t&#10;::error::pwned", "test_x", _skip("y")))))
     assert problems
+
+
+def test_the_time_check_is_what_keeps_a_hostile_time_out_of_the_sum(tmp_path, monkeypatch):
+    hostile = _write(tmp_path, _report(_case("tests.test_a", "test_x", time="::error::pwned"), _case("tests.test_a", "test_y", time="2.0")))
+    assert ci_skip_summary.slowest(hostile)[-1] == "  1 test cases carried no readable time"
+    monkeypatch.setattr(ci_skip_summary, "_SECONDS", re.compile(r".*"))  # a variant that trusts the attribute
+    with pytest.raises(ValueError):
+        ci_skip_summary.slowest(hostile)
+
+
+def test_the_line_check_names_a_timing_block_that_prints_an_unvalidated_module_name(tmp_path, monkeypatch):
+    monkeypatch.setattr(ci_skip_summary, "_test_module", lambda classname, name: classname or name)
+    xml = _report(_case(f"{_PATH}", "test_x", time="1.0"), _case("tests.t&#10;::error::pwned", "test_x", time="1.0"))
+    assert _line_problems("\n".join(ci_skip_summary.slowest(_write(tmp_path, xml))))
