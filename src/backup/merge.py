@@ -4758,11 +4758,11 @@ def _merge_law(con, batch_id, results) -> None:
     _key_law_documents(con, "inc", "inc")
     r.duplicate = _count(
         con,
-        "SELECT COUNT(*) FROM inc.law_documents i JOIN temp.law_key_inc ki ON ki.id = i.id WHERE " + _LAW_HELD,
+        "SELECT COUNT(*) FROM inc.law_documents i JOIN temp.law_key_inc ki ON ki.id = i.id WHERE " + _LAW_HELD,  # nosec B608 - _LAW_HELD is a module constant (a WHERE fragment of this file's own table names); no request, user or file value reaches the statement
     )
     r.new = _insert_tracked(
         con, batch_id, "law_documents",
-        "INSERT INTO main.law_documents (jurisdiction, title, url, official_url, category,"
+        "INSERT INTO main.law_documents (jurisdiction, title, url, official_url, category,"  # nosec B608 - as above: _LAW_HELD is a module constant, the columns are this file's own
         " consolidated, watched, baseline_text, baseline_hash, last_hash, last_size,"
         " last_checked_at, last_status, created_at,"
         # 2026-08-03 (the AST column diff). `language` is the LANGUAGE OF THE LAW, which
