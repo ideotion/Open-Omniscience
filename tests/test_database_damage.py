@@ -118,7 +118,10 @@ def damaged(tmp_path):
 def registry(tmp_path):
     """The process-global registry, pointed at a record file of this test's own."""
     damage.registry._reset_for_tests(path_fn=lambda: tmp_path / "database-damage.json")
-    return damage.registry
+    yield damage.registry
+    # One process-global object: ``_reset_for_tests`` clears its state but not a record thread still writing for the test that just
+    # ended, and that thread would put its incident into the NEXT test's registry (measured: 17 incidents where 12 were noted).
+    _settle(damage.registry)
 
 
 def _record(tmp_path) -> dict:
@@ -298,6 +301,7 @@ def test_a_schema_row_that_names_nothing_real_is_damage_on_the_real_driver(tmp_p
         with pytest.raises(Exception), eng.connect() as conn:  # noqa: B017 - the engine's own error type
             conn.execute(text("SELECT count(*) FROM sqlite_master")).fetchall()
         assert registry.latched(FILE_CORPUS)
+        _settle(registry)
         raw = (tmp_path / "database-damage.json").read_text(encoding="utf-8")  # the registry fixture's file
         assert json.loads(raw)["incidents"][0]["message"] == damage.CORRUPT_SCHEMA
         assert words not in raw and "ix_t" not in raw, "the driver's schema text reached the record"
@@ -405,6 +409,7 @@ def test_the_scope_is_decided_on_the_whole_statement_not_on_the_cut_the_record_k
     kept = statement_shape(long_statement)
     assert len(kept) <= 240 and "articles" not in kept, "the premise: the cut hides the second table"
     _note(registry, statement=long_statement)
+    _settle(registry)
     [inc] = registry.state(detail=True)["incidents"]
     assert inc["scope"] == SCOPE_DATA and len(inc["statement_shape"]) <= 240
 
@@ -458,6 +463,7 @@ def test_a_real_match_on_a_damaged_index_is_filed_as_the_search_index_with_its_r
                 break
     assert failed is not None, "the index damage no longer shows up through MATCH"
     assert registry.latched(FILE_CORPUS)
+    _settle(registry)
     inc = registry.state(detail=True)["incidents"][0]
     assert inc["code"] & 0xFF == 11 and inc["code"] != damage.SQLITE_CORRUPT_VTAB, "measured: plain 11"
     assert inc["scope"] == SCOPE_SEARCH_INDEX and inc["route"] == ROUTE_REBUILD_INDEX
@@ -497,6 +503,7 @@ def test_a_search_over_damaged_article_pages_is_filed_as_data_not_as_the_search_
             if failed:
                 break
     assert failed is not None, "the article damage no longer shows up through the gated search"
+    _settle(registry)
     inc = registry.state(detail=True)["incidents"][0]
     assert inc["code"] & 0xFF == 11
     assert inc["scope"] == SCOPE_DATA and inc["route"] == ROUTE_VERIFY_THEN_SALVAGE, inc
@@ -517,6 +524,7 @@ def test_a_damaged_page_latches_the_file_records_one_incident_and_writes_nothing
     assert not registry.latched("wiki"), "a corpus incident latched another file"
 
     # the record: who, what, where, and nothing from any row
+    _settle(registry)
     rec = _record(tmp_path)
     assert rec["schema"] == damage.SCHEMA and len(rec["incidents"]) == 1
     inc = rec["incidents"][0]
@@ -557,6 +565,7 @@ def test_the_same_incident_is_counted_not_re_recorded(damaged, registry, tmp_pat
                 text("SELECT sum(length(content)) FROM articles WHERE id > :lo AND id <= :hi"),
                 {"lo": lo, "hi": lo + 100},
             ).scalar()
+    _settle(registry)
     st = registry.state(detail=True)
     assert len(st["incidents"]) == 1, "a repeat of a known incident was written as a new record"
     assert st["incidents"][0]["repeats"] == 3
@@ -627,6 +636,7 @@ def test_the_incident_record_keeps_no_value_and_no_passphrase(registry, tmp_path
     ctx.statement = f"INSERT INTO articles (title) VALUES ('{SECRET}') -- 31337"
     ctx.parameters = (SECRET,)
     registry.on_engine_error(ctx, FILE_CORPUS)
+    _settle(registry)
     raw = (tmp_path / "database-damage.json").read_text(encoding="utf-8")
     assert SECRET not in raw and "hunter2" not in raw and "31337" not in raw
     assert "INSERT INTO articles" in raw
@@ -668,6 +678,7 @@ def test_no_driver_text_reaches_the_incident_record_or_the_verdicts_reason(regis
     ctx.original_exception = exc
     ctx.statement = "SELECT 1"
     registry.on_engine_error(ctx, FILE_CORPUS)
+    _settle(registry)
     raw = (tmp_path / "database-damage.json").read_text(encoding="utf-8")
     inc = json.loads(raw)["incidents"][0]
     assert inc["message"] == label and inc["driver_class"] == "DatabaseError"
@@ -689,6 +700,7 @@ def test_the_record_survives_a_restart_but_the_latch_does_not(tmp_path, monkeypa
     first = DamageRegistry(path_fn=lambda: path)
     assert _note(first)
     assert first.latched(FILE_CORPUS)
+    _settle(first)  # the record is on disk before a "later process" reads it
     monkeypatch.setattr(damage, "_current_session_id", lambda: "session-two")
     second = DamageRegistry(path_fn=lambda: path)  # a new process, so a new session
     assert not second.latched(FILE_CORPUS), "a restart is the operator trying again"
@@ -696,6 +708,7 @@ def test_the_record_survives_a_restart_but_the_latch_does_not(tmp_path, monkeypa
     assert st["incident_count"] == 1 and len(st["incidents"]) == 1 and st["last_incident"]["file"] == FILE_CORPUS
     assert _note(second)  # the first failed read puts it back
     assert second.latched(FILE_CORPUS)
+    _settle(second)
     assert len(second.state(detail=True)["incidents"]) == 2, "an incident of a new session is its own record"
 
 
@@ -703,6 +716,7 @@ def test_the_newest_twenty_incidents_are_kept(tmp_path):
     reg = DamageRegistry(path_fn=lambda: tmp_path / "rec.json")
     for i in range(damage.INCIDENTS_KEEP + 7):
         _note(reg, statement=f"SELECT col{i} FROM t{'x' * i}")
+    _settle(reg)
     shapes = [i["statement_shape"] for i in reg.state(detail=True)["incidents"]]
     assert len(shapes) == damage.INCIDENTS_KEEP
     assert shapes[-1].startswith(f"SELECT col{damage.INCIDENTS_KEEP + 6} ")
@@ -715,6 +729,7 @@ def test_an_unreadable_prior_record_is_said_and_replaced(tmp_path):
     reg = DamageRegistry(path_fn=lambda: path)
     assert reg.state()["prior_record_unreadable"] is True
     assert _note(reg)
+    _settle(reg)
     assert json.loads(path.read_text(encoding="utf-8"))["incidents"]
 
 
@@ -722,6 +737,7 @@ def test_a_drive_that_cannot_take_the_record_is_said_and_the_latch_still_holds(t
     reg = DamageRegistry(path_fn=lambda: tmp_path / "no-such-dir" / "rec.json")
     assert _note(reg)
     assert reg.latched(FILE_CORPUS), "the latch must not depend on the write"
+    _settle(reg)
     assert reg.state()["write_error"]
 
 
@@ -809,6 +825,7 @@ def test_the_sentences_are_plain_and_name_what_is_true(registry):
 def test_the_bundle_member_is_the_record_cut_oldest_first_and_names_the_cut(registry, tmp_path):
     for i in range(12):
         _note(registry, statement=f"SELECT col{i} FROM t{'x' * (3 * i)}")
+    _settle(registry)
     full = damage.diagnostics_member(10**6)
     assert "error" not in full and full["dropped_oldest_to_fit"] == 0 and len(full["incidents"]) == 12
     assert full["method"] == damage.METHOD and full["latched"] == [FILE_CORPUS]
@@ -944,6 +961,7 @@ def test_the_state_carries_the_damage_notes_phase_and_reason(registry):
     g = sg.StorageGuard(readings_fn=lambda: {})
     assert g.state()["database_damage"]["latched"] == [] and g.state()["phase"] is None
     _note(registry, FILE_CORPUS)
+    _settle(registry)
     st = g.state()
     assert st["phase"] == sg.PHASE_DAMAGE
     assert st["database_damage"]["latched"] == [FILE_CORPUS]
@@ -1419,6 +1437,7 @@ def test_a_file_with_nothing_to_pause_is_named_but_is_not_a_paused_file(registry
 def test_an_older_snapshot_never_overwrites_a_newer_one(tmp_path):
     reg = DamageRegistry(path_fn=lambda: tmp_path / "rec.json")
     _note(reg)
+    _settle(reg)
     with reg._lock:
         older = reg._doc_locked()
         reg._incidents[-1]["repeats"] = 5
@@ -1438,6 +1457,7 @@ def test_the_record_keeps_a_route_template_never_a_raw_path(registry):
     try:
         assert pool_watch.endpoint_template() is None
         _note(registry)
+        _settle(registry)
         assert registry.state(detail=True)["incidents"][0]["endpoint"] is None, "a raw path may carry an id"
         registry.retry(reason="t")
     finally:
@@ -1447,6 +1467,7 @@ def test_the_record_keeps_a_route_template_never_a_raw_path(registry):
     try:
         assert pool_watch.endpoint_template() == "GET /api/articles/{id}/view"
         _note(registry, statement="SELECT b FROM t")
+        _settle(registry)
         assert registry.state(detail=True)["incidents"][-1]["endpoint"] == "GET /api/articles/{id}/view"
     finally:
         pool_watch.reset_endpoint(token)
@@ -1551,10 +1572,12 @@ def test_an_incident_of_another_process_is_its_own_record_even_when_no_session_i
     first = DamageRegistry(path_fn=lambda: path)
     _note(first)
     _note(first)  # same process: a repeat, counted
+    _settle(first)  # the record thread may still be writing: note() waits for it at most RECORD_WAIT_S
     assert len(first.state(detail=True)["incidents"]) == 1
     assert first.state(detail=True)["incidents"][0]["repeats"] == 1
     second = DamageRegistry(path_fn=lambda: path)  # a later process, same shape of failure
     _note(second)
+    _settle(second)
     incidents = second.state(detail=True)["incidents"]
     assert len(incidents) == 2, "a new process's incident was swallowed as a repeat of the old one"
     assert incidents[0]["process"] != incidents[1]["process"]
@@ -1589,6 +1612,7 @@ def test_a_relatch_after_the_operators_retry_is_logged_again(registry, caplog):
         _note(registry)  # the same incident, in the same process
     lines = [r for r in caplog.records if r.levelno == logging.ERROR and "database damage:" in r.getMessage()]
     assert len(lines) == 2, "the second latch was silent in the log"
+    _settle(registry)
     assert registry.state(detail=True)["incidents"][0]["repeats"] == 1, "...and the record counts it as a repeat"
 
 
@@ -1730,6 +1754,7 @@ def test_repeats_are_written_back_at_most_once_per_window(tmp_path, monkeypatch)
     real = reg._flush
     monkeypatch.setattr(reg, "_flush", lambda doc: (writes.append(doc["write_seq"]), real(doc))[1])
     _note(reg)
+    _settle(reg)
     assert len(writes) == 1, "the first record is written"
     for step in (1.0, 2.0):  # two repeats inside the window
         clock[0] = 1000.0 + step
