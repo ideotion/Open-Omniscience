@@ -694,6 +694,7 @@
   "Building the did-you-mean table": "「もしかして」表を作成中",
   "Building the full-text index…": "全文インデックスを構築しています…",
   "Building the indexes that keep the article list fast: {index} of {total}. One time only; anything the app saves waits until it is done.": "記事一覧を高速に保つインデックスを作成しています：{index}/{total}。この処理は一度だけで、完了するまでアプリのあらゆる保存は待機します。",
+  "Building the instant title index": "タイトルの即時インデックスを構築中",
   "Building the numbered keyword files… a large corpus takes minutes; the app stays usable.": "番号付きキーワードファイルを作成中… 大きなコーパスでは数分かかります。アプリはそのまま使えます。",
   "Building your briefing…": "ブリーフィングを作成中…",
   "Building…": "作成中…",

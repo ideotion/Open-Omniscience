@@ -694,6 +694,7 @@
   "Building the did-you-mean table": "Membangun tabel mungkin-maksud-Anda",
   "Building the full-text index…": "Membangun indeks teks lengkap…",
   "Building the indexes that keep the article list fast: {index} of {total}. One time only; anything the app saves waits until it is done.": "Membangun indeks yang menjaga daftar artikel tetap cepat: {index} dari {total}. Hanya sekali; semua yang disimpan aplikasi menunggu sampai selesai.",
+  "Building the instant title index": "Membangun indeks judul instan",
   "Building the numbered keyword files… a large corpus takes minutes; the app stays usable.": "Membuat berkas kata kunci bernomor… korpus besar butuh beberapa menit; aplikasi tetap dapat dipakai.",
   "Building your briefing…": "Membangun ringkasan Anda…",
   "Building…": "Sedang membuat…",

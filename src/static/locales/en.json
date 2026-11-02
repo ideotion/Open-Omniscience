@@ -694,6 +694,7 @@
   "Building the did-you-mean table": "Building the did-you-mean table",
   "Building the full-text index…": "Building the full-text index…",
   "Building the indexes that keep the article list fast: {index} of {total}. One time only; anything the app saves waits until it is done.": "Building the indexes that keep the article list fast: {index} of {total}. One time only; anything the app saves waits until it is done.",
+  "Building the instant title index": "Building the instant title index",
   "Building the numbered keyword files… a large corpus takes minutes; the app stays usable.": "Building the numbered keyword files… a large corpus takes minutes; the app stays usable.",
   "Building your briefing…": "Building your briefing…",
   "Building…": "Building…",

@@ -17,6 +17,7 @@ _STRINGS = (
     "Newest added titles — not ranked, text not searched",
     "more titles match — type more to narrow",
     "The title index does not cover older articles yet — build it",
+    "Building the instant title index",
 )
 
 
@@ -31,8 +32,9 @@ def test_instant_rung_node_suite() -> None:
 def test_the_request_is_a_local_read_with_no_debounce_and_no_api_wrapper() -> None:
     """A debounce would put back the wait the rung exists to remove, and api() would count an aborted
     keystroke as 'server unreachable'. It must stay a plain, abortable, same-origin fetch."""
-    start = _SHELL.index("async function _instFetch(")
-    body = _SHELL[start: _SHELL.index("function _instItems(", start)]
+    from tests.js_source_helper import function_source
+
+    body = function_source(_SHELL, "_instFetch")
     assert "setTimeout" not in body and "await api(" not in body
     assert "/api/search/instant" in body and "AbortController" in body and "_instSeq" in body
 

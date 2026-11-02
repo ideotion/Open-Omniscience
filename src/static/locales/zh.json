@@ -694,6 +694,7 @@
   "Building the did-you-mean table": "正在构建“您是不是要找”表",
   "Building the full-text index…": "正在构建全文索引…",
   "Building the indexes that keep the article list fast: {index} of {total}. One time only; anything the app saves waits until it is done.": "正在建立让文章列表保持流畅的索引：第 {index} 个，共 {total} 个。仅此一次；应用的所有保存操作都需等待其完成。",
+  "Building the instant title index": "正在建立标题即时索引",
   "Building the numbered keyword files… a large corpus takes minutes; the app stays usable.": "正在构建带编号的关键词文件… 大型语料库需要几分钟；应用仍可正常使用。",
   "Building your briefing…": "正在生成您的简报…",
   "Building…": "正在生成…",

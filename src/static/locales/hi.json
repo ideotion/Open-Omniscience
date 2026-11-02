@@ -694,6 +694,7 @@
   "Building the did-you-mean table": "\"क्या आपका मतलब था\" तालिका बनाई जा रही है",
   "Building the full-text index…": "पूर्ण-पाठ अनुक्रमणिका बनाई जा रही है…",
   "Building the indexes that keep the article list fast: {index} of {total}. One time only; anything the app saves waits until it is done.": "लेख सूची को तेज़ रखने वाले इंडेक्स बनाए जा रहे हैं: {index}/{total}। केवल एक बार; यह पूरा होने तक ऐप में हर सहेजना रुका रहेगा।",
+  "Building the instant title index": "शीर्षकों का त्वरित इंडेक्स बनाया जा रहा है",
   "Building the numbered keyword files… a large corpus takes minutes; the app stays usable.": "क्रमांकित कीवर्ड फ़ाइलें बनाई जा रही हैं… बड़े कॉर्पस में कुछ मिनट लगते हैं; ऐप उपयोग में रहता है।",
   "Building your briefing…": "आपकी ब्रीफ़िंग बनाई जा रही है…",
   "Building…": "बन रहा है…",

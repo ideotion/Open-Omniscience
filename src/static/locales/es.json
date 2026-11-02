@@ -694,6 +694,7 @@
   "Building the did-you-mean table": "Construyendo la tabla de «Quizás quiso decir»",
   "Building the full-text index…": "Creando el índice de texto completo…",
   "Building the indexes that keep the article list fast: {index} of {total}. One time only; anything the app saves waits until it is done.": "Creando los índices que mantienen rápida la lista de artículos: {index} de {total}. Solo una vez; todo lo que la aplicación guarda espera a que termine.",
+  "Building the instant title index": "Creando el índice instantáneo de títulos",
   "Building the numbered keyword files… a large corpus takes minutes; the app stays usable.": "Generando los archivos numerados de palabras clave… un corpus grande tarda minutos; la aplicación sigue utilizable.",
   "Building your briefing…": "Generando tu resumen…",
   "Building…": "Creando…",

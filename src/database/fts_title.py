@@ -194,15 +194,16 @@ def backfill_step(conn, *, budget_s: float = BACKFILL_STEP_BUDGET_S, batch: int 
 
 def mark_behind(con, prev_max_id: int) -> None:
     """Record that rows above ``prev_max_id`` were bulk-inserted with the title trigger suspended (a merge),
-    so the backfill must cover them. Raw DB-API connection (the merge's own), the caller's transaction.
+    so the backfill must cover them. Raw DB-API connection (the merge's own, with the staged backup attached, so every name here says
+    ``main.``), the caller's transaction.
     Does nothing when no backfill state exists: a never-built index is built from scratch anyway."""
-    row = con.execute(f"SELECT cursor, done FROM {STATE_TABLE} WHERE id = 1").fetchone()  # nosec B608 - module constant
+    row = con.execute(f"SELECT cursor, done FROM main.{STATE_TABLE} WHERE id = 1").fetchone()  # nosec B608 - module constant
     if row is None:
         return
-    top = int(con.execute("SELECT COALESCE(max(id), 0) FROM articles").fetchone()[0])
+    top = int(con.execute("SELECT COALESCE(max(id), 0) FROM main.articles").fetchone()[0])
     cursor = int(prev_max_id) if row[1] else min(int(row[0]), int(prev_max_id))
     con.execute(
-        f"UPDATE {STATE_TABLE} SET cursor = ?, frozen_max = ?, done = 0 WHERE id = 1",  # nosec B608 - module constant
+        f"UPDATE main.{STATE_TABLE} SET cursor = ?, frozen_max = ?, done = 0 WHERE id = 1",  # nosec B608 - module constant
         (cursor, top),
     )
 

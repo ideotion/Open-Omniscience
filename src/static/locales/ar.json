@@ -694,6 +694,7 @@
   "Building the did-you-mean table": "بناء جدول «هل تقصد»",
   "Building the full-text index…": "جارٍ بناء فهرس النص الكامل…",
   "Building the indexes that keep the article list fast: {index} of {total}. One time only; anything the app saves waits until it is done.": "جارٍ إنشاء الفهارس التي تُبقي قائمة المقالات سريعة: {index} من {total}. مرة واحدة فقط؛ ويتأخر كل ما يحفظه التطبيق حتى تنتهي.",
+  "Building the instant title index": "جارٍ بناء فهرس العناوين الفوري",
   "Building the numbered keyword files… a large corpus takes minutes; the app stays usable.": "جارٍ بناء ملفات الكلمات المفتاحية المرقّمة… يستغرق المتن الكبير دقائق؛ ويبقى التطبيق قابلًا للاستخدام.",
   "Building your briefing…": "جارٍ إنشاء موجزك…",
   "Building…": "جارٍ الإنشاء…",

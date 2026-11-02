@@ -694,6 +694,7 @@
   "Building the did-you-mean table": "Построение таблицы «Возможно, вы имели в виду»",
   "Building the full-text index…": "Построение полнотекстового индекса…",
   "Building the indexes that keep the article list fast: {index} of {total}. One time only; anything the app saves waits until it is done.": "Строятся индексы, благодаря которым список статей работает быстро: {index} из {total}. Только один раз; всё, что приложение сохраняет, ждёт завершения.",
+  "Building the instant title index": "Построение мгновенного индекса заголовков",
   "Building the numbered keyword files… a large corpus takes minutes; the app stays usable.": "Собираются пронумерованные файлы ключевых слов… большой корпус занимает минуты; приложение остаётся доступным.",
   "Building your briefing…": "Сборка вашей сводки…",
   "Building…": "Создание…",
