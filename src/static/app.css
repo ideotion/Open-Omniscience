@@ -2344,3 +2344,6 @@
 #tour .tour-list { margin: 4px 0 8px; padding-inline-start: 1.2em; columns: 2; column-gap: 1.5em; }
 #tour .tour-list li { break-inside: avoid; }
 @media (max-width: 480px) { #tour .tour-list { columns: 1; } }
+
+/* Diagnostics: a running AI sweep or bench is visible while its group is folded (#ai-sweeps). */
+#ai-sweeps:has([data-running="1"]) > summary::after { content: " \25CF"; color: var(--accent); }
