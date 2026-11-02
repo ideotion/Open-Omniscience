@@ -81,6 +81,7 @@ ENGINE_MODULES: tuple[str, ...] = (
     "src/analytics/langdetect.py",
     "src/analytics/lemma.py",
     "src/analytics/managed.py",
+    "src/analytics/reindex_parallel.py",
     "src/analytics/segmentation.py",
     "src/analytics/sentiment.py",
     "src/analytics/store.py",
@@ -227,35 +228,64 @@ _DYNAMIC_NAMES = frozenset({"globals", "locals", "vars", "eval", "exec", "__impo
 #: reachability walk like any other reference); a computed name could reach anything, so it means the whole file.
 _ATTR_BUILTINS = frozenset({"getattr", "setattr", "hasattr", "delattr"})
 
-#: Modules a reachable function may import at call time without making the walk unsound: they are hashed on their own.
-def _hashed_on_their_own() -> frozenset[str]:
-    mods = {m[:-3].replace("/", ".") for m in ENGINE_MODULES if m.endswith(".py")}
-    mods |= {m[:-3].replace("/", ".") for m in NOT_OUTPUT_AFFECTING if m.endswith(".py")}
-    return frozenset(m.removesuffix(".__init__") for m in mods)
+def _is_repo_module(name: str) -> bool:
+    base = name.replace(".", "/")
+    return name.startswith("src.") and (_read(base + ".py") is not None or _read(base + "/__init__.py") is not None)
 
 
-def _repo_module_refers_to(mod: str, own_module: str) -> bool:
-    """Whether the repo module ``mod`` (dotted) mentions ``own_module`` -- i.e. could call back into the narrowed file by name.
-    Unreadable or unfindable means yes (doubt keeps the whole file)."""
+def _absolute(path: str, level: int, module: str) -> str:
+    """The dotted name a (possibly relative) ``from <module> import`` in the repo file ``path`` refers to."""
+    if not level:
+        return module
+    parts = path[:-3].split("/")
+    pkg = parts if parts[-1] == "__init__" and parts.pop() else parts[:-1]
+    base = pkg[: len(pkg) - (level - 1)] if level > 1 else pkg
+    return ".".join([*base, module] if module else base)
+
+
+def _imports_of(tree) -> list[tuple[int, str, list[str]]]:
+    import ast
+
+    out: list[tuple[int, str, list[str]]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            out.extend((0, a.name, []) for a in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            out.append((node.level, node.module or "", [a.name for a in node.names]))
+    return out
+
+
+def _module_tree(mod: str):
+    import ast
+
     data = _read(mod.replace(".", "/") + ".py")
     if data is None:
         data = _read(mod.replace(".", "/") + "/__init__.py")
     if data is None:
-        return True
-    import ast
-
+        return None
     try:
-        tree = ast.parse(data)
+        return ast.parse(data)
     except (SyntaxError, ValueError):
+        return None
+
+
+def _repo_module_refers_to(mod: str, own_module: str) -> bool:
+    """Whether the repo module ``mod`` (dotted) imports ``own_module``, at any depth in any function: i.e. could call back into the
+    narrowed file by name. Unreadable, unparsable or relative means yes (doubt keeps the whole file). The check is DIRECT, not
+    transitive, on purpose: the repo's import graph is so connected that a transitive one always answers yes. What makes direct
+    enough is ``tests/test_engine_identity_narrowed.py::test_no_module_a_pass_loads_imports_the_narrowed_file``, which loads a real
+    pass in a fresh interpreter and requires that no module it executed imports the file."""
+    tree = _module_tree(mod)
+    if tree is None:
         return True
-    parent, _, leaf = own_module.rpartition(".")
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import) and any(a.name == own_module for a in node.names):
-            return True
-        if isinstance(node, ast.ImportFrom):
-            if node.level:
-                return True  # a relative import could be this module; doubt keeps the whole file
-            if node.module == own_module or (node.module == parent and any(a.name == leaf for a in node.names)):
+    path = mod.replace(".", "/") + ".py"
+    if _read(path) is None:
+        path = mod.replace(".", "/") + "/__init__.py"
+    for level, name, from_names in _imports_of(tree):
+        name = _absolute(path, level, name)
+        targets = [name, *(f"{name}.{n}" for n in from_names if name)]
+        for target in targets:
+            if target == own_module:
                 return True
     return False
 
@@ -301,16 +331,26 @@ def narrowed_source_digest(source: bytes, root: str, *, extra_roots: frozenset[s
             always.append(node)
     if root not in defs:
         return None
-    known = _hashed_on_their_own()
     reachable: dict[str, ast.AST] = {}
+    # ROOTS: the root; every definition that NAMES the root (its callers feed it arguments it writes and certifies: the post-restore
+    # re-index, the backfill, ...); every name a top-level statement mentions (a dispatch table, an alias, a decorator target, a
+    # definition under a top-level ``if``/``try``); and what other engine modules import from this file.
     todo = [root, *sorted(n for n in extra_roots if n in defs)]
+    for dname, dnode in defs.items():
+        if any(isinstance(sub, ast.Name) and sub.id == root for sub in ast.walk(dnode)):
+            todo.append(dname)
+    for top in always:
+        for sub in ast.walk(top):
+            if isinstance(sub, ast.Name) and sub.id in defs:
+                todo.append(sub.id)
+            elif isinstance(sub, ast.Attribute) and sub.attr in defs:
+                todo.append(sub.attr)
 
     def _repo_import_ok(mod: str) -> bool:
-        if mod in known or mod.split(".")[0] in sys.stdlib_module_names:
-            return True
-        if not mod.startswith("src."):
-            return True  # a third-party package cannot call a name of ours back
-        return not _repo_module_refers_to(mod, own_module)  # a repo module outside the engine set: fine unless it reaches into this file
+        if mod.split(".")[0] in sys.stdlib_module_names or not mod.startswith("src."):
+            return True  # the standard library and third-party packages cannot call a name of ours back
+        # A repo module, hashed on its own or not: fine unless some chain of repo imports from it reaches this file.
+        return not _repo_module_refers_to(mod, own_module)
 
     while todo:
         name = todo.pop()
@@ -342,6 +382,12 @@ def narrowed_source_digest(source: bytes, root: str, *, extra_roots: frozenset[s
                 mod = ("." * sub.level) + (sub.module or "")
                 if sub.level or mod == own_module or not _repo_import_ok(mod):
                     return None
+    for top in always:
+        for level, name, from_names in _imports_of(top):
+            if level or not _repo_import_ok(name) or any(
+                not _repo_import_ok(f"{name}.{n}") for n in from_names if _is_repo_module(f"{name}.{n}")
+            ):
+                return None
     h = hashlib.sha256()
     for top in always:
         h.update(ast.dump(top, include_attributes=False).encode())
@@ -356,7 +402,8 @@ def narrowed_source_digest(source: bytes, root: str, *, extra_roots: frozenset[s
 
 def _names_other_engine_modules_take_from(rel: str) -> frozenset[str] | None:
     """The names of ``rel`` that OTHER engine modules import (they run inside a pass, so what they use is reachable), or ``None``
-    when one of them reaches into it in a way a name list cannot capture (``import`` of the module itself)."""
+    when one of them reaches into it in a way a name list cannot capture (a module import, a relative import, an unparsable
+    file) -- the caller then hashes the whole file."""
     import ast
 
     own = rel[:-3].replace("/", ".")
@@ -374,10 +421,10 @@ def _names_other_engine_modules_take_from(rel: str) -> frozenset[str] | None:
             return None
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
-                mod = ("." * node.level) + (node.module or "")
-                if mod == own:
+                module = _absolute(other, node.level, node.module or "")
+                if module == own:
                     names.update(a.name for a in node.names)
-                elif mod == parent and any(a.name == leaf for a in node.names):
+                elif module == parent and any(a.name == leaf for a in node.names):
                     return None
             elif isinstance(node, ast.Import) and any(a.name == own for a in node.names):
                 return None

@@ -65,8 +65,11 @@ def test_every_function_is_either_reachable_and_moves_the_id_or_unreachable_and_
     # index_article and the helpers it calls are in the identity; the drains and the rest are not
     assert "index_article" in moved
     assert "_write_mention_diff" in moved
-    assert "reindex_articles" in still and "reindex_all_batch" in still
-    assert len(moved) >= 5 and len(still) >= 10
+    # the CALLERS of index_article feed it values it writes and certifies (country, precomputed terms, language): they are in
+    assert "_reindex_articles_impl" in moved and "backfill_corpus" in moved
+    # the wrapper that only adds a page cache around the impl, and reports, are not
+    assert "reindex_articles" in still
+    assert len(moved) >= 10 and len(still) >= 5
 
 
 def test_a_changed_constant_import_or_toplevel_statement_moves_the_id():
@@ -138,3 +141,50 @@ def test_an_engine_module_that_imports_the_file_by_name_adds_a_root(tmp_path, mo
     plain = _digest(src)
     with_root = _digest(src, extra_roots=frozenset({"used_by_engine"}))
     assert plain != with_root  # the extra root pulls the function into the identity
+
+
+def test_a_caller_of_the_root_is_in_the_identity():
+    base = "def index_article(country):\n    return country\ndef drain():\n    return index_article('de')\ndef unrelated():\n    return 1\n"
+    d = _digest(base)
+    assert d is not None
+    assert _digest(base.replace("'de'", "'fr'")) != d  # the caller picks the argument
+    assert _digest(base.replace("return 1", "return 2")) == d
+
+
+def test_a_name_used_by_a_toplevel_statement_is_in_the_identity():
+    base = "def h():\n    return 1\n_TABLE = {'k': h}\ndef index_article():\n    return _TABLE['k']()\n"
+    d = _digest(base)
+    assert d is not None
+    assert _digest(base.replace("return 1", "return 2")) != d
+    alias = "def h():\n    return 1\ntry:\n    from x import f\nexcept ImportError:\n    def f():\n        return h()\ndef index_article():\n    return f()\n"
+    assert _digest(alias.replace("return 1", "return 2")) != _digest(alias)
+
+
+def test_a_toplevel_import_of_a_module_that_imports_the_file_keeps_the_whole_file(monkeypatch):
+    orig = ei._read
+    monkeypatch.setattr(ei, "_read", lambda rel: b"from src.analytics.store import helper\n" if rel == "src/fake_back.py" else orig(rel))
+    assert ei._repo_module_refers_to("src.fake_back", OWN)
+    assert _digest("from src.fake_back import x\ndef index_article():\n    return x\n") is None
+
+
+def test_relative_imports_resolve_against_the_importing_file():
+    assert ei._absolute("src/services/__init__.py", 1, "duckduckgo") == "src.services.duckduckgo"
+    assert ei._absolute("src/analytics/store.py", 1, "extract") == "src.analytics.extract"
+    assert ei._absolute("src/analytics/store.py", 2, "catalog") == "src.catalog"
+    assert ei._absolute("src/x.py", 0, "os.path") == "os.path"
+
+
+def test_reindex_parallel_is_part_of_the_engine():
+    # it computes the terms, sentiment and when/where/who a re-index hands to index_article as precomputed values
+    assert "src/analytics/reindex_parallel.py" in ei.ENGINE_MODULES
+
+
+def test_no_module_a_pass_loads_imports_the_narrowed_file():
+    """The narrowing assumes nothing that RUNS during a pass calls back into store.py by name. The import graph is too connected to
+    prove it statically, so prove it dynamically: load a real pass in a fresh interpreter and require that none of the repo
+    modules it executed (store.py aside) imports store.py, in any form, at any depth."""
+    from tests.test_index_engine_stamp import _probe
+
+    loaded = _probe()["modules"]
+    offenders = [m for m in loaded if m != OWN and ei._repo_module_refers_to(m, OWN)]
+    assert not offenders, f"a module a pass executes imports store.py, so the narrowed identity may under-include: {offenders}"
