@@ -12,6 +12,7 @@ import ast
 import pytest
 
 from src.analytics import engine_identity as ei
+from tests.js_source_helper import python_function_source
 
 REL = "src/analytics/store.py"
 OWN = "src.analytics.store"
@@ -200,9 +201,10 @@ def test_a_caller_of_a_caller_is_in_the_identity():
 def test_the_real_batch_driver_and_public_wrapper_are_in_the_identity():
     """The scope="keywords" mutation: reindex_all_batch decides the scope every article is indexed with."""
     src = _source().decode()
-    start = src.index("def reindex_all_batch")
-    at = src.index("scope=scope,", start)
-    mutated = src[:at] + 'scope="keywords",' + src[at + len("scope=scope,") :]
+    fn = python_function_source(src, "reindex_all_batch")
+    assert "scope=scope," in fn
+    mutated = src.replace(fn, fn.replace("scope=scope,", 'scope="keywords",', 1), 1)
+    assert mutated != src
     assert _digest(_source()) is not None
     assert _digest(mutated) != _digest(src)
     wrapper = src.replace("def reindex_articles(*args: Any, **kwargs: Any) -> dict:", "def reindex_articles(*args: Any, **kwargs: Any) -> dict:\n    _wrapper_mutant_ = 1", 1)
