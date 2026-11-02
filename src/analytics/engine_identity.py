@@ -81,6 +81,7 @@ ENGINE_MODULES: tuple[str, ...] = (
     "src/analytics/langdetect.py",
     "src/analytics/lemma.py",
     "src/analytics/managed.py",
+    "src/analytics/reindex_parallel.py",
     "src/analytics/segmentation.py",
     "src/analytics/sentiment.py",
     "src/analytics/store.py",
@@ -214,6 +215,277 @@ def engine_files() -> list[str]:
     return sorted(out)
 
 
+#: The one engine module whose bytes are NOT hashed whole: ``store.py`` is 2,700 lines and most of them (the drains, backfills,
+#: reports, ``reindex_articles``) never shape what ``index_article`` writes, yet it changed in 24 of the ~40 commits that touched
+#: any engine file in the 30 days to 2026-11-02 -- each one a new engine, so a backup rarely carried. Its identity is instead a
+#: digest of the code ``index_article`` can REACH (see :func:`narrowed_source_digest`), and falls back to the whole file whenever
+#: that cannot be established.
+NARROWED_MODULES: dict[str, str] = {"src/analytics/store.py": "index_article"}
+
+#: Names whose use makes a name-based reachability walk unsound (dynamic lookup): any of them in reachable code means the whole file.
+_DYNAMIC_NAMES = frozenset({"globals", "locals", "vars", "eval", "exec", "__import__", "importlib", "compile"})
+#: ``getattr``/``setattr``/``hasattr``/``delattr`` are fine when the attribute name is a string CONSTANT (the name then joins the
+#: reachability walk like any other reference); a computed name could reach anything, so it means the whole file.
+_ATTR_BUILTINS = frozenset({"getattr", "setattr", "hasattr", "delattr"})
+
+def _is_repo_module(name: str) -> bool:
+    base = name.replace(".", "/")
+    return name.startswith("src.") and (_read(base + ".py") is not None or _read(base + "/__init__.py") is not None)
+
+
+def _absolute(path: str, level: int, module: str) -> str:
+    """The dotted name a (possibly relative) ``from <module> import`` in the repo file ``path`` refers to."""
+    if not level:
+        return module
+    parts = path[:-3].split("/")
+    pkg = parts if parts[-1] == "__init__" and parts.pop() else parts[:-1]
+    base = pkg[: len(pkg) - (level - 1)] if level > 1 else pkg
+    return ".".join([*base, module] if module else base)
+
+
+def _imports_of(tree) -> list[tuple[int, str, list[str]]]:
+    import ast
+
+    out: list[tuple[int, str, list[str]]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            out.extend((0, a.name, []) for a in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            out.append((node.level, node.module or "", [a.name for a in node.names]))
+    return out
+
+
+def _module_tree(mod: str):
+    import ast
+
+    data = _read(mod.replace(".", "/") + ".py")
+    if data is None:
+        data = _read(mod.replace(".", "/") + "/__init__.py")
+    if data is None:
+        return None
+    try:
+        return ast.parse(data)
+    except (SyntaxError, ValueError):
+        return None
+
+
+def _repo_module_refers_to(mod: str, own_module: str) -> bool:
+    """Whether the repo module ``mod`` (dotted) imports ``own_module``, at any depth in any function: i.e. could call back into the
+    narrowed file by name. Unreadable, unparsable or relative means yes (doubt keeps the whole file). The check is DIRECT, not
+    transitive, on purpose: the repo's import graph is so connected that a transitive one always answers yes. What makes direct
+    enough is ``tests/test_engine_identity_narrowed.py::test_no_module_a_pass_loads_imports_the_narrowed_file``, which loads a real
+    pass in a fresh interpreter and requires that no module it executed imports the file."""
+    tree = _module_tree(mod)
+    if tree is None:
+        return True
+    path = mod.replace(".", "/") + ".py"
+    if _read(path) is None:
+        path = mod.replace(".", "/") + "/__init__.py"
+    for level, name, from_names in _imports_of(tree):
+        name = _absolute(path, level, name)
+        targets = [name, *(f"{name}.{n}" for n in from_names if name)]
+        for target in targets:
+            if target == own_module:
+                return True
+    return False
+
+
+def _strip_docstrings(tree) -> None:
+    import ast
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Module)):
+            body = node.body
+            first = body[0] if body else None
+            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+                node.body = body[1:] or [ast.Pass()]
+
+
+def narrowed_source_digest(source: bytes, root: str, *, extra_roots: frozenset[str] = frozenset(), own_module: str = "") -> str | None:
+    """A digest of the part of ``source`` that ``root`` can reach, or ``None`` when that cannot be established soundly.
+
+    NAME-BASED and deliberately over-inclusive: every top-level function, class or assignment whose name appears anywhere in a
+    reachable node (a call, a default, a decorator, an annotation, a local that merely shares the name) is reachable. Over-inclusion
+    costs a re-extraction; only UNDER-inclusion could carry a wrong row, so every doubt returns ``None`` and the caller hashes the whole
+    file. ``None`` when: the source does not parse; ``root`` is not a top-level def; reachable code uses a dynamic lookup
+    (:data:`_DYNAMIC_NAMES`); a reachable function imports a module that is not hashed on its own, or imports from ``own_module``
+    itself; a decorator or base class is an attribute chain into the module's own names. Top-level statements that are not a
+    def/class/assignment (imports, ``if``/``try`` blocks, expressions) are ALWAYS part of the digest, as are all top-level
+    assignments, so a changed constant or import moves the identity whether or not anything reaches it. Docstrings and comments
+    are not part of it (neither executes); line numbers are not either."""
+    import ast
+
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return None
+    _strip_docstrings(tree)
+    defs: dict[str, ast.AST] = {}
+    always: list[ast.AST] = []
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if node.name in defs:
+                return None  # a redefinition: which one wins depends on order, so keep the file whole
+            defs[node.name] = node
+        else:
+            always.append(node)
+    if root not in defs:
+        return None
+    # FAIL-SAFES for state this name walk cannot follow. A ``global`` statement (``nonlocal`` only reaches an enclosing function, which is hashed with its def), or a store into an attribute or
+    # subscript of a module-level name, lets a function that nothing reachable names change what a reachable one reads.
+    module_names = set(defs)
+    for top in always:
+        for sub in ast.walk(top):
+            if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store):
+                module_names.add(sub.id)
+    for dnode in defs.values():
+        for sub in ast.walk(dnode):
+            if isinstance(sub, ast.Global):
+                return None
+            if isinstance(sub, (ast.Attribute, ast.Subscript)) and isinstance(sub.ctx, (ast.Store, ast.Del)):
+                base = sub.value
+                while isinstance(base, (ast.Attribute, ast.Subscript)):
+                    base = base.value
+                if isinstance(base, ast.Name) and base.id in module_names:
+                    return None
+    # CALLERS TO A FIXPOINT: whatever calls the root chooses the arguments it is given (scope, country, extractor), and so does
+    # whatever calls THAT. A caller is any def that names the root, a caller of it, ... by bare name or as ``module.name``.
+    callers = {root}
+    grew = True
+    while grew:
+        grew = False
+        for dname, dnode in defs.items():
+            if dname in callers:
+                continue
+            if any(
+                (isinstance(sub, ast.Name) and sub.id in callers) or (isinstance(sub, ast.Attribute) and sub.attr in callers)
+                for sub in ast.walk(dnode)
+            ):
+                callers.add(dname)
+                grew = True
+    # An alias or a table at top level (``f = index_article``) hides callers of the alias from the walk above: hash the file whole.
+    for top in always:
+        if isinstance(top, (ast.Import, ast.ImportFrom)):
+            continue
+        if any(
+            (isinstance(sub, ast.Name) and sub.id in callers) or (isinstance(sub, ast.Attribute) and sub.attr in callers)
+            for sub in ast.walk(top)
+        ):
+            return None
+    reachable: dict[str, ast.AST] = {}
+    # ROOTS: the root; every definition that NAMES the root (its callers feed it arguments it writes and certifies: the post-restore
+    # re-index, the backfill, ...); every name a top-level statement mentions (a dispatch table, an alias, a decorator target, a
+    # definition under a top-level ``if``/``try``); and what other engine modules import from this file.
+    todo = [root, *sorted(n for n in extra_roots if n in defs)]
+    todo.extend(sorted(callers - {root}))
+    for top in always:
+        for sub in ast.walk(top):
+            if isinstance(sub, ast.Name) and sub.id in defs:
+                todo.append(sub.id)
+            elif isinstance(sub, ast.Attribute) and sub.attr in defs:
+                todo.append(sub.attr)
+
+    def _repo_import_ok(mod: str) -> bool:
+        if mod.split(".")[0] in sys.stdlib_module_names or not mod.startswith("src."):
+            return True  # the standard library and third-party packages cannot call a name of ours back
+        # A repo module, hashed on its own or not: fine unless some chain of repo imports from it reaches this file.
+        return not _repo_module_refers_to(mod, own_module)
+
+    while todo:
+        name = todo.pop()
+        if name in reachable:
+            continue
+        target = defs[name]
+        reachable[name] = target
+        for sub in ast.walk(target):
+            if isinstance(sub, ast.Name):
+                if sub.id in _DYNAMIC_NAMES:
+                    return None
+                if sub.id in defs and sub.id not in reachable:
+                    todo.append(sub.id)
+            elif isinstance(sub, ast.Attribute):
+                if sub.attr in _DYNAMIC_NAMES:
+                    return None
+                if sub.attr in defs and sub.attr not in reachable:
+                    todo.append(sub.attr)  # `module.fn` style reference to one of our own names
+            elif isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) and sub.func.id in _ATTR_BUILTINS:
+                arg = sub.args[1] if len(sub.args) > 1 else None
+                if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str)):
+                    return None  # a computed attribute name could reach any of our names
+                if arg.value in defs and arg.value not in reachable:
+                    todo.append(arg.value)
+            elif isinstance(sub, ast.Import):
+                if not all(_repo_import_ok(alias.name) for alias in sub.names):
+                    return None
+            elif isinstance(sub, ast.ImportFrom):
+                mod = ("." * sub.level) + (sub.module or "")
+                if sub.level or mod == own_module or not _repo_import_ok(mod):
+                    return None
+    for top in always:
+        for level, name, from_names in _imports_of(top):
+            if level or not _repo_import_ok(name) or any(
+                not _repo_import_ok(f"{name}.{n}") for n in from_names if _is_repo_module(f"{name}.{n}")
+            ):
+                return None
+    h = hashlib.sha256()
+    for top in always:
+        h.update(ast.dump(top, include_attributes=False).encode())
+        h.update(b"\x02")
+    for name in sorted(reachable):
+        h.update(name.encode())
+        h.update(b"\x00")
+        h.update(ast.dump(reachable[name], include_attributes=False).encode())
+        h.update(b"\x03")
+    return h.hexdigest()
+
+
+def _names_other_engine_modules_take_from(rel: str) -> frozenset[str] | None:
+    """The names of ``rel`` that OTHER engine modules import (they run inside a pass, so what they use is reachable), or ``None``
+    when one of them reaches into it in a way a name list cannot capture (a module import, a relative import, an unparsable
+    file) -- the caller then hashes the whole file."""
+    import ast
+
+    own = rel[:-3].replace("/", ".")
+    parent, _, leaf = own.rpartition(".")
+    names: set[str] = set()
+    for other in ENGINE_MODULES:
+        if other == rel or not other.endswith(".py"):
+            continue
+        data = _read(other)
+        if data is None:
+            continue
+        try:
+            tree = ast.parse(data)
+        except (SyntaxError, ValueError):
+            return None
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = _absolute(other, node.level, node.module or "")
+                if module == own:
+                    names.update(a.name for a in node.names)
+                elif module == parent and any(a.name == leaf for a in node.names):
+                    return None
+            elif isinstance(node, ast.Import) and any(a.name == own for a in node.names):
+                return None
+    return frozenset(names)
+
+
+def _engine_file_bytes(rel: str, data: bytes) -> bytes:
+    """What the code digest hashes for ``rel``: its bytes, except a :data:`NARROWED_MODULES` file whose reachable-code digest could
+    be established, which contributes that digest under a marker no whole file can start with."""
+    root = NARROWED_MODULES.get(rel)
+    if root is None:
+        return data
+    try:
+        extra = _names_other_engine_modules_take_from(rel)
+        digest = None if extra is None else narrowed_source_digest(
+            data, root, extra_roots=extra, own_module=rel[:-3].replace("/", ".")
+        )
+    except Exception:  # noqa: BLE001 - any doubt hashes the whole file
+        digest = None
+    return data if digest is None else b"\x00narrowed:" + digest.encode()
+
+
 @lru_cache(maxsize=1)
 def code_digest() -> str:
     """sha256 over (path, bytes) of every engine file. A MISSING file contributes its
@@ -230,6 +502,7 @@ def code_digest() -> str:
         if data is None:
             h.update(b"<absent>")
         else:
+            data = _engine_file_bytes(rel, data)
             h.update(str(len(data)).encode())
             h.update(b"\x00")
             h.update(data)
