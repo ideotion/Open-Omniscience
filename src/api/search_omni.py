@@ -178,17 +178,31 @@ def _ring_sibling_rows(db: Session, expand: object | None, seen: set[str]) -> li
     ]
 
 
+def _range(column, prefix: str):
+    return and_(column >= prefix, column < prefix[:-1] + chr(ord(prefix[-1]) + 1))
+
+
 def _prefix_predicate(column, folded: str):
-    """``column`` starts with ``folded``, as a RANGE the column's index can seek.
+    """``column`` starts with ``folded``, as index RANGES the column's index can seek.
 
     ``col LIKE 'p%' ESCAPE '\\'`` is a full scan of the keyword table on SQLite (the escape clause stops the
     LIKE optimization): measured 45 ms flat at 400,000 keywords for any prefix length, on every keystroke.
     The range ``col >= p AND col < p+1`` measured 30 ms for one character, 5.7 ms for two and 1-3 ms from
-    three. Same rows: normalized terms are already casefolded, so the binary range and the prefix agree.
-    A prefix whose last character has no successor (or an empty one) keeps the LIKE form."""
-    if not folded or ord(folded[-1]) >= 0x10FFFF:
+    three.
+
+    CASE: SQLite's LIKE ignores ASCII case, and the column is BINARY, so one range is not the same set.
+    Two spellings are stored: casefolded words and entities, and ALL-CAPS acronyms (the extractor keeps
+    their case: WHO is not who, extract.py). The predicate is the range of the folded prefix OR the range of
+    its upper-case form, which covers both. KNOWN LIMIT: a term stored in some other mixed case (``WhO``)
+    that LIKE would have matched is not matched; no code path stores one today.
+    A prefix that is empty, or whose last character has no safe successor (the last code point, or the one
+    before the surrogate block, whose successor cannot be bound), keeps the LIKE form."""
+    if not folded or ord(folded[-1]) in (0xD7FF, 0x10FFFF):
         return column.like(_like_escape(folded) + "%", escape="\\")
-    return and_(column >= folded, column < folded[:-1] + chr(ord(folded[-1]) + 1))
+    upper = folded.upper()
+    if upper == folded or not upper or ord(upper[-1]) in (0xD7FF, 0x10FFFF):
+        return _range(column, folded)
+    return or_(_range(column, folded), _range(column, upper))
 
 
 def _keywords_group(db: Session, q: str, expand: object | None = None) -> dict:
