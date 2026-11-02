@@ -95,8 +95,9 @@ _ORM_NAMES = {"Session", "sessionmaker", "scoped_session", "AsyncSession"}
 
 #: Statements the scan cannot read to a text, or that name no schema on purpose, each with the reason. Keyed ``function: expression``.
 _ALLOWED: dict[str, str] = {
-    "_fts_insert_suspended: ddl": "the CREATE TRIGGER text read back from main's own sqlite_master, replayed on the same connection: it creates in main",
+    "_fts_insert_suspended: trigger_sql": "the CREATE TRIGGER text (the main FTS insert trigger's or the title index's) read back from main's own sqlite_master, replayed on the same connection: it creates in main",
     "merge_corpus: fts_trigger_ddl": "the same stored CREATE TRIGGER text, handed to _restore_fts_insert_trigger",
+    "merge_corpus: fts_title_trigger_ddl": "the title index's stored CREATE TRIGGER text, read from main's sqlite_master and handed to _restore_fts_insert_trigger",
     "_carry_live_settings: CREATE TABLE IF NOT EXISTS app_state": "an unqualified CREATE always creates in main and IF NOT EXISTS looks at main only; it also runs on the working copy's own standalone connection",
     "merge_custody: CREATE TABLE IF NOT EXISTS custody_imported_entries": "an unqualified CREATE always creates in main and IF NOT EXISTS looks at main only; it also runs on custody_log.db's own standalone connection",
     "merge_custody: sql": "the two SELECTs appended to `sources` just above (a chain's rows are only fetched by _custody_rows); no write reaches it",
@@ -992,6 +993,7 @@ _CROSS_MODULE_CALLEES: dict[str, str] = {
     "src.database.connect.attach": "the one ATTACH, with a bound path and a fixed alias",
     "src.database.fts.index_articles": "writes through `_index_rows`, which names `main.` (test_the_fts_bulk_indexer_the_merge_calls_names_main)",
     "src.database.fts.rebuild_index": "names `main.` too (the same test)",
+    "src.database.fts_title.mark_behind": "one SELECT and one UPDATE on the title index's state table and a max(id) read, every name `main.`-qualified (tests/test_merge_title_index_deferred.py)",
 }
 
 

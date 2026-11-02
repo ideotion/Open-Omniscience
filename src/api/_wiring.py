@@ -68,6 +68,7 @@ def wire(app) -> None:
     from src.api.safety import router as safety_router
     from src.api.scheduler import router as scheduler_router
     from src.api.search_advanced import router as search_advanced_router
+    from src.api.search_instant import router as search_instant_router
     from src.api.search_omni import router as search_omni_router
     from src.api.settings import router as settings_router
     from src.api.signals import router as signals_router
@@ -124,6 +125,7 @@ def wire(app) -> None:
         bulletin_router,
         weather_router,
         search_omni_router,
+        search_instant_router,
         search_advanced_router,
         personality_router,
         timemap_router,

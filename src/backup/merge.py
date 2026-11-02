@@ -1114,6 +1114,11 @@ _WINDOW_JUSTIFICATIONS = frozenset({"unique", "rep", "constraint"})
 #: The FTS5 insert trigger, suspended for the duration of the article step.
 _FTS_INSERT_TRIGGER = "article_fts_ai"
 
+#: The titles-only prefix index's insert trigger (src/database/fts_title.py), suspended with it. Measured
+#: on a 100k + 100k merge: leaving it live cost +50% wall clock (21 s against 14 s), so the merge drops it
+#: and records that the title index is behind; the budgeted background backfill catches up afterwards.
+_FTS_TITLE_INSERT_TRIGGER = "article_fts_title_ai"
+
 #: How many articles to index per bulk FTS statement. Same reasoning as the merge
 #: window: bounded work per statement so stop latency and temp storage do not
 #: scale with the corpus. Not byte-derived -- the FTS cost tracks TEXT volume,
@@ -1161,7 +1166,10 @@ def _fts_insert_suspended(con: sqlite3.Connection):
         # find -- creating one here would add indexing to a corpus that had none.
         yield False
         return
+    title_ddl = _fts_insert_trigger_ddl(con, _FTS_TITLE_INSERT_TRIGGER)
     con.execute(f"DROP TRIGGER main.{_FTS_INSERT_TRIGGER}")
+    if title_ddl:
+        con.execute(f"DROP TRIGGER main.{_FTS_TITLE_INSERT_TRIGGER}")
     finished = False
     try:
         yield True
@@ -1178,31 +1186,35 @@ def _fts_insert_suspended(con: sqlite3.Connection):
         # backup then read "Failed" with a raw database error instead of "stopped --
         # nothing was written to your corpus". On success a failed restore still raises:
         # verify_copy would refuse the copy anyway, and it should be named here.
-        if finished:
-            if not _fts_insert_trigger_ddl(con):
-                con.execute(ddl)
-        else:
-            try:
-                if not _fts_insert_trigger_ddl(con):
-                    con.execute(ddl)
-            except Exception as exc:  # noqa: BLE001 - the exception already in flight is the one to report
-                log_failure(_LOG, "could not restore the FTS insert trigger while a merge was failing", exc, level=logging.WARNING)
+        pairs = [(_FTS_INSERT_TRIGGER, ddl)]
+        if title_ddl:
+            pairs.append((_FTS_TITLE_INSERT_TRIGGER, title_ddl))
+        for name, trigger_sql in pairs:
+            if finished:
+                if not _fts_insert_trigger_ddl(con, name):
+                    con.execute(trigger_sql)
+            else:
+                try:
+                    if not _fts_insert_trigger_ddl(con, name):
+                        con.execute(trigger_sql)
+                except Exception as exc:  # noqa: BLE001 - the exception already in flight is the one to report
+                    log_failure(_LOG, "could not restore the FTS insert trigger while a merge was failing", exc, level=logging.WARNING)
 
 
-def _fts_insert_trigger_ddl(con) -> str | None:
-    """The CREATE statement for the FTS insert trigger, or None if this corpus has none.
+def _fts_insert_trigger_ddl(con, name: str = _FTS_INSERT_TRIGGER) -> str | None:
+    """The CREATE statement for the named FTS insert trigger, or None if this corpus has none.
 
     Read from ``sqlite_master`` rather than from a copy of fts.py's DDL: a second copy
     would drift, and this cannot.
     """
     row = con.execute(
         "SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?",
-        (_FTS_INSERT_TRIGGER,),
+        (name,),
     ).fetchone()
     return row[0] if row and row[0] else None
 
 
-def _restore_fts_insert_trigger(con, ddl: str | None) -> bool:
+def _restore_fts_insert_trigger(con, ddl: str | None, name: str = _FTS_INSERT_TRIGGER) -> bool:
     """Put the FTS insert trigger back AFTER a failed merge has rolled back.
 
     THE BUG THIS EXISTS FOR. ``_suspend_fts_insert_trigger`` restores the trigger in a
@@ -1234,7 +1246,7 @@ def _restore_fts_insert_trigger(con, ddl: str | None) -> bool:
     if not ddl:
         return False
     try:
-        if _fts_insert_trigger_ddl(con):
+        if _fts_insert_trigger_ddl(con, name):
             return False  # the rollback restored it; nothing committed the DROP
         con.execute(ddl)
         return True
@@ -1958,6 +1970,7 @@ def merge_corpus(
     # rollback -- by then the trigger may be gone from sqlite_master and its own DDL with
     # it. See _restore_fts_insert_trigger for why the finally alone does not cover this.
     fts_trigger_ddl = _fts_insert_trigger_ddl(con)
+    fts_title_trigger_ddl = _fts_insert_trigger_ddl(con, _FTS_TITLE_INSERT_TRIGGER)
     try:
         con.execute("PRAGMA foreign_keys=OFF")  # order is FK-safe; checked at the end
         attach(con, staged_corpus, "inc")  # staged members are plaintext by design
@@ -1998,6 +2011,7 @@ def merge_corpus(
         _set_merge_option(con, "trust_fetch_history", "1" if trust_fetch_history else "0")
 
         steps = _merge_steps()
+        pre_merge_max_id = int(con.execute("SELECT COALESCE(max(id), 0) FROM main.articles").fetchone()[0])
         # The FTS insert trigger is suspended across the steps and the index is
         # built once, from merged_rows, at the end. See _fts_insert_suspended for
         # the field measurement that made this the single biggest win available,
@@ -2058,6 +2072,12 @@ def merge_corpus(
                     results["article_fts"] = DomainResult(
                         new=_fts_index_merged_articles(con, batch_id, progress=fts_prog)
                     )
+                # The titles-only index was not fed by the (suspended) trigger: say so, in the same
+                # transaction, so its background backfill covers exactly the ids this merge added.
+                if fts_title_trigger_ddl:
+                    from src.database.fts_title import mark_behind
+
+                    mark_behind(con, pre_merge_max_id)
 
         # Underscore keys carry non-table diagnostic blocks (the same convention
         # `_unmerged_tables` below uses); they are plain dicts, not DomainResults.
@@ -2116,6 +2136,7 @@ def merge_corpus(
         # own CREATE whenever a windowed step already committed the DROP. Idempotent and
         # best-effort -- it must never replace the failure above.
         _restore_fts_insert_trigger(con, fts_trigger_ddl)
+        _restore_fts_insert_trigger(con, fts_title_trigger_ddl, _FTS_TITLE_INSERT_TRIGGER)
         raise
     finally:
         con.close()
