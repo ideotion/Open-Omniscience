@@ -2540,6 +2540,8 @@
         <button class="secondary" data-on-click="ooOpenUrl('/api/diagnostics/ai-check/download')" title="Download the newest AI-check report as one .json — the file to attach to a bug report or hand to a verification session.">Download the last AI check (.json)</button>
       </div>
       <div id="aicheck-result" class="small" style="margin-top:6px"></div>
+      <details class="adv-collect" id="ai-sweeps" style="margin-top:10px">
+        <summary class="muted" style="cursor:pointer">AI sweeps and model bench (advanced)</summary>
       <details class="adv-collect" style="margin-top:8px">
         <summary class="muted" style="cursor:pointer">Run one check on its own</summary>
         <p class="hint" style="margin-top:6px">The button above runs all of these in order and keeps the results together. Each one is still here on its own, for when you want to re-run a single measurement without waiting for the rest.</p>
@@ -2671,6 +2673,7 @@
       <div id="mb-result" class="small" style="margin-top:6px"></div>
       <div id="mb-gates" class="small" style="margin-top:6px"></div>
       </div>
+      </details>
     </section>
     </details>
 
@@ -3201,6 +3204,32 @@
     <section class="panel" id="diagnostics-panel">
       <h2>Diagnostics log</h2>
       <p class="hint" style="margin-top:0">A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.</p>
+      <div class="row" style="margin-top:6px">
+        <button id="all-diag-btn" data-on-click="runAllDiagnostics(this)" title="ONE .zip with everything this install can say about itself: the records of how it has run (the previous session and why it ended, memory, the runs of this very button, the errors, the network verdicts) and the scans of your corpus. It is built as a BACKGROUND job, so the app stays usable, with live progress. Quick, the default, writes the records and then as many scans as fit in ten minutes, shortest first, and names in the file any scan that did not fit; Thorough, the box beside it, runs every scan. When it is ready the page hands it over: one file when it fits in 4 MB, otherwise numbered .zip files of at most 4 MB each, five to a click, the manifest first. Carries the bounded keyword digest when the build ran it (the file names it as not run when it did not fit the Quick time, its own time limit or the memory); the full keyword dump has its own 'All keywords' link.">Diagnostics</button>
+        <label class="small" style="margin-left:6px" title="QUICK (box empty, the default) writes the records first, with collection still running, then runs the scans in the time left of a ten-minute budget, shortest first, with collection paused; a scan that did not fit is named in the file as not run, with why. THOROUGH runs every scan, each up to five minutes, with collection paused while they run: 27 to 47 minutes measured on a large corpus. Applies to this run only: the box is empty again each time this panel opens and is never remembered.">
+          <input type="checkbox" id="diag-thorough"> Thorough
+        </label>
+        <span id="all-diag-status" class="small" style="margin-left:6px"></span>
+      </div>
+      <div class="row small" style="margin-top:2px">
+        <button type="button" id="all-diag-again" class="linkish" data-on-click="downloadDiagnosticsVolumes(this)" hidden title="Saves the Diagnostics built last again, without a new build: the same one file, or the same numbered .zip files of at most 4 MB each (type a part number in the box that appears to start from it; every file opens on its own in any unzip tool). It never starts a new build.">Save the last Diagnostics again</button>
+        <button type="button" class="linkish" data-on-click="downloadKeywordParts(this, 'all')" title="Every keyword in the corpus (not just the top 5000 per language), as numbered .zip files of at most 4 MB each: the first files hold every language's top 5,000, so if you cannot send them all, send them in number order. No total size cap. It is written to disk a batch at a time, so the app's memory stays flat, but a big corpus makes many files (the page says how many before you save any) and takes minutes, and the export stops with a clear message if memory or disk runs short.">All keywords</button>
+      </div>
+      <!-- The ONE bar that saves a numbered set (keyword files or the diagnostics archive), five files
+           to a click: see downloadKeywordParts / _partsSave in app-diagnostics.js. It sits DIRECTLY
+           UNDER the buttons that fill it, never after the unrelated buttons below them: the
+           2026-10-06 field report ("the full run did not work, I pressed 'again'") fits a finished
+           build whose Save button was 300-500 px further down (measured in Chromium) than the button
+           that was pressed. -->
+      <div class="row" id="parts-bar" hidden>
+        <span id="parts-status" class="small" role="status" aria-live="polite"></span>
+        <button id="parts-next" data-on-click="partsSaveNext()" hidden>Save the next 5</button>
+        <button id="parts-rest" class="secondary" data-on-click="partsSaveRest()" hidden>Save all the rest</button>
+        <label id="parts-from-wrap" class="small" hidden title="Type a part number and press the button beside it to save five files from that part on, for example after a few files failed to upload. The manifest is not saved again.">Start at part number
+          <input id="parts-from" type="number" min="1" value="1">
+        </label>
+        <button id="parts-from-go" class="secondary" data-on-click="partsSaveFrom()" hidden>Save from this part</button>
+      </div>
       <!-- Session forensics (E2, #596): the previous-session clean/unclean verdict (with the
            OOM-inference wording shown verbatim as a caveat), the last unlock's phase timings +
            -wal size, and the data-dir inventory with orphaned plaintext-staging flagged loudly.
@@ -3220,39 +3249,6 @@
           <button class="secondary" data-on-click="loadCountryForm(this, true)" title="Also counts the rows a migration to alpha-3 would rewrite and lists the values left exactly as stored. One read-only pass over the country columns, so it takes a moment on a large corpus; the app may stay open. It starts nothing: the migration is a command run with the app closed.">Show what a migration would do</button>
         </div>
         <div id="country-form-out" class="small" style="margin-top:6px"></div>
-      </div>
-      <!-- UNATTENDED RUN (2026-08-12 field ask): ONE button pressed before a multi-day
-           absence, and ONE that hands back a copy-pasteable log. The log is a plain file
-           read — safe to press mid-run, with jobs still going, on a slow machine.
-           Un-keyed English (matches this diagnostics panel). Browser-unverified per fork-3. -->
-      <div id="unattended-box" style="margin-top:10px">
-        <div class="small" style="font-weight:600">Unattended run (leave it working while you are away)</div>
-        <div class="hint">Goes online (which starts continuous collection), and starts draining the source-qualification backlog if there is enough memory to do it safely — it measures first and says what it decided, rather than risking an out-of-memory kill days into your absence. Then it keeps a small rolling log you can copy back at any point, finished or not. Pressing it twice is harmless: the log keeps your original start time.</div>
-        <div class="row" style="margin-top:6px">
-          <input id="unatt-note" type="text" style="min-width:260px" placeholder="note for the log (optional, e.g. '10-day run, 1M corpus')">
-          <button id="unatt-start-btn" data-on-click="unattendedStart(this)" title="Arm an unattended run: go online (continuous collection starts), start the bulk source-qualification drain if the measured memory headroom allows it, and begin the expedition log. Idempotent — pressing it again keeps the original start time.">Start unattended run</button>
-          <button class="secondary" data-on-click="unattendedLog(this)" title="Copy the expedition log. This is a plain file read plus in-memory state — it never scans your corpus, so it is safe to press mid-run on a slow machine while jobs are still running.">Copy log</button>
-          <button class="secondary" data-on-click="unattendedStop(this)" title="Close the log's record. Deliberately does NOT stop collection or cancel the drain — airplane mode is the control for that. Nothing is destroyed; the log stays readable.">Disarm</button>
-          <span id="unatt-status" class="small" style="margin-left:6px"></span>
-        </div>
-        <textarea id="unatt-log" class="small" style="width:100%;margin-top:6px;min-height:120px;display:none" readonly></textarea>
-      </div>
-      <!-- P0 DATA-SAFETY VALIDATION (S1.2): the push-button v0.2.0 acceptance run. Drives the
-           REAL backup engine against your live corpus, verifies it, probes a STAGED restore + a
-           dry-run merge PREVIEW (your live corpus is only ever READ, never committed), and reads
-           the merged unlock + collector instrumentation into ONE report with a per-check verdict.
-           Un-keyed English (matches this diagnostics panel). Browser-unverified per fork-3. -->
-      <div id="p0-validation-box" style="margin-top:10px">
-        <div class="small" style="font-weight:600">P0 data-safety validation (v0.2.0 acceptance)</div>
-        <div class="hint">Drives the REAL backup engine against your live corpus, verifies it, probes a staged restore with a dry-run merge preview (your live corpus is never replaced or deleted — the restore preview never writes it, and the backup's only touch is a standard WAL checkpoint), and reads the unlock + collector instrumentation — one report, a verdict per check, no composite score. Choose a SEPARATE empty directory (ideally an external drive) as the destination. Full procedure: docs/product/P0_VALIDATION_RUNBOOK.md.</div>
-        <div class="row" style="margin-top:6px">
-          <input id="p0-dest" type="text" style="min-width:280px" placeholder="backup destination dir (a separate empty folder / drive)">
-          <input id="p0-pass" type="password" style="width:200px" placeholder="backup passphrase (never stored)" autocomplete="new-password">
-          <button id="p0-run-btn" data-on-click="runP0Validation(this)" title="Run the P0 data-safety acceptance checks against your live corpus: back up (streaming, bounded RAM), verify (signed manifest + volume checksums), probe a staged restore + dry-run merge preview (never touches the live corpus), and read the unlock + collector instrumentation. One report, a verdict per check, no score, never a fabricated pass. This is the run the v0.2.0 tag is gated on.">Run P0 validation</button>
-          <button class="secondary" data-on-click="cancelP0Validation()" title="Stop the running validation at its next safe point; the throwaway restore staging and any partial backup are cleaned up.">Cancel</button>
-          <span id="p0-status" class="small" style="margin-left:6px"></span>
-        </div>
-        <div id="p0-result" class="small" style="margin-top:6px"></div>
       </div>
       <!-- THE 0.4 RELEASE RUN (2026-09-18, maintainer ask): ONE press before a multi-day
            absence that sequences the board's operator rows -- the P0 trio into a dated
@@ -3316,42 +3312,53 @@
         <div id="rr-result" class="small" style="margin-top:6px"></div>
       </div>
       <div class="row" style="margin-top:6px">
-        <button id="all-diag-btn" data-on-click="runAllDiagnostics(this)" title="ONE .zip with everything this install can say about itself: the records of how it has run (the previous session and why it ended, memory, the runs of this very button, the errors, the network verdicts) and the scans of your corpus. It is built as a BACKGROUND job, so the app stays usable, with live progress. Quick, the default, writes the records and then as many scans as fit in ten minutes, shortest first, and names in the file any scan that did not fit; Thorough, the box beside it, runs every scan. When it is ready the page hands it over: one file when it fits in 4 MB, otherwise numbered .zip files of at most 4 MB each, five to a click, the manifest first. Carries the bounded keyword digest when the build ran it (the file names it as not run when it did not fit the Quick time, its own time limit or the memory); the full keyword dump has its own 'All keywords' link.">Diagnostics</button>
-        <label class="small" style="margin-left:6px" title="QUICK (box empty, the default) writes the records first, with collection still running, then runs the scans in the time left of a ten-minute budget, shortest first, with collection paused; a scan that did not fit is named in the file as not run, with why. THOROUGH runs every scan, each up to five minutes, with collection paused while they run: 27 to 47 minutes measured on a large corpus. Applies to this run only: the box is empty again each time this panel opens and is never remembered.">
-          <input type="checkbox" id="diag-thorough"> Thorough
-        </label>
-        <span id="all-diag-status" class="small" style="margin-left:6px"></span>
-      </div>
-      <div class="row small" style="margin-top:2px">
-        <button type="button" id="all-diag-again" class="linkish" data-on-click="downloadDiagnosticsVolumes(this)" hidden title="Saves the Diagnostics built last again, without a new build: the same one file, or the same numbered .zip files of at most 4 MB each (type a part number in the box that appears to start from it; every file opens on its own in any unzip tool). It never starts a new build.">Save the last Diagnostics again</button>
-        <button type="button" class="linkish" data-on-click="downloadKeywordParts(this, 'all')" title="Every keyword in the corpus (not just the top 5000 per language), as numbered .zip files of at most 4 MB each: the first files hold every language's top 5,000, so if you cannot send them all, send them in number order. No total size cap. It is written to disk a batch at a time, so the app's memory stays flat, but a big corpus makes many files (the page says how many before you save any) and takes minutes, and the export stops with a clear message if memory or disk runs short.">All keywords</button>
-      </div>
-      <!-- The ONE bar that saves a numbered set (keyword files or the diagnostics archive), five files
-           to a click: see downloadKeywordParts / _partsSave in app-diagnostics.js. It sits DIRECTLY
-           UNDER the buttons that fill it, never after the unrelated buttons below them: the
-           2026-10-06 field report ("the full run did not work, I pressed 'again'") fits a finished
-           build whose Save button was 300-500 px further down (measured in Chromium) than the button
-           that was pressed. -->
-      <div class="row" id="parts-bar" hidden>
-        <span id="parts-status" class="small" role="status" aria-live="polite"></span>
-        <button id="parts-next" data-on-click="partsSaveNext()" hidden>Save the next 5</button>
-        <button id="parts-rest" class="secondary" data-on-click="partsSaveRest()" hidden>Save all the rest</button>
-        <label id="parts-from-wrap" class="small" hidden title="Type a part number and press the button beside it to save five files from that part on, for example after a few files failed to upload. The manifest is not saved again.">Start at part number
-          <input id="parts-from" type="number" min="1" value="1">
-        </label>
-        <button id="parts-from-go" class="secondary" data-on-click="partsSaveFrom()" hidden>Save from this part</button>
-      </div>
-      <div class="row" style="margin-top:6px">
-        <button data-on-click="viewKeywordGrowth(this)" title="Plot cumulative distinct keywords against cumulative words added. A curve that bends over = the vocabulary is saturating (healthy); a near-straight line (Heaps β ≈ 1) = new keywords are still minted for almost every word (markup/code/unsegmented junk).">Keyword-growth curve</button>
-        <!-- TEMPORARY / REMOVABLE diagnostic: delete this button + the /source-quality endpoint once the analyst has used the export. -->
-        <button class="secondary" data-on-click="ooOpenUrl('/api/diagnostics/source-quality?download=1')" title="TEMPORARY, removable diagnostic. ONE .zip with everything an analyst needs to decide, per source, whether to EXCLUDE it / OPTIMIZE the extractor / KEEP it: per-article keyword-stat outliers, per-source top-12 keyword fingerprints + furniture share, and a text sample from three independent selectors (a fixed-seed random control + the stat outliers + furniture-flagged sources). Read-only, EXPORT-ONLY, counts-only, no score; private newsletter bodies gated (env). Whole-corpus counts; text heads for the sampled subset only.">Source &amp; article quality (.zip) · TEMP</button>
-        <button class="secondary" data-on-click="ooOpenUrl('/api/diagnostics/rollup-benchmark')" title="Builds the keyword-daily rollup in-memory over your corpus and times the windowed keyword aggregation both ways — the live mention scan (the Insights/trends freeze) vs summing the rollup — with the speedup and a parity check. Read-only; the win shows only at real corpus size. Takes a few seconds on a large corpus.">Rollup benchmark (.json)</button>
         <button data-on-click="enrichSources(this)" title="Deduce each source's topic tags from the keywords it publishes in your corpus and add them to the source's tags — local, no network, additive (never overwrites curated tags). This also runs automatically in the background; the button forces it now. The networked Wikidata source-type pass is a separate consented action.">Enrich source tags from corpus</button>
         <button data-on-click="enrichSourceTypes(this)" title="Fill each source's TYPE (newspaper / broadcaster / news agency / scientific journal / …) from Wikidata, verified against the source's own domain. This one goes ONLINE through the guarded transport — it asks for network consent first and is refused in airplane mode. Bounded per click; click again to continue.">Enrich source types (Wikidata) ↗</button>
         <input id="discover-cc" type="text" style="width:150px" placeholder="countries e.g. ke,ng,br">
         <button data-on-click="discoverSources(this)" title="DISCOVER new sources (news orgs / institutions with an official website) from Wikidata for the countries you list, and add them DISABLED for review — nothing is scraped until you enable it in Settings → Sources. Goes ONLINE through the guarded transport (consent-gated, airplane-refused). Tip: pick under-represented countries to keep coverage balanced.">Discover new sources (Wikidata) ↗</button>
         <button data-on-click="discoverWorld(this)" title="The same Wikidata discovery over EVERY country (~250), as a long background job — one country at a time through the guarded transport, every find added DISABLED for review, nothing scraped until you enable it. RESUMABLE: progress persists per country, so cancelling (task manager), airplane mode or a restart continues where it stopped instead of re-querying the world. Consent-gated, airplane-refused. This also advances AUTOMATICALLY a few countries per online collection pass (scheduler setting world_discovery_per_pass, 0 disables); this button just runs it all now.">Discover sources worldwide (Wikidata) ↗</button>
         <span id="discover-world-status" class="hint muted"></span>
+      </div>
+      <details class="adv-collect" id="diag-retired" style="margin-top:10px">
+        <summary class="muted" style="cursor:pointer">Older and specialist instruments (one-time or exploratory; kept for reference)</summary>
+      <!-- UNATTENDED RUN (2026-08-12 field ask): ONE button pressed before a multi-day
+           absence, and ONE that hands back a copy-pasteable log. The log is a plain file
+           read — safe to press mid-run, with jobs still going, on a slow machine.
+           Un-keyed English (matches this diagnostics panel). Browser-unverified per fork-3. -->
+      <div id="unattended-box" style="margin-top:10px">
+        <div class="small" style="font-weight:600">Unattended run (leave it working while you are away)</div>
+        <div class="hint">Goes online (which starts continuous collection), and starts draining the source-qualification backlog if there is enough memory to do it safely — it measures first and says what it decided, rather than risking an out-of-memory kill days into your absence. Then it keeps a small rolling log you can copy back at any point, finished or not. Pressing it twice is harmless: the log keeps your original start time.</div>
+        <div class="row" style="margin-top:6px">
+          <input id="unatt-note" type="text" style="min-width:260px" placeholder="note for the log (optional, e.g. '10-day run, 1M corpus')">
+          <button id="unatt-start-btn" data-on-click="unattendedStart(this)" title="Arm an unattended run: go online (continuous collection starts), start the bulk source-qualification drain if the measured memory headroom allows it, and begin the expedition log. Idempotent — pressing it again keeps the original start time.">Start unattended run</button>
+          <button class="secondary" data-on-click="unattendedLog(this)" title="Copy the expedition log. This is a plain file read plus in-memory state — it never scans your corpus, so it is safe to press mid-run on a slow machine while jobs are still running.">Copy log</button>
+          <button class="secondary" data-on-click="unattendedStop(this)" title="Close the log's record. Deliberately does NOT stop collection or cancel the drain — airplane mode is the control for that. Nothing is destroyed; the log stays readable.">Disarm</button>
+          <span id="unatt-status" class="small" style="margin-left:6px"></span>
+        </div>
+        <textarea id="unatt-log" class="small" style="width:100%;margin-top:6px;min-height:120px;display:none" readonly></textarea>
+      </div>
+      <!-- P0 DATA-SAFETY VALIDATION (S1.2): the push-button v0.2.0 acceptance run. Drives the
+           REAL backup engine against your live corpus, verifies it, probes a STAGED restore + a
+           dry-run merge PREVIEW (your live corpus is only ever READ, never committed), and reads
+           the merged unlock + collector instrumentation into ONE report with a per-check verdict.
+           Un-keyed English (matches this diagnostics panel). Browser-unverified per fork-3. -->
+      <div id="p0-validation-box" style="margin-top:10px">
+        <div class="small" style="font-weight:600">P0 data-safety validation (v0.2.0 acceptance)</div>
+        <div class="hint">Drives the REAL backup engine against your live corpus, verifies it, probes a staged restore with a dry-run merge preview (your live corpus is never replaced or deleted — the restore preview never writes it, and the backup's only touch is a standard WAL checkpoint), and reads the unlock + collector instrumentation — one report, a verdict per check, no composite score. Choose a SEPARATE empty directory (ideally an external drive) as the destination. Full procedure: docs/product/P0_VALIDATION_RUNBOOK.md.</div>
+        <div class="row" style="margin-top:6px">
+          <input id="p0-dest" type="text" style="min-width:280px" placeholder="backup destination dir (a separate empty folder / drive)">
+          <input id="p0-pass" type="password" style="width:200px" placeholder="backup passphrase (never stored)" autocomplete="new-password">
+          <button id="p0-run-btn" data-on-click="runP0Validation(this)" title="Run the P0 data-safety acceptance checks against your live corpus: back up (streaming, bounded RAM), verify (signed manifest + volume checksums), probe a staged restore + dry-run merge preview (never touches the live corpus), and read the unlock + collector instrumentation. One report, a verdict per check, no score, never a fabricated pass. This is the run the v0.2.0 tag is gated on.">Run P0 validation</button>
+          <button class="secondary" data-on-click="cancelP0Validation()" title="Stop the running validation at its next safe point; the throwaway restore staging and any partial backup are cleaned up.">Cancel</button>
+          <span id="p0-status" class="small" style="margin-left:6px"></span>
+        </div>
+        <div id="p0-result" class="small" style="margin-top:6px"></div>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button data-on-click="viewKeywordGrowth(this)" title="Plot cumulative distinct keywords against cumulative words added. A curve that bends over = the vocabulary is saturating (healthy); a near-straight line (Heaps β ≈ 1) = new keywords are still minted for almost every word (markup/code/unsegmented junk).">Keyword-growth curve</button>
+        <!-- TEMPORARY / REMOVABLE diagnostic: delete this button + the /source-quality endpoint once the analyst has used the export. -->
+        <button class="secondary" data-on-click="ooOpenUrl('/api/diagnostics/source-quality?download=1')" title="TEMPORARY, removable diagnostic. ONE .zip with everything an analyst needs to decide, per source, whether to EXCLUDE it / OPTIMIZE the extractor / KEEP it: per-article keyword-stat outliers, per-source top-12 keyword fingerprints + furniture share, and a text sample from three independent selectors (a fixed-seed random control + the stat outliers + furniture-flagged sources). Read-only, EXPORT-ONLY, counts-only, no score; private newsletter bodies gated (env). Whole-corpus counts; text heads for the sampled subset only.">Source &amp; article quality (.zip) · TEMP</button>
+        <button class="secondary" data-on-click="ooOpenUrl('/api/diagnostics/rollup-benchmark')" title="Builds the keyword-daily rollup in-memory over your corpus and times the windowed keyword aggregation both ways — the live mention scan (the Insights/trends freeze) vs summing the rollup — with the speedup and a parity check. Read-only; the win shows only at real corpus size. Takes a few seconds on a large corpus.">Rollup benchmark (.json)</button>
       </div>
       <!-- S5.3: IR gold-set BUILDER — grade real corpus queries 0/1/2 (keyboard 0/1/2 on a
            focused result) and write the exact ir_eval gold-set file the run below consumes.
@@ -3414,6 +3421,7 @@
       </div>
       <div id="patterns-gate" class="hint" style="margin-top:4px"></div>
       <div class="hint">These are the read-only exploration surfaces behind the statistical manipulation-pattern signals. Every one delegates to a pure analytics module and returns its method + caveat verbatim: distinct SOURCES (not article count) measure breadth, the innocent-twin explanation rides every result, and the whole family of comparisons is multiple-testing corrected so many tests cannot manufacture a finding. They name a SHAPE, never a verdict — a microscope, not a detector. Counts + statistics only, never a composite score.</div>
+      </details>
       <div class="row" style="margin-top:6px">
         <button data-on-click="cleanupKeywords(this)" title="Re-index every article with the current engine, then remove the keywords left with no mentions — the recommended order in one action.">Clean up keywords (re-index, then prune)</button>
         <span id="reindex-all-status" class="muted small"></span>
