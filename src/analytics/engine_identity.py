@@ -346,12 +346,22 @@ def narrowed_source_digest(source: bytes, root: str, *, extra_roots: frozenset[s
         for sub in ast.walk(top):
             if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store):
                 module_names.add(sub.id)
-    plain_names = module_names - set(defs)  # module-level data, as opposed to a def or class
+    # Names bound by a top-level import are module-level state too (``os.environ`` is shared, mutable and read through an import).
+    imported: set[str] = set()
+    for top in always:
+        for sub in ast.walk(top):
+            if isinstance(sub, ast.Import):
+                imported.update((a.asname or a.name.split(".")[0]) for a in sub.names)
+            elif isinstance(sub, ast.ImportFrom):
+                imported.update((a.asname or a.name) for a in sub.names)
+    state_names = module_names | imported
     for dnode in defs.values():
         for dec in getattr(dnode, "decorator_list", []):
             # A decorator that is one of this module's own defs can register what it wraps somewhere the walk cannot see.
             head = dec.func if isinstance(dec, ast.Call) else dec
-            if isinstance(head, ast.Name) and head.id in defs:
+            while isinstance(head, (ast.Attribute, ast.Subscript, ast.Call)):
+                head = head.func if isinstance(head, ast.Call) else head.value
+            if isinstance(head, ast.Name) and head.id in module_names:
                 return None
         for sub in ast.walk(dnode):
             if isinstance(sub, ast.Global):
@@ -364,13 +374,13 @@ def narrowed_source_digest(source: bytes, root: str, *, extra_roots: frozenset[s
                     base = fn.value
                     while isinstance(base, (ast.Attribute, ast.Subscript)):
                         base = base.value
-                    if isinstance(base, ast.Name) and base.id in plain_names:
+                    if isinstance(base, ast.Name) and base.id in state_names:
                         return None  # a mutation of module-level data, e.g. ``_CFG.update(...)``
             if isinstance(sub, (ast.Attribute, ast.Subscript)) and isinstance(sub.ctx, (ast.Store, ast.Del)):
                 base = sub.value
                 while isinstance(base, (ast.Attribute, ast.Subscript)):
                     base = base.value
-                if isinstance(base, ast.Name) and base.id in module_names:
+                if isinstance(base, ast.Name) and base.id in state_names:
                     return None
     # CALLERS TO A FIXPOINT: whatever calls the root chooses the arguments it is given (scope, country, extractor), and so does
     # whatever calls THAT. A caller is any def that names the root, a caller of it, ... by bare name or as ``module.name``.
