@@ -219,6 +219,10 @@ def test_the_real_batch_driver_and_public_wrapper_are_in_the_identity():
         "_MODE = {}\ndef setter():\n    _MODE['k'] = 2\n",
         "class Cfg:\n    w = 1\ndef tweak():\n    Cfg.w = 3\n",
         "f = index_article\ndef via_alias():\n    return f(1)\n",
+        "_CFG = {}\ndef tweak():\n    _CFG.update(k=2)\n",
+        "_S = set()\ndef tweak():\n    _S.add('x')\n",
+        "class Cfg:\n    w = 1\ndef tweak():\n    setattr(Cfg, 'w', 3)\n",
+        "_REG = []\ndef register(f):\n    _REG.append(f)\n    return f\n@register\ndef plugin(a):\n    return a + 1\n",
     ],
 )
 def test_state_or_alias_the_walk_cannot_follow_keeps_the_whole_file(extra):

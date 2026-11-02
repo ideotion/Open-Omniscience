@@ -301,6 +301,14 @@ def _strip_docstrings(tree) -> None:
                 node.body = body[1:] or [ast.Pass()]
 
 
+#: Method names that change the object they are called on (list, dict, set, deque and the like). A call to one on module-level data,
+#: from a def the walk may not reach, changes what a reachable def reads. NAME-based and over-inclusive, like the rest.
+_MUTATING_METHODS = frozenset(
+    {"append", "extend", "insert", "add", "update", "pop", "popitem", "remove", "discard", "clear", "setdefault", "sort", "reverse",
+     "appendleft", "extendleft", "popleft", "rotate", "difference_update", "intersection_update", "symmetric_difference_update"}
+)
+
+
 def narrowed_source_digest(source: bytes, root: str, *, extra_roots: frozenset[str] = frozenset(), own_module: str = "") -> str | None:
     """A digest of the part of ``source`` that ``root`` can reach, or ``None`` when that cannot be established soundly.
 
@@ -338,10 +346,26 @@ def narrowed_source_digest(source: bytes, root: str, *, extra_roots: frozenset[s
         for sub in ast.walk(top):
             if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store):
                 module_names.add(sub.id)
+    plain_names = module_names - set(defs)  # module-level data, as opposed to a def or class
     for dnode in defs.values():
+        for dec in getattr(dnode, "decorator_list", []):
+            # A decorator that is one of this module's own defs can register what it wraps somewhere the walk cannot see.
+            head = dec.func if isinstance(dec, ast.Call) else dec
+            if isinstance(head, ast.Name) and head.id in defs:
+                return None
         for sub in ast.walk(dnode):
             if isinstance(sub, ast.Global):
                 return None
+            if isinstance(sub, ast.Call):
+                fn = sub.func
+                if isinstance(fn, ast.Name) and fn.id in ("setattr", "delattr"):
+                    return None  # rebinding an attribute by name, in a def the walk may not reach
+                if isinstance(fn, ast.Attribute) and fn.attr in _MUTATING_METHODS:
+                    base = fn.value
+                    while isinstance(base, (ast.Attribute, ast.Subscript)):
+                        base = base.value
+                    if isinstance(base, ast.Name) and base.id in plain_names:
+                        return None  # a mutation of module-level data, e.g. ``_CFG.update(...)``
             if isinstance(sub, (ast.Attribute, ast.Subscript)) and isinstance(sub.ctx, (ast.Store, ast.Del)):
                 base = sub.value
                 while isinstance(base, (ast.Attribute, ast.Subscript)):
