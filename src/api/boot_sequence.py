@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import threading
 import time
 from collections.abc import Callable
@@ -340,7 +341,27 @@ def _rollup_first_build() -> None:
         raise RuntimeError(f"the rollup's first build reported {outcome!r}, not a finished build")
 
 
+def _queue_title_index() -> None:
+    """Queue the instant title index's history backfill (src/database/fts_title.py), after the heavy steps.
+
+    Independent of the re-index backlog: it runs whether or not one is pending. It only STARTS the
+    budgeted background job (bounded steps, the writer gate taken and released per step) and does not
+    wait for it. ``OO_TITLE_INDEX_AUTOBUILD=0`` declines it; the omnibar's "build it" row and
+    ``POST /api/search/instant/build`` stay as the manual trigger. Never raises: a failure here must
+    not take the re-index step down with it."""
+    if os.getenv("OO_NO_SCHEDULER", "0") == "1" or os.getenv("OO_TITLE_INDEX_AUTOBUILD", "1").strip() == "0":
+        return
+    try:
+        from src.api.search_instant import start_build_if_incomplete
+
+        outcome = start_build_if_incomplete()
+        _LOG.info("boot title-index backfill: %s", outcome)
+    except Exception as exc:  # noqa: BLE001 - best effort, the omnibar's button is the fallback
+        log_failure(_LOG, "boot title-index backfill not queued", exc, level=logging.INFO)
+
+
 def _start_reindex() -> None:
+    _queue_title_index()
     with _LOCK:
         pending = _STATE["reindex_pending"]
     if pending is None:

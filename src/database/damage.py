@@ -191,9 +191,9 @@ REREAD_UNREAD = "unread"  # a table could not be read (a busy file, no memory, a
 REREAD_NOT_MADE = "not-made"  # no re-read could be made (``reread.why`` says which of the fixed reasons)
 REREAD_STAYED = "stayed"  # the same table failed again after one clean re-read: it latches and stays, with no second re-read
 
-#: The full-text index (``article_fts``) and its shadow tables. A statement over these is the evidence that
+#: The full-text index (``article_fts``), the titles-only prefix index beside it (``article_fts_title``, fts_title.py) and their shadow tables. A statement over these is the evidence that
 #: the index is what could not be read (a suspicion, not proof: see the module docstring).
-_SHADOW_TABLE = re.compile(r"\barticle_fts(?:_(?:data|idx|docsize|config|content))?\b", re.IGNORECASE)
+_SHADOW_TABLE = re.compile(r"\barticle_fts(?:_title)?(?:_(?:data|idx|docsize|config|content|vocab))?\b", re.IGNORECASE)
 
 #: The articles table. A statement that reads the index AND this table cannot say which of the two raised.
 _CONTENT_TABLE = re.compile(r"\barticles\b", re.IGNORECASE)

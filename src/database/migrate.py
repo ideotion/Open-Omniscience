@@ -155,6 +155,15 @@ _FTS_SHADOW_TABLES = frozenset(
         # under (Q506/Q507, src/database/fts_norm.py). Created beside the index, never by
         # the ORM, so it is benign in exactly the same way.
         "article_fts_norm",
+        # The titles-only prefix index (src/database/fts_title.py): its FTS5 table and shadow tables,
+        # the fts5vocab view over it and its one-row backfill state. ensure_fts creates them, never the ORM.
+        "article_fts_title",
+        "article_fts_title_data",
+        "article_fts_title_idx",
+        "article_fts_title_docsize",
+        "article_fts_title_config",
+        "article_fts_title_vocab",
+        "article_fts_title_state",
     }
 )
 

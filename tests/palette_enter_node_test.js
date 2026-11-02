@@ -49,6 +49,9 @@ const src = `
   let _omniLive = null;
   function _omniItems() { return _omniLive ? _omniLive.items : []; }
   function _omniFetch() {}
+  let _instLive = null;
+  function _instItems() { return []; }
+  function _instFetch() {}
   let _palItems = [], _palFiltered = [], _palSel = 0, _palLastRaw = null;
   ${extract("renderPalette")}
   ${extract("_palOrder")}
