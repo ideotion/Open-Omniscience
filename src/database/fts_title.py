@@ -116,7 +116,7 @@ def _ddl() -> list[str]:
         CREATE TRIGGER IF NOT EXISTS {TABLE}_ad AFTER DELETE ON articles BEGIN
             DELETE FROM {TABLE} WHERE rowid = old.id;
         END
-        """,
+        """,  # nosec B608 - module constants only
         # Column-scoped for the reason article_fts_au is (tests/test_fts_update_trigger_scope.py):
         # the re-index stamps other columns on every pass and must not re-index the title for it.
         f"""
@@ -125,7 +125,7 @@ def _ddl() -> list[str]:
             INSERT INTO {TABLE}(rowid, title)
             SELECT new.id, {_TITLE_EXPR.format(row="new")} WHERE new.title IS NOT NULL;
         END
-        """,
+        """,  # nosec B608 - module constants only
     ]
 
 
@@ -293,7 +293,7 @@ def title_prefix_ids(conn, query: str, *, limit: int = 10, exclude_quarantined: 
         return []
     params: dict[str, Any] = {"q": match, "n": int(limit)}
     gate = (
-        f" AND EXISTS (SELECT 1 FROM articles a WHERE a.id = {TABLE}.rowid AND a.quarantined IS NOT 1)"
+        f" AND EXISTS (SELECT 1 FROM articles a WHERE a.id = {TABLE}.rowid AND a.quarantined IS NOT 1)"  # nosec B608 - module constant
         if exclude_quarantined
         else ""
     )
