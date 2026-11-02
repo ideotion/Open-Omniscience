@@ -331,14 +331,53 @@ def narrowed_source_digest(source: bytes, root: str, *, extra_roots: frozenset[s
             always.append(node)
     if root not in defs:
         return None
+    # FAIL-SAFES for state this name walk cannot follow. A ``global`` statement (``nonlocal`` only reaches an enclosing function, which is hashed with its def), or a store into an attribute or
+    # subscript of a module-level name, lets a function that nothing reachable names change what a reachable one reads.
+    module_names = set(defs)
+    for top in always:
+        for sub in ast.walk(top):
+            if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store):
+                module_names.add(sub.id)
+    for dnode in defs.values():
+        for sub in ast.walk(dnode):
+            if isinstance(sub, ast.Global):
+                return None
+            if isinstance(sub, (ast.Attribute, ast.Subscript)) and isinstance(sub.ctx, (ast.Store, ast.Del)):
+                base = sub.value
+                while isinstance(base, (ast.Attribute, ast.Subscript)):
+                    base = base.value
+                if isinstance(base, ast.Name) and base.id in module_names:
+                    return None
+    # CALLERS TO A FIXPOINT: whatever calls the root chooses the arguments it is given (scope, country, extractor), and so does
+    # whatever calls THAT. A caller is any def that names the root, a caller of it, ... by bare name or as ``module.name``.
+    callers = {root}
+    grew = True
+    while grew:
+        grew = False
+        for dname, dnode in defs.items():
+            if dname in callers:
+                continue
+            if any(
+                (isinstance(sub, ast.Name) and sub.id in callers) or (isinstance(sub, ast.Attribute) and sub.attr in callers)
+                for sub in ast.walk(dnode)
+            ):
+                callers.add(dname)
+                grew = True
+    # An alias or a table at top level (``f = index_article``) hides callers of the alias from the walk above: hash the file whole.
+    for top in always:
+        if isinstance(top, (ast.Import, ast.ImportFrom)):
+            continue
+        if any(
+            (isinstance(sub, ast.Name) and sub.id in callers) or (isinstance(sub, ast.Attribute) and sub.attr in callers)
+            for sub in ast.walk(top)
+        ):
+            return None
     reachable: dict[str, ast.AST] = {}
     # ROOTS: the root; every definition that NAMES the root (its callers feed it arguments it writes and certifies: the post-restore
     # re-index, the backfill, ...); every name a top-level statement mentions (a dispatch table, an alias, a decorator target, a
     # definition under a top-level ``if``/``try``); and what other engine modules import from this file.
     todo = [root, *sorted(n for n in extra_roots if n in defs)]
-    for dname, dnode in defs.items():
-        if any(isinstance(sub, ast.Name) and sub.id == root for sub in ast.walk(dnode)):
-            todo.append(dname)
+    todo.extend(sorted(callers - {root}))
     for top in always:
         for sub in ast.walk(top):
             if isinstance(sub, ast.Name) and sub.id in defs:

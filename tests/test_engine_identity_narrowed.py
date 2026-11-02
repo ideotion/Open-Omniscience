@@ -67,8 +67,8 @@ def test_every_function_is_either_reachable_and_moves_the_id_or_unreachable_and_
     assert "_write_mention_diff" in moved
     # the CALLERS of index_article feed it values it writes and certifies (country, precomputed terms, language): they are in
     assert "_reindex_articles_impl" in moved and "backfill_corpus" in moved
-    # the wrapper that only adds a page cache around the impl, and reports, are not
-    assert "reindex_articles" in still
+    # and so are the callers of those callers: the public wrapper and the batch driver choose the scope and country they pass on
+    assert "reindex_articles" in moved and "reindex_all_batch" in moved
     assert len(moved) >= 10 and len(still) >= 5
 
 
@@ -188,3 +188,44 @@ def test_no_module_a_pass_loads_imports_the_narrowed_file():
     loaded = _probe()["modules"]
     offenders = [m for m in loaded if m != OWN and ei._repo_module_refers_to(m, OWN)]
     assert not offenders, f"a module a pass executes imports store.py, so the narrowed identity may under-include: {offenders}"
+
+
+def test_a_caller_of_a_caller_is_in_the_identity():
+    """What calls the caller chooses the arguments it passes on: ``outer -> mid -> index_article``."""
+    base = "def index_article(a):\n    return a\n\ndef mid(x):\n    return index_article(x)\n\ndef outer():\n    return mid({})\n"
+    assert _digest(base) is not None
+    assert _digest(base) != _digest(base.replace("mid({})", "mid({1})"))
+
+
+def test_the_real_batch_driver_and_public_wrapper_are_in_the_identity():
+    """The scope="keywords" mutation: reindex_all_batch decides the scope every article is indexed with."""
+    src = _source().decode()
+    start = src.index("def reindex_all_batch")
+    at = src.index("scope=scope,", start)
+    mutated = src[:at] + 'scope="keywords",' + src[at + len("scope=scope,") :]
+    assert _digest(_source()) is not None
+    assert _digest(mutated) != _digest(src)
+    wrapper = src.replace("def reindex_articles(*args: Any, **kwargs: Any) -> dict:", "def reindex_articles(*args: Any, **kwargs: Any) -> dict:\n    _wrapper_mutant_ = 1", 1)
+    assert wrapper != src
+    assert _digest(wrapper) != _digest(src)
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        "def setx():\n    global _X\n    _X = 3\n",
+        "_MODE = {}\ndef setter():\n    _MODE['k'] = 2\n",
+        "class Cfg:\n    w = 1\ndef tweak():\n    Cfg.w = 3\n",
+        "f = index_article\ndef via_alias():\n    return f(1)\n",
+    ],
+)
+def test_state_or_alias_the_walk_cannot_follow_keeps_the_whole_file(extra):
+    """A function nothing reachable names can rebind module state; an alias hides its callers: both fall back to the whole file."""
+    base = "_X = 1\ndef index_article(a):\n    return a + _X\n"
+    assert _digest(base) is not None
+    assert _digest(base + extra) is None
+
+
+def test_a_nonlocal_in_a_nested_function_does_not_defeat_the_narrowing():
+    src = "def index_article(a):\n    n = 0\n    def bump():\n        nonlocal n\n        n += 1\n    bump()\n    return n\n"
+    assert _digest(src) is not None
