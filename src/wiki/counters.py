@@ -456,6 +456,7 @@ def lane_counters(
     window's blocks do, and this function composes them without a verdict. What the
     numbers MEAN is the maintainer's call; a composite would be a score.
     """
+    from src.wiki.coverage import edition_coverage
     from src.wiki.walk import walk_coverage
     from src.wiki.warm import warm_coverage
 
@@ -476,6 +477,10 @@ def lane_counters(
         # Q707's WARM tier (S05-06's S1): pages holding text, texts fetched and the queue,
         # per edition, through the one reader Living sources also uses.
         "warm": warm_coverage(lane),
+        # S06-03 S1 + S3: the per-edition coverage report (pages seen over the edition total, the
+        # full-text share as bounds, last event, gap history) and the located counters, absent
+        # with their reason. Read through the same walk and WARM readers, so no number differs.
+        "coverage": edition_coverage(lane, now=at),
     }
     unmeasured = sorted(k for k, v in blocks.items() if not v.get("measured"))
     return {
