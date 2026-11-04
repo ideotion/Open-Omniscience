@@ -249,3 +249,78 @@ def test_a_restore_merge_over_a_store_cut_mid_character_merges_instead_of_raisin
     out = F.merge_imported_store("calendar_feed_imports.json", {"fam2": {"name": "G", "events": {"fp2": {"title": "new"}}}})
     assert out["added"] == 1
     assert list(F._load_json("calendar_feed_imports.json")) == ["fam2"]
+
+
+# --- a store that parses but cannot be walked or written (R397; the restore stage that ends on it) ------------------------------------
+_LONE = '"\\ud800"'  # the JSON text of a lone surrogate escape: ``json`` parses it, and no file can hold it as UTF-8
+
+
+@pytest.mark.parametrize("body", ["[1]", '"x"', "3", "null"])
+def test_a_store_that_is_not_a_json_object_reads_as_empty_and_names_its_type_only(body, caplog):
+    """Before: ``_load_json`` handed the list (or string, number, None) to its caller, whose first ``.items()`` / ``.get()`` raised AttributeError."""
+    _store("calendar_feed_imports.json").write_text(body, "utf-8")
+    with caplog.at_level("WARNING"):
+        assert F._load_json("calendar_feed_imports.json") == {}
+        assert F.load_imports() == {}
+    assert "calendar_feed_imports.json holds JSON that is not an object" in caplog.text
+    assert "(list)" in caplog.text or "(str)" in caplog.text or "(int)" in caplog.text or "(NoneType)" in caplog.text, "the type of the document is named"
+
+
+@pytest.mark.parametrize("incoming", [[1], "x", 3, None])
+def test_a_restore_merge_of_an_artifact_store_that_is_not_an_object_merges_nothing_instead_of_raising(incoming, caplog):
+    for name in ("calendar_feed_imports.json", "calendar_feed_checks.json"):
+        with caplog.at_level("WARNING"):
+            out = F.merge_imported_store(name, incoming)
+        assert out == {"action": "merged", "added": 0, "enriched": 0, "kept_local": 0}, name
+
+
+def test_a_lone_surrogate_in_the_store_is_replaced_so_that_reading_and_every_later_save_work(caplog):
+    """Before: the store parsed, and ``_save_json``'s ``write_text`` raised UnicodeEncodeError on it, on every save from then on."""
+    _store("calendar_feed_imports.json").write_text(
+        '{"fam": {"name": LONE, "events": {"fp1": {"title": LONE, "sources": ["a"]}}}}'.replace("LONE", _LONE), "utf-8"
+    )
+    with caplog.at_level("WARNING"):
+        data = F._load_json("calendar_feed_imports.json")
+    assert data["fam"]["name"] == "�" and data["fam"]["events"]["fp1"]["title"] == "�"
+    assert data["fam"]["events"]["fp1"]["sources"] == ["a"], "everything else is untouched"
+    assert "2 text(s) held a lone surrogate escape" in caplog.text
+    assert "ud800" not in caplog.text.lower() and "\ud800" not in caplog.text, "a count, never the text"
+    F._save_json("calendar_feed_imports.json", data, mirror=False)  # raised UnicodeEncodeError before
+    assert _store("calendar_feed_imports.json").read_bytes().decode("utf-8")
+
+
+def test_a_restore_merge_of_an_artifact_store_holding_a_lone_surrogate_merges_instead_of_ending_the_restore():
+    incoming = json.loads('{"fam2": {"name": LONE, "events": {"fp2": {"title": LONE, "sources": ["b"]}}}}'.replace("LONE", _LONE))
+    out = F.merge_imported_store("calendar_feed_imports.json", incoming)  # raised UnicodeEncodeError at the save
+    assert out["added"] == 1
+    stored = json.loads(_store("calendar_feed_imports.json").read_text("utf-8"))
+    assert stored["fam2"]["events"]["fp2"]["title"] == "�"
+    verdicts = F.merge_imported_store("calendar_feed_checks.json", {"feed-1": {"status": json.loads(_LONE)}})
+    assert verdicts["added"] == 1 and json.loads(_store("calendar_feed_checks.json").read_text("utf-8"))["feed-1"]["status"] == "�"
+
+
+_GOOD = {"name": "F", "events": {"fpok": {"title": "ok", "sources": ["a"], "uids": ["u"]}}}
+
+
+@pytest.mark.parametrize(
+    "wrong",
+    [
+        {"fam": 3},
+        {"fam": {"name": "F", "events": [1]}},
+        {"fam": {"name": "F", "events": {"fp": 3}}},
+        {"fam": {"name": "F", "events": {"fp": {"sources": "a", "uids": 7}}}},
+    ],
+)
+def test_valid_json_of_the_wrong_shape_is_left_out_and_counted_not_raised_on(wrong, caplog):
+    """Before: AttributeError at the first ``.items()`` / ``.get()`` / ``.setdefault`` on the wrong piece, in the reader or in the restore merge."""
+    local = {"keep": _GOOD, **wrong}
+    _store("calendar_feed_imports.json").write_text(json.dumps(local), "utf-8")
+    with caplog.at_level("WARNING"):
+        read = F._load_json("calendar_feed_imports.json")
+    assert read["keep"] == _GOOD, "a well-formed family beside it is untouched"
+    assert "of the wrong shape were left out of what is read" in caplog.text
+    out = F.merge_imported_store("calendar_feed_imports.json", {"new": _GOOD, **wrong})  # as an artifact's store, over the same local store
+    assert out["added"] == 1, "the one well-formed incoming event is merged"
+    after = json.loads(_store("calendar_feed_imports.json").read_text("utf-8"))
+    assert after["keep"]["events"] == _GOOD["events"] and after["new"]["events"] == _GOOD["events"]
+    assert not any(isinstance(b, dict) and b.get("events") in ([1],) for b in after.values())

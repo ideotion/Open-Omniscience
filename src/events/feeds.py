@@ -137,16 +137,94 @@ def _store_path(name: str) -> Path:
     return data_dir() / name
 
 
+#: A lone surrogate escape (a JSON text of ``"\\ud800"``): ``json`` accepts it, but no file can hold it as UTF-8.
+_LONE_SURROGATE = re.compile("[\ud800-\udfff]")
+_IMPORTS = "calendar_feed_imports.json"
+
+
+def _scrub_surrogates(value: object, found: list[int]) -> object:
+    """``value`` with every lone surrogate in any text (a key or a value) replaced by U+FFFD; ``found[0]`` counts the texts changed.
+
+    ``json.loads`` joins a valid escaped pair into one character, so any surrogate left in a parsed text IS a lone one: it parses, and
+    the next save then raises ``UnicodeEncodeError`` on it, for every save from then on (and the restore merge ends at that save).
+    """
+    if isinstance(value, str):
+        if _LONE_SURROGATE.search(value):
+            found[0] += 1
+            return _LONE_SURROGATE.sub("\ufffd", value)
+        return value
+    if isinstance(value, dict):
+        return {_scrub_surrogates(k, found): _scrub_surrogates(v, found) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_scrub_surrogates(v, found) for v in value]
+    return value
+
+
+def _imports_shape(data: dict) -> tuple[dict, int]:
+    """The imported-events store with only what its readers can walk: ``{family: {"name", "events": {fingerprint: {...}}}}``.
+
+    Valid JSON of another shape (a family that is not an object, ``events`` as a list, an event that is a number, ``sources`` as a
+    string) parses, then raises ``AttributeError`` in the first reader or merge that calls ``.items()`` or ``.get()`` on it. Each such
+    piece is left out and COUNTED; nothing of its content is kept or reported.
+    """
+    left_out = 0
+    clean: dict = {}
+    for fam_key, bucket in data.items():
+        if not isinstance(bucket, dict):
+            left_out += 1
+            continue
+        events = bucket.get("events")
+        if events is not None and not isinstance(events, dict):
+            left_out += 1
+            events = None
+        kept: dict = {}
+        for fp, entry in (events or {}).items():
+            if not isinstance(entry, dict):
+                left_out += 1
+                continue
+            entry = dict(entry)
+            for field in ("sources", "uids"):
+                if field in entry and not isinstance(entry[field], list):
+                    left_out += 1
+                    del entry[field]
+            kept[fp] = entry
+        clean[fam_key] = {**{k: v for k, v in bucket.items() if k != "events"}, "events": kept}
+    return clean, left_out
+
+
+def _sanitized(name: str, data: object, *, what: str) -> dict:
+    """``data`` as a store of ``name`` that every reader can walk, with a class-only line for what had to change.
+
+    ``what`` says where it came from in the line ("reads as" for a store on disk, "arrives as" for a restore artifact's).
+    """
+    if not isinstance(data, dict):
+        _LOG.warning("%s holds JSON that is not an object (%s), so it %s empty", name, type(data).__name__, what)
+        return {}
+    found = [0]
+    out = _scrub_surrogates(data, found)
+    assert isinstance(out, dict)
+    if found[0]:
+        _LOG.warning(
+            "%s: %d text(s) held a lone surrogate escape, which no file can store as UTF-8; each was replaced by U+FFFD", name, found[0]
+        )
+    if name == _IMPORTS:
+        out, left_out = _imports_shape(out)
+        if left_out:
+            _LOG.warning("%s: %d piece(s) of the wrong shape were left out of what is read (a save drops them from the file)", name, left_out)
+    return out
+
+
 def _load_json(name: str) -> dict:
     p = _store_path(name)
     try:
-        return json.loads(p.read_text("utf-8")) if p.exists() else {}
+        data = json.loads(p.read_text("utf-8")) if p.exists() else {}
     except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         # A store that EXISTS but cannot be read reads as empty, exactly as before (and a save that can write replaces it): that used to happen with no word anywhere (R386, R397).
         # The line does not claim the replacement: where the store is a directory or the data folder is not writable, no save succeeds.
         # The class only: the store holds the user's imported events, and what is wrong with it is not worth a line of its words.
         _LOG.warning("%s exists but could not be read, so it reads as empty: %s", name, type(exc).__name__)
         return {}
+    return _sanitized(name, data, what="reads as")
 
 
 def _save_json(name: str, data: dict, *, mirror: bool = True) -> None:
@@ -184,9 +262,12 @@ def merge_imported_store(name: str, incoming: dict) -> dict:
     their sources/uids unioned (the same dedup discipline as import_feed).
     Idempotent: re-running with the same input converges. Atomic save."""
     local = _load_json(name)
+    # The artifact's store arrives as parsed JSON of any shape: it gets the same treatment as a store read from disk (R397), or one
+    # lone surrogate in it ends the restore at the save below and a list where an object belongs ends it at the first ``.items()``.
+    incoming = _sanitized(name, incoming if incoming is not None else {}, what="arrives as")
     added = enriched = kept = 0
     if name == "calendar_feed_imports.json":
-        for fam_key, bucket in (incoming or {}).items():
+        for fam_key, bucket in incoming.items():
             if not isinstance(bucket, dict):
                 continue
             lb = local.setdefault(fam_key, {"name": bucket.get("name", fam_key), "events": {}})
@@ -206,7 +287,7 @@ def merge_imported_store(name: str, incoming: dict) -> dict:
                     if uid not in le.setdefault("uids", []):
                         le["uids"].append(uid)
     else:
-        for feed_id, verdict in (incoming or {}).items():
+        for feed_id, verdict in incoming.items():
             if feed_id in local:
                 kept += 1
             else:
