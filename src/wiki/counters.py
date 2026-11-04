@@ -480,7 +480,7 @@ def lane_counters(
         # S06-03 S1 + S3: the per-edition coverage report (pages seen over the edition total, the
         # full-text share as bounds, last event, gap history) and the located counters, absent
         # with their reason. Read through the same walk and WARM readers, so no number differs.
-        "coverage": edition_coverage(lane, now=at),
+        "coverage": edition_coverage(lane, now=at, newest_gaps=False),
     }
     unmeasured = sorted(k for k, v in blocks.items() if not v.get("measured"))
     return {

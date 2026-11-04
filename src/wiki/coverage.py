@@ -145,7 +145,7 @@ def _last_events(lane: Any, editions: list[str]) -> dict[str, dict[str, Any]]:
     return out
 
 
-def _gaps(lane: Any) -> dict[str, dict[str, Any]]:
+def _gaps(lane: Any, *, newest: bool = True) -> dict[str, dict[str, Any]]:
     """Every published gap, per edition: the count by reason (all of them) and the newest few, with their reason and bounds."""
     from src.versioned.models import VersionedGap
 
@@ -162,6 +162,9 @@ def _gaps(lane: Any) -> dict[str, dict[str, Any]]:
         block["total"] += int(n)
         block["by_reason"][str(reason)] = block["by_reason"].get(str(reason), 0) + int(n)
     for edition, block in by_edition.items():
+        if not newest:
+            del block["newest"]  # R413: the bundle member carries counts by reason only
+            continue
         feeds = [f"{prefix}{edition}" for prefix in _FEED_PREFIXES]
         rows = (
             lane.execute(
@@ -205,7 +208,9 @@ def _located_block() -> dict[str, Any]:
     }
 
 
-def edition_coverage(lane: Any, *, now: datetime | None = None) -> dict[str, Any]:
+def edition_coverage(
+    lane: Any, *, now: datetime | None = None, newest_gaps: bool = True
+) -> dict[str, Any]:
     """The report: one row per edition (the twelve first), a totals row, and the located block. Never raises on a missing table.
 
     ``measured`` is False, with a ``reason``, for a lane that has never run (the walk, WARM and the stream have written nothing); the twelve
@@ -219,7 +224,7 @@ def edition_coverage(lane: Any, *, now: datetime | None = None) -> dict[str, Any
         walk = walk_coverage(lane, now=at)
         warm = warm_coverage(lane)
         hot = _hot_pages_with_text(lane)
-        gaps = _gaps(lane)
+        gaps = _gaps(lane, newest=newest_gaps)
     except Exception as exc:  # noqa: BLE001 - a report that cannot read says so; it never blanks the artifact it rides
         log_failure(
             _LOG, "the edition coverage report could not read the lane", exc, level=logging.WARNING
@@ -258,7 +263,11 @@ def edition_coverage(lane: Any, *, now: datetime | None = None) -> dict[str, Any
         total = w.get("edition_articles") if w else None
         hot_n = int(hot.get(name, 0))
         warm_n = int(m["pages_with_text"]) if m else 0
-        gap = gaps.get(name, {"total": 0, "by_reason": {}, "newest": []})
+        gap = gaps.get(name) or (
+            {"total": 0, "by_reason": {}, "newest": []}
+            if newest_gaps
+            else {"total": 0, "by_reason": {}}
+        )
         if w and w.get("last_error"):
             total_note = {
                 "failed": True,
@@ -298,6 +307,9 @@ def edition_coverage(lane: Any, *, now: datetime | None = None) -> dict[str, Any
         "gaps": sum(r["gaps"]["total"] for r in rows),
     }
     measured = totals["editions_with_a_run"] > 0
+    if not newest_gaps:
+        # The bundle member (R413, net-zero): an edition that never ran is its name and the reason, not a dozen nulls.
+        rows = [r if r["has_run"] else {k: r[k] for k in ("edition", "has_run", "reason")} for r in rows]
     return {
         "measured": measured,
         "reason": None if measured else "lane-never-run",

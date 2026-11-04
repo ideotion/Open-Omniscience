@@ -158,3 +158,14 @@ def test_rides_the_lane_counters_member_and_reads_back(lane):
     member = json.loads(json.dumps(lane_counters(lane, now=T0, window_days=7)))
     assert _row(member["coverage"], "ja")["pages_seen"] == 5
     assert "coverage" not in member["unmeasured"] or member["coverage"]["measured"] is False
+
+
+def test_member_carries_gap_counts_only_and_compact_unrun_rows(lane):
+    lane.add(VersionedChange(change_ref="1", feed="stream:es", change_kind="edit", occurred_at=T0, recorded_at=T0))
+    lane.add(VersionedGap(feed="stream:es", detected_at=T0, reason="restart", from_time=T0, to_time=T0))
+    lane.commit()
+    member = edition_coverage(lane, now=T0, newest_gaps=False)
+    es = _row(member, "es")
+    assert es["gaps"] == {"total": 1, "by_reason": {"restart": 1}}
+    assert _row(member, "en") == {"edition": "en", "has_run": False, "reason": "no-run-yet"}
+    assert "newest" in _row(edition_coverage(lane, now=T0), "es")["gaps"]
