@@ -124,11 +124,11 @@ def test_a_translated_of_total_ratchet_per_tranche_that_never_falls():
         lines.append(f"tranche {n}: {complete} of {total} complete")
         gaps = [f"{s}/{lg}" for s in slugs for lg in langs if table[(s, lg)][0] != "complete"]
         assert complete >= FLOOR[n], f"tranche {n} fell below its floor {FLOOR[n]}: {complete} of {total}. Gaps: {gaps}"
-    assert lines  # the figure is printed by -rA; the gate's section 3 carries the same numbers
+    assert lines, "no tranche"  # the figure rides every failure message above; the gate's section 3 carries the same numbers
 
 
 @pytest.mark.parametrize("lang", _locales())
-def test_every_existing_draft_is_utf8_markdown_with_a_banner_naming_the_english_as_authoritative(lang):
+def test_every_existing_draft_is_utf8_markdown_with_a_banner_comment_and_belongs_to_a_served_document(lang):
     folder = _DOCS / "i18n" / lang
     if not folder.exists():
         pytest.skip(f"no drafts for {lang}: every document is an absent gap")
