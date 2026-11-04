@@ -175,8 +175,10 @@ def test_script_src_allows_no_inline_script(client):
 
 
 def test_swagger_docs_exempt_from_strict_csp(client):
-    # /docs loads CDN assets; it must not get the strict 'self' CSP.
-    assert "Content-Security-Policy" not in client.get("/docs").headers
+    # A-021 (R411): /docs and /redoc load CDN assets, so they are OFF by default and exempt from the strict CSP ONLY when
+    # OO_API_DOCS=1 brings them back. By default nothing is exempt: even the 404 for /docs takes the strict 'self' CSP.
+    # The switch-on half runs in a child interpreter: tests/test_api_docs_off_by_default.py.
+    assert "default-src 'self'" in client.get("/docs").headers["Content-Security-Policy"]
 
 
 # --- S-009: search injection -> 400, never a 500 ---------------------------- #

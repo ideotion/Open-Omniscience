@@ -775,6 +775,13 @@ async def _note_dispatch(request: HTTPConnection) -> None:
         pass
 
 
+# The interactive API pages (Swagger at /docs, ReDoc at /redoc) are OFF unless OO_API_DOCS=1 (A-021, R411).
+# Both pages are shells that make the BROWSER fetch their scripts, styles, favicon (and, for ReDoc, a web font)
+# from third-party hosts (cdn.jsdelivr.net, fastapi.tiangolo.com, fonts.googleapis.com): a breach of "no external
+# resource" in a tool whose pages are otherwise served from the install alone. The switch is the developer's
+# informed choice; /openapi.json (the schema, plain JSON, no third-party fetch) stays on either way.
+_API_DOCS_ON = os.getenv("OO_API_DOCS", "0").strip() == "1"
+
 # Initialize FastAPI app
 # `default_response_class`: every JSON payload leaves in its WIRE country form (alpha-3, Q304);
 # Python inside keeps speaking alpha-2. One boundary, src/api/country_wire.py.
@@ -784,6 +791,8 @@ app = FastAPI(
     lifespan=lifespan,
     default_response_class=CountryWireResponse,
     dependencies=[Depends(_note_dispatch)],
+    docs_url="/docs" if _API_DOCS_ON else None,
+    redoc_url="/redoc" if _API_DOCS_ON else None,
 )
 
 # Prometheus metrics
@@ -903,8 +912,8 @@ async def _host_header_guard(request: Request, call_next):
 # 127.0.0.1:8000 (a "simple request" needs no CORS preflight). We reject any
 # state-changing request whose Origin/Referer does not name THIS server (the same
 # host AND the same port as the Host header), and we attach defensive headers (a
-# CSP backstop, anti-clickjacking, nosniff) to every response. The swagger docs (/docs, /redoc) load assets from a CDN, so they are
-# exempt from the strict CSP (they render no ingested content).
+# CSP backstop, anti-clickjacking, nosniff) to every response. The swagger docs (/docs, /redoc), when OO_API_DOCS=1 brings them
+# back, load assets from a CDN, so then (and only then) they are exempt from the strict CSP (they render no ingested content).
 _STATE_CHANGING = {"POST", "PUT", "PATCH", "DELETE"}
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 _CSP = (
@@ -917,7 +926,8 @@ _CSP = (
     "img-src 'self' data:; font-src 'self'; connect-src 'self'; "
     "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 )
-_CSP_EXEMPT_PREFIXES = ("/docs", "/redoc", "/openapi.json")
+# Empty by default: with the pages off there is nothing to exempt, and /openapi.json is plain JSON that takes the strict CSP.
+_CSP_EXEMPT_PREFIXES: tuple[str, ...] = ("/docs", "/redoc", "/openapi.json") if _API_DOCS_ON else ()
 
 
 def _origin_parts(value: str | None) -> tuple[str, int] | None:
@@ -3492,7 +3502,7 @@ async def read_root():
             return HTMLResponse(content=f.read(), status_code=200)
     else:
         return HTMLResponse(
-            content="<h1>Welcome to Open Omniscience</h1><p>API is running. See <a href='/docs'>API Documentation</a></p>",
+            content="<h1>Welcome to Open Omniscience</h1><p>API is running.</p>",
             status_code=200,
         )
 

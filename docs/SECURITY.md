@@ -21,8 +21,11 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   refuses with an honest message until you knowingly enable it in **Settings → Advanced → Safety →
   External topic discovery**, which states plainly that the query leaves your machine
   (`OO_DISCOVERY_EXTERNAL=1` for headless use). It is strictly user-triggered — never
-  part of ingestion, the scheduler, or any default path. (The browser-rendered `/docs` Swagger page also
-  references a CDN for its own assets; the app itself never fetches it.)
+  part of ingestion, the scheduler, or any default path. (The interactive API pages, Swagger at `/docs` and ReDoc at `/redoc`, would make
+  your *browser* fetch their assets from `cdn.jsdelivr.net`, `fastapi.tiangolo.com` and, for ReDoc,
+  `fonts.googleapis.com`; so they are **off by default** (404) and come back only when a developer starts the
+  app with `OO_API_DOCS=1`, the one case where those pages are also exempt from the strict CSP below. The schema
+  at `/openapi.json` stays on and fetches nothing. The app itself never fetches any of it.)
 - **Every other outbound call is consented and off the default/boot path.** Some are a
   click; several are **ride-alongs that run inside an online collect pass you started**,
   each named below with its own opt-out (or with the honest note that it has none yet).
@@ -404,8 +407,8 @@ down is a RECORD of that date and carries its own disposition table.)*
   `127.0.0.1` and `::1` only, `FORWARDED_ALLOW_IPS` widens that), and a proxy that hides the scheme
   is refused (403). A `Host` header that does not name this loopback API is refused (421, a
   DNS-rebinding guard); `OO_ALLOWED_HOSTS` (comma-separated hostnames, no port; an IPv6 literal is written with its brackets, as `[fe80::1]`) is the escape
-  hatch for serving the app under another name and widens both checks; every non-Swagger
-  response that reaches the header step carries `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a `default-src 'self'` CSP with
+  hatch for serving the app under another name and widens both checks; every response (other than the Swagger/ReDoc pages that `OO_API_DOCS=1` brings back)
+  that reaches the header step carries `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a `default-src 'self'` CSP with
   `frame-ancestors 'none'`. The one exception is the Origin check's own 403 (a short JSON body), which is returned before the header step and
   carries none of them (measured 27 Oct, audit 0.5.0 read of the origin ratchet). CORS ships `allow_credentials=False`.
 - **What stands between a cross-site page and a state-changing request (stated 2026-10-26, audit 0.5.0
