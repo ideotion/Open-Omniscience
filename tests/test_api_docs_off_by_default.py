@@ -92,8 +92,35 @@ def test_the_fallback_page_does_not_link_the_pages():
     assert not _DOCS_LINK.search(fallback), fallback
 
 
+def test_the_help_documents_do_not_send_a_reader_to_a_page_that_is_off():
+    """The Help reader serves ``docs/*.md`` (and ``docs/i18n/<lang>/*.md``): a paragraph that names ``/docs`` or ``/redoc`` must also say
+    ``OO_API_DOCS``, or it points a reader at a 404. The static-tree scan above cannot see these files."""
+    from src.api import main
+
+    checked = 0
+    stale: list[str] = []
+    for meta in main._DOCS.values():
+        if meta["file"] == "CHANGES.md":
+            continue  # history: it records what was true when each entry shipped (its 1.x top-bar entry names the old /docs link)
+        for f in [
+            _ROOT / "docs" / meta["file"],
+            *sorted((_ROOT / "docs" / "i18n").glob(f"*/{meta['file']}")),
+        ]:
+            if not f.exists():
+                continue
+            checked += 1
+            for para in re.split(r"\n\s*\n", f.read_text(encoding="utf-8")):
+                if (
+                    _DOCS_LINK.search(para) or "8000/docs" in para or "8000/redoc" in para
+                ) and "OO_API_DOCS" not in para:
+                    stale.append(f"{f.relative_to(_ROOT)}: {para.strip()[:90]!r}")
+    assert checked >= 8, "positive control: the Help documents were found"
+    assert not stale, stale
+
+
 _CHILD = """
-import json
+import json, sys
+sys.path.insert(0, sys.argv[1])  # ``-I`` ignores PYTHONPATH, so the tree under test is put first by hand
 from fastapi.testclient import TestClient
 from src.api.main import app
 c = TestClient(app, base_url="http://127.0.0.1:8000")  # no ``with``: the lifespan is not under test
@@ -107,11 +134,11 @@ print("RESULT " + json.dumps(out))
 
 def _child(value: str | None, tmp_path) -> dict[str, list]:
     env = {k: v for k, v in os.environ.items() if k != "OO_API_DOCS"}
-    env.update(OO_DATA_DIR=str(tmp_path), OO_NO_SCHEDULER="1", PYTHONPATH=str(_ROOT))
+    env.update(OO_DATA_DIR=str(tmp_path), OO_NO_SCHEDULER="1")
     if value is not None:
         env["OO_API_DOCS"] = value
     done = subprocess.run(
-        [sys.executable, "-I", "-c", _CHILD],
+        [sys.executable, "-I", "-c", _CHILD, str(_ROOT)],
         env=env,
         cwd=tmp_path,
         capture_output=True,
@@ -132,9 +159,12 @@ def test_the_switch_brings_both_pages_back_and_exempts_only_them(tmp_path):
     assert on["/docs"][1] is False and on["/redoc"][1] is False, (
         "back on, the pages carry no strict CSP (they could not load otherwise)"
     )
+    assert on["/openapi.json"][0] == 200 and on["/openapi.json"][1] is True, (
+        "only the two pages are exempt: the schema keeps the strict CSP"
+    )
 
 
-@pytest.mark.parametrize("value", [None, "0", "", "true", "yes"])
+@pytest.mark.parametrize("value", [None, "0", "", "true", "yes", " 1", "1 ", "11"])
 def test_only_the_exact_value_one_turns_it_on(tmp_path, value):
     """``true``/``yes`` are not ``1``: the same strict reading ``OO_AIRPLANE_SOCKET_GUARD`` and the other switches have."""
     off = _child(value, tmp_path)

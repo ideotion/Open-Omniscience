@@ -780,7 +780,7 @@ async def _note_dispatch(request: HTTPConnection) -> None:
 # from third-party hosts (cdn.jsdelivr.net, fastapi.tiangolo.com, fonts.googleapis.com): a breach of "no external
 # resource" in a tool whose pages are otherwise served from the install alone. The switch is the developer's
 # informed choice; /openapi.json (the schema, plain JSON, no third-party fetch) stays on either way.
-_API_DOCS_ON = os.getenv("OO_API_DOCS", "0").strip() == "1"
+_API_DOCS_ON = os.getenv("OO_API_DOCS", "0") == "1"
 
 # Initialize FastAPI app
 # `default_response_class`: every JSON payload leaves in its WIRE country form (alpha-3, Q304);
@@ -926,8 +926,9 @@ _CSP = (
     "img-src 'self' data:; font-src 'self'; connect-src 'self'; "
     "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 )
-# Empty by default: with the pages off there is nothing to exempt, and /openapi.json is plain JSON that takes the strict CSP.
-_CSP_EXEMPT_PREFIXES: tuple[str, ...] = ("/docs", "/redoc", "/openapi.json") if _API_DOCS_ON else ()
+# Empty by default: with the pages off there is nothing to exempt. /openapi.json is plain JSON and takes the strict CSP either
+# way (Swagger fetches it by XHR, which a response header on the JSON does not block).
+_CSP_EXEMPT_PREFIXES: tuple[str, ...] = ("/docs", "/redoc") if _API_DOCS_ON else ()
 
 
 def _origin_parts(value: str | None) -> tuple[str, int] | None:

@@ -174,7 +174,7 @@ def test_script_src_allows_no_inline_script(client):
     assert directives["script-src"] == ["'self'"], csp
 
 
-def test_swagger_docs_exempt_from_strict_csp(client):
+def test_swagger_docs_are_off_and_take_the_strict_csp_by_default(client):
     # A-021 (R411): /docs and /redoc load CDN assets, so they are OFF by default and exempt from the strict CSP ONLY when
     # OO_API_DOCS=1 brings them back. By default nothing is exempt: even the 404 for /docs takes the strict 'self' CSP.
     # The switch-on half runs in a child interpreter: tests/test_api_docs_off_by_default.py.

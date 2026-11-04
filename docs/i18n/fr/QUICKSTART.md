@@ -159,14 +159,14 @@ curl 'http://127.0.0.1:8000/api/articles?query=(climate OR energy) AND policy NO
 curl 'http://127.0.0.1:8000/api/articles/export?format=csv&query=climate'
 ```
 
-Documentation interactive de l'API : **http://127.0.0.1:8000/docs**.
+Le schéma de l'API lisible par machine est à **http://127.0.0.1:8000/openapi.json**. La page interactive Swagger est désactivée par défaut (elle charge des ressources depuis des hôtes tiers) ; un développeur peut démarrer l'application avec `OO_API_DOCS=1` pour l'obtenir sur `/docs`.
 
 ---
 
 ## D. Capacités d'analyse
 
 Toutes sont locales d'abord et se dégradent bruyamment (jamais de fabrication).
-Schémas complets sur `/docs`.
+Schémas complets sur `/openapi.json`.
 
 **LLM local (Ollama).** Le plus simple : choisissez **Outils LLM
 locaux** dans `./install.sh` (il peut installer Ollama et tirer un petit modèle

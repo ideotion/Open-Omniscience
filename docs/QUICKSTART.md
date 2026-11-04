@@ -404,13 +404,13 @@ curl 'http://127.0.0.1:8000/api/articles?query=(climate OR energy) AND policy NO
 curl 'http://127.0.0.1:8000/api/articles/export?format=csv&query=climate'
 ```
 
-Interactive API docs: **http://127.0.0.1:8000/docs**.
+The machine-readable API schema is at **http://127.0.0.1:8000/openapi.json**. The interactive Swagger page is off by default (it loads assets from third-party hosts); a developer can start the app with `OO_API_DOCS=1` to get it at `/docs`.
 
 ---
 
 ## E. Analysis capabilities
 
-All are local-first and degrade loudly (never fabricate). Full schemas at `/docs`.
+All are local-first and degrade loudly (never fabricate). Full schemas at `/openapi.json`.
 
 **Local LLM (Ollama).** Set it up from **Settings → AI**: an in-app,
 **checksum-verified** Ollama installer (Linux) plus a **model download queue** (real

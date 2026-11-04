@@ -34,7 +34,7 @@ one that matches what you need.
 - **[DESIGN.md](DESIGN.md)** — what the app is and isn't (product synthesis), where each
   original "pillar" now lives, the GUI redesign reasoning, and the content-analysis strategy.
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — the database & configuration, the HTTP API map
-  (live reference at `/docs`), and internationalisation.
+  (live reference: the schema at `/openapi.json`; Swagger at `/docs` only with `OO_API_DOCS=1`), and internationalisation.
 - **[FUTURE_DEVELOPMENTS.md](FUTURE_DEVELOPMENTS.md)** — the persistent design memory (north
   star): design intent + rationale + open questions for the big features.
 - **[research/](research/)** — committed reference material (not status) for two design
