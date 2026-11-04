@@ -100,7 +100,13 @@ class Declared:
 
 
 def _alpha3(row: Mapping) -> str:
-    return (country_display_code(row.get("jurisdiction")) or "").strip().upper()
+    # A YAML row can carry an int or a bool as its jurisdiction (`ON` loads as True) and `country_display_code` calls
+    # `.strip()` on what it is given, which aborted the validator instead of naming the row. A non-string has no
+    # alpha-3 code: it reads as "" and fails the shape check in `_identity_vocabulary_problems`.
+    jurisdiction = row.get("jurisdiction")
+    if not isinstance(jurisdiction, str):
+        return ""
+    return str(country_display_code(jurisdiction) or "").strip().upper()
 
 
 def declaration_problems(row: Mapping) -> list[str]:

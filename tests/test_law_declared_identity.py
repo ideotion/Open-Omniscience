@@ -543,6 +543,8 @@ def test_a_row_that_declares_nothing_declares_nothing():
         ({"identity": _VALUE}, "must be a mapping"),
         ({"identity": None}, "must be a mapping"),
         ({"jurisdiction": "Atlantis", "identity": {"scheme": "act-number", "value": _VALUE}}, "alpha-3"),
+        ({"jurisdiction": 123, "identity": {"scheme": "act-number", "value": _VALUE}}, "alpha-3"),
+        ({"jurisdiction": True, "identity": {"scheme": "act-number", "value": _VALUE}}, "alpha-3"),
         ({"doc_type": "bill"}, "bills and drafts"),
         ({"doc_type": "case-law"}, "case law"),
         ({"doc_type": "agreement"}, "doc_type"),
