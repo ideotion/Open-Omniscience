@@ -291,7 +291,12 @@ def ensure_identity(
     # An existing identity is UPDATED only where the new reading says something and the
     # old row said nothing. A later pass that cannot see a date must never erase one an
     # earlier pass read: "the source stopped mentioning it" is not "it never happened".
-    row.doc_type = kind
+    #
+    # ``doc_type`` follows the same rule. ``unspecified`` is the state of nobody having
+    # said, and writing it over a recorded ``treaty`` would put the category back to
+    # unknown every time a pass reads a document that declares none.
+    if kind != "unspecified":
+        row.doc_type = kind
     row.jurisdiction_level = level
     if system != "unknown":
         row.legal_system = system
@@ -460,9 +465,15 @@ def register_document(
         session.add(row)
     row.identity_id = identity.id
     row.language = (language or "").strip().lower() or "und"
-    set_translation_kind(row, kind)
+    # The same rule as `ensure_identity`'s: `unrecorded` is "nobody said", so it never
+    # replaces a kind some earlier pass or an operator recorded, and a pass that names no
+    # translator never erases one. A reclassification still goes through
+    # `set_translation_kind` and is logged there.
+    if not (kind == "unrecorded" and row.translation_kind not in (None, "", "unrecorded")):
+        set_translation_kind(row, kind)
     row.title = title
-    row.translated_by = translated_by
+    if translated_by is not None:
+        row.translated_by = translated_by
     row.licence_id = licence_id if licence_id in LICENCES else "unknown"
     row.source_authority = source_authority
     row.source_url = source_url

@@ -119,6 +119,20 @@ def _err(errors: list[str], where: str, msg: str) -> None:
     errors.append(f"{where}: {msg}")
 
 
+def _declaration_errors(errors: list[str], where: str, d: dict) -> None:
+    """A document row's optional ``identity`` / ``doc_type`` / ``translation_kind`` declaration (v0.6.0 C-L2).
+
+    The rule lives in ``src/law/declared.py`` and is imported rather than restated, so what this tool passes is exactly
+    what the tracker applies: a validator with its own copy of the rule is how a row comes to pass here and then be
+    quietly treated as undeclared at track time."""
+    if str(_ROOT) not in sys.path:
+        sys.path.insert(0, str(_ROOT))
+    from src.law.declared import declaration_problems
+
+    for problem in declaration_problems(d):
+        _err(errors, where, problem)
+
+
 def _check_url(
     errors: list[str],
     warnings: list[str],
@@ -314,6 +328,7 @@ def validate(generated: dict, curated: dict) -> dict:
             if not d.get(field):
                 _err(errors, where, f"missing required field {field!r}")
         _check_url(errors, warnings, where, "url", d.get("url"))
+        _declaration_errors(errors, where, d)
         status = (d.get("verification") or {}).get("status")
         if status not in VERIFICATION_STATUSES:
             _err(errors, where, f"verification.status must be one of {VERIFICATION_STATUSES}")
@@ -325,6 +340,14 @@ def validate(generated: dict, curated: dict) -> dict:
         seen_docs.add(dkey)
         if dkey in curated_docs:
             _err(errors, where, "document already in the CURATED catalog (curated wins)")
+
+    # Rows that declare the SAME law must agree about it (one doc_type, at most one original), across both files.
+    if str(_ROOT) not in sys.path:
+        sys.path.insert(0, str(_ROOT))
+    from src.law.declared import consistency_problems
+
+    for problem in consistency_problems([*(curated.get("documents") or []), *(generated.get("documents") or [])]):
+        _err(errors, "documents", problem)
 
     return {
         "errors": errors,

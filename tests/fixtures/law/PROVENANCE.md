@@ -26,3 +26,12 @@ The textual content is invented for the fixture (a fictitious "Example Measureme
 so nothing here reproduces third-party material. Real UK legislation is Crown copyright,
 published under the Open Government Licence; when a captured sample is eventually added,
 record its URL, retrieval date and licence here.
+
+## `synthetic/treaty/` (v0.6.0 C-L2)
+
+Also HAND-AUTHORED and invented, like everything above: six HTML bodies of one fictitious
+"Treaty on Measurement Standards" and a synthetic catalogue on the reserved `.test` TLD. They
+prove that a **declared identity** aligns six language versions into one identity; they say
+nothing about what the UN Treaty Collection or WIPO Lex actually serve, because neither host
+is reachable from the build sandbox and no page of either was read. See
+`synthetic/README.md`.
