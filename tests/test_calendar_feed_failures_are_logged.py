@@ -364,8 +364,30 @@ def test_two_keys_that_become_one_once_their_surrogates_are_replaced_are_counted
 
 
 def test_a_healthy_imports_store_comes_back_exactly_as_it_was_written_key_order_included():
-    healthy = {"f": {"events": {"a": {"sources": ["s"], "x": 1}}, "name": "F", "x": 2}, "g": {"name": "G"}}
+    healthy = {"f": {"events": {"a": {"sources": ["s"], "x": 1}}, "name": "F", "x": 2}, "g": {"name": "G", "events": {}}}
     _store("calendar_feed_imports.json").write_text(json.dumps(healthy), "utf-8")
     got = F._load_json("calendar_feed_imports.json")
     assert got == healthy and list(got["f"]) == ["events", "name", "x"], "no key moved"
-    assert "events" not in got["g"], "no key added to a bucket that had none"
+    assert list(got["g"]) == ["name", "events"], "the order of a family that had both keys is kept"
+
+
+_ICS = "BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:u1\nSUMMARY:Day\nDTSTART;VALUE=DATE:20270101\nEND:VEVENT\nEND:VCALENDAR\n"
+
+
+@pytest.mark.parametrize("local", [{"name": "F"}, {"name": "F", "events": None}])
+def test_a_family_with_no_events_or_a_null_one_reads_as_an_empty_dict_so_no_reader_or_merge_raises(local, caplog):
+    """Before the fold: ``events`` stayed missing/None, and the merge (``.items()``), ``imported_agenda`` and the importers raised on it."""
+    _store("calendar_feed_imports.json").write_text(json.dumps({"f": dict(local)}), "utf-8")
+    assert F._load_json("calendar_feed_imports.json")["f"]["events"] == {}
+    out = F.merge_imported_store("calendar_feed_imports.json", {"f": {"name": "F", "events": {"a": {"title": "t", "date": "2027-01-01", "sources": ["s"], "uids": []}}}})
+    assert out["added"] == 1
+    after = json.loads(_store("calendar_feed_imports.json").read_text("utf-8"))
+    assert list(after["f"]["events"]) == ["a"]
+
+
+@pytest.mark.parametrize("local", [{"name": "F"}, {"name": "F", "events": None}])
+def test_the_agenda_and_the_ics_import_walk_a_family_with_no_events(local):
+    _store("calendar_feed_imports.json").write_text(json.dumps({"user-f": dict(local)}), "utf-8")
+    assert F.imported_agenda() == []
+    got = F.import_ics_text("F", _ICS)
+    assert got["added"] == 1 and got["family_total"] == 1

@@ -191,8 +191,8 @@ def _imports_shape(data: dict) -> tuple[dict, int]:
 
     Valid JSON of another shape (a family that is not an object, ``events`` as a list, an event that is a number, ``sources`` as a
     string or holding a non-text item) parses, then raises in the first reader or merge that calls ``.items()``, ``.get()`` or ``in`` on
-    it. Each such piece is left out and COUNTED; nothing of its content is kept or reported. A healthy store comes back with its
-    keys in their order and no key added.
+    it. Each such piece is left out and COUNTED; nothing of its content is kept or reported. A family always comes back with an
+    ``events`` dict (``{}`` when it had none or a null), and a healthy store keeps its keys in their order.
     """
     left_out = 0
     clean: dict = {}
@@ -201,29 +201,30 @@ def _imports_shape(data: dict) -> tuple[dict, int]:
             left_out += 1
             continue
         fam = dict(bucket)
-        if "events" in fam:
-            events = fam["events"]
-            if events is not None and not isinstance(events, dict):
+        # Every reader and the merge index ``fam["events"]`` directly, so it is always a dict: a missing or null one is an empty one
+        # (nothing of the file's content is lost by that), a non-object one is left out and counted.
+        events = fam.get("events")
+        if events is not None and not isinstance(events, dict):
+            left_out += 1
+            events = None
+        kept: dict = {}
+        for fp, entry in (events or {}).items():
+            if not isinstance(entry, dict):
                 left_out += 1
-                events = {}
-            kept: dict = {}
-            for fp, entry in (events or {}).items():
-                if not isinstance(entry, dict):
-                    left_out += 1
+                continue
+            entry = dict(entry)
+            for field in ("sources", "uids"):
+                if field not in entry or entry[field] is None:
                     continue
-                entry = dict(entry)
-                for field in ("sources", "uids"):
-                    if field not in entry or entry[field] is None:
-                        continue
-                    if not isinstance(entry[field], list):
-                        left_out += 1
-                        del entry[field]
-                        continue
-                    texts = [x for x in entry[field] if isinstance(x, str)]
-                    left_out += len(entry[field]) - len(texts)
-                    entry[field] = texts
-                kept[fp] = entry
-            fam["events"] = kept if events is not None else None
+                if not isinstance(entry[field], list):
+                    left_out += 1
+                    entry[field] = []  # an empty list, not a missing key: ``entry["sources"]`` is indexed in the importers
+                    continue
+                texts = [x for x in entry[field] if isinstance(x, str)]
+                left_out += len(entry[field]) - len(texts)
+                entry[field] = texts
+            kept[fp] = entry
+        fam["events"] = kept  # assigns in place when the key exists, so the family's key order is kept
         clean[fam_key] = fam
     return clean, left_out
 
