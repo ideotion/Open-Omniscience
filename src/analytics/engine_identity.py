@@ -109,6 +109,7 @@ ENGINE_MODULES: tuple[str, ...] = (
     "src/catalog/__init__.py",
     "src/catalog/aggregates.py",
     "src/catalog/cities.py",
+    "src/catalog/aggregates.py",
     "src/catalog/countries.py",
     "src/services/__init__.py",
     "src/services/stopwords.py",
@@ -153,6 +154,7 @@ WWW_ONLY_MODULES: tuple[str, ...] = (
 #: Modules the www stage reads that the keyword pass reads too: part of BOTH engines' code digests.
 WWW_SHARED_MODULES: tuple[str, ...] = (
     "src/catalog/__init__.py",
+    "src/catalog/aggregates.py",
     "src/catalog/countries.py",
     "src/timemap/__init__.py",
     "src/utils/safe_yaml.py",

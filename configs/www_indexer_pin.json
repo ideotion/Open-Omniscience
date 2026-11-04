@@ -1,12 +1,18 @@
 {
   "version": 1,
-  "digest": "311bb023767b224605625e920dde782342118d190a3130b6241b4cff41060557",
+  "digest": "e0e55df19e3459c0e85614cd93de308a8002983fdbaf5ef38f28ad47098a9b0e",
   "log": [
     {
       "version": 1,
       "digest": "311bb023767b224605625e920dde782342118d190a3130b6241b4cff41060557",
       "kind": "baseline",
       "note": "R415 baseline: the pin starts at the www code digest of the main tip this change is cut from (WWW_INDEXER_VERSION 1)"
+    },
+    {
+      "version": 1,
+      "digest": "e0e55df19e3459c0e85614cd93de308a8002983fdbaf5ef38f28ad47098a9b0e",
+      "kind": "same",
+      "note": "R415 review: src/catalog/aggregates.py is reachable from the gazetteer country path, so it joins the www modules"
     }
   ]
 }
