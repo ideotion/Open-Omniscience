@@ -324,3 +324,48 @@ def test_valid_json_of_the_wrong_shape_is_left_out_and_counted_not_raised_on(wro
     after = json.loads(_store("calendar_feed_imports.json").read_text("utf-8"))
     assert after["keep"]["events"] == _GOOD["events"] and after["new"]["events"] == _GOOD["events"]
     assert not any(isinstance(b, dict) and b.get("events") in ([1],) for b in after.values())
+
+
+# --- the Opus read of the boundary above (what it must not cost, and what it must not leave) -----------------------------------------
+def test_a_deeply_nested_healthy_store_still_reads_and_merges_as_it_did_before(caplog):
+    """The surrogate walk recurses once per level; a healthy store of 3000 levels read cleanly before the boundary and must not raise RecursionError now."""
+    deep = '{"f":' * 3000 + "1" + "}" * 3000
+    _store("calendar_feed_checks.json").write_text(deep, "utf-8")
+    with caplog.at_level("WARNING"):
+        assert "f" in F._load_json("calendar_feed_checks.json")
+        out = F.merge_imported_store("calendar_feed_checks.json", json.loads(deep))
+    assert out["kept_local"] == 1 and "nested too deeply" not in caplog.text
+
+
+def test_a_store_nested_too_deeply_to_check_for_a_surrogate_reads_as_empty_and_says_so(caplog):
+    deep = '{"f":' * 3000 + '"\\ud800"' + "}" * 3000
+    _store("calendar_feed_checks.json").write_text(deep, "utf-8")
+    with caplog.at_level("WARNING"):
+        assert F._load_json("calendar_feed_checks.json") == {}
+    assert "is nested too deeply to check for lone surrogate escapes" in caplog.text
+
+
+def test_a_non_text_item_in_sources_is_left_out_so_the_reader_does_not_raise_on_it(caplog):
+    """``load_imports`` tests ``s not in _REDUNDANT_DEFAULT_FEEDS``: an object in the list raised TypeError (unhashable)."""
+    store = {"f": {"name": "F", "events": {"a": {"sources": [{"z": 1}, "feed-1", 7], "uids": ["u", None, ["x"]]}}}}
+    _store("calendar_feed_imports.json").write_text(json.dumps(store), "utf-8")
+    with caplog.at_level("WARNING"):
+        got = F.load_imports()
+    assert got["f"]["events"]["a"]["sources"] == ["feed-1"]
+    assert "3 piece(s) of the wrong shape" in caplog.text or "4 piece(s) of the wrong shape" in caplog.text
+
+
+def test_two_keys_that_become_one_once_their_surrogates_are_replaced_are_counted_not_lost_silently(caplog):
+    _store("calendar_feed_checks.json").write_text('{"\\ud800": {"t": 1}, "\\udfff": {"t": 2}, "ok": {"t": 3}}', "utf-8")
+    with caplog.at_level("WARNING"):
+        got = F._load_json("calendar_feed_checks.json")
+    assert sorted(got) == ["ok", "�"]
+    assert "1 entry(ies) shared a key" in caplog.text
+
+
+def test_a_healthy_imports_store_comes_back_exactly_as_it_was_written_key_order_included():
+    healthy = {"f": {"events": {"a": {"sources": ["s"], "x": 1}}, "name": "F", "x": 2}, "g": {"name": "G"}}
+    _store("calendar_feed_imports.json").write_text(json.dumps(healthy), "utf-8")
+    got = F._load_json("calendar_feed_imports.json")
+    assert got == healthy and list(got["f"]) == ["events", "name", "x"], "no key moved"
+    assert "events" not in got["g"], "no key added to a bucket that had none"

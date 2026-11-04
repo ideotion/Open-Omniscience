@@ -142,11 +142,35 @@ _LONE_SURROGATE = re.compile("[\ud800-\udfff]")
 _IMPORTS = "calendar_feed_imports.json"
 
 
-def _scrub_surrogates(value: object, found: list[int]) -> object:
-    """``value`` with every lone surrogate in any text (a key or a value) replaced by U+FFFD; ``found[0]`` counts the texts changed.
+#: The JSON ESCAPE of a UTF-16 surrogate half, in the raw text of a file. A parsed text can only hold a surrogate if its source wrote one this way
+#: (the file is read as UTF-8, which refuses an encoded one), so a text without this pattern needs no walk at all.
+_SURROGATE_ESCAPE = re.compile(r"\\u[dD][89a-fA-F]")
 
-    ``json.loads`` joins a valid escaped pair into one character, so any surrogate left in a parsed text IS a lone one: it parses, and
-    the next save then raises ``UnicodeEncodeError`` on it, for every save from then on (and the restore merge ends at that save).
+
+def _may_hold_lone_surrogate(data: object, raw: str | None) -> bool:
+    """Could ``data`` hold a lone surrogate? Decided without recursing in Python, so a deeply nested store costs no more than before.
+
+    From the file's raw text when there is one (a regular expression: a false positive only costs the walk). Without one (a restore
+    artifact's store arrives parsed) from encoding the document, which is C code and raises exactly when a surrogate is in it. A document
+    too deep for that is left as it was: it behaved the same before, and a walk would only raise ``RecursionError`` where none was.
+    """
+    if raw is not None:
+        return _SURROGATE_ESCAPE.search(raw) is not None
+    try:
+        json.dumps(data, ensure_ascii=False).encode("utf-8")
+    except UnicodeEncodeError:
+        return True
+    except (RecursionError, ValueError, TypeError):
+        return False
+    return False
+
+
+def _scrub_surrogates(value: object, found: list[int]) -> object:
+    """``value`` with every lone surrogate in any text (a key or a value) replaced by U+FFFD.
+
+    ``found`` is ``[texts changed, entries lost to a key that became another key]``. ``json.loads`` joins a valid escaped pair into one
+    character, so any surrogate left in a parsed text IS a lone one: it parses, and the next save then raises ``UnicodeEncodeError`` on
+    it, for every save from then on (and the restore merge ends at that save).
     """
     if isinstance(value, str):
         if _LONE_SURROGATE.search(value):
@@ -154,7 +178,9 @@ def _scrub_surrogates(value: object, found: list[int]) -> object:
             return _LONE_SURROGATE.sub("\ufffd", value)
         return value
     if isinstance(value, dict):
-        return {_scrub_surrogates(k, found): _scrub_surrogates(v, found) for k, v in value.items()}
+        out = {_scrub_surrogates(k, found): _scrub_surrogates(v, found) for k, v in value.items()}
+        found[1] += len(value) - len(out)
+        return out
     if isinstance(value, list):
         return [_scrub_surrogates(v, found) for v in value]
     return value
@@ -164,8 +190,9 @@ def _imports_shape(data: dict) -> tuple[dict, int]:
     """The imported-events store with only what its readers can walk: ``{family: {"name", "events": {fingerprint: {...}}}}``.
 
     Valid JSON of another shape (a family that is not an object, ``events`` as a list, an event that is a number, ``sources`` as a
-    string) parses, then raises ``AttributeError`` in the first reader or merge that calls ``.items()`` or ``.get()`` on it. Each such
-    piece is left out and COUNTED; nothing of its content is kept or reported.
+    string or holding a non-text item) parses, then raises in the first reader or merge that calls ``.items()``, ``.get()`` or ``in`` on
+    it. Each such piece is left out and COUNTED; nothing of its content is kept or reported. A healthy store comes back with its
+    keys in their order and no key added.
     """
     left_out = 0
     clean: dict = {}
@@ -173,40 +200,59 @@ def _imports_shape(data: dict) -> tuple[dict, int]:
         if not isinstance(bucket, dict):
             left_out += 1
             continue
-        events = bucket.get("events")
-        if events is not None and not isinstance(events, dict):
-            left_out += 1
-            events = None
-        kept: dict = {}
-        for fp, entry in (events or {}).items():
-            if not isinstance(entry, dict):
+        fam = dict(bucket)
+        if "events" in fam:
+            events = fam["events"]
+            if events is not None and not isinstance(events, dict):
                 left_out += 1
-                continue
-            entry = dict(entry)
-            for field in ("sources", "uids"):
-                if field in entry and not isinstance(entry[field], list):
+                events = {}
+            kept: dict = {}
+            for fp, entry in (events or {}).items():
+                if not isinstance(entry, dict):
                     left_out += 1
-                    del entry[field]
-            kept[fp] = entry
-        clean[fam_key] = {**{k: v for k, v in bucket.items() if k != "events"}, "events": kept}
+                    continue
+                entry = dict(entry)
+                for field in ("sources", "uids"):
+                    if field not in entry or entry[field] is None:
+                        continue
+                    if not isinstance(entry[field], list):
+                        left_out += 1
+                        del entry[field]
+                        continue
+                    texts = [x for x in entry[field] if isinstance(x, str)]
+                    left_out += len(entry[field]) - len(texts)
+                    entry[field] = texts
+                kept[fp] = entry
+            fam["events"] = kept if events is not None else None
+        clean[fam_key] = fam
     return clean, left_out
 
 
-def _sanitized(name: str, data: object, *, what: str) -> dict:
+def _sanitized(name: str, data: object, *, what: str, raw: str | None = None) -> dict:
     """``data`` as a store of ``name`` that every reader can walk, with a class-only line for what had to change.
 
-    ``what`` says where it came from in the line ("reads as" for a store on disk, "arrives as" for a restore artifact's).
+    ``what`` says where it came from in the line ("reads as" for a store on disk, "arrives as" for a restore artifact's); ``raw`` is the
+    file's text when there is one.
     """
     if not isinstance(data, dict):
         _LOG.warning("%s holds JSON that is not an object (%s), so it %s empty", name, type(data).__name__, what)
         return {}
-    found = [0]
-    out = _scrub_surrogates(data, found)
-    assert isinstance(out, dict)
-    if found[0]:
-        _LOG.warning(
-            "%s: %d text(s) held a lone surrogate escape, which no file can store as UTF-8; each was replaced by U+FFFD", name, found[0]
-        )
+    out: dict = data
+    if _may_hold_lone_surrogate(data, raw):
+        found = [0, 0]
+        try:
+            scrubbed = _scrub_surrogates(data, found)
+        except RecursionError:
+            _LOG.warning("%s is nested too deeply to check for lone surrogate escapes, so it %s empty", name, what)
+            return {}
+        assert isinstance(scrubbed, dict)
+        out = scrubbed
+        if found[0]:
+            _LOG.warning(
+                "%s: %d text(s) held a lone surrogate escape, which no file can store as UTF-8; each was replaced by U+FFFD", name, found[0]
+            )
+        if found[1]:
+            _LOG.warning("%s: %d entry(ies) shared a key once the surrogates were replaced and were merged into one (the last wins)", name, found[1])
     if name == _IMPORTS:
         out, left_out = _imports_shape(out)
         if left_out:
@@ -217,14 +263,15 @@ def _sanitized(name: str, data: object, *, what: str) -> dict:
 def _load_json(name: str) -> dict:
     p = _store_path(name)
     try:
-        data = json.loads(p.read_text("utf-8")) if p.exists() else {}
+        raw = p.read_text("utf-8") if p.exists() else None
+        data = json.loads(raw) if raw is not None else {}
     except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         # A store that EXISTS but cannot be read reads as empty, exactly as before (and a save that can write replaces it): that used to happen with no word anywhere (R386, R397).
         # The line does not claim the replacement: where the store is a directory or the data folder is not writable, no save succeeds.
         # The class only: the store holds the user's imported events, and what is wrong with it is not worth a line of its words.
         _LOG.warning("%s exists but could not be read, so it reads as empty: %s", name, type(exc).__name__)
         return {}
-    return _sanitized(name, data, what="reads as")
+    return _sanitized(name, data, what="reads as", raw=raw)
 
 
 def _save_json(name: str, data: dict, *, mirror: bool = True) -> None:
