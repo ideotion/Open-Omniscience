@@ -1,6 +1,6 @@
 # Release gate — v0.5.0 · The investigator's desk
 
-**Status: CLOSED on the commit `v0.5.0` names, `eea913e7a` (2026-10-26; the tag push is the maintainer's and was pending when this line was written), with named `0.5.1` open items — §1d.** Written 2026-09-15 from the answered roadmap sheet, ahead of the `0.4` tag. This is the
+**Status: CLOSED on the commit the gate was verified on, `eea913e7a` (2026-10-26); `v0.5.0` was then pushed by the maintainer on `8cbb54ef4`, the 2026-11-02 merge of #1701, 227 first-parent merges later (R408), so the `0.5.1` fixes merged through #1701 are INSIDE `v0.5.0`; named `0.5.1` open items — §1d.** Written 2026-09-15 from the answered roadmap sheet, ahead of the `0.4` tag. This is the
 checkable inventory for closing the `0.5` cycle. It exists now because the maintainer ruled (Q112 = a, Q1204 =
 a) that the gate files for 0.4–0.9 are written in one session from the answered sheet
 ([`docs/design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md`](../design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md),
@@ -103,7 +103,7 @@ the step is the one in the third column. Each reading cited is from `plan-v05/ro
 
 ## 1d. The 0.5.1 open items and how each row stands at the tag (2026-10-26, `R185`–`R187`)
 
-`v0.5.0` is cut on `eea913e7a` (tag push pending the maintainer) with every row built and verified as far as a session can verify it (CI, fixtures, generated stores and
+`v0.5.0` was verified on `eea913e7a` and tagged on `8cbb54ef4` (R408) with every row built and verified as far as a session can verify it (CI, fixtures, generated stores and
 Chromium walks on seeded plaintext stores, `R126`, and one encrypted click-through run on `21a888c42`, item 21), except two artifacts
 that are not built at all, row C's gazetteer (S4) and row E's admin-boundary files, which wait on an operator build. A row's closing artifact is the PR it names; the real-install step is a **named
 0.5.1 open item**, never a blocker (`Q62` = a). The wording is one pattern: *built and fixture/Chromium-verified (PR #); the
