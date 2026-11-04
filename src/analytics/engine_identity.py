@@ -76,6 +76,12 @@ IDENTITY_SCHEMA = "oo-index-engine-2"
 #: the point -- the restore then still carries. The guard is ``tests/test_indexer_pin.py``.
 INDEXER_VERSION = 1
 
+#: The hand-bumped version of the PLACES AND ENTITIES stage alone (R415). Same discipline as :data:`INDEXER_VERSION`, policed by
+#: ``configs/www_indexer_pin.json`` (``python scripts/indexer_pin.py --engine www --bump|--same "<sentence>"``). A change confined to
+#: the www modules below bumps THIS number and leaves the keyword stamp where it is, so a restore still carries the keyword rows and
+#: re-extracts only the places and entities.
+WWW_INDEXER_VERSION = 1
+
 #: The prefix every stamp carries. A stamp is ``e1-`` + 32 hex digits = 35 characters,
 #: inside ``Article.index_engine``'s String(40).
 STAMP_PREFIX = "e1-"
@@ -131,6 +137,32 @@ ENGINE_DATA_GLOBS: tuple[str, ...] = (
     "configs/cities.sample.yml",
     # Built per install from the operator's own OSM data (scripts/build_place_gazetteer.py) and merged into the gazetteer by
     # ``load_cities`` (0.5 row C S4): an input that differs per install, so it is hashed at runtime, absent or not.
+    "configs/places_gazetteer.yml",
+)
+
+#: The modules ONLY the places-and-entities stage reads (R415): nothing in the keyword pass or the date stage imports them
+#: (measured by importing ``src.timemap.whostore`` and ``src.timemap.datestore`` in fresh interpreters). They leave the keyword
+#: engine's code digest and form the www engine's.
+WWW_ONLY_MODULES: tuple[str, ...] = (
+    "src/catalog/cities.py",
+    "src/timemap/entextract.py",
+    "src/timemap/locextract.py",
+    "src/timemap/whostore.py",
+)
+
+#: Modules the www stage reads that the keyword pass reads too: part of BOTH engines' code digests.
+WWW_SHARED_MODULES: tuple[str, ...] = (
+    "src/catalog/__init__.py",
+    "src/catalog/countries.py",
+    "src/timemap/__init__.py",
+    "src/utils/safe_yaml.py",
+)
+
+#: The www stage's data: the gazetteers (``cities.yml`` is generated per install and shadows the sample; ``places_gazetteer.yml`` is
+#: built per install from the operator's own OSM data).
+WWW_DATA_GLOBS: tuple[str, ...] = (
+    "configs/cities.yml",
+    "configs/cities.sample.yml",
     "configs/places_gazetteer.yml",
 )
 
@@ -531,14 +563,31 @@ def _engine_file_bytes(rel: str, data: bytes) -> bytes:
     return data if digest is None else b"\x00narrowed:" + digest.encode()
 
 
-def _data_files() -> list[str]:
+def _expand(globs: tuple[str, ...]) -> list[str]:
     out: set[str] = set()
-    for pattern in ENGINE_DATA_GLOBS:
+    for pattern in globs:
         if any(ch in pattern for ch in "*?["):
             out.update(str(p.relative_to(_REPO)) for p in _REPO.glob(pattern) if p.is_file())
         else:
             out.add(pattern)
     return sorted(out)
+
+
+def _data_files() -> list[str]:
+    """Every data file either engine reads."""
+    return _expand(ENGINE_DATA_GLOBS)
+
+
+def _kw_data_files() -> list[str]:
+    return sorted(set(_data_files()) - set(_expand(WWW_DATA_GLOBS)))
+
+
+def _kw_modules() -> list[str]:
+    return sorted(set(ENGINE_MODULES) - set(WWW_ONLY_MODULES))
+
+
+def _www_modules() -> list[str]:
+    return sorted(set(WWW_ONLY_MODULES) | set(WWW_SHARED_MODULES))
 
 
 def _digest_of(files: list[str], *, narrow: bool) -> str:
@@ -565,20 +614,34 @@ def _digest_of(files: list[str], *, narrow: bool) -> str:
 
 @lru_cache(maxsize=1)
 def code_digest() -> str:
-    """The hash of the engine's CODE modules (:data:`ENGINE_MODULES`). Since R412 it is not part of the identity: it is what
-    ``configs/indexer_pin.json`` and ``tests/test_indexer_pin.py`` police the hand-bumped :data:`INDEXER_VERSION` with.
+    """The hash of the KEYWORD engine's CODE modules (:data:`ENGINE_MODULES` without :data:`WWW_ONLY_MODULES`). Since R412 it is not
+    part of the identity: it is what ``configs/indexer_pin.json`` and ``tests/test_indexer_pin.py`` police the hand-bumped
+    :data:`INDEXER_VERSION` with.
 
     Cached for the process: the files a running app extracts with do not change under it, and a pass must not re-read ~200 files
     per article."""
-    return _digest_of(sorted(ENGINE_MODULES), narrow=True)
+    return _digest_of(_kw_modules(), narrow=True)
+
+
+@lru_cache(maxsize=1)
+def www_code_digest() -> str:
+    """The hash of the places-and-entities stage's code (R415), policing :data:`WWW_INDEXER_VERSION` through
+    ``configs/www_indexer_pin.json``."""
+    return _digest_of(_www_modules(), narrow=False)
 
 
 @lru_cache(maxsize=1)
 def data_digest() -> str:
-    """The hash of the engine's DATA files (stoplists, rings, gazetteers), computed at runtime on every install and part of the
-    identity: a data file can differ per install (``configs/cities.yml`` is generated on the operator's machine and shadows the
-    shipped sample), so it cannot be versioned by hand."""
-    return _digest_of(_data_files(), narrow=False)
+    """The hash of the KEYWORD engine's DATA files (stoplists, rings), computed at runtime on every install and part of the identity: a
+    data file can differ per install, so it cannot be versioned by hand. The gazetteers belong to the www engine (:func:`www_data_digest`)."""
+    return _digest_of(_kw_data_files(), narrow=False)
+
+
+@lru_cache(maxsize=1)
+def www_data_digest() -> str:
+    """The hash of the www stage's gazetteers: ``configs/cities.yml`` is generated on the operator's machine and shadows the shipped
+    sample, and ``configs/places_gazetteer.yml`` is built from their own OSM data, so a machine that has them is a different www engine."""
+    return _digest_of(_expand(WWW_DATA_GLOBS), narrow=False)
 
 
 @cache
@@ -656,6 +719,44 @@ def engine_id(extractor=None, *, extractor_name: str | None = None) -> str:
 def baseline_engine_id() -> str:
     """The identity a post-merge re-index would stamp -- what a carry must match."""
     return engine_id(extractor_name="baseline")
+
+
+#: The www stage's own format and stamp prefix (``w1-`` + 32 hex digits = 35 characters, inside ``article_www_stamps.engine``).
+WWW_IDENTITY_SCHEMA = "oo-www-engine-1"
+WWW_STAMP_PREFIX = "w1-"
+#: The prefix of a www inputs digest (``wi1-`` + 32 hex digits = 36 characters).
+WWW_INPUTS_PREFIX = "wi1-"
+
+
+def www_engine_components() -> dict:
+    """What the PLACES-AND-ENTITIES stamp is a hash of, readable. Neither extractor consults an operator switch or an optional
+    dictionary; the interpreter's Unicode tables and ``\\w`` do reach them, so those stay in."""
+    return {
+        "schema": WWW_IDENTITY_SCHEMA,
+        "indexer": WWW_INDEXER_VERSION,
+        "data": www_data_digest(),
+        "python": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "unicode": unicodedata.unidata_version,
+    }
+
+
+def www_engine_id() -> str:
+    """The stamp for the places-and-entities engine that would run right now (R415)."""
+    blob = json.dumps(www_engine_components(), sort_keys=True, separators=(",", ":"))
+    return WWW_STAMP_PREFIX + hashlib.sha256(blob.encode()).hexdigest()[:32]
+
+
+def www_inputs_digest(*, raw_content: str | None, country: str | None) -> str:
+    """A hash of EVERYTHING the places and entities stores read from one article (R415): the ``content`` COLUMN (not the decompressed
+    text -- the stores read the column directly, so a compressed article shows them an empty body) and the article's own ``country``
+    (the place extractor's ``source_country``). ONE function for both sides of the comparison, as :func:`date_part` is: the merge
+    imports this to recompute it from an incoming row."""
+    payload = {
+        "raw": hashlib.sha256((raw_content or "").encode("utf-8", "surrogatepass")).hexdigest(),
+        "country": country or "",
+    }
+    blob = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return WWW_INPUTS_PREFIX + hashlib.sha256(blob.encode("utf-8", "surrogatepass")).hexdigest()[:32]
 
 
 #: The prefix every inputs digest carries (``i1-`` + 32 hex digits = 35 characters).

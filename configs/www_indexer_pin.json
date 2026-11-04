@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "digest": "311bb023767b224605625e920dde782342118d190a3130b6241b4cff41060557",
+  "log": [
+    {
+      "version": 1,
+      "digest": "311bb023767b224605625e920dde782342118d190a3130b6241b4cff41060557",
+      "kind": "baseline",
+      "note": "R415 baseline: the pin starts at the www code digest of the main tip this change is cut from (WWW_INDEXER_VERSION 1)"
+    }
+  ]
+}
