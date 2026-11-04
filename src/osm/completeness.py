@@ -202,7 +202,7 @@ def count_admin1(alpha3: str, *, path: Path | None = None) -> dict:
     """
     from sqlalchemy import select
 
-    from src.osm.lane_models import OsmAdmin1Split, OsmCountry, osm_objects_table
+    from src.osm.lane_models import OsmAdmin1Split, OsmCountry, country_basis, osm_objects_table
     from src.versioned import store
 
     doc = load_outlines(path)
@@ -217,7 +217,7 @@ def count_admin1(alpha3: str, *, path: Path | None = None) -> dict:
         country = s.query(OsmCountry).filter_by(alpha3=alpha3).one_or_none()
         if country is None or country.status != "complete":
             raise Admin1Error("not-ingested")
-        basis = country.finished_at.isoformat() if country.finished_at else None
+        basis = country_basis(country)
         row = s.query(OsmAdmin1Split).filter_by(alpha3=alpha3).one_or_none()
         if row is None:
             row = OsmAdmin1Split(alpha3=alpha3)
@@ -304,7 +304,7 @@ def start_count(alpha3: str, *, path: Path | None = None) -> dict:
 
 def admin1_state(alpha3: str, *, path: Path | None = None) -> dict:
     """What the page shows under the country: the split, or why there is none."""
-    from src.osm.lane_models import OsmAdmin1Split, OsmCountry
+    from src.osm.lane_models import OsmAdmin1Split, OsmCountry, country_basis
     from src.versioned import store
 
     base: dict[str, Any] = {"method": ADMIN1_METHOD, "caveat": ADMIN1_CAVEAT}
@@ -320,7 +320,7 @@ def admin1_state(alpha3: str, *, path: Path | None = None) -> dict:
     with store.lane_session("osm") as s:
         row = s.query(OsmAdmin1Split).filter_by(alpha3=alpha3).one_or_none()
         country = s.query(OsmCountry).filter_by(alpha3=alpha3).one_or_none()
-        basis = country.finished_at.isoformat() if country and country.finished_at else None
+        basis = country_basis(country)
         if row is None:
             return {**base, "status": "not-counted", "outline": outline}
         counted_from = {"ingest": row.basis_ingest, "outline_vintage": row.outline_vintage,

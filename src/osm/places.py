@@ -115,7 +115,7 @@ def build_search_index(alpha3: str) -> dict:
     """(Re)build one complete country's rows in both indexes. Reads ``osm.db``; opens nothing else."""
     from sqlalchemy import literal_column, select, text
 
-    from src.osm.lane_models import OsmCountry, OsmSearchIndex, osm_objects_table
+    from src.osm.lane_models import OsmCountry, OsmSearchIndex, country_basis, osm_objects_table
     from src.versioned import store
 
     t0 = time.monotonic()
@@ -133,7 +133,7 @@ def build_search_index(alpha3: str) -> dict:
         country = s.query(OsmCountry).filter_by(alpha3=alpha3).one_or_none()
         if country is None or country.status != "complete":
             raise ValueError("not-ingested")
-        basis = country.finished_at.isoformat() if country.finished_at else None
+        basis = country_basis(country)
         _ensure(s)
         s.execute(text("DELETE FROM osm_names WHERE alpha3 = :a"), {"a": alpha3})
         s.execute(text("DELETE FROM osm_addresses WHERE alpha3 = :a"), {"a": alpha3})
@@ -183,7 +183,7 @@ def build_search_index(alpha3: str) -> dict:
 
 def index_state() -> list[dict]:
     """Every complete country, with whether its index matches its ingest. ``[]`` with no lane."""
-    from src.osm.lane_models import OsmCountry, OsmSearchIndex
+    from src.osm.lane_models import OsmCountry, OsmSearchIndex, country_basis
     from src.versioned import store
 
     if not store.lane_exists("osm"):
@@ -192,7 +192,7 @@ def index_state() -> list[dict]:
         idx = {r.alpha3: r for r in s.query(OsmSearchIndex)}
         out = []
         for c in s.query(OsmCountry).filter_by(status="complete").order_by(OsmCountry.alpha3):
-            basis = c.finished_at.isoformat() if c.finished_at else None
+            basis = country_basis(c)
             r = idx.get(c.alpha3)
             out.append({
                 "alpha3": c.alpha3, "name": c.name,

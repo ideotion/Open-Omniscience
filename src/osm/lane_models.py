@@ -10,7 +10,7 @@ ONLY through ``src.versioned.store.create_schema`` (``_lane_specific_models("osm
 opens the file through the ONE keyed factory. A lane file gets its own tables and no other
 lane's.
 
-NINE TABLES (the fourth and fifth S05-04 S4's, the sixth and seventh S5's, the last two S6's), two
+TEN TABLES (the fourth and fifth S05-04 S4's, the sixth and seventh S5's, the eighth and ninth S6's, the last S06-01 S1's), two
 full-text indexes and one R*Tree (``src/osm/view.py``).
 
 * ``osm_objects`` -- one row per kept object of an ingested country: identity (type + id),
@@ -39,6 +39,9 @@ full-text indexes and one R*Tree (``src/osm/view.py``).
 * ``osm_search_indexes`` -- one row per country whose names and addresses are in the two
   full-text indexes (``osm_names``, ``osm_addresses``; ``src/osm/places.py`` creates them,
   because a virtual table is not a mapped model), with what was indexed and from which ingest.
+* ``osm_diff_runs`` -- one row per daily change file applied to a country (S06-01 S1): its
+  sequence number, its own timestamp, what was fetched and how long it took, what it did to the
+  objects. The MEASURED cost of a daily update lives here, one measurement per day.
 
 WHY ``osm_objects`` IS BUILT FROM A ``Table`` AND NOT CLASS ATTRIBUTES. Its curated columns are
 generated from ``tags.SCALAR_KEYS`` -- one list, read by the splitter, the joiner and the
@@ -153,6 +156,32 @@ class OsmCountry(LaneBase):
     border_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: Why a failed cut failed, in the reader's words.
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The extract's replication SEQUENCE NUMBER (its header's ``osmosis_replication_sequence_number``): the
+    #: place in the mirror's daily change files the extract was cut at, so the first update asks for the
+    #: next one. NULL = the file does not say, and no update can start from it (S06-01 S1).
+    extract_sequence: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    #: The border the cut used, as ``geometry.encode_rings``: kept so a daily update can place an object
+    #: without reading the extract again. NULL on a country cut before this was kept (re-cut it).
+    border_rings: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    #: The newest daily change file applied to this country's objects, and that file's own timestamp.
+    #: NULL = none applied since the cut. Written in the SAME transaction as the object changes, so
+    #: "which sequence are the objects at" has one answer.
+    diff_sequence: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    diff_timestamp: Mapped[datetime | None] = mapped_column(LaneUTCDateTime(), nullable=True)
+
+
+def country_basis(country: OsmCountry | None) -> str | None:
+    """What a derived table (search index, map index, admin-1 split) was built FROM, as a comparable string.
+
+    The cut's finish time, plus the daily change file the objects stand at when one has been applied: an
+    update changes the objects without a new cut, and a table counted before it must read as stale, not
+    as current. A country with no update keeps the exact string it always had, so nothing built before
+    this existed reads as stale for it.
+    """
+    if country is None or country.finished_at is None:
+        return None
+    base = country.finished_at.isoformat()
+    return base if country.diff_sequence is None else f"{base}+diff{country.diff_sequence}"
 
 
 class OsmTagChange(LaneBase):
@@ -232,6 +261,32 @@ class OsmHistoryCut(LaneBase):
     #: The oldest and newest version timestamp read, ISO. JSON.
     span_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class OsmDiffRun(LaneBase):
+    """One daily change file applied to one country: what it was, what it cost, what it did (S06-01 S1).
+
+    ``sequence`` and ``diff_timestamp`` are the MIRROR's (the file's number, and the time its state file
+    gives it), never the time it was applied here (``applied_at``). The byte and second columns are
+    MEASURED where the work happened; a cell this build did not measure is NULL, never 0.
+    """
+
+    __tablename__ = "osm_diff_runs"
+    # NOT unique: a country cut again from another extract can apply the same file number onto a different baseline, and that is a
+    # second run of it, not a collision (``applied_at`` orders them).
+    __table_args__ = (Index("ix_osm_diff_runs_country_sequence", "alpha3", "sequence"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alpha3: Mapped[str] = mapped_column(String(3), nullable=False)
+    sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    diff_timestamp: Mapped[datetime | None] = mapped_column(LaneUTCDateTime(), nullable=True)
+    applied_at: Mapped[datetime] = mapped_column(LaneUTCDateTime(), nullable=False, default=_utcnow)
+    #: Compressed bytes fetched for the change file (the response body, as it crossed the wire).
+    bytes_fetched: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    fetch_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    apply_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: What the file did, by counter name (``DiffCounts``). JSON.
+    counts_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class OsmAdmin1Split(LaneBase):
@@ -322,6 +377,7 @@ OSM_LANE_MODELS: tuple[type[LaneBase], ...] = (
     OsmSearchIndex,
     OsmViewIndex,
     OsmViewCell,
+    OsmDiffRun,
 )
 
 

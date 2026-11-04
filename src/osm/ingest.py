@@ -45,7 +45,14 @@ from pathlib import Path
 
 from src.monitoring.secret_scrub import log_failure, record_text
 from src.osm import tags as T
-from src.osm.geometry import Border, BorderError, encode_coords, representative_point, stitch
+from src.osm.geometry import (
+    Border,
+    BorderError,
+    encode_coords,
+    encode_rings,
+    representative_point,
+    stitch,
+)
 from src.osm.pbf import Node, Relation, Way
 from src.osm.reader import Extract, open_extract
 
@@ -178,13 +185,21 @@ def _present(found: list) -> list:
     return [p for p in found if p is not None]
 
 
-def _row(obj: Node | Way | Relation, *, kind, pkey, pval, notable, alpha3, lat, lon, geom, node_count, members) -> dict:
-    scalars, families, blob = T.split_tags(obj.tags)
+def build_row(
+    osm_type: str, osm_id: int, version: int | None, timestamp: datetime | None, tags: dict[str, str],
+    *, kind, pkey, pval, notable, alpha3, lat, lon, geom, node_count, members,
+) -> dict:
+    """One ``osm_objects`` row as a dict: identity, the source's version and time, and the tags split into columns, families and the blob.
+
+    The ONE place a row's columns are assembled: the cut (``ingest_country``) and the daily update (``src/osm/apply.py``) both come here,
+    because two copies of this assembly are how a tag lands in the blob on one path and in a column on the other.
+    """
+    scalars, families, blob = T.split_tags(tags)
     row = {
-        "osm_type": "n" if isinstance(obj, Node) else "w" if isinstance(obj, Way) else "r",
-        "osm_id": obj.id,
-        "version": obj.version,
-        "timestamp": obj.timestamp,
+        "osm_type": osm_type,
+        "osm_id": osm_id,
+        "version": version,
+        "timestamp": timestamp,
         "country_alpha3": alpha3,
         "kind": kind,
         "notable": notable,
@@ -202,6 +217,14 @@ def _row(obj: Node | Way | Relation, *, kind, pkey, pval, notable, alpha3, lat, 
     for k in T.SCALAR_KEYS:
         row[T.column_name(k)] = scalars.get(k)
     return row
+
+
+def _row(obj: Node | Way | Relation, *, kind, pkey, pval, notable, alpha3, lat, lon, geom, node_count, members) -> dict:
+    return build_row(
+        "n" if isinstance(obj, Node) else "w" if isinstance(obj, Way) else "r",
+        obj.id, obj.version, obj.timestamp, obj.tags,
+        kind=kind, pkey=pkey, pval=pval, notable=notable, alpha3=alpha3, lat=lat, lon=lon, geom=geom, node_count=node_count, members=members,
+    )
 
 
 def ingest_country(
@@ -238,6 +261,10 @@ def ingest_country(
         row.extract_name = path.name
         row.extract_bytes = path.stat().st_size
         row.extract_vintage = hdr.replication_timestamp
+        row.extract_sequence = hdr.replication_sequence
+        row.border_rings = None
+        row.diff_sequence = None
+        row.diff_timestamp = None
         row.reader = extract.name
         row.started_at = started
         row.finished_at = None
@@ -245,11 +272,13 @@ def ingest_country(
         row.error = None
         s.add(row)
 
+    border_blob: bytes | None = None
     locations = None  # made inside the try: a bad OO_OSM_LOCATION_INDEX or an unwritable work directory must end the row "failed", named
     try:
         locations = extract.location_store(workdir or (data_dir() / "osm_work"))
         rel, border, facts = build_border(extract, alpha2)
         report.border = facts
+        border_blob = encode_rings(border.rings)
         counts: dict[str, int] = dict.fromkeys(T.KINDS, 0)
         counts.update(nodes_in_bbox_tagged=0, ways_tagged=0, relations_tagged=0, ways_missing_locations=0, outside_border=0)
         blob_q810 = blob_ext = 0
@@ -355,6 +384,8 @@ def ingest_country(
             row.blob_json = json.dumps(report.blob, sort_keys=True)
             row.border_json = json.dumps(report.border, sort_keys=True)
             row.relation_id = report.border.get("relation_id")
+            # Kept only for a cut that finished: a daily update places an object by it, and a failed cut is refused by every reader.
+            row.border_rings = border_blob if report.status == "complete" else None
             row.error = report.error
             if report.name:
                 row.name = report.name

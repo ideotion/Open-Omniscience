@@ -10,6 +10,9 @@ functions and nothing that writes: :func:`parse_osc` reads a change file, :func:
 turns an object's old and new tags into rows. No caller in 0.5 persists a row;
 ``osm_tag_changes`` stays empty, and ``tests/test_osm_changes.py`` pins both halves.
 
+S06-01 S1 reads more of each object than the tag model needs, because applying a day's change file needs a node's position, a way's
+node ids and a relation's members; the daily apply (``src/osm/apply.py``) still writes no tag-change row (S2 does).
+
 THE XML IS SOMEBODY ELSE'S, so it goes through ``defusedxml`` (a core dependency): a change
 file is fetched from a mirror in 0.6, and an entity-expansion bomb in one must fail as a parse
 error, never as a machine out of memory.
@@ -34,6 +37,13 @@ class OscChange:
     version: int | None
     timestamp: datetime | None
     tags: dict[str, str]
+    #: A node's position, as the file states it. None for a way, a relation and a deleted node that carries none.
+    lat: float | None = None
+    lon: float | None = None
+    #: A way's node ids, in order (empty for any other kind, and for a deleted way, which carries none).
+    refs: tuple[int, ...] = ()
+    #: A relation's members, ``(type, ref, role)`` with ``type`` as ``n`` | ``w`` | ``r``.
+    members: tuple[tuple[str, int, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +52,29 @@ class TagChange:
     change: str  # added | removed | modified
     old_value: str | None
     new_value: str | None
+
+
+def _coord(value: str | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _int(value: str | None, what: str) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        raise ValueError(f"a change file's {what} is not a whole number") from None
+
+
+def _member_type(value: str | None) -> str:
+    try:
+        return _TYPES[value]  # type: ignore[index]
+    except KeyError:
+        raise ValueError("a change file's relation member has a type other than node, way or relation") from None
 
 
 def _when(stamp: str | None) -> datetime | None:
@@ -81,6 +114,14 @@ def parse_osc(stream: IO[bytes]) -> Iterator[OscChange]:
                 version=int(v) if v and v.isdigit() else None,
                 timestamp=_when(el.get("timestamp")),
                 tags={t.get("k"): t.get("v", "") for t in el.findall("tag")},
+                lat=_coord(el.get("lat")),
+                lon=_coord(el.get("lon")),
+                # Strict: a node reference or a member that cannot be read ends the parse, named, instead of being skipped. A way
+                # missing one vertex has another shape, and a daily apply built on it would store that shape as the way's own.
+                refs=tuple(_int(nd.get("ref"), "nd ref") for nd in el.findall("nd")),
+                members=tuple(
+                    (_member_type(m.get("type")), _int(m.get("ref"), "member ref"), m.get("role", "")) for m in el.findall("member")
+                ),
             )
             el.clear()
 
