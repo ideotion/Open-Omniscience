@@ -6032,6 +6032,38 @@ def _carry_and_swap(working: Path, target: Path, report: dict) -> None:
             kv_invalidate()  # whatever the old file held is no longer the file: the next read goes to the one that is live
 
 
+def _log_lines(path: Path) -> tuple[list[str], list[int]]:
+    """The lines of a log (a backup's member, or the live file) that are text, and the byte size of each line that is NOT valid UTF-8 (withheld).
+
+    A log with bytes that are not text (one a crash cut in the middle of a multi-byte character, or one an older build wrote in another encoding) must
+    not end the restore (``UnicodeDecodeError``) and must not lose every line it still holds. A line that is not text CANNOT BE CHECKED for the
+    passphrase, so it is withheld whole, never repaired: the export side does the same (``scrubbed_copy``), and a repair that turns the bad bytes into
+    U+FFFD can leave most of a key that no longer matches the scrub in a log that the next backup carries out. The caller writes a sentence per
+    withheld line (:func:`_withheld_sentence`). A log that is all text is read exactly as before; the unreadable case splits on the same line
+    boundaries (the bytes are decoded with ``surrogateescape`` first, so a bad byte becomes a lone surrogate in ITS line only). The size counts the
+    line WITHOUT its ending (the export's sentence counts the ending: the same line reads one byte smaller here). Raises ``OSError`` as
+    ``read_text`` does."""
+    try:
+        return path.read_text("utf-8").splitlines(), []
+    except UnicodeDecodeError:
+        pass
+    lines: list[str] = []
+    withheld: list[int] = []
+    for line in path.read_bytes().decode("utf-8", "surrogateescape").splitlines():
+        try:
+            line.encode("utf-8")
+        except UnicodeEncodeError:  # a lone surrogate: a byte that was not UTF-8
+            withheld.append(len(line.encode("utf-8", "surrogateescape")))
+        else:
+            lines.append(line)
+    return lines, withheld
+
+
+def _withheld_sentence(size: int) -> str:
+    """What a restore writes in the live log in place of a line it could not check (a fixed sentence: the size, never any of the line)."""
+    return f"[a line of {size:,} bytes is not merged: it is not valid UTF-8, so it cannot be checked for the passphrase]"
+
+
 def merge_side_files(staged: StagedArtifact) -> dict:
     report: dict = {}
     base = data_dir()
@@ -6042,7 +6074,11 @@ def merge_side_files(staged: StagedArtifact) -> dict:
         if name in ("calendar_feed_imports.json", "calendar_feed_checks.json"):
             try:
                 incoming = json.loads(path.read_text("utf-8"))
-            except (OSError, json.JSONDecodeError):
+            except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+                # A store an earlier crash cut in the middle of a multi-byte character is carried into a backup as it is, and reading it raises
+                # ``UnicodeDecodeError`` (a ``ValueError``, neither of the other two): it ended the whole import here, before the live corpus was
+                # touched. A cut document is not a document, so there is nothing to merge: skipped and reported, as ``events.feeds._load_json``
+                # has read the live store since R397.
                 state[name] = {"action": "skipped", "reason": "unreadable in artifact"}
                 continue
             from src.events.feeds import merge_imported_store
@@ -6114,27 +6150,32 @@ def merge_side_files(staged: StagedArtifact) -> dict:
         fname = Path(name).name
         local = base / fname
         try:
-            incoming_lines = path.read_text("utf-8").splitlines()
+            incoming_lines, withheld = _log_lines(path)
         except OSError:
             continue
         existing: set[str] = set()
         if local.exists():
             try:
-                existing = set(local.read_text("utf-8").splitlines())
+                existing = set(_log_lines(local)[0])
             except OSError:
                 existing = set()
         # a restored backup's lines are scrubbed WHOLE before they join the live log (a backup an older build made can hold a key)
         incoming_lines = [scrubbed(ln) for ln in incoming_lines]
         # dedupe the incoming lines too: when the held passphrases cannot be read every line comes out as the same withheld sentence
         fresh = list(dict.fromkeys(ln for ln in incoming_lines if ln and ln not in existing))
-        if fresh:
+        # one sentence per line this restore could not check, written whatever the log already holds: they are not lines to dedupe or to
+        # count as duplicates, they are this restore saying what it left out
+        sentences = [_withheld_sentence(size) for size in withheld]
+        if fresh or sentences:
             with open(local, "a", encoding="utf-8") as fh:
                 fh.write(
                     f'{{"merged_from": "{staged.origin_fingerprint[:16]}",'
-                    f' "lines": {len(fresh)}}}\n'
+                    f' "lines": {len(fresh) + len(sentences)}}}\n'
                 )
-                fh.write("\n".join(fresh) + "\n")
+                fh.write("\n".join(fresh + sentences) + "\n")
         logs[fname] = {"appended": len(fresh), "duplicate": len(incoming_lines) - len(fresh)}
+        if withheld:
+            logs[fname]["undecodable_lines_withheld"] = len(withheld)  # not in appended or duplicate: each is a sentence in the log instead
     report["logs"] = logs
 
     # Generated, non-reconstructable JSON documents: persisted Bulletin editions and
