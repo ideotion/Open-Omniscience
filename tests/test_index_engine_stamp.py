@@ -340,10 +340,12 @@ def test_an_optional_dictionary_version_changes_the_identity(monkeypatch):
     assert ei.baseline_engine_id() != base
 
 
-def test_a_changed_engine_file_changes_the_identity(monkeypatch):
-    """Any byte, in code or in data -- a generated cities.yml shadowing the sample is a
-    different engine, and so is a one-word stoplist edit."""
-    base = ei.baseline_engine_id()
+def test_a_changed_engine_file_changes_the_code_digest(monkeypatch):
+    """Any byte, in code or in data -- a generated cities.yml shadowing the sample, a one-word stoplist edit -- moves the
+    CODE DIGEST. Since R412 that digest polices the hand-bumped INDEXER_VERSION (tests/test_indexer_pin.py) rather than
+    being the identity itself, so the identity is asserted unmoved here: only a bump moves it."""
+    base = ei.code_digest()
+    base_id = ei.baseline_engine_id()
     real = ei._read
     # stopwords_iso has NO en.txt or fr.txt -- those languages' stopwords are constants
     # in src/services/stopwords.py, which ENGINE_MODULES hashes -- so a vendored list is
@@ -367,11 +369,12 @@ def test_a_changed_engine_file_changes_the_identity(monkeypatch):
         monkeypatch.setattr(ei, "_read", _edited)
         ei.code_digest.cache_clear()
         try:
-            assert ei.baseline_engine_id() != base, f"{target} is not in the identity"
+            assert ei.code_digest() != base, f"{target} is not in the code digest"
+            assert ei.baseline_engine_id() == base_id
         finally:
             monkeypatch.setattr(ei, "_read", real)
             ei.code_digest.cache_clear()
-    assert ei.baseline_engine_id() == base
+    assert ei.code_digest() == base
 
 
 def test_an_absent_file_is_not_an_empty_file(monkeypatch):

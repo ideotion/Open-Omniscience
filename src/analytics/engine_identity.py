@@ -32,16 +32,23 @@ backup's manifest finer than ``app_version``. Three facts shaped the answer.
    the shipped sample gazetteer, or when the interpreter's Unicode tables differ
    (case-folding and ``\\w`` both read them). Every one of those is an input here.
 
-3. **THE CODE IS HASHED, NOT VERSIONED BY HAND.** A hand-bumped constant is correct
-   exactly as long as every contributor remembers it, which is the failure this
-   ledger keeps recording. The identity hashes the BYTES of the modules and data
-   files a pass reads, so any change changes it, with no one having to decide that it
-   mattered. That is deliberately strict: an unrelated edit to ``store.py`` makes two
-   builds "different engines", which costs a re-extraction and never a wrong row.
+3. **THE CODE IS VERSIONED BY HAND, AND THE HASH POLICES THE VERSION (R412, 2026-11-04,
+   amends R24).** Until then the identity hashed the BYTES of the modules and data files a
+   pass reads, so any change changed it with no one having to decide that it mattered.
+   That was correct and too strict: two builds a day apart were "different engines" and
+   every restore paid a full re-extraction. The identity now carries
+   :data:`INDEXER_VERSION`, bumped by hand when what an engine file writes changes, and
+   :func:`code_digest` -- still the hash of those files -- is kept as the POLICE: the pin
+   ``configs/indexer_pin.json`` records the digest at the last bump or at the last
+   judgement that a change left the output alone, and ``tests/test_indexer_pin.py`` is red
+   whenever the digest has moved without the pin being re-recorded through
+   ``scripts/indexer_pin.py``, which refuses to do it without a sentence saying WHAT changed
+   (``--bump``) or WHY the output did not (``--same``). That sentence is the PR's statement.
    ``tests/test_index_engine_stamp.py`` runs a real pass in a fresh interpreter and
-   fails if it loads a module or opens a data file this list does not name -- so the
-   list cannot silently fall behind the code, which is the only way a hash of the code
-   can lie.
+   fails if it loads a module or opens a data file the list does not name -- so the
+   list cannot silently fall behind the code, which is the only way the police can lie.
+   WHAT THE POLICE CANNOT DO: a ``--same`` recorded for a change that did change the output
+   carries stale rows; the sentence and the review are the only defence there.
 
 THE CARRY COMPARES AGAINST THE BASELINE IDENTITY ONLY. The post-merge re-index always
 uses ``get_extractor("baseline")``, so the question a carry must answer is "would the
@@ -60,7 +67,14 @@ from pathlib import Path
 
 #: The identity's own format. Bump it only if the COMPONENTS below change shape, so an
 #: old stamp can never collide with a new one computed from different inputs.
-IDENTITY_SCHEMA = "oo-index-engine-1"
+IDENTITY_SCHEMA = "oo-index-engine-2"
+
+#: The hand-bumped version of what the engine files write (R412). Bump it, through
+#: ``python scripts/indexer_pin.py --bump "what changed"``, whenever a change alters the
+#: rows ``index_article`` produces for the same input; a change that provably leaves them
+#: alone is recorded with ``--same "why"`` and leaves this number where it is, which is
+#: the point -- the restore then still carries. The guard is ``tests/test_indexer_pin.py``.
+INDEXER_VERSION = 1
 
 #: The prefix every stamp carries. A stamp is ``e1-`` + 32 hex digits = 35 characters,
 #: inside ``Article.index_engine``'s String(40).
@@ -592,7 +606,7 @@ def engine_components(extractor=None, *, extractor_name: str | None = None) -> d
         "schema": IDENTITY_SCHEMA,
         "extractor": name,
         "gazetteer": _gazetteer_digest(extractor) if extractor is not None else None,
-        "code": code_digest(),
+        "indexer": INDEXER_VERSION,
         "distributions": {d: _dist_version(d) for d in ENGINE_DISTRIBUTIONS},
         "switches": _switches(),
         "python": f"{sys.version_info.major}.{sys.version_info.minor}",
