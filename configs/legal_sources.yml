@@ -105,9 +105,11 @@ sources:
 #   identity: {scheme: act-number, value: "..."}   which law this row is a version of. The value is the
 #       operator's own statement, NEVER derived from the URL: the language versions of one treaty are
 #       one law only because the rows say so. Scheme is one of eli, celex, ecli, act-number, local.
+#       QUOTE the value: an unquoted 1.10 is read as the number 1.1 and is refused.
 #   doc_type: treaty                                one of the law model's document types (src/law/model.py).
+#       Omitted = no statement (a category already recorded for the law stays); write `unspecified` to take one back.
 #   translation_kind: original                      what THIS version is: original, official, intergovernmental,
-#       foreign-government, unrecorded. Omit it and the version is recorded as unrecorded, never as the original.
+#       foreign-government, unrecorded. Omitted = recorded as unrecorded on the next pass, never as the original.
 # All three are optional; a row declaring none is recorded exactly as it always was. A declaration the model
 # refuses is treated as ABSENT (logged) and fails the validator, so a typo never files a language version
 # under the wrong law. The lookup is by the row's own (jurisdiction, url), exact equality.

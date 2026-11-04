@@ -49,7 +49,7 @@ from src.law.declared import (
     declared_of,
 )
 from src.law.lane_models import LawDocumentMeta, LawIdentity
-from src.law.model import ensure_identity, identity_group, register_document
+from src.law.model import LawModelError, ensure_identity, identity_group, register_document
 from src.law.track import track_document
 from src.law.versions import reader_payload
 from src.versioned import store
@@ -365,17 +365,27 @@ def test_no_declaration_is_the_behaviour_that_existed_before():
     assert lane_sync._identity_inputs(_doc(), None, Declared(doc_type="treaty"))[0] == "local"
 
 
-def test_a_recorded_doc_type_is_not_reset_by_a_pass_that_names_none(lane):
+def test_a_pass_that_states_no_doc_type_leaves_a_recorded_one_and_an_explicit_unspecified_takes_it_back(lane):
     with store.lane_session("law") as ls:
         kwargs = {"scheme": "act-number", "jurisdiction_alpha3": "INT", "value": _VALUE, "jurisdiction_level": "international"}
-        ensure_identity(ls, doc_type="treaty", **kwargs)
-        assert ensure_identity(ls, doc_type="unspecified", **kwargs).doc_type == "treaty"
-        # Saying something DOES change it: the rule protects "nobody said", not "never revisable".
+        # A new identity whose first caller states no category reads "unspecified", as it always did.
+        assert ensure_identity(ls, doc_type=None, **kwargs).doc_type == "unspecified"
+        assert ensure_identity(ls, doc_type="treaty", **kwargs).doc_type == "treaty"
+        # The identity is shared by every language version: one that states nothing must not undo one that does.
+        assert ensure_identity(ls, doc_type=None, **kwargs).doc_type == "treaty"
+        # Saying something DOES change it, including saying "unspecified": that is how a category is taken back.
+        assert ensure_identity(ls, doc_type="unspecified", **kwargs).doc_type == "unspecified"
+        assert ensure_identity(ls, doc_type="treaty", **kwargs).doc_type == "treaty"
         assert ensure_identity(ls, doc_type="statute", **kwargs).doc_type == "statute"
         assert ls.query(LawIdentity).count() == 1
+        # And the vocabulary is still checked BEFORE any write.
+        with pytest.raises(LawModelError):
+            ensure_identity(ls, doc_type="bill", **kwargs)
+        assert ls.query(LawIdentity).one().doc_type == "statute"
 
 
-def test_a_recorded_translation_kind_and_translator_survive_a_pass_that_names_none(lane):
+def test_a_translation_kind_is_per_version_so_the_pass_writes_exactly_what_it_is_given(lane):
+    """Retraction by omission depends on this: a version's kind is its own, so a pass that states none writes `unrecorded`."""
     with store.lane_session("law") as ls:
         ident = ensure_identity(
             ls,
@@ -385,28 +395,110 @@ def test_a_recorded_translation_kind_and_translator_survive_a_pass_that_names_no
             doc_type="treaty",
             jurisdiction_level="international",
         )
-        first = register_document(
-            ls,
-            lane_key="k1",
-            identity=ident,
-            language="zxx-fr",
-            translation_kind="official",
-            translated_by="Synthetic Translation Office",
-        )
-        again = register_document(ls, lane_key="k1", identity=ident, language="zxx-fr", translation_kind="unrecorded")
-        assert again.id == first.id
-        assert (again.translation_kind, again.translated_by) == ("official", "Synthetic Translation Office")
-        # A pass that states a kind still changes it (logged in set_translation_kind).
-        changed = register_document(ls, lane_key="k1", identity=ident, language="zxx-fr", translation_kind="original")
-        assert changed.translation_kind == "original"
-        # And a brand-new document with nothing declared is still recorded as the state it is.
-        fresh = register_document(ls, lane_key="k2", identity=ident, language="zxx-es", translation_kind="unrecorded")
-        assert (fresh.translation_kind, fresh.translated_by) == ("unrecorded", None)
+        meta = register_document(ls, lane_key="k1", identity=ident, language="zxx-fr", translation_kind="original")
+        assert meta.translation_kind == "original"
+        assert register_document(ls, lane_key="k1", identity=ident, language="zxx-fr", translation_kind="unrecorded").translation_kind == "unrecorded"
 
 
 # ---------------------------------------------------------------------------
-# declared.py, pure
+# A declaration is taken back by editing the catalogue
 # ---------------------------------------------------------------------------
+
+
+def _variant(tmp_path, monkeypatch, edit):
+    """Point the catalogue at a copy of the synthetic one with each row passed through ``edit(row)``."""
+    data = yaml.safe_load(_CATALOGUE.read_text(encoding="utf-8"))
+    for row in data["documents"]:
+        edit(row)
+    path = tmp_path / "variant.yml"
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    monkeypatch.setattr(law_catalog, "LEGAL_CATALOG_PATH", path)
+    return path
+
+
+def _repass(corpus, urls):
+    fetcher = _fetcher()
+    with corpus() as session:
+        for url in urls:
+            track_document(session, fetcher, session.query(LawDocument).filter_by(url=url).one())
+
+
+def _kinds():
+    with store.lane_session("law") as ls:
+        return {m.language: m.translation_kind for m in ls.query(LawDocumentMeta).all()}
+
+
+def test_moving_the_original_to_another_version_leaves_exactly_one_original(corpus, lane, synthetic_catalogue, tmp_path, monkeypatch, caplog):
+    """The reviewer's scenario: en declared `original`, then the operator moves it to fr. The database must follow."""
+    _register_and_track(corpus, _treaty_urls())
+    assert _kinds()["zxx-en"] == "original"
+
+    def move(row):
+        if row["language"] == "zxx-en":
+            row.pop("translation_kind", None)
+        if row["language"] == "zxx-fr":
+            row["translation_kind"] = "original"
+
+    _variant(tmp_path, monkeypatch, move)
+    _repass(corpus, _treaty_urls())
+
+    kinds = _kinds()
+    assert kinds["zxx-en"] == "unrecorded" and kinds["zxx-fr"] == "original"
+    assert list(kinds.values()).count("original") == 1
+    with caplog.at_level(logging.WARNING), store.lane_session("law") as ls:
+        group = identity_group(ls, ls.query(LawIdentity).one().id)
+        assert group.original.language == "zxx-fr"
+    assert not [r for r in caplog.records if "claiming translation_kind='original'" in r.getMessage()]
+
+
+def test_an_explicit_unrecorded_takes_a_kind_back_too(corpus, lane, synthetic_catalogue, tmp_path, monkeypatch):
+    _register_and_track(corpus, _treaty_urls())
+    _variant(tmp_path, monkeypatch, lambda row: row.update(translation_kind="unrecorded"))
+    _repass(corpus, _treaty_urls())
+    assert set(_kinds().values()) == {"unrecorded"}
+
+
+def test_a_category_is_taken_back_by_declaring_unspecified_and_NOT_by_omitting_it(corpus, lane, synthetic_catalogue, tmp_path, monkeypatch):
+    _register_and_track(corpus, _treaty_urls())
+
+    _variant(tmp_path, monkeypatch, lambda row: row.pop("doc_type", None))
+    _repass(corpus, _treaty_urls())
+    with store.lane_session("law") as ls:
+        # Omitting it makes no statement, so the identity keeps what the other passes recorded ...
+        assert ls.query(LawIdentity).one().doc_type == "treaty"
+
+    _variant(tmp_path, monkeypatch, lambda row: row.update(doc_type="unspecified"))
+    _repass(corpus, _treaty_urls())
+    with store.lane_session("law") as ls:
+        # ... and saying `unspecified` outright is a statement, which takes it back.
+        assert ls.query(LawIdentity).one().doc_type == "unspecified"
+
+
+def test_a_version_that_omits_doc_type_does_not_trade_the_column_back_and_forth_with_the_others(corpus, lane, synthetic_catalogue, tmp_path, monkeypatch):
+    """Five versions declare `treaty`, one declares nothing: any pass order must leave `treaty`."""
+    _register_and_track(corpus, _treaty_urls())
+    _variant(tmp_path, monkeypatch, lambda row: row.pop("doc_type", None) if row["language"] == "zxx-zh" else None)
+    for order in (_treaty_urls(), list(reversed(_treaty_urls()))):
+        _repass(corpus, order)
+        with store.lane_session("law") as ls:
+            assert ls.query(LawIdentity).one().doc_type == "treaty"
+
+
+def test_changing_the_identity_re_files_that_version_and_leaves_the_others(corpus, lane, synthetic_catalogue, tmp_path, monkeypatch):
+    _register_and_track(corpus, _treaty_urls())
+
+    def refile(row):
+        if row["language"] == "zxx-zh":
+            row["identity"] = {"scheme": "act-number", "value": "mtdsg:xviii-9"}
+
+    _variant(tmp_path, monkeypatch, refile)
+    _repass(corpus, [_URL.format(lang="zh")])
+    with store.lane_session("law") as ls:
+        by_value = {
+            i.document_identity: sorted(m.language for m in ls.query(LawDocumentMeta).filter_by(identity_id=i.id))
+            for i in ls.query(LawIdentity).all()
+        }
+    assert by_value == {_VALUE: sorted(f"zxx-{x}" for x in _LANGS if x != "zh"), "mtdsg:xviii-9": ["zxx-zh"]}
 
 
 def _row(**over):
@@ -438,9 +530,15 @@ def test_a_row_that_declares_nothing_declares_nothing():
 @pytest.mark.parametrize(
     ("over", "needle"),
     [
-        ({"identity": {"scheme": "act-numbr", "value": _VALUE}}, "identity_scheme"),
-        ({"identity": {"scheme": "act-number", "value": "  "}}, "document_identity is empty"),
-        ({"identity": {"scheme": "act-number"}}, "document_identity is empty"),
+        ({"identity": {"scheme": "act-numbr", "value": _VALUE}}, "identity.scheme"),
+        ({"identity": {"scheme": "act-number", "value": "  "}}, "identity.value is empty"),
+        ({"identity": {"scheme": "act-number"}}, "identity.value must be a string"),
+        ({"identity": {"scheme": "act-number", "value": 1.1}}, "identity.value must be a string"),
+        ({"identity": {"scheme": "act-number", "value": True}}, "identity.value must be a string"),
+        ({"identity": {"scheme": 5, "value": _VALUE}}, "identity.scheme must be a string"),
+        ({"identity": {"scheme": "act-number", "value": _VALUE, 1: "a", None: "b", "extra": "c"}}, "unknown keys"),
+        ({"doc_type": 5}, "doc_type must be a string"),
+        ({"translation_kind": True}, "translation_kind must be a string"),
         ({"identity": {"scheme": "act-number", "value": _VALUE, "language": "fr"}}, "unknown keys"),
         ({"identity": _VALUE}, "must be a mapping"),
         ({"identity": None}, "must be a mapping"),
@@ -501,6 +599,70 @@ def test_rows_declaring_one_law_must_agree_about_it():
     assert consistency_problems([base, _row(url="u2", doc_type="bill")]) == []
 
 
+def test_the_yaml_numbers_that_used_to_become_one_identity_are_refused_by_name():
+    """The reviewer's probe: unquoted `1.10` and `1.1` are both the float 1.1, and `0123` is the octal 83."""
+    loaded = yaml.safe_load("a: {scheme: act-number, value: 1.10}\nb: {scheme: act-number, value: 1.1}\nc: {scheme: act-number, value: 0123}\nd: {scheme: act-number, value: yes}\n")
+    assert loaded["a"]["value"] == loaded["b"]["value"] == 1.1 and loaded["c"]["value"] == 83 and loaded["d"]["value"] is True
+    for key in "abcd":
+        problems = declaration_problems(_row(identity=loaded[key]))
+        assert any("must be a string" in p for p in problems), (key, problems)
+    # Quoted, the same two numbers are two laws.
+    assert declaration_problems(_row(identity={"scheme": "act-number", "value": "1.10"})) == []
+    assert declared_of(_row(identity={"scheme": "act-number", "value": "1.10"})).value != declared_of(
+        _row(identity={"scheme": "act-number", "value": "1.1"})
+    ).value
+
+
+def test_an_odd_yaml_key_in_the_identity_block_cannot_break_tracking(corpus, lane, tmp_path, monkeypatch):
+    """`on:`, `yes:` and `1:` are YAML bool/int keys; sorting them beside a string key raised TypeError out of record_document."""
+    odd = {
+        "sources": [],
+        "documents": [
+            {
+                "jurisdiction": "INT",
+                "title": "Synthetic odd key",
+                "category": "legislation",
+                "consolidated": False,
+                "country": "INT",
+                "language": "zxx-en",
+                "url": "https://odd.zzz.test/en",
+                "identity": {"scheme": "act-number", "value": _VALUE, 1: "a", "extra": "b"},
+                "doc_type": "treaty",
+            }
+        ],
+    }
+    path = tmp_path / "odd.yml"
+    path.write_text(yaml.safe_dump(odd), encoding="utf-8")
+    monkeypatch.setattr(law_catalog, "LEGAL_CATALOG_PATH", path)
+    monkeypatch.setattr(law_catalog, "GENERATED_CATALOG_PATH", tmp_path / "absent.yml")
+    assert any("unknown keys" in p for p in declaration_problems(odd["documents"][0]))
+
+    with corpus() as session:
+        law_catalog.register_documents(session, path, tmp_path / "absent.yml")
+        doc = session.query(LawDocument).one()
+        track_document(session, _UrlFetcher({"https://odd.zzz.test/en": "treaty.en.html"}), doc)
+        assert lane_sync.record_document(doc, None) == "recorded"
+    with store.lane_session("law") as ls:
+        assert ls.query(LawIdentity).one().identity_scheme == "local"
+
+
+def test_a_lookup_that_raises_is_logged_and_the_document_is_recorded_undeclared(corpus, lane, synthetic_catalogue, monkeypatch, caplog):
+    """`record_document` is documented never to raise; the declaration lookup runs on the collect path outside its guarded block."""
+
+    def boom(*_a, **_k):
+        raise RuntimeError("synthetic failure inside the declaration lookup")
+
+    monkeypatch.setattr(lane_sync, "declared_for", boom)
+    with caplog.at_level(logging.WARNING), corpus() as session:
+        law_catalog.register_documents(session, _CATALOGUE, _CATALOGUE.parent / "absent.yml")
+        doc = session.query(LawDocument).filter_by(url=_URL.format(lang="fr")).one()
+        track_document(session, _fetcher(), doc)
+        assert lane_sync.record_document(doc, None) == "recorded"
+    assert any("declaration unreadable" in r.getMessage() for r in caplog.records)
+    with store.lane_session("law") as ls:
+        assert ls.query(LawIdentity).one().identity_scheme == "local"
+
+
 # ---------------------------------------------------------------------------
 # The catalogue tooling and the committed catalogue
 # ---------------------------------------------------------------------------
@@ -530,9 +692,18 @@ def test_the_catalogue_validator_reports_a_bad_declaration_and_a_contradiction()
 
     assert _report(_gen())["errors"] == []
     bad = _report(_gen(identity={"scheme": "nope", "value": _VALUE}))["errors"]
-    assert any("identity_scheme" in e for e in bad), bad
+    assert any("identity.scheme" in e for e in bad), bad
     clash = _report(_gen(), _gen(url="https://treaties.zzz.test/y", doc_type="statute"))["errors"]
     assert any("doc_type" in e and "one law has one doc_type" in e for e in clash), clash
+
+    # The CURATED file is where an operator will put a treaty, so its rows are checked per row too.
+    curated_row = {k: v for k, v in _gen().items() if k != "verification"}
+    curated_row["identity"] = {"scheme": "act-numbr", "value": _VALUE}
+    curated = vlc.validate(
+        {"schema": vlc.SCHEMA, "as_of": "2026-11-04", "sources": [], "documents": []},
+        {"sources": [], "documents": [curated_row]},
+    )["errors"]
+    assert any("curated documents[0]" in e and "identity.scheme" in e for e in curated), curated
 
 
 def test_the_committed_catalogues_declare_nothing_the_model_would_refuse():

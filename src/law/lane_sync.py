@@ -139,7 +139,11 @@ def record_document(
         catalog = load_legal_catalog()
     except Exception:  # noqa: BLE001 - re-raised by the guarded read below, which turns it into the "failed" outcome
         catalog = None
-    declared = declared_for(catalog, jurisdiction=doc.jurisdiction, url=doc.url)
+    try:
+        declared = declared_for(catalog, jurisdiction=doc.jurisdiction, url=doc.url)
+    except Exception as exc:  # noqa: BLE001 - "a lane failure never breaks tracking"; an unreadable declaration is undeclared
+        log_failure(_LOG, f"law document {doc.id}: catalogue declaration unreadable; recorded undeclared", exc, level=logging.WARNING)
+        declared = None
 
     scheme, value, _alpha3, level = _identity_inputs(doc, parsed, declared)
     if not value:
@@ -161,7 +165,9 @@ def record_document(
                 scheme=scheme,
                 jurisdiction_alpha3=alpha3,
                 value=value,
-                doc_type=(declared.doc_type if declared is not None and declared.doc_type else "unspecified"),
+                # `None` = this row states no category (see `ensure_identity`); it is NOT "unspecified", which a
+                # row may declare outright to take a category back.
+                doc_type=(declared.doc_type if declared is not None else None),
                 jurisdiction_level=level,
                 enacted_on=getattr(doc, "enacted_on", None),
             )

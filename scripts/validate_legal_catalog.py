@@ -341,6 +341,11 @@ def validate(generated: dict, curated: dict) -> dict:
         if dkey in curated_docs:
             _err(errors, where, "document already in the CURATED catalog (curated wins)")
 
+    # The CURATED file's rows carry declarations too (it is where an operator will put a treaty), and nothing else here
+    # reads them: the per-row check above covers only the generated file.
+    for i, d in enumerate(curated.get("documents", []) or []):
+        _declaration_errors(errors, f"curated documents[{i}] ({d.get('url', '?')})", d)
+
     # Rows that declare the SAME law must agree about it (one doc_type, at most one original), across both files.
     if str(_ROOT) not in sys.path:
         sys.path.insert(0, str(_ROOT))

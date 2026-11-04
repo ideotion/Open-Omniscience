@@ -242,7 +242,7 @@ def ensure_identity(
     scheme: str,
     jurisdiction_alpha3: str,
     value: str,
-    doc_type: str,
+    doc_type: str | None,
     jurisdiction_level: str,
     legal_system: str = "unknown",
     status: str = "unknown",
@@ -257,9 +257,17 @@ def ensure_identity(
     Checking first is the difference between a refusal and a half-written group: an
     adapter that hands in ``doc_type="bill"`` gets one exception and leaves the database
     exactly as it found it.
+
+    ``doc_type=None`` means THIS CALLER STATES NO CATEGORY, which is a different thing from
+    stating ``"unspecified"``. The identity is shared by every language version of a law,
+    and each version's own pass reaches this function: if a version that declares no
+    category wrote ``unspecified``, the version that declared ``treaty`` would be undone on
+    the next pass and the two would trade the column back and forth for ever. ``None``
+    therefore leaves a recorded category alone (a new row reads ``unspecified``), and an
+    explicit ``"unspecified"`` is a statement like any other and does overwrite.
     """
     s, j, ident = document_identity_for(scheme, jurisdiction_alpha3=jurisdiction_alpha3, value=value)
-    kind = _one_of(doc_type, DOC_TYPES, "doc_type", refused=_REFUSED_DOC_TYPES)
+    kind = None if doc_type is None else _one_of(doc_type, DOC_TYPES, "doc_type", refused=_REFUSED_DOC_TYPES)
     level = _one_of(jurisdiction_level, JURISDICTION_LEVELS, "jurisdiction_level", refused=_REFUSED_LEVELS)
     system = _one_of(legal_system, LEGAL_SYSTEMS, "legal_system")
     state = _one_of(status, STATUSES, "status")
@@ -274,7 +282,7 @@ def ensure_identity(
             identity_scheme=s,
             jurisdiction_alpha3=j,
             document_identity=ident,
-            doc_type=kind,
+            doc_type=kind or "unspecified",
             jurisdiction_level=level,
             legal_system=system,
             status=state,
@@ -292,10 +300,8 @@ def ensure_identity(
     # old row said nothing. A later pass that cannot see a date must never erase one an
     # earlier pass read: "the source stopped mentioning it" is not "it never happened".
     #
-    # ``doc_type`` follows the same rule. ``unspecified`` is the state of nobody having
-    # said, and writing it over a recorded ``treaty`` would put the category back to
-    # unknown every time a pass reads a document that declares none.
-    if kind != "unspecified":
+    # ``doc_type`` follows the same rule for a caller that states none (``None``, see above).
+    if kind is not None:
         row.doc_type = kind
     row.jurisdiction_level = level
     if system != "unknown":
@@ -465,15 +471,9 @@ def register_document(
         session.add(row)
     row.identity_id = identity.id
     row.language = (language or "").strip().lower() or "und"
-    # The same rule as `ensure_identity`'s: `unrecorded` is "nobody said", so it never
-    # replaces a kind some earlier pass or an operator recorded, and a pass that names no
-    # translator never erases one. A reclassification still goes through
-    # `set_translation_kind` and is logged there.
-    if not (kind == "unrecorded" and row.translation_kind not in (None, "", "unrecorded")):
-        set_translation_kind(row, kind)
+    set_translation_kind(row, kind)
     row.title = title
-    if translated_by is not None:
-        row.translated_by = translated_by
+    row.translated_by = translated_by
     row.licence_id = licence_id if licence_id in LICENCES else "unknown"
     row.source_authority = source_authority
     row.source_url = source_url

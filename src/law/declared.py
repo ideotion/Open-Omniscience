@@ -28,6 +28,25 @@ default, and why a malformed declaration is treated as ABSENT (logged, and named
 catalogue validator) instead of half-applied: a typo that quietly files a language
 version under the wrong law is worse than one that leaves it ungrouped and says so.
 
+HOW A DECLARATION IS TAKEN BACK. The catalogue is the only writer of these three, so each
+has to be retractable from the catalogue, and they are not retracted the same way because
+they do not live in the same place:
+
+* ``translation_kind`` is per language version, so the pass writes exactly what the row
+  states and ``unrecorded`` when it states nothing: delete the key and the version reads
+  ``unrecorded`` on its next pass. (Moving the ``original`` from one version to another
+  therefore needs no extra step.)
+* ``doc_type`` belongs to the IDENTITY, which every language version's pass writes to. A
+  version that states none must not undo one that does, so a row that omits it makes no
+  statement and a recorded category stays; to take one back, declare ``doc_type:
+  unspecified`` -- an explicit statement like any other.
+* the identity is read fresh each pass: delete or change it and that version is re-filed on
+  its next pass (the identity it left stays, with its other members).
+
+A declared value must be a STRING. YAML reads an unquoted ``1.10`` as the float 1.1, ``0123``
+as the octal 83 and ``yes`` as true; coercing those would have given two different laws one
+identity with nothing to say so, so a non-string is refused by name.
+
 THE LOOKUP KEY IS THE ROW'S OWN ``(jurisdiction, url)`` -- the pair the corpus roster is
 keyed on -- by exact string equality. It is not a host match (``source_for_url`` is, and
 for a different question): six languages share a host, and a host match would hand one
@@ -48,6 +67,7 @@ from src.law.catalog import law_jurisdiction
 from src.law.model import (
     _REFUSED_DOC_TYPES,
     DOC_TYPES,
+    IDENTITY_SCHEMES,
     TRANSLATION_KINDS,
     LawModelError,
     _one_of,
@@ -96,28 +116,59 @@ def declaration_problems(row: Mapping) -> list[str]:
         if not isinstance(block, dict):
             problems.append("identity must be a mapping {scheme, value}")
         else:
-            unknown = sorted(set(block) - _IDENTITY_KEYS)
+            # `map(str, ...)`: a YAML key can be an int, a bool or null (`on:`, `yes:`, `1:`), and sorting a mix of those
+            # with a string key raised TypeError out of a function the tracker and the validator both call.
+            unknown = sorted(map(str, set(block) - _IDENTITY_KEYS))
             if unknown:
                 problems.append(f"identity has unknown keys {unknown}; only scheme and value are read")
-            try:
-                document_identity_for(
-                    str(block.get("scheme") or ""),
-                    jurisdiction_alpha3=_alpha3(row),
-                    value=str(block.get("value") or ""),
-                )
-            except LawModelError as exc:
-                problems.append(f"identity refused: {exc}")
-    if "doc_type" in row:
-        try:
-            _one_of(str(row["doc_type"] or ""), DOC_TYPES, "doc_type", refused=_REFUSED_DOC_TYPES)
-        except LawModelError as exc:
-            problems.append(str(exc))
-    if "translation_kind" in row:
-        try:
-            _one_of(str(row["translation_kind"] or ""), TRANSLATION_KINDS, "translation_kind")
-        except LawModelError as exc:
-            problems.append(str(exc))
+            # Strings only, never coerced. YAML reads an unquoted `1.10` as the float 1.1, `0123` as the octal 83 and
+            # `yes` as true, so two different laws (`1.10`, `1.1`) would have shared one identity with nothing to say so.
+            for field in ("scheme", "value"):
+                if not isinstance(block.get(field), str):
+                    problems.append(f"identity.{field} must be a string (quote it in the YAML), got {block.get(field)!r}")
+            if all(isinstance(block.get(field), str) for field in ("scheme", "value")):
+                problems.extend(_identity_vocabulary_problems(row, block["scheme"], block["value"]))
+    for field, allowed, refused in (
+        ("doc_type", DOC_TYPES, _REFUSED_DOC_TYPES),
+        ("translation_kind", TRANSLATION_KINDS, {}),
+    ):
+        if field not in row:
+            continue
+        offered = row[field]
+        if not isinstance(offered, str):
+            problems.append(f"{field} must be a string, got {offered!r}")
+            continue
+        token = offered.strip().lower()
+        if token in allowed:
+            continue
+        if token in refused:
+            problems.append(f"{field}={token!r} is refused: {refused[token]}")
+        else:
+            problems.append(f"{field}={offered!r} is not one of {', '.join(allowed)}; the vocabulary is closed")
     return problems
+
+
+def _identity_vocabulary_problems(row: Mapping, scheme: str, value: str) -> list[str]:
+    """The model's three refusals for an identity, worded here from the vocabularies rather than from the exception.
+
+    The wording is built from the offered value and the model's own constants, not from ``LawModelError``'s text:
+    ``tests/test_sink_sweep_records.py`` keeps exception words out of anything that is returned, logged or stored,
+    and this list is all three. :func:`document_identity_for` stays the one place the triple is FORMED (a final
+    call below catches whatever these three checks did not foresee), so the two cannot quietly drift apart."""
+    out: list[str] = []
+    if scheme.strip().lower() not in IDENTITY_SCHEMES:
+        out.append(f"identity.scheme={scheme!r} is not one of {', '.join(IDENTITY_SCHEMES)}; the vocabulary is closed")
+    if not " ".join(value.split()):
+        out.append("identity.value is empty; an identity nobody stated is not one")
+    alpha = _alpha3(row)
+    if len(alpha) != 3 or not alpha.isalpha():
+        out.append(f"jurisdiction {row.get('jurisdiction')!r} is not ISO 3166-1 alpha-3 (or INT), which an identity is keyed on")
+    if not out:
+        try:
+            document_identity_for(scheme, jurisdiction_alpha3=alpha, value=value)
+        except LawModelError:
+            out.append("the law model refused this identity (document_identity_for)")
+    return out
 
 
 def declared_of(row: Mapping) -> Declared | None:
@@ -140,16 +191,14 @@ def declared_of(row: Mapping) -> Declared | None:
     scheme = value = None
     if "identity" in row:
         scheme, _juris, value = document_identity_for(
-            str(row["identity"].get("scheme")),
-            jurisdiction_alpha3=_alpha3(row),
-            value=str(row["identity"].get("value")),
+            row["identity"]["scheme"], jurisdiction_alpha3=_alpha3(row), value=row["identity"]["value"]
         )
     kind = None
     if "doc_type" in row:
-        kind = _one_of(str(row["doc_type"]), DOC_TYPES, "doc_type")
+        kind = _one_of(row["doc_type"], DOC_TYPES, "doc_type")
     translation = None
     if "translation_kind" in row:
-        translation = _one_of(str(row["translation_kind"]), TRANSLATION_KINDS, "translation_kind")
+        translation = _one_of(row["translation_kind"], TRANSLATION_KINDS, "translation_kind")
     return Declared(scheme=scheme, value=value, doc_type=kind, translation_kind=translation)
 
 
@@ -183,9 +232,7 @@ def consistency_problems(documents: Iterable[Mapping]) -> list[str]:
         if "identity" not in row or declaration_problems(row):
             continue  # per-row problems are reported by declaration_problems itself
         block = row["identity"]
-        key = document_identity_for(
-            str(block.get("scheme")), jurisdiction_alpha3=_alpha3(row), value=str(block.get("value"))
-        )
+        key = document_identity_for(block["scheme"], jurisdiction_alpha3=_alpha3(row), value=block["value"])
         by_identity.setdefault(key, []).append(row)
 
     problems: list[str] = []
