@@ -253,6 +253,16 @@ class BackgroundJob:
             with self._lock:
                 self._error = error
                 self._state = "error"
+        except BaseException as exc:
+            # ``SystemExit`` (a library calling ``sys.exit``) or an interrupt ended the worker: the handler above does not see it, and a job
+            # left "running" shows in the task manager as active, holds ``db_writers_busy`` for a writer, and is never finished. The class
+            # only, never its words: a ``SystemExit`` carries the caller's own text, and the job's kwargs can carry a passphrase. Then it
+            # goes on up, as it did.
+            with self._lock:
+                self._error = f"{type(exc).__name__}: its text is withheld"
+                self._state = "error"
+            _LOG.warning("background job %s ended by %s", self.kind, type(exc).__name__)
+            raise
         finally:
             with self._lock:
                 self._ended_at = time.time()
