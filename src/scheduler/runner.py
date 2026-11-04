@@ -3220,7 +3220,20 @@ def resume_after_exclusive_operation(
         # The hold ends BEFORE the start attempts: ``start()`` refuses while it stands (R367, F5), and the operation is done.
         get_scheduler().release_exclusive()
         released = True
-        if _start_or_stand_down(retries, retry_delay):
+        try:
+            started = _start_or_stand_down(retries, retry_delay)
+        except Exception as exc:  # noqa: BLE001 - a courtesy call never raises into the operation's own finally
+            # The loop's thread could not be created (``start()`` re-raises it: "can't start new thread"). Left to propagate it would turn
+            # the operation that has just FINISHED into an error answer (an encrypt whose snapshot report is lost, a diagnostics bundle
+            # that was built and is dropped) and skip the watcher below. The class only, never its words: the operation may have held a
+            # passphrase. The pending-resume watcher takes over, and says so where the operator looks if it cannot start either. The call
+            # is guarded HERE and not inside ``_start_or_stand_down``, whose retry loop must stay free of a handler (R163).
+            _LOG.warning(
+                "could not start background collection after an exclusive operation (%s); a pending resume takes over",
+                type(exc).__name__,
+            )
+            started = False
+        if started:
             return
         # SCHED-1 (field round 2026-09-24): the retry budget ran out with the old pass
         # still alive. The budget was sized against one blocked WRITE (438 s); on a
