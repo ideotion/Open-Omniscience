@@ -80,36 +80,47 @@ def test_share_is_two_counts_and_may_pass_100(lane):
 
 
 def test_full_text_bounds_count_hot_and_warm_and_ignore_textless(lane):
+    lane.add(WikiWalkCursor(edition="fr", pages_seen=10, edition_articles=100, started_at=T0, updated_at=T0))
     _hot(lane, "fr", "A", "texte")
     _hot(lane, "fr", "B", None)  # a revision with no stored text is not full text
     lane.add(WikiWarmEdition(edition="fr", pages_with_text=3, promoted=1, updated_at=T0))
     lane.commit()
     ft = _row(edition_coverage(lane, now=T0), "fr")["full_text"]
-    assert (
-        ft["hot_pages_with_text"] == 1
-        and ft["warm_pages_with_text"] == 3
-        and ft["warm_promoted"] == 1
-    )
-    assert ft["share_lower_bound"] is None or ft["share_lower_bound"] <= ft["share_upper_bound"]
+    assert ft["hot_pages_with_text"] == 1 and ft["warm_pages_with_text"] == 3 and ft["warm_promoted"] == 1
+    assert ft["share_lower_bound"] == pytest.approx(0.3)  # max(HOT, WARM) / pages seen
+    assert ft["share_upper_bound"] == pytest.approx(0.4)  # HOT + WARM / pages seen
 
 
-def test_failed_siteinfo_keeps_last_total_and_names_the_failure(lane):
+def test_warm_never_run_is_unknown_not_zero(lane):
+    lane.add(WikiWalkCursor(edition="it", pages_seen=10, edition_articles=100, started_at=T0, updated_at=T0))
+    lane.commit()
+    ft = _row(edition_coverage(lane, now=T0), "it")["full_text"]
+    assert ft["warm_pages_with_text"] is None and ft["warm_promoted"] is None
+    assert ft["share_upper_bound"] is None
+
+
+def test_the_walks_last_refusal_is_named_as_what_it_is_not_as_a_failed_total(lane):
     lane.add(
         WikiWalkCursor(
-            edition="de",
-            pages_seen=10,
-            edition_articles=2000,
-            started_at=T0,
-            updated_at=T0,
-            last_error="airplane",
-            last_error_at=T0,
+            edition="de", pages_seen=10, edition_articles=2000, started_at=T0, updated_at=T0,
+            last_error="service-busy", last_error_at=T0,
         )
     )
     lane.commit()
     r = _row(edition_coverage(lane, now=T0), "de")
     assert r["edition_articles"] == 2000
-    assert r["edition_articles_read"]["failed"] is True
-    assert r["edition_articles_read"]["last_error"] == "airplane"
+    note = r["edition_articles_read"]
+    assert note["last_refusal"] == "service-busy" and "failed" not in note
+
+
+def test_totals_name_editions_without_a_total_and_gap_only_editions_count_as_run(lane):
+    lane.add(VersionedGap(feed="stream:pt", detected_at=T0, reason="restart", from_time=T0, to_time=T0))
+    lane.commit()
+    rep = edition_coverage(lane, now=T0)
+    assert _row(rep, "pt")["has_run"] is True
+    assert rep["totals"]["editions_without_total"] == len(rep["editions"])
+    member = edition_coverage(lane, now=T0, newest_gaps=False)
+    assert _row(member, "pt")["gaps"]["total"] == 1 == member["totals"]["gaps"]
 
 
 def test_last_event_and_gap_history(lane):
@@ -157,7 +168,7 @@ def test_rides_the_lane_counters_member_and_reads_back(lane):
 
     member = json.loads(json.dumps(lane_counters(lane, now=T0, window_days=7)))
     assert _row(member["coverage"], "ja")["pages_seen"] == 5
-    assert "coverage" not in member["unmeasured"] or member["coverage"]["measured"] is False
+    assert member["coverage"]["measured"] is True and "coverage" not in member["unmeasured"]
 
 
 def test_member_carries_gap_counts_only_and_compact_unrun_rows(lane):

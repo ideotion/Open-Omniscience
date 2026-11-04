@@ -254,7 +254,11 @@ def edition_coverage(
             exc,
             level=logging.WARNING,
         )
-        events = {}
+        events = {
+            n: dict.fromkeys(("last_event_recorded_at", "last_event_occurred_at", "last_event_feed", "cursor_updated_at", "contiguous_through"))
+            | {"last_event_unreadable": True}
+            for n in names
+        }
 
     rows: list[dict[str, Any]] = []
     for name in names:
@@ -262,21 +266,25 @@ def edition_coverage(
         pages_seen = int(w["pages_seen"]) if w else None
         total = w.get("edition_articles") if w else None
         hot_n = int(hot.get(name, 0))
-        warm_n = int(m["pages_with_text"]) if m else 0
+        warm_n = int(m["pages_with_text"]) if m else None  # WARM never ran for this edition: unknown, not 0
         gap = gaps.get(name) or (
             {"total": 0, "by_reason": {}, "newest": []}
             if newest_gaps
             else {"total": 0, "by_reason": {}}
         )
-        if w and w.get("last_error"):
-            total_note = {
-                "failed": True,
-                "last_error": w.get("last_error"),
-                "last_error_at": w.get("last_error_at"),
-            }
-        else:
-            total_note = {"failed": False}
-        ran = bool(w or m or (name in events and events[name].get("last_event_recorded_at")))
+        # walk.py stores ONE last_error for every refusal (a batch 503 as much as a siteinfo failure) and clears it
+        # never, so it cannot say the TOTAL's read failed. It is given as what it is: the walk's last refusal.
+        total_note = {
+            "last_refusal": w.get("last_error") if w else None,
+            "last_refusal_at": w.get("last_error_at") if w else None,
+        }
+        ran = bool(
+            w
+            or m
+            or hot_n
+            or gap["total"]
+            or (name in events and events[name].get("last_event_recorded_at"))
+        )
         rows.append(
             {
                 "edition": name,
@@ -296,9 +304,9 @@ def edition_coverage(
                 "full_text": {
                     "hot_pages_with_text": hot_n,
                     "warm_pages_with_text": warm_n,
-                    "warm_promoted": int(m["promoted"]) if m else 0,
-                    "share_lower_bound": _ratio(max(hot_n, warm_n), pages_seen),
-                    "share_upper_bound": _ratio(hot_n + warm_n, pages_seen),
+                    "warm_promoted": int(m["promoted"]) if m else None,
+                    "share_lower_bound": _ratio(max(hot_n, warm_n or 0), pages_seen),
+                    "share_upper_bound": _ratio(hot_n + warm_n, pages_seen) if warm_n is not None else None,
                 },
                 **events.get(name, {}),
                 "gaps": gap,
@@ -307,6 +315,8 @@ def edition_coverage(
     totals = {
         "pages_seen": sum(r["pages_seen"] or 0 for r in rows),
         "edition_articles": sum(int(r["edition_articles"] or 0) for r in rows),
+        # An edition whose total was never read adds nothing to the sum above; the count says how many.
+        "editions_without_total": sum(1 for r in rows if r["edition_articles"] is None),
         "editions_with_a_run": sum(1 for r in rows if r["has_run"]),
         "gaps": sum(r["gaps"]["total"] for r in rows),
     }
