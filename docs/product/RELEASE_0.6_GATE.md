@@ -39,6 +39,7 @@ the three i18n gates and the whole-tree guards are green, and the release notes 
 re-check (Q111). The intake's exit rows are kept: the elections coverage floor at CALENDAR scope; laws tracked
 in all twelve UI languages — or, per country, the gap stated; the OSM vintage stated on every map; a contested
 border rendering as contested.
+**One tag condition (R418).** No release tag is cut between the merge of the re-index PR that adds the `article_www_stamps` line to the restore registry in `src/backup/merge.py` (classified as not carried) and the merge of WAL's carry that follows it immediately, so no tagged build holds the table without its carry (R415).
 
 ---
 
@@ -140,6 +141,7 @@ with the translated-of-total figure on each document. Brief `S06-05`.
 | 2026-09-15 | **The 2026-09-06 register's 65 answers (rulings artifact, 15:02–16:00Z) — effects on this board:** row A — G2 `default` AUTHORISES the networked elections-acquisition session (§5 step 1 of `S06-04`) and G3 `default` the bloc-roster session (registry EMPTY until it runs; placement proposed here, `RC08.4`); G4 adds operator-curated prediction extraction from a suggested list; G7 adds the signal-keywords layer as toggleable and OFF; G5 consistent with Q1147. G6 re-states the poll idea (raw poll data, verbatim questions and results, orienting-question detection) with the version left blank — `RC12` asks it; V1-8's poll placement is in tension; not placed here by the session. | maintainer (the register, 2026-09-15) · reconciled by the session |
 | 2026-09-15 | **The RC confirmation round came back UNANSWERED — 0 of 22 `ANSWER` lines carry a letter — processed per its own §0.** Effect on this board: row A — `RC08.4` ASSUMPTION (a), register ruling G3's bloc-roster networked session is placed here beside the statistics directory, the registry staying EMPTY until it runs. Reversible by writing a letter. **No row changed status.** | maintainer (the round, left blank) · §0's blank rules applied by the session |
 | 2026-09-29 | **`RC11` = b: the V1 round re-opens all nine rulings**, so the rows here that cite V1-1..V1-9 are provisional (the banner above); V1-4 answered, PubMed bulk. | maintainer (project chat, 2026-09-29 19:55 UTC) · recorded by the session |
+| 2026-11-04 | **R418: a tag-timing condition on the exit.** The stage-2 stamp table `article_www_stamps` (R415) lands in two merges, the re-index PR with one registry line in `src/backup/merge.py` (cross-owner touch granted) and WAL's carry straight after; no release tag falls between them. | the coordinator session (R418) · recorded by Plan |
 
 ---
 
