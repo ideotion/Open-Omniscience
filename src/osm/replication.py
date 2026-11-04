@@ -64,7 +64,7 @@ KILL_SWITCH_TEXT = "refused: airplane mode is engaged, so no change file was req
 
 #: The one host a change-file session may reach (R143: the session refuses any other host on every hop). It is the download manager's own,
 #: and it is a module-level name so the pin in ``tests/test_session_host_list.py`` can read it against the popup lane that names it.
-REPLICATION_HOSTS = [urlparse(GEOFABRIK_BASE).hostname or ""]
+REPLICATION_HOSTS = (urlparse(GEOFABRIK_BASE).hostname or "",)  # a tuple: a list could be widened in place by any caller
 
 
 @dataclass(frozen=True, slots=True)
