@@ -340,26 +340,14 @@ def test_an_optional_dictionary_version_changes_the_identity(monkeypatch):
     assert ei.baseline_engine_id() != base
 
 
-def test_a_changed_engine_file_changes_the_identity(monkeypatch):
-    """Any byte, in code or in data -- a generated cities.yml shadowing the sample is a
-    different engine, and so is a one-word stoplist edit."""
-    base = ei.baseline_engine_id()
+def test_a_changed_code_module_moves_the_code_digest_not_the_identity(monkeypatch):
+    """R412: the identity carries the hand-bumped INDEXER_VERSION, so editing a CODE module moves :func:`code_digest` (which
+    polices the version, tests/test_indexer_pin.py) and leaves the engine id where it is. Only a bump moves it."""
+    base, base_id = ei.code_digest(), ei.baseline_engine_id()
     real = ei._read
-    # stopwords_iso has NO en.txt or fr.txt -- those languages' stopwords are constants
-    # in src/services/stopwords.py, which ENGINE_MODULES hashes -- so a vendored list is
-    # exercised through de.txt. The first two drafts of this test named en.txt, then
-    # fr.txt; a target outside the hashed list is never read and proves nothing, so the
-    # membership is now asserted FIRST and a wrong target fails as a wrong target.
-    targets = (
-        "src/analytics/extract.py",
-        "src/services/stopwords.py",
-        "configs/cities.yml",
-        "configs/stopwords_iso/de.txt",
-        "configs/stopwords_extra/de.yml",
-    )
-    listed = set(ei.engine_files())
-    assert set(targets) <= listed, f"test targets outside the hashed list: {set(targets) - listed}"
-    for target in targets:
+    for target in ("src/analytics/extract.py", "src/services/stopwords.py"):
+        assert target in set(ei.ENGINE_MODULES), target
+
         def _edited(rel, _t=target):
             data = real(rel)
             return (data or b"") + b"\n# edited" if rel == _t else data
@@ -367,22 +355,70 @@ def test_a_changed_engine_file_changes_the_identity(monkeypatch):
         monkeypatch.setattr(ei, "_read", _edited)
         ei.code_digest.cache_clear()
         try:
-            assert ei.baseline_engine_id() != base, f"{target} is not in the identity"
+            assert ei.code_digest() != base, f"{target} is not in the code digest"
+            assert ei.baseline_engine_id() == base_id
         finally:
             monkeypatch.setattr(ei, "_read", real)
             ei.code_digest.cache_clear()
+    assert ei.code_digest() == base
+
+
+def test_a_changed_data_file_changes_the_identity(monkeypatch):
+    """A data file is hashed at runtime and IS the identity: a generated cities.yml shadowing the sample (it differs per install),
+    a one-word stoplist edit, a ring regeneration. These cannot be versioned by hand because they are not what a PR edits."""
+    base = ei.baseline_engine_id()
+    real = ei._read
+    # stopwords_iso has NO en.txt or fr.txt -- those languages' stopwords are constants in src/services/stopwords.py -- so a
+    # vendored list is exercised through de.txt; membership is asserted first so a wrong target fails as a wrong target.
+    targets = (
+        "configs/cities.yml",
+        "configs/places_gazetteer.yml",
+        "configs/stopwords_iso/de.txt",
+        "configs/stopwords_extra/de.yml",
+        "configs/keyword_equivalents.yml",
+    )
+    listed = set(ei._data_files())
+    assert set(targets) <= listed, f"test targets outside the hashed list: {set(targets) - listed}"
+    for target in targets:
+        def _edited(rel, _t=target):
+            data = real(rel)
+            return (data or b"") + b"\n# edited" if rel == _t else data
+
+        monkeypatch.setattr(ei, "_read", _edited)
+        ei.data_digest.cache_clear()
+        ei._stamp_for.cache_clear()
+        try:
+            assert ei.baseline_engine_id() != base, f"{target} is not in the identity"
+        finally:
+            monkeypatch.setattr(ei, "_read", real)
+            ei.data_digest.cache_clear()
+            ei._stamp_for.cache_clear()
     assert ei.baseline_engine_id() == base
+
+
+def test_line_endings_do_not_change_either_digest(monkeypatch):
+    code, data = ei.code_digest(), ei.data_digest()
+    real = ei._read
+    monkeypatch.setattr(ei, "_read", lambda rel: (lambda d: None if d is None else d.replace(b"\n", b"\r\n"))(real(rel)))
+    ei.code_digest.cache_clear()
+    ei.data_digest.cache_clear()
+    try:
+        assert ei.code_digest() == code and ei.data_digest() == data
+    finally:
+        monkeypatch.undo()
+        ei.code_digest.cache_clear()
+        ei.data_digest.cache_clear()
 
 
 def test_an_absent_file_is_not_an_empty_file(monkeypatch):
     real = ei._read
     monkeypatch.setattr(ei, "_read", lambda rel: None if rel == "configs/cities.yml" else real(rel))
-    ei.code_digest.cache_clear()
-    absent = ei.code_digest()
+    ei.data_digest.cache_clear()
+    absent = ei.data_digest()
     monkeypatch.setattr(ei, "_read", lambda rel: b"" if rel == "configs/cities.yml" else real(rel))
-    ei.code_digest.cache_clear()
-    empty = ei.code_digest()
-    ei.code_digest.cache_clear()
+    ei.data_digest.cache_clear()
+    empty = ei.data_digest()
+    ei.data_digest.cache_clear()
     assert absent != empty
 
 

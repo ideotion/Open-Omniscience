@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "digest": "8c1c685dc842009b8825e3096e4b3073f4c2037d8cf37a951a9bd8388238cf26",
+  "log": [
+    {
+      "version": 1,
+      "digest": "8c1c685dc842009b8825e3096e4b3073f4c2037d8cf37a951a9bd8388238cf26",
+      "kind": "baseline",
+      "note": "R412 baseline: the pin starts at the code-module digest of the main tip this change is cut from (INDEXER_VERSION 1)"
+    }
+  ]
+}
