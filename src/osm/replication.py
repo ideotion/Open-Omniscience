@@ -62,6 +62,10 @@ class DiffUnavailable(RuntimeError):
 
 KILL_SWITCH_TEXT = "refused: airplane mode is engaged, so no change file was requested"
 
+#: The one host a change-file session may reach (R143: the session refuses any other host on every hop). It is the download manager's own,
+#: and it is a module-level name so the pin in ``tests/test_session_host_list.py`` can read it against the popup lane that names it.
+REPLICATION_HOSTS = [urlparse(GEOFABRIK_BASE).hostname or ""]
+
 
 @dataclass(frozen=True, slots=True)
 class ReplicationState:
@@ -192,7 +196,6 @@ class GuardedDiffSource:
 
     def __init__(self, region: str, *, session_factory=None, timeout: float = 60.0) -> None:
         self.base = updates_base(region)
-        self.host = urlparse(GEOFABRIK_BASE).hostname or ""
         self._factory = session_factory
         self._timeout = timeout
 
@@ -201,7 +204,7 @@ class GuardedDiffSource:
             return self._factory(url)
         from src.safety.fetcher import guarded_session
 
-        return guarded_session(isolation_token=url, allowed_hosts=[self.host])
+        return guarded_session(isolation_token=url, allowed_hosts=REPLICATION_HOSTS)
 
     def _get(self, url: str):
         from src.ingest.airplane import AirplaneModeError
