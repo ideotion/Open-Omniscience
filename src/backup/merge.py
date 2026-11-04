@@ -6374,7 +6374,10 @@ def merge_side_files(staged: StagedArtifact) -> dict:
         local = base / fname
         try:
             incoming_lines, withheld = _log_lines(path)
-        except OSError:
+        except OSError as exc:
+            # said, not skipped in silence: a restore report with no entry for a log reads as "there was no such log". Never read, so there
+            # is no duplicate count (null, not 0); the words are never empty (an empty text would read as success), the class names it then
+            logs[fname] = {"appended": 0, "duplicate": None, "read_failed": exception_text(exc, typed=False) or type(exc).__name__}
             continue
         existing: set[str] = set()
         if local.exists():
@@ -6389,14 +6392,23 @@ def merge_side_files(staged: StagedArtifact) -> dict:
         # one sentence per line this restore could not check, written whatever the log already holds: they are not lines to dedupe or to
         # count as duplicates, they are this restore saying what it left out
         sentences = [_withheld_sentence(size) for size in withheld]
+        write_failed: str | None = None
         if fresh or sentences:
-            with open(local, "a", encoding="utf-8") as fh:
-                fh.write(
-                    f'{{"merged_from": "{staged.origin_fingerprint[:16]}",'
-                    f' "lines": {len(fresh) + len(sentences)}}}\n'
-                )
-                fh.write("\n".join(fresh + sentences) + "\n")
-        logs[fname] = {"appended": len(fresh), "duplicate": len(incoming_lines) - len(fresh)}
+            try:
+                with open(local, "a", encoding="utf-8") as fh:
+                    fh.write(
+                        f'{{"merged_from": "{staged.origin_fingerprint[:16]}",'
+                        f' "lines": {len(fresh) + len(sentences)}}}\n'
+                    )
+                    fh.write("\n".join(fresh + sentences) + "\n")
+            except OSError as exc:
+                # A log is diagnostics, not the corpus: one that cannot be appended to (a file that cannot be opened for writing, a full disk)
+                # is REPORTED and the stage goes on, as the documents and rings below do. What reached the file before the failure is not
+                # known, so nothing is called appended and the words say what failed (never empty: an empty text would read as success).
+                write_failed = exception_text(exc, typed=False) or type(exc).__name__
+        logs[fname] = {"appended": 0 if write_failed else len(fresh), "duplicate": len(incoming_lines) - len(fresh)}
+        if write_failed:
+            logs[fname]["write_failed"] = write_failed
         if withheld:
             logs[fname]["undecodable_lines_withheld"] = len(withheld)  # not in appended or duplicate: each is a sentence in the log instead
     report["logs"] = logs
