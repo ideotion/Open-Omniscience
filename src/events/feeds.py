@@ -214,7 +214,10 @@ def _imports_shape(data: dict) -> tuple[dict, int]:
                 continue
             entry = dict(entry)
             for field in ("sources", "uids"):
-                if field not in entry or entry[field] is None:
+                if field not in entry:
+                    continue
+                if entry[field] is None:
+                    entry[field] = []  # a null list is an empty one (not counted: it is not wrong data), or ``setdefault`` hands the merge the None
                     continue
                 if not isinstance(entry[field], list):
                     left_out += 1

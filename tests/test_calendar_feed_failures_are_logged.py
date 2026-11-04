@@ -391,3 +391,16 @@ def test_the_agenda_and_the_ics_import_walk_a_family_with_no_events(local):
     assert F.imported_agenda() == []
     got = F.import_ics_text("F", _ICS)
     assert got["added"] == 1 and got["family_total"] == 1
+
+
+@pytest.mark.parametrize("field", ["sources", "uids"])
+def test_a_null_sources_or_uids_reads_as_an_empty_list_so_the_restore_merge_does_not_raise(field):
+    """``le.setdefault(field, [])`` hands back a stored None, and the ``in`` test that follows raised TypeError."""
+    local = {"user-f": {"name": "F", "events": {"x|2026-12-01": {"title": "X", field: None}}}}
+    _store("calendar_feed_imports.json").write_text(json.dumps(local), "utf-8")
+    assert F._load_json("calendar_feed_imports.json")["user-f"]["events"]["x|2026-12-01"][field] == []
+    incoming = {"user-f": {"events": {"x|2026-12-01": {"sources": ["b"], "uids": ["u"]}}}}
+    F.merge_imported_store("calendar_feed_imports.json", incoming)
+    after = json.loads(_store("calendar_feed_imports.json").read_text("utf-8"))
+    entry = after["user-f"]["events"]["x|2026-12-01"]
+    assert entry["sources"] == ["b"] and entry["uids"] == ["u"]
