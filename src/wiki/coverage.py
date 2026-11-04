@@ -285,6 +285,10 @@ def edition_coverage(
                 "pages_seen": pages_seen,
                 "pass_no": int(w["pass_no"]) if w else None,
                 "walk_complete": bool(w and w.get("completed_at")),
+                "walk_requests": w.get("requests") if w else None,
+                "walk_response_bytes": w.get("response_bytes") if w else None,
+                "walk_consecutive_failures": w.get("consecutive_failures") if w else None,
+                "walk_updated_at": w.get("updated_at") if w else None,
                 "edition_articles": total,
                 "edition_articles_read_at": w.get("edition_articles_read_at") if w else None,
                 "edition_articles_read": total_note,
@@ -316,7 +320,11 @@ def edition_coverage(
         "read_at": at.isoformat(),
         "editions": rows,
         "totals": totals,
-        "located": _located_block(),
+        "located": (
+            {k: v for k, v in _located_block().items() if k in ("measured", "reason", "fields")}
+            if not newest_gaps
+            else _located_block()
+        ),
         "method": (
             "Read, not accumulated, from rows the lane wrote: pages seen and the edition's article count from the walk's bookmark rows (walk_coverage), "
             "pages holding a text from HOT's revisions and WARM's counts, the last event from the newest versioned_changes row of the edition's "
