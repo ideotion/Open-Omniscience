@@ -106,7 +106,7 @@ def _scratch_run(tmp_path, *args):
 def test_the_pin_script_refuses_a_bump_without_a_sentence(tmp_path):
     out, pin, _ = _scratch_run(tmp_path, "--bump", "x")
     assert out.returncode != 0 and "say what changed" in (out.stderr + out.stdout)
-    assert json.loads(pin.read_text())["version"] == _pin()["version"]
+    assert json.loads(pin.read_text(encoding="utf-8"))["version"] == _pin()["version"]
 
 
 def test_the_pin_script_refuses_a_same_when_nothing_changed(tmp_path):
@@ -117,10 +117,10 @@ def test_the_pin_script_refuses_a_same_when_nothing_changed(tmp_path):
 def test_a_bump_raises_the_version_in_both_places_and_logs_the_sentence(tmp_path):
     out, pin, mod = _scratch_run(tmp_path, "--bump", "the places rows now carry a country code")
     assert out.returncode == 0, out.stdout + out.stderr
-    new = json.loads(pin.read_text())
+    new = json.loads(pin.read_text(encoding="utf-8"))
     assert new["version"] == _pin()["version"] + 1 and new["log"][-1]["kind"] == "bump"
     assert new["log"][-1]["note"] == "the places rows now carry a country code"
-    assert f"INDEXER_VERSION = {new['version']}" in mod.read_text()
+    assert f"INDEXER_VERSION = {new['version']}" in mod.read_text(encoding="utf-8")
 
 
 def test_the_pin_script_check_agrees_with_the_test():
