@@ -109,3 +109,13 @@ def test_the_constant_is_one_plain_line_the_script_can_rewrite():
 @pytest.mark.parametrize("name", ["configs/indexer_pin.json", "scripts/indexer_pin.py"])
 def test_the_pin_files_are_not_part_of_the_engine(name):
     assert name not in ei.engine_files(), "the police must not hash itself"
+
+
+def test_the_pin_script_refuses_a_same_when_nothing_changed():
+    out = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "indexer_pin.py"), "--same", "nothing changed at all here"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    assert out.returncode != 0 and "have not changed" in (out.stderr + out.stdout)

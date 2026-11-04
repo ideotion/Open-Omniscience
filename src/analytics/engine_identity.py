@@ -218,15 +218,9 @@ def _read(rel: str) -> bytes | None:
 
 
 def engine_files() -> list[str]:
-    """Every repo-relative file the code digest covers, sorted -- the list is part of
-    the identity, so it must be deterministic across machines and filesystems."""
-    out = set(ENGINE_MODULES)
-    for pattern in ENGINE_DATA_GLOBS:
-        if any(ch in pattern for ch in "*?["):
-            out.update(str(p.relative_to(_REPO)) for p in _REPO.glob(pattern) if p.is_file())
-        else:
-            out.add(pattern)
-    return sorted(out)
+    """Every repo-relative file the closure test covers (code modules and data files), sorted -- the list is deterministic across
+    machines and filesystems."""
+    return sorted(set(ENGINE_MODULES) | set(_data_files()))
 
 
 #: The one engine module whose bytes are NOT hashed whole: ``store.py`` is 2,700 lines and most of them (the drains, backfills,
@@ -534,28 +528,54 @@ def _engine_file_bytes(rel: str, data: bytes) -> bytes:
     return data if digest is None else b"\x00narrowed:" + digest.encode()
 
 
-@lru_cache(maxsize=1)
-def code_digest() -> str:
-    """sha256 over (path, bytes) of every engine file. A MISSING file contributes its
-    name and an explicit absence marker rather than nothing, so "absent" and "empty"
-    are different engines and a deleted gazetteer cannot hash like an untouched one.
+def _data_files() -> list[str]:
+    out: set[str] = set()
+    for pattern in ENGINE_DATA_GLOBS:
+        if any(ch in pattern for ch in "*?["):
+            out.update(str(p.relative_to(_REPO)) for p in _REPO.glob(pattern) if p.is_file())
+        else:
+            out.add(pattern)
+    return sorted(out)
 
-    Cached for the process: the files a running app extracts with do not change under
-    it, and a pass must not re-read ~200 files per article."""
+
+def _digest_of(files: list[str], *, narrow: bool) -> str:
+    """sha256 over (path, bytes) of ``files``. A MISSING file contributes its name and an explicit absence marker rather than nothing,
+    so "absent" and "empty" are different and a deleted gazetteer cannot hash like an untouched one. Line endings are normalised
+    (``\\r\\n`` to ``\\n``): a Windows checkout with autocrlf must not hash differently from the same commit on Linux."""
     h = hashlib.sha256()
-    for rel in engine_files():
+    for rel in files:
         data = _read(rel)
         h.update(rel.encode())
         h.update(b"\x00")
         if data is None:
             h.update(b"<absent>")
         else:
-            data = _engine_file_bytes(rel, data)
+            if narrow:
+                data = _engine_file_bytes(rel, data)
+            data = data.replace(b"\r\n", b"\n")
             h.update(str(len(data)).encode())
             h.update(b"\x00")
             h.update(data)
         h.update(b"\x01")
     return h.hexdigest()
+
+
+@lru_cache(maxsize=1)
+def code_digest() -> str:
+    """The hash of the engine's CODE modules (:data:`ENGINE_MODULES`). Since R412 it is not part of the identity: it is what
+    ``configs/indexer_pin.json`` and ``tests/test_indexer_pin.py`` police the hand-bumped :data:`INDEXER_VERSION` with.
+
+    Cached for the process: the files a running app extracts with do not change under it, and a pass must not re-read ~200 files
+    per article."""
+    return _digest_of(sorted(ENGINE_MODULES), narrow=True)
+
+
+@lru_cache(maxsize=1)
+def data_digest() -> str:
+    """The hash of the engine's DATA files (stoplists, rings, gazetteers), computed at runtime on every install and part of the
+    identity: a data file can differ per install (``configs/cities.yml`` is generated on the operator's machine and shadows the
+    shipped sample), so it cannot be versioned by hand."""
+    return _digest_of(_data_files(), narrow=False)
 
 
 @cache
@@ -607,6 +627,7 @@ def engine_components(extractor=None, *, extractor_name: str | None = None) -> d
         "extractor": name,
         "gazetteer": _gazetteer_digest(extractor) if extractor is not None else None,
         "indexer": INDEXER_VERSION,
+        "data": data_digest(),
         "distributions": {d: _dist_version(d) for d in ENGINE_DISTRIBUTIONS},
         "switches": _switches(),
         "python": f"{sys.version_info.major}.{sys.version_info.minor}",

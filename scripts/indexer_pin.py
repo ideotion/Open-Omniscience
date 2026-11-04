@@ -48,7 +48,7 @@ def _set_version(new: int) -> None:
     text = MODULE.read_text(encoding="utf-8")
     if not _VERSION_LINE.search(text):
         raise SystemExit("INDEXER_VERSION line not found in engine_identity.py")
-    MODULE.write_text(_VERSION_LINE.sub(f"INDEXER_VERSION = {new}", text, count=1), encoding="utf-8")
+    MODULE.write_text(_VERSION_LINE.sub(f"INDEXER_VERSION = {new}", text, count=1), encoding="utf-8", newline="\n")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -67,6 +67,8 @@ def main(argv: list[str] | None = None) -> int:
     note = (a.bump or a.same or "").strip()
     if len(note) < MIN_NOTE:
         raise SystemExit(f"say what changed (>= {MIN_NOTE} characters); the sentence is the record")
+    if a.same and pin.get("digest") == digest:
+        raise SystemExit("--same refused: the engine files have not changed since the last judgement")
     version = int(pin.get("version", 0)) + (1 if a.bump else 0)
     if a.bump:
         _set_version(version)
@@ -74,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     pin.setdefault("log", []).append(
         {"version": version, "digest": digest, "kind": "bump" if a.bump else "same", "note": note}
     )
-    PIN.write_text(json.dumps(pin, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    PIN.write_text(json.dumps(pin, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     print(f"{'bumped to' if a.bump else 'kept'} INDEXER_VERSION {version}; digest {digest[:12]}")
     return 0
 
