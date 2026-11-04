@@ -1,0 +1,9 @@
+## 2026-11-04 — a side file cut mid-character no longer ends a restore at the side-files stage (R397 follow-on; PR #1703)
+
+**What was found.** `merge_side_files` caught `(OSError, JSONDecodeError)` around the calendar stores and `OSError` around the logs; a member an earlier crash had cut in the middle of a multi-byte character raised `UnicodeDecodeError` (a `ValueError`), which ended the whole import before the live corpus was touched. The live store's loader had caught it since R397; the incoming side had not.
+
+**What changed.** The calendar member is skipped and reported (`unreadable in artifact`). In a log member and the live log every line that is text is kept and a line that is not text is withheld, never repaired (it cannot be checked for the passphrase; the first version repaired it and leaked part of a held key into the live log, found by the independent read and proved by a test), replaced by a sentence that counts its bytes, and the log's report entry carries `undecodable_lines_withheld: N` when N > 0. `src/backup/merge.py` only (`merge_side_files` and the new `_log_lines`).
+
+**Pinned by** `tests/test_restore_side_files_cut_mid_character.py` (13 tests, 8 red on main with `UnicodeDecodeError` and 2 more on the new helper's name); 18 mutants, all killed. The sentences are written whatever the log holds (never deduplicated or counted as duplicates) and the fallback splits where a clean read does.
+
+**Stated limits.** A torn tail already in the live log stays in the file (appends land after it); only the read is lenient. Restoring the same artifact twice writes the sentences a second time. A sentence's byte count leaves out the line ending, so it reads one byte smaller than the export's for the same line. A calendar store of the wrong JSON shape or holding a lone surrogate still ends the stage (reported, not changed here). Not seen in the field by this lane: driven by tests that cut the files.
