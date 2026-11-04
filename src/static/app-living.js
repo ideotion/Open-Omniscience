@@ -641,6 +641,7 @@
       _wireLawEvolution();
       loadLawWeek();
       loadLivingLawDocs();
+      loadLawFloor();
       loadLawAmendMap();
     }
     async function loadLivingLaw() {
@@ -785,6 +786,101 @@
       try { _lawDocsLast = await api("/api/law/documents"); renderLivingLawDocs(); }
       catch (e) { _lawDocsLast = null; box.innerHTML = _livingFailHtml(e.message, _livingT()); }
     }
+    // -- the language coverage floor (v0.6.0 row C, S1; Q912): where each floor country stands --
+    // Every country in the dated floor file (all three bases counted and labelled) is in ONE of four states, never a
+    // blank: "No eligible source" is a state, the one that says research is owed. Counts and lists only -- a share of the
+    // floor would be a coverage claim the report refuses to make. zh is its own line (the standing Q911 emphasis).
+    const _LAW_FLOOR_ORDER = ["tracked", "verified-not-yet-tracked", "unverified", "no-eligible-source", "unchecked"];
+    function lawFloorStateWords(state, t) {
+      if (state === "tracked") return t("Tracked here");
+      if (state === "verified-not-yet-tracked") return t("Verified, not tracked yet");
+      if (state === "unverified") return t("Not verified");
+      if (state === "no-eligible-source") return t("No eligible source");
+      if (state === "unchecked") return t("Not checked");
+      return String(state); // a state this build does not know is shown as sent, never mapped onto the nearest known word
+    }
+    function lawFloorStateWhy(state, t) {
+      if (state === "tracked") return t("This install holds at least one law document that states this country.");
+      if (state === "verified-not-yet-tracked") return t("A law source is listed for this country and a researcher or this app recorded a check of it, but no document is tracked yet.");
+      if (state === "unverified") return t("A law source is listed for this country and nothing recorded a check of it.");
+      if (state === "no-eligible-source") return t("The catalogue lists no law source for this country yet: research to do, not a statement that none exists.");
+      if (state === "unchecked") return t("The law catalogue could not be read, so this country was not looked up.");
+      return "";
+    }
+    function lawFloorBasisWords(basis, t) {
+      if (basis === "official") return t("official language");
+      if (basis === "de-facto") return t("de-facto language");
+      if (basis === "regional") return t("regional language");
+      return String(basis);
+    }
+    function lawFloorCountsHtml(counts, t) {
+      return _LAW_FLOOR_ORDER.filter((st) => counts && st in counts && (counts[st] > 0 || st !== "unchecked"))
+        .map((st) => `<span title="${esc(lawFloorStateWhy(st, t))}">${esc(lawFloorStateWords(st, t))} <b>${esc(String(counts[st]))}</b></span>`)
+        .join(" · ");
+    }
+    function livingLawFloorHtml(d, t, tf) {
+      const f = d && d.floor;
+      if (!f) return `<div class="muted">${esc(t("This build reports no language floor."))}</div>`;
+      if (!f.by_state || !f.languages) {
+        return `<div class="muted">${esc(t("The language floor could not be read, so nothing is counted."))}${f.reason ? " " + esc(String(f.reason)) : ""}</div>`;
+      }
+      const status = String(f.verification_status || "");
+      const caveat = /^drafted/.test(status)
+        ? `<p class="card-caveat">${esc(t("The list of countries was drafted from memory and has not been checked online yet, so these counts run over a list that is not settled."))}</p>`
+        : `<p class="hint">${esc(status ? tf("Status of the list of countries: {status}", { status }) : t("The list of countries states no verification status."))}</p>`;
+      const unchecked = f.state !== "checked"
+        ? `<p class="card-caveat">${esc(t("The law catalogue could not be read, so only what is tracked here is counted."))}${f.reason ? " " + esc(String(f.reason)) : ""}</p>` : "";
+      const head = `<p class="hint">${esc(tf("{n} countries on the floor · list dated {date}", { n: String(f.countries), date: f.as_of || "—" }))}</p>`;
+      const stateOf = {};
+      for (const st of Object.keys(f.by_state)) for (const cc of f.by_state[st]) stateOf[cc] = st;
+      const tally = _LAW_FLOOR_ORDER.filter((st) => st in f.by_state && (f.by_state[st].length > 0 || st !== "unchecked"))
+        .map((st) => `<div class="living-row"><span title="${esc(lawFloorStateWhy(st, t))}">${esc(lawFloorStateWords(st, t))}</span>`
+          + ` <b>${esc(String(f.by_state[st].length))}</b></div>`).join("");
+      const rank = (cc) => _LAW_FLOOR_ORDER.indexOf(stateOf[cc]);
+      const langRow = (r) => {
+        const members = [];
+        for (const basis of ["official", "de-facto", "regional"]) for (const cc of (r[basis] || [])) members.push({ cc, basis });
+        members.sort((a, b) => rank(a.cc) - rank(b.cc) || (a.cc < b.cc ? -1 : 1));
+        const contested = new Set(r.contested || []);
+        const list = members.map((m) => `<div>${ooCountryCell(m.cc)} <span class="muted">${esc(lawFloorBasisWords(m.basis, t))}`
+          + `${contested.has(m.cc) ? " · " + esc(t("contested")) : ""}</span> · ${esc(lawFloorStateWords(stateOf[m.cc], t))}</div>`).join("");
+        const name = typeof ooLangName === "function" ? ooLangName(r.language, r.language) : r.language;
+        return `<details class="living-row"${r.language === "zh" ? " open" : ""}><summary>${ooLangCell(r.language)} ${esc(name)} · `
+          + `${lawFloorCountsHtml(r.states, t)} · <span class="muted">${esc(tf("{n} tracked documents in this language", { n: String(r.documents || 0) }))}</span></summary>`
+          + `<div class="living-floor-countries">${list}`
+          + `${r.contested && r.contested.length ? `<p class="hint">${esc(t("A contested row is counted and labelled, not dropped: the language's status in that country is disputed."))}</p>` : ""}`
+          + `</div></details>`;
+      };
+      // zh first and on its own line, with the territories its seed list names beside it (they are not on the floor).
+      const rows = f.languages.slice().sort((a, b) => (b.language === "zh") - (a.language === "zh"));
+      const beyond = f.zh_beyond_floor
+        ? Object.keys(f.zh_beyond_floor).map((cc) => `${ooCountryCell(cc)} ${esc(lawFloorStateWords(f.zh_beyond_floor[cc], t))}`).join(" · ") : "";
+      const zhNote = beyond
+        ? `<p class="hint">${esc(t("Named by the Chinese seed list but not on the floor (the floor excludes territories):"))} ${beyond}</p>` : "";
+      const many = f.many_country_sources
+        ? Object.keys(f.many_country_sources).reduce((n, k) => n + Object.keys(f.many_country_sources[k]).length, 0) : 0;
+      const unplaced = f.unplaced_documents ? Object.keys(f.unplaced_documents).reduce((n, k) => n + f.unplaced_documents[k], 0) : 0;
+      const notes = `<p class="hint">${esc(t("Each country is in exactly one state. Only law sources count: an IP office or a court-decision site does not. Within a state the countries are listed by code; ordering by population reached waits for a dated population table. These are counts of countries, never a share of anything."))}</p>`
+        + (many ? `<p class="hint">${esc(tf("{n} sources that serve many countries at once are credited to no single country.", { n: String(many) }))}</p>` : "")
+        + (unplaced ? `<p class="hint">${esc(tf("{n} tracked documents state no country and are credited to none.", { n: String(unplaced) }))}</p>` : "");
+      return caveat + unchecked + head + tally + rows.map(langRow).join("") + zhNote + notes;
+    }
+    let _lawFloorLast = null;
+    function renderLawFloor() {
+      const box = $("living-law-floor");
+      if (!box || !_lawFloorLast) return;
+      box.innerHTML = livingLawFloorHtml(_lawFloorLast, _livingT(), _livingTf());
+    }
+    async function loadLawFloor() {
+      const box = $("living-law-floor");
+      if (!box) return;
+      try {
+        // The diagnostics member's own report, read from this machine (loopback, no egress): one source of truth.
+        const env = await api("/api/diagnostics/law-coverage");
+        _lawFloorLast = { floor: ((env && env.data) || {}).floor };
+        renderLawFloor();
+      } catch (e) { _lawFloorLast = null; box.innerHTML = _livingFailHtml(e.message, _livingT()); }
+    }
     function openLawVersions(id) {
       const host = $("law-tc-versions");
       if (!host || typeof ooVersionReader !== "function") return;
@@ -868,7 +964,7 @@
     }
 
     function repaintLawEvolutionFromCache() {
-      renderLawWeek(); renderLivingLawDocs(); renderLawPit(); renderLawTopic();
+      renderLawWeek(); renderLivingLawDocs(); renderLawFloor(); renderLawPit(); renderLawTopic();
       const tc = $("law-tc-title");
       if (tc && _lawTc && !_lawTc.title) tc.textContent = "";
       void renderLawAmendMap();

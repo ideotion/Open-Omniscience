@@ -287,6 +287,27 @@ def is_law_source_type(source_type: str | None) -> bool:
     return token == LAW_SOURCE_TYPE or token in LEGACY_LAW_SOURCE_TYPES
 
 
+#: ``verification.status`` values that say a researcher actually reached the portal: ``fetched`` (the session loaded it) or
+#: ``search-verified`` (its existence was confirmed from search results). ``lead`` is a domain nobody loaded. The ONE spelling of
+#: "verified" for the review-before-enable posture, read by :func:`registrable_documents` and the coverage-floor report alike.
+RESEARCH_VERIFIED_STATUSES: tuple[str, ...] = ("fetched", "search-verified")
+
+
+def source_is_law_authority(source: dict) -> bool:
+    """Pure: does this row describe a law authority (Q919)? An ``ip`` office and a ``case_law`` row do not, so neither
+    makes a country's law reachable."""
+    return source_type_for(source) == LAW_SOURCE_TYPE
+
+
+def source_is_verified(source: dict) -> bool:
+    """Pure: has anything recorded a verification of this row? EITHER the research channel (``verification.status`` fetched or
+    search-verified) OR this app's own (Q924: an adapter read a live host or a stored fixture of it). The two stay apart
+    everywhere they are shown; they are joined only here, to answer the one yes/no the coverage floor asks. A row that records
+    neither is unverified (nobody recorded one), however well known its host is."""
+    status = (source.get("verification") or {}).get("status")
+    return status in RESEARCH_VERIFIED_STATUSES or verified_tier(source)["tier"] in ("live", "fixture")
+
+
 def source_for_url(url: str | None, catalog: dict | None = None) -> dict | None:
     """The catalogue row whose domain serves ``url``, or ``None``. Pure.
 
@@ -374,7 +395,7 @@ def registrable_documents(catalog: dict) -> list[dict]:
         d = dict(d)
         if d.pop("_generated", False):
             status = (d.get("verification") or {}).get("status")
-            if status not in ("fetched", "search-verified"):
+            if status not in RESEARCH_VERIFIED_STATUSES:
                 continue
         out.append(d)
     return out
