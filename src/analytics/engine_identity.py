@@ -129,6 +129,9 @@ ENGINE_DATA_GLOBS: tuple[str, ...] = (
     "configs/keyword_rings_generated.yml",
     "configs/cities.yml",
     "configs/cities.sample.yml",
+    # Built per install from the operator's own OSM data (scripts/build_place_gazetteer.py) and merged into the gazetteer by
+    # ``load_cities`` (0.5 row C S4): an input that differs per install, so it is hashed at runtime, absent or not.
+    "configs/places_gazetteer.yml",
 )
 
 #: Optional distributions whose presence or version changes extraction. Their data

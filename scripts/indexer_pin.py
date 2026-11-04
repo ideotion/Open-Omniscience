@@ -21,13 +21,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PIN = ROOT / "configs" / "indexer_pin.json"
-MODULE = ROOT / "src" / "analytics" / "engine_identity.py"
+#: ``OO_INDEXER_PIN`` / ``OO_INDEXER_MODULE`` point the script at copies; the tests use them so that exercising the script can never
+#: record a judgement in the real pin.
+PIN = Path(os.environ.get("OO_INDEXER_PIN") or ROOT / "configs" / "indexer_pin.json")
+MODULE = Path(os.environ.get("OO_INDEXER_MODULE") or ROOT / "src" / "analytics" / "engine_identity.py")
 _VERSION_LINE = re.compile(r"^INDEXER_VERSION = (\d+)$", re.M)
 MIN_NOTE = 12
 

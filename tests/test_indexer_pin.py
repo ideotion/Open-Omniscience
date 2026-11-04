@@ -89,11 +89,38 @@ def test_the_version_is_part_of_the_identity_and_the_code_digest_is_not(monkeypa
         ei.code_digest.cache_clear()
 
 
+def _scratch_run(tmp_path, *args):
+    """Run the script against COPIES of the pin and the module, so a test can never record a judgement in the real pin."""
+    import os
+    import shutil
+
+    pin = tmp_path / "indexer_pin.json"
+    mod = tmp_path / "engine_identity.py"
+    shutil.copy(PIN, pin)
+    shutil.copy(ROOT / "src" / "analytics" / "engine_identity.py", mod)
+    env = {**os.environ, "OO_INDEXER_PIN": str(pin), "OO_INDEXER_MODULE": str(mod)}
+    out = subprocess.run([sys.executable, str(ROOT / "scripts" / "indexer_pin.py"), *args], capture_output=True, text=True, cwd=ROOT, env=env)
+    return out, pin, mod
+
+
 def test_the_pin_script_refuses_a_bump_without_a_sentence(tmp_path):
-    out = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "indexer_pin.py"), "--bump", "x"], capture_output=True, text=True, cwd=ROOT
-    )
+    out, pin, _ = _scratch_run(tmp_path, "--bump", "x")
     assert out.returncode != 0 and "say what changed" in (out.stderr + out.stdout)
+    assert json.loads(pin.read_text())["version"] == _pin()["version"]
+
+
+def test_the_pin_script_refuses_a_same_when_nothing_changed(tmp_path):
+    out, _, _ = _scratch_run(tmp_path, "--same", "nothing changed at all here")
+    assert out.returncode != 0 and "have not changed" in (out.stderr + out.stdout)
+
+
+def test_a_bump_raises_the_version_in_both_places_and_logs_the_sentence(tmp_path):
+    out, pin, mod = _scratch_run(tmp_path, "--bump", "the places rows now carry a country code")
+    assert out.returncode == 0, out.stdout + out.stderr
+    new = json.loads(pin.read_text())
+    assert new["version"] == _pin()["version"] + 1 and new["log"][-1]["kind"] == "bump"
+    assert new["log"][-1]["note"] == "the places rows now carry a country code"
+    assert f"INDEXER_VERSION = {new['version']}" in mod.read_text()
 
 
 def test_the_pin_script_check_agrees_with_the_test():
@@ -109,13 +136,3 @@ def test_the_constant_is_one_plain_line_the_script_can_rewrite():
 @pytest.mark.parametrize("name", ["configs/indexer_pin.json", "scripts/indexer_pin.py"])
 def test_the_pin_files_are_not_part_of_the_engine(name):
     assert name not in ei.engine_files(), "the police must not hash itself"
-
-
-def test_the_pin_script_refuses_a_same_when_nothing_changed():
-    out = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "indexer_pin.py"), "--same", "nothing changed at all here"],
-        capture_output=True,
-        text=True,
-        cwd=ROOT,
-    )
-    assert out.returncode != 0 and "have not changed" in (out.stderr + out.stdout)

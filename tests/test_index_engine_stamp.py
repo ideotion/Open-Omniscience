@@ -370,9 +370,15 @@ def test_a_changed_data_file_changes_the_identity(monkeypatch):
     real = ei._read
     # stopwords_iso has NO en.txt or fr.txt -- those languages' stopwords are constants in src/services/stopwords.py -- so a
     # vendored list is exercised through de.txt; membership is asserted first so a wrong target fails as a wrong target.
-    targets = ("configs/cities.yml", "configs/stopwords_iso/de.txt", "configs/stopwords_extra/de.yml", "configs/keyword_equivalents.yml")
+    targets = (
+        "configs/cities.yml",
+        "configs/places_gazetteer.yml",
+        "configs/stopwords_iso/de.txt",
+        "configs/stopwords_extra/de.yml",
+        "configs/keyword_equivalents.yml",
+    )
     listed = set(ei._data_files())
-    assert set(targets) <= listed | {"configs/cities.yml"}, f"test targets outside the hashed list: {set(targets) - listed}"
+    assert set(targets) <= listed, f"test targets outside the hashed list: {set(targets) - listed}"
     for target in targets:
         def _edited(rel, _t=target):
             data = real(rel)
