@@ -181,6 +181,12 @@ class DiffSource(Protocol):
 _CHUNK = 1024 * 1024
 
 
+def _kill_switch_engaged() -> bool:
+    from src.ingest import kill_switch_active
+
+    return bool(kill_switch_active())
+
+
 class GuardedDiffSource:
     """The production source: Geofabrik, through the ONE guarded session (kill switch, protected-mode proxy, host list on every hop)."""
 
@@ -213,6 +219,10 @@ class GuardedDiffSource:
         except RedirectRefused as exc:
             raise DiffRefused(record_text(exc)) from None
         except Exception as exc:  # noqa: BLE001 - every other failure of the request is the network's or the mirror's
+            # The socket-level guard raises inside urllib3 and requests wraps it as a ConnectionError, so a switch thrown after the
+            # request's own check arrives here as a network failure: the switch is asked again before the text is chosen.
+            if _kill_switch_engaged():
+                raise DiffRefused(KILL_SWITCH_TEXT) from None
             raise DiffUnavailable(record_text(exc)) from None
         status = getattr(resp, "status_code", 200)
         if status == 404:

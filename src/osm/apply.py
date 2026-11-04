@@ -109,6 +109,8 @@ class DiffCounts:
     relations_not_placed: int = 0
     #: A change whose ``version`` is below the stored object's: ignored, never applied over a newer row.
     older_than_stored: int = 0
+    #: A change to an object another country's cut holds (the file covers the whole region): not this country's, left alone.
+    other_country: int = 0
 
     def as_dict(self) -> dict[str, int]:
         return dict(self.__dict__)
@@ -141,9 +143,15 @@ class UpdateReport:
 #: ``outcome`` values. ``applied``: at least one file applied and nothing stopped the run early. ``current``: the mirror had nothing newer.
 #: ``rebaseline_needed``: the next file owed is not available, so the extract has to be cut again (this module cuts it in
 #: :func:`rebaseline`; the download is the caller's, under its consent). ``refused``: a gate stopped it, named in ``reason``.
-#: ``unavailable``: the network or the mirror failed. ``stopped``: the budget the caller gave ran out. ``failed``: a change file would
+#: ``superseded``: the country was cut or updated by something else mid-run, so the file was not applied. ``unavailable``: the network or the mirror failed. ``stopped``: the budget the caller gave ran out. ``failed``: a change file would
 #: not parse (the transaction was rolled back). ``not-ready``: this country cannot be updated as it is (see ``reason``).
-OUTCOMES = ("current", "applied", "rebaseline_needed", "refused", "unavailable", "stopped", "failed", "not-ready", "mirror-unreadable")
+OUTCOMES = (
+    "current", "applied", "rebaseline_needed", "refused", "unavailable", "stopped", "failed", "not-ready", "mirror-unreadable", "superseded",
+)
+
+
+class _Superseded(Exception):
+    """The country's position is not the one this file follows (see ``update_country``)."""
 
 
 # --------------------------------------------------------------------------- #
@@ -165,16 +173,17 @@ class _Ctx:
         self.border = border
         self.relation_id = relation_id
         self.t = osm_objects_table
-        #: Positions of the file's own created/modified nodes that are inside the border's bounding box (pass 1).
+        #: Positions, in the file, of the nodes its kept-class ways name (pass 1).
         self.locs: dict[int, tuple[float, float]] = {}
 
     def stored(self, osm_type: str, osm_id: int):
         t = self.t
         return self.s.execute(
-            select(t.c.id, t.c.version).where(t.c.osm_type == osm_type, t.c.osm_id == osm_id)
+            select(t.c.id, t.c.version, t.c.country_alpha3).where(t.c.osm_type == osm_type, t.c.osm_id == osm_id)
         ).first()
 
     def stored_points(self, ids: list[int]) -> dict[int, tuple[float, float]]:
+        # A position is a fact about the world, not about who holds the row, so a neighbour's stored node is a vertex like any other.
         t = self.t
         out: dict[int, tuple[float, float]] = {}
         for chunk in _chunks(ids):
@@ -190,7 +199,7 @@ class _Ctx:
         for kind in ("n", "w"):
             ids = [ref for typ, ref, _role in members if typ == kind]
             for chunk in _chunks(ids):
-                if self.s.execute(select(t.c.id).where(t.c.osm_type == kind, t.c.osm_id.in_(chunk)).limit(1)).first():
+                if self.s.execute(select(t.c.id).where(t.c.country_alpha3 == self.alpha3, t.c.osm_type == kind, t.c.osm_id.in_(chunk)).limit(1)).first():
                     return True
         return False
 
@@ -226,19 +235,25 @@ def _write(ctx: _Ctx, c: OscChange, stored, row: dict, counts: DiffCounts, *, ke
     counts.updated += 1
 
 
-def _older(stored, c: OscChange) -> bool:
-    return stored is not None and stored.version is not None and c.version is not None and c.version < stored.version
+def _skip(ctx: _Ctx, stored, c: OscChange, counts: DiffCounts) -> bool:
+    """True when this change is not to be applied: the row is another country's, or the change is older than the row (a delete included)."""
+    if stored is not None and stored.country_alpha3 != ctx.alpha3:
+        counts.other_country += 1
+        return True
+    if stored is not None and stored.version is not None and c.version is not None and c.version < stored.version:
+        counts.older_than_stored += 1
+        return True
+    return False
 
 
 def _apply_node(ctx: _Ctx, c: OscChange, counts: DiffCounts) -> None:
     stored = ctx.stored("n", c.osm_id)
+    if _skip(ctx, stored, c, counts):
+        return
     if c.action == "delete":
         if stored is not None:
             _delete(ctx, stored.id)
             counts.deleted += 1
-        return
-    if _older(stored, c):
-        counts.older_than_stored += 1
         return
     kind, pkey, pval, notable = T.classify(c.tags, is_way=False)
     if c.lat is None or c.lon is None:
@@ -265,13 +280,12 @@ def _apply_node(ctx: _Ctx, c: OscChange, counts: DiffCounts) -> None:
 
 def _apply_way(ctx: _Ctx, c: OscChange, counts: DiffCounts) -> None:
     stored = ctx.stored("w", c.osm_id)
+    if _skip(ctx, stored, c, counts):
+        return
     if c.action == "delete":
         if stored is not None:
             _delete(ctx, stored.id)
             counts.deleted += 1
-        return
-    if _older(stored, c):
-        counts.older_than_stored += 1
         return
     kind, pkey, pval, notable = T.classify(c.tags, is_way=True)
     if kind is None:
@@ -314,13 +328,12 @@ def _apply_way(ctx: _Ctx, c: OscChange, counts: DiffCounts) -> None:
 
 def _apply_relation(ctx: _Ctx, c: OscChange, counts: DiffCounts) -> None:
     stored = ctx.stored("r", c.osm_id)
+    if _skip(ctx, stored, c, counts):
+        return
     if c.action == "delete":
         if stored is not None:
             _delete(ctx, stored.id)
             counts.deleted += 1
-        return
-    if _older(stored, c):
-        counts.older_than_stored += 1
         return
     kind, pkey, pval, notable = T.classify(c.tags, is_way=False)
     if kind is None:
@@ -356,10 +369,19 @@ def apply_osc_file(s: Session, alpha3: str, border: Border, relation_id: int | N
     is placed by its members, and a member created in the same file must be stored first).
     """
     ctx = _Ctx(s, alpha3, border, relation_id)
+    # Pass 1a: the vertices the file's own kept-class ways name. Pass 1b: where the file puts exactly those nodes (not "the nodes inside the
+    # bounding box": a way with one vertex just outside the box is still placed, as the cut places it). Memory follows the file's way
+    # vertices, never its node count.
+    needed: set[int] = set()
     with gzip.open(path, "rb") as fh:
         for c in parse_osc(cast(IO[bytes], fh)):
-            if c.osm_type == "n" and c.action != "delete" and c.lat is not None and c.lon is not None and border.in_bbox(c.lat, c.lon):
-                ctx.locs[c.osm_id] = (c.lat, c.lon)
+            if c.osm_type == "w" and c.action != "delete" and c.refs and T.classify(c.tags, is_way=True)[0] is not None:
+                needed.update(c.refs)
+    if needed:
+        with gzip.open(path, "rb") as fh:
+            for c in parse_osc(cast(IO[bytes], fh)):
+                if c.osm_type == "n" and c.action != "delete" and c.osm_id in needed and c.lat is not None and c.lon is not None:
+                    ctx.locs[c.osm_id] = (c.lat, c.lon)
     counts = DiffCounts()
     relations: list[OscChange] = []
     with gzip.open(path, "rb") as fh:
@@ -532,7 +554,6 @@ def update_country(
         _sync_cursor(s, alpha3, s.query(OsmCountry).filter_by(alpha3=alpha3).one())
     border = Border(decode_rings(rings))
     work.mkdir(parents=True, exist_ok=True)
-    applied_any = False
     seq = plan.first
     done = 0
     while seq <= plan.last:
@@ -572,10 +593,16 @@ def update_country(
         try:
             t1 = time.monotonic()
             with store.lane_session("osm") as s:
+                country_row = s.query(OsmCountry).filter_by(alpha3=alpha3).one()
+                prior = _position(country_row)[0]
+                if country_row.status != "complete" or prior != seq - 1:
+                    # Cut or updated by something else since this run read its position (a re-cut, a second run): this file is not
+                    # the next one owed, and applying it would put the position behind objects that are already past it.
+                    raise _Superseded
+                # The derived rows go BEFORE the objects change (row ids are reused once objects are deleted), in the same transaction.
+                _clear_derived(s, alpha3)
                 counts = apply_osc_file(s, alpha3, border, relation_id, dest)
                 apply_s = time.monotonic() - t1
-                country_row = s.query(OsmCountry).filter_by(alpha3=alpha3).one()
-                prior = country_row.diff_sequence if country_row.diff_sequence is not None else country_row.extract_sequence
                 country_row.diff_sequence = seq
                 country_row.diff_timestamp = state.timestamp
                 s.add(
@@ -585,8 +612,11 @@ def update_country(
                     )
                 )
                 _record_applied(s, alpha3, region, seq, state.timestamp, nbytes, prior)
-                if counts.changed():
-                    _clear_derived(s, alpha3)
+        except _Superseded:
+            report.outcome = "superseded"
+            report.reason = "the country was cut or updated by something else while this file was being fetched, so it was not applied"
+            report.owed_remaining = plan.last - seq + 1
+            break
         except Exception as exc:  # noqa: BLE001 - one file that will not apply ends the run, named; its transaction was rolled back
             report.outcome, report.reason = "failed", f"change file {seq} did not apply: {record_text(exc, typed=True)}"
             report.owed_remaining = plan.last - seq + 1
@@ -598,7 +628,6 @@ def update_country(
             {"sequence": seq, "timestamp": state.timestamp.isoformat(), "bytes_fetched": nbytes, "fetch_seconds": round(fetch_s, 3),
              "apply_seconds": round(apply_s, 3), "counts": counts.as_dict()}
         )
-        applied_any = applied_any or counts.changed() > 0
         report.to_sequence = seq
         seq += 1
         done += 1
@@ -606,7 +635,7 @@ def update_country(
         report.outcome = "applied" if report.diffs else report.outcome
     if report.to_sequence is None:
         report.to_sequence = pos
-    if applied_any:
+    if report.diffs:  # even a quiet day moved the basis, so the indexes read as not matching until rebuilt
         _rebuild_indexes(alpha3, report)
     return report
 

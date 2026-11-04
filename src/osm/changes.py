@@ -20,6 +20,7 @@ error, never as a machine out of memory.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
@@ -58,9 +59,10 @@ def _coord(value: str | None) -> float | None:
     if value is None:
         return None
     try:
-        return float(value)
+        out = float(value)
     except ValueError:
         return None
+    return out if math.isfinite(out) else None  # "nan" and "inf" parse as floats and are not positions
 
 
 def _int(value: str | None, what: str) -> int:

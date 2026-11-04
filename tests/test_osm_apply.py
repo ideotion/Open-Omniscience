@@ -149,7 +149,7 @@ DAY1_EXPECTED_COUNTS = {
     "updated": 2,   # node 5, way 12 (tags only)
     "deleted": 2,   # node 7, node 6 (moved out)
     "left_class": 0, "left_country": 1, "other_class": 1, "outside_country": 1, "unreadable_position": 0,
-    "ways_not_placed": 1, "geometry_kept": 1, "relations_not_placed": 1, "older_than_stored": 1,
+    "ways_not_placed": 1, "geometry_kept": 1, "relations_not_placed": 1, "older_than_stored": 1, "other_country": 0,
 }
 
 
@@ -259,18 +259,21 @@ def test_the_derived_indexes_read_as_stale_after_a_change_and_current_after_the_
         assert s.query(OsmCountry).one().diff_sequence == 101
 
 
-def test_a_quiet_day_advances_the_position_and_touches_no_derived_table(cut, osm_lane_dir):
+def test_a_quiet_day_advances_the_position_and_the_indexes_are_rebuilt_to_match_it(cut, osm_lane_dir):
+    """Before: a file that changed nothing moved the basis but rebuilt nothing, so search and geocoding dropped the country until someone refreshed."""
     from src.osm import places
 
     places.build_search_index("ZZZ")
     quiet = _osc("")
     unrelated = _osc('<create><node id="900" version="1" timestamp="2025-01-11T00:00:00Z" lat="0.6" lon="0.6"><tag k="foo" v="1"/></node>'
                      '<way id="901" version="1" timestamp="2025-01-11T00:00:00Z"><nd ref="1"/><tag k="waterway" v="river"/></way></create>')
+    before = _snapshot()
     rep = A.update_country("ZZ", Mirror(102, {101: quiet, 102: unrelated}), workdir=osm_lane_dir / "w", kill_switch=lambda: False)
     assert rep.outcome == "applied" and rep.to_sequence == 102
     assert [d["counts"]["inserted"] + d["counts"]["updated"] + d["counts"]["deleted"] for d in rep.diffs] == [0, 0]
-    assert rep.search_index is None, "nothing changed, so nothing was rebuilt"
-    assert [r["indexed"] for r in places.index_state()] == [False], "the basis moved with the sequence, so the earlier index reads as not matching"
+    assert _snapshot() == before
+    assert rep.search_index is not None and rep.view_index is not None, "the indexes are rebuilt to the new basis"
+    assert [r["indexed"] for r in places.index_state()] == [True]
 
 
 def test_an_empty_mirror_state_is_current_and_writes_nothing(cut, osm_lane_dir):
@@ -614,3 +617,179 @@ def test_parse_osc_reads_positions_node_refs_and_members_and_refuses_what_it_can
                 b'<osmChange><create><relation id="4"><member type="thing" ref="2"/></relation></create></osmChange>'):
         with pytest.raises(ValueError):
             list(parse_osc(io.BytesIO(bad)))
+
+
+# --- the Opus read of the first B1 head (what it found, each pinned) --------------------------------------------------------------
+def _insert_foreign_row(alpha3: str, osm_id: int, lat: float, lon: float, tags: dict, version: int = 3) -> None:
+    """A row another country's cut holds (the unique key on (type, id) spans every country)."""
+    from sqlalchemy import insert
+
+    from src.osm.lane_models import osm_objects_table
+
+    kind, pkey, pval, notable = A.T.classify(tags, is_way=False)
+    row = ingest.build_row(
+        "n", osm_id, version, None, tags, kind=kind, pkey=pkey, pval=pval, notable=notable, alpha3=alpha3, lat=lat, lon=lon, geom=None,
+        node_count=None, members=None,
+    )
+    with store.lane_session("osm") as s:
+        s.execute(insert(osm_objects_table), row)
+
+
+def test_a_change_to_another_countrys_row_is_left_alone_and_counted(cut, osm_lane_dir):
+    """Before: the lookup ignored country_alpha3, so a region-wide file deleted a neighbour's row (outside this border) or took it over (inside)."""
+    _insert_foreign_row("YYY", 777, 5.0, 5.0, {"amenity": "cafe"})  # outside ZZ's border
+    _insert_foreign_row("YYY", 778, 0.15, 0.15, {"amenity": "cafe"})  # a row whose id the file puts INSIDE ZZ's border
+    day = _osc(
+        '<modify><node id="777" version="4" timestamp="2025-01-11T00:00:00Z" lat="5" lon="5"><tag k="amenity" v="cafe"/></node>'
+        '<node id="778" version="4" timestamp="2025-01-11T00:00:00Z" lat="0.15" lon="0.15"><tag k="amenity" v="cafe"/></node></modify>'
+        '<delete><node id="777" version="5" timestamp="2025-01-11T00:00:00Z" lat="5" lon="5"/></delete>'
+    )
+    before = _snapshot()
+    rep = A.update_country("ZZ", Mirror(101, {101: day}), workdir=osm_lane_dir / "w", kill_switch=lambda: False)
+    assert rep.outcome == "applied" and rep.diffs[0]["counts"]["other_country"] == 3
+    c = rep.diffs[0]["counts"]
+    assert (c["inserted"], c["updated"], c["deleted"], c["left_country"]) == (0, 0, 0, 0)
+    after = _snapshot()
+    assert after == before, "another country's rows are byte-identical, and no row of theirs changed hands"
+    assert after[("n", 778)]["country_alpha3"] == "YYY" and ("n", 777) in after
+
+
+def test_a_relation_is_not_placed_by_another_countrys_member(cut, osm_lane_dir):
+    _insert_foreign_row("YYY", 880, 5.0, 5.0, {"amenity": "cafe"})
+    day = _osc('<create><relation id="120" version="1" timestamp="2025-01-11T00:00:00Z"><member type="node" ref="880" role=""/>'
+               '<tag k="tourism" v="attraction"/></relation></create>')
+    rep = A.update_country("ZZ", Mirror(101, {101: day}), workdir=osm_lane_dir / "w", kill_switch=lambda: False)
+    assert rep.diffs[0]["counts"]["relations_not_placed"] == 1 and ("r", 120) not in _rows()
+
+
+def test_a_file_that_follows_a_position_the_country_has_left_is_not_applied(cut, osm_lane_dir):
+    """Before: the apply never re-read the position, so a re-cut between the fetch and the apply ended with extract 300, diff 101 and the cursor at 101."""
+    later = T0 + timedelta(days=200)
+    (osm_lane_dir / "fresh").mkdir()
+    fresh = _extract(osm_lane_dir / "fresh", seq=SEQ0 + 200, when=later)
+
+    def recut(seq):
+        ingest.ingest_country(fresh, "ZZ", reader="python")
+
+    m = Mirror(101, {101: DAY1})
+    m.after_each = recut
+    rep = A.update_country("ZZ", m, workdir=osm_lane_dir / "w", kill_switch=lambda: False)
+    assert rep.outcome == "superseded" and rep.diffs == [] and "cut or updated by something else" in (rep.reason or "")
+    row = _country()
+    assert (row.extract_sequence, row.diff_sequence) == (SEQ0 + 200, None)
+    with store.lane_session("osm") as s:
+        assert s.query(OsmDiffRun).count() == 0
+    assert ("n", 30) not in _rows(), "day 1 was not laid over the newer baseline"
+
+
+def test_a_delete_older_than_the_stored_row_does_not_remove_it(cut, osm_lane_dir):
+    """Before: the version check ran for create and modify only, so an older delete removed a newer row."""
+    day = _osc('<delete><node id="5" version="1" timestamp="2025-01-11T00:00:00Z" lat="0.15" lon="0.15"/></delete>')
+    rep = A.update_country("ZZ", Mirror(101, {101: day}), workdir=osm_lane_dir / "w", kill_switch=lambda: False)
+    assert rep.diffs[0]["counts"]["older_than_stored"] == 1 and rep.diffs[0]["counts"]["deleted"] == 0 and ("n", 5) in _rows()
+
+
+def test_a_new_way_with_a_vertex_outside_the_bounding_box_is_still_placed_as_the_cut_places_it(cut, osm_lane_dir):
+    """Before: only nodes inside the border's box were kept from the file, so one vertex just outside left the way unplaced."""
+    nodes = "".join(
+        f'<node id="{i}" version="1" timestamp="2025-01-11T00:00:00Z" lat="{lat}" lon="{lat}"/>'
+        for i, lat in ((60, 0.11), (61, 0.12), (62, 0.13), (63, 0.35))  # 63 is outside the box (0.1..0.2); the mean (0.1775) is inside
+    )
+    way = ('<way id="64" version="1" timestamp="2025-01-11T00:00:00Z"><nd ref="60"/><nd ref="61"/><nd ref="62"/><nd ref="63"/>'
+           '<tag k="highway" v="residential"/></way>')
+    rep = A.update_country("ZZ", Mirror(101, {101: _osc(f"<create>{nodes}{way}</create>")}), workdir=osm_lane_dir / "w", kill_switch=lambda: False)
+    c = rep.diffs[0]["counts"]
+    assert (c["inserted"], c["ways_not_placed"]) == (1, 0)
+    assert _rows()[("w", 64)].node_count == 4
+
+
+def test_a_relation_listed_before_its_member_way_is_placed_after_it(cut, osm_lane_dir):
+    """Relations are held back until every node and way is stored; applied inline this one would find no member and be dropped."""
+    day = _osc(
+        '<create><relation id="130" version="1" timestamp="2025-01-11T00:00:00Z"><member type="way" ref="70" role="outer"/>'
+        '<tag k="tourism" v="attraction"/></relation>'
+        '<node id="71" version="1" timestamp="2025-01-11T00:00:00Z" lat="0.12" lon="0.12"/>'
+        '<node id="72" version="1" timestamp="2025-01-11T00:00:00Z" lat="0.14" lon="0.14"/>'
+        '<way id="70" version="1" timestamp="2025-01-11T00:00:00Z"><nd ref="71"/><nd ref="72"/><tag k="building" v="yes"/></way></create>'
+    )
+    rep = A.update_country("ZZ", Mirror(101, {101: day}), workdir=osm_lane_dir / "w", kill_switch=lambda: False)
+    assert rep.diffs[0]["counts"]["relations_not_placed"] == 0 and ("r", 130) in _rows() and ("w", 70) in _rows()
+
+
+def test_the_border_relation_stays_the_countrys_even_when_none_of_its_members_is_stored(cut, osm_lane_dir):
+    """The cut's rule: a relation is in the country when it IS the border relation. Without that clause this modify would delete relation 100."""
+    day = _osc('<modify><relation id="100" version="4" timestamp="2025-01-11T00:00:00Z"><member type="way" ref="9990" role="outer"/>'
+               '<tag k="boundary" v="administrative"/><tag k="name" v="Renamed"/></relation></modify>')
+    rep = A.update_country("ZZ", Mirror(101, {101: day}), workdir=osm_lane_dir / "w", kill_switch=lambda: False)
+    c = rep.diffs[0]["counts"]
+    assert (c["updated"], c["deleted"], c["left_country"]) == (1, 0, 0) and ("r", 100) in _rows()
+
+
+def test_a_non_finite_coordinate_is_no_position():
+    import io
+
+    from src.osm.changes import parse_osc
+
+    doc = b'<osmChange><modify><node id="1" version="2" lat="nan" lon="inf"/></modify></osmChange>'
+    (n,) = list(parse_osc(io.BytesIO(doc)))
+    assert (n.lat, n.lon) == (None, None)
+
+
+class _FakeResp:
+    status_code = 200
+    text = "ok"
+
+    def close(self):
+        pass
+
+
+@pytest.mark.parametrize("raised", ["transport", "redirect"])
+def test_the_session_refusals_are_named_as_refusals_not_as_a_failed_mirror(raised):
+    """Before: only DiffRefused raised by the SOURCE was tested; the session's own two exceptions were never mapped under test."""
+    from src.safety.fetcher import RedirectRefused, TransportUnavailable
+
+    class Sess:
+        def get(self, url, **kw):
+            if raised == "transport":
+                raise TransportUnavailable("no proxy")
+            raise RedirectRefused("host")
+
+    with pytest.raises(R.DiffRefused):
+        R.GuardedDiffSource("europe", session_factory=lambda u: Sess()).fetch_state()
+
+
+def test_a_connection_error_while_the_switch_is_engaged_is_named_as_airplane_mode(monkeypatch):
+    """The socket-level guard raises inside urllib3 and requests wraps it as a ConnectionError: the switch is asked again to name it."""
+    import requests
+
+    class Sess:
+        def get(self, url, **kw):
+            raise requests.exceptions.ConnectionError("wrapped")
+
+    src = R.GuardedDiffSource("europe", session_factory=lambda u: Sess())
+    monkeypatch.setattr(R, "_kill_switch_engaged", lambda: True)
+    with pytest.raises(R.DiffRefused) as ei:
+        src.fetch_state()
+    assert str(ei.value) == R.KILL_SWITCH_TEXT
+    monkeypatch.setattr(R, "_kill_switch_engaged", lambda: False)
+    with pytest.raises(R.DiffUnavailable):
+        src.fetch_state()
+
+
+def test_the_derived_rows_of_a_deleted_object_go_with_it_not_left_pointing_at_a_reused_id(cut, osm_lane_dir, monkeypatch):
+    """``_clear_derived`` finds the R*Tree rows through the country's objects, so it has to run before the objects are deleted."""
+    from sqlalchemy import text
+
+    from src.osm import places, view
+
+    places.build_search_index("ZZZ")
+    view.build_view_index("ZZZ")
+    with store.lane_session("osm") as s:
+        pharmacy = s.execute(text("SELECT id FROM osm_objects WHERE osm_type='n' AND osm_id=7")).scalar_one()
+        assert s.execute(text("SELECT count(*) FROM osm_rtree WHERE id=:i"), {"i": pharmacy}).scalar_one() == 1, "the premise: it was indexed"
+    monkeypatch.setattr(A, "_rebuild_indexes", lambda alpha3, report: None)  # a rebuild that failed must leave no orphan either
+    A.update_country("ZZ", Mirror(101, {101: DAY1}), workdir=osm_lane_dir / "w", kill_switch=lambda: False)
+    with store.lane_session("osm") as s:
+        assert s.execute(text("SELECT count(*) FROM osm_objects WHERE id=:i"), {"i": pharmacy}).scalar_one() == 0
+        stale = s.execute(text("SELECT count(*) FROM osm_rtree WHERE id NOT IN (SELECT id FROM osm_objects)")).scalar_one()
+        assert stale == 0, "no R*Tree row points at an id no object holds"
