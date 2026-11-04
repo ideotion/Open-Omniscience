@@ -30,6 +30,13 @@ declares which units count the same objects. Inferring that from the unit string
 the exact move ruling 47's extensive/intensive rail forbids ("declare it explicitly on
 each catalog entry rather than inferring it from the unit string"), so no fraction is
 computed anywhere and the reason travels with every jurisdiction.
+
+THE COVERAGE FLOOR (v0.6.0, row C slice S1; Q107, Q912): the report also carries ``floor``, which answers the question the
+per-jurisdiction rows cannot -- not "what does this install watch" but "of every country the twelve UI languages put on the
+floor (``configs/language_countries.yml``, read through the ONE loader ``src.civic.coverage_floor.load_floor``), where does each
+one stand". One of four states per country, never a blank: tracked, verified-not-yet-tracked, unverified, no-eligible-source.
+It counts and lists, and it never divides: the denominator is a floor of countries, the numerators are states, and no score
+is built from them.
 """
 
 from __future__ import annotations
@@ -228,6 +235,171 @@ def _pdf_reach(session: Session, catalog: dict | None = None) -> dict:
     }
 
 
+#: The four states a floor country can be in, kept APART because each is a different fact and a reader who cannot tell them
+#: apart learns nothing. ``no-eligible-source`` is a state like the others, never a blank: it is the one that says "there is
+#: research to do here", where a blank would say "nothing to report".
+FLOOR_TRACKED = "tracked"
+FLOOR_VERIFIED_UNTRACKED = "verified-not-yet-tracked"
+FLOOR_UNVERIFIED = "unverified"
+FLOOR_NO_SOURCE = "no-eligible-source"
+FLOOR_STATES: tuple[str, ...] = (FLOOR_TRACKED, FLOOR_VERIFIED_UNTRACKED, FLOOR_UNVERIFIED, FLOOR_NO_SOURCE)
+#: Only when the catalogue could not be read: what is tracked is still true (it comes from the database), what could be
+#: reached is not known. Unchecked, which is not "none".
+FLOOR_UNCHECKED = "unchecked"
+
+#: The catalogue's many-country codes. A source filed under one of these serves many countries at once (EUR-Lex, the African
+#: Union, the UN Treaty Collection), so it is credited to NO single floor country: crediting Germany for an EU portal would
+#: put a country on the floor's "reachable" side on the strength of a source that is not its own.
+_MANY_COUNTRY_CODES: tuple[str, ...] = ("eu", "int")
+#: Hong Kong and Macau are named by the Chinese seed row but are territories, and the floor file excludes territories by a
+#: recorded scoping decision (S06-02 S1). They are reported beside ``zh``, never added to the floor.
+ZH_NAMED_BEYOND_FLOOR: tuple[str, ...] = ("hk", "mo")
+#: ``LawDocument.category`` values that are NOT law: an IP-office record and a court decision. The floor is a law floor, so a
+#: tracked document of either class credits no country (it is counted in ``non_law_documents`` instead of vanishing), the same
+#: line :func:`src.law.catalog.source_is_law_authority` draws on the source side.
+_NON_LAW_DOCUMENT_CATEGORIES: frozenset[str] = frozenset({"ip", "case-law", "case_law"})
+
+_FLOOR_METHOD = (
+    "Every country in configs/language_countries.yml, read through src.civic.coverage_floor.load_floor; the official, "
+    "de-facto and regional bases all count and each is kept. One state per country: tracked (a tracked document states the "
+    "country; an IP record or a court decision is not law and does not count), verified-not-yet-tracked (a law-authority source is listed and a researcher or an adapter recorded a "
+    "verification of it, no document tracked), unverified (a law-authority source is listed, none verified), "
+    "no-eligible-source (none listed: research to do, not a verdict on the country). Verified is either channel: research "
+    "status fetched or search-verified, or an adapter that read the host live or from a fixture. An IP office or a "
+    "case-law site is not a law authority. A source filed under eu or int serves many countries and is credited to none "
+    "(many_country_sources); a document that states no country is credited to none (unplaced_documents), and a country is "
+    "never inferred from a jurisdiction code. A country under two languages is in both rows and once in by_state. "
+    "Countries are listed by code: the ruled order (many-country sources first, then by population reached) waits for a "
+    "dated population table this tree does not hold. Hong Kong and Macau are named by the Chinese seed row, are not on "
+    "the floor (it excludes territories) and are reported beside zh."
+)
+_FLOOR_CAVEAT = (
+    "A state is where the catalogue and this install stand, not a statement about a legal system: no-eligible-source means "
+    "the catalogue lists no law-authority source, not that none exists. The floor file is itself unverified (see "
+    "verification_status): its country set is a denominator, not a settled one. A tracked document is an entry point, "
+    "never a coverage claim, and no fraction or score is computed here."
+)
+
+
+def _floor_unchecked(reason: str | None, docs: list) -> dict:
+    """The floor block when the catalogue could not be read: the database half (what is tracked) is still true, the rest
+    is null with the reason, and no country is read as "no source" for a lookup that never happened."""
+    return floor_report(docs, None, reason=reason)
+
+
+def floor_report(docs: list, catalog: dict | None, floor: dict | None = None, *, reason: str | None = None) -> dict:
+    """Pure: where each country on the language coverage floor stands, per language and per state.
+
+    ``docs`` are the tracked :class:`LawDocument` rows, ``catalog`` the parsed law catalogue (``None`` = it could not be read,
+    ``reason`` says why), ``floor`` the parsed floor (default: the one loader). Counts and lists only; no fraction, no score.
+    """
+    from src.law.catalog import source_is_law_authority, source_is_verified
+
+    if floor is None:
+        from src.civic.coverage_floor import load_floor
+
+        floor = load_floor()
+    countries: list[str] = list(floor.get("countries") or [])
+    languages: dict = floor.get("languages") or {}
+    out: dict = {
+        "state": "checked",
+        "reason": None,
+        "as_of": floor.get("as_of") or None,
+        "verification_status": floor.get("verification_status") or None,
+        "countries": len(countries),
+        "method": _FLOOR_METHOD,
+        "caveat": _FLOOR_CAVEAT,
+    }
+    if not countries:
+        # An absent or empty floor file is a floor of NOTHING, and a report of "0 of 0" would read as complete.
+        return {
+            **out,
+            "state": "unchecked",
+            "reason": "the floor file (configs/language_countries.yml) is absent, unreadable or lists no country",
+            **dict.fromkeys(
+                ("languages", "by_state", "zh_beyond_floor", "many_country_sources", "unplaced_documents", "non_law_documents", "invalid_rows")
+            ),
+        }
+
+    tracked: set[str] = set()
+    unplaced: dict[str, int] = {}
+    non_law: dict[str, int] = {}
+    docs_by_language: dict[str, int] = {}
+    for d in docs:
+        category = (getattr(d, "category", None) or "").strip().lower()
+        if category in _NON_LAW_DOCUMENT_CATEGORIES:
+            non_law[category] = non_law.get(category, 0) + 1
+            continue
+        cc = (getattr(d, "country", None) or "").strip().lower()
+        if cc:
+            tracked.add(cc)
+        else:
+            unplaced[d.jurisdiction] = unplaced.get(d.jurisdiction, 0) + 1
+        lang = (getattr(d, "language", None) or "").strip().lower()
+        if lang:
+            docs_by_language[lang] = docs_by_language.get(lang, 0) + 1
+
+    # country -> is any of its law-authority sources verified.  A many-country code credits no country.
+    reachable: dict[str, bool] = {}
+    many: dict[str, dict[str, bool]] = {code: {} for code in _MANY_COUNTRY_CODES}
+    if catalog is not None:
+        for s in catalog.get("sources") or []:
+            if not source_is_law_authority(s):
+                continue
+            cc = str(s.get("country") or "").strip().lower()
+            verified = source_is_verified(s)
+            if cc in many:
+                many[cc][str(s.get("domain") or "")] = verified
+            elif cc:
+                reachable[cc] = reachable.get(cc, False) or verified
+
+    def state_of(cc: str) -> str:
+        if cc in tracked:
+            return FLOOR_TRACKED
+        if catalog is None:
+            return FLOOR_UNCHECKED
+        if cc not in reachable:
+            return FLOOR_NO_SOURCE
+        return FLOOR_VERIFIED_UNTRACKED if reachable[cc] else FLOOR_UNVERIFIED
+
+    states = [*FLOOR_STATES, *([FLOOR_UNCHECKED] if catalog is None else [])]
+    by_state: dict[str, list[str]] = {st: [] for st in states}
+    for cc in countries:
+        by_state[state_of(cc)].append(cc)
+
+    rows = []
+    for code, block in languages.items():
+        row: dict = {"language": code}
+        counts = dict.fromkeys(states, 0)
+        listed: dict[str, list[str]] = {}
+        contested = []
+        for entry in block.get("countries") or []:
+            cc = entry["cc"]
+            listed.setdefault(entry["basis"], []).append(cc)
+            counts[state_of(cc)] += 1
+            if entry.get("contested"):
+                contested.append(cc)
+        row.update(listed)  # one list per basis present (official / de-facto / regional), the basis kept
+        if contested:
+            row["contested"] = contested
+        row["states"] = counts
+        row["documents"] = docs_by_language.get(code, 0)
+        rows.append(row)
+
+    # zh is its own line (the standing Q911 emphasis): the three floor countries it lists are in its row above, and the two
+    # territories its seed row names are here, beside it, with the state they would have if they were on the floor.
+    out["languages"] = rows
+    out["by_state"] = by_state
+    out["zh_beyond_floor"] = {cc: state_of(cc) for cc in ZH_NAMED_BEYOND_FLOOR}
+    out["many_country_sources"] = many if catalog is not None else None
+    out["unplaced_documents"] = unplaced
+    out["non_law_documents"] = non_law
+    out["invalid_rows"] = floor.get("invalid") or []
+    if catalog is None:
+        out.update(state="unchecked", reason=reason)
+    return out
+
+
 def law_coverage_report(
     session: Session, *, enumerations: dict[str, list[dict]] | None = None
 ) -> dict:
@@ -284,6 +456,7 @@ def law_coverage_report(
         return (now - dt).total_seconds() / 3600.0
 
     jurisdictions = []
+    states_used: set[str] = set()
     for jur, rows in sorted(by_jur.items()):
         tracked = len(rows)
         baselined = sum(1 for r in rows if r.baseline_text is not None)
@@ -312,6 +485,7 @@ def law_coverage_report(
             state = COVERAGE_NO_ENUMERATION
         else:
             state = COVERAGE_UNIT_UNDECLARED
+        states_used.add(state)
         jurisdictions.append(
             {
                 "jurisdiction": jur,
@@ -327,7 +501,6 @@ def law_coverage_report(
                 # and are NEVER divided — see _COVERAGE_REASONS.
                 "coverage": {
                     "state": state,
-                    "reason": _COVERAGE_REASONS[state],
                     "countries": countries,
                     "official_enumeration": figures,
                 },
@@ -364,13 +537,23 @@ def law_coverage_report(
         "baselined": total_baselined,
         "catalog": {"readable": catalog_error is None, "error": catalog_error},
         "jurisdictions": jurisdictions,
+        # Each state's reason ONCE, for the states this report uses: a jurisdiction's `coverage.state` is the key into it.
+        # Stated per jurisdiction it was the same paragraph again for every row (710 bytes for the commonest state).
+        "coverage_reasons": {st: _COVERAGE_REASONS[st] for st in sorted(states_used)},
+        "floor": _floor_unchecked(catalog_error, docs) if catalog_error else floor_report(docs, catalog),
         "extraction": unchecked_extraction if catalog_error else _pdf_reach(session, catalog),
         "enumeration": unchecked_enumeration if catalog_error else {
             "countries_with_an_official_count": len(enum_by_country),
             "figures": sum(len(v) for v in enum_by_country.values()),
             "countries_enumerated_but_untracked": len(untracked),
+            # The row's key IS the country, so the figures drop their own copy of it (the same pair of letters, once per
+            # figure; every other consumer of a figure keeps it, a jurisdiction can span several countries).
             "untracked": [
-                {"country": c, "official_enumeration": enum_by_country[c]} for c in untracked
+                {
+                    "country": c,
+                    "official_enumeration": [{k: v for k, v in f.items() if k != "country"} for f in enum_by_country[c]],
+                }
+                for c in untracked
             ],
             "method": (
                 "Every dated official count committed in the law catalog, keyed by ISO-2 "
