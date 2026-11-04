@@ -604,8 +604,6 @@ def update_country(
         done += 1
     else:
         report.outcome = "applied" if report.diffs else report.outcome
-    if report.outcome == "current" and report.diffs:  # pragma: no cover - the loop sets applied above
-        report.outcome = "applied"
     if report.to_sequence is None:
         report.to_sequence = pos
     if applied_any:
