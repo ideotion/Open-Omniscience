@@ -58,7 +58,7 @@ const LIVING = [
   "livingStorageGroup", "_livingCount", "livingRunFacts", "livingWalkGroup", "livingWarmGroup", "livingWikiGroups", "livingLawGroups",
   "livingMapGroups", "livingGroupsFor",
   "livingDiffHtml", "livingStreamRowsHtml", "livingLawRowsHtml", "livingMapRowsHtml",
-  "lawFloorStateWords", "lawFloorStateWhy", "lawFloorBasisWords", "lawFloorCountsHtml", "livingLawFloorHtml",
+  "lawFloorStateWords", "lawFloorStateWhy", "lawFloorBasisWords", "lawFloorStatesIn", "lawFloorCountsHtml", "livingLawFloorHtml",
 ];
 // `window` is defined so `window.OOI18N && ...` resolves to the fallbacks: a sandbox
 // without it raises ReferenceError on the bare global read (the recorded node trap).
@@ -597,7 +597,7 @@ const WIKI = {
   for (const word of ["Tracked here", "Verified, not tracked yet", "Not verified", "No eligible source"]) {
     assert.ok(text.includes(word), `the floor never said "${word}"`);
   }
-  assert.ok(!text.includes("Not checked"), "a readable catalogue drew the unchecked state");
+  assert.ok(!text.includes("Not looked up"), "a readable catalogue drew the unchecked state");
   // the tally is a count of countries per state, and the head says how many and as of when
   assert.ok(text.includes("6 countries on the floor · list dated 2026-09-07"), text);
   assert.ok(/Tracked here 1/.test(text.replace(/\s+/g, " ")) || /Tracked here\s*1/.test(text), "the tally lost its count");
@@ -641,7 +641,7 @@ const WIKI = {
   assert.ok(!visible(settled).includes("drafted from memory"), "a settled list still carried the unsettled caveat");
 }
 {
-  // The catalogue could not be read: tracked is still true, the rest is "Not checked", never "No eligible source".
+  // The catalogue could not be read: tracked is still true, the rest is "Not looked up", never "No eligible source".
   const UNCHECKED = {
     state: "unchecked", reason: "LawCatalogUnreadable: boom", as_of: "2026-09-07", verification_status: "drafted-x", countries: 2,
     by_state: { tracked: ["fr"], "verified-not-yet-tracked": [], unverified: [], "no-eligible-source": [], unchecked: ["de"] },
@@ -651,17 +651,37 @@ const WIKI = {
   const html = R.livingLawFloorHtml({ floor: UNCHECKED }, t, tf);
   const text = visible(html);
   noJunk(html, "the unchecked floor");
-  assert.ok(text.includes("Not checked") && text.includes("LawCatalogUnreadable: boom"), text);
+  assert.ok(text.includes("Not looked up") && text.includes("LawCatalogUnreadable: boom"), text);
   // a state with nobody in it is a measured zero and is drawn as one, in the tally and in the language row
-  assert.ok(text.includes("Verified, not tracked yet 0 Not verified 0 No eligible source 0 Not checked 1"), text);
+  assert.ok(text.includes("Verified, not tracked yet 0 Not verified 0 No eligible source 0 Not looked up 1"), text);
   assert.ok(/<p class="card-caveat">[^<]*could not be read/.test(html), "the unreadable catalogue is not a visible caveat");
-  assert.ok(text.includes("CC(de) official language · Not checked"), text);
+  assert.ok(text.includes("CC(de) official language · Not looked up"), text);
   // the reader is told nothing about "no source" for a lookup that never happened
   assert.ok(!text.includes("CC(de) official language · No eligible source"), text);
   // no floor at all, and a floor with nothing to list: a sentence, never a throw or a blank
   assert.ok(visible(R.livingLawFloorHtml({}, t, tf)).includes("This build reports no language floor."));
   assert.ok(visible(R.livingLawFloorHtml({ floor: { state: "unchecked", reason: "the floor file is absent", by_state: null, languages: null } }, t, tf))
     .includes("could not be read, so nothing is counted. the floor file is absent"));
+}
+{
+  // A payload from a newer build: a state this client has no word for is COUNTED and LISTED as sent (the tally still adds up to
+  // the countries), sorts after the known ones, and a null member list or a null source map does not throw.
+  const NEWER = {
+    state: "checked", reason: null, as_of: "2026-09-07", verification_status: "drafted-x", countries: 3,
+    by_state: { tracked: ["fr"], "verified-not-yet-tracked": [], unverified: null, "no-eligible-source": [], "brand-new-state": ["de", "es"] },
+    languages: [{ language: "fr", official: ["fr", "de", "es"], states: { tracked: 1, "brand-new-state": 2 }, documents: 1 }],
+    zh_beyond_floor: null, many_country_sources: { eu: null, int: { "treaties.un.org": true } }, unplaced_documents: { tl: "x" },
+  };
+  const html = R.livingLawFloorHtml({ floor: NEWER }, t, tf);
+  const text = visible(html).replace(/\s+/g, " ");
+  noJunk(html, "the newer-build floor");
+  assert.ok(text.includes("brand-new-state 2"), `an unknown state was dropped from the counts: ${text}`);
+  assert.ok(text.includes("Tracked here 1") && text.includes("Verified, not tracked yet 0") && text.includes("Not verified 0"), text);
+  assert.ok(text.includes("CC(de) official language · brand-new-state") && text.includes("CC(es) official language · brand-new-state"), text);
+  assert.ok(text.indexOf("CC(fr) official language · Tracked here") < text.indexOf("CC(de) official language · brand-new-state"),
+    "an unknown state sorted ahead of a known one");
+  assert.ok(text.includes("1 sources that serve many countries at once are credited to no single country."), text);
+  assert.ok(!text.includes("state no country"), "a non-numeric document count drew a disclosure");
 }
 
 console.log("living_sources_node_test: all checks passed");

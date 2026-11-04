@@ -796,7 +796,7 @@
       if (state === "verified-not-yet-tracked") return t("Verified, not tracked yet");
       if (state === "unverified") return t("Not verified");
       if (state === "no-eligible-source") return t("No eligible source");
-      if (state === "unchecked") return t("Not checked");
+      if (state === "unchecked") return t("Not looked up");
       return String(state); // a state this build does not know is shown as sent, never mapped onto the nearest known word
     }
     function lawFloorStateWhy(state, t) {
@@ -813,8 +813,16 @@
       if (basis === "regional") return t("regional language");
       return String(basis);
     }
+    // The states a payload carries, in the known order and then any this build does not know, in the order sent: a state the
+    // client cannot name is still a state, and dropping it would leave counts that no longer add up to the countries.
+    // ``unchecked`` is shown only when something is in it (it exists only when the catalogue could not be read).
+    function lawFloorStatesIn(sizes) {
+      if (!sizes || typeof sizes !== "object") return [];
+      const known = _LAW_FLOOR_ORDER.filter((st) => st in sizes && (sizes[st] > 0 || st !== "unchecked"));
+      return known.concat(Object.keys(sizes).filter((st) => !_LAW_FLOOR_ORDER.includes(st)));
+    }
     function lawFloorCountsHtml(counts, t) {
-      return _LAW_FLOOR_ORDER.filter((st) => counts && st in counts && (counts[st] > 0 || st !== "unchecked"))
+      return lawFloorStatesIn(counts)
         .map((st) => `<span title="${esc(lawFloorStateWhy(st, t))}">${esc(lawFloorStateWords(st, t))} <b>${esc(String(counts[st]))}</b></span>`)
         .join(" · ");
     }
@@ -832,11 +840,17 @@
         ? `<p class="card-caveat">${esc(t("The law catalogue could not be read, so only what is tracked here is counted."))}${f.reason ? " " + esc(String(f.reason)) : ""}</p>` : "";
       const head = `<p class="hint">${esc(tf("{n} countries on the floor · list dated {date}", { n: String(f.countries), date: f.as_of || "—" }))}</p>`;
       const stateOf = {};
-      for (const st of Object.keys(f.by_state)) for (const cc of f.by_state[st]) stateOf[cc] = st;
-      const tally = _LAW_FLOOR_ORDER.filter((st) => st in f.by_state && (f.by_state[st].length > 0 || st !== "unchecked"))
+      const sizes = {};
+      for (const st of Object.keys(f.by_state)) {
+        const members = Array.isArray(f.by_state[st]) ? f.by_state[st] : [];
+        sizes[st] = members.length;
+        for (const cc of members) stateOf[cc] = st;
+      }
+      const tally = lawFloorStatesIn(sizes)
         .map((st) => `<div class="living-row"><span title="${esc(lawFloorStateWhy(st, t))}">${esc(lawFloorStateWords(st, t))}</span>`
-          + ` <b>${esc(String(f.by_state[st].length))}</b></div>`).join("");
-      const rank = (cc) => _LAW_FLOOR_ORDER.indexOf(stateOf[cc]);
+          + ` <b>${esc(String(sizes[st]))}</b></div>`).join("");
+      // A state this build does not know sorts after the known ones, never first.
+      const rank = (cc) => { const i = _LAW_FLOOR_ORDER.indexOf(stateOf[cc]); return i < 0 ? _LAW_FLOOR_ORDER.length : i; };
       const langRow = (r) => {
         const members = [];
         for (const basis of ["official", "de-facto", "regional"]) for (const cc of (r[basis] || [])) members.push({ cc, basis });
@@ -858,8 +872,8 @@
       const zhNote = beyond
         ? `<p class="hint">${esc(t("Named by the Chinese seed list but not on the floor (the floor excludes territories):"))} ${beyond}</p>` : "";
       const many = f.many_country_sources
-        ? Object.keys(f.many_country_sources).reduce((n, k) => n + Object.keys(f.many_country_sources[k]).length, 0) : 0;
-      const unplaced = f.unplaced_documents ? Object.keys(f.unplaced_documents).reduce((n, k) => n + f.unplaced_documents[k], 0) : 0;
+        ? Object.keys(f.many_country_sources).reduce((n, k) => n + Object.keys(f.many_country_sources[k] || {}).length, 0) : 0;
+      const unplaced = f.unplaced_documents ? Object.keys(f.unplaced_documents).reduce((n, k) => n + (Number(f.unplaced_documents[k]) || 0), 0) : 0;
       const notes = `<p class="hint">${esc(t("Each country is in exactly one state. Only law sources count: an IP office or a court-decision site does not. Within a state the countries are listed by code; ordering by population reached waits for a dated population table. These are counts of countries, never a share of anything."))}</p>`
         + (many ? `<p class="hint">${esc(tf("{n} sources that serve many countries at once are credited to no single country.", { n: String(many) }))}</p>` : "")
         + (unplaced ? `<p class="hint">${esc(tf("{n} tracked documents state no country and are credited to none.", { n: String(unplaced) }))}</p>` : "");

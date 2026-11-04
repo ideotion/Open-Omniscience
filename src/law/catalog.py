@@ -295,16 +295,22 @@ RESEARCH_VERIFIED_STATUSES: tuple[str, ...] = ("fetched", "search-verified")
 
 def source_is_law_authority(source: dict) -> bool:
     """Pure: does this row describe a law authority (Q919)? An ``ip`` office and a ``case_law`` row do not, so neither
-    makes a country's law reachable."""
-    return source_type_for(source) == LAW_SOURCE_TYPE
+    makes a country's law reachable. Read through :func:`source_type_for` and :func:`is_law_source_type`, so a row that declares no
+    type (which :func:`source_type_for` reads as the legacy ``legal``) is a law authority here exactly as it is everywhere else."""
+    return is_law_source_type(source_type_for(source))
 
 
 def source_is_verified(source: dict) -> bool:
     """Pure: has anything recorded a verification of this row? EITHER the research channel (``verification.status`` fetched or
     search-verified) OR this app's own (Q924: an adapter read a live host or a stored fixture of it). The two stay apart
     everywhere they are shown; they are joined only here, to answer the one yes/no the coverage floor asks. A row that records
-    neither is unverified (nobody recorded one), however well known its host is."""
-    status = (source.get("verification") or {}).get("status")
+    neither is unverified (nobody recorded one), however well known its host is.
+
+    Read on a rendering path, so it degrades like :func:`verified_tier` does: a ``verification`` that is not a mapping, or a status
+    spelled with a capital or a stray space, is read as what it plainly says rather than raising and taking the whole coverage
+    report with it."""
+    block = source.get("verification")
+    status = str(block.get("status") or "").strip().lower() if isinstance(block, dict) else ""
     return status in RESEARCH_VERIFIED_STATUSES or verified_tier(source)["tier"] in ("live", "fixture")
 
 

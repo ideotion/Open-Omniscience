@@ -254,11 +254,15 @@ _MANY_COUNTRY_CODES: tuple[str, ...] = ("eu", "int")
 #: Hong Kong and Macau are named by the Chinese seed row but are territories, and the floor file excludes territories by a
 #: recorded scoping decision (S06-02 S1). They are reported beside ``zh``, never added to the floor.
 ZH_NAMED_BEYOND_FLOOR: tuple[str, ...] = ("hk", "mo")
+#: ``LawDocument.category`` values that are NOT law: an IP-office record and a court decision. The floor is a law floor, so a
+#: tracked document of either class credits no country (it is counted in ``non_law_documents`` instead of vanishing), the same
+#: line :func:`src.law.catalog.source_is_law_authority` draws on the source side.
+_NON_LAW_DOCUMENT_CATEGORIES: frozenset[str] = frozenset({"ip", "case-law", "case_law"})
 
 _FLOOR_METHOD = (
     "Every country in configs/language_countries.yml, read through src.civic.coverage_floor.load_floor; the official, "
     "de-facto and regional bases all count and each is kept. One state per country: tracked (a tracked document states the "
-    "country), verified-not-yet-tracked (a law-authority source is listed and a researcher or an adapter recorded a "
+    "country; an IP record or a court decision is not law and does not count), verified-not-yet-tracked (a law-authority source is listed and a researcher or an adapter recorded a "
     "verification of it, no document tracked), unverified (a law-authority source is listed, none verified), "
     "no-eligible-source (none listed: research to do, not a verdict on the country). Verified is either channel: research "
     "status fetched or search-verified, or an adapter that read the host live or from a fixture. An IP office or a "
@@ -312,13 +316,20 @@ def floor_report(docs: list, catalog: dict | None, floor: dict | None = None, *,
             **out,
             "state": "unchecked",
             "reason": "the floor file (configs/language_countries.yml) is absent, unreadable or lists no country",
-            **dict.fromkeys(("languages", "by_state", "zh_beyond_floor", "many_country_sources", "unplaced_documents", "invalid_rows")),
+            **dict.fromkeys(
+                ("languages", "by_state", "zh_beyond_floor", "many_country_sources", "unplaced_documents", "non_law_documents", "invalid_rows")
+            ),
         }
 
     tracked: set[str] = set()
     unplaced: dict[str, int] = {}
+    non_law: dict[str, int] = {}
     docs_by_language: dict[str, int] = {}
     for d in docs:
+        category = (getattr(d, "category", None) or "").strip().lower()
+        if category in _NON_LAW_DOCUMENT_CATEGORIES:
+            non_law[category] = non_law.get(category, 0) + 1
+            continue
         cc = (getattr(d, "country", None) or "").strip().lower()
         if cc:
             tracked.add(cc)
@@ -382,6 +393,7 @@ def floor_report(docs: list, catalog: dict | None, floor: dict | None = None, *,
     out["zh_beyond_floor"] = {cc: state_of(cc) for cc in ZH_NAMED_BEYOND_FLOOR}
     out["many_country_sources"] = many if catalog is not None else None
     out["unplaced_documents"] = unplaced
+    out["non_law_documents"] = non_law
     out["invalid_rows"] = floor.get("invalid") or []
     if catalog is None:
         out.update(state="unchecked", reason=reason)

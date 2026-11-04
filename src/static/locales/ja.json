@@ -3148,6 +3148,7 @@
   "Not in your corpus yet — no stats.": "まだコーパスにありません — 統計なし。",
   "Not joined yet": "まだ結びつけていないもの",
   "Not located: no address in your OpenStreetMap countries holds every word typed. Nothing nearby is offered in its place.": "特定できません：入力したすべての語を含む住所は、あなたの OpenStreetMap の国にありません。近いものを代わりに示すことはしません。",
+  "Not looked up": "照会していない",
   "Not mapped (source country unknown)": "地図化せず（情報源の国が不明）",
   "Not measured yet": "未計測",
   "Not now": "後で",

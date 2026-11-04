@@ -35,6 +35,7 @@ from src.law.coverage import (
     floor_report,
     law_coverage_report,
 )
+from tests.js_source_helper import function_body, python_function_source
 
 
 def _floor(**langs):
@@ -69,8 +70,8 @@ def _src(domain, country, *, status=None, tier=None, kind="legal"):
     return row
 
 
-def _doc(jurisdiction, country, language=None):
-    return SimpleNamespace(jurisdiction=jurisdiction, country=country, language=language)
+def _doc(jurisdiction, country, language=None, category="legislation"):
+    return SimpleNamespace(jurisdiction=jurisdiction, country=country, language=language, category=category)
 
 
 def _states(report):
@@ -132,6 +133,44 @@ def test_verified_means_either_channel_and_a_lead_is_not_one():
         assert source_is_verified({"domain": "x.example", **row}) is expected, label
 
 
+def test_a_row_that_declares_no_type_is_a_law_authority_here_as_it_is_everywhere_else():
+    """`source_type_for` reads a missing type as the legacy `legal`, which is a law authority: a row added without a type must
+    not drop its country into no-eligible-source ("the catalogue lists no source") when it lists one."""
+    row = {"domain": "x.example", "country": "aa", "verification": {"status": "fetched"}}
+    assert "source_type" not in row and source_is_law_authority(row) is True
+    assert _states(floor_report([], {"sources": [row]}, _floor(en=[("aa", "official")]))) == {"aa": FLOOR_VERIFIED_UNTRACKED}
+    assert source_is_law_authority({**row, "source_type": ""}) is True and source_is_law_authority({**row, "source_type": None}) is True
+    assert source_is_law_authority({**row, "source_type": "ip"}) is False, "a declared non-law type still is not one"
+
+
+def test_a_malformed_verification_reads_as_unverified_and_never_takes_the_report_down():
+    """The row is read on a rendering path (like `verified_tier`): a catalogue typo shows as an unverified row, not a 500."""
+    for bad in ("fetched", ["fetched"], 7, None, {"status": None}, {"status": ["fetched"]}, {}):
+        row = {"domain": "x.example", "country": "aa", "source_type": "legal", "verification": bad}
+        assert source_is_verified(row) is False, bad
+        assert _states(floor_report([], {"sources": [row]}, _floor(en=[("aa", "official")]))) == {"aa": FLOOR_UNVERIFIED}, bad
+    # a status is compared without its case or stray spaces, as the adapter tier beside it is
+    for spelled in ("Fetched", " fetched ", "SEARCH-VERIFIED"):
+        assert source_is_verified({"domain": "x.example", "verification": {"status": spelled}}) is True, spelled
+    assert source_is_verified({"domain": "x.example", "verification": {"status": "Lead"}}) is False
+
+
+def test_a_country_with_two_law_sources_is_reachable_if_any_one_is_verified_whatever_the_order():
+    """The catalogue lists several sources for one country (a code and a gazette): the country is as reachable as its best
+    one, so a later unverified row must not undo an earlier verified one, nor an earlier unverified row hide a later one."""
+    floor = _floor(en=[("aa", "official"), ("bb", "official"), ("cc", "official")])
+    good, weak = _src("good.example", "aa", status="fetched"), _src("weak.example", "aa", status="lead")
+    other_good, other_weak = _src("good.example", "bb", status="fetched"), _src("weak.example", "bb", status="lead")
+    only_weak = [_src("w1.example", "cc", status="lead"), _src("w2.example", "cc")]
+    for order in (1, -1):
+        catalog = {"sources": [*[good, weak][::order], *[other_weak, other_good][::order], *only_weak[::order]]}
+        assert _states(floor_report([], catalog, floor)) == {
+            "aa": FLOOR_VERIFIED_UNTRACKED,
+            "bb": FLOOR_VERIFIED_UNTRACKED,
+            "cc": FLOOR_UNVERIFIED,
+        }, f"order {order}"
+
+
 # --- the refusals ----------------------------------------------------------------------------------------------------------
 
 
@@ -166,6 +205,24 @@ def test_a_many_country_source_is_credited_to_no_single_country_and_is_listed_on
         "eu": {"eur-lex.example": True},
         "int": {"un.example": True, "lead.example": False},  # the IP office is not a law authority and is not listed
     }
+
+
+def test_a_tracked_ip_or_case_law_document_credits_no_country_and_is_counted_apart():
+    """The floor is a law floor: the same line the source side draws. The document is not dropped silently -- it is counted
+    under its class -- and it does not count toward its language's tracked-document total either."""
+    floor = _floor(en=[("aa", "official"), ("bb", "official"), ("cc", "official")])
+    docs = [
+        _doc("aa", "aa", "en", category="ip"),
+        _doc("bb", "bb", "en", category="case-law"),
+        _doc("bb", "bb", "en", category=" Case_Law "),
+        _doc("cc", "cc", "en", category="gazette"),
+    ]
+    rep = floor_report(docs, {"sources": []}, floor)
+    assert _states(rep) == {"aa": FLOOR_NO_SOURCE, "bb": FLOOR_NO_SOURCE, "cc": FLOOR_TRACKED}
+    assert rep["non_law_documents"] == {"ip": 1, "case-law": 1, "case_law": 1}
+    assert rep["languages"][0]["documents"] == 1
+    # a document with no category (a legacy row) is still a law document, as the table's own default says
+    assert _states(floor_report([_doc("aa", "aa", category=None)], {"sources": []}, floor))["aa"] == FLOOR_TRACKED
 
 
 def test_a_document_that_states_no_country_is_credited_to_no_country_and_is_counted_apart():
@@ -312,12 +369,23 @@ def test_the_real_floor_lists_every_country_once_with_a_state_and_the_floor_file
     with_source = {str(x.get("country") or "").lower() for x in load_legal_catalog()["sources"] if source_is_law_authority(x)}
     for cc in floor["countries"]:
         assert (placed[cc] == FLOOR_NO_SOURCE) == (cc not in with_source), cc
+    # and the reachable half agrees with an independent reading of the same catalogue: a country is verified-not-yet-tracked
+    # when ANY of its law-authority sources is verified, unverified when none is -- written here as `any`, not as the loop
+    # the report uses, so a change to how several sources for one country combine is caught on real data
+    law_rows = [x for x in load_legal_catalog()["sources"] if source_is_law_authority(x)]
+    for cc in floor["countries"]:
+        mine = [x for x in law_rows if str(x.get("country") or "").strip().lower() == cc]
+        if placed[cc] in (FLOOR_VERIFIED_UNTRACKED, FLOOR_UNVERIFIED):
+            assert (placed[cc] == FLOOR_VERIFIED_UNTRACKED) == any(source_is_verified(x) for x in mine), cc
+    assert any(
+        len([x for x in law_rows if str(x.get("country") or "").lower() == cc]) > 1 for cc in floor["countries"]
+    ), "the shipped catalogue has no country with two law sources, so this comparison pins nothing"
     assert FLOOR_NO_SOURCE in set(placed.values()), "the shipped catalogue still has a floor country with no source to research"
 
 
 def test_the_real_floor_block_is_json_and_stays_inside_its_byte_ceiling():
     """The diagnostics room is net-zero: this block is the part of law-coverage.json the floor adds, and it is held to the
-    figure measured when it shipped (5,681 bytes compact) plus the slack a longer country list needs."""
+    figure measured when it shipped (5,774 bytes compact) plus the slack a longer country list needs."""
     s = _session()
     block = law_coverage_report(s, enumerations={})["floor"]
     size = len(json.dumps(block, separators=(",", ":"), ensure_ascii=False).encode())
@@ -328,7 +396,8 @@ def test_the_module_reads_the_floor_through_the_one_loader_and_never_copies_it()
     src = Path(coverage.__file__).read_text("utf-8")
     assert "from src.civic.coverage_floor import load_floor" in src
     assert "language_countries.yml" in src  # named in prose only: the file is never opened here
-    assert "yaml.safe_load" not in src and "open(" not in src.split("def floor_report")[1].split("\ndef ")[0]
+    floor_src = python_function_source(src, "floor_report")
+    assert "yaml.safe_load" not in src and "open(" not in floor_src
 
 
 # --- the Living sources law entry reads the same block ----------------------------------------------------------------------
@@ -344,10 +413,8 @@ def test_the_living_sources_law_panel_carries_the_floor_section_and_reads_the_me
     js = (_STATIC / "app-living.js").read_text("utf-8")
     # ONE source of truth: the panel reads the diagnostics member's own report, not a second computation in the browser
     assert 'api("/api/diagnostics/law-coverage")' in js and "env.data" in js
-    evolution = js[js.index("function loadLawEvolution()") :].split("\n    }\n", 1)[0]
-    assert "loadLawFloor();" in evolution, "the panel loads with the law entry"
-    repaint = js[js.index("function repaintLawEvolutionFromCache()") :].split("\n    }\n", 1)[0]
-    assert "renderLawFloor();" in repaint, "a language switch redraws it from the cache, without a request"
+    assert "loadLawFloor();" in function_body(js, "loadLawEvolution"), "the panel loads with the law entry"
+    assert "renderLawFloor();" in function_body(js, "repaintLawEvolutionFromCache"), "a language switch redraws it from the cache, without a request"
 
 
 def test_the_route_the_panel_reads_returns_the_floor_beside_the_old_keys():
