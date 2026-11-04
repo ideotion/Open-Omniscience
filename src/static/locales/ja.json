@@ -2817,7 +2817,7 @@
   "Name the other combination to compare with.": "比較する別の組み合わせを入力してください。",
   "Name the super-group.": "スーパーグループに名前を付けてください。",
   "Name this saved search:": "この保存検索の名前：",
-  "Named by the Chinese seed list but not on the floor (the floor excludes territories):": "中国語の初期リストに挙がっていますが、最低ラインには含まれません(最低ラインは地域を除外します):",
+  "Named by the Chinese seed list but not on the floor (the floor excludes territories)": "中国語の初期リストに挙がっていますが、最低ラインには含まれません(最低ラインは地域を除外します)",
   "Names": "名称",
   "Narrate with the local model": "ローカルモデルでナレーションを作成",
   "Narrating in the background — watch it in the task manager.": "バックグラウンドでナレーションを作成中 — タスクマネージャーで確認できます。",

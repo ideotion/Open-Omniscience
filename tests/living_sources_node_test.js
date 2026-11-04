@@ -84,6 +84,8 @@ const src =
   "function ooLangCell(v, o) { return '<span class=\"' + ((o && o.cls) || '') + '\">LC(' + esc(v) + ')</span>'; }\n" +
   "function ooLangCode(v) { return 'L3(' + v + ')'; }\n" +
   "function ooLangName(v, fb) { return 'NAME(' + v + ')'; }\n" +
+  // The reader's own label frame lives in app-core.js ("{prefix}: {text}" per locale); the view must use it, not weld a colon.
+  "function ooLabelHtml(label, value) { return label + ' :: ' + value; }\n" +
   HELPERS.map(extract).join("\n") + "\n" +
   LIVING.map(extract).join("\n") + "\n" +
   "module.exports = {humanBytes, _jobWhy, " + LIVING.join(", ") + "};";
@@ -610,7 +612,8 @@ const WIKI = {
   const firstRow = html.indexOf("<details");
   assert.ok(html.slice(firstRow, firstRow + 400).includes("LC(zh)"), "zh is not the first row");
   assert.ok(/<details class="living-row" open>[^]*?LC\(zh\)/.test(html), "zh is not open");
-  assert.ok(text.includes("Named by the Chinese seed list but not on the floor"), text);
+  assert.ok(text.includes("Named by the Chinese seed list but not on the floor") && /territories\)\s*::\s*CC\(hk\)/.test(text),
+    `the territories line did not go through the label frame: ${text}`);
   assert.ok(text.includes("CC(hk) No eligible source") && text.includes("CC(mo) Not verified"), text);
   // the basis is labelled and a contested row says so
   assert.ok(text.includes("official language") && text.includes("regional language"), text);
@@ -628,7 +631,7 @@ const WIKI = {
   R.livingLawFloorHtml({ floor: CHECKED }, tt, ttf);
   for (const label of ["Tracked here", "Verified, not tracked yet", "Not verified", "No eligible source", "official language",
     "regional language", "contested", "{n} countries on the floor · list dated {date}", "{n} tracked documents in this language",
-    "Named by the Chinese seed list but not on the floor (the floor excludes territories):",
+    "Named by the Chinese seed list but not on the floor (the floor excludes territories)",
     "{n} sources that serve many countries at once are credited to no single country.",
     "{n} tracked documents state no country and are credited to none."]) {
     assert.ok(seen.has(label), `"${label}" never reached the translator`);

@@ -859,7 +859,8 @@
         const list = members.map((m) => `<div>${ooCountryCell(m.cc)} <span class="muted">${esc(lawFloorBasisWords(m.basis, t))}`
           + `${contested.has(m.cc) ? " · " + esc(t("contested")) : ""}</span> · ${esc(lawFloorStateWords(stateOf[m.cc], t))}</div>`).join("");
         const name = typeof ooLangName === "function" ? ooLangName(r.language, r.language) : r.language;
-        return `<details class="living-row"${r.language === "zh" ? " open" : ""}><summary>${ooLangCell(r.language)} ${esc(name)} · `
+        const openAttr = r.language === "zh" ? " open" : ""; // a flag for the markup, not a language value shown on screen
+        return `<details class="living-row"${openAttr}><summary>${ooLangCell(r.language)} ${esc(name)} · `
           + `${lawFloorCountsHtml(r.states, t)} · <span class="muted">${esc(tf("{n} tracked documents in this language", { n: String(r.documents || 0) }))}</span></summary>`
           + `<div class="living-floor-countries">${list}`
           + `${r.contested && r.contested.length ? `<p class="hint">${esc(t("A contested row is counted and labelled, not dropped: the language's status in that country is disputed."))}</p>` : ""}`
@@ -870,7 +871,7 @@
       const beyond = f.zh_beyond_floor
         ? Object.keys(f.zh_beyond_floor).map((cc) => `${ooCountryCell(cc)} ${esc(lawFloorStateWords(f.zh_beyond_floor[cc], t))}`).join(" · ") : "";
       const zhNote = beyond
-        ? `<p class="hint">${esc(t("Named by the Chinese seed list but not on the floor (the floor excludes territories):"))} ${beyond}</p>` : "";
+        ? `<p class="hint">${ooLabelHtml(esc(t("Named by the Chinese seed list but not on the floor (the floor excludes territories)")), beyond)}</p>` : "";
       const many = f.many_country_sources
         ? Object.keys(f.many_country_sources).reduce((n, k) => n + Object.keys(f.many_country_sources[k] || {}).length, 0) : 0;
       const unplaced = f.unplaced_documents ? Object.keys(f.unplaced_documents).reduce((n, k) => n + (Number(f.unplaced_documents[k]) || 0), 0) : 0;
