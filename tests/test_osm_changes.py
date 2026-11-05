@@ -1,4 +1,4 @@
-"""``.osc`` parsed in pure Python and Q813's tag-level change rows -- the MODEL only (S05-04 S2).
+"""``.osc`` parsed in pure Python and Q813's tag-level change rows (S05-04 S2; the daily apply writes them, ``tests/test_osm_tag_rows.py``).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -62,7 +62,7 @@ def test_change_rows_carry_the_diffs_timestamp_and_the_objects_version_and_are_n
     assert len(rows) == 1
     r = rows[0]
     assert (r.key, r.change, r.old_value, r.new_value, r.diff_timestamp, r.object_version) == ("a", "modified", "1", "2", when, 4)
-    assert r.id is None, "the model is defined, the apply is 0.6"
+    assert r.id is None and (r.country_alpha3, r.object_event) == (None, None), "unsaved, and the R428 columns default to NULL"
 
 
 def test_an_entity_expansion_bomb_is_refused_as_a_parse_error():

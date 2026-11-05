@@ -23,8 +23,8 @@ full-text indexes and one R*Tree (``src/osm/view.py``).
   both ways (Q810's note), and whether it finished. A country whose ingest did not finish says
   ``failed`` and every reader below refuses it rather than counting a partial country.
 * ``osm_tag_changes`` -- Q813 = a's MODEL: key added / removed / modified, with the diff's
-  timestamp and the object's ``version``. Defined here and EMPTY in 0.5; the daily apply that
-  fills it is 0.6 (S06-01).
+  timestamp and the object's ``version``. EMPTY in 0.5; the daily apply fills it in 0.6 (S06-01 S2,
+  plus R428's ``country_alpha3`` and ``object_event``).
 * ``osm_history_changes`` -- the PRIOR (Q814 = b): the same key-level shape, read out of the
   full-history planet for one country, plus the object-level events (``created``, ``deleted``,
   ``restored``) whose ``key`` is NULL. A table of its own rather than rows in
@@ -185,7 +185,11 @@ def country_basis(country: OsmCountry | None) -> str | None:
 
 
 class OsmTagChange(LaneBase):
-    """Q813 = a: one tag-level change. The MODEL only; 0.6's daily apply fills it."""
+    """Q813 = a: one tag-level change, written by the daily apply (``src/osm/apply.py``, S06-01 S2).
+
+    R428 added the last two columns, both NULLABLE and added to an existing lane file by the additive path: a deleted object has
+    no ``osm_objects`` row left to name its country from, and the table had no way to say that an object appeared or disappeared.
+    """
 
     __tablename__ = "osm_tag_changes"
     __table_args__ = (Index("ix_osm_tag_changes_object", "osm_type", "osm_id"),)
@@ -203,7 +207,16 @@ class OsmTagChange(LaneBase):
     #: The object's ``version`` after the change.
     object_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     recorded_at: Mapped[datetime] = mapped_column(LaneUTCDateTime(), nullable=False, default=_utcnow)
+    #: The country whose object it was when the change was applied (R428). NULL = a row written before this existed.
+    country_alpha3: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    #: NULL = an ordinary key change on an object the lane held. ``created`` = the object entered the lane with this file's
+    #: ``create``; ``deleted`` = the file deleted it (one ``removed`` row per key it held); ``left_class`` = the file's tags no longer
+    #: qualify, so the lane dropped it (R428).
+    object_event: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
+
+#: ``osm_tag_changes.object_event``.
+OBJECT_EVENTS = ("created", "deleted", "left_class")
 
 #: ``osm_history_changes.change``: the key-level three, then the object-level three.
 HISTORY_CHANGES = ("added", "removed", "modified", "created", "deleted", "restored")
