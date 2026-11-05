@@ -346,7 +346,7 @@
       const num = (v) => (typeof v === "number"
         ? { value: String(v) } : { value: t("Not recorded"), hover: why });
       const events = d.rebaselines || [];
-      const rows = events.map((e) => `<div>${esc(_ltrIsolate(String(e.detected_at || "").slice(0, 16).replace("T", " ")))} UTC \u00b7 ${ooCountryCell(e.alpha3)}</div>`);
+      const rows = events.map((e) => `<div>${esc(livingWhen(e.detected_at, t))} \u00b7 ${ooCountryCell(e.alpha3)}</div>`);
       if (d.rebaselines_not_shown > 0) rows.push(`<div class="muted">${esc(tf("{n} older events are not shown.", { n: String(d.rebaselines_not_shown) }))}</div>`);
       return { title, facts: [
         { label: t("Countries cut"), value: String(d.countries_cut) },
