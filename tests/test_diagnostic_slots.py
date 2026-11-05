@@ -854,3 +854,16 @@ def test_the_machine_record_fits_10000_bytes_in_the_manifest_with_any_number_of_
     env = block["environment"]
     assert len(env["set_names"]) == mr.ENV_NAMES_SHOWN and env["count"] >= 400 and env["names_not_shown"] == env["count"] - mr.ENV_NAMES_SHOWN
     assert env["names_cut"] >= 1 and all(len(n) <= mr.ENV_NAME_CHARS for n in env["set_names"])
+
+
+def test_the_machine_record_names_the_yaml_loader_in_use(monkeypatch):
+    """R430: ``versions.yaml_loader`` is the loader class's name, read without parsing; both real values, and unknown is null."""
+    from src.monitoring import machine_record as mr
+    from src.utils import safe_yaml
+
+    assert mr._versions()["yaml_loader"] == safe_yaml.YAML_LOADER.__name__ in ("CSafeLoader", "SafeLoader")
+    for name in ("CSafeLoader", "SafeLoader"):
+        monkeypatch.setattr(safe_yaml, "YAML_LOADER", type(name, (), {}))
+        assert mr._versions()["yaml_loader"] == name
+    monkeypatch.delattr(safe_yaml, "YAML_LOADER")
+    assert mr._versions()["yaml_loader"] is None

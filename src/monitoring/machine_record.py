@@ -142,6 +142,16 @@ def _libc() -> Any:
         return _unavailable(exc)
 
 
+def _yaml_loader() -> str | None:
+    """The YAML loader class this process uses (``CSafeLoader`` or ``SafeLoader``), read without parsing anything."""
+    try:
+        from src.utils.safe_yaml import YAML_LOADER
+
+        return str(YAML_LOADER.__name__)
+    except Exception:  # noqa: BLE001 - unknown is null, never a guess
+        return None
+
+
 def _versions() -> dict[str, Any]:
     return {
         "python": sys.version.split()[0],
@@ -149,6 +159,7 @@ def _versions() -> dict[str, Any]:
         "sqlcipher": _sqlcipher_version(),
         "duckdb": _duckdb_version(),
         "libc": _libc(),
+        "yaml_loader": _yaml_loader(),
     }
 
 
