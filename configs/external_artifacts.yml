@@ -1089,7 +1089,7 @@ artifacts:
     couplings:
       - "pyproject.toml [project.optional-dependencies] columnar duckdb>= must equal floor"
       - "the on-disk store format is version-bound; on mismatch the disposable store is rebuilt"
-      - "ci.yml runs the columnar test files twice: the `columnar` job installs the newest duckdb (2.0.0 on 2026-11-05) and `columnar-duckdb1` installs duckdb<2 (1.5.6), so both lines the floor admits are exercised; tests/test_version_floor_legs.py keeps the two file lists equal and the 1.x job on the 1.x line. The 28 files passed on 1.5.6 on 2026-11-05 (471 tests, 2 skips that name their reason; the one failure of the first run was a venv without vaderSentiment, which fails the same way on 2.0.0). The floor itself is not changed and not re-verified here."
+      - "ci.yml runs the columnar test files twice: the `columnar` job installs the newest duckdb (2.0.0 on 2026-11-05) and `columnar-duckdb1` installs duckdb<2 (1.5.6), so both lines the floor admits are exercised; tests/test_version_floor_legs.py keeps the two file lists equal and the 1.x job on the 1.x line. The 29 files passed on 1.5.6 on 2026-11-05 (472 tests and 2 skips, each of which names its reason; the one failure of a first run was a venv without vaderSentiment, which fails the same way on 2.0.0). The floor itself is not changed and not re-verified here."
     last_verified: "2026-08-22"
 
   - id: duckdb-httpfs-extension
