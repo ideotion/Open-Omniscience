@@ -31,7 +31,6 @@ GAPS_KEPT = 10
 #: What the bundle gives the member at most (the slot row states the number; this default only serves a direct call).
 DEFAULT_MAX_BYTES = 20_000
 #: What an unmeasured or unreadable figure says instead of a number.
-_NO_CPU_COUNT = "this machine did not report its processor count"
 _OLD_LANE = "this table is not in the lane (it was cut by an older build); re-cutting the country creates it"
 
 
@@ -55,8 +54,9 @@ def _machine() -> dict[str, Any]:
     """Which kind of machine the figures were measured on. The full hardware record is the manifest's (``run.hardware``)."""
     cpus = os.cpu_count()
     out: dict[str, Any] = {"os": platform.system() or None, "arch": platform.machine() or None, "cpus": cpus, "full_record": "manifest.json run.hardware"}
-    if cpus is None or not out["os"] or not out["arch"]:
-        out["unreported"] = _NO_CPU_COUNT if cpus is None else "this machine did not report its operating system or architecture"
+    missing = {k: "this machine did not report it" for k in ("os", "arch", "cpus") if out[k] is None}
+    if missing:
+        out["unreported"] = missing
     return out
 
 
@@ -113,6 +113,10 @@ def _country(s: Any, c: Any, have: set[str]) -> dict[str, Any]:
     }
     if source_reason:
         out["position"]["reason"] = source_reason
+    elif pos_ts is None:
+        out["position"]["reason"] = "this position carries no timestamp (cut before timestamps were stored)"
+    if c.extract_sequence is None or c.extract_vintage is None:
+        out["extract"]["reason"] = "this country was cut before the extract's sequence and date were stored"
     if not has_cursor:
         out["cursor_token"], out["cursor_reason"] = None, _OLD_LANE
     elif cur is None:
@@ -239,6 +243,12 @@ def diagnostics_member(max_bytes: int = DEFAULT_MAX_BYTES) -> dict[str, Any]:
     changes by one. A budget below the fixed part gets ``{"omitted", "over_budget": true, ...}`` (a few dozen bytes, which may itself
     exceed a budget that small: ``over_budget`` says so rather than leaving a reader to measure).
 
+    WHERE A NULL'S REASON LIVES: ``cost_reason`` / ``cursor_reason`` / ``gaps_reason`` (``diffs_recorded``, ``gaps_total``, ``last_applied_at``
+    are null under the same table-missing reason), ``position.reason``, ``extract.reason``, ``cost.unmeasured`` (a whole measurement no run
+    carries) and ``unreported`` (the machine). A single run's null measurement is left out of that measurement's ``n`` in ``cost``, so
+    ``n`` below ``diffs_recorded`` IS the statement that some runs did not measure it; a gap's null time or token is the substrate's own
+    (the file the gap spans was not known), shown as recorded.
+
     THE BUDGET (:data:`DEFAULT_MAX_BYTES`, MEASURED 2026-11-05 through the real member on the build container, Linux x86-64): the fixed part is
     about 0.4 KB; a country at its widest (99 files recorded, 7 shown with 7-digit byte counts, 10 retention gaps with 9-digit tokens, no
     cursor row) is about 4.0 KB, so SIX of them are 24,398 bytes whole and 20,000 cuts the 26 oldest runs of the heaviest to 19,953; a
@@ -248,15 +258,20 @@ def diagnostics_member(max_bytes: int = DEFAULT_MAX_BYTES) -> dict[str, Any]:
     """
     try:
         budget = int(max_bytes)
+    except (TypeError, ValueError, OverflowError) as exc:
+        return {"error": type(exc).__name__, "reason": "max_bytes is not a whole number"}
+    try:
         out = _build()
         if _cut_to_fit(out, budget):
             return out
         return {
             "omitted": "max_bytes is below the member's fixed part",
             "over_budget": True,
+            "lane": out.get("lane"),
             "needs_at_least_bytes": _size(out),
             "dropped_to_fit": out["dropped_to_fit"],
             "countries_not_shown": out["countries_not_shown"],
+            "countries_without_updates_not_shown": out["countries_without_updates_not_shown"],
         }
     except Exception as exc:  # noqa: BLE001 - a bundle member must never raise
         # The class and fixed words only: an engine's or a column type's own words can quote a stored value, and none is worth that.

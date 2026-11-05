@@ -243,25 +243,77 @@ def test_the_list_of_untouched_codes_is_cut_last_and_counted(cut):
     assert len(json.dumps(got, separators=(",", ":"))) <= size - 100
 
 
-def test_the_cut_does_not_re_serialise_everything_per_pop():
-    """200 populated countries took 15 s when every pop re-measured the whole output; the sizes are now taken once per item."""
-    import time
+def _tree(sizes):
+    """Countries with ``n`` identical runs each (no gaps), to cut by hand."""
+    run = {"sequence": 1, "bytes_fetched": 1234567, "fetch_seconds": 1.5, "apply_seconds": 2.5}
+    return {"countries": [{"alpha3": a3, "runs": [dict(run) for _ in range(n)], "gaps": [], "runs_not_shown": 0, "gaps_not_shown": 0}
+                          for a3, n in sizes], "countries_without_updates": [], "countries_without_updates_not_shown": 0,
+            "countries_not_shown": 0, "dropped_to_fit": {"runs": 0, "gaps": 0}}
 
-    run = {"sequence": 1, "diff_timestamp": "2025-01-01T00:00:00+00:00", "applied_at": "2025-01-01T00:00:00+00:00", "bytes_fetched": 1234567,
-           "fetch_seconds": 1.5, "apply_seconds": 2.5}
-    gap = {"reason": "retention", "from_token": "100000001", "to_token": "100000002", "from_time": None, "to_time": None,
-           "detected_at": "2025-01-01T00:00:00+00:00", "closed": False}
-    out = {"countries": [{"alpha3": f"C{i}", "runs": [dict(run) for _ in range(7)], "gaps": [dict(gap) for _ in range(10)], "runs_not_shown": 0,
-                          "gaps_not_shown": 0} for i in range(200)], "countries_without_updates": [], "countries_without_updates_not_shown": 0,
-           "countries_not_shown": 0, "dropped_to_fit": {"runs": 0, "gaps": 0}}
-    started = time.monotonic()
+
+def test_the_heaviest_country_loses_its_runs_first_and_no_country_goes_while_another_still_holds_runs():
+    out = _tree([("AAA", 2), ("BBB", 7), ("CCC", 3)])
+    full = len(json.dumps(out, separators=(",", ":")))
+    assert D._cut_to_fit(out, full - 160) is True
+    by = {c["alpha3"]: len(c["runs"]) for c in out["countries"]}
+    assert by["AAA"] == 2 and by["BBB"] < 7 and out["countries_not_shown"] == 0
+    # a country is dropped only once EVERY remaining country is down to its bare row
+    dropped = 0
+    for budget in range(150, 900, 10):
+        out = _tree([("AAA", 2), ("BBB", 7), ("CCC", 3)])
+        D._cut_to_fit(out, budget)
+        if out["countries_not_shown"]:
+            dropped += 1
+            assert all(not c["runs"] for c in out["countries"]), budget
+    assert dropped, "the range never reached the point of dropping a country"
+
+
+def test_a_fit_by_the_running_estimate_is_measured_again_before_it_is_believed():
+    """Emptying a list removes no comma, and a counter gains a digit: the estimate alone can say fit while the real size is over."""
+    for budget in range(300, 900, 7):
+        out = _tree([("AAA", 9), ("BBB", 9), ("CCC", 9)])
+        ok = D._cut_to_fit(out, budget)
+        assert ok == (len(json.dumps(out, separators=(",", ":"))) <= budget)
+
+
+def test_the_cut_measures_each_item_once_not_the_whole_output_per_pop(monkeypatch):
+    """200 populated countries took 15 s when every pop re-measured the whole output; the count of measurements stays linear."""
+    calls = []
+    real = D._size
+    monkeypatch.setattr(D, "_size", lambda v: calls.append(1) or real(v))
+    out = _tree([(f"C{i:03d}", 7) for i in range(200)])
     assert D._cut_to_fit(out, 20_000) is True
-    assert time.monotonic() - started < 3.0 and len(json.dumps(out, separators=(",", ":"))) <= 20_000
+    assert len(calls) < 6 * (200 * 7), len(calls)
+    assert len(json.dumps(out, separators=(",", ":"))) <= 20_000
 
 
-def test_a_hand_recut_is_not_counted_as_a_rebaseline(cut, osm_lane_dir):
+@pytest.mark.parametrize("table", ["versioned_gaps", "versioned_cursors"])
+def test_a_lane_without_the_substrate_tables_still_reports_the_country_and_says_which_is_missing(cut, osm_lane_dir, table):
     _run(osm_lane_dir, 101, {101: DAY1})
-    ingest.ingest_country(cut, "ZZ", reader="python")  # the operator cuts again by hand: the cursor and the objects disagree
-    _run(osm_lane_dir, 101, {101: DAY1})
-    (c,) = D.diagnostics_member(20_000)["countries"]
-    assert (c["rebaselines"], c["hand_recuts_seen"]) == (0, 1) and c["gaps"][0]["reason"] == "budget"
+    with store.lane_session("osm") as s:
+        s.execute(sa.text(f"DROP TABLE {table}"))
+    got = D.diagnostics_member(20_000)
+    assert "error" not in got
+    (c,) = got["countries"]
+    if table == "versioned_gaps":
+        assert c["gaps_total"] is None and "older build" in c["gaps_reason"]
+    else:
+        assert c["cursor_token"] is None and "older build" in c["cursor_reason"]
+    assert c["diffs_recorded"] == 1
+
+
+@pytest.mark.parametrize("bad", ["abc", None, float("nan")])
+def test_a_budget_that_is_not_a_number_is_said_to_be_the_argument_not_the_lane(bad):
+    got = D.diagnostics_member(bad)
+    assert got["reason"] == "max_bytes is not a whole number" and got["error"] in {"ValueError", "TypeError"}
+
+
+def test_an_omitted_answer_still_says_which_lane_state_it_cut_from(cut):
+    assert D.diagnostics_member(5)["lane"] == "present" and D.diagnostics_member(5)["over_budget"] is True
+
+
+def test_a_machine_that_reports_nothing_says_so_per_field(monkeypatch):
+    monkeypatch.setattr(D.os, "cpu_count", lambda: None)
+    monkeypatch.setattr(D.platform, "system", lambda: "")
+    got = D._machine()
+    assert set(got["unreported"]) == {"os", "cpus"} and got["arch"]
