@@ -3,8 +3,9 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-EVERY ROUTE HERE READS A LOCAL FILE AND MAKES NO REQUEST. The extract is downloaded by
-``/api/geo/downloads`` under the one online consent; the lane reads what is already on disk.
+EVERY ROUTE HERE READS A LOCAL FILE AND MAKES NO REQUEST, EXCEPT ONE: ``POST /countries/{code}/update`` queues a fetch of the
+mirror's daily change files and refuses without ``consent: true`` and under the kill switch (``src/osm/update_job.py``; UI invariants
+#14 and #14f). The extract is downloaded by ``/api/geo/downloads`` under the one online consent; the lane reads what is already on disk.
 
 Nothing here returns a file, an export or a bundle: the answers are JSON read by this machine's
 own UI over loopback, which is the machine. Q823 = a (2026-09-29) lets OSM data leave the machine
@@ -31,7 +32,12 @@ def lane_status() -> dict:
     ``lane_bytes`` is ``None`` when ``osm.db`` does not exist -- absent, never zero.
     """
     from src.osm import completeness
-    from src.osm.reader import DICT_BYTES_PER_NODE, MEMORY_SHARE, available_memory_bytes, pyosmium_version
+    from src.osm.reader import (
+        DICT_BYTES_PER_NODE,
+        MEMORY_SHARE,
+        available_memory_bytes,
+        pyosmium_version,
+    )
     from src.osm.tags import NOT_KEPT
     from src.versioned.store import lane_file_bytes
 
@@ -85,6 +91,38 @@ def count_admin1(code: str) -> dict:
         return start_count(a3)
     except Admin1Error as exc:
         raise HTTPException(status_code=409, detail=http_detail(exc)) from None
+
+
+class UpdateRequest(BaseModel):
+    """``consent`` is true only after the page's one online consent ran (``ensureOnline``); a caller that never went through it is refused."""
+
+    consent: bool = False
+
+
+@router.post("/countries/{code}/update")
+def update_country_route(code: str, req: UpdateRequest) -> dict:
+    """Queue the daily change files for one cut country. The ONE route here that reaches the network (on a thread of its own).
+
+    Refused at once, by name: no consent (400), the kill switch (409). A country that cannot be updated as it stands (no finished cut, no
+    replication position) is queued all the same and ENDS with that reason, which the task manager shows: the checks that need the lane run
+    in the job, once, so this route never opens the lane on the request thread.
+    """
+    from src.osm.update_job import UpdateRefused, request_update
+
+    try:
+        return request_update(code, consent=req.consent)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
+    except UpdateRefused as exc:
+        raise HTTPException(status_code=400 if exc.kind == "consent" else 409, detail=str(exc)) from None
+
+
+@router.get("/updates")
+def update_jobs() -> dict:
+    """The daily-update jobs this run has queued or ended (read-only, nothing persisted)."""
+    from src.osm.update_job import jobs
+
+    return {"jobs": jobs()}
 
 
 @router.get("/search")

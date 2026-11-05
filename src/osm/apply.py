@@ -40,6 +40,7 @@ import gzip
 import json
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -474,23 +475,32 @@ def _rebuild_indexes(alpha3: str, report: UpdateReport) -> None:
 
 def update_country(
     country: str,
-    source: DiffSource,
+    source: DiffSource | None = None,
     *,
+    source_for: Callable[[str], DiffSource] | None = None,
     workdir: Path | None = None,
     max_files: int | None = None,
     kill_switch=None,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> UpdateReport:
     """Bring ``country`` up to the mirror's newest daily change file, one file at a time. Returns what happened; raises nothing a caller should plan on.
+
+    ``source`` is the mirror to read; ``source_for(region)`` builds it once the country's own region is known (the production caller cannot
+    name the region before the cut's extract is read). Exactly one of the two.
 
     ``max_files`` bounds the run (the budget a caller sets); a run that stops on it reports ``stopped`` with how many files are still
     owed, and it is NOT a gap: the next run continues from the position. ``kill_switch`` is a callable returning True while airplane
     mode is engaged (default: the app's own); it is checked before every request, so a switch thrown mid-run stops the next fetch.
+    ``on_progress(applied, owed)`` is called once the files owed are known and after each file applied; it can never end the run (a
+    callback that raises is logged and the run goes on).
     """
     from src.ingest import kill_switch_active
     from src.osm.lane_models import OsmCountry, OsmDiffRun
     from src.paths import data_dir
     from src.versioned import store
 
+    if (source is None) == (source_for is None):
+        raise TypeError("update_country takes exactly one of source and source_for")
     _alpha2, alpha3 = country_codes(country)
     report = UpdateReport(alpha3=alpha3)
     refused = kill_switch or kill_switch_active
@@ -517,6 +527,9 @@ def update_country(
         report.outcome, report.reason = "not-ready", "this country was cut before its border was kept, so a change cannot be placed (cut it again)"
         return report
     report.from_sequence = pos
+    if source is None:
+        assert source_for is not None
+        source = source_for(region)
 
     if refused():
         report.outcome, report.reason = "refused", KILL_SWITCH_TEXT
@@ -556,6 +569,17 @@ def update_country(
     work.mkdir(parents=True, exist_ok=True)
     seq = plan.first
     done = 0
+    owed = plan.last - plan.first + 1
+
+    def progress() -> None:
+        if on_progress is None:
+            return
+        try:
+            on_progress(done, owed)
+        except Exception as exc:  # noqa: BLE001 - a progress display must never end an update
+            log_failure(_LOG, f"the {alpha3} progress callback failed", exc, level=logging.WARNING)
+
+    progress()
     while seq <= plan.last:
         if max_files is not None and done >= max_files:
             report.outcome, report.reason = "stopped", "the budget for this run was reached"
@@ -631,6 +655,7 @@ def update_country(
         report.to_sequence = seq
         seq += 1
         done += 1
+        progress()
     else:
         report.outcome = "applied" if report.diffs else report.outcome
     if report.to_sequence is None:
