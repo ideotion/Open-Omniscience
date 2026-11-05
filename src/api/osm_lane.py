@@ -74,6 +74,22 @@ def country_completeness(code: str) -> dict:
     return tag_completeness(a3)
 
 
+@router.get("/countries/{code}/trends")
+def country_trends(code: str) -> dict:
+    """Trend surfaces 2 and 3 for one cut country (alpha-2 or alpha-3): adoption over time, openings and closures.
+
+    Read-only, local, no request. The tracked window and the planet's prior are separate keys and are never summed.
+    """
+    from src.osm.ingest import country_codes
+    from src.osm.trends import trends
+
+    try:
+        _a2, a3 = country_codes(code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
+    return trends(a3)
+
+
 @router.post("/countries/{code}/admin1")
 def count_admin1(code: str) -> dict:
     """Count analytic 1 per admin-1 region, on a thread of its own (local work, no request).
