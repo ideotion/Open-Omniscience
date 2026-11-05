@@ -6917,7 +6917,7 @@
   "{n} domains disagree across instances and were left unchanged": "{n} 件のドメインでインスタンス間の判断が食い違い、変更せずに残しました",
   "{n} duplicate": "{n} 件の重複",
   "{n} duplicates": "{n} 件の重複",
-  "{n} editions have no article count yet; they add nothing to the total.": "{n} 個の版にはまだ記事数がなく、合計には含まれません。",
+  "{n} editions have no article count yet; their pages are left out of both figures.": "{n} 個の版にはまだ記事数がなく、それらのページは両方の数値から除外されています。",
   "{n} editions · {gb} GB budget": "{n} 版 · {gb} GB の予算",
   "{n} enabled extraction rule(s) are cold (>{days}d) or last reported a problem — e.g. {sample}.": "有効な抽出ルール {n} 件が停滞（>{days} 日）しているか、直近で問題を報告しています — 例：{sample}。",
   "{n} enabled source(s) in languages we can't analyse yet:": "まだ分析できない言語の有効なソースが {n} 件あります：",

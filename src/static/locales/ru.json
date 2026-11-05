@@ -6917,7 +6917,7 @@
   "{n} domains disagree across instances and were left unchanged": "По {n} доменам экземпляры расходятся; они оставлены без изменений",
   "{n} duplicate": "{n} дубликат",
   "{n} duplicates": "дубликатов: {n}",
-  "{n} editions have no article count yet; they add nothing to the total.": "У {n} изданий пока нет числа статей; в общую сумму они ничего не вносят.",
+  "{n} editions have no article count yet; their pages are left out of both figures.": "У {n} изданий пока нет числа статей; их страницы не входят ни в одно из двух чисел.",
   "{n} editions · {gb} GB budget": "{n} изданий · бюджет {gb} ГБ",
   "{n} enabled extraction rule(s) are cold (>{days}d) or last reported a problem — e.g. {sample}.": "Активных правил извлечения, которые остыли (>{days} дн.) или сообщили о проблеме: {n} — например, {sample}.",
   "{n} enabled source(s) in languages we can't analyse yet:": "Включённые источники на языках, которые мы пока не можем анализировать ({n}):",

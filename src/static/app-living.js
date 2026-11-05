@@ -171,9 +171,10 @@
         value: both.length
           ? tf("{n} of {m} pages seen", { n: _livingCount(both.reduce((n, e) => n + e.pages_seen, 0)),
               m: _livingCount(both.reduce((n, e) => n + e.edition_articles, 0)) })
-          : tf("{n} pages seen, total unknown", { n: _livingCount(seenAll) }),
+          : (eds.some((e) => e.has_run && typeof e.pages_seen === "number")
+            ? tf("{n} pages seen, total unknown", { n: _livingCount(seenAll) }) : t("Not measured yet")),
         hover: noTotal > 0
-          ? tf("{n} editions have no article count yet; they add nothing to the total.", { n: _livingCount(noTotal) })
+          ? tf("{n} editions have no article count yet; their pages are left out of both figures.", { n: _livingCount(noTotal) })
           : t("Pages the walk listed, of the editions' own article counts.") });
       for (const e of eds) {
         const code = (typeof ooLangCode === "function" ? ooLangCode(e.edition) : "") || String(e.edition);
@@ -193,7 +194,7 @@
               const lo = Math.max(ft.hot_pages_with_text, ft.warm_pages_with_text);
               const hi = ft.hot_pages_with_text + ft.warm_pages_with_text;
               hover += " " + tf("Full text held for between {lo} and {hi} pages.", { lo: _livingCount(lo), hi: _livingCount(hi) });
-            } else {
+            } else if (ft.hot_pages_with_text > 0) {
               hover += " " + tf("Full text held for at least {n} pages; the second tier has not run.", { n: _livingCount(ft.hot_pages_with_text) });
             }
           }

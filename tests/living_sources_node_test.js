@@ -704,7 +704,7 @@ const WIKI = {
   noJunk(g, "the coverage group"); noVerdict(g, "the coverage group");
   const text = visible(g);
   assert.ok(text.includes("All editions 300 of 1,000 pages seen") || text.includes("All editions 300 of 1000 pages seen"), text);
-  assert.ok(hovers(g).includes("1 editions have no article count yet"), "a missing total was not said");
+  assert.ok(hovers(g).includes("1 editions have no article count yet; their pages are left out of both figures."), "a missing total was not said");
   assert.ok(text.includes("L3(fr) 10 pages seen, total unknown"), "a missing total drew a ratio: " + text);
   assert.ok(text.includes("L3(de) No run yet") && !/L3\(de\) \d/.test(text), "a never-run edition drew a figure: " + text);
   assert.ok(hovers(g).includes("between 40 and 65 pages"), "the full-text range is lower and upper bound, not one number");
@@ -730,6 +730,10 @@ const WIKI = {
   const phov = hovers(part);
   assert.ok(!/between 0 and 0|between 1 and 1/.test(phov), "a closed range with the second tier never run: " + phov);
   assert.ok(phov.includes("at least 1 pages; the second tier has not run"), phov);
+  // The walk ran for no edition at all: the aggregate says it is not measured, never "0 pages seen".
+  const NOWALK = { ...PART, editions: PART.editions.map((e) => ({ ...e, pages_seen: null })) };
+  const nowalk = group(R.livingWikiGroups({ ...WIKI, coverage: NOWALK }, t, tf), "Edition coverage");
+  assert.ok(visible(nowalk).includes("All editions Not measured yet") && !/\b0 pages seen/.test(visible(nowalk)), visible(nowalk));
   assert.ok(phov.includes("Last event: Could not be read"), "an unreadable last event drew 'never'");
   const never = group(R.livingWikiGroups({ ...WIKI, coverage: { measured: false, reason: "lane-never-run" } }, t, tf), "Edition coverage");
   assert.ok(visible(never).includes("Not run yet") && !/\d/.test(visible(never).replace("Edition coverage", "")), visible(never));

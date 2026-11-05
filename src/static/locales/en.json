@@ -6917,7 +6917,7 @@
   "{n} domains disagree across instances and were left unchanged": "{n} domains disagree across instances and were left unchanged",
   "{n} duplicate": "{n} duplicate",
   "{n} duplicates": "{n} duplicates",
-  "{n} editions have no article count yet; they add nothing to the total.": "{n} editions have no article count yet; they add nothing to the total.",
+  "{n} editions have no article count yet; their pages are left out of both figures.": "{n} editions have no article count yet; their pages are left out of both figures.",
   "{n} editions · {gb} GB budget": "{n} editions · {gb} GB budget",
   "{n} enabled extraction rule(s) are cold (>{days}d) or last reported a problem — e.g. {sample}.": "{n} enabled extraction rule(s) are cold (>{days}d) or last reported a problem — e.g. {sample}.",
   "{n} enabled source(s) in languages we can't analyse yet:": "{n} enabled source(s) in languages we can't analyse yet:",

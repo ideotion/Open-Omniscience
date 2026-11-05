@@ -6917,7 +6917,7 @@
   "{n} domains disagree across instances and were left unchanged": "有 {n} 个域名在各实例间存在分歧，已保持不变",
   "{n} duplicate": "{n} 个重复项",
   "{n} duplicates": "{n} 个重复项",
-  "{n} editions have no article count yet; they add nothing to the total.": "{n} 个版本尚无文章总数；它们不计入总数。",
+  "{n} editions have no article count yet; their pages are left out of both figures.": "{n} 个版本尚无文章总数；它们的页面不计入这两个数字。",
   "{n} editions · {gb} GB budget": "{n} 个版本 · {gb} GB 预算",
   "{n} enabled extraction rule(s) are cold (>{days}d) or last reported a problem — e.g. {sample}.": "{n} 条启用的提取规则已冷却（>{days} 天）或上次报告了问题 — 例如 {sample}。",
   "{n} enabled source(s) in languages we can't analyse yet:": "{n} 个已启用的来源使用了我们尚无法分析的语言：",

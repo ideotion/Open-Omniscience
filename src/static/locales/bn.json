@@ -6917,7 +6917,7 @@
   "{n} domains disagree across instances and were left unchanged": "{n}টি ডোমেন নিয়ে ইনস্ট্যান্সগুলির মধ্যে দ্বিমত আছে, সেগুলি অপরিবর্তিত রাখা হয়েছে",
   "{n} duplicate": "{n}টি অনুলিপি",
   "{n} duplicates": "{n}টি অনুলিপি",
-  "{n} editions have no article count yet; they add nothing to the total.": "{n}টি সংস্করণে এখনও নিবন্ধ-সংখ্যা নেই; এগুলো মোটে কিছু যোগ করে না।",
+  "{n} editions have no article count yet; their pages are left out of both figures.": "{n}টি সংস্করণে এখনও নিবন্ধ-সংখ্যা নেই; তাদের পৃষ্ঠা দুটি সংখ্যাতেই বাদ আছে।",
   "{n} editions · {gb} GB budget": "{n}টি সংস্করণ · {gb} GB বাজেট",
   "{n} enabled extraction rule(s) are cold (>{days}d) or last reported a problem — e.g. {sample}.": "{n}টি সক্রিয় নিষ্কাশন নিয়ম নিষ্ক্রিয় (>{days} দিন) বা সর্বশেষ একটি সমস্যা জানিয়েছে — যেমন {sample}।",
   "{n} enabled source(s) in languages we can't analyse yet:": "{n}টি সক্রিয় উৎস এমন ভাষায় যা আমরা এখনো বিশ্লেষণ করতে পারি না:",

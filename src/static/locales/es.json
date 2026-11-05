@@ -6917,7 +6917,7 @@
   "{n} domains disagree across instances and were left unchanged": "{n} dominios generan desacuerdo entre instancias y se dejaron sin cambios",
   "{n} duplicate": "{n} duplicado",
   "{n} duplicates": "{n} duplicados",
-  "{n} editions have no article count yet; they add nothing to the total.": "{n} ediciones aún no tienen número de artículos; no aportan nada al total.",
+  "{n} editions have no article count yet; their pages are left out of both figures.": "{n} ediciones aún no tienen número de artículos; sus páginas quedan fuera de ambas cifras.",
   "{n} editions · {gb} GB budget": "{n} ediciones · presupuesto de {gb} GB",
   "{n} enabled extraction rule(s) are cold (>{days}d) or last reported a problem — e.g. {sample}.": "{n} regla(s) de extracción activa(s) están frías (>{days} d) o informaron por última vez de un problema — p. ej. {sample}.",
   "{n} enabled source(s) in languages we can't analyse yet:": "{n} fuente(s) activada(s) en idiomas que aún no podemos analizar:",

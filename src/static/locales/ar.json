@@ -6917,7 +6917,7 @@
   "{n} domains disagree across instances and were left unchanged": "تختلف النسخ على {n} نطاقًا، وقد تُركت دون تغيير",
   "{n} duplicate": "{n} مكرَّر",
   "{n} duplicates": "{n} مكرَّرات",
-  "{n} editions have no article count yet; they add nothing to the total.": "{n} إصدارات ليس لها عدد مقالات بعد؛ لا تضيف شيئًا إلى الإجمالي.",
+  "{n} editions have no article count yet; their pages are left out of both figures.": "{n} إصدارات ليس لها عدد مقالات بعد؛ صفحاتها مستبعدة من الرقمين معًا.",
   "{n} editions · {gb} GB budget": "{n} نسخة · ميزانية {gb} غيغابايت",
   "{n} enabled extraction rule(s) are cold (>{days}d) or last reported a problem — e.g. {sample}.": "{n} من قواعد الاستخراج المفعّلة باردة (>{days} يوم) أو أبلغت أخيراً عن مشكلة — مثلاً {sample}.",
   "{n} enabled source(s) in languages we can't analyse yet:": "{n} مصدر مُفعَّل بلغات لا يمكننا تحليلها بعد:",

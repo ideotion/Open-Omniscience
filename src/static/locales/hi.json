@@ -6917,7 +6917,7 @@
   "{n} domains disagree across instances and were left unchanged": "{n} डोमेन पर इंस्टेंस असहमत हैं और उन्हें अपरिवर्तित छोड़ा गया",
   "{n} duplicate": "{n} डुप्लिकेट",
   "{n} duplicates": "{n} डुप्लिकेट",
-  "{n} editions have no article count yet; they add nothing to the total.": "{n} संस्करणों में अभी लेखों की संख्या नहीं है; वे कुल में कुछ नहीं जोड़ते।",
+  "{n} editions have no article count yet; their pages are left out of both figures.": "{n} संस्करणों में अभी लेखों की संख्या नहीं है; उनके पृष्ठ दोनों संख्याओं से बाहर हैं।",
   "{n} editions · {gb} GB budget": "{n} संस्करण · {gb} GB बजट",
   "{n} enabled extraction rule(s) are cold (>{days}d) or last reported a problem — e.g. {sample}.": "{n} सक्रिय निष्कर्षण नियम ठंडे पड़े हैं (>{days} दिन) या पिछली बार कोई समस्या बताई — जैसे {sample}.",
   "{n} enabled source(s) in languages we can't analyse yet:": "{n} सक्षम स्रोत ऐसी भाषाओं में हैं जिनका हम अभी विश्लेषण नहीं कर सकते:",
