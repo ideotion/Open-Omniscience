@@ -139,6 +139,36 @@ def count_admin1(code: str) -> dict:
         raise HTTPException(status_code=409, detail=http_detail(exc)) from None
 
 
+@router.get("/countries/{code}/prior-summary")
+def prior_summary_state(code: str) -> dict:
+    """Is the monthly summary of the planet's past current, being built, or absent? Headers only: read-only, local, no request."""
+    from src.osm.ingest import country_codes
+    from src.osm.prior_summary import summary_state
+
+    try:
+        _a2, a3 = country_codes(code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
+    return summary_state(a3)
+
+
+@router.post("/countries/{code}/prior-summary")
+def build_prior_summary(code: str) -> dict:
+    """Build the monthly summary of the planet's past for a history cut that already exists, on a thread of its own (local work, no request).
+
+    The page asks for this once when it finds a cut without a current summary: a GET never writes, so the build is a POST. Idempotent: a
+    country already being built answers ``building``, and one whose summary is current is skipped by the thread.
+    """
+    from src.osm.ingest import country_codes
+    from src.osm.prior_summary import start_build
+
+    try:
+        _a2, a3 = country_codes(code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
+    return start_build(a3)
+
+
 class UpdateConsent(BaseModel):
     """``consent`` is true only after the page's one online consent ran (``ensureOnline``); a caller that never went through it is refused."""
 

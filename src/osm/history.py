@@ -389,6 +389,11 @@ def ingest_history(
             row.counts_json = json.dumps(report.counts, sort_keys=True)
             row.span_json = json.dumps(report.span, sort_keys=True)
             row.error = report.error
+    if report.status == "complete":
+        # R435: the planet-prior readers' monthly aggregates, once, now that the rows are final. Never fails the cut: the readers compute until it exists.
+        from src.osm.prior_summary import build_quietly
+
+        build_quietly(alpha3)
     return report
 
 
