@@ -187,6 +187,24 @@ def test_an_EMPTY_lane_file_is_named_and_does_not_blank_the_other_sources(no_lan
     assert changes["measured"] is False and changes["reason"] == "lane-unreadable"
 
 
+def test_the_coverage_block_names_a_lane_that_never_ran_and_one_that_cannot_be_read(no_lane):
+    """No lane file: measured false, 'lane-never-run', and NO edition row (a row of zeros would read as 'nothing seen')."""
+    out = living._wiki_coverage()
+    assert out == {"measured": False, "reason": "lane-never-run"}
+    path = lane_path("wiki")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"")
+    unread = living._wiki_coverage()
+    assert unread["measured"] is False and unread["reason"] in ("unreadable", "lane-never-run")
+    assert not unread.get("editions"), "an unreadable lane drew edition rows"
+
+
+def test_the_coverage_block_rides_the_wiki_source_of_the_overview(no_lane, corpus):
+    sources = living.living_overview(db=corpus)["sources"]
+    wiki = next(x for x in sources if x["kind"] == "wiki")
+    assert wiki["coverage"] == {"measured": False, "reason": "lane-never-run"}
+
+
 # --------------------------------------------------------------------------- #
 # the main database's blocks
 # --------------------------------------------------------------------------- #

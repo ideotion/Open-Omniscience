@@ -155,6 +155,46 @@
       return { title: t("Page walk"), facts };
     }
 
+    // Per-edition coverage (v0.6 row D, S06-03 S1 + S3): pages seen of the edition's OWN article count, the full-text range, the last
+    // event and the gaps by reason. Counts as "N of M", never a bar or a score; the located-share row says why it is empty.
+    function livingCoverageGroup(src, t, tf) {
+      const c = src.coverage || {};
+      if (c.measured !== true) return { title: t("Edition coverage"), facts: _livingUnmeasured(c, t) };
+      const facts = [];
+      const tot = c.totals || {};
+      facts.push({ label: t("All editions"),
+        value: tf("{n} of {m} pages seen", { n: _livingCount(tot.pages_seen), m: _livingCount(tot.edition_articles) }),
+        hover: tot.editions_without_total > 0
+          ? tf("{n} editions have no article count yet; they add nothing to the total.", { n: _livingCount(tot.editions_without_total) })
+          : t("Pages the walk listed, of the editions' own article counts.") });
+      for (const e of (c.editions || [])) {
+        const code = (typeof ooLangCode === "function" ? ooLangCode(e.edition) : "") || String(e.edition);
+        const name = typeof ooLangName === "function" ? ooLangName(e.edition, "") : "";
+        let value;
+        let hover = t("The edition counts its articles its own way, so pages seen can pass its total. A page promoted from the second tier to the first may be counted twice, so the full-text figure is a range.");
+        if (!e.has_run) {
+          value = t("No run yet");
+        } else {
+          value = typeof e.edition_articles === "number"
+            ? tf("{n} of {m} pages seen", { n: _livingCount(e.pages_seen), m: _livingCount(e.edition_articles) })
+            : tf("{n} pages seen, total unknown", { n: _livingCount(e.pages_seen) });
+          const ft = e.full_text || {};
+          if (typeof ft.hot_pages_with_text === "number") {
+            const lo = Math.max(ft.hot_pages_with_text, ft.warm_pages_with_text || 0);
+            const hi = ft.hot_pages_with_text + (ft.warm_pages_with_text || 0);
+            hover += " " + tf("Full text held for between {lo} and {hi} pages.", { lo: _livingCount(lo), hi: _livingCount(hi) });
+          }
+          hover += " " + tf("Last event: {when}.", { when: livingWhen(e.last_event_recorded_at, t) });
+          const g = e.gaps || {};
+          if (g.total > 0) hover += " " + tf("{n} stretches the lane did not see.", { n: _livingCount(g.total) });
+        }
+        facts.push({ label: code, value, hover: (name && name !== code ? ooLabelText(name, hover) : hover) });
+      }
+      facts.push({ label: t("Addresses located"), value: t("Not measured yet"),
+        hover: t("Counting addresses found, located and outside your OSM countries needs the address extractor and the local OSM address index, which this build does not have yet. A zero would read as none found; nothing has looked.") });
+      return { title: t("Edition coverage"), facts };
+    }
+
     // Q707's WARM tier (S05-06's S1): the newest text of every OTHER page the stream reports
     // changed, latest + previous (Q710). Counts only. The share of the budget it leaves to
     // the followed pages is a proposed default, and the hover says so.
@@ -293,6 +333,7 @@
         { title: t("Live stream"), facts: stream },
         livingWarmGroup(src, t, tf),
         livingWalkGroup(src, t, tf),
+        livingCoverageGroup(src, t, tf),
         { title: t("Pages you track"), facts: tracked },
         livingStorageGroup(src.storage, t),
       ];
