@@ -3899,7 +3899,19 @@
       _osmGeog = d;
       _renderOsmGeography(done);
     }
-    function _osmGeogRepaint(done) { if (_osmGeog) _renderOsmGeography(done); }
+    // The 2 s count poll: redraw the figures only when the level in view has something new (a region count finishing), and leave the
+    // controls alone, so an open dropdown is not closed under the reader and the map is not rebuilt on every tick.
+    let _osmGeogSig = "";
+    function _osmGeogSigOf() {
+      if (_osmGeogLevel === "countries") return "countries";
+      const c = (_osmComp || []).find((x) => x.country === _osmGeogLevel);
+      return JSON.stringify(c && c.admin1 ? [c.admin1.status, c.admin1.regions] : null);
+    }
+    function _osmGeogRepaint(done) {
+      if (!_osmGeog || !document.querySelector("[data-osm-geog-out]")) return;
+      const sig = _osmGeogSigOf(); if (sig === _osmGeogSig) return;
+      _osmGeogDone = done; _osmGeogDraw(done);
+    }
     function _osmGeogVintage(name, v) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const extract = v && v.extract ? ooIsoDate(v.extract) : t("Not recorded");
@@ -3935,7 +3947,7 @@
       for (const r of a.regions || []) {
         const name = _osmAdmin1Label(r);
         const raw = r.n == null ? null : (m === "places" ? r.n : (r.measures ? r.measures[m] : null));
-        if (raw == null) out.absent.push({ name, why: r.n != null && !r.measures ? "recount" : "" });
+        if (raw == null) out.absent.push({ name, why: r.n != null && !r.measures ? "recount" : (r.measures ? "no-reference" : "") });
         else out.rows.push({ key: r.key, name, raw, n: r.n });
       }
       return out;
@@ -3947,6 +3959,7 @@
     async function _osmGeogDraw(done) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const out = document.querySelector("[data-osm-geog-out]"); if (!out || !_osmGeog) return;
+      _osmGeogSig = _osmGeogSigOf();
       const m = _osmGeogMeasure, share = _osmGeogForm === "share" && m !== "places";
       const f = _osmGeogFigures(done);
       const lab = t((OSM_GEOG_MEASURES.find(([k]) => k === m) || ["", ""])[1]);
@@ -3960,7 +3973,7 @@
       }
       if (f.note) notes += `<div class="hint">${esc(f.note)}</div>`;
       const why = { "no-reference": "Not available: neither the extract nor a change file states a date to measure the ages from.",
-        "no-daily-files": "No daily change file has been applied to this country yet.", "old-lane": "This country's trends could not be read.",
+        "no-daily-files": "No daily change file has been applied to this country yet.", "old-lane": "Could not be read",
         recount: "Counted before this measure existed: count the regions again to add it.",
         "no-places": "No places were counted here, so there is no share." };
       const detail = {}, values = {};
@@ -3989,7 +4002,7 @@
       const host = $("osm-geography-body"); if (!host) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!_osmGeog || _osmGeog.status !== "ok") {
-        host.innerHTML = `<div class="muted">${esc(t("This country's trends could not be read."))}</div>`;
+        host.innerHTML = `<div class="muted">${esc(t("OpenStreetMap: the view could not be read."))}</div>`;
         return;
       }
       if (_osmGeogLevel !== "countries" && !(done || []).some((c) => c.alpha3 === _osmGeogLevel)) _osmGeogLevel = "countries";

@@ -46,7 +46,7 @@ function extractConst(name, end) {
 }
 
 const FUNCS = [
-  "loadOsmGeography", "_osmGeogRepaint", "_osmGeogVintage", "_osmGeogShare", "_osmGeogFigures", "_osmAdmin1Label", "_osmGeogDraw", "_renderOsmGeography",
+  "loadOsmGeography", "_osmGeogSigOf", "_osmGeogRepaint", "_osmGeogVintage", "_osmGeogShare", "_osmGeogFigures", "_osmAdmin1Label", "_osmGeogDraw", "_renderOsmGeography",
 ];
 const src =
   extractConst("esc") + "\n" +
@@ -65,7 +65,7 @@ const src =
   "var out = { innerHTML: '', mapHost: {}, querySelector(sel) { return sel === '[data-osm-geog-map]' ? out.mapHost : null; } };\n" +
   "var document = { querySelector(sel) { return sel === '[data-osm-geog-out]' ? out : null; } };\n" +
   "let _osmGeog = null, _osmGeogLevel = 'countries', _osmGeogMeasure = 'places', _osmGeogForm = 'count', _osmGeogSeq = 0;\n" +
-  "let _osmGeogDone = [];\n" +
+  "let _osmGeogDone = [], _osmGeogSig = '';\n" +
   FUNCS.map(extract).join("\n") + "\n" +
   "module.exports = { " + FUNCS.join(", ") + ", mapCalls, apiCalls, els, out,\n" +
   "  set(o) { if ('geog' in o) _osmGeog = o.geog; if ('level' in o) _osmGeogLevel = o.level; if ('measure' in o) _osmGeogMeasure = o.measure; if ('form' in o) _osmGeogForm = o.form;\n" +
@@ -195,6 +195,32 @@ const lastMap = () => R.mapCalls[R.mapCalls.length - 1];
   await R._osmGeogDraw(DONE);
   assert.ok(visible(R.out.innerHTML).includes("Per region: the count could not be read."), "an unknown status has no sentence");
 
+  // a split counted without a reference date has its measures but no edited_1y: the reason is the country level's, not «Not recorded»
+  fresh({ level: "ZZZ", measure: "edited_1y", comp: [REG({ admin1: { status: "complete", regions: [
+    { key: "ZZ-W", name: "West", names: {}, n: 2, measures: { brand: 2, checked: 2 } }, { key: "ZZ-E", name: "East", names: {}, n: 1, measures: { brand: 1, checked: 1, edited_1y: 1 } }] } })] });
+  await R._osmGeogDraw(DONE);
+  assert.deepStrictEqual(lastMap().opts.regionValues, { "ZZ-E": 1 });
+  assert.ok(visible(R.out.innerHTML).includes("West: Not available: neither the extract nor a change file states a date to measure the ages from."), visible(R.out.innerHTML));
+
+  // ---- the 2 s count poll: the figures are redrawn only when the level in view has something new, and the controls are left alone ----
+  const pHost = { innerHTML: "", attrs: {}, getAttribute(k) { return this.attrs[k] || null; }, setAttribute(k, v) { this.attrs[k] = v; }, addEventListener() {}, querySelector() { return { disabled: false }; } };
+  R.els["osm-geography-body"] = pHost;
+  const counting = REG({ admin1: { status: "counting" } });
+  fresh({ level: "ZZZ", measure: "brand", comp: [counting] });
+  R._renderOsmGeography(DONE);
+  await new Promise((r) => setTimeout(r, 0));
+  const controls = pHost.innerHTML, before = R.mapCalls.length;
+  R._osmGeogRepaint(DONE); R._osmGeogRepaint(DONE);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.strictEqual(pHost.innerHTML, controls, "a poll tick rebuilt the controls (an open dropdown closes)");
+  assert.strictEqual(R.mapCalls.length, before, "a poll tick with nothing new redrew the map");
+  R.set({ comp: [REG()] });   // the count finished
+  R._osmGeogRepaint(DONE);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.strictEqual(pHost.innerHTML, controls, "the finished count rebuilt the controls");
+  assert.deepStrictEqual(lastMap().opts.regionValues, { "ZZ-W": 2, "ZZ-E": 1, "ZZ-X": 0 }, "a finished count did not reach the map");
+  assert.strictEqual(R.mapCalls.length, before + 1, "the finished count drew more than once");
+
   // ---- the shell: levels, one listener, a vanished country, stale loads ----------------------------------------------
   const listeners = [];
   const host = { innerHTML: "", attrs: {}, getAttribute(k) { return this.attrs[k] || null; }, setAttribute(k, v) { this.attrs[k] = v; },
@@ -212,7 +238,7 @@ const lastMap = () => R.mapCalls[R.mapCalls.length - 1];
 
   R.set({ geog: { status: "unreadable" } });
   R._renderOsmGeography(DONE);
-  assert.ok(visible(host.innerHTML).includes("could not be read"), "an unreadable geography drew controls");
+  assert.strictEqual(visible(host.innerHTML), "OpenStreetMap: the view could not be read.", "an unreadable geography drew controls, or named the trends");
 
   // a read that finishes after a newer load began is discarded
   const sec = { hidden: true };

@@ -120,8 +120,15 @@ def _countries() -> dict[str, Any]:
             if w["state"] == "ok":
                 since = w["tracked"]["since"]
                 tc = OsmTagChange.__table__
+                # Places, as the other measures count them: a change row is written for every kept class (roads, buildings...), so the row
+                # is joined to its object's own row, which must be a place of this country (a deleted object's earlier rows fall out with it).
                 values["changed"] = int(
-                    s.execute(select(_obj(tc)).where(tc.c.country_alpha3 == c.alpha3, tc.c.object_event.is_(None), tc.c.diff_timestamp.is_not(None))).scalar() or 0
+                    s.execute(
+                        select(_obj(tc))
+                        .select_from(tc.join(t, (t.c.osm_type == tc.c.osm_type) & (t.c.osm_id == tc.c.osm_id)))
+                        .where(tc.c.country_alpha3 == c.alpha3, tc.c.object_event.is_(None), tc.c.diff_timestamp.is_not(None), poi)
+                    ).scalar()
+                    or 0
                 )
             else:
                 values["changed"] = None

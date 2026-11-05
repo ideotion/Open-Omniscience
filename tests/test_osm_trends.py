@@ -322,7 +322,13 @@ def test_the_event_versions_are_looked_up_in_a_temp_table_that_never_reaches_the
     assert _day(p["adoption"], "2020-03")["gained"]["website"] == 1 and _day(p["adoption"], "2019-01")["gained"]["website"] == 0
     assert _day(p["adoption"], "2020-03")["gained"]["phone"] == 1, "an edit on another day than the object's event, with no version numbers, was dropped as the event's"
     assert _day(p["adoption"], "2020-03")["lost"]["email"] == 0, "the deleted version's own key was counted as lost"
+    # on ONE connection (a temp table is visible only to the connection that made it; a second session could be handed another one)
     with store.lane_session("osm") as s:
-        names = {r[0] for r in s.execute(sa.text("SELECT name FROM sqlite_temp_master"))}
+        with TR._history_scope(s, "ZZZ"):
+            inside = {r[0] for r in s.execute(sa.text("SELECT name FROM sqlite_temp_master"))}
+            assert any("event_versions" in n for n in inside), "the anti-join no longer goes through the temp table"
+            rows = s.execute(sa.text(f"SELECT count(*) FROM {TR._EVENT_TMP}")).scalar()
+            assert rows == 2, "the country's two object-level versions (the creation of n5 and the deletion of n31) are what the table holds"
+        after = {r[0] for r in s.execute(sa.text("SELECT name FROM sqlite_temp_master"))}
         main = {r[0] for r in s.execute(sa.text("SELECT name FROM sqlite_master"))}
-    assert not any("event_versions" in n for n in names | main), "the temp table outlived the read, or reached the lane file"
+    assert not any("event_versions" in n for n in after | main), "the temp table outlived the read, or reached the lane file"

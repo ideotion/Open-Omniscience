@@ -11,6 +11,7 @@ import pathlib
 from datetime import UTC, datetime
 
 import pytest
+import sqlalchemy as sa
 from fastapi.testclient import TestClient
 
 from src.osm import geography as GEO
@@ -55,12 +56,16 @@ def _area(view, alpha3="ZZZ"):
 
 def _changes():
     """Window of two days. Place n5 changed two keys and n6 one (two places); n900 was CREATED (an object event, not a tag change); a row
-    of another country must not count."""
+    of another country must not count, nor a change to an object that is not a place."""
     with store.lane_session("osm") as s:
         for seq, day in ((1, _dt(2025, 1, 11)), (2, _dt(2025, 1, 12))):
             s.add(OsmDiffRun(alpha3="ZZZ", sequence=seq, diff_timestamp=day))
         rows = [("n", 5, "website", "added", None, 1, "ZZZ"), ("n", 5, "phone", "removed", None, 1, "ZZZ"), ("n", 6, "brand", "modified", None, 2, "ZZZ"),
                 ("n", 900, "name", "added", "created", 1, "ZZZ"), ("n", 77, "name", "added", None, 1, "QQQ")]
+        # a change row is written for every kept class: a road or a building edited is not a place edited
+        other = s.execute(sa.select(T.c.osm_type, T.c.osm_id).where(T.c.country_alpha3 == "ZZZ", T.c.kind != "poi")).first()
+        assert other is not None, "the fixture must hold an object that is not a place"
+        rows.append((other[0], other[1], "name", "modified", None, 1, "ZZZ"))
         for osm_type, osm_id, key, change, event, day, country in rows:
             s.add(OsmTagChange(osm_type=osm_type, osm_id=osm_id, key=key, change=change, object_event=event, country_alpha3=country,
                                diff_timestamp=_dt(2025, 1, 10 + day), object_version=2))
