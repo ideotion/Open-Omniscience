@@ -48,28 +48,25 @@ SIGNALS = ("disused", "vacant", "closed")
 CLOSED_VALUES = ("closed", "off")
 
 METHOD_ADOPTION = (
-    "Per day of the change files applied here, the places the lane already held that gained or lost each tag, counted once per place per tag. "
-    "A tag counts when it, or its contact:* twin, has a non-empty value. Places created, deleted or dropped from the kept classes that day "
-    "are counted in the openings and closures instead. Setting opening_hours to closed or off also counts as gaining opening hours, because it is a non-empty value. Days are the dates of the change files themselves (UTC)."
+    "Per day of the change files applied here: the places the lane already held that gained or lost each tag, once per place per tag. "
+    "A tag counts when it, or its contact:* twin, has a non-empty value, so setting opening hours to closed counts as gaining them. "
+    "Places created, deleted or dropped from the kept classes that day are counted under openings and closures."
 )
 CAVEAT_ADOPTION = (
-    "These are changes, not totals: a place that gained a tag is one place whose record changed, and a mapper tidying a record looks the "
-    "same as a business changing. A day without a change file is not observed, and is not a zero. The planet's earlier years are shown "
-    "separately and are never added to these."
+    "These are changes, not totals, and a mapper tidying a record looks the same as a business changing. A day without a change file "
+    "is not observed, and is not a zero. The planet's earlier years are shown apart and never added."
 )
 METHOD_OPENINGS = (
-    "Per day of the change files applied here: places that appeared in the lane, places that disappeared from it, places whose tags stopped "
-    "qualifying, and, among places the lane already held, a disused:* key added, shop set to vacant, opening_hours set to closed or off. "
-    "Each is counted once per place per day."
+    "Per day of the change files applied here: places that appeared in or disappeared from the lane, places whose tags stopped qualifying, "
+    "and, among places already held, a disused:* key added, shop set to vacant, opening hours set to closed or off. Once per place per day."
 )
 CAVEAT_OPENINGS = (
-    "OpenStreetMap records what mappers entered: a deletion can be a clean-up or a merge, an appearance can be a place that was always "
-    "there. None of these counts says that a business opened or closed. A day without a change file is not observed, and is not a zero."
+    "OpenStreetMap records what mappers entered: a deletion can be a clean-up, an appearance a place that was always there. None of these "
+    "counts says a business opened or closed. A day without a change file is not observed, and is not a zero."
 )
 METHOD_PRIOR = (
-    "Read from the full-history planet for this country's objects, by month, with the same rules, ignoring every object's first version "
-    "(which adds all its keys). It describes the years before the window this machine observed, from a different table, and is never added "
-    "to it."
+    "Read from the full-history planet for this country's objects, by month, with the same rules, ignoring each object's first version. "
+    "It covers the years before the window this machine observed, comes from a different table, and is never added to it."
 )
 
 _OLD_LANE = "this table is not in the lane (it was cut by an older build); re-cutting a country creates it"
@@ -278,7 +275,7 @@ def _prior(s, alpha3: str, have: set[str]) -> dict[str, Any]:
         "bucket": "month",
         "span": json.loads(cut.span_json) if cut.span_json else None,
         "vintage": _iso(cut.history_vintage),
-        "adoption": _adoption_series(adoption_rows, buckets),
-        "openings": _openings_series([*event_rows, *signal_rows], buckets),
+        "adoption": {**_adoption_series(adoption_rows, buckets), "caveat": CAVEAT_ADOPTION},
+        "openings": {**_openings_series([*event_rows, *signal_rows], buckets), "caveat": CAVEAT_OPENINGS},
         "method": METHOD_PRIOR,
     }

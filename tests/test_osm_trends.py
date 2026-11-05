@@ -179,6 +179,7 @@ def test_the_planets_prior_is_read_separately_by_month_and_never_added_to_the_wi
     }
     assert _day(p["openings"], "2020-05") == {"bucket": "2020-05", "created": 1, "deleted": 1, "left_class": 0, "disused": 0, "vacant": 0, "closed": 0}
     assert _day(p["openings"], "2021-01")["vacant"] == 1
+    assert p["adoption"]["caveat"] == TR.CAVEAT_ADOPTION and p["openings"]["caveat"] == TR.CAVEAT_OPENINGS, "the planet's block shows its caveat too"
     # the window is unchanged by the prior's existence: same series, same totals
     assert got["adoption"] == before["adoption"] and got["openings"] == before["openings"] and got["tracked"] == before["tracked"]
 
