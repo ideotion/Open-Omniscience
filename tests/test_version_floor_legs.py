@@ -19,7 +19,7 @@ a test of their own (R412, the version-coupling bundle):
   ``columnar-duckdb1`` installs ``duckdb<2`` and runs the same files; the checks below fail if it stops pinning the 1.x line, if it stops
   checking what it got, or if its file list drifts from the first job's.
 
-What it does not see. The exposed-sites list is a grep for the literal ``http.disconnect``: a stub that builds the message type some other
+What it does not see. The behaviour test drives the response class through the ASGI interface, not the whole app with its middleware around it. The exposed-sites list is a grep for the literal ``http.disconnect``: a stub that builds the message type some other
 way, or that is written in a helper under another name, is not found. The 1.x job runs on whatever 1.x release pip resolves, not on the
 floor (1.4.0), so a defect that exists only on 1.4 is still unseen; the registry says so.
 """
@@ -141,15 +141,16 @@ def _jobs() -> dict:
     return yaml.safe_load(_CI.read_text(encoding="utf-8"))["jobs"]
 
 
-def _pytest_files(job: dict) -> list[str]:
-    """The test files named by the job's pytest steps, in order, with the line continuations of a ``run: |`` block joined."""
-    files: list[str] = []
+def _first_pytest_step_files(job: dict) -> list[str]:
+    """The test files named by the job's FIRST pytest step, in order, with the line continuations of a ``run: |`` block joined.
+
+    The first step of each job is the rollup + loader list. ``columnar`` has a second pytest step (the CI-only httpfs round trip) that
+    names one of the same files again; comparing a prefix of all of its files would let a new file appended to its first list slip past."""
     for step in job["steps"]:
         run = str(step.get("run", ""))
-        if "-m pytest" not in run:
-            continue
-        files.extend(re.findall(r"tests/test_[A-Za-z0-9_]+\.py", run.replace("\\\n", " ")))
-    return files
+        if "-m pytest" in run:
+            return re.findall(r"tests/test_[A-Za-z0-9_]+\.py", run.replace("\\\n", " "))
+    return []
 
 
 def test_the_duckdb_1x_job_runs_the_files_of_the_columnar_job_and_pins_the_1x_line():
@@ -161,14 +162,13 @@ def test_the_duckdb_1x_job_runs_the_files_of_the_columnar_job_and_pins_the_1x_li
     assert "startswith('1.')" in install, "the 1.x job must check that it got a 1.x release, or a resolver change would turn it into a second copy of the 2.x job"
     assert one.get("if") == "github.event_name != 'schedule'", "the 1.x job must run on every PR like the columnar job (the skip guard counts only that condition)"
     assert not one.get("continue-on-error"), "the 1.x job is a blocking job"
-    # the first pytest step of each job is the rollup + loader list; the second step of `columnar` is the CI-only httpfs round trip
-    mine = _pytest_files(one)
-    theirs = _pytest_files(jobs["columnar"])
+    mine = _first_pytest_step_files(one)
+    theirs = _first_pytest_step_files(jobs["columnar"])
     assert mine, "the 1.x job names no test files"
-    first = theirs[: len(mine)]
-    assert sorted(mine) == sorted(first) and len(set(mine)) == len(mine), (
+    assert len(set(mine)) == len(mine) and len(set(theirs)) == len(theirs), "a file is named twice in one list"
+    assert set(mine) == set(theirs), (
         "the DuckDB 1.x job and the columnar job run different files: "
-        f"only in 1.x: {sorted(set(mine) - set(first))}; only in columnar: {sorted(set(first) - set(mine))}"
+        f"only in 1.x: {sorted(set(mine) - set(theirs))}; only in columnar: {sorted(set(theirs) - set(mine))}"
     )
 
 

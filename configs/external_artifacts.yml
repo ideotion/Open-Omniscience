@@ -610,7 +610,7 @@ artifacts:
       fastapi>=0.110, so a hand-installed 0.110 to 0.131 had no such check. THE FLOOR IS 0.133.0, NOT 0.132.0: fastapi 0.132.0 requires
       starlette<1.0.0 (Requires-Dist, read in its wheel) and the starlette floor of this app is 1.8.0 (entry starlette-gzip-flush; it was
       1.5.0 until 2026-11-05, and the argument held then too), so no resolver can install that pair (pip: ResolutionImpossible for
-      fastapi==0.132.0 with starlette>=1.5.0, 2026-10-26); 0.133.0 is the first release that allows starlette 1.x (Requires-Dist
+      fastapi==0.132.0 with starlette>=1.5.0, 2026-10-26, and with starlette>=1.8.0, 2026-11-05, each by a dry run); 0.133.0 is the first release that allows starlette 1.x and resolved with starlette>=1.8.0 in the same dry run (Requires-Dist
       starlette>=0.40.0, read in its wheel) and resolves with it. WHAT THE FLOOR CHANGES, measured on the wheels on 2026-10-26 with
       tests/test_security_hardening.py::test_a_json_route_refuses_a_body_not_typed_as_json (POST /api/newsletters/remove-imported): on
       0.131.0 text/plain, form-urlencoded and multipart bodies already answer 422 (the body is not parsed as JSON; the 0.110.0 wheel's
@@ -687,7 +687,7 @@ artifacts:
       - "pyproject.toml dependencies starlette carries the same floor (test-enforced)"
       - "requirements.lock pins exactly one release at or above the floor (1.8.0 today; test-enforced)"
       - "src/api/main.py GZipMiddleware stays the last add_middleware call (tests/test_sources_route_and_compression.py)"
-      - "the sites that name http.disconnect are pinned by tests/test_version_floor_legs.py: src/monitoring/diagnostics_runs.py, tests/test_backup_download_route.py, tests/test_diagnostics_runs.py, tests/test_keyword_export_bounded.py, tests/test_sources_route_and_compression.py; a new one fails that test by name, and only tests/test_keyword_export_bounded.py (two stubs) hands a response a disconnect at once, asserting only that its scratch archive is deleted, so it passes whether the body was sent or not"
+      - "the sites that name http.disconnect are pinned by tests/test_version_floor_legs.py: src/monitoring/diagnostics_runs.py, tests/test_backup_download_route.py, tests/test_diagnostics_runs.py, tests/test_keyword_export_bounded.py, tests/test_sources_route_and_compression.py; a new one fails that test by name. Two files hand a response a disconnect AT ONCE and assert only cleanup, so they pass whether the body was sent or not: tests/test_keyword_export_bounded.py (two stubs; the scratch archive is deleted) and tests/test_backup_download_route.py (_receive_gone, on spec versions 2.0 and 2.4; the directory is removed and the slot freed). The other three wait for an event or for the response to end"
     last_verified: "2026-11-05"
 
   - id: vader-linear-reproduction

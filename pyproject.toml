@@ -55,7 +55,7 @@ dependencies = [
     # (flush(Z_SYNC_FLUSH) on every chunk with more_body) is 1.5.0; 1.0.0 to 1.4.1 do not (read in the wheels, and
     # tests/test_sources_route_and_compression.py::test_gzip_flushes_every_chunk_of_a_streaming_response fails on 1.4.1 and passes
     # on 1.5.0 and every later release run). A test that hands a response an http.disconnect at once is exposed to (1): the
-    # tests/ sites are listed in the registry entry and pinned by tests/test_external_freshness.py. Registry entry
+    # tests/ sites are listed in the registry entry and pinned by tests/test_version_floor_legs.py. Registry entry
     # starlette-gzip-flush; that file keeps the three places (this line, the registry, requirements.lock) from drifting apart.
     "starlette>=1.8.0",
     "uvicorn[standard]>=0.27",
