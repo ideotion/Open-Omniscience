@@ -847,7 +847,7 @@ def test_the_machine_record_fits_10000_bytes_in_the_manifest_with_any_number_of_
     from src.monitoring import machine_record as mr
 
     for i in range(400):
-        monkeypatch.setenv(f"OO_{'X' * 400}_{i:04d}", "1")  # 409 characters: the names are cut to mr.ENV_NAME_CHARS, so any length fits
+        monkeypatch.setenv(f"OO_{i:04d}_" + ("\\" if i % 2 else "\x01") * 400, "1")  # 409 characters: the names are cut to mr.ENV_NAME_CHARS, so any length fits
     block = _machine_record_block()
     size = len(json.dumps({"machine": block}, ensure_ascii=False, indent=2).encode("utf-8"))
     assert size <= 10_000, f"the machine block is {size:,} bytes in the manifest with 400 switches set; the slot arithmetic counts 10,000: measure again"

@@ -2193,7 +2193,12 @@ def cap_report_for_bundle(report: dict, cap: int = BUNDLE_REPORT_MAX_BYTES, meas
         "truncated": True, "truncated_from_bytes": original, "cap_bytes": cap, "cut_sections": [], "cut_sections_more": 0,
     }
     out = {**{k: v for k, v in report.items() if k not in _NOTE_KEYS}, **note}
-    sizes = {k: measure(v) for k, v in report.items() if k not in _NOTE_KEYS and isinstance(v, (dict, list, str))}
+    # A section is measured IN CONTEXT (under its own key: the wire rewrite keys on the parent's name), as its share of the whole.
+    sizes = {
+        k: measure({k: v}) - measure({k: None}) + 4
+        for k, v in report.items()
+        if k not in _NOTE_KEYS and isinstance(v, (dict, list, str))
+    }
     marker_bytes = measure({"cut": True, "bytes": original})
     named: list[dict[str, Any]] = []
     more = 0

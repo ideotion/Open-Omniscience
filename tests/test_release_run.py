@@ -3109,9 +3109,13 @@ def test_the_bundle_copy_of_an_oversized_report_is_cut_to_its_cap_with_counted_m
         assert capped["truncated"] is True and isinstance(capped["cut_sections"], list), label
 
     # The bound holds on what is WRITTEN: with a measure that counts the bytes after the wire rewrite (alpha-2 country codes become alpha-3).
-    from src.api.diagnostics.bundle import _member_bytes
+    from src.api.diagnostics.bundle import _member_bytes, _wire_json_len
 
     wire = {"countries": ["fr"] * 27_996}
     assert size(wire) < 140_000 < len(_member_bytes(wire))
-    capped = rr.cap_report_for_bundle(wire, measure=lambda v: len(_member_bytes(v)))
+    capped = rr.cap_report_for_bundle(wire, measure=_wire_json_len)
     assert len(_member_bytes(capped)) <= rr.BUNDLE_REPORT_MAX_BYTES and capped["truncated"] is True
+    assert capped["countries"]["bytes"] > 160_000, "the marker counts the section as written"
+    # A big string section is cut by name, not by dropping the whole report.
+    text = rr.cap_report_for_bundle({"log": "x" * 200_000, "small": {"a": 1}}, measure=_wire_json_len)
+    assert text["log"]["cut"] is True and text["small"] == {"a": 1} and [c["section"] for c in text["cut_sections"]] == ["log"]

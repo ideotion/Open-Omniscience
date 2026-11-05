@@ -1857,6 +1857,11 @@ def _chronology_member() -> dict:
         return {"available": False, "error": _all_diag_err_str(exc, typed=True)}
 
 
+def _wire_json_len(value) -> int:
+    """The bytes any JSON value takes as the bundle writes it (wire rewrite included). Unlike ``_member_bytes``, a bare string or number is measured too."""
+    return len(json.dumps(to_wire(value), ensure_ascii=False, separators=(",", ":"), default=_member_default).encode("utf-8"))
+
+
 def _release_run_last() -> dict:
     """The newest 0.4 release-run report as a bundle member (read-only; never runs one).
 
@@ -1867,7 +1872,7 @@ def _release_run_last() -> dict:
     from src.monitoring.release_run import cap_report_for_bundle, last_release_run_report
 
     # Capped (R425): the saved file and the route keep the whole report; the bundle's copy is a bound the slot arithmetic can rely on.
-    return cap_report_for_bundle(last_release_run_report(), measure=lambda v: len(_member_bytes(v)))
+    return cap_report_for_bundle(last_release_run_report(), measure=_wire_json_len)
 
 
 def _data_volume_report() -> dict:
@@ -2025,7 +2030,7 @@ def _contention_member() -> dict:
         }
         # the section's own `{}` in the skeleton is replaced by the report, so its two bytes are given back
         room = CONTENTION_LINE_BYTES - len(_member_bytes(skeleton)) + 2
-        return report_fit(room, measure=lambda v: len(_member_bytes(v)))
+        return report_fit(room, measure=_wire_json_len)
 
     return _scrubbed_member_value(
         _merged_member(

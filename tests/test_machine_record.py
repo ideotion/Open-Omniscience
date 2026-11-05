@@ -311,3 +311,9 @@ def test_the_switch_names_listed_are_capped_and_the_rest_counted(monkeypatch):
     monkeypatch.undo()
     few = MR.machine_block()["environment"]
     assert "names_not_shown" not in few and few["count"] == len(few["set_names"])
+
+
+def test_a_non_ascii_switch_name_does_not_blank_the_block(monkeypatch):
+    monkeypatch.setenv("OO_CAF\u00c9", "1")
+    env = MR.machine_block()["environment"]
+    assert "unavailable" not in env and "OO_CAF?" in env["set_names"] and env["names_cut"] >= 1
