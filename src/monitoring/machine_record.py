@@ -227,7 +227,7 @@ def _environment() -> dict[str, Any]:
         names = sorted(k for k in os.environ if k.startswith(_ENV_PREFIX))
         # Each shown name is cut to ENV_NAME_CHARS plain-ASCII characters (an environment name can be any length and any characters), and the cuts are counted.
         shown = [n.encode("utf-8", "backslashreplace").decode("ascii")[:ENV_NAME_CHARS] for n in names[:ENV_NAMES_SHOWN]]
-        cut = sum(1 for n, t in zip(names[:ENV_NAMES_SHOWN], shown) if n != t)
+        cut = sum(1 for n, t in zip(names[:ENV_NAMES_SHOWN], shown, strict=True) if n != t)
         out: dict[str, Any] = {
             "set_names": shown,
             "count": len(names),
