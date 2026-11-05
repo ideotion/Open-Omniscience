@@ -53,7 +53,10 @@ def _build() -> dict[str, Any]:
     reasons: dict[str, str] = {}
     with store.lane_session("osm") as s:
         have = set(inspect(s.get_bind()).get_table_names())
-        countries = list(s.query(OsmCountry.alpha3, OsmCountry.diff_sequence, OsmCountry.diff_timestamp))
+        # Only a finished cut is a cut country: a row still ingesting, or one that failed, holds nothing the daily files could reach.
+        countries = list(
+            s.query(OsmCountry.alpha3, OsmCountry.diff_sequence, OsmCountry.diff_timestamp).filter(OsmCountry.status == "complete")
+        )
         out: dict[str, Any] = {
             "measured": True,
             "countries_cut": len(countries),
@@ -67,14 +70,20 @@ def _build() -> dict[str, Any]:
             out["files_applied"], out["last_applied_at"] = None, None
             reasons["files_applied"] = reasons["last_applied_at"] = _OLD_LANE
         if VersionedGap.__tablename__ in have:
-            gaps = list(
+            feed_like = f"{FEED_PREFIX}%"
+            by_reason: dict[str, int] = {
+                reason: int(n)
+                for reason, n in s.query(VersionedGap.reason, func.count(VersionedGap.id)).filter(VersionedGap.feed.like(feed_like)).group_by(VersionedGap.reason)
+            }
+            total = int(by_reason.get("retention", 0))
+            out["rebaselines_total"] = total
+            out["hand_recuts"] = int(by_reason.get("budget", 0))
+            shown = (
                 s.query(VersionedGap)
-                .filter(VersionedGap.feed.like(f"{FEED_PREFIX}%"))
+                .filter(VersionedGap.feed.like(feed_like), VersionedGap.reason == "retention")
                 .order_by(VersionedGap.detected_at.desc(), VersionedGap.id.desc())
+                .limit(EVENTS_KEPT)
             )
-            retention = [g for g in gaps if g.reason == "retention"]
-            out["rebaselines_total"] = len(retention)
-            out["hand_recuts"] = sum(1 for g in gaps if g.reason == "budget")
             out["rebaselines"] = [
                 {
                     "alpha3": g.feed[len(FEED_PREFIX):],
@@ -82,9 +91,9 @@ def _build() -> dict[str, Any]:
                     "from_time": _iso(g.from_time),
                     "to_time": _iso(g.to_time),
                 }
-                for g in retention[:EVENTS_KEPT]
+                for g in shown
             ]
-            out["rebaselines_not_shown"] = max(0, len(retention) - EVENTS_KEPT)
+            out["rebaselines_not_shown"] = max(0, total - EVENTS_KEPT)
         else:
             out["rebaselines_total"], out["hand_recuts"], out["rebaselines"], out["rebaselines_not_shown"] = None, None, [], 0
             reasons["rebaselines_total"] = reasons["hand_recuts"] = _OLD_LANE

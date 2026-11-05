@@ -346,20 +346,23 @@
       const num = (v) => (typeof v === "number"
         ? { value: String(v) } : { value: t("Not recorded"), hover: why });
       const events = d.rebaselines || [];
-      const rows = events.map((e) => `<div>${_ltrIsolate(String(e.detected_at || "").slice(0, 16).replace("T", " "))} UTC \u00b7 ${ooCountryCell(e.alpha3)}</div>`);
+      const rows = events.map((e) => `<div>${esc(_ltrIsolate(String(e.detected_at || "").slice(0, 16).replace("T", " ")))} UTC \u00b7 ${ooCountryCell(e.alpha3)}</div>`);
       if (d.rebaselines_not_shown > 0) rows.push(`<div class="muted">${esc(tf("{n} older events are not shown.", { n: String(d.rebaselines_not_shown) }))}</div>`);
       return { title, facts: [
         { label: t("Countries cut"), value: String(d.countries_cut) },
         { label: t("Reached by the daily files"), value: String(d.countries_updated) },
         { label: t("Change files applied"), ...num(d.files_applied) },
-        { label: t("Newest change file"), value: livingWhen(d.newest_file_at, t),
+        { label: t("Newest change file"),
+          value: d.newest_file_at || !(d.countries_updated > 0) ? livingWhen(d.newest_file_at, t) : t("Not recorded"),
           hover: t("The date inside the newest change file applied to any country, not the day it was applied here.") },
         { label: t("Re-baselines"), ...num(d.rebaselines_total),
           hover: t("The mirror no longer held the change files a country needed, so it was cut again from a fresh extract. Each one is listed below with its date.") },
         { label: t("Cut again by hand"), ...num(d.hand_recuts),
           hover: t("Countries you cut again yourself instead of updating them. Counted apart: it was your choice, not a gap in the mirror's files.") },
-        { label: t("Re-baseline events"), html: true, value: rows.length ? rows.join("") : esc(t("None")),
-          hover: t("Dated by when this machine found the gap, newest first.") },
+        typeof d.rebaselines_total !== "number"
+          ? { label: t("Re-baseline events"), value: t("Not recorded"), hover: why }
+          : { label: t("Re-baseline events"), html: true, value: rows.length ? rows.join("") : esc(t("None")),
+              hover: t("Dated by when this machine found the gap, newest first.") },
       ] };
     }
 

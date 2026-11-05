@@ -263,6 +263,12 @@ const WIKI = {
   assert.ok(visible(oldLane).includes("Change files applied Not recorded") && visible(oldLane).includes("Re-baselines Not recorded"),
     "a table the lane lacks is Not recorded, never 0: " + visible(oldLane));
   assert.ok(hovers(oldLane).includes("older build"), "and says why on hover");
+  assert.ok(visible(oldLane).includes("Re-baseline events Not recorded") && !visible(oldLane).includes("Re-baseline events None"),
+    "an events list the lane could not read is NOT 'None': that would state that nothing happened: " + visible(oldLane));
+  const noStamp = visible(R.livingGroupsHtml([R.livingDailyGroup({ ...DAILY, newest_file_at: null }, t, tf)]));
+  assert.ok(noStamp.includes("Newest change file Not recorded"), "files applied but no recorded date is Not recorded, not 'never': " + noStamp);
+  assert.ok(visible(R.livingGroupsHtml([R.livingDailyGroup({ ...DAILY, newest_file_at: null, countries_updated: 0, files_applied: 0 }, t, tf)])).includes("Newest change file never"),
+    "and no file at all is 'never'");
   assert.ok(visible(R.livingGroupsHtml([R.livingDailyGroup({ measured: false, reason: "lane-never-run" }, t, tf)])).includes("Not run yet"));
   assert.ok(visible(R.livingGroupsHtml([R.livingDailyGroup(undefined, t, tf)])).includes("Could not be read"), "an overview without the block is named, not blank");
   noJunk(oldLane, "the old-lane daily group");

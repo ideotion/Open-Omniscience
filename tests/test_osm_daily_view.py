@@ -92,6 +92,14 @@ def test_both_kinds_of_gap_together_stay_separate(cut, osm_lane_dir):
     assert (got["hand_recuts"], got["rebaselines_total"], len(got["rebaselines"])) == (1, 1, 1)
 
 
+def test_a_country_whose_cut_failed_or_is_still_running_is_not_a_cut_country(cut):
+    with store.lane_session("osm") as s:
+        s.add(OsmCountry(alpha2="YY", alpha3="YYY", status="failed"))
+        s.add(OsmCountry(alpha2="XX", alpha3="XXX", status="ingesting"))
+    got = V.daily_block()
+    assert (got["countries_cut"], got["countries_updated"]) == (1, 0), "only ZZZ holds a finished cut"
+
+
 def test_events_are_newest_first_and_cut_with_the_cut_counted(cut, osm_lane_dir, monkeypatch):
     for days in (200, 400, 600):
         _rebaseline(osm_lane_dir, days)
