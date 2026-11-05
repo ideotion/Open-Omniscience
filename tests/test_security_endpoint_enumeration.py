@@ -61,6 +61,7 @@ import re
 from pathlib import Path
 
 import pytest
+import yaml
 
 from tests.js_source_helper import array_literal
 
@@ -78,9 +79,24 @@ _SECTION_HEAD = "- **Every other outbound call is consented"
 _SECTION_TAIL = "\n## Data at rest & airplane mode"
 
 _URL_HOST = re.compile(r"https?://([A-Za-z0-9._{}%$()*-]+)")
-#: ``domain: example.org`` in a YAML catalogue -- the scheme-less half.
+#: ``domain: example.org`` in a YAML catalogue -- the scheme-less half. Two spellings
+#: carry it: a block row (``- domain: x`` or ``  domain: x`` on a line of its own) and a
+#: FLOW row (``- {name: "...", domain: x, ...}``), where the key follows a ``{`` or a
+#: ``,``. The first version read the block spelling only, and ``configs/legal_sources.yml``
+#: writes all 51 of its curated source rows in the flow spelling: 49 hosts the app seeds
+#: and crawls were absent from the Law lane's ``hostCount`` for as long as that file
+#: existed (``wipolex.wipo.int`` among them). A key that merely ENDS in "domain" stays out
+#: (``subdomain:``, ``source_domain:``). HONEST LIMIT: the flow branch is not tied to a
+#: real mapping, so ``{domain: x.org}`` inside a comment or a quoted string would match
+#: too; no file in the tree has one, and if one ever does,
+#: ``test_the_domain_sweep_agrees_with_the_parsed_catalogues`` (a ``hostsFrom`` file) or
+#: ``test_every_host_literal_in_the_tree_is_enumerated`` (any other YAML) fails by name.
+#: The value is read as UNICODE letters, because ``configs/sources.yml`` declares three
+#: domains in their native script; :func:`_ascii_host` turns one into the name a connection
+#: really uses.
 _YAML_DOMAIN = re.compile(
-    r"^\s*-?\s*domain:\s*[\"']?([A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,})", re.M
+    r"(?:^\s*-?\s*|[{,]\s*)domain:\s*[\"']?([^\W_][\w.-]*\.[^\W\d_]{2,})",
+    re.M,
 )
 #: What may be called a host at all. One dot minimum and an alphabetic final
 #: label, which is what drops the regex's own debris (``bihar``, ``x``,
@@ -94,6 +110,23 @@ _YAML_DOMAIN = re.compile(
 _HOST_SHAPE = re.compile(
     r"^(?:\*\.)?[A-Za-z0-9][A-Za-z0-9.*_-]*\.(?:xn--[A-Za-z0-9-]+|[A-Za-z]{2,})$"
 )
+
+
+def _ascii_host(host: str) -> str:
+    """The name a connection uses for ``host``: an internationalised name in its punycode form.
+
+    ``crawl.py`` reaches a source at ``https://<domain>`` and the HTTP stack sends the
+    IDNA (``xn--``) spelling, so ``åa.no`` and ``xn--a-1fa.no`` are ONE host, and
+    ``_HOST_SHAPE`` (ASCII by design) would otherwise drop the first without a word. A name
+    the IDNA codec refuses stays as written and so fails the shape check by itself.
+    """
+    if host.isascii():
+        return host
+    try:
+        return host.encode("idna").decode("ascii")
+    except UnicodeError:
+        return host
+
 
 _EXTENSIONS = {".py", ".js", ".html", ".css", ".json", ".yml", ".yaml", ".sh",
                ".ps1", ".cmd", ".cfg", ".toml"}
@@ -381,7 +414,7 @@ def _config_hosts(*rel_paths: str) -> set[str]:
     out: set[str] = set()
     for rel in rel_paths:
         text = (_ROOT / rel).read_text(encoding="utf-8", errors="replace")
-        out |= set(_URL_HOST.findall(text)) | set(_YAML_DOMAIN.findall(text))
+        out |= set(_URL_HOST.findall(text)) | {_ascii_host(h) for h in _YAML_DOMAIN.findall(text)}
     return {h for h in out if _HOST_SHAPE.match(h)}
 
 
@@ -410,7 +443,7 @@ def _tree_hosts() -> dict[str, set[str]]:
         # matches an object property -- `domain: g.domain` in oosky.js came back
         # as the host "g.domain" on the first run of this guard.
         if path.suffix in {".yml", ".yaml"}:
-            hosts |= set(_YAML_DOMAIN.findall(text))
+            hosts |= {_ascii_host(h) for h in _YAML_DOMAIN.findall(text)}
         for host in hosts:
             found.setdefault(host, set()).add(rel)
     return found
@@ -529,6 +562,134 @@ def test_a_class_lane_states_the_real_host_count():
             f"catalogues carry {real} distinct hosts. Update net-hosts.js AND the "
             f"SECURITY.md row in the same diff."
         )
+
+
+def _parsed_domains(path: Path) -> set[str]:
+    """Every ``domain`` value the YAML reader finds anywhere in the file, as a connection would spell it.
+
+    The oracle for the regex sweep: it does not care how a row is spelled (block, flow,
+    quoted, wrapped over two lines), which is exactly what the regex does care about.
+    It does NOT filter by ``_HOST_SHAPE``: a declared domain the shape check would drop
+    is the very thing the comparison below has to be able to see.
+    """
+    found: set[str] = set()
+
+    def walk(node: object) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "domain" and isinstance(value, str):
+                    found.add(_ascii_host(value.strip()))
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(yaml.safe_load(path.read_text(encoding="utf-8")))
+    return found
+
+
+def test_the_domain_sweep_agrees_with_the_parsed_catalogues():
+    """The regex that counts a class lane's hosts finds exactly the domains the file declares.
+
+    Measured on the day this guard was added, in two places the count had been wrong:
+    ``configs/legal_sources.yml`` has 51 curated source rows in the flow spelling
+    (``- {name: ..., domain: x, ...}``); the regex of the time read the block spelling
+    only and found none of them, so the Law lane said 260 hosts where the catalogues
+    carry 309. And ``configs/sources.yml`` declares three domains in their native script,
+    which the ASCII-only pattern and shape check dropped without a word: two of them
+    (``åa.no``, ``공유.net``) are reached by no other spelling, so the press lane said
+    9,033 where it carries 9,035. ``test_a_class_lane_states_the_real_host_count`` could
+    not catch either: it measures with the same regex it is checking, so a number typed
+    from the regex's own blind spot passed for as long as the file existed. This is the
+    check with a different instrument -- parse the YAML, compare both ways, and refuse a
+    declared domain the shape check cannot read instead of dropping it.
+    """
+    lanes = [lane for lane in _lanes() if lane.get("hostsFrom")]
+    assert lanes, "no lane in net-hosts.js is a class (hostsFrom), so this guard would check nothing"
+    problems = [
+        f"{rel}: {problem}"
+        for lane in lanes
+        for rel in lane["hostsFrom"]
+        for problem in _sweep_problems(_ROOT / rel)
+    ]
+    assert not problems, "the domain sweep disagrees with the parsed catalogues:\n  " + "\n  ".join(problems)
+
+
+def _sweep_problems(path: Path) -> list[str]:
+    """What is wrong with the regex sweep of ONE catalogue, in words; ``[]`` when it agrees with a parse."""
+    by_parse = _parsed_domains(path)
+    problems: list[str] = []
+    unreadable = sorted(d for d in by_parse if not _HOST_SHAPE.match(d))
+    if unreadable:
+        problems.append(f"declared domain(s) the host shape check cannot read: {unreadable[:5]}")
+    by_regex = {_ascii_host(d) for d in _YAML_DOMAIN.findall(path.read_text(encoding="utf-8", errors="replace"))}
+    if by_regex != by_parse:
+        problems.append(
+            f"the regex misses {sorted(by_parse - by_regex)[:5]} and invents {sorted(by_regex - by_parse)[:5]} "
+            f"({len(by_parse - by_regex)} / {len(by_regex - by_parse)} in all)"
+        )
+    return problems
+
+
+def test_the_sweep_check_names_what_the_regex_misses_and_what_the_shape_drops(tmp_path):
+    """The comparison itself, on files written here: it must fail for the two ways a count goes quietly short."""
+    clean = tmp_path / "clean.yml"
+    clean.write_text(
+        'sources:\n- {name: a, domain: flow.example.org}\n- domain: "block.example.org"\n- domain: åa.no\n',
+        encoding="utf-8",
+    )
+    assert _sweep_problems(clean) == []
+
+    # A spelling the regex does not read (a quoted KEY): the parse sees it, the regex does not.
+    quoted_key = tmp_path / "quoted_key.yml"
+    quoted_key.write_text('sources:\n- {"domain": "hidden.example.org"}\n', encoding="utf-8")
+    assert any("misses ['hidden.example.org']" in p for p in _sweep_problems(quoted_key))
+
+    # A declared domain the shape check cannot read must be NAMED, not dropped from both sides.
+    odd = tmp_path / "odd.yml"
+    odd.write_text("sources:\n- {name: a, domain: localhost}\n", encoding="utf-8")
+    problems = _sweep_problems(odd)
+    assert any("cannot read" in p and "localhost" in p for p in problems), problems
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("åa.no", "xn--a-1fa.no"),
+        ("공유.net", "xn--ob0b790c.net"),
+        ("севернаяправда.рф", "xn--80aaafcmcb6evaidf6r.xn--p1ai"),
+        ("example.org", "example.org"),
+        ("*.wikipedia.org", "*.wikipedia.org"),
+        ("xn--a-1fa.no", "xn--a-1fa.no"),
+    ],
+)
+def test_an_internationalised_name_is_counted_as_the_host_a_connection_uses(name, expected):
+    assert _ascii_host(name) == expected
+    assert _HOST_SHAPE.match(_ascii_host(name))
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("- domain: block.example.org\n", ["block.example.org"]),
+        ("  domain: indented.example.org\n", ["indented.example.org"]),
+        ('- domain: "quoted.example.org"\n', ["quoted.example.org"]),
+        ("- {name: x, domain: flow.example.org, country: FRA}\n", ["flow.example.org"]),
+        ('- {domain: "first.example.org", country: FRA}\n', ["first.example.org"]),
+        ("- {name: x,domain: tight.example.org}\n", ["tight.example.org"]),
+        ("- domain: åa.no\n", ["åa.no"]),
+        ("- {name: x, domain: 공유.net, country: KOR}\n", ["공유.net"]),
+        ("- {name: x, tags: [a, b], domain: after-list.example.org}\n", ["after-list.example.org"]),
+        # A key that merely ENDS in "domain" is some other field.
+        ("- {name: x, subdomain: not.example.org}\n", []),
+        ("- source_domain: not.example.org\n", []),
+        ("# domain: in-a-comment.example.org\n", []),
+        # A value with no dot is not a host (the shape check's job, pinned here too).
+        ("- {name: x, domain: localhost}\n", []),
+    ],
+)
+def test_the_domain_regex_reads_both_row_spellings_and_nothing_else(text, expected):
+    assert _YAML_DOMAIN.findall(text) == expected
 
 
 def test_every_url_bearing_config_is_named_in_the_enumeration():

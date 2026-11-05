@@ -89,7 +89,7 @@
       "label": "Press collection",
       "hosts": [],
       "hostsFrom": ["configs/sources.yml", "configs/academic_sources.yml", "configs/official_sources.yml", "configs/sources_spectrum.yml", "configs/markets_sources.yml"],
-      "hostCount": 9033,
+      "hostCount": 9035,
       "trigger": "pass",
       "setting": null,
       "fetcher": true
@@ -126,7 +126,7 @@
       "label": "Law",
       "hosts": [],
       "hostsFrom": ["configs/legal_sources.yml", "configs/legal_sources_generated.yml"],
-      "hostCount": 260,
+      "hostCount": 309,
       "trigger": "ride-along",
       "setting": "auto_track_law",
       "settingFrom": "scheduler",
