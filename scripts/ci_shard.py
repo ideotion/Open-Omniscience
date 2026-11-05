@@ -14,7 +14,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
     python scripts/ci_shard.py costs  [--stdout] [--min-seconds S] JUNIT_XML [...]   # rewrite configs/ci_shard_costs.json from measured per-module times
 
 WHY. The CI ``test`` and ``core-only`` jobs each ran the whole suite in one process, 70 to 80 minutes, and the run's wall time was the slower
-of the two (R347, decision 27). Each is now three jobs that each run a third of the files, so a PR waits for about the longest third.
+of the two (R412, decision 27). Each is now three jobs that each run a third of the files, so a PR waits for about the longest third.
 
 HOW A FILE GETS ITS SHARD (and why it is not a plain round robin, a hash, or a hand-kept list).
 * Files named in ``configs/ci_shard_costs.json`` (path -> seconds, measured) are dealt out longest first, each to the shard with the least

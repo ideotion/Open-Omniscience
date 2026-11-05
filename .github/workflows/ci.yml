@@ -68,7 +68,7 @@ jobs:
           python -m pip install pip-audit==2.10.1  # pinned (OO-D15-004): an unpinned audit tool can redden PRs through no code change, exactly like bandit/mypy
           pip-audit --skip-editable
 
-  # THE `test` JOB IS THREE SHARDS (C10, decision 27, R347): it ran the whole suite in one process, 70 to 80 minutes, and the run's wall time was the slower
+  # THE `test` JOB IS THREE SHARDS (C10, decision 27, R412): it ran the whole suite in one process, 70 to 80 minutes, and the run's wall time was the slower
   # of it and Core-only. Each leg now runs a third of the test FILES, chosen by scripts/ci_shard.py from the measured cost table
   # configs/ci_shard_costs.json (longest file first to the least-loaded shard; a file the table does not name goes to crc32(path) % 3 + 1, so a new test
   # file needs no edit anywhere), and the leg's list is handed to pytest as `@FILE`. The static steps (lint, the planned-work index, the i18n gates, the

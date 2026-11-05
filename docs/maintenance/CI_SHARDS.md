@@ -1,6 +1,6 @@
 # CI shards: how the `test` and `core-only` jobs are split, and how to keep them honest
 
-Written 2026-11-05 with C10 (decision 27, R347). The two full-suite CI jobs each ran the whole suite in one process, 70 to 80 minutes, and a PR waited for the
+Written 2026-11-05 with C10 (decision 27, R412). The two full-suite CI jobs each ran the whole suite in one process, 70 to 80 minutes, and a PR waited for the
 slower of the two. Each is now **three jobs** that each run a third of the test files.
 
 ## What runs where
@@ -43,7 +43,7 @@ run the suite once in the `test` environment with `--junitxml=junit.xml` and
     python scripts/ci_shard.py costs --min-seconds 0.5 junit.xml
 
 which rewrites the table (modules under half a second fall to the hash, which spreads the many small ones evenly; `--table OTHER.json` rewrites OTHER.json, the
-table it read, and `--stdout` prints instead of writing). The table was last measured on run 42014873848 of PR #1726 (794 modules of half a second or more, 4960 s).
+table it read, and `--stdout` prints instead of writing). The table was last measured on run 41995058978 of PR #1726 (head 07ec3eaf8; 794 modules of half a second or more, 4960 s), the run that is also named in its `source` field.
 Look at the legs' times on the next run; the tests pin that the table deals the shards to within 3 % of each other, not that the legs take equal time.
 
 **A new dealing is a new set of neighbours.** Which tests share a process changes with the table, so the check that no test leans on a neighbour was made for the

@@ -3,7 +3,7 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-Why it exists (C10, decision 27, R347). Each job ran the whole suite in one process, 70 to 80 minutes. Each is now a matrix of three legs that run a third
+Why it exists (C10, decision 27, R412). Each job ran the whole suite in one process, 70 to 80 minutes. Each is now a matrix of three legs that run a third
 of the test FILES (``scripts/ci_shard.py``, the cost table ``configs/ci_shard_costs.json``). Sharding can fail in ways one process cannot, and each is
 pinned below, with a mutant that breaks it:
 
@@ -579,6 +579,8 @@ def _wiring_problems(wf: dict, table: dict) -> list[str]:
         names = _leg_names(job)
         if len(set(names)) != n or required in names or matrix_job in names or "${{" in " ".join(names):
             found.append(f"{matrix_job}: each leg needs its own name that is not the required check `{required}` ({names})")
+        if any(f" of {n}" not in name for name in names):
+            found.append(f"{matrix_job}: each leg's name must say `of {n}` (the table's N), or a changed count leaves legs named `shard 4 of 3` ({names})")
         steps = job.get("steps") or []
         plans = [i for i, s in enumerate(steps) if "ci_shard.py" in str(s.get("run") or "")]
         pytest_at = [i for i, s in enumerate(steps) if "pytest" in str(s.get("run") or "")]
@@ -653,6 +655,7 @@ _MUTANTS = {
     "the job loses its condition": (lambda j: j["core-only"].pop("if"), "must run on every push"),
     "a leg is named like the required check": (lambda j: j["test"].__setitem__("name", "test"), "own name"),
     "all legs share one name": (lambda j: j["core-only"].__setitem__("name", "Core-only"), "own name"),
+    "the legs say another N": (lambda j: j["test"].__setitem__("name", j["test"]["name"].replace(" of 3", " of 4")), "must say `of 3`"),
     "the plan step is gone": (lambda j: j["test"]["steps"].remove(_step(j, "test", "Plan this shard")), "exactly one plan step"),
     "the plan step names another N": (lambda j: _step(j, "core-only", "Plan this shard").__setitem__("run", _PLAN % 4), "must run exactly"),
     "the plan step is advisory": (lambda j: _step(j, "test", "Plan this shard").__setitem__("continue-on-error", True), "unconditional and blocking"),
