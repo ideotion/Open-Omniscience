@@ -1816,6 +1816,14 @@
       <h2>OpenStreetMap trends</h2>
       <div id="osm-trend-body"></div>
     </section>
+    <!-- v0.6.0 B3b (S06-01 S3): trend surfaces 4 to 6 for each OpenStreetMap country read -- brands and operators,
+         contact channels, data freshness. Each surface shows what the places look like now, what the daily change
+         files changed, and the planet's past, as three separate blocks; counts with method and caveat, the full
+         table beside every chart. Hidden until a country has been read. Filled by loadOsmProfile(). -->
+    <section class="panel" id="osm-profile" hidden>
+      <h2>OpenStreetMap brands, contact channels and freshness</h2>
+      <div id="osm-profile-body"></div>
+    </section>
     <!-- S05-04 S5 (Q820): the LOCAL geocoder over the addresses of the OpenStreetMap countries
          read. Never an external service; its scope is stated beside the box, always. -->
     <section class="panel" id="osm-geocoder" hidden>
