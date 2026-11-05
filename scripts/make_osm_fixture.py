@@ -161,13 +161,19 @@ def _deltas(values: list[int]) -> list[int]:
 
 
 # --- the two blocks ---------------------------------------------------------- #
-def _header_block() -> bytes:
-    # HeaderBlock{ 4: required_features, 16: writingprogram }
-    return (
+def _header_block(replication: tuple[int, int] | None = None) -> bytes:
+    # HeaderBlock{ 4: required_features, 16: writingprogram, 32: osmosis_replication_timestamp (seconds),
+    # 33: osmosis_replication_sequence_number }. The last two only when a variant asks for them: the committed
+    # fixture carries neither, so its digest (and the tests pinned to it) are unchanged.
+    out = (
         _len(4, b"OsmSchema-V0.6")
         + _len(4, b"DenseNodes")
         + _len(16, b"open-omniscience scripts/make_osm_fixture.py")
     )
+    if replication is not None:
+        stamp, sequence = replication
+        out += _uint(32, stamp) + _uint(33, sequence)
+    return out
 
 
 def _primitive_block() -> bytes:
@@ -240,8 +246,9 @@ def _fileblock(kind: str, block: bytes) -> bytes:
     return struct.pack(">i", len(header)) + header + blob
 
 
-def build() -> bytes:
-    return _fileblock("OSMHeader", _header_block()) + _fileblock("OSMData", _primitive_block())
+def build(replication: tuple[int, int] | None = None) -> bytes:
+    """The fixture's bytes. ``replication=(epoch seconds, sequence number)`` stamps the header the way a Geofabrik extract is; None writes the committed file."""
+    return _fileblock("OSMHeader", _header_block(replication)) + _fileblock("OSMData", _primitive_block())
 
 
 def main() -> int:
