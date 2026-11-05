@@ -3303,7 +3303,7 @@
       let lane = null;
       try { lane = await api("/api/osm/lane"); } catch (e) { sec.hidden = true; return; }
       const done = ((lane || {}).countries || []).filter((c) => c.status === "complete");
-      if (!done.length) { sec.hidden = true; _osmComp = null; _osmGeoShow([]); loadOsmTrends([]); return; }
+      if (!done.length) { sec.hidden = true; _osmComp = null; _osmGeoShow([]); loadOsmTrends([]); loadOsmProfile([]); return; }
       await _osmLoadUpdates();
       const out = [];
       for (const c of done) {
@@ -3315,6 +3315,7 @@
       _renderOsmCompleteness();
       _osmGeoShow(done);
       if (!(opts && opts.poll)) loadOsmTrends(done);   // not awaited: the figures above must not wait on it; the 2 s count poll leaves the trends alone
+      if (!(opts && opts.poll)) loadOsmProfile(done);   // likewise, and each surface is read when its tab opens
       if (_osmUpdLive()) _osmUpdSchedulePoll();
     }
     // -- The daily change files (v0.6.0 B1, the job and consent layer) ----------------------- //
@@ -3513,9 +3514,11 @@
       const have = (block && block.fields) || null;
       return OSM_OPEN_FIELDS.filter(([f]) => !have || have.indexOf(f) !== -1);
     }
-    function _osmTrendTable(head, rows) {
-      const th = head.map((h, i) => `<th scope="col" style="text-align:${i ? "end" : "start"};padding:2px 8px">${esc(h)}</th>`).join("");
-      const body = rows.map((r) => `<tr>${r.map((v, i) => `<${i ? "td" : "th scope=\"row\""} style="text-align:${i ? "end" : "start"};padding:2px 8px">${esc(v)}</${i ? "td" : "th"}>`).join("")}</tr>`).join("");
+    function _osmTrendTable(head, rows, textCols) {
+      const left = textCols || [0];   // the columns that hold words, not numbers
+      const al = (i) => (left.indexOf(i) !== -1 ? "start" : "end");
+      const th = head.map((h, i) => `<th scope="col" style="text-align:${al(i)};padding:2px 8px">${esc(h)}</th>`).join("");
+      const body = rows.map((r) => `<tr>${r.map((v, i) => `<${i ? "td" : "th scope=\"row\""} style="text-align:${al(i)};padding:2px 8px">${esc(v)}</${i ? "td" : "th"}>`).join("")}</tr>`).join("");
       return `<div style="overflow:auto;max-height:320px"><table class="data"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>`;
     }
     // One block (the tracked window, or the planet's prior): the chart host, then the full table.
@@ -3575,6 +3578,19 @@
         + _osmTrendBlock(kind, b, true, idx, `osm-trend-${idx}-prior-${kind}`)
         + `<div class="card-caveat" style="margin-top:4px">${esc(t(b.caveat || ""))}</div>`;
     }
+    // The window this machine observed: how many change files, between which dates, and every stretch that was not observed.
+    function _osmTrendLead(tr, live) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return live
+        ? `<div class="hint">${esc(osmCompTf("Change files applied: {n}, dated {since} to {through}.", { n: fmtNum(tr.files || 0, 0), since: ooIsoDate(tr.since), through: ooIsoDate(tr.through) }))}</div>`
+          + (tr.unobserved || []).map((g) => {
+            const sentence = g.kind === "rebaseline"
+              ? "Not observed between {from} and {to}: the mirror no longer held the change files, so the country was cut again."
+              : g.kind === "hand_recut" ? "Not observed between {from} and {to}: the country was cut again by hand." : "Not observed between {from} and {to}.";
+            return `<div class="hint">${esc(osmCompTf(sentence, { from: g.from_time ? ooIsoDate(g.from_time) : t("Not recorded"), to: g.to_time ? ooIsoDate(g.to_time) : t("Not recorded") }))}</div>`;
+          }).join("")
+        : `<div class="muted">${esc(t("No daily change file has been applied to this country yet, so there are no trends to show."))}</div>`;
+    }
     function _osmTrendCountry(c, idx) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const lane = c.lane || {};
@@ -3584,16 +3600,7 @@
       }
       if (c.status !== "ok" && c.status !== "no-daily-files") return head + `<div class="muted">${esc(t("Not available: this lane was cut by an older build and lacks the table."))}</div>`;
       const live = c.status === "ok";
-      const tr = c.tracked || {};
-      const lead = live
-        ? `<div class="hint">${esc(osmCompTf("Change files applied: {n}, dated {since} to {through}.", { n: fmtNum(tr.files || 0, 0), since: ooIsoDate(tr.since), through: ooIsoDate(tr.through) }))}</div>`
-          + (tr.unobserved || []).map((g) => {
-            const sentence = g.kind === "rebaseline"
-              ? "Not observed between {from} and {to}: the mirror no longer held the change files, so the country was cut again."
-              : g.kind === "hand_recut" ? "Not observed between {from} and {to}: the country was cut again by hand." : "Not observed between {from} and {to}.";
-            return `<div class="hint">${esc(osmCompTf(sentence, { from: g.from_time ? ooIsoDate(g.from_time) : t("Not recorded"), to: g.to_time ? ooIsoDate(g.to_time) : t("Not recorded") }))}</div>`;
-          }).join("")
-        : `<div class="muted">${esc(t("No daily change file has been applied to this country yet, so there are no trends to show."))}</div>`;
+      const lead = _osmTrendLead(c.tracked || {}, live);
       const tabs = `<nav class="tabs" data-osm-trend-tabs>${OSM_TREND_TABS.map(([k, lab]) => `<button type="button" data-tab="${k}"${k === _osmTrendTab ? ' class="active"' : ""}>${esc(t(lab))}</button>`).join("")}</nav>`;
       const panels = OSM_TREND_TABS.map(([k]) => {
         const b = c[k] || {};
@@ -3628,6 +3635,229 @@
         });
       });
       _osmTrendDrawAll();
+    }
+    // -- Surfaces 4 to 6 (v0.6.0 B3b, S06-01 S3) -------------------------------------------- //
+    // Brands and operators, contact channels, data freshness: per country, per surface (loaded when its tab
+    // opens). Three parts, from three sources, never added: what the places look like NOW (the extract with
+    // every change file applied, the vintage stated), what the daily change files changed (the window this
+    // machine observed), and the planet's past (a separate block). COUNTS with their method (hover) and
+    // caveat (visible); the full table is beside every chart and every ranking states how many it shows of
+    // how many exist.
+    const OSM_PROFILE_TABS = [["brands", "Brands and operators"], ["channels", "Contact channels"], ["freshness", "Data freshness"]];
+    const OSM_SOCIAL_NAMES = { facebook: "Facebook", instagram: "Instagram", twitter: "Twitter", youtube: "YouTube", tiktok: "TikTok", linkedin: "LinkedIn", telegram: "Telegram", whatsapp: "WhatsApp" };
+    const OSM_AGE_LABELS = [
+      ["within_1y", "Within a year"], ["y1_2", "One to two years"], ["y2_5", "Two to five years"], ["over_5y", "More than five years"], ["after", "After the vintage"],
+    ];
+    const OSM_FRESH_FIELDS = [["edited", "Edited"], ["checked", "Checked"]];
+    const OSM_PROFILE_MAX = 2000;
+    let _osmProfileDone = [], _osmProfileCache = {}, _osmProfileTab = "brands", _osmProfileKeys = { brands: "brand", channels: "facebook" };
+    let _osmProfileLimit = 100, _osmProfileSeq = 0, _osmProfileNavs = [], _osmProfileFlight = {};
+    async function loadOsmProfile(done) {
+      const sec = $("osm-profile"); if (!sec) return;
+      const seq = ++_osmProfileSeq;   // a slower, older read must not overwrite a newer one
+      _osmProfileCache = {};
+      _osmProfileFlight = {};
+      if (!done || !done.length) { sec.hidden = true; _osmProfileDone = []; return; }
+      _osmProfileDone = done;
+      sec.hidden = false;
+      _renderOsmProfile();
+      await _osmProfileFetch(seq);
+    }
+    function _osmProfileCacheKey(a3, tab) { return `${a3}|${tab}|${tab === "brands" ? _osmProfileLimit : 0}`; }
+    async function _osmProfileFetch(seq) {
+      const tab = _osmProfileTab, flight = _osmProfileFlight;
+      for (let i = 0; i < _osmProfileDone.length; i++) {
+        const a3 = _osmProfileDone[i].alpha3, key = _osmProfileCacheKey(a3, tab);
+        // Cached, or already being read by another loop (a tab clicked away and back): asking again would repeat the heaviest read.
+        if (_osmProfileCache[key] || flight[key]) continue;
+        flight[key] = true;
+        let d;
+        try { d = await api(`/api/osm/countries/${encodeURIComponent(a3)}/profile/${tab}?limit=${_osmProfileLimit}`); }
+        catch (e) { d = { status: "unreadable" }; }
+        finally { delete flight[key]; }
+        if (seq !== _osmProfileSeq) return;
+        _osmProfileCache[key] = d;
+        if (_osmProfileCacheKey(a3, _osmProfileTab) === key) _osmProfileFill(i);   // the tab shown now is the one this read is for
+        if (tab !== _osmProfileTab) return;   // another tab took over; its own fetch is running
+      }
+    }
+    function _osmProfileShare(x) { return _osmCompShare({ share: x }); }
+    function _osmProfileLabel(key) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (OSM_SOCIAL_NAMES[key]) return OSM_SOCIAL_NAMES[key];   // a service's own name, never translated
+      const known = OSM_COMP_KEYS.find(([k]) => k === key);
+      if (known) return t(known[1]);
+      return key === "social" ? t("Social") : key;               // a tag key (brand, operator:wikidata ...) is shown as the tag
+    }
+    function _osmProfileSnapBrands(s) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
+      const head = [t("Tag"), t("Places"), osmCompTf("Share of {n}", { n: fmtNum(s.n || 0, 0) })];
+      const tags = _osmTrendTable(head, (s.tags || []).map((x) => [x.key, fmtNum(x.present, 0), _osmProfileShare(x.share)]));
+      const ranks = (s.rankings || []).map((r) => {
+        const title = r.key === "brand" ? t("Brands, by number of places") : t("Brand identifiers (brand:wikidata), by number of places");
+        const col = r.key === "brand" ? t("Brand") : t("Identifier");
+        const more = (r.shown < r.total && (s.limit || 0) < OSM_PROFILE_MAX)
+          ? ` <button type="button" class="btn" data-osm-profile-more>${esc(t("Show more"))}</button>` : "";
+        return `<h4 class="lib-sub">${esc(title)}</h4>`
+          + `<div class="hint">${esc(osmCompTf("{shown} of {total} shown.", { shown: fmtNum(r.shown, 0), total: fmtNum(r.total, 0) }))}${more}</div>`
+          + _osmTrendTable([t("Rank"), col, t("Places")], (r.rows || []).map((x, j) => [fmtNum(j + 1, 0), x.value, fmtNum(x.places, 0)]), [0, 1]);
+      }).join("");
+      return tags + ranks;
+    }
+    function _osmProfileSnapChannels(s) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
+      const share = osmCompTf("Share of {n}", { n: fmtNum(s.n || 0, 0) });
+      const chan = _osmTrendTable([t("Channel"), t("Places"), share], (s.channels || []).map((x) => [_osmProfileLabel(x.key), fmtNum(x.present, 0), _osmProfileShare(x.share)]));
+      const social = `<h4 class="lib-sub">${esc(t("Social services"))}</h4>`
+        + _osmTrendTable([t("Service"), t("Places"), share], (s.social || []).map((x) => [_osmProfileLabel(x.key), fmtNum(x.present, 0), _osmProfileShare(x.share)]));
+      const mix = `<h4 class="lib-sub">${esc(t("Places by number of channels carried"))}</h4>`
+        + _osmTrendTable([t("Channels carried"), t("Places"), share], (s.mix || []).map((x) => [fmtNum(x.channels, 0), fmtNum(x.places, 0), _osmProfileShare(x.share)]));
+      return chan + social + mix;
+    }
+    function _osmProfileSnapFreshness(s) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
+      const share = osmCompTf("Share of {n}", { n: fmtNum(s.n || 0, 0) });
+      const le = s.last_edit || {}, cd = s.check_date || {};
+      const gone = t("Not available: neither the extract nor a change file states a date to measure the ages from.");
+      let out = `<h4 class="lib-sub">${esc(t("Last edited, counted back from the vintage"))}</h4>`;
+      if (le.available === false) out += `<div class="muted">${esc(gone)}</div>`;
+      else {
+        const rows = OSM_AGE_LABELS.map(([k, lab]) => {
+          const b = (le.buckets || []).find((x) => x.bucket === k) || { places: 0, share: null };
+          return [t(lab), fmtNum(b.places, 0), _osmProfileShare(b.share)];
+        });
+        rows.push([t("No timestamp"), fmtNum(le.no_timestamp || 0, 0), _osmProfileShare(s.n ? (le.no_timestamp || 0) / s.n : null)]);
+        out += _osmTrendTable([t("Last edited"), t("Places"), share], rows);
+      }
+      out += `<h4 class="lib-sub">${esc(t("Carrying a check_date"))}</h4>`
+        + `<div class="hint">${esc(osmCompTf("{present} of {n} places carry a check_date ({share}).", { present: fmtNum(cd.present || 0, 0), n: fmtNum(s.n || 0, 0), share: _osmProfileShare(cd.share) }))}</div>`;
+      if (cd.available === false) return out + `<div class="muted">${esc(gone)}</div>`;
+      const rows = OSM_AGE_LABELS.map(([k, lab]) => {
+        const b = (cd.buckets || []).find((x) => x.bucket === k) || { places: 0, share: null };
+        return [t(lab), fmtNum(b.places, 0), _osmProfileShare(b.share)];
+      });
+      rows.push([t("Not a date"), fmtNum(cd.unreadable || 0, 0), _osmProfileShare(s.n ? (cd.unreadable || 0) / s.n : null)]);
+      return out + _osmTrendTable([t("check_date aged"), t("Places"), share], rows);
+    }
+    // One block of per-day (or per-month) series: the chart host, then the full table.
+    function _osmProfileBlock(tab, block, monthly, idx, hostId) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const first = t(monthly ? "Month" : "Day");
+      let head, rows;
+      if (tab === "freshness") {
+        head = [first, ...OSM_FRESH_FIELDS.map(([, lab]) => t(lab))];
+        rows = (block.series || []).map((r) => [ooIsoDate(r.bucket), ...OSM_FRESH_FIELDS.map(([f]) => fmtNum(r[f] || 0, 0))]);
+      } else {
+        const cols = (block.keys || []).flatMap((k) => [[k.key, "gained", "Gained"], [k.key, "lost", "Lost"]]);
+        head = [first, ...cols.map(([k, , lab]) => `${_osmProfileLabel(k)} · ${t(lab)}`)];
+        rows = (block.series || []).map((r) => [ooIsoDate(r.bucket), ...cols.map(([k, d]) => fmtNum((r[d] || {})[k] || 0, 0))]);
+      }
+      return `<div id="${hostId}" data-osm-profile-chart="${idx}" data-osm-profile-month="${monthly ? 1 : 0}"></div>`
+        + `<div class="hint">${esc(osmCompTf("Sum of the counts shown: {n}. A place changed on several days or in several ways is counted each time.", { n: fmtNum(block.n || 0, 0) }))}</div>`
+        + _osmTrendTable(head, rows);
+    }
+    function _osmProfilePicker(tab, block) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (tab === "freshness" || !(block.keys || []).length) return "";
+      const cur = _osmProfileKeys[tab];
+      return `<label class="hint">${esc(t("Show"))} <select data-osm-profile-key>${block.keys.map((k) => `<option value="${esc(k.key)}"${k.key === cur ? " selected" : ""}>${esc(_osmProfileLabel(k.key))}</option>`).join("")}</select></label>`;
+    }
+    function _osmProfileBody(i) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const lane = _osmProfileDone[i] || {}, tab = _osmProfileTab;
+      const d = _osmProfileCache[_osmProfileCacheKey(lane.alpha3, tab)];
+      if (!d) return `<div class="muted">${esc(t("Loading…"))}</div>`;
+      if (d.status !== "ok") return `<div class="muted">${esc(t("This country's trends could not be read."))}</div>`;
+      const v = d.vintage || {}, snap = d.snapshot || {};
+      const extract = v.extract ? ooIsoDate(v.extract) : t("Not recorded");
+      const vint = v.last_diff
+        ? osmCompTf("Counted from the extract of {extract}, with change files applied through {through}.", { extract, through: ooIsoDate(v.last_diff) })
+        : osmCompTf("Counted from the extract of {extract}; no change file has been applied since.", { extract });
+      const now = `<h4 class="lib-sub">${esc(t("Counted now"))}</h4>`
+        + `<div class="hint" title="${esc(t(snap.method || ""))}">${esc(vint)} ${esc(t("Hover for the method."))}</div>`
+        + (tab === "brands" ? _osmProfileSnapBrands(snap) : tab === "channels" ? _osmProfileSnapChannels(snap) : _osmProfileSnapFreshness(snap))
+        + `<div class="card-caveat" style="margin-top:4px">${esc(t(snap.caveat || ""))}</div>`;
+      const ch = d.changes || {};
+      let changes = `<h4 class="lib-sub">${esc(t("What the daily change files changed"))}</h4>`;
+      if (ch.status === "ok") {
+        changes += _osmTrendLead(ch.tracked || {}, true) + _osmProfilePicker(tab, ch)
+          + `<div class="hint" title="${esc(t(ch.method || ""))}">${esc(t("Hover for the method."))}</div>`
+          + _osmProfileBlock(tab, ch, false, i, `osm-profile-${i}-changes`)
+          + `<div class="card-caveat" style="margin-top:4px">${esc(t(ch.caveat || ""))}</div>`;
+      } else if (ch.status === "no-daily-files") {
+        changes += `<div class="muted">${esc(t("No daily change file has been applied to this country yet, so there are no trends to show."))}</div>`;
+      } else {
+        changes += `<div class="muted">${esc(t("Not available: this lane was cut by an older build and lacks the table."))}</div>`;
+      }
+      const p = d.prior || {};
+      let prior = `<h4 class="lib-sub">${esc(t("The planet's past, by month (a separate source, never added to the window above)"))}</h4>`;
+      if (!p.available) {
+        const say = {
+          "no-history-cut": "Not available: the full-history planet has not been read for this country.",
+          "history-cut-unfinished": "Not available: the full-history read for this country did not finish.",
+        }[p.reason] || "Not available: this lane was cut by an older build and lacks the table.";
+        prior += `<div class="muted">${esc(t(say))}</div>`;
+      } else {
+        prior += `<div class="hint" title="${esc(t(p.method || ""))}">${esc(t("Hover for the method."))}</div>`
+          + _osmProfileBlock(tab, p, true, i, `osm-profile-${i}-prior`)
+          + `<div class="card-caveat" style="margin-top:4px">${esc(t(p.caveat || ""))}</div>`;
+      }
+      return now + changes + prior;
+    }
+    function _osmProfileDraw(i) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (typeof ooChart !== "function") return;
+      const tab = _osmProfileTab;
+      const d = _osmProfileCache[_osmProfileCacheKey((_osmProfileDone[i] || {}).alpha3, tab)]; if (!d) return;
+      document.querySelectorAll(`[data-osm-profile-chart="${i}"]`).forEach((host) => {
+        const monthly = host.getAttribute("data-osm-profile-month") === "1";
+        const block = monthly ? d.prior : d.changes; if (!block || !block.series) return;
+        const at = (b) => (monthly ? `${b}-01` : b);
+        const key = _osmProfileKeys[tab];
+        const series = tab === "freshness"
+          ? OSM_FRESH_FIELDS.map(([f, lab]) => ({ label: t(lab), unit: t("places"), points: block.series.map((r) => ({ t: at(r.bucket), v: r[f] || 0 })) }))
+          : [["gained", "Gained"], ["lost", "Lost"]].map(([dir, lab]) => ({
+            label: `${_osmProfileLabel(key)} · ${t(lab)}`, unit: t("places"),
+            points: block.series.map((r) => ({ t: at(r.bucket), v: (r[dir] || {})[key] || 0 })),
+          }));
+        if (series[0].points.length) ooChart(host, series, { height: 200, zeroBase: true });
+      });
+    }
+    function _osmProfileFill(i) {
+      const host = document.querySelector(`[data-osm-profile-body="${i}"]`); if (!host) return;
+      host.innerHTML = _osmProfileBody(i);
+      _osmProfileDraw(i);
+    }
+    function _osmProfileShowTab(key) {
+      _osmProfileTab = key;
+      _osmProfileNavs.forEach((h) => { if (h && h.paint) h.paint(key); });   // every country's tabs agree, with no re-render (it would drop the keyboard focus)
+      for (let i = 0; i < _osmProfileDone.length; i++) _osmProfileFill(i);
+      _osmProfileFetch(_osmProfileSeq);
+    }
+    function _renderOsmProfile() {
+      const host = $("osm-profile-body"); if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      host.innerHTML = _osmProfileDone.map((lane, i) => {
+        const tabs = `<nav class="tabs" data-osm-profile-tabs>${OSM_PROFILE_TABS.map(([k, lab]) => `<button type="button" data-tab="${k}"${k === _osmProfileTab ? ' class="active"' : ""}>${esc(t(lab))}</button>`).join("")}</nav>`;
+        return `<div data-osm-profile-country="${i}"><h3 class="lib-sub">${esc(_osmPickLabel(lane.alpha3, lane.name))}</h3>${tabs}<div data-osm-profile-body="${i}">${_osmProfileBody(i)}</div></div>`;
+      }).join("");
+      // No `initial`: it would fire onSelect. The active button is in the markup.
+      _osmProfileNavs = Array.prototype.map.call(host.querySelectorAll("[data-osm-profile-tabs]"), (nav) => ooSubtabs(nav, _osmProfileShowTab));
+      if (host.getAttribute("data-bound") === "1") return;
+      host.setAttribute("data-bound", "1");
+      // One listener for the host: the bodies are rewritten as their reads arrive, so none is bound to an element inside them.
+      host.addEventListener("change", (ev) => {
+        const sel = ev.target && ev.target.closest ? ev.target.closest("select[data-osm-profile-key]") : null; if (!sel) return;
+        _osmProfileKeys[_osmProfileTab] = sel.value;
+        host.querySelectorAll("select[data-osm-profile-key]").forEach((o) => { o.value = sel.value; });   // one choice, shown the same everywhere
+        for (let i = 0; i < _osmProfileDone.length; i++) _osmProfileDraw(i);
+      });
+      host.addEventListener("click", (ev) => {
+        const btn = ev.target && ev.target.closest ? ev.target.closest("button[data-osm-profile-more]") : null; if (!btn) return;
+        _osmProfileLimit = Math.min(_osmProfileLimit * 4, OSM_PROFILE_MAX);
+        for (let i = 0; i < _osmProfileDone.length; i++) _osmProfileFill(i);
+        _osmProfileFetch(_osmProfileSeq);
+      });
     }
     function _osmCompSchedulePoll() {
       if (_osmCompPoll) return;

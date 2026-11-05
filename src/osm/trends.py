@@ -112,13 +112,17 @@ def _obj(t):
     return func.count(func.distinct(t.c.osm_type + cast(t.c.osm_id, String)))
 
 
-def _adoption_parts(t):
-    """``(base-key expression, direction expression, the keys read)`` over a table with ``key``, ``change``, ``old_value``, ``new_value``."""
+def _default_groups() -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """Analytic 1's four types as ``(name, the keys that count as it)``: the tag, and its ``contact:*`` twin where it has one."""
+    return tuple((k, (k, f"contact:{tw}") if tw else (k,)) for k, tw in _keys())
+
+
+def _adoption_parts(t, groups: tuple[tuple[str, tuple[str, ...]], ...] | None = None):
+    """``(group-name expression, direction expression, the keys read)`` over a table with ``key``, ``change``, ``old_value``, ``new_value``."""
     from sqlalchemy import and_, case, or_
 
-    keys = _keys()
-    twins = [(f"contact:{tw}", k) for k, tw in keys if tw]
-    base = case(*[(t.c.key == twin, k) for twin, k in twins], else_=t.c.key)
+    groups = groups or _default_groups()
+    base = case(*[(t.c.key == k, name) for name, ks in groups for k in ks], else_=t.c.key)
     gained = or_(
         and_(t.c.change == "added", t.c.new_value != ""),
         and_(t.c.change == "modified", t.c.old_value == "", t.c.new_value != ""),
@@ -128,15 +132,15 @@ def _adoption_parts(t):
         and_(t.c.change == "modified", t.c.old_value != "", t.c.new_value == ""),
     )
     direction = case((gained, "gained"), (lost, "lost"))
-    return base, direction, [k for k, _ in keys] + [twin for twin, _ in twins]
+    return base, direction, [k for _, ks in groups for k in ks]
 
 
-def _adoption_rows(s, t, bucket, *where):
+def _adoption_rows(s, t, bucket, *where, groups: tuple[tuple[str, tuple[str, ...]], ...] | None = None):
     """``(bucket, base key, direction, places)`` rows. A place that both gains and loses the same tag in one bucket is a net zero
     (a tag moved to its ``contact:*`` twin) and counts as neither."""
     from sqlalchemy import String, cast, func, select
 
-    base, direction, keys = _adoption_parts(t)
+    base, direction, keys = _adoption_parts(t, groups)
     per_place = (
         select(
             bucket.label("b"),
@@ -181,6 +185,18 @@ def _adoption_series(rows, buckets: list[str]) -> dict[str, Any]:
     return {"keys": [{"key": k, "twin": f"contact:{tw}" if tw else None} for k, tw in _keys()], "series": _series(by, buckets), "n": total}
 
 
+def _group_series(rows, buckets: list[str], groups: tuple[tuple[str, tuple[str, ...]], ...]) -> dict[str, Any]:
+    """``_adoption_series`` for groups of keys of the caller's choosing: ``key`` is the group's name, ``reads`` the tag keys counted as it."""
+    names = [name for name, _ in groups]
+    by: dict[str, dict[str, Any]] = {b: {"gained": dict.fromkeys(names, 0), "lost": dict.fromkeys(names, 0)} for b in buckets}
+    total = 0
+    for bucket, base, direction, n in rows:
+        if bucket in by and base in names and direction in ("gained", "lost"):
+            by[bucket][direction][base] = int(n)
+            total += int(n)
+    return {"keys": [{"key": name, "reads": list(ks)} for name, ks in groups], "series": _series(by, buckets), "n": total}
+
+
 _OPENING_FIELDS = ("created", "deleted", "left_class", *SIGNALS)
 _PRIOR_OPENING_FIELDS = ("created", "deleted", *SIGNALS)
 
@@ -195,13 +211,49 @@ def _openings_series(rows, buckets: list[str], fields: tuple[str, ...] = _OPENIN
     return {"fields": list(fields), "series": _series(by, buckets), "n": total}
 
 
+def _window(s, alpha3: str, have: set[str]) -> dict[str, Any]:
+    """The window this machine observed for one country: ``state`` is ``ok`` (with ``tracked`` and ``days``), ``no-daily-files`` or ``old-lane``."""
+    from sqlalchemy import select
+
+    from src.osm.apply import FEED_PREFIX
+    from src.osm.lane_models import OsmDiffRun, OsmTagChange
+    from src.versioned.models import VersionedGap
+
+    missing = [m.__tablename__ for m in (OsmDiffRun, OsmTagChange) if m.__tablename__ not in have]
+    if missing:
+        return {"state": "old-lane", "missing": missing}
+    runs = [r[0] for r in s.execute(select(OsmDiffRun.diff_timestamp).where(OsmDiffRun.alpha3 == alpha3, OsmDiffRun.diff_timestamp.is_not(None))) if r[0] is not None]
+    if not runs:
+        return {"state": "no-daily-files"}
+    days = sorted({r.date().isoformat() for r in runs})
+    tracked: dict[str, Any] = {
+        "since": _iso(min(runs)),
+        "through": _iso(max(runs)),
+        "files": len(runs),
+        "days": days,
+        "unobserved": [],
+    }
+    if VersionedGap.__tablename__ in have:
+        for g in s.query(VersionedGap).filter(VersionedGap.feed == f"{FEED_PREFIX}{alpha3}").order_by(VersionedGap.detected_at):
+            tracked["unobserved"].append(
+                {
+                    "kind": "rebaseline" if g.reason == "retention" else "hand_recut" if g.reason == "budget" else "other",
+                    "from_time": _iso(g.from_time),
+                    "to_time": _iso(g.to_time),
+                    "detected_at": _iso(g.detected_at),
+                }
+            )
+    else:
+        tracked["unobserved"] = None
+        tracked["unobserved_reason"] = _OLD_LANE
+    return {"state": "ok", "tracked": tracked, "days": days}
+
+
 def _build(alpha3: str) -> dict[str, Any]:
     from sqlalchemy import func, inspect, select
 
-    from src.osm.apply import FEED_PREFIX
-    from src.osm.lane_models import OsmCountry, OsmDiffRun, OsmTagChange
+    from src.osm.lane_models import OsmCountry, OsmTagChange
     from src.versioned import store
-    from src.versioned.models import VersionedGap
 
     if not store.lane_exists("osm"):
         return {"status": "lane-never-run", "country": alpha3}
@@ -211,33 +263,12 @@ def _build(alpha3: str) -> dict[str, Any]:
         country = s.query(OsmCountry).filter_by(alpha3=alpha3).one_or_none()
         if country is None or country.status != "complete":
             return {"status": "not-cut", "country": alpha3}
-        missing = [m.__tablename__ for m in (OsmDiffRun, OsmTagChange) if m.__tablename__ not in have]
-        if missing:
-            return {"status": "old-lane", "country": alpha3, "reason": _OLD_LANE, "missing": missing}
-        runs = [r[0] for r in s.execute(select(OsmDiffRun.diff_timestamp).where(OsmDiffRun.alpha3 == alpha3, OsmDiffRun.diff_timestamp.is_not(None))) if r[0] is not None]
-        if not runs:
+        w = _window(s, alpha3, have)
+        if w["state"] == "old-lane":
+            return {"status": "old-lane", "country": alpha3, "reason": _OLD_LANE, "missing": w["missing"]}
+        if w["state"] == "no-daily-files":
             return {"status": "no-daily-files", "country": alpha3, "prior": _prior(s, alpha3, have)}
-        days = sorted({r.date().isoformat() for r in runs})
-        tracked: dict[str, Any] = {
-            "since": _iso(min(runs)),
-            "through": _iso(max(runs)),
-            "files": len(runs),
-            "days": days,
-            "unobserved": [],
-        }
-        if VersionedGap.__tablename__ in have:
-            for g in s.query(VersionedGap).filter(VersionedGap.feed == f"{FEED_PREFIX}{alpha3}").order_by(VersionedGap.detected_at):
-                tracked["unobserved"].append(
-                    {
-                        "kind": "rebaseline" if g.reason == "retention" else "hand_recut" if g.reason == "budget" else "other",
-                        "from_time": _iso(g.from_time),
-                        "to_time": _iso(g.to_time),
-                        "detected_at": _iso(g.detected_at),
-                    }
-                )
-        else:
-            tracked["unobserved"] = None
-            tracked["unobserved_reason"] = _OLD_LANE
+        tracked, days = w["tracked"], w["days"]
         own = tc.c.country_alpha3 == alpha3
         stamped = tc.c.diff_timestamp.is_not(None)
         day = _day(tc.c.diff_timestamp)
@@ -264,27 +295,30 @@ def _build(alpha3: str) -> dict[str, Any]:
     }
 
 
-def _prior(s, alpha3: str, have: set[str]) -> dict[str, Any]:
-    """The planet's past for this country, by month, from ``osm_history_changes``; ``available: False`` with the reason when it was not read."""
-    from sqlalchemy import select
-
+def _prior_cut(s, alpha3: str, have: set[str]) -> tuple[Any, dict[str, Any] | None]:
+    """``(the finished history cut, None)``, or ``(None, the "not available" answer with its reason)``."""
     from src.osm.lane_models import OsmHistoryChange, OsmHistoryCut
 
     if OsmHistoryCut.__tablename__ not in have or OsmHistoryChange.__tablename__ not in have:
-        return {"available": False, "reason": "no-history-table", "detail": _OLD_LANE}
+        return None, {"available": False, "reason": "no-history-table", "detail": _OLD_LANE}
     cut = s.query(OsmHistoryCut).filter_by(alpha3=alpha3).one_or_none()
     if cut is None:
-        return {"available": False, "reason": "no-history-cut", "detail": "the full-history planet has not been read for this country"}
+        return None, {"available": False, "reason": "no-history-cut", "detail": "the full-history planet has not been read for this country"}
     if cut.status != "complete":
-        return {"available": False, "reason": "history-cut-unfinished", "detail": "the full-history read for this country did not finish"}
+        return None, {"available": False, "reason": "history-cut-unfinished", "detail": "the full-history read for this country did not finish"}
+    return cut, None
+
+
+def _history_scope(alpha3: str):
+    """``(history table, month expression, the where-clauses of a key-level row that is a real change)``: THE rule of the planet's prior,
+    read by every surface that has one."""
     from sqlalchemy import exists
 
+    from src.osm.lane_models import OsmHistoryChange
+
     h = OsmHistoryChange.__table__
-    own = h.c.country_alpha3 == alpha3
     month = _month(h.c.version_timestamp)
-    stamped = h.c.version_timestamp.is_not(None)
     not_first = (h.c.object_version.is_(None)) | (h.c.object_version != 1)
-    key_level = h.c.key.is_not(None)
     # The key rows of a version that created, deleted or restored the object are that event's own, counted under openings and closures:
     # history.py writes a per-key row for every key of such a version, and they are not adoption or closure signals.
     e = h.alias("e")
@@ -296,15 +330,24 @@ def _prior(s, alpha3: str, have: set[str]) -> dict[str, Any]:
         e.c.version_timestamp.is_not_distinct_from(h.c.version_timestamp),
         e.c.key.is_(None),
     )
-    adoption_rows = _adoption_rows(s, h, month, own, stamped, not_first, key_level, ~event_version)
+    return h, month, [h.c.country_alpha3 == alpha3, h.c.version_timestamp.is_not(None), h.c.key.is_not(None), not_first, ~event_version]
+
+
+def _prior(s, alpha3: str, have: set[str]) -> dict[str, Any]:
+    """The planet's past for this country, by month, from ``osm_history_changes``; ``available: False`` with the reason when it was not read."""
+    from sqlalchemy import select
+
+    cut, why = _prior_cut(s, alpha3, have)
+    if cut is None:
+        return why or {"available": False}
+    h, month, where = _history_scope(alpha3)
+    adoption_rows = _adoption_rows(s, h, month, *where)
     sig = _signal(h)
-    signal_rows = s.execute(
-        select(month, sig, _obj(h)).where(own, stamped, key_level, not_first, ~event_version, sig.is_not(None)).group_by(month, sig)
-    ).all()
+    signal_rows = s.execute(select(month, sig, _obj(h)).where(*where, sig.is_not(None)).group_by(month, sig)).all()
     # Object-level rows: created / deleted (restored is its own fact and not a closure or an opening here).
     event_rows = s.execute(
         select(month, h.c.change, _obj(h))
-        .where(own, h.c.key.is_(None), h.c.change.in_(("created", "deleted")), stamped)
+        .where(h.c.country_alpha3 == alpha3, h.c.key.is_(None), h.c.change.in_(("created", "deleted")), h.c.version_timestamp.is_not(None))
         .group_by(month, h.c.change)
     ).all()
     buckets = sorted({r[0] for r in adoption_rows} | {r[0] for r in signal_rows} | {r[0] for r in event_rows})

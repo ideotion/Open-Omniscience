@@ -44,7 +44,7 @@ function extractConst(name, end) {
   return APP.slice(at, APP.indexOf(stop, at) + stop.length - 1);
 }
 
-const FUNCS = ["_osmTrendLabel", "_osmTrendFields", "_osmTrendTable", "_osmTrendBlock", "_osmTrendCountry", "_osmTrendPrior", "_osmTrendDrawAll", "_osmTrendShowTab"];
+const FUNCS = ["_osmTrendLabel", "_osmTrendFields", "_osmTrendTable", "_osmTrendBlock", "_osmTrendLead", "_osmTrendCountry", "_osmTrendPrior", "_osmTrendDrawAll", "_osmTrendShowTab"];
 const src =
   extractConst("esc") + "\n" +
   "var window = {};\n" +

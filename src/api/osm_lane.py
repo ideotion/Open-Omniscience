@@ -90,6 +90,25 @@ def country_trends(code: str) -> dict:
     return trends(a3)
 
 
+@router.get("/countries/{code}/profile/{surface}")
+def country_profile(code: str, surface: str, limit: int = 100) -> dict:
+    """Trend surfaces 4 to 6 for one cut country (alpha-2 or alpha-3): ``brands``, ``channels`` or ``freshness``.
+
+    Read-only, local, no request. The snapshot, the tracked window and the planet's prior are separate keys and are never summed.
+    ``limit`` is how many ranked brands to return (the answer states how many exist).
+    """
+    from src.osm.ingest import country_codes
+    from src.osm.profile import SURFACES, profile
+
+    if surface not in SURFACES:
+        raise HTTPException(status_code=400, detail=f"surface must be one of {', '.join(SURFACES)}")
+    try:
+        _a2, a3 = country_codes(code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
+    return profile(a3, surface, limit)
+
+
 @router.post("/countries/{code}/admin1")
 def count_admin1(code: str) -> dict:
     """Count analytic 1 per admin-1 region, on a thread of its own (local work, no request).
