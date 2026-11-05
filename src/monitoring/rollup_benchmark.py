@@ -139,10 +139,11 @@ def _marker_progress(stage: str, rows_done: int) -> None:
 
 
 def _run_built(session: Session, repeats: int, columnar, snap: dict) -> dict:
+    from src.analytics import rollup_serve
+
     # -- corpus context (so the numbers are interpretable) ------------------------------- #
     from sqlalchemy import func
 
-    from src.analytics import rollup_serve
     from src.database.models import Article, Keyword
 
     corpus = {
