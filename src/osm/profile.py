@@ -403,16 +403,16 @@ def _prior(s, alpha3: str, surface: str, have: set[str]) -> dict[str, Any]:
         return why or {"available": False}
     import json
 
-    h, month, where = _history_scope(alpha3)
-    if surface == "freshness":
-        rows = _freshness_rows(s, h, month, *where)
-        buckets = sorted({r[0] for r in rows})
-        series = _freshness_series(rows, buckets)
-    else:
-        groups = _groups_for(surface)
-        rows = _adoption_rows(s, h, month, *where, groups=groups)
-        buckets = sorted({r[0] for r in rows})
-        series = _group_series(rows, buckets, groups)
+    with _history_scope(s, alpha3) as (h, month, where):
+        if surface == "freshness":
+            rows = _freshness_rows(s, h, month, *where)
+            buckets = sorted({r[0] for r in rows})
+            series = _freshness_series(rows, buckets)
+        else:
+            groups = _groups_for(surface)
+            rows = _adoption_rows(s, h, month, *where, groups=groups)
+            buckets = sorted({r[0] for r in rows})
+            series = _group_series(rows, buckets, groups)
     return {
         "available": True,
         "bucket": "month",

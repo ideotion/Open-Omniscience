@@ -109,6 +109,17 @@ def country_profile(code: str, surface: str, limit: int = 100) -> dict:
     return profile(a3, surface, limit)
 
 
+@router.get("/geography")
+def geography() -> dict:
+    """The geography axis at country level: every cut country with its counts for each measure and its own vintage.
+
+    Read-only, local, no request. Admin-1 values travel with each country's completeness (``/countries/{code}/completeness``).
+    """
+    from src.osm.geography import countries_view
+
+    return countries_view()
+
+
 @router.post("/countries/{code}/admin1")
 def count_admin1(code: str) -> dict:
     """Count analytic 1 per admin-1 region, on a thread of its own (local work, no request).

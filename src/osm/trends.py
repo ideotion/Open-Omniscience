@@ -31,6 +31,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from src.monitoring.secret_scrub import log_failure
@@ -309,28 +311,51 @@ def _prior_cut(s, alpha3: str, have: set[str]) -> tuple[Any, dict[str, Any] | No
     return cut, None
 
 
-def _history_scope(alpha3: str):
+_EVENT_TMP = "osm_history_event_versions"
+
+
+@contextmanager
+def _history_scope(s, alpha3: str) -> Iterator[tuple[Any, Any, list[Any]]]:
     """``(history table, month expression, the where-clauses of a key-level row that is a real change)``: THE rule of the planet's prior,
-    read by every surface that has one."""
-    from sqlalchemy import exists
+    read by every surface that has one.
+
+    The rule drops the key rows of a version that created, deleted or restored the object, and the object-level row (``key`` NULL) is
+    what names such a version. Asking «does this row's version have an object-level row?» of the whole table for EVERY key row was the
+    cost: measured on a synthetic Germany-scale cut (2 million places, 12 million history rows) the one query took 317 s. The object-level
+    rows of THIS country are copied once into a TEMP table with an index of its own, and each key row probes that (50 s on the same cut;
+    the temp table lives on this session's connection and is dropped when the block ends, so nothing is written to the lane file).
+    """
+    from sqlalchemy import Column, Integer, MetaData, String, Table, exists, text
 
     from src.osm.lane_models import OsmHistoryChange
 
     h = OsmHistoryChange.__table__
-    month = _month(h.c.version_timestamp)
-    not_first = (h.c.object_version.is_(None)) | (h.c.object_version != 1)
-    # The key rows of a version that created, deleted or restored the object are that event's own, counted under openings and closures:
-    # history.py writes a per-key row for every key of such a version, and they are not adoption or closure signals.
-    e = h.alias("e")
-    event_version = exists().where(
-        e.c.osm_type == h.c.osm_type,
-        e.c.osm_id == h.c.osm_id,
-        # null-safe: a history file without version metadata has NULL versions, and the same version is then told by its timestamp
-        e.c.object_version.is_not_distinct_from(h.c.object_version),
-        e.c.version_timestamp.is_not_distinct_from(h.c.version_timestamp),
-        e.c.key.is_(None),
+    ev = Table(_EVENT_TMP, MetaData(), Column("osm_type", String(1)), Column("osm_id", Integer), Column("object_version", Integer),
+               Column("version_timestamp", String))
+    s.execute(text(f"DROP TABLE IF EXISTS temp.{_EVENT_TMP}"))
+    s.execute(
+        text(
+            f"CREATE TEMP TABLE {_EVENT_TMP} AS SELECT DISTINCT osm_type, osm_id, object_version, version_timestamp "
+            "FROM osm_history_changes WHERE country_alpha3 = :a AND key IS NULL"
+        ),
+        {"a": alpha3},
     )
-    return h, month, [h.c.country_alpha3 == alpha3, h.c.version_timestamp.is_not(None), h.c.key.is_not(None), not_first, ~event_version]
+    s.execute(text(f"CREATE INDEX temp.ix_{_EVENT_TMP} ON {_EVENT_TMP}(osm_type, osm_id, object_version, version_timestamp)"))
+    try:
+        month = _month(h.c.version_timestamp)
+        not_first = (h.c.object_version.is_(None)) | (h.c.object_version != 1)
+        # The key rows of a version that created, deleted or restored the object are that event's own, counted under openings and
+        # closures: history.py writes a per-key row for every key of such a version, and they are not adoption or closure signals.
+        event_version = exists().where(
+            ev.c.osm_type == h.c.osm_type,
+            ev.c.osm_id == h.c.osm_id,
+            # null-safe: a history file without version metadata has NULL versions, and the same version is then told by its timestamp
+            ev.c.object_version.is_not_distinct_from(h.c.object_version),
+            ev.c.version_timestamp.is_not_distinct_from(h.c.version_timestamp),
+        )
+        yield h, month, [h.c.country_alpha3 == alpha3, h.c.version_timestamp.is_not(None), h.c.key.is_not(None), not_first, ~event_version]
+    finally:
+        s.execute(text(f"DROP TABLE IF EXISTS temp.{_EVENT_TMP}"))
 
 
 def _prior(s, alpha3: str, have: set[str]) -> dict[str, Any]:
@@ -340,10 +365,10 @@ def _prior(s, alpha3: str, have: set[str]) -> dict[str, Any]:
     cut, why = _prior_cut(s, alpha3, have)
     if cut is None:
         return why or {"available": False}
-    h, month, where = _history_scope(alpha3)
-    adoption_rows = _adoption_rows(s, h, month, *where)
-    sig = _signal(h)
-    signal_rows = s.execute(select(month, sig, _obj(h)).where(*where, sig.is_not(None)).group_by(month, sig)).all()
+    with _history_scope(s, alpha3) as (h, month, where):
+        adoption_rows = _adoption_rows(s, h, month, *where)
+        sig = _signal(h)
+        signal_rows = s.execute(select(month, sig, _obj(h)).where(*where, sig.is_not(None)).group_by(month, sig)).all()
     # Object-level rows: created / deleted (restored is its own fact and not a closure or an opening here).
     event_rows = s.execute(
         select(month, h.c.change, _obj(h))

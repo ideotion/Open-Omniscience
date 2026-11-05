@@ -3303,7 +3303,7 @@
       let lane = null;
       try { lane = await api("/api/osm/lane"); } catch (e) { sec.hidden = true; return; }
       const done = ((lane || {}).countries || []).filter((c) => c.status === "complete");
-      if (!done.length) { sec.hidden = true; _osmComp = null; _osmGeoShow([]); loadOsmTrends([]); loadOsmProfile([]); return; }
+      if (!done.length) { sec.hidden = true; _osmComp = null; _osmGeoShow([]); loadOsmTrends([]); loadOsmProfile([]); loadOsmGeography([]); return; }
       await _osmLoadUpdates();
       const out = [];
       for (const c of done) {
@@ -3316,6 +3316,7 @@
       _osmGeoShow(done);
       if (!(opts && opts.poll)) loadOsmTrends(done);   // not awaited: the figures above must not wait on it; the 2 s count poll leaves the trends alone
       if (!(opts && opts.poll)) loadOsmProfile(done);   // likewise, and each surface is read when its tab opens
+      if (!(opts && opts.poll)) loadOsmGeography(done); else _osmGeogRepaint(done);   // a finished region count reaches the map without reading the countries again
       if (_osmUpdLive()) _osmUpdSchedulePoll();
     }
     // -- The daily change files (v0.6.0 B1, the job and consent layer) ----------------------- //
@@ -3406,22 +3407,23 @@
     function osmCompTf(s, v) {
       return (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k]));
     }
+    const OSM_ADMIN1_SAY = {
+      "no-admin1-file": "Per region: the region outlines are not built on this install, so no region is counted.",
+      "no-regions": "Per region: the region outlines hold no region of this country.",
+      "not-counted": "Per region: not counted yet. Counting reads every place once, on this machine.",
+      stale: "Per region: counted from an earlier read of the data or of the outlines, so the figures below are not shown.",
+      interrupted: "Per region: the count stopped before it finished (the app was closed).",
+      failed: "Per region: the count failed.",
+      counting: "Per region: counting…",
+      unreadable: "Per region: the count could not be read.",
+    };
     // The element id of a country's per-region map: a stored code as an id, never on a screen.
     function _osmCompMapId(c) { return "osm-comp-map-" + c.country; }
     function _osmCompAdmin1(c) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const a = c.admin1 || {};
       const btn = (label) => `<button type="button" class="tiny secondary" data-on-click="osmCountAdmin1(${esc(JSON.stringify(c.country))})">${esc(t(label))}</button>`;
-      const say = {
-        "no-admin1-file": "Per region: the region outlines are not built on this install, so no region is counted.",
-        "no-regions": "Per region: the region outlines hold no region of this country.",
-        "not-counted": "Per region: not counted yet. Counting reads every place once, on this machine.",
-        stale: "Per region: counted from an earlier read of the data or of the outlines, so the figures below are not shown.",
-        interrupted: "Per region: the count stopped before it finished (the app was closed).",
-        failed: "Per region: the count failed.",
-        counting: "Per region: counting…",
-        unreadable: "Per region: the count could not be read.",
-      }[a.status];
+      const say = OSM_ADMIN1_SAY[a.status];
       if (a.status !== "complete") {
         const again = { "not-counted": "Count per region", stale: "Count again", interrupted: "Count again", failed: "Count again" }[a.status];
         if (a.status === "counting") _osmCompSchedulePoll();
@@ -3872,6 +3874,154 @@
       }
       loadOsmCompleteness();
     }
+
+    // -- The geography axis (v0.6.0 B3c, S06-01 S4, Q816 = a) ----------------------------------- //
+    // One choropleth over the ONE map component (ooMap, Equal Earth through project(lon, lat)): by country, or by the
+    // admin-1 regions of one country. The colour is a COUNT of places (or the share of the area's own places, offered
+    // beside it because a large area is darker only for being large); the ranked table ooMap draws beside the map holds
+    // every value, uncapped, and the map is a picture of it. No score, no threshold, no coverage bar. Each map states its
+    // vintage: the extract's date and the newest daily change file applied, per country. An area with no figure (a measure
+    // that needs a date the country does not state, a window nobody observed, a split counted before the measure existed)
+    // is hatched as «no data» by ooMap and explained below the map -- never drawn as zero.
+    const OSM_GEOG_MEASURES = [
+      ["places", "Places with metadata"], ["brand", "Places carrying a brand tag"], ["checked", "Places carrying a check_date"],
+      ["edited_1y", "Places last edited within a year of the vintage"], ["changed", "Places with a tag changed in the window observed here"],
+    ];
+    let _osmGeog = null, _osmGeogLevel = "countries", _osmGeogMeasure = "places", _osmGeogForm = "count", _osmGeogSeq = 0;
+    async function loadOsmGeography(done) {
+      const sec = $("osm-geography"); if (!sec) return;
+      const seq = ++_osmGeogSeq;   // a slower, older read must not overwrite a newer one
+      if (!done || !done.length) { sec.hidden = true; _osmGeog = null; return; }
+      sec.hidden = false;
+      let d;
+      try { d = await api("/api/osm/geography"); } catch (e) { d = { status: "unreadable" }; }
+      if (seq !== _osmGeogSeq) return;
+      _osmGeog = d;
+      _renderOsmGeography(done);
+    }
+    function _osmGeogRepaint(done) { if (_osmGeog) _renderOsmGeography(done); }
+    function _osmGeogVintage(name, v) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const extract = v && v.extract ? ooIsoDate(v.extract) : t("Not recorded");
+      const sentence = v && v.last_diff
+        ? osmCompTf("Counted from the extract of {extract}, with change files applied through {through}.", { extract, through: ooIsoDate(v.last_diff) })
+        : osmCompTf("Counted from the extract of {extract}; no change file has been applied since.", { extract });
+      return `${name}: ${sentence}`;
+    }
+    function _osmGeogShare(raw, n) { return n > 0 ? `${fmtNum(raw / n * 100, 1)} %` : "—"; }
+    // The figures of the level in view: {rows: [{key, name, raw, n}], absent: [{name, why}], vintage: [sentence], note}.
+    function _osmGeogFigures(done) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const m = _osmGeogMeasure, out = { rows: [], absent: [], vintage: [], note: "" };
+      if (_osmGeogLevel === "countries") {
+        for (const a of (_osmGeog.areas || [])) {
+          const name = _osmPickLabel(a.alpha3, a.name);
+          out.vintage.push(_osmGeogVintage(name, a.vintage));
+          const raw = (a.values || {})[m];
+          if (raw == null) out.absent.push({ name, why: (a.reasons || {})[m] || "" });
+          else out.rows.push({ key: (a.alpha2 || "").toLowerCase(), name, raw, n: a.n });
+        }
+        if ((_osmGeog.not_cut || []).length) out.note = osmCompTf("Not drawn, because their cut did not finish: {names}.", { names: _osmGeog.not_cut.join(", ") });
+        return out;
+      }
+      const c = (_osmComp || []).find((x) => x.country === _osmGeogLevel);
+      const lane = (done || []).find((x) => x.alpha3 === _osmGeogLevel);
+      if (!c || !lane) return out;
+      const cname = _osmPickLabel(lane.alpha3, lane.name);
+      out.vintage.push(_osmGeogVintage(cname, { extract: lane.vintage, last_diff: lane.diff_timestamp }));
+      const a = c.admin1 || {};
+      if (m === "changed") { out.note = t("A change row records the country a place was in, not its region, so this measure is drawn by country only."); return out; }
+      if (a.status !== "complete") { out.status = a.status || "unreadable"; return out; }
+      for (const r of a.regions || []) {
+        const name = _osmAdmin1Label(r);
+        const raw = r.n == null ? null : (m === "places" ? r.n : (r.measures ? r.measures[m] : null));
+        if (raw == null) out.absent.push({ name, why: r.n != null && !r.measures ? "recount" : "" });
+        else out.rows.push({ key: r.key, name, raw, n: r.n });
+      }
+      return out;
+    }
+    function _osmAdmin1Label(r) {
+      const lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+      return (r.names && r.names[lang]) || r.name || r.key;
+    }
+    async function _osmGeogDraw(done) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const out = document.querySelector("[data-osm-geog-out]"); if (!out || !_osmGeog) return;
+      const m = _osmGeogMeasure, share = _osmGeogForm === "share" && m !== "places";
+      const f = _osmGeogFigures(done);
+      const lab = t((OSM_GEOG_MEASURES.find(([k]) => k === m) || ["", ""])[1]);
+      const label = share ? `${lab} · ${t("Share of the area's places")}` : lab;
+      const vintage = f.vintage.map((v) => `<div class="hint" data-osm-geog-vintage>${esc(v)}</div>`).join("");
+      let notes = "";
+      if (f.status) {
+        const again = { "not-counted": "Count per region", stale: "Count again", interrupted: "Count again", failed: "Count again" }[f.status];
+        const btn = again ? ` <button type="button" class="tiny secondary" data-on-click="osmCountAdmin1(${esc(JSON.stringify(_osmGeogLevel))})">${esc(t(again))}</button>` : "";
+        notes += `<div class="hint">${esc(t(OSM_ADMIN1_SAY[f.status] || OSM_ADMIN1_SAY.unreadable))}${btn}</div>`;
+      }
+      if (f.note) notes += `<div class="hint">${esc(f.note)}</div>`;
+      const why = { "no-reference": "Not available: neither the extract nor a change file states a date to measure the ages from.",
+        "no-daily-files": "No daily change file has been applied to this country yet.", "old-lane": "This country's trends could not be read.",
+        recount: "Counted before this measure existed: count the regions again to add it.",
+        "no-places": "No places were counted here, so there is no share." };
+      const detail = {}, values = {};
+      for (const r of f.rows) {
+        const v = share ? (r.n > 0 ? r.raw / r.n * 100 : null) : r.raw;
+        if (v == null) { f.absent.push({ name: r.name, why: "no-places" }); continue; }   // a share of no places is no figure, not 0 %
+        values[r.key] = v;
+        detail[r.key] = r;
+      }
+      const lines = f.absent.map((x) => `${x.name}: ${t(why[x.why] || "Not recorded")}`);
+      if (lines.length) notes += `<div class="hint" data-osm-geog-absent>${lines.map(esc).join("<br>")}</div>`;
+      out.innerHTML = `${vintage}${notes}<div data-osm-geog-map style="margin-top:6px"></div>`
+        + `<div class="card-caveat" style="margin-top:4px">${esc(t(_osmGeog.caveat || ""))}</div>`;
+      const host = out.querySelector("[data-osm-geog-map]");
+      if (f.status || (_osmGeogLevel !== "countries" && m === "changed") || !Object.keys(values).length) return;
+      const valueLabel = (key, v) => {
+        const r = detail[key]; if (!r) return `${fmtNum(v, 1)}`;
+        return m === "places" ? `${fmtNum(r.raw, 0)} ${t("places")}`
+          : osmCompTf("{count} of {n} places ({share})", { count: fmtNum(r.raw, 0), n: fmtNum(r.n, 0), share: _osmGeogShare(r.raw, r.n) });
+      };
+      const common = { unit: share ? "%" : "", label, aria: label, method: t(_osmGeog.method || ""), valueLabel };   // the caveat is the panel's own line above: said once, whether or not a map is drawn
+      if (_osmGeogLevel === "countries") await ooMap(host, Object.assign({ values }, common));
+      else await ooMap(host, Object.assign({ regionValues: values }, common));
+    }
+    function _renderOsmGeography(done) {
+      const host = $("osm-geography-body"); if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!_osmGeog || _osmGeog.status !== "ok") {
+        host.innerHTML = `<div class="muted">${esc(t("This country's trends could not be read."))}</div>`;
+        return;
+      }
+      if (_osmGeogLevel !== "countries" && !(done || []).some((c) => c.alpha3 === _osmGeogLevel)) _osmGeogLevel = "countries";
+      const levelOpts = [`<option value="countries"${_osmGeogLevel === "countries" ? " selected" : ""}>${esc(t("Countries"))}</option>`]
+        .concat((done || []).map((c) => `<option value="${esc(c.alpha3)}"${_osmGeogLevel === c.alpha3 ? " selected" : ""}>${esc(osmCompTf("Regions of {country}", { country: _osmPickLabel(c.alpha3, c.name) }))}</option>`)).join("");
+      const measureOpts = OSM_GEOG_MEASURES.map(([k, lab]) => `<option value="${k}"${k === _osmGeogMeasure ? " selected" : ""}>${esc(t(lab))}</option>`).join("");
+      const formOpts = [["count", "Number of places"], ["share", "Share of the area's places"]]
+        .map(([k, lab]) => `<option value="${k}"${k === _osmGeogForm ? " selected" : ""}>${esc(t(lab))}</option>`).join("");
+      host.innerHTML = `<div class="hint" title="${esc(t(_osmGeog.method || ""))}">${esc(t("The colour is the number in the ranked table beside the map. Nothing is capped and nothing is scored."))}</div>`
+        + `<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px">`
+        + `<label>${esc(t("Map by"))} <select data-osm-geog="level">${levelOpts}</select></label>`
+        + `<label>${esc(t("Measure"))} <select data-osm-geog="measure">${measureOpts}</select></label>`
+        + `<label>${esc(t("Show"))} <select data-osm-geog="form"${_osmGeogMeasure === "places" ? " disabled" : ""}>${formOpts}</select></label></div>`
+        + `<div data-osm-geog-out></div>`;
+      if (host.getAttribute("data-bound") !== "1") {
+        host.setAttribute("data-bound", "1");
+        // One listener for the host: the controls are rewritten with each render, so none is bound to an element inside it.
+        host.addEventListener("change", (ev) => {
+          const sel = ev.target && ev.target.closest ? ev.target.closest("select[data-osm-geog]") : null; if (!sel) return;
+          const which = sel.getAttribute("data-osm-geog");
+          if (which === "level") _osmGeogLevel = sel.value;
+          else if (which === "measure") _osmGeogMeasure = sel.value;
+          else _osmGeogForm = sel.value;
+          const form = host.querySelector('select[data-osm-geog="form"]');
+          if (form) form.disabled = _osmGeogMeasure === "places";   // the share of «all the places» is always 100 %
+          _osmGeogDraw(_osmGeogDone);
+        });
+      }
+      _osmGeogDone = done;
+      _osmGeogDraw(done);
+    }
+    let _osmGeogDone = [];
 
     // -- The local geocoder (S05-04 S5, Q820) --------------------------------------------- //
     // Over the addresses of the OSM countries read, nothing else: every word typed must be in
