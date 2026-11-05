@@ -204,3 +204,56 @@ def test_an_older_lane_file_gets_the_two_new_columns_and_keeps_its_rows(tmp_path
     with engine.connect() as conn:
         assert conn.execute(sa.text("SELECT country_alpha3, object_event FROM osm_tag_changes")).all() == [(None, None)], "no backfill: old rows say NULL"
     engine.dispose()
+
+
+def test_a_node_and_a_relation_that_stop_qualifying_write_left_class_rows(cut, osm_lane_dir):
+    day = (
+        # node 6 (a bakery) keeps its name and phone but loses the shop tag and the contact email, so it is no longer a kept class
+        '<modify><node id="6" version="4" timestamp="2025-01-12T01:00:00Z" lat="0.5" lon="0.5"><tag k="name" v="Fixture Bakery"/><tag k="phone" v="+000 0000 0002"/></node>'
+        # relation 101 loses its tourism tag
+        '<relation id="101" version="4" timestamp="2025-01-12T01:00:00Z"><member type="way" ref="13" role="outer"/>'
+        '<tag k="type" v="site"/><tag k="name" v="Fixture Estate"/></relation></modify>'
+    )
+    counts = _run(osm_lane_dir, day)
+    assert counts["left_class"] == 2 and counts["tag_rows"] == 3
+    assert _rows() == [
+        ("n", 6, "contact:email", "removed", "bakery@example.invalid", None, D, 4, "ZZZ", "left_class"),
+        ("n", 6, "shop", "removed", "bakery", None, D, 4, "ZZZ", "left_class"),
+        ("r", 101, "tourism", "removed", "attraction", None, D, 4, "ZZZ", "left_class"),
+    ]
+
+
+def test_a_deleted_relation_writes_every_key_it_held(cut, osm_lane_dir):
+    counts = _run(osm_lane_dir, '<delete><relation id="101" version="5" timestamp="2025-01-12T01:00:00Z"/></delete>')
+    assert counts["deleted"] == 1
+    assert _rows() == [
+        ("r", 101, "name", "removed", "Fixture Estate", None, D, 5, "ZZZ", "deleted"),
+        ("r", 101, "tourism", "removed", "attraction", None, D, 5, "ZZZ", "deleted"),
+        ("r", 101, "type", "removed", "site", None, D, 5, "ZZZ", "deleted"),
+    ]
+
+
+def test_a_way_and_a_relation_the_lane_did_not_hold_write_no_row_on_a_modify(cut, osm_lane_dir):
+    # a way over two stored nodes (5 and 8) and a relation over a stored way (12): both enter the lane, with old tags nobody saw
+    body = (
+        '<modify><way id="90" version="3" timestamp="2025-01-12T01:00:00Z"><nd ref="5"/><nd ref="8"/><tag k="highway" v="service"/></way>'
+        '<relation id="200" version="3" timestamp="2025-01-12T01:00:00Z"><member type="way" ref="12" role="outer"/><tag k="tourism" v="attraction"/></relation></modify>'
+    )
+    counts = _run(osm_lane_dir, body)
+    assert counts["inserted"] == 2 and counts["tags_unknown_before"] == 2 and counts["tag_rows"] == 0
+    assert _rows() == []
+
+
+def test_several_changes_to_one_object_in_one_file_each_read_the_state_the_one_before_left(cut, osm_lane_dir):
+    body = (
+        '<create><node id="80" version="1" timestamp="2025-01-12T01:00:00Z" lat="0.15" lon="0.15"><tag k="amenity" v="bench"/></node></create>'
+        '<modify><node id="80" version="2" timestamp="2025-01-12T02:00:00Z" lat="0.15" lon="0.15"><tag k="amenity" v="bench"/><tag k="name" v="Corner"/></node></modify>'
+        '<delete><node id="80" version="3" timestamp="2025-01-12T03:00:00Z"/></delete>'
+    )
+    _run(osm_lane_dir, body)
+    assert _rows() == [
+        ("n", 80, "amenity", "added", None, "bench", D, 1, "ZZZ", "created"),
+        ("n", 80, "name", "added", None, "Corner", D, 2, "ZZZ", None),
+        ("n", 80, "amenity", "removed", "bench", None, D, 3, "ZZZ", "deleted"),
+        ("n", 80, "name", "removed", "Corner", None, D, 3, "ZZZ", "deleted"),
+    ]

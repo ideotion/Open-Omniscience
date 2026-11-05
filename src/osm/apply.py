@@ -25,7 +25,7 @@ WHAT A DAY DOES, AND WHAT IT REFUSES TO GUESS.
   recomputed, which is a stated limit until the next cut.
 * TAG-LEVEL ROWS (S06-01 S2, R428). Each object the file really changes writes one ``osm_tag_changes`` row per key added / removed /
   modified, stamped with THE FILE'S OWN timestamp and the object's ``version``, in the same transaction as the object. What it refuses:
-  an object outside the kept classes, in another country, older than the stored row, or outside the border writes none; a modify of an
+  an object that was never in the kept classes, in another country, older than the stored row, or outside the border writes none; a modify of an
   object the lane did not hold writes none (its old tags are unknown, so every key would read "added": counted ``tags_unknown_before``);
   a change that leaves the tags as they were (a moved node, a re-drawn way) writes none and is counted ``tags_unchanged``; a missing
   ``version`` is stored NULL and counted ``version_absent``; an object that moved out of the border writes none (the world did not change).
@@ -122,8 +122,8 @@ class DiffCounts:
     older_than_stored: int = 0
     #: A change to an object another country's cut holds (the file covers the whole region): not this country's, left alone.
     other_country: int = 0
-    #: Tag rows written (S2), and the objects that wrote none for a stated reason: the tags did not change, or the lane did not hold
-    #: the object before the file so its old tags are unknown, or the file gave no ``version`` (the rows say NULL).
+    #: Tag rows written (S2), the objects that wrote none for a stated reason (the tags did not change, or the lane did not hold the
+    #: object before the file so its old tags are unknown), and the objects whose rows say a NULL ``version`` because the file gave none.
     tag_rows: int = 0
     tags_unchanged: int = 0
     tags_unknown_before: int = 0
@@ -190,6 +190,9 @@ class _Ctx:
         self.border = border
         self.relation_id = relation_id
         self.t = osm_objects_table
+        self._tag_columns = [
+            osm_objects_table.c[name] for name in (*(T.column_name(k) for k in T.SCALAR_KEYS), *T.FAMILIES.values(), "other_tags")
+        ]
         #: Positions, in the file, of the nodes its kept-class ways name (pass 1).
         self.locs: dict[int, tuple[float, float]] = {}
         #: The file's own timestamp (the tag rows' ``diff_timestamp``) and the rows waiting to be written.
@@ -203,7 +206,8 @@ class _Ctx:
         ).first()
 
     def stored_tags(self, row_id: int) -> dict[str, str]:
-        row = self.s.execute(select(self.t).where(self.t.c.id == row_id)).mappings().first()
+        # Only the tag columns: a way's vertices and a relation's members can be kilobytes, and they are not read here.
+        row = self.s.execute(select(*self._tag_columns).where(self.t.c.id == row_id)).mappings().first()
         return T.tags_of(row) if row is not None else {}
 
     def record_tags(self, c: OscChange, stored, new: dict[str, str] | None, counts: DiffCounts, *, event: str | None = None) -> None:
@@ -326,7 +330,7 @@ def _apply_node(ctx: _Ctx, c: OscChange, counts: DiffCounts) -> None:
     inside = ctx.border.contains(c.lat, c.lon)
     if kind is None or not inside:
         if stored is not None:
-            if kind is None:  # moved out of the border: the world did not change, so no tag row
+            if kind is None:  # its tags stopped qualifying: a real tag change. (Out of the border instead: the world did not change, no row.)
                 ctx.record_tags(c, stored, c.tags, counts, event="left_class")
             _delete(ctx, stored.id)
             counts.deleted += 1
