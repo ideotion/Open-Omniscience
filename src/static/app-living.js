@@ -315,7 +315,7 @@
       return [{ title: t("Law tracker"), facts }, livingStorageGroup(src.storage, t)];
     }
 
-    function livingMapGroups(src, t) {
+    function livingMapGroups(src, t, tf) {
       const m = src.maps || {};
       let facts;
       if (m.measured !== true) {
@@ -334,14 +334,40 @@
             hover: t("A map extract carries the date of its data in its own header, which the app does not read yet. The date the file was written here is a different fact, so it is not shown in its place.") },
         ];
       }
-      return [{ title: t("Map regions"), facts }, livingStorageGroup(src.storage, t)];
+      return [{ title: t("Map regions"), facts }, livingDailyGroup(src.daily, t, tf), livingStorageGroup(src.storage, t)];
+    }
+
+    // The OSM lane's daily change files (S06-01 S5): counts and the newest file's own date, then every re-baseline as a dated
+    // event. A figure the lane could not give is "Not recorded" with the reason on hover, never 0 (a 0 reads as "reached nothing").
+    function livingDailyGroup(d, t, tf) {
+      const title = t("Daily change files");
+      if (!d || d.measured !== true) return { title, facts: _livingUnmeasured(d || {}, t) };
+      const why = t("This lane was cut by an older build and lacks the table this figure is read from. Cutting a country again creates it.");
+      const num = (v) => (typeof v === "number"
+        ? { value: String(v) } : { value: t("Not recorded"), hover: why });
+      const events = d.rebaselines || [];
+      const rows = events.map((e) => `<div>${_ltrIsolate(String(e.detected_at || "").slice(0, 16).replace("T", " "))} UTC \u00b7 ${ooCountryCell(e.alpha3)}</div>`);
+      if (d.rebaselines_not_shown > 0) rows.push(`<div class="muted">${esc(tf("{n} older events are not shown.", { n: String(d.rebaselines_not_shown) }))}</div>`);
+      return { title, facts: [
+        { label: t("Countries cut"), value: String(d.countries_cut) },
+        { label: t("Reached by the daily files"), value: String(d.countries_updated) },
+        { label: t("Change files applied"), ...num(d.files_applied) },
+        { label: t("Newest change file"), value: livingWhen(d.newest_file_at, t),
+          hover: t("The date inside the newest change file applied to any country, not the day it was applied here.") },
+        { label: t("Re-baselines"), ...num(d.rebaselines_total),
+          hover: t("The mirror no longer held the change files a country needed, so it was cut again from a fresh extract. Each one is listed below with its date.") },
+        { label: t("Cut again by hand"), ...num(d.hand_recuts),
+          hover: t("Countries you cut again yourself instead of updating them. Counted apart: it was your choice, not a gap in the mirror's files.") },
+        { label: t("Re-baseline events"), html: true, value: rows.length ? rows.join("") : esc(t("None")),
+          hover: t("Dated by when this machine found the gap, newest first.") },
+      ] };
     }
 
     function livingGroupsFor(src, t, tf) {
       if (!src) return [];
       if (src.kind === "wiki") return livingWikiGroups(src, t, tf);
       if (src.kind === "law") return livingLawGroups(src, t);
-      if (src.kind === "osm") return livingMapGroups(src, t);
+      if (src.kind === "osm") return livingMapGroups(src, t, tf);
       return [];
     }
 
