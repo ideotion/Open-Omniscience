@@ -330,18 +330,18 @@ def _history_scope(s, alpha3: str) -> Iterator[tuple[Any, Any, list[Any]]]:
     from src.osm.lane_models import OsmHistoryChange
 
     h = OsmHistoryChange.__table__
-    ev = Table(_EVENT_TMP, MetaData(), Column("osm_type", String(1)), Column("osm_id", Integer), Column("object_version", Integer),
-               Column("version_timestamp", String))
-    s.execute(text(f"DROP TABLE IF EXISTS temp.{_EVENT_TMP}"))
-    s.execute(
-        text(
-            f"CREATE TEMP TABLE {_EVENT_TMP} AS SELECT DISTINCT osm_type, osm_id, object_version, version_timestamp "
-            "FROM osm_history_changes WHERE country_alpha3 = :a AND key IS NULL"
-        ),
-        {"a": alpha3},
-    )
-    s.execute(text(f"CREATE INDEX temp.ix_{_EVENT_TMP} ON {_EVENT_TMP}(osm_type, osm_id, object_version, version_timestamp)"))
     try:
+        ev = Table(_EVENT_TMP, MetaData(), Column("osm_type", String(1)), Column("osm_id", Integer), Column("object_version", Integer),
+                   Column("version_timestamp", String))
+        s.execute(text(f"DROP TABLE IF EXISTS temp.{_EVENT_TMP}"))
+        s.execute(
+            text(
+                f"CREATE TEMP TABLE {_EVENT_TMP} AS SELECT DISTINCT osm_type, osm_id, object_version, version_timestamp "
+                "FROM osm_history_changes WHERE country_alpha3 = :a AND key IS NULL"
+            ),
+            {"a": alpha3},
+        )
+        s.execute(text(f"CREATE INDEX temp.ix_{_EVENT_TMP} ON {_EVENT_TMP}(osm_type, osm_id, object_version, version_timestamp)"))
         month = _month(h.c.version_timestamp)
         not_first = (h.c.object_version.is_(None)) | (h.c.object_version != 1)
         # The key rows of a version that created, deleted or restored the object are that event's own, counted under openings and
