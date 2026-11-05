@@ -2157,6 +2157,48 @@ def _live_run(state: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+#: The most the DIAGNOSTICS copy of the newest release-run report may weigh (raw JSON). WHAT IT PROTECTS: the diagnostics part's 4,000,000-byte
+#: ceiling (R119): the slot arithmetic counts this member at its estimate, and an estimate with no cap behind it is not a bound. 140,000 is
+#: under the 150,000 the plan allowed, and above the 87 KB of the largest report seen, so a real report is never cut. The saved file on disk
+#: and ``/release-run/last`` are NOT capped.
+BUNDLE_REPORT_MAX_BYTES = 140_000
+#: A section smaller than this is never worth a cut marker (the marker itself is about this size).
+_CUT_FLOOR_BYTES = 120
+
+
+def _json_bytes(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8"))
+
+
+def cap_report_for_bundle(report: dict, cap: int = BUNDLE_REPORT_MAX_BYTES) -> dict:
+    """``report`` itself when it fits ``cap``; else a copy with whole top-level sections replaced by a counted cut marker, largest first.
+
+    The marker is ``{"cut": true, "bytes": <the section's size>}`` and the report says ``truncated: true`` with ``truncated_from_bytes``,
+    ``cap_bytes`` and ``cut_sections`` (name and bytes of each), so a reader sees exactly what the bundle does not carry and that the saved
+    file has it. Scalars are never cut. If every section is already a marker and the report is still over (a pathological scalar), it is
+    returned as it is with ``truncated: true`` and the figure, never silently.
+    """
+    size = _json_bytes(report)
+    if size <= cap:
+        return report
+    out = dict(report)
+    cut: list[dict[str, Any]] = []
+    # room for the four fields added below, counted before the first cut
+    meta_room = 600
+    sizes = {k: _json_bytes(v) for k, v in out.items() if isinstance(v, (dict, list)) and _json_bytes(v) > _CUT_FLOOR_BYTES}
+    for name, n in sorted(sizes.items(), key=lambda kv: kv[1], reverse=True):
+        if size + meta_room <= cap:
+            break
+        out[name] = {"cut": True, "bytes": n}
+        cut.append({"section": name, "bytes": n})
+        size = _json_bytes(out)
+    out["truncated"] = True
+    out["truncated_from_bytes"] = _json_bytes(report)
+    out["cap_bytes"] = cap
+    out["cut_sections"] = cut
+    return out
+
+
 def last_release_run_report() -> dict:
     """The newest saved report (final over interim) for the bundle member and the
     ``/release-run/last`` route -- read-only, never runs anything -- WITH the live run

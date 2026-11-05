@@ -3059,3 +3059,26 @@ def test_row5_does_not_resume_a_driver_failure_that_is_not_a_pool_timeout(row5):
     with pytest.raises(rr._PhaseError):
         rr._row5_quarantine(FakeCtx(), row5["run"])
     assert row5["jobs"]["q"].calls == ["start"]
+
+
+def test_the_bundle_copy_of_an_oversized_report_is_cut_to_its_cap_with_counted_markers():
+    """R425: the diagnostics copy is a BOUND (<= 140,000 B), the saved report is untouched, and a normal report passes through as is."""
+    import json as _json
+
+    small = {"schema": "s", "available": True, "rows": [{"id": "A", "status": "measured"}], "outcome": "pass"}
+    assert rr.cap_report_for_bundle(small) is small, "a report under the cap is the same object, nothing cut"
+
+    big = {
+        "schema": "s", "available": True, "outcome": "pass",
+        "collect": {"blob": "x" * 90_000},
+        "phases": [{"n": i, "note": "y" * 100} for i in range(1500)],  # ~190 KB
+        "rows": [{"id": "A", "status": "measured"}],
+    }
+    snapshot = _json.dumps(big, sort_keys=True)
+    out = rr.cap_report_for_bundle(big)
+    assert len(_json.dumps(out, ensure_ascii=False, separators=(",", ":")).encode()) <= rr.BUNDLE_REPORT_MAX_BYTES
+    assert out["truncated"] is True and out["cap_bytes"] == 140_000
+    assert out["truncated_from_bytes"] > 140_000 and out["cut_sections"], out["cut_sections"]
+    assert out["phases"]["cut"] is True and out["phases"]["bytes"] > 100_000, "the largest section goes first"
+    assert out["rows"] == big["rows"] and out["outcome"] == "pass", "what fits stays"
+    assert _json.dumps(big, sort_keys=True) == snapshot, "the input (the saved report) is not changed"
