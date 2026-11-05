@@ -61,6 +61,21 @@ def _no_resume_watcher_outlives_the_test(monkeypatch, request):
     assert not alive, f"{request.node.nodeid} left a resume watcher running: {alive}"
 
 
+@pytest.fixture(autouse=True)
+def _no_manual_pass_outlives_the_test(request):
+    """``run_now()`` starts an ``oo-scrape-now`` daemon thread whose ``_do_run`` writes its run report into whatever data directory is current when it
+    finishes. Two tests of this file end on ``run_now() is True`` and joined nothing, so the report landed in the NEXT test's directory: unsharded that
+    test is test_scheduler_runner.py's neighbour and never noticed; sharded CI dealt test_scheduler_runs.py right after this file and it read a third
+    record. The test is held to retiring what it started, by name, while its own data directory is still the current one (this fixture is torn down
+    before ``_isolate_data_dir``'s monkeypatch is)."""
+    yield
+    left = [t for t in threading.enumerate() if t.name == "oo-scrape-now"]
+    for t in left:
+        t.join(timeout=10)
+    alive = [f"{t.name} (ident {t.ident})" for t in left if t.is_alive()]
+    assert not alive, f"{request.node.nodeid} left a manual scheduler pass running: {alive}"
+
+
 def _running_scheduler() -> BackgroundScheduler:
     def run_once():
         return {"stored": 0}
