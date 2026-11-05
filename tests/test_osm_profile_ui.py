@@ -76,7 +76,7 @@ def test_every_view_string_and_every_server_string_ships_in_twelve_languages():
         "Last edited, counted back from the vintage", "Last edited", "No timestamp", "Carrying a check_date",
         "{present} of {n} places carry a check_date ({share}).", "check_date aged", "Not a date",
         "Counted from the extract of {extract}, with change files applied through {through}.",
-        "Counted from the extract of {extract}; no change file has been applied.", "Counted now", "What the daily change files changed",
+        "Counted from the extract of {extract}; no change file has been applied since.", "Counted now", "What the daily change files changed",
     ]
     for path in sorted((STATIC / "locales").glob("*.json")):
         loc = json.loads(path.read_text("utf-8"))

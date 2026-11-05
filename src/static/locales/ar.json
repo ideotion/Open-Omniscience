@@ -1222,7 +1222,7 @@
   "Counted by the Wikipedia lane itself, separately from your article count: a page this lane follows is not an article in your corpus unless its text was stored. Today means since local midnight.": "يُحسب بواسطة مسار ويكيبيديا نفسه، بمعزل عن عدد مقالاتك: الصفحة التي يتابعها هذا المسار ليست مقالة في مجموعتك ما لم يُخزَّن نصها. تعني «اليوم» منذ منتصف الليل بالتوقيت المحلي.",
   "Counted by when this machine stored them, not by the edit's own date.": "معدودةً حسب وقت تخزين هذا الجهاز لها، لا حسب تاريخ التعديل نفسه.",
   "Counted from the extract of {extract}, with change files applied through {through}.": "محسوب من مقتطَف {extract}، مع تطبيق ملفات التغييرات حتى {through}.",
-  "Counted from the extract of {extract}; no change file has been applied.": "محسوب من مقتطَف {extract}؛ لم يُطبَّق أي ملف تغييرات.",
+  "Counted from the extract of {extract}; no change file has been applied since.": "محسوب من مقتطَف {extract}؛ ولم يُطبَّق أي ملف تغييرات منذ ذلك الحين.",
   "Counted now": "محسوب الآن",
   "Counted only: its text was not stored.": "معدود فقط: لم يُخزَّن نصه.",
   "Counted over the articles this view was computed on. Countries are the countries of the articles' sources, as the source catalogue records them; languages are each article's language tag, else the detected language; the date span runs from the earliest to the latest publication date. Articles missing any of these are counted apart, never dropped.": "عُدّت على المقالات التي حُسب عليها هذا العرض. الدول هي دول مصادر المقالات كما يسجّلها فهرس المصادر؛ واللغات هي وسم لغة كل مقالة، وإلا فاللغة المكتشفة؛ ويمتد النطاق الزمني من أقدم تاريخ نشر إلى أحدثه. المقالات التي ينقصها أيٌّ من ذلك تُعدّ على حدة، ولا تُسقط أبدًا.",

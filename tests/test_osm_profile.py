@@ -184,7 +184,7 @@ def test_the_edit_ages_and_the_check_dates_are_exactly_these_from_the_extracts_v
     le = snap["last_edit"]
     # node 5 edited 2024-12-01 (inside a year of 2025-01-10); node 6 on 2023-06-01 (one to two years); node 7 on 2019-01-01 (over five);
     # relation 101 and node 900 have no timestamp, which is counted, not dropped
-    assert {b["bucket"]: b["places"] for b in le["buckets"]} == {"within_1y": 1, "y1_2": 1, "y2_5": 0, "over_5y": 1}
+    assert {b["bucket"]: b["places"] for b in le["buckets"]} == {"within_1y": 1, "y1_2": 1, "y2_5": 0, "over_5y": 1, "after": 0}
     assert le["no_timestamp"] == 2 and sum(b["places"] for b in le["buckets"]) + le["no_timestamp"] == snap["n"]
     cd = snap["check_date"]
     # carrying: 5, 6, 7 and 101; node 900's EMPTY check_date is absent
@@ -205,6 +205,16 @@ def test_ages_are_measured_from_the_newest_change_file_not_from_the_extract_and_
     assert after["vintage"]["reference"] == after["vintage"]["last_diff"] == f"{D1}T00:00:00+00:00"
     assert {b["bucket"]: b["places"] for b in after["snapshot"]["last_edit"]["buckets"]}["within_1y"] == 0   # the cut moved to 2024-01-11: not after it
     assert {b["bucket"]: b["places"] for b in after["snapshot"]["last_edit"]["buckets"]}["y1_2"] == 2
+
+
+def test_an_edit_dated_after_the_vintage_is_named_and_never_counted_as_recent(cut):
+    _seed()
+    with store.lane_session("osm") as s:   # the extract's vintage is 2025-01-10
+        s.execute(T.update().where(T.c.osm_type == "n", T.c.osm_id == 5).values(timestamp=_dt(2025, 3, 1)))
+    le = _snap("freshness")["snapshot"]["last_edit"]
+    got = {b["bucket"]: b["places"] for b in le["buckets"]}
+    assert got["after"] == 1 and got["within_1y"] == 0, "an edit after the vintage was counted as inside the last year"
+    assert sum(got.values()) + le["no_timestamp"] == 5
 
 
 def test_a_lane_with_no_date_to_measure_from_says_so_and_invents_none(cut):

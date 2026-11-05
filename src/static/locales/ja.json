@@ -1222,7 +1222,7 @@
   "Counted by the Wikipedia lane itself, separately from your article count: a page this lane follows is not an article in your corpus unless its text was stored. Today means since local midnight.": "Wikipediaレーン自身がカウントしたもので、記事数とは別に数えます。このレーンがフォローするページは、本文が保存されない限り、あなたのコーパスの記事にはなりません。「今日」とは現地時間の午前0時からを指します。",
   "Counted by when this machine stored them, not by the edit's own date.": "編集自体の日付ではなく、このマシンが保存した時点で数えています。",
   "Counted from the extract of {extract}, with change files applied through {through}.": "{extract} の抽出ファイルに、{through} までの変更ファイルを適用して集計。",
-  "Counted from the extract of {extract}; no change file has been applied.": "{extract} の抽出ファイルから集計。変更ファイルは適用されていません。",
+  "Counted from the extract of {extract}; no change file has been applied since.": "{extract} の抽出ファイルから集計。それ以降、変更ファイルは適用されていません。",
   "Counted now": "現在の集計",
   "Counted only: its text was not stored.": "カウントのみ: テキストは保存されていません。",
   "Counted over the articles this view was computed on. Countries are the countries of the articles' sources, as the source catalogue records them; languages are each article's language tag, else the detected language; the date span runs from the earliest to the latest publication date. Articles missing any of these are counted apart, never dropped.": "このビューの計算対象となった記事について数えています。国は記事の情報源の国で、情報源カタログの記録に従います。言語は各記事の言語タグ、なければ検出された言語です。期間は最も古い公開日から最も新しい公開日までです。これらのいずれかを欠く記事は別に数え、除外はしません。",

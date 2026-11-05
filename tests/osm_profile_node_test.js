@@ -71,7 +71,7 @@ const src =
   extractConst("OSM_FRESH_FIELDS", "];\n") + "\n" +
   "const OSM_PROFILE_MAX = 2000;\n" +
   "var _osmProfileDone = [], _osmProfileCache = {}, _osmProfileTab = 'brands', _osmProfileKeys = { brands: 'brand', channels: 'facebook' };\n" +
-  "var _osmProfileLimit = 100, _osmProfileSeq = 0, _osmProfileNavs = [];\n" +
+  "var _osmProfileLimit = 100, _osmProfileSeq = 0, _osmProfileNavs = [], _osmProfileFlight = {};\n" +
   "var bodies = {}, chartHosts = [];\n" +
   "var document = { querySelector(sel) { const m = /data-osm-profile-body=\"(\\d+)\"/.exec(sel); return m ? (bodies[m[1]] = bodies[m[1]] || { innerHTML: '' }) : null; },\n" +
   "  querySelectorAll(sel) { return chartHosts.filter((h) => sel.indexOf('=\"' + h.idx + '\"') !== -1); } };\n" +
@@ -163,7 +163,7 @@ assert.ok(!html.includes('data-osm-profile-month="0"') && html.includes('data-os
 html = load("brands", brandsData({ changes: { status: "old-lane", reason: "x", missing: ["osm_tag_changes"] } }));
 assert.ok(visible(html).includes("Not available: this lane was cut by an older build and lacks the table.") && !html.includes('data-osm-profile-month="0"'));
 html = load("brands", brandsData({ vintage: { extract: null, last_diff: null, reference: null } }));
-assert.ok(visible(html).includes("Counted from the extract of Not recorded; no change file has been applied."), "an unknown extract date was invented");
+assert.ok(visible(html).includes("Counted from the extract of Not recorded; no change file has been applied since."), "an unknown extract date was invented");
 noJunk(html, "no vintage");
 
 // --- 3. states that say so in words and draw nothing ---------------------------------------------------------- //
@@ -203,7 +203,7 @@ const fresh = {
   status: "ok", vintage,
   snapshot: {
     n: 5, age_years: [1, 2, 5], method: "M-fresh", caveat: "C-fresh",
-    last_edit: { available: true, no_timestamp: 2, buckets: [{ bucket: "within_1y", places: 1, share: 0.2 }, { bucket: "y1_2", places: 1, share: 0.2 }, { bucket: "y2_5", places: 0, share: 0 }, { bucket: "over_5y", places: 1, share: 0.2 }] },
+    last_edit: { available: true, no_timestamp: 2, buckets: [{ bucket: "within_1y", places: 1, share: 0.2 }, { bucket: "y1_2", places: 1, share: 0.2 }, { bucket: "y2_5", places: 0, share: 0 }, { bucket: "over_5y", places: 1, share: 0.2 }, { bucket: "after", places: 0, share: 0 }] },
     check_date: { available: true, present: 4, share: 0.8, unreadable: 1,
       buckets: [{ bucket: "within_1y", places: 1, share: 0.2 }, { bucket: "y1_2", places: 0, share: 0 }, { bucket: "y2_5", places: 1, share: 0.2 }, { bucket: "over_5y", places: 0, share: 0 }, { bucket: "after", places: 1, share: 0.2 }] },
   },
@@ -214,7 +214,7 @@ html = load("freshness", fresh);
 noJunk(html, "freshness");
 const lastEdit = html.split("Last edited, counted back from the vintage")[1].split("Carrying a check_date")[0];
 assert.ok(visible(lastEdit).includes("Within a year 1 20 %") && visible(lastEdit).includes("More than five years 1 20 %") && visible(lastEdit).includes("No timestamp 2 40 %"), "an edit-age row is wrong: " + visible(lastEdit));
-assert.ok(!visible(lastEdit).includes("After the vintage"), "an edit cannot be after the vintage; the row was drawn");
+assert.ok(visible(lastEdit).includes("After the vintage 0 0 %"), "an edit dated after the vintage has no row, so it would read as recent");
 const cd = html.split("Carrying a check_date")[1].split("What the daily change files changed")[0];
 assert.ok(visible(cd).includes("4 of 5 places carry a check_date (80.0 %)") || visible(cd).includes("4 of 5 places carry a check_date (80 %)"), "the count line is wrong: " + visible(cd));
 assert.ok(visible(cd).includes("After the vintage 1 20 %") && visible(cd).includes("Not a date 1 20 %"), "the future or unreadable check_dates were dropped");
@@ -263,8 +263,14 @@ assert.strictEqual(R.drawn.length, 0, "an empty block drew a chart");
   R.apiCalls.length = 0;
   await R._osmProfileFetch(7);
   assert.strictEqual(Object.keys(R.get().cache).length, 0, "a stale read overwrote a newer load");
+  // a read already in flight is not asked for again (a tab clicked away and back), and its result still lands on the screen
+  R.set({ done: [LANE], tab: "brands", cache: {}, seq: 3, answer: () => ({ status: "ok" }) });
+  R.apiCalls.length = 0;
+  await Promise.all([R._osmProfileFetch(3), R._osmProfileFetch(3)]);
+  assert.strictEqual(R.apiCalls.length, 1, "two loops asked for the same country twice");
+  assert.ok(!R.bodies[0].innerHTML.includes("Loading…"), "a skipped read was never drawn");
   // a failed read is a named state, not a hole
-  R.set({ cache: {}, seq: 1, answer: () => { throw new Error("boom"); } });
+  R.set({ done: [LANE, { alpha3: "YYY", name: "Yland" }], tab: "channels", cache: {}, seq: 1, answer: () => { throw new Error("boom"); } });
   await R._osmProfileFetch(1);
   assert.deepStrictEqual(Object.values(R.get().cache).map((d) => d.status), ["unreadable", "unreadable"]);
   // loading with no country hides the section and keeps nothing; with some, shows it and reads the active tab only

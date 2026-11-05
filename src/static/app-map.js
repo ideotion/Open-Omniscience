@@ -3651,11 +3651,12 @@
     const OSM_FRESH_FIELDS = [["edited", "Edited"], ["checked", "Checked"]];
     const OSM_PROFILE_MAX = 2000;
     let _osmProfileDone = [], _osmProfileCache = {}, _osmProfileTab = "brands", _osmProfileKeys = { brands: "brand", channels: "facebook" };
-    let _osmProfileLimit = 100, _osmProfileSeq = 0, _osmProfileNavs = [];
+    let _osmProfileLimit = 100, _osmProfileSeq = 0, _osmProfileNavs = [], _osmProfileFlight = {};
     async function loadOsmProfile(done) {
       const sec = $("osm-profile"); if (!sec) return;
       const seq = ++_osmProfileSeq;   // a slower, older read must not overwrite a newer one
       _osmProfileCache = {};
+      _osmProfileFlight = {};
       if (!done || !done.length) { sec.hidden = true; _osmProfileDone = []; return; }
       _osmProfileDone = done;
       sec.hidden = false;
@@ -3667,14 +3668,17 @@
       const tab = _osmProfileTab;
       for (let i = 0; i < _osmProfileDone.length; i++) {
         const a3 = _osmProfileDone[i].alpha3, key = _osmProfileCacheKey(a3, tab);
-        if (_osmProfileCache[key]) continue;
+        // Cached, or already being read by another loop (a tab clicked away and back): asking again would repeat the heaviest read.
+        if (_osmProfileCache[key] || _osmProfileFlight[key]) continue;
+        _osmProfileFlight[key] = true;
         let d;
         try { d = await api(`/api/osm/countries/${encodeURIComponent(a3)}/profile/${tab}?limit=${_osmProfileLimit}`); }
         catch (e) { d = { status: "unreadable" }; }
+        finally { delete _osmProfileFlight[key]; }
         if (seq !== _osmProfileSeq) return;
         _osmProfileCache[key] = d;
+        if (_osmProfileCacheKey(a3, _osmProfileTab) === key) _osmProfileFill(i);   // the tab shown now is the one this read is for
         if (tab !== _osmProfileTab) return;   // another tab took over; its own fetch is running
-        _osmProfileFill(i);
       }
     }
     function _osmProfileShare(x) { return _osmCompShare({ share: x }); }
@@ -3718,7 +3722,7 @@
       let out = `<h4 class="lib-sub">${esc(t("Last edited, counted back from the vintage"))}</h4>`;
       if (le.available === false) out += `<div class="muted">${esc(gone)}</div>`;
       else {
-        const rows = OSM_AGE_LABELS.filter(([k]) => k !== "after").map(([k, lab]) => {
+        const rows = OSM_AGE_LABELS.map(([k, lab]) => {
           const b = (le.buckets || []).find((x) => x.bucket === k) || { places: 0, share: null };
           return [t(lab), fmtNum(b.places, 0), _osmProfileShare(b.share)];
         });
@@ -3768,7 +3772,7 @@
       const extract = v.extract ? ooIsoDate(v.extract) : t("Not recorded");
       const vint = v.last_diff
         ? osmCompTf("Counted from the extract of {extract}, with change files applied through {through}.", { extract, through: ooIsoDate(v.last_diff) })
-        : osmCompTf("Counted from the extract of {extract}; no change file has been applied.", { extract });
+        : osmCompTf("Counted from the extract of {extract}; no change file has been applied since.", { extract });
       const now = `<h4 class="lib-sub">${esc(t("Counted now"))}</h4>`
         + `<div class="hint" title="${esc(t(snap.method || ""))}">${esc(vint)} ${esc(t("Hover for the method."))}</div>`
         + (tab === "brands" ? _osmProfileSnapBrands(snap) : tab === "channels" ? _osmProfileSnapChannels(snap) : _osmProfileSnapFreshness(snap))

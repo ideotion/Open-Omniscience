@@ -311,7 +311,8 @@ def _snapshot_freshness(s, alpha3: str, ref: datetime | None) -> dict[str, Any]:
     day = _day(t.c.timestamp)
     stamped = t.c.timestamp.is_not(None)
     edges = (
-        ("within_1y", day > c1),
+        ("after", day > rd.isoformat()),   # an edit dated after the vintage: named, never counted as recent
+        ("within_1y", (day <= rd.isoformat()) & (day > c1)),
         ("y1_2", (day <= c1) & (day > c2)),
         ("y2_5", (day <= c2) & (day > c5)),
         ("over_5y", day <= c5),
@@ -319,9 +320,9 @@ def _snapshot_freshness(s, alpha3: str, ref: datetime | None) -> dict[str, Any]:
     sums = s.execute(
         select(*(func.sum(case((stamped & cond, 1), else_=0)) for _k, cond in edges), func.sum(case((stamped, 0), else_=1))).where(poi)
     ).one()
-    buckets = {k: int(v or 0) for (k, _c), v in zip(edges, sums[:4], strict=True)}
-    out["last_edit"] = {"available": True, "buckets": [{"bucket": k, "places": buckets[k], "share": _share(buckets[k], n)} for k in AGE_BUCKETS],
-                        "no_timestamp": int(sums[4] or 0)}
+    buckets = {k: int(v or 0) for (k, _c), v in zip(edges, sums[:5], strict=True)}
+    out["last_edit"] = {"available": True, "buckets": [{"bucket": k, "places": buckets[k], "share": _share(buckets[k], n)} for k in (*AGE_BUCKETS, "after")],
+                        "no_timestamp": int(sums[5] or 0)}
     # check_date: group by the stored text (a few thousand distinct dates at most), aged in Python.
     counts = dict.fromkeys((*AGE_BUCKETS, "after"), 0)
     unreadable = 0
