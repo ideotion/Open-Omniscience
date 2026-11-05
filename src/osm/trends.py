@@ -214,7 +214,7 @@ def _build(alpha3: str) -> dict[str, Any]:
         missing = [m.__tablename__ for m in (OsmDiffRun, OsmTagChange) if m.__tablename__ not in have]
         if missing:
             return {"status": "old-lane", "country": alpha3, "reason": _OLD_LANE, "missing": missing}
-        runs = [r[0] for r in s.execute(select(OsmDiffRun.diff_timestamp).where(OsmDiffRun.alpha3 == alpha3, OsmDiffRun.diff_timestamp.is_not(None)))]
+        runs = [r[0] for r in s.execute(select(OsmDiffRun.diff_timestamp).where(OsmDiffRun.alpha3 == alpha3, OsmDiffRun.diff_timestamp.is_not(None))) if r[0] is not None]
         if not runs:
             return {"status": "no-daily-files", "country": alpha3, "prior": _prior(s, alpha3, have)}
         days = sorted({r.date().isoformat() for r in runs})
