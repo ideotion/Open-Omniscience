@@ -461,17 +461,6 @@ def _ro_only_failure(exc: BaseException) -> bool:
     return type(exc).__name__ == "OperationalError" and any(w in str(exc).lower() for w in _RO_ONLY_FAILURES)
 
 
-def _unfolded_wal_beside(path: str) -> bool:
-    """True when a non-empty ``<path>-wal`` sits beside the file: pages not yet folded in, so "no such table" may be only
-    what the main file shows. Read-only stat; the file is never opened read-write, retried or touched (R429)."""
-    import os
-
-    try:
-        return os.stat(path + "-wal").st_size > 0
-    except OSError:
-        return False
-
-
 def kv_get_json_checked(key: str) -> dict | None:
     """:func:`kv_get_json`, except that a read which FAILED raises :class:`KvReadError` instead of reading as absent.
 
@@ -503,7 +492,7 @@ def kv_get_json_checked(key: str) -> dict | None:
         if isinstance(exc, FileNotFoundError) or "no such table" in str(exc).lower():
             with _lock:
                 vanished = path in _seen
-            if not vanished and not _unfolded_wal_beside(path):
+            if not vanished:
                 return None  # a first run: nothing stored yet
             # The store was read (or written) earlier in this process and is gone now: that is a failure, not a first run.
         what = type(exc).__name__
