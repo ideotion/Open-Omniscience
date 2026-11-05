@@ -4,10 +4,11 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-    python scripts/ci_shard.py plan   --shard 2/3 --out FILE   # write the test files shard 2 of 3 runs, one per line (pytest @FILE), and say how many
-    python scripts/ci_shard.py files  --shard 2/3              # the same list on stdout
+    python scripts/ci_shard.py plan   --shard 2/3 --out FILE   # write `--ignore=<file>` for every test file shard 2 of 3 does NOT run (pytest @FILE), and say how many it runs
+    python scripts/ci_shard.py files  --shard 2/3              # the test files shard 2 of 3 runs, on stdout
     python scripts/ci_shard.py check                           # every test file of the tree is in exactly one shard (exit 1 if not)
     python scripts/ci_shard.py digest [--pack] JUNIT_XML        # one line per test module: outcome counts and a hash of its (test, outcome) pairs
+    python scripts/ci_shard.py collected --all ALL.txt S1.txt S2.txt ...   # the shards' `pytest --collect-only -q` together are the whole suite's (exit 1 if not)
     python scripts/ci_shard.py totals JUNIT_XML                # passed / skipped / xfailed / failed / error counts of a report, on one line
     python scripts/ci_shard.py parity --shard 2/3 --junit JUNIT_XML --oracle-env NAME   # compare this shard with an unsharded run's digest
     python scripts/ci_shard.py costs  [--stdout] [--min-seconds S] JUNIT_XML [...]   # rewrite configs/ci_shard_costs.json from measured per-module times
@@ -24,6 +25,13 @@ HOW A FILE GETS ITS SHARD (and why it is not a plain round robin, a hash, or a h
   new files evenly in the long run. ``plan`` prints how many files were not in the table, so a table that has fallen behind is read, not guessed.
 * Shard 1 also runs the static steps of the ``test`` job (lint, planned-work index, i18n gates, migration drift, mypy, bandit, pip-audit), so
   the table carries ``overhead_seconds`` for it, measured on the same CI run.
+
+HOW A SHARD IS RUN (and why it is not "pytest FILE FILE ..."). A shard ignores the other shards' files and lets pytest collect ``tests`` itself, so
+everything the one-process run relied on at collection still applies: ``collect_ignore`` in tests/conftest.py (which keeps the analysis tests out of a
+core-only install), ``norecursedirs``, ``python_files``. A path NAMED on the command line is not subject to ``collect_ignore``: the first sharded
+Core-only leg passed its files explicitly, collected the two analysis modules a core-only install must not collect, and died at import. ``pytest @FILE``
+with nothing but ``--ignore`` lines also fails safe: a shard that ignores every file ends in "no tests ran" (exit 5), where an empty list of files would
+have run the whole suite.
 
 WHAT IT IS NOT. It is not an isolation model: a test that passed only because an earlier test in the same process had left something behind
 is a bug whichever shard it falls in, and the first sharded run is where it shows. ``parity`` is how that was looked for once: it compares a
@@ -122,6 +130,12 @@ def shard_lookup(shards: int, table: dict):
 
 def files_of(shard: int, shards: int, table: dict, root: Path = ROOT) -> list[str]:
     return [path for path, at in assign(test_files(root), shards, table).items() if at == shard]
+
+
+def ignore_args(mine: list[str], files: list[str]) -> list[str]:
+    """The pytest arguments that run exactly ``mine`` of ``files``: ``--ignore=<file>`` for every other one, one per line. See HOW A SHARD IS RUN."""
+    own = set(mine)
+    return [f"--ignore={f}" for f in files if f not in own]
 
 
 def predicted(files: list[str], table: dict, shard: int, shards: int) -> tuple[float, int]:
@@ -262,6 +276,31 @@ def compare(oracle: dict[str, dict], mine: dict[str, dict], shard: int, shards: 
     return found
 
 
+def read_collected(text: str) -> list[str]:
+    """The test ids in the output of ``pytest --collect-only -q``: one ``path.py::name`` per line (the summary and blank lines are not ids)."""
+    return [line.strip() for line in text.splitlines() if "::" in line and line.split("::", 1)[0].strip().endswith(".py") and " " not in line.split("::", 1)[0].strip()]
+
+
+def module_count(ids: list[str]) -> int:
+    return len({i.split("::", 1)[0] for i in ids})
+
+
+def compare_collected(everything: list[str], shards: list[list[str]]) -> list[str]:
+    """What differs between one collection of the whole suite and the shards' collections: ids no shard collected, ids a shard collected that the
+    whole did not, ids collected twice (within a shard or by two shards). Empty when the shards are a partition of the whole."""
+    whole = Counter(everything)
+    seen: Counter[str] = Counter()
+    which: dict[str, list[int]] = {}
+    for number, ids in enumerate(shards, 1):
+        for test_id in ids:
+            seen[test_id] += 1
+            which.setdefault(test_id, []).append(number)
+    found = [f"{i}: collected by the whole suite, by no shard" for i in sorted(set(whole) - set(seen))]
+    found += [f"{i}: collected by shard {which[i]}, not by the whole suite" for i in sorted(set(seen) - set(whole))]
+    found += [f"{i}: collected {seen[i]} times by shards {which[i]}, {whole[i]} time(s) by the whole suite" for i in sorted(set(seen) & set(whole)) if seen[i] != whole[i]]
+    return found
+
+
 def measured_table(old: dict, reports: list[Path], min_seconds: float = 0.0) -> dict:
     """The table with ``costs`` replaced by the summed per-module seconds of the reports, rounded to a tenth. ``shards`` and the overhead are kept.
 
@@ -292,6 +331,9 @@ def main(argv: list[str]) -> int:
             p.add_argument("--junit", required=True)
             p.add_argument("--oracle-env", required=True, help="the name of an environment variable holding the unsharded digest, packed")
     sub.add_parser("check")
+    g = sub.add_parser("collected", help="compare `pytest --collect-only -q` of the whole suite with the shards' (a partition, or the differing test ids)")
+    g.add_argument("--all", required=True, help="the output of `pytest --collect-only -q` with no shard")
+    g.add_argument("shard_outputs", nargs="+", help="the outputs of `pytest --collect-only -q @shard.args`, one per shard")
     sub.add_parser("totals").add_argument("junit")
     d = sub.add_parser("digest")
     d.add_argument("--pack", action="store_true", help="print the digest gzipped and base64-encoded on one line (a job output)")
@@ -308,13 +350,18 @@ def main(argv: list[str]) -> int:
         if args.cmd == "files":
             print("\n".join(files_of(shard, shards, table)))
         elif args.cmd == "plan":
+            every = test_files()
             mine = files_of(shard, shards, table)
             if not mine:
-                print(f"shard {shard}/{shards} has no test files: refusing to write an empty list (pytest would then run the whole suite)", file=sys.stderr)
+                print(f"shard {shard}/{shards} has no test files: refusing to write a plan that runs nothing", file=sys.stderr)
                 return 1
-            Path(args.out).write_text("\n".join(mine) + "\n", encoding="utf-8")
+            ignored = ignore_args(mine, every)
+            if shards > 1 and not ignored:
+                print(f"shard {shard}/{shards} would ignore no file, so it would run the whole suite: refusing to write that plan", file=sys.stderr)
+                return 1
+            Path(args.out).write_text("".join(f"{line}\n" for line in ignored), encoding="utf-8")
             seconds, new = predicted(mine, table, shard, shards)
-            print(f"shard {shard}/{shards}: {len(mine)} of {len(test_files())} test files; the table predicts {round(seconds)} s; {new} not in the table")
+            print(f"shard {shard}/{shards}: runs {len(mine)} of {len(every)} test files (ignores {len(ignored)}); the table predicts {round(seconds)} s; {new} not in the table")
         elif args.cmd == "check":
             files = test_files()
             found = problems(files, table["shards"], table)
@@ -323,6 +370,21 @@ def main(argv: list[str]) -> int:
             for line in found:
                 print(line)
             print(f"{len(files)} test files, {table['shards']} shards: {'a partition' if not found else str(len(found)) + ' problem(s)'}")
+            return 1 if found else 0
+        elif args.cmd == "collected":
+            whole = read_collected(Path(args.all).read_text(encoding="utf-8"))
+            parts = [read_collected(Path(f).read_text(encoding="utf-8")) for f in args.shard_outputs]
+            found = compare_collected(whole, parts)
+            for line in found[:100]:
+                print(line)
+            print(f"whole suite: {len(whole)} tests in {module_count(whole)} modules")
+            for number, ids in enumerate(parts, 1):
+                print(f"shard {number}: {len(ids)} tests in {module_count(ids)} modules")
+            union = [i for ids in parts for i in ids]
+            print(f"shards together: {len(union)} tests in {module_count(union)} modules; {len(found)} difference(s)")
+            if not whole:
+                print("the whole-suite collection holds no test id: nothing was compared", file=sys.stderr)
+                return 1
             return 1 if found else 0
         elif args.cmd == "totals":
             dig = digest(read_junit(Path(args.junit)))

@@ -381,10 +381,13 @@ jobs:
           alembic upgrade head
           alembic check
 
-      # WHICH FILES THIS LEG RUNS. scripts/ci_shard.py writes them, one path per line, to the file the pytest step reads as `@FILE` (pytest >= 8.2), and prints how many
-      # of the suite's test files they are, what the cost table predicts for them and how many the table does not name (a table that has fallen behind is read here).
-      # It refuses to write an empty list, because `pytest @EMPTY` would run the WHOLE suite in this leg. It is a step of its own so that the pytest step stays
-      # the one line tests/test_ci_pytest_flags_and_preflight.py pins, and so that a failure to plan is a red step that names the planner, not a green leg that ran nothing.
+      # WHICH FILES THIS LEG RUNS. scripts/ci_shard.py writes `--ignore=<file>` for every test file that belongs to ANOTHER shard, one per line, to the file the pytest
+      # step reads as `@FILE` (pytest >= 8.2), and prints how many of the suite's test files this leg runs, what the cost table predicts for them and how many the table
+      # does not name (a table that has fallen behind is read here). It ignores the others' files rather than naming its own because a path named on the command line is
+      # NOT subject to `collect_ignore` in tests/conftest.py: the first sharded Core-only leg named its files, collected the two analysis modules a core-only install must
+      # not collect and died at import. It refuses a plan that runs nothing or ignores nothing (a shard that ignores everything ends in "no tests ran", red). It is a step of
+      # its own so that the pytest step stays the one line tests/test_ci_pytest_flags_and_preflight.py pins, and so that a failure to plan is a red step that names the
+      # planner, not a green leg that ran nothing.
       - name: Plan this shard (which test files it runs)
         run: python scripts/ci_shard.py plan --shard ${{ matrix.shard }}/3 --out "$RUNNER_TEMP/shard.args"
 
@@ -927,8 +930,8 @@ jobs:
           python scripts/check_wheel_layout.py "$RUNNER_TEMP"/oo-dist/*.whl
 
   # ======================================================================================================================================================
-  # TEMPORARY (C10, decision 27): THE ONE SHARDED-AGAINST-UNSHARDED COMPARISON, on the head it is run on. REMOVED BEFORE THE MERGE (these three jobs and this
-  # comment are the whole of it). `parity-unsharded` is the old `test` job's suite in ONE process on the same commit, with the same installs; each leg of
+  # TEMPORARY (C10, decision 27): THE ONE SHARDED-AGAINST-UNSHARDED COMPARISON, on the head it is run on. REMOVED BEFORE THE MERGE (these jobs, `parity-collect-core`
+  # at the end of the file included, and this comment are the whole of it). `parity-unsharded` is the old `test` job's suite in ONE process on the same commit, with the same installs; each leg of
   # `parity-shard` runs its third and compares, module by module and outcome by outcome, with the unsharded run's digest (scripts/ci_shard.py parity), so the
   # union of the three legs is the unsharded run or the leg that differs says where. It also prints the measured per-module seconds for the cost table.
   # ======================================================================================================================================================
@@ -1014,3 +1017,30 @@ jobs:
         env:
           ORACLE: ${{ needs.parity-unsharded.outputs.digest }}
         run: python scripts/ci_shard.py parity --shard ${{ matrix.shard }}/3 --junit "$RUNNER_TEMP/junit.xml" --oracle-env ORACLE
+
+  # TEMPORARY (C10): the check that matters for Core-only, which has no unsharded run to compare with. A core-only install collects the whole suite once, then each
+  # shard's plan; the shards' test ids together must be exactly the whole collection's (scripts/ci_shard.py collected). This is the check that would have caught the
+  # first Core-only leg, which collected files `collect_ignore` keeps out of a core-only install. Removed with the other PARITY jobs.
+  parity-collect-core:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    name: PARITY (temporary) core-only collection, whole against the three shards
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python 3.13
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Install (core + dev only)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Collect the whole suite, then each shard
+        run: |
+          python -m pytest -q --collect-only > "$RUNNER_TEMP/all.txt"
+          for i in 1 2 3; do
+            python scripts/ci_shard.py plan --shard "$i/3" --out "$RUNNER_TEMP/shard$i.args"
+            python -m pytest -q --collect-only @"$RUNNER_TEMP/shard$i.args" > "$RUNNER_TEMP/shard$i.txt"
+          done
+      - name: The shards together are the whole
+        run: python scripts/ci_shard.py collected --all "$RUNNER_TEMP/all.txt" "$RUNNER_TEMP/shard1.txt" "$RUNNER_TEMP/shard2.txt" "$RUNNER_TEMP/shard3.txt"

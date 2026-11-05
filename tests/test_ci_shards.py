@@ -38,6 +38,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import zlib
 from pathlib import Path
 
@@ -308,8 +309,10 @@ def test_costs_are_rewritten_from_reports_and_keep_the_shape(tmp_path):
 def test_the_command_line_plans_checks_digests_and_compares(tmp_path, capsys, monkeypatch):
     out = tmp_path / "shard.args"
     assert S.main(["plan", "--shard", f"1/{_N}", "--out", str(out)]) == 0
-    assert out.read_text(encoding="utf-8").split() == S.files_of(1, _N, _TABLE)
-    assert re.search(r"shard 1/3: \d+ of \d+ test files; the table predicts \d+ s; \d+ not in the table", capsys.readouterr().out)
+    every = S.test_files()
+    mine = S.files_of(1, _N, _TABLE)
+    assert out.read_text(encoding="utf-8").splitlines() == [f"--ignore={f}" for f in every if f not in set(mine)], "the plan ignores every file of the OTHER shards"
+    assert re.search(r"shard 1/3: runs \d+ of \d+ test files \(ignores \d+\); the table predicts \d+ s; \d+ not in the table", capsys.readouterr().out)
     assert S.main(["check"]) == 0
     assert S.main(["plan", "--shard", "4/3", "--out", str(out)]) == 2, "a shard past N is an error, not an empty list"
     # an empty shard is refused: `pytest @EMPTY` would run the whole suite
@@ -318,6 +321,11 @@ def test_the_command_line_plans_checks_digests_and_compares(tmp_path, capsys, mo
     assert S.main(["--table", str(tmp_path / "t.json"), "plan", "--shard", f"{empty}/2", "--out", str(out)]) == 2  # no such table: named, not a traceback
     (tmp_path / "t.json").write_text(json.dumps({"shards": 2, "costs": {}}), encoding="utf-8")
     assert S.main(["--table", str(tmp_path / "t.json"), "plan", "--shard", f"{empty}/2", "--out", str(out)]) == 1
+    # the shard that owns the only file would ignore nothing, i.e. run the whole suite: refused too
+    assert S.main(["--table", str(tmp_path / "t.json"), "plan", "--shard", f"{3 - empty}/2", "--out", str(out)]) == 1
+    # one shard of one runs everything: an empty ignore list is right there (and only there)
+    assert S.main(["--table", str(tmp_path / "t.json"), "plan", "--shard", "1/1", "--out", str(out)]) == 0
+    assert out.read_text(encoding="utf-8") == ""
     monkeypatch.undo()
     report = _junit(tmp_path)
     assert S.main(["digest", str(report)]) == 0
@@ -335,6 +343,83 @@ def test_the_command_line_plans_checks_digests_and_compares(tmp_path, capsys, mo
     assert S.main(["parity", "--shard", f"1/{_N}", "--junit", str(_junit(tmp_path, only, "only.xml")), "--oracle-env", "ORACLE"]) == 0
     monkeypatch.delenv("ORACLE")
     assert S.main(["parity", "--shard", f"1/{_N}", "--junit", str(report), "--oracle-env", "ORACLE"]) == 1, "no oracle is a failure, not a pass"
+
+
+# --------------------------------------------------------------------------------- how a shard is run: it ignores the others' files
+def test_a_plan_ignores_the_files_of_the_other_shards_and_runs_the_rest():
+    files = [f"tests/test_m{i}.py" for i in range(6)]
+    assert S.ignore_args(files[:2], files) == [f"--ignore={f}" for f in files[2:]]
+    assert S.ignore_args(files, files) == [] and S.ignore_args([], files) == [f"--ignore={f}" for f in files]
+    everyone = [set(S.ignore_args(S.files_of(k, _N, _TABLE), S.test_files())) for k in range(1, _N + 1)]
+    # a file is run by exactly the shard that does not ignore it
+    for f in S.test_files():
+        assert sum(f"--ignore={f}" not in ignored for ignored in everyone) == 1, f
+
+
+def _run_pytest(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("PYTEST_", "COV_"))}
+    return subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", *args], cwd=cwd, env=env, capture_output=True, text=True, timeout=120)
+
+
+def test_a_file_named_on_the_command_line_escapes_collect_ignore_and_a_plan_does_not(tmp_path):
+    """The first sharded Core-only leg named its files: the two analysis modules that tests/conftest.py keeps out of a core-only install through
+    ``collect_ignore`` were collected, and died at import. Real pytest, on a toy tree built like the suite's: ``test_ignored.py`` is in ``collect_ignore``
+    and cannot be imported; ``test_one.py`` and ``test_two.py`` are fine; the shards are ``{ignored, one}`` and ``{two}``."""
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tmp_path / "pytest.ini").write_text("[pytest]\ntestpaths = tests\n", encoding="utf-8")
+    (tests / "conftest.py").write_text('collect_ignore = ["test_ignored.py"]\n', encoding="utf-8")
+    (tests / "test_ignored.py").write_text("import module_that_is_not_installed\n\ndef test_x():\n    pass\n", encoding="utf-8")
+    (tests / "test_one.py").write_text("def test_one():\n    pass\n", encoding="utf-8")
+    (tests / "test_two.py").write_text("def test_two():\n    pass\n", encoding="utf-8")
+    files = S.test_files(tmp_path)
+    assert files == ["tests/test_ignored.py", "tests/test_one.py", "tests/test_two.py"]
+
+    named = _run_pytest(tmp_path, "tests/test_ignored.py", "tests/test_one.py")
+    assert named.returncode != 0 and "module_that_is_not_installed" in named.stdout, "naming a file on the command line collects it even though collect_ignore lists it"
+
+    plan = tmp_path / "shard.args"
+    plan.write_text("".join(f"{line}\n" for line in S.ignore_args(["tests/test_ignored.py", "tests/test_one.py"], files)), encoding="utf-8")
+    first = _run_pytest(tmp_path, f"@{plan}")
+    assert first.returncode == 0 and "1 passed" in first.stdout, first.stdout
+    plan.write_text("".join(f"{line}\n" for line in S.ignore_args(["tests/test_two.py"], files)), encoding="utf-8")
+    second = _run_pytest(tmp_path, f"@{plan}")
+    assert second.returncode == 0 and "1 passed" in second.stdout, second.stdout
+    # a shard that ignores everything runs nothing and is RED (exit 5), where an empty list of files would have run the whole suite
+    plan.write_text("".join(f"{line}\n" for line in S.ignore_args([], files)), encoding="utf-8")
+    nothing = _run_pytest(tmp_path, f"@{plan}")
+    assert nothing.returncode == 5 and "no tests ran" in nothing.stdout, (nothing.returncode, nothing.stdout)
+
+
+_COLLECTED = """tests/test_a.py::test_one
+tests/test_a.py::TestK::test_two[1-x y]
+tests/test_b.py::test_three
+
+3 tests collected in 0.01s
+"""
+
+
+def test_collected_ids_are_read_and_compared(tmp_path, capsys):
+    ids = S.read_collected(_COLLECTED)
+    assert ids == ["tests/test_a.py::test_one", "tests/test_a.py::TestK::test_two[1-x y]", "tests/test_b.py::test_three"], "the summary line and the blank line are not ids"
+    assert S.read_collected("ERROR tests/test_c.py - ImportError: x\nno tests ran in 0.1s\n") == []
+    assert S.compare_collected(ids, [ids[:1], ids[1:]]) == []
+    assert any("by no shard" in line for line in S.compare_collected(ids, [ids[:1], ids[1:2]]))
+    assert any("not by the whole suite" in line for line in S.compare_collected(ids, [ids, ["tests/test_z.py::t"]]))
+    assert any("collected 2 times" in line for line in S.compare_collected(ids, [ids, ids[:1]]))
+    assert any("collected 2 times" in line for line in S.compare_collected(ids, [ids + ids[:1]])), "twice in one shard"
+    whole = tmp_path / "all.txt"
+    whole.write_text(_COLLECTED, encoding="utf-8")
+    a, b = tmp_path / "s1.txt", tmp_path / "s2.txt"
+    a.write_text("\n".join(ids[:1]) + "\n\n1 test collected\n", encoding="utf-8")
+    b.write_text("\n".join(ids[1:]) + "\n", encoding="utf-8")
+    assert S.main(["collected", "--all", str(whole), str(a), str(b)]) == 0
+    assert "shards together: 3 tests in 2 modules; 0 difference(s)" in capsys.readouterr().out
+    assert S.main(["collected", "--all", str(whole), str(a)]) == 1, "a shard missing"
+    assert "collected by the whole suite, by no shard" in capsys.readouterr().out
+    empty = tmp_path / "e.txt"
+    empty.write_text("no tests ran in 0.1s\n", encoding="utf-8")
+    assert S.main(["collected", "--all", str(empty), str(empty)]) == 1, "an empty whole collection compares nothing: red, not green"
 
 
 def test_totals_count_every_outcome_and_are_described_in_words(tmp_path, capsys):
