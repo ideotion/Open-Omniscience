@@ -9,8 +9,9 @@ COUNTS WITH A METHOD AND AN n, NEVER A VERDICT, NEVER A COMPOSITE. Two surfaces,
 * SURFACE 2, adoption: per day, how many places the lane already held GAINED and how many LOST each of the four metadata types of
   analytic 1 (opening hours, website, e-mail, phone; the ``contact:*`` twin counts as its key, as in analytic 1, and an empty value is
   absent). A place counts once per day per type, and the changes to a place the file CREATED, DELETED or took out of the kept classes
-  are not here (they are surface 3's). A tag moving to its ``contact:*`` twin reads as one loss and one gain on the same type, which is
-  what the file says.
+  are not here (they are surface 3's). A place that both gains and loses the same type on one day (a tag moved to its ``contact:*`` twin)
+  counts as neither. A change file lists only the keys that changed, so a place that already held one form and adds the other still reads
+  as a gain; the caveat says so.
 * SURFACE 3, openings and closures: per day, the places that APPEARED in the lane (``created``), DISAPPEARED (``deleted``), or stopped
   qualifying (``left_class``), and three signals read from changes to places the lane already held: a ``disused:*`` key added,
   ``shop`` set to ``vacant``, ``opening_hours`` set to ``closed`` or ``off``. A deletion in OpenStreetMap is not proof that a place closed
@@ -50,10 +51,12 @@ CLOSED_VALUES = ("closed", "off")
 METHOD_ADOPTION = (
     "Per day of the change files applied here: the places the lane already held that gained or lost each tag, once per place per tag. "
     "A tag counts when it, or its contact:* twin, has a non-empty value, so setting opening hours to closed counts as gaining them. "
+    "A place that both gains and loses the same tag on one day (a tag moved to its contact:* twin) counts as neither. "
     "Places created, deleted or dropped from the kept classes that day are counted under openings and closures."
 )
 CAVEAT_ADOPTION = (
-    "These are changes, not totals, and a mapper tidying a record looks the same as a business changing. A day without a change file "
+    "These are changes, not totals, and a mapper tidying a record looks the same as a business changing. A change file lists only the tags "
+    "that changed, so a place that already held one form of a tag and adds the other reads as gaining it. A day without a change file "
     "is not observed, and is not a zero. The planet's earlier years are shown apart and never added."
 )
 METHOD_OPENINGS = (
@@ -65,8 +68,14 @@ CAVEAT_OPENINGS = (
     "counts says a business opened or closed. A day without a change file is not observed, and is not a zero."
 )
 METHOD_PRIOR = (
-    "Read from the full-history planet for this country's objects, by month, with the same rules, ignoring each object's first version. "
-    "It covers the years before the window this machine observed, comes from a different table, and is never added to it."
+    "Read from the full-history planet for this country's objects, by month, with the same rules. The version that created, deleted or "
+    "restored an object is counted only as an appearance or a disappearance, and an object's first version is ignored. It covers the years "
+    "before the window this machine observed, comes from a different table, and is never added to it."
+)
+CAVEAT_PRIOR = (
+    "These are changes between a place's recorded versions, not totals, and a mapper tidying a record looks the same as a business changing. "
+    "A month in which nobody edited a place has no row, which is not a zero. A deletion can be a clean-up and an appearance a place that was "
+    "always there: none of these counts says a business opened or closed."
 )
 
 _OLD_LANE = "this table is not in the lane (it was cut by an older build); re-cutting a country creates it"
@@ -122,13 +131,36 @@ def _adoption_parts(t):
     return base, direction, [k for k, _ in keys] + [twin for twin, _ in twins]
 
 
+def _adoption_rows(s, t, bucket, *where):
+    """``(bucket, base key, direction, places)`` rows. A place that both gains and loses the same tag in one bucket is a net zero
+    (a tag moved to its ``contact:*`` twin) and counts as neither."""
+    from sqlalchemy import String, cast, func, select
+
+    base, direction, keys = _adoption_parts(t)
+    per_place = (
+        select(
+            bucket.label("b"),
+            base.label("k"),
+            (t.c.osm_type + cast(t.c.osm_id, String)).label("o"),
+            func.min(direction).label("lo"),
+            func.max(direction).label("hi"),
+        )
+        .where(t.c.key.in_(keys), direction.is_not(None), *where)
+        .group_by(bucket, base, t.c.osm_type + cast(t.c.osm_id, String))
+        .subquery()
+    )
+    return s.execute(
+        select(per_place.c.b, per_place.c.k, per_place.c.lo, func.count()).where(per_place.c.lo == per_place.c.hi).group_by(per_place.c.b, per_place.c.k, per_place.c.lo)
+    ).all()
+
+
 def _signal(t):
     """The closure-side signal a KEY change carries, or NULL."""
-    from sqlalchemy import and_, case
+    from sqlalchemy import and_, case, func
 
     entered = t.c.change.in_(("added", "modified"))
     return case(
-        (and_(t.c.key.like("disused:%"), t.c.change == "added", t.c.new_value != ""), "disused"),
+        (and_(func.substr(t.c.key, 1, 8) == "disused:", t.c.change == "added", t.c.new_value != ""), "disused"),   # exact: LIKE is case-blind in SQLite
         (and_(t.c.key == "shop", entered, t.c.new_value == "vacant"), "vacant"),
         (and_(t.c.key == "opening_hours", entered, t.c.new_value.in_(CLOSED_VALUES)), "closed"),
     )
@@ -150,16 +182,17 @@ def _adoption_series(rows, buckets: list[str]) -> dict[str, Any]:
 
 
 _OPENING_FIELDS = ("created", "deleted", "left_class", *SIGNALS)
+_PRIOR_OPENING_FIELDS = ("created", "deleted", *SIGNALS)
 
 
-def _openings_series(rows, buckets: list[str]) -> dict[str, Any]:
-    by: dict[str, dict[str, Any]] = {b: dict.fromkeys(_OPENING_FIELDS, 0) for b in buckets}
+def _openings_series(rows, buckets: list[str], fields: tuple[str, ...] = _OPENING_FIELDS) -> dict[str, Any]:
+    by: dict[str, dict[str, Any]] = {b: dict.fromkeys(fields, 0) for b in buckets}
     total = 0
     for bucket, what, n in rows:
-        if bucket in by and what in _OPENING_FIELDS:
+        if bucket in by and what in fields:
             by[bucket][what] = int(n)
             total += int(n)
-    return {"fields": list(_OPENING_FIELDS), "series": _series(by, buckets), "n": total}
+    return {"fields": list(fields), "series": _series(by, buckets), "n": total}
 
 
 def _build(alpha3: str) -> dict[str, Any]:
@@ -205,20 +238,16 @@ def _build(alpha3: str) -> dict[str, Any]:
         else:
             tracked["unobserved"] = None
             tracked["unobserved_reason"] = _OLD_LANE
-        base, direction, keys = _adoption_parts(tc)
         own = tc.c.country_alpha3 == alpha3
+        stamped = tc.c.diff_timestamp.is_not(None)
         day = _day(tc.c.diff_timestamp)
-        adoption_rows = s.execute(
-            select(day, base, direction, _obj(tc))
-            .where(own, tc.c.object_event.is_(None), tc.c.key.in_(keys), direction.is_not(None))
-            .group_by(day, base, direction)
-        ).all()
+        adoption_rows = _adoption_rows(s, tc, day, own, stamped, tc.c.object_event.is_(None))
         event_rows = s.execute(
-            select(day, tc.c.object_event, _obj(tc)).where(own, tc.c.object_event.is_not(None)).group_by(day, tc.c.object_event)
+            select(day, tc.c.object_event, _obj(tc)).where(own, stamped, tc.c.object_event.is_not(None)).group_by(day, tc.c.object_event)
         ).all()
         sig = _signal(tc)
         signal_rows = s.execute(
-            select(day, sig, _obj(tc)).where(own, tc.c.object_event.is_(None), sig.is_not(None)).group_by(day, sig)
+            select(day, sig, _obj(tc)).where(own, stamped, tc.c.object_event.is_(None), sig.is_not(None)).group_by(day, sig)
         ).all()
         # A row on a day that has no file in osm_diff_runs cannot happen from this build's writes, but it is shown, not dropped.
         buckets = sorted(set(days) | {r[0] for r in adoption_rows} | {r[0] for r in event_rows} | {r[0] for r in signal_rows})
@@ -248,25 +277,29 @@ def _prior(s, alpha3: str, have: set[str]) -> dict[str, Any]:
         return {"available": False, "reason": "no-history-cut", "detail": "the full-history planet has not been read for this country"}
     if cut.status != "complete":
         return {"available": False, "reason": "history-cut-unfinished", "detail": "the full-history read for this country did not finish"}
+    from sqlalchemy import exists
+
     h = OsmHistoryChange.__table__
-    base, direction, keys = _adoption_parts(h)
     own = h.c.country_alpha3 == alpha3
     month = _month(h.c.version_timestamp)
+    stamped = h.c.version_timestamp.is_not(None)
     not_first = (h.c.object_version.is_(None)) | (h.c.object_version != 1)
     key_level = h.c.key.is_not(None)
-    adoption_rows = s.execute(
-        select(month, base, direction, _obj(h))
-        .where(own, key_level, not_first, h.c.key.in_(keys), direction.is_not(None), h.c.version_timestamp.is_not(None))
-        .group_by(month, base, direction)
-    ).all()
+    # The key rows of a version that created, deleted or restored the object are that event's own, counted under openings and closures:
+    # history.py writes a per-key row for every key of such a version, and they are not adoption or closure signals.
+    e = h.alias("e")
+    event_version = exists().where(
+        e.c.osm_type == h.c.osm_type, e.c.osm_id == h.c.osm_id, e.c.object_version == h.c.object_version, e.c.key.is_(None)
+    )
+    adoption_rows = _adoption_rows(s, h, month, own, stamped, not_first, key_level, ~event_version)
     sig = _signal(h)
     signal_rows = s.execute(
-        select(month, sig, _obj(h)).where(own, key_level, not_first, sig.is_not(None), h.c.version_timestamp.is_not(None)).group_by(month, sig)
+        select(month, sig, _obj(h)).where(own, stamped, key_level, not_first, ~event_version, sig.is_not(None)).group_by(month, sig)
     ).all()
     # Object-level rows: created / deleted (restored is its own fact and not a closure or an opening here).
     event_rows = s.execute(
         select(month, h.c.change, _obj(h))
-        .where(own, h.c.key.is_(None), h.c.change.in_(("created", "deleted")), h.c.version_timestamp.is_not(None))
+        .where(own, h.c.key.is_(None), h.c.change.in_(("created", "deleted")), stamped)
         .group_by(month, h.c.change)
     ).all()
     buckets = sorted({r[0] for r in adoption_rows} | {r[0] for r in signal_rows} | {r[0] for r in event_rows})
@@ -275,7 +308,8 @@ def _prior(s, alpha3: str, have: set[str]) -> dict[str, Any]:
         "bucket": "month",
         "span": json.loads(cut.span_json) if cut.span_json else None,
         "vintage": _iso(cut.history_vintage),
-        "adoption": {**_adoption_series(adoption_rows, buckets), "caveat": CAVEAT_ADOPTION},
-        "openings": {**_openings_series([*event_rows, *signal_rows], buckets), "caveat": CAVEAT_OPENINGS},
+        "adoption": {**_adoption_series(adoption_rows, buckets), "caveat": CAVEAT_PRIOR},
+        # No "left_class": the history has no such fact, and a column of zeros would read as a measurement.
+        "openings": {**_openings_series([*event_rows, *signal_rows], buckets, _PRIOR_OPENING_FIELDS), "caveat": CAVEAT_PRIOR},
         "method": METHOD_PRIOR,
     }

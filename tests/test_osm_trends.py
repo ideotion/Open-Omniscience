@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from src.osm import apply as A
 from src.osm import ingest
 from src.osm import trends as TR
-from src.osm.lane_models import OsmHistoryChange, OsmHistoryCut
+from src.osm.lane_models import OsmHistoryChange, OsmHistoryCut, OsmTagChange
 from src.versioned import store
 from tests import _osm_lane_helpers
 from tests.test_osm_apply import DAY1, SEQ0, T0, Mirror, _extract, _osc
@@ -112,6 +112,53 @@ def test_the_three_closure_signals_and_a_gain_are_read_from_places_the_lane_alre
     assert _day(got["adoption"], D1)["lost"] == {"opening_hours": 0, "website": 0, "email": 0, "phone": 0}
 
 
+def test_a_tag_moved_to_its_contact_twin_is_neither_a_gain_nor_a_loss(cut, osm_lane_dir):
+    moved = {k: v for k, v in CAFE.items() if k != "website"} | {"contact:website": "https://cafe.invalid"}
+    _apply(osm_lane_dir, {101: f'<modify><node id="5" version="4" timestamp="2025-01-11T01:00:00Z" lat="0.15" lon="0.15">{_tags(moved)}</node></modify>'})
+    got = TR.trends("ZZZ")
+    zero = dict.fromkeys(("opening_hours", "website", "email", "phone"), 0)
+    assert _day(got["adoption"], D1) == {"bucket": D1, "gained": zero, "lost": zero}, "a move was counted as a loss and a gain"
+    assert "counts as neither" in TR.METHOD_ADOPTION, "the method does not say what the code does"
+
+
+def test_a_row_without_a_timestamp_does_not_make_the_country_unreadable(cut, osm_lane_dir):
+    _apply(osm_lane_dir, {101: DAY1})
+    with store.lane_session("osm") as s:
+        s.add(OsmTagChange(osm_type="n", osm_id=77, key="website", change="added", new_value="x", diff_timestamp=None, object_version=1, country_alpha3="ZZZ"))
+        s.add(OsmTagChange(osm_type="n", osm_id=78, key="website", change="removed", old_value="x", diff_timestamp=None, object_version=1, country_alpha3="ZZZ", object_event="deleted"))
+        s.add(OsmTagChange(osm_type="n", osm_id=79, key="shop", change="modified", old_value="a", new_value="vacant", diff_timestamp=None, object_version=1, country_alpha3="ZZZ"))
+    got = TR.trends("ZZZ")
+    assert got["status"] == "ok" and [r["bucket"] for r in got["adoption"]["series"]] == [D1], "a row that cannot be placed in a day is not a day"
+
+
+def test_the_key_rows_of_a_version_that_created_deleted_or_restored_an_object_are_not_adoption_or_signals(cut, osm_lane_dir):
+    """history.py writes a per-key row for every key of such a version beside the object-level row; those keys are the event's, not changes."""
+    _apply(osm_lane_dir, {101: DAY1})
+    t = lambda y, m, d: datetime(y, m, d, tzinfo=UTC)  # noqa: E731
+    _history([
+        # object 20 is deleted in March 2020: the object-level row, then a removed row per key it held
+        ("n", 20, 3, t(2020, 3, 5), "deleted", None, None, None),
+        ("n", 20, 3, t(2020, 3, 5), "removed", "website", "w", None),
+        ("n", 20, 3, t(2020, 3, 5), "removed", "shop", "vacant", None),
+        # restored in April 2020: the object-level row, then an added row per key
+        ("n", 20, 4, t(2020, 4, 5), "restored", None, None, None),
+        ("n", 20, 4, t(2020, 4, 5), "added", "website", None, "w"),
+        ("n", 20, 4, t(2020, 4, 5), "added", "shop", None, "vacant"),
+        # a chain that STARTS after version 1: created at version 3, every key added
+        ("n", 21, 3, t(2020, 4, 9), "created", None, None, None),
+        ("n", 21, 3, t(2020, 4, 9), "added", "phone", None, "p"),
+        # an ordinary edit, which is adoption
+        ("n", 22, 5, t(2020, 4, 20), "added", "email", None, "e"),
+    ])
+    p = TR.trends("ZZZ")["prior"]
+    assert [r["bucket"] for r in p["adoption"]["series"]] == ["2020-03", "2020-04"]
+    assert _day(p["adoption"], "2020-03")["lost"]["website"] == 0, "a deleted place's keys were counted as lost"
+    a = _day(p["adoption"], "2020-04")
+    assert (a["gained"]["website"], a["gained"]["phone"], a["gained"]["email"]) == (0, 0, 1)
+    assert _day(p["openings"], "2020-04")["vacant"] == 0 and _day(p["openings"], "2020-03")["deleted"] == 1
+    assert _day(p["openings"], "2020-04")["created"] == 1
+
+
 def test_an_object_that_stops_qualifying_is_left_class_and_its_lost_tags_are_not_adoption(cut, osm_lane_dir):
     # node 6 loses its shop tag: it leaves the kept classes. Its phone and e-mail did not change, and its shop key is not a metadata type.
     body = (
@@ -177,9 +224,13 @@ def test_the_planets_prior_is_read_separately_by_month_and_never_added_to_the_wi
         "bucket": "2020-03", "gained": {"opening_hours": 0, "website": 1, "email": 0, "phone": 0},
         "lost": {"opening_hours": 0, "website": 0, "email": 0, "phone": 1},
     }
-    assert _day(p["openings"], "2020-05") == {"bucket": "2020-05", "created": 1, "deleted": 1, "left_class": 0, "disused": 0, "vacant": 0, "closed": 0}
+    # no "left_class": the history has no such fact, so no column of zeros stands in for it
+    assert _day(p["openings"], "2020-05") == {"bucket": "2020-05", "created": 1, "deleted": 1, "disused": 0, "vacant": 0, "closed": 0}
+    assert "left_class" not in p["openings"]["fields"]
     assert _day(p["openings"], "2021-01")["vacant"] == 1
-    assert p["adoption"]["caveat"] == TR.CAVEAT_ADOPTION and p["openings"]["caveat"] == TR.CAVEAT_OPENINGS, "the planet's block shows its caveat too"
+    # the planet's block shows its own caveat (a month, not a day), never the window's sentence about days without a file
+    assert p["adoption"]["caveat"] == TR.CAVEAT_PRIOR and p["openings"]["caveat"] == TR.CAVEAT_PRIOR
+    assert "day without a change file" not in TR.CAVEAT_PRIOR
     # the window is unchanged by the prior's existence: same series, same totals
     assert got["adoption"] == before["adoption"] and got["openings"] == before["openings"] and got["tracked"] == before["tracked"]
 

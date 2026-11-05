@@ -44,7 +44,7 @@ function extractConst(name, end) {
   return APP.slice(at, APP.indexOf(stop, at) + stop.length - 1);
 }
 
-const FUNCS = ["_osmTrendLabel", "_osmTrendTable", "_osmTrendBlock", "_osmTrendCountry", "_osmTrendPrior", "_osmTrendDrawAll"];
+const FUNCS = ["_osmTrendLabel", "_osmTrendFields", "_osmTrendTable", "_osmTrendBlock", "_osmTrendCountry", "_osmTrendPrior", "_osmTrendDrawAll", "_osmTrendShowTab"];
 const src =
   extractConst("esc") + "\n" +
   "var window = {};\n" +
@@ -57,11 +57,12 @@ const src =
   extractConst("OSM_COMP_KEYS", "];\n") + "\n" +
   extractConst("OSM_TREND_TABS", "];\n") + "\n" +
   extractConst("OSM_OPEN_FIELDS", "];\n") + "\n" +
-  "var _osmTrends = null, _osmTrendTab = 'adoption', _osmTrendKey = 'opening_hours';\n" +
-  "var document = { querySelectorAll() { return fakeHosts; } };\n" +
+  "var _osmTrends = null, _osmTrendTab = 'adoption', _osmTrendKey = 'opening_hours', _osmTrendNavs = [];\n" +
+  "var fakePanels = [];\n" +
+  "var document = { querySelectorAll(sel) { return sel.indexOf('panel') !== -1 ? fakePanels : fakeHosts; } };\n" +
   "var fakeHosts = [];\n" +
   FUNCS.map(extract).join("\n") + "\n" +
-  "module.exports = { " + FUNCS.join(", ") + ", set(o) { if ('trends' in o) _osmTrends = o.trends; if ('tab' in o) _osmTrendTab = o.tab; if ('key' in o) _osmTrendKey = o.key; if ('hosts' in o) fakeHosts = o.hosts; }, drawn };";
+  "module.exports = { " + FUNCS.join(", ") + ", set(o) { if ('trends' in o) _osmTrends = o.trends; if ('tab' in o) _osmTrendTab = o.tab; if ('key' in o) _osmTrendKey = o.key; if ('hosts' in o) fakeHosts = o.hosts; if ('navs' in o) _osmTrendNavs = o.navs; if ('panels' in o) fakePanels = o.panels; }, tab() { return _osmTrendTab; }, drawn };";
 const R = (() => {
   const m = { exports: {} };
   new Function("module", "exports", src)(m, m.exports);
@@ -81,7 +82,7 @@ const tracked = { since: "2025-01-11T00:00:00+00:00", through: "2025-03-01T00:00
 const ok = {
   status: "ok", lane: { alpha3: "ZZZ", name: "Zedland" }, tracked,
   adoption: { keys: KEYS, n: 5, method: "M-adoption <b>", caveat: "C-adoption", series: [day("2025-01-11", { website: 2 }, { phone: 1 }), day("2025-01-12", {}, {}), day("2025-03-01", { opening_hours: 1 }, {})] },
-  openings: { fields: [], n: 4, method: "M-open", caveat: "C-open", series: [open("2025-01-11", { created: 3 }), open("2025-03-01", { deleted: 1 })] },
+  openings: { fields: ["created", "deleted", "left_class", "disused", "vacant", "closed"], n: 4, method: "M-open", caveat: "C-open", series: [open("2025-01-11", { created: 3 }), open("2025-03-01", { deleted: 1 })] },
   prior: { available: false, reason: "no-history-cut" },
 };
 
@@ -107,40 +108,52 @@ assert.ok(!/title="[^"]*C-adoption/.test(html), "the caveat was hidden behind a 
 assert.ok(visible(html).includes("Not available: the full-history planet has not been read for this country."));
 const withPrior = Object.assign({}, ok, { prior: {
   available: true, method: "M-prior",
-  adoption: { keys: KEYS, n: 1, caveat: "C-adoption", series: [day("2020-03", { website: 1 }, {})] },
-  openings: { n: 1, caveat: "C-open", series: [open("2020-05", { created: 1 })] },
+  adoption: { keys: KEYS, n: 1, caveat: "C-prior", series: [day("2020-03", { website: 1 }, {})] },
+  openings: { fields: ["created", "deleted", "disused", "vacant", "closed"], n: 1, caveat: "C-prior", series: [{ bucket: "2020-05", created: 1, deleted: 0, disused: 0, vacant: 0, closed: 0 }] },
 } });
 R.set({ tab: "adoption" });
 html = R._osmTrendCountry(withPrior, 0);
-assert.strictEqual((html.match(/data-osm-trend-month="1"/g) || []).length, 1, "the prior should be one block");
+assert.strictEqual((html.match(/data-osm-trend-month="1"/g) || []).length, 2, "the prior should be one block per kind");
 assert.strictEqual((html.match(/data-osm-trend-month="0"/g) || []).length, 2, "the window should be its own blocks");
 assert.ok(visible(html).includes("D(2020-03)"), "the prior's month is missing from its table");
 assert.ok(html.split("osm-trend-0-prior")[0].indexOf("2020-03") === -1, "the prior leaked into the window's table");
-assert.strictEqual((html.match(/class="card-caveat"/g) || []).length, 3, "the prior block lost its caveat");
+assert.strictEqual((html.match(/class="card-caveat"/g) || []).length, 4, "a block lost its caveat");
+assert.ok(html.includes(">C-prior<"), "the planet's block does not show its own caveat");
+// the planet's history has no "stopped qualifying": no column, so no zero stands in for it
+const priorOpen = html.split('data-osm-trend-panel="openings"')[1].split("osm-trend-0-prior-openings")[1];
+assert.ok(!priorOpen.includes("Stopped qualifying"), "the planet's table drew a column it cannot measure");
+assert.ok(html.split('data-osm-trend-panel="openings"')[1].split("osm-trend-0-prior-openings")[0].includes("Stopped qualifying"), "the window lost its column");
 
 // --- 4. no files / unreadable / old lane say so and draw nothing -------------------------------- //
 for (const [status, words] of [
-  ["no-daily-files", "No daily change file has been applied to this country yet, so there are no trends to show."],
-  ["not-cut", "No daily change file has been applied to this country yet, so there are no trends to show."],
   ["unreadable", "This country's trends could not be read."],
+  ["not-cut", "This country's trends could not be read."],
+  ["lane-never-run", "This country's trends could not be read."],
   ["old-lane", "Not available: this lane was cut by an older build and lacks the table."],
-  ["lane-never-run", "Not available: this lane was cut by an older build and lacks the table."],
 ]) {
   html = R._osmTrendCountry({ status, lane: { alpha3: "ZZZ", name: "Zedland" } }, 0);
   assert.ok(visible(html).includes(words), status + " did not say so: " + visible(html));
-  assert.ok(!html.includes("<table"), status + " drew a table");
-  assert.ok(!html.includes("data-osm-trend-chart=\"0\" data-osm-trend-kind=\"adoption\" data-osm-trend-month=\"0\""), status + " drew a chart host");
+  assert.ok(!html.includes("<table") && !html.includes("data-osm-trend-chart"), status + " drew a table or a chart");
   noJunk(html, status);
 }
+// A country with no change file yet says so and still offers the planet's past, on BOTH tabs and with the key picker.
+html = R._osmTrendCountry({ status: "no-daily-files", lane: { alpha3: "ZZZ", name: "Zedland" }, prior: withPrior.prior }, 0);
+assert.ok(visible(html).includes("No daily change file has been applied to this country yet, so there are no trends to show."));
+assert.ok(html.includes("data-osm-trend-tabs") && html.includes('data-osm-trend-panel="openings"') && html.includes("data-osm-trend-key"), "the planet's past was left on one view");
+assert.strictEqual((html.match(/data-osm-trend-month="0"/g) || []).length, 0, "a window was drawn from no file");
+assert.strictEqual((html.match(/data-osm-trend-month="1"/g) || []).length, 2);
+noJunk(html, "no-daily-files");
 
 // --- 5. an unobserved stretch is a sentence, never a zero ------------------------------------------ //
 const gapped = Object.assign({}, ok, { tracked: Object.assign({}, tracked, { unobserved: [
   { kind: "rebaseline", from_time: "2025-02-01T00:00:00+00:00", to_time: "2025-02-20T00:00:00+00:00" },
   { kind: "hand_recut", from_time: null, to_time: "2025-02-25T00:00:00+00:00" },
+  { kind: "other", from_time: "2025-02-26T00:00:00+00:00", to_time: "2025-02-27T00:00:00+00:00" },
 ] }) });
 html = R._osmTrendCountry(gapped, 0);
 assert.ok(visible(html).includes("Not observed between D(2025-02-01) and D(2025-02-20): the mirror no longer held the change files, so the country was cut again."));
 assert.ok(visible(html).includes("Not observed between Not recorded and D(2025-02-25): the country was cut again by hand."));
+assert.ok(visible(html).includes("Not observed between D(2025-02-26) and D(2025-02-27)."), "a gap of an unknown kind was given a cause");
 
 // --- 6. the charts take the picked key, and are given the counts as they are --------------------- //
 const host = { getAttribute: (a) => ({ "data-osm-trend-chart": "0", "data-osm-trend-kind": "adoption", "data-osm-trend-month": "0" })[a] };
@@ -164,5 +177,25 @@ R.drawn.length = 0;
 R.set({ trends: [Object.assign({}, ok, { adoption: Object.assign({}, ok.adoption, { series: [] }) })], hosts: [host] });
 R._osmTrendDrawAll();
 assert.strictEqual(R.drawn.length, 0, "an empty block drew a chart");
+
+// a chart in a hidden tab is not drawn (it could not measure its width); showing the tab draws it
+const hiddenPanel = { style: { display: "none" }, getAttribute: () => "openings" };
+const hhost = { getAttribute: host.getAttribute, closest: () => hiddenPanel };
+R.drawn.length = 0;
+R.set({ trends: [ok], hosts: [hhost], key: "website" });
+R._osmTrendDrawAll();
+assert.strictEqual(R.drawn.length, 0, "a chart was drawn in a hidden panel");
+hiddenPanel.style.display = "block";
+R._osmTrendDrawAll();
+assert.strictEqual(R.drawn.length, 1);
+
+// --- 7. switching tabs re-renders nothing: panels toggle, every country's tabs are painted, the visible charts draw --------- //
+const painted = [];
+const panels = ["adoption", "openings"].map((k) => ({ style: { display: k === "adoption" ? "block" : "none" }, getAttribute: () => k }));
+R.set({ navs: [{ paint: (k) => painted.push("a:" + k) }, { paint: (k) => painted.push("b:" + k) }, null], panels, hosts: [] });
+R._osmTrendShowTab("openings");
+assert.strictEqual(R.tab(), "openings");
+assert.deepStrictEqual(panels.map((p) => p.style.display), ["none", "block"]);
+assert.deepStrictEqual(painted, ["a:openings", "b:openings"], "another country's tabs disagree with the one shown");
 
 console.log("osm trends: all checks passed");

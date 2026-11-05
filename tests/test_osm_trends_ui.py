@@ -48,14 +48,39 @@ def test_every_view_string_and_every_server_string_ships_in_twelve_languages():
     from src.osm import trends as TR
 
     strings = [
-        TR.METHOD_ADOPTION, TR.CAVEAT_ADOPTION, TR.METHOD_OPENINGS, TR.CAVEAT_OPENINGS, TR.METHOD_PRIOR,
+        TR.METHOD_ADOPTION, TR.CAVEAT_ADOPTION, TR.METHOD_OPENINGS, TR.CAVEAT_OPENINGS, TR.METHOD_PRIOR, TR.CAVEAT_PRIOR,
         "OpenStreetMap trends", "Adoption of tags over time", "Openings and closures",
         "No daily change file has been applied to this country yet, so there are no trends to show.",
         "Change files applied: {n}, dated {since} to {through}.", "This country's trends could not be read.",
         "Gained", "Lost", "Appeared", "Disappeared", "Stopped qualifying", "Disused key added", "Marked vacant", "Marked closed",
-        "Day", "Hover for the method.", "{n} counted in all.",
+        "Day", "Hover for the method.", "Not observed between {from} and {to}.",
+        "Sum of the counts shown: {n}. A place changed on several days or in several ways is counted each time.",
     ]
     for path in sorted((STATIC / "locales").glob("*.json")):
         loc = json.loads(path.read_text("utf-8"))
         for s in strings:
             assert s in loc, (path.name, s)
+
+
+def test_the_two_second_count_poll_does_not_re_read_the_trends_and_a_slow_read_cannot_overwrite_a_newer_one():
+    js = (STATIC / "app-map.js").read_text(encoding="utf-8")
+    assert "loadOsmCompleteness({ poll: true })" in function_source(js, "_osmCompSchedulePoll")
+    load = function_source(js, "loadOsmCompleteness")
+    assert "if (!(opts && opts.poll)) loadOsmTrends(done)" in load
+    trends = function_source(js, "loadOsmTrends")
+    assert "++_osmTrendSeq" in trends and "if (seq !== _osmTrendSeq) return" in trends
+
+
+def test_changing_the_tab_or_the_key_does_not_rebuild_the_panel_and_so_keeps_the_keyboard_focus():
+    js = (STATIC / "app-map.js").read_text(encoding="utf-8")
+    assert "_renderOsmTrends" not in function_source(js, "_osmTrendShowTab")
+    render = function_source(js, "_renderOsmTrends")
+    assert "ooSubtabs(nav, _osmTrendShowTab)" in render
+    change = render.partition('addEventListener("change"')[2]
+    assert "_renderOsmTrends" not in change and "o.value = _osmTrendKey" in change
+
+
+def test_old_strings_are_gone_from_the_locales():
+    for path in sorted((STATIC / "locales").glob("*.json")):
+        loc = json.loads(path.read_text("utf-8"))
+        assert "{n} counted in all." not in loc, path.name
