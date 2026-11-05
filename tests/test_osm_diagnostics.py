@@ -6,6 +6,7 @@ Expected values are written out from the fixtures' own change files (their sizes
 from __future__ import annotations
 
 import json
+import types
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -18,6 +19,7 @@ from src.osm.lane_models import OsmCountry, OsmDiffRun
 from src.versioned import store
 from src.versioned.models import VersionedGap
 from tests import _osm_lane_helpers
+from tests.os_scope import scope_os
 from tests.test_osm_apply import (  # the apply tests' own fixture mirror and change files
     DAY1,
     SEQ0,
@@ -313,7 +315,7 @@ def test_an_omitted_answer_still_says_which_lane_state_it_cut_from(cut):
 
 
 def test_a_machine_that_reports_nothing_says_so_per_field(monkeypatch):
-    monkeypatch.setattr(D.os, "cpu_count", lambda: None)
-    monkeypatch.setattr(D.platform, "system", lambda: "")
+    scope_os(monkeypatch, D, cpu_count=lambda: None)  # as the module sees os; the runner's os is not touched (R351)
+    monkeypatch.setattr(D, "platform", types.SimpleNamespace(system=lambda: "", machine=lambda: "x86_64"))
     got = D._machine()
     assert set(got["unreported"]) == {"os", "cpus"} and got["arch"]
