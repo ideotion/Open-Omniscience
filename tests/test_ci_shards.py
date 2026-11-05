@@ -18,7 +18,9 @@ pinned below, with a mutant that breaks it:
   straight before pytest, and the pytest line that reads the list is pinned by tests/test_ci_pytest_flags_and_preflight.py;
 * the static steps (lint, planned-work index, i18n gates, migration drift, mypy, bandit, pip-audit) run in leg 1 only: a new static step in ``test``
   that forgot ``if: matrix.shard == 1`` would run three times, so every step of ``test`` that is not on the list of steps every leg needs must say so.
-  tests/test_skipped_tests_have_a_ci_job_that_runs_them.py knows that a job whose matrix is complete counts as the whole suite, and only then.
+  tests/test_skipped_tests_have_a_ci_job_that_runs_them.py knows that a job whose matrix is complete counts as the whole suite, and only then;
+* each leg keeps its junit report as an artifact (R433), the source of the next cost table: one upload step per job, pinned, on red as well as green, never
+  red itself, named per leg and per job, after pytest and before the skip summary (which has to stay the job's last step).
 
 What it does not see. Whether a test is order-independent: that is what the one sharded-against-unsharded run on the same commit was for
 (docs/ledger/shipped_log.d/2026-11-05-ci-test-and-core-only-run-in-three-shards.md), and what every later green run of the legs shows. Whether the
@@ -539,6 +541,9 @@ def test_the_partition_check_counts_each_problem_once(monkeypatch, tmp_path, cap
 # ------------------------------------------------------------------------------------------------ the workflow wiring
 _AGGREGATORS ={"test": ("test-all", "test"), "core-only": ("core-only-all", "Core-only install (no [analysis] extra)")}
 _PLAN = 'python scripts/ci_shard.py plan --shard ${{ matrix.shard }}/%d --out "$RUNNER_TEMP/shard.args"'
+#: The junit report each leg's pytest step writes (tests/test_ci_pytest_flags_and_preflight.py pins that step) and the artifact each leg uploads it as (R433).
+_REPORT = "${{ runner.temp }}/junit.xml"
+_ARTIFACT = "junit-%s-shard-${{ matrix.shard }}"
 #: Steps of ``test`` that every leg runs; any other step of it must say ``matrix.shard == 1``.
 _EVERY_LEG = (
     "Set up Python",
@@ -560,6 +565,35 @@ def _workflow() -> dict:
 def _leg_names(job: dict) -> list[str]:
     legs = job["strategy"]["matrix"]["shard"]
     return [str(job.get("name", "")).replace("${{ matrix.shard }}", str(leg)) for leg in legs]
+
+
+def _upload_problems(matrix_job: str, steps: list[dict], pytest_at: list[int]) -> list[str]:
+    """The step that keeps a leg's junit report (R433): once, pinned, on red as well as green, never red itself, named per leg and per job, after pytest and before the skip summary."""
+    uploads = [i for i, s in enumerate(steps) if "upload-artifact" in str(s.get("uses") or "")]
+    if len(uploads) != 1:
+        return [f"{matrix_job}: exactly one step that uploads the leg's junit report expected (the source of the next cost table), found {len(uploads)}"]
+    step = steps[uploads[0]]
+    with_ = step.get("with") or {}
+    found: list[str] = []
+    if not re.fullmatch(r"actions/upload-artifact@[0-9a-f]{40}", str(step.get("uses") or "")):
+        found.append(f"{matrix_job}: the upload step must be pinned to a full commit sha, as every action of ci.yml is ({step.get('uses')!r})")
+    if step.get("if") != "always()":
+        found.append(f"{matrix_job}: the upload step must say `if: always()` (a red leg's seconds are as good as a green one's), it says {step.get('if')!r}")
+    if step.get("continue-on-error") is not True:
+        found.append(f"{matrix_job}: the upload step must say `continue-on-error: true` (an upload never turns a leg red), it says {step.get('continue-on-error')!r}")
+    if with_.get("path") != _REPORT:
+        found.append(f"{matrix_job}: the upload step must upload `{_REPORT}`, the report the pytest step writes, it uploads {with_.get('path')!r}")
+    if with_.get("name") != _ARTIFACT % matrix_job:
+        found.append(f"{matrix_job}: the artifact name must be `{_ARTIFACT % matrix_job}`: one per leg and per job, or the legs overwrite each other ({with_.get('name')!r})")
+    retention = with_.get("retention-days")
+    if not isinstance(retention, int) or isinstance(retention, bool) or retention < 1:
+        found.append(f"{matrix_job}: the upload step must say `retention-days` (a whole number of days), or the report stays for the repository's default of 90 ({retention!r})")
+    if with_.get("overwrite") is not True:
+        found.append(f"{matrix_job}: the upload step must say `overwrite: true`, or a re-run of a leg fails on the name its first run took ({with_.get('overwrite')!r})")
+    summary_at = [i for i, s in enumerate(steps) if "ci_skip_summary" in str(s.get("run") or "")]
+    if len(pytest_at) == 1 and not (pytest_at[0] < uploads[0] and summary_at and uploads[0] < summary_at[0]):
+        found.append(f"{matrix_job}: the upload step must come after the pytest step and before the skip-summary step, which stays the job's last step")
+    return found
 
 
 def _wiring_problems(wf: dict, table: dict) -> list[str]:
@@ -597,6 +631,7 @@ def _wiring_problems(wf: dict, table: dict) -> list[str]:
             installs = [i for i, s in enumerate(steps) if "pip install -e" in str(s.get("run") or "")]
             if not installs or max(installs) > plans[0]:
                 found.append(f"{matrix_job}: the plan step must come after the install (it imports nothing from the project, but the leg's environment is what it plans for)")
+        found += _upload_problems(matrix_job, steps, pytest_at)
         aggr = jobs.get(aggregator) or {}
         if aggr.get("name") != required:
             found.append(f"{aggregator}: the aggregator must be named exactly `{required}` (the check branch protection requires), it is {aggr.get('name')!r}")
@@ -645,6 +680,16 @@ def _step(jobs: dict, job: str, prefix: str) -> dict:
     return next(s for s in jobs[job]["steps"] if str(s.get("name") or "").startswith(prefix))
 
 
+def _upload(jobs: dict, job: str) -> dict:
+    return next(s for s in jobs[job]["steps"] if "upload-artifact" in str(s.get("uses") or ""))
+
+
+def _move_upload(jobs: dict, job: str, to_end: bool) -> None:
+    steps = jobs[job]["steps"]
+    step = steps.pop(next(i for i, s in enumerate(steps) if "upload-artifact" in str(s.get("uses") or "")))
+    steps.append(step) if to_end else steps.insert(0, step)
+
+
 _MUTANTS = {
     "a leg is dropped": (lambda j: j["test"]["strategy"]["matrix"].__setitem__("shard", [1, 2]), "the matrix must be"),
     "a fourth leg": (lambda j: j["core-only"]["strategy"]["matrix"].__setitem__("shard", [1, 2, 3, 4]), "core-only: the matrix must be"),
@@ -678,6 +723,19 @@ _MUTANTS = {
     "the ratchet runs in every leg": (lambda j: _step(j, "test", "Lint — style non-growth").pop("if"), "runs in all three legs"),
     "a new static step runs in every leg": (lambda j: j["test"]["steps"].append({"name": "A new scanner", "run": "echo scan"}), "runs in all three legs"),
     "a core-only step is gated on the shard": (lambda j: _step(j, "core-only", "Boot check").__setitem__("if", "matrix.shard == 1"), "conditional on the shard"),
+    "the junit upload is gone": (lambda j: j["test"]["steps"].remove(_upload(j, "test")), "exactly one step that uploads"),
+    "the junit upload is gone from core-only": (lambda j: j["core-only"]["steps"].remove(_upload(j, "core-only")), "core-only: exactly one step that uploads"),
+    "a second junit upload": (lambda j: j["test"]["steps"].append(copy.deepcopy(_upload(j, "test"))), "exactly one step that uploads"),
+    "the junit upload is unconditional": (lambda j: _upload(j, "test").pop("if"), "`if: always()`"),
+    "the junit upload turns the leg red": (lambda j: _upload(j, "core-only").pop("continue-on-error"), "`continue-on-error: true`"),
+    "the junit upload is pinned to a tag": (lambda j: _upload(j, "test").__setitem__("uses", "actions/upload-artifact@v7"), "full commit sha"),
+    "the junit upload reads another file": (lambda j: _upload(j, "core-only")["with"].__setitem__("path", "${{ runner.temp }}/other.xml"), "the report the pytest step writes"),
+    "the legs share one artifact name": (lambda j: _upload(j, "test")["with"].__setitem__("name", "junit-test-shard"), "one per leg and per job"),
+    "the two jobs share their artifact names": (lambda j: _upload(j, "core-only")["with"].__setitem__("name", _ARTIFACT % "test"), "one per leg and per job"),
+    "the junit upload has no retention": (lambda j: _upload(j, "test")["with"].pop("retention-days"), "`retention-days`"),
+    "the junit upload cannot be re-run": (lambda j: _upload(j, "core-only")["with"].pop("overwrite"), "`overwrite: true`"),
+    "the junit upload comes after the skip summary": (lambda j: _move_upload(j, "test", True), "before the skip-summary step"),
+    "the junit upload comes before pytest": (lambda j: _move_upload(j, "core-only", False), "after the pytest step"),
 }
 
 
