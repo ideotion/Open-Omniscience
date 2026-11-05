@@ -9,12 +9,14 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import sqlalchemy as sa
 
 from src.osm import apply as A
 from src.osm import diagnostics as D
 from src.osm import ingest
-from src.osm.lane_models import OsmDiffRun
+from src.osm.lane_models import OsmCountry, OsmDiffRun
 from src.versioned import store
+from src.versioned.models import VersionedGap
 from tests import _osm_lane_helpers
 from tests.test_osm_apply import (  # the apply tests' own fixture mirror and change files
     DAY1,
@@ -69,7 +71,8 @@ def test_two_applied_files_are_read_back_with_their_measured_cost(cut, osm_lane_
     assert c["position"]["from"] == "change file" and c["position"]["sequence"] == 102
     assert (c["diffs_recorded"], c["cursor_token"]) == (2, "102")
     assert [r["sequence"] for r in c["runs"]] == [102, 101], "newest first"
-    assert c["cost"]["bytes_fetched"] == {"n": 2, "total": float(len(DAY1) + len(DAY2)), "max": float(max(len(DAY1), len(DAY2)))}
+    assert c["cost"]["bytes_fetched"] == {"n": 2, "total": len(DAY1) + len(DAY2), "max": max(len(DAY1), len(DAY2))}
+    assert all(type(c["cost"]["bytes_fetched"][k]) in (int, float) for k in ("total", "max"))
     assert c["cost"]["fetch_seconds"]["n"] == 2 and c["cost"]["apply_seconds"]["n"] == 2
     assert got["measured_on"]["os"] and got["measured_on"]["full_record"] == "manifest.json run.hardware"
     assert c["last_applied_at"] == c["runs"][0]["applied_at"]
@@ -117,18 +120,143 @@ def test_with_no_room_for_a_countrys_rows_the_country_longest_without_a_file_goe
     floor = len(json.dumps(bare, separators=(",", ":")))
     got = D.diagnostics_member(floor - 200)
     assert got.get("countries") == [] and got["countries_not_shown"] == 1 and got["dropped_to_fit"]["runs"] == 3
+    assert len(json.dumps(got, separators=(",", ":"))) <= floor - 200
 
 
 def test_the_member_never_raises_and_carries_no_path_or_address(cut, monkeypatch):
     got = D.diagnostics_member(20_000)
     text = json.dumps(got)
     assert "/" not in text.replace("manifest.json run.hardware", "") and "http" not in text
+
     def boom(*a, **k):
         raise OSError("/home/someone/secret.db is unreadable")
 
     monkeypatch.setattr(store, "lane_exists", boom)
     err = D.diagnostics_member(20_000)
-    assert set(err) == {"error"} and "someone" not in err["error"]
+    assert err["error"] == "OSError" and set(err) == {"error", "reason"} and "someone" not in json.dumps(err)
+
+
+SENTINEL = "Secret Clinic Street 5"
+
+
+def test_an_error_names_its_class_and_none_of_its_words_whatever_the_exception_is(cut, monkeypatch):
+    """A column type's decoding error can quote a stored value, so the words are never emitted, for ANY exception class."""
+
+    def boom(*a, **k):
+        raise ValueError(f"tag name={SENTINEL}")
+
+    monkeypatch.setattr(D, "_build", boom)
+    got = D.diagnostics_member(20_000)
+    assert got["error"] == "ValueError" and SENTINEL not in json.dumps(got)
+
+
+def test_no_stored_text_of_the_country_reaches_the_member(cut):
+    with store.lane_session("osm") as s:
+        row = s.query(OsmCountry).one()
+        row.name, row.error, row.extract_name, row.blob_json = SENTINEL, SENTINEL, SENTINEL, SENTINEL
+    _many_runs(2)
+    assert SENTINEL not in json.dumps(D.diagnostics_member(1_000_000))
+
+
+def test_the_absent_lane_obeys_the_budget_too():
+    assert D.diagnostics_member(20_000)["lane"] == "absent"
+    tiny = D.diagnostics_member(100)
+    assert tiny["over_budget"] is True and tiny["omitted"].startswith("max_bytes is below") and tiny["needs_at_least_bytes"] > 100
+
+
+def test_a_lane_cut_before_the_runs_table_existed_keeps_its_position_and_says_what_is_missing(cut, osm_lane_dir):
+    _run(osm_lane_dir, 101, {101: DAY1})
+    with store.lane_session("osm") as s:
+        s.execute(sa.text("DROP TABLE osm_diff_runs"))
+    got = D.diagnostics_member(20_000)
+    assert "error" not in got
+    (c,) = got["countries"]
+    assert c["diffs_recorded"] is None and c["cost"] is None and "older build" in c["cost_reason"] and c["runs"] == []
+    assert c["position"]["from"] == "change file" and c["position"]["sequence"] == 101
+    assert got["countries_without_updates"] == []
+
+
+def test_a_figure_no_run_measured_is_null_with_a_reason_not_a_zero(cut):
+    base = datetime(2025, 2, 1, tzinfo=UTC)
+    with store.lane_session("osm") as s:
+        s.add(OsmDiffRun(alpha3="ZZZ", sequence=1000, diff_timestamp=base, applied_at=base, bytes_fetched=None, fetch_seconds=None,
+                         apply_seconds=None, counts_json="{}"))
+    (c,) = D.diagnostics_member(20_000)["countries"]
+    assert c["cost"]["bytes_fetched"] is None and c["cost"]["fetch_seconds"] is None and c["cost"]["apply_seconds"] is None
+    assert set(c["cost"]["unmeasured"]) == {"bytes_fetched", "fetch_seconds", "apply_seconds"}
+
+
+def test_a_country_that_never_ran_the_feed_says_why_its_cursor_is_null(cut, osm_lane_dir):
+    (osm_lane_dir / "fresh").mkdir()
+    A.rebaseline("ZZ", _extract(osm_lane_dir / "fresh", seq=SEQ0 + 200, when=T0 + timedelta(days=200)), reason="past retention", reader="python")
+    with store.lane_session("osm") as s:
+        s.execute(sa.text("DELETE FROM versioned_cursors"))
+    (c,) = D.diagnostics_member(20_000)["countries"]
+    assert c["cursor_token"] is None and "no cursor" in c["cursor_reason"]
+
+
+def _many_gaps(n: int) -> None:
+    base = datetime(2025, 2, 1, tzinfo=UTC)
+    with store.lane_session("osm") as s:
+        for i in range(n):
+            s.add(VersionedGap(feed="osm-daily:ZZZ", detected_at=base + timedelta(days=i), from_token=str(100 + i), to_token=str(200 + i),
+                               reason="retention"))
+
+
+def test_gaps_are_cut_oldest_first_and_counted_once_the_runs_are_gone(cut):
+    _many_gaps(10)
+    full = D.diagnostics_member(1_000_000)
+    (c,) = full["countries"]
+    assert len(c["gaps"]) == D.GAPS_KEPT and c["gaps_total"] == 10 and c["gaps"][0]["from_token"] == "109"
+    size = len(json.dumps(full, separators=(",", ":")))
+    cutdown = D.diagnostics_member(size - 150)
+    (k,) = cutdown["countries"]
+    assert cutdown["dropped_to_fit"]["gaps"] >= 1 and cutdown["dropped_to_fit"]["runs"] == 0
+    assert k["gaps_not_shown"] == cutdown["dropped_to_fit"]["gaps"] and len(k["gaps"]) == 10 - k["gaps_not_shown"]
+    assert k["gaps"][0]["from_token"] == "109", "the newest gap is the last to go"
+    assert k["gaps_total"] == 10 and k["rebaselines"] == 10, "the totals are not cut with the list"
+    assert len(json.dumps(cutdown, separators=(",", ":"))) <= size - 150
+
+
+def test_a_country_with_a_newer_gap_than_anothers_last_file_sorts_ahead_of_it(cut):
+    _many_gaps(1)
+    _many_runs(1)
+    base = datetime(2025, 2, 1, tzinfo=UTC)
+    with store.lane_session("osm") as s:
+        s.add(OsmCountry(alpha2="YY", alpha3="YYY", status="complete"))
+        s.add(OsmDiffRun(alpha3="YYY", sequence=5, diff_timestamp=base, applied_at=base + timedelta(days=400), bytes_fetched=1, fetch_seconds=1.0,
+                         apply_seconds=1.0, counts_json="{}"))
+        s.add(VersionedGap(feed="osm-daily:ZZZ", detected_at=base + timedelta(days=900), from_token="1", to_token="2", reason="budget"))
+    assert [c["alpha3"] for c in D.diagnostics_member(1_000_000)["countries"]] == ["ZZZ", "YYY"]
+
+
+def test_the_list_of_untouched_codes_is_cut_last_and_counted(cut):
+    with store.lane_session("osm") as s:
+        for i in range(40):
+            s.add(OsmCountry(alpha2="A" + chr(65 + i % 26), alpha3="Q" + chr(65 + i // 26) + chr(65 + i % 26), status="complete"))
+    full = D.diagnostics_member(1_000_000)
+    assert len(full["countries_without_updates"]) == 41
+    size = len(json.dumps(full, separators=(",", ":")))
+    got = D.diagnostics_member(size - 100)
+    assert "omitted" not in got and got["countries_without_updates_not_shown"] > 0
+    assert len(got["countries_without_updates"]) + got["countries_without_updates_not_shown"] == 41
+    assert len(json.dumps(got, separators=(",", ":"))) <= size - 100
+
+
+def test_the_cut_does_not_re_serialise_everything_per_pop():
+    """200 populated countries took 15 s when every pop re-measured the whole output; the sizes are now taken once per item."""
+    import time
+
+    run = {"sequence": 1, "diff_timestamp": "2025-01-01T00:00:00+00:00", "applied_at": "2025-01-01T00:00:00+00:00", "bytes_fetched": 1234567,
+           "fetch_seconds": 1.5, "apply_seconds": 2.5}
+    gap = {"reason": "retention", "from_token": "100000001", "to_token": "100000002", "from_time": None, "to_time": None,
+           "detected_at": "2025-01-01T00:00:00+00:00", "closed": False}
+    out = {"countries": [{"alpha3": f"C{i}", "runs": [dict(run) for _ in range(7)], "gaps": [dict(gap) for _ in range(10)], "runs_not_shown": 0,
+                          "gaps_not_shown": 0} for i in range(200)], "countries_without_updates": [], "countries_without_updates_not_shown": 0,
+           "countries_not_shown": 0, "dropped_to_fit": {"runs": 0, "gaps": 0}}
+    started = time.monotonic()
+    assert D._cut_to_fit(out, 20_000) is True
+    assert time.monotonic() - started < 3.0 and len(json.dumps(out, separators=(",", ":"))) <= 20_000
 
 
 def test_a_hand_recut_is_not_counted_as_a_rebaseline(cut, osm_lane_dir):
