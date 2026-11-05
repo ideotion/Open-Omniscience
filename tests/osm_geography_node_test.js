@@ -46,7 +46,7 @@ function extractConst(name, end) {
 }
 
 const FUNCS = [
-  "loadOsmGeography", "_osmGeogSigOf", "_osmGeogRepaint", "_osmGeogVintage", "_osmGeogShare", "_osmGeogFigures", "_osmAdmin1Label", "_osmGeogDraw", "_renderOsmGeography",
+  "loadOsmGeography", "_osmGeogSigOf", "_osmGeogShellOf", "_osmGeogRepaint", "_osmGeogVintage", "_osmGeogShare", "_osmGeogFigures", "_osmAdmin1Label", "_osmGeogDraw", "_renderOsmGeography",
 ];
 const src =
   extractConst("esc") + "\n" +
@@ -65,7 +65,7 @@ const src =
   "var out = { innerHTML: '', mapHost: {}, querySelector(sel) { return sel === '[data-osm-geog-map]' ? out.mapHost : null; } };\n" +
   "var document = { querySelector(sel) { return sel === '[data-osm-geog-out]' ? out : null; } };\n" +
   "let _osmGeog = null, _osmGeogLevel = 'countries', _osmGeogMeasure = 'places', _osmGeogForm = 'count', _osmGeogSeq = 0;\n" +
-  "let _osmGeogDone = [], _osmGeogSig = '';\n" +
+  "let _osmGeogDone = [], _osmGeogSig = '', _osmGeogShellSig = '';\n" +
   FUNCS.map(extract).join("\n") + "\n" +
   "module.exports = { " + FUNCS.join(", ") + ", mapCalls, apiCalls, els, out,\n" +
   "  set(o) { if ('geog' in o) _osmGeog = o.geog; if ('level' in o) _osmGeogLevel = o.level; if ('measure' in o) _osmGeogMeasure = o.measure; if ('form' in o) _osmGeogForm = o.form;\n" +
@@ -203,23 +203,34 @@ const lastMap = () => R.mapCalls[R.mapCalls.length - 1];
   assert.ok(visible(R.out.innerHTML).includes("West: Not available: neither the extract nor a change file states a date to measure the ages from."), visible(R.out.innerHTML));
 
   // ---- the 2 s count poll: the figures are redrawn only when the level in view has something new, and the controls are left alone ----
-  const pHost = { innerHTML: "", attrs: {}, getAttribute(k) { return this.attrs[k] || null; }, setAttribute(k, v) { this.attrs[k] = v; }, addEventListener() {}, querySelector() { return { disabled: false }; } };
+  let writes = 0;
+  const pHost = { _h: "", get innerHTML() { return this._h; }, set innerHTML(v) { writes++; this._h = v; }, attrs: {}, getAttribute(k) { return this.attrs[k] || null; }, setAttribute(k, v) { this.attrs[k] = v; }, addEventListener() {}, querySelector() { return { disabled: false }; } };
   R.els["osm-geography-body"] = pHost;
   const counting = REG({ admin1: { status: "counting" } });
   fresh({ level: "ZZZ", measure: "brand", comp: [counting] });
   R._renderOsmGeography(DONE);
   await new Promise((r) => setTimeout(r, 0));
-  const controls = pHost.innerHTML, before = R.mapCalls.length;
+  const controls = pHost.innerHTML, before = R.mapCalls.length, w0 = writes;
   R._osmGeogRepaint(DONE); R._osmGeogRepaint(DONE);
   await new Promise((r) => setTimeout(r, 0));
-  assert.strictEqual(pHost.innerHTML, controls, "a poll tick rebuilt the controls (an open dropdown closes)");
+  assert.strictEqual(writes, w0, "a poll tick rebuilt the controls (an open dropdown closes)");
   assert.strictEqual(R.mapCalls.length, before, "a poll tick with nothing new redrew the map");
   R.set({ comp: [REG()] });   // the count finished
   R._osmGeogRepaint(DONE);
   await new Promise((r) => setTimeout(r, 0));
-  assert.strictEqual(pHost.innerHTML, controls, "the finished count rebuilt the controls");
+  assert.strictEqual(writes, w0, "the finished count rebuilt the controls");
+  assert.strictEqual(pHost.innerHTML, controls);
   assert.deepStrictEqual(lastMap().opts.regionValues, { "ZZ-W": 2, "ZZ-E": 1, "ZZ-X": 0 }, "a finished count did not reach the map");
   assert.strictEqual(R.mapCalls.length, before + 1, "the finished count drew more than once");
+  // a country finishing its cut (or a new vintage) rebuilds the whole panel, so the level picker offers it
+  const DONE2 = DONE.concat([{ alpha3: "XXX", name: "Xland", vintage: null, diff_timestamp: null }]);
+  R._osmGeogRepaint(DONE2);
+  assert.ok(writes > w0 && pHost.innerHTML.includes('value="XXX"'), "a country that finished its cut is missing from the level picker");
+  const w1 = writes;
+  R._osmGeogRepaint(DONE2);
+  assert.strictEqual(writes, w1, "the shell was rebuilt twice for one change");
+  R._osmGeogRepaint(DONE2.map((c) => (c.alpha3 === "ZZZ" ? Object.assign({}, c, { diff_timestamp: "2025-02-01T00:00:00+00:00" }) : c)));
+  assert.ok(writes > w1, "a new change file did not reach the vintage line");
 
   // ---- the shell: levels, one listener, a vanished country, stale loads ----------------------------------------------
   const listeners = [];

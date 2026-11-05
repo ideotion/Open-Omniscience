@@ -3901,7 +3901,8 @@
     }
     // The 2 s count poll: redraw the figures only when the level in view has something new (a region count finishing), and leave the
     // controls alone, so an open dropdown is not closed under the reader and the map is not rebuilt on every tick.
-    let _osmGeogSig = "";
+    let _osmGeogSig = "", _osmGeogShellSig = "";
+    function _osmGeogShellOf(done) { return JSON.stringify((done || []).map((c) => [c.alpha3, c.vintage, c.diff_timestamp])); }
     function _osmGeogSigOf() {
       if (_osmGeogLevel === "countries") return "countries";
       const c = (_osmComp || []).find((x) => x.country === _osmGeogLevel);
@@ -3909,6 +3910,8 @@
     }
     function _osmGeogRepaint(done) {
       if (!_osmGeog || !document.querySelector("[data-osm-geog-out]")) return;
+      // the countries held, or a vintage, changed: the level picker and the vintage lines need the whole panel, not only the figures
+      if (_osmGeogShellOf(done) !== _osmGeogShellSig) { _renderOsmGeography(done); return; }
       const sig = _osmGeogSigOf(); if (sig === _osmGeogSig) return;
       _osmGeogDone = done; _osmGeogDraw(done);
     }
@@ -4032,6 +4035,7 @@
         });
       }
       _osmGeogDone = done;
+      _osmGeogShellSig = _osmGeogShellOf(done);
       _osmGeogDraw(done);
     }
     let _osmGeogDone = [];
