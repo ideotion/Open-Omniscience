@@ -608,16 +608,18 @@ artifacts:
       a body not typed as JSON. The last is a property of the installed dependency, not of this repo: it is on by default since 0.132.0
       (read in the wheels: 0.131.0 has no strict_content_type, 0.132.0 has it as Default(True) in fastapi/routing.py). pyproject.toml said
       fastapi>=0.110, so a hand-installed 0.110 to 0.131 had no such check. THE FLOOR IS 0.133.0, NOT 0.132.0: fastapi 0.132.0 requires
-      starlette<1.0.0 (Requires-Dist, read in its wheel) and the starlette floor of this app is 1.5.0 (entry starlette-gzip-flush), so no
-      resolver can install that pair (pip: ResolutionImpossible for fastapi==0.132.0 with starlette>=1.5.0, 2026-10-26); 0.133.0 is the
-      first release that allows starlette 1.x and resolves with it. WHAT THE FLOOR CHANGES, measured on the wheels on 2026-10-26 with
+      starlette<1.0.0 (Requires-Dist, read in its wheel) and the starlette floor of this app is 1.8.0 (entry starlette-gzip-flush; it was
+      1.5.0 until 2026-11-05, and the argument held then too), so no resolver can install that pair (pip: ResolutionImpossible for
+      fastapi==0.132.0 with starlette>=1.5.0, 2026-10-26, and with starlette>=1.8.0, 2026-11-05, each by a dry run); 0.133.0 is the first release that allows starlette 1.x and resolved with starlette>=1.8.0 in the same dry run (Requires-Dist
+      starlette>=0.40.0, read in its wheel) and resolves with it. WHAT THE FLOOR CHANGES, measured on the wheels on 2026-10-26 with
       tests/test_security_hardening.py::test_a_json_route_refuses_a_body_not_typed_as_json (POST /api/newsletters/remove-imported): on
       0.131.0 text/plain, form-urlencoded and multipart bodies already answer 422 (the body is not parsed as JSON; the 0.110.0 wheel's
       routing.py reads the same, not run) and a body with NO Content-Type is parsed as JSON and reaches the handler (the one row that fails); from 0.132.0 on all rows
       pass. The layer does not cover a route with no body or an optional one (POST /api/briefing/refresh, POST /api/ai/detect-language): of
       317 state-changing operations in the OpenAPI schema on 2026-10-26, 148 take no body and 11 an optional one. WHAT WAS RUN: the
       json_route tests of that file with each release's unpacked wheel first on PYTHONPATH: the FLOOR PAIR fastapi 0.133.0 with starlette
-      1.5.0 passed all 7 rows (so did the unresolvable pair 0.132.0 with 1.5.0; 0.131.0 with 1.5.0 failed the one untyped row), and 0.138.0
+      1.8.0 passed all 7 rows on 2026-11-05 (on 2026-10-26 the pair with starlette 1.5.0, the floor then, passed all 7 too, and so did the
+      unresolvable pair 0.132.0 with 1.5.0; 0.131.0 with 1.5.0 failed the one untyped row), and 0.138.0
       (the pin of requirements.lock) and 0.162.0 (the newest) with the installed starlette 1.10.0 passed. In CI the test and core-only jobs
       run the tests on whatever release pip resolves that day; no CI job runs them on the floor, so the floor is verified by that hand run.
     upstream: https://pypi.org/project/fastapi/ (https://github.com/fastapi/fastapi)
@@ -634,40 +636,59 @@ artifacts:
       - "pyproject.toml dependencies fastapi carries the same floor (test-enforced)"
       - "requirements.lock pins exactly one release at or above the floor (0.138.0 today; test-enforced)"
       - "docs/SECURITY.md 'The local API' names the layers and what none of them covers (no test reads that file; the behaviour it describes is pinned by tests/test_security_hardening.py)"
-    last_verified: "2026-10-26"
+    last_verified: "2026-11-05"
 
   - id: starlette-gzip-flush
-    title: starlette (the web layer under fastapi), floor 1.5.0
+    title: starlette (the web layer under fastapi), floor 1.8.0
     kind: runtime-coupling
     description: >
-      src/api/main.py puts GZipMiddleware outermost, and the AI token streams (src/api/llm.py, src/api/ai.py) are application/x-ndjson, which
-      Starlette's default exclusions do not cover, so they are gzip-compressed. A release whose GZipResponder does not flush the deflate stream
-      per chunk keeps a streamed reply in zlib's window until several kilobytes have piled up: the chat appears to hang and the whole answer
-      then arrives at once, with no error anywhere. pyproject.toml had no starlette floor (fastapi asks for starlette>=0.46.0), so an install
-      that resolved below 1.5.0 had that stall. READ in the wheels (1.0.0 to 1.8.0, each unpacked): GZipResponder._compress_body calls
-      flush(zlib.Z_SYNC_FLUSH) on every chunk with more_body from 1.5.0 on, and in none of 1.0.0 to 1.4.1. WHAT WAS RUN, said exactly:
-      tests/test_sources_route_and_compression.py::test_gzip_flushes_every_chunk_of_a_streaming_response, with the release's unpacked wheel
-      first on PYTHONPATH, failed on 1.3.1, 1.4.0 and 1.4.1 and passed on 1.5.0, 1.5.1, 1.6.0, 1.7.0 and 1.8.0 on 2026-10-17; the API route and
-      security test files (tests/test_api*.py, test_route_smoke.py, test_security*.py, test_loopback_rate_limit.py, test_llm_api.py,
-      test_llm_http_wiring.py, test_stream_backup.py, test_sources_route_and_compression.py: 276 tests) passed on 1.8.0, the release that
-      requirements.lock now pins (it pinned 1.3.1, below the floor). Starlette 1.8.0 warns that TestClient with httpx is deprecated in favour
-      of httpx2; nothing here fails on it. In CI the test and core-only jobs run the gzip test on whatever release pip resolves that day; no
-      CI job runs it on the floor (lockfile-install only imports the app), so the floor is verified by that hand run on the 1.5.0 wheel.
+      The floor is the later of two releases, each bought by one behaviour this app leans on. (1) THE BACKUP STREAM STOPS WHEN THE CLIENT
+      LEAVES (1.8.0): GET /api/database/backup returns src/api/database.py _SnapshotResponse, a FileResponse over a snapshot of the whole
+      store that the app made for that one request. From 1.8.0 on FileResponse races the file against receive() and stops at an
+      http.disconnect when the server speaks an ASGI spec older than 2.4 (uvicorn h11 and httptools speak 2.3); 1.5.0 to 1.7.0 never watch,
+      so a closed tab left the response reading the snapshot to its end, holding the one backup slot and the snapshot's disk space until it
+      finished. READ in the wheels (the FileResponse of 1.7.0 and 1.8.0, diffed: 1.8.0 adds the receive() race, guarded by spec_version
+      < (2, 4) and not for a header-only or pathsend response). MEASURED on 2026-11-05 with the app's own _SnapshotResponse over a 40 MiB
+      file, a send that takes 10 ms per chunk and a client that leaves after 0.2 s, scope spec_version 2.3: starlette 1.7.0 ran 7.1 s and
+      sent all 40 MiB, 1.8.0 ran 0.3 s and sent 1.1 MiB; on a 2.4 server both read the file to the end (the race is not armed), so the
+      figure is for the server this app ships under, not for every server. The ledger's earlier figure (OPEN_QUEUE item 16, R325) is a
+      20 GB sparse snapshot: 1.7.0 had not released after 60 s, 1.8.0 released in 0.02 s. The release also rejects an endless http.request
+      from a stub receive() when something asks twice (tests/test_sources_route_and_compression.py says so beside its stub). The behaviour
+      is pinned by tests/test_version_floor_legs.py::test_a_client_that_leaves_stops_the_backup_stream_on_a_server_older_than_asgi_2_4, run
+      here on the 1.7.0 wheel (fails: all of the file sent) and on 1.8.0 (passes). (2) THE AI TOKEN STREAMS ARE NOT HELD BACK (1.5.0):
+      src/api/main.py puts GZipMiddleware outermost, and the AI token streams (src/api/llm.py, src/api/ai.py) are application/x-ndjson,
+      which Starlette's default exclusions do not cover, so they are gzip-compressed. A release whose GZipResponder does not flush the
+      deflate stream per chunk keeps a streamed reply in zlib's window until several kilobytes have piled up: the chat appears to hang and
+      the whole answer then arrives at once, with no error anywhere. READ in the wheels (1.0.0 to 1.8.0, each unpacked):
+      GZipResponder._compress_body calls flush(zlib.Z_SYNC_FLUSH) on every chunk with more_body from 1.5.0 on, and in none of 1.0.0 to
+      1.4.1. WHAT WAS RUN, said exactly: tests/test_sources_route_and_compression.py::test_gzip_flushes_every_chunk_of_a_streaming_response,
+      with the release's unpacked wheel first on PYTHONPATH, failed on 1.3.1, 1.4.0 and 1.4.1 and passed on 1.5.0, 1.5.1, 1.6.0, 1.7.0 and
+      1.8.0 on 2026-10-17. THE FLOOR RUN, 2026-11-05: the API route and security test files (tests/test_api*.py, test_route_smoke.py,
+      test_security*.py, test_loopback_rate_limit.py, test_llm_api.py, test_llm_http_wiring.py, test_stream_backup.py,
+      test_sources_route_and_compression.py) plus the three files that drive a response by hand (test_backup_download_route.py,
+      test_diagnostics_runs.py, test_keyword_export_bounded.py): 567 passed and 2 skipped on the 1.8.0 wheel first on
+      PYTHONPATH, and the same 567 on the installed 1.10.0, the newest release (requirements.lock pins 1.8.0, so the newest run is by hand). Starlette warns that
+      TestClient with httpx is deprecated in favour of httpx2; nothing here fails on it. In CI the test and core-only jobs run these on
+      whatever release pip resolves that day; no CI job runs them on the floor (lockfile-install only imports the app), so the floor is
+      verified by that hand run on the 1.8.0 wheel.
     upstream: https://pypi.org/project/starlette/ (https://github.com/encode/starlette)
-    check_upstream: "pypi.org/pypi/starlette/json - compare info.version; 1.8.0 was the newest on 2026-10-17 and is the release the tests were run on"
+    check_upstream: "pypi.org/pypi/starlette/json - compare info.version; 1.10.0 was the newest on 2026-11-05 and is the release the tests were last run on"
     license: BSD-3-Clause
-    pin: {floor: "1.5.0", verified: "1.8.0"}
-    upstream_check: {github: "encode/starlette", type: release, current: "1.8.0"}
+    pin: {floor: "1.8.0", verified: "1.10.0"}
+    upstream_check: {github: "encode/starlette", type: release, current: "1.10.0"}
     refresh: >
-      on a new starlette release run the gzip test and the route test files named above on it (its unpacked wheel first on PYTHONPATH),
-      then move verified and upstream_check.current together; the floor moves only when a release is found to carry a defect this app
-      meets. A release that changes GZipResponder, or makes application/x-ndjson an excluded content type, is read first: the second
-      would turn the stall off, and the test would then pass for a reason the comment above it does not state.
+      on a new starlette release run the gzip test, the route test files named above and tests/test_version_floor_legs.py on it (its
+      unpacked wheel first on PYTHONPATH), then move verified and upstream_check.current together; the floor moves only when a release is
+      found to carry a defect this app meets. A release that changes GZipResponder, or makes application/x-ndjson an excluded content
+      type, is read first: the second would turn the stall off, and the test would then pass for a reason the comment above it does not
+      state. A release that changes what FileResponse does on an http.disconnect, or the spec version it watches from, is read first
+      too: the backup-stream test names the behaviour, and the three hand-driven files of the floor run are the ones a change reaches.
     couplings:
       - "pyproject.toml dependencies starlette carries the same floor (test-enforced)"
       - "requirements.lock pins exactly one release at or above the floor (1.8.0 today; test-enforced)"
       - "src/api/main.py GZipMiddleware stays the last add_middleware call (tests/test_sources_route_and_compression.py)"
-    last_verified: "2026-10-17"
+      - "the sites that name http.disconnect are pinned by tests/test_version_floor_legs.py: src/monitoring/diagnostics_runs.py, tests/test_backup_download_route.py, tests/test_diagnostics_runs.py, tests/test_keyword_export_bounded.py, tests/test_sources_route_and_compression.py; a new one fails that test by name. Two files hand a response a disconnect AT ONCE and assert only cleanup, so they pass whether the body was sent or not: tests/test_keyword_export_bounded.py (two stubs; the scratch archive is deleted) and tests/test_backup_download_route.py (_receive_gone, on spec versions 2.0 and 2.4; the directory is removed and the slot freed). The other three wait for an event or for the response to end"
+    last_verified: "2026-11-05"
 
   - id: vader-linear-reproduction
     title: vaderSentiment 3.3.2 internals, reproduced in linear time
@@ -1068,6 +1089,7 @@ artifacts:
     couplings:
       - "pyproject.toml [project.optional-dependencies] columnar duckdb>= must equal floor"
       - "the on-disk store format is version-bound; on mismatch the disposable store is rebuilt"
+      - "ci.yml runs the columnar test files twice: the `columnar` job installs the newest duckdb (2.0.0 on 2026-11-05) and `columnar-duckdb1` installs duckdb<2 (1.5.6), so both lines the floor admits are exercised; tests/test_version_floor_legs.py keeps the two file lists equal and the 1.x job on the 1.x line. The 29 files passed on 1.5.6 on 2026-11-05 (472 tests and 2 skips, each of which names its reason; the one failure of a first run was a venv without vaderSentiment, which fails the same way on 2.0.0). The floor itself is not changed and not re-verified here."
     last_verified: "2026-08-22"
 
   - id: duckdb-httpfs-extension
@@ -1149,14 +1171,17 @@ artifacts:
   - id: ci-action-and-tool-pins
     title: CI action SHAs + pinned QA tools
     kind: ci-pin
-    description: GitHub Action SHAs (checkout, setup-python) + pinned mypy/bandit/pip-audit/ruff.
+    description: >
+      GitHub Action SHAs (checkout, setup-python) + pinned mypy/bandit/pip-audit/ruff. mypy and ruff are exact == pins in pyproject [dev]
+      (ruff==0.17.3 since 2026-11-05, where it was a range): the type-check and style counts are numbers about one release of the
+      tool, so a bump moves the pin and the ratchet's recorded figure in one commit.
     upstream: the respective repos
     check_upstream: "enable Dependabot for github-actions + pip; it opens PRs on new releases"
     license: per-tool
     pin: {file: .github/workflows/ci.yml, const: NONE}  # SHAs carry tag comments; Dependabot bumps
-    refresh: "let Dependabot bump; re-pin to the new SHA with the tag comment"
+    refresh: "let Dependabot bump; re-pin to the new SHA with the tag comment; for mypy and ruff, the bump PR's own run re-measures the count and the ceiling moves in the same PR"
     freshness: {policy: on-security}
-    last_verified: "2026-06-15"
+    last_verified: "2026-11-05"
 
   # --- Library NAMES the app looks for on a call stack (a coupling to what a library calls its functions, not to a data file) ----------
   - id: sqlalchemy-phase-names

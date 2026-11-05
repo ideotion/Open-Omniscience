@@ -96,15 +96,20 @@ So the count is ratcheted the way this repo ratchets everything else — the two
 blocking step; a drop prints the new floor to set. The advisory verdict is untouched:
 nobody is asked to fix the 442.
 
-## Why ruff is version-bounded
+## Why ruff is pinned to one release
 
 A count-over-a-tool ratchet is only meaningful while the tool's rule set is fixed. The
-`mypy==2.3.1` pin three lines above it in `pyproject.toml` exists for exactly this reason,
-in its own words: an unpinned floor "let a newer mypy report one extra error … and redden
-every PR with no code change". `ruff` was `>=0.4.0` — unbounded across every future rule
-addition — and is now bounded to one minor series. `scripts/ruff_ratchet.py` prints the
-ruff version it measured with in its own failure message, so a rule-set change presents as
-itself rather than as mystery debt.
+`mypy==` pin next to it in `pyproject.toml` exists for exactly this reason, in its own words:
+an unpinned floor "let a newer mypy report one extra error … and redden every PR with no code
+change". `ruff` was `>=0.4.0` (unbounded), then `>=0.16.6,<0.18`, and since 2026-11-05 is
+`ruff==0.17.3`, exact like mypy (R412): the same tree reads 414 on ruff 0.16.9 and 412 on
+0.17.3, so a range let CI and a developer's machine measure two different numbers, and the
+ceiling in `ci.yml` was true only on the day it was measured. With one release it is true by
+construction, and a new release arrives as a Dependabot PR whose own CI run is the
+re-measurement: bump the pin, the ceiling (if the new release reads differently) and this
+section's figures in one commit. `tests/test_version_floor_legs.py` fails if either pin turns
+back into a range. `scripts/ruff_ratchet.py` prints the ruff version it measured with in its own
+failure message, so a rule-set change presents as itself rather than as mystery debt.
 
 ## How to move the number
 

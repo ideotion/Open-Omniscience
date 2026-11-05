@@ -87,7 +87,7 @@ SCAN_EST_S: dict[str, float] = {
 #: A class says WHAT A MEMBER IS ABOUT, never how serious it is, and no member is in two.
 AREAS = (
     "overview", "memory", "storage", "database", "sessions", "runs", "keywords",
-    "interface", "sources", "ai", "selftests", "build",
+    "interface", "sources", "ai", "selftests", "build", "osm",
 )
 
 #: Member to area, for every member ``bundle.py`` lists itself (the slots carry their own, in

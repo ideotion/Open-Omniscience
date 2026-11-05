@@ -81,6 +81,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -2155,6 +2156,68 @@ def _live_run(state: dict[str, Any]) -> dict[str, Any] | None:
         "warnings": state.get("warnings") or [],
         "report_path": state.get("report_path"),
     }
+
+
+#: The most the DIAGNOSTICS copy of the newest release-run report may weigh (raw JSON). WHAT IT PROTECTS: the diagnostics part's 4,000,000-byte
+#: ceiling (R119): the slot arithmetic counts this member at its estimate, and an estimate with no cap behind it is not a bound. 140,000 is
+#: under the 150,000 the plan allowed, and above the 87 KB of the largest report seen, so a real report is never cut. The saved file on disk
+#: and ``/release-run/last`` are NOT capped.
+BUNDLE_REPORT_MAX_BYTES = 140_000
+#: At most this many cuts are NAMED in ``cut_sections`` (the rest are counted in ``cut_sections_more``), so the record of the cuts is itself bounded.
+_CUTS_NAMED = 20
+
+
+def _json_bytes(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8"))
+
+
+#: The keys the cap writes itself; a report's own value under one of these names is never a candidate for a cut (it would be overwritten or crash the bookkeeping).
+_NOTE_KEYS = frozenset({"truncated", "truncated_from_bytes", "cap_bytes", "cut_sections", "cut_sections_more"})
+
+
+def cap_report_for_bundle(report: dict, cap: int = BUNDLE_REPORT_MAX_BYTES, measure: Callable[[Any], int] = _json_bytes) -> dict:
+    """``report`` itself when it fits ``cap``; else a copy that DOES fit it, with whole top-level values replaced by a counted cut marker, largest first.
+
+    The marker is ``{"cut": true, "bytes": <the value's size>}`` (dicts, lists and strings alike; a value no larger than its marker is left), and the
+    report says ``truncated: true`` with ``truncated_from_bytes``, ``cap_bytes``, ``cut_sections`` (the first ``_CUTS_NAMED`` cuts: name and bytes)
+    and ``cut_sections_more``, so a reader sees what the bundle does not carry and that the saved file has it. The size is re-measured AFTER every
+    cut with the note in place, so the result is a bound, not an estimate; if cutting every value still leaves it over (thousands of keys), the
+    answer is the note alone with the key count.
+
+    ``measure`` is how a value's size is taken; the bundle passes the size of the bytes it WRITES (after its wire rewrite), so the bound holds on the file.
+    """
+    original = measure(report)
+    if original <= cap:
+        return report
+    note: dict[str, Any] = {
+        "truncated": True, "truncated_from_bytes": original, "cap_bytes": cap, "cut_sections": [], "cut_sections_more": 0,
+    }
+    out = {**{k: v for k, v in report.items() if k not in _NOTE_KEYS}, **note}
+    # A section is measured IN CONTEXT (under its own key: the wire rewrite keys on the parent's name), as its share of the whole.
+    sizes = {
+        k: measure({k: v}) - measure({k: None}) + 4
+        for k, v in report.items()
+        if k not in _NOTE_KEYS and isinstance(v, (dict, list, str))
+    }
+    marker_bytes = measure({"cut": True, "bytes": original})
+    named: list[dict[str, Any]] = []
+    more = 0
+    for cut, (name, n) in enumerate(sorted(sizes.items(), key=lambda kv: kv[1], reverse=True), start=1):
+        out["cut_sections"], out["cut_sections_more"] = named, more
+        if measure(out) <= cap:
+            break
+        if n <= marker_bytes:
+            break  # sorted, so nothing after it is larger than a marker either
+        out[name] = {"cut": True, "bytes": n}
+        if cut <= _CUTS_NAMED:
+            named.append({"section": name, "bytes": n})
+        else:
+            more += 1
+    out["cut_sections"], out["cut_sections_more"] = named, more
+    if measure(out) > cap:
+        return {**note, "cut_sections": [], "cut_sections_more": 0, "keys_in_report": len(report),
+                "note": "every value was cut and the report was still over the cap; the saved file has it whole"}
+    return out
 
 
 def last_release_run_report() -> dict:

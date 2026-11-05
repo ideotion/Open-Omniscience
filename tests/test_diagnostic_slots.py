@@ -765,7 +765,7 @@ def test_the_budgets_and_the_fixed_members_fit_one_part_with_the_headroom_the_ta
     free = cap - worst
     assert free >= slots.HEADROOM_AT_LEAST_BYTES, f"{free:,} bytes are left of a part, the table promises {slots.HEADROOM_AT_LEAST_BYTES:,}"
     # the stated figures are the ones the comment names, not drifted copies
-    assert slots.LARGEST_ZIP_MEASURED_BYTES == 632_000 and slots.OTHER_NEW_MEMBERS_BYTES == 1_204_329
+    assert slots.LARGEST_ZIP_MEASURED_BYTES == 632_000 and slots.OTHER_NEW_MEMBERS_BYTES == 1_204_329 - 20_000
     # the arithmetic beside the number: the plan's 919 KB with its +125 KB session-forensics estimate swapped for the crash
     # trace export's worst case, COMPUTED from the export's own constants so that a cut that grows fails here: the newest earlier
     # end keeps ``NEWEST_EARLIER_TRACE_LINES`` lines (the cut of the one export that has the constant; the others have no such
@@ -780,7 +780,9 @@ def test_the_budgets_and_the_fixed_members_fit_one_part_with_the_headroom_the_ta
     # ...plus the three readings the crash-evidence change added to the same member, each at its measured worst case: 2,145 (OOM counters)
     # + 6,437 (native libraries) + 1,747 (can-answer) = 10,329 bytes. The sum is not asserted from typed copies of its own parts (that could
     # not fail); the constant below is what binds.
-    assert slots.OTHER_NEW_MEMBERS_BYTES == 919_000 - 125_000 + 400_000 + 10_329
+    # ...less the 20,000 two members now prove below their plan figures: the machine record 20,000 -> 10,000 (its own test below) and the
+    # release-run report 150,000 -> 140,000 (the bundle copy is capped, test_release_run.py)
+    assert slots.OTHER_NEW_MEMBERS_BYTES == 919_000 - 125_000 + 400_000 + 10_329 - 10_000 - 10_000
     assert free == 1_502_415, "the comment on the table states the free room; move them together"
 
 
@@ -833,3 +835,22 @@ def test_a_windows_member_that_failed_gives_up_no_ticks_either(db, monkeypatch):
     slim, whole = _bundle(db, True), _bundle(db, False)
     assert asked == [20, 200]
     assert "error" in slim["collect_perf_windows"] and "error" in whole["collect_perf_windows"]
+
+
+def test_the_machine_record_fits_10000_bytes_in_the_manifest_with_any_number_of_switches_set(monkeypatch):
+    """The 10,000 the slot arithmetic counts for the manifest's machine block (down from the plan's 20,000, R424/R426): the block as the MANIFEST
+    writes it (``json.dumps(..., indent=2)``, nested under ``machine``) stays under it with 400 switches set, more than the repo has ever
+    mentioned (373 distinct OO_ names in every text file of the tree, 275 in the source). It lists at most ``ENV_NAMES_SHOWN`` names and COUNTS the rest."""
+    import json
+
+    from src.api.diagnostics.bundle import _machine_record_block
+    from src.monitoring import machine_record as mr
+
+    for i in range(400):
+        monkeypatch.setenv(f"OO_{i:04d}_" + ("\\" if i % 2 else "\x01") * 400, "1")  # 409 characters: the names are cut to mr.ENV_NAME_CHARS, so any length fits
+    block = _machine_record_block()
+    size = len(json.dumps({"machine": block}, ensure_ascii=False, indent=2).encode("utf-8"))
+    assert size <= 10_000, f"the machine block is {size:,} bytes in the manifest with 400 switches set; the slot arithmetic counts 10,000: measure again"
+    env = block["environment"]
+    assert len(env["set_names"]) == mr.ENV_NAMES_SHOWN and env["count"] >= 400 and env["names_not_shown"] == env["count"] - mr.ENV_NAMES_SHOWN
+    assert env["names_cut"] >= 1 and all(len(n) <= mr.ENV_NAME_CHARS for n in env["set_names"])
