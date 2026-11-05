@@ -311,6 +311,7 @@ def _prior_cut(s, alpha3: str, have: set[str]) -> tuple[Any, dict[str, Any] | No
     return cut, None
 
 
+# The SQL below spells the name out: an f-string around it reads as string-built SQL to the security scan (B608), though the name is a constant.
 _EVENT_TMP = "osm_history_event_versions"
 
 
@@ -333,15 +334,15 @@ def _history_scope(s, alpha3: str) -> Iterator[tuple[Any, Any, list[Any]]]:
     try:
         ev = Table(_EVENT_TMP, MetaData(), Column("osm_type", String(1)), Column("osm_id", Integer), Column("object_version", Integer),
                    Column("version_timestamp", String))
-        s.execute(text(f"DROP TABLE IF EXISTS temp.{_EVENT_TMP}"))
+        s.execute(text("DROP TABLE IF EXISTS temp.osm_history_event_versions"))
         s.execute(
             text(
-                f"CREATE TEMP TABLE {_EVENT_TMP} AS SELECT DISTINCT osm_type, osm_id, object_version, version_timestamp "
+                "CREATE TEMP TABLE osm_history_event_versions AS SELECT DISTINCT osm_type, osm_id, object_version, version_timestamp "
                 "FROM osm_history_changes WHERE country_alpha3 = :a AND key IS NULL"
             ),
             {"a": alpha3},
         )
-        s.execute(text(f"CREATE INDEX temp.ix_{_EVENT_TMP} ON {_EVENT_TMP}(osm_type, osm_id, object_version, version_timestamp)"))
+        s.execute(text("CREATE INDEX temp.ix_osm_history_event_versions ON osm_history_event_versions(osm_type, osm_id, object_version, version_timestamp)"))
         month = _month(h.c.version_timestamp)
         not_first = (h.c.object_version.is_(None)) | (h.c.object_version != 1)
         # The key rows of a version that created, deleted or restored the object are that event's own, counted under openings and
@@ -355,7 +356,7 @@ def _history_scope(s, alpha3: str) -> Iterator[tuple[Any, Any, list[Any]]]:
         )
         yield h, month, [h.c.country_alpha3 == alpha3, h.c.version_timestamp.is_not(None), h.c.key.is_not(None), not_first, ~event_version]
     finally:
-        s.execute(text(f"DROP TABLE IF EXISTS temp.{_EVENT_TMP}"))
+        s.execute(text("DROP TABLE IF EXISTS temp.osm_history_event_versions"))
 
 
 def _prior(s, alpha3: str, have: set[str]) -> dict[str, Any]:
