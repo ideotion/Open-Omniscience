@@ -1986,6 +1986,7 @@
   "Full overwrite complete. Restart the app.": "Full overwrite complete. Restart the app.",
   "Full overwrite failed: {error}": "Full overwrite failed: {error}",
   "Full path to a folder on this machine": "Full path to a folder on this machine",
+  "Full text held for at least {n} pages; the second tier has not run.": "Full text held for at least {n} pages; the second tier has not run.",
   "Full text held for between {lo} and {hi} pages.": "Full text held for between {lo} and {hi} pages.",
   "Full — also delete the app folder (data kept)": "Full — also delete the app folder (data kept)",
   "Full-text index status unavailable.": "Full-text index status unavailable.",

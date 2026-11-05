@@ -195,8 +195,25 @@ def test_the_coverage_block_names_a_lane_that_never_ran_and_one_that_cannot_be_r
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"")
     unread = living._wiki_coverage()
-    assert unread["measured"] is False and unread["reason"] in ("unreadable", "lane-never-run")
+    assert unread["measured"] is False and unread["reason"] == "unreadable"
     assert not unread.get("editions"), "an unreadable lane drew edition rows"
+
+
+def test_the_coverage_block_of_a_lane_with_rows_carries_the_shape_the_panel_reads(lane):
+    """A lane with a stream cursor and a gap but NO walk row: has_run is true while pages_seen is null (the panel must say the walk has not run)."""
+    with lane_session("wiki") as db:
+        db.add_all([
+            VersionedCursor(feed="stream:fr", contiguous_through=NOW, updated_at=NOW),
+            VersionedGap(feed="stream:pt", reason="reconnect"),
+        ])
+        db.commit()
+    out = living._wiki_coverage()
+    assert out["measured"] is True
+    rows = {r["edition"]: r for r in out["editions"]}
+    assert rows["pt"]["has_run"] is True and rows["pt"]["pages_seen"] is None and rows["pt"]["gaps"]["total"] == 1
+    assert rows["de"] == {"edition": "de", "has_run": False, "reason": "no-run-yet"}, "a never-run edition is its name and the reason"
+    assert out["totals"]["edition_articles"] == 0 and out["totals"]["editions_without_total"] >= 1
+    assert out["located"]["measured"] is False
 
 
 def test_the_coverage_block_rides_the_wiki_source_of_the_overview(no_lane, corpus):

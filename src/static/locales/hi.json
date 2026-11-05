@@ -1986,6 +1986,7 @@
   "Full overwrite complete. Restart the app.": "पूर्ण अधिलेखन संपन्न। ऐप को पुनः आरंभ करें।",
   "Full overwrite failed: {error}": "पूर्ण अधिलेखन विफल: {error}",
   "Full path to a folder on this machine": "इस मशीन पर किसी फ़ोल्डर का पूरा पथ",
+  "Full text held for at least {n} pages; the second tier has not run.": "कम से कम {n} पृष्ठों के लिए पूर्ण पाठ रखा गया है; दूसरा स्तर चला नहीं है।",
   "Full text held for between {lo} and {hi} pages.": "{lo} से {hi} पृष्ठों के बीच के लिए पूर्ण पाठ रखा गया है।",
   "Full — also delete the app folder (data kept)": "पूर्ण — ऐप फ़ोल्डर भी हटाएँ (डेटा सुरक्षित)",
   "Full-text index status unavailable.": "पूर्ण-पाठ अनुक्रमणिका की स्थिति अनुपलब्ध।",

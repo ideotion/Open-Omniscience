@@ -1986,6 +1986,7 @@
   "Full overwrite complete. Restart the app.": "Sobrescrita completa concluída. Reinicie o aplicativo.",
   "Full overwrite failed: {error}": "Falha em a substituição completa: {error}",
   "Full path to a folder on this machine": "Caminho completo para uma pasta nesta máquina",
+  "Full text held for at least {n} pages; the second tier has not run.": "Texto completo guardado para pelo menos {n} páginas; o segundo nível não foi executado.",
   "Full text held for between {lo} and {hi} pages.": "Texto completo guardado para entre {lo} e {hi} páginas.",
   "Full — also delete the app folder (data kept)": "Completo — apagar também a pasta do app (dados mantidos)",
   "Full-text index status unavailable.": "Estado do índice de texto completo indisponível.",

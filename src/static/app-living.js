@@ -161,13 +161,21 @@
       const c = src.coverage || {};
       if (c.measured !== true) return { title: t("Edition coverage"), facts: _livingUnmeasured(c, t) };
       const facts = [];
-      const tot = c.totals || {};
+      const eds = c.editions || [];
+      // The ratio sums only the editions that have BOTH figures: a numerator from an edition with no total would pass a denominator that
+      // leaves it out. An edition the walk never touched (pages_seen null) adds nothing and is said so on its own row, never as 0.
+      const both = eds.filter((e) => e.has_run && typeof e.pages_seen === "number" && typeof e.edition_articles === "number");
+      const seenAll = eds.reduce((n, e) => n + (e.has_run && typeof e.pages_seen === "number" ? e.pages_seen : 0), 0);
+      const noTotal = eds.filter((e) => e.has_run && typeof e.edition_articles !== "number").length;
       facts.push({ label: t("All editions"),
-        value: tf("{n} of {m} pages seen", { n: _livingCount(tot.pages_seen), m: _livingCount(tot.edition_articles) }),
-        hover: tot.editions_without_total > 0
-          ? tf("{n} editions have no article count yet; they add nothing to the total.", { n: _livingCount(tot.editions_without_total) })
+        value: both.length
+          ? tf("{n} of {m} pages seen", { n: _livingCount(both.reduce((n, e) => n + e.pages_seen, 0)),
+              m: _livingCount(both.reduce((n, e) => n + e.edition_articles, 0)) })
+          : tf("{n} pages seen, total unknown", { n: _livingCount(seenAll) }),
+        hover: noTotal > 0
+          ? tf("{n} editions have no article count yet; they add nothing to the total.", { n: _livingCount(noTotal) })
           : t("Pages the walk listed, of the editions' own article counts.") });
-      for (const e of (c.editions || [])) {
+      for (const e of eds) {
         const code = (typeof ooLangCode === "function" ? ooLangCode(e.edition) : "") || String(e.edition);
         const name = typeof ooLangName === "function" ? ooLangName(e.edition, "") : "";
         let value;
@@ -175,16 +183,21 @@
         if (!e.has_run) {
           value = t("No run yet");
         } else {
-          value = typeof e.edition_articles === "number"
-            ? tf("{n} of {m} pages seen", { n: _livingCount(e.pages_seen), m: _livingCount(e.edition_articles) })
-            : tf("{n} pages seen, total unknown", { n: _livingCount(e.pages_seen) });
+          if (typeof e.pages_seen !== "number") value = t("The walk has not run for this edition.");
+          else if (typeof e.edition_articles === "number") {
+            value = tf("{n} of {m} pages seen", { n: _livingCount(e.pages_seen), m: _livingCount(e.edition_articles) });
+          } else value = tf("{n} pages seen, total unknown", { n: _livingCount(e.pages_seen) });
           const ft = e.full_text || {};
           if (typeof ft.hot_pages_with_text === "number") {
-            const lo = Math.max(ft.hot_pages_with_text, ft.warm_pages_with_text || 0);
-            const hi = ft.hot_pages_with_text + (ft.warm_pages_with_text || 0);
-            hover += " " + tf("Full text held for between {lo} and {hi} pages.", { lo: _livingCount(lo), hi: _livingCount(hi) });
+            if (typeof ft.warm_pages_with_text === "number") {
+              const lo = Math.max(ft.hot_pages_with_text, ft.warm_pages_with_text);
+              const hi = ft.hot_pages_with_text + ft.warm_pages_with_text;
+              hover += " " + tf("Full text held for between {lo} and {hi} pages.", { lo: _livingCount(lo), hi: _livingCount(hi) });
+            } else {
+              hover += " " + tf("Full text held for at least {n} pages; the second tier has not run.", { n: _livingCount(ft.hot_pages_with_text) });
+            }
           }
-          hover += " " + tf("Last event: {when}.", { when: livingWhen(e.last_event_recorded_at, t) });
+          hover += " " + tf("Last event: {when}.", { when: e.last_event_unreadable ? t("Could not be read") : livingWhen(e.last_event_recorded_at, t) });
           const g = e.gaps || {};
           if (g.total > 0) hover += " " + tf("{n} stretches the lane did not see.", { n: _livingCount(g.total) });
         }

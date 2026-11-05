@@ -1986,6 +1986,7 @@
   "Full overwrite complete. Restart the app.": "全盘覆写完成。请重启应用。",
   "Full overwrite failed: {error}": "完全覆写失败：{error}",
   "Full path to a folder on this machine": "本机上某个文件夹的完整路径",
+  "Full text held for at least {n} pages; the second tier has not run.": "至少 {n} 页已保存全文；第二层尚未运行。",
   "Full text held for between {lo} and {hi} pages.": "已保存全文的页面数介于 {lo} 与 {hi} 之间。",
   "Full — also delete the app folder (data kept)": "完整 — 同时删除应用文件夹（保留数据）",
   "Full-text index status unavailable.": "全文索引状态不可用。",

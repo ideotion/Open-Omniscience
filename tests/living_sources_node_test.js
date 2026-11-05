@@ -710,6 +710,27 @@ const WIKI = {
   assert.ok(hovers(g).includes("between 40 and 65 pages"), "the full-text range is lower and upper bound, not one number");
   assert.ok(text.includes("Addresses located Not measured yet"), "the located share drew a number it does not have: " + text);
   assert.ok(!/%/.test(text), "a percentage was drawn: " + text);
+  // Editions the walk never touched or whose total was never read: no zero, no closed range, no ratio over a total that is not there.
+  const PART = { measured: true, reason: null,
+    totals: { pages_seen: 10, edition_articles: 0, editions_without_total: 3, editions_with_a_run: 3, gaps: 1 },
+    editions: [
+      { edition: "it", has_run: true, pages_seen: 10, edition_articles: null, full_text: { hot_pages_with_text: 0, warm_pages_with_text: null },
+        last_event_recorded_at: null, gaps: { total: 0, by_reason: {} } },
+      { edition: "fr", has_run: true, pages_seen: null, edition_articles: null, full_text: { hot_pages_with_text: 1, warm_pages_with_text: null },
+        last_event_recorded_at: null, last_event_unreadable: true, gaps: { total: 0, by_reason: {} } },
+      { edition: "pt", has_run: true, pages_seen: null, edition_articles: null, full_text: { hot_pages_with_text: 0, warm_pages_with_text: null },
+        last_event_recorded_at: null, gaps: { total: 1, by_reason: { reconnect: 1 } } },
+    ], located: { measured: false, reason: "address-extractor-not-built" } };
+  const part = group(R.livingWikiGroups({ ...WIKI, coverage: PART }, t, tf), "Edition coverage");
+  noJunk(part, "the partial coverage group");
+  const ptext = visible(part);
+  assert.ok(ptext.includes("All editions 10 pages seen, total unknown") && !/of 0 pages/.test(ptext), "a ratio over a total that is not there: " + ptext);
+  assert.ok(ptext.includes("L3(fr) The walk has not run for this edition.") && ptext.includes("L3(pt) The walk has not run for this edition."), ptext);
+  assert.ok(!/\b0 pages seen/.test(ptext), "an edition the walk never touched drew 0 pages seen: " + ptext);
+  const phov = hovers(part);
+  assert.ok(!/between 0 and 0|between 1 and 1/.test(phov), "a closed range with the second tier never run: " + phov);
+  assert.ok(phov.includes("at least 1 pages; the second tier has not run"), phov);
+  assert.ok(phov.includes("Last event: Could not be read"), "an unreadable last event drew 'never'");
   const never = group(R.livingWikiGroups({ ...WIKI, coverage: { measured: false, reason: "lane-never-run" } }, t, tf), "Edition coverage");
   assert.ok(visible(never).includes("Not run yet") && !/\d/.test(visible(never).replace("Edition coverage", "")), visible(never));
   const none = group(R.livingWikiGroups(WIKI, t, tf), "Edition coverage");
