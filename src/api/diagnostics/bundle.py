@@ -1867,7 +1867,7 @@ def _release_run_last() -> dict:
     from src.monitoring.release_run import cap_report_for_bundle, last_release_run_report
 
     # Capped (R425): the saved file and the route keep the whole report; the bundle's copy is a bound the slot arithmetic can rely on.
-    return cap_report_for_bundle(last_release_run_report())
+    return cap_report_for_bundle(last_release_run_report(), measure=lambda v: len(_member_bytes(v)))
 
 
 def _data_volume_report() -> dict:

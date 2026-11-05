@@ -84,6 +84,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 from src.monitoring.secret_scrub import (
@@ -2170,7 +2171,11 @@ def _json_bytes(value: Any) -> int:
     return len(json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8"))
 
 
-def cap_report_for_bundle(report: dict, cap: int = BUNDLE_REPORT_MAX_BYTES) -> dict:
+#: The keys the cap writes itself; a report's own value under one of these names is never a candidate for a cut (it would be overwritten or crash the bookkeeping).
+_NOTE_KEYS = frozenset({"truncated", "truncated_from_bytes", "cap_bytes", "cut_sections", "cut_sections_more"})
+
+
+def cap_report_for_bundle(report: dict, cap: int = BUNDLE_REPORT_MAX_BYTES, measure: Callable[[Any], int] = _json_bytes) -> dict:
     """``report`` itself when it fits ``cap``; else a copy that DOES fit it, with whole top-level values replaced by a counted cut marker, largest first.
 
     The marker is ``{"cut": true, "bytes": <the value's size>}`` (dicts, lists and strings alike; a value no larger than its marker is left), and the
@@ -2178,27 +2183,33 @@ def cap_report_for_bundle(report: dict, cap: int = BUNDLE_REPORT_MAX_BYTES) -> d
     and ``cut_sections_more``, so a reader sees what the bundle does not carry and that the saved file has it. The size is re-measured AFTER every
     cut with the note in place, so the result is a bound, not an estimate; if cutting every value still leaves it over (thousands of keys), the
     answer is the note alone with the key count.
+
+    ``measure`` is how a value's size is taken; the bundle passes the size of the bytes it WRITES (after its wire rewrite), so the bound holds on the file.
     """
-    original = _json_bytes(report)
+    original = measure(report)
     if original <= cap:
         return report
     note: dict[str, Any] = {
         "truncated": True, "truncated_from_bytes": original, "cap_bytes": cap, "cut_sections": [], "cut_sections_more": 0,
     }
-    out = {**report, **note}
-    sizes = {k: _json_bytes(v) for k, v in report.items() if isinstance(v, (dict, list, str))}
-    marker_bytes = _json_bytes({"cut": True, "bytes": original})
+    out = {**{k: v for k, v in report.items() if k not in _NOTE_KEYS}, **note}
+    sizes = {k: measure(v) for k, v in report.items() if k not in _NOTE_KEYS and isinstance(v, (dict, list, str))}
+    marker_bytes = measure({"cut": True, "bytes": original})
+    named: list[dict[str, Any]] = []
+    more = 0
     for cut, (name, n) in enumerate(sorted(sizes.items(), key=lambda kv: kv[1], reverse=True), start=1):
-        if _json_bytes(out) <= cap:
+        out["cut_sections"], out["cut_sections_more"] = named, more
+        if measure(out) <= cap:
             break
         if n <= marker_bytes:
             break  # sorted, so nothing after it is larger than a marker either
         out[name] = {"cut": True, "bytes": n}
         if cut <= _CUTS_NAMED:
-            out["cut_sections"].append({"section": name, "bytes": n})
+            named.append({"section": name, "bytes": n})
         else:
-            out["cut_sections_more"] += 1
-    if _json_bytes(out) > cap:
+            more += 1
+    out["cut_sections"], out["cut_sections_more"] = named, more
+    if measure(out) > cap:
         return {**note, "cut_sections": [], "cut_sections_more": 0, "keys_in_report": len(report),
                 "note": "every value was cut and the report was still over the cap; the saved file has it whole"}
     return out

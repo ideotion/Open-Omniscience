@@ -3097,3 +3097,21 @@ def test_the_bundle_copy_of_an_oversized_report_is_cut_to_its_cap_with_counted_m
         capped = rr.cap_report_for_bundle(report)
         assert size(capped) <= rr.BUNDLE_REPORT_MAX_BYTES, (label, size(capped))
         assert capped["truncated"] is True and capped["truncated_from_bytes"] == size(report), label
+
+    # A report that already carries a key the cap writes itself is cut like any other section and never crashes the bookkeeping.
+    for label, report in {
+        "cut_sections big string": {"cut_sections": "x" * 300_000, "b": "y" * 200_000},
+        "cut_sections_more big string": {"cut_sections_more": "x" * 300_000, **{f"b{i}": "y" * 7000 for i in range(60)}},
+        "truncated key": {"truncated": "z" * 200_000, "a": "q" * 100_000},
+    }.items():
+        capped = rr.cap_report_for_bundle(report)
+        assert size(capped) <= rr.BUNDLE_REPORT_MAX_BYTES, (label, size(capped))
+        assert capped["truncated"] is True and isinstance(capped["cut_sections"], list), label
+
+    # The bound holds on what is WRITTEN: with a measure that counts the bytes after the wire rewrite (alpha-2 country codes become alpha-3).
+    from src.api.diagnostics.bundle import _member_bytes
+
+    wire = {"countries": ["fr"] * 27_996}
+    assert size(wire) < 140_000 < len(_member_bytes(wire))
+    capped = rr.cap_report_for_bundle(wire, measure=lambda v: len(_member_bytes(v)))
+    assert len(_member_bytes(capped)) <= rr.BUNDLE_REPORT_MAX_BYTES and capped["truncated"] is True

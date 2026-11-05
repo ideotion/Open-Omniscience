@@ -54,6 +54,8 @@ _ENV_PREFIX = "OO_"
 #: names are about 6,200 bytes. An install that sets more than 100 is not a normal install; ``count`` still says how many, and ``names_not_shown``
 #: how many are not listed.
 ENV_NAMES_SHOWN = 100
+#: The longest a shown name may be (characters, plain ASCII), so the block is bounded by arithmetic, not by what the environment holds.
+ENV_NAME_CHARS = 48
 
 
 def _unavailable(exc: BaseException) -> dict[str, Any]:
@@ -223,11 +225,16 @@ def _environment() -> dict[str, Any]:
     a path or a secret, and what a reader needs is which switches this process ran under."""
     try:
         names = sorted(k for k in os.environ if k.startswith(_ENV_PREFIX))
+        # Each shown name is cut to ENV_NAME_CHARS plain-ASCII characters (an environment name can be any length and any characters), and the cuts are counted.
+        shown = [n.encode("utf-8", "backslashreplace").decode("ascii")[:ENV_NAME_CHARS] for n in names[:ENV_NAMES_SHOWN]]
+        cut = sum(1 for n, t in zip(names[:ENV_NAMES_SHOWN], shown) if n != t)
         out: dict[str, Any] = {
-            "set_names": names[:ENV_NAMES_SHOWN],
+            "set_names": shown,
             "count": len(names),
             "method": f"the names of the {_ENV_PREFIX} variables that are set; no value is read",
         }
+        if cut:
+            out["names_cut"] = cut
         if len(names) > ENV_NAMES_SHOWN:
             # The first names in sorted order are shown and the rest are COUNTED: the block's size is a bound the diagnostics arithmetic relies on.
             out["names_not_shown"] = len(names) - ENV_NAMES_SHOWN
