@@ -56,7 +56,7 @@ const HELPERS = [
 const LIVING = [
   "livingWhen", "livingSigned", "livingFactHtml", "livingGroupsHtml", "_livingUnmeasured",
   "livingStorageGroup", "_livingCount", "livingRunFacts", "livingWalkGroup", "livingWarmGroup", "livingWikiGroups", "livingLawGroups",
-  "livingMapGroups", "livingGroupsFor",
+  "livingMapGroups", "livingDailyGroup", "livingGroupsFor",
   "livingDiffHtml", "livingStreamRowsHtml", "livingLawRowsHtml", "livingMapRowsHtml",
   "lawFloorStateWords", "lawFloorStateWhy", "lawFloorBasisWords", "lawFloorStatesIn", "lawFloorCountsHtml", "livingLawFloorHtml",
 ];
@@ -242,6 +242,36 @@ const WIKI = {
   assert.ok(visible(maps).includes("Date of the map data Not recorded"),
     "the file's own write time must never stand in for the date of the map data");
   noJunk(maps, "the map groups");
+  // The OSM lane's daily change files (S06-01 S5): counts, the newest file's OWN date, re-baselines as dated events with the country.
+  const DAILY = { measured: true, countries_cut: 3, countries_updated: 2, files_applied: 41, newest_file_at: "2026-11-04T23:59:00+00:00",
+    last_applied_at: "2026-11-05T01:00:00+00:00", rebaselines_total: 2, hand_recuts: 1, rebaselines_not_shown: 0,
+    rebaselines: [{ alpha3: "FRA", detected_at: "2026-10-30T08:15:00+00:00", from_time: null, to_time: null },
+                  { alpha3: "DEU", detected_at: "2026-09-01T07:00:00+00:00", from_time: null, to_time: null }] };
+  const daily = R.livingGroupsHtml([R.livingDailyGroup(DAILY, t, tf)]);
+  const dv = visible(daily);
+  assert.ok(dv.includes("Countries cut 3") && dv.includes("Reached by the daily files 2") && dv.includes("Change files applied 41"), dv);
+  assert.ok(dv.includes("Newest change file 2026-11-04 23:59 UTC"), "the newest file's own date, said as UTC: " + dv);
+  assert.ok(dv.includes("Re-baselines 2") && dv.includes("Cut again by hand 1"), "the two kinds of re-cut are counted apart: " + dv);
+  assert.ok(dv.indexOf("2026-10-30 08:15 UTC") < dv.indexOf("2026-09-01 07:00 UTC"), "events are listed newest first, as the server sent them");
+  assert.ok(daily.includes("CC(FRA)") && daily.includes("CC(DEU)"), "a country goes through the display helper, never printed raw");
+  noJunk(daily, "the daily group"); noVerdict(daily, "the daily group");
+  const none = visible(R.livingGroupsHtml([R.livingDailyGroup({ ...DAILY, rebaselines: [], rebaselines_total: 0, hand_recuts: 0 }, t, tf)]));
+  assert.ok(none.includes("Re-baselines 0") && none.includes("Re-baseline events None"), "no event reads as None, and a zero is a measured zero: " + none);
+  const older = visible(R.livingGroupsHtml([R.livingDailyGroup({ ...DAILY, rebaselines_not_shown: 4 }, t, tf)]));
+  assert.ok(older.includes("4 older events are not shown."), older);
+  const oldLane = R.livingGroupsHtml([R.livingDailyGroup({ ...DAILY, files_applied: null, last_applied_at: null, rebaselines_total: null, hand_recuts: null, rebaselines: [] }, t, tf)]);
+  assert.ok(visible(oldLane).includes("Change files applied Not recorded") && visible(oldLane).includes("Re-baselines Not recorded"),
+    "a table the lane lacks is Not recorded, never 0: " + visible(oldLane));
+  assert.ok(hovers(oldLane).includes("older build"), "and says why on hover");
+  assert.ok(visible(oldLane).includes("Re-baseline events Not recorded") && !visible(oldLane).includes("Re-baseline events None"),
+    "an events list the lane could not read is NOT 'None': that would state that nothing happened: " + visible(oldLane));
+  const noStamp = visible(R.livingGroupsHtml([R.livingDailyGroup({ ...DAILY, newest_file_at: null }, t, tf)]));
+  assert.ok(noStamp.includes("Newest change file Not recorded"), "files applied but no recorded date is Not recorded, not 'never': " + noStamp);
+  assert.ok(visible(R.livingGroupsHtml([R.livingDailyGroup({ ...DAILY, newest_file_at: null, countries_updated: 0, files_applied: 0 }, t, tf)])).includes("Newest change file never"),
+    "and no file at all is 'never'");
+  assert.ok(visible(R.livingGroupsHtml([R.livingDailyGroup({ measured: false, reason: "lane-never-run" }, t, tf)])).includes("Not run yet"));
+  assert.ok(visible(R.livingGroupsHtml([R.livingDailyGroup(undefined, t, tf)])).includes("Could not be read"), "an overview without the block is named, not blank");
+  noJunk(oldLane, "the old-lane daily group");
   assert.deepStrictEqual(R.livingGroupsFor({ kind: "radio" }, t, tf), [], "an unknown source drew groups");
   assert.deepStrictEqual(R.livingGroupsFor(null, t, tf), []);
 }

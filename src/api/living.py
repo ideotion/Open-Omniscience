@@ -368,6 +368,13 @@ def _maps() -> dict[str, Any]:
     }
 
 
+def _osm_daily() -> dict[str, Any]:
+    """The lane's daily change files: how far they reached and every re-baseline, dated (``src/osm/daily_view.py``, which never raises)."""
+    from src.osm.daily_view import daily_block
+
+    return daily_block()
+
+
 def _storage(db: Session) -> dict[str, Any]:
     """Settings -> Storage's own rows, by kind, so the two surfaces cannot disagree."""
     from src.versioned.budget import storage_report
@@ -407,6 +414,7 @@ def living_overview(db: Session = Depends(get_db)) -> dict[str, Any]:
             {
                 "kind": "osm",
                 "maps": _maps(),
+                "daily": _osm_daily(),
                 "storage": storage.get("osm"),
             },
         ],
@@ -418,7 +426,8 @@ def living_overview(db: Session = Depends(get_db)) -> dict[str, Any]:
             "a break. Other changed pages and the page walk: the lane file's own rows, "
             "each with its own counts, and this process's state for each. Tracked pages, law: "
             "the main database's rows, with the newest and oldest "
-            "check. Maps: the download manager's regions and the bytes on disk. Storage: the "
+            "check. Maps: the download manager's regions and the bytes on disk. Daily map files: the OSM "
+            "lane's own rows -- files applied, the newest file's date, each re-baseline. Storage: the "
             "same rows as Settings -> Storage. Nothing is sent anywhere."
         ),
         "caveat": (
