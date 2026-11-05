@@ -238,6 +238,26 @@ def _wiki_warm() -> dict[str, Any]:
     return {**out, **coverage}
 
 
+def _wiki_coverage() -> dict[str, Any]:
+    """The per-edition coverage report (v0.6 row D, S06-03 S1): pages seen of each edition's own count, the full-text range, the last event
+    and the gaps by reason, through the one reader the counters artifact and the diagnostics bundle use (``edition_coverage``), so the
+    three cannot disagree about a number. The compact form (no per-gap list): this view shows counts.
+    """
+    from src.versioned.store import LaneAbsentError, lane_path, lane_session
+    from src.wiki.coverage import edition_coverage
+
+    if not lane_path("wiki").is_file():
+        return {"measured": False, "reason": "lane-never-run"}
+    try:
+        with lane_session("wiki") as lane:
+            return edition_coverage(lane, newest_gaps=False)
+    except LaneAbsentError:
+        return {"measured": False, "reason": "lane-never-run"}
+    except SQLAlchemyError as exc:
+        log_failure(_LOG, "living overview: the coverage rows could not be read", exc, level=logging.WARNING)
+        return {"measured": False, "reason": "unreadable"}
+
+
 def _wiki_tracked(db: Session, since: datetime) -> dict[str, Any]:
     """The pages the operator follows by hand (Settings -> Wikipedia), in the main database."""
     from src.database.models import WikiPage, WikiRevision
@@ -404,6 +424,7 @@ def living_overview(db: Session = Depends(get_db)) -> dict[str, Any]:
                 "tracked": _wiki_tracked(db, since.replace(tzinfo=None)),
                 "warm": _wiki_warm(),
                 "walk": _wiki_walk(),
+                "coverage": _wiki_coverage(),
                 "storage": storage.get("wiki"),
             },
             {

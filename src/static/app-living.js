@@ -155,6 +155,60 @@
       return { title: t("Page walk"), facts };
     }
 
+    // Per-edition coverage (v0.6 row D, S06-03 S1 + S3): pages seen of the edition's OWN article count, the full-text range, the last
+    // event and the gaps by reason. Counts as "N of M", never a bar or a score; the located-share row says why it is empty.
+    function livingCoverageGroup(src, t, tf) {
+      const c = src.coverage || {};
+      if (c.measured !== true) return { title: t("Edition coverage"), facts: _livingUnmeasured(c, t) };
+      const facts = [];
+      const eds = c.editions || [];
+      // The ratio sums only the editions that have BOTH figures: a numerator from an edition with no total would pass a denominator that
+      // leaves it out. An edition the walk never touched (pages_seen null) adds nothing and is said so on its own row, never as 0.
+      const both = eds.filter((e) => e.has_run && typeof e.pages_seen === "number" && typeof e.edition_articles === "number");
+      const seenAll = eds.reduce((n, e) => n + (e.has_run && typeof e.pages_seen === "number" ? e.pages_seen : 0), 0);
+      const noTotal = eds.filter((e) => e.has_run && typeof e.edition_articles !== "number").length;
+      facts.push({ label: t("All editions"),
+        value: both.length
+          ? tf("{n} of {m} pages seen", { n: _livingCount(both.reduce((n, e) => n + e.pages_seen, 0)),
+              m: _livingCount(both.reduce((n, e) => n + e.edition_articles, 0)) })
+          : (eds.some((e) => e.has_run && typeof e.pages_seen === "number")
+            ? tf("{n} pages seen, total unknown", { n: _livingCount(seenAll) }) : t("Not measured yet")),
+        hover: noTotal > 0
+          ? tf("{n} editions have no article count yet; their pages are left out of both figures.", { n: _livingCount(noTotal) })
+          : t("Pages the walk listed, of the editions' own article counts.") });
+      for (const e of eds) {
+        const code = (typeof ooLangCode === "function" ? ooLangCode(e.edition) : "") || String(e.edition);
+        const name = typeof ooLangName === "function" ? ooLangName(e.edition, "") : "";
+        let value;
+        let hover = t("The edition counts its articles its own way, so pages seen can pass its total. A page promoted from the second tier to the first may be counted twice, so the full-text figure is a range.");
+        if (!e.has_run) {
+          value = t("No run yet");
+        } else {
+          if (typeof e.pages_seen !== "number") value = t("The walk has not run for this edition.");
+          else if (typeof e.edition_articles === "number") {
+            value = tf("{n} of {m} pages seen", { n: _livingCount(e.pages_seen), m: _livingCount(e.edition_articles) });
+          } else value = tf("{n} pages seen, total unknown", { n: _livingCount(e.pages_seen) });
+          const ft = e.full_text || {};
+          if (typeof ft.hot_pages_with_text === "number") {
+            if (typeof ft.warm_pages_with_text === "number") {
+              const lo = Math.max(ft.hot_pages_with_text, ft.warm_pages_with_text);
+              const hi = ft.hot_pages_with_text + ft.warm_pages_with_text;
+              hover += " " + tf("Full text held for between {lo} and {hi} pages.", { lo: _livingCount(lo), hi: _livingCount(hi) });
+            } else if (ft.hot_pages_with_text > 0) {
+              hover += " " + tf("Full text held for at least {n} pages; the second tier has not run.", { n: _livingCount(ft.hot_pages_with_text) });
+            }
+          }
+          hover += " " + tf("Last event: {when}.", { when: e.last_event_unreadable ? t("Could not be read") : livingWhen(e.last_event_recorded_at, t) });
+          const g = e.gaps || {};
+          if (g.total > 0) hover += " " + tf("{n} stretches the lane did not see.", { n: _livingCount(g.total) });
+        }
+        facts.push({ label: code, value, hover: (name && name !== code ? ooLabelText(name, hover) : hover) });
+      }
+      facts.push({ label: t("Addresses located"), value: t("Not measured yet"),
+        hover: t("Counting addresses found, located and outside your OSM countries needs the address extractor and the local OSM address index, which this build does not have yet. A zero would read as none found; nothing has looked.") });
+      return { title: t("Edition coverage"), facts };
+    }
+
     // Q707's WARM tier (S05-06's S1): the newest text of every OTHER page the stream reports
     // changed, latest + previous (Q710). Counts only. The share of the budget it leaves to
     // the followed pages is a proposed default, and the hover says so.
@@ -293,6 +347,7 @@
         { title: t("Live stream"), facts: stream },
         livingWarmGroup(src, t, tf),
         livingWalkGroup(src, t, tf),
+        livingCoverageGroup(src, t, tf),
         { title: t("Pages you track"), facts: tracked },
         livingStorageGroup(src.storage, t),
       ];

@@ -55,7 +55,7 @@ const HELPERS = [
 ];
 const LIVING = [
   "livingWhen", "livingSigned", "livingFactHtml", "livingGroupsHtml", "_livingUnmeasured",
-  "livingStorageGroup", "_livingCount", "livingRunFacts", "livingWalkGroup", "livingWarmGroup", "livingWikiGroups", "livingLawGroups",
+  "livingStorageGroup", "_livingCount", "livingRunFacts", "livingWalkGroup", "livingCoverageGroup", "livingWarmGroup", "livingWikiGroups", "livingLawGroups",
   "livingMapGroups", "livingDailyGroup", "livingGroupsFor",
   "livingDiffHtml", "livingStreamRowsHtml", "livingLawRowsHtml", "livingMapRowsHtml",
   "lawFloorStateWords", "lawFloorStateWhy", "lawFloorBasisWords", "lawFloorStatesIn", "lawFloorCountsHtml", "livingLawFloorHtml",
@@ -392,8 +392,8 @@ const WIKI = {
 // --- 10. the page walk (Q701 = c): "N of M", never a percentage; absence is a word ---- //
 {
   const titles = R.livingWikiGroups(WIKI, t, tf).map((g) => g.title);
-  assert.deepStrictEqual(titles, ["Live stream", "Other changed pages", "Page walk", "Pages you track", "Storage"],
-    "Q707's order: the followed pages, the other changed pages, then the walk's tail");
+  assert.deepStrictEqual(titles, ["Live stream", "Other changed pages", "Page walk", "Edition coverage", "Pages you track", "Storage"],
+    "Q707's order: the followed pages, the other changed pages, then the walk, then the per-edition coverage (v0.6 row D), then the tail");
   // Off is the operator's switch: the state says so and names where it is set.
   const off = R.livingWalkGroup({ walk: { enabled: false, state: "off", measured: false,
     reason_counts: "walk-never-run" } }, t, tf);
@@ -715,6 +715,60 @@ const WIKI = {
     "an unknown state sorted ahead of a known one");
   assert.ok(text.includes("1 sources that serve many countries at once are credited to no single country."), text);
   assert.ok(!text.includes("state no country"), "a non-numeric document count drew a disclosure");
+}
+
+// --- coverage per edition: counts as "n of m", a missing total is said, nothing is a score -------- //
+{
+  const COV = { measured: true, reason: null,
+    totals: { pages_seen: 300, edition_articles: 1000, editions_without_total: 1, editions_with_a_run: 2, gaps: 3 },
+    editions: [
+      { edition: "en", has_run: true, pages_seen: 300, edition_articles: 1000,
+        full_text: { hot_pages_with_text: 40, warm_pages_with_text: 25, share_lower_bound: 0.1333, share_upper_bound: 0.2167 },
+        last_event_recorded_at: "2026-09-25T09:00:00+00:00", gaps: { total: 3, by_reason: { reconnect: 3 } } },
+      { edition: "fr", has_run: true, pages_seen: 10, edition_articles: null, full_text: { hot_pages_with_text: 0, warm_pages_with_text: null },
+        last_event_recorded_at: null, gaps: { total: 0, by_reason: {} } },
+      { edition: "de", has_run: false, reason: "no-run-yet" },
+    ],
+    located: { measured: false, reason: "address-extractor-not-built" } };
+  const g = group(R.livingWikiGroups({ ...WIKI, coverage: COV }, t, tf), "Edition coverage");
+  noJunk(g, "the coverage group"); noVerdict(g, "the coverage group");
+  const text = visible(g);
+  assert.ok(text.includes("All editions 300 of 1,000 pages seen") || text.includes("All editions 300 of 1000 pages seen"), text);
+  assert.ok(hovers(g).includes("1 editions have no article count yet; their pages are left out of both figures."), "a missing total was not said");
+  assert.ok(text.includes("L3(fr) 10 pages seen, total unknown"), "a missing total drew a ratio: " + text);
+  assert.ok(text.includes("L3(de) No run yet") && !/L3\(de\) \d/.test(text), "a never-run edition drew a figure: " + text);
+  assert.ok(hovers(g).includes("between 40 and 65 pages"), "the full-text range is lower and upper bound, not one number");
+  assert.ok(text.includes("Addresses located Not measured yet"), "the located share drew a number it does not have: " + text);
+  assert.ok(!/%/.test(text), "a percentage was drawn: " + text);
+  // Editions the walk never touched or whose total was never read: no zero, no closed range, no ratio over a total that is not there.
+  const PART = { measured: true, reason: null,
+    totals: { pages_seen: 10, edition_articles: 0, editions_without_total: 3, editions_with_a_run: 3, gaps: 1 },
+    editions: [
+      { edition: "it", has_run: true, pages_seen: 10, edition_articles: null, full_text: { hot_pages_with_text: 0, warm_pages_with_text: null },
+        last_event_recorded_at: null, gaps: { total: 0, by_reason: {} } },
+      { edition: "fr", has_run: true, pages_seen: null, edition_articles: null, full_text: { hot_pages_with_text: 1, warm_pages_with_text: null },
+        last_event_recorded_at: null, last_event_unreadable: true, gaps: { total: 0, by_reason: {} } },
+      { edition: "pt", has_run: true, pages_seen: null, edition_articles: null, full_text: { hot_pages_with_text: 0, warm_pages_with_text: null },
+        last_event_recorded_at: null, gaps: { total: 1, by_reason: { reconnect: 1 } } },
+    ], located: { measured: false, reason: "address-extractor-not-built" } };
+  const part = group(R.livingWikiGroups({ ...WIKI, coverage: PART }, t, tf), "Edition coverage");
+  noJunk(part, "the partial coverage group");
+  const ptext = visible(part);
+  assert.ok(ptext.includes("All editions 10 pages seen, total unknown") && !/of 0 pages/.test(ptext), "a ratio over a total that is not there: " + ptext);
+  assert.ok(ptext.includes("L3(fr) The walk has not run for this edition.") && ptext.includes("L3(pt) The walk has not run for this edition."), ptext);
+  assert.ok(!/\b0 pages seen/.test(ptext), "an edition the walk never touched drew 0 pages seen: " + ptext);
+  const phov = hovers(part);
+  assert.ok(!/between 0 and 0|between 1 and 1/.test(phov), "a closed range with the second tier never run: " + phov);
+  assert.ok(phov.includes("at least 1 pages; the second tier has not run"), phov);
+  // The walk ran for no edition at all: the aggregate says it is not measured, never "0 pages seen".
+  const NOWALK = { ...PART, editions: PART.editions.map((e) => ({ ...e, pages_seen: null })) };
+  const nowalk = group(R.livingWikiGroups({ ...WIKI, coverage: NOWALK }, t, tf), "Edition coverage");
+  assert.ok(visible(nowalk).includes("All editions Not measured yet") && !/\b0 pages seen/.test(visible(nowalk)), visible(nowalk));
+  assert.ok(phov.includes("Last event: Could not be read"), "an unreadable last event drew 'never'");
+  const never = group(R.livingWikiGroups({ ...WIKI, coverage: { measured: false, reason: "lane-never-run" } }, t, tf), "Edition coverage");
+  assert.ok(visible(never).includes("Not run yet") && !/\d/.test(visible(never).replace("Edition coverage", "")), visible(never));
+  const none = group(R.livingWikiGroups(WIKI, t, tf), "Edition coverage");
+  assert.ok(visible(none).includes("Could not be read"), "a payload without a coverage block threw or drew figures");
 }
 
 console.log("living_sources_node_test: all checks passed");
