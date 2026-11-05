@@ -1,0 +1,13 @@
+# SYNTHETIC catalogue (v0.6.0 C-L2). Every host is on the reserved .test TLD and nothing here is a real URL,
+# a real treaty, or an operator-verified source: it exists so the declared-identity path (src/law/declared.py) runs
+# end to end without a socket. A guard in tests/test_law_declared_identity.py fails if a real host ever appears here.
+sources: []
+documents:
+- {jurisdiction: INT, title: "Synthetic Treaty on Measurement Standards", category: legislation, consolidated: false, country: INT, language: zxx-en, url: "https://treaties.zzz.test/mtdsg/xviii-1/en", identity: {scheme: act-number, value: "mtdsg:xviii-1"}, doc_type: treaty, translation_kind: original}
+- {jurisdiction: INT, title: "Traité synthétique sur les normes de mesure", category: legislation, consolidated: false, country: INT, language: zxx-fr, url: "https://treaties.zzz.test/mtdsg/xviii-1/fr", identity: {scheme: act-number, value: "mtdsg:xviii-1"}, doc_type: treaty, translation_kind: official}
+- {jurisdiction: INT, title: "Tratado sintético sobre normas de medición", category: legislation, consolidated: false, country: INT, language: zxx-es, url: "https://treaties.zzz.test/mtdsg/xviii-1/es", identity: {scheme: act-number, value: "mtdsg:xviii-1"}, doc_type: treaty, translation_kind: official}
+- {jurisdiction: INT, title: "Синтетический договор о стандартах измерений", category: legislation, consolidated: false, country: INT, language: zxx-ru, url: "https://treaties.zzz.test/mtdsg/xviii-1/ru", identity: {scheme: act-number, value: "mtdsg:xviii-1"}, doc_type: treaty, translation_kind: intergovernmental}
+- {jurisdiction: INT, title: "معاهدة اصطناعية بشأن معايير القياس", category: legislation, consolidated: false, country: INT, language: zxx-ar, url: "https://treaties.zzz.test/mtdsg/xviii-1/ar", identity: {scheme: act-number, value: "mtdsg:xviii-1"}, doc_type: treaty}
+- {jurisdiction: INT, title: "关于计量标准的合成条约", category: legislation, consolidated: false, country: INT, language: zxx-zh, url: "https://treaties.zzz.test/mtdsg/xviii-1/zh", identity: {scheme: act-number, value: "mtdsg:xviii-1"}, doc_type: treaty}
+- {jurisdiction: INT, title: "Synthetic Protocol on Calibration (English)", category: legislation, consolidated: false, country: INT, language: zxx-en, url: "https://treaties.zzz.test/mtdsg/xviii-2/en", identity: {scheme: act-number, value: "mtdsg:xviii-2"}, doc_type: treaty, translation_kind: original}
+- {jurisdiction: INT, title: "Synthetic Undeclared Instrument (English)", category: legislation, consolidated: false, country: INT, language: zxx-en, url: "https://treaties.zzz.test/mtdsg/undeclared/en"}
