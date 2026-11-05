@@ -1,6 +1,6 @@
 # CI shards: how the `test` and `core-only` jobs are split, and how to keep them honest
 
-Written 2026-11-05 with C10 (decision 27, R412). The two full-suite CI jobs each ran the whole suite in one process, 70 to 80 minutes, and a PR waited for the
+Written 2026-11-05 with C10 (decision 27, R412); the artifacts and the measured legs below are the follow-up of the same day (R433). The two full-suite CI jobs each ran the whole suite in one process, 70 to 80 minutes, and a PR waited for the
 slower of the two. Each is now **three jobs** that each run a third of the test files.
 
 ## What runs where
@@ -37,18 +37,28 @@ Run one shard by hand: `python scripts/ci_shard.py plan --shard 2/3 --out /tmp/s
 
 ## Refreshing the cost table
 
-The table is a measurement of one tree and it ages: the plan step's "N not in the table" and each leg's real time (the step summary) say how far. To refresh it,
-run the suite once in the `test` environment with `--junitxml=junit.xml` and
+The table is a measurement of one tree and it ages: the plan step's "N not in the table" and each leg's real time (the step summary) say how far. **Every leg of
+the `test` job (and of the Core-only job) uploads its `junit.xml` as an artifact** (`junit-test-shard-N`, `junit-core-only-shard-N`, kept 14 days, on red runs
+too), so any green run of the `test` job refreshes the table without running the suite in one process:
 
-    python scripts/ci_shard.py costs --min-seconds 0.5 junit.xml
+1. open the run's page, download `junit-test-shard-1`, `-2` and `-3`, unzip each into its own folder (each holds a `junit.xml`);
+2. `python scripts/ci_shard.py costs --min-seconds 0.5 junit-test-shard-*/junit.xml`
 
 which rewrites the table (modules under half a second fall to the hash, which spreads the many small ones evenly; `--table OTHER.json` rewrites OTHER.json, the
-table it read, and `--stdout` prints instead of writing). The table was last measured on run 41995058978 of PR #1726 (head 07ec3eaf8; 794 modules of half a second or more, 4960 s), the run that is also named in its `source` field.
-Look at the legs' times on the next run; the tests pin that the table deals the shards to within 3 % of each other, not that the legs take equal time.
+table it read, and `--stdout` prints instead of writing). **Use the three reports of ONE run:** `costs` SUMS the seconds of every report it is given, and the
+three legs hold disjoint files, so one run's three reports are the suite once; two runs' reports would double every figure against `overhead_seconds`. The
+seconds are the speed of the runners that run's legs happened to get (the same suite took 72 to 90 minutes of `test` job time over three runs, below), so prefer
+a run whose three pytest steps ended within a few percent of each other. The report holds test ids, outcomes and seconds, a traceback for a failure and a skip's
+reason, which is what the job log already prints. The table was last measured on run 41995058978 of PR #1726 (head 07ec3eaf8; 794 modules of half a second or
+more, 4960 s), the run that is also named in its `source` field. The tests pin that the table deals the shards to within 3 % of each other, not that the legs take
+equal time (below: they came within 3 % of the table on the last run).
+
+The Core-only legs' reports are kept for a table of their own, which does not exist yet (below).
 
 **A new dealing is a new set of neighbours.** Which tests share a process changes with the table, so the check that no test leans on a neighbour was made for the
 table that ships. After a refresh that moves many files, or a change of shard count, run it again: put the three `PARITY` jobs back (their text is
-`git show 0d8047c91:.github/workflows/ci.yml`, the head of PR #1726 that carried them), read the legs, and remove them again.
+`git show 0d8047c91:.github/workflows/ci.yml`, the head of PR #1726 that carried them), read the legs, and remove them again. The parity jobs are needed for that,
+no longer for a plain refresh.
 
 ## Changing the number of shards
 
@@ -82,22 +92,49 @@ A test that is order-dependent shows up as a red leg that is green alone; the fi
 
 ## How long it takes, and what limits it
 
-Measured on two runs of the PR (job time from start to end, which includes the install, about two minutes, and for leg 1 of `test` the static steps). Run A is the
-parity run (head 0d8047c91 merged onto main `c0c66ffd8`); run B is the next one (head 225975f90 merged onto `7066c4401`, whose new test files are dealt by the hash).
+Measured on three runs of the PR (job time from start to end, which includes the install and, for leg 1 of `test`, the static steps). Run A is the parity run
+(head 0d8047c91 merged onto main `c0c66ffd8`); run B is the next one (head 225975f90 merged onto `7066c4401`, whose new test files are dealt by the hash); run C is the
+last one before the merge (head 65e477d35 merged onto `6945d1f3e`, run 42043201924), whose step times were read.
 
 | | run | shard 1 | shard 2 | shard 3 |
 |---|---|---|---|---|
 | `Test (shard N of 3)` | A | 28:12 | 25:34 | 26:59 |
 | `Test (shard N of 3)` | B | 21:21 | 22:33 | 28:23 |
+| `Test (shard N of 3)` | C | 29:58 | 29:34 | 30:37 |
 | `Core-only install, shard N of 3` | A | 17:46 | 28:22 | 25:54 |
 | `Core-only install, shard N of 3` | B | 24:30 | 29:32 | 25:44 (red: the clock race of the lesson `a-tick-list-clock-is-read-by-every-thread-of-the-process`, since fixed) |
+| `Core-only install, shard N of 3` | C | 26:46 | 19:19 | 25:31 |
 
-The required `test` check was green 29:51 (A) and 28:31 (B) after the run was created; before, the one-process job took 70 to 80 minutes (79:36 as the unsharded
-oracle of run A). The goal was about 25 minutes and the slowest leg took 28:22 (A) and 29:32 (B): **not reached.** The same leg varies by up to 7 minutes between
-runs (`test` shard 1: 28:12, then 21:21), which is the runner and the neighbours the new test files bring, not the dealing. Balanced perfectly, a run's legs would
-average 26:55 (A) or 24:06 (B) for `test` and 24:00 (A) or 26:35 (B) for Core-only (arithmetic on the times above, not a measurement), so three shards give 24 to 27
-minutes at best and the slowest leg adds a few more: 28 to 30 in practice.
+The required `test` check was green 29:51 (A), 28:31 (B) and 40:04 (C) after the run was created; before, the one-process job took 70 to 80 minutes (79:36 as the
+unsharded oracle of run A). The goal was about 25 minutes and the slowest leg took 28:22 (A), 29:32 (B) and 30:37 (C): **not reached.**
 
-The first run suggested two structural imbalances, `test` leg 1 (its static steps, which the table models as 80 s in `overhead_seconds`) and a light Core-only shard 1
-(its table is measured where the analysis tests run, and a core-only install skips them). The second run repeats neither, so they are not established; the per-step
-times were not read. A measured overhead, a Core-only table of its own and four shards are follow-ups to judge on several runs, not on one; none was measured.
+**A leg's time is not the run's time.** In run C `Test (shard 1)` waited 10:00 between its creation and its start and shard 2 waited 6:38, which is the difference
+between 30 and 40 minutes. Both starts came 2 to 3 seconds after a sibling job of the same run ended, while two other PR runs were running: that points to a cap on the
+number of concurrent jobs. This is an INFERENCE; the limit of the plan is not visible from the repository. Every PR run now asks for four more jobs than before the split.
+
+**Where a leg's time goes (run C, step times).** The table's prediction is the tests alone; the fixed part is the install and, in leg 1, the static steps.
+
+| leg | before pytest | pytest step | the table predicts | after pytest |
+|---|---|---|---|---|
+| Test 1 | 132 s (91 install, 41 static) | 1604 s | 1600 s | 62 s (static) |
+| Test 2 | 105 s | 1666 s | 1680 s | 3 s |
+| Test 3 | 104 s | 1730 s | 1680 s | 3 s |
+| Core-only 1 | 46 s | 1556 s | | 4 s |
+| Core-only 2 | 33 s | 1122 s | | 4 s |
+| Core-only 3 | 35 s | 1492 s | | 1 s |
+
+* **The dealing of `test` is good.** The three pytest steps came within 3 % of what the table predicted (the three add to 5000 s against the table's 4960 s). The
+  goal was out of reach for three shards, not for lack of balance: 4960 s over three shards is 27:33 of tests before any install. Four shards would be about
+  22 to 23 minutes per leg on the same arithmetic.
+* **The runner moves more than the dealing.** The same suite took 80:45 (A), 72:17 (B) and 90:09 (C) of `test` job time, a spread of 25 % between runs, against 3 %
+  between the legs of one run; the same leg varied by up to 8:37 (`test` shard 1: 21:21 in B, 29:58 in C).
+* **The static steps of leg 1** took about 100 s (41 s before pytest, about 59 s after: mypy 30, bandit 25, pip-audit 4); `overhead_seconds` models 80. The 20 s
+  difference moves the dealing by under 7 s per leg, so the number stays (R433 dropped a measured overhead).
+* **Core-only is the one imbalance measured:** the pytest steps took 1556, 1122 and 1492 s, a spread of 434 s. The light leg was leg 1 in A and B and leg 2 in C,
+  so three runs do not say how much of it is the table (measured where the analysis tests run, which a core-only install skips) and how much is the runner. Dealing
+  the 4170 s evenly would give 23:10 against 25:56 for the slowest leg, and only matters in a run where Core-only is the slowest job (B yes, A a tie, C no).
+
+**Held (R433), not done.** A Core-only table of its own (the planner takes `--table`) waits until a Core-only table has been measured from the artifacts above. Four
+shards wait until created-to-started times of every leg have been recorded on the next five runs: with a cap on concurrent jobs, two more legs per run may cost more
+queue than they save. The macOS portability observation lane holds a runner for about 50 minutes on every PR push and gates nothing; whether it should run on a
+schedule only is a question for that lane, flagged here and not changed.

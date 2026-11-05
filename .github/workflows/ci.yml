@@ -451,6 +451,22 @@ jobs:
           python -m pip install pip-audit==2.10.1  # pinned (OO-D15-004): an unpinned audit tool can redden PRs through no code change, exactly like bandit/mypy
           pip-audit --skip-editable
 
+      # THIS LEG'S JUNIT REPORT, kept 14 days, so that the cost table (configs/ci_shard_costs.json) is refreshed from the three reports of any green run
+      # (`python scripts/ci_shard.py costs --min-seconds 0.5 junit-test-shard-*/junit.xml`, docs/maintenance/CI_SHARDS.md) and not from the whole suite
+      # in one process of 80 minutes (C10 follow-up, R433). The report holds test ids, outcomes and seconds, a traceback for a failure and a skip's
+      # reason: what the job log above already prints and nothing the log does not. `if: always()` because a red leg's seconds are as good as a green
+      # one's, `continue-on-error` because an upload never turns a job red, `overwrite` because a re-run of a leg writes the same name. It comes BEFORE the
+      # skip summary, which has to stay the job's last step (tests/test_ci_pytest_flags_and_preflight.py); tests/test_ci_shards.py pins this step.
+      - name: Upload this leg's junit report (the cost table's source)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-test-shard-${{ matrix.shard }}
+          path: ${{ runner.temp }}/junit.xml
+          retention-days: 14
+          overwrite: true
+
       # WHAT THIS JOB SKIPPED, by class and by test module, counts only, and its ten SLOWEST test modules in whole seconds (the sum of each module's
       # junit times, not wall time), kept on a red run as well as a green one (`if: always()`), written to the log and to the step summary. The `-rs` block in the pytest step is hundreds of lines and a reader that returns only the last lines of a job log never
       # reaches it, so "what did this job not run" was answered by re-running the suite locally. This is a few dozen short lines (the lists are capped),
@@ -530,6 +546,17 @@ jobs:
             python -m pip list --format=freeze
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # The same upload as the `test` job's (see there): this leg's junit report, 14 days, the source of the Core-only legs' own times. Before the skip summary.
+      - name: Upload this leg's junit report (the cost table's source)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-core-only-shard-${{ matrix.shard }}
+          path: ${{ runner.temp }}/junit.xml
+          retention-days: 14
+          overwrite: true
 
       # The same summary as the `test` job's (see there): skip counts by class and by test module, then the ten slowest modules; no free-text reasons, no
       # gate. Here it shows what the analysis-module skips on purpose came to, so a count that moves is a question for a reader. The job's last step, as there.
