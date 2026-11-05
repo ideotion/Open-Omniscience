@@ -381,6 +381,9 @@ def countries() -> list[dict]:
                     "blob": json.loads(r.blob_json) if r.blob_json else None,
                     "border": json.loads(r.border_json) if r.border_json else None,
                     "error": r.error,
+                    "extract_sequence": r.extract_sequence,
+                    "diff_sequence": r.diff_sequence,
+                    "diff_timestamp": r.diff_timestamp.isoformat() if r.diff_timestamp else None,
                 }
             )
     return out

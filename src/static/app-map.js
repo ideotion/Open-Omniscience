@@ -3303,15 +3303,85 @@
       try { lane = await api("/api/osm/lane"); } catch (e) { sec.hidden = true; return; }
       const done = ((lane || {}).countries || []).filter((c) => c.status === "complete");
       if (!done.length) { sec.hidden = true; _osmComp = null; _osmGeoShow([]); return; }
+      await _osmLoadUpdates();
       const out = [];
       for (const c of done) {
-        try { out.push(await api(`/api/osm/countries/${encodeURIComponent(c.alpha3)}/completeness`)); }
-        catch (e) { out.push({ country: c.alpha3, name: c.name, status: "unreadable" }); }
+        try { out.push(Object.assign({}, await api(`/api/osm/countries/${encodeURIComponent(c.alpha3)}/completeness`), { lane: c })); }
+        catch (e) { out.push({ country: c.alpha3, name: c.name, status: "unreadable", lane: c }); }
       }
       _osmComp = out;
       sec.hidden = false;
       _renderOsmCompleteness();
       _osmGeoShow(done);
+      if (_osmUpdLive()) _osmUpdSchedulePoll();
+    }
+    // -- The daily change files (v0.6.0 B1, the job and consent layer) ----------------------- //
+    // One line under each country: how far the daily files have brought its objects, what the last
+    // run said, and the button. The button goes through THE online consent (ensureOnline) and then
+    // POSTs consent:true, which the route also demands. The run is a task-manager job; this line only
+    // reads /api/osm/updates (local) while one is queued or running.
+    let _osmUpdates = {}, _osmUpdPoll = null;
+    async function _osmLoadUpdates() {
+      try {
+        const d = await api("/api/osm/updates");
+        _osmUpdates = {};
+        for (const j of (d && d.jobs) || []) _osmUpdates[j.alpha3] = j;
+      } catch (e) { _osmUpdates = {}; }
+    }
+    function _osmUpdLive() { return Object.values(_osmUpdates).some((j) => j.state === "queued" || j.state === "running"); }
+    function _osmUpdInner(c) {
+      const lane = c.lane;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const j = _osmUpdates[c.country];
+      const live = !!j && (j.state === "queued" || j.state === "running");
+      const through = (lane || {}).diff_timestamp
+        ? osmCompTf("Daily change files applied through {date}.", { date: ooIsoDate(lane.diff_timestamp) })
+        : t("No daily change file has been applied to this country yet.");
+      let status = "";
+      if (j && j.state === "queued") status = t("Waiting for its turn.");
+      else if (j && j.state === "running") {
+        status = j.owed
+          ? osmCompTf("Applying change file {done} of {n}…", { done: fmtNum(Math.min((j.applied || 0) + 1, j.owed), 0), n: fmtNum(j.owed, 0) })
+          : t("Reading what the mirror holds…");
+      } else if (j && j.sentence) status = t(j.sentence);
+      const tip = t("Fetches this country's daily change files from download.geofabrik.de, one at a time, and applies each to this country's places only. Asks to go online first. The task manager shows the run.");
+      const btn = `<button type="button" class="tiny secondary"${live ? " disabled" : ""} title="${esc(tip)}" data-on-click="osmUpdateCountry(${esc(JSON.stringify(c.country))})">${esc(t("Update with the daily files"))}</button>`;
+      return `${esc(through)} ${esc(status)} ${btn}`;
+    }
+    function _osmCompUpdate(c) {
+      return `<div class="hint" data-osm-upd="${esc(c.country)}" style="margin-top:4px">${_osmUpdInner(c)}</div>`;
+    }
+    function _osmPaintUpdates() {
+      for (const el of document.querySelectorAll("[data-osm-upd]")) {
+        const a = el.getAttribute("data-osm-upd");
+        const c = (_osmComp || []).find((x) => x.country === a);
+        if (c) el.innerHTML = _osmUpdInner(c);
+      }
+    }
+    function _osmUpdSchedulePoll() {
+      if (_osmUpdPoll) return;
+      _osmUpdPoll = setTimeout(async () => {
+        _osmUpdPoll = null;
+        const was = _osmUpdLive();
+        await _osmLoadUpdates();
+        _osmPaintUpdates();
+        if (_osmUpdLive()) _osmUpdSchedulePoll();
+        else if (was) loadOsmCompleteness();   // the run ended: the objects (and their figures) may have moved
+      }, 2000);
+    }
+    async function osmUpdateCountry(alpha3) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!await ensureOnline(t("Update an OpenStreetMap country with the daily change files"))) return;
+      try {
+        await api(`/api/osm/countries/${encodeURIComponent(alpha3)}/update`, { method: "POST", body: JSON.stringify({ consent: true }) });
+      } catch (e) {
+        toast(t("The update could not start."));
+        return;
+      }
+      toast(t("Update queued. The task manager shows its progress."));
+      await _osmLoadUpdates();
+      _osmPaintUpdates();
+      _osmUpdSchedulePoll();
     }
     function _osmCompShare(k) {
       return k.share == null ? "—" : `${fmtNum(k.share * 100, 1)} %`;
@@ -3390,12 +3460,12 @@
         const name = _osmPickLabel(c.country, c.name);
         const head = c.vintage ? osmCompTf("{country}, as of {date}", { country: name, date: ooIsoDate(c.vintage) }) : name;
         if (c.status !== "complete") {
-          return `<h3 class="lib-sub">${esc(head)}</h3><div class="muted">${esc(t("This country's figures could not be read."))}</div>`;
+          return `<h3 class="lib-sub">${esc(head)}</h3><div class="muted">${esc(t("This country's figures could not be read."))}</div>` + _osmCompUpdate(c);
         }
         if (!c.n) {
-          return `<h3 class="lib-sub">${esc(head)}</h3><div class="muted">${esc(t("No places with metadata were kept for this country, so there is no share to show."))}</div>`;
+          return `<h3 class="lib-sub">${esc(head)}</h3><div class="muted">${esc(t("No places with metadata were kept for this country, so there is no share to show."))}</div>` + _osmCompUpdate(c);
         }
-        return `<h3 class="lib-sub">${esc(head)}</h3>`
+        return `<h3 class="lib-sub">${esc(head)}</h3>` + _osmCompUpdate(c)
           + `<div class="hint" title="${esc(t(c.method || ""))}">${esc(osmCompTf("{n} places with metadata, each tag counted on its own.", { n: fmtNum(c.n, 0) }))}</div>`
           + _osmCompTable(c.keys, c.n)
           + `<div class="card-caveat" style="margin-top:4px">${esc(t(c.caveat || ""))}</div>`
