@@ -3665,16 +3665,16 @@
     }
     function _osmProfileCacheKey(a3, tab) { return `${a3}|${tab}|${tab === "brands" ? _osmProfileLimit : 0}`; }
     async function _osmProfileFetch(seq) {
-      const tab = _osmProfileTab;
+      const tab = _osmProfileTab, flight = _osmProfileFlight;
       for (let i = 0; i < _osmProfileDone.length; i++) {
         const a3 = _osmProfileDone[i].alpha3, key = _osmProfileCacheKey(a3, tab);
         // Cached, or already being read by another loop (a tab clicked away and back): asking again would repeat the heaviest read.
-        if (_osmProfileCache[key] || _osmProfileFlight[key]) continue;
-        _osmProfileFlight[key] = true;
+        if (_osmProfileCache[key] || flight[key]) continue;
+        flight[key] = true;
         let d;
         try { d = await api(`/api/osm/countries/${encodeURIComponent(a3)}/profile/${tab}?limit=${_osmProfileLimit}`); }
         catch (e) { d = { status: "unreadable" }; }
-        finally { delete _osmProfileFlight[key]; }
+        finally { delete flight[key]; }
         if (seq !== _osmProfileSeq) return;
         _osmProfileCache[key] = d;
         if (_osmProfileCacheKey(a3, _osmProfileTab) === key) _osmProfileFill(i);   // the tab shown now is the one this read is for
