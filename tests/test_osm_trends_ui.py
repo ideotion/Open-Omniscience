@@ -32,7 +32,7 @@ def test_the_view_is_in_the_world_map_tab_after_the_completeness_view_and_hidden
     assert tab.index('id="osm-completeness"') < tab.index('id="osm-trends"')
     js = (STATIC / "app-map.js").read_text(encoding="utf-8")
     load = function_source(js, "loadOsmTrends")
-    assert "sec.hidden = true" in load and f"/api/osm/countries/${{encodeURIComponent(c.alpha3)}}/trends" in load
+    assert "sec.hidden = true" in load and "/api/osm/countries/${encodeURIComponent(c.alpha3)}/trends" in load
     assert "ensureOnline" not in load, "reading a local table asked for the network consent"
     # not awaited: the completeness figures must not wait on the trends
     assert "await loadOsmTrends" not in js
