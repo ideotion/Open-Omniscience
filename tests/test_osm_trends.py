@@ -149,14 +149,20 @@ def test_the_key_rows_of_a_version_that_created_deleted_or_restored_an_object_ar
         ("n", 21, 3, t(2020, 4, 9), "added", "phone", None, "p"),
         # an ordinary edit, which is adoption
         ("n", 22, 5, t(2020, 4, 20), "added", "email", None, "e"),
+        # a history without version metadata: NULL versions, told apart by their timestamps; the keys of the deleted one are still its own
+        ("n", 30, None, t(2020, 3, 6), "deleted", None, None, None),
+        ("n", 30, None, t(2020, 3, 6), "removed", "email", "e", None),
+        ("n", 30, None, t(2020, 4, 6), "created", None, None, None),
+        ("n", 30, None, t(2020, 4, 6), "added", "email", None, "e"),
     ])
     p = TR.trends("ZZZ")["prior"]
     assert [r["bucket"] for r in p["adoption"]["series"]] == ["2020-03", "2020-04"]
     assert _day(p["adoption"], "2020-03")["lost"]["website"] == 0, "a deleted place's keys were counted as lost"
+    assert _day(p["adoption"], "2020-03")["lost"]["email"] == 0, "the keys of a deleted version without a version number were counted as lost"
     a = _day(p["adoption"], "2020-04")
-    assert (a["gained"]["website"], a["gained"]["phone"], a["gained"]["email"]) == (0, 0, 1)
-    assert _day(p["openings"], "2020-04")["vacant"] == 0 and _day(p["openings"], "2020-03")["deleted"] == 1
-    assert _day(p["openings"], "2020-04")["created"] == 1
+    assert (a["gained"]["website"], a["gained"]["phone"], a["gained"]["email"]) == (0, 0, 1), "only the ordinary edit (object 22) is adoption"
+    assert _day(p["openings"], "2020-04")["vacant"] == 0 and _day(p["openings"], "2020-03")["deleted"] == 2
+    assert _day(p["openings"], "2020-04")["created"] == 2 and _day(p["openings"], "2020-03")["deleted"] == 2
 
 
 def test_an_object_that_stops_qualifying_is_left_class_and_its_lost_tags_are_not_adoption(cut, osm_lane_dir):

@@ -289,7 +289,12 @@ def _prior(s, alpha3: str, have: set[str]) -> dict[str, Any]:
     # history.py writes a per-key row for every key of such a version, and they are not adoption or closure signals.
     e = h.alias("e")
     event_version = exists().where(
-        e.c.osm_type == h.c.osm_type, e.c.osm_id == h.c.osm_id, e.c.object_version == h.c.object_version, e.c.key.is_(None)
+        e.c.osm_type == h.c.osm_type,
+        e.c.osm_id == h.c.osm_id,
+        # null-safe: a history file without version metadata has NULL versions, and the same version is then told by its timestamp
+        e.c.object_version.is_not_distinct_from(h.c.object_version),
+        e.c.version_timestamp.is_not_distinct_from(h.c.version_timestamp),
+        e.c.key.is_(None),
     )
     adoption_rows = _adoption_rows(s, h, month, own, stamped, not_first, key_level, ~event_version)
     sig = _signal(h)
