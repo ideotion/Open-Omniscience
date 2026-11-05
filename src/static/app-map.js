@@ -3329,9 +3329,10 @@
       } catch (e) { _osmUpdates = {}; }
     }
     function _osmUpdLive() { return Object.values(_osmUpdates).some((j) => j.state === "queued" || j.state === "running"); }
-    function _osmUpdInner(alpha3, lane) {
+    function _osmUpdInner(c) {
+      const lane = c.lane;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const j = _osmUpdates[alpha3];
+      const j = _osmUpdates[c.country];
       const live = !!j && (j.state === "queued" || j.state === "running");
       const through = (lane || {}).diff_timestamp
         ? osmCompTf("Daily change files applied through {date}.", { date: ooIsoDate(lane.diff_timestamp) })
@@ -3344,17 +3345,17 @@
           : t("Reading what the mirror holds…");
       } else if (j && j.sentence) status = t(j.sentence);
       const tip = t("Fetches this country's daily change files from download.geofabrik.de, one at a time, and applies each to this country's places only. Asks to go online first. The task manager shows the run.");
-      const btn = `<button type="button" class="tiny secondary"${live ? " disabled" : ""} title="${esc(tip)}" data-on-click="osmUpdateCountry(${esc(JSON.stringify(alpha3))})">${esc(t("Update with the daily files"))}</button>`;
+      const btn = `<button type="button" class="tiny secondary"${live ? " disabled" : ""} title="${esc(tip)}" data-on-click="osmUpdateCountry(${esc(JSON.stringify(c.country))})">${esc(t("Update with the daily files"))}</button>`;
       return `${esc(through)} ${esc(status)} ${btn}`;
     }
     function _osmCompUpdate(c) {
-      return `<div class="hint" data-osm-upd="${esc(c.country)}" style="margin-top:4px">${_osmUpdInner(c.country, c.lane)}</div>`;
+      return `<div class="hint" data-osm-upd="${esc(c.country)}" style="margin-top:4px">${_osmUpdInner(c)}</div>`;
     }
     function _osmPaintUpdates() {
       for (const el of document.querySelectorAll("[data-osm-upd]")) {
         const a = el.getAttribute("data-osm-upd");
         const c = (_osmComp || []).find((x) => x.country === a);
-        el.innerHTML = _osmUpdInner(a, c && c.lane);
+        if (c) el.innerHTML = _osmUpdInner(c);
       }
     }
     function _osmUpdSchedulePoll() {

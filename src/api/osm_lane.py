@@ -93,14 +93,14 @@ def count_admin1(code: str) -> dict:
         raise HTTPException(status_code=409, detail=http_detail(exc)) from None
 
 
-class UpdateRequest(BaseModel):
+class UpdateConsent(BaseModel):
     """``consent`` is true only after the page's one online consent ran (``ensureOnline``); a caller that never went through it is refused."""
 
     consent: bool = False
 
 
 @router.post("/countries/{code}/update")
-def update_country_route(code: str, req: UpdateRequest) -> dict:
+def update_country_route(code: str, req: UpdateConsent) -> dict:
     """Queue the daily change files for one cut country. The ONE route here that reaches the network (on a thread of its own).
 
     Refused at once, by name: no consent (400), the kill switch (409). A country that cannot be updated as it stands (no finished cut, no
