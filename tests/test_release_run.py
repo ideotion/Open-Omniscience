@@ -3062,8 +3062,11 @@ def test_row5_does_not_resume_a_driver_failure_that_is_not_a_pool_timeout(row5):
 
 
 def test_the_bundle_copy_of_an_oversized_report_is_cut_to_its_cap_with_counted_markers():
-    """R425: the diagnostics copy is a BOUND (<= 140,000 B), the saved report is untouched, and a normal report passes through as is."""
+    """R425: the diagnostics copy is a BOUND (<= 140,000 B) for every shape, the saved report is untouched, a normal report passes as is."""
     import json as _json
+
+    def size(v):
+        return len(_json.dumps(v, ensure_ascii=False, separators=(",", ":")).encode())
 
     small = {"schema": "s", "available": True, "rows": [{"id": "A", "status": "measured"}], "outcome": "pass"}
     assert rr.cap_report_for_bundle(small) is small, "a report under the cap is the same object, nothing cut"
@@ -3076,9 +3079,21 @@ def test_the_bundle_copy_of_an_oversized_report_is_cut_to_its_cap_with_counted_m
     }
     snapshot = _json.dumps(big, sort_keys=True)
     out = rr.cap_report_for_bundle(big)
-    assert len(_json.dumps(out, ensure_ascii=False, separators=(",", ":")).encode()) <= rr.BUNDLE_REPORT_MAX_BYTES
+    assert size(out) <= rr.BUNDLE_REPORT_MAX_BYTES
     assert out["truncated"] is True and out["cap_bytes"] == 140_000
     assert out["truncated_from_bytes"] > 140_000 and out["cut_sections"], out["cut_sections"]
     assert out["phases"]["cut"] is True and out["phases"]["bytes"] > 100_000, "the largest section goes first"
     assert out["rows"] == big["rows"] and out["outcome"] == "pass", "what fits stays"
     assert _json.dumps(big, sort_keys=True) == snapshot, "the input (the saved report) is not changed"
+
+    # The shapes that made an estimate of it: many mid-size sections (the record of the cuts grows), many small strings, one huge string.
+    shapes = {
+        "300 sections of 500 B": {f"s{i}": {"v": "z" * 480} for i in range(300)},
+        "2000 keys of 90-char strings": {f"k{i}": "q" * 90 for i in range(2000)},
+        "one 200 KB string": {"schema": "s", "error": "x" * 200_000},
+        "20,000 tiny keys": {f"t{i}": i for i in range(20_000)},
+    }
+    for label, report in shapes.items():
+        capped = rr.cap_report_for_bundle(report)
+        assert size(capped) <= rr.BUNDLE_REPORT_MAX_BYTES, (label, size(capped))
+        assert capped["truncated"] is True and capped["truncated_from_bytes"] == size(report), label

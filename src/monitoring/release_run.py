@@ -2162,8 +2162,8 @@ def _live_run(state: dict[str, Any]) -> dict[str, Any] | None:
 #: under the 150,000 the plan allowed, and above the 87 KB of the largest report seen, so a real report is never cut. The saved file on disk
 #: and ``/release-run/last`` are NOT capped.
 BUNDLE_REPORT_MAX_BYTES = 140_000
-#: A section smaller than this is never worth a cut marker (the marker itself is about this size).
-_CUT_FLOOR_BYTES = 120
+#: At most this many cuts are NAMED in ``cut_sections`` (the rest are counted in ``cut_sections_more``), so the record of the cuts is itself bounded.
+_CUTS_NAMED = 20
 
 
 def _json_bytes(value: Any) -> int:
@@ -2171,31 +2171,36 @@ def _json_bytes(value: Any) -> int:
 
 
 def cap_report_for_bundle(report: dict, cap: int = BUNDLE_REPORT_MAX_BYTES) -> dict:
-    """``report`` itself when it fits ``cap``; else a copy with whole top-level sections replaced by a counted cut marker, largest first.
+    """``report`` itself when it fits ``cap``; else a copy that DOES fit it, with whole top-level values replaced by a counted cut marker, largest first.
 
-    The marker is ``{"cut": true, "bytes": <the section's size>}`` and the report says ``truncated: true`` with ``truncated_from_bytes``,
-    ``cap_bytes`` and ``cut_sections`` (name and bytes of each), so a reader sees exactly what the bundle does not carry and that the saved
-    file has it. Scalars are never cut. If every section is already a marker and the report is still over (a pathological scalar), it is
-    returned as it is with ``truncated: true`` and the figure, never silently.
+    The marker is ``{"cut": true, "bytes": <the value's size>}`` (dicts, lists and strings alike; a value no larger than its marker is left), and the
+    report says ``truncated: true`` with ``truncated_from_bytes``, ``cap_bytes``, ``cut_sections`` (the first ``_CUTS_NAMED`` cuts: name and bytes)
+    and ``cut_sections_more``, so a reader sees what the bundle does not carry and that the saved file has it. The size is re-measured AFTER every
+    cut with the note in place, so the result is a bound, not an estimate; if cutting every value still leaves it over (thousands of keys), the
+    answer is the note alone with the key count.
     """
-    size = _json_bytes(report)
-    if size <= cap:
+    original = _json_bytes(report)
+    if original <= cap:
         return report
-    out = dict(report)
-    cut: list[dict[str, Any]] = []
-    # room for the four fields added below, counted before the first cut
-    meta_room = 600
-    sizes = {k: _json_bytes(v) for k, v in out.items() if isinstance(v, (dict, list)) and _json_bytes(v) > _CUT_FLOOR_BYTES}
-    for name, n in sorted(sizes.items(), key=lambda kv: kv[1], reverse=True):
-        if size + meta_room <= cap:
+    note: dict[str, Any] = {
+        "truncated": True, "truncated_from_bytes": original, "cap_bytes": cap, "cut_sections": [], "cut_sections_more": 0,
+    }
+    out = {**report, **note}
+    sizes = {k: _json_bytes(v) for k, v in report.items() if isinstance(v, (dict, list, str))}
+    marker_bytes = _json_bytes({"cut": True, "bytes": original})
+    for cut, (name, n) in enumerate(sorted(sizes.items(), key=lambda kv: kv[1], reverse=True), start=1):
+        if _json_bytes(out) <= cap:
             break
+        if n <= marker_bytes:
+            break  # sorted, so nothing after it is larger than a marker either
         out[name] = {"cut": True, "bytes": n}
-        cut.append({"section": name, "bytes": n})
-        size = _json_bytes(out)
-    out["truncated"] = True
-    out["truncated_from_bytes"] = _json_bytes(report)
-    out["cap_bytes"] = cap
-    out["cut_sections"] = cut
+        if cut <= _CUTS_NAMED:
+            out["cut_sections"].append({"section": name, "bytes": n})
+        else:
+            out["cut_sections_more"] += 1
+    if _json_bytes(out) > cap:
+        return {**note, "cut_sections": [], "cut_sections_more": 0, "keys_in_report": len(report),
+                "note": "every value was cut and the report was still over the cap; the saved file has it whole"}
     return out
 
 

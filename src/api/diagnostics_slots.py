@@ -146,7 +146,7 @@ TOTAL_BUDGET_BYTES = 620_000
 #: build, 632 KB zipped; 629 KB by the crash read's own count): every member that existed then, a
 #: MEASUREMENT;
 #: ``OTHER_NEW_MEMBERS_BYTES``: the plan's section-4 budgets of the new members that are not slots
-#: (machine 9, selftests 4, storage 120, contention 200, session-forensics, release-run 140,
+#: (machine 10, selftests 4, storage 120, contention 200, session-forensics, release-run 140,
 #: wiki-lane-history 300 KB): an ESTIMATE, which the plan says it is, and it is the figure to replace
 #: when those members are measured. The session-forensics part was +125 KB in the plan and is now the crash trace
 #: export's stated worst case at the cut the crash-evidence change sets (400 lines for the previous session, 400 for the newest
@@ -160,22 +160,24 @@ TOTAL_BUDGET_BYTES = 620_000
 #: member (session-forensics.json), measured by that change with every counter at 2^62, a 200-character cgroup path, 400 matching
 #: mapped libraries and every reason at its clip: oom_counters 2,145 + previous_session_native_libs 6,437 (its name list has
 #: its own 6,000-byte budget) + can_answer 1,747 = 10,329 bytes, typically about 2.5 KB. All of it is counted here, whole:
-#: 1,194,000 + 10,329 = 1,204,329, LESS 21,000 that two members now PROVE below their plan figures (R423/R424/R425, when the OSM change-file
-#: slot of 20,000 went in and the table had only 2,415 free): 1,204,329 - 21,000 = 1,183,329.
-#: (1) THE MACHINE RECORD, 20,000 -> 9,000 (a manifest block, ``bundle._machine_record_block``): measured 2,091 bytes with 3 OO_ names set; its
-#: only unbounded-looking field is ``environment.set_names``, the OO_ variables that are set, and the app honours only the 275 distinct OO_
-#: names its source and scripts mention (6,693 bytes as a JSON list, the longest 46 characters), so 2,091 - the three names + 6,693 + about 300
-#: for the longest version strings and git ref is under 9,000 (``test_the_machine_record_fits_9000_bytes_with_every_switch_set`` sets every
-#: one of them and holds the figure). A variable the operator sets that the app never reads is not counted, which is the stated limit.
+#: 1,194,000 + 10,329 = 1,204,329, LESS 20,000 that two members now PROVE below their plan figures (R423-R426, when the OSM change-file slot
+#: of 20,000 went in and the table had only 2,415 free): 1,204,329 - 20,000 = 1,184,329.
+#: (1) THE MACHINE RECORD, 20,000 -> 10,000 (a manifest block, ``bundle._machine_record_block``): fixed fields measured 2,091 bytes compact,
+#: about 2,400 as the manifest writes them (``indent=2``). Its one variable field is ``environment.set_names``, and it is now CAPPED: at most
+#: ``machine_record.ENV_NAMES_SHOWN`` (100) names are listed, in sorted order, and the rest are counted in ``names_not_shown``. The longest real
+#: name is 46 characters and the indented manifest spends about 62 bytes a name, so 100 names are about 6,200 bytes, about 8,800 in all with the
+#: variable strings (git ref, versions): under 10,000, and ``test_the_machine_record_fits_10000_bytes_in_the_manifest...`` sets 400 switches of 51
+#: characters and measures the block as the manifest writes it. (The first claim, 9,000 with no cap, measured compact JSON; the manifest is indented.)
 #: (2) THE RELEASE-RUN REPORT, 150,000 -> 140,000: the bundle's copy is CAPPED (``release_run.cap_report_for_bundle``,
-#: ``BUNDLE_REPORT_MAX_BYTES``): over 140,000 whole sections are replaced by a counted cut marker, ``truncated: true`` says so with the sizes,
-#: and the saved file and the route keep the whole report. The largest report seen is 87 KB, so a real one is never cut;
+#: ``BUNDLE_REPORT_MAX_BYTES``): over 140,000 whole values are replaced by a counted cut marker, re-measured after every cut with the note in place,
+#: ``truncated: true`` says so with the sizes, and the saved file and the route keep the whole report. The largest report seen is 87 KB, so a
+#: real one is never cut;
 #: ``HEADROOM_AT_LEAST_BYTES``: what the test requires to stay free of a part after the two above and
 #: the sum of the budgets, and what a budget raised carelessly would eat. At this head the sum is
-#: 615,720 with all eight rows and the free room 1,503,415 bytes (3,415 over the 1,500,000 floor), so a row can grow by that much before
+#: 615,720 with all eight rows and the free room 1,502,415 bytes (2,415 over the 1,500,000 floor), so a row can grow by that much before
 #: the pin fails (and the failure is a reason to measure again, never to raise the pin).
 LARGEST_ZIP_MEASURED_BYTES = 632_000
-OTHER_NEW_MEMBERS_BYTES = 1_183_329
+OTHER_NEW_MEMBERS_BYTES = 1_184_329
 HEADROOM_AT_LEAST_BYTES = 1_500_000
 
 
