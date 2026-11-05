@@ -488,6 +488,54 @@ def test_the_totals_check_fails_even_when_the_per_module_comparison_is_empty(mon
     assert "counts differ" in capsys.readouterr().out
 
 
+def test_a_parity_that_compared_nothing_is_not_a_pass(monkeypatch, tmp_path, capsys):
+    """Two empty sides have no difference to find. A conftest import error leaves ONE testcase with no module, in the unsharded report and in every
+    shard's, so the module sets, the per-module comparison and the totals all agree on nothing: that must be a refusal, not a green leg."""
+    broken = '<testsuites><testsuite><testcase classname="" name="tests.conftest" time="0"><error message="ImportError"/></testcase></testsuite></testsuites>'
+    empty = "<testsuites><testsuite></testsuite></testsuites>"
+    of = S.shard_lookup(_N, _TABLE)
+    elsewhere = next(m for m in sorted(_TABLE["costs"]) if of(m) == 2)
+    other = f'<testsuites><testsuite><testcase classname="{elsewhere[:-3].replace("/", ".")}" name="a" time="1"/></testsuite></testsuites>'
+    args = ["parity", "--shard", f"1/{_N}", "--oracle-env", "ORACLE", "--junit"]
+    for label, (oracle, shard) in {
+        "no module on either side": (broken, broken),
+        "no testcase on either side": (empty, empty),
+        "the unsharded run holds nothing of this shard, and this shard ran nothing": (other, empty),
+    }.items():
+        monkeypatch.setenv("ORACLE", S.pack(S.render(S.digest(S.read_junit(_junit(tmp_path, oracle, "oracle.xml"))))))
+        assert S.main([*args, str(_junit(tmp_path, shard, "shard.xml"))]) == 1, label
+        captured = capsys.readouterr()
+        assert "nothing was compared" in captured.err, label
+        assert "0 modules compared" in captured.out, label
+
+
+def test_costs_rewrite_the_table_they_read_not_the_shipped_one(monkeypatch, tmp_path):
+    shipped = tmp_path / "shipped.json"
+    shipped.write_text(json.dumps({"shards": 3, "overhead_seconds": [80], "source": "shipped", "costs": {"tests/test_shipped.py": 1.0}}), encoding="utf-8")
+    monkeypatch.setattr(S, "COSTS", shipped)
+    before = shipped.read_bytes()
+    mine = tmp_path / "mine.json"
+    old = {"shards": 2, "overhead_seconds": [5], "source": "mine", "costs": {"tests/test_old.py": 9.0}}
+    mine.write_text(json.dumps(old), encoding="utf-8")
+    report = _junit(tmp_path)
+    assert S.main(["--table", str(mine), "costs", str(report)]) == 0
+    assert shipped.read_bytes() == before, "a table named with --table is not the shipped table"
+    assert json.loads(mine.read_text(encoding="utf-8")) == S.measured_table(old, [report])
+    assert S.main(["costs", str(report)]) == 0  # no --table: the shipped one, as before
+    assert json.loads(shipped.read_text(encoding="utf-8"))["costs"] != {"tests/test_shipped.py": 1.0}
+
+
+def test_the_partition_check_counts_each_problem_once(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(S, "test_files", lambda root=S.ROOT: ["tests/test_a.py", "tests/test_b.py"])
+    monkeypatch.setattr(S, "assign", lambda files, n, table: {"tests/test_a.py": 1, "tests/test_b.py": 1})
+    table = tmp_path / "t.json"
+    table.write_text(json.dumps({"shards": 3, "costs": {}}), encoding="utf-8")
+    assert S.main(["--table", str(table), "check"]) == 1
+    lines = capsys.readouterr().out.splitlines()
+    assert [line for line in lines if "has no test file" in line] == ["shard 2/3 has no test file", "shard 3/3 has no test file"]
+    assert lines[-1] == "2 test files, 3 shards: 2 problem(s)"
+
+
 # ------------------------------------------------------------------------------------------------ the workflow wiring
 _AGGREGATORS ={"test": ("test-all", "test"), "core-only": ("core-only-all", "Core-only install (no [analysis] extra)")}
 _PLAN = 'python scripts/ci_shard.py plan --shard ${{ matrix.shard }}/%d --out "$RUNNER_TEMP/shard.args"'

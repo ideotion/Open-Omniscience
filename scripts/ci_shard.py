@@ -314,8 +314,12 @@ def measured_table(old: dict, reports: list[Path], min_seconds: float = 0.0) -> 
 
 
 # --------------------------------------------------------------------------------------------------- CLI
+def _table_path(args) -> Path:
+    return Path(args.table) if args.table else COSTS
+
+
 def _table_for(args) -> dict:
-    return load_table(Path(args.table) if args.table else COSTS)
+    return load_table(_table_path(args))
 
 
 def main(argv: list[str]) -> int:
@@ -364,7 +368,7 @@ def main(argv: list[str]) -> int:
             print(f"shard {shard}/{shards}: runs {len(mine)} of {len(every)} test files (ignores {len(ignored)}); the table predicts {round(seconds)} s; {new} not in the table")
         elif args.cmd == "check":
             files = test_files()
-            found = problems(files, table["shards"], table)
+            found: list[str] = []
             for shards in sorted({1, table["shards"]}):
                 found += problems(files, shards, table)
             for line in found:
@@ -397,8 +401,9 @@ def main(argv: list[str]) -> int:
             if args.stdout:
                 print(json.dumps(fresh, separators=(",", ":"), sort_keys=True))
             else:
-                COSTS.write_text(json.dumps(fresh, indent=1, sort_keys=True) + "\n", encoding="utf-8")
-                print(f"wrote {COSTS.relative_to(ROOT)}")
+                target = _table_path(args)  # the table that was read is the table that is rewritten
+                target.write_text(json.dumps(fresh, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+                print(f"wrote {target.relative_to(ROOT) if target.is_relative_to(ROOT) else target}")
         elif args.cmd == "parity":
             blob = os.environ.get(args.oracle_env, "")
             if not blob:
@@ -411,11 +416,16 @@ def main(argv: list[str]) -> int:
                 print(line)
             named = sum(1 for m in this if m != _UNNAMED)
             of = shard_lookup(shards, table)
-            want = totals({m: d for m, d in oracle.items() if m != _UNNAMED and of(m) == shard})
+            theirs = {m: d for m, d in oracle.items() if m != _UNNAMED and of(m) == shard}
+            want = totals(theirs)
             got = totals({m: d for m, d in this.items() if m != _UNNAMED})
             print(f"unsharded run, this shard's modules: {describe(want)}")
             print(f"this shard:                          {describe(got)}")
             print(f"parity shard {shard}/{shards}: {named} modules compared ({len(this) - named} unnamed left out), {len(found)} difference(s)")
+            if not theirs and not named:
+                # two empty sides have no difference to find; a comparison of nothing is not evidence (a conftest import error gives exactly that)
+                print(f"parity shard {shard}/{shards}: nothing was compared (the unsharded run holds {len(theirs)} named modules of this shard, this shard {named})", file=sys.stderr)
+                return 1
             if want != got:
                 print("the passed, skipped, xfailed, failed or error counts differ")
                 return 1
