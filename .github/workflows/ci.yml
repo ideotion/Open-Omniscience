@@ -206,9 +206,12 @@ jobs:
         # fixed -- only the base measurement (445) ever said which findings were its own.
         #
         # 2026-10-28: 417 -> 412, MEASURED ON origin/main@3af9f1fc9, the tree that carries it, with
-        # the ruff that CI installs from pyproject's range (0.17.3 that day). THE COUNT DEPENDS ON
+        # the ruff that CI installed from pyproject's range (0.17.3 that day). THE COUNT DEPENDS ON
         # THE TOOL VERSION: the same tree reads 414 on ruff 0.16.9 and 412 on 0.17.3 (the script, run
-        # at the old ceiling, said the ceiling can be lowered to 412). There is no spare slot now:
+        # at the old ceiling, said the ceiling can be lowered to 412). pyproject.toml now pins ruff
+        # to that one release (ruff==0.17.3, as mypy is pinned), so the number is true by
+        # construction and a new release arrives as its own Dependabot PR, whose run re-measures it.
+        # There is no spare slot now:
         # CI measures the merge of the PR into the base tip as it stands when the run starts, so a
         # finding another PR lands first reddens the next run of whichever PR merges second (and
         # main's push run, if that PR was already green). Re-measure on the fetched tip, with the
@@ -570,6 +573,52 @@ jobs:
         env:
           OO_CI_INSTALL_HTTPFS: "1"
         run: python -m pytest -q tests/test_columnar_httpfs_loader.py -k ci_encrypted_persisted_round_trip
+
+  # ----------------------------------------------------------------------- #
+  # The same columnar files on DuckDB 1.x. pyproject says `duckdb>=1.4` with no ceiling, so the job above installs the newest release
+  # (2.0.0 on 2026-11-05) and no lane ran the 1.x line that the floor admits: the join-plan assertion in test_top_terms_pre_aggregate reads
+  # a profile shape that 1.x and 2.x write differently, and a regression on either side was invisible to the other (R392, R412). This job
+  # installs `duckdb<2` (1.5.6 on 2026-11-05) and runs the SAME file list; tests/test_version_floor_legs.py fails if the two lists
+  # differ, or if this job stops pinning the 1.x line. No httpfs step: the persisted-encrypted round trip needs the network and stays in
+  # the job above. The floor of the registry entry duckdb-crypto-extension stays equal to pyproject's `duckdb>=` (test-enforced).
+  # ----------------------------------------------------------------------- #
+  columnar-duckdb1:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    name: Columnar store on DuckDB 1.x
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install (core + analysis + dev + columnar), with DuckDB held to the 1.x line
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[analysis,dev,columnar]" "duckdb<2"
+          python -c "import sys, duckdb; print('duckdb', duckdb.__version__); sys.exit(0 if duckdb.__version__.startswith('1.') else 1)"
+
+      - name: Columnar rollup + D1 loader on DuckDB 1.x (in-memory + fixture verify)
+        run: |
+          python -m pytest -q \
+            tests/test_columnar_engine.py tests/test_columnar_readmodel.py \
+            tests/test_keyword_daily_rollup.py tests/test_source_coverage_rollup.py \
+            tests/test_rollup_serve.py tests/test_columnar_httpfs_loader.py \
+            tests/test_rollup_build_streaming.py tests/test_rollup_serve_persisted.py \
+            tests/test_columnar_key_derivation.py \
+            tests/test_corpus_epoch.py tests/test_keyword_daily_merge_interrupted.py \
+            tests/test_keyword_daily_refresh.py tests/test_keyword_daily_refresh_wal_pinning.py \
+            tests/test_keyword_daily_scan_bound_race.py tests/test_map_serve.py \
+            tests/test_rollup_benchmark.py tests/test_rollup_benchmark_guard.py \
+            tests/test_rollup_generation_check.py tests/test_rollup_parity_bound.py \
+            tests/test_rollup_persisted_generation.py tests/test_rollup_scan_plan.py \
+            tests/test_rollup_shard_checkpoint.py tests/test_rollup_sharded_build.py \
+            tests/test_rollup_store_kind.py tests/test_serve_change_gate.py \
+            tests/test_serve_out_of_memory_goes_live.py tests/test_top_terms_pre_aggregate.py \
+            tests/test_wave7_poll_cache.py tests/test_external_freshness.py
 
   # ----------------------------------------------------------------------- #
   # UNIVERSAL PORTABILITY (maintainer-ruled 2026-06-11): the 3-OS matrix IS
