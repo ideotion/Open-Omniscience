@@ -3770,7 +3770,7 @@
       if (!await ensureOnline(t("Read the size of the full-history planet"))) return;
       if (btn) { btn.disabled = true; btn.textContent = t("Reading…"); }
       const code = ((_osmHistory || {}).download || {}).code || "planet-history";
-      try { _osmHistorySize = await api("/api/geo/downloads/size?code=" + encodeURIComponent(code)); }
+      try { _osmHistorySize = await api("/api/geo/downloads/size?code=" + encodeURIComponent(code) + "&consent=true"); }
       catch (e) { toast(_failMsg("Size check failed: {error}", e), "err"); }
       _renderOsmHistory();
     }

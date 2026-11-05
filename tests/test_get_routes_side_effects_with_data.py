@@ -356,7 +356,7 @@ def _urls(ids: _Ids) -> dict[str, str]:
         "/api/entities/places/search": "/api/entities/places/search?q=paris",
         "/api/events/astronomy": "/api/events/astronomy?year=2026",
         "/api/events/astronomy/lunar-series": "/api/events/astronomy/lunar-series?start=2026-01-01&end=2026-03-01",
-        "/api/geo/downloads/size": "/api/geo/downloads/size?code=europe",
+        "/api/geo/downloads/size": "/api/geo/downloads/size?code=europe&consent=true",
         "/api/governments/aggregate/{code}": "/api/governments/aggregate/WLD",
         "/api/governments/group-aggregate": "/api/governments/group-aggregate?group=G7&indicator=NY.GDP.MKTP.CD",
         "/api/governments/map": "/api/governments/map?indicator=NY.GDP.MKTP.CD",
@@ -460,8 +460,17 @@ def walk(corpus):
     return _Walk(seen, statuses, bodies, watch_note, ids)
 
 
+#: Routes that, WITH the kill switch engaged (the walk engages it), refuse by name BEFORE their body: the status they must answer. A route here
+#: is a network read whose consent and kill switch the route itself checks (v0.6 C3), so reaching a 2xx would mean it had gone to the network.
+_REFUSED_BY_NAME_UNDER_THE_KILL_SWITCH = {"/api/geo/downloads/size": 409}
+
+
 def test_every_listed_route_reaches_its_body(walk):
-    bad = {p: (s, walk.bodies[p]) for p, s in walk.statuses.items() if not 200 <= s < 300}
+    bad = {
+        p: (s, walk.bodies[p])
+        for p, s in walk.statuses.items()
+        if not 200 <= s < 300 and _REFUSED_BY_NAME_UNDER_THE_KILL_SWITCH.get(p) != s
+    }
     assert not bad, f"{len(bad)} seeded request(s) did not reach a 2xx: {bad}"
 
 

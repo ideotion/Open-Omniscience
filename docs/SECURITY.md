@@ -435,7 +435,7 @@ down is a RECORD of that date and carries its own disposition table.)*
   `Referer` judged by the middleware's own `_foreign_origin`, so default ports are normalised):
   the heavy diagnostics (`performance`, the benchmarks, `llm-bench`, `llm-throughput`, `rollup-benchmark`,
   `/all`, `/debug-bundle`, the selftests, `recursive-loop`), the egress reads (`/api/hazards`, `/api/monitoring/health`,
-  `/api/wiki/dumps/probe` and `/sizes`, `/api/geo/downloads/size`) and the exports that mint a signing
+  `/api/wiki/dumps/probe` and `/sizes`, `/api/geo/downloads/size`, which also refuses without `consent=true` (400) and under the kill switch (409) before any socket is opened) and the exports that mint a signing
   key (`/api/custody/export`, `/api/annotations/export`), and the three downloads that append to the
   diagnostics run log (`/all-job/download`, `/all-job/volumes/{name}`, `/keywords/parts/{set_id}/{name}`),
   answer a foreign page 403 before their handler runs. `/api/database/backup` has its own guard (`_refuse_cross_site` in
