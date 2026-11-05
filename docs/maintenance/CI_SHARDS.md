@@ -82,21 +82,22 @@ A test that is order-dependent shows up as a red leg that is green alone; the fi
 
 ## How long it takes, and what limits it
 
-Measured on the same run (job time from start to end, which includes the install, about two minutes, and for leg 1 of `test` the static steps):
+Measured on two runs of the PR (job time from start to end, which includes the install, about two minutes, and for leg 1 of `test` the static steps). Run A is the
+parity run (head 0d8047c91 merged onto main `c0c66ffd8`); run B is the next one (head 225975f90 merged onto `7066c4401`, whose new test files are dealt by the hash).
 
-| | shard 1 | shard 2 | shard 3 |
-|---|---|---|---|
-| `Test (shard N of 3)` | 28:12 | 25:34 | 26:59 |
-| `Core-only install, shard N of 3` | 17:46 | 28:22 | 25:54 |
+| | run | shard 1 | shard 2 | shard 3 |
+|---|---|---|---|---|
+| `Test (shard N of 3)` | A | 28:12 | 25:34 | 26:59 |
+| `Test (shard N of 3)` | B | 21:21 | 22:33 | 28:23 |
+| `Core-only install, shard N of 3` | A | 17:46 | 28:22 | 25:54 |
+| `Core-only install, shard N of 3` | B | 24:30 | 29:32 | 25:44 (red: the clock race of the lesson `a-tick-list-clock-is-read-by-every-thread-of-the-process`, since fixed) |
 
-The required `test` check was green 29:51 after the run was created (before: the one-process job, 70 to 80 minutes; the same job here took 79:36 as the unsharded
-oracle). The goal was about 25 minutes and the slowest leg took 28:22. Even perfectly balanced, `test`'s three legs (80:45 together) would take 26:55 each, so three
-shards do not reach 25 for `test`. Two known imbalances, both left alone because moving the dealing means proving the new neighbours again:
+The required `test` check was green 29:51 (A) and 28:31 (B) after the run was created; before, the one-process job took 70 to 80 minutes (79:36 as the unsharded
+oracle of run A). The goal was about 25 minutes and the slowest leg took 28:22 (A) and 29:32 (B): **not reached.** The same leg varies by up to 7 minutes between
+runs (`test` shard 1: 28:12, then 21:21), which is the runner and the neighbours the new test files bring, not the dealing. Balanced perfectly, a run's legs would
+average 26:55 (A) or 24:06 (B) for `test` and 24:00 (A) or 26:35 (B) for Core-only (arithmetic on the times above, not a measurement), so three shards give 24 to 27
+minutes at best and the slowest leg adds a few more: 28 to 30 in practice.
 
-* `test` leg 1 is the slowest, about two minutes over the mean of the other two; its static steps, which the table models as 80 s (`overhead_seconds`), are the
-  likely reason (the per-step times were not read);
-* Core-only deals from a table measured in the `test` environment, where the analysis tests run; in a core-only install they are skipped or ignored, so its shard 1 is
-  light (17:46) and shard 2 heavy (28:22). Balanced, the three legs' 72 minutes would be 24 each (arithmetic on the times above, not a measurement), which a Core-only
-  table of its own, measured the same way, would aim at.
-
-Four shards is the next step if the wall time matters more than the number of runners; it has not been measured.
+The first run suggested two structural imbalances, `test` leg 1 (its static steps, which the table models as 80 s in `overhead_seconds`) and a light Core-only shard 1
+(its table is measured where the analysis tests run, and a core-only install skips them). The second run repeats neither, so they are not established; the per-step
+times were not read. A measured overhead, a Core-only table of its own and four shards are follow-ups to judge on several runs, not on one; none was measured.
