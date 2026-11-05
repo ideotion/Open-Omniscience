@@ -13,7 +13,8 @@ read DuckDB 1.x's profile JSON and DuckDB 2.0.0, which pip resolves today, write
 
 What this pins. It reads ``.github/workflows/ci.yml`` and ``pyproject.toml`` and, for every test file that gates on a package that core does
 not install, requires a blocking job that BOTH installs the package (an extra, or a ``pip install NAME==`` pin) AND either runs the whole
-suite (a bare ``pytest -q``) or names the file, ALL of a file's packages in the same command. What does not count: a job with a literal
+suite (a bare ``pytest -q``) or names the file, ALL of a file's packages in the same command. A command that reads a shard's file list (``@"$RUNNER_TEMP/shard.args"``) counts as the whole suite only in a job whose matrix is ``shard: [1 .. N]`` for the N
+of its ``ci_shard.py plan --shard ${{ matrix.shard }}/N`` step (C10: ``test`` and ``core-only`` are three shards each). What does not count: a job with a literal
 ``continue-on-error: true``, one whose matrix legs all say ``observe: true``, one with a condition other than ``!= 'schedule'``, a pytest
 step with its own ``if:`` or ``continue-on-error``, a comment or echo that merely contains ``-m pytest``, a command that selects tests
 (``-k``, ``-m``, ``--deselect``, ``--ignore``), a package installed after the pytest step or uninstalled before it.
@@ -115,6 +116,18 @@ def _pytest_commands(script: str) -> list[str]:
     return [line for line in text.splitlines() if _PYTEST_LINE.match(line)]
 
 
+#: The argument file of one shard (C10): ``@"$RUNNER_TEMP/shard.args"``, written by ``scripts/ci_shard.py plan``. A command carrying it runs a THIRD of the suite.
+_SHARD_LIST = re.compile(r"(?:^|\s)@\S*shard\.args\b")
+_SHARD_PLAN = re.compile(r"ci_shard\.py\s+plan\s+--shard\s+\$\{\{\s*matrix\.shard\s*\}\}/([0-9]+)")
+
+
+def _runs_every_shard(job: dict) -> bool:
+    """The job's matrix runs shards 1..N, once each, for the one N its plan step names: only then is a command with a shard list the whole suite."""
+    legs = ((job.get("strategy") or {}).get("matrix") or {}).get("shard")
+    plans = {int(n) for step in job.get("steps") or [] for n in _SHARD_PLAN.findall(str(step.get("run") or ""))}
+    return len(plans) == 1 and legs == list(range(1, plans.pop() + 1))
+
+
 def _every_leg_observes(job: dict) -> bool:
     """A matrix whose every ``include`` leg sets ``observe: true`` blocks nothing, whatever ``continue-on-error`` is an expression of."""
     legs = ((job.get("strategy") or {}).get("matrix") or {}).get("include") or []
@@ -155,6 +168,8 @@ def read_runs(workflow: str) -> list[Run]:
             for cmd in _pytest_commands(run):
                 if _SELECTING.search(_PYTEST_LINE.sub("", cmd, count=1)):
                     continue
+                if _SHARD_LIST.search(cmd) and not _runs_every_shard(job):
+                    continue  # one leg of a shard matrix that is not complete runs only some of the suite
                 named = set(_TEST_FILE_RE.findall(cmd))
                 if named or re.search(r"\btests/", cmd):
                     out.append(Run(name, set(packages), set(extras), False, named, set(removed)))
@@ -288,11 +303,12 @@ def _wf(*jobs: str) -> str:
     return "jobs:\n" + "".join(jobs)
 
 
-def _job(name: str, install: str, test: str, extra: str = "", step: str = "", after: str = "") -> str:
-    """``extra`` is job-level text, ``step`` the options of the pytest step, ``after`` a run step placed after it."""
+def _job(name: str, install: str, test: str, extra: str = "", step: str = "", after: str = "", plan: str = "") -> str:
+    """``extra`` is job-level text, ``step`` the options of the pytest step, ``after`` a run step placed after it, ``plan`` one placed before it."""
     body = "\n".join("          " + ln for ln in test.splitlines())
     tail = f"      - run: {after}\n" if after else ""
-    return f"  {name}:\n{extra}    steps:\n      - run: {install}\n      - run: |\n{body}\n{step}{tail}"
+    head = f"      - run: {plan}\n" if plan else ""
+    return f"  {name}:\n{extra}    steps:\n      - run: {install}\n{head}      - run: |\n{body}\n{step}{tail}"
 
 
 def _check(workflow: str, sources: dict[str, str]) -> dict[str, str]:
@@ -302,6 +318,9 @@ def _check(workflow: str, sources: dict[str, str]) -> dict[str, str]:
 
 
 _DUCK = 'import pytest\npytest.importorskip("duckdb")\n'
+#: A shard matrix (job-level text for ``_job``) and the plan step that names its N.
+_SHARDS_123 = "    strategy:\n      matrix:\n        shard: [1, 2, 3]\n"
+_PLAN_3 = 'python scripts/ci_shard.py plan --shard ${{ matrix.shard }}/3 --out "$RUNNER_TEMP/shard.args"'
 
 
 @pytest.mark.parametrize(
@@ -504,6 +523,44 @@ _DUCK = 'import pytest\npytest.importorskip("duckdb")\n'
             {"tests/test_g.py": "import pytest\nm = 'duckdb'\npytest.importorskip(m)\n"},
             {},
         ),
+        # C10: a command that reads a shard's file list is the whole suite when the matrix runs every shard of the plan step's N ...
+        (
+            _wf(_job("s", 'python -m pip install -e ".[dev,columnar]"', 'python -m pytest -q @"$RUNNER_TEMP/shard.args"', extra=_SHARDS_123, plan=_PLAN_3)),
+            {"tests/test_b.py": _DUCK},
+            {},
+        ),
+        # ... and only then: a leg missing from the matrix, a matrix longer than N, a plan step for another N, none at all, or two disagreeing
+        (
+            _wf(_job("s", 'python -m pip install -e ".[dev,columnar]"', 'python -m pytest -q @"$RUNNER_TEMP/shard.args"', extra=_SHARDS_123.replace("[1, 2, 3]", "[1, 2]"), plan=_PLAN_3)),
+            {"tests/test_b.py": _DUCK},
+            {"tests/test_b.py": "duckdb"},
+        ),
+        (
+            _wf(_job("s", 'python -m pip install -e ".[dev,columnar]"', 'python -m pytest -q @"$RUNNER_TEMP/shard.args"', extra=_SHARDS_123.replace("[1, 2, 3]", "[1, 2, 3, 4]"), plan=_PLAN_3)),
+            {"tests/test_b.py": _DUCK},
+            {"tests/test_b.py": "duckdb"},
+        ),
+        (
+            _wf(_job("s", 'python -m pip install -e ".[dev,columnar]"', 'python -m pytest -q @"$RUNNER_TEMP/shard.args"', extra=_SHARDS_123, plan=_PLAN_3.replace("/3", "/4"))),
+            {"tests/test_b.py": _DUCK},
+            {"tests/test_b.py": "duckdb"},
+        ),
+        (
+            _wf(_job("s", 'python -m pip install -e ".[dev,columnar]"', 'python -m pytest -q @"$RUNNER_TEMP/shard.args"', extra=_SHARDS_123)),
+            {"tests/test_b.py": _DUCK},
+            {"tests/test_b.py": "duckdb"},
+        ),
+        (
+            _wf(_job("s", 'python -m pip install -e ".[dev,columnar]"', 'python -m pytest -q @"$RUNNER_TEMP/shard.args"', plan=_PLAN_3)),
+            {"tests/test_b.py": _DUCK},
+            {"tests/test_b.py": "duckdb"},
+        ),
+        # a list that is not a shard's is just an argument file the guard cannot read: the command counts as the whole suite as it always did
+        (
+            _wf(_job("s", 'python -m pip install -e ".[dev,columnar]"', 'python -m pytest -q @"$RUNNER_TEMP/other.args"')),
+            {"tests/test_b.py": _DUCK},
+            {},
+        ),
     ],
 )
 def test_the_checker_on_synthetic_workflows(workflow, sources, want):
@@ -537,3 +594,17 @@ def test_the_mutants_of_the_real_workflow_open_the_gap_the_checker_names():
     gated["tests/test_zz_new_rollup.py"] = {"duckdb"}
     after = uncovered(read_runs(text), core, extras, gated)
     assert set(after) - set(base) == {"tests/test_zz_new_rollup.py"}
+
+    # 4. C10: the `test` job is three shards. Take one leg out of its matrix (the first `shard: [1, 2, 3]` of ci.yml; Core-only has the second) and what
+    # only `test` installs for (PySocks, the segmenters, pypdf's OCR neighbours) is run by a third fewer files than the suite has: the job stops counting
+    # as the whole suite, so every file gated on one of its packages is open again. (`>=`: the temporary parity legs of the commit that proved the split
+    # list the matrix too; `test` stays the first.)
+    leg = "shard: [1, 2, 3]"
+    assert text.count(leg) >= 2 and text.index(leg) < text.index("\n  core-only:"), "the mutant's anchor moved (test and core-only each list their three shards once): update this test"
+    after = uncovered(read_runs(text.replace(leg, "shard: [1, 2]", 1)), core, extras, _gated_tests())
+    opened = set(after) - set(base)
+    assert "tests/test_airplane_socket_guard.py" in opened, sorted(opened)
+    # ... and the plan step naming another N does the same
+    plan = "ci_shard.py plan --shard ${{ matrix.shard }}/3"
+    assert text.count(plan) >= 2
+    assert "tests/test_airplane_socket_guard.py" in set(uncovered(read_runs(text.replace(plan, plan.replace("/3", "/4"), 1)), core, extras, _gated_tests())) - set(base)
