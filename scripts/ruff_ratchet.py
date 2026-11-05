@@ -37,9 +37,10 @@ Growth reddens; a drop prints the new floor to set.
 WHY THE VERSION IS PRINTED. A count-over-a-tool ratchet is only meaningful while
 the tool's rule set is fixed -- the recorded mypy lesson is that at zero slack a
 newer release "reddens every PR through no code change, which is why the pin is
-load-bearing". ``pyproject.toml`` therefore bounds ruff to one minor series, and
-this script names the version it measured with in its own failure message, so a
-rule-set change presents as itself rather than as mystery debt.
+load-bearing". ``pyproject.toml`` therefore pins ruff to ONE release (``ruff==``, as
+mypy is; tests/test_version_floor_legs.py keeps it exact), and this script names the
+version it measured with in its own failure message, so a rule-set change presents
+as itself rather than as mystery debt.
 
 Usage:
     python scripts/ruff_ratchet.py --max 432

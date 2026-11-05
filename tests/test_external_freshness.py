@@ -179,10 +179,11 @@ def test_trafilatura_floor_in_pyproject_matches_the_registry_and_the_lock_is_not
 
 
 def test_starlette_floor_in_pyproject_matches_the_registry_and_the_lock_is_not_below_it():
-    """The API is gzip-compressed and the AI token streams are ``application/x-ndjson``: a Starlette that does not flush the deflate stream
-    per chunk (anything below 1.5.0) holds a streamed reply back until several kilobytes pile up. ``fastapi`` itself only asks for
-    ``starlette>=0.46.0``, and ``requirements.lock`` pinned 1.3.1. The floor is written in three places (pyproject, the registry, the lock
-    file) and nothing else ties them."""
+    """Two behaviours of Starlette are leaned on. The API is gzip-compressed and the AI token streams are ``application/x-ndjson``: a
+    Starlette that does not flush the deflate stream per chunk (anything below 1.5.0) holds a streamed reply back until several kilobytes
+    pile up. And the database backup is a ``FileResponse``: below 1.8.0 a closed tab left it reading the whole snapshot to its end
+    (tests/test_version_floor_legs.py pins that one). ``fastapi`` itself only asks for ``starlette>=0.46.0``, and ``requirements.lock``
+    pinned 1.3.1 once. The floor is written in three places (pyproject, the registry, the lock file) and nothing else ties them."""
     entry = next(a for a in R.load_registry() if a["id"] == "starlette-gzip-flush")
     pyproject = (R.repo_root() / "pyproject.toml").read_text(encoding="utf-8")
     m = re.search(r'^\s*"starlette>=([0-9][0-9.]*)[",]', pyproject, flags=re.MULTILINE)
@@ -199,7 +200,7 @@ def test_starlette_floor_in_pyproject_matches_the_registry_and_the_lock_is_not_b
 def test_fastapi_floor_in_pyproject_matches_the_registry_and_the_lock_is_not_below_it():
     """The local API leans on FastAPI's ``strict_content_type`` (on by default since 0.132.0) as one of the layers against a cross-site
     POST (docs/SECURITY.md, "The local API"): it is what refuses a JSON body sent with no Content-Type. ``fastapi>=0.110`` admitted
-    releases without it, and the floor is 0.133.0 because 0.132.0 requires starlette<1.0.0 beside this app's own starlette>=1.5.0. The
+    releases without it, and the floor is 0.133.0 because 0.132.0 requires starlette<1.0.0 beside this app's own starlette>=1.8.0. The
     floor is written in three places (pyproject, the registry, the lock file) and nothing else ties them."""
     entry = next(a for a in R.load_registry() if a["id"] == "fastapi-strict-content-type")
     pyproject = (R.repo_root() / "pyproject.toml").read_text(encoding="utf-8")

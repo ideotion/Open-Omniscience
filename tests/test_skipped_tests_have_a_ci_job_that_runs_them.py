@@ -23,7 +23,7 @@ that no job runs fails, and so does a file that a job started running while stil
 What it does not see. A gate it has no name for (a bare ``try: import x`` at module top, ``find_spec``, a ``skipif`` on something other
 than ``importorskip`` or ``duckdb_available``); a package whose import name differs from its distribution name and is missing from
 ``_IMPORT_NAME``; an ``if:`` it cannot read (any step or job condition other than the one it knows counts as "does not run", which errs
-red); and the DuckDB version the job resolves (``duckdb>=1.4`` has no ceiling, so no lane runs the 1.x profile reader today).
+red); and the DuckDB version a job resolves (``duckdb>=1.4`` has no ceiling: ``columnar`` resolves the newest and ``columnar-duckdb1`` holds ``duckdb<2``, and tests/test_version_floor_legs.py checks that those two stay on their lines and run the same files).
 
 The guard proves itself: the pinned cases below run the checker on small synthetic workflows, and the live mutants remove one property from
 the real ``ci.yml`` (a file from the columnar list; the ``columnar`` extra) and require the checker to name what that opened.

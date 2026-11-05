@@ -36,21 +36,28 @@ dependencies = [
     # The floor is written here because THIS app relies on one behaviour of fastapi: strict_content_type, on by default since 0.132.0,
     # makes a route that takes a JSON model answer 422 to a body sent with NO Content-Type (text/plain and form bodies were already
     # refused before it). The floor is 0.133.0, not 0.132.0, because 0.132.0 requires starlette<1.0.0 and the starlette floor below is
-    # 1.5.0, so the resolver can never install that pair; 0.133.0 is the first release that allows starlette 1.x (pip refuses
-    # fastapi==0.132.0 with starlette>=1.5.0 and accepts 0.133.0). It is one of the layers that keep a cross-site page from posting to
+    # 1.8.0, so the resolver can never install that pair; 0.133.0 is the first release that allows starlette 1.x (pip refuses
+    # fastapi==0.132.0 with starlette>=1.8.0 and accepts 0.133.0). It is one of the layers that keep a cross-site page from posting to
     # the local API (docs/SECURITY.md). Read in the wheels: 0.131.0 has no strict_content_type, 0.132.0 has it as Default(True).
     # Registry entry fastapi-strict-content-type; tests/test_external_freshness.py keeps the three places (this line, the registry,
     # requirements.lock) from drifting apart.
     "fastapi>=0.133.0",
-    # starlette is fastapi's own dependency; the floor is written here because THIS app depends on one behaviour of it. The whole API
-    # sits behind GZipMiddleware (src/api/main.py), and the AI token streams are application/x-ndjson, which gzip compresses. A
-    # release that does not flush the deflate stream per chunk holds a streamed reply back until several kilobytes have piled up
-    # (the chat appears to hang, then the whole answer arrives at once, with no error anywhere). The first release that flushes per
-    # chunk (flush(Z_SYNC_FLUSH) on every chunk with more_body) is 1.5.0; 1.0.0 to 1.4.1 do not (read in the wheels, and
+    # starlette is fastapi's own dependency; the floor is written here because THIS app depends on two behaviours of it, and the floor
+    # is the later of the two releases that introduced them. (1) A streamed file response watches for the client leaving: from 1.8.0 on,
+    # FileResponse races the file against receive() and stops at an http.disconnect when the server speaks an ASGI spec older than 2.4
+    # (uvicorn speaks 2.3). The database backup (src/api/database.py _SnapshotResponse, a FileResponse) streams a snapshot the app made
+    # for that one request; on 1.5.0 to 1.7.0 a closed tab left it reading the whole snapshot to the end, holding the one backup slot
+    # and the snapshot's disk space until it finished (read in the wheels; measured on a 40 MiB file with a slow client that leaves
+    # after 0.2 s: 1.7.0 ran 7.1 s and sent all 40 MiB, 1.8.0 ran 0.3 s and sent 1.1 MiB). (2) The whole API sits behind
+    # GZipMiddleware (src/api/main.py), and the AI token streams are application/x-ndjson, which gzip compresses. A release that does
+    # not flush the deflate stream per chunk holds a streamed reply back until several kilobytes have piled up (the chat appears to
+    # hang, then the whole answer arrives at once, with no error anywhere). The first release that flushes per chunk
+    # (flush(Z_SYNC_FLUSH) on every chunk with more_body) is 1.5.0; 1.0.0 to 1.4.1 do not (read in the wheels, and
     # tests/test_sources_route_and_compression.py::test_gzip_flushes_every_chunk_of_a_streaming_response fails on 1.4.1 and passes
-    # on 1.5.0 and every later release run). Registry entry starlette-gzip-flush; tests/test_external_freshness.py keeps the three
-    # places (this line, the registry, requirements.lock) from drifting apart.
-    "starlette>=1.5.0",
+    # on 1.5.0 and every later release run). A test that hands a response an http.disconnect at once is exposed to (1): the
+    # tests/ sites are listed in the registry entry and pinned by tests/test_external_freshness.py. Registry entry
+    # starlette-gzip-flush; that file keeps the three places (this line, the registry, requirements.lock) from drifting apart.
+    "starlette>=1.8.0",
     "uvicorn[standard]>=0.27",
     "python-multipart>=0.0.9",
     # jinja2 REMOVED 2026-09-08 (audit 10, P2-14, same shape as the structlog removal
@@ -369,12 +376,13 @@ dev = [
     "pytest-cov>=5.0",
     "pytest-mock>=3.14",
     "hypothesis>=6.100",
-    # Bounded to one minor series for the same reason mypy is pinned two lines down:
-    # scripts/ruff_ratchet.py holds the advisory style lane to a non-growth ceiling,
-    # and a count-over-a-tool ratchet is only meaningful while the rule set is fixed.
-    # An unbounded floor lets a new release add rules and redden every PR through no
-    # code change. Bump deliberately, re-measuring the ceiling in the same PR.
-    "ruff>=0.16.6,<0.18",
+    # Pinned to ONE release, exactly as mypy is two lines down: scripts/ruff_ratchet.py holds the advisory style lane to a non-growth
+    # ceiling, and a count over a tool is only a number about a tree while the tool is fixed. The same tree reads 414 on ruff 0.16.9
+    # and 412 on 0.17.3, and a range let CI install a different release from a developer's, so the ceiling was true only on the day it
+    # was measured. With one pinned release the ceiling is true by construction, and Dependabot opens one PR per release, whose own CI
+    # run is the re-measurement. Bump deliberately, in one commit: this line, docs/maintenance/RUFF_STYLE_LANE.md's reading, and the
+    # ceiling in ci.yml if the new release reads differently.
+    "ruff==0.17.3",
     # Pinned: the type-check ratchet count must be deterministic. An unpinned
     # floor let a newer mypy report one extra error (129 > 128) and redden every
     # PR with no code change. Bump deliberately, re-measuring the baseline.
