@@ -3059,3 +3059,63 @@ def test_row5_does_not_resume_a_driver_failure_that_is_not_a_pool_timeout(row5):
     with pytest.raises(rr._PhaseError):
         rr._row5_quarantine(FakeCtx(), row5["run"])
     assert row5["jobs"]["q"].calls == ["start"]
+
+
+def test_the_bundle_copy_of_an_oversized_report_is_cut_to_its_cap_with_counted_markers():
+    """R425: the diagnostics copy is a BOUND (<= 140,000 B) for every shape, the saved report is untouched, a normal report passes as is."""
+    import json as _json
+
+    def size(v):
+        return len(_json.dumps(v, ensure_ascii=False, separators=(",", ":")).encode())
+
+    small = {"schema": "s", "available": True, "rows": [{"id": "A", "status": "measured"}], "outcome": "pass"}
+    assert rr.cap_report_for_bundle(small) is small, "a report under the cap is the same object, nothing cut"
+
+    big = {
+        "schema": "s", "available": True, "outcome": "pass",
+        "collect": {"blob": "x" * 90_000},
+        "phases": [{"n": i, "note": "y" * 100} for i in range(1500)],  # ~190 KB
+        "rows": [{"id": "A", "status": "measured"}],
+    }
+    snapshot = _json.dumps(big, sort_keys=True)
+    out = rr.cap_report_for_bundle(big)
+    assert size(out) <= rr.BUNDLE_REPORT_MAX_BYTES
+    assert out["truncated"] is True and out["cap_bytes"] == 140_000
+    assert out["truncated_from_bytes"] > 140_000 and out["cut_sections"], out["cut_sections"]
+    assert out["phases"]["cut"] is True and out["phases"]["bytes"] > 100_000, "the largest section goes first"
+    assert out["rows"] == big["rows"] and out["outcome"] == "pass", "what fits stays"
+    assert _json.dumps(big, sort_keys=True) == snapshot, "the input (the saved report) is not changed"
+
+    # The shapes that made an estimate of it: many mid-size sections (the record of the cuts grows), many small strings, one huge string.
+    shapes = {
+        "300 sections of 500 B": {f"s{i}": {"v": "z" * 480} for i in range(300)},
+        "2000 keys of 90-char strings": {f"k{i}": "q" * 90 for i in range(2000)},
+        "one 200 KB string": {"schema": "s", "error": "x" * 200_000},
+        "20,000 tiny keys": {f"t{i}": i for i in range(20_000)},
+    }
+    for label, report in shapes.items():
+        capped = rr.cap_report_for_bundle(report)
+        assert size(capped) <= rr.BUNDLE_REPORT_MAX_BYTES, (label, size(capped))
+        assert capped["truncated"] is True and capped["truncated_from_bytes"] == size(report), label
+
+    # A report that already carries a key the cap writes itself is cut like any other section and never crashes the bookkeeping.
+    for label, report in {
+        "cut_sections big string": {"cut_sections": "x" * 300_000, "b": "y" * 200_000},
+        "cut_sections_more big string": {"cut_sections_more": "x" * 300_000, **{f"b{i}": "y" * 7000 for i in range(60)}},
+        "truncated key": {"truncated": "z" * 200_000, "a": "q" * 100_000},
+    }.items():
+        capped = rr.cap_report_for_bundle(report)
+        assert size(capped) <= rr.BUNDLE_REPORT_MAX_BYTES, (label, size(capped))
+        assert capped["truncated"] is True and isinstance(capped["cut_sections"], list), label
+
+    # The bound holds on what is WRITTEN: with a measure that counts the bytes after the wire rewrite (alpha-2 country codes become alpha-3).
+    from src.api.diagnostics.bundle import _member_bytes, _wire_json_len
+
+    wire = {"countries": ["fr"] * 27_996}
+    assert size(wire) < 140_000 < len(_member_bytes(wire))
+    capped = rr.cap_report_for_bundle(wire, measure=_wire_json_len)
+    assert len(_member_bytes(capped)) <= rr.BUNDLE_REPORT_MAX_BYTES and capped["truncated"] is True
+    assert capped["countries"]["bytes"] > 160_000, "the marker counts the section as written"
+    # A big string section is cut by name, not by dropping the whole report.
+    text = rr.cap_report_for_bundle({"log": "x" * 200_000, "small": {"a": 1}}, measure=_wire_json_len)
+    assert text["log"]["cut"] is True and text["small"] == {"a": 1} and [c["section"] for c in text["cut_sections"]] == ["log"]
