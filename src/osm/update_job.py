@@ -56,9 +56,25 @@ OUTCOME_SENTENCES = {
 class UpdateRefused(Exception):  # noqa: N818 - a refusal, named by what refused it, like ``RebaselineRefused``
     """The request was refused before any job existed; ``str(exc)`` is the sentence to show, ``kind`` says which gate."""
 
+    kind = "refused"
+
     def __init__(self, kind: str, text: str) -> None:
         super().__init__(text)
         self.kind = kind
+
+
+class ConsentRefused(UpdateRefused):
+    """No ``consent: true``: the page's one online consent did not run for this request."""
+
+    def __init__(self, text: str) -> None:
+        super().__init__("consent", text)
+
+
+class KillSwitchRefused(UpdateRefused):
+    """The network kill switch is engaged (airplane mode): a named refusal, never a job that starts and fails."""
+
+    def __init__(self, text: str) -> None:
+        super().__init__("kill-switch", text)
 
 
 _LOCK = threading.Lock()
@@ -96,9 +112,9 @@ def request_update(
 
     alpha2, alpha3 = country_codes(country)
     if not consent:
-        raise UpdateRefused("consent", "this fetch needs the online consent; it was not given")
+        raise ConsentRefused("this fetch needs the online consent; it was not given")
     if (kill_switch or kill_switch_active)():
-        raise UpdateRefused("kill-switch", KILL_SWITCH_TEXT)
+        raise KillSwitchRefused(KILL_SWITCH_TEXT)
     with _LOCK:
         job = _JOBS.get(alpha3)
         if job is not None and job["state"] in ("queued", "running"):

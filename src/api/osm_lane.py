@@ -107,14 +107,16 @@ def update_country_route(code: str, req: UpdateRequest) -> dict:
     replication position) is queued all the same and ENDS with that reason, which the task manager shows: the checks that need the lane run
     in the job, once, so this route never opens the lane on the request thread.
     """
-    from src.osm.update_job import UpdateRefused, request_update
+    from src.osm.update_job import ConsentRefused, KillSwitchRefused, request_update
 
     try:
         return request_update(code, consent=req.consent)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from None
-    except UpdateRefused as exc:
-        raise HTTPException(status_code=400 if exc.kind == "consent" else 409, detail=str(exc)) from None
+    except ConsentRefused as exc:
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
+    except KillSwitchRefused as exc:
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from None
 
 
 @router.get("/updates")
