@@ -233,8 +233,8 @@ def test_the_osm_size_read_makes_no_head_for_a_foreign_page_and_one_for_the_own_
     with TestClient(app, base_url="http://127.0.0.1") as client:
         foreign = client.get("/api/geo/downloads/size?code=planet", headers={"Sec-Fetch-Site": "cross-site", "Referer": "https://evil.example/x"})
         no_metadata = client.get("/api/geo/downloads/size?code=planet", headers={"Origin": "https://evil.example"})
-        own = client.get("/api/geo/downloads/size?code=planet", headers={"Sec-Fetch-Site": "same-origin", "Referer": "http://127.0.0.1/"})
-        script = client.get("/api/geo/downloads/size?code=planet")
+        own = client.get("/api/geo/downloads/size?code=planet&consent=true", headers={"Sec-Fetch-Site": "same-origin", "Referer": "http://127.0.0.1/"})
+        script = client.get("/api/geo/downloads/size?code=planet&consent=true")
     assert foreign.status_code == 403 and no_metadata.status_code == 403
     assert heads == ["planet", "planet"]
     assert own.status_code == 200 and script.status_code == 200

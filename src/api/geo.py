@@ -96,20 +96,31 @@ def osm_download_start(payload: StartRegion) -> dict:
 
 
 @router.get("/downloads/size", dependencies=[Depends(refuse_cross_site_get)])
-def osm_download_size(code: str = Query(..., description="a catalogued download code")) -> dict:
+def osm_download_size(
+    code: str = Query(..., description="a catalogued download code"),
+    consent: bool = Query(False, description="true only after the page's one online consent ran (ensureOnline)"),
+) -> dict:
     """Read the mirror's EXACT size for one download before it starts (S05-04 S4, Q814 = b).
 
     A NETWORK read (one HEAD), so the Settings button that calls it passes the one online
-    consent first (invariant #14e: the gate covers what helps you decide). A plain ``def``: the
-    HEAD blocks, and Starlette runs it in the threadpool. A size that could not be read carries
-    a NAMED reason (``airplane``, ``unreachable``, ``no-content-length``), never a 0.
+    consent first (invariant #14e: the gate covers what helps you decide) AND the route itself
+    refuses without it: no ``consent=true`` is a 400 and the kill switch is a 409 that says so,
+    both before any socket is opened (v0.6 C3; the consent used to be held only in the page, so a
+    script or a future surface reached the HEAD with none). A plain ``def``: the HEAD blocks, and
+    Starlette runs it in the threadpool. A size that could not be read carries a NAMED reason
+    (``airplane``, ``unreachable``, ``no-content-length``), never a 0.
     """
     from src.geo.osm_downloads import get_manager
     from src.geo.osm_regions import get_region
+    from src.ingest import kill_switch_active
 
     region = get_region(code)
     if region is None:
         raise HTTPException(status_code=404, detail=f"unknown OSM download {code!r}")
+    if not consent:
+        raise HTTPException(status_code=400, detail="this size read contacts the mirror and needs the online consent; it was not given")
+    if kill_switch_active():
+        raise HTTPException(status_code=409, detail="refused: airplane mode is engaged, so the mirror was not asked for the size")
     return get_manager().size_reading(region.code)
 
 
