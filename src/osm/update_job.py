@@ -102,7 +102,7 @@ def request_update(
     with _LOCK:
         job = _JOBS.get(alpha3)
         if job is not None and job["state"] in ("queued", "running"):
-            return {**job, "started": False}
+            return {**_public(job), "started": False}
         job = {
             "alpha3": alpha3,
             "alpha2": alpha2,
@@ -113,7 +113,7 @@ def request_update(
             "applied": 0,
             "owed": None,
             "outcome": None,
-            "reason": None,
+            "error_class": None,
             "from_sequence": None,
             "to_sequence": None,
             "owed_remaining": None,
@@ -126,6 +126,9 @@ def request_update(
 
 
 def _public(job: dict[str, Any]) -> dict[str, Any]:
+    """The record as the route and the task manager may see it: counts, positions, an outcome word, a fixed sentence and, when the run
+    itself raised, the exception CLASS. The run's own ``reason`` is NOT here: it can quote the network's or a library's words (a URL, a
+    host), and nothing on a screen or in a response needs them (the log and the diagnostics member keep the facts)."""
     out = {k: v for k, v in job.items() if not k.startswith("_")}
     if job.get("state") == "done" and job.get("outcome") in OUTCOME_SENTENCES:
         out["sentence"] = OUTCOME_SENTENCES[job["outcome"]]
@@ -133,9 +136,9 @@ def _public(job: dict[str, Any]) -> dict[str, Any]:
 
 
 def _ensure_worker() -> None:
-    """Start the worker if none is alive. Called with ``_LOCK`` held."""
+    """Start the worker if none is alive. Called with ``_LOCK`` held. A worker that died (an interrupt, an exit) is replaced by the next request."""
     global _WORKER
-    if _WORKER is not None:
+    if _WORKER is not None and _WORKER.is_alive():
         return
     _WORKER = threading.Thread(target=_work, name="osm-update-worker", daemon=True)
     _WORKER.start()
@@ -145,39 +148,50 @@ def _work() -> None:
     global _WORKER
     from src.osm.apply import update_country
 
-    while True:
-        with _LOCK:
-            if not _QUEUE:
-                _WORKER = None  # under the lock the enqueuer also holds, so a job queued now starts a new worker
-                return
-            alpha3 = _QUEUE.pop(0)
-            job = _JOBS[alpha3]
-            job["state"], job["started_at"] = "running", _now()
-            args = dict(job["_args"])
-
-        def progress(applied: int, owed: int, _job: dict[str, Any] = job) -> None:
+    me = threading.current_thread()
+    try:
+        while True:
             with _LOCK:
-                _job["applied"], _job["owed"] = applied, owed
+                if not _QUEUE:
+                    _WORKER = None  # under the lock the enqueuer also holds, so a job queued now starts a new worker
+                    return
+                alpha3 = _QUEUE.pop(0)
+                job = _JOBS[alpha3]
+                job["state"], job["started_at"] = "running", _now()
+                args = dict(job["_args"])
 
-        try:
-            runner = args["run"] or update_country
-            kwargs: dict[str, Any] = {"source_for": args["source_for"], "on_progress": progress}
-            if args["kill_switch"] is not None:
-                kwargs["kill_switch"] = args["kill_switch"]
-            report = runner(alpha3, **kwargs)
-            ended = {
-                "outcome": report.outcome,
-                "reason": report.reason,
-                "from_sequence": report.from_sequence,
-                "to_sequence": report.to_sequence,
-                "owed_remaining": report.owed_remaining,
-            }
-        except Exception as exc:  # noqa: BLE001 - recorded on the job as "failed" with the class only; logged in full here
-            log_failure(_LOG, f"osm: the {alpha3} update job failed", exc, level=logging.WARNING)
-            ended = {"outcome": "failed", "reason": f"the update stopped on an unexpected {type(exc).__name__}; see the log"}
+            def progress(applied: int, owed: int, _job: dict[str, Any] = job) -> None:
+                with _LOCK:
+                    _job["applied"], _job["owed"] = applied, owed
+
+            ended: dict[str, Any] = {"outcome": "failed", "error_class": "BaseException"}
+            try:
+                runner = args["run"] or update_country
+                kwargs: dict[str, Any] = {"source_for": args["source_for"], "on_progress": progress}
+                if args["kill_switch"] is not None:
+                    kwargs["kill_switch"] = args["kill_switch"]
+                report = runner(alpha3, **kwargs)
+                ended = {
+                    "outcome": report.outcome,
+                    "from_sequence": report.from_sequence,
+                    "to_sequence": report.to_sequence,
+                    "owed_remaining": report.owed_remaining,
+                }
+            except Exception as exc:  # noqa: BLE001 - recorded on the job as "failed" with the class only; logged in full here
+                log_failure(_LOG, f"osm: the {alpha3} update job failed", exc, level=logging.WARNING)
+                ended = {"outcome": "failed", "error_class": type(exc).__name__}
+            except BaseException as exc:  # an interrupt or an exit: recorded below, then the worker ends with it
+                ended = {"outcome": "failed", "error_class": type(exc).__name__}
+                raise
+            finally:
+                # Whatever ended the run, an interrupt included, the job is not left "running": the page would poll it for ever.
+                with _LOCK:
+                    job.update(ended)
+                    job["state"], job["finished_at"] = "done", _now()
+    finally:
         with _LOCK:
-            job.update(ended)
-            job["state"], job["finished_at"] = "done", _now()
+            if _WORKER is me:
+                _WORKER = None
 
 
 def jobs() -> list[dict[str, Any]]:

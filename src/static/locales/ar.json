@@ -5400,6 +5400,7 @@
   "Updated": "محدّث",
   "Updated to the newest daily change file.": "تم التحديث حتى أحدث ملف تغييرات يومي.",
   "Updates automatically in the background.": "يُحدَّث تلقائيًا في الخلفية.",
+  "Updating a country with the daily map files": "جارٍ تحديث بلد بملفات الخريطة اليومية",
   "Updating your briefing…": "جارٍ تحديث موجزك…",
   "Updating {country} with the daily map files": "جارٍ تحديث {country} بملفات الخريطة اليومية",
   "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "ارفع ملف ‎.ics‎ محلياً — دون شبكة. تنضمّ أحداثه إلى مفكرتك (بلا تكرار) كتقويم قابل للإزالة؛ يُحلَّل الملف ثم يُتجاهَل.",

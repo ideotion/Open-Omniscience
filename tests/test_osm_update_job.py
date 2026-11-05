@@ -38,7 +38,7 @@ def cut(osm_lane_dir):
 def _record(alpha3, alpha2, **kw):
     """A job record as the module keeps one, for tests that show how the task manager reads each state."""
     base = {"alpha3": alpha3, "alpha2": alpha2, "state": "queued", "queued_at": "2025-01-01T00:00:00+00:00", "started_at": None,
-            "finished_at": None, "applied": 0, "owed": None, "outcome": None, "reason": None}
+            "finished_at": None, "applied": 0, "owed": None, "outcome": None, "error_class": None}
     return {**base, **kw}
 
 
@@ -101,7 +101,8 @@ def test_a_country_with_no_cut_is_queued_and_ends_not_ready_by_name(cut):
     U.request_update("FR", consent=True, source_for=_mirror_for(Mirror(1, {})), kill_switch=_off)
     assert U.wait_idle(HANG_GUARD_S)
     (job,) = U.jobs()
-    assert job["state"] == "done" and job["outcome"] == "not-ready" and "finished cut" in job["reason"]
+    assert job["state"] == "done" and job["outcome"] == "not-ready" and "finished cut" in job["sentence"]
+    assert "reason" not in job
 
 
 def test_a_second_request_for_a_country_already_running_starts_nothing_new(cut):
@@ -112,7 +113,7 @@ def test_a_second_request_for_a_country_already_running_starts_nothing_new(cut):
         U.request_update("ZZ", consent=True, source_for=_mirror_for(mirror), kill_switch=_off)
         assert wait_until(lambda: any(c[0] == "diff" for c in mirror.calls))
         again = U.request_update("ZZ", consent=True, source_for=_mirror_for(mirror), kill_switch=_off)
-        assert again["started"] is False and again["state"] == "running"
+        assert again["started"] is False and again["state"] == "running" and "_args" not in again
         assert len(U.jobs()) == 1
     finally:
         gate.set()
@@ -150,7 +151,7 @@ def test_a_run_that_raises_ends_failed_with_the_class_and_none_of_its_words(cut)
     U.request_update("ZZ", consent=True, kill_switch=_off, run=runner)
     assert U.wait_idle(HANG_GUARD_S)
     (job,) = U.jobs()
-    assert job["outcome"] == "failed" and "RuntimeError" in job["reason"] and "Secret" not in repr(job)
+    assert job["outcome"] == "failed" and job["error_class"] == "RuntimeError" and "Secret" not in repr(job)
 
 
 def test_the_worker_survives_a_failed_run_and_takes_the_next_job(cut):
@@ -245,14 +246,14 @@ def test_the_route_queues_the_job_and_the_task_manager_lists_it_with_how_it_ende
 @pytest.mark.parametrize(
     ("outcome", "state"),
     [("applied", "done"), ("current", "done"), ("rebaseline_needed", "failed"), ("refused", "failed"), ("unavailable", "failed"), ("failed", "failed"),
-     ("not-ready", "failed"), ("stopped", "failed"), ("superseded", "failed"), ("mirror-unreadable", "failed")],
+     ("not-ready", "failed"), ("stopped", "done"), ("superseded", "failed"), ("mirror-unreadable", "failed")],
 )
 def test_every_outcome_has_a_state_and_a_fixed_sentence(client, outcome, state):
     from src.api import jobs as J
 
-    U._JOBS["ZZZ"] = _record("ZZZ", "ZZ", state="done", finished_at="2025-01-02T00:00:00+00:00", outcome=outcome, reason="free text from the run")
+    U._JOBS["ZZZ"] = _record("ZZZ", "ZZ", state="done", finished_at="2025-01-02T00:00:00+00:00", outcome=outcome)
     (row,) = J._osm_update_jobs()
-    assert row["state"] == state and row["detail"] == U.OUTCOME_SENTENCES[outcome] and "free text" not in repr(row)
+    assert row["state"] == state and row["detail"] == U.OUTCOME_SENTENCES[outcome]
 
 
 def test_every_outcome_the_apply_module_can_give_has_a_sentence():
@@ -270,3 +271,83 @@ def test_a_queued_and_a_running_job_show_their_state_without_a_detail_line(cut):
     assert rows["osm-update:ZZZ"]["state"] == "running" and rows["osm-update:ZZZ"]["progress"] == {"done": 3, "total": 9, "unit": "files"}
     assert rows["osm-update:FRA"]["state"] == "queued" and rows["osm-update:FRA"]["progress"] is None
     assert "detail" not in rows["osm-update:ZZZ"] and "detail" not in rows["osm-update:FRA"]
+
+
+def test_a_second_post_for_a_running_country_is_answered_not_a_500(client, monkeypatch):
+    import src.ingest as ingest_pkg
+
+    monkeypatch.setattr(ingest_pkg, "kill_switch_active", _off)
+    gate = threading.Event()
+    mirror = Mirror(101, {101: DAY1})
+    mirror.after_each = lambda seq: gate.wait(3 * HANG_GUARD_S)
+    monkeypatch.setattr(U, "_default_source_for", _mirror_for(mirror))
+    try:
+        first = client.post("/api/osm/countries/ZZ/update", json={"consent": True})
+        assert first.status_code == 200 and first.json()["started"] is True
+        assert wait_until(lambda: any(c[0] == "diff" for c in mirror.calls))
+        again = client.post("/api/osm/countries/ZZ/update", json={"consent": True})
+        assert again.status_code == 200 and again.json()["started"] is False and again.json()["state"] == "running"
+    finally:
+        gate.set()
+    assert U.wait_idle(HANG_GUARD_S)
+
+
+def test_the_route_serves_no_free_text_of_the_run(client, monkeypatch):
+    import src.ingest as ingest_pkg
+
+    monkeypatch.setattr(ingest_pkg, "kill_switch_active", _off)
+    monkeypatch.setattr(U, "_default_source_for", _mirror_for(Mirror(1, {})))  # behind the cut's position: the run gives a sentence of its own
+    assert client.post("/api/osm/countries/ZZ/update", json={"consent": True}).status_code == 200
+    assert U.wait_idle(HANG_GUARD_S)
+    (job,) = client.get("/api/osm/updates").json()["jobs"]
+    assert "reason" not in job and job["outcome"] and job["sentence"] in U.OUTCOME_SENTENCES.values()
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")  # the thread dies of the SystemExit on purpose
+def test_an_interrupt_in_the_worker_marks_the_job_ended_and_the_next_request_gets_a_new_worker(cut):
+    def exits(alpha3, **kw):
+        raise SystemExit(3)
+
+    U.request_update("ZZ", consent=True, kill_switch=_off, run=exits)
+    assert wait_until(lambda: U.jobs() and U.jobs()[0]["state"] == "done")
+    (job,) = U.jobs()
+    assert job["outcome"] == "failed" and job["error_class"] == "SystemExit"
+    assert wait_until(lambda: U._WORKER is None), "a dead worker is not left registered"
+
+    def fine(alpha3, **kw):
+        return SimpleNamespace(outcome="current", from_sequence=1, to_sequence=1, owed_remaining=None)
+
+    U.request_update("FR", consent=True, kill_switch=_off, run=fine)
+    assert U.wait_idle(HANG_GUARD_S)
+    assert {j["alpha3"]: j["state"] for j in U.jobs()} == {"ZZZ": "done", "FRA": "done"}
+
+
+def test_a_dead_worker_still_registered_is_replaced(cut):
+    dead = threading.Thread(target=lambda: None)
+    dead.start()
+    dead.join()
+    U._WORKER = dead
+
+    def fine(alpha3, **kw):
+        return SimpleNamespace(outcome="current", from_sequence=1, to_sequence=1, owed_remaining=None)
+
+    U.request_update("ZZ", consent=True, kill_switch=_off, run=fine)
+    assert wait_until(lambda: U.jobs() and U.jobs()[0]["state"] == "done")
+
+
+def test_a_kill_switch_thrown_between_two_files_stops_before_the_next_request(cut, osm_lane_dir):
+    mirror = Mirror(102, {101: DAY1, 102: DAY2})
+    thrown = []
+    mirror.after_each = lambda seq: thrown.append(seq)
+    report = A.update_country("ZZ", mirror, workdir=osm_lane_dir / "w", kill_switch=lambda: bool(thrown))
+    assert (report.outcome, report.to_sequence, report.owed_remaining) == ("refused", 101, 1)
+    assert [c for c in mirror.calls if c[0] == "diff"] == [("diff", 101)], "no request after the switch"
+
+
+def test_a_country_the_catalogue_cannot_name_is_called_a_country_never_by_its_code(cut, monkeypatch):
+    from src.api import jobs as J
+
+    monkeypatch.setattr("src.catalog.countries.country_display_name", lambda value: None)
+    U._JOBS["ZZZ"] = _record("ZZZ", "ZZ", state="queued")
+    (row,) = J._osm_update_jobs()
+    assert row["label"] == "Updating a country with the daily map files" and "ZZ" not in row["label"]

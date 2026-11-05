@@ -5400,6 +5400,7 @@
   "Updated": "আপডেট হয়েছে",
   "Updated to the newest daily change file.": "সর্বশেষ দৈনিক পরিবর্তন ফাইল পর্যন্ত হালনাগাদ হয়েছে।",
   "Updates automatically in the background.": "পটভূমিতে স্বয়ংক্রিয়ভাবে আপডেট হয়।",
+  "Updating a country with the daily map files": "দৈনিক মানচিত্র ফাইল দিয়ে একটি দেশ হালনাগাদ করা হচ্ছে",
   "Updating your briefing…": "আপনার ব্রিফিং হালনাগাদ করা হচ্ছে…",
   "Updating {country} with the daily map files": "দৈনিক মানচিত্র ফাইল দিয়ে {country} হালনাগাদ করা হচ্ছে",
   "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "একটি স্থানীয় .ics ফাইল আপলোড করুন — কোনো নেটওয়ার্ক নয়। এর ইভেন্টগুলো (অনুলিপি বাদ দিয়ে) একটি অপসারণযোগ্য ক্যালেন্ডার হিসেবে আপনার কর্মসূচিতে যুক্ত হয়; ফাইলটি পার্স করে বাতিল করা হয়।",

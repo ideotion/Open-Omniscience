@@ -5400,6 +5400,7 @@
   "Updated": "更新时间",
   "Updated to the newest daily change file.": "已更新到最新的每日变更文件。",
   "Updates automatically in the background.": "在后台自动更新。",
+  "Updating a country with the daily map files": "正在用每日地图文件更新一个国家",
   "Updating your briefing…": "正在更新您的简报…",
   "Updating {country} with the daily map files": "正在用每日地图文件更新 {country}",
   "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "上传本地 .ics 文件 — 不联网。其中的事件将（去重后）并入您的日程，成为一个可移除的日历；文件经解析后即丢弃。",

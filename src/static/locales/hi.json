@@ -5400,6 +5400,7 @@
   "Updated": "अपडेट किया गया",
   "Updated to the newest daily change file.": "नवीनतम दैनिक परिवर्तन फ़ाइल तक अद्यतन हुआ।",
   "Updates automatically in the background.": "पृष्ठभूमि में स्वतः अद्यतन होता है।",
+  "Updating a country with the daily map files": "दैनिक मानचित्र फ़ाइलों से एक देश अद्यतन किया जा रहा है",
   "Updating your briefing…": "आपकी ब्रीफ़िंग ताज़ा की जा रही है…",
   "Updating {country} with the daily map files": "दैनिक मानचित्र फ़ाइलों से {country} अद्यतन किया जा रहा है",
   "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "एक स्थानीय .ics फ़ाइल अपलोड करें — कोई नेटवर्क नहीं। इसके इवेंट (दोहराव हटाकर) एक हटाने योग्य कैलेंडर के रूप में आपकी कार्यसूची में जुड़ जाते हैं; फ़ाइल को पार्स करके त्याग दिया जाता है।",

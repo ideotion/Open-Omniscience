@@ -5400,6 +5400,7 @@
   "Updated": "Обновлено",
   "Updated to the newest daily change file.": "Обновлено до самого нового ежедневного файла изменений.",
   "Updates automatically in the background.": "Обновляется автоматически в фоновом режиме.",
+  "Updating a country with the daily map files": "Обновляется страна ежедневными файлами карты",
   "Updating your briefing…": "Обновление вашей сводки…",
   "Updating {country} with the daily map files": "Обновляется {country} ежедневными файлами карты",
   "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "Загрузите локальный файл .ics — без сети. Его события попадают в вашу повестку (без дубликатов) как удаляемый календарь; файл разбирается и удаляется.",

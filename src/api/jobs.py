@@ -210,7 +210,8 @@ def _osm_jobs() -> list[dict]:
     return jobs
 
 
-_OSM_UPDATE_OK = ("applied", "current")
+#: "stopped" is an incomplete run that is not a failure: the next update continues from where it stopped.
+_OSM_UPDATE_OK = ("applied", "current", "stopped")
 
 
 def _osm_update_jobs() -> list[dict]:
@@ -225,15 +226,19 @@ def _osm_update_jobs() -> list[dict]:
     rows = []
     for j in update_jobs():
         alpha3 = j["alpha3"]
-        name = country_display_name(j.get("alpha2") or alpha3) or alpha3
+        name = country_display_name(j.get("alpha2") or alpha3)
         state = j["state"]
         if state == "done":
             state = "done" if j.get("outcome") in _OSM_UPDATE_OK else "failed"
         row = {
             "id": f"osm-update:{alpha3}",
             "kind": "osm-update",
-            "label": f"Updating {name} with the daily map files",
-            **_label_frame("Updating {country} with the daily map files", country=name),
+            # A country the catalogue cannot name is called "a country", never by its code (R6, alpha-3 display).
+            **(
+                {"label": f"Updating {name} with the daily map files", **_label_frame("Updating {country} with the daily map files", country=name)}
+                if name
+                else {"label": "Updating a country with the daily map files", "label_i18n": "Updating a country with the daily map files"}
+            ),
             "state": state,
             "progress": (
                 {"done": j["applied"], "total": j["owed"], "unit": "files"} if j.get("owed") else None

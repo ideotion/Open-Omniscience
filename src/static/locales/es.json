@@ -5400,6 +5400,7 @@
   "Updated": "Actualizado",
   "Updated to the newest daily change file.": "Actualizado hasta el archivo de cambios diario más reciente.",
   "Updates automatically in the background.": "Se actualiza automáticamente en segundo plano.",
+  "Updating a country with the daily map files": "Actualizando un país con los archivos de mapa diarios",
   "Updating your briefing…": "Actualizando tu resumen…",
   "Updating {country} with the daily map files": "Actualizando {country} con los archivos de mapa diarios",
   "Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.": "Sube un archivo .ics local — sin red. Sus eventos se unen a tu agenda (deduplicados) como un calendario que puedes quitar; el archivo se analiza y se descarta.",

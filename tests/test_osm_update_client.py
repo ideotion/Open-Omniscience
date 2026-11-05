@@ -31,6 +31,7 @@ PAGE_STRINGS = [
     "The update could not start.",
     "Update queued. The task manager shows its progress.",
     "Updating {country} with the daily map files",
+    "Updating a country with the daily map files",
 ]
 
 
