@@ -51,7 +51,6 @@ from src.osm.trends import (
     _adoption_rows,
     _day,
     _group_series,
-    _history_scope,
     _iso,
     _obj,
     _prior_cut,
@@ -398,26 +397,29 @@ def _changes(s, alpha3: str, surface: str, w: dict[str, Any]) -> dict[str, Any]:
 
 
 def _prior(s, alpha3: str, surface: str, have: set[str]) -> dict[str, Any]:
+    """The planet's past for one surface, by month: the stored monthly summary when current, else computed from the history rows (``source``)."""
+    import json
+
+    from src.osm.prior_summary import rows_for
+
     cut, why = _prior_cut(s, alpha3, have)
     if cut is None:
         return why or {"available": False}
-    import json
-
-    with _history_scope(s, alpha3) as (h, month, where):
-        if surface == "freshness":
-            rows = _freshness_rows(s, h, month, *where)
-            buckets = sorted({r[0] for r in rows})
-            series = _freshness_series(rows, buckets)
-        else:
-            groups = _groups_for(surface)
-            rows = _adoption_rows(s, h, month, *where, groups=groups)
-            buckets = sorted({r[0] for r in rows})
-            series = _group_series(rows, buckets, groups)
+    rows, how = rows_for(s, alpha3, surface, cut, have)
+    if surface == "freshness":
+        fresh = rows.get("fresh", [])
+        series = _freshness_series(fresh, sorted({r[0] for r in fresh}))
+    else:
+        groups = _groups_for(surface)
+        adoption = rows.get("adoption", [])
+        series = _group_series(adoption, sorted({r[0] for r in adoption}), groups)
     return {
         "available": True,
         "bucket": "month",
         "span": json.loads(cut.span_json) if cut.span_json else None,
         "vintage": _iso(cut.history_vintage),
+        "source": how["source"],
+        "summary": {k: v for k, v in how.items() if k != "source"},
         **series,
         "method": METHOD_PRIOR,
         "caveat": CAVEAT_PRIOR,

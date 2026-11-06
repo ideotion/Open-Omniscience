@@ -22,6 +22,9 @@ newest, by those files' OWN dates, with the days that have a file listed (a day 
 file is not a zero, it is not observed) and every stretch that was NOT observed (a re-baseline, a hand re-cut) named. ``prior`` is the
 planet's history for the same country, in months, from a different table; when no history cut was read it says ``available: false`` with
 the reason, and no figure from any other source stands in (Q814 (c) was not chosen).
+``prior.source`` says whether the months were read from the stored monthly summary (``summary``, ``src/osm/prior_summary.py``, written when the
+history cut finishes) or computed from the history rows on this request (``computed``, with ``prior.summary.state`` saying why); both go
+through the same series builders, so they read alike.
 
 READ-ONLY, makes no request, never raises: an unreadable lane is ``status: "unreadable"`` without the error's words. A table the lane
 lacks (cut by an older build) is a named reason, never a zero.
@@ -360,28 +363,23 @@ def _history_scope(s, alpha3: str) -> Iterator[tuple[Any, Any, list[Any]]]:
 
 
 def _prior(s, alpha3: str, have: set[str]) -> dict[str, Any]:
-    """The planet's past for this country, by month, from ``osm_history_changes``; ``available: False`` with the reason when it was not read."""
-    from sqlalchemy import select
+    """The planet's past for this country, by month: from the stored monthly summary when it is current, else from ``osm_history_changes``
+    (``source`` says which and ``summary`` why); ``available: False`` with the reason when the history was not read."""
+    from src.osm.prior_summary import rows_for
 
     cut, why = _prior_cut(s, alpha3, have)
     if cut is None:
         return why or {"available": False}
-    with _history_scope(s, alpha3) as (h, month, where):
-        adoption_rows = _adoption_rows(s, h, month, *where)
-        sig = _signal(h)
-        signal_rows = s.execute(select(month, sig, _obj(h)).where(*where, sig.is_not(None)).group_by(month, sig)).all()
-    # Object-level rows: created / deleted (restored is its own fact and not a closure or an opening here).
-    event_rows = s.execute(
-        select(month, h.c.change, _obj(h))
-        .where(h.c.country_alpha3 == alpha3, h.c.key.is_(None), h.c.change.in_(("created", "deleted")), h.c.version_timestamp.is_not(None))
-        .group_by(month, h.c.change)
-    ).all()
+    rows, how = rows_for(s, alpha3, "trends", cut, have)
+    adoption_rows, signal_rows, event_rows = rows.get("adoption", []), rows.get("signal", []), rows.get("event", [])
     buckets = sorted({r[0] for r in adoption_rows} | {r[0] for r in signal_rows} | {r[0] for r in event_rows})
     return {
         "available": True,
         "bucket": "month",
         "span": json.loads(cut.span_json) if cut.span_json else None,
         "vintage": _iso(cut.history_vintage),
+        "source": how["source"],
+        "summary": {k: v for k, v in how.items() if k != "source"},
         "adoption": {**_adoption_series(adoption_rows, buckets), "caveat": CAVEAT_PRIOR},
         # No "left_class": the history has no such fact, and a column of zeros would read as a measurement.
         "openings": {**_openings_series([*event_rows, *signal_rows], buckets, _PRIOR_OPENING_FIELDS), "caveat": CAVEAT_PRIOR},

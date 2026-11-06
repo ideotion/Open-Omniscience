@@ -3492,10 +3492,11 @@
       ["created", "Appeared"], ["deleted", "Disappeared"], ["left_class", "Stopped qualifying"],
       ["disused", "Disused key added"], ["vacant", "Marked vacant"], ["closed", "Marked closed"],
     ];
-    let _osmTrends = null, _osmTrendTab = "adoption", _osmTrendKey = "opening_hours", _osmTrendSeq = 0, _osmTrendNavs = [];
+    let _osmTrends = null, _osmTrendTab = "adoption", _osmTrendKey = "opening_hours", _osmTrendSeq = 0, _osmTrendNavs = [], _osmTrendDone = [];
     async function loadOsmTrends(done) {
       const sec = $("osm-trends"); if (!sec) return;
       const seq = ++_osmTrendSeq;   // a slower, older read must not overwrite a newer one
+      _osmTrendDone = done || [];
       if (!done || !done.length) { sec.hidden = true; _osmTrends = null; return; }
       const out = [];
       for (const c of done) {
@@ -3563,6 +3564,46 @@
         if (series[0].points.length) ooChart(host, series, { height: 200, zeroBase: true });
       });
     }
+    // Where the planet's past came from: the stored monthly summary, or the history rows read on this request (and why). Stated, never implied.
+    function _osmPriorSource(p) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!p || !p.available || !p.source) return "";
+      const sm = p.summary || {};
+      let line;
+      if (p.source === "summary") {
+        line = osmCompTf("Read from the monthly summary stored {built}, computed from the history file dated {vintage}.",
+          { built: sm.built_at ? ooIsoDate(sm.built_at) : t("Not recorded"), vintage: p.vintage ? ooIsoDate(p.vintage) : t("Not recorded") });
+      } else {
+        line = t({
+          "stale-cut": "Computed from the history rows on this read: the stored monthly summary is out of date (the country was cut again, or the counting rules changed).",
+          "stale-rule": "Computed from the history rows on this read: the stored monthly summary is out of date (the country was cut again, or the counting rules changed).",
+          "no-summary-table": "Computed from the history rows on this read: this lane has no table for the monthly summary.",
+        }[sm.state] || "Computed from the history rows on this read: no monthly summary of this cut is stored yet.");
+        if (sm.building) line += " " + t("A monthly summary is being built, which makes the next read faster.");
+      }
+      return `<div class="hint" data-osm-prior-source="${esc(p.source)}">${esc(line)}</div>`;
+    }
+    // A cut without a current summary asks for one, ONCE per country per session (a GET never writes, so this is a POST), then waits on the
+    // cheap state read and calls back when it is current. A build that ends without one leaves the computed answer, said as such.
+    const _osmPriorAsked = new Map();   // alpha3 -> {surface tag -> callback}: every surface waiting on that country's build, once each
+    function _osmPriorEnsure(alpha3, p, onCurrent, tag) {
+      if (!alpha3 || !p || !p.available || p.source !== "computed" || !p.summary) return;
+      if (["not-built", "stale-cut", "stale-rule", "no-summary-table"].indexOf(p.summary.state) === -1) return;   // the build adds the table to an older lane
+      if (_osmPriorAsked.has(alpha3)) { _osmPriorAsked.get(alpha3)[tag || ""] = onCurrent; return; }   // asked already: this surface is told too (a re-render replaces its own callback)
+      const waiting = { [tag || ""]: onCurrent };
+      _osmPriorAsked.set(alpha3, waiting);
+      const base = `/api/osm/countries/${encodeURIComponent(alpha3)}/prior-summary`;
+      (async () => {
+        try { await api(base, { method: "POST" }); } catch (e) { return; }
+        for (let i = 0; i < 180; i++) {
+          await new Promise((r) => setTimeout(r, 10000));
+          let s;
+          try { s = await api(base); } catch (e) { return; }
+          if (s && s.state === "current") { Object.values(waiting).forEach((f) => { try { f(); } catch (e) { /* one surface's refresh must not stop the others */ } }); return; }
+          if (!s || !s.building) return;
+        }
+      })();
+    }
     // The planet's past for one kind, as its own block under the window's (or alone, when no change file was applied yet).
     function _osmTrendPrior(c, idx, kind) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -3576,7 +3617,7 @@
         return title + `<div class="muted">${esc(t(say))}</div>`;
       }
       const b = p[kind] || {};
-      return title + `<div class="hint" title="${esc(t(p.method || ""))}">${esc(t("Hover for the method."))}</div>`
+      return title + `<div class="hint" title="${esc(t(p.method || ""))}">${esc(t("Hover for the method."))}</div>` + _osmPriorSource(p)
         + _osmTrendBlock(kind, b, true, idx, `osm-trend-${idx}-prior-${kind}`)
         + `<div class="card-caveat" style="margin-top:4px">${esc(t(b.caveat || ""))}</div>`;
     }
@@ -3637,6 +3678,7 @@
         });
       });
       _osmTrendDrawAll();
+      _osmTrends.forEach((c) => _osmPriorEnsure((c.lane || {}).alpha3, c.prior, () => loadOsmTrends(_osmTrendDone), "trends"));
     }
     // -- Surfaces 4 to 6 (v0.6.0 B3b, S06-01 S3) -------------------------------------------- //
     // Brands and operators, contact channels, data freshness: per country, per surface (loaded when its tab
@@ -3680,6 +3722,10 @@
         if (seq !== _osmProfileSeq) return;
         _osmProfileCache[key] = d;
         if (_osmProfileCacheKey(a3, _osmProfileTab) === key) _osmProfileFill(i);   // the tab shown now is the one this read is for
+        _osmPriorEnsure(a3, d.prior, () => {   // the summary is current now: forget this country's reads and read the tab shown again
+          Object.keys(_osmProfileCache).forEach((k) => { if (k.indexOf(a3 + "|") === 0) delete _osmProfileCache[k]; });
+          _osmProfileFetch(_osmProfileSeq);
+        }, "profile");
         if (tab !== _osmProfileTab) return;   // another tab took over; its own fetch is running
       }
     }
@@ -3800,7 +3846,7 @@
         }[p.reason] || "Not available: this lane was cut by an older build and lacks the table.";
         prior += `<div class="muted">${esc(t(say))}</div>`;
       } else {
-        prior += `<div class="hint" title="${esc(t(p.method || ""))}">${esc(t("Hover for the method."))}</div>`
+        prior += `<div class="hint" title="${esc(t(p.method || ""))}">${esc(t("Hover for the method."))}</div>` + _osmPriorSource(p)
           + _osmProfileBlock(tab, p, true, i, `osm-profile-${i}-prior`)
           + `<div class="card-caveat" style="margin-top:4px">${esc(t(p.caveat || ""))}</div>`;
       }

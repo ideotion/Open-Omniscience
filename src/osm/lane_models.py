@@ -10,7 +10,7 @@ ONLY through ``src.versioned.store.create_schema`` (``_lane_specific_models("osm
 opens the file through the ONE keyed factory. A lane file gets its own tables and no other
 lane's.
 
-TEN TABLES (the fourth and fifth S05-04 S4's, the sixth and seventh S5's, the eighth and ninth S6's, the last S06-01 S1's), two
+TWELVE TABLES (the fourth and fifth S05-04 S4's, the sixth and seventh S5's, the eighth and ninth S6's, the tenth S06-01 S1's, the last two R435's), two
 full-text indexes and one R*Tree (``src/osm/view.py``).
 
 * ``osm_objects`` -- one row per kept object of an ingested country: identity (type + id),
@@ -39,6 +39,11 @@ full-text indexes and one R*Tree (``src/osm/view.py``).
 * ``osm_search_indexes`` -- one row per country whose names and addresses are in the two
   full-text indexes (``osm_names``, ``osm_addresses``; ``src/osm/places.py`` creates them,
   because a virtual table is not a mapped model), with what was indexed and from which ingest.
+* ``osm_history_summaries`` and ``osm_history_monthly`` -- R435: the planet-prior readers' monthly aggregates for one country, computed ONCE
+  from ``osm_history_changes`` when a history cut finishes (or on request, for a cut that already exists), so a page read is a handful of
+  rows and not a pass over millions. A CACHE of one function of the history rows, never a second source of truth: the header row says
+  which cut (``cut_finished_at``) and which rule (``rule_version``) it was computed from, and a reader that finds either changed
+  computes from the history again and says so (``src/osm/prior_summary.py``).
 * ``osm_diff_runs`` -- one row per daily change file applied to a country (S06-01 S1): its
   sequence number, its own timestamp, what was fetched and how long it took, what it did to the
   objects. The MEASURED cost of a daily update lives here, one measurement per day.
@@ -380,6 +385,48 @@ class OsmViewCell(LaneBase):
     slon: Mapped[float] = mapped_column(Float, nullable=False)
 
 
+class OsmHistorySummary(LaneBase):
+    """The header of one stored monthly summary: one (country, surface), and what it was computed from (R435)."""
+
+    __tablename__ = "osm_history_summaries"
+    __table_args__ = (UniqueConstraint("alpha3", "surface", name="uq_osm_history_summaries_alpha3_surface"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alpha3: Mapped[str] = mapped_column(String(3), nullable=False)
+    #: ``trends`` | ``brands`` | ``channels`` | ``freshness``: the surfaces that read the planet's prior.
+    surface: Mapped[str] = mapped_column(String(12), nullable=False)
+    #: A digest of the rule that produced the rows (``prior_summary.rule_version``): the key sets and the version of the SQL.
+    rule_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: The cut's own ``finished_at`` and ``history_vintage`` at the time: a re-cut makes the summary stale, and the page says so.
+    cut_finished_at: Mapped[datetime | None] = mapped_column(LaneUTCDateTime(), nullable=True)
+    history_vintage: Mapped[datetime | None] = mapped_column(LaneUTCDateTime(), nullable=True)
+    built_at: Mapped[datetime] = mapped_column(LaneUTCDateTime(), nullable=False, default=_utcnow)
+    #: Wall-clock seconds the pass over the history rows took (shared by the surfaces built together).
+    seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class OsmHistoryMonthly(LaneBase):
+    """One aggregate row of a stored summary: exactly the row the computed path hands the series builders (R435).
+
+    ``kind`` is ``adoption`` (``name`` = the tag group, ``direction`` = gained | lost), ``signal`` (``name`` = disused | vacant | closed),
+    ``event`` (``name`` = created | deleted) or ``fresh`` (``name`` = edited | checked); ``n`` is a count of distinct objects. A month with
+    no row is a month with no change, which the readers fill in as they do today.
+    """
+
+    __tablename__ = "osm_history_monthly"
+    __table_args__ = (Index("ix_osm_history_monthly_lookup", "alpha3", "surface"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alpha3: Mapped[str] = mapped_column(String(3), nullable=False)
+    surface: Mapped[str] = mapped_column(String(12), nullable=False)
+    kind: Mapped[str] = mapped_column(String(8), nullable=False)
+    bucket: Mapped[str] = mapped_column(String(7), nullable=False)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    direction: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    n: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 OSM_LANE_MODELS: tuple[type[LaneBase], ...] = (
     OsmObject,
     OsmCountry,
@@ -391,6 +438,8 @@ OSM_LANE_MODELS: tuple[type[LaneBase], ...] = (
     OsmViewIndex,
     OsmViewCell,
     OsmDiffRun,
+    OsmHistorySummary,
+    OsmHistoryMonthly,
 )
 
 
