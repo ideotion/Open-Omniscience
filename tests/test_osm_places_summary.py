@@ -10,7 +10,7 @@ import ast
 import json
 import pathlib
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import sqlalchemy as sa
@@ -112,18 +112,49 @@ def test_every_distinct_value_is_stored_and_the_reader_applies_the_limit(cut, os
     assert small["source"] == "summary" and small["rankings"][0]["shown"] == 2 and small["rankings"][0]["total"] == full["total"], "the limit is the reader's, the total is real"
 
 
+def _boundary_places(ref: datetime) -> None:
+    """One place on each side of every cut the ages use, around ``ref``: the day itself, a day after, and a day either side of one, two and five years back."""
+    from src.osm.profile import _years_before
+
+    rd = ref.date()
+    days = {rd.isoformat(), (rd + timedelta(days=1)).isoformat()}
+    for y in (1, 2, 5):
+        cut = _years_before(rd, y)
+        days |= {(cut + timedelta(days=k)).isoformat() for k in (-1, 0, 1)}
+    blank = {"contact": None, "t_brand": None, "t_brand_wikidata": None, "t_website": None, "t_phone": None, "t_check_date": None}
+    with store.lane_session("osm") as s:
+        s.execute(T.insert(), [{**blank, "osm_type": "n", "osm_id": 5000 + i, "country_alpha3": "ZZZ", "kind": "poi", "notable": False,
+                                "timestamp": datetime.fromisoformat(day).replace(tzinfo=UTC)} for i, day in enumerate(sorted(days))])
+    _osm_lane_helpers.forget_places_summary()
+
+
+def _set_reference(ref: datetime) -> None:
+    with store.lane_session("osm") as s:
+        s.query(OsmCountry).filter_by(alpha3="ZZZ").one().diff_timestamp = ref
+
+
 def test_the_last_edit_is_stored_by_day_so_the_ages_follow_the_reference_date(cut, osm_lane_dir):
     _seed()
-    _more_places()
+    first = datetime(2025, 6, 15, tzinfo=UTC)
+    _boundary_places(first)
+    _set_reference(first)
+    computed = {r: _surfaces() for r in (first,)}
     PS.build_summary("ZZZ")
-    with store.lane_session("osm") as s:
-        days = s.query(OsmPlacesDay).filter_by(alpha3="ZZZ", part="freshness").count()
-        none = s.query(OsmPlacesCount).filter_by(alpha3="ZZZ", part="freshness", name="n").one().n
-    assert days > 3 and none == PF.profile("ZZZ", "freshness")["snapshot"]["n"]
-    # a daily apply moves the reference date: the summary is stale and rebuilt, and the ages differ only by what the reference date decides
-    ref = datetime(2025, 1, 10, tzinfo=UTC)
-    stored = PF._age_counts([[d, n] for d, n in _days_of("freshness")], ref.date())
-    assert sum(stored[0].values()) == stored[1]
+    assert PS.summary_state("ZZZ")["state"] == "current"
+    for ref in (first, datetime(2026, 1, 2, tzinfo=UTC), datetime(2024, 6, 16, tzinfo=UTC)):
+        # moving the reference date moves no key (the places did not change), so the SAME stored rows must answer every date as the places would
+        _set_reference(ref)
+        stored = _surfaces()
+        assert stored["freshness_source"] == "summary" and stored["geography_source"] == "summary", "the reference date made the summary stale"
+        _osm_lane_helpers.forget_places_summary()
+        direct = _surfaces()
+        assert direct["freshness_source"] == "computed"
+        assert _bare(stored) == _bare(direct), f"reference {ref.date()}: the stored by-day histogram and the places give different ages"
+        PS.build_summary("ZZZ")
+    assert computed[first]["freshness"]["last_edit"]["buckets"], "the fixture has no ages to compare"
+    # the boundaries really were separated: each cut has a place on both sides, so the buckets are not all one number
+    counts = [b["places"] for b in computed[first]["freshness"]["last_edit"]["buckets"]]
+    assert sum(1 for c in counts if c) >= 4, counts
 
 
 def _days_of(part):
@@ -298,7 +329,7 @@ def test_the_route_builds_for_an_existing_country_on_a_thread_and_a_get_does_not
         assert c.get("/api/osm/countries/ZZ/places-summary").json()["state"] == "not-built"
         assert c.post("/api/osm/countries/not-a-country/places-summary").status_code == 400
         first = c.post("/api/osm/countries/ZZ/places-summary").json()
-        assert first["status"] == "building" and first["started"] in (True, False)
+        assert first["status"] == "building" and first["started"] is True
         for _ in range(100):
             if not PS.is_building("ZZZ"):
                 break
@@ -307,6 +338,71 @@ def test_the_route_builds_for_an_existing_country_on_a_thread_and_a_get_does_not
         got = c.get("/api/osm/countries/ZZ/profile/brands").json()["snapshot"]
         assert got["source"] == "summary" and got["summary"]["state"] == "current"
         assert c.get("/api/osm/countries/ZZ/places-summary").json()["state"] == "current"
+
+
+def test_builds_started_together_on_an_old_lane_all_end_and_none_fails_on_the_schema(cut, osm_lane_dir):
+    import threading
+
+    _seed()
+    with store.lane_session("osm") as s:
+        for table in ("osm_places_days", "osm_places_values", "osm_places_counts", "osm_places_summaries"):
+            s.execute(sa.text(f"DROP TABLE {table}"))
+    results, errors = [], []
+
+    def go():
+        try:
+            results.append(PS.build_summary("ZZZ")["status"])
+        except Exception as exc:  # noqa: BLE001 - the test names it
+            errors.append(repr(exc))
+
+    threads = [threading.Thread(target=go) for _ in range(8)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    assert not errors, errors
+    assert results.count("built") == 8 and PS.summary_state("ZZZ")["state"] == "current"
+
+
+def test_an_apply_that_finishes_while_a_build_is_counting_is_not_lost(cut, osm_lane_dir, monkeypatch):
+    """The apply asks for a rebuild while the page's build is mid-pass: the running build goes round again, and the summary ends up current."""
+    _seed()
+    calls = []
+    real = PS.build_summary
+
+    def fake(alpha3, **kw):
+        calls.append(kw)
+        if len(calls) == 1:
+            PS.build_quietly(alpha3)   # what the apply's last step does; the country is busy, so it only asks
+            with store.lane_session("osm") as s:
+                s.query(OsmCountry).filter_by(alpha3="ZZZ").one().diff_sequence = (s.query(OsmCountry).filter_by(alpha3="ZZZ").one().diff_sequence or 0) + 1
+        return real(alpha3, **kw)
+
+    monkeypatch.setattr(PS, "build_summary", fake)
+    with PS._RUN_LOCK:
+        PS._RUNNING.add("ZZZ")
+    PS._run_builds("ZZZ", only_if_missing=True)
+    assert len(calls) == 2, calls
+    assert PS.summary_state("ZZZ")["state"] == "current" and not PS.is_building("ZZZ")
+    assert calls[1].get("only_if_missing") is False, "the second pass must not skip as already current"
+
+
+def test_a_reader_with_no_summary_does_not_scan_for_the_day_histogram_it_would_only_fold(cut, osm_lane_dir):
+    _seed()
+    seen = []
+    with store.lane_session("osm") as s:
+        eng = s.get_bind()
+
+    def spy(conn, cur, st, params, ctx, many):
+        seen.append(" ".join(st.split()))
+
+    sa.event.listen(eng, "before_cursor_execute", spy)
+    try:
+        area = [a for a in GE.countries_view()["areas"] if a["alpha3"] == "ZZZ"][0]
+    finally:
+        sa.event.remove(eng, "before_cursor_execute", spy)
+    assert area["places_summary"]["source"] == "computed" and area["values"]["edited_1y"] is not None
+    assert not [q for q in seen if "GROUP BY substr(osm_objects.timestamp" in q], "the geography fallback scanned for the whole histogram"
 
 
 def test_the_module_makes_no_request_and_imports_no_socket_library():

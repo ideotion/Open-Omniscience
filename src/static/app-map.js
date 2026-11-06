@@ -3953,8 +3953,14 @@
       _osmGeog = d;
       _renderOsmGeography(done);
       // Each country whose figures were computed on this read asks for its stored summary once; the view is read again when it is current.
+      // Builds finish one country at a time and a read computes every country still unbuilt, so the reads are coalesced into one.
       ((d && d.areas) || []).forEach((a) => _osmPriorEnsure(a.alpha3, a.places_summary ? { available: true, source: a.places_summary.source, summary: a.places_summary } : null,
-        () => loadOsmGeography(done), "geography", "places-summary"));
+        () => _osmGeogReloadSoon(done), "geography", "places-summary"));
+    }
+    let _osmGeogReloadTimer = null;
+    function _osmGeogReloadSoon(done) {
+      if (_osmGeogReloadTimer) return;   // one read already waits: it will see every build that finished before it
+      _osmGeogReloadTimer = setTimeout(() => { _osmGeogReloadTimer = null; loadOsmGeography(done); }, 4000);
     }
     // The 2 s count poll: redraw the figures only when the level in view has something new (a region count finishing), and leave the
     // controls alone, so an open dropdown is not closed under the reader and the map is not rebuilt on every tick.

@@ -48,6 +48,7 @@ PARTS = ("brands", "channels", "freshness", "geography")
 
 _RUN_LOCK = threading.Lock()
 _RUNNING: set[str] = set()
+_RERUN: set[str] = set()   # a country whose places changed while its build was running: the running build goes round again
 #: One pass at a time across countries: each scans a whole country, so several at once only compete for the same disk.
 _SERIAL = threading.Lock()
 
@@ -101,10 +102,13 @@ def _days(s, alpha3: str) -> list[list]:
     return [[d, int(n)] for d, n in rows]
 
 
-def compute_part(s, alpha3: str, part: str, *, days: list[list] | None = None) -> dict[str, Any]:
+def compute_part(s, alpha3: str, part: str, *, days: list[list] | None = None, reference=None) -> dict[str, Any]:
     """THE definition of what one reader counts, from ``osm_objects`` now: ``{"counts": {name: n}, "values": {key: [[text, n]]}, "days": [[day, n]]}``.
 
     ``days`` lets the builder hand over the histogram it already computed for the freshness part, so the geography part does not scan for it again.
+    ``reference`` (geography only) is for a READER that computes because nothing is stored: it counts the places edited within a year of that date in the
+    same aggregate as the rest (``counts["edited_1y"]``) instead of scanning for the whole day histogram it would only fold again. The builder passes
+    none and stores the histogram, which answers every reference date; both give the same number (``geography._edited_within_year`` is the fold).
     """
     from sqlalchemy import case, func, or_, select
 
@@ -142,11 +146,16 @@ def compute_part(s, alpha3: str, part: str, *, days: list[list] | None = None) -
         out_days = days if days is not None else _days(s, alpha3)
         values = {"check_date": _values(s, alpha3, "check_date")}
     elif part == "geography":
-        from src.osm.geography import brand_filled, check_date_filled
+        from src.osm.geography import brand_filled, check_date_filled, edited_within_year
 
-        n, brand, checked = s.execute(select(func.count(), _sum_if(brand_filled()), _sum_if(check_date_filled())).where(poi)).one()
+        extra = (_sum_if(edited_within_year(reference)),) if reference is not None and days is None else ()
+        n, brand, checked, *year = s.execute(select(func.count(), _sum_if(brand_filled()), _sum_if(check_date_filled()), *extra).where(poi)).one()
         counts.update(n=int(n), brand_any=int(brand or 0), checked=int(checked or 0))
-        out_days = days if days is not None else _days(s, alpha3)
+        if year:
+            counts["edited_1y"] = int(year[0] or 0)
+            out_days = []
+        else:
+            out_days = days if days is not None else _days(s, alpha3)
     else:
         raise ValueError(f"unknown part {part!r}")
     return {"counts": counts, "values": values, "days": out_days}
@@ -182,7 +191,7 @@ def _load(s, alpha3: str, part: str) -> dict[str, Any]:
     return {"counts": counts, "values": values, "days": days}
 
 
-def part_for(s, alpha3: str, part: str, country, have: set[str]) -> tuple[dict[str, Any], dict[str, Any]]:
+def part_for(s, alpha3: str, part: str, country, have: set[str], *, reference=None) -> tuple[dict[str, Any], dict[str, Any]]:
     """``(the part's counts, how they were got)``: from the stored summary when it is current, else computed from the places, saying why.
 
     ``country`` is the ``OsmCountry`` row the caller already read, so the header is compared with the very row the answer is stamped with.
@@ -200,7 +209,7 @@ def part_for(s, alpha3: str, part: str, country, have: set[str]) -> tuple[dict[s
         else:
             info.update(source="summary", state="current", built_at=head.built_at.isoformat() if head.built_at else None, seconds=head.seconds)
             return _load(s, alpha3, part), info
-    return compute_part(s, alpha3, part), info
+    return compute_part(s, alpha3, part, reference=reference), info
 
 
 def summary_state(alpha3: str) -> dict[str, Any]:
@@ -262,9 +271,9 @@ def build_summary(alpha3: str, *, only_if_missing: bool = False) -> dict[str, An
     if not store.lane_exists("osm"):
         return {"status": "lane-never-run"}
     # A lane file cut by an older build lacks the tables, and only a writer may add them: ``create_lane`` is idempotent and additive.
-    store.create_lane("osm")
     rule = rule_version()
     with _SERIAL:
+        store.create_lane("osm")   # under the lock: create_all is not safe to run from several threads at once on one file
         t0 = time.monotonic()
         with store.lane_session("osm") as s:
             have = set(inspect(s.get_bind()).get_table_names())
@@ -299,20 +308,42 @@ def build_summary(alpha3: str, *, only_if_missing: bool = False) -> dict[str, An
     return {"status": "built", "rows": total, "seconds": seconds}
 
 
-def build_quietly(alpha3: str) -> None:
-    """The cut and apply jobs' hook: a failed summary must never fail (or hide) a finished cut or apply; the readers compute until it is rebuilt."""
-    with _RUN_LOCK:
-        if alpha3 in _RUNNING:
-            return
-        _RUNNING.add(alpha3)
+def _run_builds(alpha3: str, *, only_if_missing: bool) -> None:
+    """Build, and build again while a daily apply or a re-cut asked for one during the pass (``_RERUN``) or made the pass ``superseded``.
+
+    The caller has put ``alpha3`` in ``_RUNNING``; this removes it. Without the flag an apply that finishes while a page-started build is counting
+    would find the country busy, return, and leave the summary stale until another page session asked again.
+    """
     try:
-        res = build_summary(alpha3)
-        _LOG.info("osm: the %s places summary: %s", alpha3, res.get("status"))
-    except Exception as exc:  # noqa: BLE001 - recorded in the log; the computed path stays in place
-        log_failure(_LOG, f"osm: the {alpha3} places summary could not be built", exc, level=logging.WARNING)
+        for attempt in range(3):
+            try:
+                res = build_summary(alpha3, only_if_missing=only_if_missing and attempt == 0)
+                _LOG.info("osm: the %s places summary: %s", alpha3, res.get("status"))
+            except Exception as exc:  # noqa: BLE001 - recorded in the log; the computed path stays in place
+                log_failure(_LOG, f"osm: the {alpha3} places summary could not be built", exc, level=logging.WARNING)
+                res = {"status": "failed"}
+            with _RUN_LOCK:
+                again = alpha3 in _RERUN
+                _RERUN.discard(alpha3)
+                if not again:
+                    break
     finally:
         with _RUN_LOCK:
+            _RERUN.discard(alpha3)
             _RUNNING.discard(alpha3)
+
+
+def build_quietly(alpha3: str) -> None:
+    """The cut and apply jobs' hook: a failed summary must never fail (or hide) a finished cut or apply; the readers compute until it is rebuilt.
+
+    A build already running for this country has read the places BEFORE this caller's write: it is told to go round again.
+    """
+    with _RUN_LOCK:
+        if alpha3 in _RUNNING:
+            _RERUN.add(alpha3)
+            return
+        _RUNNING.add(alpha3)
+    _run_builds(alpha3, only_if_missing=False)
 
 
 def start_build(alpha3: str) -> dict[str, Any]:
@@ -324,16 +355,5 @@ def start_build(alpha3: str) -> dict[str, Any]:
         if alpha3 in _RUNNING:
             return {"started": False, "status": "building"}
         _RUNNING.add(alpha3)
-
-    def run() -> None:
-        try:
-            res = build_summary(alpha3, only_if_missing=True)
-            _LOG.info("osm: the %s places summary: %s", alpha3, res.get("status"))
-        except Exception as exc:  # noqa: BLE001 - logged; the readers keep computing
-            log_failure(_LOG, f"osm: the {alpha3} places summary could not be built", exc, level=logging.WARNING)
-        finally:
-            with _RUN_LOCK:
-                _RUNNING.discard(alpha3)
-
-    threading.Thread(target=run, name=f"osm-places-summary-{alpha3}", daemon=True).start()
+    threading.Thread(target=_run_builds, args=(alpha3,), kwargs={"only_if_missing": True}, name=f"osm-places-summary-{alpha3}", daemon=True).start()
     return {"started": True, "status": "building"}

@@ -46,7 +46,7 @@ function extractConst(name, end) {
 }
 
 const FUNCS = [
-  "loadOsmGeography", "_osmGeogSigOf", "_osmGeogShellOf", "_osmGeogRepaint", "_osmGeogVintage", "_osmGeogShare", "_osmGeogFigures", "_osmAdmin1Label", "_osmGeogDraw", "_renderOsmGeography",
+  "loadOsmGeography", "_osmGeogReloadSoon", "_osmGeogSigOf", "_osmGeogShellOf", "_osmGeogRepaint", "_osmGeogVintage", "_osmGeogShare", "_osmGeogFigures", "_osmAdmin1Label", "_osmGeogDraw", "_renderOsmGeography",
 ];
 const src =
   extractConst("esc") + "\n" +
@@ -55,6 +55,9 @@ const src =
   "function $(id) { return els[id]; }\n" +
   "async function api(u) { apiCalls.push(u); return apiAnswer(u); }\n" +
   "async function ooMap(host, opts) { mapCalls.push({ host, opts }); }\n" +
+  "var timers = [];\n" +
+  "function setTimeout(f, ms) { timers.push([f, ms]); return timers.length; }\n" +
+  "let _osmGeogReloadTimer = null;\n" +
   "var asks = [];\n" +
   "function _osmPriorEnsure(a3, p, cb, tag, what) { asks.push([a3, p, tag, what]); }   // the request itself has its own test (osm_prior_summary_node_test.js)\n" +
   "function ooIsoDate(s) { return 'D(' + String(s == null ? '' : s).slice(0, 10) + ')'; }\n" +
@@ -69,7 +72,7 @@ const src =
   "let _osmGeog = null, _osmGeogLevel = 'countries', _osmGeogMeasure = 'places', _osmGeogForm = 'count', _osmGeogSeq = 0;\n" +
   "let _osmGeogDone = [], _osmGeogSig = '', _osmGeogShellSig = '';\n" +
   FUNCS.map(extract).join("\n") + "\n" +
-  "module.exports = { " + FUNCS.join(", ") + ", mapCalls, apiCalls, asks, els, out,\n" +
+  "module.exports = { " + FUNCS.join(", ") + ", mapCalls, apiCalls, asks, timers, els, out,\n" +
   "  set(o) { if ('geog' in o) _osmGeog = o.geog; if ('level' in o) _osmGeogLevel = o.level; if ('measure' in o) _osmGeogMeasure = o.measure; if ('form' in o) _osmGeogForm = o.form;\n" +
   "    if ('comp' in o) _osmComp = o.comp; if ('answer' in o) apiAnswer = o.answer; if ('seq' in o) _osmGeogSeq = o.seq; },\n" +
   "  get() { return { level: _osmGeogLevel, measure: _osmGeogMeasure, form: _osmGeogForm, geog: _osmGeog, seq: _osmGeogSeq }; } };";
@@ -274,6 +277,19 @@ const lastMap = () => R.mapCalls[R.mapCalls.length - 1];
     { alpha3: "CCC" } ] }) });
   await R.loadOsmGeography(DONE);
   assert.deepStrictEqual(R.asks.map((a) => [a[0], a[1] && a[1].source, a[2], a[3]]), [["AAA", "computed", "geography", "places-summary"], ["BBB", "summary", "geography", "places-summary"], ["CCC", null, "geography", "places-summary"]]);
+  // countries finishing their builds one after another must not each re-read the whole view: the reloads are coalesced into one
+  R.timers.length = 0;
+  R.apiCalls.length = 0;
+  R._osmGeogReloadSoon(DONE);
+  R._osmGeogReloadSoon(DONE);
+  R._osmGeogReloadSoon(DONE);
+  assert.strictEqual(R.timers.length, 1, "each finished build scheduled its own reload");
+  assert.deepStrictEqual(R.apiCalls, [], "the reload ran before its delay");
+  await R.timers[0][0]();
+  assert.strictEqual(R.apiCalls.length, 1, "the coalesced reload read the view once");
+  R._osmGeogReloadSoon(DONE);
+  assert.strictEqual(R.timers.length, 2, "after it ran, a later build could not schedule another reload");
+  R.timers.length = 0; R.apiCalls.length = 0;
   await R.loadOsmGeography([]);
   assert.strictEqual(sec.hidden, true);
   assert.strictEqual(R.get().geog, null, "an empty lane kept its old geography");

@@ -112,7 +112,7 @@ def _countries() -> dict[str, Any]:
                 continue
             ref = c.diff_timestamp or c.extract_vintage
             poi = (t.c.country_alpha3 == c.alpha3) & (t.c.kind == "poi")   # the changed measure below joins on it
-            data, how = part_for(s, c.alpha3, "geography", c, have)
+            data, how = part_for(s, c.alpha3, "geography", c, have, reference=ref)
             counts = data["counts"]
             values: dict[str, int | None] = {"places": int(counts.get("n", 0)), "brand": int(counts.get("brand_any", 0)), "checked": int(counts.get("checked", 0))}
             reasons: dict[str, str] = {}
@@ -120,7 +120,7 @@ def _countries() -> dict[str, Any]:
                 values["edited_1y"] = None
                 reasons["edited_1y"] = "no-reference"
             else:
-                values["edited_1y"] = _edited_within_year(data["days"], ref)
+                values["edited_1y"] = int(counts["edited_1y"]) if "edited_1y" in counts else _edited_within_year(data["days"], ref)
             w = _window(s, c.alpha3, have)
             since = None
             if w["state"] == "ok":
