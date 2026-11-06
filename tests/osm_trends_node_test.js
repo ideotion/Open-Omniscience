@@ -92,6 +92,23 @@ noJunk(html, "ok country");
 const rows = (html.match(/<tr>/g) || []).length;
 // adoption table: header + 3 days; openings table: header + 2 days (both panels are in the DOM, one hidden)
 assert.strictEqual(rows, 4 + 3, "a table lost or invented a row: " + rows);
+// A table of seventeen columns (the contact channels) must scroll INSIDE its box. A scroll box that still counts its table's width toward its
+// parent's minimum widened the grid track the whole World map tab sits in, and the page scrolled sideways (measured in Chromium at 1280 px:
+// the section was 1369 px wide in a 990 px column). `width:0; min-width:100%` takes the table out of the parent's sizing and leaves the box full width.
+{
+  const boxes = html.match(/<div style="[^"]*" data-osm-trend-scroll>/g) || [];
+  assert.strictEqual(boxes.length, 2, "every table sits in its own scroll box (two panels): " + boxes.length);
+  for (const b of boxes) {
+    assert.ok(/overflow:auto/.test(b) && /width:0;min-width:100%/.test(b), "a scroll box would widen its parent with its table: " + b);
+  }
+}
+// a day is one word: no break at its hyphens at phone width, in a right-to-left page too (ooIsoDate wraps the date in direction isolates there);
+// a name in the same column may still wrap
+{
+  const cell = (v, textCols) => { const m = R._osmTrendTable(["X", "Y"], [[v, "3"]], textCols).match(/<th scope="row"[^>]*>/); return m && m[0]; };
+  for (const v of ["2025-01-12", "2025-01", "\u20682025-01-12\u2069"]) assert.ok(/white-space:nowrap/.test(cell(v)), "a date may break at its hyphens: " + JSON.stringify(v));
+  for (const v of ["A long brand name that may wrap", "2025-01-12 to 2025-01-13", "12"]) assert.ok(!/nowrap/.test(cell(v)), "a name was kept from wrapping: " + v);
+}
 assert.ok(visible(html).includes("D(2025-01-12) 0 0"), "a day of zero changes (a file WAS applied) must read 0, not vanish");
 assert.ok(!visible(html).includes("2025-02"), "a day with no change file got a row");
 assert.ok(html.includes("LABEL(ZZZ)"), "the country was not named through the label helper");

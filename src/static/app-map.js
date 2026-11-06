@@ -3521,8 +3521,10 @@
       const left = textCols || [0];   // the columns that hold words, not numbers
       const al = (i) => (left.indexOf(i) !== -1 ? "start" : "end");
       const th = head.map((h, i) => `<th scope="col" style="text-align:${al(i)};padding:2px 8px">${esc(h)}</th>`).join("");
-      const body = rows.map((r) => `<tr>${r.map((v, i) => `<${i ? "td" : "th scope=\"row\""} style="text-align:${al(i)};padding:2px 8px">${esc(v)}</${i ? "td" : "th"}>`).join("")}</tr>`).join("");
-      return `<div style="overflow:auto;max-height:320px"><table class="data"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>`;
+      // A day or a month is one word: at phone width it broke at its hyphens ("2026-" over "10-02"), which reads as two numbers.
+      const stay = (v) => (/^[⁦-⁩]?\d{4}-\d{2}(-\d{2})?[⁦-⁩]?$/.test(String(v)) ? ";white-space:nowrap" : "");
+      const body = rows.map((r) => `<tr>${r.map((v, i) => `<${i ? "td" : "th scope=\"row\""} style="text-align:${al(i)};padding:2px 8px${stay(v)}">${esc(v)}</${i ? "td" : "th"}>`).join("")}</tr>`).join("");
+      return `<div style="overflow:auto;max-height:320px;width:0;min-width:100%" data-osm-trend-scroll><table class="data"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>`;
     }
     // One block (the tracked window, or the planet's prior): the chart host, then the full table.
     function _osmTrendBlock(kind, block, monthly, idx, hostId) {
