@@ -25,10 +25,12 @@ from src.osm.lane_models import (
     OsmPlacesDay,
     OsmPlacesSummary,
     OsmPlacesValue,
+    OsmTagChange,
 )
 from src.versioned import store
 from tests import _osm_lane_helpers
 from tests.test_osm_apply import DAY1, _extract
+from tests.test_osm_geography import _changes as _geo_changes
 from tests.test_osm_profile import T, _dt, _seed
 from tests.test_osm_trends import _apply
 
@@ -421,6 +423,99 @@ def test_a_reader_with_no_summary_does_not_scan_for_the_day_histogram_it_would_o
         sa.event.remove(eng, "before_cursor_execute", spy)
     assert area["places_summary"]["source"] == "computed" and area["values"]["edited_1y"] is not None
     assert not [q for q in seen if "GROUP BY substr(osm_objects.timestamp" in q], "the geography fallback scanned for the whole histogram"
+
+
+def _changed_by_the_old_join(alpha3: str = "ZZZ") -> int:
+    """The form the geography view used before R440 (change rows joined to the country's places, counted by a concatenated key): the oracle."""
+    tc = OsmTagChange.__table__
+    with store.lane_session("osm") as s:
+        q = (
+            sa.select(sa.func.count(sa.distinct(tc.c.osm_type + sa.cast(tc.c.osm_id, sa.String))))
+            .select_from(tc.join(T, (T.c.osm_type == tc.c.osm_type) & (T.c.osm_id == tc.c.osm_id)))
+            .where(tc.c.country_alpha3 == alpha3, tc.c.object_event.is_(None), tc.c.diff_timestamp.is_not(None), T.c.country_alpha3 == alpha3, T.c.kind == "poi")
+        )
+        return int(s.execute(q).scalar() or 0)
+
+
+def _area():
+    return [a for a in GE.countries_view()["areas"] if a["alpha3"] == "ZZZ"][0]
+
+
+def test_the_changed_count_is_the_same_number_by_the_old_join_computed_and_stored(cut, osm_lane_dir):
+    _seed()
+    _geo_changes()   # n5 (two keys) and n6 changed; a created object, another country's row and a road do not count
+    assert _changed_by_the_old_join() == 2
+    with store.lane_session("osm") as s:
+        assert PS.changed_places(s, "ZZZ") == 2, "the probing form disagrees with the join it replaced"
+    computed = _area()
+    assert computed["places_summary"]["source"] == "computed" and computed["values"]["changed"] == 2
+    PS.build_summary("ZZZ")
+    with store.lane_session("osm") as s:
+        assert s.query(OsmPlacesCount).filter_by(alpha3="ZZZ", part="geography", name="changed").one().n == 2
+    stored = _area()
+    assert stored["places_summary"]["source"] == "summary"
+    assert {k: v for k, v in stored.items() if k != "places_summary"} == {k: v for k, v in computed.items() if k != "places_summary"}
+
+
+def test_the_changed_count_is_read_from_the_summary_and_not_served_when_stale(cut, osm_lane_dir):
+    _seed()
+    _geo_changes()
+    PS.build_summary("ZZZ")
+    with store.lane_session("osm") as s:
+        s.query(OsmPlacesCount).filter_by(alpha3="ZZZ", part="geography", name="changed").update({"n": 999})
+    assert _area()["values"]["changed"] == 999, "the poison is not visible: the stored count is not what is read"
+    with store.lane_session("osm") as s:
+        s.query(OsmCountry).filter_by(alpha3="ZZZ").one().diff_sequence = 12345
+    got = _area()
+    assert got["places_summary"]["source"] == "computed" and got["values"]["changed"] == 2, "a stale summary's count was served"
+
+
+def test_a_summary_built_before_the_change_rows_existed_is_counted_now_not_read_as_zero(cut, osm_lane_dir):
+    _seed()
+    _geo_changes()
+    PS.build_summary("ZZZ")
+    with store.lane_session("osm") as s:
+        s.query(OsmPlacesCount).filter_by(alpha3="ZZZ", part="geography", name="changed").delete()
+    got = _area()
+    assert got["places_summary"]["source"] == "summary" and got["values"]["changed"] == 2
+
+
+def test_a_country_with_no_change_file_stores_zero_but_shows_none_with_its_reason(cut, osm_lane_dir):
+    _seed()
+    PS.build_summary("ZZZ")
+    with store.lane_session("osm") as s:
+        assert s.query(OsmPlacesCount).filter_by(alpha3="ZZZ", part="geography", name="changed").one().n == 0
+    got = _area()
+    assert got["values"]["changed"] is None and got["reasons"]["changed"] == "no-daily-files", "a count that was never observed was shown as zero"
+
+
+def test_only_the_daily_apply_writes_the_change_rows_and_the_run_rows(cut):
+    """The changed count rides the places summary's key only while nothing else writes ``osm_tag_changes`` or ``osm_diff_runs`` (the rows that say a window exists)."""
+    import re
+
+    write = re.compile(
+        r"\b(insert|update|delete)\(\s*(OsmTagChange|OsmDiffRun)\b|\b(OsmTagChange|OsmDiffRun)\.__table__\.(insert|update|delete)\(|\.add(_all)?\(\s*\[?\s*(OsmTagChange|OsmDiffRun)\b"
+        r"|\b(bulk_insert_mappings|bulk_save_objects|bulk_update_mappings)\(\s*(OsmTagChange|OsmDiffRun)\b"
+        r"|\b(INSERT INTO|UPDATE|DELETE FROM) (osm_tag_changes|osm_diff_runs)\b",
+        re.IGNORECASE,
+    )
+    files = [p for root in ("src", "scripts") for p in (ROOT / root).rglob("*.py") if p.name != "lane_models.py"]
+    writers = sorted(p.name for p in files if write.search(p.read_text(encoding="utf-8")))
+    assert writers == ["apply.py"], f"another module writes osm_tag_changes or osm_diff_runs, so a stored changed count can go stale unseen: {writers}"
+    # ``changes.change_rows`` only BUILDS unsaved rows: a module that imports it is a candidate writer this pattern cannot see
+    users = sorted(p.name for p in (ROOT / "src").rglob("*.py") if p.name != "changes.py" and re.search(r"\bchange_rows\b", p.read_text(encoding="utf-8")))
+    assert users == [], f"a module builds change rows, which this pin does not follow into a write: {users}"
+
+
+def test_a_country_without_a_run_row_answers_zero_without_probing_its_places(cut, osm_lane_dir):
+    """The short-circuit fires: change rows with no run row behind them are not counted (they cannot exist from the apply, which writes both together)."""
+    _seed()
+    _geo_changes()
+    with store.lane_session("osm") as s:
+        assert PS.changed_places(s, "ZZZ") == 2
+        s.execute(sa.text("DELETE FROM osm_diff_runs"))
+    with store.lane_session("osm") as s:
+        assert PS.changed_places(s, "ZZZ") == 0, "the probe ran although no change file was ever applied"
 
 
 def test_the_module_makes_no_request_and_imports_no_socket_library():

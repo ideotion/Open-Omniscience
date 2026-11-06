@@ -24,6 +24,10 @@ WHAT MUST STAY TRUE.
   them). Otherwise the reader computes from the places and the answer carries ``source: "computed"`` with the reason (``summary.state``).
 * THE LAST EDIT IS STORED BY DAY, never as age buckets: the buckets are cut from a reference date that moves with every change file.
 * NO CAP. Every distinct brand, brand:wikidata and check_date value is kept; the reader applies its own ``limit`` (the page says how many exist).
+* THE GEOGRAPHY PART'S ``changed`` IS A COUNT OF TWO TABLES (R440): the current places and ``osm_tag_changes``. It rides the same key because the change
+  rows are written by the daily apply ONLY, in the per-file transaction that also moves ``diff_sequence`` (a re-cut moves ``finished_at`` and the
+  count joins to the CURRENT places). The same holds for ``osm_diff_runs``, whose rows decide whether a country has a window at all
+  (:func:`changed_places` answers 0 without one). ``tests/test_osm_places_summary.py`` pins that nothing else writes either table.
 * READ-ONLY READERS STAY READ-ONLY. Only the cut job, the apply job and the POST route write; the build is local work, makes no request, never
   fails a cut or an apply (it is logged and the readers compute), and a pass that was overtaken by an apply or a re-cut stores nothing.
 """
@@ -41,7 +45,8 @@ from src.monitoring.secret_scrub import log_failure
 _LOG = logging.getLogger(__name__)
 
 #: Bump when the SQL that produces the counts changes in a way the key sets below do not show.
-RULE_REVISION = 1
+#: 2 (R440): the geography part also stores ``changed``, the places with a tag change in the window observed here.
+RULE_REVISION = 2
 
 #: The readers: ``profile.SURFACES`` and the geography view.
 PARTS = ("brands", "channels", "freshness", "geography")
@@ -103,6 +108,35 @@ def _days(s, alpha3: str) -> list[list]:
     return [[d, int(n)] for d, n in rows]
 
 
+def changed_places(s, alpha3: str) -> int:
+    """Places of a country with at least one tag-level change recorded by a daily change file (the geography view's ``changed`` measure).
+
+    Driven from the country's current places and probing the change rows by object (``ix_osm_tag_changes_object``), so its cost follows the country
+    and not the whole change table; a place counts once however many of its tags changed, and a deleted object's earlier rows fall out with it.
+    """
+    from sqlalchemy import exists, func, select
+
+    from src.osm.lane_models import OsmDiffRun, OsmTagChange
+    from src.osm.lane_models import osm_objects_table as t
+
+    # No change file was ever applied to this country: there is nothing to find, and probing every place for it would cost the same as finding it.
+    if s.execute(select(OsmDiffRun.id).where(OsmDiffRun.alpha3 == alpha3, OsmDiffRun.diff_timestamp.is_not(None)).limit(1)).first() is None:
+        return 0
+    tc = OsmTagChange.__table__
+    hit = exists().where(tc.c.osm_type == t.c.osm_type, tc.c.osm_id == t.c.osm_id, tc.c.country_alpha3 == alpha3, tc.c.object_event.is_(None), tc.c.diff_timestamp.is_not(None))
+    return int(s.execute(select(func.count()).select_from(t).where(_poi(alpha3), hit)).scalar() or 0)
+
+
+def _has_change_rows_table(s) -> bool:
+    """The lane has ``osm_tag_changes`` with the columns :func:`changed_places` reads (an older lane has neither, and then nothing is counted)."""
+    from sqlalchemy import inspect
+
+    insp = inspect(s.get_bind())
+    if "osm_tag_changes" not in insp.get_table_names():
+        return False
+    return {"country_alpha3", "object_event"} <= {c["name"] for c in insp.get_columns("osm_tag_changes")}
+
+
 def compute_part(s, alpha3: str, part: str, *, days: list[list] | None = None, reference=None) -> dict[str, Any]:
     """THE definition of what one reader counts, from ``osm_objects`` now: ``{"counts": {name: n}, "values": {key: [[text, n]]}, "days": [[day, n]]}``.
 
@@ -157,6 +191,8 @@ def compute_part(s, alpha3: str, part: str, *, days: list[list] | None = None, r
             out_days = []
         else:
             out_days = days if days is not None else _days(s, alpha3)
+        if _has_change_rows_table(s):
+            counts["changed"] = changed_places(s, alpha3)
     else:
         raise ValueError(f"unknown part {part!r}")
     return {"counts": counts, "values": values, "days": out_days}
