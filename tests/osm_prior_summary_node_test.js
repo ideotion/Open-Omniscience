@@ -123,5 +123,18 @@ const computed = (state, extra) => ({ available: true, source: "computed", vinta
   for (let i = 0; i < 4; i++) await tick();
   assert.deepStrictEqual(R.calls, ["POST /api/osm/countries/XXX/prior-summary"]);
 
+  // the current places' summary is its own build with its own route, asked once per country beside the prior's (R439)
+  R.calls.length = 0;
+  R.answers.length = 0;
+  let places = 0;
+  R.answers.push({ started: true, status: "building" }, { started: true, status: "building" }, { state: "current", building: false }, { state: "current", building: false });   // in call order
+  R._osmPriorEnsure("PPP", computed("not-built"), () => { places++; }, "profile", "places-summary");
+  R._osmPriorEnsure("PPP", computed("not-built"), () => { places++; }, "geography", "places-summary");   // a second surface: told, not sent again
+  R._osmPriorEnsure("PPP", computed("not-built"), go, "trends");                                          // the prior of the same country is a different build
+  for (let i = 0; i < 8; i++) await tick();
+  assert.deepStrictEqual(R.calls, ["POST /api/osm/countries/PPP/places-summary", "POST /api/osm/countries/PPP/prior-summary", "GET /api/osm/countries/PPP/places-summary", "GET /api/osm/countries/PPP/prior-summary"],
+    "the two builds are asked separately, each once");
+  assert.strictEqual(places, 2, "both surfaces waiting on the places summary were told");
+
   console.log("all checks passed");
 })().catch((e) => { console.error(e); process.exit(1); });

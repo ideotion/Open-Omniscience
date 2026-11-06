@@ -55,6 +55,8 @@ const src =
   "function $(id) { return els[id]; }\n" +
   "async function api(u) { apiCalls.push(u); return apiAnswer(u); }\n" +
   "async function ooMap(host, opts) { mapCalls.push({ host, opts }); }\n" +
+  "var asks = [];\n" +
+  "function _osmPriorEnsure(a3, p, cb, tag, what) { asks.push([a3, p, tag, what]); }   // the request itself has its own test (osm_prior_summary_node_test.js)\n" +
   "function ooIsoDate(s) { return 'D(' + String(s == null ? '' : s).slice(0, 10) + ')'; }\n" +
   "function fmtNum(v, d) { return String(Math.round(v * 10) / 10); }\n" +
   "function osmCompTf(s, v) { return s.replace(/\\{(\\w+)\\}/g, (_, k) => v[k]); }\n" +
@@ -67,7 +69,7 @@ const src =
   "let _osmGeog = null, _osmGeogLevel = 'countries', _osmGeogMeasure = 'places', _osmGeogForm = 'count', _osmGeogSeq = 0;\n" +
   "let _osmGeogDone = [], _osmGeogSig = '', _osmGeogShellSig = '';\n" +
   FUNCS.map(extract).join("\n") + "\n" +
-  "module.exports = { " + FUNCS.join(", ") + ", mapCalls, apiCalls, els, out,\n" +
+  "module.exports = { " + FUNCS.join(", ") + ", mapCalls, apiCalls, asks, els, out,\n" +
   "  set(o) { if ('geog' in o) _osmGeog = o.geog; if ('level' in o) _osmGeogLevel = o.level; if ('measure' in o) _osmGeogMeasure = o.measure; if ('form' in o) _osmGeogForm = o.form;\n" +
   "    if ('comp' in o) _osmComp = o.comp; if ('answer' in o) apiAnswer = o.answer; if ('seq' in o) _osmGeogSeq = o.seq; },\n" +
   "  get() { return { level: _osmGeogLevel, measure: _osmGeogMeasure, form: _osmGeogForm, geog: _osmGeog, seq: _osmGeogSeq }; } };";
@@ -264,6 +266,14 @@ const lastMap = () => R.mapCalls[R.mapCalls.length - 1];
   release({ status: "ok", areas: [], measures: [], method: "OLD", caveat: "OLD" });
   await older;
   assert.strictEqual(R.get().geog.method, "METHOD", "an older read overwrote a newer one");
+  // every country's figures say where they came from: a computed one asks for the stored summary (once per surface), a stored one does not
+  R.asks.length = 0;
+  R.set({ answer: () => ({ status: "ok", measures: [], method: "M", caveat: "C", areas: [
+    { alpha3: "AAA", places_summary: { source: "computed", state: "not-built", building: false } },
+    { alpha3: "BBB", places_summary: { source: "summary", state: "current", building: false } },
+    { alpha3: "CCC" } ] }) });
+  await R.loadOsmGeography(DONE);
+  assert.deepStrictEqual(R.asks.map((a) => [a[0], a[1] && a[1].source, a[2], a[3]]), [["AAA", "computed", "geography", "places-summary"], ["BBB", "summary", "geography", "places-summary"], ["CCC", null, "geography", "places-summary"]]);
   await R.loadOsmGeography([]);
   assert.strictEqual(sec.hidden, true);
   assert.strictEqual(R.get().geog, null, "an empty lane kept its old geography");

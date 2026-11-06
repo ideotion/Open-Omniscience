@@ -56,6 +56,7 @@ def _seed():
         upd("r", 101, t_check_date="2025-06", timestamp=None)
         upd("n", 8, t_brand="Acme", t_brand_wikidata="Q1")   # a place, not a place with metadata: never counted
         s.execute(T.insert().values(osm_type="n", osm_id=900, country_alpha3="ZZZ", kind="poi", notable=False, t_check_date="", timestamp=None))
+    _osm_lane_helpers.forget_places_summary()   # the edits above are a writer the stored summary's key cannot see (see the helper)
 
 
 def _snap(surface, **kw):

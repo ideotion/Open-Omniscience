@@ -406,6 +406,11 @@ def ingest_country(
             report.view_index = build_view_index(alpha3)
         except Exception as exc:  # noqa: BLE001 - the cut is complete; only its view index is missing
             log_failure(_LOG, f"the {alpha3} view index was not built", exc, level=logging.WARNING)
+        # R439: the counts the brands, channels, freshness and geography readers derive their answers from, once, now that the places are final.
+        # Never fails the cut: the readers compute from the places (and say so) until it exists.
+        from src.osm.places_summary import build_quietly
+
+        build_quietly(alpha3)
     return report
 
 

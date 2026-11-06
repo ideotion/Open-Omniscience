@@ -65,7 +65,7 @@ const src =
   "function osmCompTf(s, v) { return s.replace(/\\{(\\w+)\\}/g, (_, k) => v[k]); }\n" +
   "function _osmPickLabel(cc, name) { return 'LABEL(' + cc + ')'; }\n" +
   "var priorAsks = [];\n" +
-  "function _osmPriorEnsure(a3, prior) { priorAsks.push(a3); }   // the request for a summary has its own test (osm_prior_summary_node_test.js)\n" +
+  "function _osmPriorEnsure(a3, prior, cb, tag, what) { priorAsks.push([a3, what || 'prior-summary', prior && prior.source]); }   // the request for a summary has its own test (osm_prior_summary_node_test.js)\n" +
   extractConst("OSM_COMP_KEYS", "];\n") + "\n" +
   extractConst("OSM_PROFILE_TABS", "];\n") + "\n" +
   extractConst("OSM_SOCIAL_NAMES", "};\n") + "\n" +
@@ -78,7 +78,7 @@ const src =
   "var document = { querySelector(sel) { const m = /data-osm-profile-body=\"(\\d+)\"/.exec(sel); return m ? (bodies[m[1]] = bodies[m[1]] || { innerHTML: '' }) : null; },\n" +
   "  querySelectorAll(sel) { return chartHosts.filter((h) => sel.indexOf('=\"' + h.idx + '\"') !== -1); } };\n" +
   FUNCS.map(extract).join("\n") + "\n" +
-  "module.exports = { " + FUNCS.join(", ") + ", drawn, apiCalls, subtabs, bodies, els,\n" +
+  "module.exports = { " + FUNCS.join(", ") + ", drawn, apiCalls, priorAsks, subtabs, bodies, els,\n" +
   "  set(o) { if ('done' in o) _osmProfileDone = o.done; if ('cache' in o) _osmProfileCache = o.cache; if ('tab' in o) _osmProfileTab = o.tab; if ('keys' in o) _osmProfileKeys = o.keys;\n" +
   "    if ('limit' in o) _osmProfileLimit = o.limit; if ('seq' in o) _osmProfileSeq = o.seq; if ('navs' in o) _osmProfileNavs = o.navs; if ('hosts' in o) chartHosts = o.hosts; if ('answer' in o) apiAnswer = o.answer; },\n" +
   "  get() { return { tab: _osmProfileTab, keys: _osmProfileKeys, limit: _osmProfileLimit, seq: _osmProfileSeq, cache: _osmProfileCache }; } };";
@@ -271,6 +271,11 @@ assert.strictEqual(R.drawn.length, 0, "an empty block drew a chart");
   await Promise.all([R._osmProfileFetch(3), R._osmProfileFetch(3)]);
   assert.strictEqual(R.apiCalls.length, 1, "two loops asked for the same country twice");
   assert.ok(!R.bodies[0].innerHTML.includes("Loading…"), "a skipped read was never drawn");
+  // the snapshot says where its counts came from: computed ones ask for the stored summary of the current places, stored ones are asked about nothing
+  R.set({ done: [LANE], tab: "brands", cache: {}, seq: 5, answer: () => ({ status: "ok", snapshot: { source: "computed", summary: { state: "not-built" } } }) });
+  R.priorAsks.length = 0;
+  await R._osmProfileFetch(5);
+  assert.ok(R.priorAsks.some((a) => a[0] === "ZZZ" && a[1] === "places-summary" && a[2] === "computed"), "the profile read never asked for the places summary: " + JSON.stringify(R.priorAsks));
   // a failed read is a named state, not a hole
   R.set({ done: [LANE, { alpha3: "YYY", name: "Yland" }], tab: "channels", cache: {}, seq: 1, answer: () => { throw new Error("boom"); } });
   await R._osmProfileFetch(1);

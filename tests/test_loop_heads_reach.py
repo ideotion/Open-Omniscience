@@ -68,6 +68,7 @@ _LISTED: dict[str, tuple[frozenset[str], str]] = {
     "src/osm/history.py::ingest_history": (frozenset({"script"}), "scripts/osm_history_ingest.py, an operator tool that ingests one history file and exits"),
     "src/osm/pbf.py::_records": (frozenset({"script"}), "scripts/build_admin_boundaries.py, scripts/osm_history_ingest.py (ingest_history) and scripts/osm_ingest.py (ingest_country) read a .pbf through the reader and exit"),
     "src/osm/places.py::build_search_index": (frozenset({"script"}), "scripts/osm_ingest.py, an operator tool that ingests one country and exits"),
+    "src/osm/places_summary.py::build_summary": (frozenset({"script"}), "scripts/osm_ingest.py (ingest_country builds the current-places summary when a cut finishes), an operator tool that cuts one country and exits; the page reaches it only through a POST that starts a thread, and the daily apply through build_quietly"),
     "src/osm/prior_summary.py::build_summary": (frozenset({"script"}), "scripts/osm_history_ingest.py (ingest_history builds the planet-prior summary when the cut finishes), an operator tool that ingests one history file and exits; the page reaches it only through a POST that starts a thread"),
     "src/osm/reader.py::available_memory_bytes": (frozenset({"script"}), "scripts/osm_ingest.py (as above) and scripts/osm_reference_run.py (the reference-VM run, gate item 8), operator tools that run once and exit"),
     "src/osm/view.py::build_view_index": (frozenset({"script"}), "scripts/osm_ingest.py (as above)"),

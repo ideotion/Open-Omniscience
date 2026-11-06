@@ -35,7 +35,7 @@ import logging
 from typing import Any
 
 from src.monitoring.secret_scrub import log_failure
-from src.osm.profile import _filled, _sum_if, _years_before
+from src.osm.profile import _filled, _years_before
 from src.osm.trends import _day, _iso, _obj, _window
 
 _LOG = logging.getLogger(__name__)
@@ -85,11 +85,19 @@ def countries_view() -> dict[str, Any]:
         return {"status": "unreadable", "detail": "the OpenStreetMap geography could not be read"}
 
 
+def _edited_within_year(days: list[list], reference) -> int:
+    """Places whose current version is dated within a year back from ``reference``, never after it: the day histogram cut by :func:`edited_within_year`'s own comparisons."""
+    rd = reference.date()
+    newest, oldest = rd.isoformat(), _years_before(rd, 1).isoformat()
+    return sum(int(n) for day, n in days if oldest < day <= newest)
+
+
 def _countries() -> dict[str, Any]:
-    from sqlalchemy import func, inspect, select
+    from sqlalchemy import inspect, select
 
     from src.osm.lane_models import OsmCountry, OsmTagChange
     from src.osm.lane_models import osm_objects_table as t
+    from src.osm.places_summary import part_for
     from src.versioned import store
 
     if not store.lane_exists("osm"):
@@ -103,18 +111,16 @@ def _countries() -> dict[str, Any]:
                 not_cut.append(c.alpha3)
                 continue
             ref = c.diff_timestamp or c.extract_vintage
-            poi = (t.c.country_alpha3 == c.alpha3) & (t.c.kind == "poi")
-            cols = [func.count(), _sum_if(brand_filled()), _sum_if(check_date_filled())]
-            if ref is not None:
-                cols.append(_sum_if(edited_within_year(ref)))
-            got = s.execute(select(*cols).where(poi)).one()
-            values: dict[str, int | None] = {"places": int(got[0] or 0), "brand": int(got[1] or 0), "checked": int(got[2] or 0)}
+            poi = (t.c.country_alpha3 == c.alpha3) & (t.c.kind == "poi")   # the changed measure below joins on it
+            data, how = part_for(s, c.alpha3, "geography", c, have)
+            counts = data["counts"]
+            values: dict[str, int | None] = {"places": int(counts.get("n", 0)), "brand": int(counts.get("brand_any", 0)), "checked": int(counts.get("checked", 0))}
             reasons: dict[str, str] = {}
             if ref is None:
                 values["edited_1y"] = None
                 reasons["edited_1y"] = "no-reference"
             else:
-                values["edited_1y"] = int(got[3] or 0)
+                values["edited_1y"] = _edited_within_year(data["days"], ref)
             w = _window(s, c.alpha3, have)
             since = None
             if w["state"] == "ok":
@@ -143,6 +149,7 @@ def _countries() -> dict[str, Any]:
                     "reasons": reasons,
                     "vintage": {"extract": _iso(c.extract_vintage), "last_diff": _iso(c.diff_timestamp), "reference": _iso(ref)},
                     "observed_since": since,
+                    "places_summary": {"source": how["source"], **{k: v for k, v in how.items() if k != "source"}},
                 }
             )
     return {"status": "ok", "measures": list(MEASURES), "areas": areas, "not_cut": not_cut, "method": METHOD, "caveat": CAVEAT}

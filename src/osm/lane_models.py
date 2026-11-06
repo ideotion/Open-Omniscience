@@ -10,7 +10,7 @@ ONLY through ``src.versioned.store.create_schema`` (``_lane_specific_models("osm
 opens the file through the ONE keyed factory. A lane file gets its own tables and no other
 lane's.
 
-TWELVE TABLES (the fourth and fifth S05-04 S4's, the sixth and seventh S5's, the eighth and ninth S6's, the tenth S06-01 S1's, the last two R435's), two
+SIXTEEN TABLES (the fourth and fifth S05-04 S4's, the sixth and seventh S5's, the eighth and ninth S6's, the tenth S06-01 S1's, the next two R435's, the last four R439's), two
 full-text indexes and one R*Tree (``src/osm/view.py``).
 
 * ``osm_objects`` -- one row per kept object of an ingested country: identity (type + id),
@@ -427,6 +427,72 @@ class OsmHistoryMonthly(LaneBase):
     n: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
+class OsmPlacesSummary(LaneBase):
+    """The header of one stored summary of a country's CURRENT places: what it was computed from (R439).
+
+    One row per country covers all four parts (brands, channels, freshness, geography), because they are built in one pass. It is served only
+    when ``rule_version`` equals the code's AND ``cut_finished_at`` and ``diff_sequence`` equal the country row's now: a re-cut or a daily
+    apply changes one of them, and the reader then computes from ``osm_objects`` and says so.
+    """
+
+    __tablename__ = "osm_places_summaries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alpha3: Mapped[str] = mapped_column(String(3), nullable=False, unique=True)
+    #: A digest of the rule that produced the rows (``places_summary.rule_version``): the key sets and the version of the SQL.
+    rule_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: The country row's ``finished_at`` and ``diff_sequence`` when the pass started.
+    cut_finished_at: Mapped[datetime | None] = mapped_column(LaneUTCDateTime(), nullable=True)
+    diff_sequence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    built_at: Mapped[datetime] = mapped_column(LaneUTCDateTime(), nullable=False, default=_utcnow)
+    #: Wall-clock seconds the pass over the places took.
+    seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class OsmPlacesCount(LaneBase):
+    """One count of a stored summary (R439): ``part`` is brands | channels | freshness | geography, ``name`` what is counted."""
+
+    __tablename__ = "osm_places_counts"
+    __table_args__ = (Index("ix_osm_places_counts_lookup", "alpha3", "part"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alpha3: Mapped[str] = mapped_column(String(3), nullable=False)
+    part: Mapped[str] = mapped_column(String(12), nullable=False)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    n: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class OsmPlacesValue(LaneBase):
+    """One distinct value of a curated tag and how many places carry exactly that text (R439); every value is kept, the reader applies its limit."""
+
+    __tablename__ = "osm_places_values"
+    __table_args__ = (Index("ix_osm_places_values_lookup", "alpha3", "part"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alpha3: Mapped[str] = mapped_column(String(3), nullable=False)
+    part: Mapped[str] = mapped_column(String(12), nullable=False)
+    key: Mapped[str] = mapped_column(String(64), nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    n: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class OsmPlacesDay(LaneBase):
+    """The last-edit histogram of a stored summary (R439): places whose current version is dated ``day`` (``YYYY-MM-DD``).
+
+    Stored by day, not as age buckets: the buckets are cut from a reference date that moves with every change file.
+    """
+
+    __tablename__ = "osm_places_days"
+    __table_args__ = (Index("ix_osm_places_days_lookup", "alpha3", "part"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alpha3: Mapped[str] = mapped_column(String(3), nullable=False)
+    part: Mapped[str] = mapped_column(String(12), nullable=False)
+    day: Mapped[str] = mapped_column(String(10), nullable=False)
+    n: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
 OSM_LANE_MODELS: tuple[type[LaneBase], ...] = (
     OsmObject,
     OsmCountry,
@@ -440,6 +506,10 @@ OSM_LANE_MODELS: tuple[type[LaneBase], ...] = (
     OsmDiffRun,
     OsmHistorySummary,
     OsmHistoryMonthly,
+    OsmPlacesSummary,
+    OsmPlacesCount,
+    OsmPlacesValue,
+    OsmPlacesDay,
 )
 
 

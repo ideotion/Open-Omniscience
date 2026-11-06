@@ -299,3 +299,34 @@ def history() -> dict:
         "method": METHOD,
         "gap": GAP,
     }
+
+
+@router.get("/countries/{code}/places-summary")
+def places_summary_state(code: str) -> dict:
+    """Is the stored summary of this country's current places current, being built, or absent? Header only: read-only, local, no request."""
+    from src.osm.ingest import country_codes
+    from src.osm.places_summary import summary_state
+
+    try:
+        _a2, a3 = country_codes(code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
+    return summary_state(a3)
+
+
+@router.post("/countries/{code}/places-summary")
+def build_places_summary(code: str) -> dict:
+    """Build the stored summary of a country's current places, on a thread of its own (local work, no request).
+
+    The page asks for this once per country per session when it finds a country without a current summary: a GET never writes, so the build
+    is a POST. Idempotent: a country already being built answers ``building``, one whose summary is current is skipped by the thread, and
+    builds of several countries run one at a time.
+    """
+    from src.osm.ingest import country_codes
+    from src.osm.places_summary import start_build
+
+    try:
+        _a2, a3 = country_codes(code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
+    return start_build(a3)
