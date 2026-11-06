@@ -36,7 +36,7 @@ from typing import Any
 
 from src.monitoring.secret_scrub import log_failure
 from src.osm.profile import _filled, _years_before
-from src.osm.trends import _day, _iso, _obj, _window
+from src.osm.trends import _day, _iso, _window
 
 _LOG = logging.getLogger(__name__)
 
@@ -93,11 +93,10 @@ def _edited_within_year(days: list[list], reference) -> int:
 
 
 def _countries() -> dict[str, Any]:
-    from sqlalchemy import inspect, select
+    from sqlalchemy import inspect
 
-    from src.osm.lane_models import OsmCountry, OsmTagChange
-    from src.osm.lane_models import osm_objects_table as t
-    from src.osm.places_summary import part_for
+    from src.osm.lane_models import OsmCountry
+    from src.osm.places_summary import changed_places, part_for
     from src.versioned import store
 
     if not store.lane_exists("osm"):
@@ -111,7 +110,6 @@ def _countries() -> dict[str, Any]:
                 not_cut.append(c.alpha3)
                 continue
             ref = c.diff_timestamp or c.extract_vintage
-            poi = (t.c.country_alpha3 == c.alpha3) & (t.c.kind == "poi")   # the changed measure below joins on it
             data, how = part_for(s, c.alpha3, "geography", c, have, reference=ref)
             counts = data["counts"]
             values: dict[str, int | None] = {"places": int(counts.get("n", 0)), "brand": int(counts.get("brand_any", 0)), "checked": int(counts.get("checked", 0))}
@@ -125,17 +123,9 @@ def _countries() -> dict[str, Any]:
             since = None
             if w["state"] == "ok":
                 since = w["tracked"]["since"]
-                tc = OsmTagChange.__table__
-                # Places, as the other measures count them: a change row is written for every kept class (roads, buildings...), so the row
-                # is joined to its object's own row, which must be a place of this country (a deleted object's earlier rows fall out with it).
-                values["changed"] = int(
-                    s.execute(
-                        select(_obj(tc))
-                        .select_from(tc.join(t, (t.c.osm_type == tc.c.osm_type) & (t.c.osm_id == tc.c.osm_id)))
-                        .where(tc.c.country_alpha3 == c.alpha3, tc.c.object_event.is_(None), tc.c.diff_timestamp.is_not(None), poi)
-                    ).scalar()
-                    or 0
-                )
+                # Places, as the other measures count them (``places_summary.changed_places`` is the one definition): stored with the summary when it is
+                # current, counted now otherwise, and counted now when the summary was built by a lane that had no change rows yet.
+                values["changed"] = int(counts["changed"]) if "changed" in counts else changed_places(s, c.alpha3)
             else:
                 values["changed"] = None
                 reasons["changed"] = w["state"]
