@@ -235,70 +235,78 @@ def _share(n_part: int, n: int) -> float | None:
 # --------------------------------------------------------------------------- #
 
 
-def _ranked(s, t, key: str, poi, limit: int) -> dict[str, Any]:
-    """The values of one curated tag ranked by the number of places carrying exactly that text; ``total`` is the distinct values, ``rows`` the first ``limit``."""
-    from sqlalchemy import func, select
+def _ranked_from(rows: list[list], key: str, limit: int) -> dict[str, Any]:
+    """The values of one curated tag ranked by the number of places carrying exactly that text; ``total`` is the distinct values, ``rows`` the first ``limit``.
 
-    col = t.c[column_name(key)]
-    filled = _filled(key)
-    total = int(s.execute(select(func.count(func.distinct(col))).where(poi, filled)).scalar() or 0)
-    rows = s.execute(select(col, func.count().label("n")).where(poi, filled).group_by(col).order_by(func.count().desc(), col).limit(limit)).all()
-    return {"key": key, "total": total, "shown": len(rows), "rows": [{"value": v, "places": int(n)} for v, n in rows]}
+    ``rows`` arrive most first, then by the text (``places_summary._values``), so the ranking is a slice.
+    """
+    return {"key": key, "total": len(rows), "shown": min(limit, len(rows)), "rows": [{"value": v, "places": int(n)} for v, n in rows[:limit]]}
 
 
-def _snapshot_brands(s, alpha3: str, limit: int) -> dict[str, Any]:
-    from sqlalchemy import func, select
+def _source(info: dict[str, Any]) -> dict[str, Any]:
+    """Where the snapshot's counts came from: the stored summary of the current places, or computed from them on this read (and why)."""
+    return {"source": info["source"], "summary": {k: v for k, v in info.items() if k != "source"}}
 
-    from src.osm.lane_models import osm_objects_table as t
 
-    poi = (t.c.country_alpha3 == alpha3) & (t.c.kind == "poi")
-    n, *present = s.execute(select(func.count(), *(_sum_if(_filled(name)) for name, _ in BRAND_GROUPS)).where(poi)).one()
-    n = int(n)
+def _snapshot_brands(s, alpha3: str, limit: int, country, have: set[str]) -> dict[str, Any]:
+    from src.osm.places_summary import part_for
+
+    data, info = part_for(s, alpha3, "brands", country, have)
+    c = data["counts"]
+    n = int(c.get("n", 0))
     return {
         "n": n,
         "tags": [
-            {"key": name, "present": int(p or 0), "share": _share(int(p or 0), n), "group": "brand" if name.startswith("brand") else "operator"}
-            for (name, _), p in zip(BRAND_GROUPS, present, strict=True)
+            {"key": name, "present": c.get(f"present:{name}", 0), "share": _share(c.get(f"present:{name}", 0), n), "group": "brand" if name.startswith("brand") else "operator"}
+            for name, _ in BRAND_GROUPS
         ],
         "limit": limit,
-        "rankings": [_ranked(s, t, "brand", poi, limit), _ranked(s, t, "brand:wikidata", poi, limit)],
+        "rankings": [_ranked_from(data["values"].get(key, []), key, limit) for key in ("brand", "brand:wikidata")],
+        **_source(info),
     }
 
 
-def _snapshot_channels(s, alpha3: str) -> dict[str, Any]:
-    from sqlalchemy import case, func, or_, select
+def _snapshot_channels(s, alpha3: str, country, have: set[str]) -> dict[str, Any]:
+    from src.osm.places_summary import part_for
 
-    from src.osm.completeness import KEYS, _has
-    from src.osm.lane_models import osm_objects_table as t
-
-    poi = (t.c.country_alpha3 == alpha3) & (t.c.kind == "poi")
-    twins = dict(KEYS)   # site, phone and e-mail are analytic 1's definition (opening hours is not a contact channel)
-    base = {k: _has(k, twins[k]) for k in ("website", "phone", "email")}
-    social_any = case((or_(*[_contact_filled(sv) for sv in SOCIAL_SERVICES]), 1), else_=0)
-    n, *rest = s.execute(
-        select(func.count(), *(func.sum(e) for e in base.values()), func.sum(social_any), *(_sum_if(_contact_filled(sv)) for sv in SOCIAL_SERVICES)).where(poi)
-    ).one()
-    n = int(n)
-    names = [*base.keys(), "social"]
-    counts = [int(x or 0) for x in rest]
-    channels = [{"key": k, "present": c, "share": _share(c, n)} for k, c in zip(names, counts[: len(names)], strict=True)]
-    services = [{"key": sv, "present": c, "share": _share(c, n)} for sv, c in zip(SOCIAL_SERVICES, counts[len(names) :], strict=True)]
-    carried = (sum(base.values()) + social_any).label("c")
-    mix_rows = s.execute(select(carried, func.count()).where(poi).group_by(carried)).all()
-    by = {int(c): int(k) for c, k in mix_rows}
-    mix = [{"channels": i, "places": by.get(i, 0), "share": _share(by.get(i, 0), n)} for i in range(len(names) + 1)]
-    return {"n": n, "channels": channels, "social": services, "mix": mix}
+    data, info = part_for(s, alpha3, "channels", country, have)
+    c = data["counts"]
+    n = int(c.get("n", 0))
+    names = ["website", "phone", "email", "social"]
+    channels = [{"key": k, "present": c.get(k, 0), "share": _share(c.get(k, 0), n)} for k in names]
+    services = [{"key": sv, "present": c.get(f"social:{sv}", 0), "share": _share(c.get(f"social:{sv}", 0), n)} for sv in SOCIAL_SERVICES]
+    mix = [{"channels": i, "places": c.get(f"mix:{i}", 0), "share": _share(c.get(f"mix:{i}", 0), n)} for i in range(len(names) + 1)]
+    return {"n": n, "channels": channels, "social": services, "mix": mix, **_source(info)}
 
 
-def _snapshot_freshness(s, alpha3: str, ref: datetime | None) -> dict[str, Any]:
-    from sqlalchemy import case, func, select
+def _age_counts(days: list[list], rd: date) -> tuple[dict[str, int], int]:
+    """The last-edit histogram cut into the age buckets from the reference date, by the same day-text comparisons the SQL made; and the places counted."""
+    c1, c2, c5 = (c.isoformat() for c in (_years_before(rd, y) for y in AGE_YEARS))
+    r = rd.isoformat()
+    buckets = dict.fromkeys(("after", *AGE_BUCKETS), 0)
+    stamped = 0
+    for day, n in days:
+        stamped += n
+        if day > r:
+            buckets["after"] += n   # an edit dated after the vintage: named, never counted as recent
+        elif day > c1:
+            buckets["within_1y"] += n
+        elif day > c2:
+            buckets["y1_2"] += n
+        elif day > c5:
+            buckets["y2_5"] += n
+        else:
+            buckets["over_5y"] += n
+    return buckets, stamped
 
-    from src.osm.lane_models import osm_objects_table as t
 
-    poi = (t.c.country_alpha3 == alpha3) & (t.c.kind == "poi")
-    n = int(s.execute(select(func.count()).where(poi)).scalar() or 0)
-    carrying = int(s.execute(select(func.count()).where(poi, _filled("check_date"))).scalar() or 0)
-    out: dict[str, Any] = {"n": n, "check_date": {"present": carrying, "share": _share(carrying, n)}, "age_years": list(AGE_YEARS)}
+def _snapshot_freshness(s, alpha3: str, ref: datetime | None, country, have: set[str]) -> dict[str, Any]:
+    from src.osm.places_summary import part_for
+
+    data, info = part_for(s, alpha3, "freshness", country, have)
+    n = int(data["counts"].get("n", 0))
+    carrying = int(data["counts"].get("check_date", 0))
+    out: dict[str, Any] = {"n": n, "check_date": {"present": carrying, "share": _share(carrying, n)}, "age_years": list(AGE_YEARS), **_source(info)}
     if ref is None:
         reason = {"available": False, "reason": "no-reference", "detail": "neither the extract nor a change file states a date to measure the ages from"}
         out["last_edit"] = reason
@@ -306,27 +314,13 @@ def _snapshot_freshness(s, alpha3: str, ref: datetime | None) -> dict[str, Any]:
         return out
     rd = ref.date()
     cuts = [_years_before(rd, y) for y in AGE_YEARS]
-    c1, c2, c5 = (c.isoformat() for c in cuts)
-    day = _day(t.c.timestamp)
-    stamped = t.c.timestamp.is_not(None)
-    edges = (
-        ("after", day > rd.isoformat()),   # an edit dated after the vintage: named, never counted as recent
-        ("within_1y", (day <= rd.isoformat()) & (day > c1)),
-        ("y1_2", (day <= c1) & (day > c2)),
-        ("y2_5", (day <= c2) & (day > c5)),
-        ("over_5y", day <= c5),
-    )
-    sums = s.execute(
-        select(*(func.sum(case((stamped & cond, 1), else_=0)) for _k, cond in edges), func.sum(case((stamped, 0), else_=1))).where(poi)
-    ).one()
-    buckets = {k: int(v or 0) for (k, _c), v in zip(edges, sums[:5], strict=True)}
+    buckets, stamped = _age_counts(data["days"], rd)
     out["last_edit"] = {"available": True, "buckets": [{"bucket": k, "places": buckets[k], "share": _share(buckets[k], n)} for k in (*AGE_BUCKETS, "after")],
-                        "no_timestamp": int(sums[5] or 0)}
-    # check_date: group by the stored text (a few thousand distinct dates at most), aged in Python.
+                        "no_timestamp": n - stamped}
+    # check_date: the stored text of each distinct value (a few thousand at most), aged in Python.
     counts = dict.fromkeys((*AGE_BUCKETS, "after"), 0)
     unreadable = 0
-    col = t.c[column_name("check_date")]
-    for value, k in s.execute(select(col, func.count()).where(poi, _filled("check_date")).group_by(col)):
+    for value, k in data["values"].get("check_date", []):
         d = parse_check_date(value)
         if d is None:
             unreadable += int(k)
@@ -448,11 +442,11 @@ def _build(alpha3: str, surface: str, limit: int) -> dict[str, Any]:
         ref = country.diff_timestamp or country.extract_vintage
         vintage = {"extract": _iso(country.extract_vintage), "last_diff": _iso(country.diff_timestamp), "reference": _iso(ref)}
         if surface == "brands":
-            snap = _snapshot_brands(s, alpha3, limit)
+            snap = _snapshot_brands(s, alpha3, limit, country, have)
         elif surface == "channels":
-            snap = _snapshot_channels(s, alpha3)
+            snap = _snapshot_channels(s, alpha3, country, have)
         else:
-            snap = _snapshot_freshness(s, alpha3, ref)
+            snap = _snapshot_freshness(s, alpha3, ref, country, have)
         w = _window(s, alpha3, have)
         if w["state"] == "ok":
             changes = _changes(s, alpha3, surface, w)

@@ -108,6 +108,7 @@ _EMPTY_BRANCH: dict[str, str] = {
     "/api/osm/countries/{code}/trends": "reads the OpenStreetMap lane store: lane-never-run",
     "/api/osm/countries/{code}/profile/{surface}": "reads the OpenStreetMap lane store: lane-never-run",
     "/api/osm/countries/{code}/prior-summary": "reads the OpenStreetMap lane store: lane-never-run",
+    "/api/osm/countries/{code}/places-summary": "reads the OpenStreetMap lane store: lane-never-run",
 }
 
 # Routes whose answer must name something only the seed holds, so a seed that stopped reaching its handler fails here by name.
@@ -380,6 +381,7 @@ def _urls(ids: _Ids) -> dict[str, str]:
         "/api/osm/countries/{code}/completeness": "/api/osm/countries/FR/completeness",
         "/api/osm/countries/{code}/trends": "/api/osm/countries/FR/trends",
         "/api/osm/countries/{code}/prior-summary": "/api/osm/countries/FR/prior-summary",
+        "/api/osm/countries/{code}/places-summary": "/api/osm/countries/FR/places-summary",
         "/api/osm/countries/{code}/profile/{surface}": "/api/osm/countries/FR/profile/brands",
         "/api/osm/search": "/api/osm/search?q=paris",
         "/api/osm/view": "/api/osm/view?w=2.0&s=48.0&e=3.0&n=49.0",

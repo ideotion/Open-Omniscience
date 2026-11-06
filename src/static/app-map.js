@@ -3587,14 +3587,16 @@
     }
     // A cut without a current summary asks for one, ONCE per country per session (a GET never writes, so this is a POST), then waits on the
     // cheap state read and calls back when it is current. A build that ends without one leaves the computed answer, said as such.
-    const _osmPriorAsked = new Map();   // alpha3 -> {surface tag -> callback}: every surface waiting on that country's build, once each
-    function _osmPriorEnsure(alpha3, p, onCurrent, tag) {
+    const _osmPriorAsked = new Map();   // "what:alpha3" -> {surface tag -> callback}: every surface waiting on that build, once each
+    // `what` names the summary: the monthly planet prior ("prior-summary", the default) or the current places ("places-summary", v0.6.0 R439).
+    function _osmPriorEnsure(alpha3, p, onCurrent, tag, what) {
       if (!alpha3 || !p || !p.available || p.source !== "computed" || !p.summary) return;
       if (["not-built", "stale-cut", "stale-rule", "no-summary-table"].indexOf(p.summary.state) === -1) return;   // the build adds the table to an older lane
-      if (_osmPriorAsked.has(alpha3)) { _osmPriorAsked.get(alpha3)[tag || ""] = onCurrent; return; }   // asked already: this surface is told too (a re-render replaces its own callback)
+      const kind = what || "prior-summary", asked = `${kind}:${alpha3}`;
+      if (_osmPriorAsked.has(asked)) { _osmPriorAsked.get(asked)[tag || ""] = onCurrent; return; }   // asked already: this surface is told too (a re-render replaces its own callback)
       const waiting = { [tag || ""]: onCurrent };
-      _osmPriorAsked.set(alpha3, waiting);
-      const base = `/api/osm/countries/${encodeURIComponent(alpha3)}/prior-summary`;
+      _osmPriorAsked.set(asked, waiting);
+      const base = `/api/osm/countries/${encodeURIComponent(alpha3)}/${kind}`;
       (async () => {
         try { await api(base, { method: "POST" }); } catch (e) { return; }
         for (let i = 0; i < 180; i++) {
@@ -3728,6 +3730,10 @@
           Object.keys(_osmProfileCache).forEach((k) => { if (k.indexOf(a3 + "|") === 0) delete _osmProfileCache[k]; });
           _osmProfileFetch(_osmProfileSeq);
         }, "profile");
+        _osmPriorEnsure(a3, d.snapshot ? { available: true, source: d.snapshot.source, summary: d.snapshot.summary } : null, () => {   // the current places' summary is current now: read again
+          Object.keys(_osmProfileCache).forEach((k) => { if (k.indexOf(a3 + "|") === 0) delete _osmProfileCache[k]; });
+          _osmProfileFetch(_osmProfileSeq);
+        }, "profile", "places-summary");
         if (tab !== _osmProfileTab) return;   // another tab took over; its own fetch is running
       }
     }
@@ -3946,6 +3952,15 @@
       if (seq !== _osmGeogSeq) return;
       _osmGeog = d;
       _renderOsmGeography(done);
+      // Each country whose figures were computed on this read asks for its stored summary once; the view is read again when it is current.
+      // Builds finish one country at a time and a read computes every country still unbuilt, so the reads are coalesced into one.
+      ((d && d.areas) || []).forEach((a) => _osmPriorEnsure(a.alpha3, a.places_summary ? { available: true, source: a.places_summary.source, summary: a.places_summary } : null,
+        () => _osmGeogReloadSoon(done), "geography", "places-summary"));
+    }
+    let _osmGeogReloadTimer = null;
+    function _osmGeogReloadSoon(done) {
+      if (_osmGeogReloadTimer) return;   // one read already waits: it will see every build that finished before it
+      _osmGeogReloadTimer = setTimeout(() => { _osmGeogReloadTimer = null; loadOsmGeography(done); }, 4000);
     }
     // The 2 s count poll: redraw the figures only when the level in view has something new (a region count finishing), and leave the
     // controls alone, so an open dropdown is not closed under the reader and the map is not rebuilt on every tick.

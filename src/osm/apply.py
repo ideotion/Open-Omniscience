@@ -538,7 +538,7 @@ def _record_applied(s: Session, alpha3: str, region: str, seq: int, ts: datetime
 
 
 def _rebuild_indexes(alpha3: str, report: UpdateReport) -> None:
-    """The two indexes the cut builds at its end, rebuilt once after the run. A failure is logged and leaves them reading as not matching."""
+    """The two indexes the cut builds at its end, and the stored counts of the current places (R439), rebuilt once after the run. A failure is logged and leaves them reading as not matching (the counts, as computed)."""
     try:
         from src.osm.places import build_search_index
 
@@ -551,6 +551,10 @@ def _rebuild_indexes(alpha3: str, report: UpdateReport) -> None:
         report.view_index = build_view_index(alpha3)
     except Exception as exc:  # noqa: BLE001 - the update is applied; only its view index is missing
         log_failure(_LOG, f"the {alpha3} view index was not rebuilt after the update", exc, level=logging.WARNING)
+    # R439: the stored counts of the current places read as stale once the apply moved the country's position; rebuilt here, once per run (never fails the run).
+    from src.osm.places_summary import build_quietly
+
+    build_quietly(alpha3)
 
 
 def update_country(

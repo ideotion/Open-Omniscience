@@ -42,3 +42,18 @@ def osm_lane_dir(tmp_path, monkeypatch):
         yield tmp_path
     finally:
         store.dispose_all()
+
+
+def forget_places_summary() -> None:
+    """Drop the stored summary of the current places (R439) after a test edited ``osm_objects`` by hand.
+
+    The summary is keyed by the country row's ``finished_at`` and ``diff_sequence``, which the cut and the daily apply move together with the
+    places; a test that writes the places directly is a writer the key cannot see, so it says so here and the readers compute from the places.
+    """
+    import sqlalchemy as sa
+
+    from src.versioned import store
+
+    with store.lane_session("osm") as s:
+        for table in ("osm_places_summaries", "osm_places_counts", "osm_places_values", "osm_places_days"):
+            s.execute(sa.text(f"DELETE FROM {table}"))
