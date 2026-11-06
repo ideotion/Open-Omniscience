@@ -489,19 +489,33 @@ def test_a_country_with_no_change_file_stores_zero_but_shows_none_with_its_reaso
     assert got["values"]["changed"] is None and got["reasons"]["changed"] == "no-daily-files", "a count that was never observed was shown as zero"
 
 
-def test_only_the_daily_apply_writes_the_change_rows(cut):
-    """The changed count rides the places summary's key only while nothing else writes ``osm_tag_changes``."""
+def test_only_the_daily_apply_writes_the_change_rows_and_the_run_rows(cut):
+    """The changed count rides the places summary's key only while nothing else writes ``osm_tag_changes`` or ``osm_diff_runs`` (the rows that say a window exists)."""
     import re
 
     write = re.compile(
-        r"\b(insert|update|delete)\(\s*OsmTagChange\b|OsmTagChange\.__table__\.(insert|update|delete)\(|\.add\(\s*OsmTagChange\b"
-        r"|\b(INSERT INTO|UPDATE|DELETE FROM) osm_tag_changes\b"
+        r"\b(insert|update|delete)\(\s*(OsmTagChange|OsmDiffRun)\b|\b(OsmTagChange|OsmDiffRun)\.__table__\.(insert|update|delete)\(|\.add(_all)?\(\s*\[?\s*(OsmTagChange|OsmDiffRun)\b"
+        r"|\b(bulk_insert_mappings|bulk_save_objects|bulk_update_mappings)\(\s*(OsmTagChange|OsmDiffRun)\b"
+        r"|\b(INSERT INTO|UPDATE|DELETE FROM) (osm_tag_changes|osm_diff_runs)\b",
+        re.IGNORECASE,
     )
-    writers = sorted(p.name for p in (ROOT / "src").rglob("*.py") if p.name != "lane_models.py" and write.search(p.read_text(encoding="utf-8")))
-    assert writers == ["apply.py"], f"another module writes osm_tag_changes, so a stored changed count can go stale unseen: {writers}"
+    files = [p for root in ("src", "scripts") for p in (ROOT / root).rglob("*.py") if p.name != "lane_models.py"]
+    writers = sorted(p.name for p in files if write.search(p.read_text(encoding="utf-8")))
+    assert writers == ["apply.py"], f"another module writes osm_tag_changes or osm_diff_runs, so a stored changed count can go stale unseen: {writers}"
     # ``changes.change_rows`` only BUILDS unsaved rows: a module that imports it is a candidate writer this pattern cannot see
     users = sorted(p.name for p in (ROOT / "src").rglob("*.py") if p.name != "changes.py" and re.search(r"\bchange_rows\b", p.read_text(encoding="utf-8")))
     assert users == [], f"a module builds change rows, which this pin does not follow into a write: {users}"
+
+
+def test_a_country_without_a_run_row_answers_zero_without_probing_its_places(cut, osm_lane_dir):
+    """The short-circuit fires: change rows with no run row behind them are not counted (they cannot exist from the apply, which writes both together)."""
+    _seed()
+    _geo_changes()
+    with store.lane_session("osm") as s:
+        assert PS.changed_places(s, "ZZZ") == 2
+        s.execute(sa.text("DELETE FROM osm_diff_runs"))
+    with store.lane_session("osm") as s:
+        assert PS.changed_places(s, "ZZZ") == 0, "the probe ran although no change file was ever applied"
 
 
 def test_the_module_makes_no_request_and_imports_no_socket_library():

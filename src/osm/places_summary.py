@@ -26,7 +26,8 @@ WHAT MUST STAY TRUE.
 * NO CAP. Every distinct brand, brand:wikidata and check_date value is kept; the reader applies its own ``limit`` (the page says how many exist).
 * THE GEOGRAPHY PART'S ``changed`` IS A COUNT OF TWO TABLES (R440): the current places and ``osm_tag_changes``. It rides the same key because the change
   rows are written by the daily apply ONLY, in the per-file transaction that also moves ``diff_sequence`` (a re-cut moves ``finished_at`` and the
-  count joins to the CURRENT places). ``tests/test_osm_places_summary.py`` pins that nothing else writes either table.
+  count joins to the CURRENT places). The same holds for ``osm_diff_runs``, whose rows decide whether a country has a window at all
+  (:func:`changed_places` answers 0 without one). ``tests/test_osm_places_summary.py`` pins that nothing else writes either table.
 * READ-ONLY READERS STAY READ-ONLY. Only the cut job, the apply job and the POST route write; the build is local work, makes no request, never
   fails a cut or an apply (it is logged and the readers compute), and a pass that was overtaken by an apply or a re-cut stores nothing.
 """
