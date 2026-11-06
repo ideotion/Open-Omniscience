@@ -265,7 +265,7 @@ def test_the_route_builds_for_an_existing_cut_on_a_thread_and_a_get_does_not(cut
 
 
 def test_the_module_makes_no_request_and_imports_no_socket_library():
-    tree = ast.parse((ROOT / "src" / "osm" / "prior_summary.py").read_text())
+    tree = ast.parse((ROOT / "src" / "osm" / "prior_summary.py").read_text(encoding="utf-8"))
     names = {n.names[0].name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import)} | {
         (n.module or "").split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
     }
