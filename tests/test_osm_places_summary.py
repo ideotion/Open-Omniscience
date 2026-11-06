@@ -387,6 +387,24 @@ def test_an_apply_that_finishes_while_a_build_is_counting_is_not_lost(cut, osm_l
     assert calls[1].get("only_if_missing") is False, "the second pass must not skip as already current"
 
 
+def test_a_rebuild_asked_for_during_every_pass_is_still_done_until_the_writes_stop(cut, osm_lane_dir, monkeypatch):
+    """Four writes landing during four passes in a row: the fifth pass is the one that sees them all (the old cap of three dropped the fourth)."""
+    _seed()
+    calls = []
+
+    def fake(alpha3, **kw):
+        calls.append(kw)
+        if len(calls) <= 4:
+            PS.build_quietly(alpha3)   # a write finished while this pass was counting
+        return {"status": "built"}
+
+    monkeypatch.setattr(PS, "build_summary", fake)
+    with PS._RUN_LOCK:
+        PS._RUNNING.add("ZZZ")
+    PS._run_builds("ZZZ", only_if_missing=True)
+    assert len(calls) == 5 and not PS.is_building("ZZZ") and "ZZZ" not in PS._RERUN
+
+
 def test_a_reader_with_no_summary_does_not_scan_for_the_day_histogram_it_would_only_fold(cut, osm_lane_dir):
     _seed()
     seen = []

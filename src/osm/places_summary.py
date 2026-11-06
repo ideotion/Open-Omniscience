@@ -51,6 +51,7 @@ _RUNNING: set[str] = set()
 _RERUN: set[str] = set()   # a country whose places changed while its build was running: the running build goes round again
 #: One pass at a time across countries: each scans a whole country, so several at once only compete for the same disk.
 _SERIAL = threading.Lock()
+_MAX_PASSES = 10   # rebuilds one run may do for writes that landed meanwhile (each request is a committed write)
 
 
 def rule_version() -> str:
@@ -309,24 +310,25 @@ def build_summary(alpha3: str, *, only_if_missing: bool = False) -> dict[str, An
 
 
 def _run_builds(alpha3: str, *, only_if_missing: bool) -> None:
-    """Build, and build again while a daily apply or a re-cut asked for one during the pass (``_RERUN``) or made the pass ``superseded``.
+    """Build, and build again for as long as a daily apply or a re-cut asked for one during the pass (``_RERUN``).
 
     The caller has put ``alpha3`` in ``_RUNNING``; this removes it. Without the flag an apply that finishes while a page-started build is counting
-    would find the country busy, return, and leave the summary stale until another page session asked again.
+    would find the country busy, return, and leave the summary stale until another page session asked again. Each request stands for a write that
+    really committed, so the loop is bounded by the writes; ``_MAX_PASSES`` only stops a runaway, and says so in the log when it does.
     """
     try:
-        for attempt in range(3):
+        for attempt in range(_MAX_PASSES):
             try:
                 res = build_summary(alpha3, only_if_missing=only_if_missing and attempt == 0)
                 _LOG.info("osm: the %s places summary: %s", alpha3, res.get("status"))
             except Exception as exc:  # noqa: BLE001 - recorded in the log; the computed path stays in place
                 log_failure(_LOG, f"osm: the {alpha3} places summary could not be built", exc, level=logging.WARNING)
-                res = {"status": "failed"}
             with _RUN_LOCK:
                 again = alpha3 in _RERUN
                 _RERUN.discard(alpha3)
-                if not again:
-                    break
+            if not again:
+                return
+        _LOG.warning("osm: the %s places summary was asked for again after %d passes and not built again; the readers compute until the next build", alpha3, _MAX_PASSES)
     finally:
         with _RUN_LOCK:
             _RERUN.discard(alpha3)
@@ -355,5 +357,10 @@ def start_build(alpha3: str) -> dict[str, Any]:
         if alpha3 in _RUNNING:
             return {"started": False, "status": "building"}
         _RUNNING.add(alpha3)
-    threading.Thread(target=_run_builds, args=(alpha3,), kwargs={"only_if_missing": True}, name=f"osm-places-summary-{alpha3}", daemon=True).start()
+    try:
+        threading.Thread(target=_run_builds, args=(alpha3,), kwargs={"only_if_missing": True}, name=f"osm-places-summary-{alpha3}", daemon=True).start()
+    except BaseException:
+        with _RUN_LOCK:
+            _RUNNING.discard(alpha3)   # a thread that never started would leave the country "building" for ever
+        raise
     return {"started": True, "status": "building"}
