@@ -48,7 +48,7 @@ function extractConst(name, end) {
 
 const FUNCS = [
   "_osmCompShare", "_osmTrendTable", "_osmTrendLead", "_osmProfileCacheKey", "_osmProfileShare", "_osmProfileLabel", "_osmProfileSnapBrands", "_osmProfileSnapChannels",
-  "_osmProfileSnapFreshness", "_osmProfileBlock", "_osmProfilePicker", "_osmProfileBody", "_osmProfileDraw", "_osmProfileFill", "_osmProfileShowTab",
+  "_osmProfileSnapFreshness", "_osmPriorSource", "_osmProfileBlock", "_osmProfilePicker", "_osmProfileBody", "_osmProfileDraw", "_osmProfileFill", "_osmProfileShowTab",
   "_renderOsmProfile", "_osmProfileFetch", "loadOsmProfile",
 ];
 const src =
@@ -64,6 +64,8 @@ const src =
   "function fmtNum(v) { return String(v); }\n" +
   "function osmCompTf(s, v) { return s.replace(/\\{(\\w+)\\}/g, (_, k) => v[k]); }\n" +
   "function _osmPickLabel(cc, name) { return 'LABEL(' + cc + ')'; }\n" +
+  "var priorAsks = [];\n" +
+  "function _osmPriorEnsure(a3, prior) { priorAsks.push(a3); }   // the request for a summary has its own test (osm_prior_summary_node_test.js)\n" +
   extractConst("OSM_COMP_KEYS", "];\n") + "\n" +
   extractConst("OSM_PROFILE_TABS", "];\n") + "\n" +
   extractConst("OSM_SOCIAL_NAMES", "};\n") + "\n" +
