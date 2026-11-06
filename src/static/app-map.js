@@ -3585,12 +3585,13 @@
     }
     // A cut without a current summary asks for one, ONCE per country per session (a GET never writes, so this is a POST), then waits on the
     // cheap state read and calls back when it is current. A build that ends without one leaves the computed answer, said as such.
-    const _osmPriorAsked = new Set();
-    function _osmPriorEnsure(alpha3, p, onCurrent) {
+    const _osmPriorAsked = new Map();   // alpha3 -> {surface tag -> callback}: every surface waiting on that country's build, once each
+    function _osmPriorEnsure(alpha3, p, onCurrent, tag) {
       if (!alpha3 || !p || !p.available || p.source !== "computed" || !p.summary) return;
       if (["not-built", "stale-cut", "stale-rule", "no-summary-table"].indexOf(p.summary.state) === -1) return;   // the build adds the table to an older lane
-      if (_osmPriorAsked.has(alpha3)) return;
-      _osmPriorAsked.add(alpha3);
+      if (_osmPriorAsked.has(alpha3)) { _osmPriorAsked.get(alpha3)[tag || ""] = onCurrent; return; }   // asked already: this surface is told too (a re-render replaces its own callback)
+      const waiting = { [tag || ""]: onCurrent };
+      _osmPriorAsked.set(alpha3, waiting);
       const base = `/api/osm/countries/${encodeURIComponent(alpha3)}/prior-summary`;
       (async () => {
         try { await api(base, { method: "POST" }); } catch (e) { return; }
@@ -3598,7 +3599,7 @@
           await new Promise((r) => setTimeout(r, 10000));
           let s;
           try { s = await api(base); } catch (e) { return; }
-          if (s && s.state === "current") { onCurrent(); return; }
+          if (s && s.state === "current") { Object.values(waiting).forEach((f) => { try { f(); } catch (e) { /* one surface's refresh must not stop the others */ } }); return; }
           if (!s || !s.building) return;
         }
       })();
@@ -3677,7 +3678,7 @@
         });
       });
       _osmTrendDrawAll();
-      _osmTrends.forEach((c) => _osmPriorEnsure((c.lane || {}).alpha3, c.prior, () => loadOsmTrends(_osmTrendDone)));
+      _osmTrends.forEach((c) => _osmPriorEnsure((c.lane || {}).alpha3, c.prior, () => loadOsmTrends(_osmTrendDone), "trends"));
     }
     // -- Surfaces 4 to 6 (v0.6.0 B3b, S06-01 S3) -------------------------------------------- //
     // Brands and operators, contact channels, data freshness: per country, per surface (loaded when its tab
@@ -3724,7 +3725,7 @@
         _osmPriorEnsure(a3, d.prior, () => {   // the summary is current now: forget this country's reads and read the tab shown again
           Object.keys(_osmProfileCache).forEach((k) => { if (k.indexOf(a3 + "|") === 0) delete _osmProfileCache[k]; });
           _osmProfileFetch(_osmProfileSeq);
-        });
+        }, "profile");
         if (tab !== _osmProfileTab) return;   // another tab took over; its own fetch is running
       }
     }

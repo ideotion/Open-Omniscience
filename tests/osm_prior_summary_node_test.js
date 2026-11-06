@@ -47,7 +47,7 @@ const src =
   "function setTimeout(fn) { fn(); }\n" +
   "function ooIsoDate(s) { return 'D(' + String(s == null ? '' : s).slice(0, 10) + ')'; }\n" +
   "function osmCompTf(s, v) { return s.replace(/\\{(\\w+)\\}/g, (_, k) => v[k]); }\n" +
-  "const _osmPriorAsked = new Set();\n" +
+  "const _osmPriorAsked = new Map();\n" +
   extract("_osmPriorSource") + "\n" + extract("_osmPriorEnsure") + "\n" +
   "module.exports = { _osmPriorSource, _osmPriorEnsure, calls, answers, asked: _osmPriorAsked };";
 const R = (() => {
@@ -89,11 +89,20 @@ const computed = (state, extra) => ({ available: true, source: "computed", vinta
   assert.deepStrictEqual(R.calls, [], "a request was sent that cannot build anything");
   // once, and the page refetches only when the state read says current
   R.answers.push({ started: true, status: "building" }, { state: "not-built", building: true }, { state: "current", building: false });
-  R._osmPriorEnsure("ZZZ", computed("not-built"), go);
-  R._osmPriorEnsure("ZZZ", computed("not-built"), go);   // a second ask for the same country in the same session is not sent
+  R._osmPriorEnsure("ZZZ", computed("not-built"), go, "trends");
+  R._osmPriorEnsure("ZZZ", computed("not-built"), go, "trends");   // a re-render of the same surface: not sent again, and told once
   for (let i = 0; i < 6; i++) await tick();
   assert.deepStrictEqual(R.calls, ["POST /api/osm/countries/ZZZ/prior-summary", "GET /api/osm/countries/ZZZ/prior-summary", "GET /api/osm/countries/ZZZ/prior-summary"]);
   assert.strictEqual(fetched, 1, "the page did not refetch when the summary became current (or refetched twice)");
+  // two surfaces of one country (trends and a profile tab) both ask: ONE request, and BOTH are told when the summary is current
+  R.calls.length = 0;
+  let a = 0, b = 0;
+  R.answers.push({ started: true, status: "building" }, { state: "current", building: false });
+  R._osmPriorEnsure("VVV", computed("not-built"), () => { a++; }, "trends");
+  R._osmPriorEnsure("VVV", computed("not-built", { building: true }), () => { b++; }, "profile");
+  for (let i = 0; i < 6; i++) await tick();
+  assert.deepStrictEqual(R.calls, ["POST /api/osm/countries/VVV/prior-summary", "GET /api/osm/countries/VVV/prior-summary"]);
+  assert.deepStrictEqual([a, b], [1, 1], "the second surface that asked was never told the summary is current");
   // a build that ends without a current summary leaves the computed answer: no refetch, no more polling
   R.calls.length = 0; fetched = 0;
   R.answers.push({ started: true, status: "building" }, { state: "stale-cut", building: false });
