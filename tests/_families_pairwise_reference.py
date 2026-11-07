@@ -31,7 +31,6 @@ from src.analytics.families import (
 )
 
 
-
 def _is_contiguous_sub(short_toks: list[str], long_toks: list[str]) -> bool:
     n, m = len(short_toks), len(long_toks)
     if n == 0 or n >= m:
