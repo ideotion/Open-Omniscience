@@ -366,3 +366,71 @@ def fetch_jsonstat(
     resp.raise_for_status()
     payload = resp.json()
     return parse_jsonstat(payload, agency=agency, extracted_at=extracted_at, series_id=series_id)
+
+
+# NOAA NCEI GHCN-Daily: one fixed-width ``.dly`` file per station. NOT verified against a live
+# download (the build sandbox cannot reach the host): a wrong path or shape fails LOUDLY (HTTP
+# error / looks_unrecognised), never a fabricated figure.
+GHCND_BASE = "https://www.ncei.noaa.gov/pub/data/ghcn/daily/ghcnd-all"
+# The body bound is DERIVED from the file's own shape (see ghcnd_max_chars), not a fixed number.
+GHCND_FIRST_YEAR = 1750  # earlier than any published record; a bound, not a claim about coverage
+GHCND_ELEMENT_FAMILIES = 100  # documented element codes (core five, WT01.., WV.., ...) with slack
+
+
+def ghcnd_url(station: str) -> str:
+    """The ``.dly`` URL for a GHCN-Daily station id; the id is validated so it cannot carry a path."""
+    from src.stats.ghcnd import valid_station_id
+
+    if not valid_station_id(station):
+        raise ValueError(f"ghcnd_url: not a GHCN station id: {station!r}")
+    return f"{GHCND_BASE}/{station}.dly"
+
+
+def ghcnd_max_chars(now_year: int | None = None) -> int:
+    """The longest body that can still be one station's file.
+
+    One line per (year, month, element): every year from ``GHCND_FIRST_YEAR`` to the current
+    one, twelve months, each documented element family, at the format's fixed line length plus
+    its newline. Grows with the calendar rather than being a number someone must raise.
+    """
+    from datetime import UTC
+
+    from src.stats.ghcnd import LINE_LENGTH
+
+    year = now_year if now_year is not None else datetime.now(UTC).year
+    lines = max(year - GHCND_FIRST_YEAR + 1, 1) * 12 * GHCND_ELEMENT_FAMILIES
+    return lines * (LINE_LENGTH + 2)
+
+
+def fetch_ghcnd_station(
+    station: str,
+    *,
+    get: Getter | None = None,
+    extracted_at: str | None = None,
+) -> Any:
+    """Fetch one GHCN-Daily station file live and parse it (kill switch refuses UP FRONT).
+
+    Returns the :class:`~src.stats.ghcnd.GhcndParse` (figures AND refusals). A body that parses
+    to nothing but refusals (an HTML error page, a moved product) raises rather than returning
+    an empty series, because an empty list and a wrong file look the same once the refusals
+    are dropped.
+    """
+    from src.stats.ghcnd import parse_ghcnd_dly
+
+    if kill_switch_active():
+        raise RuntimeError(NETWORK_REFUSED)
+    url = ghcnd_url(station)
+    extracted_at = extracted_at or _now_iso()
+    getter = get or _default_getter
+    resp = getter(url)
+    resp.raise_for_status()
+    bound = ghcnd_max_chars()
+    if len(resp.text) > bound:
+        raise ValueError(f"GHCN-Daily {station}: the response is {len(resp.text)} characters, over the {bound} the file's own shape allows")
+    parsed = parse_ghcnd_dly(resp.text, station=station, extracted_at=extracted_at)
+    if parsed.looks_unrecognised:
+        raise ValueError(
+            f"GHCN-Daily {station}: the response is not the expected station file "
+            f"({parsed.refused_total} lines refused, none parsed)"
+        )
+    return parsed
