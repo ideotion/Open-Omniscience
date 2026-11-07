@@ -144,3 +144,53 @@ def test_route_rejects_variables_without_an_anomaly_definition():
     with pytest.raises(ValidationError):
         WeatherAnomalyRequest(lat=1, lon=2, start_date=date(2023, 1, 1), end_date=date(2023, 1, 2),
                               variables=["wind_gusts_10m_max"])
+
+
+def test_non_dict_units_and_huge_integers_do_not_raise():
+    win = _slice(date(2023, 5, 1), date(2023, 5, 2), lambda v, d: 1.0)
+    win["units"] = "mm"
+    out = compute_anomalies(_base(), win)
+    assert all(r["value"] is None and r["reason"] for r in out["results"])
+    huge = _slice(date(2023, 5, 1), date(2023, 5, 2), lambda v, d: 10**400)
+    assert _res(compute_anomalies(_base(), huge), "temperature_2m_max")["value"] is None
+
+
+def test_a_window_with_a_skipped_date_is_refused():
+    win = {"daily": {"time": ["2023-01-01", "2023-01-10"], "precipitation_sum": [1.0, 1.0]},
+           "units": UNITS}
+    r = _res(compute_anomalies(_base(), win, ["precipitation_sum"]), "precipitation_sum")
+    assert r["value"] is None and "consecutive" in r["reason"]
+
+
+def test_window_not_covering_the_requested_range_is_refused():
+    win = _slice(date(2023, 5, 1), date(2023, 5, 3), lambda v, d: 1.0)
+    out = compute_anomalies(_base(), win, expect=(date(2023, 5, 1), date(2023, 5, 9)))
+    assert all(r["value"] is None and "not the requested" in r["reason"] for r in out["results"])
+
+
+def test_integer_dates_are_not_dates():
+    win = {"daily": {"time": [20230101], "precipitation_sum": [1.0]}, "units": UNITS}
+    assert _res(compute_anomalies(_base(), win, ["precipitation_sum"]), "precipitation_sum")["value"] is None
+
+
+def test_new_year_window_at_the_baseline_end_counts_the_lost_year():
+    win = _slice(date(2020, 12, 31), date(2021, 1, 1), lambda v, d: 10.0)
+    r = _res(compute_anomalies(_base(), win), "temperature_2m_max")
+    assert r["years_used"] == 29 and r["years_excluded"] == 1
+
+
+def test_baseline_is_fetched_once_for_all_variables_and_window_checked(monkeypatch):
+    seen = []
+
+    def fake(lat, lon, s, e, vs, **kw):
+        seen.append((s, tuple(vs)))
+        return _slice(s, e, lambda v, d: 1.0, variables=vs)
+    monkeypatch.setattr(anomaly, "fetch_daily_slice", fake)
+    fetch_anomalies(1, 2, date(2023, 5, 1), date(2023, 5, 3), ["precipitation_sum"])
+    assert seen[0] == (anomaly.BASELINE_START, tuple(sorted(anomaly.SUPPORTED)))
+
+
+def test_duplicate_variables_collapse():
+    win = _slice(date(2023, 5, 1), date(2023, 5, 2), lambda v, d: 1.0)
+    out = compute_anomalies(_base(), win, ["precipitation_sum", "precipitation_sum"])
+    assert len(out["results"]) == 1

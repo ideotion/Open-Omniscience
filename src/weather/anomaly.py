@@ -72,11 +72,15 @@ def _days(payload: dict) -> tuple[list[date], dict[str, list], str | None]:
     if not isinstance(daily, dict) or not isinstance(daily.get("time"), list):
         return [], {}, "the slice has no daily.time series"
     try:
-        dates = [date.fromisoformat(str(t)) for t in daily["time"]]
+        if not all(isinstance(t, str) for t in daily["time"]):
+            raise ValueError
+        dates = [date.fromisoformat(t) for t in daily["time"]]
     except ValueError:
         return [], {}, "daily.time holds a value that is not an ISO date"
     if len(set(dates)) != len(dates):
         return [], {}, "daily.time repeats a date"
+    if any((b - a).days != 1 for a, b in zip(dates, dates[1:], strict=False)):
+        return [], {}, "daily.time is not one consecutive run of days (a skipped date would shrink the window)"
     cols = {k: v for k, v in daily.items() if k != "time" and isinstance(v, list)}
     for k, v in cols.items():
         if len(v) != len(dates):
@@ -87,7 +91,10 @@ def _days(payload: dict) -> tuple[list[date], dict[str, list], str | None]:
 def _num(x: Any) -> float | None:
     if isinstance(x, bool) or not isinstance(x, (int, float)):
         return None
-    return float(x) if math.isfinite(x) else None
+    try:
+        return float(x) if math.isfinite(x) else None
+    except OverflowError:  # an integer too large for a float
+        return None
 
 
 def _shift(d: date, years: int) -> date | None:
@@ -99,7 +106,8 @@ def _shift(d: date, years: int) -> date | None:
 
 def _unit_refusal(payload: dict, var: str) -> str | None:
     want = SUPPORTED[var][1]
-    got = (payload.get("units") or {}).get(var)
+    units = payload.get("units")
+    got = units.get(var) if isinstance(units, dict) else None
     if got is None:
         return f"the slice does not state a unit for {var}; expected {want}"
     if got != want:
@@ -134,11 +142,10 @@ def _one(var: str, base: tuple, win: tuple, base_payload: dict, win_payload: dic
     blookup = {d: _num(x) for d, x in zip(bdates, bcols[var], strict=True)}
     first = min(wdates)
     offsets = {d: d.year - first.year for d in wdates}
-    span = max(offsets.values())
 
     per_year: list[float] = []
     excluded = 0
-    for y in range(BASELINE_START.year, BASELINE_END.year - span + 1):
+    for y in range(BASELINE_START.year, BASELINE_END.year + 1):
         vals: list[float] = []
         ok = True
         for d in wdates:
@@ -179,16 +186,21 @@ def _one(var: str, base: tuple, win: tuple, base_payload: dict, win_payload: dic
     return out
 
 
-def compute_anomalies(baseline: dict, window: dict, variables: list[str] | None = None) -> dict:
+def compute_anomalies(baseline: dict, window: dict, variables: list[str] | None = None,
+                      expect: tuple[date, date] | None = None) -> dict:
     """Anomalies of ``window`` against ``baseline`` for the supported variables.
 
     Both arguments are ``fetch_daily_slice`` payloads. Never raises for bad data: every
     problem is a ``value: None`` with a ``reason``.
     """
-    variables = list(variables) if variables else list(SUPPORTED)
+    variables = list(dict.fromkeys(variables)) if variables else list(SUPPORTED)
     base = _days(baseline)
     win = _days(window)
     bad = base[2] or win[2]
+    if not bad and expect is not None and win[0] and (min(win[0]), max(win[0])) != expect:
+        win = ([], {}, f"the slice covers {min(win[0])}..{max(win[0])}, not the requested "
+                       f"{expect[0]}..{expect[1]}")
+        bad = win[2]
     results = []
     for var in variables:
         if var not in SUPPORTED:
@@ -213,22 +225,26 @@ def fetch_anomalies(lat: float, lon: float, start: date, end: date,
                     fetcher=None) -> dict:
     """Fetch (cache-aware) the 1991-2020 baseline and the window, then compute anomalies.
 
-    Two consented fetches through the single ethical path (the baseline is cached on disk after
-    the first, so re-viewing is offline). A failed fetch returns that slice's honest transport
+    Two consented fetches through the single ethical path. The baseline is a ~30-year slice
+    (about 11,000 days, deliberately beyond the 366-day window bound, which applies to the window
+    only); it is cached on disk after the first fetch per place, so re-viewing is offline, and
+    ``force`` re-downloads both. A failed fetch returns that slice's honest transport
     verdict instead of numbers.
     """
-    variables = list(variables) if variables else list(SUPPORTED)
+    variables = list(dict.fromkeys(variables)) if variables else list(SUPPORTED)
     unknown = sorted(set(variables) - set(SUPPORTED))
     if unknown:
         raise ValueError(f"no anomaly definition for {unknown}; supported: {sorted(SUPPORTED)}")
-    base = fetch_daily_slice(lat, lon, BASELINE_START, BASELINE_END, variables,
+    # The baseline is always fetched for ALL supported variables so its cache key is the same
+    # whichever subset is asked for: one 30-year download per place, not one per variable set.
+    base = fetch_daily_slice(lat, lon, BASELINE_START, BASELINE_END, sorted(SUPPORTED),
                              force=force, fetcher=fetcher)
     if not base.get("ok"):
         return {**base, "stage": "baseline"}
     win = fetch_daily_slice(lat, lon, start, end, variables, force=force, fetcher=fetcher)
     if not win.get("ok"):
         return {**win, "stage": "window"}
-    out = compute_anomalies(base, win, variables)
+    out = compute_anomalies(base, win, variables, expect=(start, end))
     out["provenance"] = {"baseline": base.get("provenance"), "window": win.get("provenance"),
                          "baseline_cached": base.get("cached"), "window_cached": win.get("cached")}
     return out
