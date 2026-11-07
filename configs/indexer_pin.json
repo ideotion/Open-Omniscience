@@ -1,12 +1,24 @@
 {
   "version": 1,
-  "digest": "8c1c685dc842009b8825e3096e4b3073f4c2037d8cf37a951a9bd8388238cf26",
+  "digest": "f37998ebfaedaef0d9ef1942f06ab4d2a4af08b0162e4dd11868d11df946c802",
   "log": [
     {
       "version": 1,
       "digest": "8c1c685dc842009b8825e3096e4b3073f4c2037d8cf37a951a9bd8388238cf26",
       "kind": "baseline",
       "note": "R412 baseline: the pin starts at the code-module digest of the main tip this change is cut from (INDEXER_VERSION 1)"
+    },
+    {
+      "version": 1,
+      "digest": "d3b258d22067123f3d53c0296cdca90bb1a97362d02a29157d32443899015a74",
+      "kind": "same",
+      "note": "R415: the www-only modules and the gazetteers left the keyword engine's digest"
+    },
+    {
+      "version": 1,
+      "digest": "f37998ebfaedaef0d9ef1942f06ab4d2a4af08b0162e4dd11868d11df946c802",
+      "kind": "same",
+      "note": "R415: index_article gained the www stamp write and a www scope; keyword rows are unchanged"
     }
   ]
 }
