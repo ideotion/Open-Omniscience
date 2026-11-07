@@ -202,6 +202,7 @@ def test_the_measured_slow_scans_run_after_the_cheap_producers(spent):
     assert {"space_time_convergence", "coverage_advisor"} <= card_audit._RUN_LAST
     assert not ({"space_time_convergence", "coverage_advisor"} & card_audit._TRENDING_SCAN_PRODUCERS)
     names = _register_pass(spent, slow_name="space_time_convergence")
-    by = {o.name: o for o in card_audit.observe_producers(object())}
+    out = card_audit.observe_producers(object())
+    by = {o.name: o for o in out}
     assert [by[f"p{i}"].outcome for i in range(5)] == ["ok"] * 5
-    assert list(by) == names or set(by) == set(names)
+    assert [o.name for o in out] == names, "registration order is kept in the result"
