@@ -2982,7 +2982,7 @@
           actions = `<button class="tiny danger" data-on-click="startOsmDownload(${esc(JSON.stringify(r.code))}, this)">${esc(t("Download"))}</button>`;
         } else if (d.status === "downloading") {
           const pct = (d.percent != null) ? d.percent : (d.total_bytes ? Math.floor(100 * d.downloaded_bytes / d.total_bytes) : 0);
-          stateHtml = `<span class="pill">${esc(t("Downloading"))} ${pct}%</span>`
+          stateHtml = `<span class="pill">${esc(t("Downloading"))} ${ooLtrIsolate(pct + "%")}</span>`
             + `<progress max="100" value="${pct}" style="width:110px;vertical-align:middle"></progress>`
             + `<span class="muted" style="font-size:12px">${humanBytes(d.downloaded_bytes)}${d.total_bytes ? ` / ${humanBytes(d.total_bytes)}` : ""}</span>`;
           actions = `<button class="tiny secondary" data-on-click="pauseOsm(${esc(JSON.stringify(d.key))})">${esc(t("Pause"))}</button>`;
@@ -3150,7 +3150,7 @@
       const btn = (label, fn) => `<button class="tiny secondary" data-on-click="${fn}(${esc(JSON.stringify(code))}, this)">${esc(t(label))}</button>`;
       if (!d) return btn("Download", "startOsmDownload");
       if (d.status === "done") return `<span class="pill ok">${esc(t("Downloaded"))} ✓</span>`;
-      if (d.status === "downloading") return `<span class="pill">${esc(t("Downloading"))} ${d.percent || 0}%</span>`;
+      if (d.status === "downloading") return `<span class="pill">${esc(t("Downloading"))} ${ooLtrIsolate((d.percent || 0) + "%")}</span>`;
       if (d.status === "queued") return `<span class="pill warn">${esc(t("Queued"))}</span>`;
       if (d.status === "paused" && d.paused_by === "airplane") return `<span class="pill warn">${esc(t("Paused: airplane mode is on"))}</span> ${btn("Resume", "resumeOsm")}`;
       const label = d.status === "error" ? t("Failed") : t("Paused");
@@ -3454,7 +3454,7 @@
         method: t(a.method || ""), caveat: t(a.caveat || ""),
         valueLabel: (key, v) => {
           const e = byKey[key];
-          return e && e.k ? osmCompTf("{share} % ({present} of {n})", { share: fmtNum(v, 1), present: fmtNum(e.k.present, 0), n: fmtNum(e.r.n, 0) }) : `${fmtNum(v, 1)} %`;
+          return e && e.k ? ooLtrPct(osmCompTf("{share} % ({present} of {n})", { share: fmtNum(v, 1), present: fmtNum(e.k.present, 0), n: fmtNum(e.r.n, 0) })) : ooLtrPct(`${fmtNum(v, 1)} %`);
         },
       });
     }
@@ -4205,7 +4205,7 @@
       if (d.status === "done") return `<span class="pill ok">${esc(t("Downloaded"))} ✓ <span class="muted">${humanBytes(d.downloaded_bytes || d.total_bytes || 0)}</span></span> <button class="tiny danger" data-on-click="deleteOsm(${c})">${esc(t("Delete"))}</button>`;
       if (d.status === "downloading") {
         const pct = d.percent || 0;
-        return `<span class="pill">${esc(t("Downloading"))} ${pct}%</span> <progress max="100" value="${pct}" style="width:110px;vertical-align:middle"></progress> <span class="muted" style="font-size:12px">${humanBytes(d.downloaded_bytes)}${d.total_bytes ? ` / ${humanBytes(d.total_bytes)}` : ""}</span> <button class="tiny secondary" data-on-click="pauseOsm(${c})">${esc(t("Pause"))}</button>`;
+        return `<span class="pill">${esc(t("Downloading"))} ${ooLtrIsolate(pct + "%")}</span> <progress max="100" value="${pct}" style="width:110px;vertical-align:middle"></progress> <span class="muted" style="font-size:12px">${humanBytes(d.downloaded_bytes)}${d.total_bytes ? ` / ${humanBytes(d.total_bytes)}` : ""}</span> <button class="tiny secondary" data-on-click="pauseOsm(${c})">${esc(t("Pause"))}</button>`;
       }
       if (d.status === "queued") return `<span class="pill warn">${esc(t("Queued"))}</span> <button class="tiny secondary" data-on-click="deleteOsm(${c})">${esc(t("Cancel"))}</button>`;
       const resume = `<button class="tiny secondary" data-on-click="resumeOsm(${c}, this)">${esc(t("Resume"))}</button> <button class="tiny danger" data-on-click="deleteOsm(${c})">${esc(t("Delete"))}</button>`;
@@ -4514,7 +4514,7 @@
         return;
       }
       const rows = items.map(a => {
-        const rel = (a.rel_change != null) ? ` <span class="muted">(${(a.rel_change * 100).toFixed(1)}%)</span>` : "";
+        const rel = (a.rel_change != null) ? ` <span class="muted">(${ooLtrIsolate((a.rel_change * 100).toFixed(1) + "%")})</span>` : "";
         return `<tr>
           <td>${esc(a.agency)}</td><td>${esc(a.series_id)}</td><td>${ooAreaCell(a.ref_area, a.area_kind, a.area_name)}</td><td>${esc(a.time_period)}</td>
           <td style="text-align:right">${_statfigFmt(a.from_value)} → ${_statfigFmt(a.to_value)}</td>

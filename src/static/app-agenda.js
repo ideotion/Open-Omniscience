@@ -1361,7 +1361,7 @@
       const box = $("agenda-decade"), loc = agLocale(), now = new Date(), curY = now.getFullYear();
       const y0 = Math.floor((AGV.y || curY) / 10) * 10;
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      $("agenda-monthlabel").textContent = `${y0}–${y0 + 9}`;
+      $("agenda-monthlabel").textContent = ooLtrIsolate(`${y0}–${y0 + 9}`);
       // Per-year count: annual rules count once a year; dated instances count in
       // their own year (same placement the Year view applies, summed over months).
       const yearCount = (y) => {
