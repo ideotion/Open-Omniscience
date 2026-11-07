@@ -30,8 +30,8 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import os
 import signal
+import sys
 import threading
 import time
 from pathlib import Path
@@ -153,7 +153,7 @@ def on_console_event(ctrl_type: int, *, hold_s: float = CONSOLE_HOLD_S, sleep=ti
 
 def install() -> list[str]:
     """Register the two listeners; returns the names registered (empty off Windows). Never raises."""
-    if os.name != "nt":
+    if sys.platform != "win32":  # the form mypy understands: the ctypes names below exist only there
         return []
     installed: list[str] = []
     try:

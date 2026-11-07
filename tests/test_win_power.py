@@ -11,7 +11,7 @@ from src.monitoring import win_power
 
 
 def test_install_is_a_noop_off_windows(monkeypatch):
-    monkeypatch.setattr(win_power, "os", types.SimpleNamespace(name="posix"))
+    monkeypatch.setattr(win_power, "sys", types.SimpleNamespace(platform="linux"))
     assert win_power.install() == []
 
 
