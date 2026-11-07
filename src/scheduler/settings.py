@@ -15,8 +15,6 @@ import json
 import logging
 from dataclasses import asdict, dataclass, field
 
-from src.shared import coerce_bool
-
 _LOG = logging.getLogger(__name__)
 
 SETTINGS_VERSION = "oo-scheduler-settings-1"
@@ -735,6 +733,9 @@ def retired_settings_disclosures() -> list[str]:
 
 def load_settings(*, strict: bool = False) -> SchedulerSettings:
     """Load scheduler settings, falling back to safe defaults."""
+    # Function-local: this module takes no module-level src import (tests/test_wiki_tiers.py).
+    from src.shared import coerce_bool
+
     d = SchedulerSettings()
     raw = _read_raw_strict() if strict else _read_raw()  # strict: a save that rewrites what it read
     if raw is None:
@@ -864,6 +865,9 @@ def _coerce_retired_mode(value) -> str:
 
 def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerSettings:
     """Apply a partial update and persist atomically. Validates before writing."""
+    # Function-local: this module takes no module-level src import (tests/test_wiki_tiers.py).
+    from src.shared import coerce_bool
+
     # A RETIRED key is REFUSED BY NAME, never accepted and dropped. Pydantic would drop an
     # undeclared field silently and this endpoint would answer 200 having changed nothing,
     # which tells a caller their scope decision took effect when it did not (the

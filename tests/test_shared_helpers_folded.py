@@ -8,6 +8,7 @@ would stay green the day somebody pasted a seventh ``_walk_no_score`` back in.
 from __future__ import annotations
 
 import ast
+import types
 from pathlib import Path
 
 import pytest
@@ -16,22 +17,18 @@ from src import paths, shared
 
 SRC = Path(__file__).resolve().parent.parent / "src"
 
-#: private name -> how many files carried a copy (the count is the audit's, 2026-11-07)
-FOLDED = {
-    "_walk_no_score": 6,
-    "_median_ms": 2,
-    "_coerce_bool": 2,
-    "_all_diagnostics_dir": 1,
-}
+#: the private names that used to be defined once per file (counts at the fold: 6, 2, 2, 1+1+1)
+FOLDED = ("_walk_no_score", "_median_ms", "_coerce_bool", "_all_diagnostics_dir", "_report_dir")
 
 
-def _top_level_defs() -> dict[str, list[str]]:
+def _all_defs() -> dict[str, list[str]]:
     out: dict[str, list[str]] = {}
     for p in SRC.rglob("*.py"):
         if "__pycache__" in p.parts:
             continue
-        for n in ast.parse(p.read_text(encoding="utf-8")).body:
-            if isinstance(n, ast.FunctionDef):
+        # Every def anywhere in the file (nested, async, method), not only top-level ones.
+        for n in ast.walk(ast.parse(p.read_text(encoding="utf-8"))):
+            if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef):
                 out.setdefault(n.name, []).append(str(p.relative_to(SRC)))
     return out
 
@@ -39,14 +36,14 @@ def _top_level_defs() -> dict[str, list[str]]:
 # ---------------------------------------------------------------------------------------------
 # structure
 # ---------------------------------------------------------------------------------------------
-@pytest.mark.parametrize("name", sorted(FOLDED) + ["_report_dir"])
+@pytest.mark.parametrize("name", FOLDED)
 def test_the_private_copies_are_gone(name):
-    defs = _top_level_defs()
+    defs = _all_defs()
     assert name not in defs, f"{name} is defined again in {defs.get(name)}: use the shared helper"
 
 
 def test_each_shared_helper_is_defined_once():
-    defs = _top_level_defs()
+    defs = _all_defs()
     for name in ("walk_no_score", "median_ms", "coerce_bool", "snapshot_or_unavailable"):
         assert defs.get(name) == ["shared.py"], (name, defs.get(name))
     assert defs.get("diagnostics_dir") == ["paths.py"]
@@ -93,14 +90,14 @@ def test_walk_no_score_raises_explicitly_so_python_O_cannot_strip_it():
 
 def test_median_ms_cold_then_warm_median_and_size(monkeypatch):
     ticks = iter([0.0, 0.010, 1.0, 1.002, 2.0, 2.004, 3.0, 3.006])
-    monkeypatch.setattr(shared.time, "perf_counter", lambda: next(ticks))
+    monkeypatch.setattr(shared, "time", types.SimpleNamespace(perf_counter=lambda: next(ticks)))
     cold, warm, size = shared.median_ms(lambda: [1, 2, 3], 4)
     assert (cold, warm, size) == (10.0, 4.0, 3)
 
 
 def test_median_ms_one_run_has_no_warm_runs_so_it_reports_the_only_one(monkeypatch):
     ticks = iter([0.0, 0.0125])
-    monkeypatch.setattr(shared.time, "perf_counter", lambda: next(ticks))
+    monkeypatch.setattr(shared, "time", types.SimpleNamespace(perf_counter=lambda: next(ticks)))
     assert shared.median_ms(lambda: 7, 1) == (12.5, 12.5, None)
 
 
@@ -143,6 +140,10 @@ def test_the_three_report_dirs_resolve_to_it(tmp_path, monkeypatch):
     from src.briefing import card_audit
     from src.monitoring import p0_validation
 
+    # The fold itself: the old names ARE the shared function, so a re-added private body cannot hide.
+    assert bundle._all_diagnostics_dir is paths.diagnostics_dir
+    assert card_audit._report_dir is paths.diagnostics_dir
+    assert p0_validation._report_dir is paths.diagnostics_dir
     monkeypatch.setattr(paths, "data_dir", lambda: tmp_path)
     want = tmp_path / "diagnostics"
     assert bundle._all_diagnostics_dir() == want
