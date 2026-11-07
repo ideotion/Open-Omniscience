@@ -182,7 +182,7 @@ def install() -> list[str]:
             _keep.append(handler)
             installed.append("console-ctrl")
     except Exception as exc:  # noqa: BLE001 - never stops the app
-        log_failure(_LOG, "could not register the console control handler", exc, level=logging.DEBUG)
+        log_failure(_LOG, "could not register the console control handler", exc, level=logging.WARNING)
     try:
         import ctypes
         from ctypes import wintypes
@@ -194,13 +194,13 @@ def install() -> list[str]:
 
         callback = callback_t(lambda _ctx, typ, _setting: (on_power_event(int(typ)), 0)[1])
         params = _Params(callback, None)
-        powrprof = ctypes.WinDLL("powrprof")
-        powrprof.RegisterSuspendResumeNotification.restype = ctypes.c_void_p  # HPOWERNOTIFY, NULL on failure
-        powrprof.RegisterSuspendResumeNotification.argtypes = [ctypes.c_void_p, wintypes.DWORD]
-        handle = powrprof.RegisterSuspendResumeNotification(ctypes.byref(params), _DEVICE_NOTIFY_CALLBACK)
+        user32 = ctypes.WinDLL("user32")  # winuser.h: the function is exported by user32, not powrprof (whose Power* variant has another signature)
+        user32.RegisterSuspendResumeNotification.restype = ctypes.c_void_p  # HPOWERNOTIFY, NULL on failure
+        user32.RegisterSuspendResumeNotification.argtypes = [ctypes.c_void_p, wintypes.DWORD]
+        handle = user32.RegisterSuspendResumeNotification(ctypes.byref(params), _DEVICE_NOTIFY_CALLBACK)
         if handle:
             _keep.extend([callback, params, handle])
             installed.append("suspend-resume")
     except Exception as exc:  # noqa: BLE001 - never stops the app
-        log_failure(_LOG, "could not register for suspend and resume", exc, level=logging.DEBUG)
+        log_failure(_LOG, "could not register for suspend and resume", exc, level=logging.WARNING)
     return installed
