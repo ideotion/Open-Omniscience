@@ -240,4 +240,25 @@ def test_the_refusal_list_is_capped_but_the_count_is_exact():
 
 def test_fetch_refuses_an_oversized_body():
     with pytest.raises(ValueError):
-        fetch.fetch_gistemp(get=lambda u: _Resp("x" * (fetch.GISTEMP_MAX_CHARS + 1)), extracted_at=VINTAGE)
+        fetch.fetch_gistemp(get=lambda u: _Resp("x" * (fetch.gistemp_max_chars() + 1)), extracted_at=VINTAGE)
+
+
+def test_the_body_bound_grows_with_the_data_and_fits_the_real_table():
+    assert fetch.gistemp_max_chars(2027) - fetch.gistemp_max_chars(2026) == fetch.GISTEMP_LINE_ALLOWANCE
+    assert fetch.gistemp_max_chars(2026) > 147 * 125  # a ~125-char row for every year to date fits
+
+
+def test_an_all_gap_table_is_a_success_marked_all_gap():
+    row = "1950," + ",".join(["***"] * 18)
+    res = parse_gistemp(f"{HEADER}\n{row}\n", extracted_at=VINTAGE)
+    assert res.rows_read == 1 and res.all_gap and not res.looks_unrecognised
+    assert res.summary()["all_gap"] is True
+    assert parse_gistemp(GOOD, extracted_at=VINTAGE).all_gap is False
+
+
+def test_the_summary_says_when_refusals_are_only_a_sample():
+    good = "1950," + ",".join(["0"] * 18)
+    res = parse_gistemp(f"{HEADER}\n{good}\n" + "junk\n" * 500, extracted_at=VINTAGE)
+    s = res.summary()
+    assert s["refused_total"] == 500 and s["refused_is_sample"] is True and len(s["refused_sample"]) == 100
+    assert parse_gistemp(GOOD, extracted_at=VINTAGE).summary()["refused_is_sample"] is False

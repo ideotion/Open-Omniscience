@@ -98,6 +98,28 @@ class GistempParse:
     preamble_lines: int = 0
 
     @property
+    def refused_is_sample(self) -> bool:
+        """True when ``refused`` holds only the first MAX_REFUSALS_KEPT of ``refused_total``."""
+        return self.refused_total > len(self.refused)
+
+    @property
+    def all_gap(self) -> bool:
+        """True when rows parsed but every figure is a gap (``***``): a success that holds no numbers."""
+        return self.rows_read > 0 and all(f.value is None for f in self.figures)
+
+    def summary(self) -> dict[str, object]:
+        """The counts a caller must show beside the figures; the refusals are a SAMPLE when flagged."""
+        return {
+            "rows_read": self.rows_read,
+            "figures": len(self.figures),
+            "all_gap": self.all_gap,
+            "refused_total": self.refused_total,
+            "refused_sample": list(self.refused),
+            "refused_is_sample": self.refused_is_sample,
+            "skipped_columns": list(self.skipped_columns),
+        }
+
+    @property
     def looks_unrecognised(self) -> bool:
         """True when nothing parsed AND something was refused: not this file (HTML, 404...)."""
         return self.rows_read == 0 and self.refused_total > 0

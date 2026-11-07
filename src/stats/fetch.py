@@ -67,8 +67,10 @@ OWID_GRAPHER_BASE = "https://ourworldindata.org/grapher"
 # against 1951-1980. NOT verified against a live download (the build sandbox cannot reach
 # the host): a wrong path or shape fails LOUDLY (HTTP error / looks_unrecognised).
 GISTEMP_BASE = "https://data.giss.nasa.gov/gistemp/tabledata_v4"
-# A body bound: the real table is ~150 KB; anything over this is not that file.
-GISTEMP_MAX_CHARS = 2_000_000
+# The body bound is DERIVED from the table's own shape, not a fixed number (see gistemp_max_chars).
+GISTEMP_FIRST_YEAR = 1880
+GISTEMP_LINE_ALLOWANCE = 200  # chars per row; a real row is about 120
+GISTEMP_HEADER_ALLOWANCE = 4096  # title, blank and header lines, with slack
 
 # Generous default timeout: a fetch may egress over Tor, which is slow — a tight
 # timeout would spuriously fail honest requests. Seconds.
@@ -384,6 +386,18 @@ def gistemp_url(region: str = "GLB") -> str:
     return f"{GISTEMP_BASE}/{region}.Ts+dSST.csv"
 
 
+def gistemp_max_chars(now_year: int | None = None) -> int:
+    """The longest body that can still be this table.
+
+    One row per year from 1880 to the current year plus one (the next year's row may appear
+    early), times a generous per-row allowance, plus the header lines. It grows with the data
+    each January instead of being a constant someone must remember to raise.
+    """
+    year = now_year if now_year is not None else datetime.now(timezone.utc).year
+    rows = max(year + 1 - GISTEMP_FIRST_YEAR + 1, 1)
+    return rows * GISTEMP_LINE_ALLOWANCE + GISTEMP_HEADER_ALLOWANCE
+
+
 def fetch_gistemp(
     region: str = "GLB",
     *,
@@ -405,8 +419,9 @@ def fetch_gistemp(
     getter = get or _default_getter
     resp = getter(gistemp_url(region))
     resp.raise_for_status()
-    if len(resp.text) > GISTEMP_MAX_CHARS:
-        raise ValueError(f"GISTEMP {region}: the response is {len(resp.text)} characters, over the {GISTEMP_MAX_CHARS} cap (the real table is about 0.15 MB)")
+    bound = gistemp_max_chars()
+    if len(resp.text) > bound:
+        raise ValueError(f"GISTEMP {region}: the response is {len(resp.text)} characters, over the {bound} the table's own shape allows")
     parsed = parse_gistemp(resp.text, region=region, extracted_at=extracted_at)
     if parsed.looks_unrecognised:
         raise ValueError(
