@@ -30,8 +30,10 @@ function runBinding(value, stubs = {}, event = {}) {
   vm.runInContext(SRC, sandbox);
   const el = { nodeType: 1, getAttribute: (n) => (n === "data-on-click" ? value : null),
                hasAttribute: (n) => n === "data-on-click" };
+  // `isTrusted: true` by default: this models a person's own click, which is what the dispatcher runs (stage 2 of A-024
+  // refuses a script-made click, keydown or submit for every name). A test of the refusal passes `isTrusted: false`.
   const ev = Object.assign({
-    type: "click", target: el, bubbles: true, cancelBubble: false, defaultPrevented: false,
+    type: "click", isTrusted: true, target: el, bubbles: true, cancelBubble: false, defaultPrevented: false,
     composedPath: () => [el],
     stopPropagation() { this.cancelBubble = true; },
     preventDefault() { this.defaultPrevented = true; },

@@ -445,15 +445,36 @@ down is a RECORD of that date and carries its own disposition table.)*
   answer a foreign page 403 before their handler runs. `/api/database/backup` has its own guard (`_refuse_cross_site` in
   `src/api/database.py`) with the same checks, judging Origin through the same `_foreign_origin`. The stated limit of both is a browser that sends none of the three
   (Firefox before 90, Safari before 16.4, an `OO_ALLOWED_HOSTS` name over plain HTTP): that request is
-  served, and the page still cannot read the answer. Behind a TLS-terminating proxy the app must see
+  served, and the page still cannot read the answer. For `/api/database/backup` the limit now covers loopback names
+  only (R445): on any other name a request that sends none of the three is refused (403) unless it carries
+  `X-OO-Download: 1`, a header a caller that is not a page adds (`curl -H`) and a no-cors `<img>` cannot. The rule reads the
+  `Host` the app RECEIVES: a plain-HTTP proxy that rewrites `Host` to a loopback name puts its callers under the loopback
+  rule above. Behind a TLS-terminating proxy the app must see
   `https` (the proxy forwards `X-Forwarded-Proto` from loopback) or the proxy must put the port in `Host`, or an
   `Origin: https://NAME` is judged as port 443 against a Host read as port 80 and refused, as it already is on a POST.
   Making these routes `POST` is a proposal. A
   `Sec-Fetch-Site` check in the MIDDLEWARE for every state-changing request is not built, because
   nothing has found a request that passes layers 1 and 2 and should not.
 - **At rest.** The data dir is created `0700` (best-effort, POSIX-only) so another local user
-  cannot read the corpus, signing keys or custody log; signing keys are `0600`. Full at-rest
-  encryption remains the host's job (Qubes/LUKS) — this bounds a shared host, not a seized one.
+  cannot read the corpus, signing keys or custody log; signing keys are `0600`. On a store with a
+  passphrase held (`OO_KEY_PASSPHRASE`, else the database passphrase) the custody keys and the
+  evidence key are **wrapped under it**, so a copied data folder does not let its holder sign as
+  this install. The evidence key is wrapped with scrypt (N = 2^15) and AES-256-GCM (the custody
+  ML-DSA key's wrap; a wrong guess measured about 85 ms and 32 MiB here, against 170 ms for the
+  database: half in time, memory-hard where its PBKDF2 is not), and one written in the clear before 0.6 is wrapped in place, the same key,
+  the first time it is loaded under a passphrase. **Stated limit:** the custody Ed25519 key is wrapped
+  as a PKCS8 PEM, whose key derivation is 2048 rounds of PBKDF2-HMAC-SHA256 (about 0.3 ms a guess,
+  against 170 ms for the database itself): a copy of that one file is the cheapest test of a guess
+  at the passphrase, so a short passphrase is exposed through it. It is not changed here. A new evidence key is created with mode `0600` from its
+  first byte (POSIX; the custody keys are still written first and set to `0600` after). A process
+  killed while creating it can leave a private copy under `keys/.pending/`, which backups do not
+  list; the first wrap of a plaintext key removes the leftover that is a second name for it. A store
+  with no passphrase keeps its keys `0600` in the clear. A wrapped key that cannot be opened (the
+  store is locked, or a backup restored from another install brought that install's key under its
+  passphrase) is refused with the cause and never replaced, and a backup, which signs its manifest
+  with the evidence key, is refused with it; there is no recovery for a lost
+  passphrase. Full at-rest encryption remains the host's job (Qubes/LUKS) — this bounds a shared
+  host, not a seized one.
 - **Exported data.** CSV cells beginning `= + - @` or a control character are neutralised
   before export (spreadsheet formula injection).
 
