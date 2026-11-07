@@ -49,6 +49,9 @@ def test_monthly_and_annual_series_with_stated_baseline():
     assert first.base_year == BASE_PERIOD == "1951-1980"
     assert first.extracted_at == VINTAGE
     assert {f.value for f in _of(res, SERIES_ANNUAL_JD) if f.time_period == "1880"} == {-0.17}
+    # 1881's J-D (-.09) differs from its Dec (-.07) and D-N (-.10): each column lands in its own series
+    assert {f.time_period: f.value for f in _of(res, SERIES_ANNUAL_JD)}["1881"] == -0.09
+    assert {f.time_period: f.value for f in _of(res, SERIES_ANNUAL_DN)}["1881"] == -0.10
 
 
 def test_stars_are_gaps_not_values_and_rows_are_kept():
@@ -262,3 +265,8 @@ def test_the_summary_says_when_refusals_are_only_a_sample():
     s = res.summary()
     assert s["refused_total"] == 500 and s["refused_is_sample"] is True and len(s["refused_sample"]) == 100
     assert parse_gistemp(GOOD, extracted_at=VINTAGE).summary()["refused_is_sample"] is False
+
+
+def test_the_unrecognised_message_counts_all_refusals_not_the_sample():
+    with pytest.raises(ValueError, match="500 lines refused"):
+        fetch.fetch_gistemp(get=lambda u: _Resp(f"{HEADER}\n" + "junk\n" * 500), extracted_at=VINTAGE)

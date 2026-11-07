@@ -426,6 +426,6 @@ def fetch_gistemp(
     if parsed.looks_unrecognised:
         raise ValueError(
             f"GISTEMP {region}: the response is not the expected table "
-            f"({len(parsed.refused)} lines refused, none parsed)"
+            f"({parsed.refused_total} lines refused, none parsed)"
         )
     return parsed
