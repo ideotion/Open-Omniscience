@@ -1950,6 +1950,7 @@ class BackgroundScheduler:
                 if self._thread.ident is None:
                     self._thread, self._started_at = previous
                 raise
+        _clear_resume_abandoned()  # a loop is running again: the claim that nothing would resume it is over
         return True
 
     def take_deferred_start(self) -> bool:
@@ -2865,6 +2866,9 @@ class BackgroundScheduler:
                 # SCHED-1: a resume still waiting for the previous pass to exit. Rides the
                 # payload the Schedule tab already polls; None when nothing is pending.
                 "resume_pending": resume_pending(),
+                # The other end of that story: the loop thread AND the watcher thread were both refused, so nothing will resume collection
+                # until the operator starts it. Names the class of each refusal, never its words. None when nothing is abandoned.
+                "resume_abandoned": resume_abandoned(),
             }
 
     def _compute_plan(self, settings: SchedulerSettings, last: dict | None) -> dict:
@@ -3220,6 +3224,7 @@ def resume_after_exclusive_operation(
         # The hold ends BEFORE the start attempts: ``start()`` refuses while it stands (R367, F5), and the operation is done.
         get_scheduler().release_exclusive()
         released = True
+        start_error: str | None = None
         try:
             started = _start_or_stand_down(retries, retry_delay)
         except Exception as exc:  # noqa: BLE001 - a courtesy call never raises into the operation's own finally
@@ -3232,8 +3237,10 @@ def resume_after_exclusive_operation(
                 "could not start background collection after an exclusive operation (%s); a pending resume takes over",
                 type(exc).__name__,
             )
+            start_error = type(exc).__name__
             started = False
         if started:
+            _clear_resume_abandoned()
             return
         # SCHED-1 (field round 2026-09-24): the retry budget ran out with the old pass
         # still alive. The budget was sized against one blocked WRITE (438 s); on a
@@ -3246,6 +3253,7 @@ def resume_after_exclusive_operation(
             _watch_for_resume(get_scheduler())
         except Exception as exc:  # noqa: BLE001 - a courtesy call never raises into the operation's own finally
             log_failure(_LOG, "pending collection resume: the watcher thread could not be started", exc, level=logging.WARNING)
+            _note_resume_abandoned(start_error, type(exc).__name__)
             _LOG.warning(
                 "could not resume background collection after an exclusive operation, and nothing is waiting to -- collection "
                 "stays stopped until it is started again (the Start button, or going online)"
@@ -3288,13 +3296,47 @@ def resume_pending() -> dict | None:
         return dict(_RESUME_PENDING) if _RESUME_PENDING else None
 
 
+_RESUME_ABANDONED: dict | None = None
+
+
+def resume_abandoned() -> dict | None:
+    """Nothing is left to resume collection, or None: what ``status()`` shows instead of an idle-looking collector.
+
+    Set when an exclusive operation ended, the loop thread could not be started AND the pending-resume watcher's thread could not be
+    started either (the process is out of threads). Before this the only trace was a log line, and with autostart off the collector stayed
+    off until the operator pressed Start. It names the CLASS of each refusal, never its words: the operation may have held a passphrase."""
+    with _RESUME_LOCK:
+        return dict(_RESUME_ABANDONED) if _RESUME_ABANDONED else None
+
+
+def _note_resume_abandoned(start_error: str | None, watcher_error: str) -> None:
+    global _RESUME_ABANDONED
+    with _RESUME_LOCK:
+        _RESUME_ABANDONED = {
+            "since": datetime.now(UTC).isoformat(timespec="seconds"),
+            "start_error": start_error,
+            "watcher_error": watcher_error,
+            "basis": (
+                "the process could not create the thread that resumes collection after an exclusive operation, so collection stays "
+                "stopped until it is started again (the Start button, or going online)"
+            ),
+        }
+
+
+def _clear_resume_abandoned() -> None:
+    global _RESUME_ABANDONED
+    with _RESUME_LOCK:
+        _RESUME_ABANDONED = None
+
+
 def cancel_pending_resume() -> None:
     """Retire any watcher (called at shutdown, so a watcher can never start collection
     on a process that is going down)."""
-    global _RESUME_GEN, _RESUME_PENDING
+    global _RESUME_GEN, _RESUME_PENDING, _RESUME_ABANDONED
     with _RESUME_LOCK:
         _RESUME_GEN += 1
         _RESUME_PENDING = None
+        _RESUME_ABANDONED = None
 
 
 def _watch_for_resume(sched: BackgroundScheduler, *, poll_s: float | None = None) -> threading.Thread:
