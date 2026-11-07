@@ -15,7 +15,7 @@ STATED LIMITS (they are not solved by a table; ``docs/ledger`` carries the audit
 * An event the BROWSER fires as a consequence of a script's ``el.click()`` (a checkbox's ``change``) is ``isTrusted``, so the
   A-023 chain (``ooClickId('discovery-external')`` then ``saveDiscoveryExternal``) is held shut only by the ``CLICK_IDS`` set.
 * An injected binding the person then CLICKS is a trusted click on any name the click row lists. The table narrows the
-  zero-click and wrong-event paths; the confirm in a name's own body and ``GESTURE_ONLY`` are what stand behind the click.
+  zero-click and wrong-event paths; the confirm in a name's own body and `tests/trusted_click_table.py` are what stand behind the click.
 * Autofill and extensions dispatch untrusted ``input``/``change`` events; no trust rule is added for them here (stage 2, a
   proposal), so nothing in this change depends on how they behave. NOT measured.
 """

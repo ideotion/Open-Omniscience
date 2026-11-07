@@ -1,5 +1,5 @@
 // The two DOM helpers touch only the ids the markup names, and the destructive names run only for a
-// person's own gesture (audit A-004, A-011).
+// person's own click (audit A-004, A-011; A-024 stage 2: the trust rule replaced the 31-name GESTURE_ONLY list).
 //
 // Open Omniscience - Global Intelligence Platform for Investigative Journalism
 // Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -37,6 +37,8 @@ console.error = (m) => warned.push(String(m));
 eval(fs.readFileSync(path.join(__dirname, "..", "src", "static", "oo-on.js"), "utf8"));
 
 const ran = [];
+// The 31 names that used to be on GESTURE_ONLY: still the interesting set (destructive or job-control, no confirm of
+// their own, some now with one), now protected by the rule for EVERY name rather than by being listed.
 const GESTURE = [
   "_uxPauseResume", "cancelP0Validation", "cancelPull", "disableUnmanagedLanguages", "dumpFtsCancel",
   "excludeKeyword", "familyResetGroup", "familySplit", "jobCancel", "kxHide", "kxRemoveTag", "lawSetWatched",
@@ -95,8 +97,8 @@ fire("error", el({ "data-on-error": "ooClickId('agenda-tag')" }));
 fire("error", el({ "data-on-error": "ooSetValue('anno-import', 'x')" }));
 assert.deepStrictEqual(touched, []);
 
-// 2. The gesture-only names: a person's click (or Enter/Space on a focused control) runs them; an
-//    error/load/toggle/focus/hover event, a synthetic click and any other key do not.
+// 2. The destructive names: a person's click runs them; an error/load/toggle/focus/hover event (no table row) and a
+//    synthetic click or keydown (not isTrusted) do not.
 const NAMES = GESTURE.map((n) => n + (n === "secureErase" ? "(8)" : n === "lawSetWatched" ? "('a', false)" : "('a')"));
 for (const call of NAMES) {
   const name = call.split("(")[0];
@@ -120,36 +122,34 @@ for (const call of NAMES) {
   fire("keydown", el({ "data-on-keydown": call }), { isTrusted: false, key: "Enter" });
   assert.deepStrictEqual(ran, [], name + " ran for something that is not a person's gesture: " + ran);
 }
-// 2b. GESTURE_ONLY must hold on its own, not only because the table refuses first. Give every gesture-only name a row on
-//     every event type here (a test-only widening, undone below) and the original rules must still hold: a person's click, or
-//     Enter/Space on a focused control, runs them; error/load/toggle/focus/hover/change/input, a synthetic click and any
-//     other key do not. This is also the only thing that exercises the keydown branch of isUserGesture, which no markup
-//     reaches now (a real Enter on a button arrives as a click) and which stage 2 would use.
-const TYPES = ["click", "keydown", "error", "load", "toggle", "focus", "mouseover", "change", "input"];
+// 2b. The trust rule must hold on its own, not only because the table refuses first. Give every destructive name a row on
+//     click, keydown and submit here (a test-only widening, undone below) and an event a script made is still refused, while
+//     a person's click and key press run it. `submit` has no row in the markup at all, so this is the only thing that
+//     exercises it. (Before stage 2 this section pinned GESTURE_ONLY, which also refused error/load/hover on a widened
+//     table; the per-event table is what refuses those now, and the section above pins that.)
+const TYPES = ["click", "keydown", "submit"];
 const saved = {};
 for (const t of TYPES) { saved[t] = window.ooOn.EVENT_ACTIONS[t]; window.ooOn.EVENT_ACTIONS[t] = new Set([...(saved[t] || []), ...GESTURE]); }
 for (const call of NAMES) {
   const name = call.split("(")[0];
-  ran.length = 0;
-  fire("click", el({ "data-on-click": call }), { isTrusted: true });
-  assert.strictEqual(ran.length, 1, name + " (widened) refused a real click");
-  ran.length = 0;
-  fire("keydown", el({ "data-on-keydown": call }), { isTrusted: true, key: "Enter" });
-  fire("keydown", el({ "data-on-keydown": call }), { isTrusted: true, key: " " });
-  assert.strictEqual(ran.length, 2, name + " (widened) refused Enter/Space");
-  ran.length = 0;
-  for (const type of ["error", "load", "toggle", "focus", "mouseover", "change", "input"]) {
-    fire(type, el({ ["data-on-" + type]: call }), { isTrusted: true });
+  for (const type of TYPES) {
+    ran.length = 0;
+    fire(type, el({ ["data-on-" + type]: call }), { isTrusted: true, key: "a" });
+    assert.strictEqual(ran.length, 1, name + " (widened) refused a person's " + type);
+    ran.length = 0;
+    fire(type, el({ ["data-on-" + type]: call }), { isTrusted: false, key: "Enter" });   // a script's el.click() / dispatched event
+    fire(type, el({ ["data-on-" + type]: call }), { key: "Enter" });                      // no isTrusted at all
+    assert.deepStrictEqual(ran, [], name + " (widened) ran for a " + type + " a script made: " + ran);
   }
-  fire("click", el({ "data-on-click": call }), { isTrusted: false });
-  fire("click", el({ "data-on-click": call }));
-  fire("keydown", el({ "data-on-keydown": call }), { isTrusted: true, key: "a" });
-  fire("keydown", el({ "data-on-keydown": call }), { isTrusted: false, key: "Enter" });
-  assert.deepStrictEqual(ran, [], name + " (widened) ran for something that is not a person's gesture: " + ran);
 }
 for (const t of TYPES) { if (saved[t]) window.ooOn.EVENT_ACTIONS[t] = saved[t]; else delete window.ooOn.EVENT_ACTIONS[t]; }
+// ... and change/input/toggle are NOT in the rule (ruled R443: Playwright's selectOption and an extension's autofill fire them
+// untrusted), so with a row they run for a script too.
+for (const t of ["change", "input", "toggle"]) {
+  assert(!window.ooOn.TRUSTED_EVENTS.has(t), t + " must stay out of the trust rule");
+}
 
-// A name that is not gesture-only still runs for the event the markup binds it to (it confirms inside, or is not
+// A name outside that set still runs for the event the markup binds it to (it confirms inside, or is not
 // destructive) ...
 ran.length = 0;
 fire("click", el({ "data-on-click": "deleteSource(1)" }), { isTrusted: true });
@@ -159,8 +159,9 @@ ran.length = 0;
 for (const type of ["error", "load", "toggle", "focus", "mouseover"]) fire(type, el({ ["data-on-" + type]: "deleteSource(1)" }));
 assert.strictEqual(ran.length, 0, "a name outside the gesture set ran for an event no markup binds it to");
 
-// 3. The set the dispatcher holds is the set this test names.
-assert.deepStrictEqual(Array.from(window.ooOn.GESTURE_ONLY).sort(), [...GESTURE].sort());
+// 3. The events the dispatcher holds to a person are the ones this test names.
+assert.deepStrictEqual(Array.from(window.ooOn.TRUSTED_EVENTS).sort(), ["click", "keydown", "submit"]);
+assert.strictEqual(window.ooOn.GESTURE_ONLY, undefined, "the 31-name list is gone: the rule covers every name");
 assert.deepStrictEqual(Array.from(window.ooOn.SET_VALUE_IDS).sort(), ["agenda-tag", "dumpread-title"]);
 assert.deepStrictEqual(Array.from(window.ooOn.CLICK_IDS).sort(), ["anno-import"]);
 

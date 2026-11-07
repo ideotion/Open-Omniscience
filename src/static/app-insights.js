@@ -267,6 +267,8 @@
     }
 
     async function familyResetGroup(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!confirm(t("Clear every override you set on this family? The automatic grouping returns."))) return;
       const members = JSON.parse(btn.dataset.members);
       try {
         for (const n of members) await api("/api/insights/family/override?normalized=" + encodeURIComponent(n), {method: "DELETE"});
