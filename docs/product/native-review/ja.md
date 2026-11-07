@@ -152,7 +152,7 @@ Correct the text in `src/static/locales/ja.json` (the key is the English text).
 | 4 | Computed from the history rows on this read: this lane has no table for the monthly summary. | 今回の読み込みで履歴の行から計算しました：このレーンには月次サマリー用のテーブルがありません。 |
 | 5 | Read from the monthly summary stored {built}, computed from the history file dated {vintage}. | {built} に保存された月次サマリーから読み込みました（{vintage} 付けの履歴ファイルから計算）。 |
 
-## C6: oo-on: confirmations for the irreversible actions (PR #1746)
+## 33g: oo-on: confirmations for the irreversible actions (PR #1746)
 
 | # | English source | Current text in this language |
 |---|---|---|
@@ -161,7 +161,15 @@ Correct the text in `src/static/locales/ja.json` (the key is the English text).
 | 3 | Remove this author and all of their imported annotations? This cannot be undone here; importing their bundle again brings them back. | この著者と、取り込み済みのすべての注釈を削除しますか？ここでは元に戻せません。バンドルをもう一度取り込めば復元できます。 |
 | 4 | Remove this item, and any note you wrote on it, from the briefing draft? | この項目と、そこに書いたメモをブリーフィングの下書きから削除しますか？ |
 
-## A-S6: Population-weighted figures state their weighting (PR #1750)
+## 33h: Help coverage banner (PR #1748)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Machine-drafted translation ({language}). How much of this document is translated could not be measured here. The English original is authoritative. Found a better wording? Improve it on the project page. | 機械翻訳（{language}）。この文書のどれだけが翻訳済みかは、ここでは測定できませんでした。英語の原文が正本です。より良い表現がありますか？プロジェクトのページで改善してください。 |
+| 2 | Machine-drafted translation ({language}): this draft has {done} of the {total} headings of the English original; that counts headings, not translated words. The English original is authoritative. Found a better wording? Improve it on the project page. | 機械翻訳（{language}）：この草稿には英語原文の見出し {total} 件のうち {done} 件があります。数えているのは見出しで、翻訳済みの語数ではありません。英語の原文が正本です。より良い表現がありますか？プロジェクトのページで改善してください。 |
+| 3 | This document has no draft in this language yet ({language}), so the English original is shown. | この文書にはまだこの言語（{language}）の版がないため、英語の原文を表示しています。 |
+
+## 33i: Population-weighted figures state their weighting (PR #1750)
 
 | # | English source | Current text in this language |
 |---|---|---|
@@ -170,6 +178,12 @@ Correct the text in `src/static/locales/ja.json` (the key is the English text).
 | 3 | Weights: source not stated. Covers {covered} of {total} members. | 重み: 出典の記載なし。{total} 件中 {covered} 件のメンバーを対象とします。 |
 | 4 | Weights: {source}, as of {as_of}. Covers {covered} of {total} members. | 重み: {source}、{as_of} 時点。{total} 件中 {covered} 件のメンバーを対象とします。 |
 | 5 | {who} taken from the operator's population table ({source}, as of {as_of}). | {who}: 運用者の人口表から取得 ({source}、{as_of} 時点)。 |
+
+## 33j: Climate series (PR #1751)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Climate series | 気候データ系列 |
 
 ## extra-1: OSM daily change files: update a country (J1) (PR #1720)
 

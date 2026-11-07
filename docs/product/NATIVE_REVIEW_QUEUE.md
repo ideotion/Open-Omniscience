@@ -24,20 +24,22 @@ half-width (item 33 (a)).
 | 33d OSM B3b: brands, contact channels, freshness | item 33 (d) | #1735 | `33f9940` | 42 |
 | 33e OSM B3c: places by country and by region | item 33 (e) | #1736 | `cac50c6` | 18 |
 | 33f OSM stored monthly summary (R435) | item 33 (f) | #1738 | `a47a9fb` | 5 |
-| C6 oo-on: confirmations for the irreversible actions | R443 (C6) | #1746 | `0982a0b` | 4 |
-| A-S6 Population-weighted figures state their weighting | A-S6 (Q1153) | #1750 | `2a621dc` | 5 |
+| 33g oo-on: confirmations for the irreversible actions | item 33 (g), C6 | #1746 | `0982a0b` | 4 |
+| 33h Help coverage banner | item 33 (h), E2 | #1748 | PENDING, open head `12eae5010` | 3 |
+| 33i Population-weighted figures state their weighting | item 33 (i), A-S6 | #1750 | `2a621dc` | 5 |
+| 33j Climate series | item 33 (j) | #1751 | PENDING, open head `25b3b42c9` | 1 |
 | extra-1 OSM daily change files: update a country (J1) | not in item 33 | #1720 | `ea88a6e` | 22 |
 | extra-2 Living sources: OSM daily change files (B1) | not in item 33 | #1725 | `c0c66ff` | 15 |
 | extra-3 Living sources: per-edition coverage group | not in item 33 | #1727 | `7139c68` | 14 |
-| **All** | | | | **183** |
+| **All** | | | | **187** |
 
 - (b) of item 33 is an operator step (a dated population table) and adds no key.
-- Item 33 has six lettered lines, (a) to (f); there is no (g) in the entry as merged.
-- E2 (PR #1346, the table-by-table database check) added no locale key, so it has no rows here.
+- Letters (g) to (j) follow the Plan lane's draft bundle; (h) and (j) are pending until #1748 and #1751 merge.
+- A group marked PENDING is read from its open PR head and changes on a re-run until it merges.
 
 ## 33a: Law coverage floor (C-L1)
 
-Recorded in item 33 (a). PR #1710, merge `743fb4cc2`. 28 new keys.
+Recorded: item 33 (a). PR #1710, merge `743fb4cc2`. 28 new keys.
 
 Per-language counts (keys added / same as English / missing):
 
@@ -90,7 +92,7 @@ Keys (English source, then the files that use it):
 
 ## 33c: OSM trends B3a: tag adoption, openings and closures
 
-Recorded in item 33 (c). PR #1730, merge `726de08`. 30 new keys.
+Recorded: item 33 (c). PR #1730, merge `726de08`. 30 new keys.
 
 Per-language counts (keys added / same as English / missing):
 
@@ -145,7 +147,7 @@ Keys (English source, then the files that use it):
 
 ## 33d: OSM B3b: brands, contact channels, freshness
 
-Recorded in item 33 (d). PR #1735, merge `33f9940`. 42 new keys.
+Recorded: item 33 (d). PR #1735, merge `33f9940`. 42 new keys.
 
 Per-language counts (keys added / same as English / missing):
 
@@ -212,7 +214,7 @@ Keys (English source, then the files that use it):
 
 ## 33e: OSM B3c: places by country and by region
 
-Recorded in item 33 (e). PR #1736, merge `cac50c6`. 18 new keys.
+Recorded: item 33 (e). PR #1736, merge `cac50c6`. 18 new keys.
 
 Per-language counts (keys added / same as English / missing):
 
@@ -255,7 +257,7 @@ Keys (English source, then the files that use it):
 
 ## 33f: OSM stored monthly summary (R435)
 
-Recorded in item 33 (f). PR #1738, merge `a47a9fb`. 5 new keys.
+Recorded: item 33 (f). PR #1738, merge `a47a9fb`. 5 new keys.
 
 Per-language counts (keys added / same as English / missing):
 
@@ -283,9 +285,9 @@ Keys (English source, then the files that use it):
 | 4 | Computed from the history rows on this read: this lane has no table for the monthly summary. | `src/static/app-map.js` |
 | 5 | Read from the monthly summary stored {built}, computed from the history file dated {vintage}. | `src/static/app-map.js` |
 
-## C6: oo-on: confirmations for the irreversible actions
+## 33g: oo-on: confirmations for the irreversible actions
 
-Recorded in R443 (C6). PR #1746, merge `0982a0b`. 4 new keys.
+Recorded: item 33 (g), C6. PR #1746, merge `0982a0b`. 4 new keys.
 
 Per-language counts (keys added / same as English / missing):
 
@@ -312,9 +314,37 @@ Keys (English source, then the files that use it):
 | 3 | Remove this author and all of their imported annotations? This cannot be undone here; importing their bundle again brings them back. | `src/static/app-home.js` |
 | 4 | Remove this item, and any note you wrote on it, from the briefing draft? | `src/static/app-home.js` |
 
-## A-S6: Population-weighted figures state their weighting
+## 33h: Help coverage banner
 
-Recorded in A-S6 (Q1153). PR #1750, merge `2a621dc`. 5 new keys.
+Recorded: item 33 (h), E2. PR #1748, PENDING, open head `12eae5010`. 3 new keys.
+
+Per-language counts (keys added / same as English / missing):
+
+| Language | Added | Same as English | Missing |
+|---|---|---|---|
+| ar | 3 | 0 | 0 |
+| bn | 3 | 0 | 0 |
+| de | 3 | 0 | 0 |
+| es | 3 | 0 | 0 |
+| fr | 3 | 0 | 0 |
+| hi | 3 | 0 | 0 |
+| id | 3 | 0 | 0 |
+| ja | 3 | 0 | 0 |
+| pt | 3 | 0 | 0 |
+| ru | 3 | 0 | 0 |
+| zh | 3 | 0 | 0 |
+
+Keys (English source, then the files that use it):
+
+| # | English source | Files |
+|---|---|---|
+| 1 | Machine-drafted translation ({language}). How much of this document is translated could not be measured here. The English original is authoritative. Found a better wording? Improve it on the project page. | built at runtime (no literal match) |
+| 2 | Machine-drafted translation ({language}): this draft has {done} of the {total} headings of the English original; that counts headings, not translated words. The English original is authoritative. Found a better wording? Improve it on the project page. | built at runtime (no literal match) |
+| 3 | This document has no draft in this language yet ({language}), so the English original is shown. | built at runtime (no literal match) |
+
+## 33i: Population-weighted figures state their weighting
+
+Recorded: item 33 (i), A-S6. PR #1750, merge `2a621dc`. 5 new keys.
 
 Per-language counts (keys added / same as English / missing):
 
@@ -342,9 +372,35 @@ Keys (English source, then the files that use it):
 | 4 | Weights: {source}, as of {as_of}. Covers {covered} of {total} members. | `src/static/app-gov-law.js` |
 | 5 | {who} taken from the operator's population table ({source}, as of {as_of}). | `src/static/app-gov-law.js` |
 
+## 33j: Climate series
+
+Recorded: item 33 (j). PR #1751, PENDING, open head `25b3b42c9`. 1 new key.
+
+Per-language counts (keys added / same as English / missing):
+
+| Language | Added | Same as English | Missing |
+|---|---|---|---|
+| ar | 1 | 0 | 0 |
+| bn | 1 | 0 | 0 |
+| de | 1 | 0 | 0 |
+| es | 1 | 0 | 0 |
+| fr | 1 | 0 | 0 |
+| hi | 1 | 0 | 0 |
+| id | 1 | 0 | 0 |
+| ja | 1 | 0 | 0 |
+| pt | 1 | 0 | 0 |
+| ru | 1 | 0 | 0 |
+| zh | 1 | 0 | 0 |
+
+Keys (English source, then the files that use it):
+
+| # | English source | Files |
+|---|---|---|
+| 1 | Climate series | built at runtime (no literal match) |
+
 ## extra-1: OSM daily change files: update a country (J1)
 
-Recorded in not in item 33. PR #1720, merge `ea88a6e`. 22 new keys.
+Recorded: not in item 33. PR #1720, merge `ea88a6e`. 22 new keys.
 
 Per-language counts (keys added / same as English / missing):
 
@@ -391,7 +447,7 @@ Keys (English source, then the files that use it):
 
 ## extra-2: Living sources: OSM daily change files (B1)
 
-Recorded in not in item 33. PR #1725, merge `c0c66ff`. 15 new keys.
+Recorded: not in item 33. PR #1725, merge `c0c66ff`. 15 new keys.
 
 Per-language counts (keys added / same as English / missing):
 
@@ -431,7 +487,7 @@ Keys (English source, then the files that use it):
 
 ## extra-3: Living sources: per-edition coverage group
 
-Recorded in not in item 33. PR #1727, merge `7139c68`. 14 new keys.
+Recorded: not in item 33. PR #1727, merge `7139c68`. 14 new keys.
 
 Per-language counts (keys added / same as English / missing):
 

@@ -152,7 +152,7 @@ Correct the text in `src/static/locales/hi.json` (the key is the English text).
 | 4 | Computed from the history rows on this read: this lane has no table for the monthly summary. | इस बार इतिहास की पंक्तियों से गणना की गई: इस लेन में मासिक सारांश की तालिका नहीं है। |
 | 5 | Read from the monthly summary stored {built}, computed from the history file dated {vintage}. | {built} को सहेजे गए मासिक सारांश से पढ़ा गया, जो {vintage} की इतिहास फ़ाइल से गणना किया गया है। |
 
-## C6: oo-on: confirmations for the irreversible actions (PR #1746)
+## 33g: oo-on: confirmations for the irreversible actions (PR #1746)
 
 | # | English source | Current text in this language |
 |---|---|---|
@@ -161,7 +161,15 @@ Correct the text in `src/static/locales/hi.json` (the key is the English text).
 | 3 | Remove this author and all of their imported annotations? This cannot be undone here; importing their bundle again brings them back. | इस लेखक और उसकी सभी आयात की गई टिप्पणियों को हटाएँ? यहाँ इसे पलटा नहीं जा सकता; उसका बंडल दोबारा आयात करने पर वे लौट आती हैं। |
 | 4 | Remove this item, and any note you wrote on it, from the briefing draft? | इस प्रविष्टि को, और उस पर आपके लिखे नोट को, ब्रीफ़िंग ड्राफ़्ट से हटाएँ? |
 
-## A-S6: Population-weighted figures state their weighting (PR #1750)
+## 33h: Help coverage banner (PR #1748)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Machine-drafted translation ({language}). How much of this document is translated could not be measured here. The English original is authoritative. Found a better wording? Improve it on the project page. | मशीन-अनुवाद ({language})। इस दस्तावेज़ का कितना भाग अनूदित है, यह यहाँ मापा नहीं जा सका। अंग्रेज़ी मूल ही प्रामाणिक है। कोई बेहतर शब्द-रचना सूझी? प्रोजेक्ट पृष्ठ पर उसे सुधारें। |
+| 2 | Machine-drafted translation ({language}): this draft has {done} of the {total} headings of the English original; that counts headings, not translated words. The English original is authoritative. Found a better wording? Improve it on the project page. | मशीन-अनुवाद ({language}): इस मसौदे में अंग्रेज़ी मूल के {total} शीर्षकों में से {done} हैं; यह शीर्षक गिनता है, अनूदित शब्द नहीं। अंग्रेज़ी मूल ही प्रामाणिक है। कोई बेहतर शब्द-रचना सूझी? प्रोजेक्ट पृष्ठ पर उसे सुधारें। |
+| 3 | This document has no draft in this language yet ({language}), so the English original is shown. | इस दस्तावेज़ का इस भाषा ({language}) में संस्करण अभी उपलब्ध नहीं है, इसलिए अंग्रेज़ी मूल दिखाया जा रहा है। |
+
+## 33i: Population-weighted figures state their weighting (PR #1750)
 
 | # | English source | Current text in this language |
 |---|---|---|
@@ -170,6 +178,12 @@ Correct the text in `src/static/locales/hi.json` (the key is the English text).
 | 3 | Weights: source not stated. Covers {covered} of {total} members. | भार: स्रोत नहीं बताया गया। {total} में से {covered} सदस्यों को शामिल करता है। |
 | 4 | Weights: {source}, as of {as_of}. Covers {covered} of {total} members. | भार: {source}, {as_of} तक। {total} में से {covered} सदस्यों को शामिल करता है। |
 | 5 | {who} taken from the operator's population table ({source}, as of {as_of}). | {who}: ऑपरेटर की जनसंख्या तालिका से लिए गए ({source}, {as_of} तक)। |
+
+## 33j: Climate series (PR #1751)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Climate series | जलवायु श्रृंखला |
 
 ## extra-1: OSM daily change files: update a country (J1) (PR #1720)
 

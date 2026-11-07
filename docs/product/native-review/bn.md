@@ -152,7 +152,7 @@ Correct the text in `src/static/locales/bn.json` (the key is the English text).
 | 4 | Computed from the history rows on this read: this lane has no table for the monthly summary. | এই পাঠে ইতিহাসের সারি থেকে গণনা করা হয়েছে: এই লেনে মাসিক সারসংক্ষেপের টেবিল নেই। |
 | 5 | Read from the monthly summary stored {built}, computed from the history file dated {vintage}. | {built}-এ সংরক্ষিত মাসিক সারসংক্ষেপ থেকে পড়া হয়েছে, যা {vintage} তারিখের ইতিহাস ফাইল থেকে গণনা করা। |
 
-## C6: oo-on: confirmations for the irreversible actions (PR #1746)
+## 33g: oo-on: confirmations for the irreversible actions (PR #1746)
 
 | # | English source | Current text in this language |
 |---|---|---|
@@ -161,7 +161,15 @@ Correct the text in `src/static/locales/bn.json` (the key is the English text).
 | 3 | Remove this author and all of their imported annotations? This cannot be undone here; importing their bundle again brings them back. | এই লেখক এবং তাঁর সব আমদানি করা টীকা সরাবেন? এখানে এটি ফেরানো যায় না; তাঁর বান্ডিল আবার আমদানি করলে সেগুলো ফিরে আসে। |
 | 4 | Remove this item, and any note you wrote on it, from the briefing draft? | ব্রিফিং খসড়া থেকে এই আইটেম এবং এতে আপনার লেখা নোট সরাবেন? |
 
-## A-S6: Population-weighted figures state their weighting (PR #1750)
+## 33h: Help coverage banner (PR #1748)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Machine-drafted translation ({language}). How much of this document is translated could not be measured here. The English original is authoritative. Found a better wording? Improve it on the project page. | যান্ত্রিক অনুবাদ ({language})। এই নথির কতটা অনূদিত তা এখানে মাপা যায়নি। ইংরেজি মূল পাঠই প্রামাণিক। আরও ভালো শব্দচয়ন আছে? প্রকল্পের পাতায় তা উন্নত করুন। |
+| 2 | Machine-drafted translation ({language}): this draft has {done} of the {total} headings of the English original; that counts headings, not translated words. The English original is authoritative. Found a better wording? Improve it on the project page. | যান্ত্রিক অনুবাদ ({language}): এই খসড়ায় ইংরেজি মূল পাঠের {total}টি শিরোনামের মধ্যে {done}টি আছে; এটি শিরোনাম গোনে, অনূদিত শব্দ নয়। ইংরেজি মূল পাঠই প্রামাণিক। আরও ভালো শব্দচয়ন আছে? প্রকল্পের পাতায় তা উন্নত করুন। |
+| 3 | This document has no draft in this language yet ({language}), so the English original is shown. | এই নথির এই ভাষায় ({language}) সংস্করণ এখনও নেই, তাই ইংরেজি মূল পাঠ দেখানো হচ্ছে। |
+
+## 33i: Population-weighted figures state their weighting (PR #1750)
 
 | # | English source | Current text in this language |
 |---|---|---|
@@ -170,6 +178,12 @@ Correct the text in `src/static/locales/bn.json` (the key is the English text).
 | 3 | Weights: source not stated. Covers {covered} of {total} members. | ওজন: উৎস উল্লেখ নেই। {total} সদস্যের মধ্যে {covered} জনকে ধরে। |
 | 4 | Weights: {source}, as of {as_of}. Covers {covered} of {total} members. | ওজন: {source}, {as_of} পর্যন্ত। {total} সদস্যের মধ্যে {covered} জনকে ধরে। |
 | 5 | {who} taken from the operator's population table ({source}, as of {as_of}). | {who}: অপারেটরের জনসংখ্যা সারণি থেকে নেওয়া ({source}, {as_of} পর্যন্ত)। |
+
+## 33j: Climate series (PR #1751)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Climate series | জলবায়ু সিরিজ |
 
 ## extra-1: OSM daily change files: update a country (J1) (PR #1720)
 

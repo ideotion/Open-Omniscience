@@ -34,26 +34,42 @@ LOCALES = "src/static/locales"
 OUT_DOC = ROOT / "docs" / "product" / "NATIVE_REVIEW_QUEUE.md"
 OUT_DIR = ROOT / "docs" / "product" / "native-review"
 
-# (id, OPEN_QUEUE reference, title, PR, merge sha)
+# (id, OPEN_QUEUE reference, title, PR, merge sha or None). A group with no sha is read from the
+# PR head (``refs/remotes/pr/<n>``, fetched with ``git fetch origin refs/pull/<n>/head:refs/remotes/pr/<n>``)
+# against its merge base with origin/main, and is labelled PENDING until that head is on origin/main.
 GROUPS = [
     ("33a", "item 33 (a)", "Law coverage floor (C-L1)", 1710, "743fb4cc2"),
     ("33c", "item 33 (c)", "OSM trends B3a: tag adoption, openings and closures", 1730, "726de08"),
     ("33d", "item 33 (d)", "OSM B3b: brands, contact channels, freshness", 1735, "33f9940"),
     ("33e", "item 33 (e)", "OSM B3c: places by country and by region", 1736, "cac50c6"),
     ("33f", "item 33 (f)", "OSM stored monthly summary (R435)", 1738, "a47a9fb"),
-    ("C6", "R443 (C6)", "oo-on: confirmations for the irreversible actions", 1746, "0982a0b"),
-    ("A-S6", "A-S6 (Q1153)", "Population-weighted figures state their weighting", 1750, "2a621dc"),
+    (
+        "33g",
+        "item 33 (g), C6",
+        "oo-on: confirmations for the irreversible actions",
+        1746,
+        "0982a0b",
+    ),
+    ("33h", "item 33 (h), E2", "Help coverage banner", 1748, None),
+    (
+        "33i",
+        "item 33 (i), A-S6",
+        "Population-weighted figures state their weighting",
+        1750,
+        "2a621dc",
+    ),
+    ("33j", "item 33 (j)", "Climate series", 1751, None),
     ("extra-1", "not in item 33", "OSM daily change files: update a country (J1)", 1720, "ea88a6e"),
     ("extra-2", "not in item 33", "Living sources: OSM daily change files (B1)", 1725, "c0c66ff"),
     ("extra-3", "not in item 33", "Living sources: per-edition coverage group", 1727, "7139c68"),
 ]
 
-# Item 33 (b) asks for no translation (a tree and operator fact), and (g) does not exist
-# in the entry as merged; E2 (the table-by-table database check) added no locale key.
+# Item 33 (b) asks for no translation (a tree and operator fact). (h) and (j) are planned
+# letters from the Plan lane's bundle (#1778) and exist in item 33 only once it merges.
 NOTES = [
     "(b) of item 33 is an operator step (a dated population table) and adds no key.",
-    "Item 33 has six lettered lines, (a) to (f); there is no (g) in the entry as merged.",
-    "E2 (PR #1346, the table-by-table database check) added no locale key, so it has no rows here.",
+    "Letters (g) to (j) follow the Plan lane's draft bundle; (h) and (j) are pending until #1748 and #1751 merge.",
+    "A group marked PENDING is read from its open PR head and changes on a re-run until it merges.",
 ]
 
 
@@ -67,11 +83,26 @@ def lang_codes() -> list[str]:
     return sorted(p.stem for p in (ROOT / LOCALES).glob("*.json"))
 
 
-def added_keys(sha: str, lang: str) -> dict[str, str]:
-    """Keys whose line the merge added to <lang>.json, with their value at the merge."""
+def span(pr: int, sha: str | None) -> tuple[str, str, bool]:
+    """(base, head, pending) for a group."""
+    if sha:
+        return f"{sha}^1", sha, False
+    head = f"refs/remotes/pr/{pr}"
+    base = git("merge-base", "origin/main", head).strip()
+    merged = (
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", head, "origin/main"], cwd=ROOT
+        ).returncode
+        == 0
+    )
+    return base, head, not merged
+
+
+def added_keys(base: str, head: str, lang: str) -> dict[str, str]:
+    """Keys the span added to <lang>.json, with their value at its head."""
     path = f"{LOCALES}/{lang}.json"
-    before = json.loads(git("show", f"{sha}^1:{path}"))
-    after = json.loads(git("show", f"{sha}:{path}"))
+    before = json.loads(git("show", f"{base}:{path}"))
+    after = json.loads(git("show", f"{head}:{path}"))
     return {k: v for k, v in after.items() if k not in before}
 
 
@@ -96,9 +127,15 @@ def build() -> dict[Path, str]:
     others = [lang for lang in langs if lang != "en"]
     data = []
     for gid, ref, title, pr, sha in GROUPS:
-        en = added_keys(sha, "en")
-        per = {lang: added_keys(sha, lang) for lang in others}
-        data.append((gid, ref, title, pr, sha, en, per))
+        base, head, pending = span(pr, sha)
+        en = added_keys(base, head, "en")
+        per = {lang: added_keys(base, head, lang) for lang in others}
+        label = (
+            f"PENDING, open head `{git('rev-parse', '--short', head).strip()}`"
+            if pending
+            else f"`{sha or git('rev-parse', '--short', head).strip()}`"
+        )
+        data.append((gid, ref, title, pr, label, en, per))
 
     doc = [
         "# Native translation review queue",
@@ -125,7 +162,7 @@ def build() -> dict[Path, str]:
     ]
     total = 0
     for gid, ref, title, pr, sha, en, _per in data:
-        doc.append(f"| {gid} {title} | {ref} | #{pr} | `{sha}` | {len(en)} |")
+        doc.append(f"| {gid} {title} | {ref} | #{pr} | {sha} | {len(en)} |")
         total += len(en)
     doc += [f"| **All** | | | | **{total}** |", ""]
     for n in NOTES:
@@ -137,7 +174,7 @@ def build() -> dict[Path, str]:
         doc += [
             f"## {gid}: {title}",
             "",
-            f"Recorded in {ref}. PR #{pr}, merge `{sha}`. {len(en)} new keys.",
+            f"Recorded: {ref}. PR #{pr}, {'merge ' + sha if not sha.startswith('PENDING') else sha}. {len(en)} new key{'' if len(en) == 1 else 's'}.",
             "",
             "Per-language counts (keys added / same as English / missing):",
             "",

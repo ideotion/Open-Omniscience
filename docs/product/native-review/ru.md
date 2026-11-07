@@ -152,7 +152,7 @@ Correct the text in `src/static/locales/ru.json` (the key is the English text).
 | 4 | Computed from the history rows on this read: this lane has no table for the monthly summary. | Рассчитано по строкам истории при этом чтении: в этой линии нет таблицы для месячной сводки. |
 | 5 | Read from the monthly summary stored {built}, computed from the history file dated {vintage}. | Прочитано из месячной сводки, сохранённой {built}, рассчитанной по файлу истории от {vintage}. |
 
-## C6: oo-on: confirmations for the irreversible actions (PR #1746)
+## 33g: oo-on: confirmations for the irreversible actions (PR #1746)
 
 | # | English source | Current text in this language |
 |---|---|---|
@@ -161,7 +161,15 @@ Correct the text in `src/static/locales/ru.json` (the key is the English text).
 | 3 | Remove this author and all of their imported annotations? This cannot be undone here; importing their bundle again brings them back. | Удалить этого автора и все его импортированные аннотации? Здесь это нельзя отменить; повторный импорт его пакета вернёт их. |
 | 4 | Remove this item, and any note you wrote on it, from the briefing draft? | Удалить этот пункт и вашу заметку к нему из черновика сводки? |
 
-## A-S6: Population-weighted figures state their weighting (PR #1750)
+## 33h: Help coverage banner (PR #1748)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Machine-drafted translation ({language}). How much of this document is translated could not be measured here. The English original is authoritative. Found a better wording? Improve it on the project page. | Машинный перевод ({language}). Здесь не удалось измерить, какая часть документа переведена. Английский оригинал является основным. Есть лучшая формулировка? Улучшите её на странице проекта. |
+| 2 | Machine-drafted translation ({language}): this draft has {done} of the {total} headings of the English original; that counts headings, not translated words. The English original is authoritative. Found a better wording? Improve it on the project page. | Машинный перевод ({language}): в этом черновике {done} из {total} заголовков английского оригинала; считаются заголовки, а не переведённые слова. Английский оригинал является основным. Есть лучшая формулировка? Улучшите её на странице проекта. |
+| 3 | This document has no draft in this language yet ({language}), so the English original is shown. | У этого документа пока нет версии на этом языке ({language}), поэтому показан английский оригинал. |
+
+## 33i: Population-weighted figures state their weighting (PR #1750)
 
 | # | English source | Current text in this language |
 |---|---|---|
@@ -170,6 +178,12 @@ Correct the text in `src/static/locales/ru.json` (the key is the English text).
 | 3 | Weights: source not stated. Covers {covered} of {total} members. | Веса: источник не указан. Охватывает {covered} из {total} участников. |
 | 4 | Weights: {source}, as of {as_of}. Covers {covered} of {total} members. | Веса: {source}, по состоянию на {as_of}. Охватывает {covered} из {total} участников. |
 | 5 | {who} taken from the operator's population table ({source}, as of {as_of}). | {who}: взято из таблицы населения оператора ({source}, по состоянию на {as_of}). |
+
+## 33j: Climate series (PR #1751)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Climate series | Климатические ряды |
 
 ## extra-1: OSM daily change files: update a country (J1) (PR #1720)
 

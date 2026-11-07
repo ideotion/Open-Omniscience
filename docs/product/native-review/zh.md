@@ -152,7 +152,7 @@ Correct the text in `src/static/locales/zh.json` (the key is the English text).
 | 4 | Computed from the history rows on this read: this lane has no table for the monthly summary. | 本次读取时由历史行计算得出：此通道没有月度摘要所用的表。 |
 | 5 | Read from the monthly summary stored {built}, computed from the history file dated {vintage}. | 读取自 {built} 保存的月度摘要，该摘要由日期为 {vintage} 的历史文件计算得出。 |
 
-## C6: oo-on: confirmations for the irreversible actions (PR #1746)
+## 33g: oo-on: confirmations for the irreversible actions (PR #1746)
 
 | # | English source | Current text in this language |
 |---|---|---|
@@ -161,7 +161,15 @@ Correct the text in `src/static/locales/zh.json` (the key is the English text).
 | 3 | Remove this author and all of their imported annotations? This cannot be undone here; importing their bundle again brings them back. | 移除此作者及其所有已导入的批注？此处无法撤销；重新导入其数据包即可恢复。 |
 | 4 | Remove this item, and any note you wrote on it, from the briefing draft? | 从简报草稿中移除此条目及您为它写的备注？ |
 
-## A-S6: Population-weighted figures state their weighting (PR #1750)
+## 33h: Help coverage banner (PR #1748)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Machine-drafted translation ({language}). How much of this document is translated could not be measured here. The English original is authoritative. Found a better wording? Improve it on the project page. | 机器翻译（{language}）。此处无法衡量本文档已翻译的比例。以英文原文为准。有更好的译法？请在项目页面上改进。 |
+| 2 | Machine-drafted translation ({language}): this draft has {done} of the {total} headings of the English original; that counts headings, not translated words. The English original is authoritative. Found a better wording? Improve it on the project page. | 机器翻译（{language}）：此草稿包含英文原文 {total} 个标题中的 {done} 个；统计的是标题，而非已翻译的字数。以英文原文为准。有更好的译法？请在项目页面上改进。 |
+| 3 | This document has no draft in this language yet ({language}), so the English original is shown. | 本文档暂无该语言（{language}）的版本，因此显示英文原文。 |
+
+## 33i: Population-weighted figures state their weighting (PR #1750)
 
 | # | English source | Current text in this language |
 |---|---|---|
@@ -170,6 +178,12 @@ Correct the text in `src/static/locales/zh.json` (the key is the English text).
 | 3 | Weights: source not stated. Covers {covered} of {total} members. | 权重：未说明来源。覆盖 {total} 个成员中的 {covered} 个。 |
 | 4 | Weights: {source}, as of {as_of}. Covers {covered} of {total} members. | 权重：{source}，截至 {as_of}。覆盖 {total} 个成员中的 {covered} 个。 |
 | 5 | {who} taken from the operator's population table ({source}, as of {as_of}). | {who}：取自运营者的人口表（{source}，截至 {as_of}）。 |
+
+## 33j: Climate series (PR #1751)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Climate series | 气候数据序列 |
 
 ## extra-1: OSM daily change files: update a country (J1) (PR #1720)
 

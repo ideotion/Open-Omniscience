@@ -152,7 +152,7 @@ Correct the text in `src/static/locales/es.json` (the key is the English text).
 | 4 | Computed from the history rows on this read: this lane has no table for the monthly summary. | Calculado a partir de las filas del historial en esta lectura: este carril no tiene la tabla del resumen mensual. |
 | 5 | Read from the monthly summary stored {built}, computed from the history file dated {vintage}. | Leído del resumen mensual guardado {built}, calculado a partir del archivo de historial fechado {vintage}. |
 
-## C6: oo-on: confirmations for the irreversible actions (PR #1746)
+## 33g: oo-on: confirmations for the irreversible actions (PR #1746)
 
 | # | English source | Current text in this language |
 |---|---|---|
@@ -161,7 +161,15 @@ Correct the text in `src/static/locales/es.json` (the key is the English text).
 | 3 | Remove this author and all of their imported annotations? This cannot be undone here; importing their bundle again brings them back. | ¿Quitar a este autor y todas sus anotaciones importadas? No se puede deshacer aquí; volver a importar su paquete las recupera. |
 | 4 | Remove this item, and any note you wrote on it, from the briefing draft? | ¿Quitar este elemento, y la nota que escribió en él, del borrador del boletín? |
 
-## A-S6: Population-weighted figures state their weighting (PR #1750)
+## 33h: Help coverage banner (PR #1748)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Machine-drafted translation ({language}). How much of this document is translated could not be measured here. The English original is authoritative. Found a better wording? Improve it on the project page. | Traducción automática ({language}). No se pudo medir aquí qué parte de este documento está traducida. El original en inglés es el que prevalece. ¿Una mejor formulación? Mejórala en la página del proyecto. |
+| 2 | Machine-drafted translation ({language}): this draft has {done} of the {total} headings of the English original; that counts headings, not translated words. The English original is authoritative. Found a better wording? Improve it on the project page. | Traducción automática ({language}): este borrador tiene {done} de los {total} títulos del original en inglés; se cuentan títulos, no palabras traducidas. El original en inglés es el que prevalece. ¿Una mejor formulación? Mejórala en la página del proyecto. |
+| 3 | This document has no draft in this language yet ({language}), so the English original is shown. | Este documento aún no tiene versión en este idioma ({language}), así que se muestra el original en inglés. |
+
+## 33i: Population-weighted figures state their weighting (PR #1750)
 
 | # | English source | Current text in this language |
 |---|---|---|
@@ -170,6 +178,12 @@ Correct the text in `src/static/locales/es.json` (the key is the English text).
 | 3 | Weights: source not stated. Covers {covered} of {total} members. | Ponderación: fuente no indicada. Cubre {covered} de {total} miembros. |
 | 4 | Weights: {source}, as of {as_of}. Covers {covered} of {total} members. | Ponderación: {source}, a {as_of}. Cubre {covered} de {total} miembros. |
 | 5 | {who} taken from the operator's population table ({source}, as of {as_of}). | {who}: tomados de la tabla de población del operador ({source}, a {as_of}). |
+
+## 33j: Climate series (PR #1751)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Climate series | Series climáticas |
 
 ## extra-1: OSM daily change files: update a country (J1) (PR #1720)
 
