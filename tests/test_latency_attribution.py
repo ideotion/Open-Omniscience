@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 import pytest
 
 from src.monitoring import latency, unlock_marker
-from src.monitoring.search_timing import _walk_no_score
+from src.shared import walk_no_score as _walk_no_score
 
 
 @pytest.fixture(autouse=True)

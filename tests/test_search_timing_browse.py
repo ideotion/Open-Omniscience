@@ -33,7 +33,8 @@ from sqlalchemy.pool import StaticPool
 from src.database.fts import ensure_fts
 from src.database.models import Article, Base, Source
 from src.monitoring import search_timing, unlock_marker
-from src.monitoring.search_timing import _FakeClock, _walk_no_score
+from src.monitoring.search_timing import _FakeClock
+from src.shared import walk_no_score as _walk_no_score
 from tests.os_scope import scope_os
 
 main = pytest.importorskip("src.api.main")  # CI/venv with crypto; skips on a bare sandbox
