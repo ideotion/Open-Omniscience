@@ -1115,7 +1115,7 @@
       const tfa = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
         String(s2).replace(/\{(\w+)\}/g, (m2, k) => (v && v[k] != null) ? v[k] : m2));
       const conf = agConfPill(e);
-      const tags = (e.tags||[]).map(t => `<span class="ag-tag" data-on-click="ooSetValue('agenda-tag', ${esc(JSON.stringify(t))});renderAgenda()">${esc(t)}</span>`).join("");
+      const tags = (e.tags||[]).map(t => `<span class="ag-tag" data-on-click="agendaSetTag(${esc(JSON.stringify(t))})">${esc(t)}</span>`).join("");
       const alsoIn = (e.also_in && e.also_in.length)
         ? ` <span class="pill" title="${esc(tfa("This event also appears in: {calendars}", {calendars: e.also_in.join(", ")}))}">`
           + `${esc(tfa("also in {n}", {n: e.also_in.length}))}</span>` : "";
@@ -1613,6 +1613,11 @@
           dayBox.innerHTML = `<h3 style="font-size:13px;margin:12px 0 6px">${esc(label)}</h3>` + evs.map(agRow).join("");
         } else dayBox.innerHTML = "";
       } else dayBox.innerHTML = "";
+    }
+    // A tag on an event narrows the agenda to it: the one field this touches is the tag filter (A-004: no generic "fill a field by id").
+    function agendaSetTag(tag) {
+      const sel = $("agenda-tag"); if (sel) sel.value = tag;
+      renderAgenda();
     }
     function renderAgenda() {
       renderAgendaCals();
