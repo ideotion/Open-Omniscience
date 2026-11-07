@@ -31,17 +31,21 @@ def test_stop_self_uses_a_graceful_signal_never_terminateprocess(monkeypatch):
     """Windows os.kill(pid, SIGTERM) is TerminateProcess: no lifespan shutdown, the sentinel stays 'running' and the next boot reads the
     in-app stop as an unclean end (field bundle 2026-11-07, 11 of 11 sessions). On Windows the stop must raise SIGINT (uvicorn's capture)."""
     import signal
+    import types
 
     from src.safety import shutdown
+    from tests.os_scope import scope_os
 
     calls: list = []
-    monkeypatch.setattr(shutdown.signal, "raise_signal", lambda s: calls.append(("raise", s)))
-    monkeypatch.setattr(shutdown.os, "kill", lambda pid, s: calls.append(("kill", s)))
-    monkeypatch.setattr(shutdown.os, "name", "nt")
+    fake_signal = types.SimpleNamespace(
+        SIGINT=signal.SIGINT, SIGTERM=signal.SIGTERM, raise_signal=lambda s: calls.append(("raise", s))
+    )
+    monkeypatch.setattr(shutdown, "signal", fake_signal)  # the module's own name, not the process-wide signal module
+    scope_os(monkeypatch, shutdown, kill=lambda pid, s: calls.append(("kill", s)), name="nt")
     shutdown.stop_self()
     assert calls == [("raise", signal.SIGINT)]
     calls.clear()
-    monkeypatch.setattr(shutdown.os, "name", "posix")
+    scope_os(monkeypatch, shutdown, name="posix")
     shutdown.stop_self()
     assert calls == [("kill", signal.SIGTERM)]
 
