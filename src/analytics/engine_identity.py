@@ -109,7 +109,6 @@ ENGINE_MODULES: tuple[str, ...] = (
     "src/catalog/__init__.py",
     "src/catalog/aggregates.py",
     "src/catalog/cities.py",
-    "src/catalog/aggregates.py",
     "src/catalog/countries.py",
     "src/services/__init__.py",
     "src/services/stopwords.py",
@@ -152,8 +151,12 @@ WWW_ONLY_MODULES: tuple[str, ...] = (
 )
 
 #: Modules the www stage reads that the keyword pass reads too: part of BOTH engines' code digests.
+#: ``reindex_parallel.py`` is here because its ``_extract_www`` chooses the text and the source country the pooled path hands the
+#: place and entity extractors. STATED LIMIT: ``store.py`` is NOT here (it is narrowed into the keyword digest only), so a change to
+#: ``_index_article_www`` or the www half of ``index_article`` is a judgement the author makes by hand: bump WWW_INDEXER_VERSION.
 WWW_SHARED_MODULES: tuple[str, ...] = (
     "src/catalog/__init__.py",
+    "src/analytics/reindex_parallel.py",
     "src/catalog/aggregates.py",
     "src/catalog/countries.py",
     "src/timemap/__init__.py",

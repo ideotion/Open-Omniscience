@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "e0e55df19e3459c0e85614cd93de308a8002983fdbaf5ef38f28ad47098a9b0e",
+  "digest": "40eee39a928060ecddb9a82e3457ecc83f80f9d6768fa7e80e565b9de163085d",
   "log": [
     {
       "version": 1,
@@ -13,6 +13,12 @@
       "digest": "e0e55df19e3459c0e85614cd93de308a8002983fdbaf5ef38f28ad47098a9b0e",
       "kind": "same",
       "note": "R415 review: src/catalog/aggregates.py is reachable from the gazetteer country path, so it joins the www modules"
+    },
+    {
+      "version": 1,
+      "digest": "40eee39a928060ecddb9a82e3457ecc83f80f9d6768fa7e80e565b9de163085d",
+      "kind": "same",
+      "note": "R415 review: reindex_parallel.py (_extract_www picks the text and source country) joins the www modules"
     }
   ]
 }
