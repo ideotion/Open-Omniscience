@@ -522,7 +522,13 @@ class ProducerOutcome:
 _TRENDING_SCAN_PRODUCERS: frozenset[str] = frozenset({
     "rising_now", "framing_split", "lonely_signal", "emotion_profile", "ip_litigation_pulse", "on_the_horizon",
 })
-_RUN_LAST: frozenset[str] = frozenset({"rising_now"}) | _TRENDING_SCAN_PRODUCERS
+#: Producers measured spending far more than their share of the pass without the trending scan: on the
+#: 2026-11-07 bundle (build e0ebc5d27, 25 M mentions) ``space_time_convergence`` took 225.6 s and ``coverage_advisor``
+#: 35.0 s, both with no signal, and together ate 261 of the 300 s statement budget, so 25 of 38 producers read
+#: ``skipped-budget`` (F8). Not trending callers, so they still run when the rollup is unserved; they only run after the
+#: producers that are cheap.
+_SLOW_SCAN_PRODUCERS: frozenset[str] = frozenset({"space_time_convergence", "coverage_advisor"})
+_RUN_LAST: frozenset[str] = frozenset({"rising_now"}) | _TRENDING_SCAN_PRODUCERS | _SLOW_SCAN_PRODUCERS
 
 
 def _rollup_gap() -> str | None:
