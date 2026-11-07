@@ -194,8 +194,8 @@ def parse_owid(text: str, *, dataset: str, extracted_at: str) -> OwidParse:
             row = next(reader)
         except StopIteration:
             break
-        except csv.Error as exc:  # e.g. one field over the csv module's size limit
-            _refuse(out, reader.line_num, f"unreadable CSV record ({exc})")
+        except csv.Error:  # e.g. one field over the csv module's size limit
+            _refuse(out, reader.line_num, "unreadable CSV record (csv.Error)")
             break
         lineno = reader.line_num  # the physical line the record ends on (quoted newlines count)
         if not row or not any(c.strip() for c in row):
