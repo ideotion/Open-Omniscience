@@ -1925,7 +1925,7 @@ catalog at `/api/catalog/sources`, `/export.csv`, `/template.csv`, `POST /import
 `PUT /api/scheduler/config`; `POST /api/scheduler/start|stop|run-now`.
 
 **Database & backup** — `GET /api/database/stats|coverage|countries`;
-`GET /api/database/backup` (raw `.db` snapshot). Backups are **created** by the streaming
+`GET /api/database/backup` (raw `.db` snapshot; under a name you listed in `OO_ALLOWED_HOSTS`, a request that names no page it comes from must add the header `X-OO-Download: 1`, as `curl -H "X-OO-Download: 1" …` does; typing the address in a browser, or opening a bookmark, on a plain-HTTP name of that kind sends nothing a browser would add on loopback or HTTPS, so it is refused there). Backups are **created** by the streaming
 engines: encrypted volumes+parity at `POST /api/backup/v2/volumes/start` (+ `/restore`,
 `/cancel`, `GET /volumes/status`) and the large-data folder copy at
 `POST /api/backup/folder/start` (+ `/plan`, `/restore`, `/{action}`, `GET /folder/status`).
