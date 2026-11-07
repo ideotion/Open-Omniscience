@@ -41,6 +41,7 @@ wiki lane (``tests/test_wiki_lane_end_to_end.py``) and the law lane
 from __future__ import annotations
 
 import logging
+import re
 import time
 from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
@@ -304,6 +305,7 @@ def run_feed_once(
     monotonic: Callable[[], float] = time.monotonic,
     catch_up: int = 0,
     attempts: dict[int, float] | None = None,
+    store_failures: dict[int, int] | None = None,
 ) -> PassResult:
     """One pass: read the feed, record every change, fetch what the budget allows.
 
@@ -407,7 +409,7 @@ def run_feed_once(
         recent: set[int] = set()
         if attempts is not None:
             for entity_key, at in list(attempts.items()):
-                if now - at < BACKLOG_COOLDOWN_S:
+                if now - at < backlog_cooldown(store_failures.get(entity_key, 0) if store_failures else 0):
                     recent.add(entity_key)
                 else:
                     del attempts[entity_key]
@@ -514,6 +516,8 @@ def run_feed_once(
             # so the backlog's "newer than the stored text" is decided in one place.
             entity.last_checked_at = covered_through
             lane_sp.commit()
+            if store_failures is not None:
+                store_failures.pop(entity.id, None)
         except Exception as exc:  # noqa: BLE001 - one entity must not end the pass
             # UNCONDITIONALLY: a failure raised inside a flush leaves the savepoint INACTIVE,
             # and skipping the rollback then leaves the session needing one, so every later
@@ -534,8 +538,19 @@ def run_feed_once(
                     corpus.rollback()
                 except Exception as rollback_exc:  # noqa: BLE001 - the original failure is the one to report
                     log_failure(_LOG, "the corpus session could not be rolled back", rollback_exc, level=logging.DEBUG)
-            log_failure(_LOG, f"storing {external_id} failed", exc, level=logging.WARNING)
-            result.errors.append(f"{external_id}: store: {type(exc).__name__}")
+            broke = constraint_of(exc)
+            failures = 0
+            if store_failures is not None:
+                failures = store_failures[entity.id] = store_failures.get(entity.id, 0) + 1
+            log_failure(
+                _LOG,
+                f"storing {external_id} failed"
+                + (f" ({broke})" if broke else "")
+                + (f", {failures} in a row: the catch-up asks for it again after {backlog_cooldown(failures) / 60:.0f} min (a new edit to it still brings it back sooner)" if failures > 1 else ""),
+                exc,
+                level=logging.WARNING,
+            )
+            result.errors.append(f"{external_id}: store: {type(exc).__name__}" + (f" ({broke})" if broke else ""))
             continue
         if outcome == "baseline":
             result.baselines_captured += 1
@@ -555,6 +570,42 @@ def run_feed_once(
 #: catch-up only: a page in the current batch is not held back by it (though the catch-up's
 #: pages are tried first within the feed's time share).
 BACKLOG_COOLDOWN_S: float = 300.0
+
+
+def backlog_cooldown(store_failures: int) -> float:
+    """Seconds a page is left alone after its last attempt, given how many times in a row its STORE has failed in this process.
+
+    A page that failed to store is not asked for every ``BACKLOG_COOLDOWN_S``: the wait doubles with each consecutive failure (the 2026-11-07
+    Windows run had three pages fail with an IntegrityError every drain they were asked for, 18, 10 and 9 times in 3.4 h, each one a fetch
+    and a rolled-back savepoint). A store that works clears the count, and a restart forgets it, which costs one more try. The exponent stops
+    at 16 only so the float cannot overflow; that is a wait of 2 years, never a limit anyone meets."""
+    if store_failures <= 0:
+        return BACKLOG_COOLDOWN_S
+    return BACKLOG_COOLDOWN_S * (2.0 ** min(store_failures, 16))
+
+
+_CONSTRAINT_RE = re.compile(r"^(UNIQUE|NOT NULL|CHECK|FOREIGN KEY) constraint failed(?:: ([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)?(?:, [A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)?)*))?$")
+
+
+def constraint_of(exc: BaseException) -> str | None:
+    """The constraint an integrity failure broke, as ``"UNIQUE on table.column"``, or ``None`` when ``exc`` is not one or SQLite's line is not
+    in its fixed shape. Only the kind and the table.column names are read, from a line that has to match whole; a driver text in any other
+    shape (one that could carry a value) is not repeated, so a log line built from this holds names and never page text."""
+    from sqlalchemy.exc import IntegrityError
+
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if isinstance(cur, IntegrityError):
+            line = str(getattr(cur, "orig", "") or "").strip()
+            m = _CONSTRAINT_RE.match(line)
+            if m is None:
+                return "an integrity constraint (not named by the driver)"
+            kind, where = m.group(1), m.group(2)
+            return f"{kind} on {where}" if where else kind
+        cur = cur.__cause__ or cur.__context__
+    return None
 
 #: Seconds taken off the fetch's start time when it is recorded as the time a text is good
 #: through: the source's times are whole seconds and its clock is not ours. The price is one

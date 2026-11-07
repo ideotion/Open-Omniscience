@@ -379,17 +379,70 @@ def test_a_second_poll_inside_the_window_does_not_read_the_lane_and_says_how_old
     assert second["pages"] == first["pages"] and second["measured"] is True
 
 
-def test_the_answer_is_read_again_once_the_window_has_passed(lane, monkeypatch):
+def _wait_refreshed(timeout=10.0):
+    import time as _t
+
+    end = _t.monotonic() + timeout
+    while _t.monotonic() < end:
+        with wiki_lane._STATUS_LOCK:
+            if not wiki_lane._STATUS_REFRESHING:
+                return
+        _t.sleep(0.01)
+    raise AssertionError("the background refresh never finished")
+
+
+def test_past_the_window_the_old_answer_is_served_at_once_and_one_background_read_replaces_it(lane, monkeypatch):
     calls = _count_lane_reads(monkeypatch)
     clock = [1000.0]
     monkeypatch.setattr(wiki_lane.time, "monotonic", lambda: clock[0])
-    wiki_lane.lane_status()
+    first = wiki_lane.lane_status()
     clock[0] += wiki_lane._STATUS_TTL_S - 1
     wiki_lane.lane_status()
     assert len(calls) == 1
     clock[0] += 2
+    stale = wiki_lane.lane_status()
+    assert stale["cached"] is True and stale["refreshing"] is True, "answered from the kept figures, and says a re-read is under way"
+    assert stale["age_s"] > wiki_lane._STATUS_TTL_S - 1 and stale["pages"] == first["pages"]
+    _wait_refreshed()
+    assert len(calls) == 2, "exactly one background read"
+    fresh = wiki_lane.lane_status()
+    assert fresh["cached"] is True and "refreshing" not in fresh and fresh["age_s"] < 1.0, "the refresh replaced the kept answer"
+
+
+def test_a_poll_past_the_window_never_waits_on_a_scan_in_flight(lane, monkeypatch):
+    import threading
+
+    clock = [1000.0]
+    monkeypatch.setattr(wiki_lane.time, "monotonic", lambda: clock[0])
+    wiki_lane.lane_status()
+    gate = threading.Event()
+    real = wiki_lane._read_status
+    started = []
+
+    def slow(midnight):
+        started.append(1)
+        assert gate.wait(10), "the test releases the scan"
+        return real(midnight)
+
+    monkeypatch.setattr(wiki_lane, "_read_status", slow)
+    clock[0] += wiki_lane._STATUS_TTL_S + 1
+    answers = [wiki_lane.lane_status() for _ in range(5)]  # none may block: the scan is held shut
+    assert all(a["cached"] is True and a["refreshing"] is True for a in answers)
+    assert len(started) <= 1, "five polls, at most one scan"
+    gate.set()
+    _wait_refreshed()
+
+
+def test_a_refresh_that_fails_drops_the_kept_answer_so_the_next_poll_says_what_happened(lane, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(wiki_lane.time, "monotonic", lambda: clock[0])
+    wiki_lane.lane_status()
+    monkeypatch.setattr(wiki_lane, "_read_status", lambda _m: wiki_lane._unreadable("status", RuntimeError("x")))
+    clock[0] += wiki_lane._STATUS_TTL_S + 1
+    assert wiki_lane.lane_status()["cached"] is True
+    _wait_refreshed()
     out = wiki_lane.lane_status()
-    assert len(calls) == 2 and out["cached"] is False
+    assert out.get("measured") is not True and out.get("cached") is not True, "a stale figure does not outlive the lane's ability to confirm it"
 
 
 def test_a_new_local_day_is_read_again_even_inside_the_window(lane, monkeypatch):

@@ -112,6 +112,12 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('StorageGuard.note_io_error', '"detail": _io_error_detail(exc),'): 1,
         ('StorageGuard.log_failure_once', 'first = (str(exc).splitlines() or [""])[0][:80]'): 1,
     },
+    # constraint_of reads an IntegrityError's driver line ONLY when it matches SQLite's fixed shape whole (kind plus table.column names),
+    # else returns a fixed sentence: no part of the exception's own words reaches the record (tests/test_wiki_drain_bound.py pins it).
+    "src/versioned/pipeline.py": {
+        ('constraint_of', 'cur: BaseException | None = exc'): 1,
+        ('run_feed_once', 'broke = constraint_of(exc)'): 1,
+    },
     "src/wiki/history.py": {
         ('retry_after_of', 'response = getattr(exc, "response", None)'): 1,
     },
