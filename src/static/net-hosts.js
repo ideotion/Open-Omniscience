@@ -193,14 +193,6 @@
       "fetcher": true
     },
     {
-      "id": "sea-ice",
-      "label": "Sea ice extent",
-      "hosts": ["noaadata.apps.nsidc.org"],
-      "trigger": "click",
-      "setting": null,
-      "fetcher": true
-    },
-    {
       "id": "topic-discovery",
       "label": "Discover by topic",
       "hosts": ["html.duckduckgo.com"],
