@@ -38,6 +38,7 @@ import json
 import math
 import re
 from collections.abc import Mapping
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +49,15 @@ DEFAULT_PATH = Path(__file__).resolve().parents[2] / "configs" / "population_tab
 
 _AS_OF = re.compile(r"^\d{4}-\d{2}(?:-\d{2})?$")
 _CODE = re.compile(r"^[A-Za-z]{2}$")
+
+
+def _real_date(text: str) -> bool:
+    """``YYYY-MM`` or ``YYYY-MM-DD`` naming a day that exists (2024-99-99 matches the shape and is not a date)."""
+    try:
+        date.fromisoformat(text if len(text) == 10 else text + "-01")
+    except ValueError:
+        return False
+    return True
 
 
 def _refuse(status: str, reason: str) -> dict[str, Any]:
@@ -78,7 +88,7 @@ def load_population_table(path: str | Path | None = None) -> dict[str, Any]:
     as_of = doc.get("as_of")
     if not isinstance(source, str) or not source.strip():
         return _refuse("undated", "the population table names no source")
-    if not isinstance(as_of, str) or not _AS_OF.match(as_of.strip()):
+    if not isinstance(as_of, str) or not _AS_OF.match(as_of.strip()) or not _real_date(as_of.strip()):
         return _refuse("undated", "the population table carries no usable as_of date (YYYY-MM or YYYY-MM-DD)")
 
     rows = doc.get("rows")
@@ -88,13 +98,16 @@ def load_population_table(path: str | Path | None = None) -> dict[str, Any]:
     for code, value in rows.items():
         if not isinstance(code, str) or not _CODE.match(code):
             return _refuse("malformed", f"row {str(code)[:12]!r} is not a two-letter country code")
-        ok_number = isinstance(value, (int, float)) and not isinstance(value, bool)
-        if not ok_number or not math.isfinite(float(value)) or float(value) <= 0:
+        try:
+            number = float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+        except OverflowError:  # a JSON integer beyond float range
+            number = None
+        if number is None or not math.isfinite(number) or number <= 0:
             return _refuse("malformed", f"row {code!r} is not a finite population above zero")
         key = code.lower()
         if key in weights:
             return _refuse("malformed", f"country {code!r} appears twice")
-        weights[key] = float(value)
+        weights[key] = number
     return {"status": "ok", "reason": None, "weights": weights, "source": source.strip(), "as_of": as_of.strip()}
 
 

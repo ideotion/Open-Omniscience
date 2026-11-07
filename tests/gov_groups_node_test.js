@@ -265,8 +265,8 @@ test("a weighted figure states its weighting on its face: source, date, coverage
     "the weights' source, date and coverage must be on the figure");
   assert(/taken from the operator's population table \(Test publisher 2024, as of 2024-07-01\)/.test(html),
     "the members the operator's table supplied must be named with the table's source and date");
-  assert(/gov-strat-weighting card-caveat/.test(html) && !/hidden/.test(html.slice(html.indexOf("gov-strat-weighting"), html.indexOf("gov-strat-weighting") + 80)),
-    "the weighting is a visible caveat line, never behind a toggle");
+  const opening = html.match(/<div class="gov-strat-weighting card-caveat"[^>]*>/);
+  assert(opening && !/hidden|display:\s*none/.test(opening[0]), "the weighting is a visible caveat line, never behind a toggle");
   const meanBlock = html.slice(html.indexOf("Mean of members"), html.indexOf("Population-weighted mean"));
   assert(!/Weights:/.test(meanBlock), "an unweighted figure carries no weighting line");
 });
@@ -287,6 +287,21 @@ test("a weighting nobody described reads 'source not stated', and a refusal name
   assert(!/table \(/.test(html), "no table is named when none supplied a member");
   const gdp = html.slice(html.indexOf("GDP-weighted mean"));
   assert(!/gov-strat-val/.test(gdp) && !/Weights:/.test(gdp), "a refused weighted figure has no value and no invented weighting");
+});
+
+test("a table the app ignored is said so on the card, with the reason, and a table-weighted figure is not called exact", () => {
+  const html = render({
+    group: roster(),
+    aggregate: agg({
+      population_table: {status: "malformed", reason: "row 'XXX' is not a two-letter country code"},
+      strategies: {population_weighted: {label: "Population-weighted mean", value: 81.9, basis: "approximate",
+        method_code: "weighted_table", weight: "population", denominator: "population"}},
+    }),
+  }, false);
+  assert(/The operator's population table was not used \(malformed\): row &#39;XXX&#39;|The operator's population table was not used \(malformed\): row 'XXX'/.test(html),
+    "a refused table's reason must reach the reader");
+  assert(/APPROXIMATE: some population figures come from the operator's table/.test(html) && !/true figure/.test(html),
+    "a figure with table weights is drawn approximate with its own sentence");
 });
 
 console.log("\n" + passed + " passed");

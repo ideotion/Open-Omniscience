@@ -41,8 +41,19 @@ def test_no_file_is_absent_not_an_error(tmp_path):
 
 
 def test_the_repo_ships_no_table():
-    """The operator's drop-in: this repository must not make up a population vintage."""
-    assert not population.DEFAULT_PATH.exists()
+    """The operator's drop-in: this repository must not make up a population vintage. Asked of git (is it
+    TRACKED), not of the working tree, so an operator who placed the file locally still passes; the path is
+    also ignored so a `git add .` cannot ship it by accident."""
+    import subprocess
+
+    root = population.DEFAULT_PATH.parents[1]
+    try:
+        tracked = subprocess.run(["git", "ls-files", "configs/population_table.json"], cwd=root,
+                                 capture_output=True, text=True, check=True).stdout
+        ignored = subprocess.run(["git", "check-ignore", "-q", "configs/population_table.json"], cwd=root).returncode
+    except (OSError, subprocess.CalledProcessError):
+        pytest.skip("not a git checkout")
+    assert tracked.strip() == "" and ignored == 0
 
 
 def test_a_good_table_loads_with_lowercase_codes_and_its_account(tmp_path):
@@ -60,6 +71,9 @@ def test_a_good_table_loads_with_lowercase_codes_and_its_account(tmp_path):
         ({"source": "  ", "as_of": "2024-07-01", "rows": {"FR": 1}}, "undated"),
         ({"source": "s", "rows": {"FR": 1}}, "undated"),
         ({"source": "s", "as_of": "last year", "rows": {"FR": 1}}, "undated"),
+        ({"source": "s", "as_of": "2024-99-99", "rows": {"FR": 1}}, "undated"),
+        ({"source": "s", "as_of": "2024-13", "rows": {"FR": 1}}, "undated"),
+        ('{"source": "s", "as_of": "2024-07", "rows": {"FR": 1' + "0" * 400 + '}}', "malformed"),
         ({"source": "s", "as_of": "2024-07-01"}, "malformed"),
         ({"source": "s", "as_of": "2024-07-01", "rows": {}}, "malformed"),
         ({"source": "s", "as_of": "2024-07-01", "rows": {"FRA": 1}}, "malformed"),
@@ -126,6 +140,36 @@ def test_a_weighting_nobody_described_says_so_rather_than_inventing_a_source():
         weights={"population": {"fr": 60.0, "de": 80.0, "lu": 0.5}})
     w = out["strategies"]["population_weighted"]["weighting"]
     assert w["stated"] is False and w["source"] is None and w["as_of"] is None and w["table"] is None
+
+
+def test_a_weight_from_the_operators_table_makes_the_figure_approximate_never_exact():
+    """A table figure is dated on its own, not at the indicator's period: it cannot rebuild the real numerator."""
+    src = {"population": {"source": "stored series SP.POP.TOTL", "as_of": "2023", "from_table": ["lu"],
+                          "table": {"source": "T", "as_of": "2015-01"}}}
+    out = aggregate.aggregate_indicator(
+        indicator=_IND, aggregation=_AGG, members=_members(),
+        weights={"population": {"fr": 60.0, "de": 80.0, "lu": 0.5}}, weight_source=src)  # a COMPLETE group
+    assert out["coverage"]["complete"] is True
+    r = out["strategies"]["population_weighted"]
+    assert r["basis"] == "approximate" and r["method_code"] == "weighted_table" and "true figure" not in r["method"]
+    assert out["default_strategy"] != "population_weighted"
+    # ...and with no table weight in play the same group IS exact (the control that makes the assertion mean something).
+    exact = aggregate.aggregate_indicator(
+        indicator=_IND, aggregation=_AGG, members=_members(),
+        weights={"population": {"fr": 60.0, "de": 80.0, "lu": 0.5}},
+        weight_source={"population": {"source": "stored series SP.POP.TOTL", "as_of": "2023", "from_table": []}})
+    assert exact["strategies"]["population_weighted"]["basis"] == "exact"
+
+
+def test_from_table_names_only_members_whose_weight_entered_the_figure():
+    members = [aggregate.Member("fr", 10.0), aggregate.Member("de", None), aggregate.Member("lu", 30.0)]
+    src = {"population": {"source": "s", "as_of": "2023", "from_table": ["de", "lu"],
+                          "table": {"source": "T", "as_of": "2015-01"}}}
+    out = aggregate.aggregate_indicator(
+        indicator=_IND, aggregation=_AGG, members=members, allow_incomplete=True,
+        weights={"population": {"fr": 60.0, "de": 80.0, "lu": 0.5}}, weight_source=src)
+    w = out["strategies"]["population_weighted"]["weighting"]
+    assert w["from_table"] == ["lu"]  # DE did not report, so its table weight touched nothing
 
 
 def test_NEGATIVE_a_member_with_no_population_is_a_named_gap_and_no_unweighted_mean_stands_in():
@@ -196,3 +240,35 @@ def test_route_with_an_undated_table_ignores_it_and_refuses(client, tmp_path, mo
     monkeypatch.setattr(population, "DEFAULT_PATH", _table(tmp_path, {"source": "s", "rows": {"LU": 0.66}}))
     r = _pop_weighted(client)
     assert "value" not in r and r["missing_weight"] == ["lu"]
+
+
+def test_route_with_nothing_stored_names_the_table_as_the_only_source(client, tmp_path, monkeypatch):
+    # No stored population for ANY member of this group: the line must not claim the stored series.
+    monkeypatch.setattr(population, "DEFAULT_PATH", _table(tmp_path, {**GOOD, "rows": {"FR": 60.0, "DE": 80.0, "LU": 0.5}}))
+    from src.stats import indicators as ind
+    monkeypatch.setitem(ind.WEIGHT_SERIES, "population", "SP.POP.NOPE")  # a series nothing is stored under
+    r = _pop_weighted(client)
+    w = r["weighting"]
+    assert w["source"] == "operator table: Test publisher 2024" and w["as_of"] == "2024-07-01"
+    assert "stored series" not in w["source"] and r["basis"] == "approximate"
+    # DE, FR and LU reported; only they appear, none of Europe's non-reporting members.
+    assert w["from_table"] == ["de", "fr", "lu"]
+
+
+def test_route_says_so_when_it_ignores_a_table_and_why(client, tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(population, "DEFAULT_PATH", _table(tmp_path, {**GOOD, "rows": {"XXX": 1}}))
+    with caplog.at_level("WARNING"):
+        r = client.get("/api/governments/group-aggregate",
+                       params={"group": "europe", "indicator": "NY.GDP.PCAP.CD", "year": "2023", "allow_incomplete": True})
+    note = r.json()["aggregate"]["population_table"]
+    assert note["status"] == "malformed" and "XXX" in note["reason"]
+    assert any("population table ignored" in m for m in caplog.messages)
+
+
+def test_route_survives_an_oversized_number_in_the_table(client, tmp_path, monkeypatch):
+    p = tmp_path / "population_table.json"
+    p.write_text('{"source": "s", "as_of": "2024-07", "rows": {"LU": 1' + "0" * 400 + "}}", encoding="utf-8")
+    monkeypatch.setattr(population, "DEFAULT_PATH", p)
+    r = client.get("/api/governments/group-aggregate",
+                   params={"group": "europe", "indicator": "NY.GDP.PCAP.CD", "year": "2023", "allow_incomplete": True})
+    assert r.status_code == 200 and r.json()["aggregate"]["population_table"]["status"] == "malformed"

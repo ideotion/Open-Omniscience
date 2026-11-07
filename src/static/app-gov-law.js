@@ -646,6 +646,8 @@
         else if (r.method_code === "median") s = t("The middle member value; unlike the mean it is not moved by one extreme member.");
         else if (r.method_code === "weighted_exact") {
           s = _govTf("Sum of (value x {weight}) divided by the summed {weight}. This indicator is measured PER {weight}, so the reconstructed numerator is the real one and this is the group's true figure, not an estimate.", {weight: w});
+        } else if (r.method_code === "weighted_table") {
+          s = _govTf("Sum of (value x {weight}) divided by the summed {weight}. APPROXIMATE: some {weight} figures come from the operator's table, dated on its own rather than at this indicator's period, so the reconstructed numerator is not the real one.", {weight: w});
         } else if (r.method_code === "weighted_approx") {
           s = r.denominator
             ? _govTf("Sum of (value x {weight}) divided by the summed {weight}. APPROXIMATE: this indicator is measured per {denominator}, not per {weight}, so the reconstructed numerator is not the real one.", {weight: w, denominator: weightName(r.denominator)})
@@ -763,9 +765,15 @@
         + (period ? ` <span class="muted">(${esc(period)})</span>` : "")
         + ` <span class="pill">${esc(t("computed here"))}</span></div>`;
 
+      // A population table the app ignored says so, visibly, with the reason (never a silent fallback).
+      const tableNote = (d.aggregate && d.aggregate.population_table)
+        ? `<div class="card-caveat gov-grp-table-note">` + esc(_govTf(
+            "The operator's population table was not used ({status}): {reason}",
+            {status: d.aggregate.population_table.status, reason: d.aggregate.population_table.reason || ""})) + `</div>`
+        : "";
       // The two caveats are the engine's and the endpoint's fixed sentences, each a key
       // (the informed-consent non-negotiable: a caveat ships in all twelve languages).
-      return head + vintage + coverageLine + spreadLine + sharedLine + override + partial
+      return head + vintage + coverageLine + tableNote + spreadLine + sharedLine + override + partial
         + `<div class="gov-strat-grid">${cards}</div>`
         // The roster's notes are the registry's fixed sentences too, each a key (W16).
         + (roster.notes ? `<div class="card-caveat">${esc(t(roster.notes))}</div>` : "")

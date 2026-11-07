@@ -143,6 +143,10 @@ def _weighting(
     rather than the stored series."""
     ws = (weight_source or {}).get(weight_name) or {}
     source = ws.get("source") if isinstance(ws.get("source"), str) and ws.get("source") else None
+    # Only members that REPORTED a value had a weight enter the figure: a table figure for a member
+    # that did not report was never used, and listing it would claim a weight that touched nothing.
+    reported_areas = {m.area for m in reported}
+    taken = sorted(a for a in (ws.get("from_table") or []) if a in reported_areas)
     return {
         "weight": weight_name,
         "stated": source is not None,
@@ -151,9 +155,9 @@ def _weighting(
         "members_total": len(members),
         "members_covered": len(reported) - len(without),
         "members_without_weight": sorted(without),
-        "from_table": sorted(ws.get("from_table") or []),
+        "from_table": taken,
         # The dated table those members came from ({source, as_of}); None when no member needed it.
-        "table": ws.get("table") if ws.get("from_table") else None,
+        "table": ws.get("table") if taken else None,
     }
 
 
@@ -374,12 +378,19 @@ def aggregate_indicator(
             }
             continue
 
-        exact = denominator is not None and denominator == weight_name
+        # A weight that came from the operator's table is dated on its own, not at the indicator's period,
+        # so it cannot rebuild the real numerator: such a figure is APPROXIMATE whatever the denominator.
+        table_weights = _weighting(weight_name, members, reported, [], weight_source)["from_table"]
+        exact = denominator is not None and denominator == weight_name and not table_weights
         results[key] = {
             "label": label,
             "value": value,
             "basis": "exact" if (exact and complete) else "approximate",
-            "method_code": "weighted_exact" if exact else "weighted_approx",
+            "method_code": (
+                "weighted_exact" if exact
+                else "weighted_table" if table_weights and denominator == weight_name
+                else "weighted_approx"
+            ),
             "weight": weight_name,
             "denominator": denominator,
             "method": (
@@ -391,7 +402,11 @@ def aggregate_indicator(
                 )
                 if exact
                 else (
-                    f"Sum of (value x {human}) divided by the "
+                    f"Sum of (value x {human}) divided by the summed {human}. APPROXIMATE: "
+                    f"some {human} figures come from the operator's table, dated on its own rather than at "
+                    "this indicator's period, so the reconstructed numerator is not the real one."
+                    if table_weights and denominator == weight_name
+                    else f"Sum of (value x {human}) divided by the "
                     f"summed {human}. APPROXIMATE: this indicator "
                     + (
                         f"is measured per {denominator.replace('_', ' ')}, not per "
