@@ -1691,28 +1691,9 @@ def _attach_title_translations(db, results: list[dict], ui_lang: str | None) -> 
     return results
 
 
-def _python_sort_key(sort_by: str):
-    """Key for sorting fetched Article rows (the FTS path) by a metadata field."""
-    if sort_by == "top_keyword":
-        # A never-indexed article has no top keyword at all. It sorts as 0 rather than
-        # being dropped -- the list is a corpus, not a leaderboard, and an article the
-        # re-index has not reached yet is missing a MEASUREMENT, not missing keywords.
-        # (Sorts by the STORED count: a row whose stored top word is now stoplisted reports no top
-        # keyword but still sorts by that count until the T3 recompute, R111.)
-        return lambda a: (a.top_keyword_count or 0)
-    if sort_by == "title":
-        return lambda a: (a.title or "").casefold()
-    if sort_by == "language":
-        return lambda a: (a.language or "")
-    if sort_by == "source":
-        return lambda a: (a.source.name if a.source else "").casefold()
-    # date: tz-normalise so naive (SQLite) + any aware values stay comparable.
-    return lambda a: (a.published_at.replace(tzinfo=None) if a.published_at else datetime.min)
-
-
 def _fts_id_sort_key(sort_by: str):
-    """Sort key over ``(id, value)`` rows for the FTS over-fetch bound (S2.5) — mirrors
-    :func:`_python_sort_key`'s casefold / tz-normalise rules but on the FETCHED column
+    """Sort key over ``(id, value)`` rows for the FTS over-fetch bound (S2.5) — uses the
+    casefold / tz-normalise rules of the Article-object sort, on the FETCHED column
     value ``r[1]`` instead of a full Article object (so content is never decrypted)."""
     if sort_by in ("title", "source"):
         return lambda r: (r[1] or "").casefold()
@@ -1818,7 +1799,7 @@ def _new_search_timer(
     caller opts in with ``browse`` -- the article list's own call does, the AI, evidence and
     analysis callers that happen to browse do not -- and its record carries the page size and
     offset. Best-effort — a timing fault must never change what /api/articles returns (the
-    instrument_search discipline)."""
+    search-timing discipline)."""
     if not query and not browse:
         return None
     try:

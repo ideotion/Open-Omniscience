@@ -1225,7 +1225,7 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("keyword-growth.json", lambda: keyword_growth(download=False, db=db)),
         ("kpi.json", lambda: kpi(download=False)),
         # §4 search-instrumentation: the per-search phase-timing aggregate (empty-honest until
-        # instrument_search is wired into the search endpoint on the operator's rig).
+        # a search has been recorded on the operator's rig).
         ("search-timing.json", lambda: search_timing(download=False)),
         # The import/export RUN JOURNAL (2026-07-31). Rides the bundle rather than the
         # backup archive on purpose: _build_backup_zip hashes members and THEN writes
