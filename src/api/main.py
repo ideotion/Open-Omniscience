@@ -1692,14 +1692,19 @@ def _attach_title_translations(db, results: list[dict], ui_lang: str | None) -> 
 
 
 def _fts_id_sort_key(sort_by: str):
-    """Sort key over ``(id, value)`` rows for the FTS over-fetch bound (S2.5) — uses the
-    casefold / tz-normalise rules of the Article-object sort, on the FETCHED column
-    value ``r[1]`` instead of a full Article object (so content is never decrypted)."""
+    """Sort key over ``(id, value)`` rows for the FTS over-fetch bound (S2.5) — text is
+    casefolded, dates are tz-normalised, a missing value sorts lowest, all on the FETCHED
+    column value ``r[1]`` instead of a full Article object (so content is never decrypted)."""
     if sort_by in ("title", "source"):
         return lambda r: (r[1] or "").casefold()
     if sort_by == "language":
         return lambda r: (r[1] or "")
     if sort_by == "top_keyword":
+        # A never-indexed article has no top keyword at all. It sorts as 0 rather than being dropped --
+        # the list is a corpus, not a leaderboard, and an article the re-index has not reached yet is
+        # missing a MEASUREMENT, not missing keywords. (Sorts by the STORED count: a row whose stored
+        # top word is now stoplisted reports no top keyword but still sorts by that count until the T3
+        # recompute, R111.)
         return lambda r: (r[1] or 0)
     if sort_by in ("words", "sentiment"):
         # NULL sorts lowest, as SQLite orders it on the browse path, so one list keeps

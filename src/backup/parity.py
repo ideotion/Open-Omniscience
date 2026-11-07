@@ -190,7 +190,7 @@ def _decode(present: dict[int, Any], n: int, m: int, erased_data: list[int]) -> 
 # --------------------------------------------------------------------------- #
 def _read_band(path: Path, offset: int, length: int) -> Any:
     """Read ``length`` bytes of ``path`` at ``offset`` as a uint8 array, zero-padded
-    past EOF (the stripe padding the whole-array read it replaced applied)."""
+    past EOF (the same stripe padding the old whole-file read applied)."""
     np = _np()
     try:
         with open(path, "rb") as fh:
