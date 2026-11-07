@@ -15,6 +15,8 @@ import json
 import logging
 from dataclasses import asdict, dataclass, field
 
+from src.shared import coerce_bool
+
 _LOG = logging.getLogger(__name__)
 
 SETTINGS_VERSION = "oo-scheduler-settings-1"
@@ -416,14 +418,6 @@ def _read_raw_strict() -> dict | None:
     return raw
 
 
-def _coerce_bool(value, fallback: bool) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in ("1", "true", "yes", "on")
-    return fallback
-
-
 def _coerce_int(value, fallback: int, lo: int, hi: int) -> int:
     try:
         return max(lo, min(hi, int(value)))
@@ -750,11 +744,11 @@ def load_settings(*, strict: bool = False) -> SchedulerSettings:
     if rate_mode not in VALID_RATE_MODES:
         rate_mode = d.collect_rate_mode
     settings = SchedulerSettings(
-        autostart=_coerce_bool(raw.get("autostart"), d.autostart),
+        autostart=coerce_bool(raw.get("autostart"), d.autostart),
         interval_minutes=_coerce_int(
             raw.get("interval_minutes"), d.interval_minutes, _MIN_INTERVAL, _MAX_INTERVAL
         ),
-        continuous=_coerce_bool(raw.get("continuous"), d.continuous),
+        continuous=coerce_bool(raw.get("continuous"), d.continuous),
         collect_rate_mode=rate_mode,
         collect_target_kbps=_coerce_int(
             raw.get("collect_target_kbps"), d.collect_target_kbps, _MIN_TARGET_KBPS, _MAX_TARGET_KBPS
@@ -783,10 +777,10 @@ def load_settings(*, strict: bool = False) -> SchedulerSettings:
         qualification_recheck_per_pass=_coerce_int(
             raw.get("qualification_recheck_per_pass"), d.qualification_recheck_per_pass, 0, 100
         ),
-        qualification_budget_auto=_coerce_bool(
+        qualification_budget_auto=coerce_bool(
             raw.get("qualification_budget_auto"), d.qualification_budget_auto
         ),
-        scrape_app_provided_only=_coerce_bool(
+        scrape_app_provided_only=coerce_bool(
             raw.get("scrape_app_provided_only"), d.scrape_app_provided_only
         ),
         language_equilibrium=_coerce_target(raw.get("language_equilibrium")),
@@ -794,9 +788,9 @@ def load_settings(*, strict: bool = False) -> SchedulerSettings:
         # Reuses _coerce_target: a {iso2: weight} map cleaned to {lowercased-key: float>0},
         # exactly the shape the priority ladder needs (empty = OFF).
         country_priority=_coerce_target(raw.get("country_priority")),
-        auto_track_signals=_coerce_bool(raw.get("auto_track_signals"), d.auto_track_signals),
-        auto_import_calendars=_coerce_bool(raw.get("auto_import_calendars"), d.auto_import_calendars),
-        auto_track_law=_coerce_bool(raw.get("auto_track_law"), d.auto_track_law),
+        auto_track_signals=coerce_bool(raw.get("auto_track_signals"), d.auto_track_signals),
+        auto_import_calendars=coerce_bool(raw.get("auto_import_calendars"), d.auto_import_calendars),
+        auto_track_law=coerce_bool(raw.get("auto_track_law"), d.auto_track_law),
         wiki_lane_state=_coerce_wiki_lane_state(raw.get("wiki_lane_state"), d.wiki_lane_state),
         wiki_lane_editions=_coerce_wiki_lane_editions(
             raw.get("wiki_lane_editions"), d.wiki_lane_editions
@@ -807,23 +801,23 @@ def load_settings(*, strict: bool = False) -> SchedulerSettings:
             WIKI_LANE_BUDGET_GB_MIN,
             WIKI_LANE_BUDGET_GB_MAX,
         ),
-        wiki_lane_wizard_done=_coerce_bool(
+        wiki_lane_wizard_done=coerce_bool(
             raw.get("wiki_lane_wizard_done"), d.wiki_lane_wizard_done
         ),
-        wiki_walk_enabled=_coerce_bool(raw.get("wiki_walk_enabled"), d.wiki_walk_enabled),
-        wiki_warm_enabled=_coerce_bool(raw.get("wiki_warm_enabled"), d.wiki_warm_enabled),
+        wiki_walk_enabled=coerce_bool(raw.get("wiki_walk_enabled"), d.wiki_walk_enabled),
+        wiki_warm_enabled=coerce_bool(raw.get("wiki_warm_enabled"), d.wiki_warm_enabled),
         country_data_per_pass=_coerce_int(
             raw.get("country_data_per_pass"), d.country_data_per_pass, 0, 100
         ),
-        crawl_supplement=_coerce_bool(raw.get("crawl_supplement"), d.crawl_supplement),
+        crawl_supplement=coerce_bool(raw.get("crawl_supplement"), d.crawl_supplement),
         crawl_per_pass=_coerce_int(raw.get("crawl_per_pass"), d.crawl_per_pass, 0, 100),
         archive_backfill_per_pass=_coerce_int(
             raw.get("archive_backfill_per_pass"), d.archive_backfill_per_pass, 0, 100
         ),
-        auto_run_market_rules=_coerce_bool(
+        auto_run_market_rules=coerce_bool(
             raw.get("auto_run_market_rules"), d.auto_run_market_rules
         ),
-        auto_refresh_stat_subscriptions=_coerce_bool(
+        auto_refresh_stat_subscriptions=coerce_bool(
             raw.get("auto_refresh_stat_subscriptions"), d.auto_refresh_stat_subscriptions
         ),
         retired_mode=_coerce_retired_mode(raw.get("retired_mode")),
@@ -928,13 +922,13 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
         "auto_track_law",
     ):
         if key in updates and updates[key] is not None:
-            setattr(current, key, _coerce_bool(updates[key], getattr(current, key)))
+            setattr(current, key, coerce_bool(updates[key], getattr(current, key)))
     if "autostart" in updates and updates["autostart"] is not None:
-        current.autostart = _coerce_bool(updates["autostart"], current.autostart)
+        current.autostart = coerce_bool(updates["autostart"], current.autostart)
     if "continuous" in updates and updates["continuous"] is not None:
-        current.continuous = _coerce_bool(updates["continuous"], current.continuous)
+        current.continuous = coerce_bool(updates["continuous"], current.continuous)
     if "auto_track_signals" in updates and updates["auto_track_signals"] is not None:
-        current.auto_track_signals = _coerce_bool(
+        current.auto_track_signals = coerce_bool(
             updates["auto_track_signals"], current.auto_track_signals
         )
     if "wiki_lane_state" in updates and updates["wiki_lane_state"] is not None:
@@ -947,27 +941,27 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
     if "wiki_lane_budget_gb" in updates and updates["wiki_lane_budget_gb"] is not None:
         current.wiki_lane_budget_gb = _require_wiki_lane_budget_gb(updates["wiki_lane_budget_gb"])
     if "wiki_lane_wizard_done" in updates and updates["wiki_lane_wizard_done"] is not None:
-        current.wiki_lane_wizard_done = _coerce_bool(
+        current.wiki_lane_wizard_done = coerce_bool(
             updates["wiki_lane_wizard_done"], current.wiki_lane_wizard_done
         )
     if "wiki_walk_enabled" in updates and updates["wiki_walk_enabled"] is not None:
-        current.wiki_walk_enabled = _coerce_bool(
+        current.wiki_walk_enabled = coerce_bool(
             updates["wiki_walk_enabled"], current.wiki_walk_enabled
         )
     if "wiki_warm_enabled" in updates and updates["wiki_warm_enabled"] is not None:
-        current.wiki_warm_enabled = _coerce_bool(
+        current.wiki_warm_enabled = coerce_bool(
             updates["wiki_warm_enabled"], current.wiki_warm_enabled
         )
     if "crawl_supplement" in updates and updates["crawl_supplement"] is not None:
-        current.crawl_supplement = _coerce_bool(
+        current.crawl_supplement = coerce_bool(
             updates["crawl_supplement"], current.crawl_supplement
         )
     if "qualification_budget_auto" in updates and updates["qualification_budget_auto"] is not None:
-        current.qualification_budget_auto = _coerce_bool(
+        current.qualification_budget_auto = coerce_bool(
             updates["qualification_budget_auto"], current.qualification_budget_auto
         )
     if "scrape_app_provided_only" in updates and updates["scrape_app_provided_only"] is not None:
-        current.scrape_app_provided_only = _coerce_bool(
+        current.scrape_app_provided_only = coerce_bool(
             updates["scrape_app_provided_only"], current.scrape_app_provided_only
         )
     if "collect_rate_mode" in updates and updates["collect_rate_mode"] is not None:

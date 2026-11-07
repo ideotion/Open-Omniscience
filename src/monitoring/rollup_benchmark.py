@@ -23,12 +23,13 @@ Counts + milliseconds only, never a score.
 from __future__ import annotations
 
 import contextlib
-import statistics
 import time
 from datetime import date, timedelta
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+from src.shared import median_ms
 
 # Day windows to compare (None = all history). These mirror what the UI actually asks for:
 # the 7d/30d trending windows plus a wider lens.
@@ -36,20 +37,6 @@ _WINDOWS = (7, 30, 90, None)
 
 #: "No bound": the live side counts every row (the pre-2026-10-16 behaviour, kept for a caller on a quiet corpus).
 _UNBOUNDED = object()
-
-
-def _median_ms(fn, repeats: int) -> tuple[float, float, int | None]:
-    """Run ``fn`` ``repeats`` times; return (cold_ms, warm_median_ms, result_size)."""
-    runs: list[float] = []
-    size: int | None = None
-    for i in range(repeats):
-        t0 = time.perf_counter()
-        out = fn()
-        runs.append((time.perf_counter() - t0) * 1000.0)
-        if i == 0:
-            size = len(out) if hasattr(out, "__len__") else None
-    warm = runs[1:] or runs
-    return round(runs[0], 1), round(statistics.median(warm), 1), size
 
 
 def _live_windowed(session: Session, start, *, scan_bound=_UNBOUNDED):
@@ -139,11 +126,10 @@ def _marker_progress(stage: str, rows_done: int) -> None:
 
 
 def _run_built(session: Session, repeats: int, columnar, snap: dict) -> dict:
-    from src.analytics import rollup_serve
-
     # -- corpus context (so the numbers are interpretable) ------------------------------- #
     from sqlalchemy import func
 
+    from src.analytics import rollup_serve
     from src.database.models import Article, Keyword
 
     corpus = {
@@ -190,10 +176,10 @@ def _measure(session: Session, repeats: int, columnar, snap: dict, con, corpus: 
         start = (today - timedelta(days=w)) if w else None
         # TIMED on the shape the app serves (no bound predicate: with ix_mention_created_id present the extra clause can
         # change the plan, and a speedup measured against a different query is not the speedup a user gets) ...
-        live_cold, live_med, _ = _median_ms(lambda s=start: _live_windowed(session, s), repeats)
+        live_cold, live_med, _ = median_ms(lambda s=start: _live_windowed(session, s), repeats)
         # ... and COUNTED once on the bounded shape, because the parity check compares like with like.
         live_n = len(_live_windowed(session, start, scan_bound=scan_bound))
-        roll_cold, roll_med, roll_n = _median_ms(
+        roll_cold, roll_med, roll_n = median_ms(
             lambda s=start: columnar.windowed_term_counts(con, start_day=s), repeats
         )
         speedup = round(live_med / roll_med, 1) if roll_med > 0 else None

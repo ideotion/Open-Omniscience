@@ -30,7 +30,8 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping
-from typing import Any
+
+from src.shared import walk_no_score
 
 
 class KindLadder:
@@ -199,22 +200,6 @@ def rank_mirrors(samples: Mapping[str, list[dict]]) -> dict:
     }
 
 
-def _walk_no_score(obj: Any) -> None:
-    """Raises explicitly (never a bare ``assert``, which ``python -O``/
-    ``PYTHONOPTIMIZE`` strips silently and would let this self-test's own
-    no-fabricated-score check false-pass under that flag — transversal
-    audit 09, 2026-07-25, §10.4)."""
-    banned = ("score", "ranking", "rating", "grade")
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if any(b in str(k).lower() for b in banned):
-                raise AssertionError(f"score-like key: {k}")
-            _walk_no_score(v)
-    elif isinstance(obj, list):
-        for v in obj:
-            _walk_no_score(v)
-
-
 def run_tor_throughput_selftest() -> dict:
     """Prove the §5 mechanism on deterministic fixtures — no network, no score. Pins: the ladder
     never starves a floored low-rate kind (ordering ≠ exclusion); segment planning tiles the file
@@ -310,7 +295,7 @@ def run_tor_throughput_selftest() -> dict:
 
     no_score = True
     try:
-        _walk_no_score(mirrors)
+        walk_no_score(mirrors)
     except AssertionError:
         no_score = False
     check("no_score_field", no_score)
