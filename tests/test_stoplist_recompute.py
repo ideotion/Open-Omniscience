@@ -83,12 +83,6 @@ def env(monkeypatch, tmp_path):
     return E
 
 
-def _needs_run() -> bool:
-    """The state file does not say the shipped list is finished (what the removed
-    ``needs_run`` answered; ``maybe_recompute_top_keywords`` makes the real decision)."""
-    return not sr._is_current(sr.read_state(), sr.current_fingerprint())
-
-
 def _keyword(s, term):
     k = Keyword(term=term, normalized_term=term, language="en")
     s.add(k)
@@ -175,10 +169,10 @@ def test_the_fingerprint_is_stable_across_order_and_moves_with_one_word(env):
 
 
 def test_a_fresh_install_records_the_fingerprint_after_a_run_that_finds_nothing(env):
-    assert _needs_run()
+    assert sr.needs_run()
     out = sr.maybe_recompute_top_keywords()
     assert out["complete"] is True and out["updated"] == 0 and out["scanned"] == 0
-    assert not _needs_run()
+    assert not sr.needs_run()
     assert sr.maybe_recompute_top_keywords() == {"skipped": "current"}
 
 
@@ -253,7 +247,7 @@ def test_the_fingerprint_is_recorded_last_and_a_resume_reaches_the_same_end_stat
 
     first = sr.maybe_recompute_top_keywords(should_stop=stop_after_three)
     assert first["complete"] is False and first["stopped_by"] == "stop"
-    assert _needs_run(), "a stopped pass must not record the fingerprint"
+    assert sr.needs_run(), "a stopped pass must not record the fingerprint"
     assert sr.incomplete()
     with env.session() as s:
         assert s.get(DerivedMeta, sr.CURSOR_KEY) is not None
@@ -261,7 +255,7 @@ def test_the_fingerprint_is_recorded_last_and_a_resume_reaches_the_same_end_stat
 
     second = sr.maybe_recompute_top_keywords()
     assert second["complete"] is True and second["resumed_at"] is not None
-    assert not _needs_run() and not sr.incomplete()
+    assert not sr.needs_run() and not sr.incomplete()
     with env.session() as s:
         assert s.get(DerivedMeta, sr.CURSOR_KEY) is None, "a finished walk leaves no cursor behind"
     _assert_final(_tops(env), before, w)
@@ -295,7 +289,7 @@ def test_a_guard_keeps_a_chunk_from_starting_and_nothing_is_written(env, monkeyp
     monkeypatch.setattr(sr, "_guard_reason", lambda: "storage_pressure")
     out = sr.maybe_recompute_top_keywords()
     assert out == {"skipped": "storage_pressure", "complete": False}
-    assert _tops(env) == before and _needs_run()
+    assert _tops(env) == before and sr.needs_run()
 
 
 def test_a_guard_that_engages_mid_walk_stops_at_a_chunk_boundary(env, monkeypatch):
@@ -313,7 +307,7 @@ def test_a_guard_that_engages_mid_walk_stops_at_a_chunk_boundary(env, monkeypatc
     # the entry check is call 1; the loop's checks follow
     out = sr.maybe_recompute_top_keywords()
     assert out["stopped_by"] == "memory_pressure" and out["complete"] is False
-    assert _needs_run()
+    assert sr.needs_run()
 
 
 def test_the_soft_budget_stops_the_pass_and_the_next_one_finishes(env, monkeypatch):
@@ -348,7 +342,7 @@ def test_a_failure_is_recorded_without_the_passphrase_and_without_a_traceback(en
         out = sr.maybe_recompute_top_keywords()
     assert out["complete"] is False
     assert secret not in out["skipped"] and out["skipped"].startswith("RuntimeError:")
-    assert _needs_run(), "a failed pass records nothing"
+    assert sr.needs_run(), "a failed pass records nothing"
     logged = [r for r in caplog.records if "stoplist recompute failed" in r.getMessage()]
     assert logged, "a failed pass says so in the log"
     for rec in caplog.records:
@@ -685,7 +679,7 @@ def test_a_crash_between_the_cursor_delete_and_the_done_write_leaves_the_walk_re
     with env.session() as s:
         assert s.get(DerivedMeta, sr.CURSOR_KEY) is not None, "the delete rolled back with the failed write"
         assert sr._done_get(s) is None
-    assert _needs_run()
+    assert sr.needs_run()
     monkeypatch.setattr(sr, "_meta_set", real)
     again = sr.maybe_recompute_top_keywords()
     assert again["complete"] is True and again["chunks"] == 0, "resumed at the end, nothing walked again"
@@ -777,11 +771,11 @@ def test_a_pass_stopped_on_a_list_that_was_taken_off_is_accounted_for_when_the_l
     assert _tops(env)["lone_top"][:3] == (w["h1"], 5, 1), "the restored word is back where it leads"
 
     env.set_words(["hid1", "hid2"])  # L3 = L1
-    assert _needs_run() and sr.incomplete()
+    assert sr.needs_run() and sr.incomplete()
     out = sr.maybe_recompute_top_keywords()
     assert out != {"skipped": "current"} and out["complete"] is True
     _assert_tops_equal_oracle(env, {"hid1", "hid2"})
-    assert not _needs_run()
+    assert not sr.needs_run()
 
 
 def test_a_pass_stopped_on_a_list_that_added_a_word_is_accounted_for_when_the_list_returns(env, monkeypatch):

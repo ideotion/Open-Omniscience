@@ -211,6 +211,16 @@ def _is_current(state: dict, fp: str) -> bool:
     return state.get("fingerprint") == fp and pending is not None and not pending
 
 
+def needs_run() -> bool:
+    """True while the state file does not say the shipped list is finished (a fingerprint that is
+    not the list's, or lists walked since the last finished run). The database's own record is
+    checked by the pass itself."""
+    try:
+        return not _is_current(read_state(), current_fingerprint())
+    except Exception:  # noqa: BLE001 - unknown means "not known to be pending"
+        return False
+
+
 def incomplete() -> bool:
     """The last pass stopped early on a list that has not been finished (the offline timer runs
     passes back to back only then)."""
