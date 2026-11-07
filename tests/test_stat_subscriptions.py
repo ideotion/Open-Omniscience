@@ -152,13 +152,14 @@ def test_refresh_does_not_carry_the_write_gate_across_the_next_fetch(monkeypatch
         S.record_subscription(s, source="worldbank", indicator="H1.ONE", country="FR")
         S.record_subscription(s, source="worldbank", indicator="H1.TWO", country="DE")
 
+    fetches: list[str] = []
     seen: list[tuple[str, bool, bool]] = []
     grants_before = write_gate.stats()["grants"]
 
     def getter(url):
-        second = "H1.TWO" in url
+        fetches.append(url)
         taken = None
-        if second:
+        if len(fetches) > 1:  # every fetch after the first has a flushed predecessor
             held = write_gate.stats()["held"]
 
             from src.database.writer import write_lock
@@ -178,7 +179,39 @@ def test_refresh_does_not_carry_the_write_gate_across_the_next_fetch(monkeypatch
 
     with session_scope() as s:
         out = S.refresh_due(s, get=getter)
-    assert out["refreshed"] == 2
+    assert out["refreshed"] >= 2  # the suite database may hold other due subscriptions
     assert seen, "the second subscription's fetch never ran"
     assert all(held is False and taken for _u, held, taken in seen)
     assert write_gate.stats()["grants"] > grants_before  # the writes did go through the gate
+
+
+def test_a_failed_store_ends_the_transaction_so_later_fetches_run_ungated(db, monkeypatch):
+    """A raising ``store_figures`` is rolled back and the error status committed, so the next
+    subscription still fetches, and is not poisoned by a half-open transaction."""
+    S.record_subscription(db, source="worldbank", indicator="BAD", country="FR")
+    S.record_subscription(db, source="worldbank", indicator="GOOD", country="DE")
+    db.commit()
+    clear_kill_switch()
+    import src.stats.store as store_mod
+
+    real = store_mod.store_figures
+
+    calls: list[int] = []
+
+    def flaky(session, figs):
+        calls.append(1)
+        if len(calls) == 1:  # the first due subscription is BAD (insertion order)
+            raise RuntimeError("boom")
+        return real(session, figs)
+
+    monkeypatch.setattr(store_mod, "store_figures", flaky)
+
+    def getter(url):
+        return _FakeResp(_wb_payload(1.0))
+
+    out = S.refresh_due(db, get=getter)
+    assert out["errors"] + out["refreshed"] == out["checked"] == 2
+    by_ind = {r["indicator"]: r for r in S.list_subscriptions(db)}
+    assert by_ind["BAD"]["last_status"].startswith("error: boom")
+    assert by_ind["GOOD"]["last_status"].startswith("stored")
+    assert out["errors"] == 1 and out["refreshed"] == 1
