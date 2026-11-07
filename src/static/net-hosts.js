@@ -187,7 +187,7 @@
     {
       "id": "climate",
       "label": "Climate series",
-      "hosts": ["data.giss.nasa.gov"],
+      "hosts": ["data.giss.nasa.gov", "raw.githubusercontent.com"],
       "trigger": "click",
       "setting": null,
       "fetcher": true
