@@ -115,3 +115,51 @@ def test_external_doctype_is_refused_without_a_network_call(tmp_path, monkeypatc
             continue  # refused: named, not fetched
         assert parsed["concepts"] == {}  # an external DTD ignored is also fine, never fetched
     assert calls == []
+
+
+def _parse_text(tmp_path, body):
+    f = tmp_path / "t.rdf"
+    f.write_text(
+        '<?xml version="1.0"?><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" '
+        'xmlns:skos="http://www.w3.org/2004/02/skos/core#" xml:lang="en">' + body + "</rdf:RDF>",
+        encoding="utf-8",
+    )
+    return skos.parse_rdfxml(f)
+
+
+def test_nested_broader_and_inherited_language(tmp_path):
+    parsed = _parse_text(
+        tmp_path,
+        '<skos:Concept rdf:about="u:a"><skos:prefLabel>A</skos:prefLabel>'
+        '<skos:broader><skos:Concept rdf:about="u:b"><skos:prefLabel>B</skos:prefLabel></skos:Concept></skos:broader>'
+        "</skos:Concept>",
+    )
+    assert parsed["concepts"]["u:a"]["broader"] == ["u:b"]
+    assert parsed["concepts"]["u:a"]["pref"] == {"en": "A"}  # xml:lang inherited from rdf:RDF
+    assert parsed["concepts"]["u:b"]["pref"] == {"en": "B"}
+    assert not any(g["kind"] == "concept_without_label" for g in parsed["gaps"])
+
+
+def test_a_label_in_no_language_is_a_named_gap(tmp_path):
+    f = tmp_path / "n.rdf"
+    f.write_text(
+        '<?xml version="1.0"?><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" '
+        'xmlns:skos="http://www.w3.org/2004/02/skos/core#"><skos:Concept rdf:about="u:a">'
+        "<skos:prefLabel>A</skos:prefLabel></skos:Concept></rdf:RDF>",
+        encoding="utf-8",
+    )
+    parsed = skos.parse_rdfxml(f)
+    assert {"kind": "label_without_language", "detail": "u:a"} in parsed["gaps"]
+
+
+def test_same_word_in_two_schemes_is_two_exact_tags_and_exact_beats_approx():
+    def art(scheme, uri, pref, alt=None):
+        return {"scheme": scheme, "concepts": {uri: {"pref": {"en": pref}, "alt": {"en": alt or []}, "broader": []}}}
+
+    idx = tt.Index([art("eurovoc", "e:1", "water"), art("agrovoc", "a:1", "water")])
+    tags = tt.tag_text("water", "en", idx)
+    assert {(t.scheme, t.tier) for t in tags} == {("eurovoc", "exact"), ("agrovoc", "exact")}
+    # a concept hit first by an alt label (≈) and later by its pref label keeps the exact tag
+    idx2 = tt.Index([art("eurovoc", "e:2", "sea", alt=["ocean"])])
+    (t,) = tt.tag_text("ocean and sea", "en", idx2)
+    assert t.tier == "exact"

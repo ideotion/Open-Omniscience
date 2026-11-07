@@ -45,13 +45,28 @@ def parse_rdfxml(source: str | Path | BinaryIO) -> dict[str, Any]:
     """Parse SKOS RDF/XML into ``{"concepts": {uri: {...}}, "gaps": [...], "n_seen": int}``.
 
     Each concept: ``{"pref": {lang: label}, "alt": {lang: [labels]}, "broader": [uri]}``.
-    Streaming (``iterparse``) so a 100 MB thesaurus is not held as a tree.
+    Streaming (``iterparse``): each top-level concept is cleared once read. Elements that are not
+    concepts (a ConceptScheme, SKOS-XL label resources) are not cleared and stay in memory; a SKOS-XL-only
+    file (labels as ``skosxl:Label``) is not read and every concept in it is reported as a gap.
     """
     concepts: dict[str, dict[str, Any]] = {}
     gaps: list[dict[str, str]] = []
     n_seen = 0
+    langs: dict[int, str] = {}  # element id -> effective xml:lang (inherited from its ancestors)
+    stack: list[str] = []
+    depth = 0
     try:
-        for _event, el in SafeET.iterparse(source, events=("end",), forbid_dtd=False, forbid_entities=True, forbid_external=True):
+        for event, el in SafeET.iterparse(
+            source, events=("start", "end"), forbid_dtd=False, forbid_entities=True, forbid_external=True,
+        ):
+            if event == "start":
+                own = el.get(XML_LANG)
+                stack.append(own if own is not None else (stack[-1] if stack else ""))
+                langs[id(el)] = stack[-1]
+                depth += 1
+                continue
+            depth -= 1
+            stack.pop()
             if el.tag != f"{SKOS}Concept" and not (
                 el.tag == f"{RDF}Description"
                 and any(c.tag == f"{RDF}type" and c.get(f"{RDF}resource", "").endswith("skos/core#Concept")
@@ -62,30 +77,36 @@ def parse_rdfxml(source: str | Path | BinaryIO) -> dict[str, Any]:
             uri = el.get(f"{RDF}about") or ""
             if not uri:
                 gaps.append({"kind": "concept_without_id", "detail": "a concept carries no rdf:about"})
-                el.clear()
-                continue
-            pref: dict[str, str] = {}
-            alt: dict[str, list[str]] = {}
-            broader: list[str] = []
-            for c in el:
-                lang = (c.get(XML_LANG) or "").split("-")[0].lower()
-                if c.tag == f"{SKOS}prefLabel":
-                    label = _text(c)
-                    if label and lang and lang not in pref:
-                        pref[lang] = label
-                elif c.tag == f"{SKOS}altLabel":
-                    label = _text(c)
-                    if label and lang:
-                        alt.setdefault(lang, []).append(label)
-                elif c.tag == f"{SKOS}broader":
-                    ref = c.get(f"{RDF}resource")
-                    if ref:
-                        broader.append(ref)
-            if not pref and not alt:
-                gaps.append({"kind": "concept_without_label", "detail": uri})
             else:
-                concepts[uri] = {"pref": pref, "alt": alt, "broader": broader}
-            el.clear()
+                pref: dict[str, str] = {}
+                alt: dict[str, list[str]] = {}
+                broader: list[str] = []
+                for c in el:
+                    lang = langs.get(id(c), "").split("-")[0].lower()
+                    if c.tag == f"{SKOS}prefLabel":
+                        label = _text(c)
+                        if label and lang and lang not in pref:
+                            pref[lang] = label
+                        elif label and not lang:
+                            gaps.append({"kind": "label_without_language", "detail": uri})
+                    elif c.tag == f"{SKOS}altLabel":
+                        label = _text(c)
+                        if label and lang:
+                            alt.setdefault(lang, []).append(label)
+                        elif label:
+                            gaps.append({"kind": "label_without_language", "detail": uri})
+                    elif c.tag == f"{SKOS}broader":
+                        ref = c.get(f"{RDF}resource")
+                        if not ref:  # the nested form: <skos:broader><skos:Concept rdf:about=.../></skos:broader>
+                            ref = next((g.get(f"{RDF}about") for g in c if g.get(f"{RDF}about")), None)
+                        if ref:
+                            broader.append(ref)
+                if not pref and not alt:
+                    gaps.append({"kind": "concept_without_label", "detail": uri})
+                else:
+                    concepts[uri] = {"pref": pref, "alt": alt, "broader": broader}
+            if depth <= 1:  # a top-level concept is finished; a nested one is still its parent's to read
+                el.clear()
     except SkosError:
         raise
     except Exception as exc:  # defusedxml/ElementTree errors: named, not swallowed

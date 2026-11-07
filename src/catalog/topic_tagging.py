@@ -8,7 +8,7 @@ sequence in a title or provision and returns what matched and HOW, so nothing is
 
 * ``exact``  -- a ``prefLabel`` that names one concept: a rule hit.
 * ``approx`` -- marked ``≈``: the label is an ``altLabel``, or it names MORE than one concept in
-  the scheme (both concepts are returned, neither is picked). Perception, not judgment.
+  the SAME scheme (both concepts are returned, neither is picked). Perception, not judgment.
 
 The classifier's module home (S06-02 S4, "record it") is ``src/catalog/topic_tagging.py``.
 No network, no model. Whitespace-delimited scripts only (ar/de/en/es/fr/pt/ru); a language
@@ -96,10 +96,11 @@ def tag_text(text: str, lang: str, index: Index) -> list[Tag]:
         if not hit:
             i += 1
             continue
-        concepts = {(s, u) for s, u, _l, _p in hit}
-        ambiguous = len(concepts) > 1
+        per_scheme: dict[str, set[str]] = {}
+        for s, u, _l, _p in hit:
+            per_scheme.setdefault(s, set()).add(u)
         for s, u, label, is_pref in hit:
-            if ambiguous:
+            if len(per_scheme[s]) > 1:  # ambiguous WITHIN one scheme; the same word in two schemes is two exact tags
                 reason: str | None = "ambiguous_label"
             elif not is_pref:
                 reason = "alt_label"
@@ -107,13 +108,12 @@ def tag_text(text: str, lang: str, index: Index) -> list[Tag]:
                 reason = None
             out.append(Tag(s, u, label, lang, "approx" if reason else "exact", reason))
         i += n
-    seen: set[tuple[str, str]] = set()
-    uniq = []
-    for t in out:  # one tag per concept: keep the first (an exact one wins if it comes first)
-        if (t.scheme, t.concept) not in seen:
-            seen.add((t.scheme, t.concept))
-            uniq.append(t)
-    return uniq
+    best: dict[tuple[str, str], Tag] = {}
+    for t in out:  # one tag per concept; an exact hit replaces an earlier ≈ one
+        key = (t.scheme, t.concept)
+        if key not in best or (best[key].approx and not t.approx):
+            best[key] = t
+    return list(best.values())
 
 
 def _ratio(num: int, den: int, reason: str) -> dict[str, Any]:
