@@ -3289,6 +3289,10 @@ def resume_after_exclusive_operation(
 _RESUME_LOCK = threading.Lock()
 _RESUME_PENDING: dict | None = None
 _RESUME_GEN = 0
+#: Set to retire the CURRENT generation's watcher at once. Every bump of ``_RESUME_GEN`` (a newer watcher, a cancel) swaps in a fresh
+#: Event and sets the old one, so a retired watcher leaves in the moment it is retired and not at the end of its poll (30 s by default):
+#: before this, a test that handed off to a watcher left a live ``oo-resume-watch`` thread for up to 30 s after its teardown cancelled it.
+_RESUME_WAKE = threading.Event()
 #: How often the watcher looks. A pass winds down in minutes, never seconds, and a
 #: start() that succeeds the minute after the pass exits costs nothing real.
 RESUME_POLL_S = 30.0
@@ -3337,19 +3341,23 @@ def _clear_resume_abandoned() -> None:
 def cancel_pending_resume() -> None:
     """Retire any watcher (called at shutdown, so a watcher can never start collection
     on a process that is going down)."""
-    global _RESUME_GEN, _RESUME_PENDING, _RESUME_ABANDONED
+    global _RESUME_GEN, _RESUME_PENDING, _RESUME_ABANDONED, _RESUME_WAKE
     with _RESUME_LOCK:
         _RESUME_GEN += 1
         _RESUME_PENDING = None
         _RESUME_ABANDONED = None
+        retired, _RESUME_WAKE = _RESUME_WAKE, threading.Event()
+    retired.set()  # the watcher leaves now, not at the end of its poll
 
 
 def _watch_for_resume(sched: BackgroundScheduler, *, poll_s: float | None = None) -> threading.Thread:
-    global _RESUME_GEN, _RESUME_PENDING
+    global _RESUME_GEN, _RESUME_PENDING, _RESUME_WAKE
     old = getattr(sched, "_thread", None)
     with _RESUME_LOCK:
         _RESUME_GEN += 1
         gen = _RESUME_GEN
+        retired, _RESUME_WAKE = _RESUME_WAKE, threading.Event()
+        wake = _RESUME_WAKE
         _RESUME_PENDING = {
             "since": datetime.now(UTC).isoformat(timespec="seconds"),
             "waiting_for": getattr(old, "name", None),
@@ -3358,7 +3366,8 @@ def _watch_for_resume(sched: BackgroundScheduler, *, poll_s: float | None = None
                 "operation ended; collection starts again the moment that pass exits"
             ),
         }
-    t = threading.Thread(target=_resume_watch, args=(sched, old, gen, poll_s or RESUME_POLL_S),
+    retired.set()  # an older watcher is retired by this one: it leaves now
+    t = threading.Thread(target=_resume_watch, args=(sched, old, gen, poll_s or RESUME_POLL_S, wake),
                          name="oo-resume-watch", daemon=True)
     try:
         t.start()
@@ -3375,15 +3384,20 @@ def _watch_for_resume(sched: BackgroundScheduler, *, poll_s: float | None = None
     return t
 
 
-def _resume_watch(sched: BackgroundScheduler, old: threading.Thread | None, gen: int, poll_s: float) -> None:
+def _resume_watch(
+    sched: BackgroundScheduler, old: threading.Thread | None, gen: int, poll_s: float, wake: threading.Event | None = None
+) -> None:
     global _RESUME_PENDING
     from src.ingest import kill_switch_active
 
     outcome = "stopped"
     t0 = time.monotonic()
     while True:
-        # Wait FIRST: the retry loop that handed over has just tried start().
-        time.sleep(poll_s)
+        # Wait FIRST: the retry loop that handed over has just tried start(). The wait ends early when this generation is retired.
+        if wake is None:
+            time.sleep(poll_s)
+        else:
+            wake.wait(poll_s)
         with _RESUME_LOCK:
             if gen != _RESUME_GEN:
                 return  # retired by a cancel or a newer watcher; they own the state now
