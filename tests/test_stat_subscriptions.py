@@ -190,33 +190,48 @@ def test_refresh_does_not_carry_the_write_gate_across_the_next_fetch(monkeypatch
     assert write_gate.stats()["grants"] > grants_before  # the writes did go through the gate
 
 
-def test_a_failed_store_ends_the_transaction_so_later_fetches_run_ungated(db, monkeypatch):
-    """A raising ``store_figures`` is rolled back and the error status committed, so the next
-    subscription still fetches, and is not poisoned by a half-open transaction."""
-    S.record_subscription(db, source="worldbank", indicator="BAD", country="FR")
-    S.record_subscription(db, source="worldbank", indicator="GOOD", country="DE")
-    db.commit()
-    clear_kill_switch()
+def test_a_failed_store_ends_the_transaction_so_later_fetches_run_ungated(monkeypatch):
+    """A ``store_figures`` that FLUSHES and then raises leaves the transaction open and the write
+    gate held; the except branch must end it, or every later subscription's request runs gated.
+    Gate-wired ``SessionLocal``; the failure is keyed on the indicator in the URL, not on order."""
+    from src.database.session import init_db, session_scope
+    from src.database.writer import write_gate
     import src.stats.store as store_mod
 
-    real = store_mod.store_figures
+    init_db()
+    clear_kill_switch()
+    with session_scope() as s:
+        S.record_subscription(s, source="worldbank", indicator="H1.BAD", country="FR")
+        S.record_subscription(s, source="worldbank", indicator="H1.GOOD", country="DE")
 
-    calls: list[int] = []
+    real = store_mod.store_figures
+    last_url: list[str] = []
+    held_at_fetch: dict[str, bool] = {}
 
     def flaky(session, figs):
-        calls.append(1)
-        if len(calls) == 1:  # the first due subscription is BAD (insertion order)
-            raise RuntimeError("boom")
-        return real(session, figs)
+        tally = real(session, figs)  # flushes: the gate is now held
+        if "H1.BAD" in last_url[-1]:
+            # A flush that FAILS poisons the transaction (needs a rollback) and keeps the gate.
+            from src.database.models import StatSubscription
+
+            first = session.query(StatSubscription).first()
+            session.add(StatSubscription(id=first.id, source="worldbank", indicator="dup"))
+            session.flush()  # IntegrityError
+        return tally
 
     monkeypatch.setattr(store_mod, "store_figures", flaky)
 
     def getter(url):
-        return _FakeResp(_wb_payload(1.0))
+        last_url.append(url)
+        held_at_fetch["H1.GOOD" if "H1.GOOD" in url else "H1.BAD"] = write_gate.stats()["held"]
+        return _FakeResp(_wb_payload(7.0))
 
-    out = S.refresh_due(db, get=getter)
-    assert out["errors"] + out["refreshed"] == out["checked"] == 2
-    by_ind = {r["indicator"]: r for r in S.list_subscriptions(db)}
-    assert by_ind["BAD"]["last_status"].startswith("error: boom")
-    assert by_ind["GOOD"]["last_status"].startswith("stored")
-    assert out["errors"] == 1 and out["refreshed"] == 1
+    with session_scope() as s:
+        S.refresh_due(s, get=getter)
+    with session_scope() as s:
+        by_ind = {r["indicator"]: r["last_status"] for r in S.list_subscriptions(s)}
+    assert by_ind["H1.BAD"].startswith("error:"), by_ind
+    assert by_ind["H1.GOOD"].startswith("stored"), by_ind
+    # Whichever ran second fetched with the gate free (the failed one's transaction was ended).
+    if len(last_url) >= 2 and "H1.BAD" in last_url[0]:
+        assert held_at_fetch["H1.GOOD"] is False
