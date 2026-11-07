@@ -47,6 +47,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from statistics import median as _median
+from typing import Any
 
 from src.catalog.countries import country_display_code
 
@@ -124,6 +125,42 @@ def _weighted(
     return num / den, []
 
 
+def _weighting(
+    weight_name: str,
+    members: Sequence[Member],
+    reported: Sequence[Member],
+    without: Sequence[str],
+    weight_source: Mapping[str, Mapping[str, Any]] | None,
+) -> dict:
+    """The weighting stated ON a weighted figure (or refusal): where the weights came from, how old
+    they are, and which members they cover. Slice S06-04 §S6.
+
+    ``weight_source[name]`` is ``{"source", "as_of", "from_table", "table"}``: the caller's account of the weight
+    series. An absent account reads ``stated: False`` with ``source`` and ``as_of`` ``None``; it is
+    never filled in here, because a weighting nobody described cannot be dated by this module.
+    ``members_without_weight`` names the members that reported a value and have no weight (the reason
+    the figure refuses); ``from_table`` the members whose weight came from the operator's dated table
+    rather than the stored series."""
+    ws = (weight_source or {}).get(weight_name) or {}
+    source = ws.get("source") if isinstance(ws.get("source"), str) and ws.get("source") else None
+    # Only members that REPORTED a value had a weight enter the figure: a table figure for a member
+    # that did not report was never used, and listing it would claim a weight that touched nothing.
+    reported_areas = {m.area for m in reported}
+    taken = sorted(a for a in (ws.get("from_table") or []) if a in reported_areas)
+    return {
+        "weight": weight_name,
+        "stated": source is not None,
+        "source": source,
+        "as_of": ws.get("as_of") if isinstance(ws.get("as_of"), str) else None,
+        "members_total": len(members),
+        "members_covered": len(reported) - len(without),
+        "members_without_weight": sorted(without),
+        "from_table": taken,
+        # The dated table those members came from ({source, as_of}); None when no member needed it.
+        "table": ws.get("table") if taken else None,
+    }
+
+
 def aggregate_indicator(
     *,
     indicator: Mapping,
@@ -131,6 +168,7 @@ def aggregate_indicator(
     members: Sequence[Member],
     weights: Mapping[str, Mapping[str, float | None]] | None = None,
     allow_incomplete: bool = False,
+    weight_source: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict:
     """Every honest way to aggregate one indicator over one group, computed side by side.
 
@@ -138,7 +176,8 @@ def aggregate_indicator(
     ``indicators.indicator_aggregation(code)``; ``members`` is EVERY member of the group,
     including those with no reported value — that is what makes coverage measurable rather
     than assumed. ``weights`` maps a weight name (``population`` / ``gdp`` /
-    ``labour_force``) to that series' value per area.
+    ``labour_force``) to that series' value per area. ``weight_source`` (optional, additive) maps the
+    same names to ``{"source", "as_of", "from_table"}`` so a weighted figure can state its weighting.
 
     Returns one entry per strategy, each carrying either a ``value`` with its ``method``
     and ``basis`` (``exact`` | ``approximate``), or a ``refused`` sentence in its place.
@@ -318,6 +357,7 @@ def aggregate_indicator(
                 "refused_code": "missing_weight",
                 "weight": weight_name,
                 "missing_weight": missing_weight,
+                "weighting": _weighting(weight_name, members, reported, missing_weight, weight_source),
                 "refused": (
                     f"{len(missing_weight)} member(s) reported a value but have no "
                     f"{human} weight ({shown}). Dropping them "
@@ -338,12 +378,19 @@ def aggregate_indicator(
             }
             continue
 
-        exact = denominator is not None and denominator == weight_name
+        # A weight that came from the operator's table is dated on its own, not at the indicator's period,
+        # so it cannot rebuild the real numerator: such a figure is APPROXIMATE whatever the denominator.
+        table_weights = _weighting(weight_name, members, reported, [], weight_source)["from_table"]
+        exact = denominator is not None and denominator == weight_name and not table_weights
         results[key] = {
             "label": label,
             "value": value,
             "basis": "exact" if (exact and complete) else "approximate",
-            "method_code": "weighted_exact" if exact else "weighted_approx",
+            "method_code": (
+                "weighted_exact" if exact
+                else "weighted_table" if table_weights and denominator == weight_name
+                else "weighted_approx"
+            ),
             "weight": weight_name,
             "denominator": denominator,
             "method": (
@@ -355,7 +402,11 @@ def aggregate_indicator(
                 )
                 if exact
                 else (
-                    f"Sum of (value x {human}) divided by the "
+                    f"Sum of (value x {human}) divided by the summed {human}. APPROXIMATE: "
+                    f"some {human} figures come from the operator's table, dated on its own rather than at "
+                    "this indicator's period, so the reconstructed numerator is not the real one."
+                    if table_weights and denominator == weight_name
+                    else f"Sum of (value x {human}) divided by the "
                     f"summed {human}. APPROXIMATE: this indicator "
                     + (
                         f"is measured per {denominator.replace('_', ' ')}, not per "
@@ -367,6 +418,7 @@ def aggregate_indicator(
                 )
             )
             + partial,
+            "weighting": _weighting(weight_name, members, reported, [], weight_source),
         }
 
     return _out(results)
