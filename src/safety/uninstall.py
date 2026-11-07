@@ -33,7 +33,6 @@ import json
 import logging
 import os
 import shutil
-import signal
 import subprocess
 import sys
 import threading
@@ -291,8 +290,10 @@ def _default_arm_shutdown(delay: float = 2.0) -> None:
     def _stop() -> None:
         time.sleep(delay)
         _close_db_quietly()
-        _LOG.warning("uninstall: stopping the server (SIGTERM to self)")
-        os.kill(os.getpid(), signal.SIGTERM)
+        _LOG.warning("uninstall: stopping the server (graceful signal to self)")
+        from src.safety.shutdown import stop_self
+
+        stop_self()
     threading.Thread(target=_stop, name="oo-uninstall", daemon=True).start()
 
 
