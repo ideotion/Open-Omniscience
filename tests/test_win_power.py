@@ -85,3 +85,15 @@ def test_main_wires_it_in_serve():
 
     src = (Path(__file__).resolve().parents[1] / "src" / "api" / "main.py").read_text(encoding="utf-8")
     assert "win_power import install" in src
+
+
+def test_suspend_checkpoint_returns_at_the_deadline_when_the_work_hangs(monkeypatch):
+    import threading
+    import time
+
+    release = threading.Event()
+    monkeypatch.setattr(win_power, "_passive_checkpoint", lambda b: release.wait(5) and {"outcome": "done"})
+    began = time.monotonic()
+    out = win_power.suspend_checkpoint(budget_s=0.1)
+    release.set()
+    assert out["outcome"] == "timeout" and time.monotonic() - began < 2

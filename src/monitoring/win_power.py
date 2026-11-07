@@ -73,7 +73,22 @@ def last_events() -> list[dict[str, Any]]:
 
 
 def suspend_checkpoint(*, budget_s: float = SUSPEND_BUDGET_S) -> dict[str, Any]:
-    """One PASSIVE checkpoint of the store, interrupted after ``budget_s``. Never raises; returns what happened."""
+    """One PASSIVE checkpoint of the store, on a thread of its own, so the OS callback returns within ``budget_s`` (+0.5 s) whatever the
+    steps below wait for (the swap lock of ``library_generation.connecting()`` can wait for a restore; the checkpoint itself is interrupted
+    at ``budget_s``). Never raises; returns what happened (``outcome`` ``timeout`` when the thread was still working at the deadline)."""
+    box: dict[str, Any] = {}
+    worker = threading.Thread(target=lambda: box.update(_passive_checkpoint(budget_s)), name="oo-suspend-checkpoint", daemon=True)
+    worker.start()
+    worker.join(budget_s + 0.5)
+    if worker.is_alive():
+        return {"outcome": "timeout", "seconds": round(budget_s + 0.5, 3)}
+    return dict(box)
+
+
+def _passive_checkpoint(budget_s: float) -> dict[str, Any]:
+    """The checkpoint itself: the connection comes from ``connect`` (keyed, the page-size handling) like the shutdown step's, and the write
+    gate (the pool's Python lock) is not taken: a raw connection, ``busy_timeout`` 0, PASSIVE, so a writer mid-transaction neither waits for
+    it nor is waited for."""
     out: dict[str, Any] = {"outcome": "skipped"}
     began = time.monotonic()
     try:
