@@ -91,6 +91,13 @@ def data_dir() -> Path:
     return _ensure(base / APP_DIRNAME)
 
 
+def diagnostics_dir() -> Path:
+    """``<data dir>/diagnostics``, created if missing (the folder the reports and bundles are written to)."""
+    d = data_dir() / "diagnostics"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def default_sqlite_url() -> str:
     """The default SQLite URL rooted in :func:`data_dir`."""
     return f"sqlite:///{data_dir() / 'open_omniscience.db'}"
