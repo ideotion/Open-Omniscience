@@ -3162,6 +3162,15 @@ hash, bound by a **domain‑separated Merkle root** and an **Ed25519 signature**
 Verify offline with `scripts/verify_evidence.py <bundle.json> [signer_pubkey]`.
 Exposed at `POST /api/reports/evidence` and `/api/reports/evidence/verify`.
 
+The signing key lives in `keys/evidence_ed25519.pem` under your data folder. On an encrypted
+store it is wrapped under your passphrase (a key made before is wrapped, unchanged, the first time
+an export loads it with the store unlocked), so a copy of the data folder alone cannot sign as
+you; with no passphrase it stays `0600` in the clear. If a restored backup brought a key wrapped
+under another install's passphrase, an evidence export and every backup (a backup signs its manifest
+with this key) say they cannot open it and replace nothing: use the passphrase it was wrapped under,
+or move the file aside to have a new key made (bundles signed with the old key still verify against
+its public key). A lost passphrase loses the key; there is no recovery.
+
 #### 2. Hybrid signatures — `src/custody/signing.py`
 Combines **Ed25519** (fast, classical) with **ML‑DSA** (FIPS 204, post‑quantum,
 the standardised successor to CRYSTALS‑Dilithium). Two rules make this honest:
