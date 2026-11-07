@@ -36,11 +36,15 @@ HONESTY PROPERTIES, each a refusal rather than a caveat:
   homogenisation); a re-fetch is a new vintage, ``extracted_at`` is caller-stamped verbatim.
 * **Seasonal columns (DJF, MAM, JJA, SON) are NOT emitted.** Their year label straddles the
   year end (the same trap ``oni.season_months`` documents) and the format is unverified live;
-  they are counted in ``OniParse``-style ``skipped_columns`` so the omission is stated.
+  they are still VALIDATED (a malformed seasonal cell refuses the row) and are named in
+  ``skipped_columns`` so the omission is stated.
+* **A blank cell, ``nan``/``inf``, an exponent or a duplicate year is refused**, never read
+  as a gap or a figure; a body with no data rows at all is ``looks_unrecognised``.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from src.stats.sdmx import StatFigure
@@ -96,15 +100,20 @@ class GistempParse:
         return self.rows_read == 0 and bool(self.refused)
 
 
+_DECIMAL = re.compile(r"^[+-]?(?:\d+\.?\d*|\.\d+)$")
+
+
 def _cell(raw: str) -> tuple[float | None, bool]:
-    """``(value, ok)``: ``***`` is a real gap ``(None, True)``; non-numeric is a refusal."""
+    """``(value, ok)``: ``***`` is a real gap ``(None, True)``; anything else must be a plain
+    finite decimal. A blank cell is NOT a gap (the documented marker is ``***``; a blank is a
+    truncated or malformed line), and ``nan`` / ``inf`` / ``1e9`` / ``1_0`` are refused rather
+    than turned into figures."""
     text = raw.strip()
-    if not text or text in _MISSING:
+    if text in _MISSING:
         return None, True
-    try:
-        return float(text), True
-    except ValueError:
+    if not _DECIMAL.match(text):
         return None, False
+    return float(text), True
 
 
 def parse_gistemp(text: str, *, region: str = "GLB", extracted_at: str) -> GistempParse:
@@ -113,6 +122,7 @@ def parse_gistemp(text: str, *, region: str = "GLB", extracted_at: str) -> Giste
         raise ValueError(f"not a GISTEMP region: {region!r} (expected one of {REGIONS})")
     out = GistempParse()
     header_seen = False
+    seen_years: set[int] = set()
     for lineno, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
         if not stripped:
@@ -139,18 +149,25 @@ def parse_gistemp(text: str, *, region: str = "GLB", extracted_at: str) -> Giste
         if not (_MIN_YEAR <= year <= _MAX_YEAR):
             out.refused.append({"line": str(lineno), "reason": "year out of range", "text": stripped[:80]})
             continue
-        cells = [_cell(c) for c in fields[1:1 + len(_MONTHS) + len(_ANNUAL_COLS)]]
+        cells = [_cell(c) for c in fields[1:]]  # months, J-D, D-N AND the seasons: all validated
         if not all(ok for _, ok in cells):
             out.refused.append({"line": str(lineno), "reason": "non-numeric value", "text": stripped[:80]})
             continue
+        if year in seen_years:
+            out.refused.append({"line": str(lineno), "reason": "duplicate year", "text": stripped[:80]})
+            continue
+        seen_years.add(year)
         out.rows_read += 1
         values = [v for v, _ in cells]
         for i in range(len(_MONTHS)):
             out.figures.append(_fig(SERIES_MONTHLY, region, f"{year}-{i + 1:02d}", values[i], extracted_at))
         out.figures.append(_fig(SERIES_ANNUAL_JD, region, str(year), values[12], extracted_at))
         out.figures.append(_fig(SERIES_ANNUAL_DN, region, str(year), values[13], extracted_at))
-    if not header_seen and out.rows_read == 0 and not out.refused and out.preamble_lines:
-        out.refused.append({"line": "0", "reason": "header row not found", "text": ""})
+    if out.rows_read == 0 and not out.refused:
+        # An empty body, a title line only, or a header with no rows: not a series. Recorded
+        # as a refusal so it reads as "unrecognised", never as a successful empty fetch.
+        reason = "no data rows found" if header_seen else "header row not found"
+        out.refused.append({"line": "0", "reason": reason, "text": ""})
     return out
 
 

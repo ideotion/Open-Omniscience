@@ -95,14 +95,15 @@ def test_unknown_region_is_a_programming_error():
         "<html><body>404 Not Found</body></html>",
         "Year,Jan\n1880,1",
         "",
+        HEADER + "\n",
+        "Land-Ocean: Global Means\n",
         "SEAS YR TOTAL ANOM\nDJF 1950 24.72 -1.53",
     ],
 )
 def test_a_wrong_file_is_unrecognised_or_empty_never_a_series(body):
     res = parse_gistemp(body, extracted_at=VINTAGE)
     assert res.figures == []
-    if body.strip():
-        assert res.looks_unrecognised
+    assert res.looks_unrecognised
 
 
 def test_a_missing_header_refuses_the_rows():
@@ -171,3 +172,39 @@ def test_kill_switch_refuses_before_any_getter_runs(monkeypatch):
     with pytest.raises(RuntimeError):
         fetch.fetch_gistemp(get=lambda u: called.append(u) or _Resp(GOOD))
     assert called == []
+
+
+_Z = ",".join(["0"] * 17)
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        "1950,nan," + ",".join(["0"] * 16),
+        "1950,inf," + ",".join(["0"] * 16),
+        "1950,-Infinity," + ",".join(["0"] * 16),
+        "1950,1e9," + ",".join(["0"] * 16),
+        "1950,1_0," + ",".join(["0"] * 16),
+        "1950," + ",".join(["0"] * 14) + ",<html>,abc,def,ghi",
+        "1950," + ",".join(["0"] * 17) + ",-",
+        "1950" + "," * 18,
+        "1950,0,,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+    ],
+)
+def test_non_measurements_and_malformed_cells_refuse_the_row(row):
+    res = parse_gistemp(f"{HEADER}\n{row}\n", extracted_at=VINTAGE)
+    assert res.figures == [] and res.rows_read == 0 and res.looks_unrecognised
+
+
+def test_a_duplicate_year_is_refused_not_emitted_twice():
+    r1 = "1950," + ",".join(["1"] * 18)
+    r2 = "1950," + ",".join(["2"] * 18)
+    res = parse_gistemp(f"{HEADER}\n{r1}\n{r2}\n", extracted_at=VINTAGE)
+    assert res.rows_read == 1 and [r["reason"] for r in res.refused] == ["duplicate year"]
+    assert {f.value for f in res.figures} == {1.0}
+
+
+@pytest.mark.parametrize("body", ["", HEADER + "\n"])
+def test_fetch_of_an_empty_or_header_only_body_raises(body):
+    with pytest.raises(ValueError):
+        fetch.fetch_gistemp(get=lambda u: _Resp(body), extracted_at=VINTAGE)
