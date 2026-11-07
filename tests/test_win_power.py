@@ -106,6 +106,8 @@ def test_the_last_power_event_reaches_the_sentinel_and_the_next_boots_end_line(m
     store: dict = {}
     monkeypatch.setattr(forensics, "_read_state", lambda: dict(store))
     monkeypatch.setattr(forensics, "_write_state", lambda s: store.update(s))
+    monkeypatch.setattr(forensics, "_SESSION_STARTED_AT", "2026-11-07T00:00:00Z")
+    monkeypatch.setattr(forensics, "_SHUTDOWN_BEGUN", False)
     monkeypatch.setattr(win_power, "suspend_checkpoint", lambda **k: {"outcome": "done"})
     win_power.on_power_event(4)
     assert store["last_power_event"]["kind"] == "suspend"
@@ -129,3 +131,28 @@ def test_an_unclean_end_line_names_the_last_power_event_and_only_the_apps_words(
     prev["last_power_event"] = {"kind": "<script>", "at": "x"}
     rec = sh._close_previous(prev, None)
     assert rec and "last_power_event" not in rec
+
+
+def _fake_store(monkeypatch):
+    from src.monitoring import forensics
+
+    store: dict = {"state": "clean", "ended_at": "prev"}
+    monkeypatch.setattr(forensics, "_read_state", lambda: dict(store))
+    monkeypatch.setattr(forensics, "_write_state", lambda s: store.update(s))
+    return forensics, store
+
+
+def test_a_power_event_before_this_session_started_never_touches_the_previous_sessions_sentinel(monkeypatch):
+    forensics, store = _fake_store(monkeypatch)
+    monkeypatch.setattr(forensics, "_SESSION_STARTED_AT", None)
+    forensics.record_power_event("suspend")
+    assert "last_power_event" not in store
+
+
+def test_a_power_event_after_the_teardown_began_cannot_write_stale_state_over_it(monkeypatch):
+    forensics, store = _fake_store(monkeypatch)
+    monkeypatch.setattr(forensics, "_SESSION_STARTED_AT", "2026-11-07T00:00:00Z")
+    monkeypatch.setattr(forensics, "_SHUTDOWN_BEGUN", False)
+    forensics.record_shutdown_phase("shutting-down")
+    forensics.record_power_event("resume")
+    assert "last_power_event" not in store and store["state"] == "shutting-down"

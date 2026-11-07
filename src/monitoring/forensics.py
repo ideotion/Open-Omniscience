@@ -35,6 +35,7 @@ import logging
 import math
 import os
 import re
+import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -339,7 +340,8 @@ def record_session_start() -> dict[str, Any] | None:
     ``unlock()`` cannot cover: a WRONG-passphrase attempt deletes the -wal too, so
     every retry after the first would otherwise be blind."""
     global _PREV_AT_BOOT, _PREV_LOADED, _WAL_AT_BOOT, _EARLY_WAL, _PAGES_AT_BOOT, _EARLY_PAGES
-    global _SESSION_STARTED_AT, _SESSION_STARTED_MONO, _OOM_AT_BOOT, _BOOT_ID_AT_BOOT
+    global _SESSION_STARTED_AT, _SESSION_STARTED_MONO, _OOM_AT_BOOT, _BOOT_ID_AT_BOOT, _SHUTDOWN_BEGUN
+    _SHUTDOWN_BEGUN = False
     # Read the -wal FIRST: before the previous state is even parsed, so nothing
     # between here and the probe can grow into a database open.
     boot_reading = _EARLY_WAL if _EARLY_WAL is not None else wal_state_before_open()
@@ -484,16 +486,25 @@ def note_stop_signal(name: str) -> None:
 POWER_EVENT_KINDS = frozenset({"suspend", "resume"})
 
 
+#: serialises the sentinel's read-modify-write between the teardown writers and the power callback, which runs on a foreign OS thread
+_STATE_LOCK = threading.RLock()
+#: set by the first teardown phase: a power event after that point is not stamped, so it cannot write stale state over the shutdown
+_SHUTDOWN_BEGUN = False
+
+
 def record_power_event(kind: str) -> None:
     """Remember the LAST power event this session saw (a suspend or a resume) in the sentinel: one small field, replaced each time, never a
     list. A session that dies while the machine is asleep (a cut power supply, a failed resume) leaves no other trace; the next boot's
     end line carries this field so the end is attributed to the sleep rather than reported as unknown. Never raises."""
-    if kind not in POWER_EVENT_KINDS:
-        return
+    if kind not in POWER_EVENT_KINDS or _SESSION_STARTED_AT is None:
+        return  # before this session's start the sentinel is still the PREVIOUS session's
     try:
-        state = _read_state() or {}
-        state["last_power_event"] = {"kind": kind, "at": _now()}
-        _write_state(state)
+        with _STATE_LOCK:
+            if _SHUTDOWN_BEGUN:
+                return
+            state = _read_state() or {}
+            state["last_power_event"] = {"kind": kind, "at": _now()}
+            _write_state(state)
     except Exception as exc:  # noqa: BLE001 - bookkeeping never gets in the way of a suspend
         log_failure(_LOG, "could not record the power event", exc, level=logging.DEBUG)
 
@@ -514,18 +525,21 @@ def record_shutdown_phase(phase: str, *, reason: str | None = None, facts: dict[
     ``shutdown_phase_at`` moves with every phase and ``ended_at`` is the last, so without it the teardown's duration was not readable
     (the 10-10 session's last step and its end were the same second). ``facts`` are the few named values a phase learned
     (:func:`dispose_facts`), merged in as they are; only the keys in :data:`_DISPOSE_FACT_KEYS` are kept."""
-    state = _read_state() or {}
-    state["state"] = phase
-    state["shutdown_phase_at"] = _now()
-    if not state.get("shutdown_began_at"):
-        state["shutdown_began_at"] = state["shutdown_phase_at"]
-    if reason and not state.get("shutdown_reason"):
-        state["shutdown_reason"] = reason
-    if _STOP_SIGNAL and not state.get("stop_signal"):
-        state["stop_signal"] = _STOP_SIGNAL
-    if facts:
-        state.update({k: v for k, v in facts.items() if k in _DISPOSE_FACT_KEYS})
-    _write_state(state)
+    global _SHUTDOWN_BEGUN
+    with _STATE_LOCK:
+        _SHUTDOWN_BEGUN = True
+        state = _read_state() or {}
+        state["state"] = phase
+        state["shutdown_phase_at"] = _now()
+        if not state.get("shutdown_began_at"):
+            state["shutdown_began_at"] = state["shutdown_phase_at"]
+        if reason and not state.get("shutdown_reason"):
+            state["shutdown_reason"] = reason
+        if _STOP_SIGNAL and not state.get("stop_signal"):
+            state["stop_signal"] = _STOP_SIGNAL
+        if facts:
+            state.update({k: v for k, v in facts.items() if k in _DISPOSE_FACT_KEYS})
+        _write_state(state)
 
 
 #: The one key the disposal step leaves in the sentinel, and ``previous_session_report`` reads back: :func:`dispose_facts`' answer. Only keys
@@ -643,12 +657,15 @@ def _clean_dispose(raw: Any, took: int | None) -> dict[str, Any] | None:
 def record_clean_shutdown() -> None:
     """Flip the sentinel to 'clean'. Called from the lifespan shutdown; a session
     that dies without reaching this reads as UNCLEAN on the next boot."""
-    state = _read_state() or {}
-    state["state"] = "clean"
-    state["ended_at"] = _now()
-    if _STOP_SIGNAL and not state.get("stop_signal"):
-        state["stop_signal"] = _STOP_SIGNAL
-    _write_state(state)
+    global _SHUTDOWN_BEGUN
+    with _STATE_LOCK:
+        _SHUTDOWN_BEGUN = True
+        state = _read_state() or {}
+        state["state"] = "clean"
+        state["ended_at"] = _now()
+        if _STOP_SIGNAL and not state.get("stop_signal"):
+            state["stop_signal"] = _STOP_SIGNAL
+        _write_state(state)
     # The ledger's own end line for this session (2026-09-18); the sentinel above is
     # still the verdict the next boot reads.
     try:
