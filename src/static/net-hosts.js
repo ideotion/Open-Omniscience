@@ -185,6 +185,14 @@
       "fetcher": true
     },
     {
+      "id": "ipcc",
+      "label": "IPCC reports",
+      "hosts": ["www.ipcc.ch"],
+      "trigger": "click",
+      "setting": null,
+      "fetcher": true
+    },
+    {
       "id": "weather",
       "label": "Weather",
       "hosts": ["archive-api.open-meteo.com"],

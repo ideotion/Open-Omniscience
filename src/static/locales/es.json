@@ -2120,6 +2120,8 @@
   "Heights on a logarithmic axis do not add, so they are not stacked.": "Las alturas en un eje logarítmico no se suman, así que no se apilan.",
   "Held on this machine by the Wikipedia lane, not in your corpus. Adding it creates one article for this exact version.": "Guardado en este equipo por el carril de Wikipedia, fuera de tu corpus. Añadirlo crea un artículo para esta versión exacta.",
   "Help": "Ayuda",
+  "IPCC reports": "Informes del IPCC",
+  "IPCC reports track predictions over time; they never assert futures.": "Los informes del IPCC siguen las predicciones a lo largo del tiempo; nunca afirman futuros.",
   "Help & docs": "Ayuda y documentación",
   "Help & documentation": "Ayuda y documentación",
   "Help and documentation": "Ayuda y documentación",
