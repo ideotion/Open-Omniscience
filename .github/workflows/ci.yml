@@ -166,6 +166,7 @@ jobs:
       fail-fast: false  # a red leg must not hide what the other two found
       matrix:
         shard: [1, 2, 3]
+    timeout-minutes: 75  # R475: a hung job holds a runner slot for the default six hours; the slowest measured run of this job is well under half of this
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -592,6 +593,7 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3]
+    timeout-minutes: 75  # R475: a hung job holds a runner slot for the default six hours; the slowest measured run of this job is well under half of this
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -667,6 +669,7 @@ jobs:
     needs: [changes]
     runs-on: ubuntu-latest
     name: PQC signing path (hybrid Ed25519 + ML-DSA)
+    timeout-minutes: 20  # R475: a hung job holds a runner slot for the default six hours; the slowest measured run of this job is well under half of this
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -720,6 +723,7 @@ jobs:
     needs: [changes]
     runs-on: ubuntu-latest
     name: Columnar store (DuckDB rollup + D1 persisted-httpfs)
+    timeout-minutes: 30  # R475: a hung job holds a runner slot for the default six hours; the slowest measured run of this job is well under half of this
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -1001,6 +1005,7 @@ jobs:
     needs: [changes]
     runs-on: ubuntu-latest
     name: Lock file installs clean (requirements.lock, real install)
+    timeout-minutes: 30  # R475: a hung job holds a runner slot for the default six hours; the slowest measured run of this job is well under half of this
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
