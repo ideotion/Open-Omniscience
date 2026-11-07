@@ -3,7 +3,7 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-The second test runs after the first in this file (pytest keeps file order) and starts nothing: it is red if the first test's 30 s watcher survived it.
+The second test runs after the first in this file (pytest keeps file order) and starts nothing: it is red if the first test's long-poll watcher survived it.
 """
 
 from __future__ import annotations

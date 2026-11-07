@@ -461,6 +461,11 @@ def _briefing_threads_quiesced(request):
 #: A retired resume watcher (``oo-resume-watch``) leaves the moment ``cancel_pending_resume`` sets its wake Event, so a short join is enough; one
 #: still alive after it is a real leak.
 _RESUME_WATCHER_JOIN_S = 2.0
+#: The real ``threading.enumerate`` and ``time.monotonic``, taken at import. Every test's ``monkeypatch`` is set up before this fixture (the autouse
+#: ``_isolated_robots_cache_path`` asks for it) and so is undone AFTER this fixture's teardown: a test that patched ``threading.enumerate`` with nameless
+#: fakes (``test_thread_census``) or ``time.monotonic`` with a short script of ticks (``test_diagnostics_runs``, ``test_session_history``) is still patched here.
+_enumerate_threads = threading.enumerate
+_monotonic = time.monotonic
 
 
 @pytest.fixture(autouse=True)
@@ -478,11 +483,11 @@ def _resume_watchers_retired(request):
         return
     runner.cancel_pending_resume()
     me = threading.current_thread()
-    live = [t for t in threading.enumerate() if t.name == "oo-resume-watch" and t is not me]
-    end = time.monotonic() + _RESUME_WATCHER_JOIN_S
+    live = [t for t in _enumerate_threads() if t.name == "oo-resume-watch" and t is not me]
+    end = _monotonic() + _RESUME_WATCHER_JOIN_S
     for t in live:
         with contextlib.suppress(RuntimeError):  # listed but not yet started
-            t.join(timeout=max(0.0, end - time.monotonic()))
+            t.join(timeout=max(0.0, end - _monotonic()))
     left = [f"{t.name} (ident {t.ident})" for t in live if t.is_alive()]
     assert not left, f"{request.node.nodeid} left a resume watcher running: {left}"
 

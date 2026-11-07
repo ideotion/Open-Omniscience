@@ -4,10 +4,10 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 ``tests/conftest.py`` retires the process-global watcher at every test's teardown with ``cancel_pending_resume()``, which bumps the
-generation. The watcher used to wait ``time.sleep(RESUME_POLL_S)`` (30 s) BEFORE it looked at the generation, so a test that handed off to a
-default-poll watcher left a live ``oo-resume-watch`` thread for up to 30 s, and the next test that asserts "no watcher is running"
-(``tests/test_resume_watcher_thread_start_failure.py``) failed whenever the runner was fast enough to reach it inside that window. The wait is
-now an Event that every bump of the generation sets.
+generation. The watcher used to wait ``time.sleep(poll_s)`` BEFORE it looked at the generation, so a retired watcher left only at its next look:
+up to ``RESUME_POLL_S`` (30 s) for a real default-poll watcher after a shutdown, and 10 ms plus scheduling latency for the poll-0.01 watchers the
+tests start. The CI failure of ``tests/test_resume_watcher_thread_start_failure.py`` (one in 8,531, not reproduced locally) is the short race; the
+join in the conftest fixture closes it and this Event makes that join return at once. The wait is now an Event that every bump of the generation sets.
 """
 
 from __future__ import annotations
