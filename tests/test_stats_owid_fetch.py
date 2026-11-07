@@ -145,3 +145,67 @@ def test_fetch_owid_default_getter_refuses_when_kill_switch_on(monkeypatch) -> N
     )
     with pytest.raises(RuntimeError, match="airplane mode"):
         fetch_owid("co2-emissions-per-capita")
+
+
+# --------------------------------------------------------------------------- #
+# R496: the default getter STREAMS and refuses as soon as the bound is passed.
+# --------------------------------------------------------------------------- #
+class _FakeStreamResponse:
+    status_code = 200
+    encoding = "utf-8"
+
+    def __init__(self, chunks, headers=None):
+        self._chunks = chunks
+        self.headers = headers or {}
+        self.read = 0
+        self.closed = False
+
+    def iter_content(self, chunk_size=0):
+        for c in self._chunks:
+            self.read += len(c)
+            yield c
+
+    def raise_for_status(self):
+        return None
+
+    def close(self):
+        self.closed = True
+
+
+def _session_returning(resp):
+    class _S:
+        def get(self, url, **kw):
+            assert kw.get("stream") is True
+            return resp
+
+    return lambda **kw: _S()
+
+
+def test_default_getter_refuses_mid_stream_once_past_the_bound(monkeypatch) -> None:
+    resp = _FakeStreamResponse([b"x" * 10] * 1000)
+    monkeypatch.setattr(fetch, "guarded_session", _session_returning(resp))
+    with pytest.raises(fetch.BodyTooLarge):
+        fetch._default_getter("https://example.test/a.csv", max_bytes=25)
+    assert resp.read == 30  # stopped at the third chunk, not after the download
+    assert resp.closed
+
+
+def test_default_getter_refuses_on_declared_length_before_reading(monkeypatch) -> None:
+    resp = _FakeStreamResponse([b"x"], headers={"Content-Length": "999999"})
+    monkeypatch.setattr(fetch, "guarded_session", _session_returning(resp))
+    with pytest.raises(fetch.BodyTooLarge):
+        fetch._default_getter("https://example.test/a.csv", max_bytes=100)
+    assert resp.read == 0 and resp.closed
+
+
+def test_default_getter_returns_the_body_within_the_bound(monkeypatch) -> None:
+    resp = _FakeStreamResponse([b"Entity,Code,Year,v\n", b"A,AAA,2000,1\n"])
+    monkeypatch.setattr(fetch, "guarded_session", _session_returning(resp))
+    got = fetch._default_getter("https://example.test/a.csv", max_bytes=1000)
+    got.raise_for_status()
+    assert got.text.startswith("Entity,Code") and got.status_code == 200
+
+
+def test_owid_and_gistemp_bounds_are_derived_and_grow_with_the_year() -> None:
+    assert fetch.owid_max_bytes(now_year=2027) > fetch.owid_max_bytes(now_year=2026)
+    assert fetch.owid_max_bytes(first_year=-10000) > fetch.owid_max_bytes()

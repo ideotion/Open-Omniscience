@@ -29,6 +29,7 @@ request.
 from __future__ import annotations
 
 import csv
+import functools
 import io
 import logging
 from datetime import UTC, datetime, timezone
@@ -71,6 +72,12 @@ GISTEMP_BASE = "https://data.giss.nasa.gov/gistemp/tabledata_v4"
 GISTEMP_FIRST_YEAR = 1880
 GISTEMP_LINE_ALLOWANCE = 200  # chars per row; a real row is about 120
 GISTEMP_HEADER_ALLOWANCE = 4096  # title, blank and header lines, with slack
+
+# OWID's bound is derived the same way (see owid_max_bytes): rows <= entities x years.
+OWID_ENTITY_ALLOWANCE = 500  # countries plus regions/income groups; the grapher lists ~350
+OWID_ROW_ALLOWANCE = 160  # bytes per row; a real "Entity,Code,Year,value" row is ~40
+# The earliest year of the modern-era charts; a deep-history chart passes first_year.
+OWID_DEFAULT_FIRST_YEAR = 1750
 
 # Generous default timeout: a fetch may egress over Tor, which is slow — a tight
 # timeout would spuriously fail honest requests. Seconds.
@@ -167,14 +174,64 @@ def _owid_value_column(text: str) -> str:
     )
 
 
-def _default_getter(url: str) -> Any:
+class BodyTooLarge(ValueError):
+    """A response went past the bound its fetcher derived from the data's own shape."""
+
+
+class _BoundedResponse:
+    """The small requests-like surface the fetchers use, over a body read within a bound."""
+
+    def __init__(self, status_code: int, body: bytes, encoding: str | None, response: Any) -> None:
+        self.status_code = status_code
+        self.content = body
+        self.encoding = encoding or "utf-8"
+        self._response = response
+
+    @property
+    def text(self) -> str:
+        return self.content.decode(self.encoding, errors="replace")
+
+    def json(self) -> Any:
+        import json
+
+        return json.loads(self.text)
+
+    def raise_for_status(self) -> None:
+        self._response.raise_for_status()
+
+
+def _default_getter(url: str, max_bytes: int | None = None) -> Any:
     """The production getter: a guarded GET (kill switch + protected-mode proxy).
 
     A per-URL ``isolation_token`` gives each request its own Tor circuit (no-op for
     non-SOCKS / no proxy), so distinct fetches are unlinkable over Tor.
+
+    With ``max_bytes`` the body is STREAMED and refused the moment it passes the bound (a
+    declared ``Content-Length`` over it is refused before any body byte is read), so a host
+    that answers with something huge costs at most the bound, not the whole download.
     """
     session = guarded_session(user_agent=DEFAULT_USER_AGENT, isolation_token=url)
-    return session.get(url, timeout=DEFAULT_TIMEOUT_S)
+    if max_bytes is None:
+        return session.get(url, timeout=DEFAULT_TIMEOUT_S)
+    resp = session.get(url, timeout=DEFAULT_TIMEOUT_S, stream=True)
+    try:
+        declared = resp.headers.get("Content-Length")
+        if declared and declared.isdigit() and int(declared) > max_bytes:
+            raise BodyTooLarge(
+                f"{url}: the response declares {declared} bytes, over the {max_bytes} allowed"
+            )
+        chunks: list[bytes] = []
+        total = 0
+        for chunk in resp.iter_content(chunk_size=64 * 1024):
+            total += len(chunk)
+            if total > max_bytes:
+                raise BodyTooLarge(
+                    f"{url}: the response passed {max_bytes} bytes and was cut off there"
+                )
+            chunks.append(chunk)
+        return _BoundedResponse(resp.status_code, b"".join(chunks), resp.encoding, resp)
+    finally:
+        resp.close()
 
 
 def _worldbank_page_count(payload: Any) -> int:
@@ -290,6 +347,17 @@ def fetch_eurostat(
     return parse_sdmx_json(payload, agency=agency, extracted_at=extracted_at)
 
 
+def owid_max_bytes(first_year: int = OWID_DEFAULT_FIRST_YEAR, now_year: int | None = None) -> int:
+    """The longest body that can still be one OWID grapher CSV: entities x years x row size.
+
+    Derived from the table's shape like :func:`gistemp_max_chars`; it grows each January. A chart
+    with data before ``first_year`` (population back to 10000 BCE) must say so.
+    """
+    year = now_year if now_year is not None else datetime.now(UTC).year
+    years = max(year + 1 - first_year + 1, 1)
+    return OWID_ENTITY_ALLOWANCE * years * OWID_ROW_ALLOWANCE
+
+
 def fetch_owid(
     slug: str,
     *,
@@ -304,6 +372,7 @@ def fetch_owid(
     adjustment: str | None = None,
     get: Getter | None = None,
     extracted_at: str | None = None,
+    first_year: int = OWID_DEFAULT_FIRST_YEAR,
 ) -> list[StatFigure]:
     """Fetch an Our World in Data per-chart CSV live and parse it into ``StatFigure`` rows.
 
@@ -323,7 +392,7 @@ def fetch_owid(
     if kill_switch_active():
         raise RuntimeError(NETWORK_REFUSED)
     extracted_at = extracted_at or _now_iso()
-    getter = get or _default_getter
+    getter = get or functools.partial(_default_getter, max_bytes=owid_max_bytes(first_year))
     resp = getter(owid_grapher_url(slug))
     resp.raise_for_status()
     text = resp.text
@@ -416,12 +485,14 @@ def fetch_gistemp(
     if kill_switch_active():
         raise RuntimeError(NETWORK_REFUSED)
     extracted_at = extracted_at or _now_iso()
-    getter = get or _default_getter
+    bound = gistemp_max_chars()
+    getter = get or functools.partial(_default_getter, max_bytes=bound)
     resp = getter(gistemp_url(region))
     resp.raise_for_status()
-    bound = gistemp_max_chars()
     if len(resp.text) > bound:
-        raise ValueError(f"GISTEMP {region}: the response is {len(resp.text)} characters, over the {bound} the table's own shape allows")
+        raise ValueError(
+            f"GISTEMP {region}: the response is {len(resp.text)} characters, over the {bound} the table's own shape allows"
+        )
     parsed = parse_gistemp(resp.text, region=region, extracted_at=extracted_at)
     if parsed.looks_unrecognised:
         raise ValueError(

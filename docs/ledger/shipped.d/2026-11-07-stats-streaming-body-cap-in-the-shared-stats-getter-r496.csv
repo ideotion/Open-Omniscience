@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-07,stats,Streaming body cap in the shared stats getter (R496),shipped,R496 R498,src/stats/fetch.py,"The shared stats getter (GISTEMP, OWID) now streams the body and refuses as soon as the byte count passes a bound derived from the data's own shape (or the declared Content-Length is already over it), instead of after the whole download; OWID gains an owid_max_bytes bound (entities x years x row size, first_year for deep-history charts)."
