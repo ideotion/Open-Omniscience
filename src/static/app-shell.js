@@ -719,7 +719,6 @@
         // This teaches it the cheap way: point at the panel that already lists and
         // rebinds every one of them, rather than re-describing them here.
         {grp:"Actions", label:"Keyboard shortcuts", sub:"System", run:() => { showTab("settings"); (_setSubtabs || {select: showSetCat}).select("general"); }},
-        {grp:"Actions", label:"API reference (Swagger)", sub:"System", run:() => window.open("/docs", "_blank")},
       ];
       const docs = (_docList || []).map(d => ({grp:"Documentation", label:d.title, sub:"Doc",
         run:() => { showTab("help"); openDoc(d.slug); }}));

@@ -169,13 +169,17 @@ def test_a_failed_unlock_finish_closes_the_serves_after_it_has_cleared_the_passp
 def test_a_wrong_passphrase_closes_nothing(unlock_ready, serves, monkeypatch):
     """A wrong key never reached the store, so it cleared nothing and the serves of the session that is open are not touched."""
     cons, _ = serves
+    tried: list[int] = []
 
     def refuse(*args, **kwargs):
+        tried.append(1)
         raise connect_mod.WrongPassphraseError("no")
 
     monkeypatch.setattr(connect_mod, "connect", refuse)
-    with pytest.raises(HTTPException):
+    with pytest.raises(HTTPException) as refused:
         unlock_mod._unlock_locked(unlock_mod.PassphraseBody(passphrase=TYPED), unlock_ready)
+    # "nothing was closed" says nothing about a request that never tried the key: any earlier refusal would leave the serves open too.
+    assert tried == [1] and refused.value.status_code == 403, "the refusal was not the wrong key's (the key was never tried, or another status)"
     assert [c.closed for c in cons.values()] == [0, 0]
 
 

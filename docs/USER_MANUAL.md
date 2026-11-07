@@ -152,7 +152,7 @@ collapse toggle), and a **minimal top bar** above the content carries:
 - **Language switcher** — all 12 languages in one menu (the flag is only a cue; the
   native name is the identifier). One click re-translates the whole UI.
 - **Help (?)** — opens the in-app documentation reader (this manual and the other
-  guides), searchable and fully offline; the raw API page is at `/docs`.
+  guides), searchable and fully offline. (The interactive Swagger/ReDoc pages are off by default, see §5.4.)
 - **Shut down (power)** — stops the server cleanly; your data is untouched, and the UI
   is replaced by a "you can close this tab" overlay. (This is *not* uninstall or a
   wipe.)
@@ -1689,7 +1689,7 @@ Official **figures** are not here at all — they are data, so they live under
 left-hand list selects a document (this **User Manual** is the default; the others
 go deeper on specific subjects), rendered on the right with **find-on-page**. Open
 it from the **?** in the top bar or the command palette ("Open the User Manual"). The
-raw, interactive API reference stays at `/docs`.
+raw API schema is at `/openapi.json`.
 
 ---
 
@@ -1899,13 +1899,14 @@ a `503`, an honest "not installed" status) — it never silently fakes the capab
 ### 5.4 The HTTP API
 
 The app is a FastAPI server on `127.0.0.1:8000`; the web UI is a single
-dependency-free `index.html` served at `/`. Interactive docs live at **`/docs`**;
-Prometheus metrics at `/metrics`. There is **no authentication** by design
+dependency-free `index.html` served at `/`. The machine-readable schema is at **`/openapi.json`**. The interactive Swagger (`/docs`) and ReDoc
+(`/redoc`) pages are **off by default**: they make the browser fetch scripts, styles and a font from third-party
+hosts, so a developer who wants them starts the app with `OO_API_DOCS=1`. Prometheus metrics at `/metrics`. There is **no authentication** by design
 (loopback-only, single user). All endpoints are **rate-limited** (roughly: reads
 100/hr, writes/exports 50/hr, deletes 20/hr, bulk imports 10/hr; `429` with
 `Retry-After` when exceeded).
 
-A condensed inventory (see `/docs` for the authoritative, always-current schema and
+A condensed inventory (see `/openapi.json`, or `/docs` with `OO_API_DOCS=1`, for the authoritative, always-current schema and
 `docs/ARCHITECTURE.md` for prose):
 
 **Core & search** — `GET /api/health`; `GET /api/articles` (FTS + filters);

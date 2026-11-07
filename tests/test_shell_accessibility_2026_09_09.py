@@ -73,7 +73,7 @@ def test_documentation_links_are_not_distinguished_by_colour_alone() -> None:
     The global rule is ``a { text-decoration:none }``, so a link inside a
     paragraph of prose differed from its surrounding text ONLY by colour --
     WCAG 1.4.1. The fix must reach BOTH populations the sweep found: the five
-    in-document links (`.prose`) and the panel's own `/docs` intro link, which
+    in-document links (`.prose`) and the panel's own intro link (the API-pages one, until A-021 removed it), which
     sits in a `.muted` paragraph OUTSIDE `.prose`.
     """
     css = _css()
@@ -85,7 +85,7 @@ def test_documentation_links_are_not_distinguished_by_colour_alone() -> None:
         f"the rule now reads: {decl.strip()}"
     )
     assert "#tab-help a" in m.group(0), (
-        "the Help panel's own intro link (the /docs Swagger anchor) is not inside "
+        "the Help panel's own intro links are not inside "
         ".prose, so a .prose-only rule leaves one of the measured nodes unfixed"
     )
 
