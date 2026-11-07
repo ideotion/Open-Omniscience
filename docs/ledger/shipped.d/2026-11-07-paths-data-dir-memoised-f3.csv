@@ -1,2 +1,2 @@
 date,area,item,status,refs,key_paths,summary
-2026-11-07,paths,data_dir() memoised (F3),shipped,PR pending,src/paths.py,"data_dir() no longer does mkdir+chmod+is_file+os.access on every call: the result is memoised per environment and revalidated with one stat (re-created if deleted), cutting the per-event cost on the Wikipedia stream thread; the marked-drive guard still runs every call."
+2026-11-07,paths,data_dir() memoised (F3),shipped,PR #1765,src/paths.py,"data_dir() no longer does mkdir+chmod+is_file+os.access on every call: the result is memoised per environment and revalidated with one stat (re-created if deleted), cutting the per-event cost on the Wikipedia stream thread; the marked-drive guard still runs every call."
