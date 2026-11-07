@@ -80,7 +80,9 @@ def _memo_key() -> tuple[str | None, ...]:
     return (
         os.getenv("OO_DATA_DIR"),
         os.getenv("XDG_DATA_HOME"),
-        os.getenv("HOME") or os.getenv("USERPROFILE"),
+        os.getenv("HOME"),
+        os.getenv("USERPROFILE"),
+        str(_REPO_ROOT),  # tests re-point it to simulate an installed (non-checkout) layout
     )
 
 
