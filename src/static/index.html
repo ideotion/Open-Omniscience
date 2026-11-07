@@ -1754,6 +1754,9 @@
           </div>
           <div id="law-tc-versions" class="living-versions"><div class="muted">Pick a document above to compare its versions.</div></div>
         </section>
+        <h3 class="lib-sub">Coverage of the language floor</h3>
+        <p class="hint">Every country where one of the twelve interface languages is official, de facto or regional, from the dated list in the floor file. Each country is in one state, never a blank.</p>
+        <div id="living-law-floor"><div class="muted">Loading…</div></div>
         <h3 class="lib-sub">A topic across jurisdictions</h3>
         <form id="law-topic-form" class="row living-law-form">
           <input id="law-topic-q" type="search" autocomplete="off" aria-label="Topic" placeholder="a topic, in the language of the texts">
@@ -1804,6 +1807,30 @@
     <section class="panel" id="osm-completeness" hidden>
       <h2>OpenStreetMap tag completeness</h2>
       <div id="osm-comp-body"></div>
+    </section>
+    <!-- v0.6.0 B3a (S06-01 S3): trend surfaces 2 and 3 for each OpenStreetMap country read -- tags gained and lost
+         per day, and places that appeared, disappeared or showed a closure signal; counts with method and caveat,
+         the full table beside each chart, the planet's past in a separate block. Hidden until a country has been
+         read. Filled by loadOsmTrends(). -->
+    <section class="panel" id="osm-trends" hidden>
+      <h2>OpenStreetMap trends</h2>
+      <div id="osm-trend-body"></div>
+    </section>
+    <!-- v0.6.0 B3b (S06-01 S3): trend surfaces 4 to 6 for each OpenStreetMap country read -- brands and operators,
+         contact channels, data freshness. Each surface shows what the places look like now, what the daily change
+         files changed, and the planet's past, as three separate blocks; counts with method and caveat, the full
+         table beside every chart. Hidden until a country has been read. Filled by loadOsmProfile(). -->
+    <section class="panel" id="osm-profile" hidden>
+      <h2>OpenStreetMap brands, contact channels and freshness</h2>
+      <div id="osm-profile-body"></div>
+    </section>
+    <!-- v0.6.0 B3c (S06-01 S4, Q816): the geography axis. One choropleth over the ONE map component, by country or by the
+         admin-1 regions of one country: counts of places (or their share of the area's own), the ranked table beside the map
+         holds every value, the vintage (extract date + newest change file applied) is stated on every map. Hidden until a
+         country has been read. Filled by loadOsmGeography(). -->
+    <section class="panel" id="osm-geography" hidden>
+      <h2>OpenStreetMap places by country and region</h2>
+      <div id="osm-geography-body"></div>
     </section>
     <!-- S05-04 S5 (Q820): the LOCAL geocoder over the addresses of the OpenStreetMap countries
          read. Never an external service; its scope is stated beside the box, always. -->

@@ -68,9 +68,26 @@ jobs:
           python -m pip install pip-audit==2.10.1  # pinned (OO-D15-004): an unpinned audit tool can redden PRs through no code change, exactly like bandit/mypy
           pip-audit --skip-editable
 
+  # THE `test` JOB IS THREE SHARDS (C10, decision 27, R412): it ran the whole suite in one process, 70 to 80 minutes, and the run's wall time was the slower
+  # of it and Core-only. Each leg now runs a third of the test FILES, chosen by scripts/ci_shard.py from the measured cost table
+  # configs/ci_shard_costs.json (longest file first to the least-loaded shard; a file the table does not name goes to crc32(path) % 3 + 1, so a new test
+  # file needs no edit anywhere), and the leg's list is handed to pytest as `@FILE`. The static steps (lint, the planned-work index, the i18n gates, the
+  # migration check, mypy, bandit, pip-audit) run in leg 1 only; the table's overhead_seconds is that leg's share.
+  #
+  # THE REQUIRED CHECK IS NOT A LEG. The check named `test` (branch protection requires it by that name) is the `test-all` job below, which is green only if
+  # every leg is. The legs are named "Test (shard N of 3)"; do not name one `test`. tests/test_ci_shards.py pins the pairing, the leg list (1..3, the
+  # same N as the table's and as the plan step's) and that nothing but the legs may run the suite under this job's id.
+  #
+  # NOT AN ISOLATION MODEL: the old single process ran every file in one order, and nothing proved a file did not lean on a neighbour. The one sharded
+  # run against an unsharded run of the same commit that settled it is docs/ledger/shipped_log.d/2026-11-05-ci-test-and-core-only-run-in-three-shards.md.
   test:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    name: Test (shard ${{ matrix.shard }} of 3)
+    strategy:
+      fail-fast: false  # a red leg must not hide what the other two found
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -149,9 +166,11 @@ jobs:
       # per pyproject `[tool.ruff.lint] ignore`; CLI --select drops config ignores,
       # so we re-apply it). The full style sweep below stays advisory.
       - name: Lint — correctness (ruff F + bugbear, BLOCKING)
+        if: matrix.shard == 1
         run: ruff check --select=F,B --extend-ignore=B008 src/ tests/
 
       - name: Lint — style (ruff, advisory)
+        if: matrix.shard == 1
         run: ruff check src/ tests/
         continue-on-error: true  # advisory until the legacy style debt is burned down
 
@@ -194,6 +213,7 @@ jobs:
       # topic PR genuinely removes that finding can take 445 with it and prove it on its own
       # tree. Lowering it from here would be asserting a number this branch cannot measure.
       - name: Lint — style non-growth ratchet (may only be lowered)
+        if: matrix.shard == 1
         # 2026-09-16 (Q1139, the diagnostics package split): 446 -> 442, MEASURED ON THIS
         # branch, which is the tree that carries it. `origin/main`@a962ea1b reads 445 and
         # this branch reads 441 -- four findings genuinely gone (the split's own modules are
@@ -206,9 +226,12 @@ jobs:
         # fixed -- only the base measurement (445) ever said which findings were its own.
         #
         # 2026-10-28: 417 -> 412, MEASURED ON origin/main@3af9f1fc9, the tree that carries it, with
-        # the ruff that CI installs from pyproject's range (0.17.3 that day). THE COUNT DEPENDS ON
+        # the ruff that CI installed from pyproject's range (0.17.3 that day). THE COUNT DEPENDS ON
         # THE TOOL VERSION: the same tree reads 414 on ruff 0.16.9 and 412 on 0.17.3 (the script, run
-        # at the old ceiling, said the ceiling can be lowered to 412). There is no spare slot now:
+        # at the old ceiling, said the ceiling can be lowered to 412). pyproject.toml now pins ruff
+        # to that one release (ruff==0.17.3, as mypy is pinned), so the number is true by
+        # construction and a new release arrives as its own Dependabot PR, whose run re-measures it.
+        # There is no spare slot now:
         # CI measures the merge of the PR into the base tip as it stands when the run starts, so a
         # finding another PR lands first reddens the next run of whichever PR merges second (and
         # main's push run, if that PR was already green). Re-measure on the fetched tip, with the
@@ -236,14 +259,14 @@ jobs:
       # acknowledgement is not permission, it is the author saying in the permanent record
       # that they read the blocked decision before touching its file.
       - name: Planned-work index (advisory — what is already decided about these files)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && matrix.shard == 1
         continue-on-error: true
         run: |
           git fetch --no-tags --depth=200 origin "${{ github.base_ref }}" || true
           python scripts/planned.py --diff "origin/${{ github.base_ref }}"
 
       - name: Planned-work index — blocked or forbidden paths (BLOCKING)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && matrix.shard == 1
         run: |
           git fetch --no-tags --depth=200 origin "${{ github.base_ref }}" || true
           python scripts/planned.py --diff "origin/${{ github.base_ref }}" --strict
@@ -254,6 +277,7 @@ jobs:
       # below 100% fails the build (drift can no longer land unblocked). Reads
       # JSON only -- no extra deps.
       - name: i18n locale completeness (x12)
+        if: matrix.shard == 1
         run: python scripts/i18n_report.py --min 100
 
       # The gate above compares the locale files against en.json, so it answers
@@ -293,6 +317,7 @@ jobs:
       # rather than a ceiling -- any single new unkeyed string reddens CI on the PR that
       # writes it, which is the state this gate was always aiming at and never reached.
       - name: i18n untranslatable-string ratchet
+        if: matrix.shard == 1
         run: python scripts/i18n_report.py --max-untranslatable 0
 
       # The tight half. The ratchet above counts strings that regexes INFER reach
@@ -321,6 +346,7 @@ jobs:
       # than its 3-character floor -- `OK` and `ok`, two characters each, rendering Latin
       # in eleven locales for as long as the app has existed.
       - name: i18n unkeyed t() call sites
+        if: matrix.shard == 1
         run: python scripts/i18n_report.py --max-unkeyed-t-calls 0
 
       # The blind spot the two ratchets above SHARE, found 2026-09-18 (S04-14) by doing
@@ -339,9 +365,11 @@ jobs:
       # 20 at the moment this step was written, 0 by the end of the same PR: the 17
       # pre-existing frames are keyed and so are the three the PR itself created.
       - name: i18n unkeyed tf() frames
+        if: matrix.shard == 1
         run: python scripts/i18n_report.py --max-unkeyed-tf-frames 0
 
       - name: Migration drift (models vs Alembic baseline)
+        if: matrix.shard == 1
         # The CI database is a fresh throwaway file; since at-rest encryption
         # became the default (PR-E), creating a store without a passphrase
         # requires the EXPLICIT plaintext opt-out — which is exactly what this
@@ -353,6 +381,16 @@ jobs:
           alembic upgrade head
           alembic check
 
+      # WHICH FILES THIS LEG RUNS. scripts/ci_shard.py writes `--ignore=<file>` for every test file that belongs to ANOTHER shard, one per line, to the file the pytest
+      # step reads as `@FILE` (pytest >= 8.2), and prints how many of the suite's test files this leg runs, what the cost table predicts for them and how many the table
+      # does not name (a table that has fallen behind is read here). It ignores the others' files rather than naming its own because a path named on the command line is
+      # NOT subject to `collect_ignore` in tests/conftest.py: the first sharded Core-only leg named its files, collected the two analysis modules a core-only install must
+      # not collect and died at import. It refuses a plan that runs nothing or ignores nothing (a shard that ignores everything ends in "no tests ran", red). It is a step of
+      # its own so that the pytest step stays the one line tests/test_ci_pytest_flags_and_preflight.py pins, and so that a failure to plan is a red step that names the
+      # planner, not a green leg that ran nothing.
+      - name: Plan this shard (which test files it runs)
+        run: python scripts/ci_shard.py plan --shard ${{ matrix.shard }}/3 --out "$RUNNER_TEMP/shard.args"
+
       # `-rs` puts every skip's file, line and reason in the pytest summary, so which tests this job did not run is read from its log
       # instead of re-run locally (the 2026-10-29 skip-reason audit had to do exactly that). `-r` REPLACES pytest's default `fE` rather than
       # adding to it, so `-rs` alone would drop the FAILED and ERROR lines from a red run's summary, and the summary is printed in the ORDER
@@ -361,7 +399,7 @@ jobs:
       # `--junitxml` writes the report that the skip-summary step below reads: the skips by CLASS and COUNT, a few dozen short lines that fit in any
       # tail, because the `-rs` block above is hundreds of lines (see the step).
       - name: Test (pytest)
-        run: python -m pytest -q -rsfE --junitxml="$RUNNER_TEMP/junit.xml"
+        run: python -m pytest -q -rsfE --junitxml="$RUNNER_TEMP/junit.xml" @"$RUNNER_TEMP/shard.args"
 
       # WHAT WAS INSTALLED WHEN THE SUITE RAN, kept on a red run as well as a green one (`if: always()`), written to the log straight after the
       # suite (the tail of a red run's log) and to the step summary. The install output sits at the HEAD of a long log, which a reader that returns only the last lines never reaches, so
@@ -396,19 +434,38 @@ jobs:
       # rather than raising a threshold quietly -- a number in this file is a
       # statement about how much debt exists, and it should only ever fall.
       - name: Type check (mypy, BLOCKING)
+        if: matrix.shard == 1
         run: python -m mypy src/
 
       # Blocking security gates (v0.0.7 audit): both are clean today, so any
       # failure is a real regression or a freshly published CVE worth seeing.
       - name: SAST (bandit, medium+ severity)
+        if: matrix.shard == 1
         run: |
           python -m pip install bandit==1.9.4  # pinned: unpinned SAST drift reddens PRs with no code change
           bandit -r src/ -ll -q
 
       - name: Dependency audit (pip-audit)
+        if: matrix.shard == 1
         run: |
           python -m pip install pip-audit==2.10.1  # pinned (OO-D15-004): an unpinned audit tool can redden PRs through no code change, exactly like bandit/mypy
           pip-audit --skip-editable
+
+      # THIS LEG'S JUNIT REPORT, kept 14 days, so that the cost table (configs/ci_shard_costs.json) is refreshed from the three reports of any green run
+      # (`python scripts/ci_shard.py costs --min-seconds 0.5 junit-test-shard-*/junit.xml`, docs/maintenance/CI_SHARDS.md) and not from the whole suite
+      # in one process of 80 minutes (C10 follow-up, R433). The report holds test ids, outcomes and seconds, a traceback for a failure and a skip's
+      # reason: what the job log above already prints and nothing the log does not. `if: always()` because a red leg's seconds are as good as a green
+      # one's, `continue-on-error` because an upload never turns a job red, `overwrite` because a re-run of a leg writes the same name. It comes BEFORE the
+      # skip summary, which has to stay the job's last step (tests/test_ci_pytest_flags_and_preflight.py); tests/test_ci_shards.py pins this step.
+      - name: Upload this leg's junit report (the cost table's source)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-test-shard-${{ matrix.shard }}
+          path: ${{ runner.temp }}/junit.xml
+          retention-days: 14
+          overwrite: true
 
       # WHAT THIS JOB SKIPPED, by class and by test module, counts only, and its ten SLOWEST test modules in whole seconds (the sum of each module's
       # junit times, not wall time), kept on a red run as well as a green one (`if: always()`), written to the log and to the step summary. The `-rs` block in the pytest step is hundreds of lines and a reader that returns only the last lines of a job log never
@@ -424,13 +481,36 @@ jobs:
         continue-on-error: true
         run: python scripts/ci_skip_summary.py "$RUNNER_TEMP/junit.xml" | tee -a "$GITHUB_STEP_SUMMARY"
 
+  # `test-all` IS THE REQUIRED CHECK `test`: green only if all three legs above are. `if: always()` because a job that needs a failed job is SKIPPED otherwise, and a
+  # skipped required check reads as passing; `needs.test.result` is `success` only when every leg of the matrix succeeded (a cancelled or skipped leg is not
+  # `success`), so a leg that never started fails this job instead of vanishing from it. It installs nothing.
+  test-all:
+    if: always() && github.event_name != 'schedule'
+    needs: [test]
+    runs-on: ubuntu-latest
+    name: test
+    steps:
+      - name: All three shards of the test job passed
+        env:
+          LEGS: ${{ needs.test.result }}
+        run: |
+          echo "the three shards of the test job: $LEGS"
+          test "$LEGS" = "success"
+
   # The "extras are optional" contract (audit finding TEST-06): a core-only
   # install must boot and its suite must be green, with analysis-dependent tests
   # skipping cleanly rather than failing.
+  #
+  # THREE SHARDS, like `test` above (see there): the same planner and cost table, no static steps. The check named "Core-only install (no [analysis] extra)"
+  # is the `core-only-all` job below.
   core-only:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
-    name: Core-only install (no [analysis] extra)
+    name: Core-only install, shard ${{ matrix.shard }} of 3 (no [analysis] extra)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -449,8 +529,11 @@ jobs:
 
       # `-rsfE`, the same flags as the `test` job's (see there for why `s` comes first): every skip's file, line and reason in the log, so which tests this job did not run is read from it.
       # This job installs core + dev only, so it skips the analysis-module tests on purpose; `-r` REPLACES pytest's default `fE`, so `-rs` alone would drop the FAILED and ERROR lines.
+      - name: Plan this shard (which test files it runs)
+        run: python scripts/ci_shard.py plan --shard ${{ matrix.shard }}/3 --out "$RUNNER_TEMP/shard.args"
+
       - name: Test (pytest, analysis modules must skip)
-        run: python -m pytest -q -rsfE --junitxml="$RUNNER_TEMP/junit.xml"
+        run: python -m pytest -q -rsfE --junitxml="$RUNNER_TEMP/junit.xml" @"$RUNNER_TEMP/shard.args"
 
       # The same report as the `test` job's (see there): the versions this suite ran against, kept on red as well as green, at the log's tail.
       - name: Installed versions (kept on red as well as green)
@@ -464,12 +547,37 @@ jobs:
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # The same upload as the `test` job's (see there): this leg's junit report, 14 days, the source of the Core-only legs' own times. Before the skip summary.
+      - name: Upload this leg's junit report (the cost table's source)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-core-only-shard-${{ matrix.shard }}
+          path: ${{ runner.temp }}/junit.xml
+          retention-days: 14
+          overwrite: true
+
       # The same summary as the `test` job's (see there): skip counts by class and by test module, then the ten slowest modules; no free-text reasons, no
       # gate. Here it shows what the analysis-module skips on purpose came to, so a count that moves is a question for a reader. The job's last step, as there.
       - name: Skipped tests and slowest modules (counts and seconds only, no gate)
         if: always()
         continue-on-error: true
         run: python scripts/ci_skip_summary.py "$RUNNER_TEMP/junit.xml" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # The required check "Core-only install (no [analysis] extra)": green only if all three core-only shards are (see `test-all`).
+  core-only-all:
+    if: always() && github.event_name != 'schedule'
+    needs: [core-only]
+    runs-on: ubuntu-latest
+    name: Core-only install (no [analysis] extra)
+    steps:
+      - name: All three shards of the core-only job passed
+        env:
+          LEGS: ${{ needs.core-only.result }}
+        run: |
+          echo "the three shards of the core-only job: $LEGS"
+          test "$LEGS" = "success"
 
   crypto:
     if: github.event_name != 'schedule'
@@ -570,6 +678,52 @@ jobs:
         env:
           OO_CI_INSTALL_HTTPFS: "1"
         run: python -m pytest -q tests/test_columnar_httpfs_loader.py -k ci_encrypted_persisted_round_trip
+
+  # ----------------------------------------------------------------------- #
+  # The same columnar files on DuckDB 1.x. pyproject says `duckdb>=1.4` with no ceiling, so the job above installs the newest release
+  # (2.0.0 on 2026-11-05) and no lane ran the 1.x line that the floor admits: the join-plan assertion in test_top_terms_pre_aggregate reads
+  # a profile shape that 1.x and 2.x write differently, and a regression on either side was invisible to the other (R392, R412). This job
+  # installs `duckdb<2` (1.5.6 on 2026-11-05) and runs the SAME file list; tests/test_version_floor_legs.py fails if the two lists
+  # differ, or if this job stops pinning the 1.x line. No httpfs step: the persisted-encrypted round trip needs the network and stays in
+  # the job above. The floor of the registry entry duckdb-crypto-extension stays equal to pyproject's `duckdb>=` (test-enforced).
+  # ----------------------------------------------------------------------- #
+  columnar-duckdb1:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    name: Columnar store on DuckDB 1.x
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install (core + analysis + dev + columnar), with DuckDB held to the 1.x line
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[analysis,dev,columnar]" "duckdb<2"
+          python -c "import sys, duckdb; print('duckdb', duckdb.__version__); sys.exit(0 if duckdb.__version__.startswith('1.') else 1)"
+
+      - name: Columnar rollup + D1 loader on DuckDB 1.x (in-memory + fixture verify)
+        run: |
+          python -m pytest -q \
+            tests/test_columnar_engine.py tests/test_columnar_readmodel.py \
+            tests/test_keyword_daily_rollup.py tests/test_source_coverage_rollup.py \
+            tests/test_rollup_serve.py tests/test_columnar_httpfs_loader.py \
+            tests/test_rollup_build_streaming.py tests/test_rollup_serve_persisted.py \
+            tests/test_columnar_key_derivation.py \
+            tests/test_corpus_epoch.py tests/test_keyword_daily_merge_interrupted.py \
+            tests/test_keyword_daily_refresh.py tests/test_keyword_daily_refresh_wal_pinning.py \
+            tests/test_keyword_daily_scan_bound_race.py tests/test_map_serve.py \
+            tests/test_rollup_benchmark.py tests/test_rollup_benchmark_guard.py \
+            tests/test_rollup_generation_check.py tests/test_rollup_parity_bound.py \
+            tests/test_rollup_persisted_generation.py tests/test_rollup_scan_plan.py \
+            tests/test_rollup_shard_checkpoint.py tests/test_rollup_sharded_build.py \
+            tests/test_rollup_store_kind.py tests/test_serve_change_gate.py \
+            tests/test_serve_out_of_memory_goes_live.py tests/test_top_terms_pre_aggregate.py \
+            tests/test_wave7_poll_cache.py tests/test_external_freshness.py
 
   # ----------------------------------------------------------------------- #
   # UNIVERSAL PORTABILITY (maintainer-ruled 2026-06-11): the 3-OS matrix IS

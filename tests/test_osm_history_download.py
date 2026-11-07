@@ -102,8 +102,36 @@ def test_the_size_route(tmp_path, monkeypatch):
     app = FastAPI()
     app.include_router(router)
     c = TestClient(app)
-    assert c.get("/api/geo/downloads/size", params={"code": "planet-history"}).json()["size_bytes"] == 42
-    assert c.get("/api/geo/downloads/size", params={"code": "atlantis"}).status_code == 404
+    assert c.get("/api/geo/downloads/size", params={"code": "planet-history", "consent": "true"}).json()["size_bytes"] == 42
+    assert c.get("/api/geo/downloads/size", params={"code": "atlantis", "consent": "true"}).status_code == 404
+
+
+def test_the_size_route_refuses_without_consent_and_under_the_kill_switch_before_any_head(tmp_path, monkeypatch):
+    """v0.6 C3: the consent was held only in the page; a script reached the HEAD with none. 400 without it, a named 409 under the kill switch."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from src import ingest
+    from src.api.geo import router
+    from src.geo import osm_downloads as mod
+
+    heads: list[str] = []
+    mgr = _mgr(tmp_path, lambda url: heads.append(url) or _Resp({"Content-Length": "42"}))
+    monkeypatch.setattr(mod, "get_manager", lambda: mgr)
+    monkeypatch.setattr(ingest, "kill_switch_active", lambda: False)
+    app = FastAPI()
+    app.include_router(router)
+    c = TestClient(app)
+    for params in ({"code": "planet-history"}, {"code": "planet-history", "consent": "false"}):
+        r = c.get("/api/geo/downloads/size", params=params)
+        assert r.status_code == 400 and "online consent" in r.json()["detail"], r.text
+    monkeypatch.setattr(ingest, "kill_switch_active", lambda: True)
+    r = c.get("/api/geo/downloads/size", params={"code": "planet-history", "consent": "true"})
+    assert r.status_code == 409 and "airplane mode" in r.json()["detail"], r.text
+    assert heads == [], "a refused size read still reached the mirror"
+    monkeypatch.setattr(ingest, "kill_switch_active", lambda: False)
+    assert c.get("/api/geo/downloads/size", params={"code": "planet-history", "consent": "true"}).json()["size_bytes"] == 42
+    assert len(heads) == 1
 
 
 def test_the_history_route_says_when_the_lane_could_not_be_read(monkeypatch):
@@ -146,6 +174,7 @@ def test_the_panel_sits_in_settings_openstreetmap_after_the_picker():
 def test_reading_the_size_passes_the_one_online_consent_first():
     body = function_source(_js(), "osmHistoryReadSize")
     assert body.index("ensureOnline(") < body.index("/api/geo/downloads/size")
+    assert "consent=true" in body, "the page sends the consent the route now demands"
     dl = function_source(_js(), "osmHistoryDownload")
     assert dl.index("ensureOnline(") < dl.index("/api/geo/downloads/start")
 

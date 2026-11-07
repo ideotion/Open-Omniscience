@@ -109,7 +109,7 @@ def build_view_index(alpha3: str) -> dict:
     """(Re)build one complete country's rows in the R*Tree. Reads ``osm.db``; opens nothing else."""
     from sqlalchemy import select, text
 
-    from src.osm.lane_models import OsmCountry, OsmViewIndex, osm_objects_table
+    from src.osm.lane_models import OsmCountry, OsmViewIndex, country_basis, osm_objects_table
     from src.versioned import store
 
     t0 = time.monotonic()
@@ -119,7 +119,7 @@ def build_view_index(alpha3: str) -> dict:
         country = s.query(OsmCountry).filter_by(alpha3=alpha3).one_or_none()
         if country is None or country.status != "complete":
             raise ValueError("not-ingested")
-        basis = country.finished_at.isoformat() if country.finished_at else None
+        basis = country_basis(country)
         _ensure(s)
         # A re-ingest writes new row ids, so the old ones are cleared by absence as well as
         # by country: an id no object holds any more is never drawn.
@@ -185,7 +185,7 @@ def _build_pyramid(s, alpha3: str) -> None:
 
 def refresh_view_indexes() -> dict:
     """Build the view rows of every complete country whose rows do not match its ingest."""
-    from src.osm.lane_models import OsmCountry, OsmViewIndex
+    from src.osm.lane_models import OsmCountry, OsmViewIndex, country_basis
     from src.versioned import store
 
     if not store.lane_exists("osm"):
@@ -194,7 +194,7 @@ def refresh_view_indexes() -> dict:
     with store.lane_session("osm") as s:
         built = {r.alpha3: r.basis_ingest for r in s.query(OsmViewIndex)}
         for c in s.query(OsmCountry).filter_by(status="complete"):
-            basis = c.finished_at.isoformat() if c.finished_at else None
+            basis = country_basis(c)
             if built.get(c.alpha3, "-") != basis:
                 todo.append(c.alpha3)
     return {a3: build_view_index(a3) for a3 in todo}

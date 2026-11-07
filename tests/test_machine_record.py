@@ -300,3 +300,20 @@ def test_a_none_entry_in_sys_modules_reads_absent_as_the_docstring_says(monkeypa
     with pytest.raises(ImportError):
         xml.sax.make_parser(["drv_libxml2"])
     assert "absent" in (MR._feed_xml.__doc__ or "") and "``None``" in (MR._feed_xml.__doc__ or "")
+
+
+def test_the_switch_names_listed_are_capped_and_the_rest_counted(monkeypatch):
+    for i in range(MR.ENV_NAMES_SHOWN + 7):
+        monkeypatch.setenv(f"OO_CAP_TEST_{i:04d}", "1")
+    env = MR.machine_block()["environment"]
+    assert len(env["set_names"]) == MR.ENV_NAMES_SHOWN and env["set_names"] == sorted(env["set_names"])
+    assert env["count"] >= MR.ENV_NAMES_SHOWN + 7 and env["names_not_shown"] == env["count"] - MR.ENV_NAMES_SHOWN
+    monkeypatch.undo()
+    few = MR.machine_block()["environment"]
+    assert "names_not_shown" not in few and few["count"] == len(few["set_names"])
+
+
+def test_a_non_ascii_switch_name_does_not_blank_the_block(monkeypatch):
+    monkeypatch.setenv("OO_CAF\u00c9", "1")
+    env = MR.machine_block()["environment"]
+    assert "unavailable" not in env and "OO_CAF?" in env["set_names"] and env["names_cut"] >= 1

@@ -42,7 +42,13 @@ from src.versioned.models import (
 #: at), so the table's SHAPE is what keeps WARM to two texts per page rather than a
 #: pruning pass over a revisions table, plus the queue, deletion and promotion marks.
 #: PostgreSQL allows 1,600 columns; the limit Q1140 warns about is nowhere near.
-COLUMN_CEILING = 19
+#:
+#: RAISED 19 -> 21 by v0.6.0 row B1 (S06-01's S1, 2026-11-04): ``osm_countries`` keeps where the country's objects stand against the
+#: mirror's daily change files, in the SAME row as the objects' import so one transaction moves them together: the extract's own
+#: replication sequence, the last change file applied (sequence and time), and the border's rings (without which a change cannot be placed).
+#: Four columns on a 17-column table of one row per country (the ceiling moves by two because the table was not the widest before it);
+#: a separate position table would let the position and the objects disagree.
+COLUMN_CEILING = 21
 
 #: ``osm_objects`` is the ONE lane table whose width is a RULING rather than a shape: Q810 = a
 #: asks for curated tag columns and its note asks for the list to be EXTENDED to shrink the

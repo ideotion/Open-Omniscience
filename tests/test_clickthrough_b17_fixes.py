@@ -82,6 +82,7 @@ _FRAMES = {
         "Downloading model {model}",
         "Model {model}",
         "Wikipedia page walk — {pages}",
+        "Updating {country} with the daily map files",
     ),
     "src/api/llm.py": (
         "Summarizing “{title}”",

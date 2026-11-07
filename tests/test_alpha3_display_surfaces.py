@@ -305,6 +305,10 @@ _NOT_A_RENDERING: dict[tuple[str, str], str] = {
         "app-map.js",
         "osmCountAdmin1(",
     ): "a button built into a local whose click handler carries the stored code; its caption is a translated label, never the code",
+    (
+        "app-living.js",
+        'r.language === "zh" ? " open" : ""',
+    ): "a flag for the language row's <details> open attribute (zh is the standing Q911 emphasis), never a code on a screen",
 }
 
 

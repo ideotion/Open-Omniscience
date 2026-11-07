@@ -246,3 +246,56 @@ def decode_coords(data: bytes) -> list[tuple[float, float]]:
         lon += (dn >> 1) ^ -(dn & 1)
         out.append((lat / 1e7, lon / 1e7))
     return out
+
+
+# --- the stored shape of a border ------------------------------------------ #
+def encode_rings(rings: Sequence[Sequence[tuple[float, float]]]) -> bytes:
+    """A border's closed rings as one blob: a count, then each ring's :func:`encode_coords` with its length.
+
+    Kept on the country's row so that a later daily update can ask "is this point inside?" without
+    reading the extract again (a continent's file is tens of GB). Vertices keep OSM's own 1e-7 degree
+    precision, which is the precision the extract stores them at, so :func:`decode_rings` hands back the
+    rings the cut used.
+    """
+    out = bytearray()
+    _uvarint(len(rings), out)
+    for ring in rings:
+        blob = encode_coords(ring)
+        _uvarint(len(blob), out)
+        out += blob
+    return bytes(out)
+
+
+def decode_rings(data: bytes) -> list[list[tuple[float, float]]]:
+    """The rings :func:`encode_rings` wrote. A truncated or empty blob is a ``ValueError``, never a short border."""
+    if not data:
+        raise ValueError("an empty border blob")
+    pos = 0
+
+    def rd() -> int:
+        nonlocal pos
+        result = shift = 0
+        while True:
+            if pos >= len(data):
+                raise ValueError("a border blob ends inside a number")
+            b = data[pos]
+            pos += 1
+            result |= (b & 0x7F) << shift
+            if not b & 0x80:
+                return result
+            shift += 7
+
+    count = rd()
+    rings: list[list[tuple[float, float]]] = []
+    for _ in range(count):
+        size = rd()
+        if pos + size > len(data):
+            raise ValueError("a border blob ends inside a ring")
+        try:
+            rings.append(decode_coords(data[pos : pos + size]))
+        except IndexError:
+            raise ValueError("a border blob has a ring that ends inside a number") from None
+        pos += size
+    if pos != len(data):
+        raise ValueError("a border blob has bytes after its last ring")
+    return rings

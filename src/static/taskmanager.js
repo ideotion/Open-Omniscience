@@ -174,7 +174,7 @@
     // The Wikipedia page walk collects too -- titles, over the network, for days -- so it
     // sits with the collector rather than falling into the AI default below.
     { id: "collect", title: "Collection", kinds: ["collect", "wiki-walk"] },
-    { id: "download", title: "Downloads", kinds: ["wiki-dump", "osm-map"] },
+    { id: "download", title: "Downloads", kinds: ["wiki-dump", "osm-map", "osm-update"] },
     { id: "ai", title: "AI & analysis", kinds: ["llm", "analytics", "index"] },
     { id: "network", title: "Network", kinds: ["fetch"] }
   ];

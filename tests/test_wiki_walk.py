@@ -506,9 +506,11 @@ def test_the_counters_artifact_carries_the_walk_or_an_ABSENCE(lane):
     assert before == {"measured": False, "reason": "walk-never-run"}, "absent, never zeros"
     _walker(FixtureWikiClient(), transport="pool").walk_for(3600)
     with _session() as db:
-        after = lane_counters(db)["walk"]
+        member = lane_counters(db)
+        after = member["walk"]
     assert after["measured"] is True and after["pages_seen"] == 4
-    [row] = after["editions"]
+    assert "editions" not in after and after["editions_in"] == "coverage", "R413: the rows travel once, in coverage"
+    row = next(r for r in member["coverage"]["editions"] if r["edition"] == EDITION)
     assert (row["edition"], row["pages_seen"], row["edition_articles"]) == (EDITION, 4, 4)
     assert after["complete"] == [EDITION]
     assert after["throughput"]["by_transport"]["pool"]["pages"] == 4

@@ -884,6 +884,7 @@ _SLOT_PRODUCER_MODULES = (
     "src/database/damage.py",
     "src/monitoring/boots.py",
     "src/monitoring/storage_events.py",
+    "src/osm/diagnostics.py",
 )
 #: What each may hand a caught exception to: ``failure_label`` is the class and the errno name, never the message; ``_error_text`` is
 #: ``exception_text`` with the paths tokenised and then cut; ``note_raw_driver_error`` hands the exception to the damage registry, which

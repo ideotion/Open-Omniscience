@@ -201,7 +201,7 @@ def test_the_reading_names_every_block_that_has_NOTHING_to_say(lane):
         out = lane_counters(db, now=NOW)
     # "walk" and "warm" too: a lane whose page walk or WARM tier never ran reports each
     # ABSENT (0.5 row F), never as zero pages seen or zero texts fetched.
-    assert set(out["unmeasured"]) == {"rows_per_day", "bytes_per_day", "run", "walk", "warm"}
+    assert set(out["unmeasured"]) == {"rows_per_day", "bytes_per_day", "run", "walk", "warm", "coverage"}
     assert out["walk"] == {"measured": False, "reason": "walk-never-run"}
     assert out["warm"] == {"measured": False, "reason": "warm-never-run"}
     assert "no counters file" in out["method"]

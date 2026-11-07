@@ -55,9 +55,10 @@ const HELPERS = [
 ];
 const LIVING = [
   "livingWhen", "livingSigned", "livingFactHtml", "livingGroupsHtml", "_livingUnmeasured",
-  "livingStorageGroup", "_livingCount", "livingRunFacts", "livingWalkGroup", "livingWarmGroup", "livingWikiGroups", "livingLawGroups",
-  "livingMapGroups", "livingGroupsFor",
+  "livingStorageGroup", "_livingCount", "livingRunFacts", "livingWalkGroup", "livingCoverageGroup", "livingWarmGroup", "livingWikiGroups", "livingLawGroups",
+  "livingMapGroups", "livingDailyGroup", "livingGroupsFor",
   "livingDiffHtml", "livingStreamRowsHtml", "livingLawRowsHtml", "livingMapRowsHtml",
+  "lawFloorStateWords", "lawFloorStateWhy", "lawFloorBasisWords", "lawFloorStatesIn", "lawFloorCountsHtml", "livingLawFloorHtml",
 ];
 // `window` is defined so `window.OOI18N && ...` resolves to the fallbacks: a sandbox
 // without it raises ReferenceError on the bare global read (the recorded node trap).
@@ -73,6 +74,7 @@ const src =
   extractConst("_LIVING_WARM_STATE") + "\n" +
   extractConst("_LIVING_WARM_WHY") + "\n" +
   extractConst("_LIVING_TRANSPORT") + "\n" +
+  extractConst("_LAW_FLOOR_ORDER") + "\n" +
   "var window = {};\n" +
   // The Q302 display helpers are STUBBED to mark what passed through them: their own
   // behaviour (the alpha-3 / 639-2/T code, the localised hover) is pinned by
@@ -82,6 +84,8 @@ const src =
   "function ooLangCell(v, o) { return '<span class=\"' + ((o && o.cls) || '') + '\">LC(' + esc(v) + ')</span>'; }\n" +
   "function ooLangCode(v) { return 'L3(' + v + ')'; }\n" +
   "function ooLangName(v, fb) { return 'NAME(' + v + ')'; }\n" +
+  // The reader's own label frame lives in app-core.js ("{prefix}: {text}" per locale); the view must use it, not weld a colon.
+  "function ooLabelHtml(label, value) { return label + ' :: ' + value; }\n" +
   HELPERS.map(extract).join("\n") + "\n" +
   LIVING.map(extract).join("\n") + "\n" +
   "module.exports = {humanBytes, _jobWhy, " + LIVING.join(", ") + "};";
@@ -238,6 +242,36 @@ const WIKI = {
   assert.ok(visible(maps).includes("Date of the map data Not recorded"),
     "the file's own write time must never stand in for the date of the map data");
   noJunk(maps, "the map groups");
+  // The OSM lane's daily change files (S06-01 S5): counts, the newest file's OWN date, re-baselines as dated events with the country.
+  const DAILY = { measured: true, countries_cut: 3, countries_updated: 2, files_applied: 41, newest_file_at: "2026-11-04T23:59:00+00:00",
+    last_applied_at: "2026-11-05T01:00:00+00:00", rebaselines_total: 2, hand_recuts: 1, rebaselines_not_shown: 0,
+    rebaselines: [{ alpha3: "FRA", detected_at: "2026-10-30T08:15:00+00:00", from_time: null, to_time: null },
+                  { alpha3: "DEU", detected_at: "2026-09-01T07:00:00+00:00", from_time: null, to_time: null }] };
+  const daily = R.livingGroupsHtml([R.livingDailyGroup(DAILY, t, tf)]);
+  const dv = visible(daily);
+  assert.ok(dv.includes("Countries cut 3") && dv.includes("Reached by the daily files 2") && dv.includes("Change files applied 41"), dv);
+  assert.ok(dv.includes("Newest change file 2026-11-04 23:59 UTC"), "the newest file's own date, said as UTC: " + dv);
+  assert.ok(dv.includes("Re-baselines 2") && dv.includes("Cut again by hand 1"), "the two kinds of re-cut are counted apart: " + dv);
+  assert.ok(dv.indexOf("2026-10-30 08:15 UTC") < dv.indexOf("2026-09-01 07:00 UTC"), "events are listed newest first, as the server sent them");
+  assert.ok(daily.includes("CC(FRA)") && daily.includes("CC(DEU)"), "a country goes through the display helper, never printed raw");
+  noJunk(daily, "the daily group"); noVerdict(daily, "the daily group");
+  const none = visible(R.livingGroupsHtml([R.livingDailyGroup({ ...DAILY, rebaselines: [], rebaselines_total: 0, hand_recuts: 0 }, t, tf)]));
+  assert.ok(none.includes("Re-baselines 0") && none.includes("Re-baseline events None"), "no event reads as None, and a zero is a measured zero: " + none);
+  const older = visible(R.livingGroupsHtml([R.livingDailyGroup({ ...DAILY, rebaselines_not_shown: 4 }, t, tf)]));
+  assert.ok(older.includes("4 older events are not shown."), older);
+  const oldLane = R.livingGroupsHtml([R.livingDailyGroup({ ...DAILY, files_applied: null, last_applied_at: null, rebaselines_total: null, hand_recuts: null, rebaselines: [] }, t, tf)]);
+  assert.ok(visible(oldLane).includes("Change files applied Not recorded") && visible(oldLane).includes("Re-baselines Not recorded"),
+    "a table the lane lacks is Not recorded, never 0: " + visible(oldLane));
+  assert.ok(hovers(oldLane).includes("older build"), "and says why on hover");
+  assert.ok(visible(oldLane).includes("Re-baseline events Not recorded") && !visible(oldLane).includes("Re-baseline events None"),
+    "an events list the lane could not read is NOT 'None': that would state that nothing happened: " + visible(oldLane));
+  const noStamp = visible(R.livingGroupsHtml([R.livingDailyGroup({ ...DAILY, newest_file_at: null }, t, tf)]));
+  assert.ok(noStamp.includes("Newest change file Not recorded"), "files applied but no recorded date is Not recorded, not 'never': " + noStamp);
+  assert.ok(visible(R.livingGroupsHtml([R.livingDailyGroup({ ...DAILY, newest_file_at: null, countries_updated: 0, files_applied: 0 }, t, tf)])).includes("Newest change file never"),
+    "and no file at all is 'never'");
+  assert.ok(visible(R.livingGroupsHtml([R.livingDailyGroup({ measured: false, reason: "lane-never-run" }, t, tf)])).includes("Not run yet"));
+  assert.ok(visible(R.livingGroupsHtml([R.livingDailyGroup(undefined, t, tf)])).includes("Could not be read"), "an overview without the block is named, not blank");
+  noJunk(oldLane, "the old-lane daily group");
   assert.deepStrictEqual(R.livingGroupsFor({ kind: "radio" }, t, tf), [], "an unknown source drew groups");
   assert.deepStrictEqual(R.livingGroupsFor(null, t, tf), []);
 }
@@ -358,8 +392,8 @@ const WIKI = {
 // --- 10. the page walk (Q701 = c): "N of M", never a percentage; absence is a word ---- //
 {
   const titles = R.livingWikiGroups(WIKI, t, tf).map((g) => g.title);
-  assert.deepStrictEqual(titles, ["Live stream", "Other changed pages", "Page walk", "Pages you track", "Storage"],
-    "Q707's order: the followed pages, the other changed pages, then the walk's tail");
+  assert.deepStrictEqual(titles, ["Live stream", "Other changed pages", "Page walk", "Edition coverage", "Pages you track", "Storage"],
+    "Q707's order: the followed pages, the other changed pages, then the walk, then the per-edition coverage (v0.6 row D), then the tail");
   // Off is the operator's switch: the state says so and names where it is set.
   const off = R.livingWalkGroup({ walk: { enabled: false, state: "off", measured: false,
     reason_counts: "walk-never-run" } }, t, tf);
@@ -567,6 +601,174 @@ const WIKI = {
     "It is asked again after a pause that doubles each time, up to an hour."]) {
     assert.ok(seen.has(label), `"${label}" never reached the translator`);
   }
+}
+
+// --- the language coverage floor (v0.6.0 row C, S1) -------------------------------- //
+// Every floor country is in ONE of four states, never a blank; zh is its own line; the floor file's own unverified
+// status is VISIBLE; and a count of countries is never turned into a share or a verdict.
+{
+  const CHECKED = {
+    state: "checked", reason: null, as_of: "2026-09-07",
+    verification_status: "drafted-from-training-knowledge; clearnet check pending", countries: 6,
+    by_state: { tracked: ["fr"], "verified-not-yet-tracked": ["de"], unverified: ["tw"], "no-eligible-source": ["cn", "ye"] },
+    languages: [
+      { language: "ar", official: ["ye"], states: { tracked: 0, "verified-not-yet-tracked": 0, unverified: 0, "no-eligible-source": 1 }, documents: 0 },
+      { language: "fr", official: ["fr"], regional: ["de"], states: { tracked: 1, "verified-not-yet-tracked": 1, unverified: 0, "no-eligible-source": 0 }, documents: 3 },
+      { language: "zh", official: ["cn"], regional: ["tw"], contested: ["tw"],
+        states: { tracked: 0, "verified-not-yet-tracked": 0, unverified: 1, "no-eligible-source": 1 }, documents: 0 },
+    ],
+    zh_beyond_floor: { hk: "no-eligible-source", mo: "unverified" },
+    many_country_sources: { eu: { "eur-lex.europa.eu": false }, int: { "treaties.un.org": true, "coe.int": true } },
+    unplaced_documents: { tl: 6 },
+  };
+  const html = R.livingLawFloorHtml({ floor: CHECKED }, t, tf);
+  const text = visible(html);
+  noJunk(html, "the language floor");
+  noVerdict(html, "the language floor");
+  // every state is a WORD, and "No eligible source" is a state the reader can see, not an empty cell
+  for (const word of ["Tracked here", "Verified, not tracked yet", "Not verified", "No eligible source"]) {
+    assert.ok(text.includes(word), `the floor never said "${word}"`);
+  }
+  assert.ok(!text.includes("Not looked up"), "a readable catalogue drew the unchecked state");
+  // the tally is a count of countries per state, and the head says how many and as of when
+  assert.ok(text.includes("6 countries on the floor · list dated 2026-09-07"), text);
+  assert.ok(/Tracked here 1/.test(text.replace(/\s+/g, " ")) || /Tracked here\s*1/.test(text), "the tally lost its count");
+  // never a share: no percent sign, no ratio word
+  assert.ok(!/%|percent|\bout of\b/i.test(text), `the floor drew a share: ${text}`);
+  // the floor file's OWN status is visible in the card-caveat line, not behind a toggle or a hover
+  assert.ok(/<p class="card-caveat">[^<]*drafted from memory/.test(html), "the unverified floor is not a visible caveat");
+  assert.ok(!/hidden/.test(html), "the floor hid something");
+  // zh is its own row, FIRST, open, with the territories its seed names beside it and not on the floor
+  const firstRow = html.indexOf("<details");
+  assert.ok(html.slice(firstRow, firstRow + 400).includes("LC(zh)"), "zh is not the first row");
+  assert.ok(/<details class="living-row" open>[^]*?LC\(zh\)/.test(html), "zh is not open");
+  assert.ok(text.includes("Named by the Chinese seed list but not on the floor") && /territories\)\s*::\s*CC\(hk\)/.test(text),
+    `the territories line did not go through the label frame: ${text}`);
+  assert.ok(text.includes("CC(hk) No eligible source") && text.includes("CC(mo) Not verified"), text);
+  // the basis is labelled and a contested row says so
+  assert.ok(text.includes("official language") && text.includes("regional language"), text);
+  assert.ok(text.includes("CC(tw) regional language · contested · Not verified"), text);
+  // each language lists its countries, each with its state: fr -> fr tracked, de verified
+  assert.ok(text.includes("CC(fr) official language · Tracked here") && text.includes("CC(de) regional language · Verified, not tracked yet"), text);
+  // the disclosures: many-country sources credited to none, documents with no country credited to none
+  assert.ok(text.includes("3 sources that serve many countries at once are credited to no single country."), text);
+  assert.ok(text.includes("6 tracked documents state no country and are credited to none."), text);
+  assert.ok(text.includes("ordering by population reached waits for a dated population table"), text);
+  // every word of chrome goes through the translator
+  const seen = new Set();
+  const tt = (x) => { seen.add(x); return "«" + x + "»"; };
+  const ttf = (x, v) => { seen.add(x); return tf(x, v); };
+  R.livingLawFloorHtml({ floor: CHECKED }, tt, ttf);
+  for (const label of ["Tracked here", "Verified, not tracked yet", "Not verified", "No eligible source", "official language",
+    "regional language", "contested", "{n} countries on the floor · list dated {date}", "{n} tracked documents in this language",
+    "Named by the Chinese seed list but not on the floor (the floor excludes territories)",
+    "{n} sources that serve many countries at once are credited to no single country.",
+    "{n} tracked documents state no country and are credited to none."]) {
+    assert.ok(seen.has(label), `"${label}" never reached the translator`);
+  }
+  // an ISO-ish state this build does not know is shown as sent, never mapped onto the nearest known word
+  assert.strictEqual(R.lawFloorStateWords("on-the-fence", t), "on-the-fence");
+  // a status that is no longer "drafted" is printed, not replaced by the old caveat
+  const settled = R.livingLawFloorHtml({ floor: { ...CHECKED, verification_status: "verified 2026-12-01" } }, t, tf);
+  assert.ok(visible(settled).includes("Status of the list of countries: verified 2026-12-01"), visible(settled));
+  assert.ok(!visible(settled).includes("drafted from memory"), "a settled list still carried the unsettled caveat");
+}
+{
+  // The catalogue could not be read: tracked is still true, the rest is "Not looked up", never "No eligible source".
+  const UNCHECKED = {
+    state: "unchecked", reason: "LawCatalogUnreadable: boom", as_of: "2026-09-07", verification_status: "drafted-x", countries: 2,
+    by_state: { tracked: ["fr"], "verified-not-yet-tracked": [], unverified: [], "no-eligible-source": [], unchecked: ["de"] },
+    languages: [{ language: "fr", official: ["fr", "de"], states: { tracked: 1, "verified-not-yet-tracked": 0, unverified: 0, "no-eligible-source": 0, unchecked: 1 }, documents: 1 }],
+    zh_beyond_floor: { hk: "unchecked", mo: "unchecked" }, many_country_sources: null, unplaced_documents: {},
+  };
+  const html = R.livingLawFloorHtml({ floor: UNCHECKED }, t, tf);
+  const text = visible(html);
+  noJunk(html, "the unchecked floor");
+  assert.ok(text.includes("Not looked up") && text.includes("LawCatalogUnreadable: boom"), text);
+  // a state with nobody in it is a measured zero and is drawn as one, in the tally and in the language row
+  assert.ok(text.includes("Verified, not tracked yet 0 Not verified 0 No eligible source 0 Not looked up 1"), text);
+  assert.ok(/<p class="card-caveat">[^<]*could not be read/.test(html), "the unreadable catalogue is not a visible caveat");
+  assert.ok(text.includes("CC(de) official language · Not looked up"), text);
+  // the reader is told nothing about "no source" for a lookup that never happened
+  assert.ok(!text.includes("CC(de) official language · No eligible source"), text);
+  // no floor at all, and a floor with nothing to list: a sentence, never a throw or a blank
+  assert.ok(visible(R.livingLawFloorHtml({}, t, tf)).includes("This build reports no language floor."));
+  assert.ok(visible(R.livingLawFloorHtml({ floor: { state: "unchecked", reason: "the floor file is absent", by_state: null, languages: null } }, t, tf))
+    .includes("could not be read, so nothing is counted. the floor file is absent"));
+}
+{
+  // A payload from a newer build: a state this client has no word for is COUNTED and LISTED as sent (the tally still adds up to
+  // the countries), sorts after the known ones, and a null member list or a null source map does not throw.
+  const NEWER = {
+    state: "checked", reason: null, as_of: "2026-09-07", verification_status: "drafted-x", countries: 3,
+    by_state: { tracked: ["fr"], "verified-not-yet-tracked": [], unverified: null, "no-eligible-source": [], "brand-new-state": ["de", "es"] },
+    languages: [{ language: "fr", official: ["fr", "de", "es"], states: { tracked: 1, "brand-new-state": 2 }, documents: 1 }],
+    zh_beyond_floor: null, many_country_sources: { eu: null, int: { "treaties.un.org": true } }, unplaced_documents: { tl: "x" },
+  };
+  const html = R.livingLawFloorHtml({ floor: NEWER }, t, tf);
+  const text = visible(html).replace(/\s+/g, " ");
+  noJunk(html, "the newer-build floor");
+  assert.ok(text.includes("brand-new-state 2"), `an unknown state was dropped from the counts: ${text}`);
+  assert.ok(text.includes("Tracked here 1") && text.includes("Verified, not tracked yet 0") && text.includes("Not verified 0"), text);
+  assert.ok(text.includes("CC(de) official language · brand-new-state") && text.includes("CC(es) official language · brand-new-state"), text);
+  assert.ok(text.indexOf("CC(fr) official language · Tracked here") < text.indexOf("CC(de) official language · brand-new-state"),
+    "an unknown state sorted ahead of a known one");
+  assert.ok(text.includes("1 sources that serve many countries at once are credited to no single country."), text);
+  assert.ok(!text.includes("state no country"), "a non-numeric document count drew a disclosure");
+}
+
+// --- coverage per edition: counts as "n of m", a missing total is said, nothing is a score -------- //
+{
+  const COV = { measured: true, reason: null,
+    totals: { pages_seen: 300, edition_articles: 1000, editions_without_total: 1, editions_with_a_run: 2, gaps: 3 },
+    editions: [
+      { edition: "en", has_run: true, pages_seen: 300, edition_articles: 1000,
+        full_text: { hot_pages_with_text: 40, warm_pages_with_text: 25, share_lower_bound: 0.1333, share_upper_bound: 0.2167 },
+        last_event_recorded_at: "2026-09-25T09:00:00+00:00", gaps: { total: 3, by_reason: { reconnect: 3 } } },
+      { edition: "fr", has_run: true, pages_seen: 10, edition_articles: null, full_text: { hot_pages_with_text: 0, warm_pages_with_text: null },
+        last_event_recorded_at: null, gaps: { total: 0, by_reason: {} } },
+      { edition: "de", has_run: false, reason: "no-run-yet" },
+    ],
+    located: { measured: false, reason: "address-extractor-not-built" } };
+  const g = group(R.livingWikiGroups({ ...WIKI, coverage: COV }, t, tf), "Edition coverage");
+  noJunk(g, "the coverage group"); noVerdict(g, "the coverage group");
+  const text = visible(g);
+  assert.ok(text.includes("All editions 300 of 1,000 pages seen") || text.includes("All editions 300 of 1000 pages seen"), text);
+  assert.ok(hovers(g).includes("1 editions have no article count yet; their pages are left out of both figures."), "a missing total was not said");
+  assert.ok(text.includes("L3(fr) 10 pages seen, total unknown"), "a missing total drew a ratio: " + text);
+  assert.ok(text.includes("L3(de) No run yet") && !/L3\(de\) \d/.test(text), "a never-run edition drew a figure: " + text);
+  assert.ok(hovers(g).includes("between 40 and 65 pages"), "the full-text range is lower and upper bound, not one number");
+  assert.ok(text.includes("Addresses located Not measured yet"), "the located share drew a number it does not have: " + text);
+  assert.ok(!/%/.test(text), "a percentage was drawn: " + text);
+  // Editions the walk never touched or whose total was never read: no zero, no closed range, no ratio over a total that is not there.
+  const PART = { measured: true, reason: null,
+    totals: { pages_seen: 10, edition_articles: 0, editions_without_total: 3, editions_with_a_run: 3, gaps: 1 },
+    editions: [
+      { edition: "it", has_run: true, pages_seen: 10, edition_articles: null, full_text: { hot_pages_with_text: 0, warm_pages_with_text: null },
+        last_event_recorded_at: null, gaps: { total: 0, by_reason: {} } },
+      { edition: "fr", has_run: true, pages_seen: null, edition_articles: null, full_text: { hot_pages_with_text: 1, warm_pages_with_text: null },
+        last_event_recorded_at: null, last_event_unreadable: true, gaps: { total: 0, by_reason: {} } },
+      { edition: "pt", has_run: true, pages_seen: null, edition_articles: null, full_text: { hot_pages_with_text: 0, warm_pages_with_text: null },
+        last_event_recorded_at: null, gaps: { total: 1, by_reason: { reconnect: 1 } } },
+    ], located: { measured: false, reason: "address-extractor-not-built" } };
+  const part = group(R.livingWikiGroups({ ...WIKI, coverage: PART }, t, tf), "Edition coverage");
+  noJunk(part, "the partial coverage group");
+  const ptext = visible(part);
+  assert.ok(ptext.includes("All editions 10 pages seen, total unknown") && !/of 0 pages/.test(ptext), "a ratio over a total that is not there: " + ptext);
+  assert.ok(ptext.includes("L3(fr) The walk has not run for this edition.") && ptext.includes("L3(pt) The walk has not run for this edition."), ptext);
+  assert.ok(!/\b0 pages seen/.test(ptext), "an edition the walk never touched drew 0 pages seen: " + ptext);
+  const phov = hovers(part);
+  assert.ok(!/between 0 and 0|between 1 and 1/.test(phov), "a closed range with the second tier never run: " + phov);
+  assert.ok(phov.includes("at least 1 pages; the second tier has not run"), phov);
+  // The walk ran for no edition at all: the aggregate says it is not measured, never "0 pages seen".
+  const NOWALK = { ...PART, editions: PART.editions.map((e) => ({ ...e, pages_seen: null })) };
+  const nowalk = group(R.livingWikiGroups({ ...WIKI, coverage: NOWALK }, t, tf), "Edition coverage");
+  assert.ok(visible(nowalk).includes("All editions Not measured yet") && !/\b0 pages seen/.test(visible(nowalk)), visible(nowalk));
+  assert.ok(phov.includes("Last event: Could not be read"), "an unreadable last event drew 'never'");
+  const never = group(R.livingWikiGroups({ ...WIKI, coverage: { measured: false, reason: "lane-never-run" } }, t, tf), "Edition coverage");
+  assert.ok(visible(never).includes("Not run yet") && !/\d/.test(visible(never).replace("Edition coverage", "")), visible(never));
+  const none = group(R.livingWikiGroups(WIKI, t, tf), "Edition coverage");
+  assert.ok(visible(none).includes("Could not be read"), "a payload without a coverage block threw or drew figures");
 }
 
 console.log("living_sources_node_test: all checks passed");

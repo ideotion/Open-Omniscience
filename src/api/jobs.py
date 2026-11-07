@@ -210,6 +210,47 @@ def _osm_jobs() -> list[dict]:
     return jobs
 
 
+#: "stopped" is an incomplete run that is not a failure: the next update continues from where it stopped.
+_OSM_UPDATE_OK = ("applied", "current", "stopped")
+
+
+def _osm_update_jobs() -> list[dict]:
+    """The OSM daily-change-file updates (``src/osm/update_job.py``) as visible jobs, kind "osm-update". Aggregated live from the job
+    module, no shadow state. NO control row: one run is short and local to the lane's single writer, and "Stop" is the network kill switch
+    as for every fetch. Progress is files applied of files owed, nothing else (no rate, no ETA, no byte total: a change file's size is read
+    when it is fetched)."""
+    from src.catalog.countries import country_display_name
+    from src.osm.update_job import OUTCOME_SENTENCES
+    from src.osm.update_job import jobs as update_jobs
+
+    rows = []
+    for j in update_jobs():
+        alpha3 = j["alpha3"]
+        name = country_display_name(j.get("alpha2") or alpha3)
+        state = j["state"]
+        if state == "done":
+            state = "done" if j.get("outcome") in _OSM_UPDATE_OK else "failed"
+        row = {
+            "id": f"osm-update:{alpha3}",
+            "kind": "osm-update",
+            # A country the catalogue cannot name is called "a country", never by its code (R6, alpha-3 display).
+            **(
+                {"label": f"Updating {name} with the daily map files", **_label_frame("Updating {country} with the daily map files", country=name)}
+                if name
+                else {"label": "Updating a country with the daily map files", "label_i18n": "Updating a country with the daily map files"}
+            ),
+            "state": state,
+            "progress": (
+                {"done": j["applied"], "total": j["owed"], "unit": "files"} if j.get("owed") else None
+            ),
+            "actions": [],
+        }
+        if j["state"] == "done" and j.get("outcome") in OUTCOME_SENTENCES:
+            row["detail"] = OUTCOME_SENTENCES[j["outcome"]]
+        rows.append(row)
+    return rows
+
+
 def _collect_job() -> dict | None:
     from src.scheduler.runner import get_scheduler
 
@@ -907,6 +948,7 @@ def list_jobs() -> dict:
         jobs.append(j)
     jobs.extend(_dump_jobs())
     jobs.extend(_osm_jobs())
+    jobs.extend(_osm_update_jobs())
     jobs.extend(_folder_backup_jobs())
     jobs.extend(_volume_backup_jobs())
     jobs.extend(_import_queue_jobs())

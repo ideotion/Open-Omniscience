@@ -178,14 +178,18 @@ def test_the_three_coverage_states_are_three_different_facts():
         LawDocument(jurisdiction="fr", title="Loi", url="https://law.example/fr", country="fr"),
     ])
     s.commit()
-    by_jur = {j["jurisdiction"]: j["coverage"]
-              for j in law_coverage_report(s, enumerations=_ENUM)["jurisdictions"]}
+    report = law_coverage_report(s, enumerations=_ENUM)
+    by_jur = {j["jurisdiction"]: j["coverage"] for j in report["jurisdictions"]}
     assert by_jur["tl"]["state"] == COVERAGE_NO_COUNTRY
     assert by_jur["uk"]["state"] == COVERAGE_NO_ENUMERATION
     assert by_jur["fr"]["state"] == COVERAGE_UNIT_UNDECLARED
     assert len({c["state"] for c in by_jur.values()}) == 3
+    # The reason is stated ONCE per state (the same paragraph per jurisdiction was the report's largest repeat), keyed by
+    # the state each jurisdiction names, and only for the states that are used.
+    assert set(report["coverage_reasons"]) == {c["state"] for c in by_jur.values()}
     for cov in by_jur.values():
-        assert cov["reason"], "every state carries its own reason"
+        assert report["coverage_reasons"][cov["state"]], "every state carries its own reason"
+        assert "reason" not in cov, "not repeated per jurisdiction"
         assert cov["official_enumeration"] == [] or cov["state"] == COVERAGE_UNIT_UNDECLARED
 
 

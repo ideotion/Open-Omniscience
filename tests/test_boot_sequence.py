@@ -147,23 +147,55 @@ def test_the_flag_comes_down_even_when_the_warm_step_raises(seq):
     assert bs.warm_running() is False
 
 
+def _own_clock(monkeypatch, ticks, then):
+    """Replace the process-wide ``time.monotonic`` (``bs.time`` is the ``time`` module) with a clock that hands THIS thread the readings in ``ticks`` in
+    order, then ``then`` for ever. Any other thread of the process gets the real clock and costs the test no reading: the write gate's watchdog
+    (``src/database/writer.py``, an ambient daemon thread) wakes every 15 s and reads the clock twice, and when that fell inside the few milliseconds
+    of the run every later reading moved up by two, so the slow step landed on the step before the one that was slow (seen once on a Core-only CI
+    shard: "boot step article-indexes took 300 s" in the test that expects warm-cache)."""
+    real = bs.time.monotonic
+    own = threading.get_ident()
+    seq_clock = iter(ticks)
+    last = [then]
+
+    def clock():
+        if threading.get_ident() != own:
+            return real()
+        last[0] = next(seq_clock, last[0])
+        return last[0]
+
+    monkeypatch.setattr(bs.time, "monotonic", clock)
+
+
 def test_a_slow_step_is_a_warning_naming_what_waited_behind_it(seq, monkeypatch, caplog):
     _log, step = seq
     # the check step (nothing armed), the repair step (nothing damaged) and the index step (nothing to build) read 0.0
     # twice each, the warm step took SLOW_STEP_S; every later reading is the same instant
-    ticks = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, bs.SLOW_STEP_S]
-    seq_clock = iter(ticks)
-    last = [bs.SLOW_STEP_S]
-
-    def clock():
-        last[0] = next(seq_clock, last[0])  # never runs out: another thread may read the clock too
-        return last[0]
-
-    monkeypatch.setattr(bs.time, "monotonic", clock)
+    _own_clock(monkeypatch, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, bs.SLOW_STEP_S], bs.SLOW_STEP_S)
     with caplog.at_level(logging.WARNING, logger=bs.__name__):
         bs.run(step("warm"))
     assert any("warm-cache took" in r.message and "the rollup build and the re-index waited" in r.message
                for r in caplog.records)
+
+
+def test_a_clock_read_by_another_thread_does_not_move_the_slow_step(seq, monkeypatch, caplog):
+    """The step that was slow is named whatever another thread reads the clock meanwhile: here a thread reads it twice inside the index step."""
+    _log, step = seq
+    _own_clock(monkeypatch, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, bs.SLOW_STEP_S], bs.SLOW_STEP_S)
+    read = []
+
+    def _index_step_with_a_stranger():
+        stranger = threading.Thread(target=lambda: read.extend([bs.time.monotonic(), bs.time.monotonic()]), name="oo-test-clock-reader")
+        stranger.start()
+        stranger.join(timeout=10)
+        raise bs._Skipped
+
+    monkeypatch.setattr(bs, "_article_indexes", _index_step_with_a_stranger)
+    with caplog.at_level(logging.WARNING, logger=bs.__name__):
+        bs.run(step("warm"))
+    assert len(read) == 2, "the stranger did read the clock"
+    assert any("warm-cache took" in r.message for r in caplog.records)
+    assert not any("article-indexes took" in r.message for r in caplog.records)
 
 
 # ----------------------------------------------------------------------------- what the bundle shows

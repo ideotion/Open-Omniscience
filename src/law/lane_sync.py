@@ -27,6 +27,13 @@ because both are claims a reader would act on:
 
 Both are visible in the reader as the states they are, so an operator can correct them
 rather than discovering later that the app decided for them.
+
+THE ONE WAY TO SAY MORE IS TO DECLARE IT (v0.6.0 C-L2, ``src/law/declared.py``). A
+catalogue ``documents:`` row may state its identity, ``doc_type`` and ``translation_kind``;
+this module looks the row up by ``(jurisdiction, url)`` and records what it states. That is
+how the six language versions of one treaty, which publish no number a parser can read,
+come to share ONE identity -- by an operator's written statement, never by inference from
+the URL. A row that declares nothing is recorded exactly as before.
 """
 
 from __future__ import annotations
@@ -35,7 +42,8 @@ import logging
 from typing import TYPE_CHECKING
 
 from src.catalog.countries import country_display_code
-from src.law.catalog import source_for_url
+from src.law.catalog import load_legal_catalog, source_for_url
+from src.law.declared import Declared, declared_for
 from src.law.model import (
     LawModelError,
     ensure_identity,
@@ -57,10 +65,17 @@ _LOG = logging.getLogger(__name__)
 OUTCOMES: tuple[str, ...] = ("recorded", "no-lane-key", "no-jurisdiction", "refused", "failed")
 
 
-def _identity_inputs(doc: LawDocument, parsed: object | None) -> tuple[str, str, str, str]:
+def _identity_inputs(
+    doc: LawDocument, parsed: object | None, declared: Declared | None = None
+) -> tuple[str, str, str, str]:
     """``(scheme, value, jurisdiction_alpha3, jurisdiction_level)`` for one document.
 
-    The scheme is the publisher's own identifier where the adapter read one, and
+    A DECLARED identity wins: the catalogue row states which law this document is a version
+    of, and that statement is the only thing that can align versions whose bodies carry no
+    number (it also wins over a number the adapter read, so one document cannot change
+    identity between passes depending on whether a parse succeeded).
+
+    Otherwise the scheme is the publisher's own identifier where the adapter read one, and
     ``local`` otherwise. A ``local`` identity is keyed on the document's OFFICIAL URL,
     which is the only stable publisher-scoped string a text-only source offers — and it
     is provisional by construction, which is what ``model.remint_identity`` exists for:
@@ -74,6 +89,9 @@ def _identity_inputs(doc: LawDocument, parsed: object | None) -> tuple[str, str,
         # The World Bank code this app already uses for the EU (`SPECIAL_ALPHA3`), so
         # the law model does not invent a second convention for the same body.
         level = "supranational"
+
+    if declared is not None and declared.has_identity:
+        return str(declared.scheme), str(declared.value), alpha3, level
 
     number = getattr(parsed, "document_number", None)
     year = getattr(parsed, "year", None)
@@ -114,7 +132,20 @@ def record_document(
         )
         return "no-jurisdiction"
 
-    scheme, value, _alpha3, level = _identity_inputs(doc, parsed)
+    # One catalogue read serves both lookups below (the declaration and the licence). An unreadable
+    # catalogue leaves `catalog` as None, which `source_for_url` re-reads INSIDE the guarded block --
+    # the same failure path, and the same "failed" outcome, as before this lookup existed.
+    try:
+        catalog = load_legal_catalog()
+    except Exception:  # noqa: BLE001 - re-raised by the guarded read below, which turns it into the "failed" outcome
+        catalog = None
+    try:
+        declared = declared_for(catalog, jurisdiction=doc.jurisdiction, url=doc.url)
+    except Exception as exc:  # noqa: BLE001 - "a lane failure never breaks tracking"; an unreadable declaration is undeclared
+        log_failure(_LOG, f"law document {doc.id}: catalogue declaration unreadable; recorded undeclared", exc, level=logging.WARNING)
+        declared = None
+
+    scheme, value, _alpha3, level = _identity_inputs(doc, parsed, declared)
     if not value:
         _LOG.warning("law document %s states no identifier and has no URL", doc.id)
         return "no-jurisdiction"
@@ -134,7 +165,9 @@ def record_document(
                 scheme=scheme,
                 jurisdiction_alpha3=alpha3,
                 value=value,
-                doc_type="unspecified",
+                # `None` = this row states no category (see `ensure_identity`); it is NOT "unspecified", which a
+                # row may declare outright to take a category back.
+                doc_type=(declared.doc_type if declared is not None else None),
                 jurisdiction_level=level,
                 enacted_on=getattr(doc, "enacted_on", None),
             )
@@ -143,13 +176,15 @@ def record_document(
             # this must never do is invent one, so a source that states no licence yields
             # `unknown` and the reader says "licence not recorded" rather than implying
             # somebody read the terms of this particular document.
-            source = source_for_url(doc.official_url or doc.url)
+            source = source_for_url(doc.official_url or doc.url, catalog)
             meta = register_document(
                 session,
                 lane_key=lane_key,
                 identity=identity,
                 language=doc.language or "und",
-                translation_kind="unrecorded",
+                translation_kind=(
+                    declared.translation_kind if declared is not None and declared.translation_kind else "unrecorded"
+                ),
                 title=doc.title,
                 licence_id=str((source or {}).get("licence") or "unknown"),
                 source_authority=str((source or {}).get("name") or "") or None,

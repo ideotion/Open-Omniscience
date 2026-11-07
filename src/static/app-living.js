@@ -155,6 +155,60 @@
       return { title: t("Page walk"), facts };
     }
 
+    // Per-edition coverage (v0.6 row D, S06-03 S1 + S3): pages seen of the edition's OWN article count, the full-text range, the last
+    // event and the gaps by reason. Counts as "N of M", never a bar or a score; the located-share row says why it is empty.
+    function livingCoverageGroup(src, t, tf) {
+      const c = src.coverage || {};
+      if (c.measured !== true) return { title: t("Edition coverage"), facts: _livingUnmeasured(c, t) };
+      const facts = [];
+      const eds = c.editions || [];
+      // The ratio sums only the editions that have BOTH figures: a numerator from an edition with no total would pass a denominator that
+      // leaves it out. An edition the walk never touched (pages_seen null) adds nothing and is said so on its own row, never as 0.
+      const both = eds.filter((e) => e.has_run && typeof e.pages_seen === "number" && typeof e.edition_articles === "number");
+      const seenAll = eds.reduce((n, e) => n + (e.has_run && typeof e.pages_seen === "number" ? e.pages_seen : 0), 0);
+      const noTotal = eds.filter((e) => e.has_run && typeof e.edition_articles !== "number").length;
+      facts.push({ label: t("All editions"),
+        value: both.length
+          ? tf("{n} of {m} pages seen", { n: _livingCount(both.reduce((n, e) => n + e.pages_seen, 0)),
+              m: _livingCount(both.reduce((n, e) => n + e.edition_articles, 0)) })
+          : (eds.some((e) => e.has_run && typeof e.pages_seen === "number")
+            ? tf("{n} pages seen, total unknown", { n: _livingCount(seenAll) }) : t("Not measured yet")),
+        hover: noTotal > 0
+          ? tf("{n} editions have no article count yet; their pages are left out of both figures.", { n: _livingCount(noTotal) })
+          : t("Pages the walk listed, of the editions' own article counts.") });
+      for (const e of eds) {
+        const code = (typeof ooLangCode === "function" ? ooLangCode(e.edition) : "") || String(e.edition);
+        const name = typeof ooLangName === "function" ? ooLangName(e.edition, "") : "";
+        let value;
+        let hover = t("The edition counts its articles its own way, so pages seen can pass its total. A page promoted from the second tier to the first may be counted twice, so the full-text figure is a range.");
+        if (!e.has_run) {
+          value = t("No run yet");
+        } else {
+          if (typeof e.pages_seen !== "number") value = t("The walk has not run for this edition.");
+          else if (typeof e.edition_articles === "number") {
+            value = tf("{n} of {m} pages seen", { n: _livingCount(e.pages_seen), m: _livingCount(e.edition_articles) });
+          } else value = tf("{n} pages seen, total unknown", { n: _livingCount(e.pages_seen) });
+          const ft = e.full_text || {};
+          if (typeof ft.hot_pages_with_text === "number") {
+            if (typeof ft.warm_pages_with_text === "number") {
+              const lo = Math.max(ft.hot_pages_with_text, ft.warm_pages_with_text);
+              const hi = ft.hot_pages_with_text + ft.warm_pages_with_text;
+              hover += " " + tf("Full text held for between {lo} and {hi} pages.", { lo: _livingCount(lo), hi: _livingCount(hi) });
+            } else if (ft.hot_pages_with_text > 0) {
+              hover += " " + tf("Full text held for at least {n} pages; the second tier has not run.", { n: _livingCount(ft.hot_pages_with_text) });
+            }
+          }
+          hover += " " + tf("Last event: {when}.", { when: e.last_event_unreadable ? t("Could not be read") : livingWhen(e.last_event_recorded_at, t) });
+          const g = e.gaps || {};
+          if (g.total > 0) hover += " " + tf("{n} stretches the lane did not see.", { n: _livingCount(g.total) });
+        }
+        facts.push({ label: code, value, hover: (name && name !== code ? ooLabelText(name, hover) : hover) });
+      }
+      facts.push({ label: t("Addresses located"), value: t("Not measured yet"),
+        hover: t("Counting addresses found, located and outside your OSM countries needs the address extractor and the local OSM address index, which this build does not have yet. A zero would read as none found; nothing has looked.") });
+      return { title: t("Edition coverage"), facts };
+    }
+
     // Q707's WARM tier (S05-06's S1): the newest text of every OTHER page the stream reports
     // changed, latest + previous (Q710). Counts only. The share of the budget it leaves to
     // the followed pages is a proposed default, and the hover says so.
@@ -293,6 +347,7 @@
         { title: t("Live stream"), facts: stream },
         livingWarmGroup(src, t, tf),
         livingWalkGroup(src, t, tf),
+        livingCoverageGroup(src, t, tf),
         { title: t("Pages you track"), facts: tracked },
         livingStorageGroup(src.storage, t),
       ];
@@ -315,7 +370,7 @@
       return [{ title: t("Law tracker"), facts }, livingStorageGroup(src.storage, t)];
     }
 
-    function livingMapGroups(src, t) {
+    function livingMapGroups(src, t, tf) {
       const m = src.maps || {};
       let facts;
       if (m.measured !== true) {
@@ -334,14 +389,43 @@
             hover: t("A map extract carries the date of its data in its own header, which the app does not read yet. The date the file was written here is a different fact, so it is not shown in its place.") },
         ];
       }
-      return [{ title: t("Map regions"), facts }, livingStorageGroup(src.storage, t)];
+      return [{ title: t("Map regions"), facts }, livingDailyGroup(src.daily, t, tf), livingStorageGroup(src.storage, t)];
+    }
+
+    // The OSM lane's daily change files (S06-01 S5): counts and the newest file's own date, then every re-baseline as a dated
+    // event. A figure the lane could not give is "Not recorded" with the reason on hover, never 0 (a 0 reads as "reached nothing").
+    function livingDailyGroup(d, t, tf) {
+      const title = t("Daily change files");
+      if (!d || d.measured !== true) return { title, facts: _livingUnmeasured(d || {}, t) };
+      const why = t("This lane was cut by an older build and lacks the table this figure is read from. Cutting a country again creates it.");
+      const num = (v) => (typeof v === "number"
+        ? { value: String(v) } : { value: t("Not recorded"), hover: why });
+      const events = d.rebaselines || [];
+      const rows = events.map((e) => `<div>${esc(livingWhen(e.detected_at, t))} \u00b7 ${ooCountryCell(e.alpha3)}</div>`);
+      if (d.rebaselines_not_shown > 0) rows.push(`<div class="muted">${esc(tf("{n} older events are not shown.", { n: String(d.rebaselines_not_shown) }))}</div>`);
+      return { title, facts: [
+        { label: t("Countries cut"), value: String(d.countries_cut) },
+        { label: t("Reached by the daily files"), value: String(d.countries_updated) },
+        { label: t("Change files applied"), ...num(d.files_applied) },
+        { label: t("Newest change file"),
+          value: d.newest_file_at || !(d.countries_updated > 0) ? livingWhen(d.newest_file_at, t) : t("Not recorded"),
+          hover: t("The date inside the newest change file applied to any country, not the day it was applied here.") },
+        { label: t("Re-baselines"), ...num(d.rebaselines_total),
+          hover: t("The mirror no longer held the change files a country needed, so it was cut again from a fresh extract. Each one is listed below with its date.") },
+        { label: t("Cut again by hand"), ...num(d.hand_recuts),
+          hover: t("Countries you cut again yourself instead of updating them. Counted apart: it was your choice, not a gap in the mirror's files.") },
+        typeof d.rebaselines_total !== "number"
+          ? { label: t("Re-baseline events"), value: t("Not recorded"), hover: why }
+          : { label: t("Re-baseline events"), html: true, value: rows.length ? rows.join("") : esc(t("None")),
+              hover: t("Dated by when this machine found the gap, newest first.") },
+      ] };
     }
 
     function livingGroupsFor(src, t, tf) {
       if (!src) return [];
       if (src.kind === "wiki") return livingWikiGroups(src, t, tf);
       if (src.kind === "law") return livingLawGroups(src, t);
-      if (src.kind === "osm") return livingMapGroups(src, t);
+      if (src.kind === "osm") return livingMapGroups(src, t, tf);
       return [];
     }
 
@@ -641,6 +725,7 @@
       _wireLawEvolution();
       loadLawWeek();
       loadLivingLawDocs();
+      loadLawFloor();
       loadLawAmendMap();
     }
     async function loadLivingLaw() {
@@ -785,6 +870,116 @@
       try { _lawDocsLast = await api("/api/law/documents"); renderLivingLawDocs(); }
       catch (e) { _lawDocsLast = null; box.innerHTML = _livingFailHtml(e.message, _livingT()); }
     }
+    // -- the language coverage floor (v0.6.0 row C, S1; Q912): where each floor country stands --
+    // Every country in the dated floor file (all three bases counted and labelled) is in ONE of four states, never a
+    // blank: "No eligible source" is a state, the one that says research is owed. Counts and lists only -- a share of the
+    // floor would be a coverage claim the report refuses to make. zh is its own line (the standing Q911 emphasis).
+    const _LAW_FLOOR_ORDER = ["tracked", "verified-not-yet-tracked", "unverified", "no-eligible-source", "unchecked"];
+    function lawFloorStateWords(state, t) {
+      if (state === "tracked") return t("Tracked here");
+      if (state === "verified-not-yet-tracked") return t("Verified, not tracked yet");
+      if (state === "unverified") return t("Not verified");
+      if (state === "no-eligible-source") return t("No eligible source");
+      if (state === "unchecked") return t("Not looked up");
+      return String(state); // a state this build does not know is shown as sent, never mapped onto the nearest known word
+    }
+    function lawFloorStateWhy(state, t) {
+      if (state === "tracked") return t("This install holds at least one law document that states this country.");
+      if (state === "verified-not-yet-tracked") return t("A law source is listed for this country and a researcher or this app recorded a check of it, but no document is tracked yet.");
+      if (state === "unverified") return t("A law source is listed for this country and nothing recorded a check of it.");
+      if (state === "no-eligible-source") return t("The catalogue lists no law source for this country yet: research to do, not a statement that none exists.");
+      if (state === "unchecked") return t("The law catalogue could not be read, so this country was not looked up.");
+      return "";
+    }
+    function lawFloorBasisWords(basis, t) {
+      if (basis === "official") return t("official language");
+      if (basis === "de-facto") return t("de-facto language");
+      if (basis === "regional") return t("regional language");
+      return String(basis);
+    }
+    // The states a payload carries, in the known order and then any this build does not know, in the order sent: a state the
+    // client cannot name is still a state, and dropping it would leave counts that no longer add up to the countries.
+    // ``unchecked`` is shown only when something is in it (it exists only when the catalogue could not be read).
+    function lawFloorStatesIn(sizes) {
+      if (!sizes || typeof sizes !== "object") return [];
+      const known = _LAW_FLOOR_ORDER.filter((st) => st in sizes && (sizes[st] > 0 || st !== "unchecked"));
+      return known.concat(Object.keys(sizes).filter((st) => !_LAW_FLOOR_ORDER.includes(st)));
+    }
+    function lawFloorCountsHtml(counts, t) {
+      return lawFloorStatesIn(counts)
+        .map((st) => `<span title="${esc(lawFloorStateWhy(st, t))}">${esc(lawFloorStateWords(st, t))} <b>${esc(String(counts[st]))}</b></span>`)
+        .join(" · ");
+    }
+    function livingLawFloorHtml(d, t, tf) {
+      const f = d && d.floor;
+      if (!f) return `<div class="muted">${esc(t("This build reports no language floor."))}</div>`;
+      if (!f.by_state || !f.languages) {
+        return `<div class="muted">${esc(t("The language floor could not be read, so nothing is counted."))}${f.reason ? " " + esc(String(f.reason)) : ""}</div>`;
+      }
+      const status = String(f.verification_status || "");
+      const caveat = /^drafted/.test(status)
+        ? `<p class="card-caveat">${esc(t("The list of countries was drafted from memory and has not been checked online yet, so these counts run over a list that is not settled."))}</p>`
+        : `<p class="hint">${esc(status ? tf("Status of the list of countries: {status}", { status }) : t("The list of countries states no verification status."))}</p>`;
+      const unchecked = f.state !== "checked"
+        ? `<p class="card-caveat">${esc(t("The law catalogue could not be read, so only what is tracked here is counted."))}${f.reason ? " " + esc(String(f.reason)) : ""}</p>` : "";
+      const head = `<p class="hint">${esc(tf("{n} countries on the floor · list dated {date}", { n: String(f.countries), date: f.as_of || "—" }))}</p>`;
+      const stateOf = {};
+      const sizes = {};
+      for (const st of Object.keys(f.by_state)) {
+        const members = Array.isArray(f.by_state[st]) ? f.by_state[st] : [];
+        sizes[st] = members.length;
+        for (const cc of members) stateOf[cc] = st;
+      }
+      const tally = lawFloorStatesIn(sizes)
+        .map((st) => `<div class="living-row"><span title="${esc(lawFloorStateWhy(st, t))}">${esc(lawFloorStateWords(st, t))}</span>`
+          + ` <b>${esc(String(sizes[st]))}</b></div>`).join("");
+      // A state this build does not know sorts after the known ones, never first.
+      const rank = (cc) => { const i = _LAW_FLOOR_ORDER.indexOf(stateOf[cc]); return i < 0 ? _LAW_FLOOR_ORDER.length : i; };
+      const langRow = (r) => {
+        const members = [];
+        for (const basis of ["official", "de-facto", "regional"]) for (const cc of (r[basis] || [])) members.push({ cc, basis });
+        members.sort((a, b) => rank(a.cc) - rank(b.cc) || (a.cc < b.cc ? -1 : 1));
+        const contested = new Set(r.contested || []);
+        const list = members.map((m) => `<div>${ooCountryCell(m.cc)} <span class="muted">${esc(lawFloorBasisWords(m.basis, t))}`
+          + `${contested.has(m.cc) ? " · " + esc(t("contested")) : ""}</span> · ${esc(lawFloorStateWords(stateOf[m.cc], t))}</div>`).join("");
+        const name = typeof ooLangName === "function" ? ooLangName(r.language, r.language) : r.language;
+        const openAttr = r.language === "zh" ? " open" : ""; // a flag for the markup, not a language value shown on screen
+        return `<details class="living-row"${openAttr}><summary>${ooLangCell(r.language)} ${esc(name)} · `
+          + `${lawFloorCountsHtml(r.states, t)} · <span class="muted">${esc(tf("{n} tracked documents in this language", { n: String(r.documents || 0) }))}</span></summary>`
+          + `<div class="living-floor-countries">${list}`
+          + `${r.contested && r.contested.length ? `<p class="hint">${esc(t("A contested row is counted and labelled, not dropped: the language's status in that country is disputed."))}</p>` : ""}`
+          + `</div></details>`;
+      };
+      // zh first and on its own line, with the territories its seed list names beside it (they are not on the floor).
+      const rows = f.languages.slice().sort((a, b) => (b.language === "zh") - (a.language === "zh"));
+      const beyond = f.zh_beyond_floor
+        ? Object.keys(f.zh_beyond_floor).map((cc) => `${ooCountryCell(cc)} ${esc(lawFloorStateWords(f.zh_beyond_floor[cc], t))}`).join(" · ") : "";
+      const zhNote = beyond
+        ? `<p class="hint">${ooLabelHtml(esc(t("Named by the Chinese seed list but not on the floor (the floor excludes territories)")), beyond)}</p>` : "";
+      const many = f.many_country_sources
+        ? Object.keys(f.many_country_sources).reduce((n, k) => n + Object.keys(f.many_country_sources[k] || {}).length, 0) : 0;
+      const unplaced = f.unplaced_documents ? Object.keys(f.unplaced_documents).reduce((n, k) => n + (Number(f.unplaced_documents[k]) || 0), 0) : 0;
+      const notes = `<p class="hint">${esc(t("Each country is in exactly one state. Only law sources count: an IP office or a court-decision site does not. Within a state the countries are listed by code; ordering by population reached waits for a dated population table. These are counts of countries, never a share of anything."))}</p>`
+        + (many ? `<p class="hint">${esc(tf("{n} sources that serve many countries at once are credited to no single country.", { n: String(many) }))}</p>` : "")
+        + (unplaced ? `<p class="hint">${esc(tf("{n} tracked documents state no country and are credited to none.", { n: String(unplaced) }))}</p>` : "");
+      return caveat + unchecked + head + tally + rows.map(langRow).join("") + zhNote + notes;
+    }
+    let _lawFloorLast = null;
+    function renderLawFloor() {
+      const box = $("living-law-floor");
+      if (!box || !_lawFloorLast) return;
+      box.innerHTML = livingLawFloorHtml(_lawFloorLast, _livingT(), _livingTf());
+    }
+    async function loadLawFloor() {
+      const box = $("living-law-floor");
+      if (!box) return;
+      try {
+        // The diagnostics member's own report, read from this machine (loopback, no egress): one source of truth.
+        const env = await api("/api/diagnostics/law-coverage");
+        _lawFloorLast = { floor: ((env && env.data) || {}).floor };
+        renderLawFloor();
+      } catch (e) { _lawFloorLast = null; box.innerHTML = _livingFailHtml(e.message, _livingT()); }
+    }
     function openLawVersions(id) {
       const host = $("law-tc-versions");
       if (!host || typeof ooVersionReader !== "function") return;
@@ -868,7 +1063,7 @@
     }
 
     function repaintLawEvolutionFromCache() {
-      renderLawWeek(); renderLivingLawDocs(); renderLawPit(); renderLawTopic();
+      renderLawWeek(); renderLivingLawDocs(); renderLawFloor(); renderLawPit(); renderLawTopic();
       const tc = $("law-tc-title");
       if (tc && _lawTc && !_lawTc.title) tc.textContent = "";
       void renderLawAmendMap();

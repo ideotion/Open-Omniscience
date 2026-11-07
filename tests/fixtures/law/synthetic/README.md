@@ -37,3 +37,27 @@ whole-document byte delta could not stand in for it.
 The `zxx-fr` language tag is deliberate: `zxx` is the ISO 639-2 code for "no linguistic
 content", so this tag cannot be mistaken for real French any more than `ZZZ` can be
 mistaken for a real country.
+
+## `treaty/` — one synthetic treaty in six language versions (v0.6.0 C-L2)
+
+The `ZZZ` Act above is aligned across languages because its bodies carry the same
+`act-number`. A treaty page offers no number a parser can read, so its language versions
+are aligned by a **declared identity** in the catalogue (`src/law/declared.py`). These
+files run that path without a socket.
+
+| file | what it is |
+| --- | --- |
+| `treaty/catalogue.yml` | A synthetic `documents:` catalogue, jurisdiction `INT`. Six rows declare one identity (`act-number` `mtdsg:xviii-1`, `doc_type: treaty`); a seventh declares a **different** treaty; an eighth declares nothing. |
+| `treaty/treaty.{en,fr,es,ru,ar,zh}.html` | The six language bodies, plain HTML (so the tracker reads no number from them, which is the point). |
+
+Everything here is **invented**: the hosts are on the reserved `.test` TLD
+(`tests/test_law_declared_identity.py` fails if a real host ever appears), the language tags are
+`zxx-<lang>` (`zxx` is ISO 639-2 for "no linguistic content", so none of them can be mistaken
+for real French, Arabic or Chinese), and the sentences were written by the model that wrote the
+test, **not reviewed by a native speaker** -- they only need to be six different texts in six
+scripts, one of them right-to-left. They are not the text of any real treaty, and no live UN
+Treaty Collection or WIPO Lex URL appears anywhere in this tree: live ingestion waits on the
+operator's verified URLs.
+
+The translation kinds are deliberately mixed (`original`, `official` x2, `intergovernmental`,
+and two rows that state none and so record as `unrecorded`) so the test sees every state arrive.

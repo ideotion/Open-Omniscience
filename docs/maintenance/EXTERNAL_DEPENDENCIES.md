@@ -65,6 +65,9 @@ version, per platform+arch**. On a DuckDB bump:
 5. [ ] Update `pyproject.toml` `duckdb>=` **and** the registry `duckdb-crypto-extension`
    `{floor, verified}` **together** (the test `test_duckdb_floor_matches_pyproject`
    enforces they match) + bump `columnar.STORE_SCHEMA_VERSION` if the table shapes changed.
+   Two CI jobs run the columnar test files: `columnar` resolves the newest DuckDB the floor admits and `columnar-duckdb1`
+   installs `duckdb<2`, so both lines are exercised; a floor at 2.x, or a ceiling, changes what the second job means
+   (`tests/test_version_floor_legs.py` fails until it is read again).
 6. [ ] Re-bundle the **D1 persisted-store** `httpfs` binaries (S3.1): build each per-OS/arch
    binary with statically-linked OpenSSL at the new DuckDB version, place them in
    `src/analytics/duckdb_ext/`, and fill the `duckdb-httpfs-extension` registry entry's
@@ -131,7 +134,9 @@ the encrypted round trip — that in-lane checksum is **never** written back int
   2.0.31 (move them together, and `requirements.lock` if its pin falls below the floor).
 - **Natural Earth geometry** — refresh only on a data correction (changes rarely).
 - **CI action SHAs + pinned QA tools** (`mypy`/`bandit`/`pip-audit`/`ruff`) — let
-  Dependabot bump; re-pin to the new SHA with its tag comment.
+  Dependabot bump; re-pin to the new SHA with its tag comment. `mypy` and `ruff` are exact `==`
+  pins in `pyproject.toml` (`tests/test_version_floor_legs.py` keeps them exact): their ratchet counts are
+  numbers about one release, so the bump PR's own run re-measures and the ceiling moves in the same PR.
 - **urllib3** (`urllib3-log-shapes`) — the HTTP library under `requests`. `src/ingest/urllib3_log.py` keeps the
   request target (the signature of a signed storage download) and anything else a record carries out of urllib3's own log lines:
   it withholds a line it does not know, and in a line it knows it reduces every argument that is not a number or text to its
@@ -154,15 +159,19 @@ the encrypted round trip — that in-lane checksum is **never** written back int
   Then move the registry `{verified, current}` together. Record only a release a test run exercised: the `test` job resolves the newest
   release, no job runs the floor (the lock file pins it; `lockfile-install` only imports the app), so the floor is verified by a hand run
   and the entry says so.
-- **starlette** (`starlette-gzip-flush`) — fastapi's web layer, named in `pyproject.toml` (`starlette>=1.5.0`) because the app leans on one
-  behaviour of it. The whole API sits behind `GZipMiddleware` (`src/api/main.py`), and the AI token streams are `application/x-ndjson`, which
+- **starlette** (`starlette-gzip-flush`) — fastapi's web layer, named in `pyproject.toml` (`starlette>=1.8.0`) because the app leans on two
+  behaviours of it; the floor is the later release. (1) From 1.8.0 a `FileResponse` stops at a client's `http.disconnect` on a server that
+  speaks ASGI spec < 2.4 (uvicorn speaks 2.3), so a closed tab ends the database backup stream instead of leaving it reading the snapshot
+  to its end; `tests/test_version_floor_legs.py` drives the real response and fails on 1.7.0. Every test that hands a response an
+  `http.disconnect` is a test of the installed release, so that file also pins the list of files that name one: a new one fails by name until
+  it is run on the floor wheel and named in the registry entry. (2) The whole API sits behind `GZipMiddleware` (`src/api/main.py`), and the AI token streams are `application/x-ndjson`, which
   gzip compresses: a release that does not flush the deflate stream per chunk holds a streamed reply back until several kilobytes have piled
   up (the reply hangs, then arrives at once, with no error anywhere). 1.5.0 is the first release that calls `flush(Z_SYNC_FLUSH)` on every
   chunk with `more_body`; 1.0.0 to 1.4.1 do not. `tests/test_sources_route_and_compression.py::test_gzip_flushes_every_chunk_of_a_streaming_response`
   measures it (five chunks in, five decodable chunks out), and `tests/test_external_freshness.py` keeps the pyproject floor, the registry
   and `requirements.lock` from drifting apart. There is no ceiling. A new release is run through that test and the API route tests (for a
   release that is not the newest on hand, put its unpacked wheel first on `PYTHONPATH`); then move the registry `{verified}` and
-  `upstream_check.current` together. The floor is verified by a hand run on the 1.5.0 wheel: the `test` job resolves the newest release, and
+  `upstream_check.current` together. The floor is verified by a hand run on the 1.8.0 wheel: the `test` job resolves the newest release, and
   `lockfile-install` only imports the app.
 
 ## Clearing an `on-security` artifact without re-vendoring (`reviewed_through`)
