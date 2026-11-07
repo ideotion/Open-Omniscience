@@ -136,3 +136,26 @@ def test_the_constant_is_one_plain_line_the_script_can_rewrite():
 @pytest.mark.parametrize("name", ["configs/indexer_pin.json", "scripts/indexer_pin.py"])
 def test_the_pin_files_are_not_part_of_the_engine(name):
     assert name not in ei.engine_files(), "the police must not hash itself"
+
+
+WWW_PIN = ROOT / "configs" / "www_indexer_pin.json"
+
+
+def test_the_www_engine_files_have_not_moved_without_a_recorded_judgement():
+    """R415: the places-and-entities engine has its own pin and its own constant, policed the same way."""
+    pin = json.loads(WWW_PIN.read_text(encoding="utf-8"))
+    assert ei.www_code_digest() == pin["digest"], HOW.replace("indexer_pin.py", "indexer_pin.py --engine www")
+    assert pin["version"] == ei.WWW_INDEXER_VERSION
+
+
+def test_the_www_pin_script_check_agrees_with_the_test():
+    out = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "indexer_pin.py"), "--engine", "www", "--check"],
+        capture_output=True, text=True, cwd=ROOT,
+    )
+    assert out.returncode == 0, out.stdout + out.stderr
+
+
+def test_the_www_constant_is_one_plain_line_the_script_can_rewrite():
+    text = (ROOT / "src" / "analytics" / "engine_identity.py").read_text(encoding="utf-8")
+    assert len(re.findall(r"^WWW_INDEXER_VERSION = \d+$", text, re.M)) == 1
