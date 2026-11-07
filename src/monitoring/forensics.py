@@ -480,6 +480,24 @@ def note_stop_signal(name: str) -> None:
     _STOP_SIGNAL = name
 
 
+#: the only power events the sentinel carries (``win_power``): a phrase outside this set is dropped, so a damaged sidecar cannot inject text
+POWER_EVENT_KINDS = frozenset({"suspend", "resume"})
+
+
+def record_power_event(kind: str) -> None:
+    """Remember the LAST power event this session saw (a suspend or a resume) in the sentinel: one small field, replaced each time, never a
+    list. A session that dies while the machine is asleep (a cut power supply, a failed resume) leaves no other trace; the next boot's
+    end line carries this field so the end is attributed to the sleep rather than reported as unknown. Never raises."""
+    if kind not in POWER_EVENT_KINDS:
+        return
+    try:
+        state = _read_state() or {}
+        state["last_power_event"] = {"kind": kind, "at": _now()}
+        _write_state(state)
+    except Exception as exc:  # noqa: BLE001 - bookkeeping never gets in the way of a suspend
+        log_failure(_LOG, "could not record the power event", exc, level=logging.DEBUG)
+
+
 def record_shutdown_phase(phase: str, *, reason: str | None = None, facts: dict[str, Any] | None = None) -> None:
     """Advance the sentinel through the teardown (S0.2).
 
