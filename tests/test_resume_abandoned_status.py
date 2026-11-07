@@ -136,3 +136,18 @@ def test_a_shutdown_clears_the_record(sched, monkeypatch):
     R.cancel_pending_resume()
     assert R.resume_abandoned() is None
 
+
+
+def test_a_later_resume_whose_watcher_starts_retires_the_old_record(sched, monkeypatch):
+    """Pending and abandoned must never be reported together: the watcher of the later resume is waiting."""
+    real_watch = R._watch_for_resume
+    monkeypatch.setattr(R, "_watch_for_resume", _refuse_watcher)
+    with R.exclusive_window():
+        pass
+    assert R.resume_abandoned() is not None
+    monkeypatch.setattr(R, "_watch_for_resume", real_watch)
+    sched.running = True  # collection was running again before the next operation
+    with R.exclusive_window():
+        pass
+    assert R.resume_pending() is not None, "the later resume handed over to a watcher"
+    assert R.resume_abandoned() is None

@@ -3259,6 +3259,8 @@ def resume_after_exclusive_operation(
                 "stays stopped until it is started again (the Start button, or going online)"
             )
             return
+        else:
+            _clear_resume_abandoned()  # a watcher IS waiting now: an older abandonment would contradict ``resume_pending``
         _LOG.warning(
             "could not resume background collection after an exclusive operation yet "
             "-- the previous pass is still winding down; collection resumes on its own "
