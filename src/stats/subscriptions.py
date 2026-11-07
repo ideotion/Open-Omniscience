@@ -175,6 +175,11 @@ def refresh_due(
             refreshed += 1
             s.last_fetched_at = now_dt
             s.last_status = f"stored {tally['stored']} (new vintage)"
+            # ``store_figures`` flushes, and a flush takes the single-writer gate and keeps it to
+            # the end of the transaction, so without this commit the NEXT subscription's
+            # World Bank / Eurostat request (30 s timeout, up to 200 pages) would run with every
+            # other writer waiting. One unit, one commit -- as ``governments.py`` does per indicator.
+            session.commit()
         except Exception as exc:  # noqa: BLE001 - best-effort; record + continue
             errors += 1
             s.last_fetched_at = now_dt

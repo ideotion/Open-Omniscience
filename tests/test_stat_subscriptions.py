@@ -133,3 +133,52 @@ def test_refresh_is_best_effort_per_subscription(db):
     assert out["refreshed"] == 1 and out["errors"] == 1  # GOOD stored, BAD recorded
     statuses = {s["indicator"]: s["last_status"] for s in S.list_subscriptions(db)}
     assert "stored 1" in statuses["GOOD"] and statuses["BAD"].startswith("error:")
+
+
+def test_refresh_does_not_carry_the_write_gate_across_the_next_fetch(monkeypatch):
+    """H1-1: ``store_figures`` flushes (which takes the write gate and keeps it to the end of
+    the transaction), so the next subscription's request used to run with the gate held.
+    Probed on the REAL gate-wired ``SessionLocal``: while subscription 2's fetch is in flight
+    the gate is free, and a second thread can take it. The twin proves the writes still pass
+    THROUGH the gate (a never-taken gate would satisfy the first half just as well)."""
+    import threading
+
+    from src.database.session import init_db, session_scope
+    from src.database.writer import write_gate
+
+    init_db()
+    clear_kill_switch()
+    with session_scope() as s:
+        S.record_subscription(s, source="worldbank", indicator="H1.ONE", country="FR")
+        S.record_subscription(s, source="worldbank", indicator="H1.TWO", country="DE")
+
+    seen: list[tuple[str, bool, bool]] = []
+    grants_before = write_gate.stats()["grants"]
+
+    def getter(url):
+        second = "H1.TWO" in url
+        taken = None
+        if second:
+            held = write_gate.stats()["held"]
+
+            from src.database.writer import write_lock
+
+            result: list[bool] = []
+
+            def other_thread():
+                with write_lock(timeout=2):
+                    result.append(True)
+
+            t = threading.Thread(target=other_thread)
+            t.start()
+            t.join(5)
+            taken = bool(result)
+            seen.append((url, held, taken))
+        return _FakeResp(_wb_payload(1.0))
+
+    with session_scope() as s:
+        out = S.refresh_due(s, get=getter)
+    assert out["refreshed"] == 2
+    assert seen, "the second subscription's fetch never ran"
+    assert all(held is False and taken for _u, held, taken in seen)
+    assert write_gate.stats()["grants"] > grants_before  # the writes did go through the gate
