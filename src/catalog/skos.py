@@ -85,7 +85,7 @@ def parse_rdfxml(source: str | Path | BinaryIO) -> dict[str, Any]:
     except SkosError:
         raise
     except Exception as exc:  # defusedxml/ElementTree errors: named, not swallowed
-        raise SkosError(f"not parseable SKOS RDF/XML: {type(exc).__name__}: {exc}") from exc
+        raise SkosError(f"not parseable SKOS RDF/XML ({type(exc).__name__})") from None
     if not concepts:
         gaps.append({"kind": "empty_scheme", "detail": f"{n_seen} concept(s) seen, none with a label"})
     return {"concepts": concepts, "gaps": gaps, "n_seen": n_seen}
