@@ -25,3 +25,22 @@ def test_request_shutdown_arms_stop_on_confirm():
     assert r["ok"] is True
     assert armed == [0.0]  # the stop was scheduled exactly once, with our delay
     assert "shutting down" in r["detail"].lower()
+
+
+def test_stop_self_uses_a_graceful_signal_never_terminateprocess(monkeypatch):
+    """Windows os.kill(pid, SIGTERM) is TerminateProcess: no lifespan shutdown, the sentinel stays 'running' and the next boot reads the
+    in-app stop as an unclean end (field bundle 2026-11-07, 11 of 11 sessions). On Windows the stop must raise SIGINT (uvicorn's capture)."""
+    import signal
+
+    from src.safety import shutdown
+
+    calls: list = []
+    monkeypatch.setattr(shutdown.signal, "raise_signal", lambda s: calls.append(("raise", s)))
+    monkeypatch.setattr(shutdown.os, "kill", lambda pid, s: calls.append(("kill", s)))
+    monkeypatch.setattr(shutdown.os, "name", "nt")
+    shutdown.stop_self()
+    assert calls == [("raise", signal.SIGINT)]
+    calls.clear()
+    monkeypatch.setattr(shutdown.os, "name", "posix")
+    shutdown.stop_self()
+    assert calls == [("kill", signal.SIGTERM)]
