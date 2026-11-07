@@ -179,7 +179,12 @@ def test_refresh_does_not_carry_the_write_gate_across_the_next_fetch(monkeypatch
 
     with session_scope() as s:
         out = S.refresh_due(s, get=getter)
-    assert out["refreshed"] >= 2  # the suite database may hold other due subscriptions
+    # The suite database may hold other due subscriptions, so pin this test's own two rows.
+    with session_scope() as s:
+        mine = {r["indicator"]: r["last_status"] for r in S.list_subscriptions(s)
+                if r["indicator"] in ("H1.ONE", "H1.TWO")}
+    assert set(mine) == {"H1.ONE", "H1.TWO"}
+    assert all(v.startswith("stored") for v in mine.values()), mine
     assert seen, "the second subscription's fetch never ran"
     assert all(held is False and taken for _u, held, taken in seen)
     assert write_gate.stats()["grants"] > grants_before  # the writes did go through the gate
