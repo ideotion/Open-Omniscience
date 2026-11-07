@@ -657,6 +657,23 @@
         }
         return s;
       };
+      // The weighting stated ON a weighted figure (S06-04 S6): where the weights came from, how
+      // old they are, which members they cover, and which members the operator's dated table
+      // supplied. Visible, never behind a toggle (informed consent); absent for the unweighted ones.
+      const weightingLine = (r) => {
+        const w = r.weighting;
+        if (!w) return "";
+        const base = w.stated
+          ? _govTf("Weights: {source}, as of {as_of}. Covers {covered} of {total} members.",
+              {source: w.source, as_of: w.as_of || "—", covered: w.members_covered, total: w.members_total})
+          : _govTf("Weights: source not stated. Covers {covered} of {total} members.",
+              {covered: w.members_covered, total: w.members_total});
+        const tbl = (w.from_table && w.from_table.length && w.table)
+          ? " " + _govTf("{who} taken from the operator's population table ({source}, as of {as_of}).",
+              {who: _govNames(w.from_table).short, source: w.table.source || "—", as_of: w.table.as_of || "—"})
+          : "";
+        return `<div class="gov-strat-weighting card-caveat" title="${esc(_govNames(w.from_table || []).full)}">${esc(base + tbl)}</div>`;
+      };
       const refusalText = (r) => {
         // The partial-roster refusal is drawn from the coverage it describes, naming the
         // button below by its own label: the server's sentence is English and named the
@@ -707,7 +724,7 @@
             ? ` <span class="pill" title="${esc(t("A starting view, not a winner: the strategies answer different questions and are never ranked or blended."))}">${esc(t("opens here"))}</span>` : ""}</div>
           <div class="gov-strat-val">${esc(_govFmt(r.value, agg.unit))}</div>
           <div class="gov-strat-basis">${esc(r.basis === "exact" ? t("exact") : t("approximate"))}</div>
-          <div class="gov-strat-why">${esc(methodText(r))}</div></div>`;
+          <div class="gov-strat-why">${esc(methodText(r))}</div>${weightingLine(r)}</div>`;
       }).join("");
 
       // Ruling 47's corollary: the SPREAD rides beside every central figure, because a

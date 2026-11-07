@@ -1217,3 +1217,23 @@ artifacts:
       - "pyproject.toml dependencies sqlalchemy carries the same floor (2.0.31); requirements.lock pins a release at or above it (test-enforced)"
       - "requirements.lock pins a release the names test passes on (2.0.51 today)"
     last_verified: "2026-10-17"
+
+  - id: population-table
+    title: The operator's dated population table (weights for a population-weighted mean, slice S06-04 S6)
+    kind: dated-data
+    description: >
+      configs/population_table.json: {source, as_of, rows: {ALPHA2: population}}, read by
+      src/stats/population.py and used ONLY to fill the members the stored population series
+      (SP.POP.TOTL) lacks, with the source and date stated on the figure. OPERATOR DROP-IN: this
+      repository ships NO table (a population vintage is someone's published data with its own
+      terms and date); until the operator places one, this entry reads "not built yet" and a member
+      with no stored population stays a named gap. The vintage is the file's own as_of. The
+      24-month window is a proposed default, not a ruling.
+    upstream: the operator's chosen publisher (for example UN World Population Prospects or the World Bank)
+    fetched_from: a file the operator placed by hand; the app opens no connection for it
+    check_upstream: "the publisher's yearly release; replace the file and bump its as_of when it lapses"
+    license: "the publisher's terms, recorded by the operator beside the file; not redistributed by this repository"
+    pin: {path: configs/population_table.json, sha256: "", vintage_key: as_of, optional: true}
+    refresh: "place configs/population_table.json (source, as_of, rows) as described in src/stats/population.py"
+    freshness: {max_age_months: 24}
+    last_verified: "2026-11-07"

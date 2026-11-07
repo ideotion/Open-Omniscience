@@ -249,4 +249,44 @@ test("a group with no strategies at all renders no fabricated figure", () => {
   assert(/membership as of/.test(html), "but the roster is still stated");
 });
 
+test("a weighted figure states its weighting on its face: source, date, coverage, and the table's members", () => {
+  const w = {weight: "population", stated: true, source: "stored series SP.POP.TOTL", as_of: "2023",
+             members_total: 3, members_covered: 3, members_without_weight: [], from_table: ["lu"],
+             table: {source: "Test publisher 2024", as_of: "2024-07-01"}};
+  const html = render({
+    group: roster(),
+    aggregate: agg({strategies: {
+      mean: {label: "Mean of members", value: 81.2, basis: "exact", method_code: "members"},
+      population_weighted: {label: "Population-weighted mean", value: 81.9, basis: "approximate",
+                            method_code: "weighted_approx", weight: "population", weighting: w},
+    }}),
+  }, false);
+  assert(/Weights: stored series SP\.POP\.TOTL, as of 2023\. Covers 3 of 3 members\./.test(html),
+    "the weights' source, date and coverage must be on the figure");
+  assert(/taken from the operator's population table \(Test publisher 2024, as of 2024-07-01\)/.test(html),
+    "the members the operator's table supplied must be named with the table's source and date");
+  assert(/gov-strat-weighting card-caveat/.test(html) && !/hidden/.test(html.slice(html.indexOf("gov-strat-weighting"), html.indexOf("gov-strat-weighting") + 80)),
+    "the weighting is a visible caveat line, never behind a toggle");
+  const meanBlock = html.slice(html.indexOf("Mean of members"), html.indexOf("Population-weighted mean"));
+  assert(!/Weights:/.test(meanBlock), "an unweighted figure carries no weighting line");
+});
+
+test("a weighting nobody described reads 'source not stated', and a refusal names no invented source", () => {
+  const html = render({
+    group: roster(),
+    aggregate: agg({strategies: {
+      population_weighted: {label: "Population-weighted mean", value: 81.9, basis: "approximate",
+        method_code: "weighted_approx", weight: "population",
+        weighting: {weight: "population", stated: false, source: null, as_of: null,
+                    members_total: 3, members_covered: 3, members_without_weight: [], from_table: [], table: null}},
+      gdp_weighted: {label: "GDP-weighted mean", refused_code: "missing_weight", weight: "gdp", missing_weight: ["it"],
+                     refused: "1 member(s) reported a value but have no gdp weight (it)."},
+    }}),
+  }, false);
+  assert(/Weights: source not stated\. Covers 3 of 3 members\./.test(html), "an undescribed weighting is said to be undescribed");
+  assert(!/table \(/.test(html), "no table is named when none supplied a member");
+  const gdp = html.slice(html.indexOf("GDP-weighted mean"));
+  assert(!/gov-strat-val/.test(gdp) && !/Weights:/.test(gdp), "a refused weighted figure has no value and no invented weighting");
+});
+
 console.log("\n" + passed + " passed");

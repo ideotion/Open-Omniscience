@@ -28,7 +28,7 @@ from src.database.models import StatFigure as StatFigureRow
 from src.database.session import get_db, session_scope
 from src.jobs.background import BackgroundJob, register_job
 from src.monitoring.secret_scrub import http_detail, log_failure
-from src.stats import aggregate
+from src.stats import aggregate, population
 from src.stats import indicators as ind
 from src.stats.store import list_figures
 
@@ -203,10 +203,25 @@ def group_aggregate(
 
     # Only fetch the weight series a strategy can actually use.
     weights: dict[str, dict[str, float | None]] = {}
+    weight_source: dict[str, dict] = {}
     for name, series_id in ind.WEIGHT_SERIES.items():
         got = _values(series_id)
-        if got:
-            weights[name] = {a: got.get(a) for a in member_codes}
+        held = {a: got.get(a) for a in member_codes}
+        from_table: list[str] = []
+        table: dict = {}
+        if name == "population":
+            # The operator's dated table fills ONLY the members the stored series lacks (S06-04 S6);
+            # absent by default, in which case nothing changes.
+            table = population.load_population_table()
+            held, from_table = population.fill_gaps(held, member_codes, table)
+        if got or from_table:
+            weights[name] = held
+            weight_source[name] = {
+                "source": f"stored series {series_id}",
+                "as_of": resolved_year,
+                "from_table": from_table,
+                "table": {"source": table.get("source"), "as_of": table.get("as_of")} if from_table else None,
+            }
 
     result = aggregate.aggregate_indicator(
         indicator=meta,
@@ -214,6 +229,7 @@ def group_aggregate(
         members=members,
         weights=weights,
         allow_incomplete=allow_incomplete,
+        weight_source=weight_source,
     )
     result["period"] = resolved_year
     result["period_source"] = "requested" if year else "latest available for this indicator"
