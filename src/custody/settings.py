@@ -35,6 +35,8 @@ import json
 import logging
 from dataclasses import asdict, dataclass
 
+from src.shared import coerce_bool
+
 _LOG = logging.getLogger(__name__)
 
 SETTINGS_VERSION = "oo-custody-settings-1"
@@ -147,14 +149,6 @@ def _write_raw(payload: dict) -> None:
     kv_set_json(_KV_KEY, payload)
 
 
-def _coerce_bool(value, fallback: bool) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in ("1", "true", "yes", "on")
-    return fallback
-
-
 def _legacy_auto_log_default() -> bool:
     """The pre-settings default for auto-log-on-ingest, from env/YAML config."""
     try:
@@ -184,9 +178,9 @@ def load_settings(*, strict: bool = False) -> CustodySettings:
         mode = defaults.anchoring_mode
     actor = raw.get("default_actor")
     return CustodySettings(
-        pqc_enabled=_coerce_bool(raw.get("pqc_enabled"), defaults.pqc_enabled),
+        pqc_enabled=coerce_bool(raw.get("pqc_enabled"), defaults.pqc_enabled),
         anchoring_mode=mode,
-        auto_log_on_ingest=_coerce_bool(raw.get("auto_log_on_ingest"), defaults.auto_log_on_ingest),
+        auto_log_on_ingest=coerce_bool(raw.get("auto_log_on_ingest"), defaults.auto_log_on_ingest),
         default_actor=str(actor) if actor else None,
     )
 
@@ -252,9 +246,9 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> CustodySet
             )
         current.anchoring_mode = mode
     if "pqc_enabled" in updates and updates["pqc_enabled"] is not None:
-        current.pqc_enabled = _coerce_bool(updates["pqc_enabled"], current.pqc_enabled)
+        current.pqc_enabled = coerce_bool(updates["pqc_enabled"], current.pqc_enabled)
     if "auto_log_on_ingest" in updates and updates["auto_log_on_ingest"] is not None:
-        current.auto_log_on_ingest = _coerce_bool(
+        current.auto_log_on_ingest = coerce_bool(
             updates["auto_log_on_ingest"], current.auto_log_on_ingest
         )
     if "default_actor" in updates:

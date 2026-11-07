@@ -44,7 +44,7 @@ def performance_report(
         added; the middleware was already measuring);
       * environment + store facts — CPUs, RAM, at-rest encryption state, page
         cache/mmap settings, file/page/freelist sizes (real PRAGMA readings);
-      * an optional ACTIVE self-test — the hot read handlers timed twice,
+      * an optional ACTIVE self-test — the hot read handlers timed twice (the keyword export once),
         in-process, against the live corpus (labelled in-session: OS and page
         caches reflect real use, so these are warm-path numbers).
     Generated only on click; never transmitted anywhere by the app.
@@ -194,8 +194,8 @@ def performance_report(
         from src.analytics import queries as aq
         from src.api.database import country_coverage, database_stats
 
-        def _timed(name: str, fn) -> None:
-            for run in (1, 2):
+        def _timed(name: str, fn, runs: tuple[int, ...] = (1, 2)) -> None:
+            for run in runs:
                 t0 = _time.perf_counter()
                 try:
                     out = fn()
@@ -254,6 +254,9 @@ def performance_report(
                     db=db, digest=True, fmt="json", per_lang=_MAX_KEYWORDS_PER_LANG,
                     page=1, max_mb=None,
                 ),
+                # ONCE: the second run only ever gave a warm figure, and it cost a second full scan
+                # of the mention rows (about 17 s at 9.9 M mentions). OPEN_QUEUE item (19), R460.
+                runs=(1,),
             )
         else:
             # A third honest state beside "measured" (ms) and "failed" (error): not run, and
@@ -281,8 +284,10 @@ def performance_report(
         "selftest": {
             "method": (
                 "Hot read handlers timed in-process against the live corpus, two "
-                "runs each, streamed bodies fully consumed. In-session numbers: "
-                "OS/page caches reflect real use (warm path). No network involved."
+                "runs each (keyword_export_streamed once: a second run is a second "
+                "full scan of the mention rows), streamed bodies fully consumed. "
+                "In-session numbers: OS/page caches reflect real use (warm path). "
+                "No network involved."
             ),
             "ran": bool(selftest),
             "results": selftest_rows,

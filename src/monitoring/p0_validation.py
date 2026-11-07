@@ -51,6 +51,7 @@ from pathlib import Path
 from typing import Any
 
 from src.monitoring.secret_scrub import record_text, scrubbed, scrubbed_value
+from src.paths import diagnostics_dir as _report_dir
 
 _LOG = logging.getLogger("monitoring.p0_validation")
 
@@ -1009,14 +1010,6 @@ def build_p0_report(
 # --------------------------------------------------------------------------- #
 #  Persistence (server-side file the download endpoint + debug bundle read)
 # --------------------------------------------------------------------------- #
-def _report_dir() -> Path:
-    from src.paths import data_dir
-
-    d = data_dir() / "diagnostics"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
 def _write_report_atomic(report: dict) -> Path:
     """Write the report to a dated file via a ``.part`` + atomic rename, keeping
     only the newest so the channel is one-shot (old reports just consume disk)."""
