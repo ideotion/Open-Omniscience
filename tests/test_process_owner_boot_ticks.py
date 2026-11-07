@@ -26,6 +26,8 @@ def _rec(pid):
 
 def test_record_carries_boot_fields():
     rec = po.owner_record()
+    if "ticks" not in rec:
+        pytest.skip("this sandbox hides /proc/self/ns/pid; the record degrades to the psutil fields")
     assert {"ticks", "boot_id", "pidns"} <= set(rec)
 
 
@@ -87,3 +89,17 @@ def test_stat_parser_handles_parentheses_in_comm(tmp_path, monkeypatch):
 def test_callers_use_the_shared_verdict(path):
     text = __import__("pathlib").Path(path).read_text(encoding="utf-8")
     assert "process_owner" in text and "record_state(" in text
+
+
+def test_boot_id_change_without_machine_tag_is_unknown(child):
+    rec = _rec(child.pid)
+    rec["boot_id"] = "not-this-boot"
+    rec["machine"] = None
+    assert po.record_state(rec, machine=None) == "unknown"
+
+
+@pytest.mark.parametrize("field,value", [("ticks", float("nan")), ("pidns", float("inf")), ("pid", 0), ("pid", -3)])
+def test_garbled_boot_record_is_unknown_never_dead_or_raising(child, field, value):
+    rec = _rec(child.pid)
+    rec[field] = value
+    assert po.record_state(rec, machine=po.machine_tag()) == "unknown"

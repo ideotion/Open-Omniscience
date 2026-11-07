@@ -22,6 +22,7 @@ The machine tag is a one-way hash under this app's own label, never the raw ``/e
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import platform
 from pathlib import Path
@@ -127,21 +128,32 @@ def record_state(data: Any, *, machine: str | None = None) -> str:
 def _boot_state(data: Any, pid: int) -> str:
     """The verdict from boot-relative fields. Never consults the wall clock; every doubt is ``unknown``."""
     try:
+        pid = int(data["pid"])
         theirs_ticks, theirs_boot, theirs_ns = float(data["ticks"]), str(data["boot_id"]), int(data["pidns"])
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError, OverflowError):
         return "unknown"
+    if pid <= 0 or not math.isfinite(theirs_ticks):
+        return "unknown"  # a garbled record is never "dead"
     boot = _boot_id()
     if boot is None:
         return "unknown"
     if theirs_boot != boot:
-        return "dead"  # same host and machine, another boot: the machine rebooted since the claim was written
+        # Same host name and the same machine tag: another boot means the machine rebooted. Without a machine tag the name alone cannot tell a reboot from a second
+        # machine that shares the name and the folder, so that case stays unknown.
+        return "dead" if data.get("machine") is not None else "unknown"
     ns = _pidns()
     if ns is None or ns != theirs_ns:
         return "unknown"  # another pid namespace (a container): this pid means something else here
     try:
         ticks = _start_ticks(pid)
     except FileNotFoundError:
-        return "dead"
+        try:
+            os.kill(pid, 0)  # /proc mounted with hidepid hides another user's live process too
+        except ProcessLookupError:
+            return "dead"
+        except OSError:
+            return "unknown"
+        return "unknown"
     except OSError:
         return "unknown"
     if ticks is None:
