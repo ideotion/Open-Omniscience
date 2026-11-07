@@ -4787,9 +4787,14 @@
           return;
         }
         const rows = items.map(it =>
-          `<li><a href="#" data-on-click="ooSetValue('dumpread-title', ${esc(JSON.stringify(it.title))});dumpReadPage();return false">${esc(it.title)}</a></li>`).join("");
+          `<li><a href="#" data-on-click="dumpReadSetTitle(${esc(JSON.stringify(it.title))});return false">${esc(it.title)}</a></li>`).join("");
         out.innerHTML = `<div class="card"><div class="muted small">${esc(t("Title matches in your downloaded dump — click one to read its wikitext. Bodies are not full-text-searched."))} <span class="muted">(${esc(_dumpScanned(d.scanned))}${d.capped ? ", " + esc(t("scan capped")) : ""})</span></div><ul>${rows}</ul></div>`;
       } catch (e) { out.innerHTML = `<div style="color:var(--err)">${esc(e.message)}</div>`; }
+    }
+    // A title match in the list opens that page: the one field this touches is the page-title box (A-004).
+    function dumpReadSetTitle(title) {
+      const ti = $("dumpread-title"); if (ti) ti.value = title;
+      return dumpReadPage();
     }
     async function dumpReadPage() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);

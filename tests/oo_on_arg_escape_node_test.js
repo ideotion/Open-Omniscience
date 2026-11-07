@@ -30,14 +30,14 @@ const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"']/g,
 // What the browser hands oo-on.js: the attribute value after entity decoding (the five esc() writes).
 const decode = (s) => s.replace(/&quot;/g, "\"").replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 
-const INJECTION = "x'); appShutdown(); ooSetValue('a','b";
+const INJECTION = "x'); appShutdown(); agendaSetTag('b";
 
 // 1. The old form injects: three calls where one was written. This is the defect, kept as a control so
 //    the test cannot pass because the parser stopped being able to see it.
 {
-  const attr = decode("ooSetValue('agenda-tag', '" + esc(INJECTION) + "');renderAgenda()");
+  const attr = decode("agendaSetTag('" + esc(INJECTION) + "')");
   const calls = Array.from(parse(attr), (s) => s.name);
-  assert.strictEqual(calls.join(","), "ooSetValue,appShutdown,ooSetValue,renderAgenda",
+  assert.strictEqual(calls.join(","), "agendaSetTag,appShutdown,agendaSetTag",
     "control: the single-quoted esc form no longer injects, so this test proves nothing: " + calls);
 }
 
@@ -47,11 +47,11 @@ const HOSTILE = [
   "</script><img src=x onerror=1>", "line\nbreak", "tab\tx", " ", "&amp; &#39; &quot;", "名前", "", "0", "true", "null",
 ];
 for (const v of HOSTILE) {
-  const attr = decode("ooSetValue('agenda-tag', " + esc(JSON.stringify(v)) + ");renderAgenda()");
+  const attr = decode("agendaSetTag(" + esc(JSON.stringify(v)) + ")");
   const stmts = parse(attr);
-  assert.strictEqual(Array.from(stmts, (s) => s.name).join(","), "ooSetValue,renderAgenda",
+  assert.strictEqual(Array.from(stmts, (s) => s.name).join(","), "agendaSetTag",
     "a value changed which calls run: " + JSON.stringify(v) + " -> " + stmts.map((s) => s.name));
-  const arg = stmts[0].args[1];
+  const arg = stmts[0].args[0];
   assert.strictEqual(arg.k, "lit");
   assert.strictEqual(arg.v, v, "the argument is not the value: " + JSON.stringify(v) + " -> " + JSON.stringify(arg.v));
 }
