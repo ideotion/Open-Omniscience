@@ -473,3 +473,34 @@ def test_concurrent_polls_share_one_read(lane, monkeypatch):
     for t in threads:
         t.join()
     assert len(calls) == 1 and len(out) == 6 and all(o["measured"] for o in out)
+
+
+def test_a_refresh_that_outlives_a_reset_neither_writes_nor_clears_the_flag_of_a_newer_one(lane, monkeypatch):
+    import threading
+
+    clock = [1000.0]
+    monkeypatch.setattr(wiki_lane.time, "monotonic", lambda: clock[0])
+    wiki_lane.lane_status()
+    gate = threading.Event()
+    real = wiki_lane._read_status
+
+    def slow(midnight):
+        assert gate.wait(10), "the test releases the scan"
+        return real(midnight)
+
+    monkeypatch.setattr(wiki_lane, "_read_status", slow)
+    clock[0] += wiki_lane._STATUS_TTL_S + 1
+    key = next(iter(wiki_lane._STATUS_CACHE))
+    assert wiki_lane.lane_status()["refreshing"] is True
+    wiki_lane._reset_status_cache()  # the old refresh is now one generation behind
+    with wiki_lane._STATUS_LOCK:
+        wiki_lane._STATUS_REFRESHING.add(key)  # a newer refresh of the same key owns the flag
+    gate.set()
+    import time as _t
+
+    end = _t.monotonic() + 5
+    while _t.monotonic() < end and threading.active_count() > 1 and any(t.name == "oo-wiki-lane-status" for t in threading.enumerate()):
+        _t.sleep(0.01)
+    with wiki_lane._STATUS_LOCK:
+        assert key in wiki_lane._STATUS_REFRESHING, "the stale refresh did not clear the newer one's flag"
+        assert key not in wiki_lane._STATUS_CACHE, "and did not write after the reset"

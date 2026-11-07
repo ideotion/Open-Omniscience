@@ -94,9 +94,9 @@ def _refresh_status(key: str, midnight, generation: int = 0) -> None:
     except Exception:  # noqa: BLE001 - a thread must not die with the flag set; the poll after this one reads for itself
         out = {}
     with _STATUS_LOCK:
-        _STATUS_REFRESHING.discard(key)
         if generation != _STATUS_GENERATION[0]:
-            return
+            return  # a reset cleared the in-flight flag already; a newer refresh of this key may own it now
+        _STATUS_REFRESHING.discard(key)
         if out.get("measured") is True:
             _STATUS_CACHE[key] = (time.monotonic(), out)
         else:
