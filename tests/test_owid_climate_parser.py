@@ -206,3 +206,13 @@ def test_fetch_refuses_a_body_with_required_columns_but_no_curated_column():
 
 def test_the_climate_fetchers_default_to_a_session_pinned_to_their_own_host():
     assert fetch.GISTEMP_HOSTS == ("data.giss.nasa.gov",) and fetch.OWID_HOSTS == ("raw.githubusercontent.com",)
+
+
+def test_bulk_urls_are_the_two_fixed_owid_paths():
+    from src.stats.fetch import owid_dataset_url
+
+    assert owid_dataset_url("co2") == "https://raw.githubusercontent.com/owid/co2-data/master/owid-co2-data.csv"
+    assert owid_dataset_url("energy") == "https://raw.githubusercontent.com/owid/energy-data/master/owid-energy-data.csv"
+    for bad in ("../x", "co2/../../evil", "", "other"):
+        with pytest.raises(ValueError):
+            owid_dataset_url(bad)
