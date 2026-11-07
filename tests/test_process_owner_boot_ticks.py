@@ -76,7 +76,7 @@ def test_record_without_new_fields_uses_legacy_comparison(child):
 
 def test_stat_parser_handles_parentheses_in_comm(tmp_path, monkeypatch):
     (tmp_path / "7").mkdir()
-    (tmp_path / "7" / "stat").write_text("7 (a) b (c) S " + " ".join(["0"] * 18) + " 4200 0\n")
+    (tmp_path / "7" / "stat").write_text("7 (a) b (c) S " + " ".join(["0"] * 18) + " 4200 0\n", encoding="utf-8")
     monkeypatch.setattr(po, "_PROC", str(tmp_path))
     import os
 
