@@ -87,3 +87,31 @@ def test_zero_denominator_is_null_with_reason(index):
     assert m["precision"]["value"] is None and m["precision"]["reason"]
     assert m["recall"]["value"] is None and m["recall"]["reason"]
     assert m["tagged_share"]["value"] == 0.0
+
+
+def test_external_doctype_is_refused_without_a_network_call(tmp_path, monkeypatch):
+    import socket
+
+    calls = []
+
+    def boom(*a, **k):
+        calls.append(a)
+        raise AssertionError("the SKOS reader must never touch the network")
+
+    for name in ("getaddrinfo", "create_connection"):
+        monkeypatch.setattr(socket, name, boom)
+    monkeypatch.setattr(socket.socket, "connect", boom)
+    for doc in (
+        '<?xml version="1.0"?><!DOCTYPE rdf:RDF SYSTEM "http://evil.example/x.dtd">'
+        '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"/>',
+        '<?xml version="1.0"?><!DOCTYPE rdf:RDF [<!ENTITY x SYSTEM "http://evil.example/x">]>'
+        '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">&x;</rdf:RDF>',
+    ):
+        f = tmp_path / "ext.rdf"
+        f.write_text(doc, encoding="utf-8")
+        try:
+            parsed = skos.parse_rdfxml(f)
+        except skos.SkosError:
+            continue  # refused: named, not fetched
+        assert parsed["concepts"] == {}  # an external DTD ignored is also fine, never fetched
+    assert calls == []

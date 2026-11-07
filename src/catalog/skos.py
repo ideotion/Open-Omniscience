@@ -7,6 +7,10 @@ OFFLINE and pure: :func:`parse_rdfxml` reads a SKOS RDF/XML file the operator do
 returns a compact, JSON-able document (:func:`build_artifact`); nothing here opens a socket.
 The thesaurus files are somebody else's XML, so they go through ``defusedxml`` (a core
 dependency): an entity-expansion bomb must fail as a parse error, never as an out-of-memory.
+``iterparse`` is called with ``forbid_entities=True`` and ``forbid_external=True`` spelled out (not left to
+the library's defaults): a DOCTYPE that points at an external URL is REFUSED, never dereferenced, so the
+namespace URIs below are identifiers this module never fetches. Pinned by
+``tests/test_skos_topics.py::test_external_doctype_is_refused_without_a_network_call``.
 
 NEGATIVE SPACE (S06-02 S4 acceptance): an empty scheme and a concept with no label are
 reported as GAPS, never given a label. A concept that carries no ``prefLabel``/``altLabel``
@@ -47,7 +51,7 @@ def parse_rdfxml(source: str | Path | BinaryIO) -> dict[str, Any]:
     gaps: list[dict[str, str]] = []
     n_seen = 0
     try:
-        for _event, el in SafeET.iterparse(source, events=("end",)):
+        for _event, el in SafeET.iterparse(source, events=("end",), forbid_dtd=False, forbid_entities=True, forbid_external=True):
             if el.tag != f"{SKOS}Concept" and not (
                 el.tag == f"{RDF}Description"
                 and any(c.tag == f"{RDF}type" and c.get(f"{RDF}resource", "").endswith("skos/core#Concept")
