@@ -185,6 +185,14 @@
       "fetcher": true
     },
     {
+      "id": "climate-enso",
+      "label": "Climate",
+      "hosts": ["www.cpc.ncep.noaa.gov"],
+      "trigger": "click",
+      "setting": null,
+      "fetcher": true
+    },
+    {
       "id": "weather",
       "label": "Weather",
       "hosts": ["archive-api.open-meteo.com"],
