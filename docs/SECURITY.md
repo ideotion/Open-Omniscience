@@ -444,7 +444,11 @@ down is a RECORD of that date and carries its own disposition table.)*
   answer a foreign page 403 before their handler runs. `/api/database/backup` has its own guard (`_refuse_cross_site` in
   `src/api/database.py`) with the same checks, judging Origin through the same `_foreign_origin`. The stated limit of both is a browser that sends none of the three
   (Firefox before 90, Safari before 16.4, an `OO_ALLOWED_HOSTS` name over plain HTTP): that request is
-  served, and the page still cannot read the answer. Behind a TLS-terminating proxy the app must see
+  served, and the page still cannot read the answer. For `/api/database/backup` the limit now covers loopback names
+  only (R445): on any other name a request that sends none of the three is refused (403) unless it carries
+  `X-OO-Download: 1`, a header a caller that is not a page adds (`curl -H`) and a no-cors `<img>` cannot. The rule reads the
+  `Host` the app RECEIVES: a plain-HTTP proxy that rewrites `Host` to a loopback name puts its callers under the loopback
+  rule above. Behind a TLS-terminating proxy the app must see
   `https` (the proxy forwards `X-Forwarded-Proto` from loopback) or the proxy must put the port in `Host`, or an
   `Origin: https://NAME` is judged as port 443 against a Host read as port 80 and refused, as it already is on a POST.
   Making these routes `POST` is a proposal. A
