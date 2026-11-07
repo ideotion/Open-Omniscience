@@ -105,7 +105,7 @@ for (const call of NAMES) {
   ran.length = 0;
   fire("click", el({ "data-on-click": call }), { isTrusted: true });
   assert.strictEqual(ran.length, 1, name + " refused a real click");
-  // Enter or Space on a focused button arrives as a CLICK; no markup binds a gesture-only name to a keydown (the per-event
+  // Enter or Space on a focused button arrives as a CLICK; no markup binds one of these names to a keydown (the per-event
   // table has no keydown entry for one, A-024 stage 1), so a keydown binding on it is refused like any other event.
   ran.length = 0;
   fire("keydown", el({ "data-on-keydown": call }), { isTrusted: true, key: "Enter" });

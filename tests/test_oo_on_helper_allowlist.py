@@ -45,7 +45,7 @@ _VERBS = frozenset(
 )
 
 # Names that carry a verb above yet touch only THIS TAB'S OWN view or this browser's own preference, and never the
-# server's data. They need neither a prompt nor a gesture; each says why, and the test below checks the body still makes
+# server's data. They need neither a prompt nor a row on the trusted-click table; each says why, and the test below checks the body still makes
 # no mutating request. A name that gains one has to leave this table and be guarded.
 _VIEW_ONLY = {
     "_anClearSense": "drops one word-sense pick from the open analysis",
@@ -159,7 +159,8 @@ def test_the_view_only_list_names_real_verb_actions_that_still_make_no_mutating_
 
 
 def test_a_trusted_click_name_is_bound_only_to_click_events() -> None:
-    """Anything else it is bound to would be refused at run time: the button would silently do nothing."""
+    """A row on the table is "a person's click is enough": a binding on any other event type is a different claim, and a
+    `change`/`input` one would run even for an event a script made (they are outside the trust rule), so it is kept off the table."""
     gesture = set(TRUSTED_CLICK_ONLY)
     bad = []
     for fname, text in _spa_texts().items():
@@ -254,6 +255,12 @@ def test_the_trusted_click_table_is_real_and_not_contradicted() -> None:
         assert _confirms(body), f"{name} must confirm() on every path to its request"
         assert body.index("confirm(") < body.index("api("), f"{name}: the confirm() must precede the request"
     assert not set(NOW_CONFIRM) & set(TRUSTED_CLICK_ONLY)
+    # no dead row: every name is still one a finder would catch (a destructive verb in the name, or a destructive request in its body)
+    from tests.test_destructive_surfaces import _request_sites
+
+    sites = _request_sites()
+    quiet = sorted(n for n in TRUSTED_CLICK_ONLY if n not in sites and n not in _verb_names([n]))
+    assert not quiet, f"rows whose function no finder would catch any more (remove the row): {quiet}"
 
 
 def test_the_dispatcher_holds_click_keydown_and_submit_to_a_person_and_the_old_list_is_gone() -> None:
@@ -261,4 +268,5 @@ def test_the_dispatcher_holds_click_keydown_and_submit_to_a_person_and_the_old_l
     assert m, "oo-on.js must declare TRUSTED_EVENTS as a literal Set"
     assert set(re.findall(r'"([^"]*)"', m.group(1))) == {"click", "keydown", "submit"}
     assert "GESTURE_ONLY" not in re.sub(r"//[^\n]*", "", _OO_ON), "the 31-name list came back as code: the rule covers every name"
-    assert "ev.isTrusted !== true" in _OO_ON
+    code = re.sub(r"//[^\n]*", "", _OO_ON)  # a comment must not satisfy this
+    assert re.search(r"if \(TRUSTED_EVENTS\.has\(ev\.type\) && ev\.isTrusted !== true\) \{\s*console\.warn\([^;]*\);\s*return undefined;", code)

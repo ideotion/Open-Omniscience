@@ -16,8 +16,9 @@ STATED LIMITS (they are not solved by a table; ``docs/ledger`` carries the audit
   A-023 chain (``ooClickId('discovery-external')`` then ``saveDiscoveryExternal``) is held shut only by the ``CLICK_IDS`` set.
 * An injected binding the person then CLICKS is a trusted click on any name the click row lists. The table narrows the
   zero-click and wrong-event paths; the confirm in a name's own body and `tests/trusted_click_table.py` are what stand behind the click.
-* Autofill and extensions dispatch untrusted ``input``/``change`` events; no trust rule is added for them here (stage 2, a
-  proposal), so nothing in this change depends on how they behave. NOT measured.
+* Autofill and extensions dispatch untrusted ``input``/``change`` events, so those two (and ``toggle``) stay OUT of the trust rule
+  (``TRUSTED_EVENTS`` in oo-on.js covers click, keydown and submit; ruled R443). The reason is the OSM lane's measurement in
+  ``osm-lane/proposal-A-024-per-event-allowlist-2026-10-27.md`` (appendix); real browser autofill was not run.
 """
 
 from __future__ import annotations
