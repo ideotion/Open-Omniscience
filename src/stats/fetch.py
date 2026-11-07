@@ -38,6 +38,7 @@ from urllib.parse import quote, urlencode
 from src.ingest import DEFAULT_USER_AGENT, kill_switch_active
 from src.ingest.fetch_verdict import NETWORK_REFUSED
 from src.safety.fetcher import guarded_session
+from src.stats.gistemp import GistempParse
 from src.stats.sdmx import (
     StatFigure,
     parse_csv,
@@ -62,6 +63,10 @@ EUROSTAT_API_BASE = (
 # column names). Verify-on-use — a wrong slug/param fails LOUDLY (HTTP error / no rows),
 # never a fabricated figure; re-confirm against OWID's published data API if it moves.
 OWID_GRAPHER_BASE = "https://ourworldindata.org/grapher"
+# NASA GISS GISTEMP v4 table data: one CSV per region (GLB / NH / SH), anomalies in degC
+# against 1951-1980. NOT verified against a live download (the build sandbox cannot reach
+# the host): a wrong path or shape fails LOUDLY (HTTP error / looks_unrecognised).
+GISTEMP_BASE = "https://data.giss.nasa.gov/gistemp/tabledata_v4"
 
 # Generous default timeout: a fetch may egress over Tor, which is slow — a tight
 # timeout would spuriously fail honest requests. Seconds.
@@ -366,3 +371,42 @@ def fetch_jsonstat(
     resp.raise_for_status()
     payload = resp.json()
     return parse_jsonstat(payload, agency=agency, extracted_at=extracted_at, series_id=series_id)
+
+
+def gistemp_url(region: str = "GLB") -> str:
+    """The GISTEMP v4 table CSV URL for ``region`` (``GLB``, ``NH`` or ``SH``)."""
+    from src.stats.gistemp import REGIONS
+
+    if region not in REGIONS:
+        raise ValueError(f"gistemp_url: region must be one of {REGIONS}, got {region!r}")
+    return f"{GISTEMP_BASE}/{region}.Ts+dSST.csv"
+
+
+def fetch_gistemp(
+    region: str = "GLB",
+    *,
+    get: Getter | None = None,
+    extracted_at: str | None = None,
+) -> GistempParse:
+    """Fetch one GISTEMP v4 table live and parse it (kill switch refuses UP FRONT).
+
+    Returns the :class:`~src.stats.gistemp.GistempParse` (figures AND refusals). A body that
+    parses to nothing but refusals (an HTML error page, a renamed product) raises rather than
+    returning an empty series, because an empty list and a wrong file look the same once the
+    refusals are dropped.
+    """
+    from src.stats.gistemp import parse_gistemp
+
+    if kill_switch_active():
+        raise RuntimeError(NETWORK_REFUSED)
+    extracted_at = extracted_at or _now_iso()
+    getter = get or _default_getter
+    resp = getter(gistemp_url(region))
+    resp.raise_for_status()
+    parsed = parse_gistemp(resp.text, region=region, extracted_at=extracted_at)
+    if parsed.looks_unrecognised:
+        raise ValueError(
+            f"GISTEMP {region}: the response is not the expected table "
+            f"({len(parsed.refused)} lines refused, none parsed)"
+        )
+    return parsed
