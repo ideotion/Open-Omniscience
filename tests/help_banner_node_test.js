@@ -43,7 +43,8 @@ function load(win) {
   return m.exports;
 }
 const bare = load({});                       // OOI18N absent: the boot-time state, English templates
-const text = (html) => html.replace(/<[^>]+>/g, "");
+// The banner's sentence is the one <span> (escaped text, so no markup inside): read it out instead of stripping tags.
+const text = (html) => { const m = /<span>([^<]*)<\/span>/.exec(html); return m ? m[1] : ""; };
 
 // --- docSections: the unit is the ATX heading, fenced code ignored ---------- //
 {
