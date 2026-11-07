@@ -451,8 +451,25 @@ down is a RECORD of that date and carries its own disposition table.)*
   `Sec-Fetch-Site` check in the MIDDLEWARE for every state-changing request is not built, because
   nothing has found a request that passes layers 1 and 2 and should not.
 - **At rest.** The data dir is created `0700` (best-effort, POSIX-only) so another local user
-  cannot read the corpus, signing keys or custody log; signing keys are `0600`. Full at-rest
-  encryption remains the host's job (Qubes/LUKS) — this bounds a shared host, not a seized one.
+  cannot read the corpus, signing keys or custody log; signing keys are `0600`. On a store with a
+  passphrase held (`OO_KEY_PASSPHRASE`, else the database passphrase) the custody keys and the
+  evidence key are **wrapped under it**, so a copied data folder does not let its holder sign as
+  this install. The evidence key is wrapped with scrypt (N = 2^15) and AES-256-GCM (the custody
+  ML-DSA key's wrap; a wrong guess measured about 85 ms and 32 MiB here, against 170 ms for the
+  database: half in time, memory-hard where its PBKDF2 is not), and one written in the clear before 0.6 is wrapped in place, the same key,
+  the first time it is loaded under a passphrase. **Stated limit:** the custody Ed25519 key is wrapped
+  as a PKCS8 PEM, whose key derivation is 2048 rounds of PBKDF2-HMAC-SHA256 (about 0.3 ms a guess,
+  against 170 ms for the database itself): a copy of that one file is the cheapest test of a guess
+  at the passphrase, so a short passphrase is exposed through it. It is not changed here. A new evidence key is created with mode `0600` from its
+  first byte (POSIX; the custody keys are still written first and set to `0600` after). A process
+  killed while creating it can leave a private copy under `keys/.pending/`, which backups do not
+  list; the first wrap of a plaintext key removes the leftover that is a second name for it. A store
+  with no passphrase keeps its keys `0600` in the clear. A wrapped key that cannot be opened (the
+  store is locked, or a backup restored from another install brought that install's key under its
+  passphrase) is refused with the cause and never replaced, and a backup, which signs its manifest
+  with the evidence key, is refused with it; there is no recovery for a lost
+  passphrase. Full at-rest encryption remains the host's job (Qubes/LUKS) — this bounds a shared
+  host, not a seized one.
 - **Exported data.** CSV cells beginning `= + - @` or a control character are neutralised
   before export (spreadsheet formula injection).
 
