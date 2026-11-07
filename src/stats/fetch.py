@@ -31,7 +31,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Callable
 from urllib.parse import quote, urlencode
 
@@ -393,7 +393,7 @@ def gistemp_max_chars(now_year: int | None = None) -> int:
     early), times a generous per-row allowance, plus the header lines. It grows with the data
     each January instead of being a constant someone must remember to raise.
     """
-    year = now_year if now_year is not None else datetime.now(timezone.utc).year
+    year = now_year if now_year is not None else datetime.now(UTC).year
     rows = max(year + 1 - GISTEMP_FIRST_YEAR + 1, 1)
     return rows * GISTEMP_LINE_ALLOWANCE + GISTEMP_HEADER_ALLOWANCE
 
