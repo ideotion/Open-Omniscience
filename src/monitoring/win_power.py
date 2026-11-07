@@ -106,6 +106,7 @@ def _passive_checkpoint(budget_s: float) -> dict[str, Any]:
         with library_generation.connecting():
             conn = connect(db, check_same_thread=False)
             timer = threading.Timer(budget_s, lambda: _interrupt(conn))
+            timer.name = "oo-suspend-interrupt"
             timer.daemon = True
             timer.start()
             try:
@@ -120,7 +121,7 @@ def _passive_checkpoint(budget_s: float) -> dict[str, Any]:
                 except Exception as exc:  # noqa: BLE001 - the answer stands; a failed close is not the checkpoint's
                     log_failure(_LOG, "suspend checkpoint: closing its connection failed", exc, level=logging.DEBUG)
     except Exception as exc:  # noqa: BLE001 - a sleeping machine never waits on this
-        out["outcome"] = "interrupted" if "interrupt" in type(exc).__name__.lower() or "interrupt" in str(exc).lower() else "failed"
+        out["outcome"] = "failed"  # by class only (R140): an engine's words can quote what it was handed; an interrupted statement is OperationalError
         out["error"] = type(exc).__name__
     out["seconds"] = round(time.monotonic() - began, 3)
     return out
