@@ -252,6 +252,9 @@ _DISPLAY_ONLY_FILES: dict[str, str] = {
         "the CC BY 4.0 attribution DB-IP requires for the BUNDLED country table",
     "src/api/link_analysis.py":
         "the GraphML XML namespace URI. A namespace is an identifier, never fetched",
+    "src/catalog/skos.py":
+        "the SKOS and RDF XML namespace URIs the offline thesaurus reader matches element "
+        "names against. A namespace is an identifier, never fetched; the module imports no socket library",
     "src/catalog/publicsuffix.py":
         "where the BUNDLED public-suffix list came from, recorded in a comment "
         "together with the sha256 of the bytes actually in the repo",
