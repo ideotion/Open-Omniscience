@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-07,weather,Open-Meteo anomalies vs the 1991-2020 baseline (A4),built; live shape unverified,PR pending,src/weather/anomaly.py;src/api/weather.py;tests/test_weather_anomaly.py,"Pure anomaly arithmetic (temperature mean difference, precipitation percent of baseline) over two Open-Meteo archive slices on the already-enumerated host; POST /api/weather/anomaly; unknown is null with a reason, incomplete baseline years excluded and counted, zero baseline has no percentage, window inside baseline flagged."

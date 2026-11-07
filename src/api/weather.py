@@ -71,3 +71,29 @@ def weather_context(req: WeatherContextRequest) -> dict:
         req.lat, req.lon, req.start_date, req.end_date, req.variables,
         label=req.label, force=req.force,
     )
+
+
+class WeatherAnomalyRequest(WeatherContextRequest):
+    """Same bounds as a context fetch; the baseline (1991-2020) is fixed server-side."""
+
+    @field_validator("variables")
+    @classmethod
+    def _vars_allowed(cls, v: list[str]) -> list[str]:
+        from src.weather.anomaly import SUPPORTED
+
+        if not v:
+            raise ValueError("at least one daily variable is required")
+        bad = sorted(set(v) - set(SUPPORTED))
+        if bad:
+            raise ValueError(f"no anomaly definition for {bad}; supported: {sorted(SUPPORTED)}")
+        return v
+
+
+@router.post("/anomaly")
+def weather_anomaly(req: WeatherAnomalyRequest) -> dict:
+    """Anomalies against the stated 1991-2020 baseline. Two bounded consented fetches (the
+    baseline is cached after the first); the UI gates this behind the one consent popup."""
+    from src.weather.anomaly import fetch_anomalies
+
+    return fetch_anomalies(req.lat, req.lon, req.start_date, req.end_date, req.variables,
+                           force=req.force)
