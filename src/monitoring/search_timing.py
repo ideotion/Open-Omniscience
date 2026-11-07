@@ -16,8 +16,8 @@ This is the pure, testable core. It mirrors three shipped foundations:
 Honesty by construction: measurements only, no composite score; the aggregate names the
 dominant phase by MEASURED p95 (a fact about where wall-clock goes, not a quality judgement);
 degrades to an honest empty report before anything is recorded. The networked call (running a
-real search on the live corpus) is the OPERATOR/CI seam — the live search path builds a
-``SearchPhaseTimer`` itself and records it with ``append_search_timing``; the core proves the mechanism on an injected clock.
+real search on the live corpus) is the OPERATOR/CI seam — ``instrument_search`` is the one-line
+hook a handler calls; the core proves the mechanism on an injected clock.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -570,6 +570,24 @@ def append_search_timing(record: dict) -> None:
         log_failure(_LOG, "search_timing append failed", exc, level=logging.DEBUG)
 
 
+def instrument_search(fn: Callable[[SearchPhaseTimer], Any]) -> Any:
+    """The OPERATOR/CI seam. A handler runs its search inside ``fn`` (calling ``timer.phase(...)``
+    at each stage); this records the finished breakdown and returns the search result unchanged.
+
+    Wiring this into the real (async) search endpoint is the CI/operator step (§4's live per-phase
+    ms on the 100-130 GB encrypted corpus decides the lever); the core here is fully proven on an
+    injected clock without a browser, Ollama, network, or the live corpus."""
+    timer = SearchPhaseTimer()
+    try:
+        result = fn(timer)
+    finally:
+        try:
+            append_search_timing(timer.finish())
+        except Exception as exc:  # noqa: BLE001
+            log_failure(_LOG, "instrument_search record failed", exc, level=logging.DEBUG)
+    return result
+
+
 def _reset_for_tests() -> None:
     """Drop the in-process record windows and the trim counters (test hook)."""
     with _LOCK:
@@ -752,7 +770,8 @@ def run_search_timing_selftest() -> dict:
             "not insertion order, and that the aggregate is honest on empty input."
         ),
         "caveat": (
-            "Verifies the MECHANISM, not the live corpus. Real per-phase ms come from the live "
-            "search endpoint recording them on the operator's rig (§4 CI/operator seam). No score."
+            "Verifies the MECHANISM, not the live corpus. Real per-phase ms come from wiring "
+            "instrument_search into the search endpoint on the operator's rig (§4 CI/operator "
+            "seam). No score."
         ),
     }

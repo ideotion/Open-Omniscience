@@ -672,6 +672,19 @@ def get_session() -> SASession:
 _LOG = logging.getLogger("database.session")
 
 
+def close_session(session: SASession) -> None:
+    """Close a session, swallowing errors (best-effort cleanup).
+
+    The swallow is deliberate (cleanup must never raise), but we log at debug
+    so a recurring close failure -- a symptom of a connection leak -- is visible
+    when debugging rather than silent (finding BUG-04).
+    """
+    try:
+        session.close()
+    except Exception as exc:
+        log_failure(_LOG, "close_session: error during session.close()", exc, level=logging.DEBUG)
+
+
 # "This transaction has written." Tracked on the Session CLASS, so it holds for
 # every session in the process — including one bound to an engine the
 # single-writer gate was never wired to (a test engine, a read-snapshot engine).

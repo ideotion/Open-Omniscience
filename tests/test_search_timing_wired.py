@@ -1,5 +1,5 @@
 """
-S5 — the phase timer wired into the live /api/articles FTS path.
+S5 — instrument_search wired into the live /api/articles FTS path.
 
 Proves a real text search through ``_query_articles`` records a per-phase breakdown into the
 search-timing reservoir (so ``GET /api/diagnostics/search-timing`` is no longer empty-honest

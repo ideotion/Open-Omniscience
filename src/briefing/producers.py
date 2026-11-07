@@ -110,6 +110,10 @@ def _growth_math_row(term: dict, *, prefix: str = "") -> tuple[str, str]:
     )
 
 
+def _small_corpus_note(session) -> str:
+    return " " + frames_text(_small_corpus_note_frames(session))
+
+
 def _small_corpus_note_frames(session) -> list[dict]:
     """The young-corpus note as ONE keyed frame, reused by every producer that adds it."""
     return [
