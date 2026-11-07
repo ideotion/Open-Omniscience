@@ -71,7 +71,7 @@ jobs:
   # ----------------------------------------------------------------------- #
   # DOCS-ONLY FAST PATH (R462). A pull request whose every changed file is documentation (scripts/ci_changed_kind.py: docs/, root Markdown, the two
   # GitHub templates) skips the heavy jobs and runs `docs-checks` instead, about 15 minutes against 100 with backed-up runners. It FAILS OPEN: a push to
-  # main, the weekly run, workflow_dispatch, the `ci-full` label (read when the run starts: add it, then push or re-run) and any git error all give
+  # main, the weekly run, workflow_dispatch, the `ci-full` label (read from the event that started the run: a re-run reuses that event, so add the label and then PUSH; a label alone starts nothing) and any git error all give
   # docs_only=false and the full matrix. The required checks still report: `test` and "Core-only install (no [analysis] extra)" are the aggregators below,
   # green when their legs are, or when docs_only and `docs-checks` are; every other gated job reports "skipped", which branch protection reads as passing.
   # ----------------------------------------------------------------------- #
@@ -127,13 +127,23 @@ jobs:
       - name: i18n locale completeness (x12)
         run: python scripts/i18n_report.py --min 100
 
-      # The tests that read documentation: every test file that names docs/, CLAUDE.md or the ledger, chosen at run time so a new one needs no edit here.
-      # A named file is not subject to collect_ignore, which is harmless here (the analysis extra is installed above).
+      # The tests that read documentation: every test file that names docs (as `docs/...` or as a `Path(...) / "docs"` join), CLAUDE.md or the ledger, chosen
+      # at run time so a new one needs no edit here. The first pattern here was `docs/` and missed the joined form (twelve files, among them the ones that read
+      # docs/USER_MANUAL.md and docs/ETHICS.md; the Opus read of the final head found it), hence the bare word. A named file is not subject to
+      # collect_ignore, which is harmless here (the analysis extra is installed above).
       - name: Tests that read the documentation
         run: |
-          grep -lE 'docs/|CLAUDE\.md|ledger' tests/test_*.py > "$RUNNER_TEMP/docs.args"
+          grep -lE 'docs|CLAUDE\.md|ledger' tests/test_*.py > "$RUNNER_TEMP/docs.args"
           echo "$(wc -l < "$RUNNER_TEMP/docs.args") test files"
           python -m pytest -q -rsfE @"$RUNNER_TEMP/docs.args"
+
+      # The wheel carries docs/legal/, docs/i18n/ and docs/USER_MANUAL.md, and scripts/check_wheel_layout.py wants them in it (the `lockfile-install` job's step of the
+      # same name): a documentation-only PR that renames or deletes one would otherwise pass here and break the wheel on main.
+      - name: Wheel carries the runtime data trees (built as release.yml builds it, read from its own file list)
+        run: |
+          python -m pip install --upgrade build
+          python -m build --outdir "$RUNNER_TEMP/oo-dist"
+          python scripts/check_wheel_layout.py "$RUNNER_TEMP"/oo-dist/*.whl
 
   # THE `test` JOB IS THREE SHARDS (C10, decision 27, R412): it ran the whole suite in one process, 70 to 80 minutes, and the run's wall time was the slower
   # of it and Core-only. Each leg now runs a third of the test FILES, chosen by scripts/ci_shard.py from the measured cost table

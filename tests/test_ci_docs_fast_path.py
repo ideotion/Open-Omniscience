@@ -52,6 +52,8 @@ def test_documentation_paths_are_documentation(path):
         "pyproject.toml",
         "requirements.lock",
         ".github/workflows/ci.yml",
+        ".github/workflows/notes.md",
+        ".github/copilot-instructions.md",
         "docs/../src/api/main.py",
         "/etc/passwd",
         "",
@@ -117,7 +119,7 @@ def test_the_fast_path_runs_only_when_the_decision_says_so_and_checks_the_ledger
     job = _jobs()["docs-checks"]
     assert job["if"] == "needs.changes.outputs.docs_only == 'true'"
     run = "\n".join(str(s.get("run") or "") for s in job["steps"])
-    for needle in ("planned.py", "ledger_fold.py check", "i18n_report.py --min 100", "pytest"):
+    for needle in ("planned.py", "ledger_fold.py check", "i18n_report.py --min 100", "pytest", "check_wheel_layout.py", "grep -lE 'docs|"):
         assert needle in run, needle
 
 

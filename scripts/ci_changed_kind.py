@@ -13,7 +13,7 @@ not about paths (a push to main, the weekly run, workflow_dispatch and the ``ci-
 
 THE ALLOWLIST is deliberately short: everything under ``docs/``, the Markdown files at the repository root, and the two GitHub templates. A file
 that code loads at run time lives under ``docs/`` (the legal texts, the user manual served by the app); the fast path still runs every test that
-names ``docs/``, ``CLAUDE.md`` or the ledger, and the merge to main runs the whole matrix.
+names ``docs``, ``CLAUDE.md`` or the ledger, runs the wheel-layout check, and the merge to main runs the whole matrix.
 """
 
 from __future__ import annotations
@@ -29,8 +29,8 @@ def is_doc(path: str) -> bool:
     """True for a path the fast path may skip tests for. A path with a parent hop, a NUL or a leading slash is never one."""
     if not path or "\x00" in path or path.startswith("/") or ".." in path.split("/"):
         return False
-    if "/" in path and path.endswith(".md") and not path.startswith(("docs/", ".github/")):
-        return False  # a Markdown file below the root outside docs/ (configs/, scripts/) ships with code: not a doc change
+    if "/" in path and not path.startswith(("docs/", ".github/ISSUE_TEMPLATE/")) and path != ".github/PULL_REQUEST_TEMPLATE.md":
+        return False  # a file below the root outside docs/ and the templates (configs/, scripts/, .github/workflows/) ships with code or CI: not a doc change
     return any(fnmatch.fnmatchcase(path, pattern) for pattern in ALLOWED)
 
 
