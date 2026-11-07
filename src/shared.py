@@ -1,4 +1,4 @@
-"""Helpers that several modules used to carry as byte-identical private copies (audit A-036).
+"""Helpers that several modules used to carry as private copies (audit A-036).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -8,7 +8,8 @@ close an import cycle (``src.utils`` imports bleach and the secret scrubber, whi
 for a monitoring or ingest module to take on for a 14-line recursion).
 
 Add a helper here only when two or more modules would otherwise hold the same body. Behaviour
-is exactly what each copy did: the folding is a move, not a change
+is exactly what each copy did (a copy that differed only in a name, a constant or a docstring
+was folded; one that differed in behaviour was not): the folding is a move, not a change
 (``tests/test_shared_helpers_folded.py`` pins both halves).
 """
 

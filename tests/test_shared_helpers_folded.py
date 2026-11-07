@@ -220,6 +220,16 @@ def test_rss_mb_is_a_one_decimal_figure_or_none():
     assert v is None or (isinstance(v, float) and v > 0 and round(v, 1) == v)
 
 
+def test_rss_mb_divides_by_one_mebibyte(monkeypatch):
+    """The divisor is the one thing the two copies spelled differently (a ``_MIB`` constant)."""
+    fake = types.ModuleType("psutil")
+    fake.Process = lambda: types.SimpleNamespace(memory_info=lambda: types.SimpleNamespace(rss=5 * 1024 * 1024))
+    monkeypatch.setitem(__import__("sys").modules, "psutil", fake)
+    assert shared.rss_mb() == 5.0
+    monkeypatch.setitem(__import__("sys").modules, "psutil", None)  # psutil missing -> None, not a guess
+    assert shared.rss_mb() is None
+
+
 def test_read_jsonl_tail(tmp_path):
     p = tmp_path / "log.jsonl"
     assert shared.read_jsonl_tail(p, 10) == []  # missing file
@@ -268,3 +278,7 @@ def test_tri_state_and_the_two_serves_keep_their_own_variable(monkeypatch, value
     monkeypatch.setenv("OO_COLUMNAR_MAP_SERVE", "0")
     monkeypatch.delenv("OO_COLUMNAR_SERVE", raising=False)
     assert rollup_serve.serve_mode() == "auto"
+    # ... and the reverse direction
+    monkeypatch.setenv("OO_COLUMNAR_SERVE", "0")
+    monkeypatch.delenv("OO_COLUMNAR_MAP_SERVE", raising=False)
+    assert map_serve.serve_mode() == "auto"
