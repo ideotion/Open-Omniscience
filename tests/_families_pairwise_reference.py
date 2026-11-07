@@ -22,7 +22,6 @@ from typing import Any
 from src.analytics.families import (
     _PLURAL_DENYLIST,
     Family,
-    _is_contiguous_sub,
     _lemma,
     _lemma_enabled,
     _norm,
@@ -30,6 +29,14 @@ from src.analytics.families import (
     canonical_key,
     strip_honorifics,
 )
+
+
+
+def _is_contiguous_sub(short_toks: list[str], long_toks: list[str]) -> bool:
+    n, m = len(short_toks), len(long_toks)
+    if n == 0 or n >= m:
+        return False
+    return any(long_toks[i : i + n] == short_toks for i in range(m - n + 1))
 
 
 def build_families_pairwise(items: list[dict], overrides: dict[str, dict] | None = None) -> list[Family]:

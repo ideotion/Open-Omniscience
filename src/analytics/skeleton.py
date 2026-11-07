@@ -51,12 +51,6 @@ def skeleton_fingerprint(keyword_ids: set[int]) -> str:
     return hashlib.blake2b(basis, digest_size=8).hexdigest()
 
 
-def skeleton_signature(keyword_ids: set[int], *, num_perm: int = 128) -> list[int]:
-    """The MinHash signature of a keyword-id skeleton — the thin wrapper that feeds the id set
-    STRAIGHT into ``minhash_signature`` (bypassing text shingles). Token-agnostic by construction."""
-    return minhash_signature(keyword_ids, num_perm=num_perm)
-
-
 def skeleton_clusters(
     docs: dict[str, set[int]], *, threshold: float = 0.7, num_perm: int = 128
 ) -> list[set[str]]:

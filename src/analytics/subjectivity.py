@@ -136,13 +136,6 @@ def load_lexicon(language: str | None) -> frozenset[str] | None:
     return e[1] if e else None
 
 
-def available_languages() -> set[str]:
-    """The languages with a non-empty lexicon (what the engine can actually measure)."""
-    if not _BASE.is_dir():
-        return set()
-    return {f.stem.lower() for f in _BASE.glob("*.txt") if _load(f.stem)}
-
-
 def _gap(reason: str, language: str | None) -> dict:
     return {
         "available": False,
