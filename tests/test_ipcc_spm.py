@@ -175,7 +175,7 @@ def test_default_getter_is_held_to_the_ipcc_host_and_asks_for_identity(monkeypat
 
     monkeypatch.setattr(ipcc_spm, "guarded_session", fake_session)
     assert ipcc_spm._default_getter("https://www.ipcc.ch/x.pdf") == "resp"
-    assert tuple(seen["session"]["allowed_hosts"]) == (ipcc_spm.IPCC_HOST,)
+    assert tuple(seen["session"]["allowed_hosts"]) == ipcc_spm.API_HOSTS == (ipcc_spm.IPCC_HOST,)
     assert seen["kw"]["stream"] is True and seen["kw"]["headers"]["Accept-Encoding"] == "identity"
 
 

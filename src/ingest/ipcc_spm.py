@@ -50,6 +50,8 @@ _LOG = logging.getLogger(__name__)
 
 IPCC_AS_OF = "2026-11-07"
 IPCC_HOST = "www.ipcc.ch"
+#: The only host this lane may reach (a redirect off it is refused); pinned to the popup lane "ipcc".
+API_HOSTS = (IPCC_HOST,)
 IPCC_SOURCE_DOMAIN = "ipcc.reports.local"
 IPCC_SOURCE_NAME = "IPCC reports"
 #: Translated (x12) as an i18n key; the surface follow-up renders it beside every SPM.
@@ -112,7 +114,7 @@ def _default_getter(url: str) -> Any:
     """A guarded GET held to the IPCC host (a redirect off it is refused), streamed,
     and asked for the identity encoding so the declared length is the body's own."""
     session = guarded_session(
-        user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=(IPCC_HOST,)
+        user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=API_HOSTS
     )
     return session.get(
         url, timeout=_TIMEOUT_S, stream=True, headers={"Accept-Encoding": "identity"}
