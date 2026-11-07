@@ -18,7 +18,7 @@
    not, and the failure is a TDZ error at load rather than anything a reader would
    spot in review. Add new code inside the module it belongs to.
 */
-    let _docList = null, _docSlug = null, _docRaw = "", _docBanner = "";
+    let _docList = null, _docSlug = null, _docRaw = "", _docBanner = "", _docGen = 0;
     async function ensureDocList() {   // fetch the list once (also feeds the palette)
       if (_docList === null) {
         try { _docList = (await api("/api/docs")).docs || []; } catch (e) { _docList = []; }
@@ -69,6 +69,7 @@
     async function openDoc(slug, anchor) {
       if (!slug) return;
       _docSlug = slug;
+      const gen = ++_docGen;   // a load owns the pane only while it is the latest: the same document re-opened in another language must win too
       document.querySelectorAll(".doc-link").forEach(b =>
         b.classList.toggle("active", b.getAttribute("data-on-click").includes("'" + slug + "'")));
       const prose = $("doc-prose"); prose.innerHTML = '<div class="muted">Loading…</div>';
@@ -88,7 +89,7 @@
             if (en.ok) total = docSections(await en.text());
           } catch (_e) { total = null; }
         }
-        if (_docSlug !== slug) return;   // another document was opened while this one loaded: it owns the pane, the banner and _docRaw
+        if (gen !== _docGen) return;   // a newer load (another document, or this one in another language) owns the pane, the banner and _docRaw
         const language = (window.OOI18N && OOI18N.meta && OOI18N.meta.native) || lang;
         _docRaw = raw;
         _docBanner = docBannerHtml(lang, served, total == null ? null : docSections(raw), total, language);
@@ -97,7 +98,7 @@
         (at || prose).scrollIntoView({block: at ? "start" : "nearest"});
       }
       catch (e) {
-        if (_docSlug !== slug) return;
+        if (gen !== _docGen) return;
         _docRaw = ""; _docBanner = "";   // a failed load must not leave the previous document for the find box to redraw
         prose.innerHTML = '<div class="muted">Could not load this document.</div>';
       }
@@ -112,11 +113,10 @@
     // landed), so a TYPED phrase lit a mark 1,800 px below the viewport while the
     // same phrase PASTED jumped to it. The pause also stops re-rendering the whole
     // Help body on every key.
-    // A language switch re-opens the Help document in the new language: the banner names the language it was built for.
-    document.addEventListener("oo:langchange", () => {
-      const pg = $("tab-help");
-      if (_docSlug && pg && pg.classList.contains("active")) openDoc(_docSlug);
-    });
+    // A language switch re-opens the Help document in the new language, wherever the switch was made (the top bar, or Settings
+    // while Help is not the visible tab: Help's loader runs once, so nothing else would): the banner names the language it was
+    // built for. One local read per switch, and only once a document has been opened.
+    document.addEventListener("oo:langchange", () => { if (_docSlug) openDoc(_docSlug); });
     let _docFindTimer = null;
     function filterDoc() {
       clearTimeout(_docFindTimer);
