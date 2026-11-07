@@ -178,7 +178,7 @@ def test_refresh_does_not_carry_the_write_gate_across_the_next_fetch(monkeypatch
         return _FakeResp(_wb_payload(1.0))
 
     with session_scope() as s:
-        out = S.refresh_due(s, get=getter)
+        S.refresh_due(s, get=getter)
     # The suite database may hold other due subscriptions, so pin this test's own two rows.
     with session_scope() as s:
         mine = {r["indicator"]: r["last_status"] for r in S.list_subscriptions(s)
@@ -194,9 +194,9 @@ def test_a_failed_store_ends_the_transaction_so_later_fetches_run_ungated(monkey
     """A ``store_figures`` that FLUSHES and then raises leaves the transaction open and the write
     gate held; the except branch must end it, or every later subscription's request runs gated.
     Gate-wired ``SessionLocal``; the failure is keyed on the indicator in the URL, not on order."""
+    import src.stats.store as store_mod
     from src.database.session import init_db, session_scope
     from src.database.writer import write_gate
-    import src.stats.store as store_mod
 
     init_db()
     clear_kill_switch()
