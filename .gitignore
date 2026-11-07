@@ -155,3 +155,7 @@ oo.env
 # a tracked generated_notes.md would make its own second run fail as a dirty tree.
 generated_notes.md
 release_notes.md
+
+# The operator's dated population table (configs/population_table.json) is a local drop-in, never committed
+# (S06-04 S6): a population vintage is someone's published data with its own terms.
+configs/population_table.json

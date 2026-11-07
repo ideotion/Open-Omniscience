@@ -1925,7 +1925,7 @@ catalog at `/api/catalog/sources`, `/export.csv`, `/template.csv`, `POST /import
 `PUT /api/scheduler/config`; `POST /api/scheduler/start|stop|run-now`.
 
 **Database & backup** — `GET /api/database/stats|coverage|countries`;
-`GET /api/database/backup` (raw `.db` snapshot). Backups are **created** by the streaming
+`GET /api/database/backup` (raw `.db` snapshot; under a name you listed in `OO_ALLOWED_HOSTS`, a request that names no page it comes from must add the header `X-OO-Download: 1`, as `curl -H "X-OO-Download: 1" …` does; typing the address in a browser, or opening a bookmark, on a plain-HTTP name of that kind sends nothing a browser would add on loopback or HTTPS, so it is refused there). Backups are **created** by the streaming
 engines: encrypted volumes+parity at `POST /api/backup/v2/volumes/start` (+ `/restore`,
 `/cancel`, `GET /volumes/status`) and the large-data folder copy at
 `POST /api/backup/folder/start` (+ `/plan`, `/restore`, `/{action}`, `GET /folder/status`).
@@ -3161,6 +3161,15 @@ A point‑in‑time export of selected articles, each with its provenance and a 
 hash, bound by a **domain‑separated Merkle root** and an **Ed25519 signature**.
 Verify offline with `scripts/verify_evidence.py <bundle.json> [signer_pubkey]`.
 Exposed at `POST /api/reports/evidence` and `/api/reports/evidence/verify`.
+
+The signing key lives in `keys/evidence_ed25519.pem` under your data folder. On an encrypted
+store it is wrapped under your passphrase (a key made before is wrapped, unchanged, the first time
+an export loads it with the store unlocked), so a copy of the data folder alone cannot sign as
+you; with no passphrase it stays `0600` in the clear. If a restored backup brought a key wrapped
+under another install's passphrase, an evidence export and every backup (a backup signs its manifest
+with this key) say they cannot open it and replace nothing: use the passphrase it was wrapped under,
+or move the file aside to have a new key made (bundles signed with the old key still verify against
+its public key). A lost passphrase loses the key; there is no recovery.
 
 #### 2. Hybrid signatures — `src/custody/signing.py`
 Combines **Ed25519** (fast, classical) with **ML‑DSA** (FIPS 204, post‑quantum,

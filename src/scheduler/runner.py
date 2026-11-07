@@ -3252,7 +3252,10 @@ def resume_after_exclusive_operation(
         try:
             _watch_for_resume(get_scheduler())
         except Exception as exc:  # noqa: BLE001 - a courtesy call never raises into the operation's own finally
-            log_failure(_LOG, "pending collection resume: the watcher thread could not be started", exc, level=logging.WARNING)
+            # The class only, never its words (not ``log_failure``, which scrubs the secrets the process KNOWS and keeps the rest of the line):
+            # this runs at the exit of an operation that may have held a passphrase the process does not hold, as the start refusal's log
+            # above does. A thread that cannot be created says nothing the class does not.
+            _LOG.warning("pending collection resume: the watcher thread could not be started (%s)", type(exc).__name__)
             _note_resume_abandoned(start_error, type(exc).__name__)
             _LOG.warning(
                 "could not resume background collection after an exclusive operation, and nothing is waiting to -- collection "
