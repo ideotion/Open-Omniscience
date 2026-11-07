@@ -17,14 +17,9 @@ Merkle root reuses the audited src/crypto/merkle_tree implementation.
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
-import logging
 import os
-import secrets
-import threading
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -36,10 +31,9 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 )
 
 from src.crypto.merkle_tree import compute_merkle_root
+from src.custody import keyfile
 
 BUNDLE_VERSION = "oo-evidence-1"
-
-log = logging.getLogger(__name__)
 
 
 # --------------------------------------------------------------------------- #
@@ -105,6 +99,7 @@ def _parse_key(path: Path, raw: bytes, passphrase: bytes | None) -> tuple[Ed2551
         # anywhere, not only first: OpenSSL writes a "Bag Attributes" preamble and an editor can
         # add a byte-order mark, and ``load_pem_private_key`` reads both. A wrapped blob is random
         # bytes, which hold these ten of them with a chance of about 2**-72.
+        unreadable = False
         try:
             # load_pem_private_key returns whatever the FILE holds. This app only ever
             # writes Ed25519 here, but a foreign key placed at this path used to be
@@ -112,6 +107,14 @@ def _parse_key(path: Path, raw: bytes, passphrase: bytes | None) -> tuple[Ed2551
             pem_key = serialization.load_pem_private_key(raw, password=None)
         except TypeError:
             pem_key = None  # a PEM that is itself password-protected
+        except ValueError:
+            pem_key = None
+            unreadable = True  # truncated, or a PEM of another kind (a public key, a certificate)
+        if unreadable:
+            raise EvidenceKeyError(
+                f"{path} is not a readable PEM private key (damaged, cut short, or another kind of "
+                "key file). Nothing was replaced; move it aside to have a new key made."
+            )
         if pem_key is None:
             raise EvidenceKeyError(
                 f"{path} is a password-protected PEM file, which is not a form this app writes for "
@@ -148,24 +151,6 @@ def _parse_key(path: Path, raw: bytes, passphrase: bytes | None) -> tuple[Ed2551
     return key, False
 
 
-def _write_new(path: Path, data: bytes) -> None:
-    """Create ``path`` (it must not exist), mode 0600 from the first byte, and flush it to disk.
-
-    ``O_EXCL`` refuses a file that is already there (``FileExistsError``) and the mode is part of
-    the creation, so there is no moment in which the key is readable by another account (the old
-    ``write_bytes`` then ``chmod`` left one under a umask of 022).
-    """
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    try:
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(data)
-            fh.flush()
-            os.fsync(fh.fileno())
-    except BaseException:
-        path.unlink(missing_ok=True)
-        raise
-
-
 def _seal(key: Ed25519PrivateKey, passphrase: bytes | None) -> bytes:
     """The bytes of the key file: the plaintext PEM with no passphrase, else the wrap of the key.
 
@@ -190,175 +175,27 @@ def _seal(key: Ed25519PrivateKey, passphrase: bytes | None) -> bytes:
     )
 
 
-#: Where the key's temporary files live: a subdirectory of the key's own directory, so a rename or a
-#: link into place stays on one file system, and so the backups, which list the FILES directly in
-#: ``keys/``, never pick one up (a temporary file is not part of the identity).
-_PENDING = ".pending"
-
-
-def _private_name(path: Path, kind: str) -> Path:
-    """A temporary file name no other caller can hold: this host's process and thread, a random token.
-
-    The token is what makes it true across machines too (two containers on one data volume can both
-    be process 1 with the same thread number). A name is removed only by the caller that made it:
-    a name shared by every caller let one delete another's finished copy and rename its own empty
-    file over the key.
-    """
-    pending = path.parent / _PENDING
-    pending.mkdir(mode=0o700, exist_ok=True)
-    token = secrets.token_hex(6)
-    return pending / f"{path.name}.{os.getpid()}.{threading.get_ident()}.{token}.{kind}"
-
-
-def _write_private(path: Path, kind: str, data: bytes) -> Path:
-    """Write ``data`` to a new private file for ``path`` and return its name; a failure leaves none.
-
-    The directory is removed again when nothing is in it (:func:`_drop_pending`), and another caller
-    can do that between this one's ``mkdir`` and its create: three tries cover it.
-    """
-    for _attempt in range(3):
-        tmp = _private_name(path, kind)
-        try:
-            _write_new(tmp, data)
-        except FileNotFoundError:
-            continue
-        except BaseException:
-            with contextlib.suppress(OSError):
-                tmp.unlink(missing_ok=True)
-            raise
-        return tmp
-    raise FileNotFoundError(
-        f"{path.parent / _PENDING}: kept disappearing while a key file was written"
-    )
-
-
-def _drop_pending(path: Path) -> None:
-    """Remove ``keys/.pending`` when it is empty, so the directory is not left in the keys listing
-    (the encryption attestation names every entry of it). Refused by the file system while any
-    caller's file is in it, which is exactly when it must stay."""
-    with contextlib.suppress(OSError):
-        (path.parent / _PENDING).rmdir()
-
-
-def _drop_aliases(path: Path, old: os.stat_result) -> None:
-    """Remove the names in ``keys/.pending`` that are hard links to the file ``path`` just replaced.
-
-    A creation that died between its ``os.link`` and the removal of its private name leaves that
-    name as a second name for the key file's own bytes, and when those bytes were the plaintext key
-    the replacement above would leave the key readable there for good, in a folder nothing sweeps.
-    A name is matched by file identity (device and inode), never by its text, so only an alias of
-    the very file that was replaced is removed: a caller's file that is not yet linked has an inode
-    of its own. A caller whose name goes this way finds it missing at its own removal, which it
-    allows. Best effort: the wrapped file is already in place, and a leftover is the stated limit.
-    """
-    if old.st_nlink < 2 or not old.st_ino:
-        return
-    with contextlib.suppress(OSError), os.scandir(path.parent / _PENDING) as entries:
-        for entry in entries:
-            try:
-                # by path: ``DirEntry.stat()`` answers 0 for the device, inode and link count on
-                # Windows, where a name would then never match and the sweep would do nothing
-                st = os.stat(entry.path, follow_symlinks=False)
-                if (st.st_dev, st.st_ino) == (old.st_dev, old.st_ino):
-                    os.unlink(entry.path)
-            except OSError:
-                continue
-
-
-def _identity(st: os.stat_result) -> tuple[int, int, int, int]:
-    """Which file, and which state of it: device, inode, size and modification time."""
-    return (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
-
-
 def _wrap_in_place(
     path: Path, key: Ed25519PrivateKey, passphrase: bytes, seen: os.stat_result | None = None
 ) -> bool:
     """Replace a legacy plaintext key file by the SAME key wrapped under ``passphrase``.
 
     The key never changes (a new key would orphan every bundle already signed, whose public half is
-    in shipped evidence). The wrapped copy is written to a private file of this caller's, read back
-    with the passphrase and compared with the original public key BEFORE it replaces anything, so a
-    failure at any step leaves the original file exactly as it was. ``seen`` is the state of the
-    file when ``key`` was read from it (``fstat`` of the open file); the wrapped copy replaces it
-    only if the file is still exactly that, so a key erased, restored over or wrapped by another
-    caller in the meantime is never replaced by this caller's copy of the key it read earlier.
-    Returns whether the file was replaced. Never raises: signing goes on with the key it holds, and
-    the next load tries again. The log names the exception CLASS only (the passphrase is in scope).
+    in shipped evidence). How the copy is made, checked and swapped in is
+    :func:`src.custody.keyfile.replace_in_place`: the wrapped copy is read back with the passphrase
+    and compared with the original public key BEFORE it replaces anything, and only lands if the
+    file is still the one ``seen`` describes. Returns whether the file was replaced. Never raises:
+    signing goes on with the key it holds, and the next load tries again.
     """
-    tmp: Path | None = None
-    try:
-        if seen is None:
-            seen = os.stat(path)
-        tmp = _write_private(path, "rewrap", _seal(key, passphrase))
-        back, _legacy = _parse_key(path, tmp.read_bytes(), passphrase)
+
+    def same_key(blob: bytes) -> None:
+        back, _legacy = _parse_key(path, blob, passphrase)
         if public_key_hex(back) != public_key_hex(key):
             raise EvidenceKeyError("the wrapped copy does not hold the same key")
-        old = os.stat(path)
-        if _identity(old) != _identity(seen):
-            raise EvidenceKeyError("the key file changed while the wrapped copy was made")
-        os.replace(tmp, path)
-        _drop_aliases(path, old)
-        return True
-    except Exception as exc:  # noqa: BLE001 - best effort by design; the original file is untouched
-        log.warning(
-            "evidence key not wrapped under the passphrase this time (%s)", type(exc).__name__
-        )
-        if tmp is not None:
-            with contextlib.suppress(OSError):
-                tmp.unlink(missing_ok=True)
-        return False
-    finally:
-        _drop_pending(path)
 
-
-def _create_new(path: Path, data: bytes) -> None:
-    """Create ``path`` (it must not exist) holding ``data``, so that no reader ever sees it half written.
-
-    The bytes go to a private file first (``O_EXCL``, 0600, flushed), and ``os.link`` then makes
-    the key file appear all at once; it is refused with ``FileExistsError`` when another caller got
-    there first, which is the one answer that means "load theirs". A file system that has no hard
-    links (a FAT or exFAT external drive), or one where the private file cannot be made, falls back
-    to an exclusive create in place; there a reader can meet the file between its create and its
-    write, which :func:`_read_settled` waits out.
-    """
-    try:
-        tmp = _write_private(path, "new", data)
-    except OSError:
-        _write_new(path, data)
-        return
-    try:
-        try:
-            os.link(tmp, path)
-        except FileExistsError:
-            raise
-        except OSError:
-            _write_new(path, data)
-    finally:
-        with contextlib.suppress(OSError):
-            tmp.unlink(missing_ok=True)
-        _drop_pending(path)
-
-
-def _read_once(path: Path) -> tuple[bytes, os.stat_result]:
-    """The bytes of the file and its state (``fstat`` of the same open file), read together."""
-    with path.open("rb") as fh:
-        return fh.read(), os.fstat(fh.fileno())
-
-
-def _read_settled(path: Path) -> tuple[bytes, os.stat_result]:
-    """The bytes of the key file and its state, waiting a moment if it is there and still empty.
-
-    An empty key file is never a key: it is another caller's create that has not been written yet
-    (only on a file system without hard links, see :func:`_create_new`). Five short looks cover that
-    and nothing else; a file that stays empty is returned empty and fails as the unreadable key it is.
-    """
-    raw, seen = _read_once(path)
-    for _ in range(5):
-        if raw:
-            break
-        time.sleep(0.02)
-        raw, seen = _read_once(path)
-    return raw, seen
+    return keyfile.replace_in_place(
+        path, lambda: _seal(key, passphrase), same_key, seen, "evidence key"
+    )
 
 
 def load_or_create_signing_key(path: Path | None = None) -> Ed25519PrivateKey:
@@ -374,16 +211,18 @@ def load_or_create_signing_key(path: Path | None = None) -> Ed25519PrivateKey:
     path = path or _default_key_path()
     passphrase = _wrap_passphrase()
     try:
-        raw, seen = _read_settled(path)
+        raw, seen = keyfile.read_settled(path)
     except FileNotFoundError:
         key = Ed25519PrivateKey.generate()
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            _create_new(path, _seal(key, passphrase))
+            keyfile.create_new(path, _seal(key, passphrase))
         except FileExistsError:
-            # another caller created it between our look and our create: ONE key, theirs
-            return _parse_key(path, _read_settled(path)[0], passphrase)[0]
-        return key
+            # another caller created it between our look and our create: ONE key, theirs, judged like
+            # any file found there (a caller with no passphrase may have made it plaintext)
+            raw, seen = keyfile.read_settled(path)
+        else:
+            return key
     key, legacy_plaintext = _parse_key(path, raw, passphrase)
     if legacy_plaintext and passphrase is not None:
         _wrap_in_place(path, key, passphrase, seen)

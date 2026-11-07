@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -47,6 +48,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
+from src.custody import keyfile
 from src.monitoring.secret_scrub import env_secret, passphrase_bytes, record_text
 
 # --------------------------------------------------------------------------- #
@@ -169,6 +171,21 @@ def _passphrase() -> bytes | None:
     return passphrase_bytes(p, error=SigningError) if p else None
 
 
+#: How many scrypt derivations may run at once in this process: as many as the machine has cores to run them on.
+#: Each one holds 32 MiB for its 80 ms, and a burst of constructions (the collector opens one custody log per
+#: worker at the start of a pass) used to hold them all at the same time, 1.3 GiB for fifty, with no gain in wall
+#: time because a derivation is CPU-bound. The bound comes from the machine, not from a number chosen here.
+_KDF_SLOTS = threading.BoundedSemaphore(
+    max(1, getattr(os, "process_cpu_count", os.cpu_count)() or 1)
+)
+
+
+def _derive(salt: bytes, passphrase: bytes) -> bytes:
+    """The AES key for a wrapped file: scrypt (N = 2**15, r = 8, p = 1) of the passphrase, at most one per core at a time."""
+    with _KDF_SLOTS:
+        return Scrypt(salt=salt, length=32, n=2**15, r=8, p=1).derive(passphrase)
+
+
 def _wrap(plaintext: bytes, passphrase: bytes) -> bytes:
     """Encrypt key material with AES-256-GCM under a scrypt-derived key.
 
@@ -177,7 +194,7 @@ def _wrap(plaintext: bytes, passphrase: bytes) -> bytes:
     for a single user, not an interoperable key format.
     """
     salt = os.urandom(16)
-    key = Scrypt(salt=salt, length=32, n=2**15, r=8, p=1).derive(passphrase)
+    key = _derive(salt, passphrase)
     nonce = os.urandom(12)
     ct = AESGCM(key).encrypt(nonce, plaintext, None)
     return salt + nonce + ct
@@ -193,8 +210,167 @@ def _mldsa_plain_len() -> int:
 
 def _unwrap(blob: bytes, passphrase: bytes) -> bytes:
     salt, nonce, ct = blob[:16], blob[16:28], blob[28:]
-    key = Scrypt(salt=salt, length=32, n=2**15, r=8, p=1).derive(passphrase)
-    return AESGCM(key).decrypt(nonce, ct, None)
+    return AESGCM(_derive(salt, passphrase)).decrypt(nonce, ct, None)
+
+
+# The Ed25519 key FILE comes in three forms, told apart by what is in it, never by a flag:
+#   "wrapped"   the 32 key bytes under ``_wrap`` (scrypt, then AES-256-GCM): what is written when a passphrase is held
+#   "plaintext" a PKCS8 PEM in the clear: what is written with no passphrase, and what a store had before it got one
+#   "pkcs8"     a PKCS8 PEM under ``BestAvailableEncryption``: what a store with a passphrase wrote before the wrap.
+#               PKCS8 derives its key with PBKDF2-HMAC-SHA256 at 2048 rounds, 0.3 ms a guess, which made this file the
+#               cheapest place to test a guess at the database passphrase (SQLCipher prices one at 170 ms).
+_PEM_START = b"-----BEGIN"
+
+
+def seal_ed25519_key(key: Ed25519PrivateKey, passphrase: bytes | None) -> bytes:
+    """The bytes of the Ed25519 key file: the wrap of the raw key under a passphrase, else the plaintext PEM.
+
+    Public for the same reason as :func:`parse_ed25519_key`: ``passphrase`` is the one given, not the held one."""
+    if passphrase:
+        seed = key.private_bytes(
+            serialization.Encoding.Raw,
+            serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        )
+        return _wrap(seed, passphrase)
+    return key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+
+
+def _ed25519_public_bytes(key: Ed25519PrivateKey) -> bytes:
+    return key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
+    )
+
+
+def parse_ed25519_key(
+    path: Path, raw: bytes, passphrase: bytes | None
+) -> tuple[Ed25519PrivateKey, str]:
+    """``(key, form)`` from the bytes of an Ed25519 key file (forms above); never writes.
+
+    Public because a restore re-wraps the files it brings (R454): it passes the passphrase the file was
+    wrapped under, which this reads from nowhere else (no environment, no held passphrase).
+
+    Every refusal is a :class:`SigningError` that names the file and the cause and carries no
+    passphrase and no key byte. None of them is ever a reason to make another key: a new key would
+    orphan every signature already made.
+    """
+    if not raw.strip():
+        raise SigningError(
+            f"{path.name} is empty (a creation that was cut short). Nothing is replaced for you: "
+            "delete it and a new key is made the next time one is needed."
+        )
+    form = "wrapped"
+    pem: object = None
+    if _PEM_START in raw:
+        # anywhere, not only first: OpenSSL writes a "Bag Attributes" preamble and an editor can add
+        # a byte-order mark. A wrapped blob is random bytes, which hold these ten with a chance of
+        # about 2**-72.
+        form = "plaintext"
+        unreadable = False
+        try:
+            pem = serialization.load_pem_private_key(raw, password=None)
+        except TypeError:
+            form = "pkcs8"  # a PEM that is itself password-protected
+        except ValueError:
+            unreadable = True  # truncated, or a PEM of another kind (a public key, a certificate)
+        if unreadable:
+            raise SigningError(
+                f"{path.name} is not a readable PEM private key (damaged, cut short, or another kind "
+                "of key file). Nothing is replaced for you: move it aside to have a new key made "
+                "(signatures made by the old key stay verifiable against its public key)."
+            )
+        if form == "pkcs8":
+            if not passphrase:
+                raise SigningError(
+                    f"the signing key {path.name} is wrapped but no passphrase is held "
+                    "(unlock the app first)"
+                )
+            try:
+                pem = serialization.load_pem_private_key(raw, password=passphrase)
+            except Exception:  # noqa: BLE001 - a wrong passphrase and a damaged file end here alike
+                pem = None
+            if pem is None:
+                raise SigningError(_NOT_OPENED.format(name=path.name))
+        if not isinstance(pem, Ed25519PrivateKey):
+            raise SigningError(
+                f"{path.name} does not hold an Ed25519 private key (found {type(pem).__name__}); "
+                "this signer only uses Ed25519."
+            )
+        return pem, form
+    if not passphrase:
+        raise SigningError(
+            f"the signing key {path.name} is wrapped but no passphrase is held "
+            "(unlock the app first)"
+        )
+    key: Ed25519PrivateKey | None = None
+    try:
+        key = Ed25519PrivateKey.from_private_bytes(_unwrap(raw, passphrase))
+    except Exception:  # noqa: BLE001 - the tag check, a short blob and a wrong-length seed all end here
+        key = None
+    if key is None:
+        raise SigningError(_NOT_OPENED.format(name=path.name))
+    return key, form
+
+
+_NOT_OPENED = (
+    "the signing key {name} could not be opened with the passphrase held (a wrong "
+    "passphrase, a backup restored from another install that wrapped it under its own, or a "
+    "damaged file). Nothing was replaced; restore the passphrase it was wrapped under, or move "
+    "the file aside to have a new key made (signatures made by the old key stay verifiable "
+    "against its public key)."
+)
+
+
+def parse_mldsa_key(path: Path, raw: bytes, passphrase: bytes | None) -> tuple[bytes, bytes, str]:
+    """``(public key, secret key, form)`` from the bytes of an ML-DSA key file; never writes.
+
+    ``form`` is ``"wrapped"`` (``_wrap`` of public + secret key) or ``"plaintext"`` (public + secret key as
+    they are: what a store had before it got a passphrase, or has with none). Public for the restore that
+    re-wraps the files it brings (R454), so ``passphrase`` is the one given, never the held one, and the
+    two refusals are the ones :class:`HybridSigner` has always raised. ``path`` is unused today; it is kept
+    so this and :func:`parse_ed25519_key` take the same arguments.
+    """
+    if passphrase:
+        try:
+            data = _unwrap(raw, passphrase)
+            form = "wrapped"
+        except Exception:  # noqa: BLE001 - GCM tag check failed
+            # A failed tag check proves only that this blob is not WRAPPED UNDER THIS
+            # passphrase: it is equally what a wrong passphrase and an altered file look
+            # like (``_wrap`` writes no magic prefix). A legacy plaintext key from before
+            # the passphrase existed is told apart by its LENGTH, which is exactly
+            # public key + secret key; anything else is refused, never used as a key
+            # (audit 0.5.0 A-018: the still-wrapped blob used to be split into a
+            # garbage key pair and signed with, silently).
+            if len(raw) != _mldsa_plain_len():
+                raise SigningError(
+                    "the ML-DSA custody key could not be unwrapped with the passphrase held "
+                    "(a wrong passphrase, or the key file was altered)"
+                ) from None
+            data = raw
+            form = "plaintext"
+    else:
+        # No passphrase held: only a blob of exactly the plain key length is a plaintext
+        # key; a longer one is still wrapped, and splitting it would sign with garbage
+        # (the same defect as above, audit 0.5.0 A-018, read-response).
+        if len(raw) != _mldsa_plain_len():
+            raise SigningError(
+                "the ML-DSA custody key is wrapped but no passphrase is held (unlock the app first)"
+            )
+        data = raw
+        form = "plaintext"
+    pk_len = _mldsa.PUBLIC_KEY_SIZE
+    return data[:pk_len], data[pk_len:], form
+
+
+def seal_mldsa_key(pk: bytes, sk: bytes, passphrase: bytes | None) -> bytes:
+    """The bytes of the ML-DSA key file: the wrap of public + secret key under ``passphrase``, else as they are."""
+    data = pk + sk
+    return _wrap(data, passphrase) if passphrase else data
 
 
 # --------------------------------------------------------------------------- #
@@ -243,6 +419,9 @@ class HybridSigner:
         for p in (self._ed_path, self._mldsa_path):
             p.parent.mkdir(parents=True, exist_ok=True)
         self._pp = _passphrase()
+        # what a key file still holds when a passphrase IS held but the file was not (or could not be) wrapped:
+        self._legacy_plain = False  # a key readable in the clear
+        self._ed_pkcs8 = False  # the Ed25519 key under PKCS8's cheap KDF (see parse_ed25519_key)
         self._ed_key = self._load_or_create_ed25519()
         self._mldsa_pk, self._mldsa_sk = self._load_or_create_mldsa()
 
@@ -265,91 +444,83 @@ class HybridSigner:
     def key_protection(self) -> str:
         # The FILE's actual state, never the environment's wish: a legacy
         # plaintext key stays reported as plaintext until it is re-wrapped.
-        if self._pp and not getattr(self, "_legacy_plain", False):
-            return "aes256gcm-scrypt"
-        return "plaintext-0600"
+        if not self._pp or self._legacy_plain:
+            return "plaintext-0600"
+        if self._ed_pkcs8:
+            # encrypted, but not under the scrypt wrap: it could not be re-wrapped this time
+            return "pkcs8-pbkdf2"
+        return "aes256gcm-scrypt"
 
     # -- Ed25519 ----------------------------------------------------------- #
     def _load_or_create_ed25519(self) -> Ed25519PrivateKey:
-        def _as_ed25519(key: object) -> Ed25519PrivateKey:
-            if not isinstance(key, Ed25519PrivateKey):
-                raise TypeError(f"custody key is not Ed25519: {type(key).__name__}")
-            return key
+        """Load the Ed25519 key, creating it once if there is none, wrapped under the passphrase held.
 
-        if self._ed_path.exists():
-            raw = self._ed_path.read_bytes()
+        With a passphrase held the file is the ``_wrap`` of the raw key (scrypt, AES-256-GCM); with
+        none it is a plaintext PKCS8 PEM, 0600 from its first byte. A key written in either older
+        form (plaintext, or PKCS8-encrypted) is wrapped in place the first time it is loaded under
+        a passphrase: the SAME key, read back and compared before it replaces anything
+        (:func:`src.custody.keyfile.replace_in_place`), so a failure leaves the file as it was and
+        ``key_protection`` says what the file really holds.
+        """
+        path = self._ed_path
+        try:
+            raw, seen = keyfile.read_settled(path)
+        except FileNotFoundError:
+            key = Ed25519PrivateKey.generate()
             try:
-                return _as_ed25519(
-                    serialization.load_pem_private_key(
-                        raw, password=self._pp if self._pp else None
-                    )
-                )
-            except TypeError:
-                # Wrapped-vs-plaintext mismatch with the current passphrase
-                # availability: a legacy PLAINTEXT key must keep loading after
-                # the database gains a passphrase (it is re-wrapped only by an
-                # explicit re-key, never silently). The reverse (encrypted key,
-                # no passphrase) re-raises loudly below.
-                if self._pp:
+                keyfile.create_new(path, seal_ed25519_key(key, self._pp))
+            except FileExistsError:
+                # another caller created it between our look and our create: ONE key, theirs, and it is
+                # judged like any file found there (it may be plaintext, made by a caller with no passphrase)
+                raw, seen = keyfile.read_settled(path)
+            else:
+                return key
+        key, form = parse_ed25519_key(path, raw, self._pp)
+        if self._pp and form != "wrapped":
+            passphrase = self._pp
+
+            def same_key(blob: bytes) -> None:
+                back, _form = parse_ed25519_key(path, blob, passphrase)
+                if _ed25519_public_bytes(back) != _ed25519_public_bytes(key):
+                    raise SigningError("the wrapped copy does not hold the same key")
+
+            if not keyfile.replace_in_place(
+                path, lambda: seal_ed25519_key(key, passphrase), same_key, seen, "signing key"
+            ):
+                # Not replaced by this caller: say what the file holds NOW, not what it held when this
+                # caller read it (another caller may have wrapped it in the meantime).
+                form = self._form_now(path, form, key)
+                if form == "plaintext":
                     self._legacy_plain = True
-                    return _as_ed25519(serialization.load_pem_private_key(raw, password=None))
-                raise
-        key = Ed25519PrivateKey.generate()
-        enc = (
-            serialization.BestAvailableEncryption(self._pp)
-            if self._pp
-            else serialization.NoEncryption()
-        )
-        self._ed_path.write_bytes(
-            key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.PKCS8,
-                encryption_algorithm=enc,
-            )
-        )
-        self._ed_path.chmod(0o600)
+                elif form == "pkcs8":
+                    self._ed_pkcs8 = True
         return key
+
+    def _form_now(self, path: Path, read_as: str, key: Ed25519PrivateKey) -> str:
+        """The form the Ed25519 file holds at this moment, when it still holds THIS key.
+
+        ``read_as`` (the answer already given) when the file cannot be read or opened, or holds another
+        key: a file restored over this one meanwhile says nothing about how this signer's key is kept.
+        """
+        try:
+            now, form = parse_ed25519_key(path, keyfile.read_settled(path)[0], self._pp)
+        except Exception:  # noqa: BLE001 - a status read: gone, unreadable or unopenable all keep the answer given
+            return read_as
+        return form if _ed25519_public_bytes(now) == _ed25519_public_bytes(key) else read_as
 
     # -- ML-DSA ------------------------------------------------------------ #
     def _load_or_create_mldsa(self) -> tuple[bytes | None, bytes | None]:
         if not self._use_pqc or not PQC_AVAILABLE:
             return None, None
         if self._mldsa_path.exists():
-            blob = self._mldsa_path.read_bytes()
-            if self._pp:
-                try:
-                    data = _unwrap(blob, self._pp)
-                except Exception:  # noqa: BLE001 - GCM tag check failed
-                    # A failed tag check proves only that this blob is not WRAPPED UNDER THIS
-                    # passphrase: it is equally what a wrong passphrase and an altered file look
-                    # like (``_wrap`` writes no magic prefix). A legacy plaintext key from before
-                    # the passphrase existed is told apart by its LENGTH, which is exactly
-                    # public key + secret key; anything else is refused, never used as a key
-                    # (audit 0.5.0 A-018: the still-wrapped blob used to be split into a
-                    # garbage key pair and signed with, silently).
-                    if len(blob) != _mldsa_plain_len():
-                        raise SigningError(
-                            "the ML-DSA custody key could not be unwrapped with the passphrase held "
-                            "(a wrong passphrase, or the key file was altered)"
-                        ) from None
-                    self._legacy_plain = True
-                    data = blob
-            else:
-                # No passphrase held: only a blob of exactly the plain key length is a plaintext
-                # key; a longer one is still wrapped, and splitting it would sign with garbage
-                # (the same defect as above, audit 0.5.0 A-018, read-response).
-                if len(blob) != _mldsa_plain_len():
-                    raise SigningError(
-                        "the ML-DSA custody key is wrapped but no passphrase is held "
-                        "(unlock the app first)"
-                    )
-                data = blob
-            pk_len = _mldsa.PUBLIC_KEY_SIZE
-            return data[:pk_len], data[pk_len:]
+            pk, sk, form = parse_mldsa_key(
+                self._mldsa_path, self._mldsa_path.read_bytes(), self._pp
+            )
+            if form == "plaintext" and self._pp:
+                self._legacy_plain = True
+            return pk, sk
         pk, sk = _mldsa.generate_keypair()
-        data = pk + sk
-        blob = _wrap(data, self._pp) if self._pp else data
-        self._mldsa_path.write_bytes(blob)
+        self._mldsa_path.write_bytes(seal_mldsa_key(pk, sk, self._pp))
         self._mldsa_path.chmod(0o600)
         return pk, sk
 
