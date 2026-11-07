@@ -109,8 +109,44 @@ def spm_entry(key: str) -> SpmEntry:
 
 
 def _default_getter(url: str) -> Any:
-    session = guarded_session(user_agent=DEFAULT_USER_AGENT, isolation_token=url)
-    return session.get(url, timeout=_TIMEOUT_S)
+    """A guarded GET held to the IPCC host (a redirect off it is refused), streamed,
+    and asked for the identity encoding so the declared length is the body's own."""
+    session = guarded_session(
+        user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=(IPCC_HOST,)
+    )
+    return session.get(
+        url, timeout=_TIMEOUT_S, stream=True, headers={"Accept-Encoding": "identity"}
+    )
+
+
+def _read_declared(resp: Any, label: str) -> bytes:
+    """Read the body, bounded by the length the server DECLARED (never a constant).
+
+    No declared length means no bound to hold the read to, so it is refused; a body that
+    runs past the declared length or stops short of it is refused too.
+    """
+    headers = getattr(resp, "headers", None) or {}
+    declared = headers.get("Content-Length")
+    if declared is None or not str(declared).isdigit():
+        raise ValueError(f"{label}: the server declared no length, so the read cannot be bounded")
+    limit = int(declared)
+    iterator = getattr(resp, "iter_content", None)
+    if iterator is None:  # a test double that only carries .content
+        data = resp.content
+    else:
+        buf = bytearray()
+        for chunk in iterator(chunk_size=65536):
+            buf.extend(chunk)
+            if len(buf) > limit:
+                raise ValueError(
+                    f"{label}: the body runs past the {limit} bytes the server declared"
+                )
+        data = bytes(buf)
+    if len(data) != limit:
+        raise ValueError(
+            f"{label}: received {len(data)} bytes, the server declared {limit} (truncated transfer)"
+        )
+    return data
 
 
 def fetch_spm(key: str, *, get: Getter | None = None) -> bytes:
@@ -127,17 +163,12 @@ def fetch_spm(key: str, *, get: Getter | None = None) -> bytes:
         raise RuntimeError(NETWORK_REFUSED)
     resp = (get or _default_getter)(entry.url)
     resp.raise_for_status()
-    data = resp.content
+    label = f"IPCC {entry.working_group} SPM"
+    data = _read_declared(resp, label)
     if not data:
-        raise ValueError(f"IPCC {entry.working_group} SPM: empty response")
+        raise ValueError(f"{label}: empty response")
     if not looks_like_pdf(data):
-        raise ValueError(f"IPCC {entry.working_group} SPM: the response is not a PDF")
-    declared = (getattr(resp, "headers", None) or {}).get("Content-Length")
-    if declared is not None and str(declared).isdigit() and int(declared) != len(data):
-        raise ValueError(
-            f"IPCC {entry.working_group} SPM: received {len(data)} bytes, "
-            f"the server declared {declared} (truncated transfer)"
-        )
+        raise ValueError(f"{label}: the response is not a PDF")
     return data
 
 

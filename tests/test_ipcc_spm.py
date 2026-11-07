@@ -71,9 +71,10 @@ def test_fetch_returns_bytes_for_a_pdf(monkeypatch):
 @pytest.mark.parametrize(
     "body,headers,msg",
     [
-        (b"", {}, "empty"),
-        (b"<html>not found</html>", {}, "not a PDF"),
+        (b"", {"Content-Length": "0"}, "empty"),
+        (b"<html>not found</html>", {"Content-Length": "22"}, "not a PDF"),
         (_TEXT_PDF[:-10], {"Content-Length": "999999"}, "truncated"),
+        (_TEXT_PDF, {}, "declared no length"),
     ],
 )
 def test_fetch_refuses_bodies_that_cannot_be_the_document(monkeypatch, body, headers, msg):
@@ -124,3 +125,55 @@ def test_disclosure_is_translated_in_all_locales():
     for p in sorted((Path(__file__).parents[1] / "src" / "static" / "locales").glob("*.json")):
         d = json.loads(p.read_text(encoding="utf-8"))
         assert ipcc_spm.DISCLOSURE in d and "IPCC reports" in d, p.name
+
+
+class _Stream(_Resp):
+    def __init__(self, chunks, headers):
+        super().__init__(b"", headers)
+        self._chunks = chunks
+
+    def iter_content(self, chunk_size=1):
+        yield from self._chunks
+
+
+def test_streamed_body_longer_than_declared_is_refused_while_reading(monkeypatch):
+    monkeypatch.setattr(ipcc_spm, "kill_switch_active", lambda: False)
+    resp = _Stream([_TEXT_PDF, b"x" * 100], {"Content-Length": str(len(_TEXT_PDF))})
+    with pytest.raises(ValueError, match="runs past"):
+        ipcc_spm.fetch_spm("wg1", get=lambda u: resp)
+
+
+def test_streamed_body_matching_declared_length_is_returned(monkeypatch):
+    monkeypatch.setattr(ipcc_spm, "kill_switch_active", lambda: False)
+    half = len(_TEXT_PDF) // 2
+    resp = _Stream([_TEXT_PDF[:half], _TEXT_PDF[half:]], {"Content-Length": str(len(_TEXT_PDF))})
+    assert ipcc_spm.fetch_spm("wg1", get=lambda u: resp) == _TEXT_PDF
+
+
+def test_http_error_propagates(monkeypatch):
+    monkeypatch.setattr(ipcc_spm, "kill_switch_active", lambda: False)
+
+    class _Bad(_Resp):
+        def raise_for_status(self):
+            raise RuntimeError("HTTP 404")
+
+    with pytest.raises(RuntimeError, match="404"):
+        ipcc_spm.fetch_spm("wg1", get=lambda u: _Bad(b""))
+
+
+def test_default_getter_is_held_to_the_ipcc_host_and_asks_for_identity(monkeypatch):
+    seen = {}
+
+    class _S:
+        def get(self, url, **kw):
+            seen["kw"] = kw
+            return "resp"
+
+    def fake_session(**kw):
+        seen["session"] = kw
+        return _S()
+
+    monkeypatch.setattr(ipcc_spm, "guarded_session", fake_session)
+    assert ipcc_spm._default_getter("https://www.ipcc.ch/x.pdf") == "resp"
+    assert tuple(seen["session"]["allowed_hosts"]) == (ipcc_spm.IPCC_HOST,)
+    assert seen["kw"]["stream"] is True and seen["kw"]["headers"]["Accept-Encoding"] == "identity"
