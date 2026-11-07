@@ -2297,6 +2297,8 @@
       } catch (e) { box.innerHTML = '<div class="muted">Could not load the draft.</div>'; }
     }
     async function removeDraftItem(id) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!confirm(t("Remove this item, and any note you wrote on it, from the briefing draft?"))) return;
       try { const d = await api("/api/briefing/draft/" + encodeURIComponent(id), {method:"DELETE"});
         updateDraftCount((d.items||[]).length); renderDraft(); } catch (e) { toast(e.message, "err"); }
     }
@@ -2409,6 +2411,8 @@
       } catch (e) { box.innerHTML = '<div class="muted">Could not load.</div>'; }
     }
     async function removeAnnotation(i) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!confirm(t("Remove this annotation? This cannot be undone."))) return;
       try { await api("/api/annotations/mine/" + i, {method:"DELETE"}); loadMineAnnotations(); } catch (e) { toast(e.message, "err"); }
     }
     function exportAnnotations() { window.open("/api/annotations/export", "_blank"); }
@@ -2440,6 +2444,8 @@
       catch (e) { toast(e.message, "err"); }
     }
     async function removeAuthor(id) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!confirm(t("Remove this author and all of their imported annotations? This cannot be undone here; importing their bundle again brings them back."))) return;
       try { await api("/api/annotations/authors/" + encodeURIComponent(id), {method:"DELETE"}); loadAuthors(); }
       catch (e) { toast(e.message, "err"); }
     }
