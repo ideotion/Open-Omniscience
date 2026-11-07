@@ -28,7 +28,8 @@ console.error = (m) => warned.push(String(m));
 
 eval(fs.readFileSync(path.join(__dirname, "..", "src", "static", "oo-on.js"), "utf8"));
 
-const { EVENTS, ACTIONS, EVENT_ACTIONS, GESTURE_ONLY } = window.ooOn;
+const { EVENTS, ACTIONS, EVENT_ACTIONS, TRUSTED_EVENTS } = window.ooOn;
+assert.deepStrictEqual([...TRUSTED_EVENTS].sort(), ["click", "keydown", "submit"], "the events that need a person (A-024 stage 2)");
 // The runtime sets are exactly the literal in the file: nothing is added to a Set outside EVENT_ACTION_NAMES.
 {
   const src = fs.readFileSync(path.join(__dirname, "..", "src", "static", "oo-on.js"), "utf8");
@@ -71,16 +72,23 @@ for (const type of EVENTS) {
   const row = EVENT_ACTIONS[type];
   for (const name of names) {
     ran.length = 0;
-    // a trusted event of this type; keydown gets Enter, so a gesture-only name is not refused for its key
+    // a trusted event of this type: it runs exactly when the type's row lists the name
     fire(type, el({ ["data-on-" + type]: name + "()" }), { isTrusted: true, key: "Enter" });
     const listed = !!row && row.has(name);
-    const gestureOk = !GESTURE_ONLY.has(name) || type === "click" || type === "keydown";
-    const want = listed && gestureOk ? [name] : [];
+    const want = listed ? [name] : [];
     assert.deepStrictEqual(ran, want, `${name} on ${type}: expected ${want.length ? "to run" : "refused"}, got ${JSON.stringify(ran)}`);
+    // an UNTRUSTED one (a script's el.click(), a dispatched keydown/submit) runs only where the type is not in
+    // TRUSTED_EVENTS: `change`, `input` and `toggle` stay open to a script, by ruling (R443), and the row still limits the names
+    ran.length = 0;
+    fire(type, el({ ["data-on-" + type]: name + "()" }), { isTrusted: false, key: "Enter" });
+    const wantUntrusted = listed && !TRUSTED_EVENTS.has(type) ? [name] : [];
+    assert.deepStrictEqual(ran, wantUntrusted, `${name} on an untrusted ${type}: expected ${wantUntrusted.length ? "to run" : "refused"}, got ${JSON.stringify(ran)}`);
     checked++;
   }
 }
 assert(checked === EVENTS.length * names.length && checked > 15000, "the truth table was walked: " + checked);
+// positive controls for the untrusted half: the rows are not empty for the types it distinguishes
+assert(EVENT_ACTIONS.click.size > 100 && EVENT_ACTIONS.change.size > 10 && TRUSTED_EVENTS.has("click") && !TRUSTED_EVENTS.has("change"));
 
 // The case the audit named: an injected zero-click binding calls NOTHING, whatever the name.
 for (const type of ["error", "load", "toggle", "focus", "mouseover", "mouseenter", "pointerdown", "touchstart", "drop"]) {
