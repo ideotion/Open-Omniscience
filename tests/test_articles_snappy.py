@@ -158,7 +158,7 @@ def test_browse_total_cache_actually_stores_a_hit(client):
 
     # A browse call over the fixture's own session/bind.
     with client._TestSession() as db:
-        n1 = main._browse_total_cached(db)
+        n1, _how = main._browse_total_with_source(db)
         assert n1 == 12
         bind = db.get_bind()
         dv = insights._data_version(bind)
@@ -167,4 +167,4 @@ def test_browse_total_cache_actually_stores_a_hit(client):
         stored = insights._read_cache.get(f"articles-total|{id(bind)}|{dv}")
         assert stored is not None and stored.get("count") == 12
         # A second call with no intervening write returns the same value from the store.
-        assert main._browse_total_cached(db) == 12
+        assert main._browse_total_with_source(db) == (12, "count_cached")

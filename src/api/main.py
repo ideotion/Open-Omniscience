@@ -1770,19 +1770,11 @@ def _not_quarantined_by_index():
     return Article.id.notin_(select(Article.id).where(Article.quarantined.is_(True)))
 
 
-def _browse_total_cached(session) -> int:
-    """The UNFILTERED browse total (S3.2: quarantine-EXCLUDED, "unfiltered" meaning no
-    OTHER structured filter) — the corpus-scaled ``COUNT(*) FROM articles WHERE
-    quarantined IS NOT TRUE`` (P1.3): served from a DATA-AWARE cache keyed on
-    ``PRAGMA data_version`` (the /status pattern). Repeat browse pages with no
-    intervening write reuse the count (a HIT); a commit by ANY connection (including a
-    quarantine write) bumps ``data_version`` so the count stays EXACT — never a
-    drifting counter. Probe unavailable -> the live count (never a wrong cache hit)."""
-    return _browse_total_with_source(session)[0]
-
-
 def _browse_total_with_source(session) -> tuple[int, str]:
-    """``(total, how)``: the same total as :func:`_browse_total_cached`, and how it was got --
+    """``(total, how)``: the UNFILTERED browse total (S3.2: quarantine-EXCLUDED, "unfiltered" meaning no
+    OTHER structured filter) -- the corpus-scaled ``COUNT(*) FROM articles WHERE quarantined IS NOT TRUE``
+    (P1.3), served from a DATA-AWARE cache keyed on ``PRAGMA data_version`` (the /status pattern) so a
+    commit by ANY connection keeps the count EXACT -- and how it was got --
     ``count_cached`` (served from the cache) or ``count_recomputed`` (counted now, because nothing
     was cached for this data version: the first browse since the app started or unlocked, an
     entry that had expired or been evicted, or a write by any connection since the last count; or
@@ -2058,7 +2050,7 @@ def _query_articles(
     # No text query: browse by the chosen metadata order (default recency).
     # S3.2: quarantined articles are EXCLUDED BY DEFAULT -- ALWAYS applied, never
     # gated on `if filters:` (so the common no-filter browse still excludes them),
-    # and `_browse_total_cached` is itself quarantine-aware so the S2.3 cached-total
+    # and `_browse_total_with_source` is itself quarantine-aware so the S2.3 cached-total
     # optimisation is preserved rather than forced onto the live-count path below.
     #
     # A PAGED browse asks for ids first (``Article.id`` alone, ordered and cut by the database) and

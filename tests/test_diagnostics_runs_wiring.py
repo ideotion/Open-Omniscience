@@ -69,7 +69,7 @@ def test_the_begin_line_is_on_disk_before_the_build_does_anything(monkeypatch):
     seen: list[list[dict]] = []
 
     def build(ctx, profile, fname, mode="thorough"):
-        seen.append(r._read_lines())
+        seen.append(r._read_lines_marked()[0])
         return {"path": "x", "bytes": 5, "members": [], "filename": fname}
 
     monkeypatch.setattr(b, "_all_diagnostics_build", build)
