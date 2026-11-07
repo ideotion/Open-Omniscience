@@ -306,7 +306,7 @@ def test_the_law_tracker_reads_the_head_and_not_the_wider_predicate():
 # source_management x2, entities, insights, discovery x2, ingestion), four statistics fetchers (five from 2026-11-07: fetch_gistemp), three catalogue loaders, two entity loaders, the
 # ring loader and the mailbox import. A twenty-first site that says the constant is a conscious change of this number, which is the point of pinning
 # it; a site that goes back to a literal fails the scan above it.
-_PRE_CHECK_SITES = 20
+_PRE_CHECK_SITES = 21
 _CONSTANT = "NETWORK_REFUSED"
 _DEFINING_MODULE = "src.ingest.fetch_verdict"
 
