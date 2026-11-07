@@ -646,6 +646,8 @@
         else if (r.method_code === "median") s = t("The middle member value; unlike the mean it is not moved by one extreme member.");
         else if (r.method_code === "weighted_exact") {
           s = _govTf("Sum of (value x {weight}) divided by the summed {weight}. This indicator is measured PER {weight}, so the reconstructed numerator is the real one and this is the group's true figure, not an estimate.", {weight: w});
+        } else if (r.method_code === "weighted_table") {
+          s = _govTf("Sum of (value x {weight}) divided by the summed {weight}. APPROXIMATE: some {weight} figures come from the operator's table, dated on its own rather than at this indicator's period, so the reconstructed numerator is not the real one.", {weight: w});
         } else if (r.method_code === "weighted_approx") {
           s = r.denominator
             ? _govTf("Sum of (value x {weight}) divided by the summed {weight}. APPROXIMATE: this indicator is measured per {denominator}, not per {weight}, so the reconstructed numerator is not the real one.", {weight: w, denominator: weightName(r.denominator)})
@@ -656,6 +658,23 @@
             reported: cov.reported || 0, members: cov.members || 0, missing: (cov.missing || []).length});
         }
         return s;
+      };
+      // The weighting stated ON a weighted figure (S06-04 S6): where the weights came from, how
+      // old they are, which members they cover, and which members the operator's dated table
+      // supplied. Visible, never behind a toggle (informed consent); absent for the unweighted ones.
+      const weightingLine = (r) => {
+        const w = r.weighting;
+        if (!w) return "";
+        const base = w.stated
+          ? _govTf("Weights: {source}, as of {as_of}. Covers {covered} of {total} members.",
+              {source: w.source, as_of: w.as_of || "—", covered: w.members_covered, total: w.members_total})
+          : _govTf("Weights: source not stated. Covers {covered} of {total} members.",
+              {covered: w.members_covered, total: w.members_total});
+        const tbl = (w.from_table && w.from_table.length && w.table)
+          ? " " + _govTf("{who} taken from the operator's population table ({source}, as of {as_of}).",
+              {who: _govNames(w.from_table).short, source: w.table.source || "—", as_of: w.table.as_of || "—"})
+          : "";
+        return `<div class="gov-strat-weighting card-caveat" title="${esc(_govNames(w.from_table || []).full)}">${esc(base + tbl)}</div>`;
       };
       const refusalText = (r) => {
         // The partial-roster refusal is drawn from the coverage it describes, naming the
@@ -707,7 +726,7 @@
             ? ` <span class="pill" title="${esc(t("A starting view, not a winner: the strategies answer different questions and are never ranked or blended."))}">${esc(t("opens here"))}</span>` : ""}</div>
           <div class="gov-strat-val">${esc(_govFmt(r.value, agg.unit))}</div>
           <div class="gov-strat-basis">${esc(r.basis === "exact" ? t("exact") : t("approximate"))}</div>
-          <div class="gov-strat-why">${esc(methodText(r))}</div></div>`;
+          <div class="gov-strat-why">${esc(methodText(r))}</div>${weightingLine(r)}</div>`;
       }).join("");
 
       // Ruling 47's corollary: the SPREAD rides beside every central figure, because a
@@ -746,9 +765,15 @@
         + (period ? ` <span class="muted">(${esc(period)})</span>` : "")
         + ` <span class="pill">${esc(t("computed here"))}</span></div>`;
 
+      // A population table the app ignored says so, visibly, with the reason (never a silent fallback).
+      const tableNote = (d.aggregate && d.aggregate.population_table)
+        ? `<div class="card-caveat gov-grp-table-note">` + esc(_govTf(
+            "The operator's population table was not used ({status}): {reason}",
+            {status: d.aggregate.population_table.status, reason: d.aggregate.population_table.reason || ""})) + `</div>`
+        : "";
       // The two caveats are the engine's and the endpoint's fixed sentences, each a key
       // (the informed-consent non-negotiable: a caveat ships in all twelve languages).
-      return head + vintage + coverageLine + spreadLine + sharedLine + override + partial
+      return head + vintage + coverageLine + tableNote + spreadLine + sharedLine + override + partial
         + `<div class="gov-strat-grid">${cards}</div>`
         // The roster's notes are the registry's fixed sentences too, each a key (W16).
         + (roster.notes ? `<div class="card-caveat">${esc(t(roster.notes))}</div>` : "")
