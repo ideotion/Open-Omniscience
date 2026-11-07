@@ -37,19 +37,18 @@ from src.analytics.keyword_log_export import (
     PARTS_DIR_PREFIX,
     ZipHooks,
     ZipJob,
-    batched,
     disk_check_for,
     disk_watch_for,
     entry_for,
     export_dir,
     fetch_meta,
-    fetch_signatures,
     finish_parts,
     finish_zip,
     fit_window,
     parts_disk_preflight,
     resolve_max_bytes,
     retire_old_parts_sets,
+    signatures_for,
     sweep_stale_scratch,
     unlink_quietly,
     zip_disk_preflight,
@@ -983,9 +982,10 @@ def keyword_log(
             # ---- json / digest: the window is at most _MAX_KEYWORDS_PER_LANG per language,
             # so the survivors (and what is needed to describe them) are bounded by the
             # LANGUAGES, never by the corpus.
-            survivors: list[tuple] = []  # (kid, m, a, first, last, dom, stored-or-dominant language)
+            # (kid, m, a, first, last, dom, stored-or-dominant language, packed language signature)
+            survivors: list[tuple] = []
             for lg in languages:
-                survivors.extend((*r, lg) for r in ranker.rows(lg))
+                survivors.extend((*r[:6], lg, r[6]) for r in ranker.rows(lg, sigs=True))
             survivors.sort(key=lambda r: order_key(r[0], r[1], r[5] is not None))
             per_lang_taken = {}
             for r in survivors:
@@ -1029,13 +1029,14 @@ def keyword_log(
                     chunk = survivors[i : i + plan["batch"]]
                     ids = [s[0] for s in chunk]
                     digest_pass.feed(
-                        chunk, fetch_meta(db, ids), fetch_signatures(db, maps, ids), is_hidden
+                        chunk, fetch_meta(db, ids), signatures_for(db, maps, chunk, 7), is_hidden
                     )
             else:
-                for batch in batched(iter([s[0] for s in survivors]), IN_LIST_IDS):
+                for i in range(0, len(survivors), IN_LIST_IDS):
                     check()
-                    meta.update(fetch_meta(db, batch))
-                    lang_sig.update(fetch_signatures(db, maps, batch))
+                    chunk = survivors[i : i + IN_LIST_IDS]
+                    meta.update(fetch_meta(db, [s[0] for s in chunk]))
+                    lang_sig.update(signatures_for(db, maps, chunk, 7))
     except StatementTimeout as exc:
         raise HTTPException(status_code=503, detail=http_detail(exc)) from exc
     except ExportRefused as exc:

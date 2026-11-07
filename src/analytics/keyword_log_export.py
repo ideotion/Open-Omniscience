@@ -45,6 +45,7 @@ from src.analytics.keyword_log_scan import (
     no_room_refusal,
     order_key,
     scratch_file,
+    unpack_signature,
 )
 from src.analytics.upload_parts import UPLOAD_PART_BYTES, PartWriter
 from src.utils.export_envelope import envelope
@@ -353,7 +354,8 @@ def fetch_meta(db, kids) -> dict[int, tuple]:
 def fetch_signatures(db, maps: ArticleMaps, kids) -> dict[int, dict[str, int]]:
     """Full language signatures via index-only probes plus the article-language map -- mention
     rows are unique per (keyword, article), so each row is one distinct article in its
-    language."""
+    language. The export reads this only for a ranked row that carried no signature (see
+    :func:`signatures_for`); the ordered scan counts the same thing for every row it ranks."""
     sigs: dict[int, dict[str, int]] = {}
     langs, lang_arr = maps.langs, maps.lang_arr
     for batch in in_batches(list(kids)):
@@ -373,6 +375,28 @@ def fetch_signatures(db, maps: ArticleMaps, kids) -> dict[int, dict[str, int]]:
                 sig = sigs[kid] = {}
             lg = langs[lid]
             sig[lg] = sig.get(lg, 0) + 1
+    return sigs
+
+
+def signatures_for(db, maps: ArticleMaps, rows, at: int) -> dict[int, dict[str, int]]:
+    """The ``language_signature`` of each of these ranked rows: the languages the scan counted when it
+    ranked them (``rows[...][at]`` is the packed signature, see ``Ranker.rows(sigs=True)``), and the
+    :func:`fetch_signatures` read only for a row that carried none.
+
+    The scan already met every mention row of a keyword, in the keyword's own order, to rank it; the
+    export used to read those rows a second time for the window's keywords (C9: about a fifth of a
+    cold ``/keywords``). A keyword's signature is its languages in the order the rows first met them,
+    which is the order either read gives (both are index-ordered by keyword, then article)."""
+    sigs: dict[int, dict[str, int]] = {}
+    missing: list[int] = []
+    for r in rows:
+        sig = unpack_signature(r[5], r[2], r[at])
+        if sig is None:
+            missing.append(r[0])
+        elif sig:
+            sigs[r[0]] = sig
+    if missing:
+        sigs.update(fetch_signatures(db, maps, missing))
     return sigs
 
 
@@ -530,7 +554,7 @@ class ZipJob:
         self.disk_watch()
         kids = [r[0] for r in chunk]
         meta = fetch_meta(self.db, kids)
-        sigs = fetch_signatures(self.db, self.maps, kids)
+        sigs = signatures_for(self.db, self.maps, chunk, 6)
         parts = []
         for r in chunk:
             e = entry_for(r, meta, sigs, self.is_hidden)
@@ -556,7 +580,7 @@ class ZipJob:
     def _entry_batches(self, lang: str, n: int, first_round: bool, sw, ring, fam: list):
         """The JSON text of this language's first ``n`` entries, one list per batch."""
         pos = 0
-        rows = itertools.islice(self.ranker.rows(lang), n)
+        rows = itertools.islice(self.ranker.rows(lang, sigs=True), n)
         for chunk in batched(rows, self.batch):
             parts = self._texts_for(lang, chunk, pos, first_round, sw, ring, fam)
             pos += len(chunk)
@@ -751,7 +775,7 @@ class ZipJob:
                 )
                 for lang in order
             }
-            cursors = {lang: _LangCursor(self.ranker.rows(lang), keep[lang]) for lang in order}
+            cursors = {lang: _LangCursor(self.ranker.rows(lang, sigs=True), keep[lang]) for lang in order}
             while any(not cursors[lang].done for lang in order):
                 for lang in order:
                     cur = cursors[lang]

@@ -47,6 +47,7 @@ from __future__ import annotations
 import contextlib
 import errno
 import heapq
+import json
 import logging
 import os
 import sqlite3
@@ -78,6 +79,22 @@ _CHECK_EVERY = 1 << 16
 #: ``test_row_budget_constant_matches_the_measured_row_size`` (it fails if this drifts by
 #: more than 25 %). It is what turns "a share of available memory" into a row count.
 ROW_BYTES = 200
+
+#: What a heap row costs ON TOP of ``ROW_BYTES`` when it carries its language signature (C9, L1: the
+#: scan counts a keyword's articles per language anyway, and the export used to read the mention
+#: rows of every exported keyword a second time to count them again). A signature is a flat tuple
+#: ``(language, n, language, n, ...)`` held only by a keyword in MORE than one language -- a
+#: one-language keyword's signature is ``{dominant: articles}`` and is derived, not stored. MEASURED
+#: with ``tracemalloc`` over 2,000 tuples per width (languages share one interned string each):
+#: 144 / 120 / 184 / 360 bytes at 2 / 3 / 5 / 10 languages when the counts happen to share int
+#: objects, 144 / 188 / 276 when each is its own. The constants are a BOUND on the second line:
+#: a tuple header, then per language a pointer pair (16) and a fresh int (32 with the allocator's
+#: rounding), 64 + 48 * languages. ``_sig_units`` turns it into whole rows, so the heap holds fewer
+#: rows when its rows are fat and ``HEAP_SHARE`` of the memory available stays what it says;
+#: ``memory_plan`` and ``ROW_BYTES`` are untouched. ``test_signature_constants_cover_the_measured_
+#: tuple_size`` fails if the bound stops holding.
+SIG_BASE_BYTES = 64
+SIG_PAIR_BYTES = 48
 
 #: The share of AVAILABLE memory (read when the export starts) the ranker's heaps may use
 #: before they spill to disk. A tenth: the export also holds the article arrays, the
@@ -616,6 +633,37 @@ def scratch_file(prefix: str, suffix: str, directory: Path | str) -> Path:
     return Path(name)
 
 
+def _sig_units(packed: tuple | None) -> int:
+    """How many ``ROW_BYTES`` a heap row counts for: one, plus whatever its carried signature costs
+    (nothing for a keyword in one language, or one whose signature was not carried)."""
+    if not packed:
+        return 1
+    return 1 + -(-(SIG_BASE_BYTES + SIG_PAIR_BYTES * (len(packed) // 2)) // ROW_BYTES)
+
+
+def pack_signature(counts: dict[int, int], names: list[str]) -> tuple:
+    """A keyword's articles per language, as the ranker carries them: ``()`` for one language (the
+    signature is then ``{dominant: articles}``, derived by :func:`unpack_signature`), otherwise the
+    flat ``(language, n, language, n, ...)`` in the order the ordered scan first met each language
+    (the order the export's own re-read of the mention rows gave the dict)."""
+    if len(counts) == 1:
+        return ()
+    return tuple(x for lid, n in counts.items() for x in (names[lid], n))
+
+
+def unpack_signature(dom: str | None, articles: int, packed: tuple | None) -> dict[str, int] | None:
+    """The ``language_signature`` of a ranked row, or ``None`` when the row did not carry one (the
+    caller reads the mention rows then). A keyword no mention row names has the empty signature."""
+    if dom is None:
+        return {}
+    if packed is None:
+        return None
+    if not packed:
+        return {dom: articles}
+    it = iter(packed)
+    return dict(zip(it, it, strict=True))
+
+
 class Ranker:
     """Per-language quota ranking that never holds more than ``heap_rows`` rows in memory.
 
@@ -623,7 +671,10 @@ class Ranker:
     ``[lo, hi)`` in rank order as ``(kid, m, a, first, last, dom)`` (``dom`` is ``None`` for
     a keyword with no mention row). Rank order within a language is the export's own:
     mention-bearing keywords by mentions descending then id ascending, then the orphans by
-    id ascending.
+    id ascending. A row can also carry its keyword's language signature (``add(..., counts, names)``,
+    read back with ``rows(lang, sigs=True)``), so the export need not read the mention rows again; a
+    row that carries one is priced as the rows it takes in memory (``_sig_units``), and on disk it is
+    one more column.
 
     Two modes, one behaviour. In heap mode each language keeps its best ``hi`` rows. When
     the rows held across all languages would pass ``heap_rows`` the contents move to an
@@ -653,6 +704,9 @@ class Ranker:
         self._expected = expected_rows
         self._heaps: dict[str, list] = {}
         self._held = 0
+        # Rows held, each counted for the ``ROW_BYTES`` it and its signature cost (``_sig_units``):
+        # what the memory plan's row budget is compared with. ``_held`` stays the plain row count.
+        self._units = 0
         self._seen: dict[str, int] = {}
         self._con: sqlite3.Connection | None = None
         self._path: Path | None = None
@@ -666,7 +720,11 @@ class Ranker:
     # -- feeding
 
     def add(self, lang: str, kid: int, m: int, a: int, first: str | None, last: str | None,
-            dom: str | None) -> None:
+            dom: str | None, counts: dict[int, int] | None = None,
+            names: list[str] | None = None) -> None:
+        """Rank one keyword. ``counts`` (its articles per language id) with ``names`` (the id ->
+        language list) makes the row carry its language signature, packed only when the row is
+        kept; without them the row carries none and the export reads the mention rows for it."""
         seen = self._seen
         seen[lang] = seen.get(lang, 0) + 1
         if self._con is not None:
@@ -674,26 +732,37 @@ class Ranker:
             floor = self._floor.get(lang)
             if floor is not None and (has_m, m, -kid) <= floor:
                 return
-            self._buf.append((kid, lang, has_m, m, a, first, last, dom))
+            sig = None
+            if counts is not None and names is not None:
+                flat = pack_signature(counts, names)
+                sig = json.dumps(flat, separators=(",", ":")) if flat else "[]"
+            self._buf.append((kid, lang, has_m, m, a, first, last, dom, sig))
             n = self._on_disk[lang] = self._on_disk.get(lang, 0) + 1
             if self._hi > 0 and n >= 2 * self._hi:
                 self._prune(lang)
             elif len(self._buf) >= _SPILL_FLUSH:
                 self._flush()
             return
-        item = (0 if dom is None else 1, m, -kid, a, first, last, dom)
+        key = (0 if dom is None else 1, m, -kid, a, first, last, dom)
         h = self._heaps.get(lang)
+        # ``key`` ranks on its first three fields (a kid is added once), so the signature, the last
+        # field of the item, is packed only for a row the heap keeps: most rows of a large corpus are not.
+        if h is not None and len(h) >= self._hi and not key > h[0]:
+            return
+        packed = pack_signature(counts, names) if counts is not None and names is not None else None
+        item = (*key, packed)
+        units = _sig_units(packed)
         if h is None:
             self._heaps[lang] = [item]
             self._held += 1
+            self._units += units
         elif len(h) < self._hi:
             heapq.heappush(h, item)
             self._held += 1
-        elif item > h[0]:
-            heapq.heapreplace(h, item)
+            self._units += units
         else:
-            return
-        if self._held > self._heap_rows:
+            self._units += units - _sig_units(heapq.heapreplace(h, item)[7])
+        if self._units > self._heap_rows:
             self._to_spill()
 
     def _to_spill(self) -> None:
@@ -704,7 +773,9 @@ class Ranker:
         if self._hi > 0 and len(self._heaps) * 2 * self._hi < bound:
             bound = max(self._held, len(self._heaps) * 2 * self._hi)
         if self._disk_check is not None:
-            self._disk_check(bound * SPILL_ROW_BYTES)
+            # The rows held now are known to the byte; the rows still to come are the disk watch's.
+            sig_bytes = sum(len(it[7]) * 8 for h in self._heaps.values() for it in h if it[7])
+            self._disk_check(bound * SPILL_ROW_BYTES + sig_bytes)
         # mkstemp: a name no other export can share (two in one millisecond used to), created
         # before anything else so a failure below has a file to remove.
         self._path = scratch_file(SPILL_PREFIX, ".sqlite", self._spill_dir)
@@ -718,7 +789,7 @@ class Ranker:
                     con.execute(f"PRAGMA {pragma}")
                 con.execute(
                     "CREATE TABLE kw (kid INTEGER PRIMARY KEY, lang TEXT NOT NULL, has_m INTEGER NOT NULL,"
-                    " m INTEGER NOT NULL, a INTEGER NOT NULL, first TEXT, last TEXT, dom TEXT)"
+                    " m INTEGER NOT NULL, a INTEGER NOT NULL, first TEXT, last TEXT, dom TEXT, sig TEXT)"
                 )
                 # Created BEFORE the rows go in: SQLite builds an index after the fact with a
                 # sorter that spills to its temp directory, which on some machines is a RAM disk.
@@ -738,17 +809,19 @@ class Ranker:
             self._on_disk[lang] = len(h)
             for i in range(0, len(h), _SPILL_FLUSH):
                 self._buf = [
-                    (-it[2], lang, it[0], it[1], it[3], it[4], it[5], it[6])
+                    (-it[2], lang, it[0], it[1], it[3], it[4], it[5], it[6],
+                     None if it[7] is None else json.dumps(it[7], separators=(",", ":")))
                     for it in h[i:i + _SPILL_FLUSH]
                 ]
                 self._flush()
         self._held = 0
+        self._units = 0
 
     def _flush(self) -> None:
         if self._buf and self._con is not None:
             with _refuse_when_the_disk_is_full(self._spill_dir):
                 self._con.execute("BEGIN")
-                self._con.executemany("INSERT INTO kw VALUES (?,?,?,?,?,?,?,?)", self._buf)
+                self._con.executemany("INSERT INTO kw VALUES (?,?,?,?,?,?,?,?,?)", self._buf)
                 self._con.execute("COMMIT")
             self._buf = []
             if self._disk_watch is not None:
@@ -799,21 +872,28 @@ class Ranker:
         """The rank (from 0) of the first row of the window: what a later page starts at."""
         return self._lo
 
-    def rows(self, lang: str) -> Iterator[tuple]:
+    def rows(self, lang: str, *, sigs: bool = False) -> Iterator[tuple]:
+        """The window's rows in rank order, ``(kid, m, a, first, last, dom)``. With ``sigs`` each
+        carries a seventh field: its packed language signature, or ``None`` when it carried none."""
         if self._con is None:
             h = sorted(self._heaps.get(lang, ()), reverse=True)
             for it in h[self._lo:self._hi]:
-                yield (-it[2], it[1], it[3], it[4], it[5], it[6])
+                row = (-it[2], it[1], it[3], it[4], it[5], it[6])
+                yield (*row, it[7]) if sigs else row
             return
         self._flush()
-        yield from self._con.execute(
-            "SELECT kid, m, a, first, last, dom FROM kw WHERE lang=? "
+        cursor = self._con.execute(
+            "SELECT kid, m, a, first, last, dom, sig FROM kw WHERE lang=? "
             "ORDER BY has_m DESC, m DESC, kid ASC LIMIT ? OFFSET ?",
             # max(0, ...): SQLite reads a NEGATIVE limit as "no limit", where the heap form's
             # slice [lo:hi] is empty when hi < lo. The route cannot reach it (fit_window never
             # returns less than one), but the two modes are one behaviour, so they agree here too.
             (lang, max(0, self._hi - self._lo), self._lo),
         )
+        for *row, sig in cursor:
+            if sigs:
+                row.append(None if sig is None else tuple(json.loads(sig)))
+            yield tuple(row)
 
     def close(self) -> None:
         con, self._con = self._con, None
@@ -992,7 +1072,7 @@ def scan_keywords(db, maps: ArticleMaps, src_articles: dict[int, int], ranker: R
         else:
             lid = min(counts, key=lambda lg: (-counts[lg], langs[lg]))
         dom = langs[lid]
-        ranker.add(dom, cur_kid, m, a, first, last, dom)
+        ranker.add(dom, cur_kid, m, a, first, last, dom, counts, langs)
         if mark_arr is not None:
             if 0 <= cur_kid <= max_kid:
                 mark_arr[cur_kid] = 1
@@ -1012,6 +1092,12 @@ def scan_keywords(db, maps: ArticleMaps, src_articles: dict[int, int], ranker: R
                     "share_of_source": round(top_n / src_total, 3),
                 })
 
+    # DELIBERATELY read through ``db.execute`` and not a raw driver cursor (C9, measured 2026-11-07: a
+    # raw cursor saves 2.3-2.9 s of a 15 s scan on 9.9 M mentions). A raw cursor bypasses the three
+    # ``before_cursor_execute`` observers every engine statement passes (the gate holder's statement
+    # clock, the statement-kind note, the slow-query log) and needs ``damage.guard_raw_driver``: this
+    # loop would be the only long read none of them can see. A small gain for a hole in them is the
+    # wrong trade; do not "optimise" it back in without ruling on that.
     for n, (kid, aid, cnt, obs) in enumerate(
         db.execute(
             text(
