@@ -59,6 +59,9 @@ from dataclasses import dataclass, field
 
 from src.stats.sdmx import StatFigure
 
+#: When the documented shape below was last written down (NOT a live verification).
+ONI_AS_OF = "2026-11"
+
 #: The stable agency code for the NOAA Climate Prediction Center.
 AGENCY = "us-noaa-cpc"
 
