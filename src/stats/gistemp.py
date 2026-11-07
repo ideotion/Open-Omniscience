@@ -44,6 +44,7 @@ HONESTY PROPERTIES, each a refusal rather than a caveat:
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 
@@ -79,7 +80,7 @@ _SEASON_COLS: tuple[str, ...] = ("DJF", "MAM", "JJA", "SON")
 _HEADER: tuple[str, ...] = ("Year", *_MONTHS, *_ANNUAL_COLS, *_SEASON_COLS)
 
 _MISSING = frozenset({"***", "****", "*****", "******"})
-_MIN_YEAR, _MAX_YEAR = 1800, 2200
+_MIN_YEAR, _MAX_YEAR = 1800, 2100
 
 
 @dataclass
@@ -89,6 +90,8 @@ class GistempParse:
     figures: list[StatFigure] = field(default_factory=list)
     refused: list[dict[str, str]] = field(default_factory=list)
     rows_read: int = 0
+    #: Exact number of refused lines; ``refused`` keeps only the first MAX_REFUSALS_KEPT.
+    refused_total: int = 0
     #: Columns published but deliberately not emitted (stated, not silent).
     skipped_columns: tuple[str, ...] = _SEASON_COLS
     #: Non-blank lines before the header (the title line); counted, never parsed.
@@ -97,10 +100,18 @@ class GistempParse:
     @property
     def looks_unrecognised(self) -> bool:
         """True when nothing parsed AND something was refused: not this file (HTML, 404...)."""
-        return self.rows_read == 0 and bool(self.refused)
+        return self.rows_read == 0 and self.refused_total > 0
 
 
-_DECIMAL = re.compile(r"^[+-]?(?:\d+\.?\d*|\.\d+)$")
+_DECIMAL = re.compile(r"^[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)$")
+_YEAR = re.compile(r"^[0-9]{4}$")
+
+#: Stated plausibility bound (degC). Real anomalies sit within a few degrees; a cell beyond this
+#: is a corrupt or hostile body, refused as not-a-measurement rather than shown as a figure.
+_MAX_ABS_ANOMALY = 50.0
+
+#: Refusals kept verbatim (the count is always exact in ``refused_total``).
+MAX_REFUSALS_KEPT = 100
 
 
 def _cell(raw: str) -> tuple[float | None, bool]:
@@ -113,7 +124,10 @@ def _cell(raw: str) -> tuple[float | None, bool]:
         return None, True
     if not _DECIMAL.match(text):
         return None, False
-    return float(text), True
+    value = float(text)
+    if not math.isfinite(value) or abs(value) > _MAX_ABS_ANOMALY:
+        return None, False
+    return value, True
 
 
 def parse_gistemp(text: str, *, region: str = "GLB", extracted_at: str) -> GistempParse:
@@ -136,25 +150,24 @@ def parse_gistemp(text: str, *, region: str = "GLB", extracted_at: str) -> Giste
             # another product. Counted either way, and the missing header refuses all rows.
             out.preamble_lines += 1
             if out.preamble_lines > 3 or "," in stripped:
-                out.refused.append({"line": str(lineno), "reason": "data before the header", "text": stripped[:80]})
+                _refuse(out, {"line": str(lineno), "reason": "data before the header", "text": stripped[:80]})
             continue
         if len(fields) != len(_HEADER):
-            out.refused.append({"line": str(lineno), "reason": f"expected {len(_HEADER)} fields", "text": stripped[:80]})
+            _refuse(out, {"line": str(lineno), "reason": f"expected {len(_HEADER)} fields", "text": stripped[:80]})
             continue
-        try:
-            year = int(fields[0])
-        except ValueError:
-            out.refused.append({"line": str(lineno), "reason": "year is not an integer", "text": stripped[:80]})
+        if not _YEAR.match(fields[0]):
+            _refuse(out, {"line": str(lineno), "reason": "year is not an integer", "text": stripped[:80]})
             continue
+        year = int(fields[0])
         if not (_MIN_YEAR <= year <= _MAX_YEAR):
-            out.refused.append({"line": str(lineno), "reason": "year out of range", "text": stripped[:80]})
+            _refuse(out, {"line": str(lineno), "reason": "year out of range", "text": stripped[:80]})
             continue
         cells = [_cell(c) for c in fields[1:]]  # months, J-D, D-N AND the seasons: all validated
         if not all(ok for _, ok in cells):
-            out.refused.append({"line": str(lineno), "reason": "non-numeric value", "text": stripped[:80]})
+            _refuse(out, {"line": str(lineno), "reason": "non-numeric value", "text": stripped[:80]})
             continue
         if year in seen_years:
-            out.refused.append({"line": str(lineno), "reason": "duplicate year", "text": stripped[:80]})
+            _refuse(out, {"line": str(lineno), "reason": "duplicate year", "text": stripped[:80]})
             continue
         seen_years.add(year)
         out.rows_read += 1
@@ -163,12 +176,18 @@ def parse_gistemp(text: str, *, region: str = "GLB", extracted_at: str) -> Giste
             out.figures.append(_fig(SERIES_MONTHLY, region, f"{year}-{i + 1:02d}", values[i], extracted_at))
         out.figures.append(_fig(SERIES_ANNUAL_JD, region, str(year), values[12], extracted_at))
         out.figures.append(_fig(SERIES_ANNUAL_DN, region, str(year), values[13], extracted_at))
-    if out.rows_read == 0 and not out.refused:
+    if out.rows_read == 0 and out.refused_total == 0:
         # An empty body, a title line only, or a header with no rows: not a series. Recorded
         # as a refusal so it reads as "unrecognised", never as a successful empty fetch.
         reason = "no data rows found" if header_seen else "header row not found"
-        out.refused.append({"line": "0", "reason": reason, "text": ""})
+        _refuse(out, {"line": "0", "reason": reason, "text": ""})
     return out
+
+
+def _refuse(out: GistempParse, entry: dict[str, str]) -> None:
+    out.refused_total += 1
+    if len(out.refused) < MAX_REFUSALS_KEPT:
+        out.refused.append(entry)
 
 
 def _fig(series: str, region: str, period: str, value: float | None, extracted_at: str) -> StatFigure:

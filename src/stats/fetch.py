@@ -67,6 +67,8 @@ OWID_GRAPHER_BASE = "https://ourworldindata.org/grapher"
 # against 1951-1980. NOT verified against a live download (the build sandbox cannot reach
 # the host): a wrong path or shape fails LOUDLY (HTTP error / looks_unrecognised).
 GISTEMP_BASE = "https://data.giss.nasa.gov/gistemp/tabledata_v4"
+# A body bound: the real table is ~150 KB; anything over this is not that file.
+GISTEMP_MAX_CHARS = 2_000_000
 
 # Generous default timeout: a fetch may egress over Tor, which is slow — a tight
 # timeout would spuriously fail honest requests. Seconds.
@@ -403,6 +405,8 @@ def fetch_gistemp(
     getter = get or _default_getter
     resp = getter(gistemp_url(region))
     resp.raise_for_status()
+    if len(resp.text) > GISTEMP_MAX_CHARS:
+        raise ValueError(f"GISTEMP {region}: the response is {len(resp.text)} characters, over the {GISTEMP_MAX_CHARS} cap (the real table is about 0.15 MB)")
     parsed = parse_gistemp(resp.text, region=region, extracted_at=extracted_at)
     if parsed.looks_unrecognised:
         raise ValueError(

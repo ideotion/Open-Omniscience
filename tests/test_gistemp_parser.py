@@ -208,3 +208,36 @@ def test_a_duplicate_year_is_refused_not_emitted_twice():
 def test_fetch_of_an_empty_or_header_only_body_raises(body):
     with pytest.raises(ValueError):
         fetch.fetch_gistemp(get=lambda u: _Resp(body), extracted_at=VINTAGE)
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        "1950," + "9" * 400 + "," + ",".join(["0"] * 17),
+        "1950,99999," + ",".join(["0"] * 16),
+        "1950,٠.٥," + ",".join(["0"] * 16),
+        "1950,０.５," + ",".join(["0"] * 16),
+        "١٩٩٠," + ",".join(["0"] * 18),
+        "19_90," + ",".join(["0"] * 18),
+        "01990," + ",".join(["0"] * 18),
+        "2199," + ",".join(["0"] * 18),
+    ],
+)
+def test_hostile_numbers_and_years_are_refused(row):
+    res = parse_gistemp(f"{HEADER}\n{row}\n", extracted_at=VINTAGE)
+    assert res.figures == [] and res.looks_unrecognised
+
+
+def test_the_refusal_list_is_capped_but_the_count_is_exact():
+    from src.stats.gistemp import MAX_REFUSALS_KEPT
+
+    good = "1950," + ",".join(["0"] * 18)
+    body = f"{HEADER}\n{good}\n" + "junk\n" * 5000
+    res = parse_gistemp(body, extracted_at=VINTAGE)
+    assert res.refused_total == 5000 and len(res.refused) == MAX_REFUSALS_KEPT
+    assert res.rows_read == 1 and not res.looks_unrecognised
+
+
+def test_fetch_refuses_an_oversized_body():
+    with pytest.raises(ValueError):
+        fetch.fetch_gistemp(get=lambda u: _Resp("x" * (fetch.GISTEMP_MAX_CHARS + 1)), extracted_at=VINTAGE)
