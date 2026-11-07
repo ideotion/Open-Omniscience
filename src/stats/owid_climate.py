@@ -86,7 +86,7 @@ CATALOG: dict[str, dict[str, object]] = {
 MAX_REFUSALS_KEPT = 100
 _YEAR = re.compile(r"^[0-9]{4}$")
 _NUMBER = re.compile(r"^[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]{1,3})?$")
-_GAP = frozenset({"", "na", "nan", "null"})
+_GAP = frozenset({"", "na", "n/a", "nan", "null"})
 _MIN_YEAR, _MAX_YEAR = 1700, 2200
 
 
@@ -147,6 +147,11 @@ def _refuse(out: OwidParse, line: int, reason: str, text: str = "") -> None:
         out.refused.append({"line": str(line), "reason": reason, "text": text[:80]})
 
 
+def _is_aggregate(iso: str) -> bool:
+    """No ISO code, or an OWID_ pseudo-code (OWID_WRL ...), is an aggregate; Kosovo's OWID_KOS is a country."""
+    return not iso or (iso.startswith("OWID_") and iso != "OWID_KOS")
+
+
 def _value(raw: str) -> tuple[float | None, bool]:
     text = raw.strip()
     if text.lower() in _GAP:
@@ -169,17 +174,30 @@ def parse_owid(text: str, *, dataset: str, extracted_at: str) -> OwidParse:
     except StopIteration:
         return out
     idx = {name: i for i, name in reversed(list(enumerate(header)))}  # first occurrence wins
-    if "country" not in idx or "year" not in idx:
-        _refuse(out, 1, "required column country/year missing", ",".join(header)[:80])
+    if "country" not in idx or "year" not in idx or "iso_code" not in idx:
+        # iso_code is required: without it every country would read as an aggregate.
+        _refuse(out, 1, "required column country/year/iso_code missing", ",".join(header)[:80])
+        return out
+    duplicated = sorted({n for n in header if header.count(n) > 1 and (n in units or n in ("country", "year", "iso_code"))})
+    if duplicated:
+        _refuse(out, 1, f"duplicate header column(s) {duplicated}: which value is meant is not guessed", ",".join(header)[:80])
         return out
     out.header_ok = True
     present = [c for c in units if c in idx]
     out.columns_present = present
     out.columns_missing = [c for c in units if c not in idx]
-    i_country, i_year, i_iso = idx["country"], idx["year"], idx.get("iso_code")
+    i_country, i_year, i_iso = idx["country"], idx["year"], idx["iso_code"]
     methodology = methodology_for(dataset)
     seen: set[tuple[str, str]] = set()
-    for lineno, row in enumerate(reader, start=2):
+    while True:
+        try:
+            row = next(reader)
+        except StopIteration:
+            break
+        except csv.Error as exc:  # e.g. one field over the csv module's size limit
+            _refuse(out, reader.line_num, f"unreadable CSV record ({exc})")
+            break
+        lineno = reader.line_num  # the physical line the record ends on (quoted newlines count)
         if not row or not any(c.strip() for c in row):
             continue
         if len(row) != len(header):
@@ -189,7 +207,7 @@ def parse_owid(text: str, *, dataset: str, extracted_at: str) -> OwidParse:
         if not country or not _YEAR.match(year_raw) or not (_MIN_YEAR <= int(year_raw) <= _MAX_YEAR):
             _refuse(out, lineno, "no country or year not a four-digit year", ",".join(row))
             continue
-        iso = row[i_iso].strip() if i_iso is not None else ""
+        iso = row[i_iso].strip()
         area = iso or country
         if (area, year_raw) in seen:
             _refuse(out, lineno, "duplicate area and year", f"{area},{year_raw}")
@@ -200,7 +218,7 @@ def parse_owid(text: str, *, dataset: str, extracted_at: str) -> OwidParse:
             continue
         seen.add((area, year_raw))
         out.rows_read += 1
-        if not iso:
+        if _is_aggregate(iso):
             out.aggregate_areas.add(country)
         for col, (val, _) in zip(present, cells, strict=True):
             out.figures.append(

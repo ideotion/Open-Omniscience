@@ -186,6 +186,22 @@ def _default_getter(url: str) -> Any:
     return session.get(url, timeout=DEFAULT_TIMEOUT_S)
 
 
+# Each climate fetcher's session may talk only to its own host: a redirect hop anywhere else is refused
+# (guarded_session(allowed_hosts=...)). The consent popup's "climate" lane names both hosts.
+GISTEMP_HOSTS = ("data.giss.nasa.gov",)
+OWID_HOSTS = ("raw.githubusercontent.com",)
+
+
+def _gistemp_getter(url: str) -> Any:
+    session = guarded_session(user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=GISTEMP_HOSTS)
+    return session.get(url, timeout=DEFAULT_TIMEOUT_S)
+
+
+def _owid_bulk_getter(url: str) -> Any:
+    session = guarded_session(user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=OWID_HOSTS)
+    return session.get(url, timeout=DEFAULT_TIMEOUT_S)
+
+
 def _worldbank_page_count(payload: Any) -> int:
     """Total pages reported by a World Bank ``[page_meta, [observations]]`` payload.
 
@@ -425,7 +441,7 @@ def fetch_gistemp(
     if kill_switch_active():
         raise RuntimeError(NETWORK_REFUSED)
     extracted_at = extracted_at or _now_iso()
-    getter = get or _default_getter
+    getter = get or _gistemp_getter
     resp = getter(gistemp_url(region))
     resp.raise_for_status()
     bound = gistemp_max_chars()
@@ -470,7 +486,7 @@ def fetch_owid_dataset(
     if kill_switch_active():
         raise RuntimeError(NETWORK_REFUSED)
     extracted_at = extracted_at or _now_iso()
-    getter = get or _default_getter
+    getter = get or _owid_bulk_getter
     resp = getter(owid_dataset_url(dataset))
     resp.raise_for_status()
     text = resp.text
@@ -478,10 +494,10 @@ def fetch_owid_dataset(
     if len(text) > bound:
         raise ValueError(f"OWID {dataset}: the response is {len(text)} characters, over the {bound} the table's own shape allows")
     parsed = parse_owid(text, dataset=dataset, extracted_at=extracted_at)
-    if parsed.looks_unrecognised:
+    if parsed.looks_unrecognised or parsed.all_gap:
         raise ValueError(
             f"OWID {dataset}: the response is not the expected table "
-            f"(required columns found: {parsed.header_ok}, curated columns found: {len(parsed.columns_present)}, "
+            f"(all curated cells empty: {parsed.all_gap}, required columns found: {parsed.header_ok}, curated columns found: {len(parsed.columns_present)}, "
             f"rows read: {parsed.rows_read}, lines refused: {parsed.refused_total})"
         )
     return parsed

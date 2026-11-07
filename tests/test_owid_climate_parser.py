@@ -93,9 +93,12 @@ def test_refusals_are_a_sample_with_an_exact_count():
     assert s["refused_total"] == 500 and len(s["refused_sample"]) == MAX_REFUSALS_KEPT and s["refused_is_sample"] is True
 
 
-def test_an_all_gap_table_is_a_success_marked_all_gap():
-    r = parse_owid("country,year,iso_code,co2\nFrance,1990,FRA,NA\n", dataset="co2", extracted_at=V)
+def test_an_all_gap_table_parses_marked_all_gap_but_the_fetch_refuses_it():
+    body = "country,year,iso_code,co2\nFrance,1990,FRA,NA\nWorld,1990,,\n"
+    r = parse_owid(body, dataset="co2", extracted_at=V)
     assert r.all_gap and not r.looks_unrecognised
+    with pytest.raises(ValueError, match="all curated cells empty: True"):
+        fetch.fetch_owid_dataset("co2", get=lambda u: _Resp(body), extracted_at=V)
 
 
 def test_the_energy_dataset_uses_its_own_columns():
@@ -154,3 +157,52 @@ def test_kill_switch_refuses_before_any_getter_runs(monkeypatch):
 def test_a_literal_nan_is_a_gap_like_bulk_py_not_a_figure():
     r = parse_owid("country,year,iso_code,co2\nFrance,1990,FRA,NaN\n", dataset="co2", extracted_at=V)
     assert r.figures[0].value is None and r.all_gap
+
+
+def test_a_file_without_iso_code_is_unrecognised_not_all_aggregates():
+    r = parse_owid("country,year,co2\nFrance,1990,1\nGermany,1990,2\n", dataset="co2", extracted_at=V)
+    assert r.figures == [] and r.looks_unrecognised and not r.aggregate_areas
+
+
+def test_a_duplicated_header_column_refuses_the_file():
+    r = parse_owid("country,year,iso_code,co2,co2\nFrance,1990,FRA,1,999\n", dataset="co2", extracted_at=V)
+    assert r.figures == [] and r.looks_unrecognised and "duplicate header" in r.refused[0]["reason"]
+
+
+def test_a_bom_before_the_header_is_stripped():
+    r = parse_owid("\ufeffcountry,year,iso_code,co2\nFrance,1990,FRA,1\n", dataset="co2", extracted_at=V)
+    assert r.rows_read == 1
+
+
+def test_line_numbers_are_physical_lines_after_a_quoted_newline():
+    body = 'country,year,iso_code,co2\n"A\nB",1990,AAA,1\nFrance,19x0,FRA,1\n'
+    r = parse_owid(body, dataset="co2", extracted_at=V)
+    assert r.rows_read == 1 and r.refused[0]["line"] == "4"
+
+
+def test_an_oversized_field_is_a_counted_refusal_not_a_raw_csv_error():
+    body = "country,year,iso_code,co2\nFrance,1990,FRA,1\n" + "x" * 200_000 + ",1990,AAA,1\n"
+    r = parse_owid(body, dataset="co2", extracted_at=V)
+    assert r.rows_read == 1 and r.refused_total == 1 and "unreadable CSV record" in r.refused[0]["reason"]
+
+
+@pytest.mark.parametrize("year", ["1699", "0001"])
+def test_years_below_the_floor_are_refused(year):
+    r = parse_owid(f"country,year,iso_code,co2\nFrance,{year},FRA,1\n", dataset="co2", extracted_at=V)
+    assert r.figures == [] and r.refused_total == 1
+
+
+def test_na_variants_are_gaps_and_owid_pseudo_codes_are_aggregates_except_kosovo():
+    body = "country,year,iso_code,co2\nFrance,1990,FRA,n/a\nWorld,1990,OWID_WRL,1\nKosovo,1990,OWID_KOS,2\n"
+    r = parse_owid(body, dataset="co2", extracted_at=V)
+    assert r.rows_read == 3 and r.aggregate_areas == {"World"}
+    assert [f.value for f in r.figures if f.ref_area == "FRA"] == [None]
+
+
+def test_fetch_refuses_a_body_with_required_columns_but_no_curated_column():
+    with pytest.raises(ValueError):
+        fetch.fetch_owid_dataset("co2", get=lambda u: _Resp("country,year,iso_code,population\nFrance,1990,FRA,5\n"), extracted_at=V)
+
+
+def test_the_climate_fetchers_default_to_a_session_pinned_to_their_own_host():
+    assert fetch.GISTEMP_HOSTS == ("data.giss.nasa.gov",) and fetch.OWID_HOSTS == ("raw.githubusercontent.com",)
