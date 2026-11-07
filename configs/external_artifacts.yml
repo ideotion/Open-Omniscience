@@ -1217,3 +1217,21 @@ artifacts:
       - "pyproject.toml dependencies sqlalchemy carries the same floor (2.0.31); requirements.lock pins a release at or above it (test-enforced)"
       - "requirements.lock pins a release the names test passes on (2.0.51 today)"
     last_verified: "2026-10-17"
+
+  - id: nsidc-sea-ice-index-shape
+    title: NSIDC Sea Ice Index v3 daily extent CSV shape
+    kind: dated-data
+    description: >-
+      The `N_seaice_extent_daily_v3.0.csv` / `S_` shape src/stats/nsidc.py targets (two header
+      lines, then Year, Month, Day, Extent in 10^6 km2, Missing in 10^6 km2, Source Data;
+      `-9999` = missing; the 1978-1987 record is every other day). Documented from the published
+      shape and NOT verified against a live download -- the build sandbox has no route to
+      noaadata.apps.nsidc.org; the first real fetch is an operator step. NSIDC reprocesses, so
+      each fetch is stored as a new vintage.
+    upstream: "https://nsidc.org/data/g02135 (noaadata.apps.nsidc.org/NOAA/G02135)"
+    check_upstream: "fetch N_seaice_extent_daily_v3.0.csv on a networked machine and confirm the header lines, the column order and the -9999 marker are unchanged"
+    license: "NSIDC/NOAA open data, free to use with citation; operator to confirm the exact terms text"
+    pin: {file: src/stats/nsidc.py, const: NSIDC_AS_OF}
+    refresh: "verify the live shape, update the fixtures in tests/test_nsidc_parser.py, bump NSIDC_AS_OF"
+    freshness: {max_age_months: 18}
+    last_verified: "2026-11-07"

@@ -31,7 +31,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, date, datetime, timezone
 from typing import Any, Callable
 from urllib.parse import quote, urlencode
 
@@ -62,6 +62,15 @@ EUROSTAT_API_BASE = (
 # column names). Verify-on-use — a wrong slug/param fails LOUDLY (HTTP error / no rows),
 # never a fabricated figure; re-confirm against OWID's published data API if it moves.
 OWID_GRAPHER_BASE = "https://ourworldindata.org/grapher"
+
+# NSIDC Sea Ice Index v3 daily extent: one CSV per hemisphere (N / S), extent in 10^6 km2.
+# NOT verified against a live download (the build sandbox cannot reach the host): a wrong path
+# or shape fails LOUDLY (HTTP error / looks_unrecognised).
+NSIDC_BASE = "https://noaadata.apps.nsidc.org/NOAA/G02135"
+# The body bound is DERIVED from the record's own shape, not a fixed number (see nsidc_max_chars).
+NSIDC_FIRST_YEAR = 1978
+NSIDC_LINE_ALLOWANCE = 400  # chars per row; a real row is about 120 but the source column can list several files
+NSIDC_HEADER_ALLOWANCE = 4096
 
 # Generous default timeout: a fetch may egress over Tor, which is slow — a tight
 # timeout would spuriously fail honest requests. Seconds.
@@ -366,3 +375,58 @@ def fetch_jsonstat(
     resp.raise_for_status()
     payload = resp.json()
     return parse_jsonstat(payload, agency=agency, extracted_at=extracted_at, series_id=series_id)
+
+
+def nsidc_url(region: str = "N") -> str:
+    """The Sea Ice Index daily extent CSV URL for ``region`` (``N`` or ``S``)."""
+    from src.stats.nsidc import REGIONS
+
+    if region not in REGIONS:
+        raise ValueError(f"nsidc_url: region must be one of {REGIONS}, got {region!r}")
+    hemisphere = "north" if region == "N" else "south"
+    return f"{NSIDC_BASE}/{hemisphere}/daily/data/{region}_seaice_extent_daily_v3.0.csv"
+
+
+def nsidc_max_chars(today: date | None = None) -> int:
+    """The longest body that can still be this record: one row per day since 1978-10-26.
+
+    Derived from the data's shape (at most one row a day since the record began, plus a day
+    of slack), so it grows with the record instead of being a constant someone must raise.
+    """
+    now = today if today is not None else datetime.now(UTC).date()
+    days = max((now - date(NSIDC_FIRST_YEAR, 10, 26)).days + 2, 1)
+    return days * NSIDC_LINE_ALLOWANCE + NSIDC_HEADER_ALLOWANCE
+
+
+def fetch_nsidc(
+    region: str = "N",
+    *,
+    get: Getter | None = None,
+    extracted_at: str | None = None,
+) -> Any:
+    """Fetch one Sea Ice Index daily extent CSV live and parse it (kill switch refuses UP FRONT).
+
+    Returns the :class:`~src.stats.nsidc.NsidcParse` (figures AND refusals). A body that parses
+    to nothing but refusals (an HTML error page, a renamed product) raises rather than
+    returning an empty series.
+    """
+    from src.stats.nsidc import parse_nsidc
+
+    if kill_switch_active():
+        raise RuntimeError(NETWORK_REFUSED)
+    extracted_at = extracted_at or _now_iso()
+    getter = get or _default_getter
+    resp = getter(nsidc_url(region))
+    resp.raise_for_status()
+    bound = nsidc_max_chars()
+    if len(resp.text) > bound:
+        raise ValueError(
+            f"NSIDC {region}: the response is {len(resp.text)} characters, over the {bound} the record's own shape allows"
+        )
+    parsed = parse_nsidc(resp.text, region=region, extracted_at=extracted_at)
+    if parsed.looks_unrecognised:
+        raise ValueError(
+            f"NSIDC {region}: the response is not the expected table "
+            f"({parsed.refused_total} lines refused, none parsed)"
+        )
+    return parsed
