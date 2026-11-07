@@ -216,3 +216,26 @@ def test_bulk_urls_are_the_two_fixed_owid_paths():
     for bad in ("../x", "co2/../../evil", "", "other"):
         with pytest.raises(ValueError):
             owid_dataset_url(bad)
+
+
+def test_an_aggregate_keeps_its_name_as_ref_area_so_it_matches_aggregate_areas():
+    r = parse_owid("country,year,iso_code,co2\nWorld,1990,OWID_WRL,1\nFrance,1990,FRA,2\n", dataset="co2", extracted_at=V)
+    areas = {f.ref_area for f in r.figures}
+    assert areas == {"World", "FRA"} and r.aggregate_areas == {"World"}
+    assert all(f.ref_area in r.aggregate_areas for f in r.figures if f.ref_area == "World")
+
+
+def test_records_after_an_oversized_field_are_still_read():
+    body = "country,year,iso_code,co2\nFrance,1990,FRA,1\n" + "x" * 200_000 + ",1990,AAA,1\n" + "".join(
+        f"C{i},1990,C{i:02d},1\n" for i in range(50)
+    )
+    r = parse_owid(body, dataset="co2", extracted_at=V)
+    assert r.rows_read == 51 and r.refused_total == 1
+
+
+def test_a_stray_quote_swallowing_many_lines_is_counted_in_lines_not_as_one_row():
+    body = 'country,year,iso_code,co2\nFrance,1990,FRA,1\n"Ger,1990,DEU,2\n' + "".join(f"C{i},1990,C{i:02d},1\n" for i in range(50))
+    r = parse_owid(body, dataset="co2", extracted_at=V)
+    assert r.rows_read == 1 and r.refused_total == 1
+    assert r.refused_lines >= 50 and "spans" in r.refused[0]["reason"]
+    assert r.summary()["refused_lines"] == r.refused_lines

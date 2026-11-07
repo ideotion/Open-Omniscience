@@ -27,7 +27,7 @@ HONESTY PROPERTIES, each a refusal rather than a caveat:
 * **A blank or ``NA`` cell is a gap (``value=None``), never 0.** Anything else that is not a
   finite decimal is refused and counted (the row is not emitted).
 * **Aggregates are not countries.** A row without an ISO code (``World``, ``Africa (GCP)``,
-  ``High-income countries`` ...) keeps its published NAME as ``ref_area`` and is tagged in
+  ``High-income countries`` ...) keeps its published NAME as ``ref_area`` (even when OWID gives it an OWID_ pseudo-code) and is tagged in
   ``aggregate_areas``; it is never given a country code, and a consumer must not sum
   countries and aggregates together (they overlap).
 * **Per-column terms differ.** OWID's processed data is CC BY 4.0, but the columns come from
@@ -111,6 +111,9 @@ class OwidParse:
     aggregate_areas: set[str] = field(default_factory=set)
     refused: list[dict[str, str]] = field(default_factory=list)
     refused_total: int = 0
+    # Physical lines the refused records covered: a stray quote can make one refusal swallow
+    # many lines, and refused_total alone would read as one bad row.
+    refused_lines: int = 0
     header_ok: bool = False
 
     @property
@@ -136,13 +139,17 @@ class OwidParse:
             "aggregate_areas": sorted(self.aggregate_areas),
             "all_gap": self.all_gap,
             "refused_total": self.refused_total,
+            "refused_lines": self.refused_lines,
             "refused_sample": list(self.refused),
             "refused_is_sample": self.refused_is_sample,
         }
 
 
-def _refuse(out: OwidParse, line: int, reason: str, text: str = "") -> None:
+def _refuse(out: OwidParse, line: int, reason: str, text: str = "", span: int = 1) -> None:
     out.refused_total += 1
+    out.refused_lines += max(span, 1)
+    if span > 1:
+        reason = f"{reason} (the record spans {span} physical lines: a stray quote can swallow following rows)"
     if len(out.refused) < MAX_REFUSALS_KEPT:
         out.refused.append({"line": str(line), "reason": reason, "text": text[:80]})
 
@@ -189,26 +196,31 @@ def parse_owid(text: str, *, dataset: str, extracted_at: str) -> OwidParse:
     i_country, i_year, i_iso = idx["country"], idx["year"], idx["iso_code"]
     methodology = methodology_for(dataset)
     seen: set[tuple[str, str]] = set()
+    prev_line = reader.line_num
     while True:
         try:
             row = next(reader)
         except StopIteration:
             break
-        except csv.Error:  # e.g. one field over the csv module's size limit
-            _refuse(out, reader.line_num, "unreadable CSV record (csv.Error)")
-            break
+        except csv.Error:  # e.g. one field over the csv module's size limit; the reader moves on
+            _refuse(out, reader.line_num, "unreadable CSV record (csv.Error)", span=reader.line_num - prev_line)
+            prev_line = reader.line_num
+            continue
         lineno = reader.line_num  # the physical line the record ends on (quoted newlines count)
+        span = lineno - prev_line
+        prev_line = lineno
         if not row or not any(c.strip() for c in row):
             continue
         if len(row) != len(header):
-            _refuse(out, lineno, f"expected {len(header)} fields", ",".join(row))
+            _refuse(out, lineno, f"expected {len(header)} fields", ",".join(row), span=span)
             continue
         country, year_raw = row[i_country].strip(), row[i_year].strip()
         if not country or not _YEAR.match(year_raw) or not (_MIN_YEAR <= int(year_raw) <= _MAX_YEAR):
             _refuse(out, lineno, "no country or year not a four-digit year", ",".join(row))
             continue
         iso = row[i_iso].strip()
-        area = iso or country
+        aggregate = _is_aggregate(iso)
+        area = country if aggregate else iso  # an aggregate keeps its published NAME, never its pseudo-code
         if (area, year_raw) in seen:
             _refuse(out, lineno, "duplicate area and year", f"{area},{year_raw}")
             continue
@@ -218,8 +230,8 @@ def parse_owid(text: str, *, dataset: str, extracted_at: str) -> OwidParse:
             continue
         seen.add((area, year_raw))
         out.rows_read += 1
-        if _is_aggregate(iso):
-            out.aggregate_areas.add(country)
+        if aggregate:
+            out.aggregate_areas.add(area)
         for col, (val, _) in zip(present, cells, strict=True):
             out.figures.append(
                 StatFigure(
