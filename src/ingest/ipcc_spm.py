@@ -129,18 +129,32 @@ def _read_declared(resp: Any, label: str) -> bytes:
     declared = headers.get("Content-Length")
     if declared is None or not str(declared).isdigit():
         raise ValueError(f"{label}: the server declared no length, so the read cannot be bounded")
+    encoding = str(headers.get("Content-Encoding") or "identity").lower()
+    if encoding != "identity":
+        raise ValueError(
+            f"{label}: the server compressed the body ({encoding}) despite the identity request, "
+            "so its declared length is not the document's"
+        )
     limit = int(declared)
     iterator = getattr(resp, "iter_content", None)
     if iterator is None:  # a test double that only carries .content
         data = resp.content
     else:
         buf = bytearray()
-        for chunk in iterator(chunk_size=65536):
-            buf.extend(chunk)
-            if len(buf) > limit:
-                raise ValueError(
-                    f"{label}: the body runs past the {limit} bytes the server declared"
-                )
+        try:
+            for chunk in iterator(chunk_size=65536):
+                buf.extend(chunk)
+                if len(buf) > limit:
+                    raise ValueError(
+                        f"{label}: the body runs past the {limit} bytes the server declared"
+                    )
+        except ValueError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - urllib3 raises its own error on a short body
+            raise ValueError(
+                f"{label}: the transfer ended early ({type(exc).__name__}); "
+                f"{len(buf)} of the {limit} declared bytes arrived (truncated transfer)"
+            ) from None
         data = bytes(buf)
     if len(data) != limit:
         raise ValueError(
@@ -162,9 +176,14 @@ def fetch_spm(key: str, *, get: Getter | None = None) -> bytes:
     if kill_switch_active():
         raise RuntimeError(NETWORK_REFUSED)
     resp = (get or _default_getter)(entry.url)
-    resp.raise_for_status()
     label = f"IPCC {entry.working_group} SPM"
-    data = _read_declared(resp, label)
+    try:
+        resp.raise_for_status()
+        data = _read_declared(resp, label)
+    finally:
+        close = getattr(resp, "close", None)  # a streamed response holds its socket until closed
+        if close is not None:
+            close()
     if not data:
         raise ValueError(f"{label}: empty response")
     if not looks_like_pdf(data):

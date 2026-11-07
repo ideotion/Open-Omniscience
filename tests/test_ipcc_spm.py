@@ -177,3 +177,40 @@ def test_default_getter_is_held_to_the_ipcc_host_and_asks_for_identity(monkeypat
     assert ipcc_spm._default_getter("https://www.ipcc.ch/x.pdf") == "resp"
     assert tuple(seen["session"]["allowed_hosts"]) == (ipcc_spm.IPCC_HOST,)
     assert seen["kw"]["stream"] is True and seen["kw"]["headers"]["Accept-Encoding"] == "identity"
+
+
+class _Closing(_Stream):
+    closed = False
+
+    def close(self):
+        self.closed = True
+
+
+def test_response_is_closed_on_every_exit(monkeypatch):
+    monkeypatch.setattr(ipcc_spm, "kill_switch_active", lambda: False)
+    over = _Closing([_TEXT_PDF, b"x"], {"Content-Length": str(len(_TEXT_PDF))})
+    with pytest.raises(ValueError):
+        ipcc_spm.fetch_spm("wg1", get=lambda u: over)
+    assert over.closed
+    ok = _Closing([_TEXT_PDF], {"Content-Length": str(len(_TEXT_PDF))})
+    ipcc_spm.fetch_spm("wg1", get=lambda u: ok)
+    assert ok.closed
+
+
+def test_short_streamed_body_and_library_errors_become_truncated(monkeypatch):
+    monkeypatch.setattr(ipcc_spm, "kill_switch_active", lambda: False)
+
+    class _Short(_Closing):
+        def iter_content(self, chunk_size=1):
+            yield b"%PDF-1"
+            raise ConnectionError("IncompleteRead")
+
+    with pytest.raises(ValueError, match="truncated transfer"):
+        ipcc_spm.fetch_spm("wg1", get=lambda u: _Short([], {"Content-Length": "5000"}))
+
+
+def test_server_that_compresses_despite_identity_is_named(monkeypatch):
+    monkeypatch.setattr(ipcc_spm, "kill_switch_active", lambda: False)
+    resp = _Closing([_TEXT_PDF], {"Content-Length": "10", "Content-Encoding": "gzip"})
+    with pytest.raises(ValueError, match="compressed"):
+        ipcc_spm.fetch_spm("wg1", get=lambda u: resp)
