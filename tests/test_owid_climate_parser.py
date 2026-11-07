@@ -175,9 +175,9 @@ def test_a_bom_before_the_header_is_stripped():
 
 
 def test_line_numbers_are_physical_lines_after_a_quoted_newline():
-    body = 'country,year,iso_code,co2\n"A\nB",1990,AAA,1\nFrance,19x0,FRA,1\n'
+    body = 'country,year,iso_code,co2\nFrance,1990,FRA,1\n"A\nB",1990,AAA,1\nFrance,19x0,FRA,1\n'
     r = parse_owid(body, dataset="co2", extracted_at=V)
-    assert r.rows_read == 1 and r.refused[0]["line"] == "4"
+    assert r.rows_read == 1 and [x["line"] for x in r.refused] == ["4", "5"]
 
 
 def test_an_oversized_field_is_a_counted_refusal_not_a_raw_csv_error():
@@ -239,3 +239,20 @@ def test_a_stray_quote_swallowing_many_lines_is_counted_in_lines_not_as_one_row(
     assert r.rows_read == 1 and r.refused_total == 1
     assert r.refused_lines >= 50 and "spans" in r.refused[0]["reason"]
     assert r.summary()["refused_lines"] == r.refused_lines
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ['Ger,1990,DEU,"2\n', 'Ger,19x0,DEU,"2\n'],
+)
+def test_a_stray_quote_anywhere_in_a_record_is_refused_and_counted_in_lines(bad):
+    body = "country,year,iso_code,co2\nFrance,1990,FRA,1\n" + bad + "".join(f"C{i},1990,C{i:02d},1\n" for i in range(50))
+    r = parse_owid(body, dataset="co2", extracted_at=V)
+    assert r.rows_read == 1 and r.refused_total >= 1
+    assert r.refused_lines >= 50
+
+
+def test_a_quote_that_closes_later_is_refused_not_absorbed_into_an_accepted_row():
+    body = 'country,year,iso_code,co2\n"Ger\nC0,1990,C00,1\nC1",1990,DEU,2\nFrance,1990,FRA,1\n'
+    r = parse_owid(body, dataset="co2", extracted_at=V)
+    assert r.rows_read == 1 and r.refused_total == 1 and r.refused_lines == 3

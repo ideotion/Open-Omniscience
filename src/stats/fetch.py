@@ -498,6 +498,6 @@ def fetch_owid_dataset(
         raise ValueError(
             f"OWID {dataset}: the response is not the expected table "
             f"(all curated cells empty: {parsed.all_gap}, required columns found: {parsed.header_ok}, curated columns found: {len(parsed.columns_present)}, "
-            f"rows read: {parsed.rows_read}, lines refused: {parsed.refused_total})"
+            f"rows read: {parsed.rows_read}, records refused: {parsed.refused_total}, lines they covered: {parsed.refused_lines})"
         )
     return parsed

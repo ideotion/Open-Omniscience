@@ -211,6 +211,11 @@ def parse_owid(text: str, *, dataset: str, extracted_at: str) -> OwidParse:
         prev_line = lineno
         if not row or not any(c.strip() for c in row):
             continue
+        if span > 1:
+            # OWID's tables have no multi-line fields, so a record covering several physical lines
+            # is a stray quote swallowing the rows after it: refused, and counted in lines.
+            _refuse(out, lineno, "multi-line record", ",".join(row), span=span)
+            continue
         if len(row) != len(header):
             _refuse(out, lineno, f"expected {len(header)} fields", ",".join(row), span=span)
             continue
