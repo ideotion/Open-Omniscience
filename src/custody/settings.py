@@ -114,10 +114,10 @@ def _read_raw_strict() -> dict | None:
 
 def _write_raw(payload: dict) -> None:
     if not _use_kv():
-        path = _settings_path()
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), "utf-8")
-        tmp.replace(path)
+        from src.safety.file_lock import atomic_replace
+
+        # A temp named for the process and thread, moved over the file (R176): the fixed ".json.tmp" two writers shared is gone.
+        atomic_replace(_settings_path(), json.dumps(payload, indent=2, sort_keys=True), fsync=False)
         return
     from src.config.kv_store import kv_set_json
 

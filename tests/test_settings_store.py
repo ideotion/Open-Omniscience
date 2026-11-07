@@ -87,3 +87,18 @@ def test_the_modules_own_wrappers_are_what_the_store_consults(modname, tmp_path,
     monkeypatch.setattr(kv, "kv_set_json", lambda key, raw: None)
     monkeypatch.setattr(mod, "_read_json_file", lambda: {"from": "wrapper file"})  # nothing is on disk: only the wrapper has it
     assert mod._read_raw() == {"from": "wrapper file"}
+
+
+def test_the_custody_json_write_uses_the_shared_atomic_replace(tmp_path, monkeypatch):
+    """The redirected-path write no longer shares one fixed ``.json.tmp`` between writers (R176)."""
+    import src.custody.settings as cs
+    import src.safety.file_lock as fl
+
+    path = tmp_path / "custody_settings.json"
+    monkeypatch.setattr(cs, "_settings_path", lambda: path)
+    seen = []
+    real = fl.atomic_replace
+    monkeypatch.setattr(fl, "atomic_replace", lambda *a, **k: (seen.append(a[0]), real(*a, **k))[1])
+    cs._write_raw({"version": "x", "pqc_enabled": True})
+    assert seen == [path] and json.loads(path.read_text("utf-8"))["pqc_enabled"] is True
+    assert not list(tmp_path.glob("*.tmp*"))
