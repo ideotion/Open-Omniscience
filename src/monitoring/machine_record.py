@@ -31,6 +31,17 @@ NOTHING LEAVES THE MACHINE AND NO SECRET IS READ: the environment section lists 
 its value is not read here), and the SQLCipher version is asked of a throwaway in-memory connection
 that is never given a key. Every section is its own reading: one that cannot be taken says so with
 its reason, and is never written as an empty or a zero. Never raises.
+
+THE SQLCIPHER BUILD (R470, 2026-11-07, ``versions.sqlcipher_build``): the same 4.19.0 string was on a Linux VM that holds the
+writer gate for 0.55 s a flush and on a Windows install that held it for 36 to 68 s, so the version does not say which build
+runs. Three readings do: the crypto ``provider`` and its ``provider_version`` (the library the pages are encrypted by), and
+``memory_security`` (``PRAGMA cipher_memory_security``: process-global, so a read tells the whole process; a build that has it ON
+locks and wipes every allocation, which cost +64 % of the hold's CPU on the Linux VM and is unmeasured on Windows). The provider
+answers only on a KEYED connection, so the throwaway in-memory database is given a RANDOM raw key made here from ``secrets`` and
+kept nowhere (no KDF, no file, never the corpus's passphrase and never read from the environment; dropped as soon as it has been
+used, and in no log, argv, exception text or record). Each of the three is a string or ``{"unavailable": reason-by-class}``, none is
+left out, and a key the library refuses makes ALL THREE unavailable (it fails closed, RC2's condition). Nothing is ever SET: turning memory security off is a decision about
+what a seized machine's pagefile may hold, and it is the maintainer's.
 """
 
 from __future__ import annotations
@@ -39,6 +50,7 @@ import importlib.util
 import os
 import platform
 import re
+import secrets
 import sqlite3
 import sys
 from datetime import UTC, datetime
@@ -115,6 +127,51 @@ def _sqlcipher_version() -> Any:
         return _unavailable(exc)
 
 
+def _pragma_text(conn: Any, name: str) -> Any:
+    """One ``PRAGMA <name>`` of a connection as text, or a reason by class (never the message) when it fails or answers nothing."""
+    try:
+        row = conn.execute(f"PRAGMA {name}").fetchone()
+    except Exception as exc:  # noqa: BLE001 - a missing reading is a reason, never a failure
+        return _unavailable(exc)
+    if row is None or row[0] is None or str(row[0]) == "":
+        return {"unavailable": "the library did not report it"}
+    return str(row[0])
+
+
+def _sqlcipher_build() -> dict[str, Any]:
+    """Which SQLCipher build this process runs (see the module docstring, R470): ``provider``, ``provider_version``,
+    ``memory_security``. Each is a string or ``{"unavailable": reason}``; none is left out. Reads only; never sets a pragma."""
+    names = ("provider", "provider_version", "memory_security")
+    try:
+        from sqlcipher3 import dbapi2 as sqc
+    except Exception as exc:  # noqa: BLE001
+        gone = {"unavailable": f"the sqlcipher3 driver is not importable ({type(exc).__name__})"}
+        return {n: dict(gone) for n in names}
+    try:
+        conn = sqc.connect(":memory:")
+    except Exception as exc:  # noqa: BLE001
+        return {n: _unavailable(exc) for n in names}
+    try:
+        security = _pragma_text(conn, "cipher_memory_security")  # global to the library: answers without a key
+        key = secrets.token_hex(32)  # a random raw key made here (the provider answers only on a keyed connection)
+        try:
+            conn.execute(f"PRAGMA key = \"x'{key}'\"")
+        except Exception as exc:  # noqa: BLE001
+            return {n: _unavailable(exc) for n in names}  # fails closed: nothing is read through a connection the key was refused on
+        finally:
+            del key  # dropped as soon as it has been used: in no log, no argv, no exception text and no record
+        return {
+            "provider": _pragma_text(conn, "cipher_provider"),
+            "provider_version": _pragma_text(conn, "cipher_provider_version"),
+            "memory_security": security,
+        }
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001 - a throwaway that will not close is not a reading
+            pass
+
+
 def _duckdb_version() -> Any:
     try:
         import duckdb
@@ -157,6 +214,7 @@ def _versions() -> dict[str, Any]:
         "python": sys.version.split()[0],
         "sqlite": sqlite3.sqlite_version,
         "sqlcipher": _sqlcipher_version(),
+        "sqlcipher_build": _sqlcipher_build(),
         "duckdb": _duckdb_version(),
         "libc": _libc(),
         "yaml_loader": _yaml_loader(),
