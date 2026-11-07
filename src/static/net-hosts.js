@@ -185,6 +185,14 @@
       "fetcher": true
     },
     {
+      "id": "climate",
+      "label": "Climate series",
+      "hosts": ["data.giss.nasa.gov"],
+      "trigger": "click",
+      "setting": null,
+      "fetcher": true
+    },
+    {
       "id": "ipcc",
       "label": "IPCC reports",
       "hosts": ["www.ipcc.ch"],

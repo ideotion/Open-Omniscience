@@ -390,7 +390,9 @@ def test_a_file_named_on_the_command_line_escapes_collect_ignore_and_a_plan_does
     # a shard that ignores everything runs nothing and is RED (exit 5), where an empty list of files would have run the whole suite
     plan.write_text("".join(f"{line}\n" for line in S.ignore_args([], files)), encoding="utf-8")
     nothing = _run_pytest(tmp_path, f"@{plan}")
-    assert nothing.returncode == 5 and "no tests ran" in nothing.stdout, (nothing.returncode, nothing.stdout)
+    # exit 5 IS pytest's "no tests collected"; the words beside it are not stable (pytest 9 prints "N warning(s) in ..." INSTEAD of "no tests ran" when
+    # anything warns), so the test pins the code and that nothing ran, not the sentence
+    assert nothing.returncode == 5 and " passed" not in nothing.stdout and " failed" not in nothing.stdout, (nothing.returncode, nothing.stdout)
 
 
 _COLLECTED = """tests/test_a.py::test_one

@@ -742,6 +742,23 @@ artifacts:
     freshness: {max_age_months: 18}
     last_verified: "2026-06-16"
 
+  - id: gistemp-v4-table-shape
+    title: NASA GISS GISTEMP v4 table CSV shape
+    kind: dated-data
+    description: >-
+      The GLB / NH / SH `Ts+dSST.csv` table shape src/stats/gistemp.py targets (Year, twelve
+      months, J-D, D-N, four seasons; `***` = missing; anomalies in degC against 1951-1980).
+      Documented from the published shape and NOT verified against a live download -- the build
+      sandbox has no route to data.giss.nasa.gov; the first real fetch is an operator step.
+      GISTEMP is retro-revised on every release, so each fetch is stored as a new vintage.
+    upstream: "https://data.giss.nasa.gov/gistemp/ (tabledata_v4)"
+    check_upstream: "fetch GLB.Ts+dSST.csv on a networked machine and confirm the header row and the *** marker are unchanged"
+    license: "NASA data, free to use with citation (GISS); operator to confirm the exact terms text"
+    pin: {file: src/stats/gistemp.py, const: GISTEMP_AS_OF}
+    refresh: "verify the live shape, update the fixtures in tests/test_gistemp_parser.py, bump GISTEMP_AS_OF"
+    freshness: {max_age_months: 18}
+    last_verified: "2026-11-07"
+
   - id: ipcc-ar6-spm-catalog
     title: IPCC AR6 Summaries for Policymakers (PDF catalog)
     kind: dated-data
