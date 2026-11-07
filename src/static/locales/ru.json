@@ -2120,6 +2120,8 @@
   "Heights on a logarithmic axis do not add, so they are not stacked.": "Высоты на логарифмической оси не складываются, поэтому их не показывают в виде стека.",
   "Held on this machine by the Wikipedia lane, not in your corpus. Adding it creates one article for this exact version.": "Хранится на этой машине каналом Википедии, не в вашем корпусе. Добавление создаёт одну статью именно для этой версии.",
   "Help": "Справка",
+  "IPCC reports": "Доклады МГЭИК",
+  "IPCC reports track predictions over time; they never assert futures.": "Доклады МГЭИК отслеживают прогнозы во времени; они никогда не утверждают будущее.",
   "Help & docs": "Справка и документация",
   "Help & documentation": "Справка и документация",
   "Help and documentation": "Справка и документация",

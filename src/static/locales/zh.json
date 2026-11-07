@@ -2120,6 +2120,8 @@
   "Heights on a logarithmic axis do not add, so they are not stacked.": "对数轴上的高度不能相加，因此不堆叠。",
   "Held on this machine by the Wikipedia lane, not in your corpus. Adding it creates one article for this exact version.": "由维基百科通道保存在本机，不在你的语料库中。加入后会为这个确切版本创建一篇条目。",
   "Help": "帮助",
+  "IPCC reports": "IPCC 报告",
+  "IPCC reports track predictions over time; they never assert futures.": "IPCC 报告随时间跟踪预测；从不断言未来。",
   "Help & docs": "帮助与文档",
   "Help & documentation": "帮助与文档",
   "Help and documentation": "帮助与文档",

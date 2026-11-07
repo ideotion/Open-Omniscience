@@ -2120,6 +2120,8 @@
   "Heights on a logarithmic axis do not add, so they are not stacked.": "対数軸では高さが加算されないため、積み上げません。",
   "Held on this machine by the Wikipedia lane, not in your corpus. Adding it creates one article for this exact version.": "Wikipediaレーンがこのマシンに保存したもので、コーパスには入っていません。追加すると、この版そのものの記事が1件作成されます。",
   "Help": "ヘルプ",
+  "IPCC reports": "IPCC報告書",
+  "IPCC reports track predictions over time; they never assert futures.": "IPCC報告書は予測を時間をかけて追跡するものであり、未来を断定するものではありません。",
   "Help & docs": "ヘルプと文書",
   "Help & documentation": "ヘルプとドキュメント",
   "Help and documentation": "ヘルプとドキュメント",

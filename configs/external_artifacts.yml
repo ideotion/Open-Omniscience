@@ -742,6 +742,22 @@ artifacts:
     freshness: {max_age_months: 18}
     last_verified: "2026-06-16"
 
+  - id: ipcc-ar6-spm-catalog
+    title: IPCC AR6 Summaries for Policymakers (PDF catalog)
+    kind: dated-data
+    description: >-
+      The four AR6 SPM PDF addresses on www.ipcc.ch (WGI, WGII, WGIII, SYR) and their approval
+      dates in src/ingest/ipcc_spm.py. Documented from the IPCC's published site and NOT verified
+      against a live download -- the build sandbox has no route to www.ipcc.ch; the first real
+      fetch is an operator step. Extraction uses pypdf (Q1133 = a).
+    upstream: "https://www.ipcc.ch/assessment-report/ar6/"
+    check_upstream: "open each SPM link on the AR6 page on a networked machine and confirm the four paths and approval dates are unchanged"
+    license: "IPCC copyright; reuse with attribution. Operator to confirm the exact terms text before any redistribution"
+    pin: {file: src/ingest/ipcc_spm.py, const: IPCC_AS_OF}
+    refresh: "verify the four URLs and dates live, update SPM_CATALOG and the tests, bump IPCC_AS_OF"
+    freshness: {max_age_months: 18}
+    last_verified: "2026-11-07"
+
   - id: wikimedia-scoring-endpoint
     title: Wikimedia edit-scoring endpoint (ORES / Lift Wing)
     kind: dated-data
