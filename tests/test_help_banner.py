@@ -19,13 +19,13 @@ _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _LOCALES = _ROOT / "src" / "static" / "locales"
 
 _BANNER_STRINGS = [
-    "There is no {language} draft of this document yet, so the English original is shown.",
-    "Machine-drafted {language} translation. How much of this document is translated could "
+    "This document has no draft in this language yet ({language}), so the English original is shown.",
+    "Machine-drafted translation ({language}). How much of this document is translated could "
     "not be measured here. The English original is authoritative. Found a better wording? "
     "Improve it on the project page.",
-    "Machine-drafted {language} translation: {done} of {total} sections of this document are "
-    "translated. The English original is authoritative. Found a better wording? Improve it "
-    "on the project page.",
+    "Machine-drafted translation ({language}): this draft has {done} of the {total} headings of "
+    "the English original; that counts headings, not translated words. The English original is "
+    "authoritative. Found a better wording? Improve it on the project page.",
 ]
 
 

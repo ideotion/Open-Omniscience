@@ -60,14 +60,14 @@ assert.strictEqual(bare.docBannerHtml("", "en", null, null, ""), "");
 // --- a draft states its language, the authority and the figure, in a named unit
 {
   const out = text(bare.docBannerHtml("fr", "fr", 8, 17, "Français"));
-  assert.ok(/Machine-drafted Français translation/.test(out), out);
-  assert.ok(/8 of 17 sections/.test(out), "the figure is missing or in no unit: " + out);
+  assert.ok(/Machine-drafted translation \(Français\)/.test(out), out);
+  assert.ok(/8 of the 17 headings/.test(out), "the figure is missing or in no unit: " + out);
   assert.ok(/English original is authoritative/.test(out), out);
   assert.ok(bare.docBannerHtml("fr", "fr", 8, 17, "Français").includes('data-doc-banner="draft"'));
 }
 
 // --- a draft with extra headings is never more than complete --------------- //
-assert.ok(/17 of 17 sections/.test(text(bare.docBannerHtml("fr", "fr", 23, 17, "Français"))));
+assert.ok(/17 of the 17 headings/.test(text(bare.docBannerHtml("fr", "fr", 23, 17, "Français"))));
 
 // --- an unmeasurable figure is absent WITH its reason, never a number ------- //
 for (const [done, total] of [[8, null], [null, 17], [null, null]]) {
@@ -80,7 +80,7 @@ for (const [done, total] of [[8, null], [null, 17], [null, null]]) {
 {
   const html = bare.docBannerHtml("ja", "en", null, null, "日本語");
   assert.ok(html.includes('data-doc-banner="fallback"'), html);
-  assert.ok(/There is no 日本語 draft of this document yet, so the English original is shown\./.test(text(html)), text(html));
+  assert.ok(/no draft in this language yet \(日本語\), so the English original is shown\./.test(text(html)), text(html));
 }
 
 // --- the language name is data: escaped, and never translated --------------- //
@@ -91,7 +91,7 @@ for (const [done, total] of [[8, null], [null, 17], [null, null]]) {
 
 // --- the frame translates and the data does not (OOI18N.tf in the loop) ----- //
 {
-  const map = { "There is no {language} draft of this document yet, so the English original is shown.": "Pas de version {language} pour l'instant." };
+  const map = { "This document has no draft in this language yet ({language}), so the English original is shown.": "Pas de version {language} pour l'instant." };
   const tr = load({ OOI18N: { tf: (s, v) => (map[s] || s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)) } });
   assert.ok(text(tr.docBannerHtml("fr", "en", null, null, "Français")).startsWith("Pas de version Français pour"), "the frame was not looked up");
 }

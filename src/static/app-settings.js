@@ -35,7 +35,7 @@
     }
     // THE COVERAGE FIGURE'S UNIT IS A SECTION: the ATX headings of a document, fenced code ignored (a `#` line in a code block is
     // not a heading). Headings are what the omnibar's Help-content group lands on and what tests/test_help_docs_translated.py
-    // compares, so one unit serves the reader and the guard. Counts only; no score.
+    // compares, so one unit serves the reader and the guard. It counts HEADINGS present, not translated words: the banner says so.
     function docSections(md) {
       let n = 0, fenced = false;
       for (const line of String(md == null ? "" : md).split("\n")) {
@@ -55,11 +55,11 @@
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const box = (kind, text) => `<div class="hint doc-banner" data-doc-banner="${kind}" role="note" style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:10px"><span>${esc(text)}</span></div>`;
       if (!wanted || wanted === "en") return "";
-      if (served === "en") return box("fallback", tf("There is no {language} draft of this document yet, so the English original is shown.", { language }));
+      if (served === "en") return box("fallback", tf("This document has no draft in this language yet ({language}), so the English original is shown.", { language }));
       if (total == null || done == null) {
-        return box("draft", tf("Machine-drafted {language} translation. How much of this document is translated could not be measured here. The English original is authoritative. Found a better wording? Improve it on the project page.", { language }));
+        return box("draft", tf("Machine-drafted translation ({language}). How much of this document is translated could not be measured here. The English original is authoritative. Found a better wording? Improve it on the project page.", { language }));
       }
-      return box("draft", tf("Machine-drafted {language} translation: {done} of {total} sections of this document are translated. The English original is authoritative. Found a better wording? Improve it on the project page.", { language, done: Math.min(done, total), total }));
+      return box("draft", tf("Machine-drafted translation ({language}): this draft has {done} of the {total} headings of the English original; that counts headings, not translated words. The English original is authoritative. Found a better wording? Improve it on the project page.", { language, done: Math.min(done, total), total }));
     }
     // `anchor` (2026-09-09) is optional and additive: the omnibar's Help-content group
     // knows which HEADING a hit sits under, and landing at the top of a 3,000-line manual
@@ -78,9 +78,9 @@
         const lang = (window.OOI18N && OOI18N.current()) || "en";
         const r = await fetch("/api/docs/" + slug + "?lang=" + encodeURIComponent(lang));
         if (!r.ok) throw new Error(String(r.status));
-        _docRaw = await r.text();
+        const raw = await r.text();
         const served = r.headers.get("X-OO-Doc-Lang") || "en";
-        // The translated-of-total figure needs the English document to count against: one more local read, only when a draft was served.
+        // The figure needs the English document to count against: one more local read, only when a draft was served.
         let total = null;
         if (served !== "en") {
           try {
@@ -88,13 +88,19 @@
             if (en.ok) total = docSections(await en.text());
           } catch (_e) { total = null; }
         }
+        if (_docSlug !== slug) return;   // another document was opened while this one loaded: it owns the pane, the banner and _docRaw
         const language = (window.OOI18N && OOI18N.meta && OOI18N.meta.native) || lang;
-        _docBanner = docBannerHtml(lang, served, total == null ? null : docSections(_docRaw), total, language);
+        _docRaw = raw;
+        _docBanner = docBannerHtml(lang, served, total == null ? null : docSections(raw), total, language);
         prose.innerHTML = _docBanner + mdToHtml(_docRaw);
         const at = anchor ? prose.querySelector("#" + (window.CSS && CSS.escape ? CSS.escape(anchor) : anchor)) : null;
         (at || prose).scrollIntoView({block: at ? "start" : "nearest"});
       }
-      catch (e) { prose.innerHTML = '<div class="muted">Could not load this document.</div>'; }
+      catch (e) {
+        if (_docSlug !== slug) return;
+        _docRaw = ""; _docBanner = "";   // a failed load must not leave the previous document for the find box to redraw
+        prose.innerHTML = '<div class="muted">Could not load this document.</div>';
+      }
       const f = $("doc-find"); if (f && f.value) highlightProse(f.value);
     }
     // DEBOUNCED, so the scroll to the first match runs OUTSIDE the input event
@@ -106,6 +112,11 @@
     // landed), so a TYPED phrase lit a mark 1,800 px below the viewport while the
     // same phrase PASTED jumped to it. The pause also stops re-rendering the whole
     // Help body on every key.
+    // A language switch re-opens the Help document in the new language: the banner names the language it was built for.
+    document.addEventListener("oo:langchange", () => {
+      const pg = $("tab-help");
+      if (_docSlug && pg && pg.classList.contains("active")) openDoc(_docSlug);
+    });
     let _docFindTimer = null;
     function filterDoc() {
       clearTimeout(_docFindTimer);
