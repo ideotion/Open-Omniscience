@@ -74,6 +74,52 @@ def country_completeness(code: str) -> dict:
     return tag_completeness(a3)
 
 
+@router.get("/countries/{code}/trends")
+def country_trends(code: str) -> dict:
+    """Trend surfaces 2 and 3 for one cut country (alpha-2 or alpha-3): adoption over time, openings and closures.
+
+    Read-only, local, no request. The tracked window and the planet's prior are separate keys and are never summed.
+    """
+    from src.osm.ingest import country_codes
+    from src.osm.trends import trends
+
+    try:
+        _a2, a3 = country_codes(code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
+    return trends(a3)
+
+
+@router.get("/countries/{code}/profile/{surface}")
+def country_profile(code: str, surface: str, limit: int = 100) -> dict:
+    """Trend surfaces 4 to 6 for one cut country (alpha-2 or alpha-3): ``brands``, ``channels`` or ``freshness``.
+
+    Read-only, local, no request. The snapshot, the tracked window and the planet's prior are separate keys and are never summed.
+    ``limit`` is how many ranked brands to return (the answer states how many exist).
+    """
+    from src.osm.ingest import country_codes
+    from src.osm.profile import SURFACES, profile
+
+    if surface not in SURFACES:
+        raise HTTPException(status_code=400, detail=f"surface must be one of {', '.join(SURFACES)}")
+    try:
+        _a2, a3 = country_codes(code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
+    return profile(a3, surface, limit)
+
+
+@router.get("/geography")
+def geography() -> dict:
+    """The geography axis at country level: every cut country with its counts for each measure and its own vintage.
+
+    Read-only, local, no request. Admin-1 values travel with each country's completeness (``/countries/{code}/completeness``).
+    """
+    from src.osm.geography import countries_view
+
+    return countries_view()
+
+
 @router.post("/countries/{code}/admin1")
 def count_admin1(code: str) -> dict:
     """Count analytic 1 per admin-1 region, on a thread of its own (local work, no request).
@@ -91,6 +137,36 @@ def count_admin1(code: str) -> dict:
         return start_count(a3)
     except Admin1Error as exc:
         raise HTTPException(status_code=409, detail=http_detail(exc)) from None
+
+
+@router.get("/countries/{code}/prior-summary")
+def prior_summary_state(code: str) -> dict:
+    """Is the monthly summary of the planet's past current, being built, or absent? Headers only: read-only, local, no request."""
+    from src.osm.ingest import country_codes
+    from src.osm.prior_summary import summary_state
+
+    try:
+        _a2, a3 = country_codes(code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
+    return summary_state(a3)
+
+
+@router.post("/countries/{code}/prior-summary")
+def build_prior_summary(code: str) -> dict:
+    """Build the monthly summary of the planet's past for a history cut that already exists, on a thread of its own (local work, no request).
+
+    The page asks for this once when it finds a cut without a current summary: a GET never writes, so the build is a POST. Idempotent: a
+    country already being built answers ``building``, and one whose summary is current is skipped by the thread.
+    """
+    from src.osm.ingest import country_codes
+    from src.osm.prior_summary import start_build
+
+    try:
+        _a2, a3 = country_codes(code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
+    return start_build(a3)
 
 
 class UpdateConsent(BaseModel):
@@ -223,3 +299,34 @@ def history() -> dict:
         "method": METHOD,
         "gap": GAP,
     }
+
+
+@router.get("/countries/{code}/places-summary")
+def places_summary_state(code: str) -> dict:
+    """Is the stored summary of this country's current places current, being built, or absent? Header only: read-only, local, no request."""
+    from src.osm.ingest import country_codes
+    from src.osm.places_summary import summary_state
+
+    try:
+        _a2, a3 = country_codes(code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
+    return summary_state(a3)
+
+
+@router.post("/countries/{code}/places-summary")
+def build_places_summary(code: str) -> dict:
+    """Build the stored summary of a country's current places, on a thread of its own (local work, no request).
+
+    The page asks for this once per country per session when it finds a country without a current summary: a GET never writes, so the build
+    is a POST. Idempotent: a country already being built answers ``building``, one whose summary is current is skipped by the thread, and
+    builds of several countries run one at a time.
+    """
+    from src.osm.ingest import country_codes
+    from src.osm.places_summary import start_build
+
+    try:
+        _a2, a3 = country_codes(code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=http_detail(exc)) from None
+    return start_build(a3)

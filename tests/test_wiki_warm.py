@@ -1072,7 +1072,7 @@ def test_the_overview_carries_WARM_before_the_walk_in_Q707_s_order(lane, monkeyp
         db.close()
         engine.dispose()
     wiki = out["sources"][0]
-    assert list(wiki) == ["kind", "stream", "tracked", "warm", "walk", "storage"]
+    assert list(wiki) == ["kind", "stream", "tracked", "warm", "walk", "coverage", "storage"]
     assert wiki["warm"]["state"] == "not_running" and wiki["warm"]["measured"] is False
     assert "Other changed pages" in out["method"]
 

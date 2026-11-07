@@ -5,13 +5,13 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Q808 = a: «``.osc`` diffs are XML and stay pure Python». Q813 = a: tag-level change rows -- key
 added / removed / modified, with the diff's timestamp and the object's ``version``. S05-04
-defines the MODEL and leaves the daily APPLY to 0.6 (S06-01), so this module is two pure
+defines the MODEL and leaves the daily APPLY to 0.6 (S06-01), so this module is pure
 functions and nothing that writes: :func:`parse_osc` reads a change file, :func:`tag_changes`
-turns an object's old and new tags into rows. No caller in 0.5 persists a row;
-``osm_tag_changes`` stays empty, and ``tests/test_osm_changes.py`` pins both halves.
+turns an object's old and new tags into rows. The daily apply (``src/osm/apply.py``, S06-01 S2) is
+the one caller that persists them, in the same transaction as the object changes.
 
 S06-01 S1 reads more of each object than the tag model needs, because applying a day's change file needs a node's position, a way's
-node ids and a relation's members; the daily apply (``src/osm/apply.py``) still writes no tag-change row (S2 does).
+node ids and a relation's members.
 
 THE XML IS SOMEBODY ELSE'S, so it goes through ``defusedxml`` (a core dependency): a change
 file is fetched from a mirror in 0.6, and an entity-expansion bomb in one must fail as a parse
@@ -148,8 +148,8 @@ def tag_changes(old: dict[str, str] | None, new: dict[str, str] | None) -> list[
     return out
 
 
-def change_rows(osm_type: str, osm_id: int, old, new, *, diff_timestamp, version) -> list:
-    """:func:`tag_changes` as unsaved ``OsmTagChange`` rows -- the shape 0.6 will persist."""
+def change_rows(osm_type: str, osm_id: int, old, new, *, diff_timestamp, version, country_alpha3=None, object_event=None) -> list:
+    """:func:`tag_changes` as unsaved ``OsmTagChange`` rows."""
     from src.osm.lane_models import OsmTagChange
 
     return [
@@ -162,6 +162,8 @@ def change_rows(osm_type: str, osm_id: int, old, new, *, diff_timestamp, version
             new_value=c.new_value,
             diff_timestamp=diff_timestamp,
             object_version=version,
+            country_alpha3=country_alpha3,
+            object_event=object_event,
         )
         for c in tag_changes(old, new)
     ]

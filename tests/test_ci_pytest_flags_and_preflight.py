@@ -12,7 +12,9 @@ skips the analysis-module tests on purpose, had the bare ``-q`` while its siblin
 
 What this pins:
 
-* the ``test`` and ``core-only`` jobs each run exactly ``python -m pytest -q -rsfE --junitxml="$RUNNER_TEMP/junit.xml"`` in their pytest step.
+* the ``test`` and ``core-only`` jobs each run exactly ``python -m pytest -q -rsfE --junitxml="$RUNNER_TEMP/junit.xml" @"$RUNNER_TEMP/shard.args"`` in their
+  pytest step (since C10 each is a matrix of three shards; the list in ``shard.args`` is written by the step before it, ``scripts/ci_shard.py plan``,
+  and tests/test_ci_shards.py pins that step; a leg whose line lost the list would run the whole suite three times over).
   ``-r`` REPLACES pytest's default
   ``fE`` (reproduced on pytest 9.1.1: ``-rs`` alone prints only SKIPPED lines), and the summary is printed in the ORDER of the letters
   (``-rfEs``: FAILED, ERROR, SKIPPED; ``-rsfE``: SKIPPED, FAILED, ERROR). The last lines of a log are the ones a reader of a red run gets, and
@@ -57,7 +59,9 @@ _PREFLIGHT = _ROOT / "scripts" / "preflight.sh"
 _JOBS = ("test", "core-only")
 _SKIP_LISTING = " -rsfE"
 _JUNIT = ' --junitxml="$RUNNER_TEMP/junit.xml"'
-_PYTEST = "python -m pytest -q" + _SKIP_LISTING + _JUNIT
+#: The file list of one shard (C10): written by the planner step, read by pytest as an argument file. preflight.sh runs the whole suite, so it has none.
+_SHARD_ARGS = ' @"$RUNNER_TEMP/shard.args"'
+_PYTEST = "python -m pytest -q" + _SKIP_LISTING + _JUNIT + _SHARD_ARGS
 _SUMMARY = 'python scripts/ci_skip_summary.py "$RUNNER_TEMP/junit.xml" | tee -a "$GITHUB_STEP_SUMMARY"'
 _VERSIONS = "pip list --format=freeze"
 #: Where a whole-suite pytest line must exist today: (workflow file, job). A line that goes away is a change this guard must be told about.
@@ -206,14 +210,14 @@ def _preflight_problems(workflow: dict, preflight: str) -> list[str]:
     if any("baseline" in line.lower() for line in code):
         found.append("preflight.sh compares something to a baseline, but the job's mypy step is BLOCKING at any error (ci.yml defines no baseline)")
     ci_pytest = _runs(job, "pytest")
-    differs = _SKIP_LISTING + _JUNIT
+    differs = _SKIP_LISTING + _JUNIT + _SHARD_ARGS
     if len(ci_pytest) != 1 or not ci_pytest[0].endswith(differs):
         found.append(f"the `test` job's pytest step must end in `{differs.strip()}`, it is {ci_pytest!r}")
     else:
         local = ci_pytest[0][: -len(differs)]
         if [line for line in code if "python -m pytest" in line] != [local]:
             found.append(f"preflight.sh must run `{local}` once: the `test` job's pytest command without `{differs.strip()}` and nothing else removed or added")
-    for what in (_SKIP_LISTING.strip(), "--junitxml"):
+    for what in (_SKIP_LISTING.strip(), "--junitxml", "shard.args"):
         if what not in _header(preflight):
             found.append(f"preflight.sh's header must name `{what}`: one of the two ways its pytest line differs from the job's")
     return found
@@ -266,6 +270,10 @@ def _edit_code(text: str, old: str, new: str) -> str:
         ("test", "python -m pytest -q -rsfE", "test"),
         ("core-only", "python -m pytest -q -rsfE", "core-only"),
         ("core-only", 'python -m pytest -q -rsfE --junitxml="$RUNNER_TEMP/other.xml"', "core-only"),
+        # a leg that lost its file list runs the whole suite (testpaths), or one that reads another list
+        ("test", 'python -m pytest -q -rsfE --junitxml="$RUNNER_TEMP/junit.xml"', "test"),
+        ("core-only", 'python -m pytest -q -rsfE --junitxml="$RUNNER_TEMP/junit.xml"', "core-only"),
+        ("test", 'python -m pytest -q -rsfE --junitxml="$RUNNER_TEMP/junit.xml" @"$RUNNER_TEMP/other.args"', "test"),
     ],
 )
 def test_ci_flags_checker_names_a_job_that_drifts(job_name, run, says):
@@ -297,6 +305,8 @@ def _text_without_the_header_flag(text: str, flag: str) -> str:
         ("preflight's pytest line gains a flag", lambda wf, t: (wf, _edit_code(t, "python -m pytest -q\n", "python -m pytest -q -x\n")), "pytest command without `-rsfE"),
         ("the header stops naming the skip listing", lambda wf, t: (wf, _text_without_the_header_flag(t, "-rsfE")), "header must name `-rsfE`"),
         ("the header stops naming the junit report", lambda wf, t: (wf, _text_without_the_header_flag(t, "--junitxml")), "header must name `--junitxml`"),
+        ("the header stops naming the shard list", lambda wf, t: (wf, _text_without_the_header_flag(t, "shard.args")), "header must name `shard.args`"),
+        ("ci drops the shard list", lambda wf, t: (_with_pytest_run(wf, "test", 'python -m pytest -q -rsfE --junitxml="$RUNNER_TEMP/junit.xml"'), t), "must end in"),
     ],
 )
 def test_preflight_checker_names_what_drifted(label, mutate, says):

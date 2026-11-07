@@ -150,6 +150,8 @@ DAY1_EXPECTED_COUNTS = {
     "deleted": 2,   # node 7, node 6 (moved out)
     "left_class": 0, "left_country": 1, "other_class": 1, "outside_country": 1, "unreadable_position": 0,
     "ways_not_placed": 1, "geometry_kept": 1, "relations_not_placed": 1, "older_than_stored": 1, "other_country": 0,
+    # tag rows (S2): 3 + 9 + 3 + 3 + 2 -- written out in tests/test_osm_tag_rows.py
+    "tag_rows": 20, "tags_unchanged": 0, "tags_unknown_before": 0, "version_absent": 0,
 }
 
 
@@ -205,7 +207,7 @@ def test_the_position_the_cursor_the_run_and_the_basis_all_move_together_in_one_
         cur = cursor_row(s, A.feed_name("ZZZ"))
         assert cur is not None and cur.token == "101"
         assert open_gaps(s, A.feed_name("ZZZ")) == [], "an ordinary day leaves no gap"
-        assert s.query(OsmTagChange).count() == 0, "S2 writes the tag rows, this does not"
+        assert s.query(OsmTagChange).count() == json.loads(runs[0].counts_json)["tag_rows"] == 20, "the rows and the run's own count agree"
 
 
 def test_an_update_resolves_ZERO_names_and_leaves_no_work_file(cut, osm_lane_dir, monkeypatch):

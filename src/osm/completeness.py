@@ -96,6 +96,24 @@ def _has(key: str, twin: str | None):
     return case((cond, 1), else_=0)
 
 
+#: The geography axis's per-region counts, in the order ``_measure_columns`` yields them (B3c; ``geography.REGION_MEASURES`` minus ``places``).
+MEASURE_COLUMNS = ("brand", "checked", "edited_1y")
+
+
+def _measure_columns(reference):
+    """``1``/``0`` columns for ``MEASURE_COLUMNS`` -- the same rules ``geography`` counts a whole country by. ``edited_1y`` is ``0`` for
+    every place when there is no reference date (and is then not stored)."""
+    from sqlalchemy import case, literal
+
+    from src.osm.geography import brand_filled, check_date_filled, edited_within_year
+
+    return (
+        case((brand_filled(), 1), else_=0),
+        case((check_date_filled(), 1), else_=0),
+        case((edited_within_year(reference), 1), else_=0) if reference is not None else literal(0),
+    )
+
+
 def _present(key: str, twin: str | None):
     """``SUM(1 when the key -- or its contact twin -- has a non-empty value)``, as an expression."""
     from sqlalchemy import func
@@ -218,6 +236,7 @@ def count_admin1(alpha3: str, *, path: Path | None = None) -> dict:
         if country is None or country.status != "complete":
             raise Admin1Error("not-ingested")
         basis = country_basis(country)
+        reference = country.diff_timestamp or country.extract_vintage
         row = s.query(OsmAdmin1Split).filter_by(alpha3=alpha3).one_or_none()
         if row is None:
             row = OsmAdmin1Split(alpha3=alpha3)
@@ -232,14 +251,15 @@ def count_admin1(alpha3: str, *, path: Path | None = None) -> dict:
         borders = [(k, b) for k, r in regions.items() if (b := _border(r.get("rings") or [])) is not None]
         # Only a region whose outline could be built is counted: one with no usable outline is
         # absent from the answer ("not counted", drawn as no data), never a counted zero.
-        counts: dict[str, dict] = {k: {"n": 0, "present": [0, 0, 0, 0]} for k, _b in borders}
+        counts: dict[str, dict] = {k: {"n": 0, "present": [0, 0, 0, 0], "m": [0] * len(MEASURE_COLUMNS)} for k, _b in borders}
         outside = no_point = 0
         t = osm_objects_table
-        query = select(t.c.lat, t.c.lon, *(_has(k, tw) for k, tw in KEYS)).where(
+        query = select(t.c.lat, t.c.lon, *(_has(k, tw) for k, tw in KEYS), *_measure_columns(reference)).where(
             t.c.country_alpha3 == alpha3, t.c.kind == "poi"
         )
         with store.lane_session("osm") as s:
-            for lat, lon, *has in s.execute(query).yield_per(5000):
+            for lat, lon, *rest in s.execute(query).yield_per(5000):
+                has, extra = rest[: len(KEYS)], rest[len(KEYS):]
                 if lat is None or lon is None:
                     no_point += 1
                     continue
@@ -255,7 +275,12 @@ def count_admin1(alpha3: str, *, path: Path | None = None) -> dict:
                 c["n"] += 1
                 for i, h in enumerate(has):
                     c["present"][i] += int(h or 0)
-        keyed = {k: {"n": c["n"], "present": dict(zip((k2 for k2, _ in KEYS), c["present"], strict=True))}
+                for i, h in enumerate(extra):
+                    c["m"][i] += int(h or 0)
+        # ``measures`` (B3c): the geography axis's counts, region by region. ``edited_1y`` is absent when the country states no date to
+        # measure from -- a counted zero would say «nothing was edited», which is a different fact.
+        keyed = {k: {"n": c["n"], "present": dict(zip((k2 for k2, _ in KEYS), c["present"], strict=True)),
+                     "measures": {m: v for m, v in zip(MEASURE_COLUMNS, c["m"], strict=True) if m != "edited_1y" or reference is not None}}
                  for k, c in counts.items()}
         with store.lane_session("osm") as s:
             row = s.query(OsmAdmin1Split).filter_by(alpha3=alpha3).one()
@@ -345,11 +370,12 @@ def admin1_state(alpha3: str, *, path: Path | None = None) -> dict:
     for key, r in regions.items():
         got = stored.get(key)
         if got is None:          # a region the file gained after the count: absent, not zero
-            rows.append({"key": key, "name": r.get("name"), "names": r.get("names") or {}, "n": None, "keys": []})
+            rows.append({"key": key, "name": r.get("name"), "names": r.get("names") or {}, "n": None, "keys": [], "measures": None})
             continue
         n = int(got["n"])
+        # None = counted before the geography measures existed (a recount adds them): not a zero.
         rows.append({"key": key, "name": r.get("name"), "names": r.get("names") or {}, "n": n,
-                     "keys": _keys(n, [got["present"].get(k, 0) for k, _ in KEYS])})
+                     "keys": _keys(n, [got["present"].get(k, 0) for k, _ in KEYS]), "measures": got.get("measures")})
     return {**base, **facts, "status": "stale" if stale else "complete", "regions": rows,
             "outside": outside, "no_point": no_point}
 

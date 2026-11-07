@@ -23,7 +23,14 @@ WHAT A DAY DOES, AND WHAT IT REFUSES TO GUESS.
 * A change file that is OLDER than what is stored (a lower ``version``) never overwrites it.
 * The border is the one the cut used. A change to the country's own border relation is applied as a row change; the rings are not
   recomputed, which is a stated limit until the next cut.
-* It writes NO tag-change row: ``osm_tag_changes`` is S2's (B2), and this module leaves it empty.
+* TAG-LEVEL ROWS (S06-01 S2, R428). Each object the file really changes writes one ``osm_tag_changes`` row per key added / removed /
+  modified, stamped with THE FILE'S OWN timestamp and the object's ``version``, in the same transaction as the object. What it refuses:
+  an object that was never in the kept classes, in another country, older than the stored row, or outside the border writes none; a modify of an
+  object the lane did not hold writes none (its old tags are unknown, so every key would read "added": counted ``tags_unknown_before``);
+  a change that leaves the tags as they were (a moved node, a re-drawn way) writes none and is counted ``tags_unchanged``; a missing
+  ``version`` is stored NULL and counted ``version_absent``; an object that moved out of the border writes none (the world did not change).
+  A delete writes a ``removed`` row for every key the object held (``object_event='deleted'``), a stored object whose new tags no longer
+  qualify writes its real key changes (``'left_class'``), and a ``create`` writes every key as ``added`` (``'created'``).
 
 THE DERIVED TABLES. The search and map indexes and the admin-1 split are built from the objects. A day that changed any object
 clears the indexes in the same transaction (they read "not indexed" until rebuilt) and moves the country's basis
@@ -51,7 +58,7 @@ from sqlalchemy.orm import Session
 
 from src.monitoring.secret_scrub import log_failure, record_text
 from src.osm import tags as T
-from src.osm.changes import OscChange, parse_osc
+from src.osm.changes import OscChange, parse_osc, tag_changes
 from src.osm.geometry import (
     Border,
     decode_coords,
@@ -75,6 +82,9 @@ from src.osm.replication import (
 from src.versioned.lanes import CHUNK_SIZE
 
 _LOG = logging.getLogger("osm.apply")
+
+#: Tag rows held in memory before they are written (the transaction is still the file's one).
+TAG_ROW_BATCH = 5000
 
 #: The substrate feed one country's daily change files are recorded under.
 FEED_PREFIX = "osm-daily:"
@@ -112,6 +122,12 @@ class DiffCounts:
     older_than_stored: int = 0
     #: A change to an object another country's cut holds (the file covers the whole region): not this country's, left alone.
     other_country: int = 0
+    #: Tag rows written (S2), the objects that wrote none for a stated reason (the tags did not change, or the lane did not hold the
+    #: object before the file so its old tags are unknown), and the objects whose rows say a NULL ``version`` because the file gave none.
+    tag_rows: int = 0
+    tags_unchanged: int = 0
+    tags_unknown_before: int = 0
+    version_absent: int = 0
 
     def as_dict(self) -> dict[str, int]:
         return dict(self.__dict__)
@@ -166,7 +182,7 @@ def _chunks(ids: list[int]):
 class _Ctx:
     """What one file's apply reads: the country, its border, and the table."""
 
-    def __init__(self, s: Session, alpha3: str, border: Border, relation_id: int | None) -> None:
+    def __init__(self, s: Session, alpha3: str, border: Border, relation_id: int | None, diff_timestamp: datetime | None = None) -> None:
         from src.osm.lane_models import osm_objects_table
 
         self.s = s
@@ -174,14 +190,64 @@ class _Ctx:
         self.border = border
         self.relation_id = relation_id
         self.t = osm_objects_table
+        self._tag_columns = [
+            osm_objects_table.c[name] for name in (*(T.column_name(k) for k in T.SCALAR_KEYS), *T.FAMILIES.values(), "other_tags")
+        ]
         #: Positions, in the file, of the nodes its kept-class ways name (pass 1).
         self.locs: dict[int, tuple[float, float]] = {}
+        #: The file's own timestamp (the tag rows' ``diff_timestamp``) and the rows waiting to be written.
+        self.diff_timestamp = diff_timestamp
+        self.pending: list[dict] = []
 
     def stored(self, osm_type: str, osm_id: int):
         t = self.t
         return self.s.execute(
             select(t.c.id, t.c.version, t.c.country_alpha3).where(t.c.osm_type == osm_type, t.c.osm_id == osm_id)
         ).first()
+
+    def stored_tags(self, row_id: int) -> dict[str, str]:
+        # Only the tag columns: a way's vertices and a relation's members can be kilobytes, and they are not read here.
+        row = self.s.execute(select(*self._tag_columns).where(self.t.c.id == row_id)).mappings().first()
+        return T.tags_of(row) if row is not None else {}
+
+    def record_tags(self, c: OscChange, stored, new: dict[str, str] | None, counts: DiffCounts, *, event: str | None = None) -> None:
+        """The tag rows for ONE object about to change (call BEFORE the stored row is written or deleted: the old tags are read from it).
+
+        ``new`` is the tags after the file (None for a delete). ``event`` is the object-level fact when this change is one; a ``create`` of
+        an object the lane did not hold is ``created`` whatever the caller says.
+        """
+        if stored is None:
+            if c.action != "create":
+                counts.tags_unknown_before += 1
+                return
+            old: dict[str, str] = {}
+            event = "created"
+        else:
+            old = self.stored_tags(stored.id)
+        changes = tag_changes(old, new)
+        if not changes:
+            counts.tags_unchanged += 1
+            return
+        if c.version is None:
+            counts.version_absent += 1
+        for ch in changes:
+            self.pending.append(
+                {
+                    "osm_type": c.osm_type, "osm_id": c.osm_id, "key": ch.key, "change": ch.change, "old_value": ch.old_value,
+                    "new_value": ch.new_value, "diff_timestamp": self.diff_timestamp, "object_version": c.version,
+                    "country_alpha3": self.alpha3, "object_event": event,
+                }
+            )
+        counts.tag_rows += len(changes)
+        if len(self.pending) >= TAG_ROW_BATCH:
+            self.flush_tags()
+
+    def flush_tags(self) -> None:
+        from src.osm.lane_models import OsmTagChange
+
+        if self.pending:
+            self.s.execute(insert(OsmTagChange), self.pending)
+            self.pending = []
 
     def stored_points(self, ids: list[int]) -> dict[int, tuple[float, float]]:
         # A position is a fact about the world, not about who holds the row, so a neighbour's stored node is a vertex like any other.
@@ -253,6 +319,7 @@ def _apply_node(ctx: _Ctx, c: OscChange, counts: DiffCounts) -> None:
         return
     if c.action == "delete":
         if stored is not None:
+            ctx.record_tags(c, stored, None, counts, event="deleted")
             _delete(ctx, stored.id)
             counts.deleted += 1
         return
@@ -263,6 +330,8 @@ def _apply_node(ctx: _Ctx, c: OscChange, counts: DiffCounts) -> None:
     inside = ctx.border.contains(c.lat, c.lon)
     if kind is None or not inside:
         if stored is not None:
+            if kind is None:  # its tags stopped qualifying: a real tag change. (Out of the border instead: the world did not change, no row.)
+                ctx.record_tags(c, stored, c.tags, counts, event="left_class")
             _delete(ctx, stored.id)
             counts.deleted += 1
             counts.left_class += 1 if kind is None else 0
@@ -276,6 +345,7 @@ def _apply_node(ctx: _Ctx, c: OscChange, counts: DiffCounts) -> None:
         "n", c.osm_id, c.version, c.timestamp, c.tags,
         kind=kind, pkey=pkey, pval=pval, notable=notable, alpha3=ctx.alpha3, lat=c.lat, lon=c.lon, geom=None, node_count=None, members=None,
     )
+    ctx.record_tags(c, stored, c.tags, counts)
     _write(ctx, c, stored, row, counts)
 
 
@@ -285,12 +355,14 @@ def _apply_way(ctx: _Ctx, c: OscChange, counts: DiffCounts) -> None:
         return
     if c.action == "delete":
         if stored is not None:
+            ctx.record_tags(c, stored, None, counts, event="deleted")
             _delete(ctx, stored.id)
             counts.deleted += 1
         return
     kind, pkey, pval, notable = T.classify(c.tags, is_way=True)
     if kind is None:
         if stored is not None:
+            ctx.record_tags(c, stored, c.tags, counts, event="left_class")
             _delete(ctx, stored.id)
             counts.deleted += 1
             counts.left_class += 1
@@ -307,6 +379,7 @@ def _apply_way(ctx: _Ctx, c: OscChange, counts: DiffCounts) -> None:
             "w", c.osm_id, c.version, c.timestamp, c.tags,
             kind=kind, pkey=pkey, pval=pval, notable=notable, alpha3=ctx.alpha3, lat=None, lon=None, geom=None, node_count=None, members=None,
         )
+        ctx.record_tags(c, stored, c.tags, counts)
         _write(ctx, c, stored, row, counts, keep_shape=True)
         counts.geometry_kept += 1
         return
@@ -324,6 +397,7 @@ def _apply_way(ctx: _Ctx, c: OscChange, counts: DiffCounts) -> None:
         kind=kind, pkey=pkey, pval=pval, notable=notable, alpha3=ctx.alpha3,
         lat=rp[0], lon=rp[1], geom=encode_coords(pts), node_count=len(pts), members=None,
     )
+    ctx.record_tags(c, stored, c.tags, counts)
     _write(ctx, c, stored, row, counts)
 
 
@@ -333,12 +407,14 @@ def _apply_relation(ctx: _Ctx, c: OscChange, counts: DiffCounts) -> None:
         return
     if c.action == "delete":
         if stored is not None:
+            ctx.record_tags(c, stored, None, counts, event="deleted")
             _delete(ctx, stored.id)
             counts.deleted += 1
         return
     kind, pkey, pval, notable = T.classify(c.tags, is_way=False)
     if kind is None:
         if stored is not None:
+            ctx.record_tags(c, stored, c.tags, counts, event="left_class")
             _delete(ctx, stored.id)
             counts.deleted += 1
             counts.left_class += 1
@@ -359,17 +435,20 @@ def _apply_relation(ctx: _Ctx, c: OscChange, counts: DiffCounts) -> None:
         kind=kind, pkey=pkey, pval=pval, notable=notable, alpha3=ctx.alpha3, lat=None, lon=None, geom=None, node_count=None,
         members=json.dumps([[m[0], m[1], m[2]] for m in c.members], separators=(",", ":")),
     )
+    ctx.record_tags(c, stored, c.tags, counts)
     _write(ctx, c, stored, row, counts)
 
 
-def apply_osc_file(s: Session, alpha3: str, border: Border, relation_id: int | None, path: Path) -> DiffCounts:
+def apply_osc_file(
+    s: Session, alpha3: str, border: Border, relation_id: int | None, path: Path, *, diff_timestamp: datetime | None = None
+) -> DiffCounts:
     """Apply one gzipped ``.osc`` to ``alpha3``'s objects inside the caller's transaction. Raises on a file that will not parse.
 
     Two passes over the file: the first reads the positions of its own nodes (a new way's vertices are usually in the same day's file),
     the second applies each object in file order, holding the kept relations back until every node and way has been applied (a relation
     is placed by its members, and a member created in the same file must be stored first).
     """
-    ctx = _Ctx(s, alpha3, border, relation_id)
+    ctx = _Ctx(s, alpha3, border, relation_id, diff_timestamp)
     # Pass 1a: the vertices the file's own kept-class ways name. Pass 1b: where the file puts exactly those nodes (not "the nodes inside the
     # bounding box": a way with one vertex just outside the box is still placed, as the cut places it). Memory follows the file's way
     # vertices, never its node count.
@@ -398,6 +477,7 @@ def apply_osc_file(s: Session, alpha3: str, border: Border, relation_id: int | N
                 relations.append(c)
     for c in relations:
         _apply_relation(ctx, c, counts)
+    ctx.flush_tags()
     return counts
 
 
@@ -458,7 +538,7 @@ def _record_applied(s: Session, alpha3: str, region: str, seq: int, ts: datetime
 
 
 def _rebuild_indexes(alpha3: str, report: UpdateReport) -> None:
-    """The two indexes the cut builds at its end, rebuilt once after the run. A failure is logged and leaves them reading as not matching."""
+    """The two indexes the cut builds at its end, and the stored counts of the current places (R439), rebuilt once after the run. A failure is logged and leaves them reading as not matching (the counts, as computed)."""
     try:
         from src.osm.places import build_search_index
 
@@ -471,6 +551,10 @@ def _rebuild_indexes(alpha3: str, report: UpdateReport) -> None:
         report.view_index = build_view_index(alpha3)
     except Exception as exc:  # noqa: BLE001 - the update is applied; only its view index is missing
         log_failure(_LOG, f"the {alpha3} view index was not rebuilt after the update", exc, level=logging.WARNING)
+    # R439: the stored counts of the current places read as stale once the apply moved the country's position; rebuilt here, once per run (never fails the run).
+    from src.osm.places_summary import build_quietly
+
+    build_quietly(alpha3)
 
 
 def update_country(
@@ -625,7 +709,7 @@ def update_country(
                     raise _Superseded
                 # The derived rows go BEFORE the objects change (row ids are reused once objects are deleted), in the same transaction.
                 _clear_derived(s, alpha3)
-                counts = apply_osc_file(s, alpha3, border, relation_id, dest)
+                counts = apply_osc_file(s, alpha3, border, relation_id, dest, diff_timestamp=state.timestamp)
                 apply_s = time.monotonic() - t1
                 country_row.diff_sequence = seq
                 country_row.diff_timestamp = state.timestamp

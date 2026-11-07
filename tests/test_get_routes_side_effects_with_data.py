@@ -105,6 +105,10 @@ _EMPTY_BRANCH: dict[str, str] = {
     "/api/osm/search": "reads the OpenStreetMap lane store: lane-never-run",
     "/api/osm/view": "reads the OpenStreetMap lane store: lane-never-run",
     "/api/osm/countries/{code}/completeness": "reads the OpenStreetMap lane store: lane-never-run",
+    "/api/osm/countries/{code}/trends": "reads the OpenStreetMap lane store: lane-never-run",
+    "/api/osm/countries/{code}/profile/{surface}": "reads the OpenStreetMap lane store: lane-never-run",
+    "/api/osm/countries/{code}/prior-summary": "reads the OpenStreetMap lane store: lane-never-run",
+    "/api/osm/countries/{code}/places-summary": "reads the OpenStreetMap lane store: lane-never-run",
 }
 
 # Routes whose answer must name something only the seed holds, so a seed that stopped reaching its handler fails here by name.
@@ -355,7 +359,7 @@ def _urls(ids: _Ids) -> dict[str, str]:
         "/api/entities/places/search": "/api/entities/places/search?q=paris",
         "/api/events/astronomy": "/api/events/astronomy?year=2026",
         "/api/events/astronomy/lunar-series": "/api/events/astronomy/lunar-series?start=2026-01-01&end=2026-03-01",
-        "/api/geo/downloads/size": "/api/geo/downloads/size?code=europe",
+        "/api/geo/downloads/size": "/api/geo/downloads/size?code=europe&consent=true",
         "/api/governments/aggregate/{code}": "/api/governments/aggregate/WLD",
         "/api/governments/group-aggregate": "/api/governments/group-aggregate?group=G7&indicator=NY.GDP.MKTP.CD",
         "/api/governments/map": "/api/governments/map?indicator=NY.GDP.MKTP.CD",
@@ -375,6 +379,10 @@ def _urls(ids: _Ids) -> dict[str, str]:
         "/api/links/preview": f"/api/links/preview?url=https://{_MARK}-a.test/1",
         "/api/llm/articles/{article_id}/analyses": f"/api/llm/articles/{a}/analyses",
         "/api/osm/countries/{code}/completeness": "/api/osm/countries/FR/completeness",
+        "/api/osm/countries/{code}/trends": "/api/osm/countries/FR/trends",
+        "/api/osm/countries/{code}/prior-summary": "/api/osm/countries/FR/prior-summary",
+        "/api/osm/countries/{code}/places-summary": "/api/osm/countries/FR/places-summary",
+        "/api/osm/countries/{code}/profile/{surface}": "/api/osm/countries/FR/profile/brands",
         "/api/osm/search": "/api/osm/search?q=paris",
         "/api/osm/view": "/api/osm/view?w=2.0&s=48.0&e=3.0&n=49.0",
         "/api/quarantine/source-furniture": f"/api/quarantine/source-furniture?source_id={ids.source}",
@@ -458,8 +466,17 @@ def walk(corpus):
     return _Walk(seen, statuses, bodies, watch_note, ids)
 
 
+#: Routes that, WITH the kill switch engaged (the walk engages it), refuse by name BEFORE their body: the status they must answer. A route here
+#: is a network read whose consent and kill switch the route itself checks (v0.6 C3), so reaching a 2xx would mean it had gone to the network.
+_REFUSED_BY_NAME_UNDER_THE_KILL_SWITCH = {"/api/geo/downloads/size": 409}
+
+
 def test_every_listed_route_reaches_its_body(walk):
-    bad = {p: (s, walk.bodies[p]) for p, s in walk.statuses.items() if not 200 <= s < 300}
+    bad = {
+        p: (s, walk.bodies[p])
+        for p, s in walk.statuses.items()
+        if not 200 <= s < 300 and _REFUSED_BY_NAME_UNDER_THE_KILL_SWITCH.get(p) != s
+    }
     assert not bad, f"{len(bad)} seeded request(s) did not reach a 2xx: {bad}"
 
 

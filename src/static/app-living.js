@@ -155,6 +155,60 @@
       return { title: t("Page walk"), facts };
     }
 
+    // Per-edition coverage (v0.6 row D, S06-03 S1 + S3): pages seen of the edition's OWN article count, the full-text range, the last
+    // event and the gaps by reason. Counts as "N of M", never a bar or a score; the located-share row says why it is empty.
+    function livingCoverageGroup(src, t, tf) {
+      const c = src.coverage || {};
+      if (c.measured !== true) return { title: t("Edition coverage"), facts: _livingUnmeasured(c, t) };
+      const facts = [];
+      const eds = c.editions || [];
+      // The ratio sums only the editions that have BOTH figures: a numerator from an edition with no total would pass a denominator that
+      // leaves it out. An edition the walk never touched (pages_seen null) adds nothing and is said so on its own row, never as 0.
+      const both = eds.filter((e) => e.has_run && typeof e.pages_seen === "number" && typeof e.edition_articles === "number");
+      const seenAll = eds.reduce((n, e) => n + (e.has_run && typeof e.pages_seen === "number" ? e.pages_seen : 0), 0);
+      const noTotal = eds.filter((e) => e.has_run && typeof e.edition_articles !== "number").length;
+      facts.push({ label: t("All editions"),
+        value: both.length
+          ? tf("{n} of {m} pages seen", { n: _livingCount(both.reduce((n, e) => n + e.pages_seen, 0)),
+              m: _livingCount(both.reduce((n, e) => n + e.edition_articles, 0)) })
+          : (eds.some((e) => e.has_run && typeof e.pages_seen === "number")
+            ? tf("{n} pages seen, total unknown", { n: _livingCount(seenAll) }) : t("Not measured yet")),
+        hover: noTotal > 0
+          ? tf("{n} editions have no article count yet; their pages are left out of both figures.", { n: _livingCount(noTotal) })
+          : t("Pages the walk listed, of the editions' own article counts.") });
+      for (const e of eds) {
+        const code = (typeof ooLangCode === "function" ? ooLangCode(e.edition) : "") || String(e.edition);
+        const name = typeof ooLangName === "function" ? ooLangName(e.edition, "") : "";
+        let value;
+        let hover = t("The edition counts its articles its own way, so pages seen can pass its total. A page promoted from the second tier to the first may be counted twice, so the full-text figure is a range.");
+        if (!e.has_run) {
+          value = t("No run yet");
+        } else {
+          if (typeof e.pages_seen !== "number") value = t("The walk has not run for this edition.");
+          else if (typeof e.edition_articles === "number") {
+            value = tf("{n} of {m} pages seen", { n: _livingCount(e.pages_seen), m: _livingCount(e.edition_articles) });
+          } else value = tf("{n} pages seen, total unknown", { n: _livingCount(e.pages_seen) });
+          const ft = e.full_text || {};
+          if (typeof ft.hot_pages_with_text === "number") {
+            if (typeof ft.warm_pages_with_text === "number") {
+              const lo = Math.max(ft.hot_pages_with_text, ft.warm_pages_with_text);
+              const hi = ft.hot_pages_with_text + ft.warm_pages_with_text;
+              hover += " " + tf("Full text held for between {lo} and {hi} pages.", { lo: _livingCount(lo), hi: _livingCount(hi) });
+            } else if (ft.hot_pages_with_text > 0) {
+              hover += " " + tf("Full text held for at least {n} pages; the second tier has not run.", { n: _livingCount(ft.hot_pages_with_text) });
+            }
+          }
+          hover += " " + tf("Last event: {when}.", { when: e.last_event_unreadable ? t("Could not be read") : livingWhen(e.last_event_recorded_at, t) });
+          const g = e.gaps || {};
+          if (g.total > 0) hover += " " + tf("{n} stretches the lane did not see.", { n: _livingCount(g.total) });
+        }
+        facts.push({ label: code, value, hover: (name && name !== code ? ooLabelText(name, hover) : hover) });
+      }
+      facts.push({ label: t("Addresses located"), value: t("Not measured yet"),
+        hover: t("Counting addresses found, located and outside your OSM countries needs the address extractor and the local OSM address index, which this build does not have yet. A zero would read as none found; nothing has looked.") });
+      return { title: t("Edition coverage"), facts };
+    }
+
     // Q707's WARM tier (S05-06's S1): the newest text of every OTHER page the stream reports
     // changed, latest + previous (Q710). Counts only. The share of the budget it leaves to
     // the followed pages is a proposed default, and the hover says so.
@@ -293,6 +347,7 @@
         { title: t("Live stream"), facts: stream },
         livingWarmGroup(src, t, tf),
         livingWalkGroup(src, t, tf),
+        livingCoverageGroup(src, t, tf),
         { title: t("Pages you track"), facts: tracked },
         livingStorageGroup(src.storage, t),
       ];
@@ -315,7 +370,7 @@
       return [{ title: t("Law tracker"), facts }, livingStorageGroup(src.storage, t)];
     }
 
-    function livingMapGroups(src, t) {
+    function livingMapGroups(src, t, tf) {
       const m = src.maps || {};
       let facts;
       if (m.measured !== true) {
@@ -334,14 +389,43 @@
             hover: t("A map extract carries the date of its data in its own header, which the app does not read yet. The date the file was written here is a different fact, so it is not shown in its place.") },
         ];
       }
-      return [{ title: t("Map regions"), facts }, livingStorageGroup(src.storage, t)];
+      return [{ title: t("Map regions"), facts }, livingDailyGroup(src.daily, t, tf), livingStorageGroup(src.storage, t)];
+    }
+
+    // The OSM lane's daily change files (S06-01 S5): counts and the newest file's own date, then every re-baseline as a dated
+    // event. A figure the lane could not give is "Not recorded" with the reason on hover, never 0 (a 0 reads as "reached nothing").
+    function livingDailyGroup(d, t, tf) {
+      const title = t("Daily change files");
+      if (!d || d.measured !== true) return { title, facts: _livingUnmeasured(d || {}, t) };
+      const why = t("This lane was cut by an older build and lacks the table this figure is read from. Cutting a country again creates it.");
+      const num = (v) => (typeof v === "number"
+        ? { value: String(v) } : { value: t("Not recorded"), hover: why });
+      const events = d.rebaselines || [];
+      const rows = events.map((e) => `<div>${esc(livingWhen(e.detected_at, t))} \u00b7 ${ooCountryCell(e.alpha3)}</div>`);
+      if (d.rebaselines_not_shown > 0) rows.push(`<div class="muted">${esc(tf("{n} older events are not shown.", { n: String(d.rebaselines_not_shown) }))}</div>`);
+      return { title, facts: [
+        { label: t("Countries cut"), value: String(d.countries_cut) },
+        { label: t("Reached by the daily files"), value: String(d.countries_updated) },
+        { label: t("Change files applied"), ...num(d.files_applied) },
+        { label: t("Newest change file"),
+          value: d.newest_file_at || !(d.countries_updated > 0) ? livingWhen(d.newest_file_at, t) : t("Not recorded"),
+          hover: t("The date inside the newest change file applied to any country, not the day it was applied here.") },
+        { label: t("Re-baselines"), ...num(d.rebaselines_total),
+          hover: t("The mirror no longer held the change files a country needed, so it was cut again from a fresh extract. Each one is listed below with its date.") },
+        { label: t("Cut again by hand"), ...num(d.hand_recuts),
+          hover: t("Countries you cut again yourself instead of updating them. Counted apart: it was your choice, not a gap in the mirror's files.") },
+        typeof d.rebaselines_total !== "number"
+          ? { label: t("Re-baseline events"), value: t("Not recorded"), hover: why }
+          : { label: t("Re-baseline events"), html: true, value: rows.length ? rows.join("") : esc(t("None")),
+              hover: t("Dated by when this machine found the gap, newest first.") },
+      ] };
     }
 
     function livingGroupsFor(src, t, tf) {
       if (!src) return [];
       if (src.kind === "wiki") return livingWikiGroups(src, t, tf);
       if (src.kind === "law") return livingLawGroups(src, t);
-      if (src.kind === "osm") return livingMapGroups(src, t);
+      if (src.kind === "osm") return livingMapGroups(src, t, tf);
       return [];
     }
 

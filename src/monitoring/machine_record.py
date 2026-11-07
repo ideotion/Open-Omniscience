@@ -38,6 +38,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import platform
+import re
 import sqlite3
 import sys
 from datetime import UTC, datetime
@@ -49,6 +50,14 @@ MACHINE_RECORD_VERSION = 2
 #: Names only, and only this prefix: the app's own switches. A variable of the operator's other
 #: software is none of a diagnostic's business.
 _ENV_PREFIX = "OO_"
+#: How many of the set switch names the record lists. WHAT IT PROTECTS: the machine block's size in the diagnostics manifest (counted at 10,000 bytes
+#: in ``diagnostics_slots.OTHER_NEW_MEMBERS_BYTES``): the longest name is 46 characters and the manifest is indented, about 62 bytes a name, so 100
+#: names are about 6,200 bytes. An install that sets more than 100 is not a normal install; ``count`` still says how many, and ``names_not_shown``
+#: how many are not listed.
+ENV_NAMES_SHOWN = 100
+#: The longest a shown name may be (characters, plain ASCII), so the block is bounded by arithmetic, not by what the environment holds.
+ENV_NAME_CHARS = 48
+_ENV_NAME_UNSAFE = re.compile(r"[^A-Za-z0-9_]")
 
 
 def _unavailable(exc: BaseException) -> dict[str, Any]:
@@ -133,6 +142,16 @@ def _libc() -> Any:
         return _unavailable(exc)
 
 
+def _yaml_loader() -> str | None:
+    """The YAML loader class this process uses (``CSafeLoader`` or ``SafeLoader``), read without parsing anything."""
+    try:
+        from src.utils.safe_yaml import YAML_LOADER
+
+        return str(YAML_LOADER.__name__)
+    except Exception:  # noqa: BLE001 - unknown is null, never a guess
+        return None
+
+
 def _versions() -> dict[str, Any]:
     return {
         "python": sys.version.split()[0],
@@ -140,6 +159,7 @@ def _versions() -> dict[str, Any]:
         "sqlcipher": _sqlcipher_version(),
         "duckdb": _duckdb_version(),
         "libc": _libc(),
+        "yaml_loader": _yaml_loader(),
     }
 
 
@@ -218,11 +238,20 @@ def _environment() -> dict[str, Any]:
     a path or a secret, and what a reader needs is which switches this process ran under."""
     try:
         names = sorted(k for k in os.environ if k.startswith(_ENV_PREFIX))
-        return {
-            "set_names": names,
+        # Each shown name is cut to ENV_NAME_CHARS characters of [A-Za-z0-9_] (anything else becomes ?, so JSON never writes an escape longer than the character), and the changed names are counted.
+        shown = [_ENV_NAME_UNSAFE.sub("?", n)[:ENV_NAME_CHARS] for n in names[:ENV_NAMES_SHOWN]]
+        cut = sum(1 for n, t in zip(names[:ENV_NAMES_SHOWN], shown, strict=True) if n != t)
+        out: dict[str, Any] = {
+            "set_names": shown,
             "count": len(names),
             "method": f"the names of the {_ENV_PREFIX} variables that are set; no value is read",
         }
+        if cut:
+            out["names_cut"] = cut
+        if len(names) > ENV_NAMES_SHOWN:
+            # The first names in sorted order are shown and the rest are COUNTED: the block's size is a bound the diagnostics arithmetic relies on.
+            out["names_not_shown"] = len(names) - ENV_NAMES_SHOWN
+        return out
     except Exception as exc:  # noqa: BLE001
         return _unavailable(exc)
 
