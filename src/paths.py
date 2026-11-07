@@ -68,27 +68,53 @@ def repo_root() -> Path:
     return _REPO_ROOT
 
 
+# Memo for :func:`data_dir` (F3, 2026-11-07): the oo-wiki-stream thread reaches it through
+# load_settings() once per firehose event, and the full path (mkdir + chmod + is_file +
+# os.access) made it one of the busiest threads in the process. Keyed on every environment
+# input the resolution reads, so changing OO_DATA_DIR / XDG_DATA_HOME / HOME in-process
+# (tests do) simply misses the memo; guarded by ONE stat so a deleted folder is re-created.
+_memo: tuple[tuple[str | None, ...], Path] | None = None
+
+
+def _memo_key() -> tuple[str | None, ...]:
+    return (
+        os.getenv("OO_DATA_DIR"),
+        os.getenv("XDG_DATA_HOME"),
+        os.getenv("HOME") or os.getenv("USERPROFILE"),
+    )
+
+
 def data_dir() -> Path:
     """Return the writable data directory, creating it if necessary.
 
-    See the module docstring for the precedence rules.
+    See the module docstring for the precedence rules. Repeat calls are cheap: the result
+    is memoised per resolved environment and revalidated with a single ``stat`` (a data
+    folder that vanished is created again, exactly as before).
     """
+    global _memo
     override = os.getenv("OO_DATA_DIR")
+    if override and os.getenv("OO_DATA_VOLUME_ID"):
+        # A folder the first-launch step marked: never recreated when it is missing, and
+        # the check must run every time (the drive can be unplugged mid-session).
+        from src.safety.data_volume import guard_data_dir
+
+        guard_data_dir(Path(override).expanduser())
+
+    key = _memo_key()
+    memo = _memo
+    if memo is not None and memo[0] == key and memo[1].is_dir():
+        return memo[1]
+
     if override:
-        chosen = Path(override).expanduser()
-        if os.getenv("OO_DATA_VOLUME_ID"):
-            # A folder the first-launch step marked: never recreated when it is missing.
-            from src.safety.data_volume import guard_data_dir
-
-            guard_data_dir(chosen)
-        return _ensure(chosen)
-
-    if _is_source_checkout():
-        return _ensure(_REPO_ROOT / "data")
-
-    xdg = os.getenv("XDG_DATA_HOME")
-    base = Path(xdg).expanduser() if xdg else Path.home() / ".local" / "share"
-    return _ensure(base / APP_DIRNAME)
+        chosen = _ensure(Path(override).expanduser())
+    elif _is_source_checkout():
+        chosen = _ensure(_REPO_ROOT / "data")
+    else:
+        xdg = os.getenv("XDG_DATA_HOME")
+        base = Path(xdg).expanduser() if xdg else Path.home() / ".local" / "share"
+        chosen = _ensure(base / APP_DIRNAME)
+    _memo = (key, chosen)
+    return chosen
 
 
 def default_sqlite_url() -> str:
