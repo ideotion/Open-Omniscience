@@ -34,6 +34,7 @@ spliced into the local chain.
 from __future__ import annotations
 
 import functools
+import heapq
 import json
 import logging
 import math
@@ -46,7 +47,7 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from itertools import islice
+from itertools import groupby, islice
 from pathlib import Path
 from typing import Any
 
@@ -2103,6 +2104,7 @@ def merge_corpus(
         status = _STATUS_MERGED
         _plan: object = results.get("_derived_carry")
         _done = _plan.get("carried") if isinstance(_plan, dict) else None
+        # ``articles`` = carried COMPLETELY (keyword rows and places-and-entities, each under its own stamp, R415): one carried for a half owes the other.
         _carried = int(_done.get("articles") or 0) if isinstance(_done, dict) else 0
         if _carried:
             _inserted = _count(
@@ -2174,6 +2176,9 @@ _MERGE_HANDLED = {
     # `_plan_derived_carry`. The places and entities left _MERGE_NOT_CARRIED for it; the
     # stamps table is never copied, only WRITTEN, for the rows the carry itself wrote.
     "article_mentioned_places", "article_entities", "article_index_stamps",
+    # R415: the places-and-entities stamp, the second of the two. Written (never copied) for the places and entities the carry itself wrote,
+    # under the same rule as the keyword stamp; it left _MERGE_NOT_CARRIED for it.
+    "article_www_stamps",
     # 2026-09-30, R61 (item 12): the ≈ titles are deduced metadata and ride the backup; they
     # left _MERGE_NOT_CARRIED for it. See `_merge_ai_layer`.
     "article_title_translations",
@@ -2242,8 +2247,6 @@ _MERGE_NOT_CARRIED: dict[str, str] = {
     # to the re-index only while it carries no human decision.
     # (b) PER-MACHINE or self-healing: losing them costs nothing durable.
     "derived_meta": "corpus epoch + derived bookkeeping, rebuilt on demand",
-    # R415/R418: the www engine's stamp. Not copied: a restore that carries places and entities writes ITS OWN stamp (WAL's carry, which follows), and an absent stamp is the safe, re-extract state.
-    "article_www_stamps": "the places-and-entities engine stamp; rewritten by the index pass, absent = re-extract",
     # S05-01 S6 (Q605 = b): the did-you-mean deletion table is derived WHOLE from the
     # keyword vocabulary by its own job; a carried copy would point at another corpus'
     # keyword ids. The next build after a restore covers the merged vocabulary.
@@ -3679,12 +3682,15 @@ def _merge_articles(con, batch_id, results) -> None:
     # again after it is deleted -- so a leftover stamp could certify a NEW article's
     # absent rows, and the post-swap re-index skips a certified article. Cheap insurance:
     # two narrow tables, normally nothing to delete. The carry writes its own stamps after.
-    if _local_has_table(con, "article_index_stamps"):  # else an unqualified name reaches the backup's
-        con.execute(
-            "DELETE FROM main.article_index_stamps WHERE article_id IN ("
-            " SELECT row_id FROM merged_rows WHERE batch_id = ? AND table_name = 'articles')",
-            (batch_id,),
-        )
+    # (The places-and-entities stamp is the same hazard in a second table, R415: a leftover www stamp at a reissued rowid would let the
+    # re-index skip a NEW article's places and entities.)
+    for stamps_table in ("article_index_stamps", "article_www_stamps"):
+        if _local_has_table(con, stamps_table):  # else an unqualified name reaches the backup's
+            con.execute(
+                f"DELETE FROM main.{stamps_table} WHERE article_id IN ("  # noqa: S608  # nosec B608 - two module-local literal table names
+                " SELECT row_id FROM merged_rows WHERE batch_id = ? AND table_name = 'articles')",
+                (batch_id,),
+            )
     r.samples = _new_row_samples(
         con, batch_id, "articles", "COALESCE(NULLIF(m.title, ''), '(untitled)')"
     )
@@ -3851,11 +3857,15 @@ def _carry_enabled() -> bool:
 def _ensure_carry_tables(con: sqlite3.Connection) -> None:
     """The plan's temp tables, created empty if the plan step did not run -- so a caller
     that runs `_merge_articles` alone joins an empty plan and carries nothing."""
+    # ``kw`` and ``www`` say WHICH stamp verified for the article (R415): the keyword stamp certifies the mentions, the www stamp the
+    # places and entities, and an article may hold either without the other. ``inputs`` is the keyword stamp's digest and ``www_inputs``
+    # the www stamp's; each is NULL for the part that did not verify.
     con.execute(
         "CREATE TEMP TABLE IF NOT EXISTS carry_plan ("
-        " old INTEGER PRIMARY KEY, source_id INTEGER, inputs TEXT NOT NULL,"
+        " old INTEGER PRIMARY KEY, source_id INTEGER, inputs TEXT,"
         " observed_on TEXT, country TEXT, language TEXT,"
-        " top_keyword_id INTEGER, top_keyword_count INTEGER, top_keyword_tied_n INTEGER)"
+        " top_keyword_id INTEGER, top_keyword_count INTEGER, top_keyword_tied_n INTEGER,"
+        " kw INTEGER NOT NULL DEFAULT 0, www INTEGER NOT NULL DEFAULT 0, www_inputs TEXT)"
     )
     con.execute(
         "CREATE TEMP TABLE IF NOT EXISTS carry_kw ("
@@ -3903,6 +3913,37 @@ def _carried_country(code: str | None, form: str, canonical) -> str | None:
     return converted if converted is not None else code
 
 
+def _stamp_pages(con, table: str, engine: str) -> Iterator[tuple]:
+    """``(article_id, inputs)`` of every incoming stamp in ``table`` that names ``engine``, by ascending article id, one page of
+    ``_CARRY_PLAN_CHUNK`` at a time. ``table`` is always a module literal below, never input. The walk is over the STAMPS and not over the
+    articles, so a stamp whose article row the backup does not hold cannot end it; and each page is one seek on the stamp table's primary key,
+    so the walk reads every stamp once (a UNION of the two tables with an ORDER BY and a LIMIT had to read the next row of BOTH sides for every
+    row it returned, which the staged copy -- it has no planner statistics -- turned into a scan of the longer table per page)."""
+    last = -(2**63)
+    while True:
+        rows = _q(
+            con,
+            f"SELECT article_id, inputs FROM inc.{table} WHERE engine = ? AND article_id > ? ORDER BY article_id LIMIT ?",  # noqa: S608  # nosec B608 - module-local literal table names
+            (engine, last, _CARRY_PLAN_CHUNK),
+        )
+        yield from rows
+        if len(rows) < _CARRY_PLAN_CHUNK:
+            return
+        last = int(rows[-1][0])
+
+
+def _stamped_candidates(con, kw_engine: str, www_engine: str | None) -> Iterator[tuple]:
+    """``(article_id, keyword_inputs, www_inputs)`` for every incoming article holding EITHER stamp from this machine's engines, once each,
+    by ascending article id. ``keyword_inputs`` / ``www_inputs`` are None for the half the article does not hold. The two stamp tables are
+    read by one cursor each and merged here."""
+    streams = [((int(a), 0, i) for a, i in _stamp_pages(con, "article_index_stamps", kw_engine))]
+    if www_engine is not None:
+        streams.append(((int(a), 1, i) for a, i in _stamp_pages(con, "article_www_stamps", www_engine)))
+    for aid, group in groupby(heapq.merge(*streams), key=lambda t: t[0]):
+        by_half = {which: inputs for _a, which, inputs in group}
+        yield aid, by_half.get(0), by_half.get(1)
+
+
 def _plan_derived_carry(con, batch_id, results) -> None:
     """Decide which incoming articles' derived rows can be CARRIED (R24).
 
@@ -3920,14 +3961,29 @@ def _plan_derived_carry(con, batch_id, results) -> None:
     con.execute("DELETE FROM temp.carry_plan")
     con.execute("DELETE FROM temp.carry_kw")
     plan: dict = {
+        # What the counters count (R415 changed three of them, so it is written down). ``stamped`` / ``verified`` / ``planned`` are the KEYWORD
+        # half: stamps naming this machine's keyword engine, those recomputed from the incoming row, those that matched. ``www_stamped`` /
+        # ``www_verified`` / ``www_planned`` are the same three for the places-and-entities half. ``candidates`` is the articles holding EITHER
+        # stamp (one count each, whichever table they came from), so ``already_present`` and ``source_unmapped`` -- which are counted per
+        # candidate -- do not reconcile against ``stamped`` alone. Every candidate is accounted for: its stamp names an article the backup does
+        # not hold (``article_missing``, a backup taken with foreign keys off), or the article is already here, or its source is not mapped, or
+        # it was verified for at least one half (and then planned or refused for it). ``carried.articles`` (filled by ``_carry_derived_rows``) means carried
+        # COMPLETELY, both halves, and is what completes a batch; ``keyword_articles`` / ``www_articles`` are the halves.
         "engine": None, "stamped": 0, "verified": 0, "planned": 0,
+        # R415: the places and entities ride their OWN stamp (``article_www_stamps``), so an article can be carried for the keywords, for the
+        # places and entities, for both, or for neither. ``www_engine`` is None when that half cannot be carried at all (``www_reason``), and
+        # is kept when it can but no incoming stamp names it (``www_stamped`` is then 0 and ``www_reason`` says so).
+        "www_engine": None, "www_stamped": 0, "www_verified": 0, "www_planned": 0, "candidates": 0,
         "refused": {
             "already_present": 0, "source_unmapped": 0, "inputs_changed": 0,
             "keyword_unmapped": 0, "entity_upgrade": 0, "keyword_collision": 0,
+            "www_inputs_changed": 0, "article_missing": 0,
         },
         "method": (
-            "an incoming article is carried only when its stamp names this engine AND its "
-            "inputs, recomputed here from the incoming row and the local source, match; "
+            "an incoming article's keywords are carried only when its keyword stamp names this engine AND its "
+            "inputs, recomputed here from the incoming row and the local source, match; its places and entities "
+            "only when its places-and-entities stamp names this machine's engine for them AND ITS inputs, "
+            "recomputed here by the one function the index pass uses, match; "
             "every refusal is re-extracted exactly as before R24"
         ),
     }
@@ -3968,13 +4024,35 @@ def _plan_derived_carry(con, batch_id, results) -> None:
     plan["stamped"] = _count(
         con, "SELECT COUNT(*) FROM inc.article_index_stamps WHERE engine = ?", (local,)
     )
-    if not plan["stamped"]:
+    # The places and entities (R415). The carry needs both tables and a www identity this machine can compute; without any of them the
+    # keywords still carry on their own stamp and the places and entities are left to the post-swap re-index, said in ``www_reason``.
+    www_engine: str | None = None
+    if not _inc_has_table(con, "article_www_stamps"):
+        plan["www_reason"] = "the backup predates the places-and-entities stamp"
+    elif not _local_has_table(con, "article_www_stamps"):
+        plan["www_reason"] = "this corpus has no table to record a places-and-entities stamp in"
+    else:
+        try:
+            from src.analytics.engine_identity import www_engine_id
+
+            www_engine = www_engine_id()
+        except Exception as exc:  # noqa: BLE001 - no www identity, no www carry; the keywords still carry and the re-index still runs
+            log_failure(_LOG, "could not compute the places-and-entities engine identity; carrying none", exc, level=logging.WARNING)
+            plan["www_reason"] = "this machine's places-and-entities engine identity could not be computed"
+    if www_engine is not None:
+        plan["www_engine"] = www_engine
+        plan["www_stamped"] = _count(
+            con, "SELECT COUNT(*) FROM inc.article_www_stamps WHERE engine = ?", (www_engine,)
+        )
+        if not plan["www_stamped"]:
+            plan["www_reason"] = "no incoming article has a places-and-entities stamp from this engine"
+    if not plan["stamped"] and not plan["www_stamped"]:
         plan["reason"] = "no incoming article is stamped by this engine"
         return
 
     from types import SimpleNamespace
 
-    from src.analytics.engine_identity import date_part, index_inputs_digest
+    from src.analytics.engine_identity import date_part, index_inputs_digest, www_inputs_digest
     from src.analytics.managed import normalize_lang
     from src.analytics.store import _self_name_forms
     from src.backup.country_codes import canonical_country, store_form_of
@@ -3988,26 +4066,35 @@ def _plan_derived_carry(con, batch_id, results) -> None:
     form = store_form_of(con)
     to_python = CountryCode().process_result_value
     refused = plan["refused"]
-    last = -(2**63)
-    while True:
-        rows = _q(
-            con,
-            "SELECT s.article_id, s.inputs, i.source_id, i.title, i.content,"
-            " i.compressed_content, i.language, i.detected_language, i.published_at,"
-            " i.created_at, i.country, i.hash"
-            " FROM inc.article_index_stamps s JOIN inc.articles i ON i.id = s.article_id"
-            " WHERE s.engine = ? AND s.article_id > ? ORDER BY s.article_id LIMIT ?",
-            (local, last, _CARRY_PLAN_CHUNK),
-        )
+    # An article is a candidate when it holds EITHER stamp from this machine's engines (``_stamped_candidates``: each stamp table read once, by
+    # its own cursor). Candidates are verified in slices of ``_CARRY_PLAN_CHUNK``; a stamp whose article row the backup does not hold is
+    # skipped in the slice, and cannot end the walk because the walk is over the stamps and not over the articles.
+    def _verify_slice(cands: list) -> None:
+        ids = tuple(c[0] for c in cands)
+        by_id = {
+            int(r[0]): r
+            for r in _q(
+                con,
+                "SELECT id, source_id, title, content, compressed_content, language, detected_language,"  # noqa: S608  # nosec B608 - only placeholders are interpolated
+                " published_at, created_at, country, hash FROM inc.articles"
+                f" WHERE id IN ({','.join('?' * len(ids))})",
+                ids,
+            )
+        }
+        rows = [
+            (aid, kw_inputs, www_inputs, *by_id[aid][1:])
+            for aid, kw_inputs, www_inputs in cands
+            if aid in by_id
+        ]
+        refused["article_missing"] += len(cands) - len(rows)
         if not rows:
-            break
-        last = int(rows[-1][0])
+            return
         marks = ",".join("?" * len(rows))
         present = {
             r[0] for r in _q(con, f"SELECT hash FROM articles WHERE hash IN ({marks})",  # noqa: S608  # nosec B608 - only placeholders are interpolated
-                             tuple(r[11] for r in rows))
+                             tuple(r[12] for r in rows))
         }
-        src_ids = tuple({int(r[2]) for r in rows if r[2] is not None})
+        src_ids = tuple({int(r[3]) for r in rows if r[3] is not None})
         local_src: dict[int, tuple] = {}
         if src_ids:
             smarks = ",".join("?" * len(src_ids))
@@ -4019,7 +4106,7 @@ def _plan_derived_carry(con, batch_id, results) -> None:
             ):
                 local_src[int(old)] = (int(new), name, domain)
         planned = []
-        for (aid, stamp_inputs, sid, title, content, compressed, lang, detected,
+        for (aid, kw_inputs, www_inputs, sid, title, content, compressed, lang, detected,
              published, created, country, ahash) in rows:
             if ahash in present:
                 # Already in this corpus: nothing is inserted, and the local article keeps
@@ -4031,37 +4118,63 @@ def _plan_derived_carry(con, batch_id, results) -> None:
                 refused["source_unmapped"] += 1
                 continue
             country = to_python(country, None)
-            text = _stored_text(content, compressed)
-            forms = _self_name_forms(SimpleNamespace(name=src[1], domain=src[2]))
-            digest = index_inputs_digest(
-                text=text, raw_content=content, title=title, language=lang,
-                detected_language=detected, observed=date_part(published or created),
-                country=country, self_forms=forms,
-            )
-            plan["verified"] += 1
-            if digest != stamp_inputs:
-                refused["inputs_changed"] += 1
+            kw_ok = False
+            if kw_inputs is not None:
+                text = _stored_text(content, compressed)
+                forms = _self_name_forms(SimpleNamespace(name=src[1], domain=src[2]))
+                digest = index_inputs_digest(
+                    text=text, raw_content=content, title=title, language=lang,
+                    detected_language=detected, observed=date_part(published or created),
+                    country=country, self_forms=forms,
+                )
+                plan["verified"] += 1
+                if digest != kw_inputs:
+                    refused["inputs_changed"] += 1
+                else:
+                    kw_ok = True
+            # The places and entities: the digest comes from the ONE function the index pass stamps with, called on the incoming row
+            # (the column as stored, not decompressed; the country as the column type hands it), never recomputed here.
+            www_ok = False
+            if www_inputs is not None:
+                plan["www_verified"] += 1
+                if www_inputs_digest(raw_content=content, country=country) != www_inputs:
+                    refused["www_inputs_changed"] += 1
+                else:
+                    www_ok = True
+            if not kw_ok and not www_ok:
                 continue
             known = (lang or "").strip() or (detected or "").strip() or None
             planned.append((
-                int(aid), src[0], stamp_inputs, date_part(published or created),
+                int(aid), src[0], kw_inputs if kw_ok else None, date_part(published or created),
                 # A re-index passes the ARTICLE's country and no city
                 # (src.analytics.store.reindex_articles), so that is what a carried mention
                 # carries -- not whatever the exporter's ingest denormalised from its source.
                 _carried_country(normalize_country(country), form, canonical_country),
                 normalize_lang(known) or None,
+                int(kw_ok), int(www_ok), www_inputs if www_ok else None,
             ))
         con.executemany(
-            "INSERT INTO temp.carry_plan (old, source_id, inputs, observed_on, country, language)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO temp.carry_plan (old, source_id, inputs, observed_on, country, language, kw, www, www_inputs)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             planned,
         )
+
+    slice_: list = []
+    for cand in _stamped_candidates(con, local, www_engine):
+        plan["candidates"] += 1
+        slice_.append(cand)
+        if len(slice_) >= _CARRY_PLAN_CHUNK:
+            _verify_slice(slice_)
+            slice_ = []
+    if slice_:
+        _verify_slice(slice_)
     if not _count(con, "SELECT COUNT(*) FROM temp.carry_plan"):
         plan["reason"] = "no stamped article passed verification"
         return
 
     # Resolve each incoming keyword the carried mentions name, the way index_article
     # resolves a term: by normalized_term alone, lowest id (_prefetch_keywords).
+    # Only the articles whose KEYWORDS are carried (kw = 1): an article carried for its places and entities alone names no keyword.
     con.execute(
         "INSERT INTO temp.carry_kw (old, new, inc_entity)"
         " SELECT ik.id,"
@@ -4069,11 +4182,15 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         "  COALESCE(ik.is_entity, 0)"
         " FROM inc.keywords ik WHERE ik.id IN ("
         "  SELECT DISTINCT im.keyword_id FROM temp.carry_plan cp"
-        "  CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old)"
+        "  CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old WHERE cp.kw = 1)"
     )
 
     def _refuse(key: str, sql: str) -> None:
-        cur = con.execute(f"DELETE FROM temp.carry_plan WHERE old IN ({sql})")  # noqa: S608  # nosec B608 - module-local literal subqueries only
+        # The three guards below are about the KEYWORDS, so a refusal takes the keyword half of the article's plan and leaves its places and
+        # entities (whose own stamp verified) where they are: they depend on no keyword row, and a re-index would write the same ones.
+        cur = con.execute(
+            f"UPDATE temp.carry_plan SET kw = 0, inputs = NULL WHERE kw = 1 AND old IN ({sql})"  # noqa: S608  # nosec B608 - module-local literal subqueries only
+        )
         refused[key] += int(cur.rowcount or 0)
 
     # A mention naming a keyword with no local row -- or no incoming row at all.
@@ -4081,7 +4198,7 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         "keyword_unmapped",
         "SELECT im.article_id FROM temp.carry_plan cp"
         " CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old"
-        " LEFT JOIN temp.carry_kw ck ON ck.old = im.keyword_id WHERE ck.new IS NULL",
+        " LEFT JOIN temp.carry_kw ck ON ck.old = im.keyword_id WHERE cp.kw = 1 AND ck.new IS NULL",
     )
     _refuse(
         "entity_upgrade",
@@ -4089,15 +4206,17 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         " CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old"
         " JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
         " JOIN keywords k ON k.id = ck.new"
-        " WHERE ck.inc_entity = 1 AND COALESCE(k.is_entity, 0) = 0",
+        " WHERE cp.kw = 1 AND ck.inc_entity = 1 AND COALESCE(k.is_entity, 0) = 0",
     )
     _refuse(
         "keyword_collision",
         "SELECT im.article_id FROM temp.carry_plan cp"
         " CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old"
         " JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
+        " WHERE cp.kw = 1"
         " GROUP BY im.article_id, ck.new HAVING COUNT(*) > 1",
     )
+    con.execute("DELETE FROM temp.carry_plan WHERE kw = 0 AND www = 0")
 
     # The article's own top keyword, exactly as src.analytics.store.top_keyword_of
     # computes it from the rows a pass writes: positive counts only; the highest count;
@@ -4106,7 +4225,7 @@ def _plan_derived_carry(con, batch_id, results) -> None:
     con.execute(
         "UPDATE temp.carry_plan SET top_keyword_count = ("
         " SELECT MAX(im.count) FROM inc.keyword_mentions im"
-        " WHERE im.article_id = carry_plan.old AND im.count > 0)"
+        " WHERE im.article_id = carry_plan.old AND im.count > 0) WHERE kw = 1"
     )
     con.execute(
         "UPDATE temp.carry_plan SET"
@@ -4115,10 +4234,11 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         " top_keyword_id = (SELECT MIN(ck.new) FROM inc.keyword_mentions im"
         "  JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
         "  WHERE im.article_id = carry_plan.old AND im.count = carry_plan.top_keyword_count)"
-        " WHERE top_keyword_count IS NOT NULL"
+        " WHERE kw = 1 AND top_keyword_count IS NOT NULL"
     )
-    plan["planned"] = _count(con, "SELECT COUNT(*) FROM temp.carry_plan")
-    if not plan["planned"]:
+    plan["planned"] = _count(con, "SELECT COUNT(*) FROM temp.carry_plan WHERE kw = 1")
+    plan["www_planned"] = _count(con, "SELECT COUNT(*) FROM temp.carry_plan WHERE www = 1")
+    if not plan["planned"] and not plan["www_planned"]:
         plan["reason"] = "every verified article was refused by a keyword guard"
 
 
@@ -4136,10 +4256,14 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
     windows can leave rows without a stamp (re-extracted -- slow, correct) but never a
     stamp without its rows (skipped by the re-index -- silently keywordless). The working
     copy is disposable until the swap in any case."""
-    out = {"articles": 0, "mentions": 0, "places": 0, "entities": 0}
+    # ``articles`` counts the articles carried COMPLETELY -- the keyword rows AND the places and entities, each under its own verified stamp --
+    # because those are the ones that owe the re-index nothing (the batch is complete when they are all of it). ``keyword_articles`` and
+    # ``www_articles`` count each half on its own, so an article carried for one of them is reported for that one and still owes the other.
+    out = {"articles": 0, "keyword_articles": 0, "www_articles": 0, "mentions": 0, "places": 0, "entities": 0}
     _ensure_carry_tables(con)
     plan = results.get("_derived_carry") or {}
     engine = plan.get("engine")
+    www_engine = plan.get("www_engine")
     if not engine or not _count(con, "SELECT COUNT(*) FROM temp.carry_plan"):
         return out
     # Every temp table below is declared with its key, never built with CREATE TABLE AS:
@@ -4150,13 +4274,13 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
     con.execute("DROP TABLE IF EXISTS temp.carry_ids")
     con.execute(
         "CREATE TEMP TABLE carry_ids (old INTEGER PRIMARY KEY, new INTEGER NOT NULL,"
-        " source_id INTEGER, inputs TEXT NOT NULL, observed_on TEXT, country TEXT,"
-        " language TEXT)"
+        " source_id INTEGER, inputs TEXT, observed_on TEXT, country TEXT,"
+        " language TEXT, kw INTEGER NOT NULL, www INTEGER NOT NULL, www_inputs TEXT)"
     )
     con.execute(
-        "INSERT INTO temp.carry_ids (old, new, source_id, inputs, observed_on, country, language)"
+        "INSERT INTO temp.carry_ids (old, new, source_id, inputs, observed_on, country, language, kw, www, www_inputs)"
         " SELECT cp.old, ma.new, cp.source_id, cp.inputs, cp.observed_on, cp.country,"
-        " cp.language FROM temp.carry_plan cp"
+        " cp.language, cp.kw, cp.www, cp.www_inputs FROM temp.carry_plan cp"
         " JOIN temp.map_articles ma ON ma.old = cp.old"
         " JOIN merged_rows r ON r.batch_id = ? AND r.table_name = 'articles' AND r.row_id = ma.new",
         (batch_id,),
@@ -4192,8 +4316,8 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
         con.execute("DROP TABLE IF EXISTS temp.carry_win")
         con.execute(
             "CREATE TEMP TABLE carry_win (old INTEGER PRIMARY KEY, new INTEGER NOT NULL,"
-            " source_id INTEGER, inputs TEXT NOT NULL, observed_on TEXT, country TEXT,"
-            " language TEXT)"
+            " source_id INTEGER, inputs TEXT, observed_on TEXT, country TEXT,"
+            " language TEXT, kw INTEGER NOT NULL, www INTEGER NOT NULL, www_inputs TEXT)"
         )
         con.execute(
             "INSERT INTO temp.carry_win SELECT * FROM temp.carry_ids WHERE old >= ? AND old <= ?",
@@ -4216,6 +4340,7 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
             " NULL, w.language, w.source_id, 'baseline', ?"
             " FROM temp.carry_win w CROSS JOIN inc.keyword_mentions im ON im.article_id = w.old"
             " JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
+            " WHERE w.kw = 1"
             " ORDER BY ck.new, w.new",
             (now,),
         )
@@ -4226,7 +4351,7 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
             " SELECT w.new, p.name, p.country, p.kind, p.mentions, p.snippet, p.lat, p.lon,"
             " p.note, p.extractor, ?"
             " FROM temp.carry_win w"
-            " CROSS JOIN inc.article_mentioned_places p ON p.article_id = w.old",
+            " CROSS JOIN inc.article_mentioned_places p ON p.article_id = w.old WHERE w.www = 1",
             (now,),
         )
         out["places"] += int(cur.rowcount or 0)
@@ -4235,7 +4360,7 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
             " snippet, note, extractor, created_at)"
             " SELECT w.new, e.name, e.entity_class, e.mentions, e.snippet, e.note,"
             " e.extractor, ?"
-            " FROM temp.carry_win w CROSS JOIN inc.article_entities e ON e.article_id = w.old",
+            " FROM temp.carry_win w CROSS JOIN inc.article_entities e ON e.article_id = w.old WHERE w.www = 1",
             (now,),
         )
         out["entities"] += int(cur.rowcount or 0)
@@ -4250,7 +4375,7 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
             "INSERT INTO temp.carry_delta (kid, m, a) SELECT ck.new, SUM(im.count), COUNT(*)"
             " FROM temp.carry_win w"
             " CROSS JOIN inc.keyword_mentions im ON im.article_id = w.old"
-            " JOIN temp.carry_kw ck ON ck.old = im.keyword_id GROUP BY ck.new"
+            " JOIN temp.carry_kw ck ON ck.old = im.keyword_id WHERE w.kw = 1 GROUP BY ck.new"
         )
         con.execute(
             "UPDATE main.keywords SET"
@@ -4262,10 +4387,23 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
         )
         con.execute(
             "INSERT INTO main.article_index_stamps (article_id, engine, inputs, stamped_at)"
-            " SELECT w.new, ?, w.inputs, ? FROM temp.carry_win w",
+            " SELECT w.new, ?, w.inputs, ? FROM temp.carry_win w WHERE w.kw = 1",
             (engine, now),
         )
-        out["articles"] += len(window)
+        if www_engine:
+            # The places-and-entities stamp, in the SAME window as the rows it certifies and with the incoming row's own digest (the one the
+            # plan verified), exactly as the keyword stamp above.
+            con.execute(
+                "INSERT INTO main.article_www_stamps (article_id, engine, inputs, stamped_at)"
+                " SELECT w.new, ?, w.www_inputs, ? FROM temp.carry_win w WHERE w.www = 1",
+                (www_engine, now),
+            )
+        n_kw, n_www, n_both = con.execute(
+            "SELECT COALESCE(SUM(kw), 0), COALESCE(SUM(www), 0), COALESCE(SUM(kw AND www), 0) FROM temp.carry_win"
+        ).fetchone()
+        out["keyword_articles"] += int(n_kw)
+        out["www_articles"] += int(n_www)
+        out["articles"] += int(n_both)
         con.execute("COMMIT")
         con.execute("BEGIN IMMEDIATE")
         _window_tick("derived rows", start + len(window), total, out["mentions"])
@@ -4322,9 +4460,9 @@ def _merge_keyword_mentions(con, batch_id, results) -> None:
         "reaches an article, that article has no keywords and is absent from keyword "
         "analytics -- see the restore report's reindex section for the backlog."
     )
-    if carried["articles"]:
+    if carried["keyword_articles"]:
         r.note = (
-            f"carried for {carried['articles']} article(s) whose engine stamp and inputs "
+            f"carried for {carried['keyword_articles']} article(s) whose engine stamp and inputs "
             "match this corpus, so a re-index would reproduce them exactly (R24); the rest "
             + base_note
         )
@@ -4335,10 +4473,16 @@ def _merge_keyword_mentions(con, batch_id, results) -> None:
         d = DomainResult()
         d.new = carried[key]
         d.deferred = max(0, _count(con, f"SELECT COUNT(*) FROM inc.{table}") - carried[key])  # noqa: S608  # nosec B608 - module-local literal table names
-        d.note = (
-            "carried with their article's certified keywords (R24); the rest are rebuilt "
-            "by the post-swap re-index, like the mentions"
-        )
+        if carried["www_articles"]:
+            d.note = (
+                f"carried for {carried['www_articles']} article(s) whose places-and-entities stamp names this machine's engine for them "
+                "and whose inputs match (R24, R415); the rest are rebuilt by the post-swap re-index, like the mentions"
+            )
+        else:
+            d.note = (
+                "none carried (the carry report says why: reason, www_reason or its refusals); the post-swap re-index rebuilds "
+                "these from the article text, like the mentions"
+            )
         results[table] = d
 
 
@@ -7119,19 +7263,23 @@ def mark_reindex_complete(batch_id: int) -> None:
 #: a real backlog sat behind it. Field bundle 2026-08-02: 686,317 of 785,481
 #: articles carried no keyword mentions and nothing said so.
 #:
-#: ``certified`` (R24, 2026-09-24): of a batch's articles, how many already hold rows
-#: stamped by the engine a re-index would run -- carried at import, or re-indexed by an
+#: ``certified`` (R24, 2026-09-24; R415, 2026-11-04): of a batch's articles, how many already hold rows
+#: stamped by the engines a re-index would run -- carried at import, or re-indexed by an
 #: earlier run that was interrupted before it could stamp the batch complete. Those owe
-#: nothing, so the backlog is ``n - certified``. The join is on two narrow tables
-#: (merged_rows, article_index_stamps) and never touches an article row (the stand-in question below reads the
+#: nothing, so the backlog is ``n - certified``. "Owes nothing" is BOTH stamps: the keyword stamp (``:engine``)
+#: AND the places-and-entities stamp (``:www_engine``), the second joined THROUGH the first so an article counts once and only when it holds
+#: both; an article with one of them still owes the other half. The join is on three narrow tables
+#: (merged_rows, article_index_stamps, article_www_stamps) and never touches an article row (the stand-in question below reads the
 #: article hash index only: a covering range, no row page).
 _BACKLOG_SQL = (
-    "SELECT b.id, b.imported_at, COUNT(m.row_id) AS n, COUNT(st.article_id) AS certified"
+    "SELECT b.id, b.imported_at, COUNT(m.row_id) AS n, COUNT(ws.article_id) AS certified"
     " FROM merge_batches b"
     " LEFT JOIN merged_rows m"
     "   ON m.batch_id = b.id AND m.table_name = 'articles'"
     " LEFT JOIN article_index_stamps st"
     "   ON st.article_id = m.row_id AND st.engine = :engine"
+    " LEFT JOIN article_www_stamps ws"
+    "   ON ws.article_id = st.article_id AND ws.engine = :www_engine"
     " WHERE b.status = :s"
     " GROUP BY b.id, b.imported_at"
     " HAVING COUNT(m.row_id) > 0"
@@ -7153,7 +7301,8 @@ _BACKLOG_LOST_SQL = (
     "SELECT m.batch_id, COUNT(*) FROM articles a"
     " CROSS JOIN merged_rows m ON m.table_name = 'articles' AND m.row_id = a.id"
     " LEFT JOIN article_index_stamps st ON st.article_id = m.row_id AND st.engine = :engine"
-    " WHERE a.hash >= '" + ARTICLE_HASH_PREFIX + "' AND a.hash < '" + ARTICLE_HASH_END + "' AND st.article_id IS NULL"  # noqa: S608  # nosec B608 - two constants of src/database/stand_in.py, never input
+    " LEFT JOIN article_www_stamps ws ON ws.article_id = st.article_id AND ws.engine = :www_engine"
+    " WHERE a.hash >= '" + ARTICLE_HASH_PREFIX + "' AND a.hash < '" + ARTICLE_HASH_END + "' AND ws.article_id IS NULL"  # noqa: S608  # nosec B608 - two constants of src/database/stand_in.py, never input
     " GROUP BY m.batch_id"
 )
 
@@ -7173,6 +7322,20 @@ def _backlog_engine() -> str:
         return "<unknown>"
 
 
+def _backlog_www_engine() -> str:
+    """The identity a re-index would stamp the places and entities with now (R415): the other half of "owes nothing". The same rule as
+    :func:`_backlog_engine` -- one that cannot be computed is a value no stamp can equal, so the backlog is overstated and never hidden."""
+    try:
+        from src.analytics.engine_identity import www_engine_id
+
+        return www_engine_id()
+    except Exception as exc:  # noqa: BLE001 - an unknown engine certifies nothing
+        # no exc_info and no log_failure, for the reason in _backlog_engine
+        said = record_text(exc, typed=True)
+        _LOG.warning("could not compute the places-and-entities engine identity for the backlog: %s", said)
+        return "<unknown>"
+
+
 def _backlog_rows(session) -> list[tuple]:
     """The backlog read for :func:`pending_reindex_batches` and :func:`reindex_backlog`: one row per pending batch,
     ``(id, imported_at, articles, certified, lost)`` -- the two statements above, so the two callers cannot drift apart. ``lost`` is the
@@ -7180,10 +7343,11 @@ def _backlog_rows(session) -> list[tuple]:
     from sqlalchemy import text
 
     engine_id = _backlog_engine()
-    rows = session.execute(text(_BACKLOG_SQL), {"s": _STATUS_MERGED, "engine": engine_id}).fetchall()
+    www_engine = _backlog_www_engine()
+    rows = session.execute(text(_BACKLOG_SQL), {"s": _STATUS_MERGED, "engine": engine_id, "www_engine": www_engine}).fetchall()
     if not rows:
         return []
-    lost = {int(r[0]): int(r[1]) for r in session.execute(text(_BACKLOG_LOST_SQL), {"engine": engine_id})}
+    lost = {int(r[0]): int(r[1]) for r in session.execute(text(_BACKLOG_LOST_SQL), {"engine": engine_id, "www_engine": www_engine})}
     # The two statements share no snapshot, so ``lost`` is held to what the first one says the batch can owe (``articles - certified``): a race
     # between them can make a batch owe less than it does for one poll, never a negative number. The one race found is a stamp deleted between
     # the reads (a stand-in is never stamped and a merged batch gets no new rows): the first statement counted that article as certified, the
@@ -7329,17 +7493,19 @@ def reindex_imported_articles(
         # R24: an article whose rows are already stamped by the engine this re-index would
         # run -- carried at import, or finished by an earlier interrupted run -- would be
         # re-indexed into exactly the rows it already has. Skipped. Read from
-        # the narrow stamps table, never from the article rows.
+        # the narrow stamps tables, never from the article rows. R415: BOTH stamps -- an article with only the keyword
+        # stamp still owes its places and entities, and one with only the www stamp still owes its keywords.
         certified = {
             int(r[0])
             for r in session.execute(
                 text(
                     "SELECT m.row_id FROM merged_rows m"
                     " JOIN article_index_stamps st ON st.article_id = m.row_id"
+                    " JOIN article_www_stamps ws ON ws.article_id = m.row_id"
                     " WHERE m.batch_id = :b AND m.table_name = 'articles'"
-                    " AND st.engine = :e"
+                    " AND st.engine = :e AND ws.engine = :w"
                 ),
-                {"b": batch_id, "e": _backlog_engine()},
+                {"b": batch_id, "e": _backlog_engine(), "w": _backlog_www_engine()},
             ).fetchall()
         }
         # A stand-in (the place-holder a salvage copy writes at a lost id, which a backup of that copy carries and the merge records here) is
