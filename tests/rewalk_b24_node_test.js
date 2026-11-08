@@ -81,7 +81,8 @@ const found = NAMES.map((n) => [n, extract(n)]);
 const MISSING = found.filter(([, s]) => !s).map(([n]) => n);
 
 const src = [
-  "function esc(s){return s==null?'':String(s).replace(/[&<>\"']/g,"
+  "function ooLtrIsolate(s){return String(s==null?'':s);} function ooLtrPct(s){return String(s==null?'':s);}",
+    "function esc(s){return s==null?'':String(s).replace(/[&<>\"']/g,"
     + "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));}",
   "function fmtNum(x){return String(x);}",
   "function extLink(u, label){return '<a>' + label + '</a>';}",

@@ -64,3 +64,23 @@ def test_default_sqlite_url_is_rooted_in_data_dir(tmp_path, monkeypatch):
 def teardown_module(_module):
     # Leave the module in its natural (un-monkeypatched) state for other tests.
     importlib.reload(paths)
+
+
+def test_data_dir_is_memoised_but_recreated_when_deleted(tmp_path, monkeypatch):
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "d"))
+    p = _reload()
+    first = p.data_dir()
+    calls = []
+    real = p._ensure
+    monkeypatch.setattr(p, "_ensure", lambda x: (calls.append(x), real(x))[1])
+    assert p.data_dir() == first and calls == []  # repeat call: no mkdir/chmod
+    first.rmdir()
+    assert p.data_dir() == first and first.is_dir() and len(calls) == 1  # recreated
+
+
+def test_data_dir_memo_follows_environment(tmp_path, monkeypatch):
+    p = _reload()
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "a"))
+    assert p.data_dir() == tmp_path / "a"
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "b"))
+    assert p.data_dir() == tmp_path / "b"

@@ -629,7 +629,7 @@ def test_every_write_the_ranker_makes_asks_its_own_drive_whether_it_is_read_only
             try:
                 with pytest.raises(kls.ExportRefused) as err:
                     if where == "flush":
-                        r._buf = [(-5, "en", 99, 1, 1, None, None, None)]
+                        r._buf = [(-5, "en", 99, 1, 1, None, None, None, None)]
                         r._flush()
                     else:
                         r._prune("en")
