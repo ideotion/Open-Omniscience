@@ -16,11 +16,11 @@ are, so the split guard's pinned positions stay where they were.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, ClassVar
 
 from fastapi import Depends, HTTPException
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from src.api.cross_site import refuse_cross_site_get
@@ -36,6 +36,17 @@ class FieldCheckRun(BaseModel):
     #: The panel's input: a folder for the drive check; an answer, a note and the page's counters
     #: for a check that needs hands. Nothing secret is asked for, and the result is scrubbed.
     inputs: dict[str, Any] = Field(default_factory=dict)
+    INPUT_KEYS_MAX: ClassVar[int] = 8
+    INPUT_CHARS_MAX: ClassVar[int] = 8192
+
+    @field_validator("inputs")
+    @classmethod
+    def _bounded(cls, v: dict[str, Any]) -> dict[str, Any]:
+        # A folder path, an answer, a 500-character note and three counters fit in far less; a bound keeps
+        # an oversized body from being held in the results and copied into the report.
+        if len(v) > cls.INPUT_KEYS_MAX or len(json.dumps(v, ensure_ascii=False, default=str)) > cls.INPUT_CHARS_MAX:
+            raise ValueError(f"inputs are limited to {cls.INPUT_KEYS_MAX} keys and {cls.INPUT_CHARS_MAX} characters")
+        return v
 
 
 @router.get("/field-checks", dependencies=[Depends(refuse_cross_site_get)])

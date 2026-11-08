@@ -395,3 +395,13 @@ def test_the_windows_terminal_panel_check_applies_only_on_windows():
     c = next(c for c in fc.load_manifest()["checks"] if c["id"] == "terminal-panel-windows")
     assert c["platforms"] == ["windows"] and c["params"]["probe"] in fc.PROBES
     assert c["kind"] not in fc.ONLINE_KINDS
+
+
+def test_the_route_refuses_oversized_inputs_before_any_runner():
+    from src.api.diagnostics.field_checks import FieldCheckRun
+
+    FieldCheckRun(id="x", inputs={"answer": "yes", "note": "n" * 500, "client": {"files_saved_by_page": 3}})
+    with pytest.raises(ValueError, match="limited"):
+        FieldCheckRun(id="x", inputs={"note": "n" * 9000})
+    with pytest.raises(ValueError, match="limited"):
+        FieldCheckRun(id="x", inputs={f"k{i}": i for i in range(9)})
