@@ -25,3 +25,50 @@ def test_request_shutdown_arms_stop_on_confirm():
     assert r["ok"] is True
     assert armed == [0.0]  # the stop was scheduled exactly once, with our delay
     assert "shutting down" in r["detail"].lower()
+
+
+def test_stop_self_uses_a_graceful_signal_never_terminateprocess(monkeypatch):
+    """Windows os.kill(pid, SIGTERM) is TerminateProcess: no lifespan shutdown, the sentinel stays 'running' and the next boot reads the
+    in-app stop as an unclean end (field bundle 2026-11-07, 11 of 11 sessions). On Windows the stop must raise SIGINT (uvicorn's capture)."""
+    import signal
+    import types
+
+    from src.safety import shutdown
+    from tests.os_scope import scope_os
+
+    calls: list = []
+    fake_signal = types.SimpleNamespace(
+        SIGINT=signal.SIGINT, SIGTERM=signal.SIGTERM, raise_signal=lambda s: calls.append(("raise", s))
+    )
+    monkeypatch.setattr(shutdown, "signal", fake_signal)  # the module's own name, not the process-wide signal module
+    scope_os(monkeypatch, shutdown, kill=lambda pid, s: calls.append(("kill", s)), name="nt")
+    shutdown.stop_self()
+    assert calls == [("raise", signal.SIGINT)]
+    calls.clear()
+    scope_os(monkeypatch, shutdown, name="posix")
+    shutdown.stop_self()
+    assert calls == [("kill", signal.SIGTERM)]
+
+
+def test_raise_signal_from_a_worker_thread_runs_the_handler_on_the_main_thread():
+    """stop_self runs on the 'oo-shutdown' thread; uvicorn's SIGINT handler must still run on the MAIN thread (CPython runs Python-level
+    handlers there only). Drives the real signal with a stand-in handler."""
+    import signal
+    import threading
+
+    seen: list = []
+    main = threading.main_thread()
+    prev = signal.signal(signal.SIGINT, lambda s, f: seen.append(threading.current_thread() is main))
+    try:
+        t = threading.Thread(target=lambda: signal.raise_signal(signal.SIGINT))
+        t.start()
+        t.join()
+        for _ in range(100):  # the handler runs at the main thread's next bytecode boundary
+            if seen:
+                break
+            import time
+
+            time.sleep(0.01)
+    finally:
+        signal.signal(signal.SIGINT, prev)
+    assert seen == [True]

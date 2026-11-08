@@ -35,6 +35,8 @@ import json
 import logging
 from dataclasses import asdict, dataclass
 
+from src.shared import coerce_bool
+
 _LOG = logging.getLogger(__name__)
 
 SETTINGS_VERSION = "oo-custody-settings-1"
@@ -72,67 +74,42 @@ def _settings_path():
     return data_dir() / "custody_settings.json"
 
 
+def _store():
+    """The shared read side (src/config/settings_store.py); only the names below are this module's."""
+    from src.config.settings_store import SettingsStore
+
+    return SettingsStore(
+        kv_key=_KV_KEY,
+        file_name="custody_settings.json",
+        path_getter=lambda: _settings_path(),
+        refusal=CustodySettingsError,
+        damaged=_DamagedCustodySettingsError,
+        log=_LOG,
+        use_kv_hook=lambda: _use_kv(),
+        json_hook=lambda: _read_json_file(),
+    )
+
+
 def _use_kv() -> bool:
     """Use the encrypted ``app_state`` store at the DEFAULT location; honour a redirected
-    ``_settings_path`` (test isolation) as JSON instead. See app_settings._use_kv."""
-    from src.paths import data_dir
-
-    return _settings_path() == data_dir() / "custody_settings.json"
+    ``_settings_path`` (test isolation) as JSON instead."""
+    return _store().use_kv()
 
 
 def _read_json_file() -> dict | None:
-    path = _settings_path()
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text("utf-8"))
-    except Exception as exc:  # noqa: BLE001 - never let a bad file take down custody
-        _LOG.warning("custody_settings.json is unreadable; using defaults (%s)", type(exc).__name__)
-        return None
+    return _store().read_json_file()
 
 
 def _read_raw() -> dict | None:
-    """Custody prefs source of truth: the encrypted ``app_state`` row (D1), falling
-    back to (and one-time migrating) the legacy ``custody_settings.json`` file.
-    ``None`` means nothing is stored yet (→ honest defaults, auto-log seeded legacy)."""
-    if not _use_kv():
-        return _read_json_file()
-    from src.config.kv_store import kv_get_json, kv_set_json
-
-    raw = kv_get_json(_KV_KEY)
-    if raw is not None:
-        return raw
-    raw = _read_json_file()
-    if raw is None:
-        return None
-    try:
-        kv_set_json(_KV_KEY, raw)
-    except Exception as exc:  # noqa: BLE001 - migration is best-effort; retried next load
-        _LOG.debug("custody_settings migration into app_state deferred (%s)", type(exc).__name__)
-    return raw
+    """Preferences source of truth: the encrypted ``app_state`` row (D1), falling back to
+    (and one-time migrating) the legacy ``custody_settings.json`` file."""
+    return _store().read_raw()
 
 
 def _read_raw_strict() -> dict | None:
     """``_read_raw`` for a caller that will REWRITE what it read: a stored row that cannot be read raises CustodySettingsError (the class only)
     instead of reading as the defaults, because saving the defaults back over the user's settings is the loss this prevents."""
-    if not _use_kv():
-        return _read_json_file()
-    from src.config.kv_store import is_damaged, kv_get_json_strict, kv_set_json, refusal_text
-
-    try:
-        raw = kv_get_json_strict(_KV_KEY)
-    except Exception as exc:  # noqa: BLE001 - refused, by class
-        raise (_DamagedCustodySettingsError if is_damaged(exc) else CustodySettingsError)(refusal_text(exc)) from None
-    if raw is not None:
-        return raw
-    raw = _read_json_file()
-    if raw is None:
-        return None
-    try:
-        kv_set_json(_KV_KEY, raw)
-    except Exception as exc:  # noqa: BLE001 - migration is best-effort; retried next load
-        _LOG.debug("custody_settings migration into app_state deferred (%s)", type(exc).__name__)
-    return raw
+    return _store().read_raw_strict()
 
 
 def _write_raw(payload: dict) -> None:
@@ -145,14 +122,6 @@ def _write_raw(payload: dict) -> None:
     from src.config.kv_store import kv_set_json
 
     kv_set_json(_KV_KEY, payload)
-
-
-def _coerce_bool(value, fallback: bool) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in ("1", "true", "yes", "on")
-    return fallback
 
 
 def _legacy_auto_log_default() -> bool:
@@ -184,9 +153,9 @@ def load_settings(*, strict: bool = False) -> CustodySettings:
         mode = defaults.anchoring_mode
     actor = raw.get("default_actor")
     return CustodySettings(
-        pqc_enabled=_coerce_bool(raw.get("pqc_enabled"), defaults.pqc_enabled),
+        pqc_enabled=coerce_bool(raw.get("pqc_enabled"), defaults.pqc_enabled),
         anchoring_mode=mode,
-        auto_log_on_ingest=_coerce_bool(raw.get("auto_log_on_ingest"), defaults.auto_log_on_ingest),
+        auto_log_on_ingest=coerce_bool(raw.get("auto_log_on_ingest"), defaults.auto_log_on_ingest),
         default_actor=str(actor) if actor else None,
     )
 
@@ -252,9 +221,9 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> CustodySet
             )
         current.anchoring_mode = mode
     if "pqc_enabled" in updates and updates["pqc_enabled"] is not None:
-        current.pqc_enabled = _coerce_bool(updates["pqc_enabled"], current.pqc_enabled)
+        current.pqc_enabled = coerce_bool(updates["pqc_enabled"], current.pqc_enabled)
     if "auto_log_on_ingest" in updates and updates["auto_log_on_ingest"] is not None:
-        current.auto_log_on_ingest = _coerce_bool(
+        current.auto_log_on_ingest = coerce_bool(
             updates["auto_log_on_ingest"], current.auto_log_on_ingest
         )
     if "default_actor" in updates:
