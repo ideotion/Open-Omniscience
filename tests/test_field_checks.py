@@ -328,3 +328,70 @@ def test_a_passphrase_typed_into_a_note_reaches_no_result_panel_or_report(monkey
     assert err["outcome"] == "error"
     for blob in (rec, err, fc.panel_view(manifest=man), fc.build_report(manifest=man)):
         assert secret not in json.dumps(blob, ensure_ascii=False)
+
+
+# ---- the 2026-11-08 additions (manifest version 2) ------------------------------------------------ #
+
+def test_the_ghcnd_live_fetch_runs_the_apps_own_fetcher_and_reports_the_span(monkeypatch):
+    import src.stats.fetch as sf
+    from src.stats.ghcnd import parse_ghcnd_dly
+
+    asked = []
+    line = "USW00094728202401TMAX" + "".join(f"{v:>5}   " for v in [50] + [-9999] * 30)
+
+    def fake(station, **k):
+        asked.append(station)
+        return parse_ghcnd_dly(line + "\n", station=station, extracted_at="2026-11-08T00:00:00Z")
+
+    monkeypatch.setattr(sf, "fetch_ghcnd_station", fake)
+    rec = fc.run_check("x-check", consent=True,
+                       manifest=_manifest(_check(kind="live_fetch", params={"source": "ghcnd", "station": "USW00094728"})))
+    assert asked == ["USW00094728"]
+    assert rec["station"] == "USW00094728" and rec["lines_read"] == 1 and rec["refused_total"] == 0
+    assert rec["first_period"] is not None and rec["first_period"].startswith("2024-01")
+    with pytest.raises(fc.FieldCheckError):
+        fc.run_check("x-check", manifest=_manifest(_check(kind="live_fetch", params={"source": "ghcnd", "station": "X"})))
+
+
+def test_the_import_journal_keeps_outcomes_and_seconds_but_not_the_file_name_or_other_messages(monkeypatch):
+    from src.backup import runlog
+
+    monkeypatch.setattr(runlog, "list_runs", lambda: [
+        {"run_id": "r2", "kind": "import", "started_at": "2026-11-08T10:00:00+00:00"},
+        {"run_id": "b1", "kind": "backup", "started_at": "2026-11-08T09:00:00+00:00"},
+        {"run_id": "r1", "kind": "import", "started_at": "2026-11-07T10:00:00+00:00"},
+    ])
+    summaries = {
+        "r2": {"started_at": "2026-11-08T10:00:00+00:00", "label": "secret-name.oob", "complete": True, "outcome": "error",
+               "wall_s": 300.0, "stages": {"verify": 120.0}, "hardware": {"ram_total_bytes": 3 << 30, "machine_label": "desk"},
+               "errors": [{"t": "2026-11-08T10:04:30+00:00", "cls": "MergeError",
+                           "msg": "Not enough free memory to merge into an encrypted corpus: needs about 5 GB, only 2 GB available."}]},
+        "r1": {"started_at": "2026-11-07T10:00:00+00:00", "label": "/home/someone/b.oob", "complete": False, "outcome": "incomplete",
+               "stages": {}, "died_in_stage": "validate",
+               "errors": [{"t": "x", "cls": "OSError", "msg": "/home/someone/b.oob: disk full"}]},
+    }
+    monkeypatch.setattr(runlog, "summarise", lambda rid: summaries[rid])
+    rec = fc.run_check("x-check", manifest=_manifest(_check(kind="import_journal")))
+    assert rec["outcome"] == "read" and len(rec["imports"]) == 2
+    new, old = rec["imports"]
+    assert new["memory_refused"] and new["memory_refusal_after_s"] == 270.0 and new["stages_s"] == {"verify": 120.0}
+    assert new["hardware"] == {"ram_total_bytes": 3 << 30}
+    assert not old["memory_refused"] and old["error_classes"] == ["OSError"] and old["died_in_stage"] == "validate"
+    flat = json.dumps(rec)
+    assert "secret-name" not in flat and "/home/someone" not in flat and "desk" not in flat and "disk full" not in flat
+
+    monkeypatch.setattr(runlog, "list_runs", lambda: [])
+    assert fc.run_check("x-check", manifest=_manifest(_check(kind="import_journal")))["outcome"] == "no-import-recorded"
+
+
+def test_an_operator_report_probe_is_named_in_code_and_runs_locally():
+    rec = fc.run_check("x-check", manifest=_manifest(_check(params={"probe": "python_curses"})), inputs={"answer": "yes"})
+    assert rec["probe"]["name"] == "python_curses" and isinstance(rec["probe"]["curses_imports"], bool)
+    assert "windows_curses" in rec["probe"]
+    assert any("no probe named" in p for p in fc.manifest_problems(_manifest(_check(params={"probe": "rm-rf"}))))
+
+
+def test_the_windows_terminal_panel_check_applies_only_on_windows():
+    c = next(c for c in fc.load_manifest()["checks"] if c["id"] == "terminal-panel-windows")
+    assert c["platforms"] == ["windows"] and c["params"]["probe"] in fc.PROBES
+    assert c["kind"] not in fc.ONLINE_KINDS
