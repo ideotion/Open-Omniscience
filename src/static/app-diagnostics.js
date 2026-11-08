@@ -3207,9 +3207,6 @@
         if (btn) btn.disabled = false;
       }
     }
-    function fieldChecksSave() {
-      ooOpenUrl("/api/diagnostics/field-checks/report");
-    }
     const _fcClient = {};
     async function _fcRun(id, btn) {
       const t = _fcT();

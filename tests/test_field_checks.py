@@ -127,9 +127,13 @@ def test_the_operator_report_keeps_an_answer_from_the_list_and_numbers_only(monk
     with pytest.raises(fc.FieldCheckError):
         fc.run_check("x-check", manifest=man, inputs={"answer": "maybe"})
     rec = fc.run_check("x-check", manifest=man, inputs={
-        "answer": "yes", "note": "x" * 900, "client": {"files": 7, "text": "secret", "flag": True}})
+        "answer": "yes", "note": "x" * 900,
+        "client": {"files_saved_by_page": 7, "sources_total": float("nan"), "sources_covered": True,
+                   "my-passphrase-as-a-key": 1, "text": "secret"}})
     assert rec["answer"] == "yes" and len(rec["note"]) == 500
-    assert rec["page_counters"] == {"files": 7}
+    # only the fixed counter names (a key is never scrubbed), only finite numbers (NaN is not JSON)
+    assert rec["page_counters"] == {"files_saved_by_page": 7}
+    json.dumps(fc.build_report(manifest=man), allow_nan=False)
 
 
 def test_no_passphrase_the_process_holds_survives_into_a_result_or_the_report(monkeypatch):
@@ -202,8 +206,9 @@ def test_the_clock_check_finds_this_sessions_step(monkeypatch):
     ])
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     monkeypatch.setattr(sh, "read_liveness", lambda: {"session_id": "S1", "at": now})
+    monkeypatch.setattr(sh, "boottime", lambda: None)
     rec = fc.run_check("x-check", manifest=_manifest(_check(kind="clock_step")))
-    assert rec["outcome"] == "pass"
+    assert rec["outcome"] == "pass" and rec["boot_clock_readable"] is False
     assert [s["step_s"] for s in rec["clock_steps_this_session"]] == [900]
     monkeypatch.setattr(sh, "read_records", lambda: [])
     assert fc.run_check("x-check", manifest=_manifest(_check(kind="clock_step")))["outcome"] == "no-step-recorded"
@@ -253,8 +258,14 @@ def test_the_panel_sits_next_to_the_diagnostics_button_and_fetches_nothing_on_op
     # the one consent popup comes BEFORE the POST, and consent is what it returned
     assert run.index("ensureOnline(") < run.index("/api/diagnostics/field-checks/run")
     assert "JSON.stringify({id, consent, inputs})" in run
+    # the save button uses the dispatcher's own ooOpenUrl helper (not a global, so never called from app code)
+    assert "data-on-click=\"ooOpenUrl('/api/diagnostics/field-checks/report')\"" in html
+    assert "ooOpenUrl(" not in js[js.index("// ---- FIELD CHECKS"):]
     on = (STATIC / "oo-on.js").read_text(encoding="utf-8")
-    assert '"fieldChecksLoad"' in on and '"fieldChecksSave"' in on
+    click_row = on[on.index("const EVENT_ACTION_NAMES"):]
+    click_row = click_row[click_row.index("click: ["):]
+    click_row = click_row[:click_row.index("]")]
+    assert '"fieldChecksLoad"' in click_row
 
 
 def test_the_temporary_sample_export_button_is_kept_and_reused():

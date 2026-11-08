@@ -3283,7 +3283,7 @@
         <div class="hint">Checks that no test machine can run: this computer's memory and drives, its network, its browser and its clock. Each one runs when you press it. Save the report and send it back with the Diagnostics file. The list changes with each update: a check is added when something new needs your machine, and retired once enough reports have answered it. A check that goes online asks first.</div>
         <div class="row" style="margin-top:6px">
           <button class="secondary" id="fc-load-btn" data-on-click="fieldChecksLoad(this)" title="Read the list of field checks for this version, with the last result of each in this session. Runs nothing and goes nowhere.">Show field checks</button>
-          <button class="secondary" id="fc-report-btn" data-on-click="fieldChecksSave()" title="Save ONE .json file with every field-check result this session holds, the list version, the app build and the system name. Passwords, passphrases and your home folder's name are removed before it is written. Results are not kept across a restart.">Save the field-check report</button>
+          <button class="secondary" id="fc-report-btn" data-on-click="ooOpenUrl('/api/diagnostics/field-checks/report')" title="Save ONE .json file with every field-check result this session holds, the list version, the app build and the system name. Passwords, passphrases and your home folder's name are removed before it is written. Results are not kept across a restart.">Save the field-check report</button>
           <span id="fc-status" class="small" style="margin-left:6px"></span>
         </div>
         <div id="fc-list" class="small" style="margin-top:6px"></div>

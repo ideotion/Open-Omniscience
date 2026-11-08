@@ -187,6 +187,6 @@ checks:
       change of the system clock happens only on your machine.
     retire_when: Reports from Linux and Windows show the change recorded and the liveness file still fresh.
     steps:
-      - Keep the app running. In your system settings, turn off automatic time and move the clock forward by 15 minutes.
+      - Keep the app running. In your system settings, turn off automatic time and move the clock BACK by 15 minutes (back, not forward: outside Linux a forward move looks the same as a sleep and is recorded as one).
       - Wait three minutes, then press Run.
       - Put the clock back (turn automatic time on again).

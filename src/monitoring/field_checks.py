@@ -29,6 +29,7 @@ diagnostic from growing a file nobody asked for.
 from __future__ import annotations
 
 import contextlib
+import math
 import os
 import platform
 import re
@@ -50,6 +51,8 @@ REQUIRED_FIELDS = ("id", "title", "kind", "status", "added_on", "added_by", "why
 PLATFORMS = ("linux", "windows", "darwin")
 _ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _NOTE_MAX = 500
+#: The page counters an operator check may carry (the sample-export walk's own counts).
+CLIENT_COUNTERS = ("files_saved_by_page", "sources_covered", "sources_total")
 _ERR_MAX = 300
 
 
@@ -518,8 +521,12 @@ def _operator_report(params: dict, inputs: dict, db: Any, check: dict) -> dict[s
         raise FieldCheckError("pick one of the listed answers")
     note = str(inputs.get("note") or "")[:_NOTE_MAX]
     client = inputs.get("client") or {}
-    numbers = {str(k)[:40]: v for k, v in client.items() if isinstance(v, (int, float)) and not isinstance(v, bool)} \
-        if isinstance(client, dict) else {}
+    numbers: dict[str, float] = {}
+    if isinstance(client, dict):
+        for k in CLIENT_COUNTERS:  # fixed names: a key is never scrubbed, so none comes from the request
+            v = client.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
+                numbers[k] = v
     return {"outcome": "answered", "answer": answer, "note": tokenise_paths(note) or None, "page_counters": numbers}
 
 
@@ -529,11 +536,11 @@ def _clock_step(params: dict, inputs: dict, db: Any, check: dict) -> dict[str, A
 
     cur = sh.current_session()
     sid = cur.get("session_id")
-    steps = [
-        {k: r.get(k) for k in ("at", "step_s", "direction", "basis")}
-        for r in sh.read_records()
-        if r.get("kind") == "clock-step" and sid and r.get("session_id") == sid
-    ]
+    mine = [r for r in sh.read_records() if sid and r.get("session_id") == sid]
+    steps = [{k: r.get(k) for k in ("at", "step_s", "direction", "basis")} for r in mine if r.get("kind") == "clock-step"]
+    # Where the boot-time clock cannot be read (everywhere but Linux), a FORWARD move cannot be told
+    # from a suspend and is recorded as one; only a BACKWARD move is a clock-step everywhere.
+    suspends = [{k: r.get(k) for k in ("to", "gap_s", "basis")} for r in mine if r.get("kind") == "suspend"]
     live = sh.read_liveness() or {}
     age = None
     with contextlib.suppress(Exception):
@@ -544,6 +551,8 @@ def _clock_step(params: dict, inputs: dict, db: Any, check: dict) -> dict[str, A
         "outcome": "pass" if steps and fresh else ("no-step-recorded" if fresh else "liveness-stale"),
         "session_uptime_s": cur.get("uptime_s"),
         "clock_steps_this_session": steps[-5:],
+        "suspends_this_session": suspends[-5:],
+        "boot_clock_readable": sh.boottime() is not None,
         "liveness_age_s": age,
         "liveness_same_session": live.get("session_id") == sid,
         "threshold_s": sh.CLOCK_STEP_MIN_S,
