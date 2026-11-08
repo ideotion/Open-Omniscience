@@ -109,6 +109,11 @@ class KvCursorStore:
             log_failure(_LOG, "corpus-integrity: could not save the cursor", exc, level=logging.WARNING)
 
 
+#: The physical mentions table, named once: ``PRAGMA foreign_key_check`` takes a table (a view has no foreign keys), and the foreign-key sweep
+#: leaves this one to the two dangling-mention checks. Every READ below goes through the ``keyword_mentions_all`` view (R96).
+_MENTIONS_TABLE = "keyword_mentions"
+
+
 #: The exact scans: (check, the table whose id range is walked, the statement over one range). Each counts the rows of its range that break the
 #: rule; the sum over the ranges is the whole-table figure.
 _RANGE_SCANS = (
@@ -116,18 +121,18 @@ _RANGE_SCANS = (
         "orphan_keywords",
         "keywords",
         "SELECT COUNT(*) FROM keywords k WHERE k.id > :lo AND k.id <= :hi "
-        "AND NOT EXISTS (SELECT 1 FROM keyword_mentions m WHERE m.keyword_id = k.id)",
+        "AND NOT EXISTS (SELECT 1 FROM keyword_mentions_all m WHERE m.keyword_id = k.id)",
     ),
     (
         "dangling_mentions_missing_article",
-        "keyword_mentions",
-        "SELECT COUNT(*) FROM keyword_mentions m WHERE m.id > :lo AND m.id <= :hi "
+        "keyword_mentions_all",
+        "SELECT COUNT(*) FROM keyword_mentions_all m WHERE m.id > :lo AND m.id <= :hi "
         "AND NOT EXISTS (SELECT 1 FROM articles a WHERE a.id = m.article_id)",
     ),
     (
         "dangling_mentions_missing_keyword",
-        "keyword_mentions",
-        "SELECT COUNT(*) FROM keyword_mentions m WHERE m.id > :lo AND m.id <= :hi "
+        "keyword_mentions_all",
+        "SELECT COUNT(*) FROM keyword_mentions_all m WHERE m.id > :lo AND m.id <= :hi "
         "AND NOT EXISTS (SELECT 1 FROM keywords k WHERE k.id = m.keyword_id)",
     ),
 )
@@ -203,7 +208,7 @@ def _fk_scan(session: Session, saved: dict[str, Any], progress: dict[str, Any], 
     """``PRAGMA foreign_key_check`` one table at a time, from the tables the last build had not reached.
 
     A table at a time because the whole-database pragma is one statement the deadline cannot stop and one that never finished on a 14 GB corpus.
-    ``keyword_mentions`` is left to the two dangling-mention checks, which are the same two foreign keys counted exactly in ranges; it is named in
+    The mentions table is left to the two dangling-mention checks, which are the same two foreign keys counted exactly in ranges; it is named in
     the progress, never silently dropped."""
     prev = saved.get("foreign_key_violations") if isinstance(saved.get("foreign_key_violations"), dict) else {}
     pending = prev.get("pending") if isinstance(prev.get("pending"), dict) else None
@@ -215,7 +220,7 @@ def _fk_scan(session: Session, saved: dict[str, Any], progress: dict[str, Any], 
         if _budget_spent(session, exc):
             raise
         return None
-    names = [n for n in names if _TABLE_NAME.match(n) and n != "keyword_mentions"]
+    names = [n for n in names if _TABLE_NAME.match(n) and n != _MENTIONS_TABLE]
     done_tables: dict[str, int] = {k: int(v) for k, v in (pending or {}).get("tables", {}).items() if k in names}
     bad: set[str] = {str(t) for t in (pending or {}).get("violating_tables", [])}
     started = str((pending or {}).get("started_at") or _now_iso())
@@ -241,7 +246,7 @@ def _fk_scan(session: Session, saved: dict[str, Any], progress: dict[str, Any], 
         saved["foreign_key_violations"] = {"last_complete": last_complete}
         progress["foreign_key_violations"] = {
             "state": "complete", "tables_checked": len(names), "violating_tables": sorted(bad),
-            "left_to_the_mention_checks": ["keyword_mentions"], "last_complete": last_complete,
+            "left_to_the_mention_checks": [_MENTIONS_TABLE], "last_complete": last_complete,
         }
     else:
         saved["foreign_key_violations"] = {
@@ -251,7 +256,7 @@ def _fk_scan(session: Session, saved: dict[str, Any], progress: dict[str, Any], 
         progress["foreign_key_violations"] = {
             "state": "partial", "tables_checked": len(done_tables), "tables_total": len(names),
             "tally_so_far": total, "violating_tables": sorted(bad), "started_at": started,
-            "left_to_the_mention_checks": ["keyword_mentions"], "last_complete": last_complete,
+            "left_to_the_mention_checks": [_MENTIONS_TABLE], "last_complete": last_complete,
         }
     if interrupted is not None:
         raise interrupted
@@ -349,7 +354,7 @@ def corpus_integrity(
                         "SELECT k.id, k.term, k.mention_count, k.article_count, "  # nosec B608 - `source_rows` is a constant or built from int(sample); no user input
                         "COALESCE(SUM(m.count),0) AS live_mentions, "
                         "COUNT(m.article_id) AS live_articles "
-                        f"FROM {source_rows} k LEFT JOIN keyword_mentions m ON m.keyword_id = k.id "
+                        f"FROM {source_rows} k LEFT JOIN keyword_mentions_all m ON m.keyword_id = k.id "
                         "GROUP BY k.id"
                     )
                 ).fetchall()

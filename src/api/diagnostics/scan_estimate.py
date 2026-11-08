@@ -26,7 +26,7 @@ from ._base import _LOG, router
 @router.get("/all-job/estimate")
 def all_diagnostics_estimate() -> Response:
     """What a Thorough build is expected to hold the machine for, and what it was scaled by. Quick is bounded by its own budget."""
-    from fastapi.responses import JSONResponse
+    from src.api.country_wire import CountryWireResponse as JSONResponse
 
     try:
         from src.config.kv_store import kv_get_json
@@ -45,14 +45,14 @@ def all_diagnostics_estimate() -> Response:
 
 
 def _mention_rows() -> int | None:
-    """The largest keyword_mentions id: the O(1) stand-in for its row count, an upper bound that is exact for a corpus never pruned. ``None`` when unreadable."""
+    """The largest mention id: the O(1) stand-in for its row count, an upper bound that is exact for a corpus never pruned. ``None`` when unreadable."""
     try:
         from sqlalchemy import text
 
         from src.database.session import SessionLocal
 
         with SessionLocal() as s:
-            v = s.execute(text("SELECT MAX(id) FROM keyword_mentions")).scalar()
+            v = s.execute(text("SELECT MAX(id) FROM keyword_mentions_all")).scalar()
         return int(v) if v else None
     except Exception:  # noqa: BLE001 - an estimate's input never fails a build
         return None
