@@ -575,3 +575,111 @@ def test_a_savepoint_that_CANNOT_be_rolled_back_fails_the_drain_loudly(lane, mon
     # chain prints the engine's text.
     assert str(lost.value).endswith(": RuntimeError; then the savepoint rollback failed: OperationalError"), str(lost.value)
     assert lost.value.__cause__ is None and lost.value.__suppress_context__
+
+
+# ---- a page whose STORE keeps failing backs off and names the constraint (Windows run 2026-11-07: 18, 10 and 9 IntegrityErrors) ----
+
+
+def _integrity(message):
+    from sqlalchemy.exc import IntegrityError
+
+    return IntegrityError("INSERT ...", {}, Exception(message))
+
+
+def test_constraint_of_names_kind_table_and_column_and_never_repeats_other_driver_text():
+    f = pipeline_mod.constraint_of
+    assert f(_integrity("UNIQUE constraint failed: versioned_entities.feed, versioned_entities.external_id")) == (
+        "UNIQUE on versioned_entities.feed, versioned_entities.external_id"
+    )
+    assert f(_integrity("NOT NULL constraint failed: articles.title")) == "NOT NULL on articles.title"
+    assert f(_integrity("FOREIGN KEY constraint failed")) == "FOREIGN KEY"
+    odd = f(_integrity("UNIQUE constraint failed: t.c (value 'Décès en novembre 2026')"))
+    assert "Décès" not in odd and "not named" in odd, "a line that is not in the fixed shape is never repeated"
+    assert f(RuntimeError("boom")) is None
+    wrapped = RuntimeError("outer")
+    wrapped.__cause__ = _integrity("CHECK constraint failed: ck_x")
+    assert f(wrapped) == "CHECK on ck_x"
+
+
+def test_the_wait_doubles_with_each_consecutive_store_failure_and_a_clean_page_has_the_base_wait():
+    c = pipeline_mod.backlog_cooldown
+    assert c(0) == pipeline_mod.BACKLOG_COOLDOWN_S
+    assert c(1) == 2 * pipeline_mod.BACKLOG_COOLDOWN_S
+    assert c(3) == 8 * pipeline_mod.BACKLOG_COOLDOWN_S
+    assert c(10_000) == c(16), "the exponent stops only so a float cannot overflow"
+
+
+def test_a_page_whose_store_keeps_failing_is_asked_for_less_and_less_and_the_error_names_the_constraint(lane, monkeypatch):
+    adapter = _deferred_lane()
+    calls: list[int] = []
+
+    def boom(*_a, **_k):
+        calls.append(1)
+        raise _integrity("UNIQUE constraint failed: versioned_entities.external_id")
+
+    monkeypatch.setattr(pipeline_mod, "store_version", boom)
+    attempts: dict[int, float] = {}
+    failures: dict[int, int] = {}
+    clock = {"t": 1000.0}
+
+    def drain():
+        with lane_session("wiki") as db:
+            return drain_once(
+                db, adapter, hot_sets=_hot(), budget=_plenty(), text_seconds=3600.0,
+                attempts=attempts, store_failures=failures, monotonic=lambda: clock["t"],
+            )
+
+    report = drain()
+    errors = [e for p in report.passes.values() for e in p.get("errors", [])]
+    assert any("IntegrityError (UNIQUE on versioned_entities.external_id)" in e for e in errors), errors
+    assert list(failures.values()) == [1]
+    base = pipeline_mod.BACKLOG_COOLDOWN_S
+    clock["t"] += base + 1
+    drain()
+    assert len(calls) == 1, "after one failure the base wait is no longer enough"
+    clock["t"] += base
+    drain()
+    assert len(calls) == 2 and list(failures.values()) == [2], "asked again after twice the base wait"
+    clock["t"] += 2 * base + 1
+    drain()
+    assert len(calls) == 2, "and now the wait is four times the base"
+    clock["t"] += 2 * base
+    drain()
+    assert len(calls) == 3 and list(failures.values()) == [3]
+
+
+def test_a_store_that_works_clears_the_failure_count(lane, monkeypatch):
+    adapter = _deferred_lane()
+    attempts: dict[int, float] = {}
+    clock = {"t": 1000.0}
+    real = pipeline_mod.store_version
+    state = {"fail": True}
+
+    def flaky(*a, **k):
+        if state["fail"]:
+            raise RuntimeError("locked")
+        return real(*a, **k)
+
+    monkeypatch.setattr(pipeline_mod, "store_version", flaky)
+    failures: dict[int, int] = {}
+
+    def drain():
+        with lane_session("wiki") as db:
+            drain_once(
+                db, adapter, hot_sets=_hot(), budget=_plenty(), text_seconds=3600.0,
+                attempts=attempts, store_failures=failures, monotonic=lambda: clock["t"],
+            )
+
+    drain()
+    assert list(failures.values()) == [1]
+    state["fail"] = False
+    clock["t"] += 3 * pipeline_mod.BACKLOG_COOLDOWN_S
+    drain()
+    assert failures == {}, "a stored page forgets its failures"
+
+
+def test_the_runner_hands_its_failure_memory_to_every_drain():
+    import inspect
+
+    src = inspect.getsource(runner_mod.WikiLaneRunner)
+    assert src.count("store_failures=self._store_failures") == 2

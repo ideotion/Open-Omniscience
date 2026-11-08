@@ -155,12 +155,18 @@ def session_transport(session: Any) -> str:
     return "direct"
 
 
+_MENTIONS = None  # the one MentionCache of this process (built on first use)
+
+
 def _hot_sets():
     """Rebuilt each drain from the operator's own corpus and lane. No network."""
     from src.config.kv_store import kv_get_json
     from src.database.session import SessionLocal
-    from src.wiki.hotset import build_hot_sets, pageview_kv_key
+    from src.wiki.hotset import MentionCache, build_hot_sets, pageview_kv_key
 
+    global _MENTIONS
+    if _MENTIONS is None:
+        _MENTIONS = MentionCache()
     editions = _editions()
     tops: dict[str, set[str]] = {}
     for edition in editions:
@@ -172,7 +178,7 @@ def _hot_sets():
     # drain on a fresh install must find a lane with its schema (see that function).
     with SessionLocal() as corpus, wiki_lane_session() as lane:
         sets, _report = build_hot_sets(
-            corpus=corpus, lane=lane, editions=editions, pageview_tops=tops
+            corpus=corpus, lane=lane, editions=editions, pageview_tops=tops, mention_cache=_MENTIONS
         )
     return sets
 

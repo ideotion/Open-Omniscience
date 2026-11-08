@@ -192,3 +192,21 @@ def test_put_ots_consent_flag_is_not_echoed_back_or_persisted(client):
     )
     body = client.get("/api/custody/settings").json()
     assert "ots_consent" not in body
+
+
+def test_a_stale_legacy_tmp_is_swept_on_save_and_a_fresh_one_is_left():
+    # 0.6.1, R552: no writer uses the fixed ``custody_settings.json.tmp`` name since #1796, so an old
+    # one is a leftover; a fresh one may belong to an older build sharing the folder mid-write.
+    import os
+    import time
+
+    tmp = cset._settings_path().with_suffix(".json.tmp")
+    tmp.parent.mkdir(parents=True, exist_ok=True)
+    tmp.write_text("{}", "utf-8")
+    cset.save_settings({"pqc_enabled": True})
+    assert tmp.exists()  # fresh: left alone
+    old = time.time() - 2 * cset._LEGACY_TMP_MIN_AGE_S
+    os.utime(tmp, (old, old))
+    cset.save_settings({"pqc_enabled": False})
+    assert not tmp.exists()
+    assert cset.load_settings().pqc_enabled is False
