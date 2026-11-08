@@ -2377,6 +2377,33 @@ class ArticleIndexStamp(Base):
     )
 
 
+class ArticleWwwStamp(Base):
+    """The WWW engine's twin of :class:`ArticleIndexStamp` (R415, 2026-11-04).
+
+    Says which www engine (places + entities extraction), on which inputs (the raw
+    content column and country), produced an article's mentioned-place and entity rows.
+    A SEPARATE table, not a second row of ``article_index_stamps``: that table's key is
+    the article, and the keyword stamp's reader must not have to filter by kind. Dates
+    merge on their own path and are covered by the keyword stamp, not this one.
+
+    Written by ``index_article`` only after the places + entities savepoint succeeded
+    (an upsert, never a delete: the two writes land together, so a failed savepoint
+    leaves the previous stamp true of the previous rows). Absence is the uncertified
+    state, which costs a www re-extraction and never a wrong row.
+    """
+
+    __tablename__ = "article_www_stamps"
+
+    article_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("articles.id", ondelete="CASCADE"), primary_key=True
+    )
+    engine: Mapped[str] = mapped_column(String(40), nullable=False)
+    inputs: Mapped[str] = mapped_column(String(40), nullable=False)
+    stamped_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC)
+    )
+
+
 class HazardEventDetail(Base):
     """Provider-ASSERTED event metadata for a hazard ingested as an Article
     (2026-07-24 field-feedback Session A §6, ruled: hazards ingest AS Articles).

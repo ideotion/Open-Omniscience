@@ -78,3 +78,18 @@ def test_zips_stay_under_the_cap_and_the_cursor_covers_every_source_once(db):
             break
         after = nxt
     assert seen == list(range(1, 41)) and parts > 1
+
+
+def test_a_long_run_of_empty_sources_cannot_push_a_zip_past_the_cap(db):
+    for sid in range(1, 3001):
+        db.add(Source(id=sid, name=f"S{sid}", domain=f"empty{sid}.example"))
+    db.commit()
+    cap, after, seen = 20_000, 0, []
+    while True:
+        data, nxt, _c, _t = build_sample_zip(db, after=after, seed=3, cap=cap)
+        assert len(data) <= cap, len(data)
+        seen += [r["source_id"] for r in json.loads(_open(data).read("manifest.json"))["sources"]]
+        if nxt is None:
+            break
+        after = nxt
+    assert seen == list(range(1, 3001))

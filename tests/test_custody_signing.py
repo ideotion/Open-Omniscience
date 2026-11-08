@@ -97,9 +97,12 @@ def test_pinning_catches_resign_with_other_key(tmp_path, monkeypatch):
 def test_passphrase_encrypts_keys_at_rest(tmp_path, monkeypatch):
     s = _signer(tmp_path, monkeypatch, passphrase="correct horse battery staple")
     assert s.key_protection == "aes256gcm-scrypt"
-    # The Ed25519 PEM must be an ENCRYPTED PKCS8 blob, not a plaintext key.
-    pem = (tmp_path / "ed.pem").read_bytes()
-    assert b"ENCRYPTED PRIVATE KEY" in pem
+    # The Ed25519 file is the scrypt + AES-256-GCM wrap of the raw key (not a PEM, and not PKCS8's PBKDF2 at
+    # 2048 rounds, which made it the cheapest place to test a guess at the passphrase): salt || nonce || ciphertext.
+    blob = (tmp_path / "ed.pem").read_bytes()
+    assert b"-----BEGIN" not in blob and len(blob) == 16 + 12 + 32 + 16
+    seed = signing._unwrap(blob, b"correct horse battery staple")
+    assert len(seed) == 32 and seed not in blob
     # Reloading with the same passphrase yields the same identity.
     s2 = _signer(tmp_path, monkeypatch, passphrase="correct horse battery staple")
     assert s2.public_identity().ed25519_pub == s.public_identity().ed25519_pub

@@ -5,7 +5,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Field diagnostics rank 12 (2026-09-30): "one API-thread checkout held for the whole process life"
 on all 16 instances. Hands-on on the real app it named itself -- ``GET /api/articles`` ->
-``_browse_total_cached`` -> ``insights._data_version`` -> ``engine.raw_connection()`` -- the pinned
+``_browse_total_with_source`` -> ``insights._data_version`` -> ``engine.raw_connection()`` -- the pinned
 probe connection that ``PRAGMA data_version`` needs (the value only tracks OTHER connections'
 commits on a long-lived connection). It is idle and does not pin the WAL, but it held one pool
 slot for ever and nothing counted it: on the small tier (6 + 6, API margin 4) the app had three

@@ -547,20 +547,3 @@ def settings_for(name: str) -> dict:
         clamped, _notes = clamp_settings(name, stored)
         values.update(clamped)
     return values
-
-
-def is_disabled(name: str) -> bool:
-    """Whether the operator has switched this producer off.
-
-    Reads the unified ``cards_disabled`` list, which the settings loader seeds
-    from the legacy ``recipes_disabled`` key so an existing settings file keeps
-    working -- extending that mechanism rather than running a second one beside
-    it (the brief's instruction).
-    """
-    try:
-        from src.config.app_settings import load_settings
-
-        s = load_settings()
-        return name in set(s.cards_disabled or []) | set(s.recipes_disabled or [])
-    except Exception:  # noqa: BLE001 - settings must never take down the briefing
-        return False
