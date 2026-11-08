@@ -27,6 +27,7 @@ from cryptography.exceptions import InvalidSignature, InvalidTag
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from src.custody import keyfile as kf
 from src.reporting import evidence as ev
 from tests.os_scope import scope_os
 
@@ -94,7 +95,7 @@ def _files(directory: Path) -> list[str]:
 
 
 def _pending_left(directory: Path) -> list[str]:
-    pending = directory / ev._PENDING
+    pending = directory / kf.PENDING
     return sorted(f.name for f in pending.iterdir()) if pending.is_dir() else []
 
 
@@ -197,7 +198,7 @@ def test_the_key_is_created_0600_from_its_first_byte_under_a_permissive_umask(
             seen.append((flags, mode))
         return real_open(path, flags, mode, *a, **kw)
 
-    scope_os(monkeypatch, ev, open=spy)
+    scope_os(monkeypatch, kf, open=spy)
     old = os.umask(0o022)
     try:
         ev.load_or_create_signing_key(tmp_path / "k.pem")
@@ -215,13 +216,13 @@ def test_two_first_callers_end_with_one_key_the_loser_loads_the_winners(tmp_path
     signed with the other key. Here the winner's file appears between the loser's look and its link."""
     winner = Ed25519PrivateKey.generate()
     p = tmp_path / "k.pem"
-    real_link = ev.os.link
+    real_link = kf.os.link
 
     def racing(src, dst, *a, **kw):
-        ev._write_new(Path(dst), _plain_pem(winner))  # the other caller got there first
+        kf.write_new(Path(dst), _plain_pem(winner))  # the other caller got there first
         return real_link(src, dst, *a, **kw)  # ... so this link is refused with FileExistsError
 
-    scope_os(monkeypatch, ev, link=racing)
+    scope_os(monkeypatch, kf, link=racing)
     got = ev.load_or_create_signing_key(p)
     assert ev.public_key_hex(got) == ev.public_key_hex(winner)
     assert ev.public_key_hex(_opens_with(p, None)) == ev.public_key_hex(winner)
@@ -229,10 +230,66 @@ def test_two_first_callers_end_with_one_key_the_loser_loads_the_winners(tmp_path
     assert _pending_left(tmp_path) == [], "the loser's private copy is gone"
 
 
+def test_a_loser_that_holds_a_passphrase_wraps_a_plaintext_winners_key(tmp_path, monkeypatch):
+    """The winner held no passphrase (a tool run) and made the key plaintext; the loser holds one. It loads that
+    key, as before, and wraps it the way it would any plaintext key it found there, instead of returning early."""
+    winner = Ed25519PrivateKey.generate()
+    p = tmp_path / "k.pem"
+    real_link = kf.os.link
+
+    def racing(src, dst, *a, **kw):
+        kf.write_new(Path(dst), _plain_pem(winner))
+        return real_link(src, dst, *a, **kw)
+
+    scope_os(monkeypatch, kf, link=racing)
+    _hold(monkeypatch, PASS)
+    got = ev.load_or_create_signing_key(p)
+    assert ev.public_key_hex(got) == ev.public_key_hex(winner)
+    assert _is_wrapped(p)
+    assert ev.public_key_hex(_opens_with(p, PASS)) == ev.public_key_hex(winner)
+    assert _pending_left(tmp_path) == []
+
+
+@pytest.mark.parametrize("what", ["truncated", "public"])
+def test_a_damaged_or_foreign_pem_is_named_not_left_as_a_bare_value_error(tmp_path, what):
+    key = Ed25519PrivateKey.generate()
+    p = tmp_path / "k.pem"
+    if what == "truncated":
+        data = _plain_pem(key)[:60]
+    else:
+        data = key.public_key().public_bytes(
+            serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+    p.write_bytes(data)
+    with pytest.raises(ev.EvidenceKeyError, match="not a readable PEM private key"):
+        ev.load_or_create_signing_key(p)
+    assert p.read_bytes() == data
+
+
+@posix_only
+def test_a_key_file_that_is_a_symbolic_link_is_never_replaced_and_is_reported_as_it_is(
+    tmp_path, monkeypatch
+):
+    """``os.replace`` would swap the link for a regular file and leave the plaintext key at its target, while the
+    wrap looked done."""
+    key = Ed25519PrivateKey.generate()
+    target = tmp_path / "elsewhere.pem"
+    target.write_bytes(_plain_pem(key))
+    keys = tmp_path / "keys"
+    keys.mkdir()
+    link = keys / "k.pem"
+    link.symlink_to(target)
+    _hold(monkeypatch, PASS)
+    got = ev.load_or_create_signing_key(link)
+    assert ev.public_key_hex(got) == ev.public_key_hex(key)
+    assert link.is_symlink() and target.read_bytes() == _plain_pem(key)
+    assert _pending_left(keys) == []
+
+
 def test_a_key_appears_complete_or_not_at_all(tmp_path, monkeypatch):
     """The file is linked into place from a finished private copy, so a reader never meets it half written."""
     seen: list[bytes] = []
-    real_link = ev.os.link
+    real_link = kf.os.link
 
     def look(src, dst, *a, **kw):
         assert not Path(dst).exists()
@@ -241,7 +298,7 @@ def test_a_key_appears_complete_or_not_at_all(tmp_path, monkeypatch):
         seen.append(Path(dst).read_bytes())
         return out
 
-    scope_os(monkeypatch, ev, link=look)
+    scope_os(monkeypatch, kf, link=look)
     key = ev.load_or_create_signing_key(tmp_path / "k.pem")
     assert seen and ev.public_key_hex(_opens_with(tmp_path / "k.pem", None)) == ev.public_key_hex(
         key
@@ -255,7 +312,7 @@ def test_a_file_system_without_hard_links_still_gets_its_key_created_exclusively
     def no_links(src, dst, *a, **kw):
         raise PermissionError(1, "Operation not permitted")  # what FAT and exFAT answer
 
-    scope_os(monkeypatch, ev, link=no_links)
+    scope_os(monkeypatch, kf, link=no_links)
     _hold(monkeypatch, PASS)
     p = tmp_path / "k.pem"
     key = ev.load_or_create_signing_key(p)
@@ -263,7 +320,7 @@ def test_a_file_system_without_hard_links_still_gets_its_key_created_exclusively
     assert _files(tmp_path) == ["k.pem"] and _pending_left(tmp_path) == []
     # and the exclusive create still refuses a file that is there
     with pytest.raises(FileExistsError):
-        ev._create_new(p, b"x")
+        kf.create_new(p, b"x")
     assert ev.public_key_hex(_opens_with(p, PASS)) == ev.public_key_hex(key)
 
 
@@ -271,13 +328,13 @@ def test_a_reader_that_meets_an_empty_key_file_waits_for_the_write(tmp_path, mon
     winner = Ed25519PrivateKey.generate()
     p = tmp_path / "k.pem"
     p.write_bytes(b"")  # created, not yet written (the no-hard-link fallback)
-    real_sleep = ev.time.sleep
+    real_sleep = kf.time.sleep
 
     def fill(_seconds):
         p.write_bytes(_plain_pem(winner))
-        monkeypatch.setattr(ev.time, "sleep", real_sleep)
+        monkeypatch.setattr(kf.time, "sleep", real_sleep)
 
-    monkeypatch.setattr(ev.time, "sleep", fill)
+    monkeypatch.setattr(kf.time, "sleep", fill)
     assert ev.public_key_hex(ev.load_or_create_signing_key(p)) == ev.public_key_hex(winner)
 
 
@@ -368,18 +425,18 @@ def test_a_failed_wrap_leaves_the_original_file_and_still_signs(tmp_path, monkey
         def boom(src, dst):
             raise OSError(f"cannot replace, passphrase {PASS}")
 
-        scope_os(monkeypatch, ev, replace=boom)
+        scope_os(monkeypatch, kf, replace=boom)
     elif how == "read-back is another key":
         other = Ed25519PrivateKey.generate()
         monkeypatch.setattr(ev, "_seal", lambda key, passphrase: _wrapped(other, PASS))
     else:
-        real_write = ev._write_new
+        real_write = kf.write_new
 
         def boom_write(path, data):
             real_write(path, b"half written")  # the private copy exists, then the disk fails
             raise OSError(f"disk full, passphrase {PASS}")
 
-        monkeypatch.setattr(ev, "_write_new", boom_write)
+        monkeypatch.setattr(kf, "write_new", boom_write)
     with caplog.at_level(logging.DEBUG):
         key = ev.load_or_create_signing_key(p)
     assert ev.public_key_hex(key) == ev.public_key_hex(legacy), (
@@ -394,10 +451,10 @@ def test_a_failed_wrap_leaves_the_original_file_and_still_signs(tmp_path, monkey
 
 def test_temporary_names_differ_even_for_the_same_process_and_thread_number(tmp_path, monkeypatch):
     """Two containers on one data volume can both be process 1 with the same thread number."""
-    scope_os(monkeypatch, ev, getpid=lambda: 1)
-    monkeypatch.setattr(ev.threading, "get_ident", lambda: 7)
+    scope_os(monkeypatch, kf, getpid=lambda: 1)
+    monkeypatch.setattr(kf.threading, "get_ident", lambda: 7)
     p = tmp_path / "k.pem"
-    names = {ev._private_name(p, "new").name for _ in range(50)}
+    names = {kf.private_name(p, "new").name for _ in range(50)}
     assert len(names) == 50
 
 
@@ -421,7 +478,7 @@ def test_a_plaintext_alias_a_dead_creation_left_is_removed_when_the_key_is_wrapp
     real_unlink = Path.unlink
 
     def dies_at_the_private_name(self, *a, **kw):
-        if ev._PENDING in self.parts:
+        if kf.PENDING in self.parts:
             raise KeyboardInterrupt  # the process is gone before it removes its own name
         return real_unlink(self, *a, **kw)
 
@@ -431,7 +488,7 @@ def test_a_plaintext_alias_a_dead_creation_left_is_removed_when_the_key_is_wrapp
             ev.load_or_create_signing_key(p)
     leftover = _pending_left(tmp_path)
     assert len(leftover) == 1  # the premise: the crash does leave a second name
-    plain = (tmp_path / ev._PENDING / leftover[0]).read_bytes()
+    plain = (tmp_path / kf.PENDING / leftover[0]).read_bytes()
     assert plain.startswith(b"-----BEGIN PRIVATE KEY-----") and plain == p.read_bytes()
 
     _hold(monkeypatch, PASS)
@@ -439,7 +496,7 @@ def test_a_plaintext_alias_a_dead_creation_left_is_removed_when_the_key_is_wrapp
     assert _is_wrapped(p)
     assert ev.public_key_hex(_opens_with(p, PASS)) == ev.public_key_hex(key)
     assert _pending_left(tmp_path) == []
-    assert not (tmp_path / ev._PENDING).exists()
+    assert not (tmp_path / kf.PENDING).exists()
     assert not any(
         b"BEGIN PRIVATE KEY" in f.read_bytes() for f in tmp_path.rglob("*") if f.is_file()
     )
@@ -451,7 +508,7 @@ def test_the_alias_sweep_removes_only_names_that_are_the_replaced_file(tmp_path,
     legacy = Ed25519PrivateKey.generate()
     p = tmp_path / "k.pem"
     p.write_bytes(_plain_pem(legacy))
-    pending = tmp_path / ev._PENDING
+    pending = tmp_path / kf.PENDING
     pending.mkdir()
     alias = pending / "k.pem.9.9.aaaaaaaaaaaa.new"
     os.link(p, alias)
@@ -475,7 +532,7 @@ def test_the_alias_sweep_does_not_trust_a_directory_entrys_own_stat(tmp_path, mo
     legacy = Ed25519PrivateKey.generate()
     p = tmp_path / "k.pem"
     p.write_bytes(_plain_pem(legacy))
-    pending = tmp_path / ev._PENDING
+    pending = tmp_path / kf.PENDING
     pending.mkdir()
     alias = pending / "k.pem.9.9.aaaaaaaaaaaa.new"
     os.link(p, alias)
@@ -498,7 +555,7 @@ def test_the_alias_sweep_does_not_trust_a_directory_entrys_own_stat(tmp_path, mo
         def __exit__(self, *exc):
             return self._real.__exit__(*exc)
 
-    scope_os(monkeypatch, ev, scandir=Scan)
+    scope_os(monkeypatch, kf, scandir=Scan)
     _hold(monkeypatch, PASS)
     ev.load_or_create_signing_key(p)
     assert _is_wrapped(p)
@@ -550,7 +607,7 @@ def test_a_wrap_stands_down_when_the_key_file_changed_while_its_copy_was_made(
     assert ev.public_key_hex(got) == ev.public_key_hex(k1)  # this call signs with what it read
     assert p.read_bytes() == other  # and the file is what the other caller left, not K1 wrapped
     assert _pending_left(tmp_path) == []
-    assert not (tmp_path / ev._PENDING).exists()
+    assert not (tmp_path / kf.PENDING).exists()
     assert PASS not in caplog.text
 
 
@@ -583,10 +640,10 @@ def test_a_wrap_never_removes_or_uses_a_file_it_did_not_make(tmp_path, monkeypat
     p.write_bytes(_plain_pem(legacy))
     others = [
         tmp_path / "k.pem.rewrap",  # the name every caller used to share
-        tmp_path / ev._PENDING / "k.pem.1.2.rewrap",  # another process's file, in flight
-        tmp_path / ev._PENDING / "k.pem.1.2.new",
+        tmp_path / kf.PENDING / "k.pem.1.2.rewrap",  # another process's file, in flight
+        tmp_path / kf.PENDING / "k.pem.1.2.new",
     ]
-    (tmp_path / ev._PENDING).mkdir()
+    (tmp_path / kf.PENDING).mkdir()
     for f in others:
         f.write_bytes(b"somebody else's, unfinished")
     _hold(monkeypatch, PASS)
@@ -604,7 +661,7 @@ def test_two_callers_wrapping_at_once_never_rename_the_others_unfinished_file(
     p = tmp_path / "k.pem"
     p.write_bytes(_plain_pem(legacy))
     _hold(monkeypatch, PASS)
-    real_write, real_replace = ev._write_new, ev.os.replace
+    real_write, real_replace = kf.write_new, kf.os.replace
     b_created, b_go = threading.Event(), threading.Event()
     state: dict = {}
 
@@ -626,8 +683,8 @@ def test_two_callers_wrapping_at_once_never_rename_the_others_unfinished_file(
             assert b_created.wait(10)
         real_replace(src, dst)
 
-    monkeypatch.setattr(ev, "_write_new", write)
-    scope_os(monkeypatch, ev, replace=replace)
+    monkeypatch.setattr(kf, "write_new", write)
+    scope_os(monkeypatch, kf, replace=replace)
     assert ev._wrap_in_place(p, legacy, PASS.encode()) is True
     assert p.read_bytes(), "A's rename moved B's empty file over the key"
     assert ev.public_key_hex(_opens_with(p, PASS)) == ev.public_key_hex(legacy)
@@ -776,7 +833,7 @@ def test_the_review_does_not_wrap_a_legacy_plaintext_key_that_is_the_exports_job
     # a review that wrote a temporary file and left it would show here (the temporary files of this
     # key live in ``.pending``; nothing is ever beside it)
     assert _pending_left(tmp_path) == []
-    assert not (tmp_path / ev._PENDING).exists()
+    assert not (tmp_path / kf.PENDING).exists()
     assert _files(tmp_path) == ["k.pem"]
 
 
