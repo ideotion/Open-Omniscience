@@ -959,6 +959,11 @@ The extractor is high-precision: bare years and vague spans are not extracted, b
   tab**. None of it runs at startup or offline. The ~500-feed **catalogue** itself
   (verdicts, folders of duplicate providers, adding your own `.ics`) is plumbing and
   lives in **Settings → Advanced → Calendar directory**.
+- **If the file of imported events is damaged**, the Agenda reads it as empty and the
+  log says so. Before the next import replaces it, the app keeps the damaged file once,
+  unchanged, as `calendar_feed_imports.json.damaged` in your data folder, for you or a
+  recovery tool; a second damage never overwrites that first copy. It is not part of a
+  backup. You can remove it yourself at any time.
 
 ### 3.6b Living sources
 

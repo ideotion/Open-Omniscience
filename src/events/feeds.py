@@ -264,18 +264,64 @@ def _sanitized(name: str, data: object, *, what: str, raw: str | None = None) ->
     return out
 
 
+#: The stores read as damaged this process whose bytes the next save keeps (R397 (b), item 31): only the imported-events store, the one
+#: store that holds the user's own imports and is not rebuilt by the next pass (the verdicts, attempts and auto-import stamps are).
+_KEEP_DAMAGED = frozenset({_IMPORTS})
+#: Keyed by the store's PATH, not its name, so that a read under one data folder never moves a file under another.
+_READ_AS_DAMAGED: set[Path] = set()
+
+
+def _note_read(name: str, p: Path, *, damaged: bool) -> None:
+    """Remember whether ``name`` was last read as damaged, so that ``_save_json`` keeps its bytes before it replaces them."""
+    if name not in _KEEP_DAMAGED:
+        return
+    if damaged and p.is_file():
+        _READ_AS_DAMAGED.add(p)
+    else:
+        _READ_AS_DAMAGED.discard(p)
+
+
 def _load_json(name: str) -> dict:
     p = _store_path(name)
     try:
         raw = p.read_text("utf-8") if p.exists() else None
         data = json.loads(raw) if raw is not None else {}
     except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-        # A store that EXISTS but cannot be read reads as empty, exactly as before (and a save that can write replaces it): that used to happen with no word anywhere (R386, R397).
+        # A store that EXISTS but cannot be read reads as empty (R386, R397). For the imported-events store the next save first keeps its
+        # bytes as ``<name>.damaged`` (R397 (b)); the others are rebuilt by the next pass and are replaced as before.
         # The line does not claim the replacement: where the store is a directory or the data folder is not writable, no save succeeds.
         # The class only: the store holds the user's imported events, and what is wrong with it is not worth a line of its words.
         _LOG.warning("%s exists but could not be read, so it reads as empty: %s", name, type(exc).__name__)
+        _note_read(name, p, damaged=True)
         return {}
-    return _sanitized(name, data, what="reads as", raw=raw)
+    out = _sanitized(name, data, what="reads as", raw=raw)
+    # Read as empty although the file held something (not an object, nested too deeply, every piece of the wrong shape): the next save
+    # would replace it all, so its bytes are kept too. An absent file or a real ``{}`` holds nothing to keep.
+    _note_read(name, p, damaged=raw is not None and not out and data != {})
+    return out
+
+
+def _keep_damaged_bytes(name: str, p: Path) -> None:
+    """Move the store read as damaged to ``<name>.damaged`` before a save replaces it, ONCE: an existing copy is the first evidence and is never overwritten.
+
+    The copy sits beside the store and is not in the backup list (``src/backup/artifact.py``), so it never travels.
+    """
+    if p not in _READ_AS_DAMAGED:
+        return
+    _READ_AS_DAMAGED.discard(p)
+    kept = p.with_name(p.name + ".damaged")
+    if not p.is_file():
+        return
+    if kept.exists() or kept.is_symlink():
+        _LOG.warning("%s was read as damaged; an earlier copy is already kept as %s and is not overwritten, so this save replaces it", name, kept.name)
+        return
+    try:
+        os.replace(p, kept)
+    except OSError as exc:
+        # The save goes on, as it did before R397 (b): a copy that cannot be made never blocks the import. The class only.
+        _LOG.warning("%s was read as damaged and could not be kept as %s, so this save replaces it: %s", name, kept.name, type(exc).__name__)
+        return
+    _LOG.warning("%s was read as damaged; its bytes are kept as %s before this save replaces it", name, kept.name)
 
 
 def _save_json(name: str, data: dict, *, mirror: bool = True) -> None:
@@ -285,6 +331,7 @@ def _save_json(name: str, data: dict, *, mirror: bool = True) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(p.name + ".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    _keep_damaged_bytes(name, p)  # only once the new text is written, so a failed write leaves the damaged store where it was
     os.replace(tmp, p)
     # DB-reliability D1 (Wave 4 J): mirror the imported-events store into the encrypted
     # ``event_imports`` table so the events are durable, transactional and carried by a
