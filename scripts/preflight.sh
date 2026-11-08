@@ -8,7 +8,7 @@
 # pytest's default `fE`, so the job names the skip listing `s` first and `fE` after it, which puts the
 # FAILED and ERROR lines last, at the tail of its log; the report feeds the job's skip-summary step,
 # which this script does not run; the CI job is one of three shards that each run a third of the test
-# files, and this script runs them all): a bare sandbox skips hundreds of tests and that block would
+# files, and this script runs them all; both run one pytest-xdist worker per CPU, each test file whole on one worker): a bare sandbox skips hundreds of tests and that block would
 # bury the failures this advisory run is read for, which pytest's default `-rfE` already prints.
 # tests/test_ci_pytest_flags_and_preflight.py pins the commands and that one difference.
 # NOT run here: the job's other steps (the ruff style ratchet, planned-work index, i18n, migration
@@ -81,11 +81,11 @@ fi
 hr
 echo "GATE 3/3 — pytest (advisory here; the hard gate is CI's full env)"
 if [ "${run_tests}" -eq 1 ]; then
-  echo "  python -m pytest -q"
+  echo "  python -m pytest -q -n auto --dist loadfile"
   echo "  REVIEW any failures against the known-environmental set BEFORE trusting a red:"
   echo "    sqlcipher3-absent · socket/PermissionError · PackageNotFoundError (metadata) · httpfs egress."
   echo "  A failure OUTSIDE that set is a REAL regression — do not push on it."
-  python -m pytest -q
+  python -m pytest -q -n auto --dist loadfile
   echo "  (^ pytest result is advisory — this script's exit code reflects the ruff+mypy hard gates only.)"
 else
   echo "  SKIPPED — pass --tests to run the full suite (slow; has environmental noise in a bare sandbox)."

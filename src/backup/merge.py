@@ -779,6 +779,12 @@ def prepare_staged_corpus(
     # same reason; this follows them.
     _sub = _sub_timer(timings)
 
+    # The full memory refusal (with this backup's own row counts), AFTER the hash and signature
+    # gates above (a tampered artifact is refused as tampered, never as "close other programs")
+    # and BEFORE the validation reads every page and the working corpus is copied: see
+    # check_memory_once_staged for what that order cost on the field instances.
+    check_memory_once_staged(staged.corpus_path)
+
     _report_import_scale(staged.corpus_path)
 
     try:
@@ -1039,6 +1045,70 @@ def check_memory_before_staging() -> None:
         return
     if encrypted:
         check_memory_for_encrypted_merge()
+
+
+def _staged_group_rows_or_none(staged_corpus: Path | str) -> dict[str, int] | None:
+    """The rows :func:`_incoming_group_rows` counts, read straight off the staged file, or None.
+
+    For :func:`check_memory_once_staged`, which runs BEFORE the staged file is validated: a file
+    that cannot be counted here answers None (no early verdict) rather than a refusal, because
+    the validation a moment later is what names a damaged file, in its own words, and the
+    merge's own count still runs after it. Read-only and plaintext by design: a staged member is
+    a plain SQLite file (:func:`src.database.connect.attach`'s note), and ``mode=ro`` never
+    writes the main file (a WAL-mode header can still leave ``-wal``/``-shm`` side files in the
+    private staging directory, which ``cleanup_staging`` removes with it)."""
+    from src.database.read_only_uri import open_plain_read_only
+
+    try:
+        con = open_plain_read_only(staged_corpus)
+    except Exception:  # noqa: BLE001 - not countable here: the validation names it
+        return None
+    try:
+        present = {
+            str(r[0]).lower()
+            for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+        }
+        out: dict[str, int] = {}
+        for table in _ENCRYPTED_REP_BYTES_PER_ROW:
+            # a table the artifact does not carry is a measured zero, as in _incoming_group_rows
+            out[table] = (
+                int(con.execute(f"SELECT COUNT(*) FROM {_ident(table)}").fetchone()[0])  # noqa: S608  # nosec B608 - fixed table names from this module's own map
+                if table in present
+                else 0
+            )
+        return out
+    except Exception:  # noqa: BLE001 - not countable here: the validation names it
+        return None
+    finally:
+        with suppress(Exception):
+            con.close()
+
+
+def check_memory_once_staged(staged_corpus: Path | str) -> None:
+    """The memory refusal WITH the backup's own row counts, asked as soon as the staged file exists.
+
+    :func:`check_memory_before_staging` can only ask for the part of the need that does not depend
+    on the backup; the part that does (the three whole-source grouping steps, sized by the
+    incoming rows) used to be asked only inside :func:`merge_corpus`, AFTER the staged file had
+    been validated (a read of every page) and the whole working corpus copied. Measured on two
+    field instances (2026-11-03 to 11-07): seven imports refused for memory after 48 min to 9 h
+    each, of which 0.3 to 1.8 h was that validation and up to 0.9 h the copy. The counts are
+    cheap next to either, so they are taken here, before both. Best effort: a plain store is
+    never gated, an unknown store state or an uncountable file gives no early verdict, and the
+    merge's own check still runs with the exact figure."""
+    try:
+        from src.backup.sqlite_backup import live_db_path
+        from src.database.connect import is_encrypted_file
+
+        encrypted = is_encrypted_file(live_db_path())
+    except Exception:  # noqa: BLE001 - unknown is not a refusal (the memory guard's own rule)
+        return
+    if not encrypted:
+        return
+    rows = _staged_group_rows_or_none(staged_corpus)
+    if rows is None:
+        return
+    check_memory_for_encrypted_merge(incoming_rows=rows)
 
 
 #: Where a windowed insert's bound is spliced in. A caller that opts into
@@ -3707,10 +3777,16 @@ def _merge_articles(con, batch_id, results) -> None:
 def _merge_keywords(con, batch_id, results) -> None:
     r = DomainResult()
     key = "m.normalized_term = i.normalized_term AND COALESCE(m.language,'en') = COALESCE(i.language,'en')"
-    r.duplicate = _count(
-        con,
-        f"SELECT COUNT(*) FROM inc.keywords i WHERE EXISTS (SELECT 1 FROM keywords m WHERE {key})",  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
-    )
+    # THE DUPLICATE COUNT IS READ OFF map_keywords BELOW, not from a pass of its own. It used to
+    # be a separate `SELECT COUNT(*) FROM inc.keywords i WHERE EXISTS (... {key})`: one more probe
+    # of the target per incoming keyword, for a number and nothing else. On two field imports
+    # (2026-11-07, Qubes VMs of ~3 GB, swap full) that one statement ran 7,588 s and 11,555 s,
+    # a third of the step. map_keywords already probes the same key for every incoming row and
+    # keeps the LOWEST matching target id; every keyword this merge inserts gets an id above
+    # the target's largest id before the insert (an INTEGER PRIMARY KEY, no id supplied), so
+    # "matched a row that was already there" is exactly "maps to an id at or below that
+    # bound". Same rows, same key, same answer; pinned by tests/test_merge_keyword_dup_count.py.
+    pre_max = int(_count(con, "SELECT COALESCE(MAX(id), 0) FROM main.keywords"))
     # `keywords` carries NO unique constraint on (normalized_term, language) --
     # deliberately, so near-duplicate rows are reconciled later at the family/ring
     # layer, never at the schema layer. So an incoming corpus can genuinely hold TWO
@@ -3755,6 +3831,7 @@ def _merge_keywords(con, batch_id, results) -> None:
         "m.normalized_term = i.normalized_term AND COALESCE(m.language,'en') ="
         " COALESCE(i.language,'en')) FROM inc.keywords i",
     )
+    r.duplicate = _count(con, 'SELECT COUNT(*) FROM temp."map_keywords" WHERE new <= ?', (pre_max,))
     results["keywords"] = r
 
 

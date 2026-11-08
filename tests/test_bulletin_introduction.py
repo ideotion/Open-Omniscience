@@ -240,3 +240,11 @@ def test_a_figure_the_edition_did_not_carry_reads_as_absent_not_as_none():
     from src.bulletin.introduction import _fmt
 
     assert _fmt(1234) == "1,234" and _fmt(None) == "—" and _fmt("n/a") == "—"
+
+
+def test_a_figure_already_grouped_is_the_same_figure_not_an_absent_one():
+    # 0.6.1, R552: «1,234» used to render «—» once the non-int fallback became the dash.
+    from src.bulletin.introduction import _fmt
+
+    assert _fmt("1,234") == "1,234" and _fmt(" 12,345,678 ") == "12,345,678" and _fmt("1234") == "1,234"
+    assert _fmt("1,23") == "—" and _fmt("1.234") == "—" and _fmt(",123") == "—"
