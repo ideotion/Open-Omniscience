@@ -310,3 +310,21 @@ def test_the_law_residue_check_uses_the_ingest_reports_own_test_and_carries_no_t
     monkeypatch.setattr(ingest_report, "CHROME_MARKERS", ingest_report.CHROME_MARKERS + ("Section 1.",))
     with Session(eng) as db:
         assert fc.run_check("x-check", manifest=_manifest(_check(kind="law_residue")), db=db)["with_residue"] == 2
+
+
+def test_a_passphrase_typed_into_a_note_reaches_no_result_panel_or_report(monkeypatch):
+    """The hard rule (no secret into a result, a screen or the report): a held passphrase the operator pastes into a note, or a
+    runner's error quotes, is scrubbed where the result is kept, so the panel and the saved report never carry it."""
+    secret = "Correct-Horse-Battery-Field-7"
+    monkeypatch.setenv("OO_DB_PASSPHRASE", secret)
+    man = _manifest(_check(), _check(id="y-check", kind="law_residue"))
+
+    def boom(*a, **k):
+        raise RuntimeError(f"could not open the store with {secret}")
+
+    monkeypatch.setitem(fc.RUNNERS, "law_residue", boom)
+    rec = fc.run_check("x-check", manifest=man, inputs={"answer": "yes", "note": f"my passphrase is {secret} by mistake"})
+    err = fc.run_check("y-check", manifest=man)
+    assert err["outcome"] == "error"
+    for blob in (rec, err, fc.panel_view(manifest=man), fc.build_report(manifest=man)):
+        assert secret not in json.dumps(blob, ensure_ascii=False)
