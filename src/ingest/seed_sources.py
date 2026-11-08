@@ -839,6 +839,33 @@ def repair_erased_feeds(session: Session, sources: list[dict]) -> dict:
     }
 
 
+def outlet_feed_row(rows: list[Source]) -> Source | None:
+    """The ONE feed row of an outlet that receives a feed-less catalogue entry's tags, or None when it has no feed row.
+
+    In order: the lowest id among its feed rows whose baseline already records merged tags (the row earlier boots merged
+    onto keeps receiving them: an install that ran the older rule, or a catalogue since reordered, gets no second copy);
+    else the lowest id among its feed rows that carry a catalogue baseline; else the lowest id among its feed rows.
+
+    Both seeds use it (OPEN_QUEUE row J (6)(b)). The main seed used to pick the catalogue's FIRST feed entry and the
+    legal-only seed the lowest id, so an operator-added older feed row, or a reordered catalogue, landed one entry's tags on
+    two rows. Every input is stable (ids never change, a baseline is kept), so the answer is the same at every boot and in
+    either call. A row with a baseline is preferred because :func:`merge_feedless_tags` can only record a merge on such a
+    row: an operator-added row (no baseline) would take the tags nowhere. The feed is read from ``rss_url``, not from
+    ``feed_key``, which the ORM derives only when the row is flushed. When the outlet holds no feed row, ``seed_sources``
+    falls back to the plan's target, which can be the outlet's one feed-less row.
+
+    KNOWN LIMIT: ``merged_tags`` also records tags from an entry that names a feed (the same feed described twice), so an
+    operator-added older feed row that later gains a baseline and such a merge would become the target, and a feed-less
+    entry's tags would reach a second row once. Rare, and stable afterwards."""
+    feed_rows = [r for r in rows if feed_key(r.rss_url)]
+    if not feed_rows:
+        return None
+    based = [(r, _baseline_of(r)) for r in feed_rows]
+    with_merges = [r for r, b in based if b is not None and b.get("merged_tags")]
+    with_base = [r for r, b in based if b is not None]
+    return min(with_merges or with_base or feed_rows, key=lambda r: r.id)
+
+
 def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
     """Create Source rows for any ``(domain, feed)`` not already present. Idempotent.
 
@@ -855,7 +882,9 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
     counter: ``created + skipped == total``, where ``skipped`` is ``skipped_existing`` + ``merged`` + ``shadowed`` +
     ``skipped_malformed`` (no domain or no name) + ``held_back_legacy_key``. ``merged`` counts a feed-less entry whose tags
     went onto a feed row of the outlet, whether the plan found that row in the same list or the database held it already;
-    a feed-less entry whose planned feed was HELD BACK (a store keyed on the domain alone) is counted in ``held_back_legacy_key``.
+    a feed-less entry whose outlet holds no feed row because its planned feed was HELD BACK (a store keyed on the domain
+    alone) is counted in ``held_back_legacy_key``. The feed row a feed-less entry's tags go onto is :func:`outlet_feed_row`'s,
+    in this call and in the legal-only one alike.
     """
     # An entry the seeder cannot read as a source: no domain, or no name (the two things ``_usable`` requires).
     skipped_malformed = len(sources) - len(_usable(sources))
@@ -868,7 +897,7 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
         domain, fk = entry_key(e)
         feed_rows = [r for r in rows_by_domain.get(domain, []) if r.feed_key]
         if not fk and feed_rows:
-            extra_merges.append((e, feed_rows[0]))   # the outlet already has a feed row: this describes it
+            extra_merges.append((e, feed_rows[0]))   # the outlet already has a feed row: this describes it (target re-picked below)
         else:
             to_create.append(e)
     # A store whose boot rebuild was refused still keys a source on the domain alone: a second feed of a held domain
@@ -906,9 +935,21 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
     # field reconcile just filled reads as a gap rather than as an edit (sync skips empties).
     corrections = sync_catalogue_corrections(session, sources, pairs=all_pairs)
     # Feed-less entries describe an outlet that already has a feed row: their tags go there, after the baseline exists.
-    plan_merges = [(e, row_of[id(t)]) for e, t in plan.merges if id(t) in row_of]
-    # A feed-less entry planned onto a feed that a domain-keyed store held back has no row to put its tags on: it is held
-    # back with that feed and counted so, never as merged.
+    # WHICH feed row is ONE rule for every seed call (OPEN_QUEUE row J (6)(b)): ``outlet_feed_row``. The plan's target (the
+    # catalogue's first feed entry) is kept only for an entry that names a feed itself, the same feed described twice.
+    domain_rows: dict[str, list[Source]] = {d: list(rs) for d, rs in rows_by_domain.items()}
+    for e, r in zip(to_create, new_rows, strict=True):
+        domain_rows.setdefault(entry_key(e)[0], []).append(r)
+    plan_merges: list[tuple[dict, Source]] = []
+    for e, t in plan.merges:
+        # A feed-less entry falls back to its plan target when the outlet holds no feed row (the plan's feed entry was paired
+        # with a feed-less row the database held): the tags still have a row, as before.
+        target = (None if entry_key(e)[1] else outlet_feed_row(domain_rows.get(entry_key(e)[0], []))) or row_of.get(id(t))
+        if target is not None:
+            plan_merges.append((e, target))
+    extra_merges = [(e, outlet_feed_row(domain_rows.get(entry_key(e)[0], [])) or r) for e, r in extra_merges]  # never None
+    # A feed-less entry whose outlet holds no row for it at all (its planned feed was held back by a domain-keyed store) has
+    # no row to put its tags on: it is held back with that feed and counted so, never as merged.
     dropped_merges = len(plan.merges) - len(plan_merges)
     merges = plan_merges + extra_merges
     tag_merge = merge_feedless_tags(session, merges)
