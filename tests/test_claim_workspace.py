@@ -183,6 +183,48 @@ def test_group_paths_three_echoes_of_one_wire_are_one_path_and_say_why():
     assert lone["unjoined"] is True and lone["joins"] == []
 
 
+def test_one_outlets_feeds_under_different_labels_count_as_one_source():
+    # Two feeds of one domain, labelled differently (no outlet label from the caller): the
+    # same-source join makes them one path, and the count must agree with the join.
+    arts = [
+        {"id": 1, "source_id": 1, "source": "Le Monde - International", "outlet": "lemonde.fr",
+         "wire": None, "published_at": "2026-01-01"},
+        {"id": 2, "source_id": 2, "source": "Le Monde - Planete", "outlet": "lemonde.fr",
+         "wire": None, "published_at": "2026-01-02"},
+    ]
+    out = cw.group_paths(arts, {}, [])
+    assert out["n_paths"] == 1 and out["n_sources"] == 1
+    p = out["paths"][0]
+    assert p["n_sources"] == 1 and p["sources"] == ["Le Monde - International"]
+    assert [j["kind"] for j in p["joins"]] == ["same_source"]
+
+
+def test_two_outlets_sharing_a_label_count_as_two_sources():
+    # Two domains whose shown label is the same: two voices, never one.
+    arts = [
+        {"id": 1, "source_id": 1, "source": "Daily News", "outlet": "dailynews.example",
+         "outlet_label": "Daily News", "wire": "Reuters", "published_at": "2026-01-01"},
+        {"id": 2, "source_id": 2, "source": "Daily News", "outlet": "dailynews.example.org",
+         "outlet_label": "Daily News", "wire": "Reuters", "published_at": "2026-01-02"},
+    ]
+    out = cw.group_paths(arts, {}, [])
+    assert out["n_sources"] == 2
+    p = out["paths"][0]
+    assert p["n_sources"] == 2 and p["sources"] == ["Daily News", "Daily News"]
+    assert [j["kind"] for j in p["joins"]] == ["same_wire"]
+
+
+def test_without_an_outlet_the_count_falls_back_to_the_feed_id_like_the_join():
+    arts = [
+        {"id": 1, "source_id": 7, "source": "Feed A", "wire": None, "published_at": "2026-01-01"},
+        {"id": 2, "source_id": 7, "source": "Feed A (renamed)", "wire": None, "published_at": "2026-01-02"},
+        {"id": 3, "source_id": 8, "source": "Feed A", "wire": None, "published_at": "2026-01-03"},
+    ]
+    out = cw.group_paths(arts, {}, [])
+    assert out["n_sources"] == 2
+    assert out["paths"][0]["article_ids"] == [1, 2] and out["paths"][0]["n_sources"] == 1
+
+
 # --------------------------------------------------------------------------- #
 #  The seeded wire-echo fixture, end to end
 # --------------------------------------------------------------------------- #
