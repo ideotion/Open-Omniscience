@@ -247,7 +247,7 @@ def _count_key(article: dict) -> tuple:
     """The key a source COUNT is made of: the voice when there is one, else the shown name (an article with neither has
     nothing better to be counted by)."""
     v = _voice(article)
-    return ("voice", str(v)) if v is not None else ("name", _outlet_name(article))
+    return ("voice", v) if v is not None else ("name", _outlet_name(article))
 
 
 def _sources_of(arts: list[dict]) -> list[str]:
@@ -298,7 +298,8 @@ def group_paths(articles: list[dict], shared_links: dict[str, list[int]],
         joins.append({"kind": kind, "detail": detail, "article_ids": members})
 
     for _sid, members in sorted(by_source.items(), key=lambda kv: str(kv[0])):
-        _join("same_source", members, by_id[members[0]].get("outlet_label") or by_id[members[0]].get("source"))
+        # The detail names the outlet by the same rule as the path's sources, so the two never disagree.
+        _join("same_source", members, _sources_of([by_id[m] for m in members])[0])
     for group in near_dup_groups:
         _join("near_identical", list(group), None)
     for url in sorted(shared_links):

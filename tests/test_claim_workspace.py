@@ -223,6 +223,19 @@ def test_without_an_outlet_the_count_falls_back_to_the_feed_id_like_the_join():
     out = cw.group_paths(arts, {}, [])
     assert out["n_sources"] == 2
     assert out["paths"][0]["article_ids"] == [1, 2] and out["paths"][0]["n_sources"] == 1
+    assert out["paths"][0]["joins"][0]["detail"] == "Feed A"
+
+
+def test_an_empty_outlet_falls_back_to_the_feed_id_and_keyless_articles_count_by_name():
+    arts = [
+        {"id": 1, "source_id": 3, "source": "X", "outlet": "", "wire": None, "published_at": "2026-01-01"},
+        {"id": 2, "source_id": 3, "source": "X", "outlet": None, "wire": None, "published_at": "2026-01-02"},
+        {"id": 3, "source_id": None, "source": "Y", "wire": None, "published_at": "2026-01-03"},
+        {"id": 4, "source_id": None, "source": "Z", "wire": None, "published_at": "2026-01-04"},
+    ]
+    out = cw.group_paths(arts, {}, [])
+    assert out["paths"][0]["article_ids"] == [1, 2] and out["paths"][0]["n_sources"] == 1
+    assert out["n_paths"] == 3 and out["n_sources"] == 3
 
 
 # --------------------------------------------------------------------------- #
