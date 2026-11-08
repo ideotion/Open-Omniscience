@@ -111,11 +111,16 @@ def test_the_carried_signature_equals_the_reread_one_key_order_included(tmp_path
         ranker.close()
 
 
-def test_signatures_for_reads_nothing_when_every_row_carried_one(tmp_path, monkeypatch):
+@pytest.mark.parametrize("heap_rows", [10**9, 5], ids=["heaps", "spill"])
+def test_signatures_for_reads_nothing_when_every_row_carried_one(tmp_path, monkeypatch, heap_rows):
+    """In BOTH modes: a spill that stored NULL for every wide row would still pass the equality test above
+    (the fallback re-reads and agrees), so this one forbids the read."""
     db = _store(tmp_path)
     try:
-        maps, ranker = _scanned(db, tmp_path, heap_rows=10**9)
+        maps, ranker = _scanned(db, tmp_path, heap_rows=heap_rows)
+        assert ranker.spilled == (heap_rows == 5)
         rows = [r for lg in ranker.totals() for r in ranker.rows(lg, sigs=True)]
+        assert all(r[6] is not None for r in rows if r[5] is not None), "a mention-bearing row carried nothing"
         monkeypatch.setattr(kle, "fetch_signatures", lambda *a, **k: pytest.fail("the mention rows were read"))
         assert kle.signatures_for(db, maps, rows, 6)
     finally:
@@ -192,8 +197,9 @@ def test_a_replaced_heap_row_swaps_its_cost_for_the_new_ones(tmp_path):
     full = r._units
     r.add("l1", 3, 9, 5, None, None, "l1", {1: 5}, names)  # beats the lowest: replaces a wide row
     assert r._held == 2 and r._units == full - kls._sig_units(kls.pack_signature(wide, names)) + 1
+    after = r._units
     r.add("l1", 4, 0, 5, None, None, "l1", {1: 5}, names)  # cannot rank: nothing changes
-    assert r._held == 2
+    assert r._held == 2 and r._units == after and [row[0] for row in r.rows("l1")] == [3, 2]
 
 
 def test_signature_constants_cover_the_measured_tuple_size():

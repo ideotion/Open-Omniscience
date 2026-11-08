@@ -774,7 +774,7 @@ class Ranker:
             bound = max(self._held, len(self._heaps) * 2 * self._hi)
         if self._disk_check is not None:
             # The rows held now are known to the byte; the rows still to come are the disk watch's.
-            sig_bytes = sum(len(it[7]) * 8 for h in self._heaps.values() for it in h if it[7])
+            sig_bytes = sum(len(json.dumps(it[7], separators=(",", ":"))) for h in self._heaps.values() for it in h if it[7])
             self._disk_check(bound * SPILL_ROW_BYTES + sig_bytes)
         # mkstemp: a name no other export can share (two in one millisecond used to), created
         # before anything else so a failure below has a file to remove.
