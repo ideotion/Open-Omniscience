@@ -353,3 +353,14 @@ def test_the_seed_script_documents_the_encrypted_variant():
     assert "OO_DB_PASSPHRASE" in doc
     assert "--require-encrypted" in doc
     assert "OO_UIWALK_ENCRYPTED_PASS" in doc
+
+
+def test_the_a11y_axis_label_comes_from_the_vendored_axe_banner(runner):
+    """The label once said 4.13 as a literal and would have gone on saying it over 4.14.0's counts."""
+    vendored = runner.AXE_PATH.read_text(encoding="utf-8")
+    m = re.match(r"/\*! axe v(\d+)\.(\d+)\.", vendored)
+    assert m, "the vendored axe.min.js lost its version banner"
+    assert runner.axe_axis_label(vendored) == f"axe-core-{m.group(1)}.{m.group(2)}"
+    assert runner.axe_axis_label("/*! axe v9.8.7\n * Copyright */") == "axe-core-9.8"
+    assert runner.axe_axis_label("window.axe={}") == "axe-core-unknown-version"
+    assert 'axis="axe-core-4.' not in _runner_source_without_comments()
