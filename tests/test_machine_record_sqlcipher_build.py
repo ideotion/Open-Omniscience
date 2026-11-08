@@ -44,13 +44,16 @@ class _Cursor:
 class _Conn:
     """A stand-in for a sqlcipher3 connection that records every statement it is given."""
 
-    def __init__(self, answers, log, fail_on=()):
+    def __init__(self, answers, log, fail_on=(), quote_sql=False):
         self.answers, self.log, self.fail_on, self.closed = answers, log, fail_on, False
+        self.quote_sql = quote_sql  # fail like SQLite's syntax error, which quotes the statement: the key is then IN the exception's text
 
     def execute(self, sql):
         self.log.append(sql)
         for needle in self.fail_on:
             if needle in sql:
+                if self.quote_sql:
+                    raise RuntimeError(f'near "{sql}": syntax error')
                 raise OSError("the secret path /home/x must not be named")
         m = re.fullmatch(r"PRAGMA (\w+)", sql)
         if m is None:
@@ -62,7 +65,7 @@ class _Conn:
         self.closed = True
 
 
-def _driver(monkeypatch, answers=None, log=None, fail_on=(), connect_error=None):
+def _driver(monkeypatch, answers=None, log=None, fail_on=(), connect_error=None, quote_sql=False):
     """Replace the sqlcipher3 driver the record imports with one that hands back a ``_Conn``; returns the log of statements."""
     log = [] if log is None else log
     made: list[_Conn] = []
@@ -71,7 +74,7 @@ def _driver(monkeypatch, answers=None, log=None, fail_on=(), connect_error=None)
         assert target == ":memory:", "the throwaway never touches a file"
         if connect_error is not None:
             raise connect_error
-        conn = _Conn(GOOD if answers is None else answers, log, fail_on)
+        conn = _Conn(GOOD if answers is None else answers, log, fail_on, quote_sql)
         made.append(conn)
         return conn
 
@@ -225,7 +228,8 @@ def test_the_key_text_is_in_neither_the_record_nor_a_log_nor_an_error(monkeypatc
     """RC2's condition: the throwaway's key never reaches the record, a log capture or an exception's text, whether the library takes it or
     refuses it. The key is made by ``secrets``, so the test makes it recognisable."""
     monkeypatch.setattr(MR.secrets, "token_hex", lambda n=32: SENTINEL_KEY)
-    log, made = _driver(monkeypatch, fail_on=("PRAGMA key",) if refused else ())
+    # a refusal whose text QUOTES the statement, so a log or record line that kept the exception's words would carry the key
+    log, made = _driver(monkeypatch, fail_on=("PRAGMA key",) if refused else (), quote_sql=True)
     caplog.set_level(logging.DEBUG)
     block = MR.machine_block()
     assert any(SENTINEL_KEY in s for s in log), "the test did make the library see the key (it would otherwise prove nothing)"

@@ -54,6 +54,16 @@ def test_a_hold_that_computes_adds_its_cpu_and_one_that_waits_adds_about_none():
     waited = gate.stats()
     assert waited["total_held_s"] - worked["total_held_s"] >= 0.25, "the sleep is held time"
     assert waited["total_hold_cpu_s"] - worked["total_hold_cpu_s"] < BURN_S, "and it is not CPU: waiting is told from working"
+    assert waited["total_hold_cpu_s"] >= worked["total_hold_cpu_s"], "a hold adds to the total, it never replaces it"
+
+
+def test_the_total_is_summed_over_every_hold():
+    gate = writer.WriterGate()
+    for _ in range(2):
+        assert gate.acquire()
+        _burn()
+        gate.release()
+    assert gate.stats()["total_hold_cpu_s"] >= 2 * BURN_S, "two holds that each burn BURN_S add up to at least twice it"
 
 
 def test_it_is_the_holders_cpu_not_the_processs():
