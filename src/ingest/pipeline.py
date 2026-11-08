@@ -86,7 +86,7 @@ from src.ingest import (
     kill_switch_epoch,
 )
 from src.ingest.extract import extract_article
-from src.ingest.fetch_verdict import classify_fetch_failure, fetch_reason_key
+from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL, classify_fetch_failure, fetch_reason_key
 from src.ingest.furniture import strip_furniture
 from src.ingest.non_article import classify_non_article, skip_non_articles_enabled
 from src.utils.url_utils import canonicalize_url, generate_content_hash
@@ -616,8 +616,11 @@ def ingest_source(
         #
         # A STOP is neither: the person's own setting says nothing about the feed, so while the switch is engaged the backoff history is
         # left as it was (a refusal used to erase a quiet feed's climb, so its next checks came back at the normal cadence). The decision is
-        # the switch read after the failure, never the words of the refusal (R320), and a Stop cleared again inside the request counts (R614).
-        if not kill_switch_engaged_since(pass_epoch):
+        # the switch read after the failure (R320), a Stop cleared again inside the request counts (R614), and so does the fetcher's own
+        # refusal BY NAME: it is written before any request, so a switch engaged before the epoch was taken and cleared before this read
+        # is still the person's (never a host's words: the whole sentence at the start, as every writer raises it).
+        refused_by_name = record_text(exc, typed=False).startswith(KILL_SWITCH_REFUSAL)
+        if not (kill_switch_engaged_since(pass_epoch) or refused_by_name):
             _update_feed_backoff(session, source.id, reset=True)
         _commit_feed_bookkeeping(session)
         # A refusal by the kill switch is the person's own setting, not the feed's behaviour:

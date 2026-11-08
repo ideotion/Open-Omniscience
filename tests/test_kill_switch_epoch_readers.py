@@ -219,6 +219,28 @@ def test_a_stop_cleared_inside_the_feed_get_keeps_the_backoff_history_and_is_a_r
     assert tally.get("skipped_offline") == 1, "a feed the Stop cut is not counted as the person's setting"
 
 
+def test_a_feed_get_refused_by_name_keeps_the_backoff_history_after_a_clear(db, tmp_path):
+    """The switch was engaged before the pass took its epoch, so the count does not move inside the window; the feed GET is refused BY
+    NAME (the fetcher's own sentence, written before any request) and the operator goes back online before the failure is read."""
+    row = _source(db, seed=True)
+    f = _fetcher(tmp_path, [], feed=True, retries=0)
+    real_fetch = f.fetch
+
+    def fetch(url, **kw):
+        try:
+            return real_fetch(url, **kw)
+        finally:
+            clear_kill_switch()
+
+    f.fetch = fetch  # type: ignore[method-assign]
+    activate_kill_switch()
+    tally = ingest_source(db, row, fetcher=f)
+    assert not kill_switch_active()
+    st = _state(db, row.id)
+    assert st.etag == "old" and st.consecutive_unchanged == 4 and st.skip_until is not None, "a refusal by name erased the backoff history"
+    assert tally.get("skipped_offline") == 1, tally
+
+
 def test_a_stop_cleared_inside_the_feed_get_that_a_retry_got_past_still_leaves_the_row_alone(db, tmp_path):
     """The window is the whole pass from before the feed's request, its retries included: the stated cost is one more read of the feed
     on the next pass (the dedup step skips what was stored), never a validator stored over a pass a Stop touched."""

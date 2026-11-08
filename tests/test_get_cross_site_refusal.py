@@ -198,6 +198,22 @@ def test_with_the_switch_off_a_host_writing_the_guards_words_stays_down(monkeypa
     assert out["summary"] == {"down": 2}
 
 
+def test_with_the_switch_off_a_detail_that_only_opens_with_the_refusal_head_stays_down(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The narrower control: only the fetcher's WHOLE refusal sentence is the switch's with the switch off. A redirect's hostname keeps
+    its spaces, so a BlockedTarget can open with the head's words and still be the host's own failure."""
+    from src.api import monitoring
+    from src.ingest import kill_switch_active
+
+    class _Result:
+        def to_dict(self) -> dict:
+            return _health("down", "network kill switch is active.evil.example resolves to a non-public address")
+
+    assert not kill_switch_active()
+    monkeypatch.setattr(monitoring, "check_source", lambda *_a, **_k: _Result())
+    out = monitoring.sources_health(limit=1, db=_Rows(), fetcher=object())
+    assert out["summary"] == {"down": 2}
+
+
 def test_a_refusal_by_name_is_the_switchs_after_a_clear(monkeypatch: pytest.MonkeyPatch) -> None:
     """The switch was engaged before the sweep and cleared during it: the count did not move, but the fetcher wrote its own refusal
     sentence before any request, so that probe is still the switch's (R614)."""
