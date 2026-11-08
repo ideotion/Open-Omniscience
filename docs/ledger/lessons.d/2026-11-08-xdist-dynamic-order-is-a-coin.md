@@ -1,4 +1,4 @@
-## 2026-11-08 — pytest-xdist's own scheduling makes a required check a coin; place the files instead (R597, queue item 27 option B)
+## 2026-11-08 — pytest-xdist's own scheduling makes a required check a coin; place the files instead (R597, queue item 27 option B, PR #1816)
 
 **What was found.** CI's wall time on a busy day was not the tests: on #1786's run the jobs waited 90 to 195 minutes for a runner and then ran in about 30. Each run cost about 200 runner-minutes (six full-suite legs of 25 to 31 minutes, pytest about 95 % of each), so a handful of open PRs filled the free runner pool. `-n auto --dist loadfile` on the runner's 4 CPUs ran the whole suite locally in 19 minutes against about 80 in one process.
 
