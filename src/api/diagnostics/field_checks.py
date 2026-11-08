@@ -47,7 +47,7 @@ def field_checks_list() -> dict:
     try:
         return fc.panel_view()
     except fc.FieldCheckError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from None
+        raise HTTPException(status_code=500, detail=record_text(exc, limit=300)) from None
 
 
 @router.post("/field-checks/run")
@@ -72,7 +72,7 @@ def field_checks_report() -> Response:
     try:
         report = fc.build_report()
     except fc.FieldCheckError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from None
+        raise HTTPException(status_code=500, detail=record_text(exc, limit=300)) from None
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
     return Response(
         content=json.dumps(report, ensure_ascii=False, indent=1).encode("utf-8"),

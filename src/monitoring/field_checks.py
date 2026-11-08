@@ -155,10 +155,6 @@ def _now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _err(exc: BaseException) -> str:
-    return tokenise_paths(record_text(exc, limit=_ERR_MAX, typed=True))
-
-
 def run_check(
     check_id: str,
     *,
@@ -189,7 +185,7 @@ def run_check(
         except FieldCheckError:
             raise
         except Exception as exc:  # noqa: BLE001 - a runner that broke is a result, named
-            body = {"outcome": "error", "error": _err(exc)}
+            body = {"outcome": "error", "error": tokenise_paths(record_text(exc, limit=_ERR_MAX, typed=True))}
     finally:
         with _LOCK:
             _RUNNING.discard(check_id)
@@ -320,7 +316,7 @@ def _import_headroom(params: dict, inputs: dict, db: Any, check: dict) -> dict[s
             rows[table] = int(db.execute(text(f'SELECT MAX(rowid) FROM "{table}"')).scalar() or 0)
         except Exception as exc:  # noqa: BLE001
             rows[table] = None
-            out.setdefault("row_errors", {})[table] = _err(exc)
+            out.setdefault("row_errors", {})[table] = tokenise_paths(record_text(exc, limit=_ERR_MAX, typed=True))
     out["rows_upper_bound"] = rows
     out["method"] = (
         "Rows are each table's highest rowid (an upper bound, read instantly). The memory verdict is the "
@@ -342,7 +338,7 @@ def _import_headroom(params: dict, inputs: dict, db: Any, check: dict) -> dict[s
             out["memory_verdict"] = "enough memory now"
             mem_ok = True
         except MergeError as exc:
-            out["memory_verdict"] = _err(exc)
+            out["memory_verdict"] = tokenise_paths(record_text(exc, limit=_ERR_MAX, typed=True))
             mem_ok = False
     disk_ok = corpus_bytes is not None and corpus_bytes > 0 and du.free >= 3 * corpus_bytes
     out["disk_verdict"] = "room for three copies" if disk_ok else "less than three copies of free space"
@@ -458,7 +454,7 @@ def _live_fetch(params: dict, inputs: dict, db: Any, check: dict) -> dict[str, A
         if source == "ipcc":
             return _ipcc_all()
     except Exception as exc:  # noqa: BLE001 - the refusal or the break is the finding
-        return {"outcome": "fail", "source": source, "error": _err(exc)}
+        return {"outcome": "fail", "source": source, "error": tokenise_paths(record_text(exc, limit=_ERR_MAX, typed=True))}
     raise FieldCheckError(f"unknown live_fetch source {source!r}")
 
 
@@ -477,7 +473,7 @@ def _ipcc_all() -> dict[str, Any]:
             rows.append({"key": e.key, "url": e.url, "reached": True, "bytes": len(data),
                          "sha256": hashlib.sha256(data).hexdigest(), "elapsed_s": round(time.monotonic() - t0, 2)})
         except Exception as exc:  # noqa: BLE001
-            rows.append({"key": e.key, "url": e.url, "reached": False, "error": _err(exc),
+            rows.append({"key": e.key, "url": e.url, "reached": False, "error": tokenise_paths(record_text(exc, limit=_ERR_MAX, typed=True)),
                          "elapsed_s": round(time.monotonic() - t0, 2)})
     ok = sum(1 for r in rows if r["reached"])
     return {"outcome": "pass" if ok == len(rows) else ("partial" if ok else "fail"), "pdfs_ok": ok,
@@ -503,9 +499,9 @@ def _host_reach(params: dict, inputs: dict, db: Any, check: dict) -> dict[str, A
             entry.update({"reached": True, "status_code": r.status_code, "bytes": len(body),
                           "title": re.sub(r"\s+", " ", m.group(1).decode("utf-8", "replace")).strip()[:200] if m else None})
         except FetchError as exc:
-            entry.update({"reached": False, "refusal": type(exc).__name__, "detail": _err(exc)})
+            entry.update({"reached": False, "refusal": type(exc).__name__, "detail": tokenise_paths(record_text(exc, limit=_ERR_MAX, typed=True))})
         except Exception as exc:  # noqa: BLE001
-            entry.update({"reached": False, "error": _err(exc)})
+            entry.update({"reached": False, "error": tokenise_paths(record_text(exc, limit=_ERR_MAX, typed=True))})
         entry["elapsed_s"] = round(time.monotonic() - t0, 2)
         rows.append(entry)
     ok = sum(1 for e in rows if e.get("reached") and 200 <= int(e.get("status_code") or 0) < 300)
