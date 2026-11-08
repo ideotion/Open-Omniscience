@@ -1318,8 +1318,10 @@ The panel has three parts:
   status always shows the **effective** state, not just your wish: if you enable PQC
   or OpenTimestamps but the supporting library isn't installed, it says *"requested,
   library not installed"* and stays Ed25519-/local-only — **it never shows a green
-  light it can't back up.** Key protection is shown too (`aes256gcm-scrypt` if you
-  set `OO_KEY_PASSPHRASE`, otherwise `unencrypted`).
+  light it can't back up.** Key protection is shown too (`aes256gcm-scrypt` when a passphrase is
+  held, from `OO_KEY_PASSPHRASE` or the database passphrase; `plaintext-0600` otherwise; and `pkcs8-pbkdf2`
+  or `plaintext-0600` with a passphrase held, for a key from before 0.6 that could not be re-wrapped yet,
+  which says what its file really holds).
 - **View & verify chain.** Enter an item id (e.g. `article:42`) to **View chain**
   (sequence, action, actor, time, signature algorithm), **Verify** (re-checks chain
   links, hashes, signatures, timestamps), or **Export bundle** (an

@@ -612,6 +612,8 @@
       // The official-statistics producer DIRECTORY is source management, so it lives here;
       // the FIGURES surface moved to Governments → Statistics (2026-07-31).
       stats:    () => { loadStatAgencies(); },
+      // The IPCC reports click surface: a local list read only; the fetch is a button.
+      ipcc:     () => { if (typeof loadIpccSpm === "function") loadIpccSpm(); },
       // loadKeywordFilter moved off loadSettings with its panel, so it loads here too.
       keywords: () => { loadKeywordExplorer(); loadFamilyCuration(); loadSupergroupCuration();
                         loadKeywordFilter(); loadRingGaps();

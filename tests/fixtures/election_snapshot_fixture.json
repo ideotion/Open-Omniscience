@@ -1,0 +1,10 @@
+[
+ {"qid":"Q1","country":"fr","office":"President","point_in_time":"2027-04-10","precision":"day","official_url":"https://www.conseil-constitutionnel.fr/"},
+ {"qid":"Q2","country":"de","office":"Bundestag","point_in_time":"2029-09-01","precision":"day"},
+ {"qid":"Q3","country":"es","office":"Cortes","start":"2027-07-01","end":"2027-07-31"},
+ {"qid":"Q4","country":"pt","office":"President","point_in_time":"2031-01-01","precision":"year"},
+ {"qid":"Q5","country":"it","office":"Chamber","point_in_time":"2027-03-01","precision":"month"},
+ {"qid":"Q6","country":"jp","office":"Diet"},
+ {"qid":"Q7","country":"id","office":"President","point_in_time":"2019-04-17","precision":"day","official_url":"https://www.kpu.go.id/"},
+ {"qid":"Q8","country":"xx1","office":"Nope","point_in_time":"2030-01-01","precision":"day"}
+]

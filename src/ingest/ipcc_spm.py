@@ -131,10 +131,12 @@ def _read_declared(resp: Any, label: str) -> bytes:
     declared = headers.get("Content-Length")
     if declared is None or not str(declared).isdigit():
         raise ValueError(f"{label}: the server declared no length, so the read cannot be bounded")
-    encoding = str(headers.get("Content-Encoding") or "identity").lower()
+    encoding = str(headers.get("Content-Encoding") or "identity").strip().lower()
     if encoding != "identity":
+        # A server-chosen string goes into the message: bounded and printable-ASCII only.
+        shown = "".join(c for c in encoding[:32] if c.isascii() and c.isprintable())
         raise ValueError(
-            f"{label}: the server compressed the body ({encoding}) despite the identity request, "
+            f"{label}: the server compressed the body ({shown}) despite the identity request, "
             "so its declared length is not the document's"
         )
     limit = int(declared)
@@ -230,7 +232,12 @@ def ingest_spm(
     content_hash = hashlib.sha256(text.encode()).hexdigest()
     dup = session.query(Article).filter_by(hash=content_hash).first()
     if dup is not None:
-        return {"status": "duplicate", "key": key, "article_id": dup.id}
+        return {
+            "status": "duplicate",
+            "key": key,
+            "article_id": dup.id,
+            "reason": "the same text is already in your corpus, stored under another address",
+        }
     prior = session.query(Article).filter_by(url=entry.url).first()
     if prior is not None:
         return {
