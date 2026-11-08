@@ -405,3 +405,20 @@ def test_the_route_refuses_oversized_inputs_before_any_runner():
         FieldCheckRun(id="x", inputs={"note": "n" * 9000})
     with pytest.raises(ValueError, match="limited"):
         FieldCheckRun(id="x", inputs={f"k{i}": i for i in range(9)})
+
+
+def test_the_nsidc_live_fetch_runs_both_hemispheres_and_names_the_one_that_failed(monkeypatch):
+    import src.stats.fetch as sf
+    from src.stats.nsidc import NsidcParse
+
+    def fake(region, **k):
+        if region == "S":
+            raise RuntimeError("HTTP 404 for the southern file")
+        return NsidcParse(rows_read=2, coverage_gaps={"1987-12-03": None, "1987-12-04": 1.5})
+
+    monkeypatch.setattr(sf, "fetch_nsidc", fake)
+    rec = fc.run_check("x-check", consent=True, manifest=_manifest(_check(kind="live_fetch", params={"source": "nsidc"})))
+    north, south = rec["hemispheres"]
+    assert rec["outcome"] == "partial" and north["reached"] and north["days_not_fully_observed"] == 2
+    assert "1987-12-03" not in json.dumps(rec), "the per-day map is a count in the report, not the map"
+    assert not south["reached"] and "404" in south["error"]

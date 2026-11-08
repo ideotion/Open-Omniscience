@@ -456,6 +456,8 @@ def _live_fetch(params: dict, inputs: dict, db: Any, check: dict) -> dict[str, A
                     "columns_missing": list(o.columns_missing), "refused_total": o.refused_total}
         if source == "ipcc":
             return _ipcc_all()
+        if source == "nsidc":
+            return _nsidc_both()
         if source == "ghcnd":
             from src.stats.fetch import fetch_ghcnd_station
 
@@ -471,6 +473,28 @@ def _live_fetch(params: dict, inputs: dict, db: Any, check: dict) -> dict[str, A
     except Exception as exc:  # noqa: BLE001 - the refusal or the break is the finding
         return {"outcome": "fail", "source": source, "error": tokenise_paths(record_text(exc, limit=_ERR_MAX, typed=True))}
     raise FieldCheckError(f"unknown live_fetch source {source!r}")
+
+
+def _nsidc_both() -> dict[str, Any]:
+    """Both hemispheres' Sea Ice Index daily extent files, each through the app's own fetcher and parser; counts only (the
+    per-day coverage map is a count here, not the map). One hemisphere that fails is named and the other still runs."""
+    from src.stats.fetch import fetch_nsidc
+
+    rows = []
+    for region in ("N", "S"):
+        try:
+            p = fetch_nsidc(region)
+            dated = sorted(str(f.time_period) for f in p.figures if f.time_period)
+            rows.append({"region": region, "reached": True, "rows_read": p.rows_read, "figures": len(p.figures),
+                         "first_period": dated[0] if dated else None, "last_period": dated[-1] if dated else None,
+                         "header_lines": p.header_lines, "days_not_fully_observed": len(p.coverage_gaps),
+                         "rows_with_unknown_missing_area": p.rows_with_unknown_missing_area,
+                         "refused_total": p.refused_total, "refused_first": p.refused[:3], "all_gap": p.all_gap})
+        except Exception as exc:  # noqa: BLE001
+            rows.append({"region": region, "reached": False, "error": tokenise_paths(record_text(exc, limit=_ERR_MAX, typed=True))})
+    clean = sum(1 for r in rows if r["reached"] and not r["refused_total"] and not r["all_gap"])
+    reached = sum(1 for r in rows if r["reached"])
+    return {"outcome": "pass" if clean == len(rows) else ("partial" if reached else "fail"), "hemispheres": rows}
 
 
 def _ipcc_all() -> dict[str, Any]:

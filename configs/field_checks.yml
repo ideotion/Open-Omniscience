@@ -224,6 +224,21 @@ checks:
       source: ghcnd
       station: USW00094728
 
+  - id: live-fetch-nsidc
+    title: "Live fetch: NSIDC Sea Ice Index daily extent (both hemispheres)"
+    kind: live_fetch
+    status: active
+    added_on: "2026-11-08"
+    added_by: "PR #1767 (NSIDC Sea Ice Index v3, merged 2026-11-08, written without a live download)"
+    why: >-
+      The sea ice parser reads the NSIDC daily extent CSVs, but the build sandbox cannot reach
+      noaadata.apps.nsidc.org, so the file names and columns were taken from the product's
+      documentation. This downloads the northern and southern files once each through the app's
+      own fetcher and parser and reports what parsed and what was refused. Nothing is stored.
+    retire_when: One report shows both hemispheres parsed with no refused rows, or names what changed.
+    params:
+      source: nsidc
+
   - id: import-memory-refusal-early
     title: Does a big import that cannot fit in memory now stop within minutes?
     kind: import_journal
