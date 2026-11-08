@@ -261,9 +261,13 @@ its progress. Click its buttons, or press the key shown on each:
 
 The panel never asks for your passphrase: if the app is locked, it says so, and you unlock
 it in the browser. Closing the launcher window or pressing Ctrl-C still stops the app, as
-before. Set `OO_PANEL=0` to start without the panel. Some work does need the tab to stay
-open: an upload you are sending from the browser, a file the browser is downloading, and
-the AI tools that answer in the page (bulk summarize or translate, prompt runs). On
+before. Set `OO_PANEL=0` to start without the panel. The AI tools that answer in the page
+(bulk summarize or translate, AI keyword extraction, prompt runs) keep going too once the
+tab is closed: they show in the panel and the task manager, and stop after the article in
+flight when you press **Stop** there or **Cancel** in the page; the articles already done
+stay stored. The keyword index of articles Insights has not indexed yet also catches up on
+its own while the app is idle. Only two things need the tab to stay open: an upload you are
+sending from the browser, and a file the browser is downloading. On
 Windows the panel opens in a window of its own (closing it does not stop the app), and only
 when Python's curses module is installed there (`pip install windows-curses`).
 
