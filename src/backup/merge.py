@@ -6470,8 +6470,12 @@ _KEY_NOT_OPENED = (
     "it is not written and stays in the backup"
 )
 _KEY_NO_PQC = (
-    "an ML-DSA key, and the post-quantum library is not available here to read it; it is not written and "
-    "stays in the backup"
+    "an ML-DSA key no passphrase this restore had opens, and without the post-quantum library here it cannot be "
+    "told from a plaintext one; it is not written and stays in the backup"
+)
+_KEY_PAIR_RACED = (
+    "another caller made the other half of its key pair while the restore ran, and a pair is placed whole or not "
+    "at all; it is not written and stays in the backup"
 )
 _KEY_NOT_SAME = "the copy wrapped for this install did not read back as the same key; it is not written"
 _KEY_HELD_UNUSABLE = (
@@ -6515,27 +6519,58 @@ def _reseal_key(
     from src.custody import signing
 
     if kind == "ml_dsa" and not signing.PQC_AVAILABLE:
-        return _KEY_NO_PQC
+        return _move_wrapped_mldsa(raw, candidates, held)
     for cand in candidates:
         try:
             if kind == "ed25519":
                 key, form = signing.parse_ed25519_key(local, raw, cand)
-                if (form == "wrapped" and cand == held) or (form == "plaintext" and held is None):
-                    return raw, False
+            else:
+                pk, sk, form = signing.parse_mldsa_key(local, raw, cand)
+        except Exception:  # noqa: BLE001 - SigningError, and what the library raises for a file it cannot read: not this passphrase
+            continue
+        if (form == "wrapped" and cand == held) or (form == "plaintext" and held is None):
+            return raw, False
+        try:
+            if kind == "ed25519":
                 sealed = signing.seal_ed25519_key(key, held)
                 back, _form = signing.parse_ed25519_key(local, sealed, held)
                 same = _ed25519_public(back) == _ed25519_public(key)
             else:
-                pk, sk, form = signing.parse_mldsa_key(local, raw, cand)
-                if (form == "wrapped" and cand == held) or (form == "plaintext" and held is None):
-                    return raw, False
                 sealed = signing.seal_mldsa_key(pk, sk, held)
                 pk2, sk2, _form = signing.parse_mldsa_key(local, sealed, held)
                 same = (pk2, sk2) == (pk, sk)
-        except Exception:  # noqa: BLE001 - SigningError, and what the library raises for a file it cannot read: not this passphrase
-            continue
+        except Exception:  # noqa: BLE001 - the sealed copy does not read back: nothing is written
+            return _KEY_NOT_SAME
         return (sealed, True) if same else _KEY_NOT_SAME
     return _KEY_NOT_OPENED
+
+
+def _move_wrapped_mldsa(raw: bytes, candidates: list[bytes | None], held: bytes | None) -> tuple[bytes, bool] | str:
+    """The ML-DSA key file of a pair, on an install WITHOUT the post-quantum library (the optional extra).
+
+    Its wrap is the custody signer's own AES-256-GCM over the public and secret key, which needs no ML-DSA code to
+    open or to make again, so a WRAPPED key is moved under this install's passphrase as it is (byte for byte through
+    the read-back) and its pair is restored whole. Only the library knows the plaintext length that tells a legacy
+    plaintext key from a wrapped one no passphrase opens, so a file no candidate opens is refused.
+    """
+    from src.custody import signing
+
+    for cand in candidates:
+        if not cand:
+            continue
+        try:
+            data = signing._unwrap(raw, cand)
+        except Exception:  # noqa: BLE001 - the GCM tag check: not this passphrase
+            continue
+        if cand == held:
+            return raw, False
+        sealed = signing.seal_mldsa_key(data, b"", held)  # the wrap of public + secret key as one run of bytes, or them as they are
+        try:
+            back = signing._unwrap(sealed, held) if held else sealed
+        except Exception:  # noqa: BLE001 - the sealed copy does not read back: nothing is written
+            return _KEY_NOT_SAME
+        return (sealed, True) if back == data else _KEY_NOT_SAME
+    return _KEY_NO_PQC
 
 
 def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
@@ -6651,10 +6686,13 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
             for name in names:
                 out["not_placed"].append({"name": name, "reason": refused.get(name, _KEY_PAIR_HALF)})
             continue
-        for name, data, resealed in placeable:
+        for i, (name, data, resealed) in enumerate(placeable):
             if not _place_key_file(base / name, data):
-                out["kept_local"].append(name)  # another caller made this key while the restore ran: theirs wins
-                continue
+                # another caller made this key while the restore ran: theirs wins, and so does the rest of its pair
+                out["kept_local"].append(name)
+                for later, _data, _resealed in placeable[i + 1 :]:
+                    out["not_placed"].append({"name": later, "reason": _KEY_PAIR_RACED})
+                break
             out["restored"].append(name)
             if resealed:
                 out["resealed"].append(name)

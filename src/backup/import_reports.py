@@ -379,9 +379,10 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
         lines.append("## Signing keys not restored")
         lines.append("")
         lines.append(
-            "These keys travelled in the backup and were not placed on this install. Each one stays in the backup. "
-            "The next time this install needs a key it makes a new one, so what it signs from then on is signed by a "
-            "new identity; what the old key signed stays verifiable against its public key."
+            "These files from the backup's keys folder were not placed on this install; each one stays in the backup, "
+            "and the reason is given beside it. A signing key that is not placed is replaced by a new one the next "
+            "time this install signs, so what it signs from then on is signed by a new identity; what the old key "
+            "signed stays verifiable against its public key."
         )
         lines.append("")
         for entry in not_placed:
