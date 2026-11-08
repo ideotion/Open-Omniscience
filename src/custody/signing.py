@@ -32,6 +32,7 @@ operator is never misled about how their keys are stored.
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import threading
@@ -510,19 +511,63 @@ class HybridSigner:
 
     # -- ML-DSA ------------------------------------------------------------ #
     def _load_or_create_mldsa(self) -> tuple[bytes | None, bytes | None]:
+        """Load the ML-DSA key pair, creating it once if there is none, by the same protocol as the Ed25519 key.
+
+        A new pair is created 0600 from its first byte and made once (:func:`src.custody.keyfile.create_new`:
+        two first callers end with ONE pair, never the last writer's). A pair written in the clear before
+        the passphrase existed is wrapped in place the first time it is loaded under one: the SAME pair,
+        read back and compared before it replaces anything (:func:`src.custody.keyfile.replace_in_place`),
+        so a failure leaves the file as it was and ``key_protection`` says what the file really holds.
+        """
         if not self._use_pqc or not PQC_AVAILABLE:
             return None, None
-        if self._mldsa_path.exists():
-            pk, sk, form = parse_mldsa_key(
-                self._mldsa_path, self._mldsa_path.read_bytes(), self._pp
-            )
-            if form == "plaintext" and self._pp:
+        path = self._mldsa_path
+        try:
+            raw, seen = keyfile.read_settled(path)
+        except FileNotFoundError:
+            pk, sk = _mldsa.generate_keypair()
+            try:
+                keyfile.create_new(path, seal_mldsa_key(pk, sk, self._pp))
+            except FileExistsError:
+                # another caller created it between our look and our create: ONE pair, theirs, judged like
+                # any file found there (it may be plaintext, made by a caller with no passphrase)
+                raw, seen = keyfile.read_settled(path)
+            else:
+                return pk, sk
+        pk, sk, form = parse_mldsa_key(path, raw, self._pp)
+        if self._pp and form != "wrapped":
+            passphrase = self._pp
+
+            def same_pair(blob: bytes) -> None:
+                back_pk, back_sk, back_form = parse_mldsa_key(path, blob, passphrase)
+                if back_form != "wrapped" or not (
+                    hmac.compare_digest(back_pk, pk) and hmac.compare_digest(back_sk, sk)
+                ):
+                    raise SigningError("the wrapped copy does not hold the same key")
+
+            if not keyfile.replace_in_place(
+                path, lambda: seal_mldsa_key(pk, sk, passphrase), same_pair, seen, "ML-DSA signing key"
+            ) and self._mldsa_form_now(path, form, pk, raw) == "plaintext":
+                # Not replaced by this caller, and the file still holds this pair in the clear (another
+                # caller may have wrapped it in the meantime, which is then what it holds).
                 self._legacy_plain = True
-            return pk, sk
-        pk, sk = _mldsa.generate_keypair()
-        self._mldsa_path.write_bytes(seal_mldsa_key(pk, sk, self._pp))
-        self._mldsa_path.chmod(0o600)
         return pk, sk
+
+    def _mldsa_form_now(self, path: Path, read_as: str, pk: bytes, raw: bytes) -> str:
+        """The form the ML-DSA file holds at this moment, when it still holds THIS pair (else ``read_as``).
+
+        ``raw`` is what this caller read: a file whose bytes have not changed holds what it held, so it is
+        answered without a second scrypt (a wrap that cannot land, a read-only folder or a link, is retried
+        on every load, and each one would pay it again).
+        """
+        try:
+            now = keyfile.read_settled(path)[0]
+            if now == raw:
+                return read_as
+            now_pk, _sk, form = parse_mldsa_key(path, now, self._pp)
+        except Exception:  # noqa: BLE001 - a status read: gone, unreadable or unopenable all keep the answer given
+            return read_as
+        return form if hmac.compare_digest(now_pk, pk) else read_as
 
     # -- identity ---------------------------------------------------------- #
     def public_identity(self) -> PublicIdentity:

@@ -286,3 +286,86 @@ def test_an_error_page_raises_rather_than_returning_an_empty_series():
 def test_http_error_propagates():
     with pytest.raises(RuntimeError):
         fetch.fetch_usgs_quakes("2026-01", "2026-03", get=lambda u: _Resp("", 503))
+
+
+# ------------------------------------------------------------------ 0.6.1 rows (R548)
+
+
+def test_an_fdsn_204_on_a_zero_count_is_true_zeros_not_an_error():
+    def get(url):
+        return _Resp("0") if "/count?" in url else _Resp("", 204)
+
+    res = fetch.fetch_usgs_quakes("2026-01", "2026-03", get=get, extracted_at=VINTAGE)
+    count_id, max_id = series_ids(5.0)
+    assert _by(res, count_id) == {"2026-01": 0.0, "2026-02": 0.0, "2026-03": 0.0}
+    assert _by(res, max_id) == {"2026-01": None, "2026-02": None, "2026-03": None}
+    assert res.declared_count == 0 and res.unreviewed == 0 and res.refused_total == 0
+
+
+def test_a_204_against_a_nonzero_count_is_still_refused():
+    def get(url):
+        return _Resp("2") if "/count?" in url else _Resp("", 204)
+
+    with pytest.raises(ValueError, match="counted 2 events but 0 were read"):
+        fetch.fetch_usgs_quakes("2026-01", "2026-03", get=get, extracted_at=VINTAGE)
+
+
+def _growing_server(seen, counts, bodies):
+    def get(url):
+        seen.append(url)
+        if "/count?" in url:
+            return _Resp(counts.pop(0))
+        return _Resp(bodies.pop(0))
+
+    return get
+
+
+_TWO = HEADER + "\n" + _row("2026-11-01T01:00:00Z", "5.1", "n1") + "\n" + _row("2026-11-02T01:00:00Z", "5.2", "n2")
+_THREE = _TWO + "\n" + _row("2026-11-06T01:00:00Z", "5.3", "n3")
+
+
+def test_a_window_reaching_the_month_in_progress_retries_once_on_a_mismatch():
+    seen: list[str] = []
+    res = fetch.fetch_usgs_quakes(
+        "2026-10", "2026-11", get=_growing_server(seen, ["2", "3"], [_THREE, _THREE]), extracted_at=VINTAGE
+    )
+    assert len(seen) == 4 and res.declared_count == 3
+    assert res.partial_periods["2026-11"] == "month still in progress at the vintage"
+
+
+def test_the_retry_happens_once_only():
+    seen: list[str] = []
+    with pytest.raises(ValueError, match="counted"):
+        fetch.fetch_usgs_quakes(
+            "2026-10", "2026-11", get=_growing_server(seen, ["2", "3"], [_THREE, _TWO]), extracted_at=VINTAGE
+        )
+    assert len(seen) == 4
+
+
+def test_a_closed_window_is_not_retried():
+    seen: list[str] = []
+    with pytest.raises(ValueError, match="counted"):
+        fetch.fetch_usgs_quakes("2026-01", "2026-03", get=_growing_server(seen, ["9"], [GOOD]), extracted_at=VINTAGE)
+    assert len(seen) == 2
+
+
+def test_a_refused_row_is_a_gap_live_not_a_failed_window():
+    body = GOOD + "\n" + _row("2026-02-10T00:00:00.000Z", "", "bad1")  # an earthquake with no magnitude
+    res = fetch.fetch_usgs_quakes("2026-01", "2026-03", get=_server(count="6", body=body), extracted_at=VINTAGE)
+    count_id, _ = series_ids(5.0)
+    assert _by(res, count_id)["2026-02"] is None
+    assert res.partial_periods["2026-02"].startswith("a row in this month was refused")
+    assert res.refused_events == 1 and res.summary()["refused_events"] == 1
+
+
+def test_a_duplicate_row_is_not_counted_as_a_sent_event():
+    body = GOOD + "\n" + _row("2026-03-01T00:00:00.000Z", "5.0", "a5")
+    res = parse_usgs_quakes(body, start_month="2026-01", end_month="2026-03", min_magnitude=5.0, extracted_at=VINTAGE)
+    assert res.refused_total == 1 and res.refused_events == 0
+
+
+def test_the_last_month_the_parser_accepts_is_also_fetchable():
+    from urllib.parse import parse_qs, urlsplit
+
+    q = parse_qs(urlsplit(fetch.usgs_quakes_count_url("2100-12", "2100-12", 5.0)).query)
+    assert q["starttime"] == ["2100-12-01T00:00:00"] and q["endtime"] == ["2100-12-31T23:59:59.999"]

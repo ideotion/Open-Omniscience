@@ -20,6 +20,17 @@ ROWS = json.loads(
 )
 
 
+def _all_keys(obj):
+    """Every key at every depth, so a score nested in a row or an entry is caught too."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield str(k)
+            yield from _all_keys(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _all_keys(v)
+
+
 def _by_qid():
     events, refused = snapshot_to_events(ROWS, TODAY)
     return {e["source_qid"]: e for e in events}, {r["qid"]: r["reason"] for r in refused}
@@ -73,7 +84,7 @@ def test_report_states_every_floor_country_exactly_once_with_a_reason_when_absen
     assert by["jp"]["state"] == "dateless" and by["jp"]["reason"]
     assert by["id"]["state"] == "missing" and by["id"]["reason"]
     assert all(r["state"] in STATES for r in rep["countries"])
-    assert not any("score" in k for k in rep)
+    assert not any("score" in k.lower() for k in _all_keys(rep))
 
 
 def test_projected_passed_is_reported_apart_and_never_rolled_forward():
@@ -105,7 +116,12 @@ def test_layering_shadows_with_a_record_and_never_silently_drops():
     ]
     merged, shadowed = layer(curated, events)
     assert shadowed == [
-        {"qid": "Q1", "country": "FR", "shadowed_by": "France — Presidential election 2027"}
+        {
+            "qid": "Q1",
+            "country": "FR",
+            "shadowed_by": "France — Presidential election 2027",
+            "reason": "same country, no office named, month 4",
+        }
     ]
     assert len(merged) == len(events)  # 1 curated + (N-1) kept
     assert merged[0] is curated[0]
@@ -143,3 +159,68 @@ def test_a_dropped_day_does_not_survive_in_date_basis():
 
 def snapshot_to_event_pair(row):
     return snapshot_to_event(row, TODAY)
+
+
+# ------------------------------------------------------------------ 0.6.1 follow-ups of #1773
+
+
+def _curated(**kw):
+    base = {"calendar": "elections", "title": "Curated", "confirmed": False, "day": None}
+    base.update(kw)
+    return base
+
+
+def test_an_office_less_curated_entry_no_longer_shadows_every_row_of_its_country():
+    events, _ = snapshot_to_events(ROWS, TODAY)
+    # Germany: a curated window in a different month from the Bundestag row (September 2029)
+    merged, shadowed = layer([_curated(country="DEU", month=3)], events, TODAY)
+    assert shadowed == [] and len(merged) == len(events) + 1
+    # a dateless curated entry shadows nothing either: it cannot show it is the same election
+    _, shadowed = layer([_curated(country="DEU")], events, TODAY)
+    assert shadowed == []
+
+
+def test_a_stated_year_must_overlap_and_an_office_must_agree():
+    events, _ = snapshot_to_events(ROWS, TODAY)
+    _, shadowed = layer([_curated(country="DE", window_year=2029)], events, TODAY)
+    assert [s["qid"] for s in shadowed] == ["Q2"] and "year 2029" in shadowed[0]["reason"]
+    _, shadowed = layer([_curated(country="DE", window_year=2030)], events, TODAY)
+    assert shadowed == []
+    _, shadowed = layer([_curated(country="DE", window_year=2029, office="President")], events, TODAY)
+    assert shadowed == []
+    _, shadowed = layer([_curated(country="DE", window_year=2029, office="bundestag")], events, TODAY)
+    assert [s["qid"] for s in shadowed] == ["Q2"]
+
+
+def test_an_undated_snapshot_row_is_kept_not_shadowed():
+    events, _ = snapshot_to_events(ROWS, TODAY)
+    _, shadowed = layer([_curated(country="JPN", month=7, window_year=2028)], events, TODAY)
+    assert shadowed == []  # Q6 (Japan) carries no date, so nothing shows it is the curated election
+
+
+def test_alpha3_and_alpha2_meet_in_the_report_and_in_layering():
+    events = [_curated(country="FRA", title="France 2027", month=4)]
+    rep = country_tier_report(events, {"fr", "DEU"}, TODAY)
+    by = {r["cc"]: r for r in rep["countries"]}
+    assert set(by) == {"fr", "de"}
+    assert by["fr"]["state"] == "window" and by["de"]["state"] == "missing"
+
+
+def test_wikidata_timestamps_with_a_time_part_are_read():
+    base = {"qid": "Q50", "country": "fr", "office": "President", "official_url": "https://example.org/"}
+    ev, _ = snapshot_to_event(dict(base, point_in_time="+2027-04-10T00:00:00Z", precision="day"), TODAY)
+    assert (ev["month"], ev["day"], ev["window_year"]) == (4, 10, 2027) and ev["confirmed"]
+    ev, _ = snapshot_to_event(dict(base, point_in_time="+2027-05-00T00:00:00Z", precision="month"), TODAY)
+    assert (ev["month"], ev["window_year"]) == (5, 2027)
+    ev, _ = snapshot_to_event(dict(base, point_in_time="+2031-00-00T00:00:00Z", precision="year"), TODAY)
+    assert ev["window_year"] == 2031 and ev["month"] is None
+    ev, _ = snapshot_to_event(
+        dict(base, start="2027-07-01T00:00:00Z", end="+2027-07-31T00:00:00Z", official_url=""), TODAY
+    )
+    assert ev["month"] == 7 and ev["inferred"]
+
+
+def test_a_zero_day_under_day_precision_stays_unreadable():
+    row = {"qid": "Q51", "country": "fr", "office": "P", "point_in_time": "+2027-04-00T00:00:00Z", "precision": "day"}
+    ev, _ = snapshot_to_event(row, TODAY)
+    assert ev["day"] is None and ev["date_reason"] == "row states no usable date"
