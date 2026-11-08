@@ -78,6 +78,7 @@ def test_the_month_in_progress_is_a_gap_not_a_small_number():
 def test_a_future_month_is_a_gap_with_its_own_reason():
     res = _parse(start_month="2026-12", end_month="2026-12", text=HEADER + "\n")
     assert res.partial_periods == {"2026-12": "month after the vintage"}
+    assert all(f.value is None for f in res.figures)
 
 
 def test_below_the_completeness_floor_is_a_refusal():
@@ -86,28 +87,34 @@ def test_below_the_completeness_floor_is_a_refusal():
 
 
 @pytest.mark.parametrize(
-    "bad",
+    ("bad", "month"),
     [
-        _row("not-a-time", "5.1", "x1"),
-        _row("2026-01-03T01:02:03Z", "nan", "x2"),
-        _row("2026-01-03T01:02:03Z", "inf", "x3"),
-        _row("2026-01-03T01:02:03Z", "1e9", "x4"),
-        _row("2026-01-03T01:02:03Z", "", "x5"),  # an earthquake of unknown size is not an event of size 0
-        _row("2026-01-03T01:02:03Z", "5.1", ""),
-        "short,row",
+        (_row("2026-01-03T01:02:03Z", "nan", "x2"), "2026-01"),
+        (_row("2026-01-03T01:02:03Z", "inf", "x3"), "2026-01"),
+        (_row("2026-01-03T01:02:03Z", "1e9", "x4"), "2026-01"),
+        (_row("2026-01-03T01:02:03Z", "", "x5"), "2026-01"),  # an earthquake of unknown size is not an event of size 0
+        (_row("2026-01-03T01:02:03Z", "5.1", ""), "2026-01"),
+        (_row("not-a-time", "5.1", "x1"), None),
+        ("short,row", None),
     ],
 )
-def test_malformed_rows_are_refused_counted_and_not_counted_as_events(bad):
+def test_a_refused_row_makes_its_month_a_gap_not_a_smaller_number(bad, month):
     res = _parse(text=GOOD + "\n" + bad)
     assert res.refused_total == 1
     assert res.counted == 3  # the good rows are untouched
-    assert _by(res, series_ids(5.0)[0])["2026-01"] == 2.0
+    counts = _by(res, series_ids(5.0)[0])
+    if month:
+        assert counts == {"2026-01": None, "2026-02": 0.0, "2026-03": 1.0}
+        assert list(res.partial_periods) == [month]
+    else:  # no readable month: any month of the window may be short
+        assert set(counts.values()) == {None} and len(res.partial_periods) == 3
 
 
 def test_a_duplicate_event_id_is_refused_not_counted_twice():
     res = _parse(text=GOOD + "\n" + _row("2026-01-03T01:02:03.500Z", "5.1", "a1"))
     assert res.refused_total == 1 and res.refused[0]["reason"] == "duplicate event id"
-    assert _by(res, series_ids(5.0)[0])["2026-01"] == 2.0
+    assert _by(res, series_ids(5.0)[0])["2026-01"] == 2.0  # a copy of a counted event loses nothing
+    assert not res.partial_periods
 
 
 @pytest.mark.parametrize("body", ["", "<html><body>Bad Request</body></html>", "a,b,c\n1,2,3\n"])
@@ -131,12 +138,51 @@ def test_same_bytes_new_stamp_is_a_new_vintage():
     assert {f.extracted_at for f in b.figures} == {"2026-11-08T00:00:00Z"}
 
 
+def test_the_month_in_progress_is_read_in_utc_not_in_the_offset_it_was_written_in():
+    # 2026-12-01 00:30 at +01:00 is still 2026-11-30 in UTC: November is in progress
+    res = _parse(start_month="2026-11", end_month="2026-11", text=HEADER + "\n", extracted_at="2026-12-01T00:30:00+01:00")
+    assert "2026-11" in res.partial_periods
+    # and one hour later (UTC December) it is whole
+    res = _parse(start_month="2026-11", end_month="2026-11", text=HEADER + "\n", extracted_at="2026-12-01T00:30:00Z")
+    assert not res.partial_periods
+
+
+@pytest.mark.parametrize("stamp", ["2026-11-07T00:00:00", "2026-13-01T00:00:00Z", "2026-11-07"])
+def test_a_stamp_without_a_zone_or_with_a_bad_month_is_refused(stamp):
+    with pytest.raises(ValueError):
+        _parse(extracted_at=stamp)
+
+
+def test_a_window_across_a_year_end_counts_each_month_once():
+    text = "\n".join([HEADER, _row("2025-12-31T23:59:59.999Z", "5.0", "y1"), _row("2026-01-01T00:00:00.000Z", "5.2", "y2")])
+    res = _parse(start_month="2025-12", end_month="2026-01", text=text)
+    assert _by(res, series_ids(5.0)[0]) == {"2025-12": 1.0, "2026-01": 1.0}
+
+
+def test_a_missing_status_column_is_unknown_not_zero_unreviewed():
+    text = "time,mag,type,id\n2026-01-03T01:02:03Z,5.1,earthquake,q1\n"
+    res = _parse(text=text)
+    assert res.unreviewed is None and "status" in res.unreviewed_unknown
+    assert _parse().unreviewed == 1
+
+
+def test_a_blank_magnitude_on_a_non_earthquake_row_is_excluded_not_refused():
+    res = _parse(text=GOOD + "\n" + _row("2026-01-09T00:00:00Z", "", "w1", kind="explosion"))
+    assert res.refused_total == 0 and res.excluded_non_earthquake == 2
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), 11, 5.05, "five"])
+def test_a_threshold_that_is_not_a_clean_magnitude_is_refused(bad):
+    with pytest.raises(ValueError):
+        _parse(min_magnitude=bad)
+
+
 def test_the_refusal_list_is_capped_but_the_count_is_exact():
     res = _parse(text=HEADER + "\n" + "\n".join(f"junk{i}" for i in range(500)))
     assert res.refused_total == 500 and len(res.refused) == 100 and res.refused_is_sample
 
 
-@pytest.mark.parametrize("kw", [{"start_month": "2026-3"}, {"end_month": "2025-01"}, {"extracted_at": "yesterday"}])
+@pytest.mark.parametrize("kw", [{"start_month": "2026-3"}, {"start_month": "2026-01\n"}, {"end_month": "2025-01"}, {"extracted_at": "yesterday"}])
 def test_bad_arguments_are_programming_errors(kw):
     with pytest.raises(ValueError):
         _parse(**kw)
@@ -154,7 +200,7 @@ class _Resp:
             raise RuntimeError(f"HTTP {self.status_code}")
 
 
-def _server(count="3", body=GOOD, seen=None):
+def _server(count="5", body=GOOD, seen=None):
     def get(url):
         if seen is not None:
             seen.append(url)
@@ -164,19 +210,32 @@ def _server(count="3", body=GOOD, seen=None):
 
 
 def test_urls_are_complete_months_utc_and_earthquakes_only():
+    from urllib.parse import parse_qs, urlsplit
+
     u = fetch.usgs_quakes_count_url("2026-01", "2026-03", 5.0)
     assert u.startswith("https://earthquake.usgs.gov/fdsnws/event/1/count?")
-    assert "starttime=2026-01-01T00%3A00%3A00" in u and "endtime=2026-04-01T00%3A00%3A00" in u
-    assert "eventtype=earthquake" in u and "minmagnitude=5" in u
-    q = fetch.usgs_quakes_query_url("2026-12", "2026-12", 6.5)
-    assert "endtime=2027-01-01" in q and "format=csv" in q and "orderby=time-asc" in q and "minmagnitude=6.5" in q
+    q = parse_qs(urlsplit(u).query)
+    assert q["starttime"] == ["2026-01-01T00:00:00"]
+    assert q["endtime"] == ["2026-03-31T23:59:59.999"]  # FDSN endtime is inclusive
+    assert q["eventtype"] == ["earthquake"] and q["minmagnitude"] == ["5.0"] and q["format"] == ["plain"]
+    q = parse_qs(urlsplit(fetch.usgs_quakes_query_url("2026-12", "2026-12", 6.5)).query)
+    assert q["endtime"] == ["2026-12-31T23:59:59.999"] and q["format"] == ["csv"]
+    assert q["orderby"] == ["time-asc"] and q["minmagnitude"] == ["6.5"]
+
+
+@pytest.mark.parametrize("bad", [float("nan"), 11, 5.05, 4.0])
+def test_a_bad_threshold_is_refused_before_any_request(bad):
+    called: list[str] = []
+    with pytest.raises(ValueError):
+        fetch.fetch_usgs_quakes("2026-01", "2026-03", bad, get=_server(seen=called))
+    assert called == []
 
 
 def test_fetch_counts_first_then_reads_and_stamps_the_vintage():
     seen: list[str] = []
     res = fetch.fetch_usgs_quakes("2026-01", "2026-03", get=_server(seen=seen), extracted_at=VINTAGE)
     assert "/count?" in seen[0] and "/query?" in seen[1] and len(seen) == 2
-    assert res.declared_count == 3 and res.figures[0].extracted_at == VINTAGE
+    assert res.declared_count == 5 and res.figures[0].extracted_at == VINTAGE
 
 
 def test_kill_switch_refuses_before_any_getter_runs(monkeypatch):
@@ -200,8 +259,19 @@ def test_a_count_that_is_not_an_integer_is_refused(count):
         fetch.fetch_usgs_quakes("2026-01", "2026-03", get=_server(count=count))
 
 
+def test_a_body_with_fewer_events_than_the_service_counted_is_refused_not_shrunk():
+    with pytest.raises(ValueError, match="counted 5 events but 3 were read"):
+        fetch.fetch_usgs_quakes("2026-01", "2026-03", get=_server(count="5", body=HEADER + "\n" + _row("2026-01-03T01:02:03Z", "5.1", "m1") + "\n" + _row("2026-01-04T01:02:03Z", "5.1", "m2") + "\n" + _row("2026-01-05T01:02:03Z", "5.1", "m3")))
+
+
+@pytest.mark.parametrize("count", ["１２", "²"])
+def test_a_count_in_non_ascii_digits_is_refused_cleanly(count):
+    with pytest.raises(ValueError, match="plain integer"):
+        fetch.fetch_usgs_quakes("2026-01", "2026-03", get=_server(count=count))
+
+
 def test_the_body_bound_is_derived_from_the_declared_count():
-    big = "x" * (3 * fetch.USGS_QUAKES_ROW_ALLOWANCE + fetch.USGS_QUAKES_HEADER_ALLOWANCE + 1)
+    big = "x" * (5 * fetch.USGS_QUAKES_ROW_ALLOWANCE + fetch.USGS_QUAKES_HEADER_ALLOWANCE + 1)
     with pytest.raises(ValueError, match="allow"):
         fetch.fetch_usgs_quakes("2026-01", "2026-03", get=_server(body=big))
     # and a body that fits is not refused by size

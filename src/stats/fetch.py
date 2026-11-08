@@ -31,6 +31,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import re
 from datetime import UTC, datetime, timezone
 from typing import Any, Callable
 from urllib.parse import quote, urlencode
@@ -442,18 +443,21 @@ USGS_QUAKES_HEADER_ALLOWANCE = 4096
 
 
 def _quakes_params(start_month: str, end_month: str, min_magnitude: float) -> dict[str, str]:
-    from src.stats.usgs_quakes import MIN_MAGNITUDE_FLOOR, month_index, month_label
+    from datetime import timedelta
 
-    if min_magnitude < MIN_MAGNITUDE_FLOOR:
-        raise ValueError(f"min_magnitude {min_magnitude} is under the {MIN_MAGNITUDE_FLOOR} global completeness floor")
+    from src.stats.usgs_quakes import month_index, month_label, validate_min_magnitude
+
+    magnitude = validate_min_magnitude(min_magnitude)
     first, last = month_index(start_month), month_index(end_month)
     if last < first:
         raise ValueError("end_month is before start_month")
-    after = month_label(last + 1)  # exclusive end = the first instant of the month after
+    # The FDSN endtime is "on or before", so the window ends one millisecond short of the next month.
+    after = month_index(month_label(last + 1))
+    end = datetime(after // 12, after % 12 + 1, 1) - timedelta(milliseconds=1)
     return {
-        "starttime": f"{start_month}-01T00:00:00",
-        "endtime": f"{after}-01T00:00:00",
-        "minmagnitude": f"{min_magnitude:g}",
+        "starttime": f"{month_label(first)}-01T00:00:00",
+        "endtime": end.strftime("%Y-%m-%dT%H:%M:%S.") + f"{end.microsecond // 1000:03d}",
+        "minmagnitude": f"{magnitude:.1f}",
         "eventtype": "earthquake",
     }
 
@@ -499,7 +503,7 @@ def fetch_usgs_quakes(
     resp = getter(count_url)
     resp.raise_for_status()
     text = resp.text.strip()
-    if not text.isdigit() or len(text) > 9:
+    if not re.fullmatch(r"[0-9]{1,9}", text):
         raise ValueError("USGS earthquakes: the count response is not a plain integer")
     declared = int(text)
     if declared > USGS_QUAKES_QUERY_LIMIT:
@@ -520,4 +524,10 @@ def fetch_usgs_quakes(
             f"USGS earthquakes: the response is not the expected catalogue ({parsed.refused_total} lines refused, none parsed)"
         )
     parsed.declared_count = declared
+    parsed_events = parsed.rows_read - parsed.excluded_non_earthquake
+    if parsed_events != declared:
+        raise ValueError(
+            f"USGS earthquakes: the service counted {declared} events but {parsed_events} were read "
+            f"({parsed.refused_total} rows refused); the catalogue changed between the two requests or the list was cut short, so no series is returned"
+        )
     return parsed
