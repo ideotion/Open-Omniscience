@@ -12,7 +12,7 @@ from the merge commits themselves, for each group: the exact keys, the English s
 files that use the key, and per language how many keys were added and how many still read
 exactly like English.
 
-It READS ``src/static/locales`` and writes only:
+It READS the locale files at the named commits (git history) and writes only:
     docs/product/NATIVE_REVIEW_QUEUE.md           the overview
     docs/product/native-review/<lang>.md          one sheet per language (key, English, current text)
 
@@ -45,20 +45,20 @@ GROUPS = [
     ("33f", "item 33 (f)", "OSM stored monthly summary (R435)", 1738, "a47a9fb"),
     (
         "33g",
-        "item 33 (g), C6",
+        "planned item 33 (g), C6",
         "oo-on: confirmations for the irreversible actions",
         1746,
         "0982a0b",
     ),
-    ("33h", "item 33 (h), E2", "Help coverage banner", 1748, None),
+    ("33h", "planned item 33 (h), E2", "Help coverage banner", 1748, None),
     (
         "33i",
-        "item 33 (i), A-S6",
+        "planned item 33 (i), A-S6",
         "Population-weighted figures state their weighting",
         1750,
         "2a621dc",
     ),
-    ("33j", "item 33 (j)", "Climate series", 1751, None),
+    ("33j", "planned item 33 (j)", "Climate series", 1751, None),
     ("extra-1", "not in item 33", "OSM daily change files: update a country (J1)", 1720, "ea88a6e"),
     ("extra-2", "not in item 33", "Living sources: OSM daily change files (B1)", 1725, "c0c66ff"),
     ("extra-3", "not in item 33", "Living sources: per-edition coverage group", 1727, "7139c68"),
@@ -68,7 +68,7 @@ GROUPS = [
 # letters from the Plan lane's bundle (#1778) and exist in item 33 only once it merges.
 NOTES = [
     "(b) of item 33 is an operator step (a dated population table) and adds no key.",
-    "Letters (g) to (j) follow the Plan lane's draft bundle; (h) and (j) are pending until #1748 and #1751 merge.",
+    "Letters (g) to (j) exist in item 33 only once the Plan lane's draft #1778 merges; (h) and (j) also wait on #1748 and #1751.",
     "A group marked PENDING is read from its open PR head and changes on a re-run until it merges.",
 ]
 
@@ -88,14 +88,19 @@ def span(pr: int, sha: str | None) -> tuple[str, str, bool]:
     if sha:
         return f"{sha}^1", sha, False
     head = f"refs/remotes/pr/{pr}"
-    base = git("merge-base", "origin/main", head).strip()
+    try:
+        base = git("merge-base", "origin/main", head).strip()
+    except subprocess.CalledProcessError:
+        sys.exit(f"PR #{pr} head is not fetched: git fetch origin refs/pull/{pr}/head:{head}")
     merged = (
         subprocess.run(
             ["git", "merge-base", "--is-ancestor", head, "origin/main"], cwd=ROOT
         ).returncode
         == 0
     )
-    return base, head, not merged
+    if merged:
+        sys.exit(f"PR #{pr} is merged: set its merge sha in GROUPS and re-run")
+    return base, head, True
 
 
 def added_keys(base: str, head: str, lang: str) -> dict[str, str]:
@@ -146,7 +151,7 @@ def build() -> dict[Path, str]:
         "**same as English** carries English text in that language, which is either a deliberate",
         "carry-over (a name, a code) or a string still waiting for a translation.",
         "",
-        "One sheet per language lists, for each key, the English source and the text the app shows:",
+        "One sheet per language lists, for each key, the English source and the text at the commit named for the group (the head, for a pending group):",
         "",
         " ".join(f"[{lang}](native-review/{lang}.md)" for lang in others),
         "",
@@ -185,7 +190,7 @@ def build() -> dict[Path, str]:
             got = per[lang]
             same = sum(1 for k in en if got.get(k) == k or got.get(k) == en[k])
             missing = sum(1 for k in en if k not in got)
-            doc.append(f"| {lang} | {len(got)} | {same} | {missing} |")
+            doc.append(f"| {lang} | {sum(k in got for k in en)} | {same} | {missing} |")
         doc += ["", "Keys (English source, then the files that use it):", ""]
         doc += ["| # | English source | Files |", "|---|---|---|"]
         for i, key in enumerate(sorted(en), 1):

@@ -6,7 +6,7 @@ was AI-drafted and has not been read by a native speaker. A key counted as
 **same as English** carries English text in that language, which is either a deliberate
 carry-over (a name, a code) or a string still waiting for a translation.
 
-One sheet per language lists, for each key, the English source and the text the app shows:
+One sheet per language lists, for each key, the English source and the text at the commit named for the group (the head, for a pending group):
 
 [ar](native-review/ar.md) [bn](native-review/bn.md) [de](native-review/de.md) [es](native-review/es.md) [fr](native-review/fr.md) [hi](native-review/hi.md) [id](native-review/id.md) [ja](native-review/ja.md) [pt](native-review/pt.md) [ru](native-review/ru.md) [zh](native-review/zh.md)
 
@@ -24,17 +24,17 @@ half-width (item 33 (a)).
 | 33d OSM B3b: brands, contact channels, freshness | item 33 (d) | #1735 | `33f9940` | 42 |
 | 33e OSM B3c: places by country and by region | item 33 (e) | #1736 | `cac50c6` | 18 |
 | 33f OSM stored monthly summary (R435) | item 33 (f) | #1738 | `a47a9fb` | 5 |
-| 33g oo-on: confirmations for the irreversible actions | item 33 (g), C6 | #1746 | `0982a0b` | 4 |
-| 33h Help coverage banner | item 33 (h), E2 | #1748 | PENDING, open head `12eae5010` | 3 |
-| 33i Population-weighted figures state their weighting | item 33 (i), A-S6 | #1750 | `2a621dc` | 5 |
-| 33j Climate series | item 33 (j) | #1751 | PENDING, open head `25b3b42c9` | 1 |
+| 33g oo-on: confirmations for the irreversible actions | planned item 33 (g), C6 | #1746 | `0982a0b` | 4 |
+| 33h Help coverage banner | planned item 33 (h), E2 | #1748 | PENDING, open head `12eae5010` | 3 |
+| 33i Population-weighted figures state their weighting | planned item 33 (i), A-S6 | #1750 | `2a621dc` | 5 |
+| 33j Climate series | planned item 33 (j) | #1751 | PENDING, open head `25b3b42c9` | 1 |
 | extra-1 OSM daily change files: update a country (J1) | not in item 33 | #1720 | `ea88a6e` | 22 |
 | extra-2 Living sources: OSM daily change files (B1) | not in item 33 | #1725 | `c0c66ff` | 15 |
 | extra-3 Living sources: per-edition coverage group | not in item 33 | #1727 | `7139c68` | 14 |
 | **All** | | | | **187** |
 
 - (b) of item 33 is an operator step (a dated population table) and adds no key.
-- Letters (g) to (j) follow the Plan lane's draft bundle; (h) and (j) are pending until #1748 and #1751 merge.
+- Letters (g) to (j) exist in item 33 only once the Plan lane's draft #1778 merges; (h) and (j) also wait on #1748 and #1751.
 - A group marked PENDING is read from its open PR head and changes on a re-run until it merges.
 
 ## 33a: Law coverage floor (C-L1)
@@ -287,7 +287,7 @@ Keys (English source, then the files that use it):
 
 ## 33g: oo-on: confirmations for the irreversible actions
 
-Recorded: item 33 (g), C6. PR #1746, merge `0982a0b`. 4 new keys.
+Recorded: planned item 33 (g), C6. PR #1746, merge `0982a0b`. 4 new keys.
 
 Per-language counts (keys added / same as English / missing):
 
@@ -316,7 +316,7 @@ Keys (English source, then the files that use it):
 
 ## 33h: Help coverage banner
 
-Recorded: item 33 (h), E2. PR #1748, PENDING, open head `12eae5010`. 3 new keys.
+Recorded: planned item 33 (h), E2. PR #1748, PENDING, open head `12eae5010`. 3 new keys.
 
 Per-language counts (keys added / same as English / missing):
 
@@ -344,7 +344,7 @@ Keys (English source, then the files that use it):
 
 ## 33i: Population-weighted figures state their weighting
 
-Recorded: item 33 (i), A-S6. PR #1750, merge `2a621dc`. 5 new keys.
+Recorded: planned item 33 (i), A-S6. PR #1750, merge `2a621dc`. 5 new keys.
 
 Per-language counts (keys added / same as English / missing):
 
@@ -374,7 +374,7 @@ Keys (English source, then the files that use it):
 
 ## 33j: Climate series
 
-Recorded: item 33 (j). PR #1751, PENDING, open head `25b3b42c9`. 1 new key.
+Recorded: planned item 33 (j). PR #1751, PENDING, open head `25b3b42c9`. 1 new key.
 
 Per-language counts (keys added / same as English / missing):
 
