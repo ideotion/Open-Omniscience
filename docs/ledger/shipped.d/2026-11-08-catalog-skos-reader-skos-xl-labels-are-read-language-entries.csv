@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-08,catalog,"SKOS reader: SKOS-XL labels are read, language entries are pruned (0.6.1 EuroVoc follow-ups a, c)",shipped (draft),PR #1809,src/catalog/skos.py; tests/test_skos_topics.py,"skosxl:prefLabel/altLabel are resolved after the stream (plain label of a language wins; unresolved reference is the named gap xl_label_unresolved); per-element language entries are dropped when the element ends; a dropped unlanguaged top-level label deliberately stays a label_without_language gap (b), pinned by a test."

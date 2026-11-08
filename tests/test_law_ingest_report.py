@@ -57,16 +57,69 @@ def test_a_re_extracted_document_is_counted_as_healed(db):
     _doc(db, last_status=_RE_EXTRACTED, baseline_text="Clean Act text.")
     r = law_ingest_report(db)
     assert r["re_extracted"] == 1
-    assert r["awaiting_re_extraction"] == 0
+    assert r["last_status_mix"] == {"re_extracted": 1}
     assert r["per_document"][0]["re_extracted"] is True
+    assert r["per_document"][0]["verdict"] == "re_extracted"
 
 
-def test_a_document_still_awaiting_the_re_read_is_the_one_worth_seeing(db):
-    """A portal that cannot be fetched never heals -- the whole point of the field."""
-    _doc(db, last_status="fetch error: robots.txt disallows https://example.test/act")
+def test_a_document_that_cannot_be_fetched_is_the_one_worth_seeing(db):
+    """A portal that cannot be fetched never heals: its verdict and check time say so."""
+    checked = datetime(2026, 11, 1, 6, 0, tzinfo=UTC)
+    _doc(
+        db,
+        last_status="fetch error: HTTP 503 from https://example.test/act",
+        last_checked_at=checked,
+    )
     r = law_ingest_report(db)
     assert r["re_extracted"] == 0
-    assert r["awaiting_re_extraction"] == 1
+    assert r["last_status_mix"] == {"error": 1}
+    row = r["per_document"][0]
+    assert row["verdict"] == "error"
+    assert row["last_checked_at"].startswith("2026-11-01T06:00:00")
+
+
+def test_a_healed_document_polled_again_is_not_reported_as_awaiting(db):
+    """F10 (diagnostics 2026-11-07): the counter this replaced said "23 of 23 awaiting".
+
+    The tracker writes "re-read with ..." on ONE poll; the next poll of the same unchanged
+    document writes "unchanged". A counter of "checked, last status not a re-read" therefore
+    read N of N on a fully healed install. The report now says what the last check recorded.
+    """
+    _doc(db, last_status="unchanged", baseline_text="Clean Act text.")
+    _doc(
+        db,
+        last_status="baseline captured",
+        baseline_text="Clean Act text.",
+        url="https://example.test/b",
+    )
+    r = law_ingest_report(db)
+    assert "awaiting_re_extraction" not in r
+    assert r["re_extracted"] == 0
+    assert r["last_status_mix"] == {"baselined": 1, "unchanged": 1}
+    assert "not a count of documents still to heal" in r["caveat"]
+    assert "never proof" in r["caveat"]  # a failing verdict is a candidate, not a finding
+
+
+def test_the_status_mix_uses_the_law_tabs_own_verdicts(db):
+    """One classification, never a second guess: the mix must agree with the Law tab."""
+    from src.api.law import _verdict_of
+
+    statuses = [
+        "deferred: Crawl-delay 30 s: not before 2026-11-08T06:00:00Z",
+        "fetch error: robots.txt disallows https://example.test/act",
+        "changed (+12 bytes vs baseline)",
+        "no usable text extracted",
+        None,
+    ]
+    for i, st in enumerate(statuses):
+        _doc(db, last_status=st, url=f"https://example.test/{i}")
+    r = law_ingest_report(db)
+    want: dict[str, int] = {}
+    for st in statuses:
+        want[_verdict_of(st)] = want.get(_verdict_of(st), 0) + 1
+    assert r["last_status_mix"] == want
+    assert sum(r["last_status_mix"].values()) == r["documents"]
+    assert [row["verdict"] for row in r["per_document"]] == [_verdict_of(st) for st in statuses]
 
 
 def test_a_never_checked_document_is_not_smeared_into_awaiting(db):
@@ -78,8 +131,9 @@ def test_a_never_checked_document_is_not_smeared_into_awaiting(db):
     _doc(db, last_checked_at=None, last_status=None)
     r = law_ingest_report(db)
     assert r["never_checked"] == 1
-    assert r["awaiting_re_extraction"] == 0
+    assert r["last_status_mix"] == {"never_checked": 1}
     assert r["re_extracted"] == 0
+    assert r["per_document"][0]["last_checked_at"] is None
 
 
 # --------------------------------------------------------------- the residue measure
@@ -242,6 +296,8 @@ def test_the_per_document_list_is_bounded_and_says_so(db):
     assert r["documents"] == _MAX_LISTED + 5
     assert r["listed"] == _MAX_LISTED
     assert r["truncated"] == 5  # stated, never a silent cut
+    # the mix counts EVERY document; only the rows are capped
+    assert sum(r["last_status_mix"].values()) == _MAX_LISTED + 5
 
 
 # ------------------------------------------------------------------- the verdict badge
