@@ -1728,6 +1728,7 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
         "manifest's `machine` block names identifies it, so it is not written into every archive"
     ),
     "/source-quality": "whole-corpus decrypt ZIP export — own button (manifest 'excluded')",
+    "/source-samples": "TEMPORARY one-article-per-source ZIP walk, 4 MB per zip — own button (manifest 'excluded')",
     "/rollup-benchmark": "heavy operator-run benchmark (manifest 'excluded')",
     "/llm-bench": "heavy operator-run benchmark, needs a live model (manifest 'excluded')",
     "/llm-throughput": (
@@ -2632,6 +2633,11 @@ def _all_diagnostics_manifest(
                 "endpoint": "/api/diagnostics/source-quality",
                 "reason": "a whole-corpus decrypt pass producing a bulky per-source "
                 "text-sample ZIP — run it from its own Diagnostics button",
+            },
+            {
+                "endpoint": "/api/diagnostics/source-samples",
+                "reason": "TEMPORARY: one random stored article per source (full text) as "
+                "zips of at most 4 MB, walked by a cursor — run it from its own Diagnostics button",
             },
             {
                 "endpoint": "/api/diagnostics/card-audit/preflight",
