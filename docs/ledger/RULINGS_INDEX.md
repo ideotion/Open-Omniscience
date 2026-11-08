@@ -863,3 +863,33 @@ with the sheet's `Q11xx` rows is in each row; the confirmation round is `docs/de
 | R510 | 2026-11-08 | **The A-037 must-fix indexer pin push is acked; the CI lane maps engine files to `test_indexer_pin` in `guards_for_diff`.** | the coordinator session, 2026-11-08 (relay 00:55Z) | the A-037 lane's PR; `scripts/guards_for_diff.py` (CI lane, R487) |
 | R511 | 2026-11-08 | **#1782 (CI fast path) merges as is; the sweep is done separately.** | the coordinator session, 2026-11-08 (relay 01:18Z) | PR #1782; the CI lane |
 | R512 | 2026-11-08 | **The CI lane's pin-mapping PR comes after #1782, with the sweep folded in.** | the coordinator session, 2026-11-08 (relay 01:18Z) | the CI lane's pin-mapping PR; `scripts/guards_for_diff.py` (R510) |
+| R513 | 2026-11-08 | **The #1783 main-merge push is acked.** | the coordinator session, 2026-11-08 (relay 02:03Z) | PR #1783 (monitoring and API names lane) |
+| R514 | 2026-11-08 | **#1754 gets one no-push shard rerun.** | the coordinator session, 2026-11-08 (relay 02:03Z) | PR #1754 (reindex lane); R500 |
+| R515 | 2026-11-08 | **#1779's push comes after it re-checks OPEN_QUEUE item 33 against main.** | the coordinator session, 2026-11-08 (relay 02:03Z) | PR #1779 (native review lane); OPEN_QUEUE item 33 |
+| R516 | 2026-11-08 | **Queue order: OWID before IPCC (kill-switch pins: 21 OWID, 22 IPCC).** | the coordinator session, 2026-11-08 (relay 02:03Z) | the OWID and IPCC PRs; `src/ingest/airplane.py` (`_PRE_CHECK_SITES`); R457, R481 |
+| R517 | 2026-11-08 | **Every merge, docs-only included, needs a merge window from the coordinator first; the earlier standing «as soon as green» line is withdrawn.** The window of #1792 was held by CI #1782; the merge of #1792 stands because it was docs-only and disjoint. | the coordinator session, 2026-11-08 (relay 02:03Z) | R441, R490; every lane's merge |
+| R518 | 2026-11-08 | **The #1783 push is allowed only if just the known failures show (refines R513).** | the coordinator session (current, relay 02:15Z) | PR #1783; R513 |
+| R519 | 2026-11-08 | **#1782 was still a draft and not merging, so #1790 took the merge window; #1790 merged as `8416faf1d`.** | the coordinator session (current, relay 02:15Z) | R441, R517; PR #1790 |
+| R520 | 2026-11-08 | **#1782 has the merge window after #1790, with guards re-run against `8416faf1d`.** | the coordinator session (current, relay 02:15Z) | PR #1782; R487, R517 |
+| R521 | 2026-11-08 | **C7 / A-028 was already closed by R456; the `file_lock` wait deadline is deferred to the 0.7 backlog,** because it changes behaviour and no report shows the need. | the coordinator session (current, relay 02:15Z) | R456; the 0.7 backlog |
+| R522 | 2026-11-08 | **R492 stands: the Q lane writes the drifted-pairs table for 0.6.1; the note that the A-036 lane owns it is withdrawn.** | the coordinator session (current, relay 02:15Z) | R492; the Q lane's PR |
+| R523 | 2026-11-08 | **The keyword #1794 is queued and runs its guards.** | the coordinator session (current, relay 03:17Z) | PR #1794 |
+| R524 | 2026-11-08 | **No full OSM rerun is needed (its metadata failures are env-only); a targeted run happens at the merge window.** | the coordinator session (current, relay 03:17Z) | the OSM lane; PR #1756 |
+| R525 | 2026-11-08 | **F7 #1791 is queued and its R319 release-notes line is accepted.** | the coordinator session (current, relay 03:17Z) | PR #1791 (F7) |
+| R526 | 2026-11-08 | **The USGS #1764 diff list is acked; the lane merges latest main before it pushes, and the kill-switch pin count goes to the second lander plus 1.** | the coordinator session (current, relay 03:17Z) | PR #1764; `src/ingest/airplane.py` (`_PRE_CHECK_SITES`); R457, R481 |
+| R527 | 2026-11-08 | **Qual #1795 is queued; it re-checks the OSM hunks after #1756.** | the coordinator session (current, relay 03:17Z) | PR #1795 (qual lane) |
+| R528 | 2026-11-08 | **F3 #1793 is queued; the second lander resolves `fetch.py`.** | the coordinator session (current, relay 03:17Z) | PR #1793 (F3); `src/ingest/fetch.py` |
+| R529 | 2026-11-08 | **The dead-code #1788 is queued; its grep of open PRs came back clean.** | the coordinator session (current, relay 03:17Z) | PR #1788 (A-037 dead-code lane) |
+| R530 | 2026-11-08 | **OSM #1756 went ahead of #1782 while #1782's guards were slow (merged as `c2aaada0f`).** | the coordinator session (current, relay 03:17Z) | R519, R520; PR #1756 |
+| R531 | 2026-11-08 | **Native review #1779 needs an Opus delta read of `396abb92b`.** | the coordinator session (current, relay 03:17Z) | PR #1779 (native review lane); R222 |
+| R532 | 2026-11-08 | **The #1779 must-fix push is acked, and its delta read counts for the final head.** | the coordinator session (current, relay 03:28Z) | PR #1779 (native review lane); R531, R222 |
+| R533 | 2026-11-08 | **Keyword #1794 has the merge window.** | the coordinator session (current, relay 03:28Z) | PR #1794; R517 |
+| R534 | 2026-11-08 | **OSM #1798 re-runs the ratchet on ruff 0.17.3.** | the coordinator session (current, relay 03:42Z) | PR #1798 (OSM lane); R487, R488 |
+| R535 | 2026-11-08 | **EuroVoc #1757 is queued; it re-checks the ratchet and needs an Opus confirmation.** | the coordinator session (current, relay 03:42Z) | PR #1757 (EuroVoc lane) |
+| R536 | 2026-11-08 | **#1783 is queued; no new Opus read, because the diff is the same.** | the coordinator session (current, relay 03:42Z) | PR #1783; R513, R518 |
+| R537 | 2026-11-08 | **#1797 (ledger bundle 66) goes next after keyword #1794, which holds the window now; the merge waits for the coordinator's go once #1794's sha lands.** Bundle 67 also carries R534 to R537 and OPEN_QUEUE 33(k) (the IPCC licence operator item). | the coordinator session (current, relay 03:42Z) | R517, R533; PR #1797 |
+| R538 | 2026-11-08 | **The EuroVoc push of `e25214626` is acked.** | the coordinator session (current, relay 03:54Z) | PR #1757 (EuroVoc lane) |
+| R539 | 2026-11-08 | **EuroVoc's last head change is `d97f002c0`; after it only must-fixes block.** | the coordinator session (current, relay 03:54Z) | PR #1757 |
+| R540 | 2026-11-08 | **The CI #1799 push is acked, with the pip cache dropped.** | the coordinator session (current, relay 03:54Z) | PR #1799 (CI lane); R475 (the pip cache is dropped from it) |
+| R541 | 2026-11-08 | **The #1799 nits push is acked.** | the coordinator session (current, relay 03:54Z) | PR #1799 (CI lane) |
+| R542 | 2026-11-08 | **#1797 (ledger bundle 66) takes the merge window (merged as `bf4ff26a4`).** | the coordinator session (current, relay 03:54Z) | R517, R537; PR #1797 |
