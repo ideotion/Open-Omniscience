@@ -32,7 +32,10 @@ refusal; the socket guard is the net beneath it and is not installed in a test).
 * a file CREATED AND REMOVED inside one request is not seen: ``GET /api/database/backup`` writes ``snapshot.db`` into the data folder and
   removes it after streaming (it has its own cross-site guard, R214);
 * effects are attributed by the request's time window, so work from a long-running background thread lands on a later route (the
-  ambient tables absorb the known writers) and an effect after the last request is lost;
+  ambient tables absorb the known writers) and an effect after the last request is lost; and a LOOPBACK connect from a thread that was
+  already running when a request began and is not the app's own (not ``oo-*``, not the client's portal or worker threads) is recorded
+  apart and not charged (``background_connects``): that is a thread a test left behind, and under pytest-xdist its connect named an
+  unrelated route. A non-``oo-`` thread a route started that connects only after the route returned is therefore missed;
 * a file allowance matches the file's basename anywhere under the data folders, a REMOVED file is accounted for like a changed one, and a
   thread allowance matches by name only;
 * the app's local-model autostart is off in the suite (``OO_LLM_AUTOSTART=0``), so a GET that would start a model server in production
@@ -224,11 +227,14 @@ class _Monitor:
         self.dirs = dirs
         self.watchers = watchers
         self.connects: list[str] = []
-        #: LOOPBACK connects made by a thread that was already running when the request began and is not one of the client's own (the main
-        #: thread, the TestClient's asyncio portal, anyio's worker threads): a thread an EARLIER test left behind. Kept for the record, not charged
-        #: to the route: under pytest-xdist (2026-11-08) such a leftover's loopback connect landed inside one GET's window and named a stub-only
-        #: self-test route. A non-loopback connect is charged whoever made it: egress with the kill switch engaged is a fault from any thread.
+        #: LOOPBACK connects made by a thread that was already running when the request began, is not one of the client's own (the main
+        #: thread, the TestClient's asyncio portal, anyio's worker threads) and is NOT one of the app's own named threads (``oo-*``): a thread a
+        #: test left behind. Kept for the record, not charged to the route: under pytest-xdist (2026-11-08) such a leftover's loopback connect
+        #: landed inside one GET's window and named a stub-only self-test route. Still charged: any connect from an ``oo-*`` thread (so a GET
+        #: that hands work to a running app worker which then calls a model server is still seen) and any non-loopback connect from any thread.
         self.background_connects: list[str] = []
+        #: ``host (thread name)`` for every charged connect, so a failure names who connected, not only where.
+        self.connect_origins: list[str] = []
         self.lookups: list[str] = []
         self.threads: list[str] = []
         self.files: set[str] = set()
@@ -260,8 +266,10 @@ class _Monitor:
         self._before = self._snapshot()
         self._dv_before = self._versions()
         monitor = self
-        client_threads = ("MainThread", "asyncio-portal", "AnyIO worker thread")
-        leftover = {t.ident for t in threading.enumerate() if not t.name.startswith(client_threads)}
+        exempt_never = ("MainThread", "asyncio-portal", "AnyIO worker thread", "oo-")  # the client's own threads and the app's own threads
+        # Thread OBJECTS, not idents: an ident is reused as soon as its thread exits, so a thread the request starts could inherit a dead
+        # leftover's ident and be taken for it.
+        leftover = {t for t in threading.enumerate() if not t.name.startswith(exempt_never)}
         real_start = threading.Thread.start
         real_gai = socket.getaddrinfo
 
@@ -270,10 +278,12 @@ class _Monitor:
 
         def charge(address) -> None:  # noqa: ANN001
             host = host_of(address)
-            if threading.get_ident() in leftover and _is_loopback(host):
-                monitor.background_connects.append(f"{host} ({threading.current_thread().name})")
+            me = threading.current_thread()
+            if me in leftover and _is_loopback(host):
+                monitor.background_connects.append(f"{host} ({me.name})")
             else:
                 monitor.connects.append(host)
+                monitor.connect_origins.append(f"{host} ({me.name})")
 
         def connect(sock, address, *a, **k):  # noqa: ANN001
             charge(address)
@@ -498,7 +508,8 @@ def test_no_get_reaches_a_non_loopback_address_with_the_kill_switch_engaged(obse
 
 def test_only_the_listed_routes_open_a_loopback_socket(observed):
     bad = sorted(p for p, m in observed.seen.items() if m.connects and not _LOOPBACK_ROUTES.match(p))
-    assert not bad, f"these GETs opened a socket and are not in _LOOPBACK_ROUTES (the local model servers): {bad}"
+    who = {p: observed.seen[p].connect_origins for p in bad}
+    assert not bad, f"these GETs opened a socket and are not in _LOOPBACK_ROUTES (the local model servers): {bad}; host (thread): {who}"
 
 
 def _file_and_thread_problems(seen: dict[str, _Monitor], routes: dict[str, tuple[frozenset[str], frozenset[str], str]]) -> list:
@@ -717,8 +728,9 @@ def test_the_monitors_see_every_socket_call_they_patch(tmp_path):
 
 
 def test_a_leftover_threads_loopback_connect_is_recorded_but_not_charged_and_its_egress_is(tmp_path):
-    """A thread already running when the monitor opens (left by an earlier test) is not the request: its LOOPBACK connect is kept apart, its
-    non-loopback one is charged like any other. A thread the request itself starts is charged for both."""
+    """A non-app thread already running when the monitor opens (left by an earlier test) is not the request: its LOOPBACK connect is kept
+    apart, its non-loopback one is charged like any other. An app thread (``oo-*``) already running is charged, and so is a thread the
+    request starts, even one that inherits the ident of a leftover that has exited."""
     go, done = threading.Event(), threading.Event()
 
     def leftover() -> None:
@@ -730,9 +742,22 @@ def test_a_leftover_threads_loopback_connect_is_recorded_but_not_charged_and_its
 
     t = threading.Thread(target=leftover, name="left-by-an-earlier-test", daemon=True)
     t.start()
+    app_go, app_done = threading.Event(), threading.Event()
+
+    def app_worker() -> None:  # an app thread already running, handed work by the request: still charged
+        app_go.wait(5)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s, contextlib.suppress(OSError):
+            s.connect(("127.0.0.2", 9))
+        app_done.set()
+
+    a = threading.Thread(target=app_worker, name="oo-model-worker", daemon=True)
+    a.start()
     with _Monitor([tmp_path]) as mon:
         go.set()
         assert done.wait(5)
+        t.join(5)  # the leftover is gone: a thread started now may take its ident, and must still be charged
+        app_go.set()
+        assert app_done.wait(5)
 
         def own() -> None:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s, contextlib.suppress(OSError):
@@ -741,9 +766,10 @@ def test_a_leftover_threads_loopback_connect_is_recorded_but_not_charged_and_its
         started = threading.Thread(target=own, name="started-by-the-request")
         started.start()
         started.join(5)
-    t.join(5)
+    a.join(5)
     assert mon.background_connects == ["127.0.0.1 (left-by-an-earlier-test)"], mon.background_connects
-    assert mon.connects == ["192.0.2.4", "127.0.0.1"], mon.connects
+    assert mon.connects == ["192.0.2.4", "127.0.0.2", "127.0.0.1"], mon.connects
+    assert mon.connect_origins[1:] == ["127.0.0.2 (oo-model-worker)", "127.0.0.1 (started-by-the-request)"], mon.connect_origins
 
 
 def test_the_monitors_see_a_thread_a_file_a_removal_and_a_write(tmp_path):
