@@ -370,6 +370,25 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
             lines.append(f"  - {reason}: {_fmt_count(n)}")
         lines.append("")
 
+    # R448: a signing key the backup carried and the restore did not place is a change of identity the operator meets
+    # later (the next export makes a new key), so it is said here, where the outcome is read, and not only in the JSON.
+    side = report.get("side_files")
+    keys = side.get("keys") if isinstance(side, dict) else None
+    not_placed = keys.get("not_placed") if isinstance(keys, dict) else None
+    if not_placed:
+        lines.append("## Signing keys not restored")
+        lines.append("")
+        lines.append(
+            "These keys travelled in the backup and were not placed on this install. Each one stays in the backup. "
+            "The next time this install needs a key it makes a new one, so what it signs from then on is signed by a "
+            "new identity; what the old key signed stays verifiable against its public key."
+        )
+        lines.append("")
+        for entry in not_placed:
+            if isinstance(entry, dict):
+                lines.append(f"- `{entry.get('name')}`: {entry.get('reason')}")
+        lines.append("")
+
     return "\n".join(lines)
 
 
