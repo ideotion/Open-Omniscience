@@ -180,7 +180,9 @@ def test_settings_for_falls_back_to_defaults_when_settings_are_unreadable(monkey
 
     monkeypatch.setattr(A, "load_settings", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
     assert C.settings_for("echo_chamber") == C.defaults_for("echo_chamber")
-    assert C.is_disabled("echo_chamber") is False, "unreadable settings must not disable a Lead"
+    from src.briefing import registry
+
+    assert registry._disabled_names() == frozenset(), "unreadable settings must not disable a Lead"
 
 
 # --------------------------------------------------------------------------- #

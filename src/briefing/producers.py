@@ -1864,15 +1864,26 @@ def coverage_advisor(session) -> list[Card]:
 
     cutoff = datetime.now(UTC) - timedelta(days=_COVERAGE_DAYS)
 
-    def _share(col):
-        rows = (
-            session.query(col, func.count(Article.id))
-            .join(Article, Article.source_id == Source.id)
-            .filter(Article.created_at >= cutoff, col.isnot(None))
-            .group_by(col)
-            .all()
-        )
-        counts = {str(k): int(c) for k, c in rows if c}
+    # ONE grouped scan of the window serves both shares and the audit-trail total (it was three scans of the same rows:
+    # one per column, then a recount; 35 s on the 2026-11-07 bundle's corpus, F8). The per-column counts are the sums of
+    # the cells whose column is set, which is exactly what each separate ``col IS NOT NULL`` query counted.
+    cells = (
+        session.query(Source.country, Source.language, func.count(Article.id))
+        .join(Article, Article.source_id == Source.id)
+        .filter(Article.created_at >= cutoff)
+        .group_by(Source.country, Source.language)
+        .all()
+    )
+
+    def _counts(idx: int) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for row in cells:
+            key, c = row[idx], row[2]
+            if key is not None and c:
+                out[str(key)] = out.get(str(key), 0) + int(c)
+        return out
+
+    def _share(counts: dict[str, int]):
         if sum(counts.values()) < 5:
             return None  # too little collected to say anything honest
         res = concentration(counts, top_n=1)
@@ -1881,8 +1892,10 @@ def coverage_advisor(session) -> list[Card]:
         # A single bucket (100% one country/language) is the strongest skew — surface it.
         return res.shares[0]["label"], res.top_share, res.n
 
-    country = _share(Source.country)
-    lang = _share(Source.language)
+    country_counts = _counts(0)
+    lang_counts = _counts(1)
+    country = _share(country_counts)
+    lang = _share(lang_counts)
     flagged = []
     if country and country[1] >= _COVERAGE_DOMINANCE:
         flagged.append(("country", *country))
@@ -1896,14 +1909,7 @@ def coverage_advisor(session) -> list[Card]:
     from src.signals.intervals import wilson_interval
 
     # Recompute the bucket totals for the audit trail (real counts, by design).
-    col = Source.country if kind == "country" else Source.language
-    rows2 = (
-        session.query(func.count(Article.id))
-        .join(Source, Article.source_id == Source.id)
-        .filter(Article.created_at >= cutoff, col.isnot(None))
-        .scalar()
-    )
-    total_arts = int(rows2 or 0)
+    total_arts = sum((country_counts if kind == "country" else lang_counts).values())
     top_count = round(share * total_arts)
     ci = wilson_interval(top_count, total_arts) if total_arts else None
     math_rows = [

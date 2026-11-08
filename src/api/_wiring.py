@@ -50,6 +50,7 @@ def wire(app) -> None:
     from src.api.ingestion import router as ingestion_router
     from src.api.insights import router as insights_router
     from src.api.integrity import router as integrity_router
+    from src.api.ipcc import router as ipcc_router
     from src.api.jobs import router as jobs_router
     from src.api.lane_storage import router as lane_storage_router
     from src.api.law import router as law_router
@@ -136,6 +137,7 @@ def wire(app) -> None:
         lane_storage_router,
         living_router,
         entities_router,
+        ipcc_router,
         claims_router,
         osm_lane_router,
     )
