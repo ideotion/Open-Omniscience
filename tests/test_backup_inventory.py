@@ -142,12 +142,17 @@ def test_a_member_that_cannot_be_exported_yet_says_SO_and_says_WHY(db, monkeypat
             assert m.get("not_exportable_reason"), f"{m['key']} is disabled silently"
 
 
-def test_an_ABSENT_lane_is_left_out_rather_than_reported_as_zero_bytes(db, monkeypatch):
+def test_an_ABSENT_lane_is_left_out_rather_than_reported_as_zero_bytes(db, monkeypatch, tmp_path):
     """``None`` and ``0`` are different facts about a store.
 
     A lane the operator has never opened must not appear in a backup dialog as an
     empty one — that is a row about a thing that does not exist.
+
+    The data directory is a fresh one: the suite's shared directory may already hold a
+    lane file another test created (under pytest-xdist a worker runs files in a
+    different order), and then no lane is absent.
     """
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(inv, "_blob_totals", lambda: {})
     monkeypatch.setattr(inv, "_db_bytes", lambda: 0)
     out = inv.backup_inventory(db)
