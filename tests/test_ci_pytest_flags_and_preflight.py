@@ -12,7 +12,7 @@ skips the analysis-module tests on purpose, had the bare ``-q`` while its siblin
 
 What this pins:
 
-* the ``test`` and ``core-only`` jobs each run exactly ``python -m pytest -q -rsfE --junitxml="$RUNNER_TEMP/junit.xml" @"$RUNNER_TEMP/shard.args"`` in their
+* the ``test`` and ``core-only`` jobs each run exactly ``python -m pytest -q -n auto --dist loadfile -rsfE --junitxml="$RUNNER_TEMP/junit.xml" @"$RUNNER_TEMP/shard.args"`` in their
   pytest step (since C10 each is a matrix of three shards; the list in ``shard.args`` is written by the step before it, ``scripts/ci_shard.py plan``,
   and tests/test_ci_shards.py pins that step; a leg whose line lost the list would run the whole suite three times over).
   ``-r`` REPLACES pytest's default
@@ -61,7 +61,9 @@ _SKIP_LISTING = " -rsfE"
 _JUNIT = ' --junitxml="$RUNNER_TEMP/junit.xml"'
 #: The file list of one shard (C10): written by the planner step, read by pytest as an argument file. preflight.sh runs the whole suite, so it has none.
 _SHARD_ARGS = ' @"$RUNNER_TEMP/shard.args"'
-_PYTEST = "python -m pytest -q" + _SKIP_LISTING + _JUNIT + _SHARD_ARGS
+#: pytest-xdist, one worker per CPU, each test FILE whole on one worker (2026-11-08: the pytest step was ~25 of each leg's 27 minutes). preflight.sh keeps it.
+_PARALLEL = " -n auto --dist loadfile"
+_PYTEST = "python -m pytest -q" + _PARALLEL + _SKIP_LISTING + _JUNIT + _SHARD_ARGS
 _SUMMARY = 'python scripts/ci_skip_summary.py "$RUNNER_TEMP/junit.xml" | tee -a "$GITHUB_STEP_SUMMARY"'
 _VERSIONS = "pip list --format=freeze"
 #: Where a whole-suite pytest line must exist today: (workflow file, job). A line that goes away is a change this guard must be told about.
@@ -302,7 +304,7 @@ def _text_without_the_header_flag(text: str, flag: str) -> str:
         ("mypy exit status is not read", lambda wf, t: (wf, _edit_code(t, "mypy_rc=$?", "mypy_rc=0")), "exit status"),
         ("a baseline comes back", lambda wf, t: (wf, t.replace("\nfail=0\n", "\nfail=0\nbaseline=127\n", 1)), "baseline"),
         ("ci drops the junit report", lambda wf, t: (_with_pytest_run(wf, "test", "python -m pytest -q -rsfE"), t), "must end in"),
-        ("preflight's pytest line gains a flag", lambda wf, t: (wf, _edit_code(t, "python -m pytest -q\n", "python -m pytest -q -x\n")), "pytest command without `-rsfE"),
+        ("preflight's pytest line gains a flag", lambda wf, t: (wf, _edit_code(t, "python -m pytest -q -n auto --dist loadfile\n", "python -m pytest -q -n auto --dist loadfile -x\n")), "pytest command without `-rsfE"),
         ("the header stops naming the skip listing", lambda wf, t: (wf, _text_without_the_header_flag(t, "-rsfE")), "header must name `-rsfE`"),
         ("the header stops naming the junit report", lambda wf, t: (wf, _text_without_the_header_flag(t, "--junitxml")), "header must name `--junitxml`"),
         ("the header stops naming the shard list", lambda wf, t: (wf, _text_without_the_header_flag(t, "shard.args")), "header must name `shard.args`"),

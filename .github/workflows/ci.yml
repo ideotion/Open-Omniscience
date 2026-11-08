@@ -135,7 +135,7 @@ jobs:
         run: |
           grep -lE 'docs|CLAUDE\.md|ledger' tests/test_*.py > "$RUNNER_TEMP/docs.args"
           echo "$(wc -l < "$RUNNER_TEMP/docs.args") test files"
-          python -m pytest -q -rsfE @"$RUNNER_TEMP/docs.args"
+          python -m pytest -q -n auto --dist loadfile -rsfE @"$RUNNER_TEMP/docs.args"
 
       # The wheel carries docs/legal/, docs/i18n/ and docs/USER_MANUAL.md, and scripts/check_wheel_layout.py wants them in it (the `lockfile-install` job's step of the
       # same name): a documentation-only PR that renames or deletes one would otherwise pass here and break the wheel on main.
@@ -477,8 +477,16 @@ jobs:
       # red run gets and the skip block runs to hundreds of lines (`-rfEs` put the failures BEFORE it, out of that tail's reach).
       # `--junitxml` writes the report that the skip-summary step below reads: the skips by CLASS and COUNT, a few dozen short lines that fit in any
       # tail, because the `-rs` block above is hundreds of lines (see the step).
+      # `-n auto --dist loadfile` (pytest-xdist, pinned in the [dev] extra) runs the leg's files on one worker per CPU of the runner (4 on a public
+      # repository's ubuntu-latest), each FILE whole on one worker. tests/conftest.py swaps xdist's first-free-worker order for a FIXED placement
+      # (tests/_xdist_placement.py: the cost table dealt longest first, each worker's files in collection order), because two runs in xdist's own
+      # order at one commit went red on different order-dependent tests (fixed per commit: a PR that adds a test file re-deals them); tests/conftest.py
+      # also gives every worker its own OO_DATA_DIR. Measured
+      # 2026-11-08 on 4 cores: each leg's pytest in 6 to 7 minutes against 25 to 31 in one process, which was ~95% of the job; the run's ~200
+      # runner-minutes were what kept PRs queued for hours behind each other (#1786: jobs waited 90 to 195 minutes for a runner).
+      # The weekly `portability` job keeps running one process per leg, so a test that passes only in parallel order (or only in serial) still shows.
       - name: Test (pytest)
-        run: python -m pytest -q -rsfE --junitxml="$RUNNER_TEMP/junit.xml" @"$RUNNER_TEMP/shard.args"
+        run: python -m pytest -q -n auto --dist loadfile -rsfE --junitxml="$RUNNER_TEMP/junit.xml" @"$RUNNER_TEMP/shard.args"
 
       # WHAT WAS INSTALLED WHEN THE SUITE RAN, kept on a red run as well as a green one (`if: always()`), written to the log straight after the
       # suite (the tail of a red run's log) and to the step summary. The install output sits at the HEAD of a long log, which a reader that returns only the last lines never reaches, so
@@ -616,7 +624,7 @@ jobs:
         run: python scripts/ci_shard.py plan --shard ${{ matrix.shard }}/3 --out "$RUNNER_TEMP/shard.args"
 
       - name: Test (pytest, analysis modules must skip)
-        run: python -m pytest -q -rsfE --junitxml="$RUNNER_TEMP/junit.xml" @"$RUNNER_TEMP/shard.args"
+        run: python -m pytest -q -n auto --dist loadfile -rsfE --junitxml="$RUNNER_TEMP/junit.xml" @"$RUNNER_TEMP/shard.args"
 
       # The same report as the `test` job's (see there): the versions this suite ran against, kept on red as well as green, at the log's tail.
       - name: Installed versions (kept on red as well as green)
