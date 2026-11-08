@@ -43,9 +43,9 @@ from tests.test_get_routes_side_effects import (
     _ROUTES,
     _SQL_WRITES_ALLOWED,
     _analysis_extra_installed,
+    _drive,
     _file_and_thread_problems,
     _is_loopback,
-    _Monitor,
 )
 
 _MARK = "oo-getdata-probe"
@@ -456,8 +456,7 @@ def walk(corpus):
             for path, url in _urls(ids).items():
                 if path not in schema:
                     continue  # not mounted on this install (see _NEEDS_ANALYSIS_EXTRA)
-                with _Monitor(dirs, tuple(watchers)) as mon:
-                    r = client.get(url, headers={"Host": "testserver"})
+                r, mon = _drive(client, url, {"Host": "testserver"}, dirs, watchers)
                 statuses[path], bodies[path], seen[path] = r.status_code, r.text[:4000], mon
         finally:
             clear_kill_switch()
