@@ -1448,7 +1448,7 @@
         const entries = (r.entries || []).map(e => esc(e.title)).join("<br>") || "—";
         const needs = [...new Set((r.entries || []).flatMap(e => e.missing_fields || []))];
         const why = [r.reason ? esc(T(r.reason)) : "",
-                     needs.length ? esc(TF("needs: {fields}", { fields: needs.join(", ") })) : ""]
+                     needs.length ? esc(TF("fields needed: {fields}", { fields: needs.join(", ") })) : ""]
           .filter(Boolean).join("<br>");
         return `<tr><td>${agFlag(r.cc)} ${esc(label)}</td><td><span class="pill ${m.cls}">${esc(T(m.label))}</span></td>`
           + `<td>${entries}</td><td class="muted">${why}</td></tr>`;
