@@ -54,7 +54,12 @@ _SYSTEM = (
 )
 
 
+_GROUPED = re.compile(r"[0-9]{1,3}(?:,[0-9]{3})+")
+
+
 def _fmt(n: Any) -> str:
+    if isinstance(n, str) and _GROUPED.fullmatch(n.strip()):
+        n = n.strip().replace(",", "")  # a figure already grouped («1,234») is the same figure, not an absent one
     try:
         return f"{int(n):,}"
     except (TypeError, ValueError):

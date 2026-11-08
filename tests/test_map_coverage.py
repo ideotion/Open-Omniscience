@@ -34,6 +34,12 @@ def client(monkeypatch):
     # Force the live path: these tests pin the endpoint's enrichment/honesty, not the
     # serve (tests/test_map_serve.py + tests/test_serve_change_gate.py own that).
     monkeypatch.setenv("OO_COLUMNAR_MAP_SERVE", "0")
+    # ...and an EMPTY read cache: the endpoint keeps its answer for OO_INSIGHTS_CACHE_TTL (120 s), so a file that ran earlier in the same
+    # process and asked for /map-coverage would be answered from before this file's seeds (seen under pytest-xdist, 2026-11-08).
+    from src.api import insights
+    from src.utils.cache import SimpleCache
+
+    monkeypatch.setattr(insights, "_read_cache", SimpleCache(max_size=128, default_ttl=max(1, insights._CACHE_TTL_S)))
     from src.api.main import app
 
     with TestClient(app) as c:

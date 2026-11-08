@@ -221,9 +221,11 @@ def test_queue_order_survives_a_reload(tmp_path):
     try:
         assert _wait_until(lambda: _downloading(mgr) == 1)
         assert mgr.queue_order() == ["asia", "africa"]
+        # Reload while europe is still held: once the gate opens, europe finishes and asia starts, so a reload read after it raced that
+        # hand-over and on a loaded runner (pytest-xdist, 2026-11-08) saw only ['africa'] queued. A restart mid-download is what this pins.
+        reloaded = OsmDownloadManager(base_dir=tmp_path, max_concurrent=1)
     finally:
         gate.set()
-    reloaded = OsmDownloadManager(base_dir=tmp_path, max_concurrent=1)
     # The two queued codes persist their order (the running one demoted to paused).
     assert reloaded._order[:2] == ["asia", "africa"]
 

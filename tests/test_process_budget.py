@@ -212,8 +212,18 @@ def test_a_total_missing_a_component_is_flagged_as_a_lower_bound():
     assert "lower bound" in out["budget_reason"]
 
 
-def test_an_idle_process_is_not_the_same_fact_as_an_unmeasurable_one():
-    """Three states, not two. ``idle`` says there is nothing to measure."""
+def test_an_idle_process_is_not_the_same_fact_as_an_unmeasurable_one(monkeypatch):
+    """Three states, not two. ``idle`` says there is nothing to measure.
+
+    The process-wide registry set is replaced by an empty one: "idle" is a claim about a
+    process with no downloads, and a registry another test in the same process left alive
+    (a pytest-xdist worker runs files in a different order) would otherwise make it false.
+    """
+    import weakref
+
+    from src.ingest import download_rate
+
+    monkeypatch.setattr(download_rate, "_REGISTRIES", weakref.WeakSet())
     out = process_budget.compose(_gov(), 10.0, download_rate=process_download_rate())
     assert out["downloads_idle"] is True
     assert out["downloads_measured"] is False
