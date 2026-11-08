@@ -1782,7 +1782,7 @@ class EthicalFetcher:
             # The switch's own refusal, by its sentence: engaged before the capture, it refused this read by
             # name, and a clear may land before this line, so neither the switch nor the count says so now.
             # A wider match here could only skip a cache write (the host is asked again), never cause a fetch.
-            refused_by_name = isinstance(exc, FetchError) and str(exc).startswith(KILL_SWITCH_REFUSAL_HEAD)
+            refused_by_name = isinstance(exc, FetchError) and record_text(exc, typed=False).startswith(KILL_SWITCH_REFUSAL_HEAD)
             if refused_by_name or kill_switch_engaged_since(epoch):
                 # A refusal BY THE SWITCH, or a request cut off by it mid-flight (the socket
                 # guard's OSError arrives here wrapped in a requests error), is not an answer
