@@ -73,6 +73,8 @@ NEVER_ANSWERED_S = 300.0
 #: silence still ends the panel, over a longer wait that a server busy for a while never reaches.
 GONE_WITH_PID_S = 300.0
 NEVER_ANSWERED_WITH_PID_S = 1800.0
+#: run()'s answer when it ended because the server stayed silent: main() says so instead of vanishing like a crash.
+SILENT_EXIT = 11
 #: The largest response read: the job list of a busy instance is tens of kilobytes.
 MAX_BODY = 4_000_000
 
@@ -517,6 +519,12 @@ def server_silent_too_long(server_pid: int | None, *, ever: bool, now: float, la
     return (now - last_ok > gone) if ever else (now - started > never)
 
 
+def silent_message(url: str) -> str:
+    """What the panel says as it ends because the app stopped answering (it cannot tell a hung app from one that is gone)."""
+    return (f"\nThe app has not answered for a while, so the panel closed. If Open Omniscience is still running, open {url} "
+            "in the browser.\n")
+
+
 def run(scr: Any, port: int, url: str, server_pid: int | None, stopping: list[bool]) -> int:
     assert curses is not None
     with contextlib.suppress(CursesError):
@@ -551,7 +559,7 @@ def run(scr: Any, port: int, url: str, server_pid: int | None, stopping: list[bo
             if snap.reachable:
                 ever, last_ok = True, now
             elif server_silent_too_long(server_pid, ever=ever, now=now, last_ok=last_ok, started=started):
-                return 0
+                return SILENT_EXIT
             next_fetch = now + (REFRESH_BUSY_S if (snap.busy or not snap.reachable) else REFRESH_IDLE_S)
         if now >= next_repaint:
             full, next_repaint = True, now + REPAINT_S
@@ -624,6 +632,8 @@ def main(argv: list[str] | None = None) -> int:
         code = curses.wrapper(run, args.port, url, args.server_pid, stopping)
         if code == 10:
             print("\nPanel closed. Open Omniscience keeps running: close this window or press Ctrl-C to stop it.\n", flush=True)
+        elif code == SILENT_EXIT:
+            print(silent_message(url), flush=True)
     except _Stop:  # a signal: curses.wrapper has already restored the terminal
         return 0
     except CursesError as exc:

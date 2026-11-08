@@ -119,6 +119,19 @@ def test_a_silent_server_ends_the_panel_even_with_a_pid_that_may_have_been_reuse
     assert P.server_silent_too_long(123, ever=False, now=P.NEVER_ANSWERED_WITH_PID_S + 1, last_ok=0, started=0)
 
 
+def test_a_panel_ended_by_silence_says_so_instead_of_vanishing(monkeypatch, capsys):
+    """Security read, 8 Nov: the silence path exited 0 with nothing printed, which reads as a crash."""
+    if P.curses is None:
+        pytest.skip("no curses here")
+    monkeypatch.setattr(P.signal, "signal", lambda *a: None)
+    monkeypatch.setattr(P.sys.stdin, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(P.sys.stdout, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(P.curses, "wrapper", lambda *a: P.SILENT_EXIT)
+    assert P.main(["--port", "8123"]) == P.SILENT_EXIT
+    out = capsys.readouterr().out
+    assert "has not answered" in out and "http://127.0.0.1:8123/" in out
+
+
 # --------------------------------------------------------------------------- the actions
 
 
