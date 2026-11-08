@@ -1039,6 +1039,26 @@ jobs:
       - name: Smoke-check the installed package imports
         run: python -c "import src.api.main; print('ok:', src.api.main.__name__)"
 
+      # R318, option A of audit-0.5.0/proposal-mypy-lock-profile-2026-10-27 (adopted by R412). The test job's mypy run sees what
+      # `-e ".[analysis,dev,...]"` resolves, the newest release of every unbounded dependency, while an install from this lock gets
+      # its pins, and the typing differs between the two: src/api/diagnostics/keywords.py was red on SQLAlchemy 2.0.51 (the lock)
+      # and clean on the 2.1 series CI resolved, found a day late on a lock install (#1576). So mypy runs again here, on the
+      # lock's own set, and a type error fails this job. This job is not one of the checks branch protection requires (the
+      # `test` and Core-only roll-ups are), so making it one is a repository setting, not a line here. The mypy release is the one
+      # pyproject's [dev] extra pins, read from pyproject so the two cannot drift apart; the read is its own assignment, so a
+      # failed read stops the step under bash -e instead of handing pip an empty name. The lock is then installed again with
+      # --no-deps, which puts back any pinned package that mypy's own install moved, and `pip check` refuses a set that no longer
+      # fits together (it also checks the project's own requirements against the lock, which no other step does, since the
+      # project installs --no-deps). A mypy release that needs a newer typing_extensions than the lock pins reddens `pip check`
+      # here: bump the lock with it. Before the wheel step, whose build install would change the set.
+      - name: Type check against the lock's own pins (mypy; R318)
+        run: |
+          pin="$(python -c 'import tomllib; dev = tomllib.load(open("pyproject.toml", "rb"))["project"]["optional-dependencies"]["dev"]; print(next(r for r in dev if r.startswith("mypy==")))')"
+          python -m pip install "$pin"
+          python -m pip install --require-hashes --no-deps -r requirements.lock
+          python -m pip check
+          python -m mypy src/
+
       # R380 (R353). The wheel is built only by release.yml, at tag time, so a data file the code reads and the wheel does not carry
       # (pyproject lists the data by glob and MANIFEST.in by graft, and a file kind nobody remembered to list simply does not ship) used to
       # be found after the tag. Build it here with the command release.yml runs (python -m build: the sdist first, then the wheel FROM the

@@ -32,7 +32,7 @@ import csv
 import io
 import logging
 import re
-from datetime import UTC, datetime, timezone
+from datetime import UTC, date, datetime, timezone
 from typing import Any, Callable
 from urllib.parse import quote, urlencode, urljoin
 
@@ -81,6 +81,13 @@ OWID_ROW_CHARS_ALLOWANCE = 2000  # a wide row, generous (about 600 to 1,500 char
 GISTEMP_FIRST_YEAR = 1880
 GISTEMP_LINE_ALLOWANCE = 200  # chars per row; a real row is about 120
 GISTEMP_HEADER_ALLOWANCE = 4096  # title, blank and header lines, with slack
+# NSIDC Sea Ice Index v3 daily extent: one CSV per hemisphere (N / S), extent in 10^6 km2. NOT verified against a live download (the
+# build sandbox cannot reach the host): a wrong path or shape fails LOUDLY (HTTP error / looks_unrecognised). The body bound is DERIVED
+# from the record's own shape (see nsidc_max_chars), not a fixed number.
+NSIDC_BASE = "https://noaadata.apps.nsidc.org/NOAA/G02135"
+NSIDC_FIRST_DAY = date(1978, 10, 26)
+NSIDC_LINE_ALLOWANCE = 400  # chars per row; a real row is about 120 but the source column can list several files
+NSIDC_HEADER_ALLOWANCE = 4096
 
 # Body bounds for the four fetchers that used to read without limit. Each is DERIVED from the table's shape (rows x a generous per-row
 # allowance + header slack), like the climate bounds below, and grows with the calendar or the request, never a fixed cap to remember.
@@ -196,6 +203,8 @@ def _owid_value_column(text: str) -> str:
 # "climate" lane names all the climate hosts.
 GISTEMP_HOSTS = ("data.giss.nasa.gov",)
 GISTEMP_PATHS = ("/gistemp/tabledata_v4/",)
+NSIDC_HOSTS = ("noaadata.apps.nsidc.org",)
+NSIDC_PATHS = ("/NOAA/G02135/",)
 OWID_HOSTS = ("raw.githubusercontent.com",)
 OWID_PATHS = ("/owid/co2-data/", "/owid/energy-data/")  # raw.githubusercontent.com serves EVERY repository: the directory is the pin
 USGS_HOSTS = ("earthquake.usgs.gov",)
@@ -276,6 +285,13 @@ def _gistemp_getter(url: str) -> Any:
         user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=GISTEMP_HOSTS, allowed_path_prefixes=GISTEMP_PATHS
     )
     return _bounded_get(session, url, max_chars=gistemp_max_chars())
+
+
+def _nsidc_getter(url: str) -> Any:
+    session = guarded_session(
+        user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=NSIDC_HOSTS, allowed_path_prefixes=NSIDC_PATHS
+    )
+    return _bounded_get(session, url, max_chars=nsidc_max_chars())
 
 
 def _owid_bulk_getter(url: str) -> Any:
@@ -843,6 +859,60 @@ def fetch_ghcnd_station(
     if parsed.looks_unrecognised:
         raise ValueError(
             f"GHCN-Daily {station}: the response is not the expected station file "
+            f"({parsed.refused_total} lines refused, none parsed)"
+        )
+    return parsed
+
+
+def nsidc_url(region: str = "N") -> str:
+    """The Sea Ice Index daily extent CSV URL for ``region`` (``N`` or ``S``)."""
+    from src.stats.nsidc import REGIONS
+
+    if region not in REGIONS:
+        raise ValueError(f"nsidc_url: region must be one of {REGIONS}, got {region!r}")
+    hemisphere = "north" if region == "N" else "south"
+    return f"{NSIDC_BASE}/{hemisphere}/daily/data/{region}_seaice_extent_daily_v3.0.csv"
+
+
+def nsidc_max_chars(today: date | None = None) -> int:
+    """The longest body that can still be this record: one row per day since 1978-10-26.
+
+    Derived from the data's shape (at most one row a day since the record began, plus a day of slack), so it grows with the
+    record instead of being a constant someone must raise.
+    """
+    now = today if today is not None else datetime.now(UTC).date()
+    days = max((now - NSIDC_FIRST_DAY).days + 2, 1)
+    return days * NSIDC_LINE_ALLOWANCE + NSIDC_HEADER_ALLOWANCE
+
+
+def fetch_nsidc(
+    region: str = "N",
+    *,
+    get: Getter | None = None,
+    extracted_at: str | None = None,
+) -> Any:
+    """Fetch one Sea Ice Index daily extent CSV live and parse it (kill switch refuses UP FRONT).
+
+    Returns the :class:`~src.stats.nsidc.NsidcParse` (figures AND refusals). A body that parses to nothing but refusals (an HTML
+    error page, a renamed product) raises rather than returning an empty series.
+    """
+    from src.stats.nsidc import parse_nsidc
+
+    if kill_switch_active():
+        raise RuntimeError(NETWORK_REFUSED)
+    extracted_at = extracted_at or _now_iso()
+    getter = get or _nsidc_getter
+    resp = getter(nsidc_url(region))
+    resp.raise_for_status()
+    bound = nsidc_max_chars()
+    if len(resp.text) > bound:
+        raise ValueError(
+            f"NSIDC {region}: the response is {len(resp.text)} characters, over the {bound} the record's own shape allows"
+        )
+    parsed = parse_nsidc(resp.text, region=region, extracted_at=extracted_at)
+    if parsed.looks_unrecognised:
+        raise ValueError(
+            f"NSIDC {region}: the response is not the expected table "
             f"({parsed.refused_total} lines refused, none parsed)"
         )
     return parsed

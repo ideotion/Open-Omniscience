@@ -147,6 +147,12 @@ def _build_engine() -> Engine:
             pool_timeout=_pool_timeout_s(),
             # D44 = a: collector-role checkouts leave the API's margin free.
             poolclass=ReservingQueuePool,
+            # R470 (D1): hand out the connection that was returned LAST. A connection's page cache is its own, so a
+            # flush on the connection the previous flush used reads from a warm cache: 50 to 54 of 84 flushes on a
+            # 4.4 GB encrypted store, 2,322 / 2,151 pages read before the COMMIT against 3,076 under the default
+            # first-in-first-out order (the rotation that hands every flush a connection another flush warmed last).
+            # An upper bound: a commit by any other connection between two flushes drops the cache whatever the order.
+            pool_use_lifo=True,
         )
     # NOT SQLite. Nothing here refuses the URL -- refusing would break an install in
     # the name of documenting it -- but a silent half-working app is the dishonest
