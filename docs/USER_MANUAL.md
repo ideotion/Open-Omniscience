@@ -269,8 +269,11 @@ the whole app): it stops after the article in flight, and the articles already d
 stored. The keyword index of articles Insights has not indexed yet also catches up on
 its own while the app is idle. Only two things need the tab to stay open: an upload you are
 sending from the browser, and a file the browser is downloading. On
-Windows the panel opens in a window of its own (closing it does not stop the app), and only
-when Python's curses module is installed there (`pip install windows-curses`).
+Windows the panel opens in a window of its own (closing it does not stop the app). It needs
+Python's curses module, which Windows gets from the windows-curses package: the installer
+adds it on Intel and AMD PCs, and on an install made before this version you can add it with
+`.venv\Scripts\python -m pip install windows-curses` in the app's folder. Windows on ARM has
+no build of it yet, so there the app starts without the panel.
 
 ---
 

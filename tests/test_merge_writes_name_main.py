@@ -61,7 +61,9 @@ from src.database.models import Article, Base, Source  # noqa: E402
 
 _MERGE = Path(__file__).resolve().parents[1] / "src" / "backup" / "merge.py"
 
-_EXEMPT = ("main.", "temp.")
+#: ``oo_scratch.`` is the merge's own disposable scratch database (the low-memory groupings,
+#: ``merge._SCRATCH_SCHEMA``): named, so it cannot fall through to main or to the backup either.
+_EXEMPT = ("main.", "temp.", "oo_scratch.")
 #: A statement's HEAD, with its target: the writes the module sends. The target is read up to the next space or bracket.
 _WRITE = re.compile(
     r"\s*(INSERT(?:\s+OR\s+\w+)?\s+INTO|REPLACE\s+INTO|UPDATE(?:\s+OR\s+\w+)?|DELETE\s+FROM|DROP\s+(?:TABLE|INDEX|VIEW|TRIGGER)(?:\s+IF\s+EXISTS)?"
@@ -100,6 +102,10 @@ _ALLOWED: dict[str, str] = {
     "merge_corpus: fts_title_trigger_ddl": "the title index's stored CREATE TRIGGER text, read from main's sqlite_master and handed to _restore_fts_insert_trigger",
     "_carry_live_settings: CREATE TABLE IF NOT EXISTS app_state": "an unqualified CREATE always creates in main and IF NOT EXISTS looks at main only; it also runs on the working copy's own standalone connection",
     "merge_custody: CREATE TABLE IF NOT EXISTS custody_imported_entries": "an unqualified CREATE always creates in main and IF NOT EXISTS looks at main only; it also runs on custody_log.db's own standalone connection",
+    "_attach_scratch: ATTACH (use connect.attach, which the callers pin)": "the low-memory scratch database must INHERIT the working copy's key, which connect.attach's empty KEY clause forbids by design; it is attached under the literal schema oo_scratch, which every write to it names",
+    "_attach_scratch: PRAGMA oo_scratch.journal_mode is not a known read-only pragma on a schema that is not main": "set on the merge's own disposable scratch database only (named), never on main or the backup",
+    "_attach_scratch: PRAGMA oo_scratch.synchronous is not a known read-only pragma on a schema that is not main": "as above: the scratch file is thrown away whatever happens",
+    "_attach_scratch: PRAGMA oo_scratch.cache_size is not a known read-only pragma on a schema that is not main": "as above: bounds the scratch's page cache, which is the low-memory path's whole point",
     "merge_custody: sql": "the two SELECTs appended to `sources` just above (a chain's rows are only fetched by _custody_rows); no write reaches it",
 }
 
