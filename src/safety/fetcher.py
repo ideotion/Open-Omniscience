@@ -189,6 +189,52 @@ def refuse_unlisted_host(url: str, allowed: tuple[str, ...]) -> None:
         raise RedirectRefused("the host is not one this client talks to")
 
 
+def _checked_path_prefixes(prefixes: Iterable[str] | None) -> tuple[str, ...] | None:
+    """A path-prefix list as the session stores it, or ``None`` for no policy. Each entry is an absolute directory path that starts and
+    ends with ``/`` and carries no ``%``, backslash, empty segment or dot segment: a malformed entry is a programming error and raises,
+    as does an empty list (it would refuse every request) and a bare string (it would be read as one entry per character)."""
+    if prefixes is None:
+        return None
+    if isinstance(prefixes, str):
+        raise TypeError("a path-prefix list is a sequence of paths, not one string")
+    out = tuple(prefixes)
+    if not out:
+        raise ValueError("an empty path-prefix list would refuse every request; pass None for a session with no list")
+    for entry in out:
+        segments = entry.split("/")[1:-1]
+        if (
+            not entry.startswith("/")
+            or not entry.endswith("/")
+            or "%" in entry
+            or "\\" in entry
+            or any(seg in ("", ".", "..") for seg in segments)
+        ):
+            raise ValueError(f"not an absolute directory path: {entry!r}")
+    return out
+
+
+def refuse_unlisted_path(url: str, prefixes: tuple[str, ...]) -> None:
+    """Raise :class:`RedirectRefused` unless the path of ``url`` lies under one of ``prefixes`` (:func:`_checked_path_prefixes`).
+
+    A host list cannot tell one repository of a multi-tenant host from another (``raw.githubusercontent.com`` serves every GitHub
+    repository), so a client of such a host also lists the directories it talks to. The path is read BOTH ways, as in
+    :func:`refuse_unlisted_host`: by ``urllib3`` (which resolves dot segments) and by ``urlparse`` (which does not), and each reading has to
+    lie under a listed prefix. A ``%`` in the path is refused outright, because a percent-encoded dot or slash is read differently
+    by the server than by either parser, and a backslash for the same reason; no endpoint a session with a list talks to needs either.
+    Only the path is compared: the query and the fragment are the caller's. Call it after :func:`refuse_unlisted_host`, which owns the
+    scheme, authority and port."""
+    by_urllib3 = parse_url(url).path or ""
+    try:
+        by_urlparse = urlparse(url).path
+    except ValueError:
+        raise RedirectRefused("the URL cannot be read") from None
+    for path in (by_urllib3, by_urlparse):
+        if "%" in path or "\\" in path:
+            raise RedirectRefused("the path carries an escape or a backslash")
+        if not any(path.startswith(prefix) for prefix in prefixes):
+            raise RedirectRefused("the path is not one this client talks to")
+
+
 class GuardedSession(requests.Session):
     """A ``requests.Session`` that consults the global kill switch on EVERY verb.
 
@@ -226,6 +272,9 @@ class GuardedSession(requests.Session):
     #: (:meth:`request`'s own checks run once, on the first URL: ``requests`` carries the per-request proxy mapping onto each hop, and
     #: the airplane socket guard stands under both, but nothing there looks at WHERE a hop goes.)
     allowed_hosts: tuple[str, ...] | None = None
+    #: The directories on those hosts this session may talk to (:func:`_checked_path_prefixes`), or ``None`` for no list. Checked in
+    #: :meth:`send` beside ``allowed_hosts`` and for the same reason: a redirect hop to another directory is refused before it is sent.
+    allowed_path_prefixes: tuple[str, ...] | None = None
 
     def request(self, method, url, *args, **kwargs) -> requests.Response:  # type: ignore[override]
         # NOTE for anyone writing a test here: this reads the MODULE-LEVEL
@@ -254,6 +303,8 @@ class GuardedSession(requests.Session):
     def send(self, request, **kwargs) -> requests.Response:  # type: ignore[override]
         if self.allowed_hosts is not None:
             refuse_unlisted_host(request.url or "", self.allowed_hosts)
+        if self.allowed_path_prefixes is not None:
+            refuse_unlisted_path(request.url or "", self.allowed_path_prefixes)
         return super().send(request, **kwargs)
 
     def _send(self, method, url, *args, **kwargs) -> requests.Response:
@@ -408,6 +459,7 @@ def guarded_session(
     isolation_token: str | None = None,
     egress_purpose: str | None = None,
     allowed_hosts: Iterable[str] | None = None,
+    allowed_path_prefixes: Iterable[str] | None = None,
 ) -> GuardedSession:
     """Build a kill-switch-aware session that honours the protected-mode proxy.
 
@@ -434,6 +486,9 @@ def guarded_session(
     leading-dot suffixes, :func:`_checked_hosts`): a request, or a redirect hop, to any
     other host is refused with :class:`RedirectRefused` before it is sent. Omitted -- the
     default, and every existing caller -- the session follows no list, as before.
+
+    ``allowed_path_prefixes`` narrows that to directories (:func:`_checked_path_prefixes`, :func:`refuse_unlisted_path`) for a host that
+    serves many tenants; give it together with ``allowed_hosts``. Omitted, the session follows no path list.
     """
     return _session_for(
         load_settings(),
@@ -441,6 +496,7 @@ def guarded_session(
         isolation_token=isolation_token,
         egress_purpose=egress_purpose,
         allowed_hosts=allowed_hosts,
+        allowed_path_prefixes=allowed_path_prefixes,
     )
 
 
@@ -451,6 +507,7 @@ def _session_for(
     isolation_token: str | None = None,
     egress_purpose: str | None = None,
     allowed_hosts: Iterable[str] | None = None,
+    allowed_path_prefixes: Iterable[str] | None = None,
 ) -> GuardedSession:
     """``guarded_session`` built from the settings ``settings`` and no other read: a caller that keys a cache on a snapshot builds the
     session from that same snapshot, or a setting that flips between two reads caches a session of one transport under the key of
@@ -458,6 +515,7 @@ def _session_for(
     s = GuardedSession()
     s.egress_purpose = egress_purpose
     s.allowed_hosts = _checked_hosts(allowed_hosts)  # before the early return below: the list holds in transparent mode too
+    s.allowed_path_prefixes = _checked_path_prefixes(allowed_path_prefixes)  # likewise
     s.headers["User-Agent"] = user_agent
     if not settings.is_protected:
         return s

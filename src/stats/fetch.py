@@ -187,20 +187,81 @@ def _default_getter(url: str) -> Any:
     return session.get(url, timeout=DEFAULT_TIMEOUT_S)
 
 
-# Each climate fetcher's session may talk only to its own host: a redirect hop anywhere else is refused
-# (guarded_session(allowed_hosts=...)). The consent popup's "climate" lane names all the climate hosts.
+# Each climate fetcher's session may talk only to its own host AND, on a host that serves many tenants, only to its own directories:
+# a redirect hop anywhere else is refused (guarded_session(allowed_hosts=..., allowed_path_prefixes=...)). The consent popup's
+# "climate" lane names all the climate hosts.
 GISTEMP_HOSTS = ("data.giss.nasa.gov",)
+GISTEMP_PATHS = ("/gistemp/tabledata_v4/",)
 OWID_HOSTS = ("raw.githubusercontent.com",)
+OWID_PATHS = ("/owid/co2-data/", "/owid/energy-data/")  # raw.githubusercontent.com serves EVERY repository: the directory is the pin
+USGS_HOSTS = ("earthquake.usgs.gov",)
+USGS_PATHS = ("/fdsnws/event/1/",)
+_UTF8_MAX_BYTES_PER_CHAR = 4
+_READ_CHUNK = 64 * 1024
+
+
+class BodyTooLarge(ValueError):
+    """A response body went past the bound its table's own shape allows. The message names the sizes, never the URL."""
+
+
+def _bounded_get(session: Any, url: str, *, max_chars: int) -> Any:
+    """A GET on ``session`` (a ``guarded_session`` the caller built with its own host and directory lists) that STOPS READING at
+    ``max_chars`` characters' worth of bytes, instead of reading everything and measuring after.
+
+    The bound each fetcher derives from its table's shape (``gistemp_max_chars``, ``owid_max_chars``, the USGS count) was checked after
+    ``requests`` had already downloaded and decoded the whole body, so an upstream that sent an endless or oversized body grew memory
+    without limit before the check ran. Here the body is read in chunks and the read is abandoned the moment it passes
+    ``max_chars * 4`` bytes (a UTF-8 character is at most four bytes, so a body over that is over ``max_chars`` characters whatever it
+    holds), or at once when the server DECLARES a longer ``Content-Length``. ``iter_content`` decodes a compressed body, so the bound
+    holds on the decoded size and a compression bomb is stopped the same way. The bytes read are put back on the response, so
+    ``.text``, ``.json()`` and ``.raise_for_status()`` behave as on any other response; an error status is read under the same bound.
+
+    What it does NOT bound is time: the request timeout limits each read, not the whole transfer, so a server that drips bytes just
+    under the bound keeps the call waiting. That is named, not hidden.
+    """
+    max_bytes = max_chars * _UTF8_MAX_BYTES_PER_CHAR
+    resp = session.get(url, timeout=DEFAULT_TIMEOUT_S, stream=True)
+    try:
+        declared = (resp.headers.get("Content-Length") or "").strip()
+        if declared.isascii() and declared.isdigit() and int(declared) > max_bytes:
+            raise BodyTooLarge(f"the server declares {declared} bytes, over the {max_bytes} the table's own shape allows")
+        chunks: list[bytes] = []
+        total = 0
+        for chunk in resp.iter_content(_READ_CHUNK):
+            total += len(chunk)
+            if total > max_bytes:
+                raise BodyTooLarge(f"the body went past {max_bytes} bytes, the most the table's own shape allows; reading stopped")
+            chunks.append(chunk)
+        resp._content = b"".join(chunks)  # what ``Response.content`` would have built; ``text`` and ``json`` read it
+        resp._content_consumed = True
+    except BaseException:
+        resp.close()
+        raise
+    return resp
 
 
 def _gistemp_getter(url: str) -> Any:
-    session = guarded_session(user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=GISTEMP_HOSTS)
-    return session.get(url, timeout=DEFAULT_TIMEOUT_S)
+    session = guarded_session(
+        user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=GISTEMP_HOSTS, allowed_path_prefixes=GISTEMP_PATHS
+    )
+    return _bounded_get(session, url, max_chars=gistemp_max_chars())
 
 
 def _owid_bulk_getter(url: str) -> Any:
-    session = guarded_session(user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=OWID_HOSTS)
-    return session.get(url, timeout=DEFAULT_TIMEOUT_S)
+    session = guarded_session(
+        user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=OWID_HOSTS, allowed_path_prefixes=OWID_PATHS
+    )
+    return _bounded_get(session, url, max_chars=owid_max_chars())
+
+
+def _usgs_getter(max_chars: int) -> Getter:
+    def getter(url: str) -> Any:
+        session = guarded_session(
+            user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=USGS_HOSTS, allowed_path_prefixes=USGS_PATHS
+        )
+        return _bounded_get(session, url, max_chars=max_chars)
+
+    return getter
 
 
 def _worldbank_page_count(payload: Any) -> int:
@@ -465,6 +526,7 @@ USGS_QUAKES_BASE = "https://earthquake.usgs.gov/fdsnws/event/1"
 USGS_QUAKES_QUERY_LIMIT = 20000
 USGS_QUAKES_ROW_ALLOWANCE = 1200  # chars per CSV row; a real row is about 250-350
 USGS_QUAKES_HEADER_ALLOWANCE = 4096
+_USGS_COUNT_MAX_CHARS = 16  # the count response is a plain integer of at most nine digits (the regex below), plus a newline
 
 
 def _quakes_params(start_month: str, end_month: str, min_magnitude: float) -> dict[str, str]:
@@ -524,8 +586,8 @@ def fetch_usgs_quakes(
     count_url = usgs_quakes_count_url(start_month, end_month, min_magnitude)  # validates the arguments
     query_url = usgs_quakes_query_url(start_month, end_month, min_magnitude)
     extracted_at = extracted_at or _now_iso()
-    getter = get or _default_getter
-    resp = getter(count_url)
+    count_getter = get or _usgs_getter(_USGS_COUNT_MAX_CHARS)
+    resp = count_getter(count_url)
     resp.raise_for_status()
     text = resp.text.strip()
     if not re.fullmatch(r"[0-9]{1,9}", text):
@@ -536,9 +598,10 @@ def fetch_usgs_quakes(
             f"USGS earthquakes: {declared} events in {start_month}..{end_month} at M>={min_magnitude:g} is over the "
             f"{USGS_QUAKES_QUERY_LIMIT} one request returns; ask for a shorter window or a higher threshold"
         )
-    resp = getter(query_url)
-    resp.raise_for_status()
     bound = declared * USGS_QUAKES_ROW_ALLOWANCE + USGS_QUAKES_HEADER_ALLOWANCE
+    query_getter = get or _usgs_getter(bound)  # the read stops at the bound the count just fixed
+    resp = query_getter(query_url)
+    resp.raise_for_status()
     if len(resp.text) > bound:
         raise ValueError(f"USGS earthquakes: the response is {len(resp.text)} characters, over the {bound} its declared {declared} events allow")
     parsed = parse_usgs_quakes(
