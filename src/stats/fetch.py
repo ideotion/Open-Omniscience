@@ -698,7 +698,7 @@ def fetch_usgs_quakes(
         query_getter = get or _usgs_getter(bound)  # the read stops at the bound the count just fixed
         resp = query_getter(query_url)
         resp.raise_for_status()
-        body = _USGS_EMPTY_CATALOGUE if resp.status_code == 204 else resp.text
+        body = _USGS_EMPTY_CATALOGUE if getattr(resp, "status_code", None) == 204 else resp.text
         if len(body) > bound:
             raise ValueError(f"USGS earthquakes: the response is {len(body)} characters, over the {bound} its declared {declared} events allow")
         parsed = parse_usgs_quakes(
