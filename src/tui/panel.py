@@ -45,6 +45,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.monitoring.secret_scrub import HELD_ENV_VARS
+
 try:  # absent on Windows without windows-curses; main() says so and ends
     import curses
 except ImportError:  # pragma: no cover - exercised on Windows only
@@ -349,8 +351,10 @@ def open_ui(url: str) -> bool:
         cmd = ["open", url] if sys.platform == "darwin" else ["xdg-open", url]
         if not shutil.which(cmd[0]):
             return False
+        # The browser is a third-party program that reaches the network: it is given the environment WITHOUT the held secrets.
+        env = {k: v for k, v in os.environ.items() if k not in HELD_ENV_VARS}
         subprocess.Popen(  # noqa: S603 - fixed program, the app's own loopback URL
-            cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+            cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, env=env,
         )
         return True
     except OSError:

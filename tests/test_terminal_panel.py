@@ -76,6 +76,23 @@ def test_open_ui_only_ever_opens_the_apps_own_address(monkeypatch):
     assert P.loopback_url("http://localhost:8001/", 8000) == "http://localhost:8001/"
 
 
+def test_the_browser_the_panel_starts_never_inherits_the_passphrase(monkeypatch):
+    seen = {}
+
+    def fake_popen(cmd, **kw):
+        seen.update(kw, cmd=cmd)
+
+    monkeypatch.setattr(P, "IS_WINDOWS", False)
+    monkeypatch.setattr(P.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(P.subprocess, "Popen", fake_popen)
+    monkeypatch.setenv("OO_DB_PASSPHRASE", "never-in-a-child")
+    monkeypatch.setenv("OO_PANEL_TEST_KEEP", "1")
+    assert P.open_ui("http://127.0.0.1:8000/")
+    assert seen["cmd"][-1] == "http://127.0.0.1:8000/"
+    assert "OO_DB_PASSPHRASE" not in seen["env"] and seen["env"]["OO_PANEL_TEST_KEEP"] == "1"
+    assert not set(seen["env"]) & set(P.HELD_ENV_VARS)
+
+
 # --------------------------------------------------------------------------- the actions
 
 
