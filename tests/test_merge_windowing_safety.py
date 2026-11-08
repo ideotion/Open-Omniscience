@@ -154,7 +154,9 @@ def test_a_rep_justification_really_has_a_materialise_rep_call() -> None:
         f"materialised reps {names} do not match the steps claiming 'rep'"
     )
     for n in names:
-        assert f"temp.{n} rep ON rep.rep_id = i.id" in _SRC, (
+        # qualified by the schema it was built in (temp, or the encrypted scratch on the
+        # low-memory path): an unqualified name would resolve through main or the backup first
+        assert f" JOIN {{_rep_schema(con)}}.{n} rep ON rep.rep_id = i.id" in _SRC, (
             f"{n} is materialised but not joined on rep_id = i.id"
         )
 

@@ -13,7 +13,9 @@ What it checks, and what it deliberately does not (a ratchet, not a policy):
   * every CORE requirement IS pinned, because the first check passes vacuously for a package the lock lacks (the lock is generated with
     ``--extra=analysis`` only, so requirements of the other extras are legitimately absent and are not asserted);
   * the lock pins each package once, because two pins are two installs.
-It never asks for a pin to be NEWER, never reads the registry and never edits a range. 39 of today's 60 requirements are pinned (all satisfied);
+A requirement whose environment marker leaves out the platform the lock is generated on (Linux, x86_64, the header's Python) is not
+asked to be pinned: pip-compile resolves for the machine it runs on and drops it, and no lock install can need it (R602: windows-curses,
+``sys_platform == 'win32'``; Windows installs resolve pyproject directly, install.ps1). It never asks for a pin to be NEWER, never reads the registry and never edits a range. 39 of today's 60 requirements are pinned (all satisfied);
 the other 21 are in extras the lock is not generated for.
 
 The parser reads ``lxml[html-clean]==6.1.1`` and ``uvicorn[standard]==0.49.0`` (pip-compile writes the extras into the pin line). A parser that
@@ -26,6 +28,7 @@ import re
 import tomllib
 from pathlib import Path
 
+from packaging.markers import default_environment
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import Version
@@ -52,6 +55,16 @@ def requirements_by_group(pyproject_text: str) -> dict[str, list[Requirement]]:
     return groups
 
 
+#: The environment the lock is generated in (its header: pip-compile, Python 3.13), for reading a requirement's marker.
+LOCK_ENVIRONMENT = {**default_environment(), "sys_platform": "linux", "platform_system": "Linux", "os_name": "posix",
+                    "platform_machine": "x86_64", "python_version": "3.13", "python_full_version": "3.13.0", "implementation_name": "cpython",
+                    "platform_python_implementation": "CPython"}
+
+
+def applies_to_the_lock(req: Requirement) -> bool:
+    return req.marker is None or req.marker.evaluate({**LOCK_ENVIRONMENT, "extra": ""})
+
+
 def violations(groups: dict[str, list[Requirement]], pins: dict[str, list[str]]) -> tuple[list[str], int]:
     """(problems, number of requirements compared). A problem is a sentence naming the package, the range, the pin and the group."""
     problems: list[str] = []
@@ -61,7 +74,7 @@ def violations(groups: dict[str, list[Requirement]], pins: dict[str, list[str]])
             name = canonicalize_name(req.name)
             found = pins.get(name)
             if not found:
-                if group == "core":
+                if group == "core" and applies_to_the_lock(req):
                     problems.append(f"core requirement {req} is not pinned in requirements.lock")
                 continue
             if len(found) > 1:
@@ -134,3 +147,11 @@ def test_the_checker_reads_the_real_files_to_a_known_shape():
     """The two core pins whose lines carry extras are found in the real lock (the parser's own tell)."""
     pins = lock_pins((_ROOT / "requirements.lock").read_text(encoding="utf-8"))
     assert "lxml" in pins and "uvicorn" in pins
+
+
+def test_a_requirement_for_another_platform_need_not_be_pinned_but_one_for_linux_must():
+    lock = lock_pins(_LOCK)
+    problems, _ = violations(_groups("winonly>=1; sys_platform == 'win32'"), lock)
+    assert problems == [], "a Windows-only requirement can never be in a lock pip-compile generates on Linux"
+    problems, _ = violations(_groups("linuxonly>=1; sys_platform == 'linux'", "anywhere>=1; python_version >= '3.9'"), lock)
+    assert len(problems) == 2, "a marker that keeps Linux in still has to be pinned"

@@ -66,7 +66,8 @@ start "" /min powershell -NoProfile -ExecutionPolicy Bypass -Command "$u='%URL%'
 endlocal
 
 rem THE TERMINAL PANEL (R600, anticipated for Windows; not run on Windows yet). src\tui\panel.py shows the app's status and jobs with
-rem Open UI / Pause collection / Stop app. Python's curses exists on Windows only with the windows-curses package, so the panel starts only
+rem Open UI / Pause collection / Stop app. Python's curses exists on Windows only with the windows-curses package (a pyproject dependency
+rem on Intel/AMD Windows since R602; no ARM64 build exists), so the panel starts only
 rem when "import curses" works there, and never with OO_PANEL=0. It opens in a window of its own, because this one holds the server's
 rem output: closing the panel window does NOT stop the app (the panel says so); closing THIS window still does.
 rem The panel never needs the passphrases, so neither it nor the curses check gets them: both names are cleared in a nested setlocal

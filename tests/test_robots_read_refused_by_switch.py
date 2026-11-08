@@ -286,8 +286,9 @@ def test_a_403_that_was_received_is_cached_as_refused_even_if_stop_is_pressed_ri
 
 
 def test_a_real_failure_under_a_clear_switch_whose_text_names_it_is_still_a_host_failure(tmp_path):
-    """The switch is CLEAR here, so even a FetchFailed whose words are the sentence is the host's problem as far as
-    this guard is concerned: it decides by the switch, never by a text."""
+    """The switch is CLEAR here, so a FetchFailed whose words merely CONTAIN the sentence is the host's problem as far
+    as this guard is concerned: it decides by the switch and the engagement epoch, and by a text only when the text
+    STARTS with the fetcher's own refusal sentence (R614; ``tests/test_kill_switch_epoch.py``)."""
     f = _fetcher(tmp_path)
 
     def says_so(url, **_kw):
