@@ -56,6 +56,25 @@ def _reap_worker_processes() -> None:
         log_failure(_LOG, "shutdown: reaping worker processes failed", exc, level=logging.DEBUG)
 
 
+def stop_self() -> None:
+    """Ask THIS process to take the one graceful path out (uvicorn's, which runs the lifespan shutdown).
+
+    WINDOWS: ``os.kill(pid, SIGTERM)`` there is ``TerminateProcess`` -- an immediate hard kill that runs no handler and no lifespan
+    shutdown, so the sentinel was never flipped and every in-app stop read UNCLEAN on the next boot (field bundle of 2026-11-07: 11 of 11
+    sessions, each costing about 34 min of verify/warm-cache/rollup, and the user stops the app with this very button). A raised SIGINT
+    reaches uvicorn's capture (Server.capture_signals) like Ctrl-C does. Elsewhere SIGTERM is the graceful signal and stays."""
+    if os.name == "nt":
+        try:
+            from src.monitoring.forensics import note_stop_signal
+
+            note_stop_signal("in-app stop")
+        except Exception:  # noqa: BLE001 - never block a shutdown on forensics
+            pass
+        signal.raise_signal(signal.SIGINT)
+    else:
+        os.kill(os.getpid(), signal.SIGTERM)
+
+
 def _default_arm(delay: float) -> None:
     """Stop the server after a short delay so the HTTP response is flushed first."""
 
@@ -64,8 +83,8 @@ def _default_arm(delay: float) -> None:
         # Children first: once we SIGTERM ourselves there is nobody left to do it.
         _reap_worker_processes()
         _close_db_quietly()
-        _LOG.warning("shutdown: stopping the server (SIGTERM to self)")
-        os.kill(os.getpid(), signal.SIGTERM)
+        _LOG.warning("shutdown: stopping the server (graceful signal to self)")
+        stop_self()
 
     threading.Thread(target=_stop, name="oo-shutdown", daemon=True).start()
 

@@ -511,6 +511,11 @@ def test_performance_report_carries_real_evidence(client, seeded):
         assert ("ms" in row) or ("error" in row) or ("skipped" in row)
     streamed = [x for x in st["results"] if x["probe"] == "keyword_export_streamed"]
     assert all("bytes" in x or "skipped" in x for x in streamed), "streamed body must be fully consumed"
+    # The export runs ONCE (R460, OPEN_QUEUE item (19)): a second run is a second full scan of the
+    # mention rows and only ever gave a warm figure. The cheap probes still run twice.
+    assert len(streamed) == 1 and streamed[0].get("run") in (1, 0)
+    for name in ("database_stats", "insights_map"):
+        assert [x["run"] for x in st["results"] if x["probe"] == name] == [1, 2]
 
 
 def test_performance_report_says_so_when_the_keyword_export_is_declined(client, seeded, monkeypatch):

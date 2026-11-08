@@ -144,3 +144,49 @@ def test_weather_signals_endpoints(session, data_dir):
             assert all(x["anomaly"]["checked"] is False for x in signals)
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+class _StubFetched:
+    """What ``fetcher.fetch`` returns for the one body the cache test serves."""
+
+    content = b'{"daily": {"time": ["2026-01-01"], "temperature_2m_max": [1.5]}, "daily_units": {}}'
+    final_url = "https://archive-api.open-meteo.com/v1/archive"
+    status_code = 200
+    fetched_at = datetime(2026, 1, 2, tzinfo=UTC)
+
+
+class _StubFetcher:
+    def __init__(self):
+        self.calls = 0
+
+    def fetch(self, url, require_html=False):
+        self.calls += 1
+        return _StubFetched()
+
+
+@pytest.mark.parametrize("cached_text", ["[1, 2]", "42", '"text"', "null", "{not json", ""])
+def test_a_cache_file_that_is_not_a_slice_is_a_miss_not_a_500(data_dir, cached_text):
+    """Valid JSON that is not an object used to raise TypeError out of the cache read (both weather routes answered 500)."""
+    from src.weather import openmeteo
+
+    start, end = date(2026, 1, 1), date(2026, 1, 1)
+    url = openmeteo.build_archive_url(10.0, 20.0, start, end, ["temperature_2m_max"])
+    openmeteo.cache_path(url).write_text(cached_text, encoding="utf-8")
+    fetcher = _StubFetcher()
+    got = openmeteo.fetch_daily_slice(10.0, 20.0, start, end, ["temperature_2m_max"], fetcher=fetcher)
+    assert got["ok"] is True and got["cached"] is False
+    assert fetcher.calls == 1
+    # the bad file was replaced by the fetched slice, so the next read is a hit
+    again = openmeteo.fetch_daily_slice(10.0, 20.0, start, end, ["temperature_2m_max"], fetcher=fetcher)
+    assert again["cached"] is True and fetcher.calls == 1
+
+
+def test_a_cache_file_holding_a_slice_is_still_served(data_dir):
+    from src.weather import openmeteo
+
+    start, end = date(2026, 1, 1), date(2026, 1, 1)
+    url = openmeteo.build_archive_url(10.0, 20.0, start, end, ["temperature_2m_max"])
+    openmeteo.cache_path(url).write_text('{"ok": true, "daily": {"time": []}}', encoding="utf-8")
+    fetcher = _StubFetcher()
+    got = openmeteo.fetch_daily_slice(10.0, 20.0, start, end, ["temperature_2m_max"], label="x", fetcher=fetcher)
+    assert got["cached"] is True and got["label"] == "x" and fetcher.calls == 0

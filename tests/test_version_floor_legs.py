@@ -160,7 +160,9 @@ def test_the_duckdb_1x_job_runs_the_files_of_the_columnar_job_and_pins_the_1x_li
     install = " ".join(str(s.get("run", "")) for s in one["steps"])
     assert '"duckdb<2"' in install and "[analysis,dev,columnar]" in install, "the 1.x job must install the columnar extra and hold duckdb to <2"
     assert "startswith('1.')" in install, "the 1.x job must check that it got a 1.x release, or a resolver change would turn it into a second copy of the 2.x job"
-    assert one.get("if") == "github.event_name != 'schedule'", "the 1.x job must run on every PR like the columnar job (the skip guard counts only that condition)"
+    assert one.get("if") in ("github.event_name != 'schedule'", "github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'"), (
+        "the 1.x job must run on every PR like the columnar job, but a docs-only one (R462; the skip guard counts only that condition)"
+    )
     assert not one.get("continue-on-error"), "the 1.x job is a blocking job"
     mine = _first_pytest_step_files(one)
     theirs = _first_pytest_step_files(jobs["columnar"])

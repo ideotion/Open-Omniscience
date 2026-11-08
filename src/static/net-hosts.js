@@ -185,9 +185,17 @@
       "fetcher": true
     },
     {
-      "id": "climate-enso",
-      "label": "Climate",
-      "hosts": ["www.cpc.ncep.noaa.gov"],
+      "id": "climate",
+      "label": "Climate series",
+      "hosts": ["data.giss.nasa.gov", "www.cpc.ncep.noaa.gov", "earthquake.usgs.gov", "raw.githubusercontent.com"],
+      "trigger": "click",
+      "setting": null,
+      "fetcher": true
+    },
+    {
+      "id": "ipcc",
+      "label": "IPCC reports",
+      "hosts": ["www.ipcc.ch"],
       "trigger": "click",
       "setting": null,
       "fetcher": true

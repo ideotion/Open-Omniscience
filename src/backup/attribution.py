@@ -263,17 +263,3 @@ def attribution_lines(signals: Iterable[str]) -> list[AttributionLine]:
 def attribution_dicts(signals: Iterable[str]) -> list[dict[str, str]]:
     """:func:`attribution_lines` as plain dicts, for JSON payloads and manifests."""
     return [line.to_dict() for line in attribution_lines(signals)]
-
-
-def attribution_markdown(lines: Iterable[AttributionLine], *, heading: str | None = None) -> str:
-    """The lines as a Markdown block. Empty when nothing applies — an "Attribution"
-    heading over no lines reads as a failure to compute, which is a different fact."""
-    items = list(lines)
-    if not items:
-        return ""
-    out: list[str] = []
-    if heading:
-        out += [heading, ""]
-    for line in items:
-        out.append(f"- {line.text}")
-    return "\n".join(out) + "\n"

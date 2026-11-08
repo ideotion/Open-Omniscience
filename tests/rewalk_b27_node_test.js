@@ -322,7 +322,7 @@ async function h3() {
     const clock = makeClock();
     const prose = { innerHTML: "" }, find = { value: "Where in the tree" };
     const calls = [];
-    const body = "let _docRaw = \"# Security\\n\\n| a | b |\";\nlet _docFindTimer = null;\n"
+    const body = "let _docRaw = \"# Security\\n\\n| a | b |\"; let _docBanner = \"\";\nlet _docFindTimer = null;\n"
       + extract(APP, "filterDoc") + (has(APP, "_filterDocNow") ? extract(APP, "_filterDocNow") : "")
       + "return filterDoc;";
     const filterDoc = new Function("$", "mdToHtml", "highlightProse", "setTimeout", "clearTimeout", body)(

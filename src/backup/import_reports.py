@@ -467,13 +467,6 @@ def _report_facts(p: Path, size_bytes: int) -> dict[str, Any]:
     return out
 
 
-def _report_outcome(p: Path, size_bytes: int) -> str:
-    """``"ok"`` / the report's own outcome / ``"unknown"``. See :func:`_report_facts`,
-    which this now delegates to -- kept because it is the narrow question and has its
-    own callers and its own tests."""
-    return str(_report_facts(p, size_bytes)["outcome"])
-
-
 def list_import_reports() -> list[dict[str, Any]]:
     """Every persisted report, newest first. Read-only; an empty/missing directory is
     simply an empty list (never an error -- a fresh install has no reports yet)."""

@@ -2938,8 +2938,8 @@
           + `<td style="text-align:right;padding:2px 0"><b style="color:${dCol}">${esc(dTxt)}</b></td></tr>`;
       }).join("");
       const dateRow = `<tr><td style="padding:2px 8px 2px 0">${esc(t("Date range"))}</td>`
-        + `<td style="text-align:right;padding:2px 8px" class="muted">${fmtDate(before.date_min)} – ${fmtDate(before.date_max)}</td>`
-        + `<td style="text-align:right;padding:2px 8px" colspan="2">${fmtDate(after.date_min)} – ${fmtDate(after.date_max)}</td></tr>`;
+        + `<td style="text-align:right;padding:2px 8px" class="muted">${ooLtrIsolate(`${fmtDate(before.date_min)} – ${fmtDate(before.date_max)}`)}</td>`
+        + `<td style="text-align:right;padding:2px 8px" colspan="2">${ooLtrIsolate(`${fmtDate(after.date_min)} – ${fmtDate(after.date_max)}`)}</td></tr>`;
       return `<div style="margin-top:8px">`
         + `<div class="muted" style="font-size:12px;margin-bottom:2px">${esc(t("How your corpus grew"))}</div>`
         + `<table style="width:100%;font-size:13px;border-collapse:collapse">`
