@@ -45,20 +45,26 @@ GROUPS = [
     ("33f", "item 33 (f)", "OSM stored monthly summary (R435)", 1738, "a47a9fb"),
     (
         "33g",
-        "planned item 33 (g), C6",
+        "item 33 (g), C6",
         "oo-on: confirmations for the irreversible actions",
         1746,
         "0982a0b",
     ),
-    ("33h", "planned item 33 (h), E2", "Help coverage banner", 1748, None),
+    (
+        "33h",
+        "item 33 (h) (reserved for E2), not yet in its text",
+        "Help coverage banner",
+        1748,
+        "bf4cbbf41",
+    ),
     (
         "33i",
-        "planned item 33 (i), A-S6",
+        "item 33 (i), A-S6",
         "Population-weighted figures state their weighting",
         1750,
         "2a621dc",
     ),
-    ("33j", "planned item 33 (j)", "Climate series", 1751, None),
+    ("33j", "planned item 33 (j), not yet in item 33", "Climate series", 1751, "45851f526"),
     ("extra-1", "not in item 33", "OSM daily change files: update a country (J1)", 1720, "ea88a6e"),
     ("extra-2", "not in item 33", "Living sources: OSM daily change files (B1)", 1725, "c0c66ff"),
     ("extra-3", "not in item 33", "Living sources: per-edition coverage group", 1727, "7139c68"),
@@ -68,7 +74,7 @@ GROUPS = [
 # letters from the Plan lane's bundle (#1778) and exist in item 33 only once it merges.
 NOTES = [
     "(b) of item 33 is an operator step (a dated population table) and adds no key.",
-    "Letters (g) to (j) exist in item 33 only once the Plan lane's draft #1778 merges; (h) and (j) also wait on #1748 and #1751.",
+    "Item 33 on main has (a) to (g) and (i); (h) is reserved for E2 (#1748, merged) and (j) is planned for the climate key (#1751, merged); both rows are listed here ahead of their text in item 33.",
     "A group marked PENDING is read from its open PR head and changes on a re-run until it merges.",
 ]
 
