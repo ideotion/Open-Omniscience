@@ -160,25 +160,64 @@ def write_result(plan: dict, status: str, old: str, data_dir: Path) -> None:
         (data_dir / RESULT_FILE).write_text(json.dumps(body), encoding="utf-8")
 
 
-def take_lock(lock: Path, *, alive=pid_alive) -> bool:
-    """Create ``lock`` holding this process's pid, or take it over when its owner is no longer running. False only while a live owner holds it."""
-    for _ in range(3):
-        try:
-            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
+LOCK_MAX_AGE_S = WAIT_S + 2 * PIP_TIMEOUT_S
+
+
+def _lock_owner(lock: Path) -> int:
+    try:
+        return int(lock.read_text(encoding="utf-8").strip() or 0)
+    except (OSError, ValueError):
+        return 0
+
+
+def take_lock(lock: Path, *, alive=pid_alive, now=time.time) -> bool:
+    """Create ``lock`` holding this process's pid, or take it over when its owner is gone or it is older than any update could run. False
+    only while a live owner holds a fresh lock.
+
+    The pid is in the file BEFORE the file has the lock's name (written beside it, then ``os.link``-ed: atomic, and it fails when the name
+    exists), so no reader ever sees an empty lock. A take-over first RENAMES the stale lock to a name of its own: of two contenders only one
+    rename succeeds, so only one of them can go on to create the new lock."""
+    mine = str(os.getpid())
+    tmp = lock.with_name(f"{lock.name}.{mine}.tmp")
+    tmp.write_text(mine, encoding="utf-8")
+    try:
+        for _ in range(3):
             try:
-                owner = int(lock.read_text(encoding="utf-8").strip() or 0)
-            except (OSError, ValueError):
-                owner = 0
-            if owner and owner != os.getpid() and alive(owner):
+                os.link(tmp, lock)
+                return True
+            except FileExistsError:
+                pass
+            except OSError:  # no hard links on this filesystem: the plain exclusive create, then the pid
+                try:
+                    fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                except FileExistsError:
+                    pass
+                else:
+                    os.write(fd, mine.encode())
+                    os.close(fd)
+                    return True
+            owner = _lock_owner(lock)
+            try:
+                fresh = now() - lock.stat().st_mtime < LOCK_MAX_AGE_S
+            except OSError:
+                continue  # it went away between the two reads: try again
+            if fresh and owner and owner != os.getpid() and alive(owner):
                 return False
             with contextlib.suppress(OSError):
-                lock.unlink()
-            continue
-        os.write(fd, str(os.getpid()).encode())
-        os.close(fd)
-        return True
-    return False
+                stale = lock.with_name(f"{lock.name}.{mine}.stale")
+                os.rename(lock, stale)  # only one contender's rename can succeed
+                stale.unlink()
+        return False
+    finally:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+
+
+def release_lock(lock: Path) -> None:
+    """Remove ``lock`` only while it is still this process's (a helper that lost it to a take-over must not delete the new owner's)."""
+    if _lock_owner(lock) == os.getpid():
+        with contextlib.suppress(OSError):
+            lock.unlink()
 
 
 def main(argv: list[str]) -> int:
@@ -190,6 +229,12 @@ def main(argv: list[str]) -> int:
     # owner relaunches the app. A lock whose owner is gone (a reboot, a helper killed with its job) is taken over, never obeyed.
     lock = data_dir / LOCK_FILE
     if not take_lock(lock):
+        # Another helper holds the lock and will apply. This one still makes sure the app comes back: it waits for the app to exit and starts
+        # the launcher, which only opens the browser when a server already answers, so a wrongly-obeyed lock (a recycled pid) never leaves the
+        # app stopped. It touches nothing in the install.
+        if wait_for_exit(int(plan["pid"])):
+            time.sleep(5)
+            relaunch(root)
         return 1
     try:
         # Recorded FIRST, so a helper that dies part-way leaves "started" behind rather than an older attempt's "updated".
@@ -204,8 +249,7 @@ def main(argv: list[str]) -> int:
         relaunch(root)
         return 0 if status in ("updated", "already_current") else 1
     finally:
-        with contextlib.suppress(OSError):
-            lock.unlink()
+        release_lock(lock)
 
 
 if __name__ == "__main__":
