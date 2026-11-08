@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -189,8 +190,51 @@ def test_helper_rolls_back_when_the_dependency_install_fails(repos):
     before = _g(inst, "rev-parse", "HEAD")
     h = _helper()
     fail = subprocess.CompletedProcess([], 1, "", "")
+    good = subprocess.CompletedProcess([], 0, "", "")
+    calls = []
+
+    def first_fails(*a, **k):
+        calls.append(a)
+        return fail if len(calls) == 1 else good
+
+    status, _ = h.apply(_plan(inst, new, "v0.7.0"), run=first_fails)
+    # the checkout is back AND the old lock was installed again (two pip calls after the failed one)
+    assert status == "dependencies_failed_rolled_back" and _g(inst, "rev-parse", "HEAD") == before and len(calls) == 3
     status, _ = h.apply(_plan(inst, new, "v0.7.0"), run=lambda *a, **k: fail)
-    assert status == "dependencies_failed_rolled_back" and _g(inst, "rev-parse", "HEAD") == before
+    assert status == "rollback_incomplete" and _g(inst, "rev-parse", "HEAD") == before
+
+
+def test_helper_reports_a_version_the_checkout_already_has(repos):
+    inst, _work, sha = repos
+    h = _helper()
+    assert h.apply(_plan(inst, sha))[0] == "updated"
+    assert h.apply(_plan(inst, sha))[0] == "already_current"
+
+
+def test_a_timeout_or_missing_program_is_a_failed_step_not_a_crash(tmp_path):
+    h = _helper()
+    assert h._run(tmp_path, "oo-no-such-program-xyz").returncode == 127
+    assert h._run(tmp_path, sys.executable, "-c", "import time; time.sleep(5)", timeout=1).returncode == 124
+
+
+def test_a_second_apply_is_refused_and_the_check_is_spent(monkeypatch):
+    monkeypatch.setattr(su, "current_version", lambda: "0.5.0")
+    monkeypatch.setattr(su, "_local_head", lambda root: SHA_A)
+    monkeypatch.setattr(su, "install_status", lambda root=None: {"kind": "git", "can_apply": True, "reason": "", "manual_steps": []})
+    monkeypatch.setattr(su, "launch_helper", lambda *a, **k: None)
+    monkeypatch.setattr(su, "_APPLYING", False)
+    su.check(lambda url: _tags(("v0.6.0", SHA_B)), now=1000.0)
+    su.begin_apply("v0.6.0", SHA_B, now=1001.0)
+    with pytest.raises(su.UpdateError, match="already starting"):
+        su.begin_apply("v0.6.0", SHA_B, now=1002.0)
+    assert su._LAST_CHECK == {}
+
+
+def test_check_says_up_to_date_when_the_checkout_runs_the_tag_commit(monkeypatch):
+    monkeypatch.setattr(su, "current_version", lambda: "0.3.0")  # stale metadata, as when v0.4.0 was cut before its version flip
+    monkeypatch.setattr(su, "_local_head", lambda root: SHA_B)
+    monkeypatch.setattr(su, "install_status", lambda root=None: {"kind": "git", "can_apply": True, "reason": "", "manual_steps": []})
+    assert su.check(lambda url: _tags(("v0.4.0", SHA_B)))["update_available"] is False
 
 
 def test_helper_never_touches_the_install_when_the_app_does_not_exit():

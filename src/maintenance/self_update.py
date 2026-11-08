@@ -32,6 +32,7 @@ import os
 import re
 import subprocess  # noqa: S404 - fixed argv, no shell
 import sys
+import threading
 import time
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
@@ -206,7 +207,9 @@ def check(get_json: Any = None, *, root: Path | None = None, now: float | None =
     ref, sha = newest
     if kind == "tag":
         latest_t = _vtuple(ref) or (0, 0, 0)
-        available = latest_t > cur_t
+        # The installed metadata can lag the checkout (a tag cut before its version flip, a pull without a reinstall): the commit we run being
+        # the tag's commit is "up to date" whatever the metadata says.
+        available = latest_t > cur_t and _local_head(root) != sha
         latest = ref.lstrip("v")
     else:
         # No release tag exists: main's tip is only "newer" when it is not the commit we run. Without a readable local head, say so.
@@ -240,6 +243,24 @@ def _local_head(root: Path | None) -> str:
 
 
 # --- the apply ---------------------------------------------------------------- #
+
+
+_APPLY_LOCK = threading.Lock()
+_APPLYING = False
+
+
+def begin_apply(ref: str, sha: str, *, now: float | None = None, root: Path | None = None, popen: Any = None) -> dict[str, Any]:
+    """Validate, then start the helper, ONCE: a second click or a second tab while one apply is under way is refused, and the check it used is
+    spent, so the same answer cannot start a second helper either."""
+    global _APPLYING
+    with _APPLY_LOCK:
+        if _APPLYING:
+            raise UpdateError("An update is already starting.")
+        checked = validate_apply(ref, sha, now=now, root=root)
+        launch_helper(checked["ref"], checked["sha"], checked["kind"], root=root, popen=popen)
+        _APPLYING = True
+        _LAST_CHECK.clear()
+        return checked
 
 
 def validate_apply(ref: str, sha: str, *, now: float | None = None, root: Path | None = None) -> dict[str, Any]:
@@ -278,7 +299,10 @@ def launch_helper(ref: str, sha: str, kind: str, *, root: Path | None = None, po
     quiet = subprocess.DEVNULL
     if os.name == "nt":
         flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-        spawn(argv, stdin=quiet, stdout=quiet, stderr=quiet, cwd=str(root), creationflags=flags)  # noqa: S603 - fixed argv, no shell
+        try:  # break away from a job object that would kill the helper together with this process; not every job allows it
+            spawn(argv, stdin=quiet, stdout=quiet, stderr=quiet, cwd=str(root), creationflags=flags | 0x01000000)  # noqa: S603 - fixed argv
+        except OSError:
+            spawn(argv, stdin=quiet, stdout=quiet, stderr=quiet, cwd=str(root), creationflags=flags)  # noqa: S603 - fixed argv, no shell
     else:
         spawn(argv, stdin=quiet, stdout=quiet, stderr=quiet, cwd=str(root), start_new_session=True)  # noqa: S603 - fixed argv, no shell
 

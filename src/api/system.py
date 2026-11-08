@@ -117,17 +117,16 @@ def update_apply(body: UpdateApplyBody) -> dict:
     """Stop the app cleanly and let the helper apply the checked version, then start the app again. Needs ``confirm`` and the exact checked ref/sha."""
     if not body.confirm:
         raise HTTPException(status_code=400, detail="confirmation required to update")
-    from src.maintenance.self_update import UpdateError, launch_helper, validate_apply
+    from src.maintenance.self_update import UpdateError, begin_apply
 
     try:
-        checked = validate_apply(body.ref, body.sha)
-        # Pause everything first: the kill switch refuses every new request, then the ordinary shutdown closes the database and the WAL.
-        from src.ingest import activate_kill_switch
-
-        launch_helper(checked["ref"], checked["sha"], checked["kind"])  # waits for this process to exit before touching anything
-        activate_kill_switch()
+        begin_apply(body.ref, body.sha)  # the helper waits for this process to exit before touching anything
     except UpdateError as exc:
         raise HTTPException(status_code=409, detail=http_detail(exc)) from None
+    # Pause everything: the kill switch refuses every new request, then the ordinary shutdown closes the database and the WAL.
+    from src.ingest import activate_kill_switch
+
+    activate_kill_switch()
     from src.safety.shutdown import request_shutdown
 
     out = request_shutdown(confirm=True)

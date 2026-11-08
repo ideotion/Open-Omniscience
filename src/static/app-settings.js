@@ -2109,9 +2109,12 @@
         _updPaintInstall(st.install);
         if (last) {
           const r = st.last_result;
-          last.textContent = !r ? "" : (r.status === "updated"
-            ? t("The last update was installed.")
-            : t("The last update was not applied; the previous version was kept."));
+          let say = "";
+          if (r && (r.status === "updated" || r.status === "already_current")) say = t("The last update was installed.");
+          else if (r && r.status === "started") say = t("The last update did not finish. If the app misbehaves, re-run the installer.");
+          else if (r && r.status === "rollback_incomplete") say = t("The last update failed and could not fully restore the previous version. Re-run the installer.");
+          else if (r) say = t("The last update was not applied; the previous version was kept.");
+          last.textContent = say;
         }
       } catch (e) { /* the check below reports its own failure */ }
     }
@@ -2139,13 +2142,19 @@
       const t = _updT();
       const msg = $("upd-msg");
       if (!_updCheck || !_updCheck.update_available) return;
-      if (!window.confirm(t("Update now? The app stops, the new version is downloaded with git, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click."))) return;
+      if (!window.confirm(t("Update now? The app stops, the new version is downloaded with git, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click.")
+          + " " + t("If the new version changes the app's dependencies, pip also downloads them from pypi.org. Neither download goes through this app's proxy."))) return;
+      const go = $("upd-apply"), chk = $("upd-check");
+      if (go) go.disabled = true;
+      if (chk) chk.disabled = true;
       try {
         await api("/api/system/update/apply", { method: "POST", body: JSON.stringify({ confirm: true, ref: _updCheck.ref, sha: _updCheck.sha }) });
         if (msg) msg.textContent = t("The app is stopping to update and will start again by itself. Reload this page in a minute.");
-        const go = $("upd-apply"); if (go) go.hidden = true;
+        if (go) go.hidden = true;
       } catch (e) {
         if (msg) msg.textContent = t("The update could not start; nothing was changed.");
+        if (go) go.disabled = false;
+        if (chk) chk.disabled = false;
       }
     }
     (function _updWire() {
