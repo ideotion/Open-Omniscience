@@ -10,7 +10,6 @@ import importlib.util
 import os
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -263,22 +262,22 @@ def test_check_says_up_to_date_when_the_checkout_is_ahead_of_the_tag(repos, monk
     assert su.check(lambda url: _tags(("v0.6.0", "c" * 40)), root=inst)["update_available"] is True
 
 
-def test_the_helper_lock_obeys_a_live_owner_and_takes_over_a_dead_or_old_one(tmp_path):
+def test_the_helper_lock_obeys_only_a_live_helper_for_the_same_app(tmp_path):
     h = _helper()
     lock = tmp_path / "update.lock"
-    lock.write_text("424242", encoding="utf-8")
-    assert h.take_lock(lock, alive=lambda pid: True) is False
-    # a lock older than any update could run is taken over even if its pid is alive again (a recycled pid)
-    assert h.take_lock(lock, alive=lambda pid: True, now=lambda: time.time() + h.LOCK_MAX_AGE_S + 1) is True
-    assert lock.read_text(encoding="utf-8") == str(os.getpid())
-    lock.write_text("424242", encoding="utf-8")
-    assert h.take_lock(lock, alive=lambda pid: False) is True
+    lock.write_text("111 424242", encoding="utf-8")
+    assert h.take_lock(lock, 111, alive=lambda pid: True) is False  # a live duplicate for this same shutdown
+    # a lock from another app process is stale by construction, even when its helper pid is alive (recycled after a reboot)
+    assert h.take_lock(lock, 222, alive=lambda pid: True) is True
+    assert lock.read_text(encoding="utf-8") == f"222 {os.getpid()}"
+    lock.write_text("222 424242", encoding="utf-8")
+    assert h.take_lock(lock, 222, alive=lambda pid: False) is True  # its helper is gone
     lock.write_text("garbage", encoding="utf-8")
-    assert h.take_lock(lock, alive=lambda pid: True) is True
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["update.lock"], "no temp or stale file is left behind"
+    assert h.take_lock(lock, 222, alive=lambda pid: True) is True
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["update.lock"], "no temp file is left behind"
     h.release_lock(lock)
     assert not lock.exists()
-    lock.write_text("424242", encoding="utf-8")
+    lock.write_text("222 424242", encoding="utf-8")
     h.release_lock(lock)  # not ours: left alone
     assert lock.exists()
 

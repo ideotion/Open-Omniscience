@@ -160,25 +160,25 @@ def write_result(plan: dict, status: str, old: str, data_dir: Path) -> None:
         (data_dir / RESULT_FILE).write_text(json.dumps(body), encoding="utf-8")
 
 
-LOCK_MAX_AGE_S = WAIT_S + 2 * PIP_TIMEOUT_S
-
-
-def _lock_owner(lock: Path) -> int:
+def _lock_owner(lock: Path) -> tuple[int, int]:
+    """``(app pid, helper pid)`` recorded in ``lock``, ``(0, 0)`` when it cannot be read."""
     try:
-        return int(lock.read_text(encoding="utf-8").strip() or 0)
+        app, helper = (int(x) for x in lock.read_text(encoding="utf-8").split())
     except (OSError, ValueError):
-        return 0
+        return (0, 0)
+    return (app, helper)
 
 
-def take_lock(lock: Path, *, alive=pid_alive, now=time.time) -> bool:
-    """Create ``lock`` holding this process's pid, or take it over when its owner is gone or it is older than any update could run. False
-    only while a live owner holds a fresh lock.
+def take_lock(lock: Path, app_pid: int, *, alive=pid_alive) -> bool:
+    """Create ``lock`` naming the app process this helper serves and this helper, or take over a lock that is not a live duplicate. False only
+    when a LIVE helper already serves the SAME app process: a second helper for one shutdown, whose owner will apply and relaunch.
 
-    The pid is in the file BEFORE the file has the lock's name (written beside it, then ``os.link``-ed: atomic, and it fails when the name
-    exists), so no reader ever sees an empty lock. A take-over first RENAMES the stale lock to a name of its own: of two contenders only one
-    rename succeeds, so only one of them can go on to create the new lock."""
-    mine = str(os.getpid())
-    tmp = lock.with_name(f"{lock.name}.{mine}.tmp")
+    A lock naming ANOTHER app process belongs to an earlier run (that app is gone, or this app could not have been started to ask again), so
+    it is stale by construction: no age guess, and no pid that a reboot recycled can make it look alive. Two helpers can only serve the same
+    app process, and the server starts one per process (``begin_apply``), so the take-over is not contended in practice. The pid is written
+    beside the lock and hard-linked into place, so a reader never sees an empty lock where links exist."""
+    mine = f"{app_pid} {os.getpid()}"
+    tmp = lock.with_name(f"{lock.name}.{os.getpid()}.tmp")
     tmp.write_text(mine, encoding="utf-8")
     try:
         for _ in range(3):
@@ -187,7 +187,7 @@ def take_lock(lock: Path, *, alive=pid_alive, now=time.time) -> bool:
                 return True
             except FileExistsError:
                 pass
-            except OSError:  # no hard links on this filesystem: the plain exclusive create, then the pid
+            except OSError:  # no hard links on this filesystem: the plain exclusive create, then the content
                 try:
                     fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
                 except FileExistsError:
@@ -196,17 +196,11 @@ def take_lock(lock: Path, *, alive=pid_alive, now=time.time) -> bool:
                     os.write(fd, mine.encode())
                     os.close(fd)
                     return True
-            owner = _lock_owner(lock)
-            try:
-                fresh = now() - lock.stat().st_mtime < LOCK_MAX_AGE_S
-            except OSError:
-                continue  # it went away between the two reads: try again
-            if fresh and owner and owner != os.getpid() and alive(owner):
+            owner_app, owner_helper = _lock_owner(lock)
+            if owner_app == app_pid and owner_helper != os.getpid() and alive(owner_helper):
                 return False
             with contextlib.suppress(OSError):
-                stale = lock.with_name(f"{lock.name}.{mine}.stale")
-                os.rename(lock, stale)  # only one contender's rename can succeed
-                stale.unlink()
+                lock.unlink()
         return False
     finally:
         with contextlib.suppress(OSError):
@@ -215,7 +209,7 @@ def take_lock(lock: Path, *, alive=pid_alive, now=time.time) -> bool:
 
 def release_lock(lock: Path) -> None:
     """Remove ``lock`` only while it is still this process's (a helper that lost it to a take-over must not delete the new owner's)."""
-    if _lock_owner(lock) == os.getpid():
+    if _lock_owner(lock)[1] == os.getpid():
         with contextlib.suppress(OSError):
             lock.unlink()
 
@@ -225,17 +219,11 @@ def main(argv: list[str]) -> int:
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     data_dir = plan_path.parent
     root = Path(plan["root"])
-    # One helper at a time: a second one (a double click that slipped past the server's own guard) exits without touching anything; the live
-    # owner relaunches the app. A lock whose owner is gone (a reboot, a helper killed with its job) is taken over, never obeyed.
+    # One helper per shutdown: a second one for the same app process exits without touching anything (its live owner applies and relaunches);
+    # a lock from an earlier app process, or whose helper is gone, is taken over, never obeyed.
     lock = data_dir / LOCK_FILE
-    if not take_lock(lock):
-        # Another helper holds the lock and will apply. This one still makes sure the app comes back: it waits for the app to exit and starts
-        # the launcher, which only opens the browser when a server already answers, so a wrongly-obeyed lock (a recycled pid) never leaves the
-        # app stopped. It touches nothing in the install.
-        if wait_for_exit(int(plan["pid"])):
-            time.sleep(5)
-            relaunch(root)
-        return 1
+    if not take_lock(lock, int(plan["pid"])):
+        return 1  # a live helper already serves this same shutdown: it applies and relaunches; this one touches nothing
     try:
         # Recorded FIRST, so a helper that dies part-way leaves "started" behind rather than an older attempt's "updated".
         write_result(plan, "started", "", data_dir)
