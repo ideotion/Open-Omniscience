@@ -38,6 +38,25 @@ nothing to patch since no SOCKS proxying is even possible) and the stdlib's own
 ``http.client.HTTPConnection._tunnel`` (always available) are ALSO guarded on
 their own real-destination argument, before either negotiates anything.
 
+A PLAIN ``http://`` URL through an HTTP proxy is the third shape (R619, from a
+security read of R616, 2026-11-08, live-reproduced first): urllib3 and the
+stdlib's ``urllib.request`` send no CONNECT for it at all. They open the loopback
+proxy socket (allowed) and write an ABSOLUTE-FORM request line,
+``GET http://example.com/x HTTP/1.1``, which the proxy then forwards. ``_tunnel``
+is never called, so a loopback listener standing in for Privoxy received the
+whole request while airplane mode was engaged. The real destination exists only
+in that request target, so ``http.client.HTTPConnection.putrequest`` -- the one
+place every http.client-based client (requests/urllib3 call it through
+``super()``) hands the target over, before a byte is written -- is guarded on
+the host it names. Only an absolute-form target (or a ``CONNECT`` authority)
+names a destination other than the socket's own peer; an origin-form ``/path``
+goes to the host the connect guard already saw, so it is left alone. An
+authority that does not parse cleanly (userinfo, a backslash, whitespace) is
+treated as remote, because a proxy that parses it differently from us is
+exactly the bypass. Not covered: an HTTP client that does not sit on
+``http.client`` (httpx/httpcore) -- in this tree those are the loopback-only
+LLM clients, which refuse a non-loopback base URL themselves.
+
 Disable with ``OO_AIRPLANE_SOCKET_GUARD=0`` (e.g. an exotic deployment that proxies
 loopback). The guard never blocks while the kill switch is OFF.
 
@@ -70,6 +89,7 @@ from __future__ import annotations
 import http.client
 import ipaddress
 import os
+import re
 import socket
 from collections.abc import Callable
 from typing import Any, cast
@@ -169,6 +189,7 @@ _orig_connect_ex = socket.socket.connect_ex
 # _tunnel is a private stdlib method typeshed does not declare; capturing and
 # restoring it is the whole point of this backstop.
 _orig_tunnel = http.client.HTTPConnection._tunnel  # type: ignore[attr-defined]
+_orig_putrequest = http.client.HTTPConnection.putrequest
 _orig_socks_connect = _pysocks.socksocket.connect if _pysocks is not None else None
 #: The same real calls, never reassigned: a test swaps ``_orig_*`` for spies, and a call that has the stdlib's own function back in it
 #: is "the guard was removed" whether or not a spy is standing in ``_orig_*`` at that moment.
@@ -178,6 +199,8 @@ _REAL_AT_IMPORT = (
     _orig_connect,
     _orig_connect_ex,
     _orig_tunnel,
+    _orig_putrequest,
+    # Last, because it is the one point that may be absent: the zip in removed_while_installed pairs these with _patch_points by position.
     _orig_socks_connect,
 )
 
@@ -241,6 +264,56 @@ def _guarded_tunnel(self):  # type: ignore[no-untyped-def]
     return _orig_tunnel(self)
 
 
+#: An absolute-form request target: a URI scheme, then ``://`` and the authority up to the first ``/``, ``?`` or ``#``.
+_ABSOLUTE_FORM = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*://([^/?#]*)")
+#: Characters that make an authority ambiguous between parsers: userinfo (``local@remote``), a backslash some parsers read as ``/``,
+#: and whitespace. With one of these present the target is treated as remote rather than guessed at.
+_AMBIGUOUS_AUTHORITY = re.compile(r"[@\\\s]")
+#: Returned by :func:`_request_target_host` for a target that names no destination of its own (origin-form ``/path``, ``*``).
+_NO_OTHER_DESTINATION = object()
+
+
+def _authority_host(authority: str) -> str:
+    """The host of a ``host[:port]`` authority: a bracketed IPv6 literal keeps its brackets off, anything else loses its ``:port``."""
+    if authority.startswith("["):
+        return authority[1:].split("]", 1)[0]
+    return authority.rsplit(":", 1)[0] if authority.count(":") == 1 else authority
+
+
+def _request_target_host(method: object, url: object) -> object:
+    """The destination a request line names when it is NOT the socket's own peer.
+
+    An absolute-form target (``GET http://host/x``, what a client writes to a forwarding HTTP proxy) and a ``CONNECT host:port`` authority
+    name a host the proxy will reach for us; that host is returned. An origin-form target names nothing beyond the connected peer and gets
+    :data:`_NO_OTHER_DESTINATION`. A target that is neither text nor parses cleanly comes back as itself, which ``_guard`` treats as remote.
+    """
+    if isinstance(url, bytes):
+        url = url.decode("latin-1")
+    if not isinstance(url, str):
+        return url
+    if isinstance(method, str) and method.upper() == "CONNECT":
+        authority = url
+    else:
+        m = _ABSOLUTE_FORM.match(url)
+        if m is None:
+            return _NO_OTHER_DESTINATION
+        authority = m.group(1)
+    if not authority or _AMBIGUOUS_AUTHORITY.search(authority):
+        return url
+    # An empty host (``http://:80/``) would read as local to ``_guard``; a proxy fills it in however it likes, so it is remote here.
+    return _authority_host(authority) or url
+
+
+def _guarded_putrequest(self, method, url, *args, **kwargs):  # type: ignore[no-untyped-def]
+    """Guard the destination named IN the request line (R619): a plain ``http://`` URL through an HTTP proxy is written as an
+    absolute-form ``GET http://host/...`` to an already-allowed loopback socket, with no CONNECT and so no ``_tunnel`` call. This runs
+    before ``putrequest`` buffers anything, so a refusal leaves zero request bytes on the wire."""
+    host = _request_target_host(method, url)
+    if host is not _NO_OTHER_DESTINATION:
+        _guard(host)
+    return _orig_putrequest(self, method, url, *args, **kwargs)
+
+
 def _guarded_socks_connect(self, dest_pair, *args, **kwargs):  # type: ignore[no-untyped-def]
     """Guard PySocks' own ``connect()``. ``dest_pair`` is its first argument and
     IS the real destination (host, port), known synchronously before any I/O —
@@ -261,6 +334,7 @@ def _patch_points() -> list[tuple[Any, str, Any, Any]]:
         (socket.socket, "connect", _guarded_connect, _orig_connect),
         (socket.socket, "connect_ex", _guarded_connect_ex, _orig_connect_ex),
         (http.client.HTTPConnection, "_tunnel", _guarded_tunnel, _orig_tunnel),
+        (http.client.HTTPConnection, "putrequest", _guarded_putrequest, _orig_putrequest),
     ]
     if _orig_socks_connect is not None:
         points.append((_pysocks.socksocket, "connect", _guarded_socks_connect, _orig_socks_connect))
@@ -276,6 +350,7 @@ def _standing_calls() -> list[Any]:
         getattr(socket.socket, "connect", None),
         getattr(socket.socket, "connect_ex", None),
         getattr(http.client.HTTPConnection, "_tunnel", None),
+        getattr(http.client.HTTPConnection, "putrequest", None),
     ]
     if _orig_socks_connect is not None:
         calls.append(getattr(_pysocks.socksocket, "connect", None))
@@ -359,6 +434,7 @@ def uninstall_airplane_socket_guard() -> None:
     socket.socket.connect = _orig_connect  # type: ignore[assignment]
     socket.socket.connect_ex = _orig_connect_ex  # type: ignore[assignment]
     http.client.HTTPConnection._tunnel = _orig_tunnel  # type: ignore[attr-defined]
+    http.client.HTTPConnection.putrequest = _orig_putrequest  # type: ignore[method-assign]
     if _orig_socks_connect is not None:
         _pysocks.socksocket.connect = _orig_socks_connect  # type: ignore[union-attr]
     _installed = False

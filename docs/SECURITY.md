@@ -338,7 +338,13 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   `socket.getaddrinfo` / `create_connection` / `socket.connect(_ex)` — and, since
   2026-07-25, over `http.client.HTTPConnection._tunnel` and PySocks' `socksocket.connect`
   as well, because a proxied connection negotiates its REAL destination at an
-  application-protocol layer the first three never see. Any **non-loopback** target raises
+  application-protocol layer the first three never see. Since 2026-11-08 (R619) it also guards
+  `http.client.HTTPConnection.putrequest` on the host an absolute-form request target names:
+  a plain `http://` URL through an HTTP proxy (Privoxy chained to Tor) is sent as
+  `GET http://host/x` to the loopback proxy with no CONNECT at all, and before this a loopback
+  listener received that whole request in airplane mode. Clients that do not sit on
+  `http.client` (httpx, used only by the loopback-only LLM clients) are not covered by this
+  patch point. Any **non-loopback** target raises
   `AirplaneModeError` **before** a real socket is opened, so no missed call
   site, third-party library, or DNS prefetch can egress. Loopback (127/8, ::1, `localhost`)
   and AF_UNIX always pass through (the app's own server, a loopback Ollama, the file DB).

@@ -16,6 +16,7 @@ fix. ``test_socks_proxy_destination_is_guarded_before_negotiation`` and
 
 from __future__ import annotations
 
+import contextlib
 import http.client
 import socket
 from pathlib import Path
@@ -47,6 +48,7 @@ def guard():
         ap._orig_connect_ex,
         ap._orig_tunnel,
         ap._orig_socks_connect,
+        ap._orig_putrequest,
     )
     reached: list[str] = []
 
@@ -62,6 +64,7 @@ def guard():
     ap._orig_connect = lambda self, address: reached.append("connect")  # type: ignore[assignment]
     ap._orig_connect_ex = lambda self, address: reached.append("connect_ex")  # type: ignore[assignment]
     ap._orig_tunnel = spy("tunnel")  # type: ignore[assignment]
+    ap._orig_putrequest = spy("putrequest")  # type: ignore[assignment]
     if ap._orig_socks_connect is not None:
         ap._orig_socks_connect = spy("socks_connect")  # type: ignore[assignment]
     install_airplane_socket_guard()
@@ -79,6 +82,7 @@ def guard():
             ap._orig_connect_ex,
             ap._orig_tunnel,
             ap._orig_socks_connect,
+            ap._orig_putrequest,
         ) = saved
         uninstall_airplane_socket_guard()
 
@@ -157,6 +161,7 @@ def test_uninstall_restores_real_socket_calls():
     real_gai, real_cc = socket.getaddrinfo, socket.create_connection
     real_conn = socket.socket.connect
     real_tunnel = http.client.HTTPConnection._tunnel
+    real_putrequest = http.client.HTTPConnection.putrequest
     install_airplane_socket_guard()
     assert socket.getaddrinfo is not real_gai  # patched
     uninstall_airplane_socket_guard()
@@ -164,6 +169,7 @@ def test_uninstall_restores_real_socket_calls():
     assert socket.create_connection is real_cc
     assert socket.socket.connect is real_conn
     assert http.client.HTTPConnection._tunnel is real_tunnel
+    assert http.client.HTTPConnection.putrequest is real_putrequest
 
 
 def test_http_connect_tunnel_destination_is_guarded(guard):
@@ -308,3 +314,154 @@ def test_a_patch_point_that_cannot_be_read_is_left_alone_not_healed(guard, monke
     assert ap.removed_while_installed() == []
     ap._install_patches()
     assert not hasattr(http.client.HTTPConnection, "_tunnel")
+
+
+# --------------------------------------------------------------------------- #
+# R619: a plain http:// URL through a LOOPBACK HTTP proxy (Privoxy -> Tor). The
+# client writes an absolute-form ``GET http://host/x`` to the allowed loopback
+# proxy socket and never sends CONNECT, so neither the connect guard nor
+# ``_tunnel`` sees the real destination. Live-reproduced first: a loopback
+# listener standing in for the proxy received the full request in airplane mode.
+# --------------------------------------------------------------------------- #
+
+
+def test_absolute_form_request_target_is_guarded_before_putrequest(guard):
+    """The unit half: the real ``putrequest`` (a spy here) is never reached for a remote absolute-form target, nor for a CONNECT authority
+    or an authority two parsers could read differently; origin-form and loopback targets pass through to it."""
+    activate_kill_switch()
+    conn = http.client.HTTPConnection("127.0.0.1", 8118)
+    remote: list[tuple[str, str | bytes]] = [
+        ("GET", "http://example.com/x"),
+        ("GET", "HTTP://EXAMPLE.COM:80/"),
+        ("GET", b"http://93.184.216.34/"),
+        ("GET", "http://[2606:2800:220:1::]/"),
+        ("GET", "http://localhost@example.com/"),
+        ("GET", "http://localhost\\@example.com/"),
+        ("GET", "http://:80/"),
+        ("CONNECT", "example.com:443"),
+    ]
+    for method, target in remote:
+        with pytest.raises(AirplaneModeError):
+            conn.putrequest(method, target)  # type: ignore[arg-type]  # bytes is what a client may hand it; typeshed says str
+    assert guard == [], "the real putrequest was reached for a remote request target in airplane mode"
+    for method, target in [("GET", "/x"), ("OPTIONS", "*"), ("GET", "http://127.0.0.1:8000/x"), ("GET", "http://[::1]/"), ("GET", "http://localhost/")]:
+        with pytest.raises(_Reached):
+            conn.putrequest(method, target)
+    assert guard == ["putrequest"] * 5
+
+
+def test_absolute_form_request_target_transparent_when_online(guard):
+    conn = http.client.HTTPConnection("127.0.0.1", 8118)
+    with pytest.raises(_Reached):
+        conn.putrequest("GET", "http://example.com/x")
+    assert guard == ["putrequest"]
+
+
+class _Listener:
+    """A loopback TCP listener standing in for an HTTP proxy: it records every byte any connection sends it."""
+
+    def __init__(self) -> None:
+        import threading
+
+        self.received = bytearray()
+        self.accepted = 0
+        self._srv = socket.socket()
+        self._srv.bind(("127.0.0.1", 0))
+        self._srv.listen(8)
+        self._srv.settimeout(0.2)
+        self.port = self._srv.getsockname()[1]
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                c, _ = self._srv.accept()
+            except OSError:
+                continue
+            self.accepted += 1
+            c.settimeout(0.5)
+            try:
+                while chunk := c.recv(65536):
+                    self.received += chunk
+                    if b"\r\n\r\n" in self.received:
+                        c.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+                        break
+            except OSError:
+                pass
+            finally:
+                c.close()
+
+    def close(self) -> None:
+        self._stop.set()
+        self._thread.join(2)
+        self._srv.close()
+
+
+@pytest.fixture
+def proxy_listener():
+    """The REAL guard (no spies: the bytes must really not be written) plus a loopback listener; the guard's prior state is put back."""
+    was_installed, was_armed = ap.is_installed(), ap._airplane_armed
+    install_airplane_socket_guard()
+    clear_kill_switch()
+    listener = _Listener()
+    try:
+        yield listener
+    finally:
+        clear_kill_switch()
+        listener.close()
+        uninstall_airplane_socket_guard()
+        if was_installed:
+            ap.ensure_connect_guard_installed()
+        ap._airplane_armed = was_armed
+
+
+def _fetch_with_requests(port: int) -> object:
+    import requests
+
+    return requests.get("http://example.com/x", proxies={"http": f"http://127.0.0.1:{port}"}, timeout=2)
+
+
+def _fetch_with_urllib(port: int) -> object:
+    import urllib.request
+
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({"http": f"http://127.0.0.1:{port}"}))
+    with opener.open("http://example.com/x", timeout=2) as r:
+        return r.read()
+
+
+@pytest.mark.parametrize("fetch", [_fetch_with_requests, _fetch_with_urllib], ids=["requests", "urllib"])
+def test_no_byte_reaches_a_loopback_http_proxy_in_airplane_mode(proxy_listener, fetch):
+    """The guarantee itself, end to end: with airplane mode engaged, a plain http:// fetch through a loopback HTTP proxy leaves ZERO bytes
+    at the proxy, through both http.client-based clients the tree uses. The refusal is the named airplane one, wherever the client wraps it."""
+    activate_kill_switch()
+    with pytest.raises(Exception) as exc:
+        fetch(proxy_listener.port)
+    assert "airplane mode is engaged" in str(exc.value) or isinstance(exc.value, AirplaneModeError)
+    clear_kill_switch()
+    proxy_listener.close()
+    assert bytes(proxy_listener.received) == b"", "the loopback proxy received request bytes while airplane mode was engaged"
+
+
+@pytest.mark.parametrize("fetch", [_fetch_with_requests, _fetch_with_urllib], ids=["requests", "urllib"])
+def test_the_listener_does_see_the_request_while_online(proxy_listener, fetch):
+    """The control that makes the zero above mean something: online, the same fetch DOES deliver the absolute-form request to the listener."""
+    fetch(proxy_listener.port)
+    proxy_listener.close()
+    assert bytes(proxy_listener.received).startswith(b"GET http://example.com/x HTTP/1.1\r\n")
+
+
+def test_without_the_putrequest_patch_the_bytes_arrive(proxy_listener):
+    """Remove the guard, a test fails: with ``putrequest`` put back to the real call, airplane mode lets the absolute-form request through
+    to the proxy -- the bypass as found. This is what the zero-bytes test above is pinning."""
+    http.client.HTTPConnection.putrequest = ap._orig_putrequest  # type: ignore[method-assign]
+    try:
+        activate_kill_switch()
+        with contextlib.suppress(Exception):  # only the bytes matter here
+            _fetch_with_requests(proxy_listener.port)
+        clear_kill_switch()
+        proxy_listener.close()
+        assert bytes(proxy_listener.received).startswith(b"GET http://example.com/x HTTP/1.1\r\n")
+    finally:
+        http.client.HTTPConnection.putrequest = ap._guarded_putrequest  # type: ignore[method-assign]
