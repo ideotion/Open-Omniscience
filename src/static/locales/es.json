@@ -466,6 +466,7 @@
   "Anonymisation:": "Anonimización:",
   "Anonymisation: {redacted} recipient echoes redacted, {stripped} tracker tokens stripped, {flagged} tracker wrappers flagged.": "Anonimización: {redacted} ecos del destinatario redactados, {stripped} tokens de rastreo eliminados, {flagged} envoltorios de rastreo señalados.",
   "Anonymised at import, zero network: the recipient is never stored, recipient echoes are redacted, tracker tokens are stripped and server-side tracker wrappers are flagged. Nothing is ever fetched — a tracking pixel or link is never followed, so importing can never reveal that you opened or clicked.": "Anonimizado al importar, cero red: el destinatario nunca se almacena, los ecos del destinatario se redactan, los tokens de rastreo se eliminan y los envoltorios de rastreo del servidor se marcan. Nunca se obtiene nada — un píxel o enlace de rastreo nunca se sigue, así que importar nunca puede revelar que abriste o hiciste clic.",
+  "Another IPCC fetch is already running; try again when it finishes.": "Ya hay otra obtención del IPCC en curso; inténtelo de nuevo cuando termine.",
   "Another job is writing to the database": "Otra tarea está escribiendo en la base de datos",
   "Another job is writing to the database:": "Otra tarea está escribiendo en la base de datos:",
   "Another way to get": "Otra forma de obtener",

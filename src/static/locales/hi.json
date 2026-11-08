@@ -466,6 +466,7 @@
   "Anonymisation:": "अनामीकरण:",
   "Anonymisation: {redacted} recipient echoes redacted, {stripped} tracker tokens stripped, {flagged} tracker wrappers flagged.": "अनामीकरण: {redacted} प्राप्तकर्ता प्रतिध्वनियाँ हटाई गईं, {stripped} ट्रैकर टोकन हटाए गए, {flagged} ट्रैकर रैपर चिह्नित किए गए।",
   "Anonymised at import, zero network: the recipient is never stored, recipient echoes are redacted, tracker tokens are stripped and server-side tracker wrappers are flagged. Nothing is ever fetched — a tracking pixel or link is never followed, so importing can never reveal that you opened or clicked.": "आयात पर अनाम, शून्य नेटवर्क: प्राप्तकर्ता कभी संग्रहीत नहीं होता, प्राप्तकर्ता की प्रतिध्वनियाँ संपादित की जाती हैं, ट्रैकर टोकन हटा दिए जाते हैं और सर्वर-साइड ट्रैकर रैपर चिह्नित किए जाते हैं। कुछ भी कभी प्राप्त नहीं किया जाता — ट्रैकिंग पिक्सेल या लिंक का कभी अनुसरण नहीं होता, इसलिए आयात कभी प्रकट नहीं कर सकता कि आपने खोला या क्लिक किया।",
+  "Another IPCC fetch is already running; try again when it finishes.": "IPCC की एक और प्राप्ति पहले से चल रही है; समाप्त होने पर पुनः प्रयास करें।",
   "Another job is writing to the database": "एक और कार्य डेटाबेस में लिख रहा है",
   "Another job is writing to the database:": "एक और कार्य डेटाबेस में लिख रहा है:",
   "Another way to get": "इसे पाने का दूसरा तरीका",

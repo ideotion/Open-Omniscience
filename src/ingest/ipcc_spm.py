@@ -232,7 +232,12 @@ def ingest_spm(
     content_hash = hashlib.sha256(text.encode()).hexdigest()
     dup = session.query(Article).filter_by(hash=content_hash).first()
     if dup is not None:
-        return {"status": "duplicate", "key": key, "article_id": dup.id}
+        return {
+            "status": "duplicate",
+            "key": key,
+            "article_id": dup.id,
+            "reason": "the same text is already in your corpus, stored under another address",
+        }
     prior = session.query(Article).filter_by(url=entry.url).first()
     if prior is not None:
         return {

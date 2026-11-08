@@ -466,6 +466,7 @@
   "Anonymisation:": "বেনামীকরণ:",
   "Anonymisation: {redacted} recipient echoes redacted, {stripped} tracker tokens stripped, {flagged} tracker wrappers flagged.": "বেনামীকরণ: {redacted}টি প্রাপকের প্রতিধ্বনি সরানো হয়েছে, {stripped}টি ট্র্যাকার টোকেন সরানো হয়েছে, {flagged}টি ট্র্যাকার র‍্যাপার চিহ্নিত করা হয়েছে।",
   "Anonymised at import, zero network: the recipient is never stored, recipient echoes are redacted, tracker tokens are stripped and server-side tracker wrappers are flagged. Nothing is ever fetched — a tracking pixel or link is never followed, so importing can never reveal that you opened or clicked.": "আমদানির সময় বেনামি, শূন্য নেটওয়ার্ক: প্রাপককে কখনও সংরক্ষণ করা হয় না, প্রাপকের প্রতিধ্বনি মুছে ফেলা হয়, ট্র্যাকার টোকেন সরানো হয় এবং সার্ভার-সাইড ট্র্যাকার র‍্যাপার চিহ্নিত করা হয়। কখনও কিছু আনা হয় না — ট্র্যাকিং পিক্সেল বা লিঙ্ক কখনও অনুসরণ করা হয় না, তাই আমদানি কখনও প্রকাশ করতে পারে না যে আপনি খুলেছেন বা ক্লিক করেছেন।",
+  "Another IPCC fetch is already running; try again when it finishes.": "IPCC-র আরেকটি আনা ইতিমধ্যে চলছে; শেষ হলে আবার চেষ্টা করুন।",
   "Another job is writing to the database": "আরেকটি কাজ ডেটাবেসে লিখছে",
   "Another job is writing to the database:": "আরেকটি কাজ ডেটাবেসে লিখছে:",
   "Another way to get": "এটি পাওয়ার অন্য উপায়",

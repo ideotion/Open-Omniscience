@@ -466,6 +466,7 @@
   "Anonymisation:": "إخفاء الهوية:",
   "Anonymisation: {redacted} recipient echoes redacted, {stripped} tracker tokens stripped, {flagged} tracker wrappers flagged.": "إخفاء الهوية: {redacted} أثر للمستلم تم حجبه، {stripped} رمز تتبّع تمت إزالته، {flagged} غلاف تتبّع تم وسمه.",
   "Anonymised at import, zero network: the recipient is never stored, recipient echoes are redacted, tracker tokens are stripped and server-side tracker wrappers are flagged. Nothing is ever fetched — a tracking pixel or link is never followed, so importing can never reveal that you opened or clicked.": "مجهول المصدر عند الاستيراد، بلا شبكة: لا يُخزَّن المستلِم أبدًا، وتُحجب أصداء المستلِم، وتُزال رموز التتبّع، وتُعلَّم أغلفة التتبّع من جهة الخادم. لا يُجلب أي شيء أبدًا — لا يُتَّبع بكسل أو رابط تتبّع أبدًا، لذا لا يمكن للاستيراد أن يكشف أبدًا أنك فتحت أو نقرت.",
+  "Another IPCC fetch is already running; try again when it finishes.": "عملية جلب أخرى من IPCC قيد التشغيل بالفعل؛ أعد المحاولة عند انتهائها.",
   "Another job is writing to the database": "مهمة أخرى تكتب في قاعدة البيانات",
   "Another job is writing to the database:": "مهمة أخرى تكتب في قاعدة البيانات:",
   "Another way to get": "طريقة أخرى للحصول على",

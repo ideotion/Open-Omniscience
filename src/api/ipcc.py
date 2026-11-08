@@ -87,7 +87,7 @@ def spm_list(db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/spm/{key}/fetch")
-def spm_fetch(key: str, body: _FetchBody) -> dict:
+def spm_fetch(key: str, body: _FetchBody | None = None) -> dict:
     """Fetch one SPM from www.ipcc.ch (EGRESSES), read it and store it as an Article."""
     from src.ingest import kill_switch_active
     from src.ingest.fetch_verdict import NETWORK_REFUSED
@@ -97,7 +97,7 @@ def spm_fetch(key: str, body: _FetchBody) -> dict:
         raise HTTPException(status_code=404, detail="unknown IPCC report")
     if kill_switch_active():
         raise HTTPException(status_code=409, detail=NETWORK_REFUSED)
-    if not body.consent:
+    if body is None or not body.consent:
         raise HTTPException(
             status_code=400, detail="consent required: this sends a request to www.ipcc.ch"
         )

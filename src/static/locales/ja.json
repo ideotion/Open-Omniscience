@@ -466,6 +466,7 @@
   "Anonymisation:": "匿名化:",
   "Anonymisation: {redacted} recipient echoes redacted, {stripped} tracker tokens stripped, {flagged} tracker wrappers flagged.": "匿名化：受信者の痕跡 {redacted} 件を削除、トラッカートークン {stripped} 件を除去、トラッカーラッパー {flagged} 件を警告表示。",
   "Anonymised at import, zero network: the recipient is never stored, recipient echoes are redacted, tracker tokens are stripped and server-side tracker wrappers are flagged. Nothing is ever fetched — a tracking pixel or link is never followed, so importing can never reveal that you opened or clicked.": "インポート時に匿名化、ネットワーク通信なし：受信者は一切保存されず、受信者の痕跡は伏せられ、トラッカートークンは除去され、サーバー側のトラッカーラッパーには印が付きます。何も取得されません——トラッキングピクセルやリンクをたどることはないため、インポートで開封やクリックが判明することは決してありません。",
+  "Another IPCC fetch is already running; try again when it finishes.": "別の IPCC 取得がすでに実行中です。完了後にもう一度お試しください。",
   "Another job is writing to the database": "別のタスクがデータベースに書き込み中です",
   "Another job is writing to the database:": "別のタスクがデータベースに書き込み中です:",
   "Another way to get": "入手する別の方法",

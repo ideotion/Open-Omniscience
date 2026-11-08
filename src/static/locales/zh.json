@@ -466,6 +466,7 @@
   "Anonymisation:": "匿名化：",
   "Anonymisation: {redacted} recipient echoes redacted, {stripped} tracker tokens stripped, {flagged} tracker wrappers flagged.": "匿名化：{redacted} 处收件人痕迹已隐去，{stripped} 个跟踪令牌已剥离，{flagged} 个跟踪包装已标记。",
   "Anonymised at import, zero network: the recipient is never stored, recipient echoes are redacted, tracker tokens are stripped and server-side tracker wrappers are flagged. Nothing is ever fetched — a tracking pixel or link is never followed, so importing can never reveal that you opened or clicked.": "导入时匿名化，零网络：从不存储收件人，收件人回显被涂去，追踪令牌被剥离，服务器端追踪包装被标记。从不抓取任何内容——绝不跟随追踪像素或链接，因此导入永远不会暴露您是否打开或点击。",
+  "Another IPCC fetch is already running; try again when it finishes.": "另一个 IPCC 获取正在进行；请在其完成后重试。",
   "Another job is writing to the database": "另一个任务正在写入数据库",
   "Another job is writing to the database:": "另一个任务正在写入数据库：",
   "Another way to get": "获取该模型的另一种方式",

@@ -40,8 +40,13 @@
         && !await ensureOnline(t("Fetch an IPCC report from www.ipcc.ch (one request, over your transport)"))) return;
     if (st) st.textContent = t("Fetching in the background…");
     try {
-      await api("/api/ipcc/spm/" + encodeURIComponent(key) + "/fetch",
+      const started = await api("/api/ipcc/spm/" + encodeURIComponent(key) + "/fetch",
         {method: "POST", body: JSON.stringify({consent: true})});
+      // The job kind is one singleton: a refused start is ANOTHER report's run, never this click's answer.
+      if (started && started.started === false) {
+        if (st) st.textContent = t("Another IPCC fetch is already running; try again when it finishes.");
+        return;
+      }
       const job = await pollJobStatus("/api/ipcc/spm/status");
       if (job.state === "error") {
         if (st) st.textContent = t("IPCC fetch failed:") + " " + (job.error || "");

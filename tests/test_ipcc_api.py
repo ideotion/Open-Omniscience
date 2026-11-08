@@ -155,3 +155,20 @@ def test_every_visible_string_is_keyed_in_all_twelve_locales():
         if s not in json.loads(p.read_text(encoding="utf-8"))
     ]
     assert not missing, "\n".join(missing)
+
+
+def test_a_request_with_no_body_gets_the_named_refusal_not_a_422(client):
+    r = client.post("/api/ipcc/spm/wg1/fetch")
+    assert r.status_code == 400 and "consent" in r.json()["detail"], r.text
+    activate_kill_switch()
+    try:
+        r = client.post("/api/ipcc/spm/wg1/fetch")
+    finally:
+        clear_kill_switch()
+    assert r.status_code == 409 and "airplane mode" in r.json()["detail"].lower()
+
+
+def test_the_button_does_not_report_another_reports_run_as_its_own():
+    src = function_source(read_static("app-ipcc.js"), "ipccFetch")
+    assert "started.started === false" in src
+    assert src.index("started.started === false") < src.index("pollJobStatus(")

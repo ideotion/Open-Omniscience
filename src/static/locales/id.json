@@ -466,6 +466,7 @@
   "Anonymisation:": "Anonimisasi:",
   "Anonymisation: {redacted} recipient echoes redacted, {stripped} tracker tokens stripped, {flagged} tracker wrappers flagged.": "Anonimisasi: {redacted} gema penerima disunting, {stripped} token pelacak dihapus, {flagged} pembungkus pelacak ditandai.",
   "Anonymised at import, zero network: the recipient is never stored, recipient echoes are redacted, tracker tokens are stripped and server-side tracker wrappers are flagged. Nothing is ever fetched — a tracking pixel or link is never followed, so importing can never reveal that you opened or clicked.": "Dianonimkan saat impor, tanpa jaringan: penerima tidak pernah disimpan, gema penerima disunting, token pelacak dihapus, dan pembungkus pelacak sisi server ditandai. Tidak ada yang pernah diambil — piksel atau tautan pelacak tidak pernah diikuti, sehingga mengimpor tidak pernah dapat mengungkap bahwa Anda membuka atau mengeklik.",
+  "Another IPCC fetch is already running; try again when it finishes.": "Pengambilan IPCC lain sedang berjalan; coba lagi setelah selesai.",
   "Another job is writing to the database": "Tugas lain sedang menulis ke basis data",
   "Another job is writing to the database:": "Tugas lain sedang menulis ke basis data:",
   "Another way to get": "Cara lain mendapatkan",
