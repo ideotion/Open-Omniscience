@@ -1729,6 +1729,8 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     ),
     "/source-quality": "whole-corpus decrypt ZIP export — own button (manifest 'excluded')",
     "/source-samples": "TEMPORARY one-article-per-source ZIP walk, 4 MB per zip — own button (manifest 'excluded')",
+    "/field-checks": "the field-check list and its last results in this process (R603) — the panel's own read, its report has its own button",
+    "/field-checks/report": "the field-check report (R603) — its own Save button; results are in-process only",
     "/rollup-benchmark": "heavy operator-run benchmark (manifest 'excluded')",
     "/llm-bench": "heavy operator-run benchmark, needs a live model (manifest 'excluded')",
     "/llm-throughput": (

@@ -283,7 +283,7 @@
     "enrichSources", "evaluateWatches", "excludeKeyword", "expandCitedSource", "exploreTerm",
     "exportAnnotations", "exportCustody", "exportDraft", "exportEvidence", "exportMethods",
     "exportResults", "familyMerge", "familyResetGroup", "familySplit", "feedAction",
-    "feedClearSeen", "feedReshuffle", "fetchStatFigure", "filterConceptBrowse", "filterDoc",
+    "feedClearSeen", "feedReshuffle", "fetchStatFigure", "fieldChecksLoad", "fieldChecksSave", "filterConceptBrowse", "filterDoc",
     "folderImportAction", "goldBuilderGrade", "goldBuilderKey", "goldBuilderLoad",
     "goldBuilderSave", "govLoadStandard", "govShowLaw", "govToggleAllAggregates",
     "importAnnotations", "importCustomFeed", "importFeed", "importIcsFile", "importIcsUrl",
