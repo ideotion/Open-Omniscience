@@ -799,6 +799,359 @@ def test_the_mldsa_parser_and_seal_round_trip_and_keep_the_refusals(tmp_path, mo
 
 
 # --------------------------------------------------------------------------- #
+#  The ML-DSA key file, by the same protocol (R484 (1) and (2), go 2026-11-08)
+# --------------------------------------------------------------------------- #
+#
+# Before: the ML-DSA key was written by ``write_bytes`` then ``chmod`` (a window at 0644 under a umask of
+# 022), two first callers could each make a pair (the last writer won, orphaning what the first had
+# signed), and a pair written in the clear before the passphrase existed stayed in the clear. Now it is
+# created and re-wrapped through ``src.custody.keyfile``, as the Ed25519 key is.
+
+
+@pytest.fixture
+def fake_pqc(monkeypatch):
+    monkeypatch.setattr(signing, "_mldsa", _FakeMldsa)
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", True)
+
+
+def _hybrid(directory: Path) -> HybridSigner:
+    return HybridSigner(ed25519_path=directory / "ed.pem", mldsa_path=directory / "ml.key")
+
+
+def _wrapped_ed25519_first(directory: Path, monkeypatch) -> None:
+    """Make the Ed25519 key already wrapped under PASS, so a test sees only what happens to the ML-DSA file."""
+    _hold(monkeypatch, PASS)
+    _signer(directory)
+
+
+@posix_only
+@pytest.mark.parametrize("passphrase", [None, PASS])
+def test_a_new_mldsa_key_is_made_0600_from_its_first_byte(tmp_path, monkeypatch, fake_pqc, passphrase):
+    _hold(monkeypatch, passphrase)
+    seen: list[tuple[str, int, int]] = []
+    real_open = os.open
+
+    def spy(path, flags, mode=0o777, *a, **kw):
+        seen.append((os.fspath(path), flags, mode))
+        return real_open(path, flags, mode, *a, **kw)
+
+    scope_os(monkeypatch, kf, open=spy)
+    old = os.umask(0o022)
+    try:
+        s = _hybrid(tmp_path)
+    finally:
+        os.umask(old)
+    creates = [(f, m) for p, f, m in seen if f & os.O_CREAT and "ml.key" in p]
+    assert creates, "the ML-DSA key was not created through keyfile"
+    assert all(f & os.O_EXCL and m == 0o600 for f, m in creates)
+    ml = tmp_path / "ml.key"
+    assert stat.S_IMODE(ml.stat().st_mode) == 0o600
+    pk, _sk, form = signing.parse_mldsa_key(ml, ml.read_bytes(), passphrase.encode() if passphrase else None)
+    assert form == ("wrapped" if passphrase else "plaintext")
+    assert s.public_identity().ml_dsa_pub == pk.hex()
+    assert _pending_left(tmp_path) == []
+
+
+def test_two_first_callers_end_with_one_mldsa_pair(tmp_path, monkeypatch, fake_pqc):
+    _hold(monkeypatch, PASS)
+    callers = 6
+    start = threading.Barrier(callers)
+    results: list[str | None] = []
+    errors: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            start.wait(timeout=30)
+            results.append(_hybrid(tmp_path).public_identity().ml_dsa_pub)
+        except BaseException as exc:  # noqa: BLE001 - collected and asserted below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run) for _ in range(callers)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=120)
+    assert not errors, errors
+    assert len(results) == callers and len(set(results)) == 1
+    ml = tmp_path / "ml.key"
+    pk, _sk, form = signing.parse_mldsa_key(ml, ml.read_bytes(), PASS.encode())
+    assert form == "wrapped" and results[0] == pk.hex()
+    assert _pending_left(tmp_path) == []
+
+
+def test_the_loser_of_an_mldsa_creation_race_uses_the_winners_pair(tmp_path, monkeypatch, fake_pqc):
+    _wrapped_ed25519_first(tmp_path, monkeypatch)
+    winner_pk, winner_sk = _FakeMldsa.generate_keypair()
+    real_link = kf.os.link
+
+    def racing(src, dst, *a, **kw):
+        if Path(dst).name == "ml.key":  # the other caller got there first
+            kf.write_new(Path(dst), signing.seal_mldsa_key(winner_pk, winner_sk, PASS.encode()))
+        return real_link(src, dst, *a, **kw)
+
+    scope_os(monkeypatch, kf, link=racing)
+    s = _hybrid(tmp_path)
+    assert s.public_identity().ml_dsa_pub == winner_pk.hex()
+    ml = tmp_path / "ml.key"
+    assert signing.parse_mldsa_key(ml, ml.read_bytes(), PASS.encode()) == (winner_pk, winner_sk, "wrapped")
+    assert _pending_left(tmp_path) == []
+
+
+def test_a_legacy_plaintext_mldsa_pair_is_wrapped_in_place_and_stays_the_same_pair(
+    tmp_path, monkeypatch, fake_pqc
+):
+    _wrapped_ed25519_first(tmp_path, monkeypatch)
+    pk, sk = _FakeMldsa.generate_keypair()
+    ml = tmp_path / "ml.key"
+    ml.write_bytes(pk + sk)  # what the file was before the store had a passphrase
+    s = _hybrid(tmp_path)
+    assert signing.parse_mldsa_key(ml, ml.read_bytes(), PASS.encode()) == (pk, sk, "wrapped")
+    assert pk not in ml.read_bytes() and sk not in ml.read_bytes()
+    assert s.public_identity().ml_dsa_pub == pk.hex()
+    assert s.key_protection == "aes256gcm-scrypt"
+    assert stat.S_IMODE(ml.stat().st_mode) == 0o600 or os.name == "nt"
+    assert _pending_left(tmp_path) == []
+
+
+def test_a_failed_mldsa_wrap_leaves_the_file_and_says_what_it_holds(tmp_path, monkeypatch, fake_pqc):
+    _wrapped_ed25519_first(tmp_path, monkeypatch)
+    pk, sk = _FakeMldsa.generate_keypair()
+    ml = tmp_path / "ml.key"
+    ml.write_bytes(pk + sk)
+
+    def boom(*_a, **_k):
+        raise OSError("disk says no")
+
+    scope_os(monkeypatch, kf, replace=boom)
+    s = _hybrid(tmp_path)
+    assert ml.read_bytes() == pk + sk
+    assert s.key_protection == "plaintext-0600"
+    assert s.public_identity().ml_dsa_pub == pk.hex()
+    assert _pending_left(tmp_path) == []
+    # the next load tries again, and this time nothing is in the way
+    monkeypatch.undo()
+    monkeypatch.setattr(signing, "_mldsa", _FakeMldsa)
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", True)
+    _hold(monkeypatch, PASS)
+    assert _hybrid(tmp_path).key_protection == "aes256gcm-scrypt"
+    assert signing.parse_mldsa_key(ml, ml.read_bytes(), PASS.encode()) == (pk, sk, "wrapped")
+
+
+@pytest.mark.parametrize("bad", ["another_pair", "same_public_other_secret", "not_wrapped"])
+def test_an_mldsa_copy_that_is_not_the_same_wrapped_pair_never_replaces_the_file(
+    tmp_path, monkeypatch, fake_pqc, bad
+):
+    """The check runs on the copy before anything is replaced. ``not_wrapped`` is the case a key comparison
+    alone would pass: a copy left in the clear would be put in place and reported as the wrap."""
+    _wrapped_ed25519_first(tmp_path, monkeypatch)
+    pk, sk = _FakeMldsa.generate_keypair()
+    ml = tmp_path / "ml.key"
+    ml.write_bytes(pk + sk)
+    other_pk, other_sk = _FakeMldsa.generate_keypair()
+    if bad == "another_pair":
+        monkeypatch.setattr(signing, "seal_mldsa_key", lambda _pk, _sk, pp: signing._wrap(other_pk + other_sk, pp))
+    elif bad == "same_public_other_secret":  # a copy cut or mixed up: the public half alone proves nothing
+        monkeypatch.setattr(signing, "seal_mldsa_key", lambda pk_, _sk, pp: signing._wrap(pk_ + other_sk, pp))
+    else:
+        monkeypatch.setattr(signing, "seal_mldsa_key", lambda pk_, sk_, _pp: pk_ + sk_)
+    s = _hybrid(tmp_path)
+    assert ml.read_bytes() == pk + sk
+    assert s.key_protection == "plaintext-0600"
+    assert s.public_identity().ml_dsa_pub == pk.hex()
+    assert _pending_left(tmp_path) == []
+
+
+def test_an_mldsa_wrap_another_caller_won_is_reported_as_the_wrap(tmp_path, monkeypatch, fake_pqc):
+    """This caller's replace stood down because another caller wrapped the file meanwhile: the answer is what
+    the file holds NOW (the wrap), not what it held when this caller read it."""
+    _wrapped_ed25519_first(tmp_path, monkeypatch)
+    pk, sk = _FakeMldsa.generate_keypair()
+    ml = tmp_path / "ml.key"
+    ml.write_bytes(pk + sk)
+    real = kf.replace_in_place
+
+    def the_other_caller_won(*a, **kw):
+        assert real(*a, **kw) is True  # the file is wrapped, by "someone else"
+        return False
+
+    monkeypatch.setattr(kf, "replace_in_place", the_other_caller_won)
+    s = _hybrid(tmp_path)
+    assert signing.parse_mldsa_key(ml, ml.read_bytes(), PASS.encode()) == (pk, sk, "wrapped")
+    assert s.key_protection == "aes256gcm-scrypt"
+
+
+def test_an_mldsa_file_restored_over_with_another_pair_does_not_change_the_answer_given(
+    tmp_path, monkeypatch, fake_pqc
+):
+    """A restore lands another install's wrapped pair while this caller's replace stands down: that file says
+    nothing about how THIS signer's pair is kept, so the answer stays what this caller read."""
+    _wrapped_ed25519_first(tmp_path, monkeypatch)
+    pk, sk = _FakeMldsa.generate_keypair()
+    ml = tmp_path / "ml.key"
+    ml.write_bytes(pk + sk)
+    other_pk, other_sk = _FakeMldsa.generate_keypair()
+
+    def restored_meanwhile(*_a, **_kw):
+        ml.write_bytes(signing.seal_mldsa_key(other_pk, other_sk, PASS.encode()))
+        return False
+
+    monkeypatch.setattr(kf, "replace_in_place", restored_meanwhile)
+    s = _hybrid(tmp_path)
+    assert s.public_identity().ml_dsa_pub == pk.hex()
+    assert s.key_protection == "plaintext-0600"
+
+
+def _restore_on_first_parse(monkeypatch, ml: Path, restored: bytes) -> None:
+    """A restore lands ``restored`` at ``ml`` right after this caller's first read of it, before anything is
+    replaced: the stand-down must depend on the file's state AT THE READ."""
+    real_parse = signing.parse_mldsa_key
+    calls = {"n": 0}
+
+    def parse_then_lose_the_race(path, raw, passphrase):
+        out = real_parse(path, raw, passphrase)
+        calls["n"] += 1
+        if calls["n"] == 1:
+            side = ml.parent / "side"
+            side.write_bytes(restored)
+            os.replace(side, ml)
+        return out
+
+    monkeypatch.setattr(signing, "parse_mldsa_key", parse_then_lose_the_race)
+
+
+def test_an_mldsa_file_that_changed_between_the_read_and_the_copy_is_not_overwritten(
+    tmp_path, monkeypatch, fake_pqc
+):
+    _wrapped_ed25519_first(tmp_path, monkeypatch)
+    pk, sk = _FakeMldsa.generate_keypair()
+    ml = tmp_path / "ml.key"
+    ml.write_bytes(pk + sk)
+    other_pk, other_sk = _FakeMldsa.generate_keypair()
+    restored = signing.seal_mldsa_key(other_pk, other_sk, PASS.encode())
+    _restore_on_first_parse(monkeypatch, ml, restored)
+    _hybrid(tmp_path)
+    assert ml.read_bytes() == restored  # never this caller's stale pair over the restored one
+
+
+def test_a_creation_loser_does_not_overwrite_a_file_restored_after_it_read_the_winners(
+    tmp_path, monkeypatch, fake_pqc
+):
+    """The loser's ``seen`` is the state of the WINNER'S file as it read it, not one taken later."""
+    _wrapped_ed25519_first(tmp_path, monkeypatch)
+    ml = tmp_path / "ml.key"
+    winner_pk, winner_sk = _FakeMldsa.generate_keypair()
+    real_link = kf.os.link
+
+    def racing(src, dst, *a, **kw):
+        if Path(dst).name == "ml.key":  # a winner with no passphrase got there first, in the clear
+            kf.write_new(Path(dst), winner_pk + winner_sk)
+        return real_link(src, dst, *a, **kw)
+
+    scope_os(monkeypatch, kf, link=racing)
+    other_pk, other_sk = _FakeMldsa.generate_keypair()
+    restored = signing.seal_mldsa_key(other_pk, other_sk, PASS.encode())
+    _restore_on_first_parse(monkeypatch, ml, restored)
+    _hybrid(tmp_path)
+    assert ml.read_bytes() == restored
+
+
+def test_with_no_passphrase_a_plaintext_pair_is_loaded_and_nothing_is_written(
+    tmp_path, monkeypatch, fake_pqc, caplog
+):
+    _hold(monkeypatch, None)
+    _signer(tmp_path)  # the Ed25519 key, plaintext
+    pk, sk = _FakeMldsa.generate_keypair()
+    ml = tmp_path / "ml.key"
+    ml.write_bytes(pk + sk)
+    created: list[str] = []
+    real_open = os.open
+
+    def spy(path, flags, mode=0o777, *a, **kw):
+        if flags & os.O_CREAT:
+            created.append(os.fspath(path))
+        return real_open(path, flags, mode, *a, **kw)
+
+    scope_os(monkeypatch, kf, open=spy)
+    with caplog.at_level(logging.DEBUG, logger="src.custody"):
+        s = _hybrid(tmp_path)
+    assert created == []  # no private copy of the pair, not even one removed again
+    assert ml.read_bytes() == pk + sk
+    assert s.key_protection == "plaintext-0600"
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert _pending_left(tmp_path) == []
+
+
+def test_a_wrap_that_cannot_land_pays_no_extra_derivation_on_each_load(tmp_path, monkeypatch, fake_pqc):
+    """A symbolic link is refused before the copy is sealed, and the stand-down reads the unchanged file
+    without parsing it again: a link left in place is met on every load, and each scrypt is about 80 ms."""
+    keys = tmp_path / "keys"
+    keys.mkdir()
+    _wrapped_ed25519_first(keys, monkeypatch)
+    pk, sk = _FakeMldsa.generate_keypair()
+    target = tmp_path / "elsewhere.key"
+    target.write_bytes(pk + sk)
+    (keys / "ml.key").symlink_to(target)
+    counts = {"seal": 0, "parse": 0}
+    real_seal, real_parse = signing.seal_mldsa_key, signing.parse_mldsa_key
+
+    def seal(*a, **kw):
+        counts["seal"] += 1
+        return real_seal(*a, **kw)
+
+    def parse(*a, **kw):
+        counts["parse"] += 1
+        return real_parse(*a, **kw)
+
+    monkeypatch.setattr(signing, "seal_mldsa_key", seal)
+    monkeypatch.setattr(signing, "parse_mldsa_key", parse)
+    s = _hybrid(keys)
+    assert counts == {"seal": 0, "parse": 1}
+    assert s.key_protection == "plaintext-0600"
+    assert target.read_bytes() == pk + sk
+
+
+@posix_only
+def test_a_hard_link_made_while_the_copy_is_sealed_still_stops_the_replace(tmp_path, monkeypatch, fake_pqc, caplog):
+    """The early refusal saves the derivation; the late one is what holds when a second name appears while
+    the copy is being made (the plaintext pair would stay readable at it)."""
+    _wrapped_ed25519_first(tmp_path, monkeypatch)
+    pk, sk = _FakeMldsa.generate_keypair()
+    ml = tmp_path / "ml.key"
+    ml.write_bytes(pk + sk)
+    elsewhere = tmp_path / "another-name"
+    real_seal = signing.seal_mldsa_key
+
+    def seal_while_someone_links(*a, **kw):
+        os.link(ml, elsewhere)
+        return real_seal(*a, **kw)
+
+    monkeypatch.setattr(signing, "seal_mldsa_key", seal_while_someone_links)
+    with caplog.at_level(logging.WARNING):
+        s = _hybrid(tmp_path)
+    assert ml.read_bytes() == pk + sk and elsewhere.read_bytes() == pk + sk
+    assert s.key_protection == "plaintext-0600"
+    assert any("KeyFileLinked" in r.getMessage() for r in caplog.records)
+    assert _pending_left(tmp_path) == []
+
+
+def test_an_mldsa_key_file_that_is_a_symbolic_link_is_never_replaced(tmp_path, monkeypatch, fake_pqc, caplog):
+    keys = tmp_path / "keys"
+    keys.mkdir()
+    _wrapped_ed25519_first(keys, monkeypatch)
+    pk, sk = _FakeMldsa.generate_keypair()
+    target = tmp_path / "elsewhere.key"
+    target.write_bytes(pk + sk)
+    (keys / "ml.key").symlink_to(target)
+    with caplog.at_level(logging.WARNING):
+        s = _hybrid(keys)
+    assert (keys / "ml.key").is_symlink() and target.read_bytes() == pk + sk
+    assert s.key_protection == "plaintext-0600"
+    assert any("KeyFileLinked" in r.getMessage() and "ML-DSA" in r.getMessage() for r in caplog.records)
+    assert PASS not in caplog.text
+    assert _pending_left(keys) == []
+
+
+# --------------------------------------------------------------------------- #
 #  A burst of constructions
 # --------------------------------------------------------------------------- #
 
