@@ -277,9 +277,72 @@ def test_a_read_under_one_data_folder_never_moves_a_store_under_another(monkeypa
     assert F._load_json("calendar_feed_imports.json") == {}
     other = tmp_path / "other"
     other.mkdir()
+    (other / "calendar_feed_imports.json").write_text(json.dumps(_NEW), "utf-8")  # a healthy store there, so only the PATH key keeps it in place
     monkeypatch.setenv("OO_DATA_DIR", str(other))
-    F._save_json("calendar_feed_imports.json", _NEW, mirror=False)
+    F._save_json("calendar_feed_imports.json", {"fam3": {"name": "H", "events": {}}}, mirror=False)
     assert not (other / "calendar_feed_imports.json.damaged").exists()
+
+
+def test_a_passing_read_error_does_not_mark_a_healthy_store(monkeypatch):
+    """EMFILE, or a Windows sharing violation while another thread replaces the file, is not damage: marking it would spend the one copy on healthy bytes."""
+    import errno
+    import pathlib
+
+    p = _store("calendar_feed_imports.json")
+    p.write_text(json.dumps(_NEW), "utf-8")
+    real = pathlib.Path.read_text
+
+    def flaky(self, *a, **k):
+        if self == p:
+            raise OSError(errno.EMFILE, "too many open files")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", flaky)
+    assert F._load_json("calendar_feed_imports.json") == {}
+    monkeypatch.setattr(pathlib.Path, "read_text", real)
+    F._save_json("calendar_feed_imports.json", {"fam3": {"name": "H", "events": {}}}, mirror=False)
+    assert not _kept("calendar_feed_imports.json").exists()
+
+
+def test_an_io_error_in_the_file_marks_it(monkeypatch):
+    import errno
+    import pathlib
+
+    p = _store("calendar_feed_imports.json")
+    p.write_text("bytes on a bad sector", "utf-8")
+    real = pathlib.Path.read_text
+
+    def eio(self, *a, **k):
+        if self == p:
+            raise OSError(errno.EIO, "input/output error")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", eio)
+    assert F._load_json("calendar_feed_imports.json") == {}
+    monkeypatch.setattr(pathlib.Path, "read_text", real)
+    F._save_json("calendar_feed_imports.json", _NEW, mirror=False)
+    assert _kept("calendar_feed_imports.json").read_text("utf-8") == "bytes on a bad sector"
+
+
+def test_a_copy_that_cannot_be_made_never_blocks_the_save_and_leaves_no_mark_on_the_new_store(monkeypatch, caplog):
+    p = _store("calendar_feed_imports.json")
+    p.write_text(_TORN, "utf-8")
+    assert F._load_json("calendar_feed_imports.json") == {}
+    real = F.os.replace
+    calls = {"n": 0}
+
+    def refuse_the_copy(src, dst):
+        if str(dst).endswith(".damaged") and calls["n"] == 0:
+            calls["n"] += 1
+            raise PermissionError("held open")
+        return real(src, dst)
+
+    monkeypatch.setattr(F.os, "replace", refuse_the_copy)
+    with caplog.at_level("WARNING"):
+        F._save_json("calendar_feed_imports.json", _NEW, mirror=False)
+    assert p not in F._READ_AS_DAMAGED, "the new store is healthy: a mark left on it would move it at the next save"
+    assert "could not be kept as calendar_feed_imports.json.damaged" in caplog.text and "PermissionError" in caplog.text
+    assert list(F._load_json("calendar_feed_imports.json")) == ["fam2"], "the save went on"
 
 
 def test_a_store_that_cannot_be_opened_is_on_the_record(caplog):

@@ -23,6 +23,7 @@ The maintainer supplied an aggregated directory of ~500 public iCalendar feeds
 
 from __future__ import annotations
 
+import errno
 import json
 import logging
 import os
@@ -292,7 +293,9 @@ def _load_json(name: str) -> dict:
         # The line does not claim the replacement: where the store is a directory or the data folder is not writable, no save succeeds.
         # The class only: the store holds the user's imported events, and what is wrong with it is not worth a line of its words.
         _LOG.warning("%s exists but could not be read, so it reads as empty: %s", name, type(exc).__name__)
-        _note_read(name, p, damaged=True)
+        # A parse failure or EIO is damage in the file; any other OSError (too many open files, a Windows sharing violation while another
+        # thread replaces it) may pass and must not mark a healthy store, since the one ``.damaged`` slot is never overwritten.
+        _note_read(name, p, damaged=not isinstance(exc, OSError) or exc.errno == errno.EIO)
         return {}
     out = _sanitized(name, data, what="reads as", raw=raw)
     # Read as empty although the file held something (not an object, nested too deeply, every piece of the wrong shape): the next save
@@ -308,6 +311,8 @@ def _keep_damaged_bytes(name: str, p: Path) -> None:
     """
     if p not in _READ_AS_DAMAGED:
         return
+    # The mark goes on every path: this save replaces the damaged bytes, whether or not they were kept, and a mark left on the new,
+    # healthy file would move it at the next save.
     _READ_AS_DAMAGED.discard(p)
     kept = p.with_name(p.name + ".damaged")
     if not p.is_file():
