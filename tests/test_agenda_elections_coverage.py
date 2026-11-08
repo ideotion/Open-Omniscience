@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import pathlib
 import re
+import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "static"
@@ -24,7 +25,7 @@ BOOT = (STATIC / "app-boot.js").read_text(encoding="utf-8")
 
 
 def _render_fn() -> str:
-    start = AGENDA.index("function renderAgendaCoverage()")
+    start = AGENDA.index("function renderAgendaCoverage(")
     end = AGENDA.index("function agNavToday()", start)
     return AGENDA[start:end]
 
@@ -89,3 +90,23 @@ def test_a_language_switch_repaints_it_from_the_held_payload_without_a_request()
     start = AGENDA.index("function _agCovRepaint()")
     body = AGENDA[start:AGENDA.index("function agCovFilter", start)]
     assert "api(" not in body and "_agCov.then" in body
+
+
+def test_the_event_filters_step_aside_in_the_coverage_view():
+    """The category, country, tag and subscribed filters narrow calendar EVENTS; the
+    report is per floor country and ignores them. Left visible they would read as broken."""
+    for fid in ("agenda-cats", "agenda-country", "agenda-tag", "agenda-subonly"):
+        i = HTML.index(f'id="{fid}"')
+        host = HTML.rindex("<div", 0, HTML.rindex('<label', 0, i) + 1)
+        assert 'class="ag-filter"' in HTML[host:i], fid
+    assert 'closest(".ag-filter")' in AGENDA and 'host.style.display = isCov ? "none" : ""' in AGENDA
+
+
+def test_the_renderer_draws_what_the_report_says():
+    """Drives renderAgendaCoverage in node: caveats + method drawn, server text escaped,
+    filter keeps full counts, a repaint never fetches, the RTL date is isolated, and a
+    failure the user never saw is asked again on the way back."""
+    proc = subprocess.run(["node", str(ROOT / "tests" / "agenda_coverage_node_test.js")],
+                          capture_output=True, text=True, check=False)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "agenda coverage node test: ok" in proc.stdout

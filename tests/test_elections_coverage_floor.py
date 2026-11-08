@@ -322,6 +322,11 @@ def test_the_endpoint_carries_the_per_country_tier_report_and_it_agrees_with_the
     assert {r["cc"] for r in rep["countries"] if r["state"] in covered_states} == set(out["covered"])
     assert {r["cc"] for r in rep["countries"] if r["state"] == "missing"} == set(out["missing"])
     assert rep["caveat"]
-    # The method names every state by the label the Agenda shows for it.
-    for label in ("scheduled", "window", "projected", "projected · passed", "dateless", "missing"):
-        assert label in rep["method"], label
+    # The method names every state by the label the Agenda shows for it, read from the
+    # Agenda's own table so the two cannot drift, each label introducing its "(...)" gloss.
+    agenda = (Path(__file__).resolve().parents[1] / "src" / "static" / "app-agenda.js").read_text(encoding="utf-8")
+    table = agenda.split("const _AG_COV_STATES", 1)[1].split("];", 1)[0]
+    labels = re.findall(r'\["(\w+)", "([^"]+)", "[\w-]*"\]', table)
+    assert {k for k, _ in labels} == set(rep["counts"]), "one Agenda label per state the report counts"
+    for _, label in labels:
+        assert f"{label} (" in rep["method"], label

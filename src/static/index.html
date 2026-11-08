@@ -1225,13 +1225,13 @@
             <button data-tab="decade">Decade</button>
             <button data-tab="list">List</button>
             <button data-tab="coverage" title="Which floor countries the elections calendar dates, and how firmly">Elections coverage</button></nav></div>
-        <div style="flex:1 1 auto"><label>Category</label>
+        <div class="ag-filter" style="flex:1 1 auto"><label>Category</label>
           <div class="ag-cats" id="agenda-cats"></div></div>
-        <div><label for="agenda-country">Country</label><select id="agenda-country" data-on-change="renderAgenda()"><option value="">all</option></select></div>
-        <div><label for="agenda-tag">Tag</label><select id="agenda-tag" data-on-change="renderAgenda()"><option value="">all</option></select></div>
+        <div class="ag-filter"><label for="agenda-country">Country</label><select id="agenda-country" data-on-change="renderAgenda()"><option value="">all</option></select></div>
+        <div class="ag-filter"><label for="agenda-tag">Tag</label><select id="agenda-tag" data-on-change="renderAgenda()"><option value="">all</option></select></div>
         <div id="agenda-group-wrap"><label for="agenda-group">Group by</label><select id="agenda-group" data-on-change="renderAgenda()">
           <option value="month">month</option><option value="calendar">calendar</option><option value="country">country</option></select></div>
-        <div style="flex:0 0 auto;align-self:end"><label class="switch" style="margin-top:0"><input type="checkbox" id="agenda-subonly" checked data-on-change="renderAgenda()"> subscribed only</label></div>
+        <div class="ag-filter" style="flex:0 0 auto;align-self:end"><label class="switch" style="margin-top:0"><input type="checkbox" id="agenda-subonly" checked data-on-change="renderAgenda()"> subscribed only</label></div>
         <div style="flex:1"></div>
         <div class="hint" style="align-self:end"><a href="#settings" data-on-click="openSettingsAgenda();return false">Manage calendars &amp; sources in Settings → Agenda.</a></div>
       </div>
