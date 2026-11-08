@@ -31,7 +31,10 @@ HONESTY PROPERTIES, each a refusal rather than a caveat:
 * **The ``Missing`` column** (area with no data in the swath, in 10^6 km2) is validated but not
   emitted as its own series; it is counted in ``rows_with_missing_area`` so a consumer can say
   that some days were computed with part of the pole unobserved, and a ``-9999`` there is
-  counted in ``rows_with_unknown_missing_area`` (coverage unknown is not full coverage).
+  counted in ``rows_with_unknown_missing_area`` (coverage unknown is not full coverage);
+  ``coverage_gaps`` names each such DAY, so a consumer can mark which figures are undercounts.
+* **The column-names line is matched whole**, so a swapped or renamed column is refused, not
+  read as Extent.
 * **The units row is checked**: both area columns must say ``10^6 sq km``, or no row is read.
 * **A line that is not a data row is refused and COUNTED**, so an HTML error page or a renamed
   product reads as ``looks_unrecognised`` and not as "no data".
@@ -91,6 +94,9 @@ class NsidcParse:
     rows_with_missing_area: int = 0
     #: Rows whose ``Missing`` column was the ``-9999`` gap: that day's coverage is unknown.
     rows_with_unknown_missing_area: int = 0
+    #: Per day, the area left unobserved (10^6 km2) on every day that was NOT fully observed, keyed by the
+    #: figure's ``time_period``; ``None`` = unknown (the ``-9999`` gap). A day absent here was fully observed.
+    coverage_gaps: dict[str, float | None] = field(default_factory=dict)
     header_lines: int = 0
 
     @property
@@ -114,6 +120,7 @@ class NsidcParse:
             "all_gap": self.all_gap,
             "rows_with_missing_area": self.rows_with_missing_area,
             "rows_with_unknown_missing_area": self.rows_with_unknown_missing_area,
+            "coverage_gaps": dict(self.coverage_gaps),
             "refused_total": self.refused_total,
             "refused_sample": list(self.refused),
             "refused_is_sample": self.refused_is_sample,
@@ -139,6 +146,8 @@ def _number(raw: str) -> tuple[float | None, str | None]:
 
 
 _UNIT_TEXT = "10^6 sq km"
+#: The column-names line, matched whole: a swapped or renamed column must not be read as Extent.
+_NAMES: tuple[str, ...] = ("Year", "Month", "Day", "Extent", "Missing", "Source Data")
 
 
 def parse_nsidc(text: str, *, region: str = "N", extracted_at: str) -> NsidcParse:
@@ -157,8 +166,11 @@ def parse_nsidc(text: str, *, region: str = "N", extracted_at: str) -> NsidcPars
         fields = [p.strip() for p in stripped.split(",", _EXPECTED_FIELDS - 1)]
         first = fields[0].lower()
         if first == "year" and not header_seen:
-            names_seen = True
             out.header_lines += 1
+            if tuple(fields) == _NAMES:
+                names_seen = True
+            else:
+                _refuse(out, lineno, "column names or order changed", stripped)
             continue
         if first == "yyyy" and names_seen and not header_seen:
             out.header_lines += 1
@@ -197,8 +209,10 @@ def parse_nsidc(text: str, *, region: str = "N", extracted_at: str) -> NsidcPars
         out.rows_read += 1
         if missing is None:
             out.rows_with_unknown_missing_area += 1
+            out.coverage_gaps[when.isoformat()] = None
         elif missing > 0:
             out.rows_with_missing_area += 1
+            out.coverage_gaps[when.isoformat()] = missing
         out.figures.append(
             StatFigure(
                 agency=AGENCY,

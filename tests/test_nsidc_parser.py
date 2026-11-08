@@ -160,3 +160,20 @@ def test_a_changed_or_missing_units_row_reads_no_rows():
     ):
         p = parse_nsidc(body, extracted_at="t")
         assert p.rows_read == 0 and p.looks_unrecognised
+
+
+def test_each_partly_observed_day_is_named():
+    body = HEADER + "2000, 1, 1, 5.0, 0.000, x\n2000, 1, 2, 4.1, 2.500, x\n2000, 1, 3, 4.0, -9999, x\n"
+    p = parse_nsidc(body, extracted_at="t")
+    assert p.coverage_gaps == {"2000-01-02": 2.5, "2000-01-03": None}
+    assert p.summary()["coverage_gaps"] == {"2000-01-02": 2.5, "2000-01-03": None}
+
+
+def test_a_swapped_or_renamed_column_is_refused_not_read_as_extent():
+    units = "YYYY, MM, DD, 10^6 sq km, 10^6 sq km, x\n"
+    for names in (
+        "Year, Month, Day, Missing, Extent, Source Data\n",
+        "Year, Month, Day, Area, Missing, Source Data\n",
+    ):
+        p = parse_nsidc(names + units + "2000, 1, 1, 0.000, 10.2, x\n", extracted_at="t")
+        assert p.rows_read == 0 and p.figures == [] and p.looks_unrecognised
