@@ -99,6 +99,8 @@ def snapshot_to_event(
     }
 
     if point is None and start is not None and end is not None and start <= end:
+        if end < today:
+            return None, "past election (the agenda is forward-looking)"
         # A range is a window, never a schedule; a month is stated only when both ends agree.
         if (start.year, start.month) == (end.year, end.month):
             event["month"], event["window_year"] = start.month, start.year
@@ -111,7 +113,15 @@ def snapshot_to_event(
 
     if point is None:
         return _undated(event, "row states no usable date")
-    if point < today:
+    # A month- or year-precision date is stored as the 1st of the period, so compare the
+    # period, not the day: the current month/year has not passed.
+    if precision == "year":
+        is_past = point.year < today.year
+    elif precision == "month":
+        is_past = (point.year, point.month) < (today.year, today.month)
+    else:
+        is_past = point < today
+    if is_past:
         return None, "past election (the agenda is forward-looking)"
 
     if precision == "day" and url:
@@ -121,7 +131,9 @@ def snapshot_to_event(
     if precision == "day":
         # A day with no authority behind it is not a schedule: degrade, and say so.
         event.update(month=point.month, window_year=point.year)
-        event["date_basis"] = f"P585 {point.isoformat()} (day precision), NO official source"
+        event["date_basis"] = (
+            f"P585 {point.year}-{point.month:02d} (day dropped: NO official source)"
+        )
         return _inferred(event, "day degraded to a window: no official source named"), None
     if precision == "month":
         event.update(month=point.month, window_year=point.year)

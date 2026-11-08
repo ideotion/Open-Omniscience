@@ -10,6 +10,7 @@ from src.civic.calendar_report import (
     STATES,
     country_tier_report,
     layer,
+    snapshot_to_event,
     snapshot_to_events,
 )
 
@@ -108,3 +109,37 @@ def test_layering_shadows_with_a_record_and_never_silently_drops():
     ]
     assert len(merged) == len(events)  # 1 curated + (N-1) kept
     assert merged[0] is curated[0]
+
+
+def test_a_past_range_is_refused_like_a_past_point():
+    row = {"qid": "Q9", "country": "id", "office": "P", "start": "2019-04-01", "end": "2019-04-30"}
+    ev, why = snapshot_to_event_pair(row)
+    assert ev is None and "past" in why
+
+
+def test_the_current_month_and_year_have_not_passed():
+    month = {
+        "qid": "Q10",
+        "country": "id",
+        "office": "P",
+        "point_in_time": "2026-11-01",
+        "precision": "month",
+    }
+    year = {
+        "qid": "Q11",
+        "country": "id",
+        "office": "P",
+        "point_in_time": "2026-01-01",
+        "precision": "year",
+    }
+    assert snapshot_to_event_pair(month)[0] is not None
+    assert snapshot_to_event_pair(year)[0] is not None
+
+
+def test_a_dropped_day_does_not_survive_in_date_basis():
+    ev, _ = _by_qid()
+    assert "2029-09-01" not in ev["Q2"]["date_basis"]
+
+
+def snapshot_to_event_pair(row):
+    return snapshot_to_event(row, TODAY)
