@@ -2072,3 +2072,83 @@
     // drives the ALWAYS-WORKS streaming engines — the encrypted corpus (volumes +
     // parity) then the large public blobs (folder stream) — into that one folder.
     // No new backend: reuses /backup/v2/volumes + /backup/folder. English-only.
+
+    // ---- Updates (Settings -> Advanced): check for a newer version, then install it ---------------------------------- //
+    // The CHECK is the one in-process fetch (api.github.com, guarded session) so it asks the ONE consent popup first; the INSTALL is a click of its
+    // own that stops the app, lets a helper process fast-forward the git checkout, and starts the app again. Never automatic, never silent.
+    let _updCheck = null;
+    function _updT() { return (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s); }
+    function _updReason(reason) {
+      const t = _updT();
+      if (reason === "not_a_git_checkout") return t("This install is not a git checkout.");
+      if (reason === "origin_not_this_repository") return t("This checkout's origin is not the project's repository.");
+      if (reason === "not_on_main") return t("This checkout is not on the main branch.");
+      if (reason === "local_changes") return t("This checkout has local changes.");
+      if (reason === "git_unavailable") return t("git is not available on this computer.");
+      return "";
+    }
+    function _updPaintInstall(install) {
+      const box = $("upd-manual");
+      if (!box) return;
+      const t = _updT();
+      if (!install || install.can_apply) { box.hidden = true; box.textContent = ""; return; }
+      box.hidden = false;
+      box.innerHTML = "";
+      const p = document.createElement("p");
+      p.textContent = t("This install cannot be updated from here.") + " " + _updReason(install.reason) + " " + t("To update it yourself:");
+      const pre = document.createElement("pre");
+      pre.textContent = (install.manual_steps || []).join("\n");
+      box.appendChild(p); box.appendChild(pre);
+    }
+    async function updLoadStatus() {
+      const t = _updT();
+      const cur = $("upd-current"), last = $("upd-last");
+      try {
+        const st = await api("/api/system/update/status", { polled: true });
+        if (cur) cur.textContent = st.current || "";
+        _updPaintInstall(st.install);
+        if (last) {
+          const r = st.last_result;
+          last.textContent = !r ? "" : (r.status === "updated"
+            ? t("The last update was installed.")
+            : t("The last update was not applied; the previous version was kept."));
+        }
+      } catch (e) { /* the check below reports its own failure */ }
+    }
+    async function updCheck() {
+      const t = _updT();
+      const msg = $("upd-msg"), go = $("upd-apply");
+      if (go) go.hidden = true;
+      if (msg) msg.textContent = "";
+      if (!await ensureOnline(t("Check GitHub for a newer version of the app"))) return;
+      if (msg) msg.textContent = t("Checking…");
+      try {
+        _updCheck = await api("/api/system/update/check", { method: "POST" });
+      } catch (e) {
+        _updCheck = null;
+        if (msg) msg.textContent = (e && e.status === 409) ? t("Airplane mode is on: the update check did not run.") : t("The update check failed.");
+        return;
+      }
+      const latest = $("upd-latest"); if (latest) latest.textContent = _updCheck.latest || "";
+      _updPaintInstall(_updCheck.install);
+      if (!_updCheck.update_available) { if (msg) msg.textContent = t("You are up to date."); return; }
+      if (msg) msg.textContent = t("A newer version is available.");
+      if (go) go.hidden = !(_updCheck.install && _updCheck.install.can_apply);
+    }
+    async function updApply() {
+      const t = _updT();
+      const msg = $("upd-msg");
+      if (!_updCheck || !_updCheck.update_available) return;
+      if (!window.confirm(t("Update now? The app stops, the new version is downloaded with git, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click."))) return;
+      try {
+        await api("/api/system/update/apply", { method: "POST", body: JSON.stringify({ confirm: true, ref: _updCheck.ref, sha: _updCheck.sha }) });
+        if (msg) msg.textContent = t("The app is stopping to update and will start again by itself. Reload this page in a minute.");
+        const go = $("upd-apply"); if (go) go.hidden = true;
+      } catch (e) {
+        if (msg) msg.textContent = t("The update could not start; nothing was changed.");
+      }
+    }
+    (function _updWire() {
+      const sec = document.querySelector('details[data-adv="update"]');
+      if (sec) sec.addEventListener("toggle", () => { if (sec.open) updLoadStatus(); });
+    })();

@@ -1397,12 +1397,16 @@
         // installer check IS a guarded fetch (docs/SECURITY.md's "Mixed." row), so
         // the plain "not through the fetcher" line would deny a path it takes (row H).
         if (!protectedMode) {
+          if (lane.mixed && lane.id === "update") return t("Mostly not through this app's fetcher or proxy — only the update check uses the fetcher.");
           return lane.mixed
             ? t("Mostly not through this app's fetcher or proxy — only the installer check uses the fetcher.")
             : t("Not through this app's fetcher or proxy.");
         }
         // With no usable proxy the installer check is refused, not proxied, so the
         // "mostly direct" line would overclaim; the plain direct line is the true one.
+        if (lane.mixed && lane.id === "update" && kind !== "refused") {
+          return t("Transport: mostly direct, even with protected mode on — only the update check goes through your proxy; the git download does not, so GitHub sees your address.");
+        }
         return (lane.mixed && kind !== "refused")
           ? t("Transport: mostly direct, even with protected mode on — only the installer check goes through your proxy, so the download hosts see your address.")
           : t("Transport: direct, even with protected mode on — this lane does not use your proxy, so these hosts see your address.");

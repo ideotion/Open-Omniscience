@@ -77,6 +77,64 @@ except Exception:  # noqa: BLE001 - any failure -> degrade honestly, never fabri
 _BOOT_TS = time.time()
 
 
+class UpdateApplyBody(BaseModel):
+    """Install the version a check just read. ``ref``/``sha`` must equal that check's answer; ``confirm`` must be true."""
+
+    confirm: bool = False
+    ref: str = ""
+    sha: str = ""
+
+
+@router.post("/update/check")
+def update_check() -> dict:
+    """Ask GitHub for the newest published version (the ONE in-process fetch of the update path; guarded session, kill-switch gated)."""
+    from src.maintenance.self_update import UpdateError, check
+    from src.safety.fetcher import NetworkBlocked
+
+    try:
+        return check()
+    except NetworkBlocked:
+        raise HTTPException(status_code=409, detail="Airplane mode is on: the update check did not run. Go online first.") from None
+    except UpdateError as exc:
+        raise HTTPException(status_code=502, detail=http_detail(exc)) from None
+
+
+@router.get("/update/status")
+def update_status() -> dict:
+    """Local reads only: this install's updatability and what the helper recorded about the last attempt."""
+    from src.maintenance.self_update import current_version, install_status, last_result
+
+    st = install_status()
+    return {
+        "current": current_version(),
+        "install": {k: st[k] for k in ("kind", "can_apply", "reason", "manual_steps")},
+        "last_result": last_result(),
+    }
+
+
+@router.post("/update/apply")
+def update_apply(body: UpdateApplyBody) -> dict:
+    """Stop the app cleanly and let the helper apply the checked version, then start the app again. Needs ``confirm`` and the exact checked ref/sha."""
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="confirmation required to update")
+    from src.maintenance.self_update import UpdateError, launch_helper, validate_apply
+
+    try:
+        checked = validate_apply(body.ref, body.sha)
+        # Pause everything first: the kill switch refuses every new request, then the ordinary shutdown closes the database and the WAL.
+        from src.ingest import activate_kill_switch
+
+        launch_helper(checked["ref"], checked["sha"], checked["kind"])  # waits for this process to exit before touching anything
+        activate_kill_switch()
+    except UpdateError as exc:
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from None
+    from src.safety.shutdown import request_shutdown
+
+    out = request_shutdown(confirm=True)
+    out["detail"] = "The app is stopping to update; it starts again by itself. Reload this page in a minute."
+    return out
+
+
 def _process_vitals() -> dict:
     """Per-process CPU / memory / disk I/O via psutil, or nulls if unavailable."""
     out: dict = {

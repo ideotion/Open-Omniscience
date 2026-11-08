@@ -339,7 +339,7 @@
     "toggleSidebar", "toggleSourceTags", "toggleSourceTrail", "toggleStatSub", "toggleVitals",
     "toggleWatch", "trackWikiNow", "trackWikiPage", "translateArticle", "triangulateStatSeries",
     "trustAuthor", "unattendedLog", "unattendedStart", "unattendedStop", "undoNewsletterAttach",
-    "uninstallAi", "uninstallApp", "updateSourceEnabled", "updateSourcePriority", "vacuumNow",
+    "uninstallAi", "uninstallApp", "updApply", "updCheck", "updateSourceEnabled", "updateSourcePriority", "vacuumNow",
     "verifyChain", "viewChain", "viewKeywordGrowth", "viewWikiDiff", "vitalsKey", "wikiLaneClick",
     "zoomMap",
   ];
@@ -439,7 +439,7 @@
       "toggleMktConfig", "toggleNetwork", "togglePerceptionExtract", "toggleRateMode", "toggleSidebar",
       "toggleSourceTags", "toggleSourceTrail", "toggleStatSub", "toggleVitals", "toggleWatch", "trackWikiNow",
       "trackWikiPage", "translateArticle", "triangulateStatSeries", "unattendedLog", "unattendedStart",
-      "unattendedStop", "undoNewsletterAttach", "uninstallAi", "uninstallApp", "vacuumNow", "verifyChain",
+      "unattendedStop", "undoNewsletterAttach", "uninstallAi", "uninstallApp", "updApply", "updCheck", "vacuumNow", "verifyChain",
       "viewChain", "viewKeywordGrowth", "viewWikiDiff", "wikiLaneClick", "zoomMap",
     ],
     input: [
