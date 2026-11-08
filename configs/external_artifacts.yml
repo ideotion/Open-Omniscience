@@ -89,7 +89,16 @@ artifacts:
     # from publicsuffix.org, and that host is CONNECT-refused from the build sandbox, so
     # this snapshot came from the project's own upstream repository. An operator with
     # clearnet should refresh from the canonical URL named in `refresh` above.
-    last_verified: "2026-09-07"
+    #
+    # Refreshed 2026-11-08 to publicsuffix/list@aae37acca5d0f3d09e7c1fe4da9024c514674ac9 (the
+    # last commit touching public_suffix_list.dat, 2026-11-04; freshness issue #1163), same
+    # route and same deviation as above (publicsuffix.org still CONNECT-refused). 31 upstream
+    # commits to the file since 24fdb51; 159 non-comment lines changed. tests/tests.txt is
+    # byte-identical upstream (last touched 2016), re-fetched at the same commit anyway.
+    # Re-checked the platform-inversion claim against the new bytes: substack.com,
+    # beehiiv.com, ghost.io, mailchimp.com, buttondown.email, kit.com and medium.com are
+    # still in neither section, so NEWSLETTER_PLATFORM_HOSTS stays load-bearing.
+    last_verified: "2026-11-08"
 
   - id: ip-geo-country
     title: DB-IP IP-to-Country Lite
@@ -121,7 +130,15 @@ artifacts:
     # another routine monthly delta. Re-ran the same production-reader verification: the same
     # four known IPs still resolve to their same countries (db_vintage now "2026-09"), and the
     # RFC-5737 range still returns the honest level="unavailable".
-    last_verified: "2026-09-08"
+    #
+    # Refreshed AGAIN 2026-11-08 to the 2026-11 DB-IP release (freshness issue #1163). Mirror's
+    # last dbip-country data commit is 4bedcc4 "20261102_005016 Update" (the 2026-10 release,
+    # 0446a11 of 2026-10-02, was skipped by the cycle, not missed in the data). 717,152 ->
+    # 732,778 rows; 0 malformed; country vocabulary unchanged at 250 codes (none gained, none
+    # lost); v4/v6 362,984 / 369,794 -- a routine delta. Production reader re-run: 8.8.8.8 us,
+    # 1.1.1.1 au, 212.27.48.10 fr, 2001:4860:4860::8888 ca (db_vintage "2026-11"), and the
+    # RFC-5737 range still returns the honest level="unavailable".
+    last_verified: "2026-11-08"
 
   - id: windows-x64-python-nuget
     title: CPython x64 for Windows (NuGet, Python Software Foundation)
@@ -900,7 +917,7 @@ artifacts:
     # scripts/check_upstream_updates.py:review_baseline for why the two must stay apart.
     upstream_check:
       {github: "alpinejs/alpine", type: release, current: "v3.14.1",
-       reviewed_through: "v3.17.2"}
+       reviewed_through: "v3.17.5"}
     # Reviewed 2026-08-22 (freshness issue #440 flagged v3.16.1; upstream had already moved
     # to v3.16.2 by the time it was read -- read the tags, not the issue body). Evidence,
     # from the upstream git history rather than release-note prose:
@@ -955,27 +972,57 @@ artifacts:
     # Same LIMIT as last time: github.com/advisories and api.osv.dev remain egress-blocked
     # (403) from this sandbox too -- still a code-level diff review, not an advisory-database
     # clearance.
-    last_verified: "2026-09-08"
+    #
+    # Reviewed AGAIN 2026-11-08 (freshness issue #1163 flagged v3.17.5, which was still the
+    # latest tag when read). v3.17.2..v3.17.5 is 15 commits:
+    #   * The one security-shaped commit is 8554b9e "Harden CSP evaluator DOM access checks"
+    #     (Document objects and SVG script elements refused, host DOM interfaces non-writable,
+    #     node factory/insertion methods blocked by name). It touches packages/csp/src/parser.js
+    #     only, and our bundle is the CORE build ("csp" occurs 0 times in alpine.min.js), so it
+    #     does not reach what we ship. The other CSP commit (#4905, reserved words as keys) is
+    #     the same package.
+    #   * Core (packages/alpinejs) changes are bug fixes: mutation-observer recovery after an
+    #     error (#4908), $watch/x-modelable firing after release (#4903), x-data init() skipped
+    #     during clone (#4901), x-on/x-model modifiers read as key names (#4891), x-for
+    #     "(foo)in(bar)" (#4897), x-cloak under morph (#4922). The keyword scan over the FULL
+    #     core + morph diff (secur|vulnerab|xss|cve|ghsa|sanitiz|escap|inject|exploit|csp|
+    #     prototype|innerHTML|new Function|eval) found nothing security-relevant: its only hits
+    #     are two lines of #4901 where an `evaluate(el, reactiveData['init'])` call is re-indented
+    #     into skipDuringClone(), a clone-time skip (with \beval\b, 0 hits).
+    #   * The resize plugin's viewport modifier (#4910) is a plugin we do not vendor
+    #     (ResizeObserver occurs 0 times); js-yaml/vitest bumps are dev tooling only.
+    #   * Token probes re-run on our file: morph, Alpine.morph, hostDiv,
+    #     monkeyPatchDomSetAttributeToAllowAtSymbols, new Function, csp: all 0.
+    # So: no security fix applies to what we vendor -> NOT re-vendored; reviewed_through moves.
+    # Same LIMIT: a code-level diff review, not an advisory-database clearance.
+    last_verified: "2026-11-08"
 
   - id: vendored-axe-core
     title: axe-core (vendored, browser-harness a11y engine)
     kind: vendored-binary
     description: >
-      Deque axe-core v4.13.0 vendored for the ui_walk browser harness's a11y axis
+      Deque axe-core v4.14.0 vendored for the ui_walk browser harness's a11y axis
       (0.3 gate row 8, the 2026-08-20 matrix session): PlaywrightUiWalkDriver.run_axe()
       injects it into the page under test. HARNESS tooling only — lives under
       scripts/vendor/, never src/static/ (nothing serves it; the app has no dependency
       on it); vendored per the local-first/no-CDN posture so the harness never fetches
       tooling over the network at run time. Tarball verified against the npm registry's
       own attested digests (sha1 + sha512 integrity) before extraction.
-    upstream: https://github.com/dequelabs/axe-core (npm tarball axe-core-4.13.0.tgz)
+    upstream: https://github.com/dequelabs/axe-core (npm tarball axe-core-4.14.0.tgz)
     check_upstream: "watch dequelabs/axe-core releases; refresh on rule-set or security fixes"
     license: MPL-2.0 (GPL-3.0-compatible via its secondary-license clause; LICENSE vendored alongside)
-    pin: {path: scripts/vendor/axe-core/axe.min.js, sha256: "c24f097bd2f451d4f933e8bc7d8d539f8672a2ebcb5cc9f9f3eec8ca9470a0c1"}
+    pin: {path: scripts/vendor/axe-core/axe.min.js, sha256: "20c09fe157a8a34a30e241aaa1fcdade657734f08ab379ecfbeb7d45cc46e878"}
     refresh: "re-fetch the pinned npm tarball, verify the registry's attested digests, re-vendor axe.min.js + LICENSE, update this sha256"
     freshness: {policy: on-security}
-    upstream_check: {github: "dequelabs/axe-core", type: release, current: "v4.13.0"}
-    last_verified: "2026-08-20"
+    upstream_check: {github: "dequelabs/axe-core", type: release, current: "v4.14.0"}
+    # Re-vendored 2026-11-08 at v4.14.0 (freshness issue #1163; npm dist-tag latest, published
+    # 2026-10-05). The tarball's sha1 (a9819d39...) and sha512 integrity both matched the
+    # registry's attested values before extraction; only axe.min.js changed (LICENSE is
+    # byte-identical). Upstream's changelog is a rule-set release: label-content-name-mismatch
+    # is now ON by default, and several checks report "incomplete" where they used to fail, so
+    # a ui_walk a11y axis run on 4.14.0 is not count-comparable with one on 4.13.0.
+    # tests/test_ui_walk_playwright.py: 31 passed against the sandbox's pinned Chromium.
+    last_verified: "2026-11-08"
 
   - id: natural-earth-geometry
     title: Natural Earth coastline + country polygons

@@ -1510,6 +1510,13 @@ def reindex_backlog_resume_status() -> dict:
     paces THIS read at 5 s inside its single chain while the queue status keeps the
     1 s cadence. The figure moves on the scale of minutes, so nothing is lost.
 
+    R415 (2026-11-07): "owes nothing" is TWO stamps (keyword and places-and-entities), so ``_BACKLOG_SQL`` joins
+    ``article_www_stamps`` through the keyword stamp, one more primary-key probe per stamped pending article. The
+    same fixture at 1,000,000 pending articles on this machine (the median of five; only comparable with itself),
+    the statement before / after, in ms: no stamps 99.7 / 129.7, a keyword stamp on every article 123.9 / 144.1,
+    both stamps on every article 162.2 / 180.7. That is 20 to 30 ms more at a million pending articles and
+    nothing when none are pending; the 5 s pacing above stands.
+
     THE STAND-IN QUESTION (E3, 2026-10-12). The owed count leaves out the stand-ins a salvage copy wrote
     (they are never re-indexed), which the second statement, ``_BACKLOG_LOST_SQL``, asks from the stand-in
     side: the hash index names them (a covering range, no article row) and each is looked up in

@@ -13,7 +13,7 @@ register on one router in that order.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import Depends, Query
 from fastapi.responses import Response
@@ -99,10 +99,19 @@ def elections_coverage_floor() -> dict:
     dateless · missing) because a single "covered" count would let the floor be cleared by
     entries that tell a reader nothing. Counts only, no score; the country mapping's own
     verification status rides every answer, since the share is measured against a
-    denominator that has not yet been checked against a primary source."""
-    from src.civic.coverage_floor import floor_coverage
+    denominator that has not yet been checked against a primary source.
 
-    return floor_coverage()
+    ``tier_report`` (S06-04 S1's artifact, A2) states every floor country's ONE state and
+    best tier with the reason a value is absent, over the same shipped catalogue; it is a
+    list of facts, never a score, and it carries its own caveat."""
+    from src.civic.calendar_report import country_tier_report
+    from src.civic.coverage_floor import floor_coverage, load_floor
+    from src.events.catalog import load_events
+
+    today = date.today()  # one clock for both halves, so a request that spans midnight cannot split them
+    out = floor_coverage(today)
+    out["tier_report"] = country_tier_report(load_events(), set(load_floor()["countries"]), today)
+    return out
 
 
 @router.get("/freshness")

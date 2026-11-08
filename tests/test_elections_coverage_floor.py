@@ -271,6 +271,9 @@ def test_the_payload_carries_no_score_shaped_field():
                 walk(v, f"{path}[{i}]")
 
     walk(floor_coverage(TODAY))
+    from src.api.diagnostics.system import elections_coverage_floor
+
+    walk(elections_coverage_floor())  # the endpoint's answer too, tier_report included
 
 
 def test_the_diagnostic_endpoint_serves_the_real_measurement():
@@ -304,3 +307,19 @@ def test_the_config_states_its_verification_status_at_the_top(path):
     head = path.read_text(encoding="utf-8")[:4000]
     assert re.search(r"VERIFICATION STATUS", head)
     assert "clearnet check pending" in head
+
+
+def test_the_endpoint_carries_the_per_country_tier_report_and_it_agrees_with_the_floor():
+    """A2's artifact rides the existing network-free diagnostics answer: one row per floor
+    country, and its covered states name exactly the countries the floor calls covered."""
+    from src.api.diagnostics.system import elections_coverage_floor
+
+    out = elections_coverage_floor()
+    rep = out["tier_report"]
+    assert [r["cc"] for r in rep["countries"]] == sorted(floor_countries())
+    assert rep["floor_countries"] == out["floor_countries"]
+    covered_states = {"scheduled", "window", "projected_upcoming"}
+    assert {r["cc"] for r in rep["countries"] if r["state"] in covered_states} == set(out["covered"])
+    assert {r["cc"] for r in rep["countries"] if r["state"] == "missing"} == set(out["missing"])
+    assert rep["caveat"]
+    assert all(state in rep["method"] for state in rep["counts"])  # the method names every state it counts

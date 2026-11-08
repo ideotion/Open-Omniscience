@@ -63,7 +63,6 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/catalog/discover_job.py": (2, "qual"),
     "src/custody/keyfile.py": (1, "export"),
     "src/custody/pending.py": (3, "Q"),
-    "src/custody/signing.py": (1, "Q"),
     "src/database/article_indexes.py": (2, "WAL"),
     "src/database/damage.py": (2, "WAL"),
     "src/database/encrypt_tool.py": (1, "WAL"),
