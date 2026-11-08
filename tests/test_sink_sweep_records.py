@@ -181,6 +181,9 @@ KEPT: dict[str, dict[tuple[str, str], int]] = {
     "src/backup/merge.py": {
         ("_restore_ring_members", 'out["refused"].append({"name": name, "reason": f"write failed: {exception_text(exc, typed=False)}"})'): 1,
         ("merge_side_files", 'refused.append(f"{name}: {exception_text(exc, typed=False)}")'): 1,
+        # the logs loop of the same function: a log the stage could not read or write (a file system refusal, never a driver's), its words scrubbed
+        ("merge_side_files", 'logs[fname] = {"appended": 0, "duplicate": None, "read_failed": exception_text(exc, typed=False) or type(exc).__name__}'): 1,
+        ("merge_side_files", "write_failed = exception_text(exc, typed=False) or type(exc).__name__"): 1,
     },
     "src/backup/runlog.py": {
         ("RunLog._open", 'self._disable("milestones", exception_text(exc))'): 1,

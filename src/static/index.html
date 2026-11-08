@@ -3273,6 +3273,21 @@
         </label>
         <button id="parts-from-go" class="secondary" data-on-click="partsSaveFrom()" hidden>Save from this part</button>
       </div>
+      <!-- FIELD CHECKS (R603, 2026-11-08, maintainer-asked): the checks only this machine can run, next to
+           the Diagnostics button. The list is configs/field_checks.yml (versioned; each check says why it
+           exists, who asked for it and when it retires); the runners are src/monitoring/field_checks.py.
+           Fetches nothing on open: "Show field checks" reads the list. An online check passes the ONE
+           consent popup (invariant #14). Rows are drawn by fieldChecksLoad in app-diagnostics.js. -->
+      <div id="field-checks-box" style="margin-top:10px">
+        <div class="small" style="font-weight:600">Field checks (what only this machine can tell)</div>
+        <div class="hint">Checks that no test machine can run: this computer's memory and drives, its network, its browser and its clock. Each one runs when you press it. Save the report and send it back with the Diagnostics file. The list changes with each update: a check is added when something new needs your machine, and retired once enough reports have answered it. A check that goes online asks first.</div>
+        <div class="row" style="margin-top:6px">
+          <button class="secondary" id="fc-load-btn" data-on-click="fieldChecksLoad(this)" title="Read the list of field checks for this version, with the last result of each in this session. Runs nothing and goes nowhere.">Show field checks</button>
+          <button class="secondary" id="fc-report-btn" data-on-click="ooOpenUrl('/api/diagnostics/field-checks/report')" title="Save ONE .json file with every field-check result this session holds, the list version, the app build and the system name. Passwords, passphrases and your home folder's name are removed before it is written. Results are not kept across a restart.">Save the field-check report</button>
+          <span id="fc-status" class="small" style="margin-left:6px"></span>
+        </div>
+        <div id="fc-list" class="small" style="margin-top:6px"></div>
+      </div>
       <!-- Session forensics (E2, #596): the previous-session clean/unclean verdict (with the
            OOM-inference wording shown verbatim as a caveat), the last unlock's phase timings +
            -wal size, and the data-dir inventory with orphaned plaintext-staging flagged loudly.

@@ -231,9 +231,36 @@ class _UnionFind:
 
 
 def _outlet_name(article: dict) -> str:
-    """The name a path's source COUNT is made of: the outlet's label when the caller gives one (one site's several feeds are
-    one voice, the same unit the same-source join uses), else the feed label."""
+    """The name a path's sources are SHOWN by: the outlet's label when the caller gives one, else the feed label. A name
+    is display only and never the unit counted -- two outlets can share a label, and one outlet's feeds can carry several."""
     return article.get("outlet_label") or article.get("source") or "?"
+
+
+def _voice(article: dict) -> Any:
+    """The key one voice is made of: the outlet (a domain: one site's several feeds are one voice, row J R146), else the
+    feed's ``source_id``. The same-source join and every source COUNT read this one key, so a path that the join made out
+    of one outlet can never be counted as two sources because its feeds are labelled differently."""
+    return article.get("outlet") or article.get("source_id")
+
+
+def _count_key(article: dict) -> tuple:
+    """The key a source COUNT is made of: the voice when there is one, else the shown name (an article with neither has
+    nothing better to be counted by)."""
+    v = _voice(article)
+    return ("voice", v) if v is not None else ("name", _outlet_name(article))
+
+
+def _sources_of(arts: list[dict]) -> list[str]:
+    """One shown name per counted voice, sorted. Two outlets sharing a label appear twice, so the list's length is the
+    count; one outlet's several feed labels collapse to the first of them in sort order (deterministic), and a voice
+    shows "?" only when none of its articles carries a name."""
+    names: dict[tuple, str | None] = {}
+    for a in arts:
+        k, n = _count_key(a), (a.get("outlet_label") or a.get("source") or None)
+        cur = names.get(k)
+        if k not in names or (n is not None and (cur is None or n < cur)):
+            names[k] = n
+    return sorted(n or "?" for n in names.values())
 
 
 def group_paths(articles: list[dict], shared_links: dict[str, list[int]],
@@ -258,7 +285,7 @@ def group_paths(articles: list[dict], shared_links: dict[str, list[int]],
     by_source: dict[Any, list[int]] = defaultdict(list)
     by_wire: dict[str, list[int]] = defaultdict(list)
     for a in articles:
-        voice = a.get("outlet") or a.get("source_id")
+        voice = _voice(a)
         if voice is not None:
             by_source[voice].append(a["id"])
         if a.get("wire"):
@@ -273,7 +300,10 @@ def group_paths(articles: list[dict], shared_links: dict[str, list[int]],
         joins.append({"kind": kind, "detail": detail, "article_ids": members})
 
     for _sid, members in sorted(by_source.items(), key=lambda kv: str(kv[0])):
-        _join("same_source", members, by_id[members[0]].get("outlet_label") or by_id[members[0]].get("source"))
+        # The detail names the outlet by the same rule as the path's sources (the smallest name any member carries),
+        # so the two never disagree; a voice with no name at all (its source row is gone) gets no detail, not a "?".
+        named = [x for m in members if (x := by_id[m].get("outlet_label") or by_id[m].get("source"))]
+        _join("same_source", members, min(named) if named else None)
     for group in near_dup_groups:
         _join("near_identical", list(group), None)
     for url in sorted(shared_links):
@@ -289,7 +319,7 @@ def group_paths(articles: list[dict], shared_links: dict[str, list[int]],
     for members in members_of.values():
         mset = set(members)
         path_joins = [j for j in joins if mset.issuperset(j["article_ids"])]
-        sources = sorted({_outlet_name(by_id[m]) for m in members})
+        sources = _sources_of([by_id[m] for m in members])
         dates = sorted(by_id[m]["published_at"] for m in members if by_id[m].get("published_at"))
         paths.append({
             "article_ids": sorted(members),
@@ -307,7 +337,7 @@ def group_paths(articles: list[dict], shared_links: dict[str, list[int]],
     for n, p in enumerate(paths, start=1):
         p["path"] = n
 
-    all_sources = {_outlet_name(by_id[i]) for i in ids}
+    all_sources = _sources_of(articles)
     return {
         "paths": paths,
         "n_articles": len(ids),

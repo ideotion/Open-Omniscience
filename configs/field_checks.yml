@@ -1,0 +1,235 @@
+# Field checks: what only the operator's own machine can tell us (R603, 2026-11-08).
+#
+# Settings -> Advanced -> Diagnostics -> "Field checks" lists every ACTIVE check below. Each runs
+# on a press, on the real machine, and its result goes into ONE report the operator saves and
+# brings back, like the Diagnostics zip. These are the checks no CI runner and no build sandbox can
+# make: the real RAM and disks, the real network, the real browser, the real operating system.
+#
+# THE LOOP (the maintainer's ask, 2026-11-08: «this button should evolve with the repo's updates to
+# test things that cannot be tested by you, and remove those tests for which you already had
+# sufficient feedback»):
+#   * A PR that ships something only the field can confirm ADDS its check here, in the same PR,
+#     with a runner registered in src/monitoring/field_checks.py (RUNNERS).
+#   * When a report has answered the question, the check is RETIRED: status becomes `retired`, with
+#     `retired_on` and `retired_by` (the PR, ruling or report that settled it). A retired check is
+#     kept here as the record of what was asked and why; the panel lists it folded, never runs it.
+#   * `version` goes up by one in every PR that changes this file, so a report says which list it
+#     was run against.
+#
+# FIELDS (tests/test_field_checks.py pins them):
+#   id           stable, kebab-case; never reused for a different question
+#   title        one line, shown on the panel
+#   kind         the runner (src/monitoring/field_checks.py RUNNERS). Whether a check goes ONLINE is
+#                the runner's property in the code, never a field here, so an edit to this file
+#                cannot make an online check skip the consent popup (invariant #14)
+#   status       active | retired
+#   added_on     ISO date
+#   added_by     the PR, ruling or field report that asked for it
+#   why          what we cannot see from here, in plain words
+#   retire_when  what feedback is enough to retire it
+#   params       the runner's inputs (optional)
+#   steps        what the operator does, for checks that need hands (optional)
+#   answers      the choices the operator picks from, for checks that need hands (optional)
+#   platforms    limit to some systems: linux, windows, darwin (optional; absent = all)
+#
+# HARD RULES every runner keeps: it only READS the corpus (or works on a scratch file it deletes);
+# nothing it records carries a passphrase or a secret (the report is scrubbed on the way out); an
+# online check is refused by the server without the consent the popup gives.
+#
+# The text here is English only, like the rest of the Diagnostics panel; the panel's own buttons
+# and labels ship in twelve languages.
+
+version: 2
+
+checks:
+  - id: import-memory-headroom
+    title: Memory and disk for a big encrypted import
+    kind: import_headroom
+    status: active
+    added_on: "2026-11-08"
+    added_by: "R603; the 2026-11-08 import reports (two Qubes VMs with 2.3 to 4.4 GB of RAM; seven imports refused for memory after 48 min to 9 h); PR #1813"
+    why: >-
+      The encrypted merge needs memory that grows with the keyword, link and source-relationship
+      tables. The imports that failed ran on virtual machines with about 3 GB of RAM and 1 GB of
+      swap, which no test machine here looks like. This reads the memory, swap and free disk this
+      machine has now and asks the app's own memory check whether a backup the size of this
+      corpus would be refused.
+    retire_when: >-
+      Reports from at least two machines under 4 GB of RAM, one of them a Qubes VM, show the
+      verdict agreeing with what a real import then did.
+
+  - id: backup-drive-throughput
+    title: Write and read speed of a backup drive (external or USB)
+    kind: drive_throughput
+    status: active
+    added_on: "2026-11-08"
+    added_by: "R603; the 2026-11-08 import reports (backups on an exFAT USB disk and a USB stick)"
+    why: >-
+      Backups, restores and imports run for hours on external and USB drives whose speed we
+      cannot measure from here. This writes one scratch file of 256 MiB in the folder you name,
+      reads it back, deletes it, and reports the speeds and the file system type. Your corpus is
+      not touched.
+    retire_when: >-
+      Reports cover a USB stick, an external hard disk and an internal disk, so the backup time
+      estimates can be checked against real speeds.
+    params:
+      size_mib: 256
+
+  - id: live-fetch-gistemp
+    title: "Live fetch: NASA GISTEMP global temperature table"
+    kind: live_fetch
+    status: active
+    added_on: "2026-11-08"
+    added_by: "R603; R416 item (33), the climate series built without a live download"
+    why: >-
+      The build sandbox cannot reach data.giss.nasa.gov, so the parser was written against the
+      documented shape only. This runs the app's own fetcher once and parses the answer. Nothing
+      is stored.
+    retire_when: One report shows the table parsed with no refused lines, or names what changed.
+    params:
+      source: gistemp
+
+  - id: live-fetch-usgs
+    title: "Live fetch: USGS earthquake counts (one month, magnitude 5 and above)"
+    kind: live_fetch
+    status: active
+    added_on: "2026-11-08"
+    added_by: "R603; R416 item (33), the USGS earthquake counts' live shape"
+    why: >-
+      The USGS event service was never reached from the build sandbox. This asks it for the
+      count and the list of one whole month and checks the two agree, through the app's own
+      fetcher. Nothing is stored.
+    retire_when: One report shows the count and the list agreeing, or names what changed.
+    params:
+      source: usgs
+
+  - id: live-fetch-owid
+    title: "Live fetch: Our World in Data CO2 table"
+    kind: live_fetch
+    status: active
+    added_on: "2026-11-08"
+    added_by: "R603; the OWID climate CSVs built without a live download"
+    why: >-
+      Our World in Data's bulk CO2 file (tens of megabytes) was never downloaded here. This runs
+      the app's own fetcher and parser once. Nothing is stored.
+    retire_when: One report shows the table parsed with its curated columns, or names what changed.
+    params:
+      source: owid
+
+  - id: live-fetch-ipcc
+    title: "Live fetch: the four IPCC AR6 Summaries for Policymakers (PDFs)"
+    kind: live_fetch
+    status: active
+    added_on: "2026-11-08"
+    added_by: "R603; PR #1804 (IPCC reports; the PDF URLs documented, not yet verified live)"
+    why: >-
+      The IPCC reports fetch (PR #1804) uses PDF addresses taken from the documentation; none was
+      ever fetched here. This downloads each of the four summaries once through the same fetcher
+      as Settings -> Advanced -> IPCC reports and checks each is a whole PDF. Nothing is stored.
+    retire_when: One report shows all four PDFs arriving whole, or names the address that moved.
+    params:
+      source: ipcc
+
+  - id: eurovoc-hosts
+    title: Reach the five thesaurus hosts (EuroVoc, UNESCO, AGROVOC, IPTC, Wikidata P5437)
+    kind: host_reach
+    status: active
+    added_on: "2026-11-08"
+    added_by: "R603; OPEN_QUEUE item (38), R555 (EuroVoc topic tagging, PR #1757)"
+    why: >-
+      The thesauri are not bundled until their licences are read and Wikidata's EuroVoc-ID
+      property (P5437, written from memory) is confirmed, and the build sandbox cannot reach any
+      of the five hosts. This fetches each landing page once through the app's ethical fetcher
+      (robots.txt honoured) and records the answer and the page title.
+    retire_when: >-
+      A report shows each page's title, so the licences can be read and P5437 confirmed, or the
+      environment allowlist is opened for a development session.
+    params:
+      urls:
+        - https://op.europa.eu/en/web/eu-vocabularies/dataset/-/resource?uri=http%3A%2F%2Fpublications.europa.eu%2Fresource%2Fdataset%2Feurovoc
+        - https://vocabularies.unesco.org/browser/thesaurus/en/
+        - https://www.fao.org/agrovoc/
+        - https://iptc.org/standards/media-topics/
+        - https://www.wikidata.org/wiki/Property:P5437
+
+  - id: sample-export-multi-download
+    title: Does your browser keep every file of a multi-file save?
+    kind: operator_report
+    status: active
+    added_on: "2026-11-08"
+    added_by: "R603; OPEN_QUEUE item (37), R587 (the temporary one-article-per-source export, PR #1807)"
+    why: >-
+      The one-article-per-source export saves many .zip files in a row from one press. Browsers
+      may block or ask about several downloads at once, and no test here runs a real browser's
+      download settings. Press Start, then count what arrived in your downloads folder.
+    retire_when: Reports from two browsers (one Firefox, one Chromium-based) say every file arrived.
+    params:
+      action: source_samples
+    steps:
+      - Press Start. The page saves one .zip file after another and says how many it saved.
+      - If the browser asks whether to allow several downloads, allow it and say so in the note.
+      - Count the oo-source-samples-*.zip files in your downloads folder, then pick the answer that fits.
+    answers:
+      - every file arrived
+      - some files are missing
+      - the browser blocked the downloads
+      - the browser asked first, then every file arrived
+
+  - id: clock-step-recorded
+    title: Is a change of the system clock recorded while the app runs?
+    kind: clock_step
+    status: active
+    added_on: "2026-11-08"
+    added_by: "R603; field finding RR-5 (a machine booted 12 hours fast), PRs #1379 and #1380"
+    why: >-
+      The app records a change of the wall clock (an NTP correction, a manual set) so its
+      chronology and its liveness check stay right. A test can only fake the clocks; a real
+      change of the system clock happens only on your machine.
+    retire_when: Reports from Linux and Windows show the change recorded and the liveness file still fresh.
+    steps:
+      - Keep the app running. In your system settings, turn off automatic time and move the clock BACK by 15 minutes (back, not forward: outside Linux a forward move looks the same as a sleep and is recorded as one).
+      - Wait three minutes, then press Run.
+      - Restore the right time (turn automatic time on again).
+
+  - id: law-chrome-residue
+    title: Which tracked law documents still carry page chrome, and why
+    kind: law_residue
+    status: active
+    added_on: "2026-11-08"
+    added_by: "R604 (Export lane); the 2026-11-07 Diagnostics bundle (\"10 still carry chrome\")"
+    why: >-
+      The last report counted ten law documents still carrying website chrome (cookie banners, menu
+      text). That has two causes that look the same in a count: text stored before the cleanup
+      existed and never read again, or chrome the cleanup keeps on purpose. This lists, for each
+      such document, its id, jurisdiction, last status and when it was last checked, beside this
+      install's cleanup version. No document text is read into the report.
+    retire_when: >-
+      One report classes every document with residue as one cause or the other, and the fix for
+      each cause has shipped.
+
+  - id: in-app-update-end-to-end
+    title: Did the in-app update run end to end on your install?
+    kind: operator_report
+    status: active
+    added_on: "2026-11-08"
+    added_by: "PR #1810 (Settings -> Advanced -> Updates)"
+    why: >-
+      The update stops the app, swaps the checkout in a separate helper process, starts the
+      launcher again and watches it come up. No test here runs a real launcher window, a real
+      Windows console or a real install's git and Python together, so only a real update shows
+      whether the app came back by itself on the new version. Run this after an update offered
+      by Settings -> Advanced -> Updates (or after one refused), then pick what happened.
+    retire_when: >-
+      Reports from one Linux or macOS install and one Windows install say the app came back by
+      itself on the new version, and one report covers a refusal (a dependency change or a
+      local edit) that left the install as it was.
+    steps:
+      - "In Settings -> Advanced -> Updates, press Check for updates, then Update and restart if a version is offered."
+      - Wait up to a few minutes without closing anything, then reload the page.
+      - Open Settings -> Advanced -> Updates again and read the line about the last update, then pick the answer that fits.
+      - "On Windows, say in the note whether a new launcher window opened and whether the old one closed or waited for a key."
+    answers:
+      - the app came back by itself on the new version
+      - the app came back on the old version and said why
+      - the app did not come back; I started it by hand
+      - no update was offered
