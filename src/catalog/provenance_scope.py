@@ -115,11 +115,6 @@ def app_provided_filter(column):
     return _tag_filter(column, APP_PROVIDED_TAGS)
 
 
-def curated_filter(column):
-    """The SQL twin of :func:`is_curated`, token-exact for the same reason."""
-    return _tag_filter(column, CURATED_TAGS)
-
-
 # THE CURATED CATALOGUES THEMSELVES, as files rather than as tags. See
 # `curated_catalogue_domains` for why this exists beside `CURATED_TAGS`.
 CURATED_CATALOGUE_FILES: tuple[str, ...] = (

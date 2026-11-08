@@ -58,7 +58,7 @@ def _fmt(n: Any) -> str:
     try:
         return f"{int(n):,}"
     except (TypeError, ValueError):
-        return str(n)
+        return "—"  # a figure the edition did not carry reads as absent, as in bulletin/render.py, never as the word "None"
 
 
 def introduction_facts(edition: dict) -> dict:

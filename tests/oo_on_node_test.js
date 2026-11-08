@@ -56,8 +56,9 @@ function fire(type, target, extra = {}) {
   const pathArr = [];
   for (let n = target; n; n = n.parent) pathArr.push(n);
   pathArr.push(global.document, global.window);
+  // a person's own event by default (A-024 stage 2 refuses a script-made click/keydown/submit; oo_on_gate_node_test.js pins that)
   const ev = Object.assign({
-    type, target, bubbles: true, cancelBubble: false, defaultPrevented: false,
+    type, isTrusted: true, target, bubbles: true, cancelBubble: false, defaultPrevented: false,
     composedPath() { return pathArr; },
     stopPropagation() { this.cancelBubble = true; },
     preventDefault() { this.defaultPrevented = true; },

@@ -234,3 +234,9 @@ def test_the_review_screen_omits_an_introduction_that_does_not_exist():
     from src.bulletin.review import review_view
 
     assert review_view(_edition())["introduction"] is None
+
+
+def test_a_figure_the_edition_did_not_carry_reads_as_absent_not_as_none():
+    from src.bulletin.introduction import _fmt
+
+    assert _fmt(1234) == "1,234" and _fmt(None) == "—" and _fmt("n/a") == "—"

@@ -46,6 +46,16 @@
       const v = String(s == null ? "" : s);
       return (v && document.documentElement.dir === "rtl") ? "\u2068" + v + "\u2069" : v;
     }
+    // A percent figure keeps its sign on the far side of the digits beside Arabic text (ruled 2026-11-07, item 46
+    // S4 b: the sign after the digits, a range low to high). For a SENTENCE that a translation frame has already
+    // composed ("{pct}% used"), where the sign sits inside the translator's own string and cannot be handed in:
+    // every "digits then percent" run in it gets the same first-strong isolate. Only under a right-to-left page;
+    // left-to-right output is the input unchanged.
+    function ooLtrPct(s) {
+      const v = String(s == null ? "" : s);
+      return (v && document.documentElement.dir === "rtl")
+        ? v.replace(/[\d\u0660-\u0669][\d\u0660-\u0669.,\u066B\u066C]*\s?[%\u066A]/g, "\u2068$&\u2069") : v;
+    }
     // Render an ingested URL as a link only if it is plain http(s) — esc() does NOT
     // neutralize a javascript:/data: scheme, which would execute on click (S-005).
     const safeUrl = (u) => {
@@ -2503,7 +2513,7 @@
             ? `${_fmtBytes(j.progress.done)} / ${_fmtBytes(j.progress.total)}`
             : `${fmtNum(j.progress.done, 0)} / ${fmtNum(j.progress.total, 0)}` + (unit ? ` ${esc(t(unit))}` : "");
           prog = `<div class="cap-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>` +
-                 `<div class="muted" style="font-size:11px">${amount}${_rateNote(j, t)} · ${pct}%</div>`;
+                 `<div class="muted" style="font-size:11px">${amount}${_rateNote(j, t)} · ${ooLtrIsolate(pct + "%")}</div>`;
         }
         const acts = [];
         if (j.id === "collect:current") acts.push(`<button class="tiny danger" title="${esc(t("Stopping collection engages the network kill switch — the app goes offline."))}" data-on-click="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Stop"))}</button>`);

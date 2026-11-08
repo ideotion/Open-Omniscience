@@ -33,6 +33,7 @@ from src.database.source_lookup import source_for_domain
 from src.ingest.email import NEWSLETTER_SOURCE_DOMAINS, ingest_emails
 from src.monitoring import storage_events
 from src.monitoring.secret_scrub import log_failure, record_text, record_traceback
+from src.shared import import_owns_the_machine as _import_owns_the_machine
 
 _LOG = logging.getLogger("ingest.import_job")
 
@@ -46,17 +47,6 @@ _STATE_FILE = "newsletter_import.json"
 
 #: How often a parked job re-checks whether a corpus import still owns the machine.
 _EXCLUSIVE_POLL_S = 5.0
-
-
-def _import_owns_the_machine() -> bool:
-    """True while a corpus import run holds the exclusive window. Best-effort: an
-    unreadable scheduler must never park this job forever."""
-    try:
-        from src.scheduler.runner import exclusive_window_open
-
-        return exclusive_window_open()
-    except Exception:  # noqa: BLE001 - a courtesy check is never load-bearing
-        return False
 
 
 def _default_session():

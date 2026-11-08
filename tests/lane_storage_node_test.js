@@ -60,6 +60,7 @@ const NAMES = [
 // The REAL esc(), so the Save button's quoting is checked against what ships, and the
 // REAL bidi isolate the growth figures and dates go through (app-library.js).
 const src =
+  "function ooLtrIsolate(s){return String(s==null?'':s);} function ooLtrPct(s){return String(s==null?'':s);}\n" +
   extractConst("esc") + "\n" +
   extractConst("_LTR_ISOLATE") + "\n" +
   extract("_ltrIsolate") + "\n" +
