@@ -32,9 +32,13 @@ This reports that, from stored data, with no network and no heuristics:
   documents still to heal, and on a healed install it falls back toward zero.
 * ``last_status_mix`` — what each document's last check recorded, through the ONE
   classifier the Law tab and the coverage report already use (``src.api.law._verdict_of``).
-  Each per-document row carries that verdict and its ``last_checked_at``, which is what
-  tells a document still holding pre-strip text (no successful check since the strip
-  shipped) from one whose residue is the strip's stated limit.
+  Each per-document row carries that verdict and its ``last_checked_at`` (UTC). They say
+  which documents' LAST check stored no fresh body (an error, a deferral, a robots
+  refusal, an empty extraction, no check at all) and when each was last attempted, and
+  that is all: a re-read leaves no lasting trace (the status that names it is overwritten
+  by the next poll, and no revision is written), so a document that healed in August and
+  has failed since November reads the same as one that has failed since before the strip
+  shipped. Such a verdict marks a CANDIDATE for still holding pre-strip text, never proof.
 * ``stored_publication_date`` — a law corpus article still carrying ``published_at``.
   Exact, and expected to be zero once each document has synced once.
 * ``chrome_residue`` — chrome text that survived into the stored body.
@@ -187,7 +191,8 @@ def law_ingest_report(session: Session) -> dict:
             "recorded status for a baseline it re-read through the strip stage, on the one "
             "poll that re-read it; `last_status_mix` classifies every document's last "
             "recorded status with the Law tab's own verdicts; `never_checked` counts "
-            "documents with no check time; "
+            "documents with no check time; `last_checked_at` is the time of the last "
+            "attempt, in UTC; "
             "`stored_publication_dates` counts law corpus articles still carrying a "
             "published_at, which should be zero once each document has synced once, "
             "because the only date available was the day we polled the page. "
@@ -201,9 +206,11 @@ def law_ingest_report(session: Session) -> dict:
             "Residue measures that stated limit. The marker list is a FLOOR -- zero means "
             "none of these markers, never no chrome. `re_extracted` is not a count of "
             "documents still to heal: the next unchanged poll records `unchanged`, so a "
-            "fully healed install shows few or none. A document that has not healed is one "
-            "with no successful check since the strip shipped: read its `verdict` "
-            "(error, deferred, robots_blocked, never_checked) and its `last_checked_at`."
+            "fully healed install shows few or none. Whether a given document ever healed "
+            "is not recorded anywhere. A `verdict` of error, deferred, robots_blocked, "
+            "empty or never_checked says its last check stored no fresh body, so it is a "
+            "CANDIDATE for still holding pre-strip text, never proof: a document that healed "
+            "long ago and fails today reads the same."
         ),
     }
 

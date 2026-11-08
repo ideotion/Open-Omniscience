@@ -97,6 +97,7 @@ def test_a_healed_document_polled_again_is_not_reported_as_awaiting(db):
     assert r["re_extracted"] == 0
     assert r["last_status_mix"] == {"baselined": 1, "unchanged": 1}
     assert "not a count of documents still to heal" in r["caveat"]
+    assert "never proof" in r["caveat"]  # a failing verdict is a candidate, not a finding
 
 
 def test_the_status_mix_uses_the_law_tabs_own_verdicts(db):
@@ -295,6 +296,8 @@ def test_the_per_document_list_is_bounded_and_says_so(db):
     assert r["documents"] == _MAX_LISTED + 5
     assert r["listed"] == _MAX_LISTED
     assert r["truncated"] == 5  # stated, never a silent cut
+    # the mix counts EVERY document; only the rows are capped
+    assert sum(r["last_status_mix"].values()) == _MAX_LISTED + 5
 
 
 # ------------------------------------------------------------------- the verdict badge
