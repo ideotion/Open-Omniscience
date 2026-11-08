@@ -22,6 +22,7 @@ import json
 import pytest
 
 from src.events import feeds as F
+from tests.os_scope import scope_os
 
 CRED_URL = "https://alice:hunter2@calendar.example/feed.ics"
 
@@ -337,7 +338,7 @@ def test_a_copy_that_cannot_be_made_never_blocks_the_save_and_leaves_no_mark_on_
             raise PermissionError("held open")
         return real(src, dst)
 
-    monkeypatch.setattr(F.os, "replace", refuse_the_copy)
+    scope_os(monkeypatch, F, replace=refuse_the_copy)
     with caplog.at_level("WARNING"):
         F._save_json("calendar_feed_imports.json", _NEW, mirror=False)
     assert p not in F._READ_AS_DAMAGED, "the new store is healthy: a mark left on it would move it at the next save"

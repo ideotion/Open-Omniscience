@@ -71,7 +71,7 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/database/maintenance.py": (1, "WAL"),
     "src/database/repair.py": (6, "WAL"),
     "src/entities/gazetteer_build.py": (1, "Plan J"),
-    "src/events/feeds.py": (2, "Plan J"),
+    "src/events/feeds.py": (3, "Plan J"),  # the third: R397 (b) keeps a damaged store as .damaged, beside the save it precedes
     "src/geo/osm_downloads.py": (2, "OSM"),
     "src/hazards/store.py": (1, "Plan J"),
     "src/ingest/__init__.py": (2, "export"),

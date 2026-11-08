@@ -87,6 +87,8 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
 #: key, and return no record text. Allowed LINE BY LINE (function plus exact line text, counted), never by function name, so a new
 #: line in one of them, or a same-named method elsewhere, is read like any other code. Each line was read in the code.
 CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
+    # R397 (b): only the errno is read, to tell damage in the file (EIO) from a passing error that must not mark a healthy store
+    "src/events/feeds.py": {("_load_json", "_note_read(name, p, damaged=not isinstance(exc, OSError) or exc.errno == errno.EIO)"): 1},
     "src/ingest/email.py": {("_is_integrity_error", "for e in (exc, exc.__cause__, exc.__context__):"): 3},
     "src/scheduler/plan_cache.py": {
         ('PlanPreviewCache._label', 'if err is not None:'): 1,
