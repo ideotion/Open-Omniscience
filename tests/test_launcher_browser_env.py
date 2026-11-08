@@ -33,6 +33,8 @@ posix_only = pytest.mark.skipif(sys.platform == "win32", reason="runs the bash l
 
 DUMMY = "dummy-value-for-a-test"
 CONTROL = "OO_TEST_CONTROL_VAR"
+# handed to the fake programs in their environment, never written into them (see _presence_recorder)
+RECORDED_NAMES = " ".join((*HELD_ENV_VARS, CONTROL))
 
 
 def _exe(path: Path, body: str) -> None:
@@ -41,11 +43,14 @@ def _exe(path: Path, body: str) -> None:
 
 
 def _presence_recorder(out_var: str) -> str:
-    """A fake program that writes one line per name: ``NAME set`` or ``NAME unset``. Never a value."""
-    names = " ".join((*HELD_ENV_VARS, CONTROL))
+    """A fake program that writes one line per name: ``NAME set`` or ``NAME unset``. Never a value.
+
+    The names come from ``OO_TEST_NAMES`` at run time rather than being written into the script,
+    so the script file holds no passphrase-named string (CodeQL reads one written to a file as
+    clear-text storage of a secret, py/clear-text-storage-sensitive-data)."""
     return (
         "#!/bin/sh\n"
-        f"for n in {names}; do\n"
+        "for n in $OO_TEST_NAMES; do\n"
         '  eval "v=\\${$n+x}"\n'
         f'  if [ -n "$v" ]; then echo "$n set"; else echo "$n unset"; fi >> "${out_var}"\n'
         "done\n"
@@ -173,6 +178,7 @@ def _run_open_browser(tmp_path: Path, opener: str, prelude: str = "") -> dict[st
     # PATH holds the fake opener and env alone, so the other opener is genuinely absent
     env.update(dict.fromkeys(HELD_ENV_VARS, DUMMY), PATH=str(fake), OO_TEST_OUT=str(out))
     env[CONTROL] = "1"
+    env["OO_TEST_NAMES"] = RECORDED_NAMES
     bash = shutil.which("bash")
     assert bash
     subprocess.run([bash, "-c", script], env=env, check=True, timeout=30)
@@ -231,6 +237,7 @@ def _launcher_tree(tmp_path: Path, *, already_running: bool) -> tuple[Path, dict
         OO_TEST_BROWSER_OUT=str(tmp_path / "browser.txt"),
     )
     env[CONTROL] = "1"
+    env["OO_TEST_NAMES"] = RECORDED_NAMES
     return root, env
 
 
