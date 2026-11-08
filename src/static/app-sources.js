@@ -701,9 +701,27 @@
 
     // `skipped_offline` is the pipeline saying the kill switch refused the feed (invariant #14e's corollary): the
     // callers below say it in words, so it is never printed as a count beside the real outcomes.
+    // `stopped_unwalked` is the pipeline saying a Stop ended the walk of the feed's entries (R327): the rest were
+    // never asked for, so they are not an outcome either (R320/R337). It leaves the list and is said in words
+    // after the counts (R353 = B); the long form rides on the hover (`tallyHover`). The returned line is PLAIN
+    // text: a caller writing it into innerHTML escapes it there.
     function tally(t) {
-      return Object.entries(t).filter(([k,v]) => v > 0 && k !== "skipped_offline")
-        .map(([k,v]) => `${esc(k)}: ${v}`).join(", ") || "nothing new";
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) =>
+        String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? v[k] : m));
+      const counts = Object.entries(t || {})
+        .filter(([k,v]) => v > 0 && k !== "skipped_offline" && k !== "stopped_unwalked")
+        .map(([k,v]) => `${k}: ${v}`).join(", ");
+      const cut = (t && t.stopped_unwalked) || 0;
+      if (!(cut > 0)) return counts || "nothing new";
+      return counts
+        ? tf("{counts} · {n} entries not asked for (you stopped collection)", {counts, n: cut})
+        : tf("{n} entries not asked for (you stopped collection)", {n: cut});
+    }
+    function tallyHover(t) {
+      const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return (t && t.stopped_unwalked > 0)
+        ? tr("Stop was pressed while this feed was being read: the remaining entries were never requested, and they are not failures. The feed is read again on the next collection pass.")
+        : "";
     }
 
     async function ingestSource() {
@@ -718,6 +736,7 @@
           $("ingest-result").textContent = msg; toast(msg, "warn"); return;
         }
         $("ingest-result").textContent = t("Feed result —") + " " + tally(r.tally);
+        $("ingest-result").title = tallyHover(r.tally);
         toast("Ingest complete."); doSearch({refresh: true});
       } catch (e) { $("ingest-result").textContent = ""; toast(_failMsg("Ingest failed: {error}", e), "err"); }
     }
@@ -886,10 +905,12 @@
         $("bi-status").textContent = allOff
           ? t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.")
           : `Done: ${r.ingested - off}/${r.requested} fetched` + (off ? ` · ${tf("{n} not fetched (airplane mode)", {n: off})}` : "") + ` · ${tally(r.aggregate)}`;
+        $("bi-status").title = allOff ? "" : tallyHover(r.aggregate);
         $("bi-results").innerHTML = `<table class="bi-res"><tr><th>Source</th><th>Result</th></tr>` +
           r.results.map(x => `<tr><td>${esc(x.source || ("#" + x.source_id))}</td>` +
-            `<td>${x.status === "ok"
-              ? ((x.tally && x.tally.skipped_offline) ? `<span class="pill warn">${esc(t("Not fetched (airplane mode)"))}</span>` : tally(x.tally))
+            `<td${(x.status === "ok" && x.tally && !x.tally.skipped_offline && tallyHover(x.tally))
+                ? ` title="${esc(tallyHover(x.tally))}"` : ""}>${x.status === "ok"
+              ? ((x.tally && x.tally.skipped_offline) ? `<span class="pill warn">${esc(t("Not fetched (airplane mode)"))}</span>` : esc(tally(x.tally)))
               : `<span class="pill warn">${esc(x.status)}</span>${x.detail ? " " + esc(x.detail) : ""}`}</td></tr>`).join("") +
           `</table>`;
         if (allOff) { toast(t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again."), "warn"); return; }
