@@ -435,7 +435,9 @@ def observed(tmp_path_factory):
             try:
                 for path, url in ops:
                     with _Monitor(dirs, tuple(watchers)) as mon:
-                        statuses[path] = client.get(url, headers={"Host": "testserver"}).status_code
+                        # the one route that wants a caller to name itself on a name that is not loopback (R445): the walk is a script
+                        headers = {"Host": "testserver", **({"X-OO-Download": "1"} if path == "/api/database/backup" else {})}
+                        statuses[path] = client.get(url, headers=headers).status_code
                     seen[path] = mon
             finally:
                 clear_kill_switch()

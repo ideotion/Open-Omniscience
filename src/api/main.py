@@ -3812,6 +3812,9 @@ def _serve() -> None:
             host,
         )
     install_signal_handlers()
+    from src.monitoring.win_power import install as _install_win_power
+
+    _install_win_power()  # Windows only: console close / logoff / shutdown take the graceful path; a checkpoint before sleep
     # uvicorn ends a SIGTERM stop by putting the handler it found back and raising the signal again; with the default one the
     # process dies at once, past a snapshot still being written (0.5.1 item 41). Installed before uvicorn.run so it is the one put back.
     from src.api.database import install_stop_signal_cleanup

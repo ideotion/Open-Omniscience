@@ -47,6 +47,7 @@ from src.database.derived_views import KeywordMentionRead
 from src.database.fts import _HAS_WORD_CHAR, _quote
 from src.database.models import Article
 from src.database.stand_in import not_a_stand_in_article_id
+from src.shared import walk_no_score
 
 ALGEBRA_OPS = ("intersection", "union", "difference")
 
@@ -458,22 +459,6 @@ def near_match_expression(terms: list[str], *, distance: int = 10) -> str | None
     return f"NEAR({' '.join(phrases)}, {int(distance)})"
 
 
-def _walk_no_score(obj: Any) -> None:
-    """Raises explicitly (never a bare ``assert``, which ``python -O``/
-    ``PYTHONOPTIMIZE`` strips silently and would let this self-test's own
-    no-fabricated-score check false-pass under that flag — transversal
-    audit 09, 2026-07-25, §10.4)."""
-    banned = ("score", "ranking", "rating", "grade")
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if any(b in str(k).lower() for b in banned):
-                raise AssertionError(f"score-like key: {k}")
-            _walk_no_score(v)
-    elif isinstance(obj, list):
-        for v in obj:
-            _walk_no_score(v)
-
-
 def run_conjunction_selftest() -> dict:
     """Prove the PURE §1 pieces (vocabulary_contrast + NEAR emission) on hand-computed fixtures —
     no DB, no network, no score. The DB set-algebra (corpus_algebra / per_article_intensity /
@@ -523,7 +508,7 @@ def run_conjunction_selftest() -> dict:
 
     no_score = True
     try:
-        _walk_no_score(vc)
+        walk_no_score(vc)
     except AssertionError:
         no_score = False
     check("no_score_field", no_score)
