@@ -598,7 +598,7 @@ artifacts:
       with htmldate 1.11.0) on 2026-10-16, every run with lxml 6.1.3 (the lock's lxml 6.1.1 was not exercised). tests/test_extract_lock.py
       uses fakes for the extractor; the real-release coverage comes from tests/test_extract_single_parse.py and
       tests/test_extract_date_bound.py. In CI the test, core-only and portability jobs run the tests on whatever release pip resolves that
-      day (2.3.1 on 2026-10-16); no CI job runs them on the floor (lockfile-install only imports the app), so the floor is verified by
+      day (2.3.1 on 2026-10-16); no CI job runs them on the floor (lockfile-install imports and type-checks the app but runs no test), so the floor is verified by
       that hand run.
     upstream: https://pypi.org/project/trafilatura/ (https://github.com/adbar/trafilatura)
     check_upstream: "pypi.org/pypi/trafilatura/json - compare info.version; 2.3.1 (2026-10-06) was the newest on 2026-10-16 and is the release the tests were run on"
@@ -686,7 +686,7 @@ artifacts:
       test_diagnostics_runs.py, test_keyword_export_bounded.py): 567 passed and 2 skipped on the 1.8.0 wheel first on
       PYTHONPATH, and the same 567 on the installed 1.10.0, the newest release (requirements.lock pins 1.8.0, so the newest run is by hand). Starlette warns that
       TestClient with httpx is deprecated in favour of httpx2; nothing here fails on it. In CI the test and core-only jobs run these on
-      whatever release pip resolves that day; no CI job runs them on the floor (lockfile-install only imports the app), so the floor is
+      whatever release pip resolves that day; no CI job runs them on the floor (lockfile-install imports and type-checks the app but runs no test), so the floor is
       verified by that hand run on the 1.8.0 wheel.
     upstream: https://pypi.org/project/starlette/ (https://github.com/encode/starlette)
     check_upstream: "pypi.org/pypi/starlette/json - compare info.version; 1.10.0 was the newest on 2026-11-05 and is the release the tests were last run on"
@@ -917,7 +917,7 @@ artifacts:
     # scripts/check_upstream_updates.py:review_baseline for why the two must stay apart.
     upstream_check:
       {github: "alpinejs/alpine", type: release, current: "v3.14.1",
-       reviewed_through: "v3.17.2"}
+       reviewed_through: "v3.17.5"}
     # Reviewed 2026-08-22 (freshness issue #440 flagged v3.16.1; upstream had already moved
     # to v3.16.2 by the time it was read -- read the tags, not the issue body). Evidence,
     # from the upstream git history rather than release-note prose:
@@ -972,27 +972,57 @@ artifacts:
     # Same LIMIT as last time: github.com/advisories and api.osv.dev remain egress-blocked
     # (403) from this sandbox too -- still a code-level diff review, not an advisory-database
     # clearance.
-    last_verified: "2026-09-08"
+    #
+    # Reviewed AGAIN 2026-11-08 (freshness issue #1163 flagged v3.17.5, which was still the
+    # latest tag when read). v3.17.2..v3.17.5 is 15 commits:
+    #   * The one security-shaped commit is 8554b9e "Harden CSP evaluator DOM access checks"
+    #     (Document objects and SVG script elements refused, host DOM interfaces non-writable,
+    #     node factory/insertion methods blocked by name). It touches packages/csp/src/parser.js
+    #     only, and our bundle is the CORE build ("csp" occurs 0 times in alpine.min.js), so it
+    #     does not reach what we ship. The other CSP commit (#4905, reserved words as keys) is
+    #     the same package.
+    #   * Core (packages/alpinejs) changes are bug fixes: mutation-observer recovery after an
+    #     error (#4908), $watch/x-modelable firing after release (#4903), x-data init() skipped
+    #     during clone (#4901), x-on/x-model modifiers read as key names (#4891), x-for
+    #     "(foo)in(bar)" (#4897), x-cloak under morph (#4922). The keyword scan over the FULL
+    #     core + morph diff (secur|vulnerab|xss|cve|ghsa|sanitiz|escap|inject|exploit|csp|
+    #     prototype|innerHTML|new Function|eval) found nothing security-relevant: its only hits
+    #     are two lines of #4901 where an `evaluate(el, reactiveData['init'])` call is re-indented
+    #     into skipDuringClone(), a clone-time skip (with \beval\b, 0 hits).
+    #   * The resize plugin's viewport modifier (#4910) is a plugin we do not vendor
+    #     (ResizeObserver occurs 0 times); js-yaml/vitest bumps are dev tooling only.
+    #   * Token probes re-run on our file: morph, Alpine.morph, hostDiv,
+    #     monkeyPatchDomSetAttributeToAllowAtSymbols, new Function, csp: all 0.
+    # So: no security fix applies to what we vendor -> NOT re-vendored; reviewed_through moves.
+    # Same LIMIT: a code-level diff review, not an advisory-database clearance.
+    last_verified: "2026-11-08"
 
   - id: vendored-axe-core
     title: axe-core (vendored, browser-harness a11y engine)
     kind: vendored-binary
     description: >
-      Deque axe-core v4.13.0 vendored for the ui_walk browser harness's a11y axis
+      Deque axe-core v4.14.0 vendored for the ui_walk browser harness's a11y axis
       (0.3 gate row 8, the 2026-08-20 matrix session): PlaywrightUiWalkDriver.run_axe()
       injects it into the page under test. HARNESS tooling only — lives under
       scripts/vendor/, never src/static/ (nothing serves it; the app has no dependency
       on it); vendored per the local-first/no-CDN posture so the harness never fetches
       tooling over the network at run time. Tarball verified against the npm registry's
       own attested digests (sha1 + sha512 integrity) before extraction.
-    upstream: https://github.com/dequelabs/axe-core (npm tarball axe-core-4.13.0.tgz)
+    upstream: https://github.com/dequelabs/axe-core (npm tarball axe-core-4.14.0.tgz)
     check_upstream: "watch dequelabs/axe-core releases; refresh on rule-set or security fixes"
     license: MPL-2.0 (GPL-3.0-compatible via its secondary-license clause; LICENSE vendored alongside)
-    pin: {path: scripts/vendor/axe-core/axe.min.js, sha256: "c24f097bd2f451d4f933e8bc7d8d539f8672a2ebcb5cc9f9f3eec8ca9470a0c1"}
+    pin: {path: scripts/vendor/axe-core/axe.min.js, sha256: "20c09fe157a8a34a30e241aaa1fcdade657734f08ab379ecfbeb7d45cc46e878"}
     refresh: "re-fetch the pinned npm tarball, verify the registry's attested digests, re-vendor axe.min.js + LICENSE, update this sha256"
     freshness: {policy: on-security}
-    upstream_check: {github: "dequelabs/axe-core", type: release, current: "v4.13.0"}
-    last_verified: "2026-08-20"
+    upstream_check: {github: "dequelabs/axe-core", type: release, current: "v4.14.0"}
+    # Re-vendored 2026-11-08 at v4.14.0 (freshness issue #1163; npm dist-tag latest, published
+    # 2026-10-05). The tarball's sha1 (a9819d39...) and sha512 integrity both matched the
+    # registry's attested values before extraction; only axe.min.js changed (LICENSE is
+    # byte-identical). Upstream's changelog is a rule-set release: label-content-name-mismatch
+    # is now ON by default, and several checks report "incomplete" where they used to fail, so
+    # a ui_walk a11y axis run on 4.14.0 is not count-comparable with one on 4.13.0.
+    # tests/test_ui_walk_playwright.py: 31 passed against the sandbox's pinned Chromium.
+    last_verified: "2026-11-08"
 
   - id: natural-earth-geometry
     title: Natural Earth coastline + country polygons
@@ -1221,7 +1251,7 @@ artifacts:
     upstream: https://github.com/duckdb/duckdb (+ extensions.duckdb.org)
     check_upstream: "watch duckdb releases; the storage format + extension version both move"
     license: MIT (DuckDB)
-    pin: {floor: "1.4", verified: "1.5.5"}   # pyproject [columnar] duckdb>=floor ; verified against
+    pin: {floor: "1.4", verified: "2.0.0"}   # pyproject [columnar] duckdb>=floor ; verified against
     # Re-verified 2026-08-22 at duckdb 1.5.5 (freshness issue #440). WHAT THAT COVERS, and
     # what it does not -- the two halves of this coupling are in different states:
     #   * LIVE half, verified here: `pip install -e ".[columnar]"` resolves duckdb>=1.4 to
@@ -1251,14 +1281,39 @@ artifacts:
     freshness: {policy: track-duckdb-version}
     # No `reviewed_through` here on purpose: under track-duckdb-version, lagging upstream is
     # NOT a legitimate steady state (unlike an on-security artifact), so `current` moves only
-    # when the coupling is actually re-verified -- as it was, at 1.5.5, on 2026-08-22.
-    upstream_check: {github: "duckdb/duckdb", type: release, current: "v1.5.5"}
+    # when the coupling is actually re-verified -- as it was, at 1.5.5, on 2026-08-22, and at
+    # 2.0.0 on 2026-11-08.
+    upstream_check: {github: "duckdb/duckdb", type: release, current: "v2.0.0"}
     platforms: [linux_amd64, linux_arm64, osx_amd64, osx_arm64, windows_amd64]
     couplings:
       - "pyproject.toml [project.optional-dependencies] columnar duckdb>= must equal floor"
       - "the on-disk store format is version-bound; on mismatch the disposable store is rebuilt"
       - "ci.yml runs the columnar test files twice: the `columnar` job installs the newest duckdb (2.0.0 on 2026-11-05) and `columnar-duckdb1` installs duckdb<2 (1.5.6), so both lines the floor admits are exercised; tests/test_version_floor_legs.py keeps the two file lists equal and the 1.x job on the 1.x line. The 29 files passed on 1.5.6 on 2026-11-05 (472 tests and 2 skips, each of which names its reason; the one failure of a first run was a venv without vaderSentiment, which fails the same way on 2.0.0). The floor itself is not changed and not re-verified here."
-    last_verified: "2026-08-22"
+    # Re-verified 2026-11-08 at duckdb 2.0.0 (freshness issue #1163), a MAJOR bump, read before it
+    # was accepted. What was checked, and what was not:
+    #   * LIVE half: main's `columnar` CI job already resolves duckdb>=1.4 to 2.0.0 (run
+    #     42463055993, 2026-11-08: duckdb-2.0.0 wheel installed, the 29 columnar files 471 passed
+    #     and 3 skipped, each skip naming its reason). The same 29 files ran here on 2.0.0: 471
+    #     passed and 3 skipped once vaderSentiment was installed (the one failure without it is
+    #     the venv, as recorded in couplings below). `columnar-duckdb1` keeps 1.5.6 exercised.
+    #   * THE ENCRYPTED STORE: the same CI job's CI-only httpfs trust path installed the REAL
+    #     httpfs for 2.0.0 and test_ci_encrypted_persisted_round_trip passed (1 passed), so v2
+    #     does not break the persisted encrypted columnar store. That in-lane checksum is NOT a
+    #     pin (see duckdb-httpfs-extension, still blank by design).
+    #   * MIGRATION: a store written by 1.5.6 opens under 2.0.0 (measured here: rows and oo_meta
+    #     read back), store_format_marker() is now "duckdb-2.0/schema-1", and the old
+    #     "duckdb-1.5/schema-1" marker reads as incompatible, so open_store() drops and rebuilds
+    #     it, as the disposable-store design says. _duckdb_minor() returns "2.0", so a future
+    #     bundled binary must be built for 2.0. Not run here: an ENCRYPTED 1.5 file opened by
+    #     2.0 (needs a real httpfs; extensions.duckdb.org is CONNECT-refused from the sandbox).
+    #     If it fails to attach, the any-open-failure path deletes it and goes in-memory.
+    #   * THE FLOOR stays 1.4, no ceiling (item (29), closed by R412: no ceiling, a duckdb<2
+    #     leg; 2.0.0 acked for this lane by R595). STORE_SCHEMA_VERSION stays 1: no table
+    #     shape changed.
+    #   * CHECKLIST (EXTERNAL_DEPENDENCIES.md): steps 1, 2 and 6 stay OPEN (no per-OS httpfs
+    #     binaries; blank by design); step 3 was run on linux_amd64 CI only; step 4 on a
+    #     plaintext 1.5 file only; step 5 done (floor unchanged, `verified` moved).
+    last_verified: "2026-11-08"
 
   - id: duckdb-httpfs-extension
     title: DuckDB httpfs extension binaries (persisted-store crypto backend, D1)
@@ -1275,7 +1330,7 @@ artifacts:
     upstream: https://github.com/duckdb/duckdb (httpfs built with statically-linked OpenSSL via vcpkg)
     check_upstream: "rebuild per platform on any duckdb minor bump (the version couples)"
     license: MIT (DuckDB)
-    pin: {floor: "1.4", verified: "1.5.5"}   # tracks the installed duckdb minor, like duckdb-crypto-extension
+    pin: {floor: "1.4", verified: "2.0.0"}   # tracks the installed duckdb minor, like duckdb-crypto-extension
     # Kept in step with duckdb-crypto-extension on 2026-08-22. Here `verified` names the
     # duckdb version the (still-unbundled) binaries must be BUILT at -- a target, not a
     # verification of binaries that do not exist. Nothing else changes: every `binaries`
@@ -1283,6 +1338,9 @@ artifacts:
     # 1.5.5), and enforcement is per-binary against the INSTALLED minor at run time
     # (columnar._verified_httpfs), never against this field. 1.5.4 -> 1.5.5 is a patch
     # inside minor 1.5, so it would not have invalidated a bundle even if one existed.
+    # Moved to 2.0.0 on 2026-11-08 with duckdb-crypto-extension (issue #1163). 1.5 -> 2.0 IS the
+    # kind of bump that invalidates a bundle, but there is still none to invalidate: every
+    # `binaries` entry stays blank, and the networked per-platform build must now target 2.0.
     binaries:                                # per-platform pins; version+sha256 BLANK until the networked build (NEVER fabricated)
       linux_amd64:   {version: "", sha256: "", file: ""}
       linux_arm64:   {version: "", sha256: "", file: ""}
@@ -1386,6 +1444,22 @@ artifacts:
       - "requirements.lock pins a release the names test passes on (2.0.51 today)"
     last_verified: "2026-10-17"
 
+  - id: nsidc-sea-ice-index-shape
+    title: NSIDC Sea Ice Index v3 daily extent CSV shape
+    kind: dated-data
+    description: >-
+      The `N_seaice_extent_daily_v3.0.csv` / `S_` shape src/stats/nsidc.py targets (two header
+      lines, then Year, Month, Day, Extent in 10^6 km2, Missing in 10^6 km2, Source Data;
+      `-9999` = missing; the 1978-1987 record is every other day). Documented from the published
+      shape and NOT verified against a live download -- the build sandbox has no route to
+      noaadata.apps.nsidc.org; the first real fetch is an operator step. NSIDC reprocesses, so
+      each fetch is stored as a new vintage.
+    upstream: "https://nsidc.org/data/g02135 (noaadata.apps.nsidc.org/NOAA/G02135)"
+    check_upstream: "fetch N_seaice_extent_daily_v3.0.csv on a networked machine and confirm the header lines, the column order and the -9999 marker are unchanged"
+    license: "NSIDC/NOAA open data, free to use with citation; operator to confirm the exact terms text"
+    pin: {file: src/stats/nsidc.py, const: NSIDC_AS_OF}
+    refresh: "verify the live shape, update the fixtures in tests/test_nsidc_parser.py, bump NSIDC_AS_OF"
+    freshness: {max_age_months: 18}
   - id: population-table
     title: The operator's dated population table (weights for a population-weighted mean, slice S06-04 S6)
     kind: dated-data

@@ -32,7 +32,7 @@ import csv
 import io
 import logging
 import re
-from datetime import UTC, datetime, timezone
+from datetime import UTC, date, datetime, timezone
 from typing import Any, Callable
 from urllib.parse import quote, urlencode, urljoin
 
@@ -81,6 +81,13 @@ OWID_ROW_CHARS_ALLOWANCE = 2000  # a wide row, generous (about 600 to 1,500 char
 GISTEMP_FIRST_YEAR = 1880
 GISTEMP_LINE_ALLOWANCE = 200  # chars per row; a real row is about 120
 GISTEMP_HEADER_ALLOWANCE = 4096  # title, blank and header lines, with slack
+# NSIDC Sea Ice Index v3 daily extent: one CSV per hemisphere (N / S), extent in 10^6 km2. NOT verified against a live download (the
+# build sandbox cannot reach the host): a wrong path or shape fails LOUDLY (HTTP error / looks_unrecognised). The body bound is DERIVED
+# from the record's own shape (see nsidc_max_chars), not a fixed number.
+NSIDC_BASE = "https://noaadata.apps.nsidc.org/NOAA/G02135"
+NSIDC_FIRST_DAY = date(1978, 10, 26)
+NSIDC_LINE_ALLOWANCE = 400  # chars per row; a real row is about 120 but the source column can list several files
+NSIDC_HEADER_ALLOWANCE = 4096
 
 # Body bounds for the four fetchers that used to read without limit. Each is DERIVED from the table's shape (rows x a generous per-row
 # allowance + header slack), like the climate bounds below, and grows with the calendar or the request, never a fixed cap to remember.
@@ -196,6 +203,8 @@ def _owid_value_column(text: str) -> str:
 # "climate" lane names all the climate hosts.
 GISTEMP_HOSTS = ("data.giss.nasa.gov",)
 GISTEMP_PATHS = ("/gistemp/tabledata_v4/",)
+NSIDC_HOSTS = ("noaadata.apps.nsidc.org",)
+NSIDC_PATHS = ("/NOAA/G02135/",)
 OWID_HOSTS = ("raw.githubusercontent.com",)
 OWID_PATHS = ("/owid/co2-data/", "/owid/energy-data/")  # raw.githubusercontent.com serves EVERY repository: the directory is the pin
 USGS_HOSTS = ("earthquake.usgs.gov",)
@@ -276,6 +285,13 @@ def _gistemp_getter(url: str) -> Any:
         user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=GISTEMP_HOSTS, allowed_path_prefixes=GISTEMP_PATHS
     )
     return _bounded_get(session, url, max_chars=gistemp_max_chars())
+
+
+def _nsidc_getter(url: str) -> Any:
+    session = guarded_session(
+        user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=NSIDC_HOSTS, allowed_path_prefixes=NSIDC_PATHS
+    )
+    return _bounded_get(session, url, max_chars=nsidc_max_chars())
 
 
 def _owid_bulk_getter(url: str) -> Any:
@@ -616,6 +632,9 @@ USGS_QUAKES_QUERY_LIMIT = 20000
 USGS_QUAKES_ROW_ALLOWANCE = 1200  # chars per CSV row; a real row is about 250-350
 USGS_QUAKES_HEADER_ALLOWANCE = 4096
 _USGS_COUNT_MAX_CHARS = 16  # the count response is a plain integer of at most nine digits (the regex below), plus a newline
+#: What an FDSN 204 (No Content: no event matches) means for the parser: the catalogue header and no
+#: row, so a window with no qualifying event reads as true zeros instead of an unrecognised body.
+_USGS_EMPTY_CATALOGUE = "time,mag,type,id,status\n"
 
 
 def _quakes_params(start_month: str, end_month: str, min_magnitude: float) -> dict[str, str]:
@@ -628,7 +647,8 @@ def _quakes_params(start_month: str, end_month: str, min_magnitude: float) -> di
     if last < first:
         raise ValueError("end_month is before start_month")
     # The FDSN endtime is "on or before", so the window ends one millisecond short of the next month.
-    after = month_index(month_label(last + 1))
+    # Computed from the index directly: a label round trip would refuse 2101-01 and so 2100-12.
+    after = last + 1
     end = datetime(after // 12, after % 12 + 1, 1) - timedelta(milliseconds=1)
     return {
         "starttime": f"{month_label(first)}-01T00:00:00",
@@ -676,33 +696,43 @@ def fetch_usgs_quakes(
     query_url = usgs_quakes_query_url(start_month, end_month, min_magnitude)
     extracted_at = extracted_at or _now_iso()
     count_getter = get or _usgs_getter(_USGS_COUNT_MAX_CHARS)
-    resp = count_getter(count_url)
-    resp.raise_for_status()
-    text = resp.text.strip()
-    if not re.fullmatch(r"[0-9]{1,9}", text):
-        raise ValueError("USGS earthquakes: the count response is not a plain integer")
-    declared = int(text)
-    if declared > USGS_QUAKES_QUERY_LIMIT:
-        raise ValueError(
-            f"USGS earthquakes: {declared} events in {start_month}..{end_month} at M>={min_magnitude:g} is over the "
-            f"{USGS_QUAKES_QUERY_LIMIT} one request returns; ask for a shorter window or a higher threshold"
+    # A window that reaches the month still in progress can gain an event between the two requests,
+    # so a mismatch there is retried once with a fresh count; anywhere else it is refused at once.
+    for attempt in (1, 2):
+        resp = count_getter(count_url)
+        resp.raise_for_status()
+        text = resp.text.strip()
+        if not re.fullmatch(r"[0-9]{1,9}", text):
+            raise ValueError("USGS earthquakes: the count response is not a plain integer")
+        declared = int(text)
+        if declared > USGS_QUAKES_QUERY_LIMIT:
+            raise ValueError(
+                f"USGS earthquakes: {declared} events in {start_month}..{end_month} at M>={min_magnitude:g} is over the "
+                f"{USGS_QUAKES_QUERY_LIMIT} one request returns; ask for a shorter window or a higher threshold"
+            )
+        bound = declared * USGS_QUAKES_ROW_ALLOWANCE + USGS_QUAKES_HEADER_ALLOWANCE
+        query_getter = get or _usgs_getter(bound)  # the read stops at the bound the count just fixed
+        resp = query_getter(query_url)
+        resp.raise_for_status()
+        body = _USGS_EMPTY_CATALOGUE if getattr(resp, "status_code", None) == 204 else resp.text
+        if len(body) > bound:
+            raise ValueError(f"USGS earthquakes: the response is {len(body)} characters, over the {bound} its declared {declared} events allow")
+        parsed = parse_usgs_quakes(
+            body, start_month=start_month, end_month=end_month, min_magnitude=min_magnitude, extracted_at=extracted_at
         )
-    bound = declared * USGS_QUAKES_ROW_ALLOWANCE + USGS_QUAKES_HEADER_ALLOWANCE
-    query_getter = get or _usgs_getter(bound)  # the read stops at the bound the count just fixed
-    resp = query_getter(query_url)
-    resp.raise_for_status()
-    if len(resp.text) > bound:
-        raise ValueError(f"USGS earthquakes: the response is {len(resp.text)} characters, over the {bound} its declared {declared} events allow")
-    parsed = parse_usgs_quakes(
-        resp.text, start_month=start_month, end_month=end_month, min_magnitude=min_magnitude, extracted_at=extracted_at
-    )
-    if parsed.looks_unrecognised:
-        raise ValueError(
-            f"USGS earthquakes: the response is not the expected catalogue ({parsed.refused_total} lines refused, none parsed)"
-        )
-    parsed.declared_count = declared
-    parsed_events = parsed.rows_read - parsed.excluded_non_earthquake
-    if parsed_events != declared:
+        if parsed.looks_unrecognised:
+            raise ValueError(
+                f"USGS earthquakes: the response is not the expected catalogue ({parsed.refused_total} lines refused, none parsed)"
+            )
+        parsed.declared_count = declared
+        # A refused event row was still sent by the service: it counts toward the comparison and leaves
+        # its month a gap (the parser's own rule), rather than failing the whole window.
+        parsed_events = parsed.rows_read - parsed.excluded_non_earthquake + parsed.refused_events
+        if parsed_events == declared:
+            break
+        in_progress = "month still in progress at the vintage" in parsed.partial_periods.values()
+        if attempt == 1 and in_progress:
+            continue
         raise ValueError(
             f"USGS earthquakes: the service counted {declared} events but {parsed_events} were read "
             f"({parsed.refused_total} rows refused); the catalogue changed between the two requests or the list was cut short, so no series is returned"
@@ -829,6 +859,60 @@ def fetch_ghcnd_station(
     if parsed.looks_unrecognised:
         raise ValueError(
             f"GHCN-Daily {station}: the response is not the expected station file "
+            f"({parsed.refused_total} lines refused, none parsed)"
+        )
+    return parsed
+
+
+def nsidc_url(region: str = "N") -> str:
+    """The Sea Ice Index daily extent CSV URL for ``region`` (``N`` or ``S``)."""
+    from src.stats.nsidc import REGIONS
+
+    if region not in REGIONS:
+        raise ValueError(f"nsidc_url: region must be one of {REGIONS}, got {region!r}")
+    hemisphere = "north" if region == "N" else "south"
+    return f"{NSIDC_BASE}/{hemisphere}/daily/data/{region}_seaice_extent_daily_v3.0.csv"
+
+
+def nsidc_max_chars(today: date | None = None) -> int:
+    """The longest body that can still be this record: one row per day since 1978-10-26.
+
+    Derived from the data's shape (at most one row a day since the record began, plus a day of slack), so it grows with the
+    record instead of being a constant someone must raise.
+    """
+    now = today if today is not None else datetime.now(UTC).date()
+    days = max((now - NSIDC_FIRST_DAY).days + 2, 1)
+    return days * NSIDC_LINE_ALLOWANCE + NSIDC_HEADER_ALLOWANCE
+
+
+def fetch_nsidc(
+    region: str = "N",
+    *,
+    get: Getter | None = None,
+    extracted_at: str | None = None,
+) -> Any:
+    """Fetch one Sea Ice Index daily extent CSV live and parse it (kill switch refuses UP FRONT).
+
+    Returns the :class:`~src.stats.nsidc.NsidcParse` (figures AND refusals). A body that parses to nothing but refusals (an HTML
+    error page, a renamed product) raises rather than returning an empty series.
+    """
+    from src.stats.nsidc import parse_nsidc
+
+    if kill_switch_active():
+        raise RuntimeError(NETWORK_REFUSED)
+    extracted_at = extracted_at or _now_iso()
+    getter = get or _nsidc_getter
+    resp = getter(nsidc_url(region))
+    resp.raise_for_status()
+    bound = nsidc_max_chars()
+    if len(resp.text) > bound:
+        raise ValueError(
+            f"NSIDC {region}: the response is {len(resp.text)} characters, over the {bound} the record's own shape allows"
+        )
+    parsed = parse_nsidc(resp.text, region=region, extracted_at=extracted_at)
+    if parsed.looks_unrecognised:
+        raise ValueError(
+            f"NSIDC {region}: the response is not the expected table "
             f"({parsed.refused_total} lines refused, none parsed)"
         )
     return parsed

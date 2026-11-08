@@ -181,6 +181,9 @@ KEPT: dict[str, dict[tuple[str, str], int]] = {
     "src/backup/merge.py": {
         ("_restore_ring_members", 'out["refused"].append({"name": name, "reason": f"write failed: {exception_text(exc, typed=False)}"})'): 1,
         ("merge_side_files", 'refused.append(f"{name}: {exception_text(exc, typed=False)}")'): 1,
+        # the logs loop of the same function: a log the stage could not read or write (a file system refusal, never a driver's), its words scrubbed
+        ("merge_side_files", 'logs[fname] = {"appended": 0, "duplicate": None, "read_failed": exception_text(exc, typed=False) or type(exc).__name__}'): 1,
+        ("merge_side_files", "write_failed = exception_text(exc, typed=False) or type(exc).__name__"): 1,
     },
     "src/backup/runlog.py": {
         ("RunLog._open", 'self._disable("milestones", exception_text(exc))'): 1,
@@ -402,6 +405,9 @@ _MONITORING_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_memory', 'out["available_now_mb"] = _unavailable(exc)'): 1,
         ('_allocator', 'return _unavailable(exc)'): 1,
         ('_environment', 'return _unavailable(exc)'): 1,
+        ('_pragma_text', 'return _unavailable(exc)'): 1,  # R470 D4: one SQLCipher build pragma, its failure by class
+        ('_sqlcipher_build', 'return {n: _unavailable(exc) for n in names}'): 1,  # the throwaway connection would not open
+        ('_sqlcipher_build', 'return {n: _unavailable(exc) for n in names}  # fails closed: nothing is read through a connection the key was refused on'): 1,
     },
     'src/monitoring/page_reading.py': {  # failure_label: the class and the errno name, never the message or the path (src/database/damage.py)
         ('_error', 'return failure_label(exc)'): 1,
