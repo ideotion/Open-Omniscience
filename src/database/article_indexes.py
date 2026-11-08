@@ -69,6 +69,14 @@ UI language). It ends by itself when the cause does, or on a stop (the outcome `
 asks again). Boot's later steps wait behind a paused build, as they do behind a slow one (``boot_sequence``: no timeout, the
 slow step is the fault and has to be seen).
 
+THE LINKS' INDEX (R611, 2026-11-08). The same step builds ``idx_article_link_article_url (article_id, normalized_url)``,
+the covering index of ``convergence._shared_origin`` (R455: 1,392 -> 171 ms on 4.16 M scattered links, SQLCipher, cold),
+AFTER the article list's two and with its own reading of what it needs: the row bound is ``MAX(id)`` of ``article_links``,
+the figures are :data:`BYTES_PER_LINK` and :data:`RAM_BYTES_PER_LINK`, and its refusals and progress have their own words
+(``FRAME_LINK_*``), so a row never calls it the article list's. One group refused for room or memory does not hold the other
+back: what fits is built, and the job then ends declined with the refused group's words. The attempt record is shared
+(one build at a time, and an unfinished start counts whichever index was being built).
+
 HONEST LIMITS. Both figures are estimates (title length varies; they are sized on titles twice the
 synthetic store's) and the report carries what was measured. A memory estimate that turns out too small is
 not caught by the gate: the build is one opaque statement, and the memory guard it relies on pauses
@@ -132,6 +140,34 @@ FRAME_UNFINISHED = (
 #: The names, in the order they are built (the language filter first: it is the slower read today).
 NAMES: tuple[str, ...] = ("idx_article_language_published", "idx_article_title_nocase")
 
+#: The links' covering index (R611), built after :data:`NAMES` (see the module docstring).
+LINK_NAMES: tuple[str, ...] = ("idx_article_link_article_url",)
+
+#: Every index this step builds, in the order it builds them.
+ALL_NAMES: tuple[str, ...] = NAMES + LINK_NAMES
+
+#: What the links' index shows while it is built, and its refusals (keyed x12; the numbers as in the frames above, the
+#: count is the largest link id).
+FRAME_LINK_BUILDING = (
+    "Building the index that keeps the shared-origin counts fast. "
+    "One time only; anything the app saves waits until it is done."
+)
+FRAME_LINK_NO_ROOM = (
+    "The index of the articles' links was not built: the volume your data file is on has {free} MB free and it "
+    "needs about {needed} MB (up to {rows} links). Free some space and restart the app; until then the "
+    "shared-origin counts stay slow."
+)
+FRAME_LINK_NO_MEMORY = (
+    "The index of the articles' links was not built: it needs about {needed} MB of free memory (sorting up to {rows} "
+    "links, plus the memory the app always keeps free) and this computer has {free} MB. Close other programs and "
+    "restart the app; until then the shared-origin counts stay slow."
+)
+FRAME_LINK_UNFINISHED = (
+    "The index of the articles' links was not built: two starts in a row ended while it was being built (the "
+    "computer ran out of memory or power, or the app was ended abruptly), so it is not tried again until "
+    "the app is updated. The shared-origin counts stay slow."
+)
+
 #: Free bytes asked per article on the database's volume. WHAT IT PROTECTS: a disk that fills while the
 #: write-ahead log grows, which would fail every writer in the app, not only this build. Measured on a
 #: 40,000-article store with titles of 38 characters on average: 38 and 46 bytes an article (1.5 and
@@ -151,6 +187,19 @@ BYTES_PER_ARTICLE = 400
 #: and already inside the process) and anything another program takes while the sort runs. WHAT IT PROTECTS: a machine that has less than this
 #: much memory free (plus the memory guard's floor) is not asked to hold the sort.
 RAM_BYTES_PER_ARTICLE = 300
+
+#: Free bytes asked per link for the links' index (R611). Measured 2026-11-08 on 4,160,000 links whose
+#: normalized url averages 54 characters: 17,099 pages of 16 KiB, 67 bytes a link. The write-ahead copy and
+#: the copy in the file are two of them (about 135); asked as 300 for urls twice as long as the ones measured
+#: (the column holds up to 1,000).
+BYTES_PER_LINK = 300
+
+#: RAM the sort of the links' index holds per link under ``temp_store=MEMORY``. Measured the same day on the
+#: same store, plaintext and SQLCipher alike: +409 and +414 MiB resident, 103 and 104 bytes a link at 54
+#: characters, i.e. about the url's bytes plus 50. Asked as 250: urls of 200 bytes, about four times the
+#: measured ones, on the asymmetry RAM_BYTES_PER_ARTICLE states (a refusal costs slow shared-origin counts until
+#: memory is freed; an out-of-memory kill ends the app at start-up).
+RAM_BYTES_PER_LINK = 250
 
 #: How many starts in a row may begin this build and end without it ending before it is no longer tried (until
 #: the app is updated: the record carries the version). WHAT THE 2 PROTECTS: a build that itself brings the
@@ -213,8 +262,8 @@ def _reset_for_tests() -> None:
 
 def pending(engine: Engine) -> tuple[str, list[str]]:
     """``("work", missing)`` when there is something to build, else ``("skipped", [])`` (switch off,
-    not SQLite, no ``articles`` table) or ``("present", [])`` (both are there). One read of the
-    schema; never builds."""
+    not SQLite, no ``articles`` table) or ``("present", [])`` (all are there). One read of the
+    schema; never builds. The links' index is asked for only where ``article_links`` exists."""
     if engine.url.get_backend_name() != "sqlite" or not switch_on():
         return "skipped", []
     with engine.connect() as conn:
@@ -222,7 +271,8 @@ def pending(engine: Engine) -> tuple[str, list[str]]:
         if "articles" not in tables:
             return "skipped", []
         have = {r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='index'"))}
-    missing = [n for n in NAMES if n not in have]
+    wanted = NAMES + (LINK_NAMES if "article_links" in tables else ())
+    missing = [n for n in wanted if n not in have]
     return ("work", missing) if missing else ("present", [])
 
 
@@ -326,6 +376,58 @@ def preflight(engine: Engine, rows: int) -> dict:
         report["detail"] = (
             " ".join(parts) + " Until then the article list's language filter and sort by title stay slow."
         )
+    return report
+
+
+def link_preflight(engine: Engine, rows: int, *, reserved_bytes: int = 0) -> dict:
+    """:func:`preflight` for the links' index (R611): ``rows`` is the largest link id, the figures are
+    :data:`BYTES_PER_LINK` and :data:`RAM_BYTES_PER_LINK`, the same volume, the same memory reading and floor,
+    the same ``sufficient``/``short_on`` contract, and its own words. ``reserved_bytes`` is what the article
+    group, built first in the same run, is expected to take from the same volume."""
+    needed = int(rows) * BYTES_PER_LINK
+    ram_needed = int(rows) * RAM_BYTES_PER_LINK
+    floor = _floor_bytes()
+    db_path = engine.url.database
+    volume = (os.path.dirname(os.path.abspath(db_path)) if db_path else None) or "."
+    free = _free(volume)
+    measured = {"database": free}
+    available = _available_ram_bytes()
+    report: dict[str, Any] = {
+        "needed_bytes": needed,
+        "free_bytes": measured,
+        "bytes_per_link": BYTES_PER_LINK,
+        "ram_estimate_bytes": ram_needed,
+        "ram_floor_bytes": floor,
+        "ram_available_bytes": available,
+        "method": (
+            f"about {BYTES_PER_LINK} bytes per link free on the database's volume (the write-ahead log, then the "
+            f"file), and about {RAM_BYTES_PER_LINK} bytes per link of memory for the sort plus the memory guard's "
+            "floor; never a temporary file (on an encrypted store its sort would write the urls to it in the clear)"
+        ),
+    }
+    if free is None and available is None:
+        report["sufficient"] = None
+        return report
+    report["reserved_bytes"] = int(reserved_bytes)
+    short = ["database"] if free is not None and free - int(reserved_bytes) < needed else []
+    if available is not None and available < ram_needed + floor:
+        short.append("memory")
+    report["sufficient"] = not short
+    if short:
+        report["short_on"] = short
+        parts = []
+        if "database" in short:
+            parts.append(
+                f"the database volume has {free:,} bytes free and the links' index needs about {needed:,} "
+                f"(up to {rows:,} links at {BYTES_PER_LINK} bytes each). Free some space and restart the app."
+            )
+        if "memory" in short:
+            parts.append(
+                f"the machine has {available:,} bytes of memory available and sorting the urls of up to {rows:,} "
+                f"links needs about {ram_needed:,} (at {RAM_BYTES_PER_LINK} bytes each) on top of the {floor:,} "
+                "the memory guard keeps free. Close other programs and restart the app."
+            )
+        report["detail"] = " ".join(parts) + " Until then the shared-origin counts stay slow."
     return report
 
 
@@ -454,7 +556,7 @@ def _refresh_stats(engine: Engine, names: list[str]) -> None:
         with engine.connect() as conn, write_lock():
             conn.execute(text("PRAGMA analysis_limit=1000"))
             for name in names:
-                if name in NAMES:  # a module constant, never input
+                if name in ALL_NAMES:  # a module constant, never input
                     conn.execute(text(f"ANALYZE main.{name}"))  # noqa: S608  # nosec B608
             conn.commit()
     except Exception as exc:  # noqa: BLE001 - statistics are an optimisation, never a reason to fail the build
@@ -538,26 +640,31 @@ def build_missing(engine: Engine, ctx: JobContext | None = None) -> dict:
             )
             _LOG.warning("article-list indexes not built: %s", report["reason"])
             if ctx is not None:
-                ctx.set_progress(done=0, total=len(missing), detail=Framed(FRAME_UNFINISHED, FRAME_UNFINISHED))
+                unfinished = FRAME_UNFINISHED if any(n in NAMES for n in missing) else FRAME_LINK_UNFINISHED
+                ctx.set_progress(done=0, total=len(missing), detail=Framed(unfinished, unfinished))
             raise Declined(report["reason"])
         # B1: stand aside while the storage guard is engaged, BEFORE the readings below (they are taken right before the build, not
         # hours before it) and before the attempt is recorded (a pause is not a build that brought the process down).
         if not _stand_aside(ctx, len(missing)):
             report["outcome"] = "stopped"
             return report
-        with engine.connect() as conn:
-            rows = int(conn.execute(text("SELECT COALESCE(MAX(id), 0) FROM articles")).scalar() or 0)
-        report["rows_bound"] = rows
-        room = preflight(engine, rows)
-        report["preflight"] = room
-        if room.get("sufficient") is False:
-            report["outcome"] = "declined"
-            report["reason"] = room["detail"]
-            _LOG.warning("article-list indexes not built: %s", room["detail"])
-            if ctx is not None:
-                # The row's error is an English string no renderer draws for this kind; the detail is the keyed
-                # frame both task managers do (it survives into the error state). When both fell short the space
-                # is shown first: it is the one a restart does not cure.
+        articles_missing = [n for n in missing if n in NAMES]
+        links_missing = [n for n in missing if n in LINK_NAMES]
+        # Each group is measured on its own (R611): one refused for room or memory does not hold the other back. A refusal is kept
+        # here, as (frame, values, detail), and shown once whatever fits has been built.
+        refused: list[tuple[str, dict[str, int], str]] = []
+        to_build: list[str] = []
+        reserved = 0  # the article group's disk estimate, when it builds first: the links' group is asked against what is left
+        if articles_missing:
+            with engine.connect() as conn:
+                rows = int(conn.execute(text("SELECT COALESCE(MAX(id), 0) FROM articles")).scalar() or 0)
+            report["rows_bound"] = rows
+            room = preflight(engine, rows)
+            report["preflight"] = room
+            if room.get("sufficient") is False:
+                report["reason"] = room["detail"]
+                _LOG.warning("article-list indexes not built: %s", room["detail"])
+                # The space is shown first when both fell short: it is the one a restart does not cure.
                 if "database" in room["short_on"]:
                     free_mb = int(room["free_bytes"]["database"] // 1_000_000)
                     need_mb = -(-int(room["needed_bytes"]) // 1_000_000)  # rounded UP: what is asked is at least this
@@ -566,19 +673,55 @@ def build_missing(engine: Engine, ctx: JobContext | None = None) -> dict:
                     free_mb = int(room["ram_available_bytes"] // 1_000_000)
                     need_mb = -(-(int(room["ram_estimate_bytes"]) + int(room["ram_floor_bytes"])) // 1_000_000)
                     frame = FRAME_NO_MEMORY
+                refused.append((frame, {"free": free_mb, "needed": need_mb, "rows": rows}, room["detail"]))
+            else:
+                to_build += articles_missing
+                reserved = int(room["needed_bytes"])
+        if links_missing:
+            with engine.connect() as conn:
+                link_rows = int(conn.execute(text("SELECT COALESCE(MAX(id), 0) FROM article_links")).scalar() or 0)
+            report["link_rows_bound"] = link_rows
+            link_room = link_preflight(engine, link_rows, reserved_bytes=reserved)
+            report["link_preflight"] = link_room
+            if link_room.get("sufficient") is False:
+                report.setdefault("reason", link_room["detail"])
+                _LOG.warning("links' index not built: %s", link_room["detail"])
+                if "database" in link_room["short_on"]:
+                    free_mb = int(max(0, link_room["free_bytes"]["database"] - reserved) // 1_000_000)
+                    need_mb = -(-int(link_room["needed_bytes"]) // 1_000_000)
+                    frame = FRAME_LINK_NO_ROOM
+                else:
+                    free_mb = int(link_room["ram_available_bytes"] // 1_000_000)
+                    need_mb = -(-(int(link_room["ram_estimate_bytes"]) + int(link_room["ram_floor_bytes"])) // 1_000_000)
+                    frame = FRAME_LINK_NO_MEMORY
+                refused.append((frame, {"free": free_mb, "needed": need_mb, "rows": link_rows}, link_room["detail"]))
+            else:
+                to_build += links_missing
+
+        def _show_refusal() -> None:
+            frame, values, _detail = refused[0]
+            if ctx is not None:
+                # The row's error is an English string no renderer draws for this kind; the detail is the keyed
+                # frame both task managers do (it survives into the error state).
                 ctx.set_progress(
-                    done=0,
-                    total=len(missing),
-                    detail=Framed(
-                        frame.format(free=free_mb, needed=need_mb, rows=rows), frame,
-                        free=free_mb, needed=need_mb, rows=rows,
-                    ),
+                    done=len(report["built"]), total=len(missing),
+                    detail=Framed(frame.format(**values), frame, **values),
                 )
-            raise Declined(room["detail"])
-        attempt_facts = {
-            "rows_bound": rows,
-            "ram_available_mb": None if room.get("ram_available_bytes") is None else round(room["ram_available_bytes"] / 1048576),
-        }
+
+        if not to_build:
+            report["outcome"] = "declined"
+            _show_refusal()
+            raise Declined(refused[0][2])
+        # The bound of each group that builds (counts only), and the memory the machine had free.
+        attempt_facts: dict[str, Any] = {}
+        if any(n in NAMES for n in to_build):
+            attempt_facts["rows_bound"] = report["rows_bound"]
+        if any(n in LINK_NAMES for n in to_build):
+            attempt_facts["link_rows_bound"] = report["link_rows_bound"]
+        ram = next((r for r in (report.get("preflight"), report.get("link_preflight")) if r), {})
+        attempt_facts["ram_available_mb"] = (
+            None if ram.get("ram_available_bytes") is None else round(ram["ram_available_bytes"] / 1048576)
+        )
 
         def _retake() -> None:
             report["attempt_recorded"] = _arm(prior + 1, **attempt_facts)
@@ -586,22 +729,23 @@ def build_missing(engine: Engine, ctx: JobContext | None = None) -> dict:
         armed = report["attempt_recorded"] = _arm(prior + 1, **attempt_facts)
         began = True
         report["peak_rss_mb_before"] = _peak_rss_mb()
-        total = len(missing)
+        total = len(to_build)
+        articles_total = sum(1 for n in to_build if n in NAMES)
         built: dict[str, float] = report["built"]
         stopped = False
-        for i, name in enumerate(missing):
+        for i, name in enumerate(to_build):
             if i > 0 and not _stand_aside(ctx, total, done=i, retake=_retake if armed else None):
                 stopped = True
                 break
             if ctx is not None:
-                ctx.set_progress(
-                    done=i,
-                    total=total,
-                    detail=Framed(
-                        FRAME_BUILDING.format(index=i + 1, total=total), FRAME_BUILDING,
-                        index=i + 1, total=total,
-                    ),
-                )
+                if name in NAMES:
+                    detail = Framed(
+                        FRAME_BUILDING.format(index=i + 1, total=articles_total), FRAME_BUILDING,
+                        index=i + 1, total=articles_total,
+                    )
+                else:
+                    detail = Framed(FRAME_LINK_BUILDING, FRAME_LINK_BUILDING)
+                ctx.set_progress(done=i, total=total, detail=detail)
             with engine.connect() as conn:  # the connection first, then the gate; "asked" below is the gate's wait alone
                 asked = time.monotonic()
                 with write_lock():
@@ -612,11 +756,15 @@ def build_missing(engine: Engine, ctx: JobContext | None = None) -> dict:
             built[name] = round(done - got, 2)
             report["gate_wait_s"] = round(report.get("gate_wait_s", 0.0) + (got - asked), 2)
             _record(**report)
-            _LOG.info("article-list index %s built in %.1f s (%d of %d)", name, done - got, i + 1, total)
-        if ctx is not None and not stopped:
-            ctx.set_progress(done=total, total=total)
+            _LOG.info("start-up index %s built in %.1f s (%d of %d)", name, done - got, i + 1, total)
         if built:
             _refresh_stats(engine, list(built))
+        if refused and not stopped:
+            report["outcome"] = "declined"
+            _show_refusal()
+            raise Declined(refused[0][2])
+        if ctx is not None and not stopped:
+            ctx.set_progress(done=total, total=total)
         report["outcome"] = "stopped" if stopped else "built"
         return report
     except Declined:
