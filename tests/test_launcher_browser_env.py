@@ -91,7 +91,7 @@ def test_launch_sh_starts_every_browser_opener_through_env_minus_u():
         # an opener in command position: at the start of a statement, after a separator, or
         # after a keyword or wrapper that runs it; prose like "will open at" is not one
         if re.search(
-            r"(^\s*|[;&|({]\s*|\b(then|else|do|exec|command|nohup|setsid|env)\s+(\S+=\S*\s+)*)"
+            r"(^\s*|[;&|({]\s*|\b(then|else|do|exec|command|nohup|setsid|env)\s+(?:[A-Za-z_]\w*=\S*\s+)*)"
             r"(xdg-open|open|gio\s+open|kde-open\d*|sensible-browser|x-www-browser|www-browser"
             r"|\"?\$\{?BROWSER\b)(?=[\s\"'}]|$)",
             ln,
