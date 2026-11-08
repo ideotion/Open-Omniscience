@@ -1199,6 +1199,7 @@ POPUP_LANE_LISTS = [
     ("src.stats.fetch", "GISTEMP_HOSTS", ("climate",)),
     ("src.stats.fetch", "OWID_HOSTS", ("climate",)),
     ("src.stats.fetch", "USGS_HOSTS", ("climate",)),
+    ("src.stats.fetch", "GHCND_HOSTS", ("climate",)),
 ]
 
 #: A session built with a list that arrives as a PARAMETER cannot be resolved to a name; each such place says why it is still pinned. Keyed by

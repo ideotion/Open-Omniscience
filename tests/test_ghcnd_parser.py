@@ -162,3 +162,18 @@ def test_kill_switch_refuses_before_any_request(monkeypatch):
 
     with pytest.raises(RuntimeError, match=NETWORK_REFUSED.split()[0]):
         fetch.fetch_ghcnd_station(STN, get=boom)
+
+
+def test_the_default_getter_is_held_to_the_ghcn_directory(monkeypatch):
+    seen = {}
+
+    def fake_session(**kw):
+        seen.update(kw)
+        return object()
+
+    monkeypatch.setattr(fetch, "guarded_session", fake_session)
+    monkeypatch.setattr(fetch, "_bounded_get", lambda session, url, *, max_chars: (url, max_chars))
+    url, max_chars = fetch._ghcnd_getter(fetch.ghcnd_url(STN))
+    assert seen["allowed_hosts"] == ("www.ncei.noaa.gov",)
+    assert all(fetch.ghcnd_url(STN).split("//", 1)[1].split("/", 1)[1].startswith(p.lstrip("/")) for p in seen["allowed_path_prefixes"])
+    assert max_chars == fetch.ghcnd_max_chars()
