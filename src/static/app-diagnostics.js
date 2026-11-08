@@ -260,6 +260,9 @@
       const note = $("diag-thorough-note");
       const box = $("diag-thorough");
       if (!note || !box) return;
+      // S3: the operator's scan budget is offered only beside a ticked Thorough box (Quick has its own budget).
+      const budgetWrap = $("diag-budget-wrap");
+      if (budgetWrap) budgetWrap.hidden = !box.checked;
       if (!box.checked) { note.hidden = true; note.textContent = ""; return; }
       let est = null;
       try { est = await api("/api/diagnostics/all-job/estimate"); } catch (_e) { est = null; }
@@ -271,6 +274,8 @@
     async function diagnosticsPanelOpened() {
       const box = $("diag-thorough");
       if (box) box.checked = false;
+      const budgetEl = $("diag-budget-min");
+      if (budgetEl) budgetEl.value = "";   // per run, never remembered (the box's own rule)
       if (box && !_thoroughNoteBound) { _thoroughNoteBound = true; box.addEventListener("change", paintThoroughNote); }
       paintThoroughNote();
       try {
@@ -1210,12 +1215,21 @@
         // panel opens (R124). The profile is not sent: the panel has no light bundle since R122.
         const thoroughEl = $("diag-thorough");
         const mode = (thoroughEl && thoroughEl.checked) ? "thorough" : "quick";
+        // S3: the operator's budget rides the start call too, Thorough only. An entry that is not a number of minutes above
+        // zero is said so here and the build is not started, rather than read as "no limit" (the backend refuses it with 400).
+        const budgetEl = $("diag-budget-min");
+        const budgetRaw = (mode === "thorough" && budgetEl) ? String(budgetEl.value || "").trim() : "";
+        if (budgetRaw && !(Number(budgetRaw) > 0 && Number.isFinite(Number(budgetRaw)))) {
+          set(t("The scan time limit must be a number of minutes above zero, or blank for none."));
+          return;   // the finally below gives the button back
+        }
+        const budgetQs = budgetRaw ? "&budget_min=" + encodeURIComponent(budgetRaw) : "";
         // ``started: false`` is a build that was ALREADY running (another tab, the API, or this page before a reload):
         // this page follows it, and its status line says so, because the Thorough box applies to a build the person
         // starts, and a ticked box answered by a Quick build must not read as having been honoured.
         let followed = false;
         try {
-          const began = await api("/api/diagnostics/all-job?mode=" + mode, { method: "POST" });
+          const began = await api("/api/diagnostics/all-job?mode=" + mode + budgetQs, { method: "POST" });
           followed = !!began && began.started === false;
         }
         catch (e) { /* a transient start failure still lets us poll an existing job */ }

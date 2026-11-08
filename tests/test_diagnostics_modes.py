@@ -571,3 +571,73 @@ def test_the_release_run_reads_the_mode_and_the_skipped_scans_out_of_an_archive(
     assert out["skipped_budget_members"] == ["s-mid.json"]
     assert out["complete_profile"] is False
     assert ".skipped-budget.txt" in rr._MARKER_SUFFIXES
+
+
+# ---- S3: an operator-set budget for a Thorough build (none by default) -----------------------------
+@pytest.mark.parametrize("given, want", [(None, None), ("", None), ("  ", None), ("10", 600.0), (2.5, 150.0), ("0.5", 30.0)])
+def test_the_operator_budget_is_minutes_or_none(given, want):
+    assert plan.operator_budget_s(given) == want
+
+
+@pytest.mark.parametrize("bad", ["0", "-3", "abc", "nan", "inf", 0, -1])
+def test_an_operator_budget_that_is_not_minutes_above_zero_is_refused_never_read_as_no_limit(bad):
+    with pytest.raises(ValueError):
+        plan.operator_budget_s(bad)
+
+
+def test_thorough_with_an_operator_budget_skips_and_names_what_it_did_not_reach(monkeypatch):
+    clock, window, seen = _Clock(), _Window(), []
+    monkeypatch.setattr(B, "_mono", clock)
+    members = _members(clock, window, seen, costs={"s-tiny.json": 40.0, "s-fast.json": 40.0})
+    results, man, names, _ = _build(members, mode="thorough", scan_window=window, thorough_budget_s=100.0)
+    by = {r["file"]: r for r in results}
+    for skipped in ("s-mid.json", "s-slow.json"):
+        assert by[skipped]["outcome"] == "skipped-budget"
+        assert "the operator set" in by[skipped]["skipped_reason"] and "longer budget" in by[skipped]["skipped_reason"]
+        assert skipped + ".skipped-budget.txt" in names
+    assert man["mode"] == "thorough" and man["scan_budget_s"] == 100.0 and man["scan_budget_set_by"] == "operator"
+    assert [s["file"] for s in man["scans"]["skipped"]] == ["s-mid.json", "s-slow.json"]
+    assert man["profile"]["complete_profile"] is False and "longer budget" in man["profile"]["note"]
+
+
+def test_thorough_without_a_budget_is_unchanged(monkeypatch):
+    clock, window, seen = _Clock(), _Window(), []
+    monkeypatch.setattr(B, "_mono", clock)
+    members = _members(clock, window, seen, costs={"s-tiny.json": 400.0})
+    _, man, _, _ = _build(members, mode="thorough", scan_window=window)
+    assert man["scan_budget_s"] is None and man["scan_budget_set_by"] is None and man["scans"]["skipped"] == []
+
+
+def test_quick_keeps_its_own_budget_whatever_the_operator_passed(monkeypatch):
+    clock, window, seen = _Clock(), _Window(), []
+    monkeypatch.setattr(B, "_mono", clock)
+    _, man, _, _ = _build(_members(clock, window, seen), mode="quick", scan_window=window, thorough_budget_s=5.0)
+    assert man["scan_budget_s"] == 100.0 and man["scan_budget_set_by"] == "product"
+
+
+def test_the_job_route_passes_an_operator_budget_for_thorough_only_and_refuses_a_bad_one(monkeypatch):
+    from fastapi import HTTPException
+
+    started: list[dict] = []
+    monkeypatch.setattr(B._ALL_DIAG_JOB, "start", lambda **kw: started.append(kw) or {"state": "running"})
+    B.all_diagnostics_job_start(profile="full", mode="thorough", budget_min="20")
+    assert started[-1] == {"profile": "full", "mode": "thorough", "budget_s": 1200.0}
+    resp = B.all_diagnostics_job_start(profile="full", mode="quick", budget_min="20")
+    assert started[-1] == {"profile": "full", "mode": "quick"}
+    assert b"budget_ignored" in bytes(resp.body)
+    with pytest.raises(HTTPException) as e:
+        B.all_diagnostics_job_start(profile="full", mode="thorough", budget_min="-1")
+    assert e.value.status_code == 400
+
+
+def test_the_panel_offers_the_budget_beside_thorough_only_and_never_remembers_it():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent / "src" / "static"
+    html = (root / "index.html").read_text(encoding="utf-8")
+    js = (root / "app-diagnostics.js").read_text(encoding="utf-8")
+    assert 'id="diag-budget-wrap"' in html and 'id="diag-budget-min"' in html
+    assert 'id="diag-budget-wrap" class="small" style="margin-left:6px" hidden' in html, "hidden until Thorough is ticked"
+    assert 'budgetWrap.hidden = !box.checked' in js
+    assert 'budgetEl.value = ""' in js, "empty each time the panel opens"
+    assert '"&budget_min=" + encodeURIComponent(budgetRaw)' in js and 'mode === "thorough"' in js

@@ -43,6 +43,8 @@ file and imports nothing heavy, so the tests can pin it.
 
 from __future__ import annotations
 
+import math
+
 from typing import Any
 
 #: The two modes. ``quick`` is what the panel asks for unless the user ticks Thorough.
@@ -186,6 +188,28 @@ def split_members(
     scans = [m for m in members if m[0] in est]
     scans.sort(key=lambda m: scan_est_s(m[0], est))  # stable: ties keep the list's order
     return records, scans
+
+
+def operator_budget_s(minutes: Any) -> float | None:
+    """The scan budget an operator set for a THOROUGH build, in seconds, or ``None`` for none (the default: every scan runs
+    under its own deadline). Refuses a value that is not a finite number of minutes above zero with ``ValueError`` (the route
+    answers 400), rather than reading a typo as "no limit" or as a limit nobody chose. No upper bound: the operator owns the
+    pause, and a budget shorter than :data:`SCAN_FLOOR_S` simply runs no scan, each one named."""
+    if minutes is None or (isinstance(minutes, str) and not minutes.strip()):
+        return None
+    try:
+        value = float(minutes)
+    except (TypeError, ValueError):
+        raise ValueError("budget_min must be a number of minutes") from None
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError("budget_min must be a finite number of minutes above zero")
+    return value * 60.0
+
+
+def scan_budget_for(mode: str, thorough_budget_s: float | None) -> float | None:
+    """The one shared scan budget a build runs under: Quick's own :data:`SCAN_BUDGET_S`, or the operator's for Thorough
+    (``None`` when they set none). An operator budget is never applied to Quick, whose budget is the product's."""
+    return SCAN_BUDGET_S if mode == "quick" else thorough_budget_s
 
 
 def scan_deadline_s(cap_s: float, elapsed_s: float, budget_s: float | None) -> tuple[float | None, bool]:
