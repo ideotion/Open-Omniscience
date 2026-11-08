@@ -7363,5 +7363,10 @@
   "＋ zoom": "＋ تكبير",
   "－ zoom": "－ تصغير",
   "📍 places": "📍 أماكن",
-  "🛒 Draft (": "🛒 المسودة ("
+  "🛒 Draft (": "🛒 المسودة (",
+  "One article per source (.zip files) · TEMP": "مقال واحد لكل مصدر (ملفات .zip) · مؤقت",
+  "TEMPORARY diagnostic. Saves one randomly chosen stored article per source, with every stored field of the article and its source and the full text, as several .zip files of at most 4 MB each. Sources with no stored article are listed in each zip's manifest. Read-only, no network, nothing is written on this machine.": "تشخيص مؤقت. يحفظ مقالًا مخزَّنًا واحدًا مختارًا عشوائيًا لكل مصدر، مع جميع الحقول المخزَّنة للمقال ومصدره والنص الكامل، في عدة ملفات .zip لا يتجاوز كلٌّ منها 4 ميغابايت. المصادر التي لا مقال مخزَّنًا لها مدرجة في بيان كل ملف zip. للقراءة فقط، بلا شبكة، ولا يُكتب شيء على هذا الجهاز.",
+  "Packing the next sources… {files} zip files saved, {sources} of {total} sources.": "جارٍ تجميع المصادر التالية… حُفظ {files} ملف zip، {sources} من {total} مصدرًا.",
+  "Done: {files} zip files covering {sources} sources.": "تم: {files} ملف zip تغطي {sources} مصدرًا.",
+  "Stopped after {files} zip files: {why}": "توقف بعد {files} ملف zip: {why}"
 }

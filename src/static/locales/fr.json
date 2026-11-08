@@ -7363,5 +7363,10 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lieux",
-  "🛒 Draft (": "🛒 Brouillon ("
+  "🛒 Draft (": "🛒 Brouillon (",
+  "One article per source (.zip files) · TEMP": "Un article par source (fichiers .zip) · TEMPORAIRE",
+  "TEMPORARY diagnostic. Saves one randomly chosen stored article per source, with every stored field of the article and its source and the full text, as several .zip files of at most 4 MB each. Sources with no stored article are listed in each zip's manifest. Read-only, no network, nothing is written on this machine.": "Diagnostic TEMPORAIRE. Enregistre un article stocké tiré au hasard par source, avec tous les champs stockés de l'article et de sa source et le texte intégral, en plusieurs fichiers .zip de 4 Mo maximum. Les sources sans article stocké figurent dans le manifeste de chaque zip. Lecture seule, aucun accès réseau, rien n'est écrit sur cette machine.",
+  "Packing the next sources… {files} zip files saved, {sources} of {total} sources.": "Préparation des sources suivantes… {files} fichiers zip enregistrés, {sources} sources sur {total}.",
+  "Done: {files} zip files covering {sources} sources.": "Terminé : {files} fichiers zip couvrant {sources} sources.",
+  "Stopped after {files} zip files: {why}": "Arrêt après {files} fichiers zip : {why}"
 }

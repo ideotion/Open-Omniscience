@@ -7363,5 +7363,10 @@
   "＋ zoom": "＋ 放大",
   "－ zoom": "－ 缩小",
   "📍 places": "📍 地点",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "One article per source (.zip files) · TEMP": "每个来源一篇文章(.zip 文件)· 临时",
+  "TEMPORARY diagnostic. Saves one randomly chosen stored article per source, with every stored field of the article and its source and the full text, as several .zip files of at most 4 MB each. Sources with no stored article are listed in each zip's manifest. Read-only, no network, nothing is written on this machine.": "临时诊断。为每个来源保存一篇随机选取的已存储文章,包含文章及其来源的所有已存储字段和全文,分成多个不超过 4 MB 的 .zip 文件。没有已存储文章的来源会列在每个 zip 的清单中。只读、无网络,不会在本机写入任何内容。",
+  "Packing the next sources… {files} zip files saved, {sources} of {total} sources.": "正在打包后续来源……已保存 {files} 个 zip 文件,{sources}/{total} 个来源。",
+  "Done: {files} zip files covering {sources} sources.": "完成:{files} 个 zip 文件,涵盖 {sources} 个来源。",
+  "Stopped after {files} zip files: {why}": "在 {files} 个 zip 文件后停止:{why}"
 }

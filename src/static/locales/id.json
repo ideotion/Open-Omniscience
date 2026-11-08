@@ -7363,5 +7363,10 @@
   "＋ zoom": "＋ perbesar",
   "－ zoom": "－ perkecil",
   "📍 places": "📍 tempat",
-  "🛒 Draft (": "🛒 Draf ("
+  "🛒 Draft (": "🛒 Draf (",
+  "One article per source (.zip files) · TEMP": "Satu artikel per sumber (berkas .zip) · SEMENTARA",
+  "TEMPORARY diagnostic. Saves one randomly chosen stored article per source, with every stored field of the article and its source and the full text, as several .zip files of at most 4 MB each. Sources with no stored article are listed in each zip's manifest. Read-only, no network, nothing is written on this machine.": "Diagnostik SEMENTARA. Menyimpan satu artikel tersimpan yang dipilih acak per sumber, lengkap dengan semua bidang tersimpan artikel dan sumbernya serta teks lengkap, dalam beberapa berkas .zip maksimal 4 MB. Sumber tanpa artikel tersimpan dicantumkan dalam manifes tiap zip. Hanya baca, tanpa jaringan, tidak ada yang ditulis di mesin ini.",
+  "Packing the next sources… {files} zip files saved, {sources} of {total} sources.": "Mengemas sumber berikutnya… {files} berkas zip tersimpan, {sources} dari {total} sumber.",
+  "Done: {files} zip files covering {sources} sources.": "Selesai: {files} berkas zip mencakup {sources} sumber.",
+  "Stopped after {files} zip files: {why}": "Berhenti setelah {files} berkas zip: {why}"
 }

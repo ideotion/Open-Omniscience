@@ -7363,5 +7363,10 @@
   "＋ zoom": "＋ জুম",
   "－ zoom": "－ জুম",
   "📍 places": "📍 স্থান",
-  "🛒 Draft (": "🛒 খসড়া ("
+  "🛒 Draft (": "🛒 খসড়া (",
+  "One article per source (.zip files) · TEMP": "প্রতি উৎসে একটি নিবন্ধ (.zip ফাইল) · অস্থায়ী",
+  "TEMPORARY diagnostic. Saves one randomly chosen stored article per source, with every stored field of the article and its source and the full text, as several .zip files of at most 4 MB each. Sources with no stored article are listed in each zip's manifest. Read-only, no network, nothing is written on this machine.": "অস্থায়ী ডায়াগনস্টিক। প্রতিটি উৎসের একটি এলোমেলোভাবে বাছাই করা সংরক্ষিত নিবন্ধ, নিবন্ধ ও তার উৎসের সব সংরক্ষিত ক্ষেত্র এবং সম্পূর্ণ লেখাসহ, সর্বোচ্চ 4 MB-এর একাধিক .zip ফাইলে সংরক্ষণ করে। সংরক্ষিত নিবন্ধ নেই এমন উৎস প্রতিটি zip-এর ম্যানিফেস্টে তালিকাভুক্ত থাকে। শুধু পাঠ, নেটওয়ার্ক নেই, এই মেশিনে কিছু লেখা হয় না।",
+  "Packing the next sources… {files} zip files saved, {sources} of {total} sources.": "পরবর্তী উৎসগুলো প্যাক করা হচ্ছে… {files}টি zip ফাইল সংরক্ষিত, {total}-এর মধ্যে {sources}টি উৎস।",
+  "Done: {files} zip files covering {sources} sources.": "সম্পন্ন: {files}টি zip ফাইল, {sources}টি উৎস।",
+  "Stopped after {files} zip files: {why}": "{files}টি zip ফাইলের পর থেমেছে: {why}"
 }

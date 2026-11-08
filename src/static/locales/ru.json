@@ -7363,5 +7363,10 @@
   "＋ zoom": "＋ увеличить",
   "－ zoom": "－ уменьшить",
   "📍 places": "📍 места",
-  "🛒 Draft (": "🛒 Черновик ("
+  "🛒 Draft (": "🛒 Черновик (",
+  "One article per source (.zip files) · TEMP": "Одна статья на источник (файлы .zip) · ВРЕМЕННО",
+  "TEMPORARY diagnostic. Saves one randomly chosen stored article per source, with every stored field of the article and its source and the full text, as several .zip files of at most 4 MB each. Sources with no stored article are listed in each zip's manifest. Read-only, no network, nothing is written on this machine.": "ВРЕМЕННАЯ диагностика. Сохраняет по одной случайно выбранной сохранённой статье на каждый источник, со всеми сохранёнными полями статьи и источника и полным текстом, в нескольких файлах .zip размером не более 4 МБ. Источники без сохранённых статей указаны в манифесте каждого zip. Только чтение, без сети, на этом компьютере ничего не записывается.",
+  "Packing the next sources… {files} zip files saved, {sources} of {total} sources.": "Упаковка следующих источников… сохранено zip-файлов: {files}, источников: {sources} из {total}.",
+  "Done: {files} zip files covering {sources} sources.": "Готово: zip-файлов {files}, источников {sources}.",
+  "Stopped after {files} zip files: {why}": "Остановлено после {files} zip-файлов: {why}"
 }

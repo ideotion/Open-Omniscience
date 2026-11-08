@@ -7363,5 +7363,10 @@
   "＋ zoom": "＋ 拡大",
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "One article per source (.zip files) · TEMP": "ソースごとに記事1件(.zip ファイル)· 一時的",
+  "TEMPORARY diagnostic. Saves one randomly chosen stored article per source, with every stored field of the article and its source and the full text, as several .zip files of at most 4 MB each. Sources with no stored article are listed in each zip's manifest. Read-only, no network, nothing is written on this machine.": "一時的な診断。ソースごとにランダムに選んだ保存済み記事を、記事とソースの保存済みフィールドすべてと全文付きで、各4 MB以下の複数の .zip ファイルとして保存します。保存済み記事のないソースは各 zip のマニフェストに記載されます。読み取り専用・ネットワーク不使用・このマシンには何も書き込みません。",
+  "Packing the next sources… {files} zip files saved, {sources} of {total} sources.": "次のソースをまとめています… zip {files} 件を保存、ソース {sources}/{total} 件。",
+  "Done: {files} zip files covering {sources} sources.": "完了:zip {files} 件、ソース {sources} 件。",
+  "Stopped after {files} zip files: {why}": "zip {files} 件の後で停止しました:{why}"
 }

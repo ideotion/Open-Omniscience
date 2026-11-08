@@ -7363,5 +7363,10 @@
   "＋ zoom": "＋ ज़ूम",
   "－ zoom": "－ ज़ूम",
   "📍 places": "📍 स्थान",
-  "🛒 Draft (": "🛒 ड्राफ़्ट ("
+  "🛒 Draft (": "🛒 ड्राफ़्ट (",
+  "One article per source (.zip files) · TEMP": "प्रति स्रोत एक लेख (.zip फ़ाइलें) · अस्थायी",
+  "TEMPORARY diagnostic. Saves one randomly chosen stored article per source, with every stored field of the article and its source and the full text, as several .zip files of at most 4 MB each. Sources with no stored article are listed in each zip's manifest. Read-only, no network, nothing is written on this machine.": "अस्थायी डायग्नोस्टिक। हर स्रोत का एक यादृच्छिक रूप से चुना गया संग्रहीत लेख, लेख और उसके स्रोत के सभी संग्रहीत फ़ील्ड और पूरे पाठ के साथ, अधिकतम 4 MB की कई .zip फ़ाइलों में सहेजता है। बिना संग्रहीत लेख वाले स्रोत हर zip के मैनिफ़ेस्ट में सूचीबद्ध होते हैं। केवल पढ़ना, कोई नेटवर्क नहीं, इस मशीन पर कुछ नहीं लिखा जाता।",
+  "Packing the next sources… {files} zip files saved, {sources} of {total} sources.": "अगले स्रोत पैक किए जा रहे हैं… {files} zip फ़ाइलें सहेजी गईं, {total} में से {sources} स्रोत।",
+  "Done: {files} zip files covering {sources} sources.": "पूरा हुआ: {files} zip फ़ाइलें, {sources} स्रोत।",
+  "Stopped after {files} zip files: {why}": "{files} zip फ़ाइलों के बाद रुका: {why}"
 }

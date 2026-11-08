@@ -7363,5 +7363,10 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 places",
-  "🛒 Draft (": "🛒 Draft ("
+  "🛒 Draft (": "🛒 Draft (",
+  "One article per source (.zip files) · TEMP": "One article per source (.zip files) · TEMP",
+  "TEMPORARY diagnostic. Saves one randomly chosen stored article per source, with every stored field of the article and its source and the full text, as several .zip files of at most 4 MB each. Sources with no stored article are listed in each zip's manifest. Read-only, no network, nothing is written on this machine.": "TEMPORARY diagnostic. Saves one randomly chosen stored article per source, with every stored field of the article and its source and the full text, as several .zip files of at most 4 MB each. Sources with no stored article are listed in each zip's manifest. Read-only, no network, nothing is written on this machine.",
+  "Packing the next sources… {files} zip files saved, {sources} of {total} sources.": "Packing the next sources… {files} zip files saved, {sources} of {total} sources.",
+  "Done: {files} zip files covering {sources} sources.": "Done: {files} zip files covering {sources} sources.",
+  "Stopped after {files} zip files: {why}": "Stopped after {files} zip files: {why}"
 }

@@ -7363,5 +7363,10 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 locais",
-  "🛒 Draft (": "🛒 Rascunho ("
+  "🛒 Draft (": "🛒 Rascunho (",
+  "One article per source (.zip files) · TEMP": "Um artigo por fonte (arquivos .zip) · TEMPORÁRIO",
+  "TEMPORARY diagnostic. Saves one randomly chosen stored article per source, with every stored field of the article and its source and the full text, as several .zip files of at most 4 MB each. Sources with no stored article are listed in each zip's manifest. Read-only, no network, nothing is written on this machine.": "Diagnóstico TEMPORÁRIO. Salva um artigo armazenado escolhido ao acaso por fonte, com todos os campos armazenados do artigo e da fonte e o texto completo, em vários arquivos .zip de no máximo 4 MB. Fontes sem artigo armazenado constam no manifesto de cada zip. Somente leitura, sem rede, nada é gravado nesta máquina.",
+  "Packing the next sources… {files} zip files saved, {sources} of {total} sources.": "Preparando as próximas fontes… {files} arquivos zip salvos, {sources} de {total} fontes.",
+  "Done: {files} zip files covering {sources} sources.": "Concluído: {files} arquivos zip cobrindo {sources} fontes.",
+  "Stopped after {files} zip files: {why}": "Interrompido após {files} arquivos zip: {why}"
 }
