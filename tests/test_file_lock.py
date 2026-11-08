@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import ast
 import errno
+import os
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -482,8 +484,6 @@ def test_a_filesystem_that_cannot_flush_a_folder_still_replaces_and_the_reason_i
 
 @posix_only
 def test_a_folder_that_cannot_be_opened_is_skipped_with_the_cause_named(tmp_path, monkeypatch):
-    import os
-
     real_open = os.open
 
     def deny_folders(path, flags, *args, **kwargs):
@@ -527,8 +527,6 @@ def test_a_failed_folder_flush_is_raised_with_the_new_file_in_place_and_no_temp_
 
 @posix_only
 def test_an_interrupt_in_the_folder_flush_closes_the_folder_it_opened(tmp_path, monkeypatch):
-    import os
-
     seen: list[int] = []
 
     def interrupted(fd):
@@ -571,3 +569,97 @@ def test_one_file_through_a_symlinked_folder_raises_instead_of_deadlocking(tmp_p
     t.join(10)
     assert not t.is_alive(), "the second spelling waited for ever on the operating-system lock this thread holds"
     assert isinstance(outcome[0], RuntimeError)
+
+
+# R287: the dead-temp sweep. L1, a pid from another pid namespace (a container, a NAS peer) looks dead here, so a copy is removed only once it is older than
+# SWEEP_MIN_AGE_S; L2, a copy under this process's own pid that is older than this process is a predecessor's and is removed.
+
+
+def _dead_pid() -> int:
+    done = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"], capture_output=True, text=True, check=True)
+    return int(done.stdout)
+
+
+def _age(p: Path, seconds: float) -> None:
+    t = time.time() - seconds
+    os.utime(p, (t, t))
+
+
+def test_a_fresh_copy_named_for_a_dead_pid_is_kept_and_an_old_one_is_swept(tmp_path):
+    f = tmp_path / "state.json"
+    pid = _dead_pid()
+    fresh = f.with_name(f"state.json.tmp.{pid}.1")
+    old = f.with_name(f"state.json.tmp.{pid}.2")
+    fresh.write_text("in flight elsewhere", encoding="utf-8")
+    old.write_text("left by a dead writer", encoding="utf-8")
+    _age(old, file_lock.SWEEP_MIN_AGE_S + 5)
+    file_lock.sweep_dead_temps(f)
+    assert fresh.exists(), "a copy younger than the bound was removed: a writer in another pid namespace would lose its write"
+    assert not old.exists(), "a dead writer's old copy was not swept"
+
+
+def test_an_old_copy_named_for_a_live_pid_is_kept(tmp_path):
+    f = tmp_path / "state.json"
+    live = f.with_name(f"state.json.tmp.{os.getppid()}.1")
+    live.write_text("half", encoding="utf-8")
+    _age(live, file_lock.SWEEP_MIN_AGE_S + 5)
+    file_lock.sweep_dead_temps(f)
+    assert live.exists()
+
+
+def test_a_copy_under_the_own_pid_older_than_this_process_is_a_predecessors_and_is_swept(tmp_path):
+    import psutil
+
+    f = tmp_path / "state.json"
+    started = psutil.Process().create_time()
+    stranded = f.with_name(f"state.json.tmp.{os.getpid()}.1")
+    stranded.write_text("left by the last server under this pid", encoding="utf-8")
+    t = min(started - 5, time.time() - file_lock.SWEEP_MIN_AGE_S - 5)
+    os.utime(stranded, (t, t))
+    mine = f.with_name(f"state.json.tmp.{os.getpid()}.2")
+    mine.write_text("this process's own, in flight", encoding="utf-8")
+    file_lock.sweep_dead_temps(f)
+    assert not stranded.exists(), "a predecessor's copy under the same pid was never swept (R287 L2)"
+    assert mine.exists()
+
+
+def test_an_old_copy_under_the_own_pid_made_after_this_process_began_is_kept(tmp_path, monkeypatch):
+    monkeypatch.setattr(file_lock, "SWEEP_MIN_AGE_S", 0.0)  # the age bound alone would keep it; this pins the start-time rule
+    f = tmp_path / "state.json"
+    mine = f.with_name(f"state.json.tmp.{os.getpid()}.1")
+    mine.write_text("this process's own", encoding="utf-8")
+    file_lock.sweep_dead_temps(f)
+    assert mine.exists()
+
+
+def test_the_longest_write_to_swap_is_reported_and_far_under_the_sweep_bound(tmp_path):
+    f = tmp_path / "big.bin"
+    atomic_replace(f, b"\0" * (32 << 20))
+    swap = file_lock.stats()["big.bin"]["max_swap_s"]
+    assert swap > 0.0 and swap * 100 < file_lock.SWEEP_MIN_AGE_S, swap
+
+
+def _unshare() -> list[str] | None:
+    if sys.platform != "linux" or not shutil.which("unshare"):
+        return None
+    cmd = ["unshare", "--user", "--map-root-user", "--pid", "--fork", "--mount-proc"]
+    try:
+        ok = subprocess.run([*cmd, "true"], capture_output=True, timeout=30).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return cmd if ok else None
+
+
+def test_a_sweep_in_another_pid_namespace_leaves_a_live_writers_fresh_copy(tmp_path):
+    """The read's reproduction (R287 L1), against the shared helper: a sweep run in a child pid namespace, where this process's pid does not exist."""
+    cmd = _unshare()
+    if cmd is None:
+        pytest.skip("no unprivileged pid namespace here")
+    f = tmp_path / "state.json"
+    inflight = f.with_name(f"state.json.tmp.{os.getpid()}.999")
+    inflight.write_text("in flight in the host namespace", encoding="utf-8")
+    code = f"import sys; sys.path.insert(0, {ROOT!r})\nimport psutil\nfrom pathlib import Path\nfrom src.safety import file_lock\n"
+    code += f"assert not psutil.pid_exists({os.getpid()}) or {os.getpid()} == 1\nfile_lock.sweep_dead_temps(Path({str(f)!r}))\n"
+    done = subprocess.run([*cmd, sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr
+    assert inflight.exists(), "a sweep in another pid namespace removed a live writer's in-flight copy"
