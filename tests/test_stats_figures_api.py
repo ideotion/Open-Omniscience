@@ -68,7 +68,7 @@ def test_fetch_stores_figures_with_injected_getter(client, monkeypatch):
     clear_kill_switch()
     # Patch the production getter so the real fetch + parse path runs with NO socket.
     import src.stats.fetch as statfetch
-    monkeypatch.setattr(statfetch, "_default_getter", lambda url: _FakeResp(_WB_PAYLOAD))
+    monkeypatch.setattr(statfetch, "_worldbank_getter", lambda max_chars: (lambda url: _FakeResp(_WB_PAYLOAD)))
 
     r = client.post("/api/stats/figures/fetch",
                     json={"source": "worldbank", "indicator": "NY.GDP.MKTP.CD", "country": "FR"})
@@ -99,7 +99,7 @@ def test_fetch_records_a_subscription_for_scheduled_refresh(client, monkeypatch)
     replays for new vintages. Idempotent; toggle + delete work; refresh is airplane-gated."""
     clear_kill_switch()
     import src.stats.fetch as statfetch
-    monkeypatch.setattr(statfetch, "_default_getter", lambda url: _FakeResp(_WB_PAYLOAD))
+    monkeypatch.setattr(statfetch, "_worldbank_getter", lambda max_chars: (lambda url: _FakeResp(_WB_PAYLOAD)))
 
     client.post("/api/stats/figures/fetch",
                 json={"source": "worldbank", "indicator": "NY.GDP.MKTP.CD", "country": "FR"})
@@ -147,7 +147,7 @@ def test_triangulate_endpoint_side_by_side(client, monkeypatch):
     # worldbank figure is fetched (USD), the eurostat figure (EUR) is stored directly below.
     wb = [{"page": 1, "pages": 1, "per_page": 1, "total": 1},
           [{"indicator": {"id": "X"}, "countryiso3code": "FRA", "date": "2021", "value": 100.0, "unit": "USD"}]]
-    monkeypatch.setattr(statfetch, "_default_getter", lambda url: _FakeResp(wb))
+    monkeypatch.setattr(statfetch, "_worldbank_getter", lambda max_chars: (lambda url: _FakeResp(wb)))
     client.post("/api/stats/figures/fetch", json={"source": "worldbank", "indicator": "X", "country": "FR"})
     # Store the eurostat figure under agency "eurostat" but with the worldbank parser
     # shape by routing through the worldbank fetch with agency overridden in the store.

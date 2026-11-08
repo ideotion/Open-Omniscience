@@ -138,9 +138,9 @@ def test_fetch_owid_default_getter_refuses_when_kill_switch_on(monkeypatch) -> N
     monkeypatch.setattr(fetch, "kill_switch_active", lambda: True)
     monkeypatch.setattr(
         fetch,
-        "_default_getter",
-        lambda url: (_ for _ in ()).throw(
-            AssertionError("default getter reached while kill switch is on")
+        "guarded_session",
+        lambda **kw: (_ for _ in ()).throw(
+            AssertionError("a session was built while kill switch is on")
         ),
     )
     with pytest.raises(RuntimeError, match="airplane mode"):

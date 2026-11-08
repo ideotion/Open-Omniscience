@@ -498,7 +498,7 @@ def secure_crypto_available() -> bool:
     except Exception as exc:  # noqa: BLE001 - not loadable offline -> not available
         # SURFACE the cause (audit BUG-1) — never swallow it silently. The persisted store
         # still degrades to in-memory (behaviour unchanged); but now a red CI lane / an
-        # operator can see WHY via the WARNING log + secure_crypto_reason().
+        # operator can see WHY via the WARNING log; secure_crypto_reason() holds the same cause but no surface calls it yet.
         _LAST_CRYPTO_ERROR = record_text(exc, typed=True)
         log_failure(_LOG, "secure_crypto_available: the verified httpfs did not LOAD offline (persisted store -> in-memory)", exc, level=logging.WARNING)
         return False

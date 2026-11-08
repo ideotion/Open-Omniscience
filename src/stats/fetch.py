@@ -89,6 +89,20 @@ NSIDC_FIRST_DAY = date(1978, 10, 26)
 NSIDC_LINE_ALLOWANCE = 400  # chars per row; a real row is about 120 but the source column can list several files
 NSIDC_HEADER_ALLOWANCE = 4096
 
+# Body bounds for the four fetchers that used to read without limit. Each is DERIVED from the table's shape (rows x a generous per-row
+# allowance + header slack), like the climate bounds below, and grows with the calendar or the request, never a fixed cap to remember.
+WORLDBANK_OBSERVATION_ALLOWANCE = 1000  # chars per observation object; a real one is about 250
+WORLDBANK_META_ALLOWANCE = 4096  # the page-meta object, with slack
+# Eurostat's synchronous dissemination API documents a limit of 50,000 values per query (a larger selection is refused or deferred); the
+# figure is PROVISIONAL (documented, not verified against a live response from this sandbox): if it moves, the bound moves with it here.
+EUROSTAT_VALUES_PER_QUERY = 50_000
+EUROSTAT_CELL_ALLOWANCE = 300  # chars per value, its status flag and its index entries; a real cell is about 25
+EUROSTAT_HEADER_ALLOWANCE = 2_000_000  # dimension labels and categories, with slack
+OWID_GRAPHER_ROW_CHARS_ALLOWANCE = 200  # Entity,Code,Year,value; a real row is about 50
+JSONSTAT_DEFAULT_MAX_CELLS = 500_000  # PxWeb instances cap a query at roughly 100,000 to 800,000 cells; a caller with a bigger table passes max_cells
+JSONSTAT_CELL_ALLOWANCE = 40  # chars per value in the flat ``value`` array; a real one is about 8
+JSONSTAT_HEADER_ALLOWANCE = 2_000_000  # dimension labels and categories, with slack
+
 # Generous default timeout: a fetch may egress over Tor, which is slow — a tight
 # timeout would spuriously fail honest requests. Seconds.
 DEFAULT_TIMEOUT_S = 30.0
@@ -118,7 +132,7 @@ def worldbank_url(
     if not indicator or not indicator.strip():
         raise ValueError("worldbank_url: indicator must be a non-empty string")
     ind = quote(indicator.strip(), safe="")
-    ctry = quote((country or "all").strip(), safe="")
+    ctry = quote((country or "all").strip(), safe=";")  # ";" separates countries in one request; the directory pin refuses a %-escape
     url = (
         f"{WORLDBANK_API_BASE}/country/{ctry}/indicator/{ind}"
         f"?format=json&per_page={int(per_page)}"
@@ -184,16 +198,6 @@ def _owid_value_column(text: str) -> str:
     )
 
 
-def _default_getter(url: str) -> Any:
-    """The production getter: a guarded GET (kill switch + protected-mode proxy).
-
-    A per-URL ``isolation_token`` gives each request its own Tor circuit (no-op for
-    non-SOCKS / no proxy), so distinct fetches are unlinkable over Tor.
-    """
-    session = guarded_session(user_agent=DEFAULT_USER_AGENT, isolation_token=url)
-    return session.get(url, timeout=DEFAULT_TIMEOUT_S)
-
-
 # Each climate fetcher's session may talk only to its own host AND, on a host that serves many tenants, only to its own directories:
 # a redirect hop anywhere else is refused (guarded_session(allowed_hosts=..., allowed_path_prefixes=...)). The consent popup's
 # "climate" lane names all the climate hosts.
@@ -205,6 +209,14 @@ OWID_HOSTS = ("raw.githubusercontent.com",)
 OWID_PATHS = ("/owid/co2-data/", "/owid/energy-data/")  # raw.githubusercontent.com serves EVERY repository: the directory is the pin
 USGS_HOSTS = ("earthquake.usgs.gov",)
 USGS_PATHS = ("/fdsnws/event/1/",)
+# The official-statistics fetchers. World Bank and Eurostat pin their documented API directories; the OWID grapher pins its chart
+# directory. JSON-stat has NO list: the caller supplies an arbitrary publisher URL, so only its body is bounded.
+WORLDBANK_HOSTS = ("api.worldbank.org",)
+WORLDBANK_PATHS = ("/v2/",)
+EUROSTAT_HOSTS = ("ec.europa.eu",)  # a multi-tenant host: the directory is the pin
+EUROSTAT_PATHS = ("/eurostat/api/dissemination/statistics/1.0/data/",)
+OWID_GRAPHER_HOSTS = ("ourworldindata.org",)
+OWID_GRAPHER_PATHS = ("/grapher/",)
 _UTF8_MAX_BYTES_PER_CHAR = 4
 _READ_CHUNK = 64 * 1024
 
@@ -299,6 +311,60 @@ def _usgs_getter(max_chars: int) -> Getter:
     return getter
 
 
+def worldbank_max_chars(per_page: int) -> int:
+    """The longest World Bank page that can still be a page of ``per_page`` observations."""
+    return max(int(per_page), 1) * WORLDBANK_OBSERVATION_ALLOWANCE + WORLDBANK_META_ALLOWANCE
+
+
+def eurostat_max_chars() -> int:
+    """The longest Eurostat answer: the documented per-query value limit times a generous per-cell allowance, plus the labels."""
+    return EUROSTAT_VALUES_PER_QUERY * EUROSTAT_CELL_ALLOWANCE + EUROSTAT_HEADER_ALLOWANCE
+
+
+def owid_grapher_max_chars(now_year: int | None = None) -> int:
+    """The longest OWID grapher CSV: one row per area and year from 1750 to next year, times a generous row allowance."""
+    year = now_year if now_year is not None else datetime.now(UTC).year
+    return (year + 1 - OWID_FIRST_YEAR + 1) * OWID_AREAS_ALLOWANCE * OWID_GRAPHER_ROW_CHARS_ALLOWANCE
+
+
+def jsonstat_max_chars(max_cells: int = JSONSTAT_DEFAULT_MAX_CELLS) -> int:
+    """The longest JSON-stat body for a table of at most ``max_cells`` values."""
+    return max(int(max_cells), 1) * JSONSTAT_CELL_ALLOWANCE + JSONSTAT_HEADER_ALLOWANCE
+
+
+def _worldbank_getter(max_chars: int) -> Getter:
+    def getter(url: str) -> Any:
+        session = guarded_session(
+            user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=WORLDBANK_HOSTS, allowed_path_prefixes=WORLDBANK_PATHS
+        )
+        return _bounded_get(session, url, max_chars=max_chars)
+
+    return getter
+
+
+def _eurostat_getter(url: str) -> Any:
+    session = guarded_session(
+        user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=EUROSTAT_HOSTS, allowed_path_prefixes=EUROSTAT_PATHS
+    )
+    return _bounded_get(session, url, max_chars=eurostat_max_chars())
+
+
+def _owid_grapher_getter(url: str) -> Any:
+    session = guarded_session(
+        user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=OWID_GRAPHER_HOSTS, allowed_path_prefixes=OWID_GRAPHER_PATHS
+    )
+    return _bounded_get(session, url, max_chars=owid_grapher_max_chars())
+
+
+def _jsonstat_getter(max_chars: int) -> Getter:
+    def getter(url: str) -> Any:
+        # No host or directory list: the caller names any publisher. The body bound is the protection that applies to every one.
+        session = guarded_session(user_agent=DEFAULT_USER_AGENT, isolation_token=url)
+        return _bounded_get(session, url, max_chars=max_chars)
+
+    return getter
+
+
 def _worldbank_page_count(payload: Any) -> int:
     """Total pages reported by a World Bank ``[page_meta, [observations]]`` payload.
 
@@ -357,7 +423,7 @@ def fetch_worldbank(
     if kill_switch_active():
         raise RuntimeError(NETWORK_REFUSED)
     extracted_at = extracted_at or _now_iso()
-    getter = get or _default_getter
+    getter = get or _worldbank_getter(worldbank_max_chars(per_page))
 
     resp = getter(worldbank_url(indicator, country, per_page=per_page))
     resp.raise_for_status()
@@ -405,7 +471,7 @@ def fetch_eurostat(
     if kill_switch_active():
         raise RuntimeError(NETWORK_REFUSED)
     extracted_at = extracted_at or _now_iso()
-    getter = get or _default_getter
+    getter = get or _eurostat_getter
     resp = getter(eurostat_url(dataset, params))
     resp.raise_for_status()
     payload = resp.json()
@@ -445,7 +511,7 @@ def fetch_owid(
     if kill_switch_active():
         raise RuntimeError(NETWORK_REFUSED)
     extracted_at = extracted_at or _now_iso()
-    getter = get or _default_getter
+    getter = get or _owid_grapher_getter
     resp = getter(owid_grapher_url(slug))
     resp.raise_for_status()
     text = resp.text
@@ -472,6 +538,7 @@ def fetch_jsonstat(
     series_id: str | None = None,
     get: Getter | None = None,
     extracted_at: str | None = None,
+    max_cells: int = JSONSTAT_DEFAULT_MAX_CELLS,
 ) -> list[StatFigure]:
     """Fetch a JSON-stat dataset live and parse it into ``StatFigure`` rows.
 
@@ -485,6 +552,9 @@ def fetch_jsonstat(
     injected getter), ``get`` is injectable, ``extracted_at`` stamps the vintage. The decoded
     JSON is handed to :func:`src.stats.sdmx.parse_jsonstat` — no parsing here. Pass
     ``series_id`` to pin a single-series slice for unambiguous rows (the parser's contract).
+
+    The body is read under a bound derived from ``max_cells`` (the most values the caller's table can hold) and the read stops when it
+    passes it; the host is the caller's, so there is no host list. A table past the default is fetched by passing a larger ``max_cells``.
     """
     if kill_switch_active():
         raise RuntimeError(NETWORK_REFUSED)
@@ -492,7 +562,7 @@ def fetch_jsonstat(
     if not (u.startswith("https://") or u.startswith("http://")):
         raise ValueError("fetch_jsonstat: url must be an http(s) JSON-stat endpoint")
     extracted_at = extracted_at or _now_iso()
-    getter = get or _default_getter
+    getter = get or _jsonstat_getter(jsonstat_max_chars(max_cells))
     resp = getter(u)
     resp.raise_for_status()
     payload = resp.json()
