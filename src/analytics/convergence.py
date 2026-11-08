@@ -498,22 +498,26 @@ def _shared_origin(session, article_ids: list[int]) -> tuple[int, list[str]]:
         return 0, []
     from sqlalchemy import func
 
-    grouped = (
-        session.query(
-            ArticleLink.normalized_url,
-            func.count(func.distinct(ArticleLink.article_id)).label("n"),
-        )
+    n_cited = func.count(func.distinct(ArticleLink.article_id))
+    # ONE scan of the id set. The old shape ran the grouped query twice (``.count()`` wrapping it as a
+    # subquery, then again with ORDER BY/LIMIT 3), and a 2026-11-07 field bundle measured 32-55 s PER
+    # statement on a 4 M-link table (rows read per id: article_links has no covering (article_id,
+    # normalized_url) index). The HAVING-filtered groups are the cited-by-more-than-one URLs only, so
+    # holding them all is bounded by the data's shape, never by a cap; the count is len() of the same
+    # rows the examples come from, so the two can no longer disagree.
+    rows = (
+        session.query(ArticleLink.normalized_url, n_cited.label("n"))
         .filter(
             ArticleLink.article_id.in_(article_ids),
             ArticleLink.normalized_url.isnot(None),
         )
         .group_by(ArticleLink.normalized_url)
-        .having(func.count(func.distinct(ArticleLink.article_id)) > 1)
+        .having(n_cited > 1)
+        .all()
     )
-    exact_count = grouped.count()  # EXACT — never capped, however many groups qualify
-
-    example_rows = grouped.order_by(func.count(func.distinct(ArticleLink.article_id)).desc()).limit(3).all()
-    examples = [url for url, _ in example_rows if url]
+    exact_count = len(rows)  # EXACT — never capped, however many groups qualify
+    top = sorted(rows, key=lambda r: (-r[1], r[0] or ""))[:3]
+    examples = [url for url, _ in top if url]
     return exact_count, examples
 
 

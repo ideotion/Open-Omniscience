@@ -1210,12 +1210,6 @@ class SourceManager:
         }
 
 
-# Convenience functions for module-level usage
-def get_source_manager() -> SourceManager:
-    """Get a new SourceManager instance."""
-    return SourceManager()
-
-
 if __name__ == "__main__":
     # Example usage
     print("Testing SourceManager...")

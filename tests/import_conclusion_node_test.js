@@ -86,6 +86,10 @@ const src = [
   extract("function fmtNum("),
   APP.slice(APP.indexOf("const _LTR_ISOLATE = "), APP.indexOf("function _ltrIsolate(")),
   extract("function _ltrIsolate("),
+  // The date spans go through the right-to-left isolate (2026-11-07, item 46 S4 b): the real helper, on a page with no
+  // direction set, so it returns its input unchanged.
+  "var document = {documentElement: {}};",
+  extract("function ooLtrIsolate("),
   // Collaborators the renderer calls that are not what is under test.
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));}",
   "function _v2PlanTable(p){return '<table data-plan></table>';}",

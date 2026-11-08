@@ -105,6 +105,8 @@ class Run:
 
 #: The one job-level condition that still means "on every push and pull request": the schedule-only audit is the job it leaves out.
 _EVERY_PUSH = "github.event_name != 'schedule'"
+#: The same condition with the docs-only fast path (R462): a documentation-only pull request skips the job, every other run takes it.
+_EVERY_PUSH_BUT_DOCS_ONLY = _EVERY_PUSH + " && needs.changes.outputs.docs_only != 'true'"
 _PYTEST_LINE = re.compile(r"^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*(?:python3?\s+-m\s+pytest|pytest)\b")
 #: An option that selects or removes tests: a command carrying one is neither "the whole suite" nor a run of the files it names.
 _SELECTING = re.compile(r"(?:^|\s)(?:-k|-m|--deselect|--ignore|--ignore-glob|--lf|--ff|--co|--collect-only)(?:[=\s]|$)")
@@ -140,7 +142,7 @@ def read_runs(workflow: str) -> list[Run]:
     out = []
     for name, job in (doc.get("jobs") or {}).items():
         cond = job.get("if")
-        if job.get("continue-on-error") is True or (cond is not None and str(cond).strip() != _EVERY_PUSH):
+        if job.get("continue-on-error") is True or (cond is not None and str(cond).strip() not in (_EVERY_PUSH, _EVERY_PUSH_BUT_DOCS_ONLY)):
             continue
         if isinstance(job.get("continue-on-error"), str) and _every_leg_observes(job):
             continue

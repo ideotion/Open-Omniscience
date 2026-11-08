@@ -156,7 +156,7 @@
   // proposal-A-024 appendix); the per-event table below still limits WHICH names they can reach.
   // Limits, stated: a trusted event is not intent. A binding an attacker injected that the person then CLICKS (an
   // overlay, an accesskey) is a trusted click on any name the click row lists, and the browser's own `change` after a
-  // script's `checkbox.click()` is trusted (the A-023 chain, held shut by CLICK_IDS). What stands behind the click is
+  // script's `checkbox.click()` is trusted (the A-023 chain; no binding can now click a control by id, R443). What stands behind the click is
   // each destructive name's own confirm() or, for the job-control names that stop, pause or cancel running work and for
   // the one-click curation edits, a row with its reason in tests/trusted_click_table.py, which
   // tests/test_oo_on_helper_allowlist.py and tests/test_destructive_surfaces.py hold in both directions.
@@ -259,9 +259,9 @@
     "_uxImVerify", "_uxPauseResume", "_uxRun", "addAnnotation", "addMarketRule", "addSource",
     "addToDraft", "addWikiPage", "agExcludeBulk", "agExcludeClear", "agNavShift", "agNavToday",
     "agOpenMonth", "agOpenMonthYear", "agOpenYear", "agPickDate", "agSetCat", "agShowDay",
-    "agToggleExclude", "aiRunPrompt", "aiRunPromptStart", "aiStartNow", "altAct", "altDiscardBatch", "altMore", "anApplyArticlesFilter",
+    "agToggleExclude", "agendaSetTag", "aiRunPrompt", "aiRunPromptStart", "aiStartNow", "altAct", "altDiscardBatch", "altMore", "anApplyArticlesFilter",
     "anFillTentative", "anMMset", "anMMsetScale", "anMMtoggleBig", "anParams", "anRelUpdateSel", "anSelectLens", "anTrendPick", "anTrendSetMode",
-    "anchorRoot", "appShutdown", "applySrcFilters", "batchSelectAll", "batchToggle",
+    "anchorRoot", "annoImportPick", "appShutdown", "applySrcFilters", "batchSelectAll", "batchToggle",
     "branchByFacet", "branchFromOrigin", "branchFromRelated", "branchSelectedRelated",
     "bulkJobCancel", "bulkJobClearDone", "bulkLlm", "bulkLlmRun", "bulkLlmStop", "bulkPanelHide",
     "bulletinDelete", "bulletinDownloadBundle", "bulletinGenerate",
@@ -278,7 +278,7 @@
     "dismissRetiredMode", "doSearch", "downloadBackupFirst", "downloadDiagnosticsVolumes",
     "downloadKeywordParts",
     "dumpFtsBuild", "dumpFtsCancel", "dumpFtsClear", "dumpFtsOpen", "dumpFtsSearch", "dumpReadPage",
-    "dumpReadView", "dumpSearchTitles", "editWatch", "encryptCorpus", "enlargeHomeTrend",
+    "dumpReadSetTitle", "dumpReadView", "dumpSearchTitles", "editWatch", "encryptCorpus", "enlargeHomeTrend",
     "enlargeLibMetric", "enlargeLibQualification", "enlargeTrend", "enrichSourceTypes",
     "enrichSources", "evaluateWatches", "excludeKeyword", "expandCitedSource", "exploreTerm",
     "exportAnnotations", "exportCustody", "exportDraft", "exportEvidence", "exportMethods",
@@ -353,8 +353,8 @@
   // tests/test_oo_on_event_table.py holds the table equal to the markup both ways, with zero slack, and prints the
   // literal to paste (`python -m tests.test_oo_on_event_table`); tests/oo_on_event_table_node_test.js runs every
   // (event type, name) pair through the real dispatcher. NOT solved here, and stated: an event the browser itself
-  // fires after a script's `el.click()` (a checkbox's `change`) is trusted, so that chain stays shut only through
-  // CLICK_IDS; a binding an attacker injected that the person then CLICKS is a trusted click on any name the click
+  // fires after a script's `el.click()` (a checkbox's `change`) is trusted, so that chain is shut by there being no
+  // helper that clicks a control by id (R443); a binding an attacker injected that the person then CLICKS is a trusted click on any name the click
   // row lists (each name's own confirm and tests/trusted_click_table.py stand behind that); the trust rule
   // (TRUSTED_EVENTS, above) covers click, keydown and submit.
   const EVENT_ACTION_NAMES = {
@@ -377,9 +377,9 @@
       "_synthSelectAll", "_uxImBackground", "_uxImRun", "_uxImScan", "_uxImStop", "_uxImVerify", "_uxPauseResume",
       "_uxRun", "addAnnotation", "addMarketRule", "addSource", "addToDraft", "addWikiPage", "agExcludeBulk",
       "agExcludeClear", "agNavShift", "agNavToday", "agOpenMonth", "agOpenMonthYear", "agOpenYear", "agPickDate",
-      "agSetCat", "agShowDay", "agToggleExclude", "aiRunPrompt", "aiRunPromptStart", "aiStartNow", "altAct",
+      "agSetCat", "agShowDay", "agToggleExclude", "agendaSetTag", "aiRunPrompt", "aiRunPromptStart", "aiStartNow", "altAct",
       "altDiscardBatch", "altMore", "anApplyArticlesFilter", "anFillTentative", "anMMset", "anMMtoggleBig",
-      "anParams", "anSelectLens", "anTrendPick", "anTrendSetMode", "anchorRoot", "appShutdown", "applySrcFilters",
+      "anParams", "anSelectLens", "anTrendPick", "anTrendSetMode", "anchorRoot", "annoImportPick", "appShutdown", "applySrcFilters",
       "batchSelectAll", "branchByFacet", "branchFromOrigin", "branchFromRelated", "branchSelectedRelated",
       "bulkJobCancel", "bulkJobClearDone", "bulkLlm", "bulkLlmRun", "bulkLlmStop", "bulkPanelHide", "bulletinDelete",
       "bulletinDownloadBundle", "bulletinGenerate", "bulletinNarrate", "bulletinOpen", "bulletinOpenFile",
@@ -391,7 +391,7 @@
       "deleteDump", "deleteMarketRule", "deleteOsm", "deleteSource", "deleteStatSub", "deleteSuperGroup",
       "deleteWatch", "deleteWikiPage", "disableUnmanagedLanguages", "discoverSources", "discoverWorld", "dismissCard",
       "dismissRetiredMode", "doSearch", "downloadBackupFirst", "downloadDiagnosticsVolumes", "downloadKeywordParts",
-      "dumpFtsBuild", "dumpFtsCancel", "dumpFtsClear", "dumpFtsOpen", "dumpFtsSearch", "dumpReadPage", "dumpReadView",
+      "dumpFtsBuild", "dumpFtsCancel", "dumpFtsClear", "dumpFtsOpen", "dumpFtsSearch", "dumpReadPage", "dumpReadSetTitle", "dumpReadView",
       "dumpSearchTitles", "editWatch", "encryptCorpus", "enlargeHomeTrend", "enlargeLibMetric",
       "enlargeLibQualification", "enlargeTrend", "enrichSourceTypes", "enrichSources", "evaluateWatches",
       "excludeKeyword", "expandCitedSource", "exploreTerm", "exportAnnotations", "exportCustody", "exportDraft",
@@ -410,8 +410,8 @@
       "loadSupergroupCuration", "loadTagCoverage", "loadTrends", "loadWikiChanges", "loadWikiTC", "lookupAnnotations",
       "lunarTestTerm", "maintAction", "maintLoadFurniture", "maintStart", "mbAnchorGrade", "mbAnchorKind",
       "mbAnchorsLoad", "mbAnchorsSave", "mbBuildBatch", "mbRun", "migrateOllamaStore", "mmExpand", "mmLevel",
-      "mmView", "ooBodyClass", "ooClickId", "ooCloseDialog", "ooFolderPicker", "ooFolderPickerUse",
-      "ooMapCloseDetail", "ooOpenUrl", "ooPrevent", "ooPreventStop", "ooSetValue", "ooStop", "openAnalysisFor",
+      "mmView", "ooBodyClass", "ooCloseDialog", "ooFolderPicker", "ooFolderPickerUse",
+      "ooMapCloseDetail", "ooOpenUrl", "ooPrevent", "ooPreventStop", "ooStop", "openAnalysisFor",
       "openAnalysisForIds", "openCardCorpus", "openCardCorpusQuery", "openChannelCorpus", "openConceptMap",
       "openConjunctionLensChannel", "openCorpus", "openDoc", "openDraft", "openGuide", "openIdxComparison",
       "openInsightsTrends", "openLinkPreview", "openOsmObjectCard", "openPalette", "openPlaceCard",
@@ -424,7 +424,7 @@
       "qualifyBulkCancel", "qualifyBulkStart", "recheckOllama", "refreshDumpSizes", "refreshStatSubs",
       "releaseRunCancel", "releaseRunCollect", "releaseRunResume", "releaseRunStart", "releaseRunStatus",
       "removeAnnotation", "removeAuthor", "removeDraftItem", "removeImportedNewsletters", "removeModel",
-      "removeUserCalendar", "renderAgenda", "renderGovGroup", "renderStatChart", "renderStatMap",
+      "removeUserCalendar", "renderGovGroup", "renderStatChart", "renderStatMap",
       "renderStorageFootprint", "resetCustomPromptForm", "resetLlmPrompt", "resetMap", "resetUi", "resumeOsm",
       "retryFailedFeeds", "revertAllCollapse", "ringLoadStart", "runAiCheck", "runAiSetup", "runAllDiagnostics",
       "runFixity", "runIrEval", "runMarketRule", "runOllamaInstall", "runP0Validation", "runPerceptionEvalLive",
@@ -460,21 +460,15 @@
   const EVENT_ACTIONS = Object.create(null);
   for (const [type, names] of Object.entries(EVENT_ACTION_NAMES)) EVENT_ACTIONS[type] = new Set(names);
 
-  const CLICK_IDS = new Set(["anno-import"]);
-  const SET_VALUE_IDS = new Set(["agenda-tag", "dumpread-title"]);
-
   // Small helpers for what inline handlers used to say in-line.
   const HELPERS = {
     ooPrevent(ev) { if (ev) ev.preventDefault(); },
     ooStop(ev) { if (ev) ev.stopPropagation(); },
     ooPreventStop(ev) { if (ev) { ev.preventDefault(); ev.stopPropagation(); } },
     ooCloseDialog(id) { const d = document.getElementById(id); if (d && d.close) d.close(); },
-    // The ids these two may touch are the ones the markup names today, no more: a binding an
-    // attacker injected could otherwise fill ANY form field or click ANY control by id and then
-    // call the handler that reads them (audit A-004). tests/test_oo_on_helper_allowlist.py holds
-    // each set equal to the literal ids actually bound.
-    ooClickId(id) { if (!CLICK_IDS.has(id)) return; const e = document.getElementById(id); if (e) e.click(); },
-    ooSetValue(id, v) { if (!SET_VALUE_IDS.has(id)) return; const e = document.getElementById(id); if (e) e.value = v; },
+    // No helper here takes an element id to click or fill (audit A-004, R443): the three bindings that did are named handlers
+    // that each touch one fixed field (annoImportPick, agendaSetTag, dumpReadSetTitle), so an injected binding has no
+    // "fill ANY field / click ANY control by id" call to chain into the handler that reads the field.
     ooClearValue(el) { if (el) el.value = ""; },
     ooBodyClass(cls, force) { document.body.classList.toggle(cls, force); },
     // A same-origin download in a new tab. Only a path on this app is accepted, so a
@@ -501,5 +495,5 @@
   const root = document.documentElement;
   for (const type of EVENTS) root.addEventListener(type, onEvent, true);
 
-  window.ooOn = {parse, EVENTS, ACTIONS, OO_ACTIONS, EVENT_ACTIONS, CLICK_IDS, SET_VALUE_IDS, TRUSTED_EVENTS};
+  window.ooOn = {parse, EVENTS, ACTIONS, OO_ACTIONS, EVENT_ACTIONS, TRUSTED_EVENTS};
 })();

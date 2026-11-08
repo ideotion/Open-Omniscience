@@ -52,6 +52,7 @@ from src.monitoring.secret_scrub import UNREADABLE_TEXT as _UNREADABLE_TEXT
 from src.monitoring.secret_scrub import http_detail, log_failure
 from src.monitoring.secret_scrub import record_text as _record_text
 from src.monitoring.secret_scrub import scrubbed_value as _scrubbed_value
+from src.paths import diagnostics_dir as _all_diagnostics_dir
 from src.utils.export_envelope import app_version, envelope
 
 from ._base import _LOG, _MAX_KEYWORDS_PER_LANG, api_dir, package_source, router
@@ -3255,14 +3256,6 @@ def _bundle_exclusive_window():
             yield claim
 
     return _cm()
-
-
-def _all_diagnostics_dir():
-    from src.paths import data_dir
-
-    d = data_dir() / "diagnostics"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
 
 
 #: The most a left-over journal is READ for (bytes). A journal is a begin line and an end line per

@@ -188,17 +188,9 @@ def _decode(present: dict[int, Any], n: int, m: int, erased_data: list[int]) -> 
 #  File-level: write parity for a volume set, and recover corrupt volumes
 #  (band-wise: bounded RAM regardless of archive size — see the module docstring)
 # --------------------------------------------------------------------------- #
-def _load_padded(path: Path, length: int) -> Any:
-    np = _np()
-    raw = np.frombuffer(path.read_bytes(), dtype=np.uint8)
-    if raw.size < length:
-        raw = np.concatenate([raw, np.zeros(length - raw.size, dtype=np.uint8)])
-    return raw
-
-
 def _read_band(path: Path, offset: int, length: int) -> Any:
     """Read ``length`` bytes of ``path`` at ``offset`` as a uint8 array, zero-padded
-    past EOF (the stripe padding the whole-array `_load_padded` applied)."""
+    past EOF (the same stripe padding the old whole-file read applied)."""
     np = _np()
     try:
         with open(path, "rb") as fh:

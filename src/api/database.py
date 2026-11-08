@@ -657,21 +657,28 @@ def _refuse_cross_site(request: Request) -> None:
     * ``Origin``, else ``Referer``, when sent: judged by the POST middleware's own ``_foreign_origin`` (scheme-default ports
       normalised, so a proxy's ``Host: NAME:443`` with ``Origin: https://NAME`` is the same server; the hostname must be one the
       app serves; another port is another origin). ``Origin: null`` names no host and is refused.
-    * Neither sent: a command line, a script or a navigation from this page, which carries no ``Referer`` under the app's own
-      ``Referrer-Policy: no-referrer``. Allowed, as the middleware allows them for the state-changing methods. **The stated limit,
-      in two forms:** a browser that does not send Fetch Metadata (Firefox before 90, Safari before 16.4, an old embedded webview),
-      and any browser asked for a name that is not a "potentially trustworthy" address (an ``OO_ALLOWED_HOSTS`` name over plain
-      HTTP: browsers attach Fetch Metadata only to loopback and HTTPS targets), send none of the three for
-      ``<img src=... referrerpolicy="no-referrer">``, so that request is served: the page still cannot read the answer, but the
-      machine writes the snapshot. The one-at-a-time slot and the free-space gate bound what that costs.
+    * None of the three sent: a command line, a script or a navigation from this page, which carries no ``Referer`` under the
+      app's own ``Referrer-Policy: no-referrer``. On a LOOPBACK name it is allowed, as the middleware allows it for the
+      state-changing methods: browsers send Fetch Metadata to loopback, so only a browser that does not (Firefox before 90, Safari
+      before 16.4, an old embedded webview) can be behind it, and that stays the stated limit, for loopback names alone. On any
+      OTHER name (an ``OO_ALLOWED_HOSTS`` name over plain HTTP, where browsers attach no Fetch Metadata, so an
+      ``<img src=... referrerpolicy="no-referrer">`` of another site sends none of the three) it is refused unless the request
+      names itself with the header ``X-OO-Download: 1``, which a caller that is not a page sends (``curl -H``) and a no-cors
+      ``<img>`` or ``fetch`` cannot (R445; the page could never read the answer, but the machine wrote the snapshot).
     """
-    from src.api.main import _allowed_hosts, _foreign_origin, _host_without_port
+    from src.api.main import (
+        _LOOPBACK_HOST_NAMES,
+        _allowed_hosts,
+        _foreign_origin,
+        _host_without_port,
+    )
 
     refusal = HTTPException(
         status_code=403,
         detail="Refused: the corpus snapshot is served to the app's own page, not to a request from another site or origin.",
     )
-    if _host_without_port(request.headers.get("host", "")) not in _allowed_hosts():
+    host = _host_without_port(request.headers.get("host", ""))
+    if host not in _allowed_hosts():
         raise refusal
     site = request.headers.get("sec-fetch-site")
     if site is not None and site.strip().lower() not in ("same-origin", "none"):
@@ -680,6 +687,15 @@ def _refuse_cross_site(request: Request) -> None:
     if sent is None:
         sent = request.headers.get("referer")
     if sent is None:
+        if site is None and host not in _LOOPBACK_HOST_NAMES and request.headers.get("x-oo-download") != "1":
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Refused: this request does not say where it comes from (no Sec-Fetch-Site, Origin or Referer) and the app "
+                    "is reached by a name other than loopback. A caller that is not a web page names itself with the header "
+                    "X-OO-Download: 1."
+                ),
+            )
         return
     if _foreign_origin(request, sent):
         raise refusal
