@@ -60,7 +60,7 @@ def test_the_counts_are_the_full_counts_and_there_is_no_score():
 def test_every_string_the_view_draws_is_keyed_in_all_twelve_locales():
     fn = _render_fn() + AGENDA[AGENDA.index("const _AG_COV_STATES"):AGENDA.index("function _agCovRepaint")]
     literals = set(re.findall(r'\bTF?\("((?:[^"\\]|\\.)*)"', fn))
-    literals |= {m for m in re.findall(r'\["\w+", "([^"]+)", "[\w-]*"\]', fn)}
+    literals |= set(re.findall(r'\["\w+", "([^"]+)", "[\w-]*"\]', fn))
     button = re.search(r'<button data-tab="coverage" title="([^"]+)">([^<]+)</button>', HTML)
     assert button, "the coverage view's button"
     literals |= {button.group(1), button.group(2)}

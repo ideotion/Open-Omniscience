@@ -1434,7 +1434,8 @@
       for (const [k, label, cls] of _AG_COV_STATES) meta[k] = { label, cls };
       const chips = _AG_COV_STATES.map(([k, label, cls]) => {
         const on = _agCovState === k;
-        return `<button class="secondary${on ? " active" : ""}" aria-pressed="${on}" data-on-click="agCovFilter('${k}')">`
+        return `<button class="secondary${on ? " active" : ""}" aria-pressed="${on}" data-on-click="agCovFilter('${k}')"`
+          + `${on ? ' style="outline:2px solid var(--accent);outline-offset:1px"' : ""}>`
           + `<span class="pill ${cls}">${esc(T(label))}</span> ${counts[k] || 0}</button>`;
       }).join(" ");
       const rows = (rep.countries || [])
@@ -1459,8 +1460,8 @@
         + `<p class="hint" style="margin:0 0 8px"><b>${esc(T("Method"))}</b> ${esc(T(rep.method || ""))}</p>`
         + `<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">${chips}</div>`
         + (rows.length
-          ? `<table class="data"><thead><tr><th>${esc(T("Country"))}</th><th>${esc(T("State"))}</th>`
-            + `<th>${esc(T("Calendar entries"))}</th><th>${esc(T("Why no date"))}</th></tr></thead><tbody>${body}</tbody></table>`
+          ? `<div style="overflow-x:auto;max-width:100%"><table class="data"><thead><tr><th>${esc(T("Country"))}</th><th>${esc(T("State"))}</th>`
+            + `<th>${esc(T("Calendar entries"))}</th><th>${esc(T("Why no date"))}</th></tr></thead><tbody>${body}</tbody></table></div>`
           : `<div class="muted">${esc(T("No floor country is in this state."))}</div>`);
     }
     function agNavToday() {
