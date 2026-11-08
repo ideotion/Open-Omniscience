@@ -322,4 +322,6 @@ def test_the_endpoint_carries_the_per_country_tier_report_and_it_agrees_with_the
     assert {r["cc"] for r in rep["countries"] if r["state"] in covered_states} == set(out["covered"])
     assert {r["cc"] for r in rep["countries"] if r["state"] == "missing"} == set(out["missing"])
     assert rep["caveat"]
-    assert all(state in rep["method"] for state in rep["counts"])  # the method names every state it counts
+    # The method names every state by the label the Agenda shows for it.
+    for label in ("scheduled", "window", "projected", "projected · passed", "dateless", "missing"):
+        assert label in rep["method"], label
