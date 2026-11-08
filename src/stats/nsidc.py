@@ -30,7 +30,9 @@ HONESTY PROPERTIES, each a refusal rather than a caveat:
   simply absent. Nothing is interpolated, and the series is NOT claimed daily throughout.
 * **The ``Missing`` column** (area with no data in the swath, in 10^6 km2) is validated but not
   emitted as its own series; it is counted in ``rows_with_missing_area`` so a consumer can say
-  that some days were computed with part of the pole unobserved.
+  that some days were computed with part of the pole unobserved, and a ``-9999`` there is
+  counted in ``rows_with_unknown_missing_area`` (coverage unknown is not full coverage).
+* **The units row is checked**: both area columns must say ``10^6 sq km``, or no row is read.
 * **A line that is not a data row is refused and COUNTED**, so an HTML error page or a renamed
   product reads as ``looks_unrecognised`` and not as "no data".
 * **Vintages are the point.** NSIDC reprocesses (the NRT tail is replaced by the final product);
@@ -87,6 +89,8 @@ class NsidcParse:
     refused_total: int = 0
     #: Rows whose ``Missing`` column was above zero (part of the pole unobserved that day).
     rows_with_missing_area: int = 0
+    #: Rows whose ``Missing`` column was the ``-9999`` gap: that day's coverage is unknown.
+    rows_with_unknown_missing_area: int = 0
     header_lines: int = 0
 
     @property
@@ -109,31 +113,32 @@ class NsidcParse:
             "figures": len(self.figures),
             "all_gap": self.all_gap,
             "rows_with_missing_area": self.rows_with_missing_area,
+            "rows_with_unknown_missing_area": self.rows_with_unknown_missing_area,
             "refused_total": self.refused_total,
             "refused_sample": list(self.refused),
             "refused_is_sample": self.refused_is_sample,
         }
 
 
-def _number(raw: str, *, allow_gap: bool) -> tuple[float | None, bool]:
-    """``(value, ok)``: ``-9999`` is a gap ``(None, True)`` when allowed; otherwise a plain,
-    finite, non-negative decimal within the stated bound."""
+def _number(raw: str) -> tuple[float | None, str | None]:
+    """``(value, refusal)``: ``-9999`` is a gap ``(None, None)``; otherwise a plain, finite,
+    non-negative decimal within the stated bound, or a named refusal."""
     text = raw.strip()
     if not _DECIMAL.match(text):
-        return None, False
+        return None, "non-numeric value"
     value = float(text)
     if not math.isfinite(value):
-        return None, False
+        return None, "non-numeric value"
     if value == _MISSING_MARKER:
-        return (None, True) if allow_gap else (None, False)
-    if value < 0 or value > _MAX_EXTENT:
-        return None, False
-    return value, True
+        return None, None
+    if text.startswith("-"):
+        return None, "negative value"  # includes -0.000: a sign on an area is not a measurement
+    if value > _MAX_EXTENT:
+        return None, f"value above the {_MAX_EXTENT:g} x 10^6 km2 bound"
+    return value, None
 
 
-def _is_header_line(fields: list[str]) -> bool:
-    first = fields[0].lower()
-    return first in ("year", "yyyy")
+_UNIT_TEXT = "10^6 sq km"
 
 
 def parse_nsidc(text: str, *, region: str = "N", extracted_at: str) -> NsidcParse:
@@ -142,16 +147,25 @@ def parse_nsidc(text: str, *, region: str = "N", extracted_at: str) -> NsidcPars
         raise ValueError(f"not an NSIDC hemisphere: {region!r} (expected one of {REGIONS})")
     out = NsidcParse()
     seen: set[date] = set()
-    header_seen = False
+    names_seen = False
+    header_seen = False  # True once BOTH header lines (names, then units) have been read
     for lineno, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
         if not stripped:
             continue
         # The sixth field (source data) is free text that can itself hold commas.
         fields = [p.strip() for p in stripped.split(",", _EXPECTED_FIELDS - 1)]
-        if _is_header_line(fields):
-            header_seen = True
+        first = fields[0].lower()
+        if first == "year" and not header_seen:
+            names_seen = True
             out.header_lines += 1
+            continue
+        if first == "yyyy" and names_seen and not header_seen:
+            out.header_lines += 1
+            if len(fields) == _EXPECTED_FIELDS and fields[3] == _UNIT_TEXT and fields[4] == _UNIT_TEXT:
+                header_seen = True
+            else:
+                _refuse(out, lineno, f"units row does not say {_UNIT_TEXT}", stripped)
             continue
         if not header_seen:
             _refuse(out, lineno, "data before the header", stripped)
@@ -171,17 +185,19 @@ def parse_nsidc(text: str, *, region: str = "N", extracted_at: str) -> NsidcPars
         except ValueError:
             _refuse(out, lineno, "not a calendar date", stripped)
             continue
-        extent, ok_extent = _number(fields[3], allow_gap=True)
-        missing, ok_missing = _number(fields[4], allow_gap=True)
-        if not (ok_extent and ok_missing):
-            _refuse(out, lineno, "non-numeric value", stripped)
+        extent, why_extent = _number(fields[3])
+        missing, why_missing = _number(fields[4])
+        if why_extent or why_missing:
+            _refuse(out, lineno, why_extent or why_missing or "", stripped)
             continue
         if when in seen:
             _refuse(out, lineno, "duplicate date", stripped)
             continue
         seen.add(when)
         out.rows_read += 1
-        if missing:
+        if missing is None:
+            out.rows_with_unknown_missing_area += 1
+        elif missing > 0:
             out.rows_with_missing_area += 1
         out.figures.append(
             StatFigure(

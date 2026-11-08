@@ -42,8 +42,9 @@ def test_source_column_with_commas_does_not_break_the_row():
         ("2000, 1, 1, nan, 0, x", "non-numeric"),
         ("2000, 1, 1, inf, 0, x", "non-numeric"),
         ("2000, 1, 1, 1e3, 0, x", "non-numeric"),
-        ("2000, 1, 1, -3.0, 0, x", "non-numeric"),
-        ("2000, 1, 1, 999, 0, x", "non-numeric"),
+        ("2000, 1, 1, -3.0, 0, x", "negative"),
+        ("2000, 1, 1, -0.000, 0, x", "negative"),
+        ("2000, 1, 1, 999, 0, x", "bound"),
         ("2000, 2, 30, 5.0, 0, x", "calendar"),
         ("1900, 1, 1, 5.0, 0, x", "range"),
         ("2000, 1, 1, 5.0", "fields"),
@@ -143,3 +144,19 @@ def test_the_session_is_pinned_to_its_own_host_and_directory_and_the_read_is_bou
     assert bounded == [fetch_mod.nsidc_max_chars()]
     for region in ("N", "S"):
         assert fetch_mod.nsidc_url(region).startswith("https://noaadata.apps.nsidc.org/NOAA/G02135/")
+
+
+def test_unknown_coverage_is_counted_apart_from_full_coverage():
+    p = parse_nsidc(HEADER + "2000, 1, 1, 5.0, -9999, x\n2000, 1, 2, 5.0, 0.000, x\n", extracted_at="t")
+    assert p.rows_read == 2 and p.rows_with_unknown_missing_area == 1 and p.rows_with_missing_area == 0
+
+
+def test_a_changed_or_missing_units_row_reads_no_rows():
+    names = "Year, Month, Day, Extent, Missing, Source Data\n"
+    for body in (
+        names + "2000, 1, 1, 5.0, 0, x\n",  # units row missing
+        names + "YYYY, MM, DD, 10^3 sq km, 10^3 sq km, x\n2000, 1, 1, 5.0, 0, x\n",  # unit changed
+        "Year, Month\n2000,1,1,5,0,x\n",
+    ):
+        p = parse_nsidc(body, extracted_at="t")
+        assert p.rows_read == 0 and p.looks_unrecognised
