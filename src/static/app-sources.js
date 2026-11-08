@@ -754,6 +754,7 @@
       if (!url) { toast("Enter a URL.", "err"); return; }
       if (!id) { toast("Select a source to attribute it to.", "err"); return; }
       $("ingest-result").textContent = "Fetching…";
+      $("ingest-result").title = "";   // the line is shared with ingestSource: never keep its Stop hover
       try {
         const r = await api("/api/ingest", {method: "POST",
           body: JSON.stringify({source_id: Number(id), url})});
