@@ -81,6 +81,9 @@ _LATE_NEEDLE = '"late": true'
 _READ_CHUNK = 500
 #: How many owed entries one collection pass writes, at most. The field debt was 8 to 19
 #: entries per day or two; a bounded tail keeps a pass's end predictable when it is larger.
+#: The queue itself has no bound, and in OpenTimestamps mode each entry written also makes up to three calendar submissions
+#: (10 s timeout each) under the log's append lock, so a large backlog (entries a Stop refused, R618) slows the end of
+#: collection passes for a while once the switch is cleared.
 DRAIN_PER_PASS = 200
 
 
@@ -398,6 +401,7 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
     it), while the file lock is held only to read the queue and, at the end, to remove
     what this drain settled -- re-reading first, so an entry queued meanwhile survives."""
     from src.custody.log import CustodyAction
+    from src.custody.timestamp import TimestampRefusedOffline
 
     with _DRAIN_LOCK:
         try:
@@ -411,7 +415,7 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
         if not todo:
             return {"recorded": 0, "already_present": 0, "article_gone": 0, "still_pending": 0}
         settled: list[dict[str, Any]] = []
-        recorded = already = gone = 0
+        recorded = already = gone = refused = 0
         need = _ids_missing_columns(todo)
         read: dict[int, dict[str, Any]] | None = {}
         read_error: str | None = None
@@ -481,6 +485,8 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
                     recorded += 1
                     settled.append(it)
                 except Exception as exc:  # noqa: BLE001 - this one waits for the next drain
+                    if isinstance(exc, TimestampRefusedOffline):
+                        refused += 1  # R618: the kill switch refused its OpenTimestamps submission; the answer says so
                     log_failure(_LOG, f"custody: late entry for article {aid} still pending", exc, level=logging.DEBUG)
         finally:
             with contextlib.suppress(Exception):
@@ -502,6 +508,8 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
                     log_failure(_LOG, "custody: could not rewrite the pending file", exc, level=logging.WARNING)
     out: dict[str, Any] = {"recorded": recorded, "already_present": already, "article_gone": gone,
                            "still_pending": len(remaining)}
+    if refused:
+        out["refused_offline"] = refused  # present ONLY when the kill switch refused entries (OpenTimestamps mode, R618)
     if read_error:
         out["read_error"] = read_error
     if queue_error:

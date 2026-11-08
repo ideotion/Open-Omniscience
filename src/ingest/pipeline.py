@@ -406,6 +406,7 @@ class _CustodyBatch:
         self._log: CustodyLog | None = None
         self._opened_under: tuple | None = None
         self.opened = 0  # logs this batch has opened (a reading, for the tests)
+        self.refused_offline = 0  # entries the kill switch refused (R618): owed, and logged ONCE when the block ends
 
     @staticmethod
     def _under(prefs) -> tuple:
@@ -439,6 +440,12 @@ class _CustodyBatch:
 
     def __exit__(self, *exc) -> None:
         self.drop()
+        if self.refused_offline:
+            # R618: one line for the flush, not one per article (a Stop refuses every entry after it the same way).
+            logging.getLogger(__name__).info(
+                "custody: %d ingest entr(ies) of this flush were refused by the network kill switch (OpenTimestamps); "
+                "they are owed and written later, marked late", self.refused_offline,
+            )
 
 
 def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = None) -> None:
@@ -447,6 +454,10 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
     ``batch`` is the flush's :class:`_CustodyBatch`: the entry is written through the log it holds (re-opened if the
     settings or the passphrase changed since it was opened), and a failure drops that log so the next article opens a
     fresh one. Without it the entry gets a log of its own, closed when it is written.
+
+    An entry the kill switch refused (``TimestampRefusedOffline``, R618: OpenTimestamps mode, a Stop) is told apart by its
+    type. Nothing was written (the refusal comes before the insert), so the batch keeps its log and counts the entry, and
+    the batch logs once, at INFO, when it ends; the entry is queued as owed like any other.
 
     Best-effort and fail-open: custody logging must never break ingestion, so any
     error here is swallowed (and logged). Controlled by the GUI-editable custody
@@ -495,12 +506,21 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
         else:
             batch.log(prefs).record(item_id, item_hash, CustodyAction.INGEST, actor=actor, metadata=metadata)
     except Exception as exc:  # noqa: BLE001 - custody is auxiliary; never fail ingestion
-        import logging
+        from src.custody.timestamp import TimestampRefusedOffline
 
-        if batch is not None and log_touched:
-            batch.drop()  # the next article opens a fresh log, as every article did before batches
+        if isinstance(exc, TimestampRefusedOffline):
+            # R618: the switch's refusal, raised before the insert: the connection is clean, so the batch keeps its log (a
+            # fresh one costs a key derivation) and the flush logs once; an unbatched entry logs its own line, at INFO.
+            if batch is not None:
+                batch.refused_offline += 1
+            else:
+                log_failure(logging.getLogger(__name__), "custody entry on ingest owed: refused by the network kill switch", exc,
+                            level=logging.INFO)
+        else:
+            if batch is not None and log_touched:
+                batch.drop()  # the next article opens a fresh log, as every article did before batches
 
-        log_failure(logging.getLogger(__name__), "custody logging on ingest failed", exc, level=logging.WARNING)
+            log_failure(logging.getLogger(__name__), "custody logging on ingest failed", exc, level=logging.WARNING)
         # ...but the entry is OWED, not forgotten: queued in a file (no database), and
         # written later, marked late, at the end of the next collection pass or from the
         # Chain of custody tab. NEVER repaid here: the read a repayment needs competes for

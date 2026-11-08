@@ -903,6 +903,109 @@ def test_custody_an_ingest_entry_a_stop_cut_is_owed_for_a_later_anchor_not_lost(
         assert log.all_entries() == []
 
 
+def _ots_auto_log(monkeypatch) -> None:
+    from src.custody.settings import CustodySettings
+
+    monkeypatch.setattr(
+        "src.custody.settings.load_settings", lambda: CustodySettings(auto_log_on_ingest=True, anchoring_mode="opentimestamps"),
+    )
+
+
+def _calendars_answer(monkeypatch) -> list[bytes]:
+    """The calendars reached (the seam is ``ots_stamp``): an OpenTimestamps proof for every submission, each one counted."""
+    import src.custody.log as L
+    from src.custody.timestamp import TimestampProof
+
+    asked: list[bytes] = []
+
+    def ots_stamp(digest):
+        asked.append(digest)
+        return TimestampProof(kind="opentimestamps", digest=digest.hex(), asserted_time=None, proof_b64="c3R1Yg==", detail="stub")
+
+    monkeypatch.setattr(L, "ots_stamp", ots_stamp)
+    return asked
+
+
+def _db_factory(db):
+    from contextlib import nullcontext
+
+    return lambda: nullcontext(db)
+
+
+def test_custody_a_flush_the_switch_refuses_keeps_its_one_log_logs_once_and_owes_every_entry(db, monkeypatch, caplog, ots):
+    """Each refusal used to drop the flush's log, so the next article opened a fresh one (a key derivation, ~173 ms encrypted) and
+    logged a WARNING of its own. Nothing was written (the refusal comes before the insert), so the log is kept and still writes once
+    the switch is cleared, the flush logs ONE line, and every refused entry is owed."""
+    from src.custody import pending
+    from src.custody.log import CustodyLog
+    from src.ingest.pipeline import _CustodyBatch, _maybe_record_custody
+    from tests.test_custody_batch import _Opens, _stored
+
+    _ots_auto_log(monkeypatch)
+    arts = _stored(db, 5)
+    ids = [a.id for a in arts]
+    opens = _Opens(monkeypatch)
+    activate_kill_switch()  # the REAL ots_stamp refuses by name; the log turns it into the typed refusal
+    with caplog.at_level(logging.INFO, logger="src.ingest.pipeline"), _CustodyBatch() as batch:
+        for a in arts[:4]:
+            _maybe_record_custody(a, batch=batch)
+        assert batch.refused_offline == 4
+        clear_kill_switch()
+        asked = _calendars_answer(monkeypatch)
+        _maybe_record_custody(arts[4], batch=batch)  # through the same, kept log
+        assert batch.opened == 1
+    assert opens.opened == 1 and opens.closed == 1, "a refusal cost the flush its log: the next article paid for a fresh one"
+    lines = [r for r in caplog.records if r.name == "src.ingest.pipeline"]
+    assert [r.levelno for r in lines] == [logging.INFO], [r.getMessage() for r in lines]
+    assert "4 ingest entr" in lines[0].getMessage() and "kill switch" in lines[0].getMessage(), lines[0].getMessage()
+    assert sorted(int(r["article_id"]) for r in pending.read_pending()) == sorted(ids[:4]), "a refused entry is not owed"
+    with CustodyLog() as log:
+        written = log.all_entries()
+    assert [(e.item_id, e.timestamp["kind"]) for e in written] == [(f"article:{ids[4]}", "opentimestamps")] and len(asked) == 1
+
+
+def _owed_under_the_switch(db, monkeypatch):
+    from src.ingest.pipeline import _CustodyBatch, _maybe_record_custody
+    from tests.test_custody_batch import _stored
+
+    _ots_auto_log(monkeypatch)
+    art = _stored(db, 1)[0]
+    activate_kill_switch()
+    with _CustodyBatch() as batch:
+        _maybe_record_custody(art, batch=batch)
+    return art.id, art.hash
+
+
+def test_custody_a_drain_the_switch_still_refuses_says_so_and_keeps_the_entry_owed(db, monkeypatch, ots):
+    from src.custody import pending
+    from src.custody.log import CustodyLog
+
+    aid, _ = _owed_under_the_switch(db, monkeypatch)
+    res = pending.drain_owed(session_factory=_db_factory(db))
+    assert res == {"recorded": 0, "already_present": 0, "article_gone": 0, "still_pending": 1, "refused_offline": 1}, res
+    assert [int(r["article_id"]) for r in pending.read_pending()] == [aid]
+    with CustodyLog() as log:
+        assert log.all_entries() == []
+
+
+def test_custody_back_online_the_drain_writes_a_refused_entry_once_late_with_its_anchor(db, monkeypatch, ots):
+    from src.custody import pending
+    from src.custody.log import CustodyLog
+
+    aid, item_hash = _owed_under_the_switch(db, monkeypatch)
+    clear_kill_switch()
+    asked = _calendars_answer(monkeypatch)
+    res = pending.drain_owed(session_factory=_db_factory(db))
+    assert res == {"recorded": 1, "already_present": 0, "article_gone": 0, "still_pending": 0}, res
+    assert pending.read_pending() == [] and pending.drain_owed(session_factory=_db_factory(db)) is None, "the entry is owed again"
+    with CustodyLog() as log:
+        entries = log.all_entries()
+    assert len(entries) == 1, [e.to_dict() for e in entries]
+    (e,) = entries
+    assert (e.item_id, e.item_hash, e.metadata.get("late")) == (f"article:{aid}", item_hash, True)
+    assert e.timestamp["kind"] == "opentimestamps" and e.timestamp["proof_b64"] == "c3R1Yg==" and len(asked) == 1
+
+
 def test_custody_a_genuine_calendar_failure_still_falls_back_to_a_local_proof_the_control(tmp_path, monkeypatch, ots):
     _calendars_cut(monkeypatch, stop=False)
     with _custody(tmp_path) as log:

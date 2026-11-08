@@ -129,6 +129,13 @@ class TimestampUnavailable(TimestampError):
     """A third-party timestamp could not be obtained (offline / lib missing / refused)."""
 
 
+class TimestampRefusedOffline(TimestampUnavailable):
+    """The network kill switch refused or cut the submission (R618): the entry is owed, not failed, and nothing was written.
+
+    Raised by ``CustodyLog._default_timestamp`` before the entry is inserted, so a caller tells the switch's refusal from a
+    failure by its TYPE, never by its words, and keeps the log it wrote through (``src.ingest.pipeline._maybe_record_custody``)."""
+
+
 @dataclass
 class TimestampProof:
     """A timestamp claim attached to a digest.
