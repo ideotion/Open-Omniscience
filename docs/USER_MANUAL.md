@@ -2982,9 +2982,14 @@ cleared. Both are correct — and a document whose portal is unreachable never h
 is exactly the case worth knowing about.
 
 The **law-ingest** report (in the all-diagnostics bundle, or on its own) answers that from
-stored data with no network call: how many tracked documents have had the re-read, how
-many are still waiting, and whether any law article still carries a publication date it
-should not.
+stored data with no network call: what each tracked document's last check recorded (a
+count per outcome, such as unchanged, re-read, error or deferred, and each document's own
+outcome and time of last attempt), and whether any law article still carries a
+publication date it should not. A document whose last check failed is one worth looking
+at, but the report cannot tell whether it was re-read once before it started failing:
+that is not recorded. The re-read count itself only counts documents whose most recent
+poll was the re-read, so on an install where every document has healed it falls back
+toward zero.
 
 It also reports **chrome residue** — navigation text still present in a stored body. Read
 that as a *measurement*, not a verdict: the chrome strip deliberately removes only what

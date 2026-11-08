@@ -25,7 +25,20 @@ portal is unreachable.
 
 This reports that, from stored data, with no network and no heuristics:
 
-* ``re_extracted`` — read from the status the tracker itself wrote. Exact.
+* ``re_extracted`` — read from the status the tracker itself wrote. Exact, and TRANSIENT:
+  the tracker writes "re-read with ..." on the one poll that re-baselines a document
+  through the strip stage, and the next poll of the same unchanged document overwrites it
+  with "unchanged". So it counts documents whose LAST poll was that re-read, never the
+  documents still to heal, and on a healed install it falls back toward zero.
+* ``last_status_mix`` — what each document's last check recorded, through the ONE
+  classifier the Law tab and the coverage report already use (``src.api.law._verdict_of``).
+  Each per-document row carries that verdict and its ``last_checked_at`` (UTC). They say
+  which documents' LAST check stored no fresh body (an error, a deferral, a robots
+  refusal, an empty extraction, no check at all) and when each was last attempted, and
+  that is all: a re-read leaves no lasting trace (the status that names it is overwritten
+  by the next poll, and no revision is written), so a document that healed in August and
+  has failed since November reads the same as one that has failed since before the strip
+  shipped. Such a verdict marks a CANDIDATE for still holding pre-strip text, never proof.
 * ``stored_publication_date`` — a law corpus article still carrying ``published_at``.
   Exact, and expected to be zero once each document has synced once.
 * ``chrome_residue`` — chrome text that survived into the stored body.
@@ -119,8 +132,14 @@ def law_ingest_report(session: Session) -> dict:
     marker_counts: dict[str, int] = {}
     never_checked = 0
 
+    from src.api.law import _verdict_of  # the ONE classification, reused (never a 2nd guess)
+
+    verdicts: dict[str, int] = {}
+
     for d in docs:
         status = d.last_status or ""
+        verdict = _verdict_of(d.last_status)
+        verdicts[verdict] = verdicts.get(verdict, 0) + 1
         was_re_extracted = status.lower().startswith(_RE_EXTRACT_PREFIX)
         if was_re_extracted:
             re_extracted += 1
@@ -147,6 +166,10 @@ def law_ingest_report(session: Session) -> dict:
                         str(dated[d.id]) if d.id in dated else None
                     ),
                     "last_status": d.last_status,
+                    "verdict": verdict,
+                    "last_checked_at": (
+                        d.last_checked_at.isoformat() if d.last_checked_at is not None else None
+                    ),
                 }
             )
 
@@ -154,7 +177,7 @@ def law_ingest_report(session: Session) -> dict:
         "documents": len(docs),
         "never_checked": never_checked,
         "re_extracted": re_extracted,
-        "awaiting_re_extraction": len(docs) - re_extracted - never_checked,
+        "last_status_mix": dict(sorted(verdicts.items())),
         "with_chrome_residue": with_residue,
         "chrome_markers_found": dict(sorted(marker_counts.items())),
         "stored_publication_dates": len(dated),
@@ -165,7 +188,11 @@ def law_ingest_report(session: Session) -> dict:
         "structured": _structured_section(),
         "method": (
             "Read from stored data only -- no fetch. `re_extracted` is the tracker's own "
-            "recorded status for a baseline it re-read through the strip stage; "
+            "recorded status for a baseline it re-read through the strip stage, on the one "
+            "poll that re-read it; `last_status_mix` classifies every document's last "
+            "recorded status with the Law tab's own verdicts; `never_checked` counts "
+            "documents with no check time; `last_checked_at` is the time of the last "
+            "attempt, in UTC; "
             "`stored_publication_dates` counts law corpus articles still carrying a "
             "published_at, which should be zero once each document has synced once, "
             "because the only date available was the day we polled the page. "
@@ -177,10 +204,13 @@ def law_ingest_report(session: Session) -> dict:
             "removes what the markup declares to be chrome and deliberately leaves the "
             "rest, because a text heuristic would also eat an Act's section headings. "
             "Residue measures that stated limit. The marker list is a FLOOR -- zero means "
-            "none of these markers, never no chrome. `awaiting_re_extraction` counts "
-            "documents checked at least once whose last outcome was something other than "
-            "a strip re-read; a document heals on its next successful poll, so a portal "
-            "that cannot be fetched never heals and is exactly what this field surfaces."
+            "none of these markers, never no chrome. `re_extracted` is not a count of "
+            "documents still to heal: the next unchanged poll records `unchanged`, so a "
+            "fully healed install shows few or none. Whether a given document ever healed "
+            "is not recorded anywhere. A `verdict` of error, deferred, robots_blocked, "
+            "empty or never_checked says its last check stored no fresh body, so it is a "
+            "CANDIDATE for still holding pre-strip text, never proof: a document that healed "
+            "long ago and fails today reads the same."
         ),
     }
 
