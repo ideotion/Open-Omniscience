@@ -2133,7 +2133,9 @@
         _updCheck = await api("/api/system/update/check", { method: "POST" });
       } catch (e) {
         _updCheck = null;
-        if (msg) msg.textContent = (e && e.status === 409) ? t("Airplane mode is on: the update check did not run.") : t("The update check failed.");
+        const code = e && e.detail && e.detail.code;
+        if (msg) msg.textContent = code === "airplane" ? t("Airplane mode is on: the update check did not run.")
+          : code === "protected_no_proxy" ? t("Protected mode has no usable proxy: the update check did not run.") : t("The update check failed.");
         return;
       }
       const latest = $("upd-latest"); if (latest) latest.textContent = _updCheck.latest || "";

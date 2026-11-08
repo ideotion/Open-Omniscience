@@ -94,9 +94,14 @@ def update_check() -> dict:
     try:
         return check()
     except NetworkBlocked:
-        raise HTTPException(status_code=409, detail="Airplane mode is on: the update check did not run. Go online first.") from None
+        raise HTTPException(
+            status_code=409, detail={"code": "airplane", "message": "Airplane mode is on: the update check did not run. Go online first."}
+        ) from None
     except TransportUnavailable:
-        raise HTTPException(status_code=409, detail="Protected mode has no usable proxy: the update check did not run.") from None
+        # never named as airplane mode (#14e's corollary): it is the proxy protected mode needs, not the operator's switch
+        raise HTTPException(
+            status_code=409, detail={"code": "protected_no_proxy", "message": "Protected mode has no usable proxy: the update check did not run."}
+        ) from None
     except UpdateError as exc:
         raise HTTPException(status_code=502, detail=http_detail(exc)) from None
 

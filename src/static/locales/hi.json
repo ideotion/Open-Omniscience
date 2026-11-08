@@ -7423,5 +7423,6 @@
   "The new version did not start, so the update was undone and the previous version started again.": "नया संस्करण शुरू नहीं हुआ, इसलिए अपडेट वापस लिया गया और पिछला संस्करण फिर से शुरू हुआ।",
   "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "पिछला अपडेट इंस्टॉल हो गया, लेकिन ऐप को शुरू होने में बहुत समय लगा। यदि यह ठीक से काम न करे, तो इंस्टॉलर फिर से चलाएँ।",
   "The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.": "अपडेट इंस्टॉल होते समय ऐप फिर से शुरू किया गया। इसे बंद करें और एक बार फिर शुरू करें ताकि यह पूरा नया संस्करण चलाए।",
-  "The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).": "नया संस्करण ऐप की निर्भरताएँ बदलता है, इसलिए इसे यहाँ इंस्टॉल नहीं किया गया और कुछ नहीं बदला। इंस्टॉलर फिर से चलाकर अपडेट करें (git pull, फिर install.sh या install.ps1)।"
+  "The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).": "नया संस्करण ऐप की निर्भरताएँ बदलता है, इसलिए इसे यहाँ इंस्टॉल नहीं किया गया और कुछ नहीं बदला। इंस्टॉलर फिर से चलाकर अपडेट करें (git pull, फिर install.sh या install.ps1)।",
+  "Protected mode has no usable proxy: the update check did not run.": "संरक्षित मोड में कोई उपयोग योग्य प्रॉक्सी नहीं है: अपडेट जाँच नहीं चली।"
 }

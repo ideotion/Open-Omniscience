@@ -7423,5 +7423,6 @@
   "The new version did not start, so the update was undone and the previous version started again.": "নতুন সংস্করণ চালু হয়নি, তাই আপডেট বাতিল করা হয়েছে এবং আগের সংস্করণ আবার চালু হয়েছে।",
   "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "শেষ আপডেটটি ইনস্টল হয়েছে, কিন্তু অ্যাপটি চালু হতে অনেক সময় নিয়েছে। সমস্যা হলে ইনস্টলারটি আবার চালান।",
   "The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.": "আপডেট ইনস্টল হওয়ার সময় অ্যাপটি আবার চালু করা হয়েছিল। এটি বন্ধ করে আরও একবার চালু করুন, যাতে এটি পুরো নতুন সংস্করণ চালায়।",
-  "The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).": "নতুন সংস্করণ অ্যাপের নির্ভরতা বদলায়, তাই এটি এখানে ইনস্টল করা হয়নি এবং কিছুই বদলানো হয়নি। ইনস্টলারটি আবার চালিয়ে আপডেট করুন (git pull, তারপর install.sh বা install.ps1)।"
+  "The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).": "নতুন সংস্করণ অ্যাপের নির্ভরতা বদলায়, তাই এটি এখানে ইনস্টল করা হয়নি এবং কিছুই বদলানো হয়নি। ইনস্টলারটি আবার চালিয়ে আপডেট করুন (git pull, তারপর install.sh বা install.ps1)।",
+  "Protected mode has no usable proxy: the update check did not run.": "সুরক্ষিত মোডে কোনো ব্যবহারযোগ্য প্রক্সি নেই: আপডেট যাচাই চালানো হয়নি।"
 }

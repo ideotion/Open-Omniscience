@@ -105,7 +105,7 @@ def test_a_check_in_airplane_mode_is_named_by_the_endpoint(monkeypatch):
         r = TestClient(app, base_url="http://127.0.0.1").post("/api/system/update/check")
     finally:
         clear_kill_switch()
-    assert r.status_code == 409 and "Airplane mode" in r.json()["detail"]
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "airplane" and "Airplane mode" in r.json()["detail"]["message"]
 
 
 def test_apply_endpoint_refuses_without_confirm_and_without_a_check():
@@ -811,4 +811,37 @@ def test_a_check_in_protected_mode_without_a_proxy_is_named_not_a_500(monkeypatc
 
     monkeypatch.setattr(su, "_get_json", no_proxy)
     r = TestClient(app, base_url="http://127.0.0.1").post("/api/system/update/check")
-    assert r.status_code == 409 and "proxy" in r.json()["detail"]
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "protected_no_proxy"
+    js = (ROOT / "src" / "static" / "app-settings.js").read_text(encoding="utf-8")
+    body = js[js.index("async function updCheck()"):js.index("async function updApply()")]
+    assert 'code === "protected_no_proxy"' in body and 'code === "airplane"' in body  # never named as airplane mode
+
+
+def test_a_merge_that_stops_part_way_puts_the_tree_back(repos):
+    inst, _work, sha = repos
+    h = _helper()
+    old = _g(inst, "rev-parse", "HEAD")
+    calls: list = []
+
+    def git(root, *args, **k):
+        if args[:1] == ("merge",):
+            (inst / "a.txt").write_text("half-written", encoding="utf-8")  # what a stopped merge leaves: a new file under the old HEAD
+            return subprocess.CompletedProcess([], 1, "", "unable to unlink")
+        calls.append(args)
+        return h._git(root, *args, **k)
+
+    assert h.apply(_plan(inst, sha), git=git)[0] == "not_a_fast_forward"
+    assert _g(inst, "rev-parse", "HEAD") == old and _g(inst, "status", "--porcelain") == ""
+    assert ("reset", "--hard", old) in calls
+
+
+def test_the_last_resort_handler_never_starts_a_second_launcher(tmp_path, monkeypatch):
+    h = _helper()
+    plan = _plan_file(tmp_path)
+    launched: list = []
+    monkeypatch.setattr(h, "wait_for_exit", lambda pid, *a, **k: True)
+    monkeypatch.setattr(h, "server_answers", lambda port: False)
+    monkeypatch.setattr(h, "apply", lambda plan, **k: ("updated", SHA_A))
+    monkeypatch.setattr(h, "relaunch", lambda root, **k: launched.append(root) or _Proc(None))
+    monkeypatch.setattr(h, "watch_start", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert h.main(["x", str(plan)]) == 1 and len(launched) == 1

@@ -7423,5 +7423,6 @@
   "The new version did not start, so the update was undone and the previous version started again.": "新しいバージョンが起動しなかったため、更新を取り消し、以前のバージョンを再起動しました。",
   "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "前回の更新はインストールされましたが、アプリの起動に長い時間がかかりました。動作がおかしい場合は、インストーラーを再実行してください。",
   "The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.": "更新のインストール中にアプリが再び起動されました。新しいバージョン全体で動作するよう、いったん閉じてもう一度起動してください。",
-  "The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).": "新しいバージョンはアプリの依存関係を変更するため、ここではインストールされず、何も変更されていません。インストーラーを再実行して更新してください（git pull の後、install.sh または install.ps1）。"
+  "The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).": "新しいバージョンはアプリの依存関係を変更するため、ここではインストールされず、何も変更されていません。インストーラーを再実行して更新してください（git pull の後、install.sh または install.ps1）。",
+  "Protected mode has no usable proxy: the update check did not run.": "保護モードで使用できるプロキシがありません。更新の確認は実行されませんでした。"
 }

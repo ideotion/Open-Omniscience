@@ -234,6 +234,10 @@ def apply(plan: dict, *, git=_git, run=_run) -> tuple[str, str]:
         # offset when it returns: give it a moment before the checkout (and so launch.cmd) can change; the console-script .exe is freed too.
         time.sleep(5)
     if git(root, "merge", "--ff-only", sha).returncode != 0:
+        # git writes the new files one by one BEFORE it moves HEAD: a merge that stopped part-way (a file held open, a path too long, the
+        # timeout) leaves some files new under the old HEAD. Put the tree back; safe, as it was clean and HEAD is still the old commit.
+        if git(root, "reset", "--hard", old).returncode != 0:
+            return "rollback_incomplete", old
         return "not_a_fast_forward", old
     changed = changed_files(root, old, sha, git=git)
     if "pyproject.toml" in changed:
@@ -408,7 +412,7 @@ def main(argv: list[str]) -> int:
     except Exception:  # noqa: BLE001 - the one place that must not let any failure leave the app down
         write_result(plan, "helper_failed", "", data_dir)
         pid = _pid(plan)
-        if (not pid or wait_for_exit(pid)) and not server_answers(_port(plan)):
+        if not plan.get("_relaunched") and (not pid or wait_for_exit(pid)) and not server_answers(_port(plan)):
             relaunch(root)
         return 1
 
@@ -463,6 +467,7 @@ def _main(plan_path: Path, plan: dict, data_dir: Path, root: Path) -> int:
             write_result(plan, "app_started_during_update", old, data_dir)
             return 1
         proc = relaunch(root, watched=status == "updated")
+        plan["_relaunched"] = True  # main()'s last-resort handler must not start a second launcher after this
         if status == "updated":
             started = watch_start(proc, port)
             if started == "exited" and not server_answers(port):

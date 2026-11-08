@@ -7423,5 +7423,6 @@
   "The new version did not start, so the update was undone and the previous version started again.": "新版本没有启动，因此已撤销更新并重新启动了之前的版本。",
   "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "上次更新已安装，但应用启动用了很长时间。如果运行异常，请重新运行安装程序。",
   "The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.": "在安装更新期间应用被再次启动。请关闭它并再启动一次，使其完整运行新版本。",
-  "The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).": "新版本更改了应用的依赖项，因此没有在此安装，也没有做任何更改。请重新运行安装程序来更新（git pull，然后 install.sh 或 install.ps1）。"
+  "The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).": "新版本更改了应用的依赖项，因此没有在此安装，也没有做任何更改。请重新运行安装程序来更新（git pull，然后 install.sh 或 install.ps1）。",
+  "Protected mode has no usable proxy: the update check did not run.": "保护模式下没有可用的代理：未执行更新检查。"
 }
