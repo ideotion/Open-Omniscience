@@ -723,7 +723,9 @@ def test_run_restore_asks_before_it_validates_or_copies(
     def touched(*a, **kw):  # noqa: ANN002, ANN003, ANN202
         raise AssertionError("validated or copied before the memory check")
 
-    monkeypatch.setattr(merge_mod, "prepare_staged_corpus", touched)
+    import src.backup.sqlite_backup as sqlite_backup
+
+    monkeypatch.setattr(sqlite_backup, "validate_sqlite_file", touched)
     monkeypatch.setattr(connect_mod, "snapshot_preserving", touched)
     staged = tmp_path / "staged.db"
     _staged_with_links(staged, 3)
@@ -732,4 +734,28 @@ def test_run_restore_asks_before_it_validates_or_copies(
         manifest=None, signature_state="verified", origin_fingerprint="test",
     )
     with pytest.raises(MergeError, match="Not enough free memory to merge into an encrypted corpus"):
+        merge_mod.run_restore(art, commit=False, reindex_imported=False)
+
+
+def test_a_tampered_artifact_is_refused_as_tampered_before_the_memory_check(
+    tmp_path, encrypted_working_copy, monkeypatch
+) -> None:
+    """The cheap origin gates come first: freeing memory must never be the advice for an
+    artifact that would be refused anyway."""
+    from src.backup.artifact import StagedArtifact
+
+    _live_is(monkeypatch, encrypted_working_copy)
+    _short_machine(monkeypatch)
+    staged = tmp_path / "staged.db"
+    _staged_with_links(staged, 3)
+    art = StagedArtifact(
+        kind="oo-backup-2", staging_dir=tmp_path, corpus_path=staged, custody_path=None,
+        manifest=None, signature_state="verified", origin_fingerprint="test",
+        hash_failures=["corpus.db"],
+    )
+    with pytest.raises(MergeError, match="failed its own manifest hashes"):
+        merge_mod.run_restore(art, commit=False, reindex_imported=False)
+    art.hash_failures = []
+    art.signature_state = "unsigned"
+    with pytest.raises(MergeError, match="allow_unverified"):
         merge_mod.run_restore(art, commit=False, reindex_imported=False)

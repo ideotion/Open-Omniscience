@@ -778,6 +778,12 @@ def prepare_staged_corpus(
     # same reason; this follows them.
     _sub = _sub_timer(timings)
 
+    # The full memory refusal (with this backup's own row counts), AFTER the hash and signature
+    # gates above (a tampered artifact is refused as tampered, never as "close other programs")
+    # and BEFORE the validation reads every page and the working corpus is copied: see
+    # check_memory_once_staged for what that order cost on the field instances.
+    check_memory_once_staged(staged.corpus_path)
+
     _report_import_scale(staged.corpus_path)
 
     try:
@@ -1047,8 +1053,9 @@ def _staged_group_rows_or_none(staged_corpus: Path | str) -> dict[str, int] | No
     that cannot be counted here answers None (no early verdict) rather than a refusal, because
     the validation a moment later is what names a damaged file, in its own words, and the
     merge's own count still runs after it. Read-only and plaintext by design: a staged member is
-    a plain SQLite file (:func:`src.database.connect.attach`'s note), and ``mode=ro`` writes
-    nothing to a file nothing has validated yet."""
+    a plain SQLite file (:func:`src.database.connect.attach`'s note), and ``mode=ro`` never
+    writes the main file (a WAL-mode header can still leave ``-wal``/``-shm`` side files in the
+    private staging directory, which ``cleanup_staging`` removes with it)."""
     from src.database.read_only_uri import open_plain_read_only
 
     try:
@@ -8013,10 +8020,6 @@ def run_restore(
         timings.record(f"stage_a:{_name}", _seconds)
 
     _abort_point("prepare_staged")
-    # The full memory refusal (with this backup's own row counts), before the validation reads
-    # every page of the staged file and before the working corpus is copied: see
-    # check_memory_once_staged for what that cost on the field instances.
-    check_memory_once_staged(staged.corpus_path)
     with timings.stage("prepare_staged"):
         # SPLIT, because the aggregate cannot be acted on. On the field's largest
         # import this ONE number was 5773 s -- 54% of the entire run, more than the
