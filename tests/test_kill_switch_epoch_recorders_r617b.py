@@ -868,6 +868,21 @@ def test_custody_a_submission_refused_with_the_switch_still_engaged_writes_nothi
         assert log.all_entries() == []
 
 
+def test_custody_the_log_route_names_the_switch_when_a_stop_refuses_the_entry(tmp_path, monkeypatch, ots):
+    """The manual route answers the refusal in its own words (503), never a bare 500 that would point the operator elsewhere."""
+    from fastapi import HTTPException
+
+    import src.api.custody as C
+
+    monkeypatch.setattr(C, "_log", lambda: _custody(tmp_path))
+    activate_kill_switch()
+    with pytest.raises(HTTPException) as caught:
+        C.log_action(C.LogRequest(item_id="article:1", item_hash="h1", action="ingest"))
+    assert caught.value.status_code == 503 and "kill switch" in str(caught.value.detail), caught.value.detail
+    with _custody(tmp_path) as log:
+        assert log.all_entries() == []
+
+
 def test_custody_an_ingest_entry_a_stop_cut_is_owed_for_a_later_anchor_not_lost(db, tmp_path, monkeypatch, ots):
     """The ingest auto-log stays fail-open: the article is stored, and its entry is queued as owed (``src.custody.pending``), which the
     end of a later collection pass writes, marked late, with the anchor this mode asks for."""

@@ -25,6 +25,7 @@ from src.custody.settings import (
     save_settings,
 )
 from src.custody.signing import HybridSigner
+from src.custody.timestamp import TimestampUnavailable
 from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/custody", tags=["custody"])
@@ -57,6 +58,10 @@ def log_action(req: LogRequest) -> dict:
             req.item_id, req.item_hash, action, actor=req.actor, metadata=req.metadata
         )
         return entry.to_dict()
+    except TimestampUnavailable as exc:
+        # R618: in OpenTimestamps mode a Stop refuses the entry rather than give it a permanent local-only proof. The refusal names
+        # the kill switch, so it is answered in its own words (503, as an unavailable anchor provider is), never a bare 500.
+        raise HTTPException(status_code=503, detail=http_detail(exc)) from exc
     finally:
         log.close()
 
