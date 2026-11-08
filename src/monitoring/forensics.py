@@ -355,8 +355,7 @@ def record_session_start() -> dict[str, Any] | None:
         _PREV_AT_BOOT = prev
         _PREV_LOADED = True
     started_at = _now()
-    _SESSION_STARTED_AT = started_at
-    _SESSION_STARTED_MONO = time.monotonic()
+    started_mono = time.monotonic()
     state: dict[str, Any] = {
         "state": "running",
         "started_at": started_at,
@@ -403,7 +402,11 @@ def record_session_start() -> dict[str, Any] | None:
         state["oom_counters"] = _OOM_AT_BOOT
     except Exception as exc:  # noqa: BLE001 - a missing reading never breaks a boot
         log_failure(_LOG, "session sentinel: kill counters unavailable", exc, level=logging.DEBUG)
-    _write_state(state)
+    with _STATE_LOCK:
+        _write_state(state)
+        # Published only now: until this session's state is on disk, a power event would stamp the PREVIOUS session's sentinel and this write would erase it.
+        _SESSION_STARTED_AT = started_at
+        _SESSION_STARTED_MONO = started_mono
     # The session LEDGER (2026-09-18, maintainer-asked): the chronology across MANY
     # sessions that this one-sentinel file cannot hold -- restarts, stretches, the
     # last minute a dead session was seen. Best-effort, after the sentinel is written,
@@ -781,12 +784,13 @@ def record_unlock_timing(record: dict[str, Any]) -> None:
         note_unlock_done()
     except Exception as exc:  # noqa: BLE001 - a stamp must never break the unlock it describes
         log_failure(_LOG, "could not stamp the unlock", exc, level=logging.DEBUG)
-    state = _read_state() or {"state": "running", "started_at": _now(), "pid": os.getpid()}
-    state["last_unlock"] = {**record, "at": _now()}
     recovery = _recovery_from_record(record)
-    if recovery is not None:
-        state["last_recovery"] = {**recovery, "at": _now()}
-    _write_state(state)
+    with _STATE_LOCK:
+        state = _read_state() or {"state": "running", "started_at": _now(), "pid": os.getpid()}
+        state["last_unlock"] = {**record, "at": _now()}
+        if recovery is not None:
+            state["last_recovery"] = {**recovery, "at": _now()}
+        _write_state(state)
 
 
 def record_init_db(record: dict[str, Any]) -> None:
@@ -797,9 +801,10 @@ def record_init_db(record: dict[str, Any]) -> None:
     ``init_db`` (STORE-02) was read on starts of both kinds. Best-effort: forensics never blocks a boot.
     """
     try:
-        state = _read_state() or {"state": "running", "started_at": _now(), "pid": os.getpid()}
-        state["last_init_db"] = record
-        _write_state(state)
+        with _STATE_LOCK:
+            state = _read_state() or {"state": "running", "started_at": _now(), "pid": os.getpid()}
+            state["last_init_db"] = record
+            _write_state(state)
     except Exception as exc:  # noqa: BLE001 - a record that cannot be kept is not worth a failed boot
         log_failure(_LOG, "could not record the init_db steps", exc, level=logging.DEBUG)
 

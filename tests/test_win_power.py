@@ -156,3 +156,22 @@ def test_a_power_event_after_the_teardown_began_cannot_write_stale_state_over_it
     forensics.record_shutdown_phase("shutting-down")
     forensics.record_power_event("resume")
     assert "last_power_event" not in store and store["state"] == "shutting-down"
+
+
+def test_a_new_session_start_re_arms_the_power_stamp_after_a_teardown(monkeypatch, tmp_path):
+    from src.monitoring import forensics
+
+    for name in ("_PREV_AT_BOOT", "_PREV_LOADED", "_WAL_AT_BOOT", "_PAGES_AT_BOOT", "_SESSION_STARTED_AT", "_SESSION_STARTED_MONO", "_OOM_AT_BOOT", "_BOOT_ID_AT_BOOT", "_SHUTDOWN_BEGUN"):
+        monkeypatch.setattr(forensics, name, getattr(forensics, name), raising=False)  # restored at teardown: the start rewrites them
+    monkeypatch.setattr(forensics, "_state_path", lambda: tmp_path / "session_state.json")
+    monkeypatch.setattr(forensics, "kernel_evidence", lambda: {"verdict": "not-run"})
+    monkeypatch.setattr(forensics, "_SESSION_STARTED_AT", "2026-11-07T00:00:00Z")
+    forensics.record_shutdown_phase("shutting-down")
+    assert forensics._SHUTDOWN_BEGUN is True
+    monkeypatch.setattr(forensics, "_SESSION_STARTED_AT", None)
+    forensics.record_session_start()
+    assert forensics._SHUTDOWN_BEGUN is False and forensics._SESSION_STARTED_AT is not None
+    forensics.record_power_event("suspend")
+    import json
+
+    assert json.loads((tmp_path / "session_state.json").read_text(encoding="utf-8"))["last_power_event"]["kind"] == "suspend"
