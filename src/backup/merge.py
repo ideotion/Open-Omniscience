@@ -2312,6 +2312,8 @@ _MERGE_NOT_CARRIED: dict[str, str] = {
     # to the re-index only while it carries no human decision.
     # (b) PER-MACHINE or self-healing: losing them costs nothing durable.
     "derived_meta": "corpus epoch + derived bookkeeping, rebuilt on demand",
+    # R415/R418: the www engine's stamp. Not copied: a restore that carries places and entities writes ITS OWN stamp (WAL's carry, which follows), and an absent stamp is the safe, re-extract state.
+    "article_www_stamps": "the places-and-entities engine stamp; rewritten by the index pass, absent = re-extract",
     # S05-01 S6 (Q605 = b): the did-you-mean deletion table is derived WHOLE from the
     # keyword vocabulary by its own job; a carried copy would point at another corpus'
     # keyword ids. The next build after a restore covers the merged vocabulary.

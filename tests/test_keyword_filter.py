@@ -45,13 +45,13 @@ def test_single_letter_not_an_entity():
 
 def test_filter_settings_roundtrip(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    from src.analytics.filters import add_excluded, excluded_set, load_settings, save_settings
+    from src.analytics.filters import add_excluded, load_settings, save_settings
 
     save_settings({"excluded": "Foo, BAR\nbaz", "min_length": 4})
     s = load_settings()
     assert s.excluded == ["bar", "baz", "foo"] and s.min_length == 4
     add_excluded("Qux")
-    assert "qux" in excluded_set()
+    assert "qux" in load_settings().excluded
 
 
 def test_excluded_terms_hidden_in_top(tmp_path, monkeypatch):
