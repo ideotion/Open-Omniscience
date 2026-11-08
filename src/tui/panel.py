@@ -16,7 +16,9 @@ WHAT IT MAY DO, AND WHAT IT NEVER DOES.
     (R601): every offline-to-online move passes the browser's one consent popup (invariant #14), which lists the local interfaces and
     names the action; a key in a terminal would be a second, lesser gate beside it.
   * It NEVER asks for, reads, holds or prints the passphrase. A locked app is shown as locked, with the way to unlock: open the UI.
-  * It imports nothing from the app, so it costs a few megabytes, not the server's footprint twice.
+  * It imports nothing from the app but the list of held secret variables (``secret_scrub.HELD_ENV_VARS``, standard library only), so
+    it costs a few megabytes, not the server's footprint twice. It drops those variables from its own environment as it starts, so
+    no browser it opens can inherit them (on Windows ``os.startfile`` cannot be handed an environment).
 
 THE STOP PATHS ARE THE LAUNCHER'S, UNCHANGED. The panel runs in cbreak mode, never raw, so Ctrl-C still reaches the whole foreground group
 as a terminal SIGINT (the server takes its graceful path, the launcher records the stop) and the panel itself just restores the terminal and
@@ -67,6 +69,10 @@ STOP_CONFIRM_S = 10.0
 GONE_AFTER_S = 20.0
 #: ...or when it never answered at all for this long (a first launch preparing its database can take minutes).
 NEVER_ANSWERED_S = 300.0
+#: With a server pid, the pid is the first test, but a pid can be REUSED by another process once the server has ended, so the
+#: silence still ends the panel, over a longer wait that a server busy for a while never reaches.
+GONE_WITH_PID_S = 300.0
+NEVER_ANSWERED_WITH_PID_S = 1800.0
 #: The largest response read: the job list of a busy instance is tens of kilobytes.
 MAX_BODY = 4_000_000
 
@@ -336,7 +342,7 @@ def loopback_url(url: str, port: int) -> str:
 
     try:
         u = urlsplit(url)
-        ok = (u.scheme == "http" and u.hostname in (HOST, "localhost") and u.username is None and u.password is None
+        ok = (u.scheme == "http" and u.hostname in (HOST, "::1") and u.username is None and u.password is None
               and u.port is not None)
     except ValueError:
         ok = False
@@ -505,6 +511,12 @@ def _show_log(scr: Any, server_pid: int | None) -> bool:
     return back
 
 
+def server_silent_too_long(server_pid: int | None, *, ever: bool, now: float, last_ok: float, started: float) -> bool:
+    """Whether the server has not answered for long enough that the panel should end, the pid test aside."""
+    gone, never = (GONE_AFTER_S, NEVER_ANSWERED_S) if server_pid is None else (GONE_WITH_PID_S, NEVER_ANSWERED_WITH_PID_S)
+    return (now - last_ok > gone) if ever else (now - started > never)
+
+
 def run(scr: Any, port: int, url: str, server_pid: int | None, stopping: list[bool]) -> int:
     assert curses is not None
     with contextlib.suppress(CursesError):
@@ -538,7 +550,7 @@ def run(scr: Any, port: int, url: str, server_pid: int | None, stopping: list[bo
             snap = take_snapshot(port)
             if snap.reachable:
                 ever, last_ok = True, now
-            elif server_pid is None and ((ever and now - last_ok > GONE_AFTER_S) or (not ever and now - started > NEVER_ANSWERED_S)):
+            elif server_silent_too_long(server_pid, ever=ever, now=now, last_ok=last_ok, started=started):
                 return 0
             next_fetch = now + (REFRESH_BUSY_S if (snap.busy or not snap.reachable) else REFRESH_IDLE_S)
         if now >= next_repaint:
@@ -546,7 +558,8 @@ def run(scr: Any, port: int, url: str, server_pid: int | None, stopping: list[bo
         h, w = scr.getmaxyx()
         lines, buttons = build_screen(snap, w, state, url, time.time(), starting=not ever, height=h)
         if not mouse_ok:
-            lines.append(("Keys: o open UI · p pause · l log · s stop · q close panel", "dim"))
+            lines.append(("Keys: o open UI · p pause · s stop · q close panel" if IS_WINDOWS
+                          else "Keys: o open UI · p pause · l log · s stop · q close panel", "dim"))
         _draw(scr, lines, buttons, attrs, full)
         ch = scr.getch()
         if ch == -1:
@@ -585,6 +598,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--port", type=int, default=int(os.environ.get("OO_PORT") or 8000))
     p.add_argument("--server-pid", type=int, default=None, help="end the panel when this process ends (the launcher's server)")
     p.add_argument("--url", default="", help="the address Open UI opens (defaults to the loopback address and port)")
+    for name in HELD_ENV_VARS:  # first: nothing the panel starts (a browser) may inherit them, and it never needs them itself
+        os.environ.pop(name, None)
     args = p.parse_args(argv)
     url = loopback_url(args.url, args.port)
     if curses is None:

@@ -539,7 +539,8 @@ open_browser "$URL"
 # It never sees the passphrase: unlocking stays in the browser (R601 keeps going online there too).
 PANEL_PY="$DIR/.venv/bin/python"
 if [ "${OO_PANEL:-1}" != "0" ] && [ -t 0 ] && [ -t 1 ] && [ -f "$DIR/src/tui/panel.py" ] && [ -x "$PANEL_PY" ]; then
-    "$PANEL_PY" -m src.tui.panel --port "$PORT" --server-pid "$SERVER" --url "$URL" <&0 &
+    # env -u: the panel never needs the passphrases, and a browser it opens must not inherit them (secret_scrub.HELD_ENV_VARS)
+    env -u OO_DB_PASSPHRASE -u OO_KEY_PASSPHRASE "$PANEL_PY" -m src.tui.panel --port "$PORT" --server-pid "$SERVER" --url "$URL" <&0 &
     PANEL=$!
     while kill -0 "$PANEL" 2>/dev/null; do
         wait "$PANEL" 2>/dev/null || true

@@ -74,7 +74,9 @@ def test_open_ui_only_ever_opens_the_apps_own_address(monkeypatch):
     assert seen["url"] == "http://127.0.0.1:8123/"
     for bad in ("http://127.0.0.1:8000@evil.example/", "https://127.0.0.1:8000/", "http://127.0.0.1.evil.example:80/", "file:///etc/passwd"):
         assert P.loopback_url(bad, 8000) == "http://127.0.0.1:8000/", bad
-    assert P.loopback_url("http://localhost:8001/", 8000) == "http://localhost:8001/"
+    # only a literal loopback address: "localhost" is whatever the hosts file says it is
+    assert P.loopback_url("http://localhost:8001/", 8000) == "http://127.0.0.1:8000/"
+    assert P.loopback_url("http://[::1]:8001/", 8000) == "http://[::1]:8001/"
 
 
 def test_the_browser_the_panel_starts_never_inherits_the_passphrase(monkeypatch):
@@ -92,6 +94,29 @@ def test_the_browser_the_panel_starts_never_inherits_the_passphrase(monkeypatch)
     assert seen["cmd"][-1] == "http://127.0.0.1:8000/"
     assert "OO_DB_PASSPHRASE" not in seen["env"] and seen["env"]["OO_PANEL_TEST_KEEP"] == "1"
     assert not set(seen["env"]) & set(P.HELD_ENV_VARS)
+
+
+def test_main_drops_every_held_secret_from_its_own_environment_before_anything_else(monkeypatch):
+    """Security read, 8 Nov: on Windows os.startfile cannot be handed an env, so the browser it starts inherits the panel's. The
+    panel never needs the held variables, so main() drops them from its own environment first, on every platform."""
+    for name in P.HELD_ENV_VARS:
+        monkeypatch.setenv(name, "never-in-a-child")
+    monkeypatch.setattr(P.signal, "signal", lambda *a: None)
+    monkeypatch.setattr(P.sys.stdin, "isatty", lambda: False, raising=False)  # main() returns 3 right after the arguments
+    P.main(["--port", "8123"])
+    assert not set(P.HELD_ENV_VARS) & set(os.environ)
+
+
+def test_a_silent_server_ends_the_panel_even_with_a_pid_that_may_have_been_reused():
+    """Security read, 8 Nov: with --server-pid the silence timeout was off, so a reused pid kept the panel (and launch.sh's wait) up."""
+    t0 = 1000.0
+    assert not P.server_silent_too_long(None, ever=True, now=t0 + P.GONE_AFTER_S - 1, last_ok=t0, started=0)
+    assert P.server_silent_too_long(None, ever=True, now=t0 + P.GONE_AFTER_S + 1, last_ok=t0, started=0)
+    assert P.server_silent_too_long(None, ever=False, now=P.NEVER_ANSWERED_S + 1, last_ok=0, started=0)
+    assert not P.server_silent_too_long(123, ever=True, now=t0 + P.GONE_AFTER_S + 1, last_ok=t0, started=0), "a busy server keeps its panel"
+    assert P.server_silent_too_long(123, ever=True, now=t0 + P.GONE_WITH_PID_S + 1, last_ok=t0, started=0)
+    assert not P.server_silent_too_long(123, ever=False, now=P.NEVER_ANSWERED_S + 1, last_ok=0, started=0)
+    assert P.server_silent_too_long(123, ever=False, now=P.NEVER_ANSWERED_WITH_PID_S + 1, last_ok=0, started=0)
 
 
 # --------------------------------------------------------------------------- the actions
@@ -400,7 +425,8 @@ def _tree_with_panel(tmp_path: Path, panel_body: str, server_body: str = "trap '
     (root / "src" / "tui").mkdir(parents=True)
     (root / "src" / "tui" / "panel.py").write_text("# stand-in\n", encoding="utf-8")
     py = root / ".venv" / "bin" / "python"
-    py.write_text("#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" > \"$OO_TEST_PANEL_ARGS\"\n[ -t 0 ] && echo tty >> \"$OO_TEST_PANEL_ARGS\"\n" + panel_body,
+    py.write_text("#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" > \"$OO_TEST_PANEL_ARGS\"\n[ -t 0 ] && echo tty >> \"$OO_TEST_PANEL_ARGS\"\n"
+                  "echo \"held=${OO_DB_PASSPHRASE-}${OO_KEY_PASSPHRASE-}\" >> \"$OO_TEST_PANEL_ARGS\"\n" + panel_body,
                   encoding="utf-8")
     py.chmod(0o755)
     env.update(OO_TEST_PANEL_ARGS=str(tmp_path / "panel.args"))
@@ -437,6 +463,7 @@ def _drain(master: int) -> None:
 @posix_only
 def test_the_launcher_starts_the_panel_with_its_server_pid_on_a_terminal(tmp_path):
     root, env = _tree_with_panel(tmp_path, _WAIT_FOR_SERVER)
+    env.update(OO_DB_PASSPHRASE="never-in-the-panel", OO_KEY_PASSPHRASE="never-either")
     proc, master = _launch(root, env)
     try:
         assert _wait_file(tmp_path / "panel.args", 30), "the panel was not started"
@@ -447,6 +474,7 @@ def test_the_launcher_starts_the_panel_with_its_server_pid_on_a_terminal(tmp_pat
         assert args[args.index("--server-pid") + 1] == server_pid
         assert args[args.index("--port") + 1] == "8000"
         assert "tty" in args, "the panel must keep the terminal as its input (<&0), not bash's /dev/null"
+        assert "held=" in args, "the panel was handed a held secret: launch.sh must start it without them"
         # A TERM to the launcher still stops the server AT ONCE with the panel running (a foreground panel would hold the trap back).
         t0 = time.monotonic()
         proc.send_signal(signal.SIGTERM)
