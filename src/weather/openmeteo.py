@@ -110,11 +110,14 @@ def fetch_daily_slice(
     if not force and cpath.exists():
         try:
             payload = json.loads(cpath.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            payload = None
+        if isinstance(payload, dict):
             payload["cached"] = True
             payload["label"] = label or payload.get("label")
             return payload
-        except (OSError, ValueError):
-            _LOG.warning("unreadable weather cache %s; refetching", cpath)
+        # Unreadable, or valid JSON that is not a slice (``[1, 2]``, a bare number): a miss, refetched, never a 500.
+        _LOG.warning("unreadable weather cache %s; refetching", cpath)
 
     if fetcher is None:
         from src.safety.fetcher import make_fetcher

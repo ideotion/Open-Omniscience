@@ -194,9 +194,10 @@ NOT_OUTPUT_AFFECTING: dict[str, str] = {
     ),
     "src/analytics/engine_identity.py": "this module; it computes the stamp, not the rows",
     "src/shared.py": (
-        "stdlib-only helpers shared by self-tests, benchmarks, a settings parser and a snapshot wrapper "
-        "(A-036); none of them is on a path that writes an indexed row, so a change here can make no "
-        "indexed article stale"
+        "stdlib-only helpers shared by self-tests, benchmarks, a settings parser, a snapshot wrapper, an RSS "
+        "reading, a JSON-lines tail reader, an environment tri-state for the serve switches and the import "
+        "window check (A-036); none of them is on a path that writes an indexed row, so a change here can "
+        "make no indexed article stale"
     ),
     "src/config/kv_store.py": (
         "the settings store; the country column type reads the store's country FORM through it when a pass binds "

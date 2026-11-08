@@ -759,6 +759,60 @@ artifacts:
     freshness: {max_age_months: 18}
     last_verified: "2026-11-07"
 
+  - id: owid-climate-bulk-catalog
+    title: Our World in Data CO2 and Energy bulk CSV catalog
+    kind: dated-data
+    description: >-
+      The curated column subset and units (CATALOG in src/stats/owid_climate.py) of OWID's
+      owid-co2-data.csv and owid-energy-data.csv, and the raw.githubusercontent.com/owid paths
+      they are fetched from. Written from OWID's published codebook and NOT verified against a
+      live download -- the build sandbox cannot reach the host. OWID renames and retires columns
+      (the parser reports columns_missing) and revises history every release (each fetch is its
+      own vintage). Per-column terms of the original producers (Global Carbon Project, Energy
+      Institute, Ember) are an operator check.
+    upstream: "https://github.com/owid/co2-data and https://github.com/owid/energy-data"
+    check_upstream: "fetch both CSVs on a networked machine; confirm the header still carries country, year, iso_code and the curated columns, and that the units in the codebook match CATALOG"
+    license: "CC BY 4.0 (OWID processing); original producers' terms per column, operator to confirm"
+    pin: {file: src/stats/owid_climate.py, const: OWID_CLIMATE_AS_OF}
+    refresh: "verify the live headers and codebook units, update the fixtures in tests/test_owid_climate_parser.py, bump OWID_CLIMATE_AS_OF"
+    freshness: {max_age_months: 18}
+    last_verified: "2026-11-07"
+
+  - id: usgs-quakes-csv-shape
+    title: USGS ComCat earthquake catalogue CSV shape (FDSN event service)
+    kind: dated-data
+    description: >-
+      The FDSN `count?format=plain` and `query?format=csv` shapes src/stats/usgs_quakes.py targets
+      (columns looked up by name: time, mag, type, id, status; one UTC month per figure; only
+      `type == earthquake` counted; 4.5 = the documented global completeness floor, a refusal below
+      it). Documented from the published shape and NOT verified against a live download -- the build
+      sandbox has no route to earthquake.usgs.gov; the first real fetch is an operator step. The
+      catalogue is revised after the fact (automatic -> reviewed, deletions), so each fetch is stored
+      as a new vintage. Separate from the live hazards relay in src/hazards.
+    upstream: "https://earthquake.usgs.gov/fdsnws/event/1/"
+    check_upstream: "run count and query (format=csv) for one past month on a networked machine; confirm the header names, the plain-integer count, and the 20000 per-request maximum"
+    license: "USGS-authored data is public domain (US Government work); operator to confirm the credit line the USGS asks for"
+    pin: {file: src/stats/usgs_quakes.py, const: USGS_QUAKES_AS_OF}
+    refresh: "verify the live shape, update the fixtures in tests/test_usgs_quakes.py, bump USGS_QUAKES_AS_OF"
+    freshness: {max_age_months: 18}
+    last_verified: "2026-11-07"
+
+  - id: ipcc-ar6-spm-catalog
+    title: IPCC AR6 Summaries for Policymakers (PDF catalog)
+    kind: dated-data
+    description: >-
+      The four AR6 SPM PDF addresses on www.ipcc.ch (WGI, WGII, WGIII, SYR) and their approval
+      dates in src/ingest/ipcc_spm.py. Documented from the IPCC's published site and NOT verified
+      against a live download -- the build sandbox has no route to www.ipcc.ch; the first real
+      fetch is an operator step. Extraction uses pypdf (Q1133 = a).
+    upstream: "https://www.ipcc.ch/assessment-report/ar6/"
+    check_upstream: "open each SPM link on the AR6 page on a networked machine and confirm the four paths and approval dates are unchanged"
+    license: "IPCC copyright; reuse with attribution. Operator to confirm the exact terms text before any redistribution"
+    pin: {file: src/ingest/ipcc_spm.py, const: IPCC_AS_OF}
+    refresh: "verify the four URLs and dates live, update SPM_CATALOG and the tests, bump IPCC_AS_OF"
+    freshness: {max_age_months: 18}
+    last_verified: "2026-11-07"
+
   - id: wikimedia-scoring-endpoint
     title: Wikimedia edit-scoring endpoint (ORES / Lift Wing)
     kind: dated-data

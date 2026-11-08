@@ -132,15 +132,23 @@ def _interrupt(conn: Any) -> None:
         conn.interrupt()
 
 
+def _stamp(kind: str) -> None:
+    from src.monitoring.forensics import record_power_event
+
+    record_power_event(kind)
+
+
 def on_power_event(event_type: int) -> None:
     """The suspend / resume callback's body (separate from ctypes so it is tested without Windows). Never raises."""
     try:
         if event_type == _PBT_APMSUSPEND:
+            _stamp("suspend")  # first: the checkpoint below may be cut short by the sleep itself
             facts = suspend_checkpoint()
             _note("suspend", **facts)
             _LOG.info("system suspending: passive checkpoint %s", facts.get("outcome"))
         elif event_type in _PBT_RESUME:
             _note("resume", event=_PBT_RESUME[event_type])
+            _stamp("resume")
     except Exception as exc:  # noqa: BLE001
         log_failure(_LOG, "power event handling failed", exc, level=logging.DEBUG)
 

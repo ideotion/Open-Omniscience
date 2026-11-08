@@ -2196,6 +2196,8 @@
   "IP geolocation by DB-IP (https://db-ip.com) — CC BY 4.0": "IP 地理定位由 DB-IP 提供 (https://db-ip.com) — CC BY 4.0",
   "IP/legal terms rising in your corpus": "您语料库中上升的知识产权/法律词语",
   "IP/legal vocabulary is trending in your corpus ({terms}); “{top}” is up ~{growth}× vs the prior period.": "知识产权/法律词汇在你的语料库中呈上升趋势（{terms}）；“{top}”比前一时期上升约 {growth} 倍。",
+  "IPCC reports": "IPCC 报告",
+  "IPCC reports track predictions over time; they never assert futures.": "IPCC 报告随时间跟踪预测；从不断言未来。",
   "ISO / de jure": "ISO / 法理",
   "Identical wording copied verbatim across articles from several DIFFERENT sources, where the articles themselves are not whole duplicates of one another. Shared verbatim text is often innocent — a quoted statement, a press-release line, a wire snippet, or common boilerplate — so the shape flagged is only 'the same text in otherwise-different articles across several sources', never a claim it was coordinated. Read them and judge.": "在来自多个不同来源的文章中被逐字复制的相同措辞，而这些文章本身并非彼此的完整副本。共享的逐字文本常常是无害的 — 被引述的声明、新闻稿中的句子、通讯社片段或常见套话 — 因此标记的形态仅是“多个来源在其他方面不同的文章中出现相同文本”，绝不是断言存在协调。请阅读并自行判断。",
   "Identical wording in {n} sources: “{phrase}”": "{n} 个来源中的相同措辞：“{phrase}”",
