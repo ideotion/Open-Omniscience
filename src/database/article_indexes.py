@@ -683,13 +683,13 @@ def build_missing(engine: Engine, ctx: JobContext | None = None) -> dict:
             if not _stand_aside(ctx, total, done=len(built)):
                 stopped = True
                 break
+            bound = (
+                "SELECT COALESCE(MAX(id), 0) FROM article_links"
+                if links
+                else "SELECT COALESCE(MAX(id), 0) FROM articles"
+            )
             with engine.connect() as conn:
-                rows = int(
-                    conn.execute(
-                        text(f"SELECT COALESCE(MAX(id), 0) FROM {'article_links' if links else 'articles'}")
-                    ).scalar()
-                    or 0
-                )
+                rows = int(conn.execute(text(bound)).scalar() or 0)
             rows_key = "link_rows_bound" if links else "rows_bound"
             report[rows_key] = rows
             room = link_preflight(engine, rows) if links else preflight(engine, rows)
