@@ -190,3 +190,15 @@ def test_one_gap_per_concept_for_labels_without_language(tmp_path):
     )
     kinds = [g["kind"] for g in skos.parse_rdfxml(f)["gaps"]]
     assert kinds.count("label_without_language") == 1
+
+
+def test_a_labelless_top_level_entry_and_a_nested_labelled_one_are_one_defined_concept(tmp_path):
+    nested = (
+        '<skos:Concept rdf:about="a"><skos:broader><skos:Concept rdf:about="p"><skos:prefLabel>P</skos:prefLabel>'
+        '</skos:Concept></skos:broader><skos:prefLabel>A</skos:prefLabel></skos:Concept>'
+    )
+    bare = '<skos:Concept rdf:about="p"/>'
+    for body in (nested + bare, bare + nested):
+        parsed = _parse_text(tmp_path, body)
+        assert sorted(parsed["concepts"]) == ["a", "p"]
+        assert parsed["n_seen"] == 2 and parsed["gaps"] == []

@@ -52,7 +52,8 @@ def parse_rdfxml(source: str | Path | BinaryIO) -> dict[str, Any]:
     concepts: dict[str, dict[str, Any]] = {}
     gaps: list[dict[str, str]] = []
     n_seen = 0
-    nested_defined: set[str] = set()
+    nested_defs: dict[str, dict[str, Any]] = {}  # concepts defined only inside another element
+    top_seen: set[str] = set()
     langs: dict[int, str] = {}  # element id -> effective xml:lang (inherited from its ancestors)
     stack: list[str] = []
     depth = 0
@@ -107,21 +108,17 @@ def parse_rdfxml(source: str | Path | BinaryIO) -> dict[str, Any]:
                         if ref:
                             broader.append(ref)
                 if nested:
-                    # a bare reference defines nothing; one that carries labels defines the concept
-                    # unless a top-level entry exists, which always wins (it has the full record)
-                    if (pref or alt) and uri not in concepts:
-                        concepts[uri] = {"pref": pref, "alt": alt, "broader": broader}
-                        n_seen += 1
-                        nested_defined.add(uri)
+                    # a bare reference defines nothing; one that carries labels defines the concept, but
+                    # only if no top-level entry gives it (settled after the stream, so order never matters)
+                    if pref or alt:
+                        nested_defs.setdefault(uri, {"pref": pref, "alt": alt, "broader": broader})
                     continue
+                top_seen.add(uri)
                 if no_lang:
                     gaps.append({"kind": "label_without_language", "detail": uri})
                 if not pref and not alt:
                     gaps.append({"kind": "concept_without_label", "detail": uri})
                 else:
-                    if uri in nested_defined:
-                        nested_defined.discard(uri)
-                        n_seen -= 1  # counted once, as the top-level entry now replaces the nested one
                     concepts[uri] = {"pref": pref, "alt": alt, "broader": broader}
             if nested:
                 continue
@@ -129,6 +126,14 @@ def parse_rdfxml(source: str | Path | BinaryIO) -> dict[str, Any]:
                 langs.pop(id(c), None)
             langs.pop(id(el), None)
             el.clear()  # a top-level concept is finished
+        for uri, entry in nested_defs.items():
+            if uri in concepts:
+                continue  # a top-level entry with labels wins
+            concepts[uri] = entry
+            if uri in top_seen:  # it had a label-less top-level entry: now defined, so not a gap, counted once
+                gaps[:] = [g for g in gaps if not (g["kind"] == "concept_without_label" and g["detail"] == uri)]
+            else:
+                n_seen += 1
     except SkosError:
         raise
     except Exception as exc:  # defusedxml/ElementTree errors: named, not swallowed
