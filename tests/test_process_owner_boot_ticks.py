@@ -93,13 +93,17 @@ def test_callers_use_the_shared_verdict(path):
 
 def test_boot_id_change_without_machine_tag_is_unknown(child):
     rec = _rec(child.pid)
+    if "ticks" not in rec:
+        pytest.skip("this sandbox hides /proc/self/ns/pid")
     rec["boot_id"] = "not-this-boot"
     rec["machine"] = None
     assert po.record_state(rec, machine=None) == "unknown"
 
 
-@pytest.mark.parametrize("field,value", [("ticks", float("nan")), ("pidns", float("inf")), ("pid", 0), ("pid", -3)])
+@pytest.mark.parametrize("field,value", [("ticks", float("nan")), ("pidns", float("inf")), ("pid", 0), ("pid", -3), ("pid", 2**40)])
 def test_garbled_boot_record_is_unknown_never_dead_or_raising(child, field, value):
     rec = _rec(child.pid)
+    if "ticks" not in rec:
+        pytest.skip("this sandbox hides /proc/self/ns/pid")
     rec[field] = value
     assert po.record_state(rec, machine=po.machine_tag()) == "unknown"

@@ -151,7 +151,7 @@ def _boot_state(data: Any, pid: int) -> str:
             os.kill(pid, 0)  # /proc mounted with hidepid hides another user's live process too
         except ProcessLookupError:
             return "dead"
-        except OSError:
+        except (OSError, OverflowError):
             return "unknown"
         return "unknown"
     except OSError:
