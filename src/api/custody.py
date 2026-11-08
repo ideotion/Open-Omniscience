@@ -191,7 +191,9 @@ def reconcile(req: ReconcileRequest) -> dict:
     A drain the kill switch stopped (R618: OpenTimestamps mode, a Stop) is answered as ``/log`` answers it, 503 in the refusal's
     fixed words, whenever writing was what the request asked for: answered as a result, it read "Recorded 0 entries" (invariant
     #14e's corollary). Nothing after it is done, and the entries stay owed. A scan alone answers with the scan, and its drain's
-    ``refused_offline`` says the same in the body."""
+    ``refused_offline`` says the same in the body. The 503 does not count the entries a drain wrote BEFORE the Stop (a body would be
+    needed): those are written, each marked late, so the custody status's ``recorded_late`` (the ``late`` block, read again when the
+    tab loads) includes them, while the gap button's next press counts only what that press writes."""
     from src.custody.pending import drain, gap_scan, queue_gaps
 
     def _drain() -> dict:
