@@ -1438,7 +1438,7 @@
       for (const [k, label, cls] of _AG_COV_STATES) meta[k] = { label, cls };
       const chips = _AG_COV_STATES.map(([k, label, cls]) => {
         const on = _agCovState === k;
-        return `<button class="secondary${on ? " active" : ""}" aria-pressed="${on}" data-on-click="agCovFilter('${k}')"`
+        return `<button class="secondary${on ? " active" : ""}" aria-pressed="${on}" data-on-click="agCovFilter(${esc(JSON.stringify(k))})"`
           + `${on ? ' style="outline:2px solid var(--accent);outline-offset:1px"' : ""}>`
           + `<span class="pill ${cls}">${esc(T(label))}</span> ${counts[k] || 0}</button>`;
       }).join(" ");
