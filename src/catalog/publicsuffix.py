@@ -55,11 +55,11 @@ from src.monitoring.secret_scrub import record_text
 
 # The vintage of the vendored snapshot (the external-artifact registry pins this
 # constant; tests/test_external_freshness.py fails if it is not registered).
-PUBLIC_SUFFIX_LIST_AS_OF = "2026-09-07"
+PUBLIC_SUFFIX_LIST_AS_OF = "2026-11-04"
 
 # The exact bytes we vendored. Verified before the file is parsed, so a truncated
 # download or an edited list is a loud refusal rather than a quietly wrong suffix.
-PUBLIC_SUFFIX_LIST_SHA256 = "ad47cebef5f86eb77e2c9514d42cde4bd07f591a1f93384a63568624ec3f1f37"
+PUBLIC_SUFFIX_LIST_SHA256 = "762b6cbdd2dacc597b398fcd7860e2184b684125a58aa177dbdf54916a1f3430"
 
 # Where the bytes came from, stated exactly. The list's own header asks that it be
 # pulled "only from https://publicsuffix.org/list/public_suffix_list.dat, rather than
@@ -69,7 +69,7 @@ PUBLIC_SUFFIX_LIST_SHA256 = "ad47cebef5f86eb77e2c9514d42cde4bd07f591a1f93384a635
 # stated preference and it is recorded here rather than glossed: an operator with
 # clearnet should refresh from the canonical URL, which the registry's `refresh`
 # step names.
-PUBLIC_SUFFIX_LIST_UPSTREAM = "https://github.com/publicsuffix/list @ 24fdb5107983c3997144ca19e0d7e1e8fc714f03"
+PUBLIC_SUFFIX_LIST_UPSTREAM = "https://github.com/publicsuffix/list @ aae37acca5d0f3d09e7c1fe4da9024c514674ac9"
 
 _LIST_PATH = Path(__file__).resolve().parent / "data" / "public_suffix_list.dat"
 

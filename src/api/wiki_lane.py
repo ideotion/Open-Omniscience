@@ -69,13 +69,38 @@ def _unreadable(route: str, exc: BaseException) -> dict:
 #: against 0.03-0.07 s for the other local polls, 528 calls in 9 h, i.e. one about every minute). The figures move only when a drain
 #: commits, so a reading this old is within what the strip is read at; the age is on the answer, never hidden. A day change always reads again.
 _STATUS_TTL_S = 30.0
-_STATUS_LOCK = threading.Lock()  # held across the read: a second poll waits for the first scan and then shares it, never starts a second
+_STATUS_LOCK = threading.Lock()  # held across the FIRST read of a process or a day (polls behind it share it); never across a background refresh
 _STATUS_CACHE: dict[str, tuple[float, dict]] = {}
 
 
 def _reset_status_cache() -> None:
     with _STATUS_LOCK:
         _STATUS_CACHE.clear()
+        _STATUS_REFRESHING.clear()
+        _STATUS_GENERATION[0] += 1
+
+
+_STATUS_REFRESHING: set[str] = set()  # keys with a background re-read in flight (guarded by _STATUS_LOCK)
+_STATUS_GENERATION = [0]  # bumped by _reset_status_cache: a refresh that started before a reset does not write after it
+
+
+def _refresh_status(key: str, midnight, generation: int = 0) -> None:
+    """Re-read the three counts OFF the request path and keep them when they were measured.
+
+    A failure drops the kept answer instead of keeping it: the next poll then reads for itself and says what happened (absent, unreadable),
+    so a stale figure never outlives the lane's ability to confirm it."""
+    try:
+        out = _read_status(midnight)
+    except Exception:  # noqa: BLE001 - a thread must not die with the flag set; the poll after this one reads for itself
+        out = {}
+    with _STATUS_LOCK:
+        if generation != _STATUS_GENERATION[0]:
+            return  # a reset cleared the in-flight flag already; a newer refresh of this key may own it now
+        _STATUS_REFRESHING.discard(key)
+        if out.get("measured") is True:
+            _STATUS_CACHE[key] = (time.monotonic(), out)
+        else:
+            _STATUS_CACHE.pop(key, None)
 
 
 @router.get("/status")
@@ -83,6 +108,13 @@ def lane_status() -> dict:
     """Q714's own figure: pages followed and changes recorded today, read at most once per ``_STATUS_TTL_S``.
 
     The answer says how old it is (``age_s``, ``cached``). A failure, an absent lane and an unreadable lane are never kept.
+
+    STALE WHILE REVALIDATING. Once a measured answer exists for today, a poll NEVER waits on a scan: past ``_STATUS_TTL_S`` it is answered
+    at once with the old figures (``cached`` true, the real ``age_s``, ``refreshing`` true) and ONE background read replaces them. Before
+    this the poll that found the window passed held the lock through the whole scan and every poll behind it waited too: on the 2026-11-07
+    Windows run 9,170 polls averaged 1.47 s (p95 5.5 s, max 19.8 s) and 139 of the 152 stalls over 5 s named this route, while a drain was
+    writing. Only the first poll of a process and the first of a new local day read for themselves, because a figure from before midnight
+    is not "today".
 
     "Today" is the LOCAL machine's day, not UTC, and that is deliberate for this one number: it sits on the Home strip beside other
     figures the operator reads as "today". The boundary is AWARE, because the lane's timestamp type refuses a naive one by name;
@@ -97,8 +129,22 @@ def lane_status() -> dict:
     with _STATUS_LOCK:
         hit = _STATUS_CACHE.get(key)
         age = time.monotonic() - hit[0] if hit else None
-        if hit is not None and age is not None and age < _STATUS_TTL_S and hit[1]["counted_since"] == midnight.isoformat():
-            return {**hit[1], "cached": True, "age_s": round(age, 1)}
+        if hit is not None and age is not None and hit[1]["counted_since"] == midnight.isoformat():
+            if age < _STATUS_TTL_S:
+                return {**hit[1], "cached": True, "age_s": round(age, 1)}
+            refreshing = key in _STATUS_REFRESHING
+            if not refreshing:
+                _STATUS_REFRESHING.add(key)
+                try:
+                    threading.Thread(target=_refresh_status, args=(key, midnight, _STATUS_GENERATION[0]), name="oo-wiki-lane-status", daemon=True).start()
+                except Exception:  # noqa: BLE001 - no thread: read here, as before
+                    _STATUS_REFRESHING.discard(key)
+                    out = _read_status(midnight)
+                    if out.get("measured") is True:
+                        _STATUS_CACHE[key] = (time.monotonic(), out)
+                        return {**out, "cached": False, "age_s": 0.0}
+                    return out
+            return {**hit[1], "cached": True, "age_s": round(age, 1), "refreshing": True}
         out = _read_status(midnight)
         if out.get("measured") is True:
             _STATUS_CACHE[key] = (time.monotonic(), out)

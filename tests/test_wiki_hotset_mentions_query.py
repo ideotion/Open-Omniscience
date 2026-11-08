@@ -102,3 +102,125 @@ def test_the_old_expression_form_is_the_one_the_plan_check_would_catch(corpus):
     with engine.connect() as conn:
         plan = " | ".join(str(r[-1]) for r in conn.execute(text("EXPLAIN QUERY PLAN " + old)).fetchall())
     assert "USE TEMP B-TREE FOR ORDER BY" in plan and "idx_keyword_frequency" not in plan, plan
+
+
+# ---- the mention set is reused for a time derived from what the read cost (Windows run 2026-11-07: 1,516 reads, mean 8.4 s) ----
+
+
+class _Clock:
+    def __init__(self):
+        self.t = 0.0
+
+    def __call__(self):
+        return self.t
+
+
+def _cache_with_reads(monkeypatch, cost_s, clock):
+    cache = hotset.MentionCache(monotonic=clock)
+    reads = []
+
+    def fake(corpus, *, limit=hotset.MENTION_LIMIT):
+        reads.append(limit)
+        clock.t += cost_s
+        return {"alpha"}, False
+
+    monkeypatch.setattr(hotset, "corpus_mention_titles", fake)
+    monkeypatch.setattr(hotset, "_log_mention_plan", lambda *a, **k: None)
+    return cache, reads
+
+
+class _Corpus:
+    def __init__(self, url="sqlite:///a.db"):
+        self._url = url
+
+    def get_bind(self):
+        class B:
+            pass
+
+        b = B()
+        b.url = self._url
+        return b
+
+
+def test_a_slow_read_is_reused_for_a_time_derived_from_its_cost(monkeypatch):
+    clock = _Clock()
+    cache, reads = _cache_with_reads(monkeypatch, 8.4, clock)
+    corpus = _Corpus()
+    cache.get(corpus)
+    clock.t += 98  # the drain's cadence: well inside 8.4 / 0.01 = 840 s
+    cache.get(corpus)
+    assert reads == [hotset.MENTION_LIMIT], "the second drain did not read"
+    clock.t += 840
+    cache.get(corpus)
+    assert len(reads) == 2, "past the derived window it reads again"
+
+
+def test_a_fast_read_barely_caches(monkeypatch):
+    clock = _Clock()
+    cache, reads = _cache_with_reads(monkeypatch, 0.01, clock)
+    corpus = _Corpus()
+    cache.get(corpus)
+    clock.t += 98
+    cache.get(corpus)
+    assert len(reads) == 2, "a 10 ms read is re-read at the next drain (window 1 s)"
+
+
+def test_another_corpus_or_limit_is_never_answered_from_the_cache(monkeypatch):
+    clock = _Clock()
+    cache, reads = _cache_with_reads(monkeypatch, 8.4, clock)
+    cache.get(_Corpus("sqlite:///a.db"))
+    cache.get(_Corpus("sqlite:///b.db"))
+    cache.get(_Corpus("sqlite:///b.db"), limit=10)
+    assert len(reads) == 3
+
+
+def test_a_failed_read_raises_and_keeps_nothing(monkeypatch):
+    clock = _Clock()
+    cache = hotset.MentionCache(monotonic=clock)
+
+    def boom(corpus, *, limit=0):
+        raise RuntimeError("locked")
+
+    monkeypatch.setattr(hotset, "corpus_mention_titles", boom)
+    with pytest.raises(RuntimeError):
+        cache.get(_Corpus())
+    assert cache._held is None
+
+
+def test_a_slow_read_logs_the_query_plan_once(corpus, monkeypatch, caplog):
+    import logging
+
+    db, _engine = corpus
+
+    clock = _Clock()
+    cache = hotset.MentionCache(monotonic=clock)
+    real = hotset.corpus_mention_titles
+
+    def slow(corpus, *, limit=hotset.MENTION_LIMIT):
+        clock.t += hotset.SLOW_MENTION_READ_S + 1
+        return real(corpus, limit=limit)
+
+    monkeypatch.setattr(hotset, "corpus_mention_titles", slow)
+    with caplog.at_level(logging.WARNING, logger="wiki.hotset"):
+        cache.get(db, limit=4)
+        clock.t += 10_000
+        cache.get(db, limit=4)
+    plans = [r.getMessage() for r in caplog.records if "query plan" in r.getMessage()]
+    assert len(plans) == 1, "the plan is logged once per process"
+    assert "keywords" in plans[0].lower() or "idx_keyword_frequency" in plans[0]
+
+
+def test_build_hot_sets_reads_the_mentions_through_the_cache_it_is_given(monkeypatch):
+    clock = _Clock()
+    cache, reads = _cache_with_reads(monkeypatch, 5.0, clock)
+    monkeypatch.setattr(hotset, "followed_page_ids_by_edition", lambda _lane, editions: {e: (set(), set()) for e in editions})
+    monkeypatch.setattr(hotset, "tracked_titles", lambda _corpus, _edition: set())
+    for _ in range(3):
+        sets, report = hotset.build_hot_sets(corpus=_Corpus(), lane=object(), editions=("en",), mention_cache=cache)
+    assert len(reads) == 1, "three drains, one read"
+    assert report["editions"]["en"] is not None and "en" in sets
+    # without a cache every call reads (the unchanged default)
+    reads.clear()
+    for _ in range(2):
+        hotset.build_hot_sets(corpus=_Corpus(), lane=object(), editions=("en",))
+    assert len(reads) == 2
