@@ -144,6 +144,26 @@ def apply(plan: dict, *, git=_git, run=_run) -> tuple[str, str]:
     return "updated", old
 
 
+def server_answers(port: int) -> bool:
+    """Something is listening on the app's loopback port (a TCP connect, no request sent)."""
+    import socket
+
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=2):
+            return True
+    except OSError:
+        return False
+
+
+def wait_for_server(port: int, limit: float = 120.0, *, answers=server_answers, sleep=time.sleep) -> bool:
+    deadline = time.monotonic() + limit
+    while not answers(port):
+        if time.monotonic() >= deadline:
+            return False
+        sleep(2)
+    return True
+
+
 def relaunch(root: Path, *, popen=subprocess.Popen) -> None:
     quiet = subprocess.DEVNULL
     if os.name == "nt":
@@ -237,8 +257,16 @@ def main(argv: list[str]) -> int:
     # taken over.
     lock = data_dir / LOCK_FILE
     if not take_lock(lock, int(plan["pid"])):
-        # A live helper holds the checkout (this same shutdown, or an earlier run still applying; the server checks before stopping, so the
-        # second is a race). It relaunches the app when it finishes, so this one touches nothing and starts nothing: two launchers would race.
+        holder = lock_holder_alive(lock)
+        if holder is None or holder[0] == int(plan["pid"]):
+            return 1  # a live helper serves this same shutdown: it applies and relaunches; this one touches nothing and starts nothing
+        # The holder serves an EARLIER app run (a race the server's own check narrows). Its relaunch may land while this app is still up and be
+        # a no-op, so this helper, which touches nothing in the install, makes sure the app comes back: after this app and the holder have
+        # both exited it gives the holder's launcher time to bring a server up, and starts the launcher only if none answers.
+        if wait_for_exit(int(plan["pid"])):
+            wait_for_exit(holder[1], LOCK_STALE_S)
+            if not wait_for_server(int(plan.get("port") or 8000)):
+                relaunch(root)
         return 1
     try:
         # Recorded FIRST, so a helper that dies part-way leaves "started" behind rather than an older attempt's "updated".

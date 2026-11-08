@@ -322,3 +322,10 @@ def test_the_server_reads_the_real_helper_lock(tmp_path, monkeypatch):
     bad.mkdir()
     (bad / "apply_update.py").write_text("def broken(:\n", encoding="utf-8")
     assert su._helper_running(tmp_path) is False  # a script mid-swap answers False, never raises
+
+
+def test_wait_for_server_gives_up_and_reports(tmp_path):
+    h = _helper()
+    assert h.wait_for_server(1, 0.0, answers=lambda port: False, sleep=lambda s: None) is False
+    seq = iter([False, True])
+    assert h.wait_for_server(1, 5.0, answers=lambda port: next(seq), sleep=lambda s: None) is True
