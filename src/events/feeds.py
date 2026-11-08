@@ -291,7 +291,7 @@ def _note_read(name: str, p: Path, ident: tuple[int, int, int] | None, *, damage
     """Remember whether ``name`` was last read as damaged, and which file was read, so that ``_save_json`` keeps its bytes before it replaces them."""
     if name not in _KEEP_DAMAGED:
         return
-    if damaged and ident is not None:
+    if damaged and ident is not None and ident[2] > 0:  # an empty file holds nothing to keep, and must not spend the one slot
         _READ_AS_DAMAGED[p] = ident
     else:
         _READ_AS_DAMAGED.pop(p, None)
@@ -313,7 +313,8 @@ def _load_json(name: str) -> dict:
         # sharing violation while another thread replaces it) may pass and must not mark a healthy store, since the one ``.damaged`` slot
         # is never overwritten.
         damaged = not isinstance(exc, OSError) or exc.errno == errno.EIO or getattr(exc, "winerror", None) in _WINDOWS_READ_DAMAGE
-        _note_read(name, p, ident, damaged=damaged)
+        if damaged:  # a passing error says nothing about the file: it neither marks it nor clears a mark an earlier read noted
+            _note_read(name, p, ident, damaged=True)
         return {}
     out = _sanitized(name, data, what="reads as", raw=raw)
     # Read as empty although the file held something (not an object, nested too deeply, every piece of the wrong shape): the next save
@@ -333,6 +334,18 @@ def _keep_damaged_bytes(name: str, p: Path) -> None:
     if read is None or _identity(p) != read:
         return  # not marked, or the file read as damaged has since been replaced (by another writer, a restore, a hand repair)
     kept = p.with_name(p.name + ".damaged")
+    try:
+        # A second name for the same file: it fails, never overwrites, when the name is taken, even by another process at the same moment,
+        # and the save's own os.replace then gives the store's name to the new file while the copy keeps the damaged one.
+        os.link(p, kept)
+    except FileExistsError:
+        _LOG.warning("%s was read as damaged; an earlier copy is already kept as %s and is not overwritten, so this save replaces it", name, kept.name)
+        return
+    except OSError:
+        pass  # a drive that cannot give a file a second name (FAT, exFAT, some network shares): the check-then-move below instead
+    else:
+        _LOG.warning("%s was read as damaged; its bytes are kept as %s before this save replaces it", name, kept.name)
+        return
     if kept.exists() or kept.is_symlink():
         _LOG.warning("%s was read as damaged; an earlier copy is already kept as %s and is not overwritten, so this save replaces it", name, kept.name)
         return
@@ -352,8 +365,9 @@ def _save_json(name: str, data: dict, *, mirror: bool = True) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(p.name + ".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-    # Only once the new text is written, so a failed write leaves the damaged store where it was. A crash between the two moves
-    # leaves no store (it reads as absent), the damaged bytes in ``.damaged`` and the new text in ``.tmp``: nothing is lost.
+    # Only once the new text is written, so a failed write leaves the damaged store where it was. Where the copy is a second name (the
+    # usual case) the store's name never goes missing; where it is a move, a crash between the two moves leaves no store (it reads as
+    # absent) and the damaged bytes safe in ``.damaged``, while this save's new text, left in ``.tmp``, is overwritten by the next save.
     _keep_damaged_bytes(name, p)
     os.replace(tmp, p)
     # DB-reliability D1 (Wave 4 J): mirror the imported-events store into the encrypted
