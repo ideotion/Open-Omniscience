@@ -303,10 +303,10 @@ def test_the_law_tracker_reads_the_head_and_not_the_wider_predicate():
 # --- THE PRE-CHECK SENTENCE (R328) ---------------------------------------------------------------------------------------------------------
 # What the count below protects: the routes and loaders that refuse UP FRONT (``if kill_switch_active(): raise ...``) and say ``NETWORK_REFUSED``,
 # measured on 2026-10-27 at 854610514 (main) and at 1fd3040f8 (the same sites, one more commit): eight HTTP 409 details (governments,
-# source_management x2, entities, insights, discovery x2, ingestion), four statistics fetchers (five from 2026-11-07: fetch_gistemp), three catalogue loaders, two entity loaders, the
-# ring loader and the mailbox import. A twenty-first site that says the constant is a conscious change of this number, which is the point of pinning
+# source_management x2, entities, insights, discovery x2, ingestion), four statistics fetchers (seven from 2026-11-07: fetch_gistemp, fetch_usgs_quakes, fetch_owid_dataset), three catalogue loaders, two entity loaders, the
+# ring loader and the mailbox import. A twenty-third site that says the constant is a conscious change of this number, which is the point of pinning
 # it; a site that goes back to a literal fails the scan above it.
-_PRE_CHECK_SITES = 20
+_PRE_CHECK_SITES = 23
 _CONSTANT = "NETWORK_REFUSED"
 _DEFINING_MODULE = "src.ingest.fetch_verdict"
 

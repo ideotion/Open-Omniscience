@@ -107,7 +107,7 @@
     function _reindexStatusText(s, _report, t) {
       const tal = s.tally || {};
       const bits = [`${fmtNum(tal.reindexed || 0, 0)} ${t("re-indexed")}`];
-      if (s.articles_total) bits.push(`${s.percent || 0}%`);
+      if (s.articles_total) bits.push(ooLtrIsolate(`${s.percent || 0}%`));
       // Speed, so a long run can be estimated rather than guessed at. Both rates
       // are measurements over THIS run and are absent until real -- never a 0/h.
       if (s.keywords_per_hour) bits.push(`${fmtNum(Math.round(s.keywords_per_hour), 0)} ${t("keywords/h")}`);
@@ -498,7 +498,7 @@
       // stronger claim than "we have not measured it".
       const fpLabel = `<span>${esc(t("False-positive rate"))}</span>`;
       const fp = g.false_positive_rate != null
-        ? ooLabelHtml(fpLabel, `<b>${(100 * g.false_positive_rate).toFixed(1)}%</b> / ${(100 * g.false_positive_bar).toFixed(0)}%`)
+        ? ooLabelHtml(fpLabel, `<b>${ooLtrIsolate((100 * g.false_positive_rate).toFixed(1) + "%")}</b> / ${ooLtrIsolate((100 * g.false_positive_bar).toFixed(0) + "%")}`)
         : ooLabelHtml(fpLabel, `<span class="pill warn">${esc(t("unmeasured"))}</span>`)
           + ` <span class="muted">${esc(t("needs a labelled sample judged by a person"))}</span>`;
       box.innerHTML = `<div>${corpus}</div><div>${fp}</div>`

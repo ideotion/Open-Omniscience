@@ -1189,12 +1189,16 @@ POPUP_LANE_LISTS = [
     ("src.analytics.wikidata_rings", "API_HOSTS", ("keyword-rings",)),
     ("src.analytics.ring_loader", "API_HOSTS", ("keyword-rings",)),
     ("src.entities.items", "API_HOSTS", ("entity-items",)),
+    ("src.ingest.ipcc_spm", "API_HOSTS", ("ipcc",)),
     ("src.entities.gazetteer_build", "API_HOSTS", ("entity-items",)),
     ("src.monitoring.release_run", "HF_API_HOSTS", ("ai",)),
     ("src.services.duckduckgo", "DuckDuckGoSearch.ALLOWED_HOSTS", ("topic-discovery",)),
     ("src.llm.installer", "GITHUB_API_HOSTS", ("ai",)),
     ("src.llm.installer", "GITHUB_ASSET_HOSTS", ("ai",)),
     ("src.osm.replication", "REPLICATION_HOSTS", ("osm",)),
+    ("src.stats.fetch", "GISTEMP_HOSTS", ("climate",)),
+    ("src.stats.fetch", "OWID_HOSTS", ("climate",)),
+    ("src.stats.fetch", "USGS_HOSTS", ("climate",)),
 ]
 
 #: A session built with a list that arrives as a PARAMETER cannot be resolved to a name; each such place says why it is still pinned. Keyed by

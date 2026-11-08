@@ -598,6 +598,10 @@ def _upload_problems(matrix_job: str, steps: list[dict], pytest_at: list[int]) -
     return found
 
 
+#: The job-level condition of a sharded job (R462): not the weekly run, and not a docs-only pull request (the `changes` job decides that; it fails open).
+_GATE = "github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'"
+
+
 def _wiring_problems(wf: dict, table: dict) -> list[str]:
     found: list[str] = []
     jobs = wf["jobs"]
@@ -610,8 +614,8 @@ def _wiring_problems(wf: dict, table: dict) -> list[str]:
             continue
         if (job.get("strategy") or {}).get("fail-fast") is not False:
             found.append(f"{matrix_job}: `fail-fast: false` is missing: a red leg would cancel the others and hide what they found")
-        if job.get("if") != "github.event_name != 'schedule'" or job.get("continue-on-error"):
-            found.append(f"{matrix_job}: the job must run on every push and pull request and must block (`if: github.event_name != 'schedule'`, no continue-on-error)")
+        if job.get("if") != _GATE or job.get("needs") != ["changes"] or job.get("continue-on-error"):
+            found.append(f"{matrix_job}: the job must run on every push and every pull request but a docs-only one, and must block (`if: {_GATE}`, `needs: [changes]`, no continue-on-error)")
         names = _leg_names(job)
         if len(set(names)) != n or required in names or matrix_job in names or "${{" in " ".join(names):
             found.append(f"{matrix_job}: each leg needs its own name that is not the required check `{required}` ({names})")
@@ -639,14 +643,15 @@ def _wiring_problems(wf: dict, table: dict) -> list[str]:
             found.append(f"{aggregator}: the aggregator must be named exactly `{required}` (the check branch protection requires), it is {aggr.get('name')!r}")
         if aggr.get("if") != "always() && github.event_name != 'schedule'":
             found.append(f"{aggregator}: `if: always() && github.event_name != 'schedule'` expected (without always() a failed leg SKIPS it, and a skipped required check passes), it is {aggr.get('if')!r}")
-        if aggr.get("needs") != [matrix_job]:
-            found.append(f"{aggregator}: must need exactly [{matrix_job}], it needs {aggr.get('needs')!r}")
+        if aggr.get("needs") != [matrix_job, "changes", "docs-checks"]:
+            found.append(f"{aggregator}: must need exactly [{matrix_job}, changes, docs-checks] (the docs-only fast path), it needs {aggr.get('needs')!r}")
         if aggr.get("continue-on-error"):
             found.append(f"{aggregator}: must block")
         asteps = aggr.get("steps") or []
         run = "\n".join(str(s.get("run") or "") for s in asteps)
         env = {k: v for s in asteps for k, v in (s.get("env") or {}).items()}
-        if len(asteps) != 1 or env != {"LEGS": "${{ needs." + matrix_job + ".result }}"} or 'test "$LEGS" = "success"' not in run:
+        want_env = {"LEGS": "${{ needs." + matrix_job + ".result }}", "DOCS_ONLY": "${{ needs.changes.outputs.docs_only }}", "DOCS_CHECKS": "${{ needs.docs-checks.result }}"}
+        if len(asteps) != 1 or env != want_env or 'test "$LEGS" = "success"' not in run or 'test "$DOCS_ONLY" = "true" && test "$DOCS_CHECKS" = "success"' not in run:
             found.append(f"{aggregator}: one step that takes LEGS from `needs.{matrix_job}.result` and fails unless it is `success` is expected")
         if any(s.get("continue-on-error") or s.get("if") for s in asteps) or "|| true" in run:
             found.append(f"{aggregator}: its step must not be conditional or advisory")
@@ -700,6 +705,8 @@ _MUTANTS = {
     "fail-fast is gone": (lambda j: j["core-only"]["strategy"].pop("fail-fast"), "fail-fast: false"),
     "the job turns advisory": (lambda j: j["test"].__setitem__("continue-on-error", True), "must block"),
     "the job loses its condition": (lambda j: j["core-only"].pop("if"), "must run on every push"),
+    "the job skips on every run": (lambda j: j["test"].__setitem__("if", "false"), "must run on every push"),
+    "the job forgets to wait for the fast-path decision": (lambda j: j["core-only"].pop("needs"), "must run on every push"),
     "a leg is named like the required check": (lambda j: j["test"].__setitem__("name", "test"), "own name"),
     "all legs share one name": (lambda j: j["core-only"].__setitem__("name", "Core-only"), "own name"),
     "the legs say another N": (lambda j: j["test"].__setitem__("name", j["test"]["name"].replace(" of 3", " of 4")), "must say `of 3`"),
@@ -715,6 +722,8 @@ _MUTANTS = {
     "the aggregator loses always()": (lambda j: j["core-only-all"].__setitem__("if", "github.event_name != 'schedule'"), "always()"),
     "the aggregator needs nothing": (lambda j: j["test-all"].pop("needs"), "must need exactly"),
     "the aggregator needs the other job": (lambda j: j["test-all"].__setitem__("needs", ["core-only"]), "must need exactly"),
+    "the aggregator forgets the fast path": (lambda j: j["test-all"].__setitem__("needs", ["test"]), "must need exactly"),
+    "the aggregator drops the fast-path clause": (lambda j: j["core-only-all"]["steps"][0].__setitem__("run", 'test "$LEGS" = "success"'), "fails unless it is `success`"),
     "the aggregator stops testing the result": (lambda j: j["test-all"]["steps"][0].__setitem__("run", "echo $LEGS"), "fails unless it is `success`"),
     "the aggregator reads another result": (lambda j: j["core-only-all"]["steps"][0]["env"].__setitem__("LEGS", "${{ needs.test.result }}"), "fails unless it is `success`"),
     "the aggregator swallows the failure": (lambda j: j["test-all"]["steps"][0].__setitem__("continue-on-error", True), "not be conditional or advisory"),

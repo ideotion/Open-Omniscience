@@ -774,7 +774,7 @@
         const pct = active.percent || 0;
         html += `<div class="row" style="align-items:center;gap:8px;margin-bottom:4px">` +
           `<code>${esc(active.model)}</code> <span class="pill">${esc(t("Pulling"))}</span> ` +
-          `<span class="muted">${esc(active.status || "")} ${pct}%</span>` +
+          `<span class="muted">${esc(active.status || "")} ${ooLtrIsolate(pct + "%")}</span>` +
           `<button class="tiny danger" data-on-click="cancelPull(${esc(JSON.stringify(active.model))})">${esc(t("Cancel"))}</button></div>` +
           `<progress value="${pct}" max="100" style="width:100%"></progress>`;
       }
@@ -1679,7 +1679,7 @@
       const tl = s.tally || {};
       const eta = (s.eta_seconds != null) ? ` · ~${Math.max(1, Math.round(s.eta_seconds / 60))} ${t("min left")}` : "";
       if (active) {
-        prog.innerHTML = `${esc(t("Importing"))}… ${s.percent || 0}% (${s.files_done}/${s.files_total}) · ` +
+        prog.innerHTML = `${esc(t("Importing"))}… ${ooLtrIsolate((s.percent || 0) + "%")} (${s.files_done}/${s.files_total}) · ` +
           `${(tl.stored || 0)} ${esc(t("imported"))}, ${(tl.duplicate || 0)} ${esc(t("duplicates skipped"))}` +
           (s.state === "paused" ? ` (${esc(t("paused"))})` : eta);
       } else if (s.state === "done") {
@@ -1888,7 +1888,7 @@
         : t("the published default");
       let html = `<b>${esc(tf("{gb} GB", { gb: b.gb }))}</b> <span class="muted">${esc(src)}</span>`;
       if (typeof b.used_share === "number") {
-        html += `<div class="muted">${esc(tf("{pct}% used", { pct: _storagePct(b.used_share) }))}</div>`;
+        html += `<div class="muted">${ooLtrPct(esc(tf("{pct}% used", { pct: _storagePct(b.used_share) })))}</div>`;
       }
       if (b.exhausted === true) {
         html += `<div class="card-caveat">${esc(lane.kind === "wiki"

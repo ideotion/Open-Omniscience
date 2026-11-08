@@ -34,7 +34,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 _CI = _ROOT / ".github" / "workflows" / "ci.yml"
 
 _JOB = "lockfile-install"
-_JOB_IF = "github.event_name != 'schedule'"
+_JOB_IF = "github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'"  # R462: a docs-only pull request skips the job
 _STEP_PREFIX = "Wheel carries the runtime data trees"
 _SCRIPT = "scripts/check_wheel_layout.py"
 _INSTALL_LINE = "python -m pip install --upgrade build"

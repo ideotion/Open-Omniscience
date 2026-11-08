@@ -187,7 +187,15 @@
     {
       "id": "climate",
       "label": "Climate series",
-      "hosts": ["data.giss.nasa.gov"],
+      "hosts": ["data.giss.nasa.gov", "earthquake.usgs.gov", "raw.githubusercontent.com"],
+      "trigger": "click",
+      "setting": null,
+      "fetcher": true
+    },
+    {
+      "id": "ipcc",
+      "label": "IPCC reports",
+      "hosts": ["www.ipcc.ch"],
       "trigger": "click",
       "setting": null,
       "fetcher": true

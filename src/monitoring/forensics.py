@@ -35,6 +35,7 @@ import logging
 import math
 import os
 import re
+import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -339,7 +340,8 @@ def record_session_start() -> dict[str, Any] | None:
     ``unlock()`` cannot cover: a WRONG-passphrase attempt deletes the -wal too, so
     every retry after the first would otherwise be blind."""
     global _PREV_AT_BOOT, _PREV_LOADED, _WAL_AT_BOOT, _EARLY_WAL, _PAGES_AT_BOOT, _EARLY_PAGES
-    global _SESSION_STARTED_AT, _SESSION_STARTED_MONO, _OOM_AT_BOOT, _BOOT_ID_AT_BOOT
+    global _SESSION_STARTED_AT, _SESSION_STARTED_MONO, _OOM_AT_BOOT, _BOOT_ID_AT_BOOT, _SHUTDOWN_BEGUN
+    _SHUTDOWN_BEGUN = False
     # Read the -wal FIRST: before the previous state is even parsed, so nothing
     # between here and the probe can grow into a database open.
     boot_reading = _EARLY_WAL if _EARLY_WAL is not None else wal_state_before_open()
@@ -353,8 +355,7 @@ def record_session_start() -> dict[str, Any] | None:
         _PREV_AT_BOOT = prev
         _PREV_LOADED = True
     started_at = _now()
-    _SESSION_STARTED_AT = started_at
-    _SESSION_STARTED_MONO = time.monotonic()
+    started_mono = time.monotonic()
     state: dict[str, Any] = {
         "state": "running",
         "started_at": started_at,
@@ -401,7 +402,11 @@ def record_session_start() -> dict[str, Any] | None:
         state["oom_counters"] = _OOM_AT_BOOT
     except Exception as exc:  # noqa: BLE001 - a missing reading never breaks a boot
         log_failure(_LOG, "session sentinel: kill counters unavailable", exc, level=logging.DEBUG)
-    _write_state(state)
+    with _STATE_LOCK:
+        _write_state(state)
+        # Published only now: until this session's state is on disk, a power event would stamp the PREVIOUS session's sentinel and this write would erase it.
+        _SESSION_STARTED_AT = started_at
+        _SESSION_STARTED_MONO = started_mono
     # The session LEDGER (2026-09-18, maintainer-asked): the chronology across MANY
     # sessions that this one-sentinel file cannot hold -- restarts, stretches, the
     # last minute a dead session was seen. Best-effort, after the sentinel is written,
@@ -480,6 +485,33 @@ def note_stop_signal(name: str) -> None:
     _STOP_SIGNAL = name
 
 
+#: the only power events the sentinel carries (``win_power``): a phrase outside this set is dropped, so a damaged sidecar cannot inject text
+POWER_EVENT_KINDS = frozenset({"suspend", "resume"})
+
+
+#: serialises the sentinel's read-modify-write between the teardown writers and the power callback, which runs on a foreign OS thread
+_STATE_LOCK = threading.RLock()
+#: set by the first teardown phase: a power event after that point is not stamped, so it cannot write stale state over the shutdown
+_SHUTDOWN_BEGUN = False
+
+
+def record_power_event(kind: str) -> None:
+    """Remember the LAST power event this session saw (a suspend or a resume) in the sentinel: one small field, replaced each time, never a
+    list. A session that dies while the machine is asleep (a cut power supply, a failed resume) leaves no other trace; the next boot's
+    end line carries this field so the end is attributed to the sleep rather than reported as unknown. Never raises."""
+    if kind not in POWER_EVENT_KINDS or _SESSION_STARTED_AT is None:
+        return  # before this session's start the sentinel is still the PREVIOUS session's
+    try:
+        with _STATE_LOCK:
+            if _SHUTDOWN_BEGUN:
+                return
+            state = _read_state() or {}
+            state["last_power_event"] = {"kind": kind, "at": _now()}
+            _write_state(state)
+    except Exception as exc:  # noqa: BLE001 - bookkeeping never gets in the way of a suspend
+        log_failure(_LOG, "could not record the power event", exc, level=logging.DEBUG)
+
+
 def record_shutdown_phase(phase: str, *, reason: str | None = None, facts: dict[str, Any] | None = None) -> None:
     """Advance the sentinel through the teardown (S0.2).
 
@@ -496,18 +528,21 @@ def record_shutdown_phase(phase: str, *, reason: str | None = None, facts: dict[
     ``shutdown_phase_at`` moves with every phase and ``ended_at`` is the last, so without it the teardown's duration was not readable
     (the 10-10 session's last step and its end were the same second). ``facts`` are the few named values a phase learned
     (:func:`dispose_facts`), merged in as they are; only the keys in :data:`_DISPOSE_FACT_KEYS` are kept."""
-    state = _read_state() or {}
-    state["state"] = phase
-    state["shutdown_phase_at"] = _now()
-    if not state.get("shutdown_began_at"):
-        state["shutdown_began_at"] = state["shutdown_phase_at"]
-    if reason and not state.get("shutdown_reason"):
-        state["shutdown_reason"] = reason
-    if _STOP_SIGNAL and not state.get("stop_signal"):
-        state["stop_signal"] = _STOP_SIGNAL
-    if facts:
-        state.update({k: v for k, v in facts.items() if k in _DISPOSE_FACT_KEYS})
-    _write_state(state)
+    global _SHUTDOWN_BEGUN
+    kept = {k: v for k, v in (facts or {}).items() if k in _DISPOSE_FACT_KEYS}  # outside the lock: a loop under a ``with`` is a classified loop head
+    with _STATE_LOCK:
+        _SHUTDOWN_BEGUN = True
+        state = _read_state() or {}
+        state["state"] = phase
+        state["shutdown_phase_at"] = _now()
+        if not state.get("shutdown_began_at"):
+            state["shutdown_began_at"] = state["shutdown_phase_at"]
+        if reason and not state.get("shutdown_reason"):
+            state["shutdown_reason"] = reason
+        if _STOP_SIGNAL and not state.get("stop_signal"):
+            state["stop_signal"] = _STOP_SIGNAL
+        state.update(kept)
+        _write_state(state)
 
 
 #: The one key the disposal step leaves in the sentinel, and ``previous_session_report`` reads back: :func:`dispose_facts`' answer. Only keys
@@ -625,12 +660,15 @@ def _clean_dispose(raw: Any, took: int | None) -> dict[str, Any] | None:
 def record_clean_shutdown() -> None:
     """Flip the sentinel to 'clean'. Called from the lifespan shutdown; a session
     that dies without reaching this reads as UNCLEAN on the next boot."""
-    state = _read_state() or {}
-    state["state"] = "clean"
-    state["ended_at"] = _now()
-    if _STOP_SIGNAL and not state.get("stop_signal"):
-        state["stop_signal"] = _STOP_SIGNAL
-    _write_state(state)
+    global _SHUTDOWN_BEGUN
+    with _STATE_LOCK:
+        _SHUTDOWN_BEGUN = True
+        state = _read_state() or {}
+        state["state"] = "clean"
+        state["ended_at"] = _now()
+        if _STOP_SIGNAL and not state.get("stop_signal"):
+            state["stop_signal"] = _STOP_SIGNAL
+        _write_state(state)
     # The ledger's own end line for this session (2026-09-18); the sentinel above is
     # still the verdict the next boot reads.
     try:
@@ -746,12 +784,13 @@ def record_unlock_timing(record: dict[str, Any]) -> None:
         note_unlock_done()
     except Exception as exc:  # noqa: BLE001 - a stamp must never break the unlock it describes
         log_failure(_LOG, "could not stamp the unlock", exc, level=logging.DEBUG)
-    state = _read_state() or {"state": "running", "started_at": _now(), "pid": os.getpid()}
-    state["last_unlock"] = {**record, "at": _now()}
     recovery = _recovery_from_record(record)
-    if recovery is not None:
-        state["last_recovery"] = {**recovery, "at": _now()}
-    _write_state(state)
+    with _STATE_LOCK:
+        state = _read_state() or {"state": "running", "started_at": _now(), "pid": os.getpid()}
+        state["last_unlock"] = {**record, "at": _now()}
+        if recovery is not None:
+            state["last_recovery"] = {**recovery, "at": _now()}
+        _write_state(state)
 
 
 def record_init_db(record: dict[str, Any]) -> None:
@@ -762,9 +801,10 @@ def record_init_db(record: dict[str, Any]) -> None:
     ``init_db`` (STORE-02) was read on starts of both kinds. Best-effort: forensics never blocks a boot.
     """
     try:
-        state = _read_state() or {"state": "running", "started_at": _now(), "pid": os.getpid()}
-        state["last_init_db"] = record
-        _write_state(state)
+        with _STATE_LOCK:
+            state = _read_state() or {"state": "running", "started_at": _now(), "pid": os.getpid()}
+            state["last_init_db"] = record
+            _write_state(state)
     except Exception as exc:  # noqa: BLE001 - a record that cannot be kept is not worth a failed boot
         log_failure(_LOG, "could not record the init_db steps", exc, level=logging.DEBUG)
 

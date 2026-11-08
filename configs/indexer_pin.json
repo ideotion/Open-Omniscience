@@ -1,12 +1,18 @@
 {
   "version": 1,
-  "digest": "8c1c685dc842009b8825e3096e4b3073f4c2037d8cf37a951a9bd8388238cf26",
+  "digest": "c2bdcb117a46b8789c864e9a3ea1821306ec3a667a6fa9c7bd3b2c23a362d185",
   "log": [
     {
       "version": 1,
       "digest": "8c1c685dc842009b8825e3096e4b3073f4c2037d8cf37a951a9bd8388238cf26",
       "kind": "baseline",
       "note": "R412 baseline: the pin starts at the code-module digest of the main tip this change is cut from (INDEXER_VERSION 1)"
+    },
+    {
+      "version": 1,
+      "digest": "c2bdcb117a46b8789c864e9a3ea1821306ec3a667a6fa9c7bd3b2c23a362d185",
+      "kind": "same",
+      "note": "A-037 deletes two functions of equivalence.py that nothing calls (ring_terms and candidate_languages; not index_article, not anything else); no row an article gets is written differently"
     }
   ]
 }

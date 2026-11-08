@@ -2699,19 +2699,19 @@
       const rows = keys.map((k) => {
         const pct = Math.round((100 * lab[k]) / d.n_scored);
         return `<div style="display:flex;justify-content:space-between;max-width:320px">`
-          + `<span>${esc(LK[k] ? t(LK[k]) : k)}</span><span class="muted">${lab[k]} · ${pct}%</span></div>`;
+          + `<span>${esc(LK[k] ? t(LK[k]) : k)}</span><span class="muted">${lab[k]} · ${ooLtrIsolate(pct + "%")}</span></div>`;
       }).join("");
       const engPct = Math.round((100 * d.english_scored) / d.n_scored);
       // The reader's own separator, through the ONE keyed label frame (N-5).
       return cav + `<div style="margin-top:8px">${rows}</div>`
         + `<div class="muted" style="margin-top:8px">${ooLabelHtml(esc(t("Mean tone")), esc(String(d.mean_score)))}`
         + ` · n=${d.n_scored}/${d.n_articles} · `
-        + `${ooLabelHtml(esc(t("English-scored (reliable)")), `${d.english_scored} (${engPct}%)`)}</div>`;
+        + `${ooLabelHtml(esc(t("English-scored (reliable)")), `${d.english_scored} (${ooLtrIsolate(engPct + "%")})`)}</div>`;
     }
     function _anSourcesHtml(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const rows = (d.sources || []).map((s) => {
-        const span = (s.first && s.last) ? `${ooIsoDate(s.first)} – ${ooIsoDate(s.last)}` : "—";
+        const span = (s.first && s.last) ? ooLtrIsolate(`${ooIsoDate(s.first)} – ${ooIsoDate(s.last)}`) : "—";
         const tone = (s.mean_tone === null || s.mean_tone === undefined) ? "—" : s.mean_tone;
         return `<tr><td>${esc(s.name || s.domain || "")}</td>`
           + `<td style="text-align:right;font-variant-numeric:tabular-nums">${s.articles}</td>`
@@ -4196,7 +4196,7 @@
       if (a.regions) parts.push(ooLabelText(t("region"), a.regions));
       if (a.start_date || a.end_date) parts.push(ooLabelText(t("published"), (a.start_date || "…") + " → " + (a.end_date || "…")));
       if (a.collected_from || a.collected_to) parts.push(ooLabelText(t("collected"), (a.collected_from || "…") + " → " + (a.collected_to || "…")));
-      if (a.words_min || a.words_max) parts.push(ooLabelText(t("words"), (a.words_min || "0") + "–" + (a.words_max || "∞")));
+      if (a.words_min || a.words_max) parts.push(ooLabelText(t("words"), ooLtrIsolate((a.words_min || "0") + "–" + (a.words_max || "∞"))));
       if (a.sentiment) parts.push(ooLabelText(t("tone"), a.sentiment.split(",").map((x) => t(x)).join(", ")));
       if (a.mentions_from || a.mentions_to) parts.push(ooLabelText(t("mentions a date"), (a.mentions_from || "…") + " → " + (a.mentions_to || "…")));
       if (a.include_quarantined) parts.push(t("quarantined included"));

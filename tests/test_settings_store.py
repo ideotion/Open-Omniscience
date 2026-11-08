@@ -51,7 +51,9 @@ def test_strict_read_refuses_by_class_with_the_modules_own_error(modname, monkey
     monkeypatch.setattr(kv, "kv_get_json_strict", boom)
     with pytest.raises(getattr(mod, err)) as ei:
         mod._read_raw_strict()
-    assert "secret" not in str(ei.value)
+    assert type(ei.value) is getattr(mod, err)  # the plain class: the damaged one is a subclass and would also match raises()
+    assert str(ei.value) == kv.refusal_text(RuntimeError()) and "secret" not in str(ei.value)
+    assert ei.value.__cause__ is None and ei.value.__suppress_context__  # raised from None
     monkeypatch.setattr(kv, "is_damaged", lambda exc: True)
     with pytest.raises(getattr(mod, damaged)):
         mod._read_raw_strict()
@@ -87,3 +89,41 @@ def test_the_modules_own_wrappers_are_what_the_store_consults(modname, tmp_path,
     monkeypatch.setattr(kv, "kv_set_json", lambda key, raw: None)
     monkeypatch.setattr(mod, "_read_json_file", lambda: {"from": "wrapper file"})  # nothing is on disk: only the wrapper has it
     assert mod._read_raw() == {"from": "wrapper file"}
+
+
+def test_the_custody_json_write_uses_the_shared_atomic_replace(tmp_path, monkeypatch):
+    """The redirected-path write no longer shares one fixed ``.json.tmp`` between writers (R176)."""
+    import src.custody.settings as cs
+    import src.safety.file_lock as fl
+
+    path = tmp_path / "custody_settings.json"
+    monkeypatch.setattr(cs, "_settings_path", lambda: path)
+    seen = []
+    real = fl.atomic_replace
+    monkeypatch.setattr(fl, "atomic_replace", lambda *a, **k: (seen.append(a[0]), real(*a, **k))[1])
+    cs._write_raw({"version": "x", "pqc_enabled": True})
+    assert seen == [path] and json.loads(path.read_text("utf-8"))["pqc_enabled"] is True
+    assert not list(tmp_path.glob("*.tmp*"))
+
+
+@pytest.mark.parametrize("modname", list(_MODULES))
+@pytest.mark.parametrize("strict", [False, True])
+def test_a_legacy_file_is_migrated_into_the_kv_row_once_and_a_failed_migration_still_reads(modname, strict, tmp_path, monkeypatch):
+    import src.config.kv_store as kv
+
+    mod = importlib.import_module(modname)
+    monkeypatch.setattr(mod, "_use_kv", lambda: True)
+    monkeypatch.setattr(mod, "_read_json_file", lambda: {"from": "file"})
+    monkeypatch.setattr(kv, "kv_get_json", lambda key: None)
+    monkeypatch.setattr(kv, "kv_get_json_strict", lambda key: None)
+    calls = []
+    monkeypatch.setattr(kv, "kv_set_json", lambda key, raw: calls.append((key, raw)))
+    read = mod._read_raw_strict if strict else mod._read_raw
+    assert read() == {"from": "file"}
+    assert calls == [(mod._KV_KEY, {"from": "file"})]
+
+    def boom(key, raw):
+        raise RuntimeError("disk full /secret")
+
+    monkeypatch.setattr(kv, "kv_set_json", boom)
+    assert read() == {"from": "file"}  # best-effort: a failed migration never fails the read
