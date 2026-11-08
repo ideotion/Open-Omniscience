@@ -8,7 +8,7 @@ entry is one of three things, decided here, purely, from the loaded catalogue an
   carries no feed entry at all (the outlet's one feed-less row);
 * a MERGE -- a feed-less entry whose domain DOES carry a feed row. It describes that outlet from a catalogue that has
   no feed (210 of 235 are the lean-tagged spectrum), so it creates no second, uncollectable copy of the outlet: its
-  TAGS go onto the outlet's first feed row;
+  TAGS go onto one feed row of the outlet (the seeder picks it, ``seed_sources.outlet_feed_row``: the lowest id);
 * UNREGISTERED, with a reason -- the same feed claimed twice, a feed-less duplicate of a feed-less domain, or a
   second entry of the legal catalogue for a host (the ruled 2026-07-17 collapse: "registration must collapse them").
 
