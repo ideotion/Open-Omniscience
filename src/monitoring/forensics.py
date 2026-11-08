@@ -526,6 +526,7 @@ def record_shutdown_phase(phase: str, *, reason: str | None = None, facts: dict[
     (the 10-10 session's last step and its end were the same second). ``facts`` are the few named values a phase learned
     (:func:`dispose_facts`), merged in as they are; only the keys in :data:`_DISPOSE_FACT_KEYS` are kept."""
     global _SHUTDOWN_BEGUN
+    kept = {k: v for k, v in (facts or {}).items() if k in _DISPOSE_FACT_KEYS}  # outside the lock: a loop under a ``with`` is a classified loop head
     with _STATE_LOCK:
         _SHUTDOWN_BEGUN = True
         state = _read_state() or {}
@@ -537,8 +538,7 @@ def record_shutdown_phase(phase: str, *, reason: str | None = None, facts: dict[
             state["shutdown_reason"] = reason
         if _STOP_SIGNAL and not state.get("stop_signal"):
             state["stop_signal"] = _STOP_SIGNAL
-        if facts:
-            state.update({k: v for k, v in facts.items() if k in _DISPOSE_FACT_KEYS})
+        state.update(kept)
         _write_state(state)
 
 
