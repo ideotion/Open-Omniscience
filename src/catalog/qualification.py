@@ -1739,7 +1739,7 @@ def run_qualification_pass(
     trial_errors = 0
     deferred = 0
     if fetcher is not None:
-        from src.ingest import kill_switch_engaged_since, kill_switch_epoch
+        from src.ingest import kill_switch_active, kill_switch_engaged_since, kill_switch_epoch
 
         started = time.monotonic()
         attempted: list[Source] = []
@@ -1748,6 +1748,12 @@ def run_qualification_pass(
             # This candidate's trial window (R614), from before its first request to the read below: a Stop pressed and cleared
             # again anywhere inside it is a Stop, as when the switch is still engaged.
             epoch = kill_switch_epoch()
+            if kill_switch_active():
+                # R617 (R614): the loop's own check, AFTER the window opened. The callers' checks run before the cohort plan and the
+                # selection queries, so a Stop landing in between would otherwise reach the first trial with a window opened after
+                # it; refused by name and cleared before the read below, it would be judged as the candidate's failure. Deferred.
+                stopped = True
+                break
             # The first candidate is always tried; after that a pass gives up on the rest when
             # its wall-clock budget is spent or the memory guard says stop.
             if attempted and (
@@ -1759,10 +1765,13 @@ def run_qualification_pass(
             try:
                 trial_fetch(session, source, fetcher)
             except Exception as exc:  # noqa: BLE001 - one bad candidate must not abort the pass
-                if not kill_switch_engaged_since(epoch):  # a Stop's failure is not the candidate's (R617): read just below
+                stop_touched = kill_switch_engaged_since(epoch)  # the window read ONCE (R617), so the count and the deferral agree
+                if not stop_touched:  # a Stop's failure is not the candidate's
                     trial_errors += 1
                     log_failure(_LOG, f"qualification trial fetch failed for {getattr(source, 'domain', '?')!r}", exc, level=logging.WARNING)
-            if kill_switch_engaged_since(epoch):
+            else:
+                stop_touched = kill_switch_engaged_since(epoch)
+            if stop_touched:
                 # R617 (R320, R614): the Stop touched this candidate's trial, whether it raised or came back with what it read
                 # before the cut (``trial_fetch`` refuses by name or returns a tally; neither is evidence about the source). Judged
                 # here it would be stamped, climb the backoff ladder, or be logged as having no evidence and sent to the back of

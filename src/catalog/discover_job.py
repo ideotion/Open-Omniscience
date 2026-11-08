@@ -204,6 +204,7 @@ def run_world_discovery(
             added = int(result.get("added") or 0)
             added_total += added
             added_this_run += added
+            per_country[cc] = per_country.get(cc, 0) + added  # the resumed ask adds to it (sources are deduped by domain)
             paused_reason = "airplane mode engaged — progress is saved; start again to resume"
             break
 
@@ -226,7 +227,7 @@ def run_world_discovery(
         added_this_run += added
         done.add(cc)
         done_in_run += 1
-        per_country[cc] = added
+        per_country[cc] = per_country.get(cc, 0) + added  # plus what an ask a Stop cut had already added (R617)
         state.update(
             {
                 "done": sorted(done),

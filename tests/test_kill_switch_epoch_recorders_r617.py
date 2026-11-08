@@ -507,6 +507,45 @@ def test_qualification_candidates_tried_before_the_stop_are_judged_and_the_cut_o
     }, statuses
 
 
+def test_qualification_a_stop_landing_before_the_trial_loop_and_cleared_after_the_refusal_judges_nothing(db, q, monkeypatch):
+    """The Stop lands after the caller's check (in the cohort plan or the selection queries) and is cleared once the first trial is
+    refused by name: the trial loop's own check, after its window opens, defers the batch before any trial (the independent read)."""
+    cands = _candidates(db, q)
+    tried: list[str] = []
+
+    def trial(session, source, fetcher, **_kw):
+        tried.append(source.domain)
+        assert kill_switch_active()
+        clear_kill_switch()
+        raise FetchFailed(KILL_SWITCH_REFUSAL)
+
+    monkeypatch.setattr(q, "trial_fetch", trial)
+    activate_kill_switch()
+    out = q.run_qualification_pass(db, fetcher=object(), per_pass=10)
+    rows, statuses = _judged(db, q, cands)
+    assert tried == [], "a trial went out under the Stop"
+    assert out["evaluated"] == 0 and out["skipped"] == "airplane mode engaged" and out["trial_fetch_errors"] == 0, out
+    assert rows == set() and set(statuses.values()) == {q.STATUS_UNQUALIFIED}, (rows, statuses)
+
+
+def test_qualification_a_stop_pressed_just_after_the_trial_loops_check_is_a_stop(db, q, monkeypatch):
+    cands = _candidates(db, q)
+
+    def trial(session, source, fetcher, **_kw):
+        try:
+            raise FetchFailed(KILL_SWITCH_REFUSAL)  # what the fetcher says with the switch engaged
+        finally:
+            clear_kill_switch()
+
+    monkeypatch.setattr(q, "trial_fetch", trial)
+    fired = _stop_right_after_the_check(monkeypatch, q.run_qualification_pass, "epoch = kill_switch_epoch()")
+    out = q.run_qualification_pass(db, fetcher=object(), per_pass=10)
+    rows, statuses = _judged(db, q, cands)
+    assert fired, "premise: the Stop landed right after the trial loop's check"
+    assert out["evaluated"] == 0 and out["skipped"] == "airplane mode engaged" and out["trial_fetch_errors"] == 0, out
+    assert rows == set() and set(statuses.values()) == {q.STATUS_UNQUALIFIED}, (rows, statuses)
+
+
 def test_qualification_through_the_production_fetcher_a_cut_feed_logs_no_no_evidence_attempt(db, q, tmp_path):
     """The real trial (``ingest_source``) over the production fetcher: it catches the cut feed GET and returns a tally, so only the
     epoch read after it can say the candidate was never asked. Before R617 it was logged as having no evidence (to the back of the queue)."""
@@ -596,6 +635,23 @@ def test_discovery_a_stop_inside_a_country_does_not_mark_it_done(db, scope, tmp_
     # the sources the answered queries added are real rows, so they are counted
     added = db.query(Source).filter(Source.domain.like("outlet-ke-%")).count()
     assert added >= 1 and res["added_total"] == added, (res, added)
+
+
+def test_discovery_a_country_a_stop_cut_counts_both_asks_once_resumed(db, scope, tmp_path):
+    """The sources the cut ask added stay in the country's own count after the resumed ask completes it (the independent read)."""
+    run_query, _asked = _second_query(_stop_and_clear)
+    first, _ = _discover(scope, tmp_path, run_query, countries=("ke",))
+    assert first["added_total"] >= 1, first
+    n = [0]
+
+    def answer(cc, type_qids):
+        n[0] += 1
+        return _payload(f"Outlet {cc}-r{n[0]}", f"https://outlet-{cc}-r{n[0]}.example/")
+
+    res, state = _discover(scope, tmp_path, answer, countries=("ke",))
+    added = db.query(Source).filter(Source.domain.like("outlet-ke-%")).count()
+    assert state["done"] == ["ke"], state
+    assert state["per_country"]["ke"] == added == res["added_total"] > first["added_total"], (state, res, added)
 
 
 def test_discovery_a_stop_pressed_just_after_the_country_check_is_a_stop(db, scope, tmp_path, monkeypatch):
