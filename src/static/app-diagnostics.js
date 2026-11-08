@@ -3112,6 +3112,7 @@
           setTimeout(() => URL.revokeObjectURL(a.href), 60000);
           const nxt = r.headers.get("X-Source-Samples-Next");
           if (!nxt) break;
+          if (!(Number(nxt) > after)) break;   // a cursor that does not advance can never loop
           after = Number(nxt);
           await new Promise((res) => setTimeout(res, 400));   // let the browser take each download
         }
