@@ -113,7 +113,7 @@ def build_sample_zip(db: Session, *, after: int, seed: int, cap: int) -> tuple[b
                 row["article_id"] = art.id
                 row["bytes"] = len(data)
             used = buf.tell() + _RESERVE_BYTES + 400 * (len(manifest) + 1)
-            if manifest and data is not None and used + len(data) > cap:
+            if manifest and used + len(data or b"") > cap:   # empty sources count too: their manifest rows add up
                 break   # nothing is added that could breach the cap; the next request resumes here
             if data is not None:
                 z.writestr(f"samples/source-{sid:07d}.json", data)

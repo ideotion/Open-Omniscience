@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-08,diagnostics,Source-samples zip: empty sources count toward the 4 MB cap (Opus read of #1807),built,PR pending,src/api/diagnostics/source_samples.py;tests/test_source_samples.py,"Follow-up to the temporary one-article-per-source export: a long run of sources with no article could push a zip past 4 MB because only article rows were size-checked; every row is now checked, and the button stops if the cursor does not advance."
