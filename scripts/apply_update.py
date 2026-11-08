@@ -194,8 +194,9 @@ def _lock_owner(lock: Path) -> tuple[int, int]:
 LOCK_STALE_S = 8 * 3600
 
 
-def lock_holder_alive(lock: Path, *, alive=pid_alive, now=time.time) -> tuple[int, int] | None:
+def lock_holder_alive(lock: Path, *, alive=None, now=time.time) -> tuple[int, int] | None:
     """The ``(app pid, helper pid)`` of a lock whose helper is still running and which is younger than :data:`LOCK_STALE_S`, else None."""
+    alive = alive or pid_alive
     owner_app, owner_helper = _lock_owner(lock)
     try:
         fresh = now() - lock.stat().st_mtime < LOCK_STALE_S
@@ -206,7 +207,7 @@ def lock_holder_alive(lock: Path, *, alive=pid_alive, now=time.time) -> tuple[in
     return None
 
 
-def take_lock(lock: Path, app_pid: int, *, alive=pid_alive, now=time.time) -> bool:
+def take_lock(lock: Path, app_pid: int, *, alive=None, now=time.time) -> bool:
     """Create ``lock`` naming the app process this helper serves and this helper, or take over a stale one. False while a LIVE helper holds a
     fresh lock, whichever app it served: it may be mid-pip for an earlier app while the person started the app again by hand, and two
     helpers on one checkout would undo each other. A lock whose helper is gone, or older than :data:`LOCK_STALE_S`, is taken over. The
@@ -256,15 +257,25 @@ def main(argv: list[str]) -> int:
     # One helper at a time on a checkout: a live helper's fresh lock is obeyed; a lock whose helper is gone, or that is older than any run, is
     # taken over.
     lock = data_dir / LOCK_FILE
-    if not take_lock(lock, int(plan["pid"])):
+    holder = None
+    for _ in range(3):
+        if take_lock(lock, int(plan["pid"])):
+            break
         holder = lock_holder_alive(lock)
-        if holder is None or holder[0] == int(plan["pid"]):
+        if holder is not None:
+            break  # a live holder, read once: decide on THIS reading
+        # the holder let go between the two reads: try to take the lock again
+    else:
+        holder = (0, 0)  # could neither take nor read it three times: behave as for an earlier run's holder
+    if holder is not None:
+        if holder[0] == int(plan["pid"]):
             return 1  # a live helper serves this same shutdown: it applies and relaunches; this one touches nothing and starts nothing
         # The holder serves an EARLIER app run (a race the server's own check narrows). Its relaunch may land while this app is still up and be
         # a no-op, so this helper, which touches nothing in the install, makes sure the app comes back: after this app and the holder have
         # both exited it gives the holder's launcher time to bring a server up, and starts the launcher only if none answers.
         if wait_for_exit(int(plan["pid"])):
-            wait_for_exit(holder[1], LOCK_STALE_S)
+            if holder[1]:
+                wait_for_exit(holder[1], LOCK_STALE_S)
             if not wait_for_server(int(plan.get("port") or 8000)):
                 relaunch(root)
         return 1

@@ -329,3 +329,22 @@ def test_wait_for_server_gives_up_and_reports(tmp_path):
     assert h.wait_for_server(1, 0.0, answers=lambda port: False, sleep=lambda s: None) is False
     seq = iter([False, True])
     assert h.wait_for_server(1, 5.0, answers=lambda port: next(seq), sleep=lambda s: None) is True
+
+
+def test_main_refused_by_a_live_holder_touches_nothing_and_relaunches_only_for_an_earlier_run(tmp_path, monkeypatch):
+    import json as _json
+
+    h = _helper()
+    plan = tmp_path / "update-plan.json"
+    plan.write_text(_json.dumps({"ref": "v0.6.0", "sha": SHA_B, "kind": "tag", "pid": 111, "root": str(tmp_path), "port": "1"}), encoding="utf-8")
+    relaunched, applied = [], []
+    monkeypatch.setattr(h, "pid_alive", lambda pid: pid == 999)  # the holder helper is alive, the apps are gone
+    monkeypatch.setattr(h, "relaunch", lambda root, **k: relaunched.append(root))
+    monkeypatch.setattr(h, "apply", lambda plan, **k: applied.append(plan) or ("updated", ""))
+    monkeypatch.setattr(h, "wait_for_server", lambda port, *a, **k: False)
+    lock = tmp_path / "update.lock"
+    lock.write_text("111 999", encoding="utf-8")  # the same shutdown's helper
+    assert h.main(["x", str(plan)]) == 1 and relaunched == [] and applied == []
+    lock.write_text("50 999", encoding="utf-8")  # an earlier run's helper, still alive
+    monkeypatch.setattr(h, "wait_for_exit", lambda pid, *a, **k: True)
+    assert h.main(["x", str(plan)]) == 1 and len(relaunched) == 1 and applied == []
