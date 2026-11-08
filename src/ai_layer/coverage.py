@@ -50,7 +50,10 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+import contextlib
+import threading
 import time
+from collections.abc import Iterator
 
 from src.ai_layer.context import (
     SWEEP_OUTPUT_RESERVE_TOKENS,
@@ -78,6 +81,27 @@ def reset_window_cache() -> None:
     longer exists.
     """
     _window_cache.clear()
+
+
+#: A serving window held fixed for ONE thread, by :func:`fixed_serving_window`. Thread-local, so a
+#: self-test running in a request thread never changes what a real batch on another thread reads.
+_pinned = threading.local()
+
+
+@contextlib.contextmanager
+def fixed_serving_window(tokens: int | None, source: str) -> Iterator[None]:
+    """Answer :func:`serving_window_tokens` with ``tokens`` on this thread, and ask no backend.
+
+    For the self-tests that run the sweep path on a stub client: they claim "no model, no network",
+    and without this the budget behind the sweep probed the vLLM and Ollama ports (loopback) whenever
+    the shared cache was cold, so whether a self-test opened a socket depended on what ran in the
+    five minutes before it (found by tests/test_get_routes_side_effects.py, 2026-11-08)."""
+    prev = getattr(_pinned, "window", None)
+    _pinned.window = {"tokens": tokens, "source": source, "backend": None}
+    try:
+        yield
+    finally:
+        _pinned.window = prev
 
 
 def _resolve_window(backend_name: str | None) -> dict:
@@ -169,6 +193,9 @@ def serving_window_tokens(backend_name: str | None = None) -> dict:
     ``{"tokens": int | None, "source": str, "backend": str | None}`` — ``None`` is an
     honest "could not be read", never a guessed number.
     """
+    pinned = getattr(_pinned, "window", None)
+    if pinned is not None:
+        return dict(pinned)
     key = "backend:" + (backend_name or "auto").strip().lower()
     now = time.monotonic()
     hit = _window_cache.get(key)
@@ -324,6 +351,7 @@ def merge_items(per_part: list[list[str]], *, limit: int | None = None) -> list[
 
 __all__ = [
     "WINDOW_TTL_S",
+    "fixed_serving_window",
     "merge_items",
     "reset_window_cache",
     "serving_window_tokens",
