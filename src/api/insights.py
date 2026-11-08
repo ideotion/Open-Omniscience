@@ -744,7 +744,7 @@ def include_term(body: TermBody) -> dict:
 # interchangeable connections, see ``_detachable``). It used to stay
 # a pooled checkout for the life of the process: all 16 field instances showed "one API-thread
 # checkout held for the whole process life", which hands-on on the real app turned out to be
-# exactly this connection (GET /api/articles -> _browse_total_cached -> here). It is idle and
+# exactly this connection (GET /api/articles -> _browse_total_with_source -> here). It is idle and
 # does not pin the WAL (tests/test_wal_pin_facts.py), but it took one of the pool's slots for
 # ever and nothing counted it: on the small tier (6 + 6, margin 4) the app really had three
 # slots for API requests, and D44's "cap 8, pool 12, margin 4" held only on paper. A detached

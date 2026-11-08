@@ -416,11 +416,6 @@ def _read_lines_marked(path: Path | None = None) -> tuple[list[dict[str, Any]], 
     return out, cut
 
 
-def _read_lines(path: Path | None = None) -> list[dict[str, Any]]:
-    """The well-formed lines of the file (see ``_read_lines_marked``)."""
-    return _read_lines_marked(path)[0]
-
-
 def _encoded(doc: Any) -> int:
     return len(json.dumps(doc, separators=(",", ":")))
 

@@ -5,7 +5,7 @@ workflow).
 A quarantined article (Article.quarantined=True) must never surface through the ONE
 search/browse surface every other consumer (omnibar, search, export, card-seeded
 analysis) ultimately funnels through: src.api.main._query_articles /
-_structured_filters / _browse_total_cached. This mirrors the fixture pattern in
+_structured_filters / _browse_total_with_source. This mirrors the fixture pattern in
 tests/test_api_search.py (an isolated temp SQLite DB, get_db overridden onto it, a
 real TestClient) rather than reusing that file's fixture directly, so a quarantined
 row can be stamped AFTER seeding via the same session factory the override uses.
