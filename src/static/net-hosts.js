@@ -185,6 +185,14 @@
       "fetcher": true
     },
     {
+      "id": "field-checks",
+      "label": "Field checks",
+      "hosts": ["op.europa.eu", "vocabularies.unesco.org", "www.fao.org", "iptc.org", "www.wikidata.org"],
+      "trigger": "click",
+      "setting": null,
+      "fetcher": true
+    },
+    {
       "id": "climate",
       "label": "Climate series",
       "hosts": ["data.giss.nasa.gov", "earthquake.usgs.gov", "raw.githubusercontent.com", "www.ncei.noaa.gov", "noaadata.apps.nsidc.org"],
