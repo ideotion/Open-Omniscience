@@ -4,11 +4,12 @@ How a private key FILE is made, read and replaced, in one place.
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-Two files hold a signing key under ``keys/``: the evidence key and the custody Ed25519 key. Each
-used to be written by ``write_bytes`` then ``chmod`` (a window in which another account could read
-it under a umask of 022) and created with a check-then-write (two first callers could each make a
-key, the second silently orphaning what the first had already signed). The routines here are the
-fix, written once and used by both, because an exclusive create is not an atomic one and the part
+The signing keys under ``keys/`` are the evidence key, and the Ed25519 and ML-DSA keys of
+``HybridSigner`` (the custody log's, and the annotation signer's own pair). Each used to be
+written by ``write_bytes`` then ``chmod`` (a window in which another account could read it under a
+umask of 022) and created with a check-then-write (two first callers could each make a key, the
+second silently orphaning what the first had already signed). The routines here are the fix,
+written once and used by all of them, because an exclusive create is not an atomic one and the part
 that makes it atomic is the part nobody should have two copies of.
 
 What a file CONTAINS is not decided here: the callers parse and seal their own bytes. This module
@@ -171,6 +172,15 @@ class KeyFileLinked(Exception):  # noqa: N818 - a refusal to replace, not an err
     """
 
 
+def _refuse_a_linked_name(path: Path, old: os.stat_result) -> None:
+    """Raise :class:`KeyFileLinked` when ``old`` (the ``lstat`` of ``path``) is a symbolic link or a file with
+    another name outside ``keys/.pending``."""
+    if stat.S_ISLNK(old.st_mode):
+        raise KeyFileLinked("the key file is a symbolic link")
+    if old.st_ino and old.st_nlink > 1 + len(pending_aliases(path, old)):
+        raise KeyFileLinked("the key file has another name outside keys/.pending")
+
+
 def replace_in_place(
     path: Path,
     make: Callable[[], bytes],
@@ -198,6 +208,9 @@ def replace_in_place(
     try:
         if seen is None:
             seen = os.stat(path)
+        # A link is refused before the copy is paid for (``make`` derives a key from the passphrase), and
+        # again below, since the name can change while the copy is made.
+        _refuse_a_linked_name(path, os.lstat(path))
         tmp = write_private(path, "rewrap", make())
         check(tmp.read_bytes())
         # the NAME's own state: a symbolic link answers for itself, not for its target
@@ -206,8 +219,7 @@ def replace_in_place(
             raise KeyFileLinked("the key file is a symbolic link")
         if identity(old) != identity(seen):
             raise ReplaceRefused("the key file changed while the replacement was made")
-        if old.st_ino and old.st_nlink > 1 + len(pending_aliases(path, old)):
-            raise KeyFileLinked("the key file has another name outside keys/.pending")
+        _refuse_a_linked_name(path, old)
         os.replace(tmp, path)
         drop_aliases(path, old)
         return True

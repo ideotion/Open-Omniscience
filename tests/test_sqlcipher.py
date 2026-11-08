@@ -448,14 +448,22 @@ def test_encrypt_tool_inplace(tmp_path):
 
 def test_legacy_plaintext_keys_survive_passphrase(tmp_path, monkeypatch):
     """Signing keys created BEFORE encryption keep loading after THE passphrase
-    exists (D6 fallback), and the Ed25519 one is wrapped IN PLACE the first time
-    it loads under it (R449): the same key, never regenerated. key_protection
-    reports the FILES' real state: an ML-DSA key that is still plaintext (not
-    wrapped in place yet) is named as such whenever the post-quantum library is
-    installed."""
-    from src.custody.signing import PQC_AVAILABLE, HybridSigner
+    exists (D6 fallback), and each is wrapped IN PLACE the first time it loads
+    under it (R449 for the Ed25519 key, R484 for the ML-DSA pair): the same
+    keys, never regenerated, so key_protection reports the wrap."""
+    from src.custody import signing
+    from src.custody.signing import HybridSigner, parse_mldsa_key
     from src.database.connect import set_passphrase
 
+    class _StandInMldsa:  # the ML-DSA key file's handling, in every lane (the library is in one CI lane only)
+        PUBLIC_KEY_SIZE = 40
+
+        @staticmethod
+        def generate_keypair():
+            return os.urandom(40), os.urandom(100)
+
+    monkeypatch.setattr(signing, "_mldsa", _StandInMldsa)
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", True)
     monkeypatch.delenv("OO_KEY_PASSPHRASE", raising=False)
     ed, ml = tmp_path / "k.pem", tmp_path / "k.mldsa"
     s1 = HybridSigner(ed25519_path=ed, mldsa_path=ml)  # created plaintext
@@ -466,8 +474,9 @@ def test_legacy_plaintext_keys_survive_passphrase(tmp_path, monkeypatch):
         s2 = HybridSigner(ed25519_path=ed, mldsa_path=ml)  # must still load
         assert s2.public_identity().to_dict() == ident
         assert not ed.read_bytes().startswith(b"-----BEGIN")  # wrapped in place, same key
-        # honest about the files: the ML-DSA key stays plaintext until it is wrapped too
-        assert s2.key_protection == ("plaintext-0600" if PQC_AVAILABLE else "aes256gcm-scrypt")
+        # the ML-DSA pair is wrapped in place too (R484): no longer pk + sk in the clear
+        assert parse_mldsa_key(ml, ml.read_bytes(), b"now-encrypted-pw")[2] == "wrapped"
+        assert s2.key_protection == "aes256gcm-scrypt"
     finally:
         set_passphrase(None)
 
