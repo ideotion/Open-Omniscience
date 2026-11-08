@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-07,i18n/native-review,A generated native review queue lists every AI-drafted locale key waiting for a native reader,shipped,PR #1779,scripts/native_review_queue.py; docs/product/NATIVE_REVIEW_QUEUE.md; docs/product/native-review/,"Rebuilt from the merge diffs: per group the keys, English source, files and per-language counts, plus one sheet per language; item 33 (a)-(f), C6, A-S6."

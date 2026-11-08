@@ -39,8 +39,7 @@ nothing, so the absence is the honest answer and is pinned by a test.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
-from typing import Any
+from collections.abc import Iterable
 
 from sqlalchemy import func, insert, select
 from sqlalchemy.orm import Session
@@ -105,39 +104,6 @@ def record_tentative(
     if commit:
         session.commit()
     return bool(getattr(result, "rowcount", 0))
-
-
-def record_tentative_batch(
-    session: Session,
-    rows: Iterable[Mapping[str, Any]],
-    *,
-    target_lang: str,
-    model: str | None = None,
-    prompt_version: str | None = None,
-) -> dict:
-    """Persist a batch of ``{term, language, text}`` answers. Returns a small tally.
-
-    ONE commit for the batch, and each row inserted through its own statement so a
-    single refused row cannot discard the ones already staged beside it — the recorded
-    mid-batch-rollback family, which this shape avoids by never rolling back at all
-    (``OR IGNORE`` makes a collision a no-op rather than an ``IntegrityError``).
-    """
-    added = skipped = 0
-    for r in rows:
-        ok = record_tentative(
-            session,
-            term=str(r.get("term") or ""),
-            source_lang=r.get("language"),
-            target_lang=target_lang,
-            text=str(r.get("text") or ""),
-            model=model,
-            prompt_version=prompt_version,
-            commit=False,
-        )
-        added += int(ok)
-        skipped += int(not ok)
-    session.commit()
-    return {"added": added, "skipped": skipped, "target_lang": normalize_lang(target_lang)}
 
 
 def tentative_translations(

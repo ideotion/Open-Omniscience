@@ -95,6 +95,7 @@ from src.monitoring.secret_scrub import (
     scrubbed_value,
 )
 from src.monitoring.secret_scrub import scrub_file as _scrub_file
+from src.shared import rss_mb as _rss_mb
 
 _LOG = logging.getLogger("monitoring.release_run")
 
@@ -618,15 +619,6 @@ def resume_preflight(passphrase: str = "", *, check_passphrase: bool = True) -> 
 # --------------------------------------------------------------------------- #
 #  Small readers (each degrades to a stated absence, never to a fabricated 0)
 # --------------------------------------------------------------------------- #
-
-
-def _rss_mb() -> float | None:
-    try:
-        import psutil
-
-        return round(psutil.Process().memory_info().rss / _MIB, 1)
-    except Exception:  # noqa: BLE001 - RSS is best-effort
-        return None
 
 
 def _process_uptime_s() -> float | None:

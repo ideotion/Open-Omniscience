@@ -1,4 +1,4 @@
-// The two DOM helpers touch only the ids the markup names, and the destructive names run only for a
+// No DOM helper clicks or fills a control by id, and the destructive names run only for a
 // person's own click (audit A-004, A-011; A-024 stage 2: the trust rule replaced the 31-name GESTURE_ONLY list).
 //
 // Open Omniscience - Global Intelligence Platform for Investigative Journalism
@@ -67,35 +67,16 @@ function fire(type, target, extra = {}) {
   for (const f of (listeners[type] || [])) f(ev);
 }
 
-// 1. ooSetValue / ooClickId: the ids the markup names work, every other id is refused BEFORE the lookup.
-for (const id of ["agenda-tag", "dumpread-title"]) {
-  touched.length = 0;
-  fire("click", el({ "data-on-click": `ooSetValue('${id}', 'v')` }), { isTrusted: true });
-  assert.deepStrictEqual(touched, [["value", id, "v"]], id);
+// 1. No helper clicks or fills a control by id (A-004, R443). ooClickId / ooSetValue were removed; the three bindings that used
+//    them are named handlers (annoImportPick, agendaSetTag, dumpReadSetTitle) that each touch one fixed field. An injected
+//    binding that names the old helpers, or any id-taking call, is refused by the parser and reaches no element.
+for (const bad of ["ooClickId('anno-import')", "ooSetValue('agenda-tag', 'v')", "ooSetValue('atrest-pw1', 'pwned')", "ooClickId('discovery-external')"]) {
+  assert.throws(() => window.ooOn.parse(bad), /not in OO_ACTIONS/, bad);
+  fire("click", el({ "data-on-click": bad }), { isTrusted: true });
+  fire("error", el({ "data-on-error": bad }));
 }
-touched.length = 0;
-fire("click", el({ "data-on-click": "ooClickId('anno-import')" }), { isTrusted: true });
-assert.deepStrictEqual(touched, [["click", "anno-import"]]);
-
-looked.length = 0; touched.length = 0;
-for (const id of ["atrest-pw1", "atrest-pw2", "http-proxy", "fetch-mode", "ing-url", "constructor", "", "anno-import "]) {
-  fire("click", el({ "data-on-click": `ooSetValue('${id}', 'pwned')` }), { isTrusted: true });
-  fire("error", el({ "data-on-error": `ooSetValue('${id}', 'pwned')` }));
-}
-for (const id of ["atrest-consent", "discovery-external", "atrest-pw1", "agenda-tag", "anno-importX"]) {
-  // A real click, not only an error event: since the per-event table (A-024 stage 1) refuses ooClickId on `error`
-  // before the id check is reached, an error-only loop would pass with CLICK_IDS removed (the A-023 chain's only gate).
-  fire("click", el({ "data-on-click": `ooClickId('${id}')` }), { isTrusted: true });
-  fire("error", el({ "data-on-error": `ooClickId('${id}')` }));
-}
-assert.deepStrictEqual(touched, [], "an id the markup does not name was written or clicked");
-assert.deepStrictEqual(looked, [], "a refused id was looked up");
-// ooSetValue's ids are not ooClickId's, and the other way round.
-fire("click", el({ "data-on-click": "ooClickId('agenda-tag')" }), { isTrusted: true });
-fire("click", el({ "data-on-click": "ooSetValue('anno-import', 'x')" }), { isTrusted: true });
-fire("error", el({ "data-on-error": "ooClickId('agenda-tag')" }));
-fire("error", el({ "data-on-error": "ooSetValue('anno-import', 'x')" }));
-assert.deepStrictEqual(touched, []);
+assert.deepStrictEqual(touched, [], "a removed helper still touched an element");
+assert.deepStrictEqual(looked, [], "a removed helper still looked an element up");
 
 // 2. The destructive names: a person's click runs them; an error/load/toggle/focus/hover event (no table row) and a
 //    synthetic click or keydown (not isTrusted) do not.
@@ -162,8 +143,8 @@ assert.strictEqual(ran.length, 0, "a name outside the gesture set ran for an eve
 // 3. The events the dispatcher holds to a person are the ones this test names.
 assert.deepStrictEqual(Array.from(window.ooOn.TRUSTED_EVENTS).sort(), ["click", "keydown", "submit"]);
 assert.strictEqual(window.ooOn.GESTURE_ONLY, undefined, "the 31-name list is gone: the rule covers every name");
-assert.deepStrictEqual(Array.from(window.ooOn.SET_VALUE_IDS).sort(), ["agenda-tag", "dumpread-title"]);
-assert.deepStrictEqual(Array.from(window.ooOn.CLICK_IDS).sort(), ["anno-import"]);
+assert.strictEqual(window.ooOn.SET_VALUE_IDS, undefined, "the id-fill helper's id set is gone with the helper");
+assert.strictEqual(window.ooOn.CLICK_IDS, undefined, "the id-click helper's id set is gone with the helper");
 
 console.warn = realWarn; console.error = realError;
 console.log("oo_on_gate_node_test.js: OK");

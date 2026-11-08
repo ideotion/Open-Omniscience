@@ -7,8 +7,9 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 key press or a submit, only when the browser says a person made it (``TRUSTED_EVENTS``, stage 2). The allowlist of names is
 the boundary; these are the rules that keep what the names themselves can do small:
 
-* ``ooClickId`` / ``ooSetValue`` touch only the ids the markup names today (an injected binding could
-  otherwise fill any form field by id and then call the handler that reads it);
+* no helper clicks or fills a control by an id it is handed (``ooClickId`` / ``ooSetValue`` were removed, R443): the three bindings
+  that used them are named handlers that each touch one fixed field, so an injected binding cannot fill any form field by id and
+  then call the handler that reads it;
 * a name that erases or removes data, or stops a running job, either has a ``confirm(`` in its own body or sits in
   ``tests/trusted_click_table.py`` with the reason a person's click alone is enough, and the listed names are bound to click
   events only; such a name is found by the VERBS inside it wherever they sit (``sgRemoveMember``, ``familyResetGroup``,
@@ -80,22 +81,24 @@ def _allowlist() -> list[str]:
     return re.findall(r'"([\w$]+)"', m.group(1))
 
 
-def _set_literal(name: str) -> set[str]:
-    m = re.search(rf"const {name} = new Set\(\[(.*?)\]\);", _OO_ON, re.S)
-    assert m, f"oo-on.js must declare {name} as a literal Set"
-    return set(re.findall(r'"([^"]*)"', m.group(1)))
+def test_no_helper_takes_an_element_id_to_click_or_fill() -> None:
+    """The A-004 chain needs a call that clicks or fills a control by an id the binding supplies; there is none left."""
+    for gone in ("ooClickId", "ooSetValue", "CLICK_IDS", "SET_VALUE_IDS"):
+        assert gone not in _OO_ON, f"oo-on.js still names {gone}"
+        for name, text in _spa_texts().items():
+            assert gone not in text, f"{name} still names {gone}"
 
 
-@pytest.mark.parametrize(("helper", "table"), [("ooClickId", "CLICK_IDS"), ("ooSetValue", "SET_VALUE_IDS")])
-def test_the_helper_ids_are_exactly_the_ids_the_markup_names(helper: str, table: str) -> None:
-    allowed = _set_literal(table)
-    used: set[str] = set()
-    for name, text in _spa_texts().items():
-        calls = len(re.findall(rf"\b{helper}\(", text))
-        literals = re.findall(rf"\b{helper}\(\s*(['\"])([A-Za-z][\w-]*)\1", text)
-        assert calls == len(literals), f"{name}: {helper}( with an argument that is not a literal id"
-        used |= {i for _, i in literals}
-    assert used == allowed, f"{table} must be exactly the ids bound in markup: unlisted {sorted(used - allowed)}, dead {sorted(allowed - used)}"
+@pytest.mark.parametrize(
+    ("handler", "ids"),
+    [("annoImportPick", {"anno-import"}), ("agendaSetTag", {"agenda-tag"}), ("dumpReadSetTitle", {"dumpread-title"})],
+)
+def test_each_replacement_handler_touches_exactly_its_one_field(handler: str, ids: set[str]) -> None:
+    body = function_body(app_js(), handler)
+    assert body, f"{handler} is not defined in the SPA scripts"
+    found = set(re.findall(r"\$\(\s*[\"']([\w-]+)[\"']\s*\)", body))
+    assert found == ids, f"{handler} must read exactly {sorted(ids)} by a literal id, found {sorted(found)}"
+    assert not re.search(r"getElementById\(|querySelector|\$\(\s*[^\s\"']", body), f"{handler} looks an element up other than by one literal id"
 
 
 def _verb_names(names) -> list[str]:

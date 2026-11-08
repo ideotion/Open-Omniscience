@@ -60,7 +60,7 @@ const appSrc = ESC +
   extract(APP, "_jobRow");
 const appRow = (() => {
   const m = { exports: {} };
-  new Function("module", "exports", appSrc + "\nmodule.exports = _jobRow;")(m, m.exports);
+  new Function("module", "exports", "function ooLtrIsolate(s){return String(s==null?'':s);} function ooLtrPct(s){return String(s==null?'':s);}\n" + appSrc + "\nmodule.exports = _jobRow;")(m, m.exports);
   return (j, t) => m.exports(j, {}, t);
 })();
 
@@ -78,7 +78,7 @@ const tmSrc = extract(TM, "esc") + "\n" + extract(TM, "fmtBytes") + "\n" + extra
   varFn(TM, "var dlKey = function") + "\n" + extract(TM, "jobWhy") + "\n" + extract(TM, "jobRow");
 const tmRow = (j, t) => {
   const m = { exports: {} };
-  new Function("module", "exports", "t", tmSrc + "\nmodule.exports = jobRow;")(m, m.exports, t);
+  new Function("module", "exports", "t", "function ooLtrIsolate(s){return String(s==null?'':s);} function ooLtrPct(s){return String(s==null?'':s);}\n" + tmSrc + "\nmodule.exports = jobRow;")(m, m.exports, t);
   return m.exports(j, {});
 };
 

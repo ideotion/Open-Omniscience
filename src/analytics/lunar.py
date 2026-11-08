@@ -124,11 +124,6 @@ LUNAR_METHOD = (
 )
 
 
-def _pearson_centered(xc: list[float], lc: list[float], sx: float, sl: float) -> float:
-    num = sum(a * b for a, b in zip(xc, lc, strict=True))
-    return num / (sx * sl)
-
-
 def circular_shift_test(x: list[float], moon: list[float]) -> tuple[float, float] | None:
     """(r, p) for a dense daily series ``x`` vs the aligned illuminated fraction ``moon``.
 

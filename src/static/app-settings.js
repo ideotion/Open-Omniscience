@@ -18,7 +18,7 @@
    not, and the failure is a TDZ error at load rather than anything a reader would
    spot in review. Add new code inside the module it belongs to.
 */
-    let _docList = null, _docSlug = null, _docRaw = "";
+    let _docList = null, _docSlug = null, _docRaw = "", _docBanner = "", _docGen = 0;
     async function ensureDocList() {   // fetch the list once (also feeds the palette)
       if (_docList === null) {
         try { _docList = (await api("/api/docs")).docs || []; } catch (e) { _docList = []; }
@@ -33,6 +33,34 @@
            data-on-click="openDoc(${esc(JSON.stringify(d.slug))})">${esc(d.title)}<small>${esc(d.blurb)}</small></button>`).join("");
       if (!_docSlug) openDoc((_docList.find(d => d.slug === "user-manual") || _docList[0] || {}).slug);
     }
+    // THE COVERAGE FIGURE'S UNIT IS A SECTION: the ATX headings of a document, fenced code ignored (a `#` line in a code block is
+    // not a heading). Headings are what the omnibar's Help-content group lands on and what tests/test_help_docs_translated.py
+    // compares, so one unit serves the reader and the guard. It counts HEADINGS present, not translated words: the banner says so.
+    function docSections(md) {
+      let n = 0, fenced = false;
+      for (const line of String(md == null ? "" : md).split("\n")) {
+        if (/^\s{0,3}(```|~~~)/.test(line)) { fenced = !fenced; continue; }
+        if (!fenced && /^#{1,6} +\S/.test(line)) n++;
+      }
+      return n;
+    }
+    // The reader's honest statement of what it was given (informed consent, x12 through OOI18N.tf; the frame translates, the
+    // numbers and the language's own name do not). `wanted` is the UI language, `served` what X-OO-Doc-Lang says came back.
+    //  - served = an own-language draft: its language, "machine-drafted, English is authoritative" and the translated-of-total
+    //    figure in sections. The figure is computed from the two documents AFTER they are loaded; with no English text to count
+    //    against (`total` null) the figure is ABSENT with that reason, never a guessed number.
+    //  - served = English for a non-English reader: no draft exists, and the reader is told why the page is not in their language.
+    //  - English reader, English document: no banner.
+    function docBannerHtml(wanted, served, done, total, language) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const box = (kind, text) => `<div class="hint doc-banner" data-doc-banner="${kind}" role="note" style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:10px"><span>${esc(text)}</span></div>`;
+      if (!wanted || wanted === "en") return "";
+      if (served === "en") return box("fallback", tf("This document has no draft in this language yet ({language}), so the English original is shown.", { language }));
+      if (total == null || done == null) {
+        return box("draft", tf("Machine-drafted translation ({language}). How much of this document is translated could not be measured here. The English original is authoritative. Found a better wording? Improve it on the project page.", { language }));
+      }
+      return box("draft", tf("Machine-drafted translation ({language}): this draft has {done} of the {total} headings of the English original; that counts headings, not translated words. The English original is authoritative. Found a better wording? Improve it on the project page.", { language, done: Math.min(done, total), total }));
+    }
     // `anchor` (2026-09-09) is optional and additive: the omnibar's Help-content group
     // knows which HEADING a hit sits under, and landing at the top of a 3,000-line manual
     // wastes the one thing the search just worked out. mdToHtml emits heading ids (the
@@ -41,6 +69,7 @@
     async function openDoc(slug, anchor) {
       if (!slug) return;
       _docSlug = slug;
+      const gen = ++_docGen;   // a load owns the pane only while it is the latest: the same document re-opened in another language must win too
       document.querySelectorAll(".doc-link").forEach(b =>
         b.classList.toggle("active", b.getAttribute("data-on-click").includes("'" + slug + "'")));
       const prose = $("doc-prose"); prose.innerHTML = '<div class="muted">Loading…</div>';
@@ -50,17 +79,29 @@
         const lang = (window.OOI18N && OOI18N.current()) || "en";
         const r = await fetch("/api/docs/" + slug + "?lang=" + encodeURIComponent(lang));
         if (!r.ok) throw new Error(String(r.status));
-        _docRaw = await r.text();
+        const raw = await r.text();
         const served = r.headers.get("X-OO-Doc-Lang") || "en";
-        const banner = (served !== "en")
-          ? `<div class="hint" style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:10px">` +
-            `<span>Machine-drafted translation — the English original is authoritative. Found a better wording? Improve it on the project page.</span></div>`
-          : "";
-        prose.innerHTML = banner + mdToHtml(_docRaw);
+        // The figure needs the English document to count against: one more local read, only when a draft was served.
+        let total = null;
+        if (served !== "en") {
+          try {
+            const en = await fetch("/api/docs/" + slug + "?lang=en");
+            if (en.ok) total = docSections(await en.text());
+          } catch (_e) { total = null; }
+        }
+        if (gen !== _docGen) return;   // a newer load (another document, or this one in another language) owns the pane, the banner and _docRaw
+        const language = (window.OOI18N && OOI18N.meta && OOI18N.meta.native) || lang;
+        _docRaw = raw;
+        _docBanner = docBannerHtml(lang, served, total == null ? null : docSections(raw), total, language);
+        prose.innerHTML = _docBanner + mdToHtml(_docRaw);
         const at = anchor ? prose.querySelector("#" + (window.CSS && CSS.escape ? CSS.escape(anchor) : anchor)) : null;
         (at || prose).scrollIntoView({block: at ? "start" : "nearest"});
       }
-      catch (e) { prose.innerHTML = '<div class="muted">Could not load this document.</div>'; }
+      catch (e) {
+        if (gen !== _docGen) return;
+        _docRaw = ""; _docBanner = "";   // a failed load must not leave the previous document for the find box to redraw
+        prose.innerHTML = '<div class="muted">Could not load this document.</div>';
+      }
       const f = $("doc-find"); if (f && f.value) highlightProse(f.value);
     }
     // DEBOUNCED, so the scroll to the first match runs OUTSIDE the input event
@@ -72,6 +113,10 @@
     // landed), so a TYPED phrase lit a mark 1,800 px below the viewport while the
     // same phrase PASTED jumped to it. The pause also stops re-rendering the whole
     // Help body on every key.
+    // A language switch re-opens the Help document in the new language, wherever the switch was made (the top bar, or Settings
+    // while Help is not the visible tab: Help's loader runs once, so nothing else would): the banner names the language it was
+    // built for. One local read per switch, and only once a document has been opened.
+    document.addEventListener("oo:langchange", () => { if (_docSlug) openDoc(_docSlug); });
     let _docFindTimer = null;
     function filterDoc() {
       clearTimeout(_docFindTimer);
@@ -80,7 +125,7 @@
     function _filterDocNow() {
       _docFindTimer = null;
       if (!_docRaw) return;
-      $("doc-prose").innerHTML = mdToHtml(_docRaw);
+      $("doc-prose").innerHTML = _docBanner + mdToHtml(_docRaw);   // the banner survives the find box re-render
       highlightProse($("doc-find").value);
     }
     function highlightProse(q) {
@@ -729,7 +774,7 @@
         const pct = active.percent || 0;
         html += `<div class="row" style="align-items:center;gap:8px;margin-bottom:4px">` +
           `<code>${esc(active.model)}</code> <span class="pill">${esc(t("Pulling"))}</span> ` +
-          `<span class="muted">${esc(active.status || "")} ${pct}%</span>` +
+          `<span class="muted">${esc(active.status || "")} ${ooLtrIsolate(pct + "%")}</span>` +
           `<button class="tiny danger" data-on-click="cancelPull(${esc(JSON.stringify(active.model))})">${esc(t("Cancel"))}</button></div>` +
           `<progress value="${pct}" max="100" style="width:100%"></progress>`;
       }
@@ -1634,7 +1679,7 @@
       const tl = s.tally || {};
       const eta = (s.eta_seconds != null) ? ` · ~${Math.max(1, Math.round(s.eta_seconds / 60))} ${t("min left")}` : "";
       if (active) {
-        prog.innerHTML = `${esc(t("Importing"))}… ${s.percent || 0}% (${s.files_done}/${s.files_total}) · ` +
+        prog.innerHTML = `${esc(t("Importing"))}… ${ooLtrIsolate((s.percent || 0) + "%")} (${s.files_done}/${s.files_total}) · ` +
           `${(tl.stored || 0)} ${esc(t("imported"))}, ${(tl.duplicate || 0)} ${esc(t("duplicates skipped"))}` +
           (s.state === "paused" ? ` (${esc(t("paused"))})` : eta);
       } else if (s.state === "done") {
@@ -1843,7 +1888,7 @@
         : t("the published default");
       let html = `<b>${esc(tf("{gb} GB", { gb: b.gb }))}</b> <span class="muted">${esc(src)}</span>`;
       if (typeof b.used_share === "number") {
-        html += `<div class="muted">${esc(tf("{pct}% used", { pct: _storagePct(b.used_share) }))}</div>`;
+        html += `<div class="muted">${ooLtrPct(esc(tf("{pct}% used", { pct: _storagePct(b.used_share) })))}</div>`;
       }
       if (b.exhausted === true) {
         html += `<div class="card-caveat">${esc(lane.kind === "wiki"

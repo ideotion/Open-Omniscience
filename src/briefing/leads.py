@@ -23,6 +23,7 @@ from datetime import datetime
 from typing import Any
 
 from src.briefing.card import Card, frame, frames_text
+from src.shared import walk_no_score
 from src.signals.near_dup import _connected_components
 
 OUTLETS_NOTE = (
@@ -348,22 +349,6 @@ def assemble_leads_view(
     return out
 
 
-def _walk_no_score(obj: Any) -> None:
-    """Raises explicitly (never a bare ``assert``, which ``python -O``/
-    ``PYTHONOPTIMIZE`` strips silently and would let this self-test's own
-    no-fabricated-score check false-pass under that flag — transversal
-    audit 09, 2026-07-25, §10.4)."""
-    banned = ("score", "ranking", "rating", "grade")
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if any(b in str(k).lower() for b in banned):
-                raise AssertionError(f"score-like key: {k}")
-            _walk_no_score(v)
-    elif isinstance(obj, list):
-        for v in obj:
-            _walk_no_score(v)
-
-
 def run_leads_selftest() -> dict:
     """Prove the §2 pure mechanism on hand-built Cards — no DB/network/score. Pins the ordering
     (more sources ranks earlier; recency breaks a tie), the major-floor fact, story clustering by
@@ -436,9 +421,9 @@ def run_leads_selftest() -> dict:
 
     no_score = True
     try:
-        _walk_no_score(maj)
-        _walk_no_score(cl)
-        _walk_no_score(card_deltas(prev, new))
+        walk_no_score(maj)
+        walk_no_score(cl)
+        walk_no_score(card_deltas(prev, new))
     except AssertionError:
         no_score = False
     check("no_score_field", no_score)

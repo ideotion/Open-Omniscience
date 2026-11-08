@@ -38,6 +38,7 @@ from typing import Any
 
 from src.monitoring import unlock_marker
 from src.monitoring.secret_scrub import log_failure, record_text
+from src.shared import walk_no_score
 
 _LOG = logging.getLogger(__name__)
 
@@ -597,22 +598,6 @@ def _reset_for_tests() -> None:
             _appends_since_trim[kind] = _TRIM_EVERY
 
 
-def _walk_no_score(obj: Any) -> None:
-    """Raises explicitly (never a bare ``assert``, which ``python -O``/
-    ``PYTHONOPTIMIZE`` strips silently and would let this self-test's own
-    no-fabricated-score check false-pass under that flag — transversal
-    audit 09, 2026-07-25, §10.4)."""
-    banned = ("score", "ranking", "rating", "grade")
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if any(b in str(k).lower() for b in banned):
-                raise AssertionError(f"score-like key: {k}")
-            _walk_no_score(v)
-    elif isinstance(obj, list):
-        for v in obj:
-            _walk_no_score(v)
-
-
 class _FakeClock:
     """Deterministic monotonic clock: returns each tick in order, holds the last forever."""
 
@@ -747,9 +732,9 @@ def run_search_timing_selftest() -> dict:
     # No composite score anywhere in the surfaced structures.
     no_score = True
     try:
-        _walk_no_score(rec_a)
-        _walk_no_score(agg)
-        _walk_no_score(rep)
+        walk_no_score(rec_a)
+        walk_no_score(agg)
+        walk_no_score(rep)
     except AssertionError as exc:
         no_score = False
         check("no_score_field", False, record_text(exc, typed=False))
