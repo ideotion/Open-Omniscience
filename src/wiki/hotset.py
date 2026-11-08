@@ -66,6 +66,85 @@ def pageview_kv_key(edition: str) -> str:
     return f"wiki.pageviews.top.{edition}"
 
 
+def _mention_statement(limit: int):
+    """The one statement that reads the mention set: the first ``limit + 1`` terms by frequency."""
+    from src.database.models import Keyword
+
+    return (
+        select(Keyword.term)
+        .where(Keyword.term.is_not(None))
+        .order_by(Keyword.frequency.desc(), Keyword.term)
+        .limit(limit + 1)
+    )
+
+
+#: A mention read slower than this (seconds) logs the statement's query plan once per process.
+SLOW_MENTION_READ_S: float = 1.0
+
+#: The share of wall time a cached mention set may spend being re-read: it is reused for ``1 / MENTION_READ_DUTY`` times what the read cost.
+MENTION_READ_DUTY: float = 0.01
+
+
+def _log_mention_plan(corpus: Any, limit: int, elapsed: float) -> None:
+    """Say how SQLite planned the slow read. The 2026-11-07 Windows run measured 8.4 s a call (1,516 calls) on a build that already had the
+    index-order fix, and a synthetic table of the same shape runs in 9 ms: the real plan is the missing fact. Table, index and column names only."""
+    try:
+        from sqlalchemy import text
+
+        bind = corpus.get_bind()
+        if bind.dialect.name != "sqlite":
+            return
+        sql = str(_mention_statement(limit).compile(dialect=bind.dialect, compile_kwargs={"literal_binds": True}))
+        plan = [str(r[3]) for r in corpus.execute(text("EXPLAIN QUERY PLAN " + sql)).all()]
+        _LOG.warning("slow corpus mention read: %.1f s for %d terms; query plan: %s", elapsed, limit, " | ".join(plan))
+    except Exception as exc:  # noqa: BLE001 - a diagnostic must never break the drain that asked for it
+        from src.monitoring.secret_scrub import log_failure
+
+        log_failure(_LOG, "could not read the plan of the slow mention query", exc, level=logging.DEBUG)
+
+
+class MentionCache:
+    """Reuses the mention set for a time DERIVED FROM WHAT THE READ COST, so a slow corpus pays for it rarely and a fast one barely caches.
+
+    The set is the corpus's most frequent keyword terms and it moves slowly; the wiki drain asked for it about every 98 s and each read cost
+    8.4 s on average (3.5 h in total over 41 h). A read that took ``c`` seconds is reused for ``c / MENTION_READ_DUTY`` seconds, so the read
+    itself is at most 1% of the wall time whatever the corpus size. NOT SHARED BETWEEN CORPORA OR LIMITS: it is one instance held by the one
+    caller that owns a corpus, and a different ``limit`` reads again. A failed read raises and keeps nothing. STATED TRADE: the window has no upper bound, so a read
+    that took 60 s keeps the set for 100 minutes, during which a keyword that became frequent in that time is not yet in the HOT tier (it joins at the next read)."""
+
+    def __init__(self, monotonic: Any = None) -> None:
+        import threading
+        import time
+
+        self._monotonic = monotonic or time.monotonic
+        self._lock = threading.Lock()
+        self._held: tuple[int, set[str], bool, float, str] | None = None  # limit, titles, capped, valid until, corpus
+        self._plan_logged = False
+
+    @staticmethod
+    def _corpus_key(corpus: Any) -> str:
+        """Which corpus database this session reads (the URL, whose password SQLAlchemy masks). Unreadable: a key no read can match."""
+        try:
+            return str(corpus.get_bind().url)
+        except Exception:  # noqa: BLE001
+            return f"unknown-{id(corpus)}"
+
+    def get(self, corpus: Any, *, limit: int = MENTION_LIMIT) -> tuple[set[str], bool]:
+        with self._lock:
+            now = self._monotonic()
+            held = self._held
+            key = self._corpus_key(corpus)
+            if held is not None and held[0] == limit and held[4] == key and now < held[3]:
+                return set(held[1]), held[2]
+            titles, capped = corpus_mention_titles(corpus, limit=limit)
+            elapsed = max(0.0, self._monotonic() - now)
+            if elapsed >= SLOW_MENTION_READ_S and not self._plan_logged:
+                self._plan_logged = True
+                _log_mention_plan(corpus, limit, elapsed)
+            self._held = (limit, titles, capped, self._monotonic() + elapsed / MENTION_READ_DUTY, key)
+            return set(titles), capped
+
+
 def corpus_mention_titles(corpus: Any, *, limit: int = MENTION_LIMIT) -> tuple[set[str], bool]:
     """The corpus's own most-frequent keyword terms, and whether the cap was hit.
 
@@ -85,18 +164,7 @@ def corpus_mention_titles(corpus: Any, *, limit: int = MENTION_LIMIT) -> tuple[s
     corpus with fewer than 5,000 keywords that have a frequency of 1 or more. SQLAlchemy renders the
     ``limit`` as ``LIMIT ? OFFSET ?`` on SQLite (an OFFSET bound to 0): this is one page, not a pager.
     """
-    from src.database.models import Keyword
-
-    rows = (
-        corpus.execute(
-            select(Keyword.term)
-            .where(Keyword.term.is_not(None))
-            .order_by(Keyword.frequency.desc(), Keyword.term)
-            .limit(limit + 1)
-        )
-        .scalars()
-        .all()
-    )
+    rows = corpus.execute(_mention_statement(limit)).scalars().all()
     capped = len(rows) > limit
     return {r for r in rows[:limit] if r}, capped
 
@@ -169,6 +237,7 @@ def build_hot_sets(
     editions: tuple[str, ...],
     pageview_tops: dict[str, set[str]] | None = None,
     mention_limit: int = MENTION_LIMIT,
+    mention_cache: MentionCache | None = None,
 ) -> tuple[dict[str, HotSet], dict[str, Any]]:
     """One :class:`HotSet` per edition, plus a report of how each was built.
 
@@ -177,7 +246,10 @@ def build_hot_sets(
     that the tier is working.
     """
     tops = pageview_tops or {}
-    mentions, capped = corpus_mention_titles(corpus, limit=mention_limit)
+    if mention_cache is not None:
+        mentions, capped = mention_cache.get(corpus, limit=mention_limit)
+    else:
+        mentions, capped = corpus_mention_titles(corpus, limit=mention_limit)
     sets: dict[str, HotSet] = {}
     per_edition: dict[str, Any] = {}
     by_edition = followed_page_ids_by_edition(lane, editions)

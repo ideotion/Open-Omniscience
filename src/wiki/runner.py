@@ -125,6 +125,11 @@ WALK_RESERVE: float = 0.3
 #: a rate: nothing about the network depends on it.
 DRAIN_INTERVAL_S: float = 30.0
 
+#: How long the stream thread reuses a "keep going" answer to the lane-state read, in seconds. It bounds how
+#: late the operator's Stop or Pause is seen by the per-event check; it is a latency-versus-CPU choice and not
+#: a rate (the kill switch and airplane mode are read per event regardless; see ``_stream_should_stop``).
+STATE_READ_TTL_S: float = 2.0
+
 #: How many drain durations the runner keeps for its p50 and p95. Not a tuning number: it is
 #: the ticks of a 72-hour run (3 days at one drain every 30 s plus the drain itself is under
 #: 8,640), the run the operator asked these figures for, and 10,000 floats are 80 KB.
@@ -272,6 +277,7 @@ def drain_once(
     rotate: int = 0,
     catch_up: int = CATCH_UP_LIMIT,
     attempts: dict[int, float] | None = None,
+    store_failures: dict[int, int] | None = None,
 ) -> DrainReport:
     """Drain every feed's buffer into the lane once. No network of its own.
 
@@ -322,6 +328,7 @@ def drain_once(
                 monotonic=monotonic,
                 catch_up=catch_up if text_seconds is not None else 0,
                 attempts=attempts,
+                store_failures=store_failures,
             )
         except LaneTransactionLost:
             # The lane's transaction is gone: go on and a later feed's commit would hide the
@@ -410,6 +417,8 @@ class WikiLaneRunner:
         self._sleep = sleep
         self._monotonic = monotonic
         self._stop = threading.Event()
+        #: Until when the stream's last "keep going" answer stands (a monotonic time); ``None`` when none does.
+        self._state_ok_until: float | None = None
         self._thread: threading.Thread | None = None
         # ONE start at a time: the drain thread's revive and the service's start (Start, Run-now,
         # the airplane button) can land together, and two passes through the alive check would
@@ -454,6 +463,8 @@ class WikiLaneRunner:
         #: Entity id -> monotonic time of the catch-up's last attempt at it, this process only
         #: (the pipeline's backoff; a restart forgets it, which costs one more try).
         self._attempts: dict[int, float] = {}
+        #: Entity id -> how many times in a row its store failed, this process only; it lengthens the wait in ``_attempts`` (``backlog_cooldown``).
+        self._store_failures: dict[int, int] = {}
         #: When the last drain COMPLETED. A failed drain leaves it alone (it shows in
         #: ``consecutive_failures``), so "since last drain" never counts a failure as one.
         self._last_drain_ended: float | None = None
@@ -620,6 +631,30 @@ class WikiLaneRunner:
             self.last_error = "the lane setting could not be read; the loop stopped (the next Start or online click restarts it)"
             return True
 
+    def _stream_should_stop(self) -> bool:
+        """The stream's per-EVENT stop check: ``_should_stop``, but a "keep going" answer is reused for
+        ``STATE_READ_TTL_S`` seconds.
+
+        WHY. The stream calls its stop check for every event of the whole recent-change firehose, and
+        ``_should_stop`` reads the settings each time (a key-value read or a JSON file read, then the data
+        directory's mkdir, chmod and stat). On the 41-hour Windows run of 2026-11-07 this thread was the third
+        busiest in the process: 904 CPU-seconds in one hour, all of it that read repeated for events whose
+        answer had not changed. WHAT IS KEPT FRESH: a stop is never reused (only a False answer is stored), the
+        runner's own stop event is read live on every call, and the kill switch and airplane mode are read per
+        event by the stream itself, not through this check. WHAT IS TRADED: the operator's Stop or Pause is
+        seen within ``STATE_READ_TTL_S`` rather than at the very next event, and the stream may store the
+        events of those seconds. An unreadable setting is not cached either: it stops the stream at once, as
+        before."""
+        if self._stop.is_set():
+            return True
+        now = self._monotonic()
+        if self._state_ok_until is not None and now < self._state_ok_until:
+            return False
+        stopping = self._should_stop()
+        if not stopping:
+            self._state_ok_until = now + STATE_READ_TTL_S
+        return stopping
+
     def _writing_stopped(self) -> bool:
         """What the TIERS stop on: the lane is stopped, or the database reported its file damaged. The
         stream thread does not stop on the second (it keeps filling its bounded buffer: it writes nothing),
@@ -638,7 +673,7 @@ class WikiLaneRunner:
         try:
             self._stream.run(
                 self._adapter.offer,
-                should_stop=self._should_stop,
+                should_stop=self._stream_should_stop,
                 max_connections=self._max_connections,
                 resume_from=resume,
                 on_position=self._adapter.note_position,
@@ -664,6 +699,7 @@ class WikiLaneRunner:
             if self._state_of() != "running":
                 return False
             self._stop.clear()
+            self._state_ok_until = None
             self._thread = threading.Thread(
                 target=self._stream_body, name="oo-wiki-stream", daemon=True
             )
@@ -767,14 +803,14 @@ class WikiLaneRunner:
                     report = drain_once(
                         lane, self._adapter, hot_sets=hot, budget=budget,
                         monotonic=self._monotonic, on_feed=_note_feed, rotate=self.drains,
-                        attempts=self._attempts,
+                        attempts=self._attempts, store_failures=self._store_failures,
                     )
                 else:
                     with corpus_cm as corpus:
                         report = drain_once(
                             lane, self._adapter, hot_sets=hot, budget=budget, corpus=corpus,
                             monotonic=self._monotonic, on_feed=_note_feed, rotate=self.drains,
-                            attempts=self._attempts,
+                            attempts=self._attempts, store_failures=self._store_failures,
                         )
             ok = True
         finally:
