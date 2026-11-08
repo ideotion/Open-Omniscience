@@ -25,16 +25,16 @@ half-width (item 33 (a)).
 | 33e OSM B3c: places by country and by region | item 33 (e) | #1736 | `cac50c6` | 18 |
 | 33f OSM stored monthly summary (R435) | item 33 (f) | #1738 | `a47a9fb` | 5 |
 | 33g oo-on: confirmations for the irreversible actions | item 33 (g), C6 | #1746 | `0982a0b` | 4 |
-| 33h Help coverage banner | item 33 (h) (reserved for E2), not yet in its text | #1748 | `bf4cbbf41` | 3 |
+| 33h Help coverage banner | item 33 (h), E2 | #1748 | `bf4cbbf41` | 3 |
 | 33i Population-weighted figures state their weighting | item 33 (i), A-S6 | #1750 | `2a621dc` | 5 |
-| 33j Climate series | planned item 33 (j), not yet in item 33 | #1751 | `45851f526` | 1 |
+| 33j Climate series | item 33 (j) | #1751 | `45851f526` | 1 |
 | extra-1 OSM daily change files: update a country (J1) | not in item 33 | #1720 | `ea88a6e` | 22 |
 | extra-2 Living sources: OSM daily change files (B1) | not in item 33 | #1725 | `c0c66ff` | 15 |
 | extra-3 Living sources: per-edition coverage group | not in item 33 | #1727 | `7139c68` | 14 |
 | **All** | | | | **187** |
 
 - (b) of item 33 is an operator step (a dated population table) and adds no key.
-- Item 33 on main has (a) to (g) and (i); (h) is reserved for E2 (#1748, merged) and (j) is planned for the climate key (#1751, merged); both rows are listed here ahead of their text in item 33.
+- Item 33 has (a) to (j); (h) and (j) were added with their merges (#1748, #1751).
 - A group marked PENDING is read from its open PR head and changes on a re-run until it merges.
 
 ## 33a: Law coverage floor (C-L1)
@@ -316,7 +316,7 @@ Keys (English source, then the files that use it):
 
 ## 33h: Help coverage banner
 
-Recorded: item 33 (h) (reserved for E2), not yet in its text. PR #1748, merge `bf4cbbf41`. 3 new keys.
+Recorded: item 33 (h), E2. PR #1748, merge `bf4cbbf41`. 3 new keys.
 
 Per-language counts (keys added / same as English / missing):
 
@@ -374,7 +374,7 @@ Keys (English source, then the files that use it):
 
 ## 33j: Climate series
 
-Recorded: planned item 33 (j), not yet in item 33. PR #1751, merge `45851f526`. 1 new key.
+Recorded: item 33 (j). PR #1751, merge `45851f526`. 1 new key.
 
 Per-language counts (keys added / same as English / missing):
 

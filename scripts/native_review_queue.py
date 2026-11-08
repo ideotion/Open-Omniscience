@@ -52,7 +52,7 @@ GROUPS = [
     ),
     (
         "33h",
-        "item 33 (h) (reserved for E2), not yet in its text",
+        "item 33 (h), E2",
         "Help coverage banner",
         1748,
         "bf4cbbf41",
@@ -64,17 +64,16 @@ GROUPS = [
         1750,
         "2a621dc",
     ),
-    ("33j", "planned item 33 (j), not yet in item 33", "Climate series", 1751, "45851f526"),
+    ("33j", "item 33 (j)", "Climate series", 1751, "45851f526"),
     ("extra-1", "not in item 33", "OSM daily change files: update a country (J1)", 1720, "ea88a6e"),
     ("extra-2", "not in item 33", "Living sources: OSM daily change files (B1)", 1725, "c0c66ff"),
     ("extra-3", "not in item 33", "Living sources: per-edition coverage group", 1727, "7139c68"),
 ]
 
-# Item 33 (b) asks for no translation (a tree and operator fact). (h) and (j) are planned
-# letters from the Plan lane's bundle (#1778) and exist in item 33 only once it merges.
+# Item 33 (b) asks for no translation (a tree and operator fact).
 NOTES = [
     "(b) of item 33 is an operator step (a dated population table) and adds no key.",
-    "Item 33 on main has (a) to (g) and (i); (h) is reserved for E2 (#1748, merged) and (j) is planned for the climate key (#1751, merged); both rows are listed here ahead of their text in item 33.",
+    "Item 33 has (a) to (j); (h) and (j) were added with their merges (#1748, #1751).",
     "A group marked PENDING is read from its open PR head and changes on a re-run until it merges.",
 ]
 
