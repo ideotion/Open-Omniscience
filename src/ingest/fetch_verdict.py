@@ -61,11 +61,14 @@ NETWORK_REFUSED = "network refused: airplane mode is engaged"
 #      AFTER the fetcher's own check passed: "request error for <url>: HTTPSConnectionPool(host='<host>', port=<n>): Max retries exceeded
 #      with url: <path> (Caused by NewConnectionError("HTTPSConnection(host='<host>', port=<n>): Failed to establish a new connection: airplane
 #      mode is engaged: ...", the cause led by "ProxyError('Unable to connect to proxy', " when the guard refused a proxy that is not on
-#      loopback. The alternative spells that construction out from its first word with no gap, because a host's OWN words can sit
-#      in the same sentence: urllib3 quotes a status line it could not parse (``('Connection aborted.', BadStatusLine('<the host's line>'))``),
-#      and a gap (the ``.*`` this alternative had) read a host that wrote the guard's words there as the person's airplane mode (OPEN_QUEUE
-#      2026-11-08 item 42, R616). The host tokens take no whitespace, quote or backslash (as in 3.), and the path is percent-encoded, so neither can
-#      carry the words that follow it;
+#      loopback, and the class names urllib3.contrib.socks gives them over a SOCKS proxy (the protected transport, Tor): SOCKSHTTPSConnectionPool
+#      and SOCKSHTTPSConnection, SOCKSHTTPConnectionPool and SOCKSConnection. The alternative spells that construction out from its first word
+#      with no gap, because a host's OWN words can sit in the same sentence: urllib3 quotes a status line it could not parse (``('Connection
+#      aborted.', BadStatusLine('<the host's line>'))``), and a gap (the ``.*`` this alternative had) read a host that wrote the guard's words
+#      there as the person's airplane mode (OPEN_QUEUE 2026-11-08 item 42, R616). Every token another party shapes ends where our words begin:
+#      the URL is written through ``failure_url`` below (its whitespace percent-encoded, so ``\S+`` is the whole URL and a link that holds
+#      spaces cannot continue in our words), the path is the one requests sent (percent-encoded), and the host tokens take no whitespace, quote
+#      or backslash (as in 3.);
 #   3. the same guard sentence under OUR resolver wrapper (``EthicalFetcher._resolve_cached``), when the switch is engaged between the
 #      pre-fetch check and the lookup: "cannot resolve host '<host>': airplane mode is engaged: refusing a network connection ...". The host
 #      is the only part another party shapes (a redirect's Location, a feed item's link: an IPvFuture "[v1.<anything>]" host reaches a lookup
@@ -74,12 +77,25 @@ NETWORK_REFUSED = "network refused: airplane mode is engaged"
 #      (read as ``dns``). A gaierror's own text ("[Errno -2] ...") between the two never matches.
 _OFFLINE_RE = re.compile(
     r"^\s*(?:[\w.]+:\s*)?(?:" + re.escape(KILL_SWITCH_REFUSAL_HEAD) + r"|airplane mode is engaged: refusing a network connection)\b"
-    r"|^\s*request error for \S+: HTTPS?ConnectionPool\(host='[^'\s\\]*', port=\d+\): Max retries exceeded with url: \S* "
-    r"\(Caused by (?:ProxyError\('Unable to connect to proxy', )?NewConnectionError\([\"']HTTPS?Connection\(host='[^'\s\\]*', port=\d+\): Failed to establish a new connection: "
+    r"|^\s*request error for \S+: (?:SOCKS)?HTTPS?ConnectionPool\(host='[^'\s\\]*', port=\d+\): Max retries exceeded with url: \S* "
+    r"\(Caused by (?:ProxyError\('Unable to connect to proxy', )?NewConnectionError\([\"'](?:SOCKS(?:HTTPS)?|HTTPS?)Connection\(host='[^'\s\\]*', port=\d+\): "
+    r"Failed to establish a new connection: "
     r"airplane mode is engaged: refusing a network connection"
     r"|^\s*cannot resolve host (?:'[^'\s\\]*'|\"[^\"\s\\]*\"): airplane mode is engaged: refusing a network connection",
     re.IGNORECASE | re.DOTALL,
 )
+
+
+_WHITESPACE_RE = re.compile(r"\s")
+
+
+def failure_url(url: str) -> str:
+    """The URL as the fetcher writes it into its failure sentence ("request error for <url>: ..."): every whitespace character
+    percent-encoded (its UTF-8 bytes), nothing else changed. A caller's URL can hold spaces (a feed item's link, a redirect target) and
+    the reader above takes the URL token as everything up to the first whitespace, so a raw space let the rest of a link be read as our
+    own words (R616). ``\\s`` here is the reader's ``\\S`` turned around, so the two cannot disagree on what ends the token. The request
+    itself is unchanged: requests quotes the URL it sends on its own."""
+    return _WHITESPACE_RE.sub(lambda m: "".join(f"%{b:02X}" for b in m.group().encode("utf-8", "surrogatepass")), url)
 
 
 def is_kill_switch_refusal(text: str | None) -> bool:

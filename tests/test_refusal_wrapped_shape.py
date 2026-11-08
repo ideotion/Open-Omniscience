@@ -9,7 +9,11 @@ The second alternative of ``fetch_verdict._OFFLINE_RE`` read "request error for 
 anything: urllib3 quotes a status line it could not parse, ``('Connection aborted.', BadStatusLine('<the host's line>'))``, so a host that
 wrote the guard's words in its status line was read as the person's airplane mode: a calendar feed then stayed ``skipped_offline`` and never
 climbed its re-check ladder, and a hostile feed in the sample left the feed preflight incomplete on every run (OPEN_QUEUE 2026-11-08 item 42,
-found by the read of R614's second PR). The alternative now spells urllib3's construction out from its first word with no gap.
+found by the read of R614's second PR). The alternative now spells urllib3's construction out from its first word with no gap, and
+its security read found two more ways to the same place, both closed here: the URL token (``\\S+``) ended at the first space INSIDE a link
+that held spaces, so a feed item's link could continue in the guard's words (the fetcher now writes the URL through ``failure_url``, its
+whitespace percent-encoded); and the narrowed alternative named only urllib3's direct classes, so a real Stop over a SOCKS proxy (the
+protected transport, Tor) was no longer read as one (the SOCKS class names are spelled out too).
 
 The real shapes come from the REAL guard through REAL requests/urllib3 (a drift pin, so a urllib3 that rewords its error turns this red
 instead of silently turning a Stop into a host failure); the forged ones are what a host can make the fetcher say.
@@ -23,7 +27,7 @@ import pytest
 import requests
 
 from src.ingest import FetchFailed, activate_kill_switch, clear_kill_switch, kill_switch_active
-from src.ingest.fetch_verdict import classify_fetch_failure, is_kill_switch_refusal
+from src.ingest.fetch_verdict import classify_fetch_failure, failure_url, is_kill_switch_refusal
 from src.monitoring.secret_scrub import record_text
 
 _GUARD_WORDS = "Failed to establish a new connection: airplane mode is engaged: refusing a network connection"
@@ -52,7 +56,7 @@ def _cut(url: str) -> str:
             requests.Session().get(url, timeout=2)
     finally:
         clear_kill_switch()
-    return f"request error for {url}: {record_text(caught.value, typed=False)}"  # the fetcher's own construction
+    return f"request error for {failure_url(url)}: {record_text(caught.value, typed=False)}"  # the fetcher's own construction
 
 
 @pytest.mark.parametrize("url", ["https://a.example/robots.txt", "http://a.example/p?q=1", "https://a.example:8443/x/y"])
@@ -115,7 +119,7 @@ def _status_line(line: str, *, via_retry: bool = False) -> str:
     cause: Exception = ProtocolError("Connection aborted.", http.client.BadStatusLine(line))
     if via_retry:
         cause = MaxRetryError(HTTPSConnectionPool("h.example", 443), "/", cause)
-    return f"request error for https://h.example/: {record_text(requests.exceptions.ConnectionError(cause), typed=False)}"
+    return f"request error for {failure_url('https://h.example/')}: {record_text(requests.exceptions.ConnectionError(cause), typed=False)}"
 
 
 def test_a_real_host_writing_the_guards_words_in_its_status_line_is_its_own_failure():
@@ -147,6 +151,12 @@ def test_a_real_host_writing_the_guards_words_in_its_status_line_is_its_own_fail
     assert classify_fetch_failure(text) != "offline", text
 
 
+#: A link that holds spaces and goes on in the words of a real refusal (a feed item's <link> keeps its spaces through feedparser).
+_FORGED_LINK = (
+    "https://evil.example/x: HTTPSConnectionPool(host='a', port=1): Max retries exceeded with url: / (Caused by NewConnectionError("
+    f"\"HTTPSConnection(host='a', port=1): {_GUARD_WORDS}"
+)
+
 #: What a host can make the fetcher say: its status line, quoted by urllib3 inside our own "request error for" sentence.
 _FORGED = [
     # the whole pool construction forged as a status line (single quotes inside, so the repr adds no backslash)
@@ -173,6 +183,10 @@ _FORGED = [
     # alternative still reads urllib3's sentence word for word, so a urllib3 that grew another sentence here is not read as a Stop)
     "request error for https://h.example/: HTTPSConnectionPool(host='h.example', port=443): Max retries exceeded with url: / (Caused by "
     f"NewConnectionError(\"HTTPSConnection(host='h.example', port=443): Failed to resolve 'h.example' ({_GUARD_WORDS})\"))",
+    # a feed item's link that holds spaces and continues in our words, behind the host's own closed connection: through failure_url (as the
+    # fetcher writes it) the URL token is the whole link, so what follows the first ": " is urllib3's
+    f"request error for {failure_url(_FORGED_LINK)}: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without "
+    "response'))",
 ]
 
 
@@ -188,3 +202,134 @@ def test_the_old_alternative_read_the_forged_status_line_as_offline():
 
     old_second = re.compile(r"^\s*request error for \S+: .*" + _GUARD_WORDS, re.IGNORECASE | re.DOTALL)
     assert all(old_second.match(text) for text in _FORGED[:4]), [t for t in _FORGED[:4] if not old_second.match(t)]
+
+
+def test_the_fetcher_writes_a_link_with_spaces_as_one_token(monkeypatch, tmp_path):
+    """The security read's reproduction, end to end: a feed item's link that holds spaces and goes on in a real refusal's words, fetched
+    through ``EthicalFetcher.fetch`` from a loopback host that answers its robots.txt and then closes the page's connection. The switch is
+    never engaged; the failure is the host's, and the sentence the fetcher writes carries the link as one token."""
+    import socket
+    import threading
+
+    import feedparser
+
+    from src.safety.fetcher import make_fetcher
+
+    monkeypatch.setenv("OO_SSRF_CONNECT_GUARD", "0")  # the host is loopback, standing in for a public one
+    srv = socket.create_server(("127.0.0.1", 0))
+    port = srv.getsockname()[1]
+    seen: list[str] = []
+
+    def serve() -> None:
+        while True:
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                return
+            with conn:
+                request = conn.recv(65536).decode("latin-1")
+                seen.append(request.split("\r\n")[0])
+                if " /robots.txt " in request:
+                    conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 23\r\nConnection: close\r\n\r\n"
+                                 b"User-agent: *\nAllow: /\n")
+
+    t = threading.Thread(target=serve, name="closing-host", daemon=True)
+    t.start()
+    link = _FORGED_LINK.replace("https://evil.example", f"http://127.0.0.1:{port}")
+    feed = (f'<?xml version="1.0"?><rss version="2.0"><channel><title>t</title><item><title>i</title><link>{link}</link></item>'
+            "</channel></rss>")
+    url = feedparser.parse(feed.encode()).entries[0].link
+    assert " " in url and _GUARD_WORDS in url, f"premise: the link keeps its spaces and the words: {url}"
+    f = make_fetcher(retry_backoff_s=0, max_retries=0, robots_cache_path=pathlib.Path(tmp_path) / "robots.json")
+    f._guard_target = lambda *_a, **_k: None  # type: ignore[method-assign]  # the pre-fetch SSRF check would refuse loopback
+    try:
+        with pytest.raises(FetchFailed) as caught:
+            f.fetch(url, require_html=True)
+    finally:
+        srv.close()
+        t.join(5)
+    assert not kill_switch_active()
+    assert len(seen) == 2 and seen[1].startswith("GET /x:%20"), f"premise: robots, then the page was asked for: {seen}"
+    text = record_text(caught.value, typed=False)
+    assert text.startswith(f"request error for {failure_url(url)}: ('Connection aborted.', "), text
+    assert not is_kill_switch_refusal(text), text
+    assert classify_fetch_failure(text) == "connect", text
+
+
+@pytest.mark.parametrize("space", [" ", "\t", "\n", "\r", "\x0b", "\x0c", "\x1c", "\x85", "\xa0", "\u1680", "\u2007", "\u2028", "\u3000"])
+def test_failure_url_leaves_no_character_the_reader_would_end_the_token_on(space):
+    import re
+
+    url = f"https://h.example/a{space}b?q=1{space}#f"
+    token = failure_url(url)
+    assert re.fullmatch(r"\S+", token), repr(token)
+    assert token == url.replace(space, "".join(f"%{b:02X}" for b in space.encode("utf-8")))
+
+
+def test_failure_url_changes_nothing_else():
+    url = "https://h.example:8443/p%20q/r?x=1&y='\"()[]~@!$*+,;=#frag/é"
+    assert failure_url(url) == url
+    assert failure_url("https://h.example/\ud800 x") == "https://h.example/\ud800%20x"  # a lone surrogate is kept and never raises
+
+
+def _socks_cut(url: str) -> str:
+    """The guard's refusal over a SOCKS proxy, built from the REAL objects urllib3.contrib.socks raises (its ``_new_conn`` wraps the
+    OSError PySocks lets through as ``NewConnectionError(self, f"Failed to establish a new connection: {e}")``), under the class names
+    that module defines. PySocks is not in the lock, so the module itself cannot be imported here: its class names are read from its
+    source instead, a drift pin for a urllib3 that renames them."""
+    import importlib.util
+    import socket
+    from urllib.parse import urlsplit
+
+    from urllib3 import HTTPConnectionPool, HTTPSConnectionPool
+    from urllib3.connection import HTTPConnection, HTTPSConnection
+    from urllib3.exceptions import MaxRetryError, NewConnectionError
+
+    from src.ingest.airplane import AirplaneModeError
+
+    spec = importlib.util.find_spec("urllib3")
+    assert spec is not None and spec.origin is not None
+    socks_src = (pathlib.Path(spec.origin).parent / "contrib" / "socks.py").read_text(encoding="utf-8")
+    parts = urlsplit(url)
+    https = parts.scheme == "https"
+    pool_name, conn_name = ("SOCKSHTTPSConnectionPool", "SOCKSHTTPSConnection") if https else ("SOCKSHTTPConnectionPool", "SOCKSConnection")
+    for name in (pool_name, conn_name):
+        assert f"class {name}(" in socks_src, f"urllib3.contrib.socks no longer defines {name}"
+    assert 'f"Failed to establish a new connection: {e}"' in socks_src, "urllib3.contrib.socks reworded its connect error"
+    pool_cls = type(pool_name, (HTTPSConnectionPool if https else HTTPConnectionPool,), {})
+    conn_cls = type(conn_name, (HTTPSConnection if https else HTTPConnection,), {})
+    host, port = parts.hostname or "", parts.port or (443 if https else 80)
+    activate_kill_switch()
+    try:
+        with pytest.raises(AirplaneModeError) as refused:
+            socket.create_connection((host, port), timeout=2)  # what PySocks' connect meets under the guard
+    finally:
+        clear_kill_switch()
+    cause = NewConnectionError(conn_cls(host, port), f"Failed to establish a new connection: {record_text(refused.value, typed=False)}")
+    path = parts.path + (f"?{parts.query}" if parts.query else "")
+    error = requests.exceptions.ConnectionError(MaxRetryError(pool_cls(host, port), path, cause))
+    return f"request error for {failure_url(url)}: {record_text(error, typed=False)}"
+
+
+@pytest.mark.parametrize("url", ["https://a.example/story", "http://a.example/p?q=1", "https://a.example:8443/x"])
+def test_the_guards_refusal_over_a_socks_proxy_is_recognised(url):
+    text = _socks_cut(url)
+    assert text.startswith(f"request error for {failure_url(url)}: SOCKSHTTP"), f"premise: {text}"
+    assert _GUARD_WORDS in text, f"premise: {text}"
+    assert is_kill_switch_refusal(text), text
+    assert classify_fetch_failure(text) == "offline", text
+
+
+def test_the_guards_refusal_through_real_pysocks_is_recognised():
+    """The same through PySocks itself, where it is installed (protected mode needs it; the lock does not carry it)."""
+    pytest.importorskip("socks")
+    activate_kill_switch()
+    try:
+        with pytest.raises(requests.RequestException) as caught:
+            requests.Session().get("https://a.example/story", timeout=2,
+                                   proxies={"http": "socks5h://127.0.0.1:9", "https": "socks5h://127.0.0.1:9"})
+    finally:
+        clear_kill_switch()
+    text = f"request error for {failure_url('https://a.example/story')}: {record_text(caught.value, typed=False)}"
+    assert _GUARD_WORDS in text, f"premise: the guard refused the connect: {text}"
+    assert is_kill_switch_refusal(text), text
