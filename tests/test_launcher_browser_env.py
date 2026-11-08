@@ -117,11 +117,9 @@ def test_launch_cmd_clears_the_held_names_right_before_every_start():
         low = ln.lower()
         if low.startswith("rem") or i in starts:
             continue
-        # the terminal panel (#1817, R600) is the app's own Python and drops the held names from its
-        # own environment as it starts, before it can open a browser (tests/test_terminal_panel.py);
-        # it holds no address of its own to hand to the shell, so it is not a browser start
-        # pinned to the exact program and to a tail with no command separator, so nothing can be
-        # chained after it under the exemption
+        # the terminal panel's start (#1817, R600) is checked by
+        # test_launch_cmd_starts_the_panel_without_the_held_names below; it is matched here by its
+        # exact program and a tail with no command separator, so nothing can be chained after it
         if re.fullmatch(
             r'if not errorlevel 1 start "open omniscience panel" "\.venv\\scripts\\python\.exe"'
             r" -m src\.tui\.panel [^&|^]*",
@@ -159,9 +157,15 @@ def test_launch_cmd_gives_the_names_back_to_the_server():
         i for i, ln in enumerate(lines) if ln in ('"%APP%"',) or 'launch_server.ps1" -App' in ln
     ]
     assert server and all(i > closed for i in server)
-    # and nothing between the endlocal and the server clears a name again
-    for ln in lines[closed : max(server)]:
-        assert not any(ln == f'set "{n}="' for n in HELD_ENV_VARS)
+    # and nothing between the endlocal and the server clears a name again, except inside a nested
+    # setlocal that its own endlocal closes before the server (the panel's)
+    depth = 0
+    for ln in lines[closed + 1 : max(server)]:
+        depth += {"setlocal": 1, "endlocal": -1}.get(ln.lower(), 0)
+        assert depth >= 0
+        if any(ln == f'set "{n}="' for n in HELD_ENV_VARS):
+            assert depth > 0, f"launch.cmd clears a held name for the server: {ln}"
+    assert depth == 0, "every nested setlocal is closed before the server starts"
 
 
 # --------------------------------------------------------------------------- #
@@ -295,3 +299,22 @@ def test_the_already_running_branch_opens_the_browser_without_the_passphrase(tmp
     browser = _read_presence(tmp_path / "browser.txt")
     assert browser[CONTROL] == "set"
     assert all(browser[n] == "unset" for n in HELD_ENV_VARS)
+
+
+def test_launch_cmd_starts_the_panel_without_the_held_names():
+    """The panel never needs the passphrases (it drops them itself too, tests/test_terminal_panel.py),
+    so launch.cmd clears both in a nested setlocal before the curses check and the panel start, and
+    the matching endlocal gives them back before the server starts. The clears come before the check
+    because clearing an unset name sets ERRORLEVEL, which the start's `if not errorlevel 1` reads."""
+    lines = _cmd_lines()
+    low = [ln.lower() for ln in lines]
+    panel = next(i for i, ln in enumerate(low) if "-m src.tui.panel" in ln)
+    check = next(i for i in range(panel, -1, -1) if '-c "import curses"' in low[i])
+    opened = next(i for i in range(check, -1, -1) if low[i] == "setlocal")
+    assert lines[opened + 1 : check] == [f'set "{n}="' for n in HELD_ENV_VARS], (
+        "the held names are cleared right before the curses check"
+    )
+    assert check == panel - 1, "nothing between the check and the start resets ERRORLEVEL"
+    assert low[panel + 1] == "endlocal", "the clear ends with the panel start"
+    server = next(i for i, ln in enumerate(lines) if 'launch_server.ps1" -App' in ln)
+    assert panel + 1 < server, "the server starts after the endlocal, with both names"

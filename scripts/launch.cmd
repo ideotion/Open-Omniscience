@@ -69,9 +69,16 @@ rem THE TERMINAL PANEL (R600, anticipated for Windows; not run on Windows yet). 
 rem Open UI / Pause collection / Stop app. Python's curses exists on Windows only with the windows-curses package, so the panel starts only
 rem when "import curses" works there, and never with OO_PANEL=0. It opens in a window of its own, because this one holds the server's
 rem output: closing the panel window does NOT stop the app (the panel says so); closing THIS window still does.
+rem The panel never needs the passphrases, so neither it nor the curses check gets them: both names are cleared in a nested setlocal
+rem that endlocal undoes before the server starts below. The clears come BEFORE the check, because clearing a name that is not set
+rem sets ERRORLEVEL, and the check's own exit code is what "if not errorlevel 1" reads.
 if not "%OO_PANEL%"=="0" if exist ".venv\Scripts\python.exe" (
+  setlocal
+  set "OO_DB_PASSPHRASE="
+  set "OO_KEY_PASSPHRASE="
   ".venv\Scripts\python.exe" -c "import curses" >nul 2>&1
   if not errorlevel 1 start "Open Omniscience panel" ".venv\Scripts\python.exe" -m src.tui.panel --port %PORT% --url "%URL%/"
+  endlocal
 )
 rem Run the server through scripts\launch_server.ps1 when it is there: the window still shows every line the server prints, and the wrapper
 rem records the server's fatal-error headers and how it ended for the app's next boot to read. It leaves a marker file once it has STARTED
