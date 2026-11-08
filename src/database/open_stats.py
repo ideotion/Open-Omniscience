@@ -46,6 +46,8 @@ import re
 import threading
 import time
 
+from src.shared import snapshot_or_unavailable
+
 #: A leaf lock: nothing is called while it is held.
 _STATS_LOCK = threading.Lock()
 
@@ -262,7 +264,4 @@ def snapshot() -> dict:
 
 def safe_snapshot() -> dict:
     """:func:`snapshot`, or the class of the failure that kept it from being read (never its words, never a zero)."""
-    try:
-        return snapshot()
-    except Exception as exc:  # noqa: BLE001 - the pass is written without the figures, saying so
-        return {"unavailable": type(exc).__name__}
+    return snapshot_or_unavailable(snapshot)

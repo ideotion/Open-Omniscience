@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-07,shutdown,"Windows: the last sleep or resume is kept in the session record, so an end while asleep is named",shipped (Windows behaviour OS-unverified here),PR #1791,src/monitoring/win_power.py;src/monitoring/forensics.py;src/monitoring/session_history.py;tests/test_win_power.py,"If the app ends while the PC is asleep, the next start's session record now says the last thing it saw was a sleep or resume, instead of an unknown end. Field bundle 2026-11-07 F7."

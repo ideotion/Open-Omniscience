@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-08,ci/runtime,CI: docs-only fast path timeout 30 to 75 minutes (R554),shipped,R554 PR #1800,.github/workflows/ci.yml,"The Docs-only checks job hit its 30-minute cap at 80% of the docs-test run on a backed-up runner (04:17 to 04:47Z on #1800) and failed the test and Core-only aggregators. The cap now matches the test job's 75. The docs-test selection (every test file naming docs, CLAUDE.md or ledger) is left as is: it is most of the suite, so narrowing it was not clearly safe."
