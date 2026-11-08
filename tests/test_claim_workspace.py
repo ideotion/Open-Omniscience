@@ -430,3 +430,20 @@ def test_every_string_the_workspace_draws_is_keyed_in_all_twelve_locales():
         loc = json.loads((_ROOT / f"src/static/locales/{code}.json").read_text(encoding="utf-8"))
         missing = sorted(x for x in lits if x not in loc)
         assert not missing, (code, missing)
+
+
+def test_the_same_source_detail_names_the_outlet_like_the_path_whatever_the_input_order():
+    a = {"id": 1, "source_id": 1, "source": "A", "outlet": "x.fr", "wire": None, "published_at": "2026-01-01"}
+    b = {"id": 2, "source_id": 2, "source": "B", "outlet": "x.fr", "wire": None, "published_at": "2026-01-02"}
+    for arts in ([b, a], [a, b]):
+        p = cw.group_paths(arts, {}, [])["paths"][0]
+        assert p["sources"] == ["A"] and p["joins"][0]["detail"] == "A"
+
+
+def test_a_feed_id_and_an_outlet_that_print_alike_stay_two_voices_like_the_join():
+    arts = [
+        {"id": 1, "source_id": 9, "source": "A", "outlet": "3", "wire": None, "published_at": "2026-01-01"},
+        {"id": 2, "source_id": 3, "source": "B", "outlet": None, "wire": None, "published_at": "2026-01-02"},
+    ]
+    out = cw.group_paths(arts, {}, [])
+    assert out["n_paths"] == 2 and out["n_sources"] == 2
