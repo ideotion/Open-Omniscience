@@ -480,7 +480,8 @@ jobs:
       # `-n auto --dist loadfile` (pytest-xdist, pinned in the [dev] extra) runs the leg's files on one worker per CPU of the runner (4 on a public
       # repository's ubuntu-latest), each FILE whole on one worker. tests/conftest.py swaps xdist's first-free-worker order for a FIXED placement
       # (tests/_xdist_placement.py: the cost table dealt longest first, each worker's files in collection order), because two runs in xdist's own
-      # order at one commit went red on different order-dependent tests; tests/conftest.py also gives every worker its own OO_DATA_DIR. Measured
+      # order at one commit went red on different order-dependent tests (fixed per commit: a PR that adds a test file re-deals them); tests/conftest.py
+      # also gives every worker its own OO_DATA_DIR. Measured
       # 2026-11-08 on 4 cores: each leg's pytest in 6 to 7 minutes against 25 to 31 in one process, which was ~95% of the job; the run's ~200
       # runner-minutes were what kept PRs queued for hours behind each other (#1786: jobs waited 90 to 195 minutes for a runner).
       # The weekly `portability` job keeps running one process per leg, so a test that passes only in parallel order (or only in serial) still shows.
