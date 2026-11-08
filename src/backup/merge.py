@@ -1525,6 +1525,11 @@ def _scratch_attached(con: sqlite3.Connection) -> bool:
         return False
 
 
+def _rep_schema(con: sqlite3.Connection) -> str:
+    """Where :func:`_materialise_rep` put the winning ids: the scratch when attached, else temp."""
+    return _SCRATCH_SCHEMA if _scratch_attached(con) else "temp"
+
+
 def _split_group_keys(keys: str) -> list[str]:
     """Split a GROUP BY list at its top-level commas (``COALESCE(a,'en')`` stays one key)."""
     out: list[str] = []
@@ -1556,9 +1561,12 @@ def _materialise_rep_in_scratch(con: sqlite3.Connection, name: str, group_sql: s
     ``GROUP BY`` puts every NULL in one group, a primary key rejects NULL, and the flag keeps a real
     ``0`` apart from a NULL. The columns carry no type (no affinity), so values compare as the
     ``GROUP BY`` compares them. ``MIN(id)`` is the upsert's ``min(rep_id, excluded.rep_id)``, which
-    does not depend on the order rows arrive in. The joins name the result without a schema
-    (``JOIN rep_keywords``), which resolves to ``temp`` on the in-RAM path and to the scratch here:
-    the temp copy is dropped first, and neither ``main`` nor ``inc`` holds a ``rep_*`` table."""
+    does not depend on the order rows arrive in. The joins name the schema the result was built in
+    (:func:`_rep_schema`), never an unqualified name: that would resolve through ``main`` before the
+    scratch, and through the incoming backup (untrusted, and free to carry a ``rep_*`` table) if it
+    were ever attached first. Collation: a key column the backup declares with a non-BINARY
+    collation groups by BINARY here (``ifnull`` drops it), which is the identity ``main`` uses; the
+    app's own schema declares none on these columns."""
     m = _REP_GROUP_SQL.fullmatch(group_sql.strip())
     if m is None:
         raise ValueError(f"{name}: not the lowest-id-per-group shape this path can rebuild")
@@ -1590,10 +1598,17 @@ def _attach_scratch(con: sqlite3.Connection, working_copy: Path | str) -> Path:
     path = Path(working_copy).with_name(f".{Path(working_copy).name}.oo-scratch-{os.getpid()}-{threading.get_ident()}")
     _remove_scratch(path)
     con.execute("ATTACH DATABASE ? AS oo_scratch", (str(path),))
-    # the file is thrown away whatever happens: no rollback journal, no fsync, a bounded cache
-    con.execute("PRAGMA oo_scratch.journal_mode=OFF")
-    con.execute("PRAGMA oo_scratch.synchronous=OFF")
-    con.execute(f"PRAGMA oo_scratch.cache_size=-{int(_SCRATCH_CACHE_KIB)}")
+    try:
+        # the file is thrown away whatever happens: no rollback journal, no fsync, a bounded cache
+        con.execute("PRAGMA oo_scratch.journal_mode=OFF")
+        con.execute("PRAGMA oo_scratch.synchronous=OFF")
+        con.execute(f"PRAGMA oo_scratch.cache_size=-{int(_SCRATCH_CACHE_KIB)}")
+    except BaseException:
+        # the caller has no path yet to clean up: the file the ATTACH created goes here
+        with suppress(Exception):
+            con.execute("DETACH DATABASE oo_scratch")
+        _remove_scratch(path)
+        raise
     return path
 
 
@@ -3954,7 +3969,7 @@ def _merge_keywords(con, batch_id, results) -> None:
         " i.is_ngram, i.ngram_size, i.is_entity, i.entity_type, i.relevance_score,"
         " i.extractor, i.created_at, i.updated_at"
         " FROM inc.keywords i LEFT JOIN temp.map_kwcat mc ON mc.old = i.category_id"
-        " JOIN rep_keywords rep ON rep.rep_id = i.id"
+        f" JOIN {_rep_schema(con)}.rep_keywords rep ON rep.rep_id = i.id"
         f" WHERE NOT EXISTS (SELECT 1 FROM keywords m WHERE {key})"
         + _WINDOW_MARK,
         src="keywords",
@@ -4845,7 +4860,7 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
         " JOIN temp.map_articles ma ON ma.old = i.article_id"
         " LEFT JOIN temp.map_ext me ON me.old = i.external_source_id"
         " LEFT JOIN temp.map_srcart msa ON msa.old = i.source_article_id"
-        " JOIN rep_links rep ON rep.rep_id = i.id"
+        f" JOIN {_rep_schema(con)}.rep_links rep ON rep.rep_id = i.id"
         f" WHERE NOT EXISTS (SELECT 1 FROM article_links t WHERE {link_key})"
         + _WINDOW_MARK,
         src="article_links",
@@ -4883,7 +4898,7 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
         " JOIN temp.map_articles ma ON ma.old = i.article_id"
         " LEFT JOIN temp.map_ext me ON me.old = i.source_id"
         " LEFT JOIN temp.map_srcart msa ON msa.old = i.source_article_id"
-        " JOIN rep_asr rep ON rep.rep_id = i.id"
+        f" JOIN {_rep_schema(con)}.rep_asr rep ON rep.rep_id = i.id"
         f" WHERE NOT EXISTS (SELECT 1 FROM article_source_relationships t WHERE {rel_key})"
         + _WINDOW_MARK,
         src="article_source_relationships",

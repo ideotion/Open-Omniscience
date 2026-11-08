@@ -221,3 +221,67 @@ def test_a_plain_store_never_takes_the_scratch_path(tmp_path, monkeypatch) -> No
     _corpus(staged, first=100, kw=[("b", "en")])
     merge_corpus(staged, working, _META)
     assert not called
+
+
+def _plant_rep_tables(path: Path, *, encrypted: bool) -> None:
+    con = connect_mod.connect(path) if encrypted else sqlite3.connect(path)
+    try:
+        for n in ("rep_keywords", "rep_links", "rep_asr"):
+            con.execute(f"CREATE TABLE {n} (rep_id INTEGER PRIMARY KEY)")  # empty: would drop every row
+        con.commit()
+    finally:
+        con.close()
+
+
+@pytest.mark.parametrize("where", ["working copy", "backup"])
+def test_a_rep_table_in_main_or_in_the_backup_is_never_what_the_join_reads(tmp_path, keyed, monkeypatch, where) -> None:
+    """Review finding: an unqualified ``JOIN rep_keywords`` resolves through ``main`` before the
+    scratch, and through the (untrusted) backup if it is attached first. The joins name the
+    schema the winning ids were built in, so a planted table changes nothing."""
+    kw = [("petrol", "en"), ("Lisbon", "pt"), ("lisbon", "pt"), ("Oslo", None)]
+    clean, planted = tmp_path / "clean.db", tmp_path / "planted.db"
+    _corpus(clean, first=100, kw=kw)
+    _corpus(planted, first=100, kw=kw)
+    ref_copy, copy = _encrypted(tmp_path, "ref"), _encrypted(tmp_path, "w")
+    if where == "backup":
+        _plant_rep_tables(planted, encrypted=False)
+    else:
+        _plant_rep_tables(copy, encrypted=True)
+    monkeypatch.setattr(merge_mod, "check_memory_for_encrypted_merge", lambda **kw: "memory")
+    ref_counts, _ = merge_corpus(clean, ref_copy, _META)
+    for path_kind in ("scratch", "memory"):
+        monkeypatch.setattr(merge_mod, "check_memory_for_encrypted_merge", lambda pk=path_kind, **kw: pk)
+        w = _encrypted(tmp_path, f"w-{path_kind}")
+        if where != "backup":
+            _plant_rep_tables(w, encrypted=True)
+        counts, _ = merge_corpus(planted, w, _META)
+        for k in ("keywords", "article_links"):
+            assert counts[k] == ref_counts[k], (path_kind, k)
+            assert counts[k]["new"] > 0, (path_kind, k)
+        got, ref = _dump(w), _dump(ref_copy)
+        assert got == ref, path_kind
+
+
+class _PragmaRefused:
+    """A connection whose scratch PRAGMAs fail after the ATTACH succeeded."""
+
+    def __init__(self, con: sqlite3.Connection) -> None:
+        self.con = con
+
+    def execute(self, sql, params=()):  # noqa: ANN001, ANN201
+        if sql.startswith("PRAGMA oo_scratch.synchronous"):
+            raise sqlite3.OperationalError("refused")
+        return self.con.execute(sql, params)
+
+
+def test_a_scratch_whose_setup_fails_is_removed_by_the_attach_itself(tmp_path) -> None:
+    working = tmp_path / "w.db"
+    sqlite3.connect(working).close()
+    con = sqlite3.connect(working)
+    try:
+        with pytest.raises(sqlite3.OperationalError, match="refused"):
+            merge_mod._attach_scratch(_PragmaRefused(con), working)  # type: ignore[arg-type]
+        assert not merge_mod._scratch_attached(con)
+    finally:
+        con.close()
+    assert not list(tmp_path.glob("*oo-scratch*"))
