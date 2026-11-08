@@ -24,8 +24,9 @@ Steps, each of which refuses by leaving the install exactly as it was:
 7. start the launcher again and watch it: when the launcher exits before the app ever answers on its port, the update is undone the same way
    (``start_failed_rolled_back``) and the launcher started once more on the old version. On Windows the launcher is started with
    ``OO_UPDATE_WATCH`` so its window ends with the server instead of waiting for a key (``scripts/launch.cmd``, which clears it before the
-   server starts), and a window the person CLOSED (``STATUS_CONTROL_C_EXIT``) is their stop, never undone. A new version that adds a migration
-   (``migrations/versions/``) may have run it before failing: it is still rolled back (a down app shows no message at all) and the result
+   server starts), and a window the person CLOSED (``STATUS_CONTROL_C_EXIT``) is their stop, never undone. A new version that changes the database code
+   (``migrations/versions/`` or ``src/database/``) may have altered the store at start-up before failing (``init_db``'s ``create_all``,
+   FTS tables and triggers, the ``ensure_*`` self-heals; alembic itself never runs against the live store at boot): it is still rolled back (a down app shows no message at all) and the result
    is ``start_failed_rolled_back_schema``, so Settings says to restore the last backup or re-run the installer if the app misbehaves. Every
    reset runs only while the checkout is still exactly as this helper left it (:func:`checkout_is`); write ``update-result.json`` in the data directory (read by Settings -> Advanced after the restart).
 
@@ -59,6 +60,8 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 BOOT_WAIT_S = 900
 #: The passphrase variables (``src/monitoring/secret_scrub.py:HELD_ENV_VARS``; a test pins the two equal). No child of this helper gets them.
 SECRET_ENV = ("OO_DB_PASSPHRASE", "OO_KEY_PASSPHRASE")
+#: Where a change can alter the live store when the new version starts (migrations, and init_db's own schema code).
+SCHEMA_PATHS = ("migrations/versions/", "src/database/")
 LOCK_FILE = "update.lock"
 RESULT_FILE = "update-result.json"
 
@@ -512,9 +515,10 @@ def _main(plan_path: Path, plan: dict, data_dir: Path, root: Path) -> int:
                 # The new version did not come up: undo it and start the old one, which ran a minute ago.
                 changed = changed_files(root, old, plan["sha"])
                 ok = roll_back(root, old, changed, plan.get("python") or sys.executable, new=plan["sha"])
-                # A new version that adds a migration may already have run it before failing: the old code then starts on a newer schema.
-                # It is still started (a down app shows no message at all), and the result names that case so Settings can say so.
-                schema = any(f.startswith("migrations/versions/") for f in changed)
+                # A new version whose database code changed may have altered the store at start-up (init_db: create_all, FTS tables and
+                # triggers, the ensure_* self-heals) before failing: the old code then starts on that store. It is still started (a down app
+                # shows no message at all), and the result names the case so Settings can say so.
+                schema = any(f.startswith(SCHEMA_PATHS) for f in changed)
                 status = ("start_failed_rolled_back_schema" if schema else "start_failed_rolled_back") if ok else "rollback_incomplete"
                 write_result(plan, status, old, data_dir)
                 relaunch(root)

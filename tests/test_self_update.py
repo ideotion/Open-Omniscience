@@ -940,7 +940,14 @@ def test_a_failed_start_that_adds_a_migration_says_the_schema_may_have_moved(tmp
     seen: list = []
     monkeypatch.setattr(h, "roll_back", lambda root, old, changed, py, **k: seen.append(k.get("new")) or True)
     assert h.main(["x", str(plan)]) == 1 and _result(tmp_path, h) == "start_failed_rolled_back_schema"
-    assert seen == [SHA_B]  # the rollback is told which commit it must find before it resets anything
+    assert seen == [SHA_B]
+    # init_db's own schema code (FTS tables, self-heals) changes the store at boot without any migration file
+    plan = _plan_file(tmp_path)
+    monkeypatch.setattr(h, "changed_files", lambda root, old, new, **k: ["src/database/fts.py"])
+    assert h.main(["x", str(plan)]) == 1 and _result(tmp_path, h) == "start_failed_rolled_back_schema"
+    plan = _plan_file(tmp_path)
+    monkeypatch.setattr(h, "changed_files", lambda root, old, new, **k: ["src/static/app.js"])
+    assert h.main(["x", str(plan)]) == 1 and _result(tmp_path, h) == "start_failed_rolled_back"  # the rollback is told which commit it must find before it resets anything
     from tests.js_source_helper import function_body, read_static
 
     assert '"start_failed_rolled_back_schema"' in function_body(read_static("app-settings.js"), "updLoadStatus")
