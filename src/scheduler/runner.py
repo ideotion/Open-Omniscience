@@ -1623,11 +1623,12 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
         # A Stop is the person's setting, not an outcome of the outlet: the lane checks the switch once, before it starts, so a Stop pressed
         # between two outlets (or inside one) is read HERE, by the switch itself and never by the words of a refusal (R320). An outlet
         # stopped this way is not stamped, so it keeps its place at the front of the rotation.
+        # The engagement epoch (R614), captured BEFORE the check that lets this outlet's first request go: its step runs from here to the
+        # stamp, waits included, so a Stop pressed and cleared again anywhere inside it is read below as a Stop, as when the switch is still
+        # engaged. Taken after the check, a Stop landing between the two would be counted into the epoch and missed.
+        epoch = kill_switch_epoch()
         if kill_switch_active():
             break
-        # The engagement epoch (R614), captured before this outlet's first request: its step runs from here to the stamp, waits included, so
-        # a Stop pressed and cleared again anywhere inside it is read below as a Stop, as when the switch is still engaged.
-        epoch = kill_switch_epoch()
         try:
             sm_report = discover_sitemap_urls(fetcher, domain, max_urls=max_pages)
             if update_source_sitemap_url(session, source, sm_report):

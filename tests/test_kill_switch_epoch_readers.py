@@ -265,6 +265,33 @@ def _crawl(db, tmp_path, **script):
     return out, stamped, calls
 
 
+def _stop_right_after_the_loop_check(monkeypatch, function, loop_line):
+    """The check at the head of ``function``'s loop (the first ``if kill_switch_active():`` after ``loop_line``) reads clear, and the
+    operator presses Stop the instant after it, before the request that check lets go: the case where an epoch taken AFTER the check
+    would already hold the Stop and read the request's refusal as the target's failure once the switch is cleared again."""
+    import inspect
+    import sys
+
+    import src.ingest as ingest_pkg
+
+    lines, first = inspect.getsourcelines(function)
+    start = next(i for i, line in enumerate(lines) if line.strip() == loop_line)
+    target = first + next(i for i in range(start, len(lines)) if lines[i].strip() == "if kill_switch_active():")
+    real = ingest_pkg.kill_switch_active
+    fired: list[int] = []
+
+    def check() -> bool:
+        engaged = real()
+        caller = sys._getframe(1)
+        if not fired and caller.f_code is function.__code__ and caller.f_lineno == target:
+            fired.append(target)
+            activate_kill_switch()
+        return engaged
+
+    monkeypatch.setattr(ingest_pkg, "kill_switch_active", check)
+    return fired
+
+
 def _record(monkeypatch, module, name):
     seen: list = []
     real = getattr(module, name)
@@ -302,6 +329,29 @@ def test_a_stop_cleared_inside_a_sitemap_page_ends_the_walk_and_stamps_nothing(d
     out, stamped, _ = _crawl(db, tmp_path, cut_clear_on="/p-1", sitemap_urls=urls)
     assert [a[2] for a in walked] == urls[:1], f"the pages after the Stop were walked: {[a[2] for a in walked]}"
     assert stamped == [] and out["sitemap_urls_ingested"] == 0, "the page the Stop cut was counted as an attempt"
+
+
+def test_a_stop_pressed_just_after_the_outlet_check_and_cleared_after_the_refusal_is_a_stop(db, tmp_path, monkeypatch):
+    """The outlet's epoch is taken before the check that lets its first request go, so a Stop between the two is in its window."""
+    from src.ingest import crawl, sitemap
+    from src.scheduler.runner import _lane_step_crawl
+
+    crawled = _record(monkeypatch, crawl, "crawl_source")
+    real_discover = sitemap.discover_sitemap_urls
+
+    def discover(fetcher, domain, **kw):
+        assert kill_switch_active(), "premise: the Stop is engaged when discovery asks"
+        try:
+            return real_discover(fetcher, domain, **kw)  # every request refused by name
+        finally:
+            clear_kill_switch()  # back online before the rung reads its answer
+
+    monkeypatch.setattr(sitemap, "discover_sitemap_urls", discover)
+    fired = _stop_right_after_the_loop_check(monkeypatch, _lane_step_crawl, "for source, source_id, domain in batch:")
+    out, stamped, _calls = _crawl(db, tmp_path)
+    assert fired, "premise: the Stop landed right after the loop's check"
+    assert crawled == [], "a discovery the Stop refused fell back to a blind crawl"
+    assert stamped == [] and out["sources_crawled"] == 0, stamped
 
 
 def test_an_outlet_crawled_with_no_stop_is_stamped_the_control(db, tmp_path):
@@ -387,6 +437,24 @@ def test_each_url_is_judged_by_its_own_window(db, tmp_path):
 
     out = _tick(db, sp, ingest=ingest)
     assert out["attempted"] == 3 and out["tally"] == {"stored": 2, "fetch_failed": 1} and "skipped_offline" not in out, out
+
+
+def test_a_stop_pressed_just_after_the_url_check_and_cleared_after_the_refusal_is_a_stop(db, tmp_path, monkeypatch):
+    from src.ingest.archive_backfill import advance_backfill, load_state
+
+    source, sp = _backfill_source(db), tmp_path / "s.json"
+    _active(db, source, sp)
+
+    def refused(session, src, url, *, fetcher):
+        assert kill_switch_active(), "premise: the Stop is engaged when the URL is asked for"
+        clear_kill_switch()  # refused by name, then back online before the outcome is read
+        return _outcome(url, IngestResult.FETCH_FAILED)
+
+    fired = _stop_right_after_the_loop_check(monkeypatch, advance_backfill, "for url in active_urls[cursor : cursor + per_pass]:")
+    out = _tick(db, sp, ingest=refused)
+    assert fired, "premise: the Stop landed right after the loop's check"
+    assert out["attempted"] == 0 and out["cursor"] == 0 and out["tally"] == {} and out["skipped_offline"] == 1, out
+    assert load_state(sp)["active"]["cursor"] == 0
 
 
 def test_a_url_that_failed_with_no_stop_is_consumed_the_control(db, tmp_path):
@@ -548,6 +616,22 @@ def test_a_stop_cleared_inside_a_calendar_auto_import_is_neither_a_failure_nor_s
     out = F.auto_import_due_feeds(_CutFetcher(), batch=1)
     assert out["picked"] == 1 and out["imported"] == 0 and out["failed"] == 0, out
     assert _autoimport_stamps() == {}, "a feed the Stop cut was stamped as checked: it would wait 12 h"
+
+
+def test_a_stop_pressed_just_after_the_auto_import_check_and_cleared_after_the_refusal_is_a_stop(monkeypatch):
+    from src.events import feeds as F
+
+    class _RefusedByName:
+        def fetch(self, url, **_kw):
+            assert kill_switch_active(), "premise: the Stop is engaged when the feed is asked for"
+            clear_kill_switch()  # back online before the failure reaches the batch
+            raise FetchFailed(KILL_SWITCH_REFUSAL)
+
+    fired = _stop_right_after_the_loop_check(monkeypatch, F.auto_import_due_feeds, "for fid in picked:")
+    out = F.auto_import_due_feeds(_RefusedByName(), batch=1)
+    assert fired, "premise: the Stop landed right after the loop's check"
+    assert out["picked"] == 1 and out["imported"] == 0 and out["failed"] == 0, out
+    assert _autoimport_stamps() == {}, "a feed the Stop refused was stamped as checked: it would wait 12 h"
 
 
 def test_a_calendar_auto_import_that_failed_with_no_stop_is_a_failure_and_stamped_the_control():

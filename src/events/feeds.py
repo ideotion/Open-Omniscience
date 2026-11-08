@@ -912,9 +912,9 @@ def auto_import_due_feeds(fetcher, *, batch: int = 8, min_interval_hours: float 
     picked = [fid for _, fid in due[: max(0, batch)]]
     imported = failed = 0
     for fid in picked:
+        epoch = kill_switch_epoch()  # this feed's window, waits included (R614), opened before the check that lets it go
         if kill_switch_active():
             break  # a Stop: the feeds not yet asked for are neither failures nor attempts, and stay exactly as due as they were
-        epoch = kill_switch_epoch()  # this feed's window, waits included (R614)
         try:
             import_feed(fetcher, fid)
             imported += 1

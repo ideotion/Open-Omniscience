@@ -652,6 +652,7 @@ def ingest_source(
     stopped = False  # latched: the batch flush below can wait seconds on the writer gate, and a Stop cleared in that wait must not undo it
     try:
         for done, link in enumerate(links):
+            entry_epoch = kill_switch_epoch()  # this entry's own window, for the reason of a failure (R614); before the check, as below it
             if kill_switch_active():
                 stopped = True
                 # a Stop mid-feed: the rest were never asked for, so they are not walked through a refusal one by one, but they are COUNTED, so
@@ -659,7 +660,6 @@ def ingest_source(
                 # reads it as "nothing was fetched"), and some of these entries would have been answered as duplicates without a request.
                 tally["stopped_unwalked"] = len(links) - done
                 break
-            entry_epoch = kill_switch_epoch()  # this entry's own window, for the reason of a failure (R614)
             outcome = ingest_url(session, source, link, fetcher=fetcher, batch=batch)
             if outcome.result is IngestResult.STAGED:
                 continue  # resolved at flush; merged from batch.tally below
