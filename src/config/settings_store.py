@@ -12,9 +12,8 @@ DELIBERATELY NOT HERE:
   read as the default direct connection); this class fails OPEN (an unreadable file reads
   as the defaults, and the strict reader refuses instead). Folding the two would change one
   of them.
-* the WRITE side -- the three modules write three different ways (atomic_replace with the
-  lock, an inline atomic_replace in scheduler, a bare tmp+replace in custody). That is a
-  behaviour question for its own change, not part of a pure fold.
+* the WRITE side -- the modules write separately (app_settings and scheduler each call
+  atomic_replace at their own site, custody does too). It is not part of the read fold.
 
 ``scheduler/settings.py`` takes no module-level ``src.`` import (tests/test_wiki_tiers.py),
 so its wrappers import this module inside the function.
