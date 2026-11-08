@@ -187,15 +187,17 @@ def test_http_connect_tunnel_destination_is_guarded(guard):
     assert guard == [], "the real _tunnel() (spy) was reached in airplane mode"
 
 
-def test_http_connect_tunnel_loopback_target_passes_through(guard):
-    """Tunnelling to a loopback target (the app's own server via a local relay)
-    is still allowed offline, mirroring the direct-connect loopback exemption."""
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1"])
+def test_http_connect_tunnel_to_a_loopback_target_is_refused_too(guard, host):
+    """REVERSED 2026-11-08 (R619, second security read; this test said loopback passed): ``CONNECT localhost:80`` is written to the
+    PROXY, and a proxy chained upstream forwards that name like any other -- requests does the same for https://localhost through an
+    HTTP proxy. In airplane mode every tunnel is refused; the direct-connect loopback exemption is untouched."""
     activate_kill_switch()
     conn = http.client.HTTPConnection("127.0.0.1", 9999)
-    conn.set_tunnel("127.0.0.1", 8000)
-    with pytest.raises(_Reached):
+    conn.set_tunnel(host, 8000)
+    with pytest.raises(AirplaneModeError):
         conn._tunnel()
-    assert "tunnel" in guard
+    assert guard == [], "the real _tunnel() (spy) was reached for a loopback tunnel host in airplane mode"
 
 
 def test_http_connect_tunnel_transparent_when_online(guard):
@@ -224,14 +226,19 @@ def test_socks_proxy_destination_is_guarded_before_negotiation(guard):
     assert guard == [], "PySocks' real connect() (spy) was reached in airplane mode"
 
 
-def test_socks_proxy_loopback_target_passes_through(guard):
-    """A SOCKS-proxied connection to a loopback target is still allowed offline."""
+def test_socks_proxy_loopback_target_is_refused_too(guard):
+    """REVERSED 2026-11-08 (R619): through a SOCKS proxy a loopback destination is the proxy's to reach, so it is refused offline
+    like the CONNECT tunnel above. A socksocket with NO proxy set is a plain socket, and loopback stays local there."""
     pysocks = pytest.importorskip("socks")
     activate_kill_switch()
     s = pysocks.socksocket()
     s.set_proxy(pysocks.SOCKS5, "127.0.0.1", 9050)
+    with pytest.raises(AirplaneModeError):
+        s.connect(("localhost", 8000))
+    assert guard == []
+    plain = pysocks.socksocket()
     with pytest.raises(_Reached):
-        s.connect(("127.0.0.1", 8000))
+        plain.connect(("127.0.0.1", 8000))
     assert "socks_connect" in guard
 
 
@@ -357,6 +364,10 @@ def test_absolute_form_request_target_is_guarded_before_putrequest(guard):
         ("CONNECT", "example.com:443"),
         ("CONNECT ", "example.com:443"),
         ("connect", "127.0.0.1:9050"),
+        # A method that is not an RFC 7230 token carries a target of its own: "GET http://evil.com / HTTP/1.1".
+        ("GET http://example.com", "/"),
+        ("GET\x7f", "/"),
+        ("G\tET", "/"),
     ]
     for method, target in named:
         with pytest.raises(AirplaneModeError):

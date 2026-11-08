@@ -90,6 +90,7 @@ from __future__ import annotations
 import http.client
 import ipaddress
 import os
+import re
 import socket
 from collections.abc import Callable
 from typing import Any, cast
@@ -259,8 +260,12 @@ def _guarded_tunnel(self):  # type: ignore[no-untyped-def]
     went through ``_guarded_connect`` above (loopback — allowed); ``_tunnel()``
     is what actually asks the proxy to relay to the REAL destination, known
     here as ``self._tunnel_host`` before any CONNECT bytes are sent.
+
+    A LOOPBACK tunnel host is no exemption (R619, second security read): ``CONNECT localhost:80`` goes to the proxy, and a proxy
+    chained upstream forwards that name like any other, so in airplane mode every tunnel is refused. A remote host is still named in
+    the refusal; a loopback one gets the neutral proxied-target words.
     """
-    _guard(self._tunnel_host)
+    _guard(_proxied_destination(self._tunnel_host))
     return _orig_tunnel(self)
 
 
@@ -268,6 +273,17 @@ def _guarded_tunnel(self):  # type: ignore[no-untyped-def]
 #: egress-window exemption) apply exactly as for a remote connect; it names no part of the target, which may carry userinfo or a signed
 #: query string that must not reach a log (R142).
 _PROXIED_TARGET = "a destination named in a request line (sent through a proxy)"
+
+
+#: An RFC 7230 method token. Anything else (a space, a DEL) lets the METHOD carry a request target of its own:
+#: ``putrequest("GET http://example.com", "/")`` writes ``GET http://example.com / HTTP/1.1``, and the stdlib rejects only \x00-\x1f.
+_METHOD_TOKEN = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
+
+
+def _proxied_destination(host: object) -> object:
+    """What ``_guard`` is handed for a destination a PROXY will reach: the host itself when it is remote (so the refusal names it, as
+    it always did), the neutral marker when it is loopback, because a loopback name handed to a proxy is not local."""
+    return _PROXIED_TARGET if _is_local_host(host) else host
 
 
 def _names_its_own_destination(method: object, url: object) -> bool:
@@ -281,12 +297,12 @@ def _names_its_own_destination(method: object, url: object) -> bool:
     destination for whatever is at the other end of the socket, which is only ever a proxy, to reach. Its host is deliberately NOT
     parsed: a loopback name or literal in it is not local either, because a forwarding proxy chained upstream (Privoxy with
     ``forward-socks5t``, tinyproxy with ``upstream``) hands ``http://localhost/`` to the next hop like any other name, and every parse
-    that could say "loopback" is one a proxy can read differently (``http://127.0.0.1?@evil.com/``, ``%2e``, ``[::1]evil.com``, found in
+    that could say "loopback" is one a proxy can read differently (``http://127.0.0.1?@example.com/``, ``%2e``, ``[::1]example.com``, found in
     the Opus read of the first version of this guard).
     """
     if isinstance(method, bytes):
         method = method.decode("latin-1")
-    if not isinstance(method, str) or method.strip().upper() == "CONNECT":
+    if not isinstance(method, str) or not _METHOD_TOKEN.fullmatch(method) or method.upper() == "CONNECT":
         return True
     if isinstance(url, bytes):
         url = url.decode("latin-1")
@@ -312,7 +328,12 @@ def _guarded_socks_connect(self, dest_pair, *args, **kwargs):  # type: ignore[no
     guard it here so a SOCKS-proxied connection is refused exactly like a direct
     one, before the proxy TCP connect (already guarded) even happens.
     """
-    _guard(_addr_host(dest_pair))
+    host = _addr_host(dest_pair)
+    # Through a proxy, a loopback destination is the PROXY's to reach (the same reason as ``_guarded_tunnel``); with no proxy set, a
+    # socksocket is a plain socket and loopback stays local.
+    proxy = getattr(self, "proxy", None)
+    proxied = isinstance(proxy, tuple) and bool(proxy) and proxy[0] is not None
+    _guard(_proxied_destination(host) if proxied else host)
     # Only installed when the real connect exists (see install_...), so this is
     # never the None branch -- the checker cannot see that from here.
     return cast(Callable[..., Any], _orig_socks_connect)(self, dest_pair, *args, **kwargs)

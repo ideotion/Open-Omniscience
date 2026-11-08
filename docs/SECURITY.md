@@ -343,9 +343,11 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   (Privoxy chained to Tor) is sent as `GET http://host/x` to the loopback proxy with no
   CONNECT at all, and before this a loopback listener received that whole request in airplane
   mode. While airplane mode is on, every request target that names its own destination
-  (anything but origin-form `/path`, `*` or empty, so absolute-form and `CONNECT` included) is
-  refused whatever host it names, `localhost` too, because a proxy chained upstream forwards
-  that name like any other. Not covered: clients that do not sit on `http.client` (httpx, used
+  (anything but origin-form `/path` (never `//`), exactly `*` or empty, so absolute-form and
+  `CONNECT` included), and every request whose method is not an RFC 7230 token, is refused
+  whatever host it names, `localhost` too, because a proxy chained upstream forwards that name
+  like any other. For the same reason a CONNECT tunnel, or a SOCKS connection with a proxy set,
+  to a LOOPBACK destination is refused in airplane mode too (until then it was let through). Not covered: clients that do not sit on `http.client` (httpx, used
   only by the loopback-only LLM clients), and an origin-form request whose `Host` header an
   intercepting (transparent) proxy reads as the destination; this app never configures one. Any **non-loopback** target raises
   `AirplaneModeError` **before** a real socket is opened, so no missed call
