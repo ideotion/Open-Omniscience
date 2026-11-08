@@ -10,6 +10,7 @@ names: a claim with no related article (the Socratic empty state), a single-sour
 
 from __future__ import annotations
 
+import itertools
 from datetime import datetime, timedelta
 
 import pytest
@@ -461,10 +462,11 @@ def test_a_same_source_join_with_no_name_has_no_detail():
 
 
 def test_a_voice_mixing_a_named_and_a_nameless_article_shows_the_name_in_both_places():
-    for order in ((0, 1), (1, 0)):
+    for order in itertools.permutations(range(3)):
         pair = [
             {"id": 1, "source_id": 5, "source": "Reuters", "wire": None, "published_at": "2026-01-01"},
             {"id": 2, "source_id": 5, "source": None, "wire": None, "published_at": "2026-01-02"},
+            {"id": 3, "source_id": 5, "source": "", "wire": None, "published_at": "2026-01-03"},
         ]
         p = cw.group_paths([pair[i] for i in order], {}, [])["paths"][0]
         assert p["sources"] == ["Reuters"] and p["joins"][0]["detail"] == "Reuters"

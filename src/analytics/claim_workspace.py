@@ -256,7 +256,7 @@ def _sources_of(arts: list[dict]) -> list[str]:
     shows "?" only when none of its articles carries a name."""
     names: dict[tuple, str | None] = {}
     for a in arts:
-        k, n = _count_key(a), (a.get("outlet_label") or a.get("source"))
+        k, n = _count_key(a), (a.get("outlet_label") or a.get("source") or None)
         cur = names.get(k)
         if k not in names or (n is not None and (cur is None or n < cur)):
             names[k] = n
