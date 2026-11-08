@@ -657,3 +657,79 @@ def test_the_refusal_sentence_is_read_back_by_the_page() -> None:
     sizes = json.loads(rest)
     assert re.fullmatch(r"\S+\s*MB", sizes["needed"].strip("\u2068\u2069")) or "MB" in sizes["needed"]
     assert "100" in sizes["free"] and "MB" in sizes["free"], sizes
+
+
+# --------------------------------------------------------------------------- #
+#  the full refusal, with the backup's own counts, once the file is staged
+# --------------------------------------------------------------------------- #
+def _staged_with_links(path: Path, links: int) -> None:
+    _plain_corpus(path, articles=1, first=100)
+    import sqlite3
+
+    con = sqlite3.connect(path)
+    try:
+        con.executemany(
+            "INSERT INTO keywords (term, normalized_term, language) VALUES (?, ?, 'en')",
+            [(f"k{i}", f"k{i}") for i in range(links)],
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def test_the_once_staged_check_refuses_with_the_backups_own_counts(
+    tmp_path, encrypted_working_copy, monkeypatch
+) -> None:
+    """Refused by the incoming rows alone: enough for the fixed part, not for 1,000 keywords at
+    an inflated per-row cost. The fixed part passes on its own, so the refusal is the counts'."""
+    _live_is(monkeypatch, encrypted_working_copy)
+    monkeypatch.setattr(merge_mod, "_ENCRYPTED_REP_BYTES_PER_ROW",
+                        {"keywords": 1024 * 1024, "article_links": 150, "article_source_relationships": 80})
+    fixed_mb = merge_mod._ENCRYPTED_TEMP_NEED_BYTES / _MB
+    monkeypatch.setattr(merge_mod, "check_memory_for_encrypted_merge",
+                        lambda **kw: check_memory_for_encrypted_merge(
+                            available_mb=fixed_mb + 100.0, floor_mb=0.0, **kw))
+    staged = tmp_path / "staged.db"
+    _staged_with_links(staged, 1_000)
+    merge_mod.check_memory_before_staging()  # the fixed part alone fits
+    with pytest.raises(MergeError, match="Not enough free memory to merge into an encrypted corpus"):
+        merge_mod.check_memory_once_staged(staged)
+
+
+def test_the_once_staged_check_gives_no_early_verdict_it_cannot_measure(
+    tmp_path, encrypted_working_copy, monkeypatch
+) -> None:
+    _short_machine(monkeypatch)
+    junk = tmp_path / "junk.db"
+    junk.write_bytes(b"this is not a database" * 100)
+    _live_is(monkeypatch, encrypted_working_copy)
+    merge_mod.check_memory_once_staged(junk)  # uncountable: the validation names it, not this
+    merge_mod.check_memory_once_staged(tmp_path / "missing.db")  # absent: the same
+    plain = tmp_path / "plain.db"
+    _plain_corpus(plain, articles=1)
+    _live_is(monkeypatch, plain)
+    merge_mod.check_memory_once_staged(plain)  # a plain store is never gated
+    assert junk.read_bytes() == b"this is not a database" * 100, "the look wrote nothing"
+
+
+def test_run_restore_asks_before_it_validates_or_copies(
+    tmp_path, encrypted_working_copy, monkeypatch
+) -> None:
+    from src.backup.artifact import StagedArtifact
+
+    _live_is(monkeypatch, encrypted_working_copy)
+    _short_machine(monkeypatch)
+
+    def touched(*a, **kw):  # noqa: ANN002, ANN003, ANN202
+        raise AssertionError("validated or copied before the memory check")
+
+    monkeypatch.setattr(merge_mod, "prepare_staged_corpus", touched)
+    monkeypatch.setattr(connect_mod, "snapshot_preserving", touched)
+    staged = tmp_path / "staged.db"
+    _staged_with_links(staged, 3)
+    art = StagedArtifact(
+        kind="oo-backup-2", staging_dir=tmp_path, corpus_path=staged, custody_path=None,
+        manifest=None, signature_state="verified", origin_fingerprint="test",
+    )
+    with pytest.raises(MergeError, match="Not enough free memory to merge into an encrypted corpus"):
+        merge_mod.run_restore(art, commit=False, reindex_imported=False)
