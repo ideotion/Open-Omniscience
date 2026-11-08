@@ -15,6 +15,7 @@ plan seeks each id and reads the whole link row (two String(1000) columns, a pag
     refused for memory or room do not hold the article indexes back, and the job ends declined in the links' words;
   * the four new frames are keys in every locale, translated, with their placeholders.
 """
+
 from __future__ import annotations
 
 import json
@@ -38,7 +39,9 @@ LANG = "idx_article_language_published"
 TITLE = "idx_article_title_nocase"
 
 
-def _store(tmp_path: Path, *, drop: tuple[str, ...] = (LINK,), articles: int = 60, links_per: int = 6):
+def _store(
+    tmp_path: Path, *, drop: tuple[str, ...] = (LINK,), articles: int = 60, links_per: int = 6
+):
     """A real store from the models with ``articles`` articles of ``links_per`` links each (every third url shared by
     several articles), then with ``drop`` dropped: the state of a store made before the index existed."""
     eng = create_engine(f"sqlite:///{tmp_path / 'corpus.db'}")
@@ -50,8 +53,13 @@ def _store(tmp_path: Path, *, drop: tuple[str, ...] = (LINK,), articles: int = 6
         src_id = s.execute(select(Source.id)).scalar_one()
         for i in range(articles):
             a = Article(
-                url=f"https://example.org/{i}", canonical_url=f"https://example.org/{i}", source_id=src_id,
-                content="x" * 50, hash=f"h{i}", title=f"t{i}", language="en",
+                url=f"https://example.org/{i}",
+                canonical_url=f"https://example.org/{i}",
+                source_id=src_id,
+                content="x" * 50,
+                hash=f"h{i}",
+                title=f"t{i}",
+                language="en",
             )
             s.add(a)
             s.flush()
@@ -85,7 +93,9 @@ def _clean(monkeypatch, tmp_path):
     ai._reset_for_tests()
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setattr(ai, "_available_ram_bytes", lambda: 8 * 1024**3)
-    monkeypatch.setattr(damage, "registry", DamageRegistry(path_fn=lambda: tmp_path / "database-damage.json"))
+    monkeypatch.setattr(
+        damage, "registry", DamageRegistry(path_fn=lambda: tmp_path / "database-damage.json")
+    )
     monkeypatch.delenv("OO_ARTICLE_INDEXES", raising=False)
     yield
 
@@ -128,15 +138,23 @@ def test_without_it_the_plan_reads_the_rows_and_the_answer_is_the_same(tmp_path)
     with eng.begin() as c:
         c.execute(text(f"DROP INDEX {LINK}"))
     _sql, plan = _shared_origin_sql(eng, ids)
-    assert not any("COVERING INDEX" in p for p in plan), "the assertion above would otherwise prove nothing"
+    assert not any("COVERING INDEX" in p for p in plan), (
+        "the assertion above would otherwise prove nothing"
+    )
     with sessionmaker(bind=eng)() as s:
         assert _shared_origin(s, ids) == with_index, "an index changes the cost, never the answer"
     assert with_index[0] == 2 and len(with_index[1]) == 2, with_index
 
 
 def test_the_model_the_deferred_self_heal_and_the_migration_are_one_statement():
-    assert LINK in {ix.name for ix in ArticleLink.__table__.indexes}, "a self-heal entry the model lacks reads as drift"
-    assert LINK in DEFERRED_INDEXES and ai.LINK_NAMES == (LINK,) and ai.ALL_NAMES == (LANG, TITLE, LINK)
+    assert LINK in {ix.name for ix in ArticleLink.__table__.indexes}, (
+        "a self-heal entry the model lacks reads as drift"
+    )
+    assert (
+        LINK in DEFERRED_INDEXES
+        and ai.LINK_NAMES == (LINK,)
+        and ai.ALL_NAMES == (LANG, TITLE, LINK)
+    )
     assert HOT_INDEXES[LINK] == (
         "CREATE INDEX IF NOT EXISTS idx_article_link_article_url ON article_links (article_id, normalized_url)"
     )
@@ -157,7 +175,9 @@ def test_the_model_the_deferred_self_heal_and_the_migration_are_one_statement():
 def test_init_db_leaves_it_to_the_start_up_step(tmp_path):
     eng = _store(tmp_path)
     created = ensure_hot_indexes(eng, include_deferred=False)
-    assert LINK not in created and LINK not in _names(eng), "never inside the call that opens the database"
+    assert LINK not in created and LINK not in _names(eng), (
+        "never inside the call that opens the database"
+    )
 
 
 def test_the_start_up_step_builds_it_with_its_own_words(tmp_path):
@@ -168,7 +188,9 @@ def test_the_start_up_step_builds_it_with_its_own_words(tmp_path):
     assert rep["outcome"] == "built" and list(rep["built"]) == [LINK]
     assert LINK in _names(eng)
     detail = ctx.calls[0]["detail"]
-    assert isinstance(detail, Framed) and detail.i18n == ai.FRAME_LINK_BUILDING, "never the article list's words"
+    assert isinstance(detail, Framed) and detail.i18n == ai.FRAME_LINK_BUILDING, (
+        "never the article list's words"
+    )
     assert rep["link_rows_bound"] == 60 * 6 and "rows_bound" not in rep
     assert ai.pending(eng) == ("present", [])
 
@@ -181,7 +203,9 @@ def test_after_the_article_indexes_and_in_one_job(tmp_path):
     frames = [c["detail"].i18n for c in ctx.calls if isinstance(c.get("detail"), Framed)]
     assert frames == [ai.FRAME_BUILDING, ai.FRAME_BUILDING, ai.FRAME_LINK_BUILDING]
     first = next(c["detail"] for c in ctx.calls if isinstance(c.get("detail"), Framed))
-    assert first.vars == {"index": 1, "total": 2}, "the article frame counts the article indexes only"
+    assert first.vars == {"index": 1, "total": 2}, (
+        "the article frame counts the article indexes only"
+    )
 
 
 def test_links_refused_for_memory_do_not_hold_the_article_indexes_back(tmp_path, monkeypatch):
@@ -211,7 +235,9 @@ def test_the_links_are_asked_against_the_room_left_after_the_article_indexes(tmp
         ai.build_missing(eng, _Ctx())
     snap = ai.snapshot()
     assert list(snap["built"]) == [LANG, TITLE]
-    assert snap["link_preflight"]["reserved_bytes"] == articles_need and snap["link_preflight"]["short_on"] == ["database"]
+    assert snap["link_preflight"]["reserved_bytes"] == articles_need and snap["link_preflight"][
+        "short_on"
+    ] == ["database"]
 
 
 def test_only_links_missing_and_refused_is_a_declined_row_in_the_links_words(tmp_path, monkeypatch):
@@ -235,7 +261,9 @@ def test_two_unfinished_starts_name_the_links_when_only_they_are_missing(tmp_pat
 
     marker = ai._marker_path()
     marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(json.dumps({"version": __version__, "attempts": ai.MAX_UNFINISHED_STARTS}), encoding="utf-8")
+    marker.write_text(
+        json.dumps({"version": __version__, "attempts": ai.MAX_UNFINISHED_STARTS}), encoding="utf-8"
+    )
     ctx = _Ctx()
     with pytest.raises(ai.Declined):
         ai.build_missing(eng, ctx)
@@ -243,7 +271,12 @@ def test_two_unfinished_starts_name_the_links_when_only_they_are_missing(tmp_pat
 
 
 def test_the_four_frames_are_keys_in_every_locale_translated_with_their_placeholders():
-    frames = (ai.FRAME_LINK_BUILDING, ai.FRAME_LINK_NO_ROOM, ai.FRAME_LINK_NO_MEMORY, ai.FRAME_LINK_UNFINISHED)
+    frames = (
+        ai.FRAME_LINK_BUILDING,
+        ai.FRAME_LINK_NO_ROOM,
+        ai.FRAME_LINK_NO_MEMORY,
+        ai.FRAME_LINK_UNFINISHED,
+    )
     for p in sorted((ROOT / "src" / "static" / "locales").glob("*.json")):
         d = json.loads(p.read_text(encoding="utf-8"))
         for key in frames:

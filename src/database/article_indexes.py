@@ -718,7 +718,7 @@ def build_missing(engine: Engine, ctx: JobContext | None = None) -> dict:
             attempt_facts["rows_bound"] = report["rows_bound"]
         if any(n in LINK_NAMES for n in to_build):
             attempt_facts["link_rows_bound"] = report["link_rows_bound"]
-        ram = next((r for r in (report.get("preflight"), report.get("link_preflight")) if r), {})
+        ram: dict[str, Any] = next((r for r in (report.get("preflight"), report.get("link_preflight")) if r), {})
         attempt_facts["ram_available_mb"] = (
             None if ram.get("ram_available_bytes") is None else round(ram["ram_available_bytes"] / 1048576)
         )
