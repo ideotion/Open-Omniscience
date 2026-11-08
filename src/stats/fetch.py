@@ -38,7 +38,7 @@ from urllib.parse import quote, urlencode, urljoin
 
 from src.ingest import DEFAULT_USER_AGENT, kill_switch_active
 from src.ingest.fetch_verdict import NETWORK_REFUSED
-from src.safety.fetcher import guarded_session
+from src.safety.fetcher import RedirectRefused, guarded_session
 from src.stats.gistemp import GistempParse
 from src.stats.owid_climate import CATALOG as OWID_CLIMATE_CATALOG
 from src.stats.owid_climate import OwidParse
@@ -221,22 +221,28 @@ def _bounded_get(session: Any, url: str, *, max_chars: int) -> Any:
     under the bound keeps the call waiting. That is named, not hidden.
     """
     max_bytes = max_chars * _UTF8_MAX_BYTES_PER_CHAR
+    # Redirects are followed HERE, one hop at a time, never by ``requests``. Passing ``allow_redirects=False`` is NOT enough: ``Session.send``
+    # still starts ``resolve_redirects`` on the first response (to fill ``_next``), and that generator reads the whole 3xx body
+    # (``resp.content``) before it yields, an unbounded read of a body nobody asked for. ``get_redirect_target`` answering ``None`` makes
+    # it yield nothing, so no 3xx body is read; the ``Location`` is read below. Every hop goes through ``session.get`` -> ``request`` ->
+    # ``send``, so the kill switch, the host list and the directory list run on each hop exactly as on the first request.
+    session.get_redirect_target = lambda _resp: None
     resp = session.get(url, timeout=DEFAULT_TIMEOUT_S, stream=True, allow_redirects=False)
     try:
-        # Redirects are followed HERE, one hop at a time, never by ``requests``: its own loop reads each 3xx body whole
-        # (``resp.content``) before following it, which is an unbounded read of a body nobody asked for. A redirect body is closed
-        # unread, and every hop goes through ``session.get`` -> ``send``, so the host list, the directory list and the kill switch run
-        # on each hop exactly as on the first request.
         hops = 0
         while resp.is_redirect:
             hops += 1
             if hops > session.max_redirects:
-                raise BodyTooLarge("too many redirects")
-            target = urljoin(resp.url, resp.headers["Location"])
-            resp.close()
+                raise RedirectRefused("too many redirects")
+            location = resp.headers["Location"]
+            if not location.isascii():
+                raise RedirectRefused("the redirect target is not plain ASCII")
+            target = urljoin(resp.url, location)
+            resp.close()  # unread
             resp = session.get(target, timeout=DEFAULT_TIMEOUT_S, stream=True, allow_redirects=False)
         if resp.status_code >= 400:
-            return resp  # the caller's ``raise_for_status`` names the status; an error page is not read at all
+            resp.close()  # unread: the caller's ``raise_for_status`` names the status; an error page is not read at all
+            return resp
         declared = (resp.headers.get("Content-Length") or "").strip()
         if declared.isascii() and declared.isdigit() and int(declared) > max_bytes:
             raise BodyTooLarge(f"the server declares {declared} bytes, over the {max_bytes} the table's own shape allows")

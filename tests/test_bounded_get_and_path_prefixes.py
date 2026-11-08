@@ -205,7 +205,7 @@ def test_a_redirect_body_is_never_read_and_the_hop_is_followed_by_hand():
 def test_a_redirect_loop_stops_at_the_sessions_own_limit():
     session = _routes({"https://h/p/x": (_Raw(b""), {"Location": "/p/x"}, 302)})
     session.max_redirects = 3
-    with pytest.raises(fetch.BodyTooLarge):
+    with pytest.raises(RedirectRefused):
         _get(session, 100)
     assert len(session.asked) == 4  # the first request plus three hops
 
@@ -277,3 +277,76 @@ def test_usgs_reads_the_count_under_a_tiny_bound_and_the_events_under_the_counte
     with contextlib.suppress(ValueError):  # what the parse makes of an empty catalogue is not under test; the two caps are
         fetch.fetch_usgs_quakes("2020-01", "2020-01", 5.0)
     assert caps == [fetch._USGS_COUNT_MAX_CHARS, fetch.USGS_QUAKES_HEADER_ALLOWANCE]
+
+
+# --- the same, on a REAL GuardedSession with a mounted transport (a stubbed ``send`` would hide ``resolve_redirects``) -------------------
+
+
+class _Adapter(requests.adapters.BaseAdapter):
+    def __init__(self, table):
+        super().__init__()
+        self.table = table
+        self.asked: list[str] = []
+
+    def send(self, request, **kw):
+        self.asked.append(request.url)
+        raw, headers, status = self.table[request.url]
+        return _response(request.url, raw, headers, status)
+
+    def close(self):
+        pass
+
+
+def _real(table, **kw):
+    session = fetcher.guarded_session(allowed_hosts=("raw.githubusercontent.com",), allowed_path_prefixes=OWID, **kw)
+    adapter = _Adapter(table)
+    session.mount("https://", adapter)
+    return session, adapter
+
+
+BASE = "https://raw.githubusercontent.com/owid/co2-data/master/"
+
+
+def test_on_a_real_session_a_redirect_body_is_never_pulled():
+    big = _Raw(None, endless=b"x" * 65536)
+    session, adapter = _real({BASE + "a.csv": (big, {"Location": "b.csv"}, 302), BASE + "b.csv": (_Raw(b"ok"), {}, 200)})
+    resp = fetch._bounded_get(session, BASE + "a.csv", max_chars=100)
+    assert resp.text == "ok" and adapter.asked == [BASE + "a.csv", BASE + "b.csv"]
+    assert big.pulled == 0, "requests' own resolve_redirects must not read the 3xx body"
+
+
+def test_on_a_real_session_a_non_ascii_location_is_a_refusal_not_a_decode_error():
+    session, _ = _real({BASE + "a.csv": (_Raw(b""), {"Location": "/owid/co2-data/\u00e9"}, 302)})
+    with pytest.raises(RedirectRefused):
+        fetch._bounded_get(session, BASE + "a.csv", max_chars=100)
+
+
+def test_on_a_real_session_zero_redirects_allowed_is_our_refusal_not_a_requests_exception():
+    session, adapter = _real({BASE + "a.csv": (_Raw(b""), {"Location": "b.csv"}, 302)})
+    session.max_redirects = 0
+    with pytest.raises(RedirectRefused):
+        fetch._bounded_get(session, BASE + "a.csv", max_chars=100)
+    assert adapter.asked == [BASE + "a.csv"]
+
+
+def test_on_a_real_session_the_kill_switch_stops_the_second_hop():
+    from src.ingest import activate_kill_switch, clear_kill_switch
+
+    calls: list[str] = []
+    table = {BASE + "a.csv": (_Raw(b""), {"Location": "b.csv"}, 302), BASE + "b.csv": (_Raw(b"ok"), {}, 200)}
+    session, adapter = _real(table)
+    original = adapter.send
+
+    def send(request, **kw):
+        calls.append(request.url)
+        out = original(request, **kw)
+        activate_kill_switch()  # airplane mode is engaged between the hops
+        return out
+
+    adapter.send = send
+    try:
+        with pytest.raises(Exception, match="(?i)airplane|kill|network|offline|blocked"):
+            fetch._bounded_get(session, BASE + "a.csv", max_chars=100)
+    finally:
+        clear_kill_switch()
+    assert calls == [BASE + "a.csv"], "the second hop was never sent"
