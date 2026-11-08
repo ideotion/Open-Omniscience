@@ -181,7 +181,13 @@ def test_origin_decides_when_a_request_sends_both_origin_and_referer():
 
 @pytest.mark.parametrize(
     "headers",
-    [{}, OWN_PAGE, {"Sec-Fetch-Site": "none"}, {"Sec-Fetch-Site": "Same-Origin"}, {"Referer": "http://testserver/index.html"}],
+    [
+        {"X-OO-Download": "1"},  # a script on a name that is not loopback names itself (R445)
+        OWN_PAGE,
+        {"Sec-Fetch-Site": "none"},
+        {"Sec-Fetch-Site": "Same-Origin"},
+        {"Referer": "http://testserver/index.html"},
+    ],
 )
 def test_the_apps_own_page_and_callers_that_are_not_browsers_are_served(client, data_dir, headers):
     r = client.get("/api/database/backup", headers=headers)
@@ -191,20 +197,69 @@ def test_the_apps_own_page_and_callers_that_are_not_browsers_are_served(client, 
     assert "X-OO-Free-Space-Check" not in r.headers
 
 
-def test_a_request_that_sends_none_of_the_three_headers_is_served_which_is_the_stated_limit(client, data_dir):
-    """Firefox before 90, Safari before 16.4 and old webviews send no Sec-Fetch-Site, and a no-cors ``<img>`` GET with
-    ``referrerpolicy="no-referrer"`` carries no Origin and no Referer either: the route cannot tell it from curl. Pinned so the
-    limit is a decision in the record and not a surprise; the page cannot read the answer, and the slot and the space gate bound the cost."""
-    r = client.get("/api/database/backup")
-    assert r.status_code == 200 and _left_over(data_dir) == []
+def test_a_request_that_sends_none_of_the_three_headers_is_refused_on_a_name_that_is_not_loopback(client, data_dir, monkeypatch):
+    """R445 (A-008). Firefox before 90, Safari before 16.4 and old webviews send no Sec-Fetch-Site, and a no-cors ``<img>`` GET with
+    ``referrerpolicy="no-referrer"`` at an ``OO_ALLOWED_HOSTS`` name over plain HTTP carries none of the three either (browsers
+    attach Fetch Metadata only to loopback and HTTPS): the route could not tell it from curl and wrote a plaintext snapshot for it.
+    On a name that is not loopback (``testserver`` here) such a request now has to name itself with ``X-OO-Download: 1``, which an
+    ``<img>`` cannot send. Refused BEFORE the disk is touched, and only the exact value ``1`` counts."""
+    calls = _forbid_snapshots(monkeypatch)
+    for headers in ({}, {"X-OO-Download": "0"}, {"X-OO-Download": "true"}, {"X-OO-Download": ""}):
+        r = client.get("/api/database/backup", headers=headers)
+        assert r.status_code == 403, headers
+        assert "X-OO-Download: 1" in r.json()["detail"]
+    assert not calls and _left_over(data_dir) == []
+    assert dbapi._backup_flight is None, "a refused request must not hold the slot"
 
 
-def test_the_same_limit_holds_for_a_name_the_operator_serves_over_plain_http(monkeypatch):
-    """Browsers attach Fetch Metadata only to loopback and HTTPS targets, so a page that points an ``<img>`` at an
-    ``OO_ALLOWED_HOSTS`` name over plain HTTP sends none of the three headers either: served, as curl is. Pinned so the second
-    form of the limit is a decision in the record and not a surprise."""
+@pytest.mark.parametrize("host", ["127.0.0.1:8000", "localhost", "LOCALHOST:9", "[::1]:8000"])
+def test_a_loopback_name_is_unchanged_a_request_that_sends_none_of_the_three_is_still_served(host):
+    """Browsers send Fetch Metadata to loopback, so only an old browser is behind an empty trio there: the stated limit stays,
+    for loopback names alone."""
+    dbapi._refuse_cross_site(_request({}, host=host))
+
+
+def test_the_same_holds_for_a_name_the_operator_serves_over_plain_http(monkeypatch):
+    """The header is asked for only when the browser said nothing, and it never rescues a request that said it was foreign."""
     monkeypatch.setenv("OO_ALLOWED_HOSTS", "corpus.lan")
-    dbapi._refuse_cross_site(_request({}, host="corpus.lan:8000"))
+    with pytest.raises(HTTPException) as err:
+        dbapi._refuse_cross_site(_request({}, host="corpus.lan:8000"))
+    assert err.value.status_code == 403
+    dbapi._refuse_cross_site(_request({"X-OO-Download": "1"}, host="corpus.lan:8000"))
+    for said in (
+        {"Sec-Fetch-Site": "same-origin"},
+        {"Sec-Fetch-Site": "none"},
+        {"Origin": "http://corpus.lan:8000"},
+        {"Referer": "http://corpus.lan:8000/index.html"},
+    ):
+        dbapi._refuse_cross_site(_request(said, host="corpus.lan:8000"))  # the browser named itself: the header is not asked for
+    for foreign in (
+        {"Origin": "http://evil.example", "X-OO-Download": "1"},
+        {"Sec-Fetch-Site": "cross-site", "X-OO-Download": "1"},
+        {"Referer": "http://evil.example/p", "X-OO-Download": "1"},
+    ):
+        with pytest.raises(HTTPException):
+            dbapi._refuse_cross_site(_request(foreign, host="corpus.lan:8000"))
+
+
+def test_no_page_of_the_app_calls_the_snapshot_route_so_none_is_refused_for_lacking_the_header():
+    """The app's own backup (Settings, Backup) is the streaming ``/api/backup/v2`` and ``/api/backup/folder`` routes, started by a
+    POST and written on the server; nothing under ``src/static`` names ``GET /api/database/backup``. So the header rule cannot
+    refuse the app's own page on a LAN operator name. A page that starts to call it MUST do it from a ``fetch`` that sends
+    ``X-OO-Download: 1``: a navigation (an ``<a href>``, ``location``) over plain HTTP carries none of Sec-Fetch-Site, Origin and
+    Referer and cannot add a header, so the route would refuse it on that name."""
+    static = Path(dbapi.__file__).resolve().parents[1] / "static"
+    callers = sorted(
+        str(path.relative_to(static))
+        for path in static.rglob("*")
+        if path.suffix in (".js", ".html")
+        and "locales" not in path.relative_to(static).parts
+        and "api/database/backup" in path.read_text(encoding="utf-8", errors="replace")
+    )
+    assert callers == [], (
+        f"{callers} now name GET /api/database/backup: send it from a fetch with the header X-OO-Download: 1 "
+        "(a link or a location change cannot), and pin that here"
+    )
 
 
 def test_the_snapshot_is_written_beside_the_database_and_removed_when_the_response_ends(client, data_dir, monkeypatch):
@@ -408,7 +463,7 @@ def test_a_stop_that_is_not_an_exception_still_frees_the_slot_and_removes_the_di
 
     monkeypatch.setattr(sb, "backup_to", stops)
     with pytest.raises(_Stop):
-        dbapi.download_backup(_request({}))
+        dbapi.download_backup(_request({"X-OO-Download": "1"}))  # a script on a name that is not loopback (R445)
     assert _left_over(data_dir) == []
     assert dbapi._backup_flight is None
 

@@ -185,6 +185,14 @@
       "fetcher": true
     },
     {
+      "id": "climate",
+      "label": "Climate series",
+      "hosts": ["data.giss.nasa.gov", "earthquake.usgs.gov"],
+      "trigger": "click",
+      "setting": null,
+      "fetcher": true
+    },
+    {
       "id": "weather",
       "label": "Weather",
       "hosts": ["archive-api.open-meteo.com"],

@@ -31,13 +31,14 @@ from __future__ import annotations
 import csv
 import io
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Callable
 from urllib.parse import quote, urlencode
 
 from src.ingest import DEFAULT_USER_AGENT, kill_switch_active
 from src.ingest.fetch_verdict import NETWORK_REFUSED
 from src.safety.fetcher import guarded_session
+from src.stats.gistemp import GistempParse
 from src.stats.sdmx import (
     StatFigure,
     parse_csv,
@@ -62,6 +63,14 @@ EUROSTAT_API_BASE = (
 # column names). Verify-on-use — a wrong slug/param fails LOUDLY (HTTP error / no rows),
 # never a fabricated figure; re-confirm against OWID's published data API if it moves.
 OWID_GRAPHER_BASE = "https://ourworldindata.org/grapher"
+# NASA GISS GISTEMP v4 table data: one CSV per region (GLB / NH / SH), anomalies in degC
+# against 1951-1980. NOT verified against a live download (the build sandbox cannot reach
+# the host): a wrong path or shape fails LOUDLY (HTTP error / looks_unrecognised).
+GISTEMP_BASE = "https://data.giss.nasa.gov/gistemp/tabledata_v4"
+# The body bound is DERIVED from the table's own shape, not a fixed number (see gistemp_max_chars).
+GISTEMP_FIRST_YEAR = 1880
+GISTEMP_LINE_ALLOWANCE = 200  # chars per row; a real row is about 120
+GISTEMP_HEADER_ALLOWANCE = 4096  # title, blank and header lines, with slack
 
 # Generous default timeout: a fetch may egress over Tor, which is slow — a tight
 # timeout would spuriously fail honest requests. Seconds.
@@ -366,6 +375,60 @@ def fetch_jsonstat(
     resp.raise_for_status()
     payload = resp.json()
     return parse_jsonstat(payload, agency=agency, extracted_at=extracted_at, series_id=series_id)
+
+
+def gistemp_url(region: str = "GLB") -> str:
+    """The GISTEMP v4 table CSV URL for ``region`` (``GLB``, ``NH`` or ``SH``)."""
+    from src.stats.gistemp import REGIONS
+
+    if region not in REGIONS:
+        raise ValueError(f"gistemp_url: region must be one of {REGIONS}, got {region!r}")
+    return f"{GISTEMP_BASE}/{region}.Ts+dSST.csv"
+
+
+def gistemp_max_chars(now_year: int | None = None) -> int:
+    """The longest body that can still be this table.
+
+    One row per year from 1880 to the current year plus one (the next year's row may appear
+    early), times a generous per-row allowance, plus the header lines. It grows with the data
+    each January instead of being a constant someone must remember to raise.
+    """
+    year = now_year if now_year is not None else datetime.now(UTC).year
+    rows = max(year + 1 - GISTEMP_FIRST_YEAR + 1, 1)
+    return rows * GISTEMP_LINE_ALLOWANCE + GISTEMP_HEADER_ALLOWANCE
+
+
+def fetch_gistemp(
+    region: str = "GLB",
+    *,
+    get: Getter | None = None,
+    extracted_at: str | None = None,
+) -> GistempParse:
+    """Fetch one GISTEMP v4 table live and parse it (kill switch refuses UP FRONT).
+
+    Returns the :class:`~src.stats.gistemp.GistempParse` (figures AND refusals). A body that
+    parses to nothing but refusals (an HTML error page, a renamed product) raises rather than
+    returning an empty series, because an empty list and a wrong file look the same once the
+    refusals are dropped.
+    """
+    from src.stats.gistemp import parse_gistemp
+
+    if kill_switch_active():
+        raise RuntimeError(NETWORK_REFUSED)
+    extracted_at = extracted_at or _now_iso()
+    getter = get or _default_getter
+    resp = getter(gistemp_url(region))
+    resp.raise_for_status()
+    bound = gistemp_max_chars()
+    if len(resp.text) > bound:
+        raise ValueError(f"GISTEMP {region}: the response is {len(resp.text)} characters, over the {bound} the table's own shape allows")
+    parsed = parse_gistemp(resp.text, region=region, extracted_at=extracted_at)
+    if parsed.looks_unrecognised:
+        raise ValueError(
+            f"GISTEMP {region}: the response is not the expected table "
+            f"({parsed.refused_total} lines refused, none parsed)"
+        )
+    return parsed
 
 
 # USGS ComCat via the FDSN event service. NOT verified against a live download (the build sandbox
