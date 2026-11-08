@@ -43,13 +43,13 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from src.analytics.engine_identity import baseline_engine_id
+from src.analytics.engine_identity import baseline_engine_id, www_engine_id
 from src.analytics.extract import get_extractor
 from src.analytics.store import index_article, reindex_articles
 from src.backup.merge import _BACKLOG_SQL, _STATUS_MERGED, _STATUS_REINDEXED, merge_corpus
 from src.database.fts import _FTS_DDL
 from src.database.fts_norm import register as _register_fts_functions
-from src.database.models import Article, ArticleIndexStamp, Base, Keyword, Source
+from src.database.models import Article, ArticleIndexStamp, ArticleWwwStamp, Base, Keyword, Source
 
 
 def _writer(path: Path) -> sqlite3.Connection:
@@ -246,9 +246,11 @@ def _restore(backup: Path, target: Path, working: Path, *, carry: bool, monkeypa
         ids = [int(r[0]) for r in s.execute(text(
             "SELECT row_id FROM merged_rows WHERE batch_id = :b AND table_name = 'articles'"
         ), {"b": batch_id})]
+        # "Certified" is BOTH stamps (R415): the keyword stamp and the places-and-entities stamp, as reindex_imported_articles reads it.
         certified = {int(r[0]) for r in s.execute(text(
-            "SELECT article_id FROM article_index_stamps WHERE engine = :e"
-        ), {"e": baseline_engine_id()})}
+            "SELECT k.article_id FROM article_index_stamps k JOIN article_www_stamps w ON w.article_id = k.article_id"
+            " WHERE k.engine = :e AND w.engine = :w"
+        ), {"e": baseline_engine_id(), "w": www_engine_id()})}
         todo = sorted(set(ids) - certified)
         if todo:
             reindex_articles(s, extractor=get_extractor("baseline"), article_ids=todo,
@@ -301,6 +303,10 @@ def _snapshot(path: Path) -> dict:
             ),
             "stamps": rows(
                 "SELECT a.hash, st.engine, st.inputs FROM article_index_stamps st"
+                " JOIN articles a ON a.id = st.article_id"
+            ),
+            "www_stamps": rows(
+                "SELECT a.hash, st.engine, st.inputs FROM article_www_stamps st"
                 " JOIN articles a ON a.id = st.article_id"
             ),
         }
@@ -391,6 +397,10 @@ def test_a_merge_into_a_populated_corpus_matches_a_re_index(backup, tmp_path, mo
     assert refused["inputs_changed"] >= 1, refused  # the wire source's renamed articles
     assert refused["entity_upgrade"] >= 1, refused
     assert plan["carried"]["articles"] >= 1, plan
+    # The three keyword guards and the source rename take the KEYWORD half of an article and leave its places and entities (R415): every
+    # article that was neither present here nor on an unmapped source has them carried, whichever way its keywords went.
+    assert plan["carried"]["www_articles"] == _N - refused["already_present"] - refused["source_unmapped"], plan
+    assert plan["carried"]["www_articles"] > plan["carried"]["keyword_articles"], plan
     # ...and the carried ones still match a re-index, row for row, including which
     # KEYWORD ROW each mention landed on where two rows share a term.
     snap = _snapshot(tmp_path / "carry.db")
@@ -427,13 +437,14 @@ def test_a_backup_without_stamps_carries_nothing(backup, tmp_path, monkeypatch):
     shutil.copyfile(backup, old)
     con = sqlite3.connect(old)
     con.execute("DELETE FROM article_index_stamps")
+    con.execute("DELETE FROM article_www_stamps")  # R415: a backup with no stamps has neither of the two
     con.commit()
     con.close()
     target = tmp_path / "t.db"
     _schema(target)
     out = _restore(old, target, tmp_path / "w.db", carry=True, monkeypatch=monkeypatch)
     plan = out["counts"]["_derived_carry"]
-    assert plan.get("carried") is None and plan["stamped"] == 0, plan
+    assert plan.get("carried") is None and plan["stamped"] == 0 and plan["www_stamped"] == 0, plan
     assert sorted(out["reindexed"]) == sorted(out["inserted"])
 
 
@@ -572,8 +583,8 @@ def test_a_partly_carried_batch_stays_merged_and_the_backlog_counts_only_what_is
     try:
         status = con.execute("SELECT status FROM merge_batches WHERE id = ?", (batch_id,)).fetchone()[0]
         row = con.execute(
-            _BACKLOG_SQL.replace(":s", "?").replace(":engine", "?"),
-            (baseline_engine_id(), _STATUS_MERGED),
+            _BACKLOG_SQL,
+            {"s": _STATUS_MERGED, "engine": baseline_engine_id(), "www_engine": www_engine_id()},
         ).fetchone()
         inserted = con.execute(
             "SELECT COUNT(*) FROM merged_rows WHERE batch_id = ? AND table_name = 'articles'",
@@ -688,7 +699,7 @@ def test_the_post_swap_re_index_skips_an_article_already_certified(monkeypatch):
                 src = Source(name="Carry Skip", domain="carry-skip.test")
                 s.add(src)
                 s.flush()
-            for i in range(2):
+            for i in range(4):
                 a = Article(url=f"https://carry-skip.test/{i}",
                             canonical_url=f"https://carry-skip.test/{i}", source_id=src.id,
                             title=f"Skip {i}", content="Energy prices and the budget.",
@@ -706,6 +717,13 @@ def test_the_post_swap_re_index_skips_an_article_already_certified(monkeypatch):
             # The first article arrives CERTIFIED by this engine (as a carry leaves it).
             s.add(ArticleIndexStamp(article_id=made[0], engine=baseline_engine_id(),
                                     inputs="i1-" + "0" * 32))
+            # ...and by BOTH: "certified" is the two stamps (R415), so an article with the keyword stamp alone would still be owed.
+            s.add(ArticleWwwStamp(article_id=made[0], engine=www_engine_id(), inputs="wi1-" + "0" * 32))
+            # The third holds the KEYWORD stamp alone: it still owes its places and entities, so it is NOT skipped.
+            s.add(ArticleIndexStamp(article_id=made[2], engine=baseline_engine_id(), inputs="i1-" + "0" * 32))
+            # The fourth holds the PLACES-AND-ENTITIES stamp alone: it still owes its keywords. (A reader that certified on the www stamp
+            # alone would skip it, and nothing else in this file runs the production query.)
+            s.add(ArticleWwwStamp(article_id=made[3], engine=www_engine_id(), inputs="wi1-" + "0" * 32))
             s.commit()
 
         seen: list[list[int]] = []
@@ -717,20 +735,22 @@ def test_the_post_swap_re_index_skips_an_article_already_certified(monkeypatch):
             seen.append(list(article_ids))
             return real(session, article_ids=article_ids, **kw)
 
-        # The backlog, through BOTH readers: one article owed, one certified.
+        # The backlog, through BOTH readers: four articles in the batch, one certified (both stamps); the other three are owed -- one with
+        # nothing, one with the keyword stamp alone, one with the places-and-entities stamp alone.
         mine = [b for b in merge_mod.reindex_backlog()["batches"] if b["batch_id"] == batch_id]
-        assert mine and mine[0]["articles"] == 1 and mine[0]["certified"] == 1, mine
+        assert mine and mine[0]["articles"] == 3 and mine[0]["certified"] == 1, mine
         pend = [b for b in merge_mod.pending_reindex_batches() if b["batch_id"] == batch_id]
-        assert pend and pend[0]["articles"] == 1 and pend[0]["certified"] == 1, pend
+        assert pend and pend[0]["articles"] == 3 and pend[0]["certified"] == 1, pend
 
         monkeypatch.setattr(store_mod, "reindex_articles", _spy)
         out = merge_mod.reindex_imported_articles(batch_id, commit_batch=1, workers=0)
-        assert seen == [[made[1]]], f"the certified article was re-indexed: {seen}"
+        assert seen == [[made[1], made[2], made[3]]], f"the certified article was re-indexed, or a half-stamped one skipped: {seen}"
         assert out["already_certified"] == 1
     finally:
         with session_scope() as s:
             for aid in made:
                 s.query(ArticleIndexStamp).filter_by(article_id=aid).delete()
+                s.query(ArticleWwwStamp).filter_by(article_id=aid).delete()
                 s.query(KeywordMention).filter_by(article_id=aid).delete()
                 a = s.get(Article, aid)
                 if a is not None:
@@ -755,7 +775,8 @@ def test_carried_timestamps_are_stored_in_the_orms_own_format(backup, tmp_path, 
     con = sqlite3.connect(tmp_path / "w.db")
     try:
         for table, col in (("keyword_mentions", "created_at"), ("article_mentioned_places", "created_at"),
-                           ("article_entities", "created_at"), ("article_index_stamps", "stamped_at")):
+                           ("article_entities", "created_at"), ("article_index_stamps", "stamped_at"),
+                           ("article_www_stamps", "stamped_at")):
             bad = [v for (v,) in con.execute(f"SELECT {col} FROM {table}") if not shape.match(v or "")]
             assert not bad, f"{table}.{col} holds a second timestamp format: {bad[:3]}"
     finally:
@@ -891,3 +912,396 @@ def test_a_carry_that_carried_nothing_leaves_the_stoplist_run_alone(backup, tmp_
     assert "carried" not in again["counts"]["_derived_carry"], "the second restore must carry nothing"
     assert _done(tmp_path / "second.db") == "finished-after-first"
     assert _cursor(tmp_path / "second.db") == "finished-after-first.abc:1:1"
+
+
+# --- R415: the places and entities ride their OWN stamp ------------------------------------------ #
+#
+# ``article_index_stamps`` certifies the keyword rows and ``article_www_stamps`` the places and entities, each with its own engine and its own
+# inputs digest (the www one is made by ``www_inputs_digest``, which the carry CALLS on the incoming row and never recomputes). An article may hold
+# either stamp without the other, so the carry takes each half on its own evidence, and "owes the re-index nothing" means BOTH.
+
+_N = len(_ARTICLES)
+
+
+def _variant(backup: Path, tmp_path: Path, name: str, *statements: str) -> Path:
+    """A copy of the backup with the statements applied (foreign keys OFF, so a stamp can be planted without its article)."""
+    path = tmp_path / name
+    shutil.copyfile(backup, path)
+    con = _writer(path)
+    con.execute("PRAGMA foreign_keys=OFF")
+    for sql in statements:
+        con.execute(sql)
+    con.commit()
+    con.close()
+    return path
+
+
+def _restore_both_ways(variant: Path, tmp_path: Path, monkeypatch) -> dict:
+    """Restore the variant into a fresh install with the carry and without it, require the two to end in the SAME rows (the differential), and
+    return the carry run."""
+    target = tmp_path / "empty.db"
+    _schema(target)
+    carried = _restore(variant, target, tmp_path / "carry.db", carry=True, monkeypatch=monkeypatch)
+    classic = _restore(variant, target, tmp_path / "classic.db", carry=False, monkeypatch=monkeypatch)
+    assert classic["reindexed"], "the comparison run must actually have re-indexed"
+    _assert_same(_snapshot(tmp_path / "carry.db"), _snapshot(tmp_path / "classic.db"))
+    return carried
+
+
+def _merge_only(variant: Path, tmp_path: Path, monkeypatch) -> tuple[dict, int, Path]:
+    """merge_corpus alone into a fresh install (no re-index afterwards), so the state a restore leaves is what the test reads."""
+    target = tmp_path / "t.db"
+    _schema(target)
+    working = tmp_path / "w.db"
+    shutil.copyfile(target, working)
+    monkeypatch.setenv("OO_CARRY_DERIVED", "1")
+    counts, batch_id = merge_corpus(variant, working, _BATCH_META)
+    return counts, batch_id, working
+
+
+def _assert_rows_only_where_their_stamp_is(path: Path) -> None:
+    """The invariant a stamp exists for: no row of a half exists for an article that does not hold that half's stamp (a row with no stamp is
+    re-extracted, which is slow and correct; the other way round is a certified article missing rows), and the keyword counters equal the
+    mentions they count, the top keyword is set only with its mentions."""
+    assert not _scalar(
+        path,
+        "SELECT COUNT(*) FROM keyword_mentions m WHERE NOT EXISTS (SELECT 1 FROM article_index_stamps s WHERE s.article_id = m.article_id)",
+    ), "a keyword mention was carried for an article with no keyword stamp"
+    assert not _scalar(
+        path,
+        "SELECT COUNT(*) FROM article_mentioned_places p WHERE NOT EXISTS (SELECT 1 FROM article_www_stamps s WHERE s.article_id = p.article_id)",
+    ), "a place was carried for an article with no places-and-entities stamp"
+    assert not _scalar(
+        path,
+        "SELECT COUNT(*) FROM article_entities e WHERE NOT EXISTS (SELECT 1 FROM article_www_stamps s WHERE s.article_id = e.article_id)",
+    ), "an entity was carried for an article with no places-and-entities stamp"
+    assert not _scalar(
+        path,
+        "SELECT COUNT(*) FROM articles a WHERE (a.top_keyword_id IS NOT NULL OR a.top_keyword_count IS NOT NULL)"
+        " AND NOT EXISTS (SELECT 1 FROM article_index_stamps s WHERE s.article_id = a.id)",
+    ), "an article got a top keyword without its keyword stamp"
+    assert not _scalar(
+        path,
+        "SELECT COUNT(*) FROM (SELECT k.id FROM keywords k LEFT JOIN keyword_mentions m ON m.keyword_id = k.id"
+        " GROUP BY k.id HAVING k.mention_count <> COALESCE(SUM(m.count), 0) OR k.article_count <> COUNT(m.id))",
+    ), "a keyword counter moved by rows that were not carried"
+
+
+def _scalar(path: Path, sql: str, *args):
+    con = sqlite3.connect(path)
+    try:
+        return con.execute(sql, args).fetchone()[0]
+    finally:
+        con.close()
+
+
+#: One article's row count per half, keyed on the article's hash, for the articles holding the half's stamp. Fixed statements, no interpolation.
+_ROWS_PER_STAMPED_ARTICLE = {
+    "mentions": (
+        "SELECT a.hash, (SELECT COUNT(*) FROM keyword_mentions t WHERE t.article_id = a.id)"
+        " FROM articles a JOIN article_index_stamps s ON s.article_id = a.id"
+    ),
+    "places": (
+        "SELECT a.hash, (SELECT COUNT(*) FROM article_mentioned_places t WHERE t.article_id = a.id)"
+        " FROM articles a JOIN article_www_stamps s ON s.article_id = a.id"
+    ),
+    "entities": (
+        "SELECT a.hash, (SELECT COUNT(*) FROM article_entities t WHERE t.article_id = a.id)"
+        " FROM articles a JOIN article_www_stamps s ON s.article_id = a.id"
+    ),
+}
+
+
+def _assert_every_stamp_has_its_rows(path: Path, backup: Path) -> None:
+    """The dangerous direction of the stamp invariant, which `_assert_rows_only_where_their_stamp_is` cannot see: an article holding a half's
+    stamp must hold ALL of that half's rows -- as many as the backup it came from, which is what a re-index of unchanged text writes. A stamp
+    written without (or ahead of) its rows would make the re-index skip an article that is missing them."""
+    for half, sql in _ROWS_PER_STAMPED_ARTICLE.items():
+        con = sqlite3.connect(backup)
+        try:
+            want = dict(con.execute(sql).fetchall())
+        finally:
+            con.close()
+        con = sqlite3.connect(path)
+        try:
+            got = dict(con.execute(sql).fetchall())
+        finally:
+            con.close()
+        assert got == {h: want[h] for h in got}, f"a stamped article is missing {half} rows it was exported with"
+        assert sum(got.values()) > 0 or not got, f"the {half} comparison was vacuous: the stamped articles hold no {half} at all"
+
+
+def test_a_fresh_install_carries_both_halves_and_both_stamps(backup, tmp_path, monkeypatch):
+    carried = _restore_both_ways(backup, tmp_path, monkeypatch)
+    done = carried["counts"]["_derived_carry"]["carried"]
+    assert done["articles"] == done["keyword_articles"] == done["www_articles"] == _N, done
+    assert carried["counts"]["_derived_carry"]["www_engine"] == www_engine_id()
+    assert _scalar(tmp_path / "carry.db", "SELECT COUNT(*) FROM article_www_stamps WHERE engine = ?", www_engine_id()) == _N
+    assert carried["reindexed"] == []
+
+
+@pytest.mark.parametrize("drop", ["article_www_stamps", "article_index_stamps"])
+def test_a_batch_carried_for_one_half_stays_merged_and_owes_the_other(backup, tmp_path, monkeypatch, drop):
+    """The hazard R415 names: counting the batch complete (or the article certified) on ONE stamp would hide the half that was not carried
+    for good -- a keyword-only article would never get its places and entities, a www-only one never its keywords."""
+    variant = _variant(backup, tmp_path, "half.db", f"DELETE FROM {drop}")
+    counts, batch_id, working = _merge_only(variant, tmp_path, monkeypatch)
+    done = counts["_derived_carry"]["carried"]
+    kw_half = drop == "article_www_stamps"
+    assert done["keyword_articles"] == (_N if kw_half else 0) and done["www_articles"] == (0 if kw_half else _N), done
+    assert done["articles"] == 0, "carried COMPLETELY means both halves"
+    assert (done["mentions"] > 0) is kw_half and (done["places"] > 0) is (not kw_half), done
+    assert _scalar(working, "SELECT status FROM merge_batches WHERE id = ?", batch_id) == _STATUS_MERGED
+    con = sqlite3.connect(working)
+    try:
+        row = con.execute(
+            _BACKLOG_SQL, {"s": _STATUS_MERGED, "engine": baseline_engine_id(), "www_engine": www_engine_id()}
+        ).fetchone()
+    finally:
+        con.close()
+    assert row[2] == _N and row[3] == 0, f"nothing is certified by one stamp: {row}"
+    # Only the stamp for the half that WAS carried was written.
+    assert _scalar(working, "SELECT COUNT(*) FROM article_index_stamps") == (_N if kw_half else 0)
+    assert _scalar(working, "SELECT COUNT(*) FROM article_www_stamps") == (0 if kw_half else _N)
+    _assert_rows_only_where_their_stamp_is(working)
+    _assert_every_stamp_has_its_rows(working, backup)
+
+
+@pytest.mark.parametrize("drop", ["article_www_stamps", "article_index_stamps"])
+def test_the_half_that_was_not_carried_is_re_indexed_to_the_same_rows(backup, tmp_path, monkeypatch, drop):
+    variant = _variant(backup, tmp_path, "half.db", f"DELETE FROM {drop}")
+    carried = _restore_both_ways(variant, tmp_path, monkeypatch)
+    assert sorted(carried["reindexed"]) == sorted(carried["inserted"]), "an article with one stamp is still owed the other half"
+
+
+def test_a_fully_carried_batch_is_certified_by_both_stamps_in_the_backlog(backup, tmp_path, monkeypatch):
+    counts, batch_id, working = _merge_only(backup, tmp_path, monkeypatch)
+    assert _scalar(working, "SELECT status FROM merge_batches WHERE id = ?", batch_id) == _STATUS_REINDEXED
+    con = sqlite3.connect(working)
+    try:
+        row = con.execute(
+            _BACKLOG_SQL, {"s": _STATUS_REINDEXED, "engine": baseline_engine_id(), "www_engine": www_engine_id()}
+        ).fetchone()
+        other = con.execute(
+            _BACKLOG_SQL, {"s": _STATUS_REINDEXED, "engine": baseline_engine_id(), "www_engine": "w1-" + "0" * 32}
+        ).fetchone()
+    finally:
+        con.close()
+    assert row[2] == _N and row[3] == _N, row
+    assert other[3] == 0, "a different places-and-entities engine certifies nothing"
+
+
+def test_a_different_www_engine_carries_the_keywords_and_not_the_places(backup, tmp_path, monkeypatch):
+    variant = _variant(backup, tmp_path, "w.db", "UPDATE article_www_stamps SET engine = 'w1-' || substr(engine, 4, 31) || 'x'")
+    carried = _restore_both_ways(variant, tmp_path, monkeypatch)
+    plan = carried["counts"]["_derived_carry"]
+    assert plan["www_stamped"] == 0 and "places-and-entities stamp from this engine" in plan["www_reason"], plan
+    assert plan["carried"]["keyword_articles"] == _N and plan["carried"]["www_articles"] == 0 and plan["carried"]["places"] == 0, plan
+
+
+def test_a_www_stamp_whose_inputs_changed_is_refused_for_the_places_only(backup, tmp_path, monkeypatch):
+    variant = _variant(backup, tmp_path, "w.db", "UPDATE article_www_stamps SET inputs = 'wi1-00000000000000000000000000000000' WHERE article_id = 2")
+    carried = _restore_both_ways(variant, tmp_path, monkeypatch)
+    plan = carried["counts"]["_derived_carry"]
+    assert plan["refused"]["www_inputs_changed"] == 1 and plan["refused"]["inputs_changed"] == 0, plan
+    assert plan["carried"]["keyword_articles"] == _N and plan["carried"]["www_articles"] == _N - 1 and plan["carried"]["articles"] == _N - 1, plan
+
+
+def test_a_title_edit_refuses_the_keywords_and_keeps_the_places_and_entities(backup, tmp_path, monkeypatch):
+    """The point of the split: the title is an input of the keyword rows and of no places-and-entities row, so the edit costs the keywords a
+    re-extraction and leaves the places and entities carried -- and they still equal what a re-index writes (the differential)."""
+    variant = _variant(backup, tmp_path, "t.db", "UPDATE articles SET title = 'Climate finance talks resume' WHERE hash = 'h0003'")
+    carried = _restore_both_ways(variant, tmp_path, monkeypatch)
+    plan = carried["counts"]["_derived_carry"]
+    assert plan["refused"]["inputs_changed"] == 1 and plan["refused"]["www_inputs_changed"] == 0, plan
+    assert plan["carried"]["keyword_articles"] == _N - 1 and plan["carried"]["www_articles"] == _N, plan
+    assert plan["carried"]["articles"] == _N - 1, "carried completely: the edited article still owes its keywords"
+
+
+def test_a_body_edit_refuses_both_halves(backup, tmp_path, monkeypatch):
+    variant = _variant(backup, tmp_path, "b.db", "UPDATE articles SET content = content || ' Added in Madrid on 4 July 2024.' WHERE hash = 'h0003'")
+    carried = _restore_both_ways(variant, tmp_path, monkeypatch)
+    plan = carried["counts"]["_derived_carry"]
+    assert plan["refused"]["inputs_changed"] == 1 and plan["refused"]["www_inputs_changed"] == 1, plan
+    assert plan["carried"]["keyword_articles"] == plan["carried"]["www_articles"] == plan["carried"]["articles"] == _N - 1, plan
+
+
+def test_a_country_edit_refuses_both_halves(backup, tmp_path, monkeypatch):
+    variant = _variant(backup, tmp_path, "c.db", "UPDATE articles SET country = 'it' WHERE hash = 'h0003'")
+    carried = _restore_both_ways(variant, tmp_path, monkeypatch)
+    plan = carried["counts"]["_derived_carry"]
+    assert plan["refused"]["inputs_changed"] == 1 and plan["refused"]["www_inputs_changed"] == 1, plan
+
+
+def test_a_backup_from_before_the_www_stamp_carries_the_keywords_alone(backup, tmp_path, monkeypatch):
+    variant = _variant(backup, tmp_path, "old.db", "DROP TABLE article_www_stamps")
+    carried = _restore_both_ways(variant, tmp_path, monkeypatch)
+    plan = carried["counts"]["_derived_carry"]
+    assert plan["www_reason"] == "the backup predates the places-and-entities stamp" and plan["www_engine"] is None, plan
+    assert plan["carried"]["keyword_articles"] == _N and plan["carried"]["www_articles"] == 0, plan
+
+
+def test_a_corpus_without_the_www_table_carries_the_keywords_and_says_so(backup, tmp_path, monkeypatch):
+    target = tmp_path / "t.db"
+    _schema(target)
+    con = _writer(target)
+    con.execute("DROP TABLE article_www_stamps")
+    con.commit()
+    con.close()
+    working = tmp_path / "w.db"
+    shutil.copyfile(target, working)
+    monkeypatch.setenv("OO_CARRY_DERIVED", "1")
+    counts, _batch = merge_corpus(backup, working, _BATCH_META)
+    plan = counts["_derived_carry"]
+    assert plan["www_reason"] == "this corpus has no table to record a places-and-entities stamp in", plan
+    assert plan["carried"]["keyword_articles"] == _N and plan["carried"]["www_articles"] == 0 and plan["carried"]["places"] == 0, plan
+
+
+def test_a_www_identity_that_cannot_be_computed_carries_the_keywords_alone(backup, tmp_path, monkeypatch):
+    import src.analytics.engine_identity as ident
+
+    def boom():
+        raise RuntimeError("no www identity")
+
+    monkeypatch.setattr(ident, "www_engine_id", boom)
+    counts, _batch, _working = _merge_only(backup, tmp_path, monkeypatch)
+    plan = counts["_derived_carry"]
+    assert plan["www_engine"] is None and "could not be computed" in plan["www_reason"], plan
+    assert plan["carried"]["keyword_articles"] == _N and plan["carried"]["www_articles"] == 0, plan
+    from src.backup.merge import _backlog_www_engine
+
+    assert _backlog_www_engine() == "<unknown>", "an identity nobody can compute certifies nothing"
+
+
+def test_the_two_stamp_tables_are_walked_together_in_small_chunks(backup, tmp_path, monkeypatch):
+    """Each article holds the stamps the variant leaves it: the first two only the www stamp, the next two only the keyword stamp, the rest
+    both. Chunks of two candidates and windows of one: every article must be carried for exactly the halves it holds, in the same rows a
+    re-index writes. The WALK is what this pins (a walk that followed one table, or lost its place at a chunk edge, would drop or repeat an
+    article); the rows themselves are pinned by the merge-only tests that read the state before any re-index (`_assert_every_stamp_has_its_rows`)."""
+    import src.backup.merge as merge_mod
+
+    monkeypatch.setattr(merge_mod, "_CARRY_PLAN_CHUNK", 2)
+    monkeypatch.setattr(merge_mod, "_CARRY_WRITE_WINDOW", 1)
+    variant = _variant(
+        backup, tmp_path, "mixed.db",
+        "DELETE FROM article_index_stamps WHERE article_id IN (1, 2)",
+        "DELETE FROM article_www_stamps WHERE article_id IN (3, 4)",
+    )
+    carried = _restore_both_ways(variant, tmp_path, monkeypatch)
+    plan = carried["counts"]["_derived_carry"]
+    done = plan["carried"]
+    assert plan["candidates"] == _N, "every article holding either stamp is one candidate, whichever table it came from"
+    assert done["keyword_articles"] == _N - 2 and done["www_articles"] == _N - 2 and done["articles"] == _N - 4, done
+    # Which articles are still owed, by hash (the ids a fresh install hands out are not the test's business).
+    owed = {_scalar(tmp_path / "carry.db", "SELECT hash FROM articles WHERE id = ?", aid) for aid in carried["reindexed"]}
+    assert owed == {"h0000", "h0001", "h0002", "h0003"}, f"only the four half-stamped articles are still owed: {owed}"
+
+
+@pytest.mark.parametrize("mismatch", ["none", "www", "keyword"])
+def test_each_stamp_table_is_read_once_in_pages_whatever_the_other_one_holds(backup, tmp_path, monkeypatch, mismatch):
+    """The walk that was first written merged the two tables inside ONE ordered, limited statement; SQLite has to read the next row of BOTH
+    sides to return a row of either, so a table with nothing left to give was scanned from the cursor to its end on every page -- quadratic,
+    18 s at a million articles when one engine had changed. The statement count is the cheap regression guard: one seek per page per table,
+    pages that follow the cursor, and a table whose engine matches nothing asked ONCE."""
+    import src.backup.merge as merge_mod
+
+    monkeypatch.setattr(merge_mod, "_CARRY_PLAN_CHUNK", 2)
+    seen: list[tuple[str, tuple]] = []
+    real = merge_mod._q
+
+    def spy(con, sql, params=()):
+        if "ORDER BY article_id LIMIT" in sql and "FROM inc.article_" in sql and "_stamps" in sql:
+            seen.append((sql, params))
+        return real(con, sql, params)
+
+    monkeypatch.setattr(merge_mod, "_q", spy)
+    statements = {
+        "none": (),
+        "www": ("UPDATE article_www_stamps SET engine = engine || 'x'",),
+        "keyword": ("UPDATE article_index_stamps SET engine = engine || 'x'",),
+    }[mismatch]
+    variant = _variant(backup, tmp_path, "m.db", *statements) if statements else backup
+    counts, _batch, working = _merge_only(variant, tmp_path, monkeypatch)
+    kw = [p for sql, p in seen if "FROM inc.article_index_stamps" in sql]
+    www = [p for sql, p in seen if "FROM inc.article_www_stamps" in sql]
+    full_walk = _N // 2 + 1  # pages of two over seven rows: 2, 2, 2, 1
+    assert len(kw) == (1 if mismatch == "keyword" else full_walk), kw
+    assert len(www) == (1 if mismatch == "www" else full_walk), www
+    for pages in (kw, www):
+        cursors = [p[1] for p in pages]
+        assert cursors == sorted(set(cursors)), f"a page did not move the cursor past the one before: {cursors}"
+    plan = counts["_derived_carry"]
+    # The mismatched half is declined in the report and the matching half still carries, whichever it is.
+    done = plan["carried"]
+    assert done["keyword_articles"] == (0 if mismatch == "keyword" else _N), done
+    assert done["www_articles"] == (0 if mismatch == "www" else _N), done
+    _assert_rows_only_where_their_stamp_is(working)
+
+
+def test_a_mixed_backup_leaves_rows_only_where_their_stamp_is(backup, tmp_path, monkeypatch):
+    """Two articles with the www stamp alone and two with the keyword stamp alone, the rest with both: what the merge leaves BEFORE any
+    re-index must satisfy the stamp invariant (rows only where their stamp is, counters equal to the mentions)."""
+    variant = _variant(
+        backup, tmp_path, "mixed.db",
+        "DELETE FROM article_index_stamps WHERE article_id IN (1, 2)",
+        "DELETE FROM article_www_stamps WHERE article_id IN (3, 4)",
+    )
+    counts, batch_id, working = _merge_only(variant, tmp_path, monkeypatch)
+    done = counts["_derived_carry"]["carried"]
+    assert done["keyword_articles"] == _N - 2 and done["www_articles"] == _N - 2 and done["articles"] == _N - 4, done
+    _assert_rows_only_where_their_stamp_is(working)
+    _assert_every_stamp_has_its_rows(working, backup)
+    assert _scalar(working, "SELECT status FROM merge_batches WHERE id = ?", batch_id) == _STATUS_MERGED
+
+
+def test_a_stamp_whose_article_is_missing_cannot_end_the_walk_early(backup, tmp_path, monkeypatch):
+    """Orphan stamps (a backup taken with foreign keys off) sort FIRST here, so a whole chunk of them: the walk must go on past it."""
+    import src.backup.merge as merge_mod
+
+    monkeypatch.setattr(merge_mod, "_CARRY_PLAN_CHUNK", 2)
+    ghost_kw = "INSERT INTO article_index_stamps (article_id, engine, inputs) VALUES ({}, '" + baseline_engine_id() + "', 'i1-x')"
+    ghost_www = "INSERT INTO article_www_stamps (article_id, engine, inputs) VALUES ({}, '" + www_engine_id() + "', 'wi1-x')"
+    variant = _variant(
+        backup, tmp_path, "ghosts.db",
+        ghost_kw.format(-9), ghost_kw.format(-8), ghost_www.format(-9), ghost_www.format(-7), ghost_www.format(-6),
+    )
+    carried = _restore_both_ways(variant, tmp_path, monkeypatch)
+    plan = carried["counts"]["_derived_carry"]
+    assert plan["carried"]["articles"] == _N, plan
+    assert plan["candidates"] == _N + 4, "four distinct ghost ids were walked, and none of them ended the walk or was carried"
+    assert plan["refused"]["article_missing"] == 4, "each stamp whose article the backup does not hold is counted once, not once per table"
+
+
+def test_a_leftover_www_stamp_on_a_reused_id_cannot_certify_a_new_article(backup, tmp_path, monkeypatch):
+    """The keyword stamp's hazard (above), in the second table: a www stamp that outlived its article would let the re-index skip the places
+    and entities of whatever lands on that id next."""
+    target = tmp_path / "t.db"
+    _schema(target)
+    engine, s = _session(target)
+    try:
+        src = Source(name="Other", domain="other.example")
+        s.add(src)
+        s.flush()
+        gone = Article(url="https://other.example/x", canonical_url="https://other.example/x",
+                       source_id=src.id, title="gone", content="gone", hash="gone", created_at=datetime.now(UTC))
+        s.add(gone)
+        s.flush()
+        s.add(ArticleWwwStamp(article_id=gone.id, engine=www_engine_id(), inputs="wi1-" + "0" * 32))
+        s.commit()
+        gone_id = gone.id
+    finally:
+        s.close()
+        engine.dispose()
+    con = _writer(target)
+    con.execute("PRAGMA foreign_keys=OFF")
+    con.execute("DELETE FROM articles WHERE id = ?", (gone_id,))
+    con.commit()
+    con.close()
+    monkeypatch.setenv("OO_CARRY_DERIVED", "0")  # nothing carries, so any www stamp left on the id is the leftover
+    working = tmp_path / "w.db"
+    shutil.copyfile(target, working)
+    _counts, batch_id = merge_corpus(backup, working, _BATCH_META)
+    assert _scalar(working, "SELECT COUNT(*) FROM merged_rows WHERE batch_id = ? AND table_name = 'articles' AND row_id = ?", batch_id, gone_id), (
+        "the fixture did not reuse the id, so this proves nothing"
+    )
+    assert _scalar(working, "SELECT COUNT(*) FROM article_www_stamps WHERE article_id = ?", gone_id) == 0, "a leftover www stamp survived onto a new article"

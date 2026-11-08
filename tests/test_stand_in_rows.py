@@ -2130,13 +2130,19 @@ def test_a_restore_batch_holding_the_stand_in_ends_reindexed_whether_it_is_the_h
 def test_a_stamped_stand_in_is_certified_and_is_not_subtracted_a_second_time_as_lost(restore_seams):
     """``lost`` is the stand-ins a batch lists that are NOT certified: one that already holds a stamp of the engine is counted by ``certified``,
     and subtracting it again would make the batch owe less than it does."""
-    from src.backup.merge import _backlog_engine, pending_reindex_batches, reindex_backlog
-    from src.database.models import ArticleIndexStamp
+    from src.backup.merge import (
+        _backlog_engine,
+        _backlog_www_engine,
+        pending_reindex_batches,
+        reindex_backlog,
+    )
+    from src.database.models import ArticleIndexStamp, ArticleWwwStamp
 
     db = restore_seams
     _merged_batch(db, [1, 2, STAND_IN_ARTICLE])
     assert [(b["articles"], b["certified"]) for b in pending_reindex_batches()] == [(2, 0)]  # the stand-in owes nothing (lost)
     db.add(ArticleIndexStamp(article_id=STAND_IN_ARTICLE, engine=_backlog_engine(), inputs="{}"))
+    db.add(ArticleWwwStamp(article_id=STAND_IN_ARTICLE, engine=_backlog_www_engine(), inputs="{}"))  # certified is BOTH stamps (R415)
     db.commit()
     assert [(b["articles"], b["certified"]) for b in pending_reindex_batches()] == [(2, 1)]  # certified now, and not lost a second time
     assert reindex_backlog()["articles_pending"] == 2
@@ -2146,18 +2152,33 @@ def test_a_lost_count_that_a_race_inflated_never_makes_a_batch_owe_a_negative_nu
     """The backlog read is two statements with no shared snapshot, so ``lost`` is held to what the first one says the batch can owe
     (``articles - certified``): the owed count of both callers is never below zero, with or without a certified article in the batch."""
     import src.backup.merge as merge_mod
-    from src.backup.merge import _backlog_engine
-    from src.database.models import ArticleIndexStamp
+    from src.backup.merge import _backlog_engine, _backlog_www_engine
+    from src.database.models import ArticleIndexStamp, ArticleWwwStamp
 
     db = restore_seams
     plain = _merged_batch(db, [1, 2])
     stamped = _merged_batch(db, [3, 4])
     db.add(ArticleIndexStamp(article_id=3, engine=_backlog_engine(), inputs="{}"))  # one of the second batch's two is certified: it can owe 1
+    db.add(ArticleWwwStamp(article_id=3, engine=_backlog_www_engine(), inputs="{}"))  # ...by both stamps (R415)
     db.commit()
     monkeypatch.setattr(merge_mod, "_BACKLOG_LOST_SQL", "SELECT id, 99 FROM merge_batches WHERE :engine IS NOT NULL")  # 99 lost of 2
     assert [(b["batch_id"], b["articles"]) for b in merge_mod.pending_reindex_batches()] == [(plain, 0), (stamped, 0)]
     assert merge_mod.reindex_backlog()["articles_pending"] == 0
     assert [r[4] for r in merge_mod._backlog_rows(db)] == [2, 1], "lost is capped at what the batch can still owe, not at zero"
+
+
+def test_a_stand_in_with_only_the_keyword_stamp_is_still_lost_not_owed(restore_seams):
+    """Certified is BOTH stamps (R415), so a stand-in that somehow holds the keyword stamp alone is not certified -- and it is still never
+    re-indexed, so it must still come off the owed count as ``lost``; reading ``lost`` from the keyword stamp alone would make it owe."""
+    from src.backup.merge import _backlog_engine, pending_reindex_batches, reindex_backlog
+    from src.database.models import ArticleIndexStamp
+
+    db = restore_seams
+    _merged_batch(db, [1, 2, STAND_IN_ARTICLE])
+    db.add(ArticleIndexStamp(article_id=STAND_IN_ARTICLE, engine=_backlog_engine(), inputs="{}"))
+    db.commit()
+    assert [(b["articles"], b["certified"]) for b in pending_reindex_batches()] == [(2, 0)]
+    assert reindex_backlog()["articles_pending"] == 2
 
 
 def _backlog_plan_fixture(tmp_path, analysed: bool):
@@ -2171,7 +2192,9 @@ def _backlog_plan_fixture(tmp_path, analysed: bool):
 
     path = tmp_path / ("analysed.db" if analysed else "fresh.db")
     eng = create_engine(f"sqlite:///{path}")
-    m.Base.metadata.create_all(eng, tables=[m.MergeBatch.__table__, m.MergedRow.__table__, m.ArticleIndexStamp.__table__, m.Article.__table__])
+    m.Base.metadata.create_all(
+        eng, tables=[m.MergeBatch.__table__, m.MergedRow.__table__, m.ArticleIndexStamp.__table__, m.ArticleWwwStamp.__table__, m.Article.__table__]
+    )
     eng.dispose()
     con = sqlite3.connect(path)
     con.executemany("INSERT INTO merge_batches (id, artifact_kind, origin_fingerprint, status, imported_at) VALUES (?, 'oo-backup-2', 'x', 'merged', '2026-10-12')", [(i,) for i in (1, 2, 3)])
@@ -2197,12 +2220,12 @@ def test_the_stand_in_question_of_the_backlog_read_starts_from_the_hash_range_wh
 
     con = _backlog_plan_fixture(tmp_path, analysed)
     assert bool(con.execute("SELECT count(*) FROM sqlite_master WHERE name = 'sqlite_stat1'").fetchone()[0]) is analysed
-    plan = [str(r[-1]) for r in con.execute("EXPLAIN QUERY PLAN " + _BACKLOG_LOST_SQL.replace(":engine", "'e0'"))]
+    plan = [str(r[-1]) for r in con.execute("EXPLAIN QUERY PLAN " + _BACKLOG_LOST_SQL.replace(":engine", "'e0'").replace(":www_engine", "'w0'"))]
     assert plan[0].startswith("SEARCH a USING COVERING INDEX idx_article_hash"), plan  # the outer loop is the hash range, no article row read
     assert any(line.startswith("SEARCH m USING INDEX ix_merged_rows_lookup") for line in plan), plan
     assert not any(line.startswith(("SCAN", "SEARCH a USING INTEGER PRIMARY KEY")) for line in plan), plan  # no scan, no article row fetched by id
     # and it answers: 20 stand-ins (ids 30, 60, ... 600), 6 or 7 to a batch
-    lost = {int(b): int(n) for b, n in con.execute(_BACKLOG_LOST_SQL, {"engine": "e0"})}
+    lost = {int(b): int(n) for b, n in con.execute(_BACKLOG_LOST_SQL, {"engine": "e0", "www_engine": "w0"})}
     assert lost == {1: 6, 2: 7, 3: 7}, lost
     con.close()
 

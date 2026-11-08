@@ -112,16 +112,39 @@ def _read_raw_strict() -> dict | None:
     return _store().read_raw_strict()
 
 
+_LEGACY_TMP_MIN_AGE_S = 60.0
+
+
+def _sweep_legacy_tmp() -> None:
+    """Remove a ``custody_settings.json.tmp`` an older writer left behind (0.6.1, R552).
+
+    No writer uses that fixed name since #1796 (the temp is now named per process and thread),
+    so a file under it is only ever a leftover from a write that died before its rename. It
+    never holds the settings of record, so removing it loses nothing; a failure is ignored. Only a
+    file older than a minute goes: an older build sharing the folder (R176) may be mid-write.
+    """
+    import time
+
+    tmp = _settings_path().with_suffix(".json.tmp")
+    try:
+        if time.time() - tmp.stat().st_mtime > _LEGACY_TMP_MIN_AGE_S:
+            tmp.unlink(missing_ok=True)
+    except OSError:
+        pass  # absent (the usual case), or not ours to remove
+
+
 def _write_raw(payload: dict) -> None:
     if not _use_kv():
         from src.safety.file_lock import atomic_replace
 
         # A temp named for the process and thread, moved over the file (R176): the fixed ".json.tmp" two writers shared is gone.
         atomic_replace(_settings_path(), json.dumps(payload, indent=2, sort_keys=True), fsync=False)
+        _sweep_legacy_tmp()
         return
     from src.config.kv_store import kv_set_json
 
     kv_set_json(_KV_KEY, payload)
+    _sweep_legacy_tmp()
 
 
 def _legacy_auto_log_default() -> bool:
