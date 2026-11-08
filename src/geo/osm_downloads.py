@@ -358,13 +358,14 @@ class OsmDownloadManager:
 
         to_launch: list[OsmDownloadEntry] = []
         with self._lock:
-            # R617: a worker that airplane mode paused frees its slot and pumps. The entry it would launch is presented PAUSED
-            # (resumable), as start() presents one under airplane mode, instead of a worker whose refused request said "error".
+            # R617: a worker that airplane mode paused frees its slot and pumps. Under airplane mode EVERY queued entry is
+            # presented PAUSED (resumable), as start() presents one, and not only as many as there are free slots: going back
+            # online starts nothing by itself, so an entry left "queued" behind them would have no worker ever to launch it.
             offline = kill_switch_active()
             claimed = False
             free = self.max_concurrent - self._downloading_now()
             for k in list(self._order):
-                if free <= 0:
+                if free <= 0 and not offline:
                     break
                 e = self._entries.get(k)
                 if e is None or e.status != "queued":
@@ -378,8 +379,8 @@ class OsmDownloadManager:
                 else:
                     e.status = "downloading"  # claim the slot atomically
                     to_launch.append(e)
+                    free -= 1
                 claimed = True
-                free -= 1
             if claimed:
                 self._save()
         for entry in to_launch:
@@ -560,7 +561,8 @@ class OsmDownloadManager:
         from src.ingest import kill_switch_engaged_since, kill_switch_epoch
         from src.safety.fetcher import NetworkBlocked
 
-        # This attempt's window (R614), opened before its first request (a mirror probe, a size read, the GET).
+        # This attempt's window (R614), opened before its first request (a mirror probe, a size read, the GET); once the transfer
+        # runs, each chunk opens its own (below).
         epoch = kill_switch_epoch()
         http_get = self._http_get or _default_get
         dest = Path(entry.dest)
@@ -612,6 +614,10 @@ class OsmDownloadManager:
 
             with open(dest, mode) as fh:
                 for chunk in resp.iter_content(_CHUNK):
+                    # The transfer's window narrows to one chunk (R617, R614): the socket guard refuses new connects and never cuts
+                    # an open stream, so a failure after the check below passed is the transfer's own unless a Stop touched the
+                    # read since. Taken BEFORE the check, so a Stop landing between the two is in it.
+                    epoch = kill_switch_epoch()
                     # Pause (resumable) on Pause OR when airplane mode engages MID-DOWNLOAD
                     # — the kill switch must halt an open file download, not only refuse new
                     # fetches (field test 2026-06-19 #36). Resume continues via HTTP Range.
@@ -637,7 +643,8 @@ class OsmDownloadManager:
                 # arrived. ``NetworkBlocked`` is raised only by the switch, so it also covers a Stop that landed after start()'s
                 # check and before this worker opened its window. Stored as "error" the entry would wait for the operator; it is
                 # presented as the chunk loop presents a Stop, PAUSED by airplane mode, resumable from the partial file. The cost:
-                # a genuine failure sharing its window with a Stop reads as paused, and Resume asks again.
+                # a genuine failure sharing its window (the connect phase, or one chunk) with a Stop reads as paused, and Resume
+                # asks again.
                 entry.status = "paused"
                 entry.error = None
                 entry.paused_by = "airplane"

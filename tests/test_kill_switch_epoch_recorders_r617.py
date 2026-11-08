@@ -733,10 +733,16 @@ def test_downloads_a_stop_landing_after_the_start_check_is_paused_not_error(tmp_
     assert (e["status"], e.get("paused_by"), e.get("error")) == ("paused", "airplane", None), e
 
 
+_THIRD = {"dump": ("de", "de:pages-articles"), "osm": ("liechtenstein", "liechtenstein")}
+
+
 @pytest.mark.parametrize("kind", ["dump", "osm"])
-def test_downloads_the_queued_entry_is_paused_not_launched_when_airplane_mode_pauses_the_worker(tmp_path, kind):
-    """The worker airplane mode paused pumps the queue: the next entry is presented paused, and no request is even attempted for it."""
+def test_downloads_every_queued_entry_is_paused_not_launched_when_airplane_mode_pauses_the_worker(tmp_path, kind):
+    """The worker airplane mode paused pumps the queue: EVERY queued entry is presented paused, not only as many as the freed slots (the
+    one-slot queue of two behind it would otherwise leave the second "queued" with no worker, since going back online starts nothing),
+    and no request is even attempted for any of them."""
     _m, _c, (first, second), (key1, key2), (tag1, _tag2) = _KINDS[kind]
+    third, key3 = _THIRD[kind]
     gate = threading.Event()
     calls: list[str] = []
 
@@ -751,17 +757,74 @@ def test_downloads_the_queued_entry_is_paused_not_launched_when_airplane_mode_pa
         mgr.start(first)
         assert _wait_until(lambda: _entry(mgr, key1)["status"] == "downloading")
         assert mgr.start(second)["status"] == "queued"
+        assert mgr.start(third)["status"] == "queued"
         activate_kill_switch()  # and it stays engaged
         gate.set()
         _join(mgr, key1)
         assert _wait_until(lambda: _entry(mgr, key2)["status"] != "queued")
         _join(mgr, key2)
+        _join(mgr, key3)
     finally:
         gate.set()
-    e2 = _entry(mgr, key2)
     assert _entry(mgr, key1)["status"] == "paused"
-    assert (e2["status"], e2.get("paused_by"), e2.get("error")) == ("paused", "airplane", None), e2
-    assert len(calls) == 1, f"the queued entry was launched into airplane mode: {calls}"
+    for key in (key2, key3):
+        e = _entry(mgr, key)
+        assert (e["status"], e.get("paused_by"), e.get("error")) == ("paused", "airplane", None), e
+    assert mgr._order == [], "no entry is left queued with no worker to launch it"
+    assert len(calls) == 1, f"a queued entry was launched into airplane mode: {calls}"
+
+
+class _ChunkedResp:
+    """Two chunks answered, then ``between`` runs (inside the transfer, after the chunk loop's check for the second chunk passed), then
+    the read fails as a reset would."""
+
+    status_code = 200
+    headers = {"Content-Length": "30"}
+
+    def __init__(self, between):
+        self._between = between
+
+    def raise_for_status(self):
+        pass
+
+    def iter_content(self, _chunk):
+        yield b"0123456789"
+        yield b"0123456789"
+        self._between()
+        raise requests.exceptions.ConnectionError(RESET)
+
+
+@pytest.mark.parametrize("kind", ["dump", "osm"])
+def test_downloads_a_transfer_that_fails_genuinely_after_a_cleared_stop_is_an_error(tmp_path, kind):
+    """A Stop pressed and cleared while the first chunk was read, then a genuine reset two chunks later: the transfer's window is one
+    chunk (the socket guard never cuts an open stream), so the reset is the transfer's own, an error, never "paused by airplane"."""
+    _m, _c, (code, _), (key, _), _ = _KINDS[kind]
+    stops: list[int] = []
+
+    class _Resp(_ChunkedResp):
+        def iter_content(self, _chunk):
+            _stop_and_clear()  # before the first chunk lands: inside the connect's window
+            stops.append(1)
+            yield from super().iter_content(_chunk)
+
+    mgr = _manager(kind, tmp_path, lambda url, headers: _Resp(lambda: None))
+    mgr.start(code)
+    _join(mgr, key)
+    assert stops, "premise: the Stop was pressed and cleared inside the transfer"
+    e = _entry(mgr, key)
+    assert e["status"] == "error" and e["error"] and not e.get("paused_by"), e
+
+
+@pytest.mark.parametrize("kind", ["dump", "osm"])
+def test_downloads_a_chunk_read_a_stop_cut_and_cleared_is_paused_not_error(tmp_path, kind):
+    """The other side of the one-chunk window: a Stop pressed and cleared inside a chunk's read that then fails is the Stop's."""
+    _m, _c, (code, _), (key, _), _ = _KINDS[kind]
+    mgr = _manager(kind, tmp_path, lambda url, headers: _ChunkedResp(_stop_and_clear))
+    mgr.start(code)
+    _join(mgr, key)
+    e = _entry(mgr, key)
+    assert not kill_switch_active()
+    assert (e["status"], e.get("paused_by"), e.get("error")) == ("paused", "airplane", None), e
 
 
 @pytest.mark.parametrize("kind", ["dump", "osm"])

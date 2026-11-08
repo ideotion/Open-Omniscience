@@ -1068,6 +1068,10 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # classify_fetch_failure returns a verdict and a note whose exception text is record_text (markets/csv_feeds.py)
         ('fetch_daily_slice', 'verdict, note, retryable = classify_failed_check(exc)'): 1,
     },
+    'src/wiki/dumps.py': {
+        # kept to be logged after the handler through log_failure, which scrubs it (R617, as osm_downloads): not written
+        ('DumpDownloadManager._download', 'failure = exc'): 1,
+    },
 }
 _S5_NOT_RECORDS: dict[str, dict[str, int]] = {
     'src/ai_layer/coordinator.py': {
