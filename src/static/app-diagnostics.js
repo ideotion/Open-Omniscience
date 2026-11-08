@@ -3148,7 +3148,7 @@
       if (!r) return `<div class="muted">${esc(t("Not run yet in this session."))}</div>`;
       const shown = Object.assign({}, r);
       delete shown.id; delete shown.kind;
-      return `<div><b>${esc(t("Result"))}:</b> ${esc(String(r.outcome || ""))} · ${esc(ooIsoDateTime(r.started_at))}</div>`
+      return `<div>${ooLabelHtml(`<b>${esc(t("Result"))}</b>`, `${esc(String(r.outcome || ""))} · ${esc(ooIsoDateTime(r.started_at))}`)}</div>`
         + `<pre class="small" style="white-space:pre-wrap;max-height:240px;overflow:auto;margin:4px 0">${esc(JSON.stringify(shown, null, 1))}</pre>`;
     }
     function _fcRowHtml(c) {
@@ -3174,8 +3174,8 @@
       return `<div class="fc-row" data-fc-row="${esc(c.id)}" style="border-top:1px solid var(--line, #8884);padding:6px 0">`
         + `<div><b>${esc(c.title)}</b> ${badges.join(" ")}</div>`
         + `<div class="hint">${esc(c.why)}</div>`
-        + `<div class="hint">${esc(t("Added"))}: ${esc(ooIsoDate(c.added_on))} · ${esc(c.added_by)}</div>`
-        + `<div class="hint">${esc(t("Retired when"))}: ${esc(c.retire_when)}</div>`
+        + `<div class="hint">${ooLabelHtml(esc(t("Added")), `${esc(ooIsoDate(c.added_on))} · ${esc(c.added_by)}`)}</div>`
+        + `<div class="hint">${ooLabelHtml(esc(t("Retired when")), esc(c.retire_when))}</div>`
         + steps
         + `<div class="row" style="margin-top:4px">${inputs} ${run} <span class="small" data-fc-status="${esc(c.id)}"></span></div>`
         + `<div data-fc-result="${esc(c.id)}">${_fcResultHtml(c.result)}</div>`

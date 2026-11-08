@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from src.monitoring import field_checks as fc
+from tests.js_source_helper import function_body, object_literal
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "static"
@@ -254,18 +255,18 @@ def test_the_panel_sits_next_to_the_diagnostics_button_and_fetches_nothing_on_op
     assert diag < box < html.index('id="session-forensics-box"')
     assert 'data-on-click="fieldChecksLoad(this)"' in html
     js = (STATIC / "app-diagnostics.js").read_text(encoding="utf-8")
-    run = js[js.index("async function _fcRun"):js.index("async function _fcAction")]
+    run = function_body(js, "_fcRun")
     # the one consent popup comes BEFORE the POST, and consent is what it returned
     assert run.index("ensureOnline(") < run.index("/api/diagnostics/field-checks/run")
     assert "JSON.stringify({id, consent, inputs})" in run
     # the save button uses the dispatcher's own ooOpenUrl helper (not a global, so never called from app code)
     assert "data-on-click=\"ooOpenUrl('/api/diagnostics/field-checks/report')\"" in html
-    assert "ooOpenUrl(" not in js[js.index("// ---- FIELD CHECKS"):]
+    for fn in ("_fcRun", "_fcAction", "_fcRender", "_fcRowHtml", "fieldChecksLoad"):
+        assert "ooOpenUrl(" not in function_body(js, fn)
     on = (STATIC / "oo-on.js").read_text(encoding="utf-8")
-    click_row = on[on.index("const EVENT_ACTION_NAMES"):]
-    click_row = click_row[click_row.index("click: ["):]
-    click_row = click_row[:click_row.index("]")]
-    assert '"fieldChecksLoad"' in click_row
+    table = object_literal(on, "EVENT_ACTION_NAMES")
+    click_row = table[table.index("click:"):]
+    assert '"fieldChecksLoad"' in click_row[:click_row.index("]")]
 
 
 def test_the_temporary_sample_export_button_is_kept_and_reused():
