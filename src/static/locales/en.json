@@ -5557,7 +5557,7 @@
   "Update an OpenStreetMap country with the daily change files": "Update an OpenStreetMap country with the daily change files",
   "Update and restart": "Update and restart",
   "Update failed: {error}": "Update failed: {error}",
-  "Update now? The app stops, the new version is downloaded with git from github.com, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org, checked against the hashes in the release. Both downloads use a direct connection, which is why updating is refused in protected mode.": "Update now? The app stops, the new version is downloaded with git from github.com, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org, checked against the hashes in the release. Both downloads use a direct connection, which is why updating is refused in protected mode.",
+  "Update now? The app stops, the new version is downloaded with git from github.com, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click, and no package is downloaded: a version that changes the app's dependencies is left to the installer. The download uses a direct connection, which is why updating is refused in protected mode.": "Update now? The app stops, the new version is downloaded with git from github.com, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click, and no package is downloaded: a version that changes the app's dependencies is left to the installer. The download uses a direct connection, which is why updating is refused in protected mode.",
   "Update queued. The task manager shows its progress.": "Update queued. The task manager shows its progress.",
   "Update with the daily files": "Update with the daily files",
   "Updated": "Updated",
@@ -7415,10 +7415,11 @@
   "－ zoom": "－ zoom",
   "📍 places": "📍 places",
   "🛒 Draft (": "🛒 Draft (",
-  "Download and install the app update from GitHub and PyPI": "Download and install the app update from GitHub and PyPI",
-  "Protected mode is on, so the update did not start: it would connect to GitHub and PyPI directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.": "Protected mode is on, so the update did not start: it would connect to GitHub and PyPI directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.",
+  "Download the app update from GitHub": "Download the app update from GitHub",
+  "Protected mode is on, so the update did not start: it would connect to GitHub directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.": "Protected mode is on, so the update did not start: it would connect to GitHub directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.",
   "Airplane mode is on, so the update did not start. Go online first.": "Airplane mode is on, so the update did not start. Go online first.",
   "The new version did not start, so the update was undone and the previous version started again.": "The new version did not start, so the update was undone and the previous version started again.",
   "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.",
-  "The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.": "The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version."
+  "The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.": "The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.",
+  "The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).": "The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1)."
 }

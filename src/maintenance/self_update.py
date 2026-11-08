@@ -316,9 +316,9 @@ def begin_apply(ref: str, sha: str, *, now: float | None = None, root: Path | No
 
 
 #: The two refusals ``refuse_offline_or_protected`` raises, kept as constants so the endpoint test and the UI read the same words.
-AIRPLANE_REFUSAL = "Airplane mode is on: the update did not start. Go online first (the update downloads from GitHub and PyPI)."
+AIRPLANE_REFUSAL = "Airplane mode is on: the update did not start. Go online first (the update downloads from GitHub)."
 PROTECTED_REFUSAL = (
-    "Protected mode is on: the update did not start. It would download from GitHub and PyPI over a direct connection, not through your "
+    "Protected mode is on: the update did not start. It would download from GitHub over a direct connection, not through your "
     "proxy, which would reveal this machine's address. Switch to standard mode to update, or update by hand through your proxy."
 )
 
@@ -335,7 +335,7 @@ def protected_mode_chosen() -> bool:
 
 
 def refuse_offline_or_protected() -> None:
-    """Refuse an apply while airplane mode is on or protected mode is chosen. The helper's ``git fetch`` and ``pip install`` run in a separate
+    """Refuse an apply while airplane mode is on or protected mode is chosen. The helper's ``git fetch`` runs in a separate
     process after this app has exited, where neither the socket guard nor the proxy settings reach, so the gate has to be HERE, before anything
     stops: an apply in airplane mode would egress while the app shows offline, and one in protected mode would silently drop the proxy (a
     deanonymisation, never a retry). Settings that cannot be read count as protected (the app's own rule, R117)."""
@@ -427,11 +427,12 @@ def launch_helper(ref: str, sha: str, kind: str, *, root: Path | None = None, po
     argv = [sys.executable, "-I", str(script), str(plan_path)]
     spawn = popen or subprocess.Popen
     quiet = subprocess.DEVNULL
-    # WITHOUT the passphrases: the helper runs git, pip and the fetched release's build step, none of which may hold the key that opens the
+    # WITHOUT the passphrases: the helper runs git and pip (an offline metadata refresh), neither of which may hold the key that opens the
     # corpus (the passphrase rule). The app it starts again opens locked, as any start without OO_DB_PASSPHRASE does.
     from src.llm.model_store import child_env
 
     env = child_env()
+    env.pop("OO_UPDATE_WATCH", None)  # for the one launcher a watched relaunch starts, never inherited by a later helper
     if os.name == "nt":
         flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
         try:  # break away from a job object that would kill the helper together with this process; not every job allows it

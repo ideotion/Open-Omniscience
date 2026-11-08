@@ -20,6 +20,8 @@ from src.maintenance import self_update as su
 ROOT = Path(__file__).resolve().parents[1]
 SHA_A = "a" * 40
 SHA_B = "b" * 40
+#: scripts/launch_stopped.cmd, which must never change (see the test that pins it).
+FROZEN_STOP_SHA256 = "8ec4653d7df400296bcc0bea64accd6c7f8de6c59b61016774d7401478e35f6e"
 
 
 def _helper():
@@ -179,31 +181,6 @@ def test_helper_refuses_dirty_tree_other_branch_and_foreign_origin(repos):
     _g(inst, "remote", "set-url", "origin", "https://github.com/someone-else/fork.git")
     assert h.apply(_plan(inst, sha))[0] == "origin_not_this_repository"
     assert h.apply({**_plan(inst, sha), "ref": "--upload-pack=x"})[0] == "bad_plan"
-
-
-def test_helper_rolls_back_when_the_dependency_install_fails(repos):
-    inst, work, _sha = repos
-    (work / "requirements.lock").write_text("x", encoding="utf-8")
-    _g(work, "add", ".")
-    _g(work, "commit", "-qm", "deps")
-    _g(work, "tag", "v0.7.0")
-    _g(work, "push", "-q", "origin", "main", "--tags")
-    new = _g(work, "rev-parse", "HEAD")
-    before = _g(inst, "rev-parse", "HEAD")
-    h = _helper()
-    fail = subprocess.CompletedProcess([], 1, "", "")
-    good = subprocess.CompletedProcess([], 0, "", "")
-    calls = []
-
-    def first_fails(*a, **k):
-        calls.append(a)
-        return fail if len(calls) == 1 else good
-
-    status, _ = h.apply(_plan(inst, new, "v0.7.0"), run=first_fails)
-    # the checkout is back AND the old lock was installed again (one pip call after the failed one; pyproject did not change, so no refresh)
-    assert status == "dependencies_failed_rolled_back" and _g(inst, "rev-parse", "HEAD") == before and len(calls) == 2
-    status, _ = h.apply(_plan(inst, new, "v0.7.0"), run=lambda *a, **k: fail)
-    assert status == "rollback_incomplete" and _g(inst, "rev-parse", "HEAD") == before
 
 
 def test_helper_reports_a_version_the_checkout_already_has(repos):
@@ -494,32 +471,6 @@ def test_the_ui_asks_the_consent_popup_before_the_update_starts():
     assert 'code === "protected"' in body and 'code === "airplane"' in body
 
 
-def test_dependencies_install_hash_pinned_and_the_metadata_refresh_downloads_nothing(tmp_path):
-    h = _helper()
-    calls: list = []
-    ok = subprocess.CompletedProcess([], 0, "", "")
-
-    def run(root, *argv, **k):
-        calls.append(argv)
-        return ok
-
-    assert h._install_deps(tmp_path, "py", run, refresh_metadata=True)
-    pips = [c for c in calls if "pip" in c]
-    assert "--require-hashes" in pips[0]
-    assert pips[1][-1] == "." and "--no-build-isolation" in pips[1] and "--no-deps" in pips[1]
-    # no local setuptools: the refresh is skipped, never fetched
-    calls.clear()
-
-    def no_setuptools(root, *argv, **k):
-        calls.append(argv)
-        return subprocess.CompletedProcess([], 1 if "import setuptools" in argv else 0, "", "")
-
-    assert h._install_deps(tmp_path, "py", no_setuptools, refresh_metadata=True)
-    assert not any("-e" in c for c in calls)
-    calls.clear()
-    assert h._install_deps(tmp_path, "py", run, refresh_metadata=False) and len(calls) == 1
-
-
 class _Proc:
     def __init__(self, code):
         self.code = code
@@ -564,18 +515,6 @@ def test_a_new_version_that_does_not_start_is_undone_and_the_old_one_started(tmp
     undone.clear()
     assert h.main(["x", str(plan)]) == 0 and undone == []
     assert _json.loads((tmp_path / h.RESULT_FILE).read_text(encoding="utf-8"))["status"] == "start_unconfirmed"
-
-
-def test_roll_back_reinstalls_the_old_lock_only_when_dependencies_changed(repos):
-    inst, _work, sha = repos
-    h = _helper()
-    old = _g(inst, "rev-parse", "HEAD")
-    assert h.apply(_plan(inst, sha))[0] == "updated"
-    calls: list = []
-    ok = subprocess.CompletedProcess([], 0, "", "")
-    assert h.roll_back(inst, old, ["a.txt"], "py", run=lambda *a, **k: calls.append(a) or ok) and calls == []
-    assert _g(inst, "rev-parse", "HEAD") == old
-    assert h.roll_back(inst, old, ["requirements.lock"], "py", run=lambda *a, **k: calls.append(a) or ok) and len(calls) == 1
 
 
 def test_every_tag_page_is_read(monkeypatch):
@@ -647,17 +586,6 @@ def test_a_failed_start_whose_rollback_fails_says_so(tmp_path, monkeypatch):
     assert h.main(["x", str(plan)]) == 0 and undone == [] and _result(tmp_path, h) == "start_unconfirmed"
 
 
-def test_the_watched_windows_launcher_ends_with_its_server_instead_of_waiting_for_a_key(tmp_path):
-    h = _helper()
-    seen: list = []
-    h.relaunch(tmp_path, popen=lambda argv, **k: seen.append(k), watched=True)
-    h.relaunch(tmp_path, popen=lambda argv, **k: seen.append(k))
-    assert seen[0]["env"].get("OO_UPDATE_WATCH") == "1" and "OO_UPDATE_WATCH" not in seen[1]["env"]
-    cmd = (ROOT / "scripts" / "launch.cmd").read_text(encoding="utf-8")
-    stopped = cmd[cmd.index(":stopped"):]
-    assert stopped.index("if defined OO_UPDATE_WATCH") < stopped.index("pause >nul")
-
-
 def test_update_status_names_protected_mode_for_the_button(monkeypatch):
     from fastapi.testclient import TestClient
 
@@ -668,3 +596,141 @@ def test_update_status_names_protected_mode_for_the_button(monkeypatch):
     assert c.get("/api/system/update/status").json()["blocked"] == "protected"
     _standard_settings(monkeypatch)
     assert c.get("/api/system/update/status").json()["blocked"] is None
+
+
+def _commit_file(work, name, text, tag):
+    (work / name).write_text(text, encoding="utf-8")
+    _g(work, "add", ".")
+    _g(work, "commit", "-qm", name)
+    _g(work, "tag", tag)
+    _g(work, "push", "-q", "origin", "main", "--tags")
+    return _g(work, "rev-parse", "HEAD")
+
+
+_PYPROJECT = '[build-system]\nrequires = ["setuptools"]\n\n[project]\nname = "x"\nversion = "{v}"\ndependencies = [{deps}]\n'
+
+
+def test_a_version_that_changes_the_dependencies_is_left_to_the_installer_untouched(repos):
+    inst, work, _sha = repos
+    h = _helper()
+    before = _g(inst, "rev-parse", "HEAD")
+    ran: list = []
+    new = _commit_file(work, "requirements.lock", "x==1 --hash=sha256:00\n", "v0.7.0")
+    assert h.apply(_plan(inst, new, "v0.7.0"), run=lambda *a, **k: ran.append(a))[0] == "dependencies_changed"
+    assert _g(inst, "rev-parse", "HEAD") == before and ran == []  # nothing swapped, pip never run
+    new = _commit_file(work, "pyproject.toml", _PYPROJECT.format(v="0.8.0", deps='"a>=2"'), "v0.8.0")
+    assert h.apply(_plan(inst, new, "v0.8.0"), run=lambda *a, **k: ran.append(a))[0] == "dependencies_changed"
+    assert _g(inst, "rev-parse", "HEAD") == before and ran == []
+
+
+def test_a_version_flip_alone_is_applied_and_its_metadata_refreshed_offline(repos):
+    inst, work, _sha = repos
+    h = _helper()
+    ok = subprocess.CompletedProcess([], 0, "", "")
+    base = _commit_file(work, "pyproject.toml", _PYPROJECT.format(v="0.6.0", deps='"a>=1"'), "v0.6.1")
+    assert h.apply(_plan(inst, base, "v0.6.1"), run=lambda *a, **k: ok)[0] == "dependencies_changed"  # pyproject appeared: a change
+    _g(inst, "pull", "-q", "--ff-only", "origin", "main")
+    new = _commit_file(work, "pyproject.toml", _PYPROJECT.format(v="0.7.0", deps='"a>=1"'), "v0.7.0")
+    ran: list = []
+    assert h.apply(_plan(inst, new, "v0.7.0"), run=lambda *a, **k: ran.append(a) or ok)[0] == "updated"
+    assert _g(inst, "rev-parse", "HEAD") == new
+    pip = [a for a in ran if "pip" in a]
+    assert len(pip) == 1 and {"--no-index", "--no-deps", "--no-build-isolation", "-e"} <= set(pip[0])
+    assert not any("--require-hashes" in a or "-r" in a for a in ran)
+
+
+def test_a_failed_metadata_refresh_puts_the_checkout_back(repos):
+    inst, work, _sha = repos
+    h = _helper()
+    _commit_file(work, "pyproject.toml", _PYPROJECT.format(v="0.6.0", deps=""), "v0.6.1")
+    _g(inst, "pull", "-q", "--ff-only", "origin", "main")
+    before = _g(inst, "rev-parse", "HEAD")
+    new = _commit_file(work, "pyproject.toml", _PYPROJECT.format(v="0.7.0", deps=""), "v0.7.0")
+
+    def pip_fails(root, *argv, **k):
+        return subprocess.CompletedProcess([], 1 if "pip" in argv else 0, "", "")
+
+    assert h.apply(_plan(inst, new, "v0.7.0"), run=pip_fails)[0] == "install_failed_rolled_back"
+    assert _g(inst, "rev-parse", "HEAD") == before
+
+
+def test_the_metadata_refresh_is_skipped_without_a_local_setuptools(tmp_path):
+    h = _helper()
+    calls: list = []
+
+    def no_setuptools(root, *argv, **k):
+        calls.append(argv)
+        return subprocess.CompletedProcess([], 1 if "import setuptools" in argv else 0, "", "")
+
+    assert h.refresh_metadata(tmp_path, "py", no_setuptools) and not any("pip" in c for c in calls)
+
+
+def test_a_local_commit_ahead_is_never_merged_over(repos):
+    inst, _work, sha = repos
+    (inst / "b.txt").write_text("mine", encoding="utf-8")
+    _g(inst, "add", ".")
+    _g(inst, "-c", "user.email=t@example.org", "-c", "user.name=t", "commit", "-qm", "local work")
+    mine = _g(inst, "rev-parse", "HEAD")
+    assert _helper().apply(_plan(inst, sha))[0] == "not_a_fast_forward"
+    assert _g(inst, "rev-parse", "HEAD") == mine
+
+
+def test_the_apply_endpoint_names_protected_mode(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    import src.safety.shutdown as shutdown
+    from src.api.main import app
+
+    started: list = []
+    stopped: list = []
+    _checked_for_apply(monkeypatch, started)
+    _standard_settings(monkeypatch, fetch_mode="protected")
+    monkeypatch.setattr(shutdown, "request_shutdown", lambda **k: stopped.append(k) or {})
+    r = TestClient(app, base_url="http://127.0.0.1").post("/api/system/update/apply", json={"confirm": True, "ref": "v0.6.0", "sha": SHA_B})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "protected" and started == [] and stopped == []
+
+
+def test_the_watch_flag_reaches_one_launcher_and_nothing_after_it(tmp_path, monkeypatch):
+    import src.paths as paths
+
+    monkeypatch.setattr(paths, "data_dir", lambda: tmp_path)
+    monkeypatch.setenv("OO_UPDATE_WATCH", "1")  # as inherited by an app a watched launcher started
+    h = _helper()
+    assert "OO_UPDATE_WATCH" not in h.child_env()
+    seen: list = []
+    h.relaunch(tmp_path, popen=lambda argv, **k: seen.append(k), watched=True)
+    h.relaunch(tmp_path, popen=lambda argv, **k: seen.append(k))
+    assert seen[0]["env"].get("OO_UPDATE_WATCH") == "1" and "OO_UPDATE_WATCH" not in seen[1]["env"]
+    helper_env: list = []
+    su.launch_helper("v0.6.0", SHA_B, "tag", root=ROOT, popen=lambda argv, **k: helper_env.append(k["env"]))
+    assert "OO_UPDATE_WATCH" not in helper_env[0]
+
+
+def test_the_windows_launcher_clears_the_watch_flag_and_waits_in_a_frozen_file():
+    import hashlib
+
+    cmd = (ROOT / "scripts" / "launch.cmd").read_text(encoding="utf-8")
+    # copied to a local and cleared before the server starts, so the server never inherits it
+    assert cmd.index('set "OO_UPDATE_WATCH="') < cmd.index("launch_server.ps1\" -App")
+    stopped = cmd[cmd.index(":stopped"):]
+    assert "pause" not in stopped and "call " not in stopped.lower()  # chained, never called: control never returns to this file
+    assert stopped.rstrip().endswith('"%~dp0launch_stopped.cmd"')
+    frozen = (ROOT / "scripts" / "launch_stopped.cmd").read_text(encoding="utf-8").replace("\r\n", "\n")
+    assert "if defined OO_WATCHED exit /b 0" in frozen and frozen.index("OO_WATCHED exit") < frozen.index("pause >nul")
+    # FROZEN: a window waits for a key inside this file while an update may rewrite the checkout, and cmd.exe resumes by byte offset.
+    # Changing it breaks every launcher window open at the moment of an update; this pin makes that a decision, never an accident.
+    assert hashlib.sha256(frozen.encode()).hexdigest() == FROZEN_STOP_SHA256
+
+
+def test_a_helper_that_fails_unexpectedly_still_brings_the_app_back(tmp_path, monkeypatch):
+    h = _helper()
+    plan = _plan_file(tmp_path)
+    launched: list = []
+    monkeypatch.setattr(h, "wait_for_exit", lambda pid, *a, **k: True)
+    monkeypatch.setattr(h, "server_answers", lambda port: False)
+    monkeypatch.setattr(h, "relaunch", lambda root, **k: launched.append(root))
+    monkeypatch.setattr(h, "take_lock", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
+    assert h.main(["x", str(plan)]) == 1 and launched == [tmp_path]
+    assert _result(tmp_path, h) == "helper_failed"
+    (tmp_path / "update-plan.json").write_text("{not json", encoding="utf-8")
+    assert h.main(["x", str(tmp_path / "update-plan.json")]) == 1 and len(launched) == 2  # the script's own checkout is started

@@ -11,22 +11,27 @@ Steps, each of which refuses by leaving the install exactly as it was:
    then, when something already answers on the app's port (the person or a supervisor started it again), refuse and touch nothing;
 2. the checkout must be on ``main``, clean, with ``origin`` = this repository over https;
 3. ``git fetch`` the named ref, and require the fetched commit to equal the planned ``sha`` byte for byte;
-4. ``git merge --ff-only`` it (cannot discard a local commit);
-5. when ``requirements.lock`` or ``pyproject.toml`` changed, ``pip install --require-hashes -r requirements.lock``, then (``pyproject.toml`` changed,
-   and setuptools is already installed) ``pip install -e . --no-deps --no-build-isolation``, which refreshes the version metadata with NOTHING
-   downloaded (build isolation would fetch the build backend from PyPI with no hash; without setuptools the refresh is skipped and the
-   version shown can lag until the installer is re-run); if the install fails, ``git reset --hard`` back to the old commit (safe: the tree was clean and only this script moved it) AND the old lock is installed
-   again, so the old code never starts on the new packages (``rollback_incomplete`` when even that fails: re-run the installer);
-6. start the launcher again and watch it: when the launcher exits before the app ever answers on its port, the update is undone the same way
+4. when the new version changes the app's DEPENDENCIES (``requirements.lock``, or in ``pyproject.toml`` the dependency lists, the extras,
+   ``requires-python`` or the build system), refuse BEFORE swapping (``dependencies_changed``): the installers resolve packages per install
+   (``install.sh`` uses the lock only when it covers the chosen extras and the Python version, ``install.ps1`` never does), so no single
+   in-place pip run is right for every install, and the installer is the way to take such a release. So this helper NEVER downloads a
+   package, and needs no host but github.com;
+5. ``git merge --ff-only`` it (cannot discard a local commit);
+6. when ``pyproject.toml`` changed (the version, every release), refresh the editable metadata with
+   ``pip install --no-index --no-deps --no-build-isolation -e .``: no network at all; skipped when setuptools is not installed (the version
+   shown then lags until the installer is re-run); a failed refresh puts the checkout back (``git reset --hard``, safe: the tree was clean and
+   only this script moved it);
+7. start the launcher again and watch it: when the launcher exits before the app ever answers on its port, the update is undone the same way
    (``start_failed_rolled_back``) and the launcher started once more on the old version. On Windows the launcher is started with
-   ``OO_UPDATE_WATCH`` so its window ends with the server instead of waiting for a key (``scripts/launch.cmd``), and a window the person CLOSED
-   (``STATUS_CONTROL_C_EXIT``) is their stop, never undone. A new version that migrated the database before failing is rolled back onto that
-   database: the old code then runs on the newer schema, which works only as far as that migration added rather than changed (stated, not
-   checked here); the result says the start failed, and re-running the installer on the new version is the way forward; write ``update-result.json`` in the data directory
-   (read by Settings -> Advanced after the restart).
+   ``OO_UPDATE_WATCH`` so its window ends with the server instead of waiting for a key (``scripts/launch.cmd``, which clears it before the
+   server starts), and a window the person CLOSED (``STATUS_CONTROL_C_EXIT``) is their stop, never undone. A new version that migrated the
+   database before failing is rolled back onto that database: the old code then runs on the newer schema, which works only as far as that
+   migration added rather than changed (stated, not checked here); the result says the start failed, and re-running the installer on the new
+   version is the way forward; write ``update-result.json`` in the data directory (read by Settings -> Advanced after the restart).
 
-Every child (git, pip, the build step, the launcher) runs WITHOUT the passphrase variables (``SECRET_ENV``): the server already starts this
-helper without them, and this strips them again, so a start that handed the app ``OO_DB_PASSPHRASE`` comes back locked.
+Every child (git, pip, the launcher) runs WITHOUT the passphrase variables (``SECRET_ENV``): the server already starts this helper without
+them, and this strips them again, so a start that handed the app ``OO_DB_PASSPHRASE`` comes back locked. On Windows, git and pip run with no
+console window of their own (the helper has none).
 
 The result file holds a fixed ``status`` word, the two versions' commit prefixes and nothing else: no path to a secret, no command output.
 """
@@ -60,7 +65,8 @@ RESULT_FILE = "update-result.json"
 
 def child_env() -> dict[str, str]:
     """This process's environment without :data:`SECRET_ENV`, and with git never prompting."""
-    env = {k: v for k, v in os.environ.items() if k not in SECRET_ENV}
+    # OO_UPDATE_WATCH too: it is for the one launcher a watched relaunch starts, never inherited by anything after it.
+    env = {k: v for k, v in os.environ.items() if k not in SECRET_ENV and k != "OO_UPDATE_WATCH"}
     env["GIT_TERMINAL_PROMPT"] = "0"
     return env
 
@@ -71,7 +77,7 @@ def _run(root: Path, *argv: str, timeout: int = GIT_TIMEOUT_S) -> subprocess.Com
     try:
         return subprocess.run(  # noqa: S603 - fixed argv, no shell
             argv, cwd=str(root), capture_output=True, text=True, timeout=timeout, check=False,
-            env=child_env(),
+            env=child_env(), creationflags=0x08000000 if os.name == "nt" else 0,  # CREATE_NO_WINDOW: no console window per git/pip step
         )
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(argv, 124, "", "timeout")
@@ -119,13 +125,44 @@ def wait_for_exit(pid: int, limit: float = WAIT_S, *, alive=pid_alive, sleep=tim
     return True
 
 
-def _install_deps(root: Path, py: str, run, *, refresh_metadata: bool = True) -> bool:
-    """The hash-pinned lock, then (``refresh_metadata``) the editable metadata with no build isolation, so nothing unhashed is downloaded."""
-    if run(root, py, "-m", "pip", "install", "--require-hashes", "-r", "requirements.lock", timeout=PIP_TIMEOUT_S).returncode != 0:
-        return False
-    if not refresh_metadata or run(root, py, "-c", "import setuptools").returncode != 0:
-        return True  # nothing else to do, or no local build backend: skip the refresh rather than fetch one unhashed
-    return run(root, py, "-m", "pip", "install", "--no-deps", "--no-build-isolation", "-e", ".", timeout=PIP_TIMEOUT_S).returncode == 0
+def refresh_metadata(root: Path, py: str, run) -> bool:
+    """Re-register the editable install's metadata (version, entry points) with NOTHING downloaded: no index, no dependencies, no build
+    isolation. True when done or skipped (no local setuptools to build with: the version shown then lags until the installer is re-run)."""
+    if run(root, py, "-c", "import setuptools").returncode != 0:
+        return True
+    argv = (py, "-m", "pip", "install", "--no-index", "--no-deps", "--no-build-isolation", "-e", ".")
+    return run(root, *argv, timeout=PIP_TIMEOUT_S).returncode == 0
+
+
+#: The parts of ``pyproject.toml`` that decide which packages an install holds. A change to any of them is a dependency change.
+_DEP_KEYS = (("project", "dependencies"), ("project", "optional-dependencies"), ("project", "requires-python"), ("build-system",))
+
+
+def _dependency_view(root: Path, rev: str, git) -> object:
+    import tomllib
+
+    shown = git(root, "show", f"{rev}:pyproject.toml")
+    if shown.returncode != 0:
+        return ("no pyproject.toml",)  # absent (or unreadable) at that commit: equal only to the same answer at the other
+    try:
+        data = tomllib.loads(shown.stdout)
+    except (tomllib.TOMLDecodeError, ValueError):
+        return ("unreadable", shown.stdout)
+    view = []
+    for path in _DEP_KEYS:
+        node: object = data
+        for key in path:
+            node = node.get(key) if isinstance(node, dict) else None
+        view.append(node)
+    return view
+
+
+def dependencies_changed(root: Path, old: str, new: str, *, git=_git) -> bool:
+    """True when ``new`` changes the dependency lock or the dependency parts of ``pyproject.toml`` (anything unreadable counts as changed)."""
+    lock = git(root, "diff", "--quiet", old, new, "--", "requirements.lock")
+    if lock.returncode != 0:
+        return True
+    return _dependency_view(root, old, git) != _dependency_view(root, new, git)
 
 
 def changed_files(root: Path, old: str, new: str, *, git=_git) -> list[str]:
@@ -133,17 +170,18 @@ def changed_files(root: Path, old: str, new: str, *, git=_git) -> list[str]:
 
 
 def roll_back(root: Path, old: str, changed: list[str], py: str, *, git=_git, run=_run) -> bool:
-    """Put the checkout back on ``old`` (safe: it was clean and only this helper moved it) and, when the update changed the dependencies, the
-    environment from the old lock too, so the old code never starts on the new packages. False when either step failed."""
+    """Put the checkout back on ``old`` (safe: it was clean and only this helper moved it) and, when ``pyproject.toml`` had changed, try its
+    metadata too (best effort: it only names the version; when it fails the version shown lags until the installer is re-run). No package
+    was installed by the update, so there is no environment to restore. False when the checkout could not be put back."""
     if git(root, "reset", "--hard", old).returncode != 0:
         return False
-    if any(f in ("requirements.lock", "pyproject.toml") for f in changed):
-        return _install_deps(root, py, run, refresh_metadata="pyproject.toml" in changed)
+    if "pyproject.toml" in changed:
+        refresh_metadata(root, py, run)
     return True
 
 
 def apply(plan: dict, *, git=_git, run=_run) -> tuple[str, str]:
-    """Do steps 2-5. Returns ``(status, old_head)``; ``status`` is ``updated``, ``already_current`` or one fixed refusal word."""
+    """Do steps 2-6. Returns ``(status, old_head)``; ``status`` is ``updated``, ``already_current`` or one fixed refusal word."""
     root = Path(plan["root"])
     ref, sha = plan["ref"], plan["sha"]
     if not SHA_RE.match(sha) or not (TAG_RE.match(ref) or ref == "main"):
@@ -168,17 +206,17 @@ def apply(plan: dict, *, git=_git, run=_run) -> tuple[str, str]:
         return "commit_mismatch", old
     if git(root, "merge-base", "--is-ancestor", sha, old).returncode == 0:
         return "already_current", old  # the checkout already contains that version (a pull without a reinstall, a tag behind main)
+    if dependencies_changed(root, old, sha, git=git):
+        return "dependencies_changed", old  # nothing swapped: the installer takes this release
     if git(root, "merge", "--ff-only", sha).returncode != 0:
         return "not_a_fast_forward", old
     changed = changed_files(root, old, sha, git=git)
-    if any(f in ("requirements.lock", "pyproject.toml") for f in changed):
+    if "pyproject.toml" in changed:
         py = plan.get("python") or sys.executable
         if os.name == "nt":
             time.sleep(3)  # the console-script launcher may still hold its own .exe for a moment after the Python process exits
-        if not _install_deps(root, py, run, refresh_metadata="pyproject.toml" in changed):
-            if not roll_back(root, old, changed, py, git=git, run=run):
-                return "rollback_incomplete", old
-            return "dependencies_failed_rolled_back", old
+        if not refresh_metadata(root, py, run):
+            return ("install_failed_rolled_back" if roll_back(root, old, changed, py, git=git, run=run) else "rollback_incomplete"), old
     return "updated", old
 
 
@@ -318,11 +356,41 @@ def release_lock(lock: Path) -> None:
             lock.unlink()
 
 
+def _port(plan: dict) -> int:
+    try:
+        return int(plan.get("port") or 8000)
+    except (TypeError, ValueError):
+        return 8000
+
+
+def _pid(plan: dict) -> int:
+    try:
+        return int(plan.get("pid") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def main(argv: list[str]) -> int:
+    """Run the update, and whatever goes wrong inside it, make sure the app comes back: the app has already been asked to stop when this
+    starts, so a helper that died on an unexpected error (a full data drive, an unreadable plan) would otherwise leave it down."""
     plan_path = Path(argv[1])
-    plan = json.loads(plan_path.read_text(encoding="utf-8"))
     data_dir = plan_path.parent
-    root = Path(plan["root"])
+    plan: dict = {}
+    root = Path(__file__).resolve().parents[1]  # this script's own checkout, until the plan names one
+    try:
+        loaded = json.loads(plan_path.read_text(encoding="utf-8"))
+        plan = loaded if isinstance(loaded, dict) else {}
+        root = Path(plan["root"])
+        return _main(plan_path, plan, data_dir, root)
+    except Exception:  # noqa: BLE001 - the one place that must not let any failure leave the app down
+        write_result(plan, "helper_failed", "", data_dir)
+        pid = _pid(plan)
+        if (not pid or wait_for_exit(pid)) and not server_answers(_port(plan)):
+            relaunch(root)
+        return 1
+
+
+def _main(plan_path: Path, plan: dict, data_dir: Path, root: Path) -> int:
     # One helper at a time on a checkout: a live helper's fresh lock is obeyed; a lock whose helper is gone, or that is older than any run, is
     # taken over.
     lock = data_dir / LOCK_FILE
@@ -345,7 +413,7 @@ def main(argv: list[str]) -> int:
         if wait_for_exit(int(plan["pid"])):
             if holder[1]:
                 wait_for_exit(holder[1], LOCK_STALE_S)
-            if not wait_for_server(int(plan.get("port") or 8000)):
+            if not wait_for_server(_port(plan)):
                 relaunch(root)
         return 1
     try:
@@ -354,7 +422,7 @@ def main(argv: list[str]) -> int:
         if not wait_for_exit(int(plan["pid"])):
             write_result(plan, "app_did_not_stop", "", data_dir)
             return 1  # the app is still running and untouched; nothing was changed
-        port = int(plan.get("port") or 8000)
+        port = _port(plan)
         if server_answers(port):
             # Started again already (by hand, or a supervisor): swapping files under a running app would mix two versions. Touch nothing.
             write_result(plan, "app_running_again", "", data_dir)

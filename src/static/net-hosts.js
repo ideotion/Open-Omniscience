@@ -231,7 +231,7 @@
     {
       "id": "update",
       "label": "App updates",
-      "hosts": ["api.github.com", "github.com", "pypi.org", "files.pythonhosted.org"],
+      "hosts": ["api.github.com", "github.com"],
       "trigger": "click",
       "setting": null,
       "fetcher": false,

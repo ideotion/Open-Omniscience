@@ -5557,7 +5557,7 @@
   "Update an OpenStreetMap country with the daily change files": "OpenStreetMap の国を日次変更ファイルで更新する",
   "Update and restart": "アップデートして再起動",
   "Update failed: {error}": "更新に失敗しました: {error}",
-  "Update now? The app stops, the new version is downloaded with git from github.com, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org, checked against the hashes in the release. Both downloads use a direct connection, which is why updating is refused in protected mode.": "今すぐ更新しますか？アプリが停止し、新しいバージョンが git で github.com からダウンロードされ、アプリは自動的に再起動します。データフォルダーには触れません。このクリックなしには何もインストールされません。新しいバージョンでアプリの依存関係が変わる場合、pip がそれらも pypi.org からダウンロードし、リリースのハッシュで検証します。どちらのダウンロードも直接接続を使うため、保護モードでは更新が拒否されます。",
+  "Update now? The app stops, the new version is downloaded with git from github.com, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click, and no package is downloaded: a version that changes the app's dependencies is left to the installer. The download uses a direct connection, which is why updating is refused in protected mode.": "今すぐ更新しますか？アプリが停止し、新しいバージョンが git で github.com からダウンロードされ、アプリは自動的に再起動します。データフォルダーには触れません。このクリックなしには何もインストールされず、パッケージも一切ダウンロードされません。アプリの依存関係を変えるバージョンはインストーラーに任せます。ダウンロードは直接接続を使うため、保護モードでは更新が拒否されます。",
   "Update queued. The task manager shows its progress.": "更新を待機列に入れました。進行状況はタスクマネージャーに表示されます。",
   "Update with the daily files": "日次ファイルで更新",
   "Updated": "更新日",
@@ -7415,10 +7415,11 @@
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
   "🛒 Draft (": "🛒 草稿 (",
-  "Download and install the app update from GitHub and PyPI": "GitHub と PyPI からアプリの更新をダウンロードしてインストール",
-  "Protected mode is on, so the update did not start: it would connect to GitHub and PyPI directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.": "保護モードがオンのため、更新は開始されませんでした。更新はプロキシを経由せず GitHub と PyPI に直接接続します。更新するには標準モードに切り替えるか、プロキシ経由で手動で更新してください。",
+  "Download the app update from GitHub": "GitHub からアプリの更新をダウンロード",
+  "Protected mode is on, so the update did not start: it would connect to GitHub directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.": "保護モードがオンのため、更新は開始されませんでした。更新はプロキシを経由せず GitHub に直接接続します。更新するには標準モードに切り替えるか、プロキシ経由で手動で更新してください。",
   "Airplane mode is on, so the update did not start. Go online first.": "機内モードがオンのため、更新は開始されませんでした。先にオンラインにしてください。",
   "The new version did not start, so the update was undone and the previous version started again.": "新しいバージョンが起動しなかったため、更新を取り消し、以前のバージョンを再起動しました。",
   "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "前回の更新はインストールされましたが、アプリの起動に長い時間がかかりました。動作がおかしい場合は、インストーラーを再実行してください。",
-  "The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.": "更新のインストール中にアプリが再び起動されました。新しいバージョン全体で動作するよう、いったん閉じてもう一度起動してください。"
+  "The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.": "更新のインストール中にアプリが再び起動されました。新しいバージョン全体で動作するよう、いったん閉じてもう一度起動してください。",
+  "The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).": "新しいバージョンはアプリの依存関係を変更するため、ここではインストールされず、何も変更されていません。インストーラーを再実行して更新してください（git pull の後、install.sh または install.ps1）。"
 }

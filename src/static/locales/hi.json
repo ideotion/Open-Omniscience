@@ -5557,7 +5557,7 @@
   "Update an OpenStreetMap country with the daily change files": "दैनिक परिवर्तन फ़ाइलों से OpenStreetMap का एक देश अद्यतन करें",
   "Update and restart": "अपडेट करें और पुनः शुरू करें",
   "Update failed: {error}": "अद्यतन विफल: {error}",
-  "Update now? The app stops, the new version is downloaded with git from github.com, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org, checked against the hashes in the release. Both downloads use a direct connection, which is why updating is refused in protected mode.": "अभी अपडेट करें? ऐप रुकता है, नया संस्करण github.com से git के साथ डाउनलोड होता है, और ऐप अपने आप फिर से शुरू होता है। आपका डेटा फ़ोल्डर नहीं छुआ जाता। इस क्लिक के बिना कुछ भी इंस्टॉल नहीं होता। यदि नया संस्करण ऐप की निर्भरताएँ बदलता है, तो pip उन्हें भी pypi.org से डाउनलोड करता है, रिलीज़ के हैश से जाँचकर। दोनों डाउनलोड सीधे कनेक्शन का उपयोग करते हैं, इसीलिए संरक्षित मोड में अपडेट अस्वीकार किया जाता है।",
+  "Update now? The app stops, the new version is downloaded with git from github.com, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click, and no package is downloaded: a version that changes the app's dependencies is left to the installer. The download uses a direct connection, which is why updating is refused in protected mode.": "अभी अपडेट करें? ऐप रुकता है, नया संस्करण github.com से git के साथ डाउनलोड होता है, और ऐप अपने आप फिर से शुरू होता है। आपका डेटा फ़ोल्डर नहीं छुआ जाता। इस क्लिक के बिना कुछ भी इंस्टॉल नहीं होता, और कोई पैकेज डाउनलोड नहीं होता: जो संस्करण ऐप की निर्भरताएँ बदलता है, उसे इंस्टॉलर पर छोड़ा जाता है। डाउनलोड सीधे कनेक्शन का उपयोग करता है, इसीलिए संरक्षित मोड में अपडेट अस्वीकार किया जाता है।",
   "Update queued. The task manager shows its progress.": "अद्यतन क़तार में लगा। कार्य प्रबंधक इसकी प्रगति दिखाता है।",
   "Update with the daily files": "दैनिक फ़ाइलों से अद्यतन करें",
   "Updated": "अपडेट किया गया",
@@ -7415,10 +7415,11 @@
   "－ zoom": "－ ज़ूम",
   "📍 places": "📍 स्थान",
   "🛒 Draft (": "🛒 ड्राफ़्ट (",
-  "Download and install the app update from GitHub and PyPI": "GitHub और PyPI से ऐप अपडेट डाउनलोड और इंस्टॉल करें",
-  "Protected mode is on, so the update did not start: it would connect to GitHub and PyPI directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.": "संरक्षित मोड चालू है, इसलिए अपडेट शुरू नहीं हुआ: यह आपके प्रॉक्सी के बजाय सीधे GitHub और PyPI से जुड़ता। अपडेट करने के लिए मानक मोड पर जाएँ, या अपने प्रॉक्सी के माध्यम से हाथ से अपडेट करें।",
+  "Download the app update from GitHub": "GitHub से ऐप अपडेट डाउनलोड करें",
+  "Protected mode is on, so the update did not start: it would connect to GitHub directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.": "संरक्षित मोड चालू है, इसलिए अपडेट शुरू नहीं हुआ: यह आपके प्रॉक्सी के बजाय सीधे GitHub से जुड़ता। अपडेट करने के लिए मानक मोड पर जाएँ, या अपने प्रॉक्सी के माध्यम से हाथ से अपडेट करें।",
   "Airplane mode is on, so the update did not start. Go online first.": "हवाई जहाज़ मोड चालू है, इसलिए अपडेट शुरू नहीं हुआ। पहले ऑनलाइन जाएँ।",
   "The new version did not start, so the update was undone and the previous version started again.": "नया संस्करण शुरू नहीं हुआ, इसलिए अपडेट वापस लिया गया और पिछला संस्करण फिर से शुरू हुआ।",
   "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "पिछला अपडेट इंस्टॉल हो गया, लेकिन ऐप को शुरू होने में बहुत समय लगा। यदि यह ठीक से काम न करे, तो इंस्टॉलर फिर से चलाएँ।",
-  "The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.": "अपडेट इंस्टॉल होते समय ऐप फिर से शुरू किया गया। इसे बंद करें और एक बार फिर शुरू करें ताकि यह पूरा नया संस्करण चलाए।"
+  "The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.": "अपडेट इंस्टॉल होते समय ऐप फिर से शुरू किया गया। इसे बंद करें और एक बार फिर शुरू करें ताकि यह पूरा नया संस्करण चलाए।",
+  "The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).": "नया संस्करण ऐप की निर्भरताएँ बदलता है, इसलिए इसे यहाँ इंस्टॉल नहीं किया गया और कुछ नहीं बदला। इंस्टॉलर फिर से चलाकर अपडेट करें (git pull, फिर install.sh या install.ps1)।"
 }
