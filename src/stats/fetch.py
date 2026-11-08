@@ -40,6 +40,8 @@ from src.ingest import DEFAULT_USER_AGENT, kill_switch_active
 from src.ingest.fetch_verdict import NETWORK_REFUSED
 from src.safety.fetcher import guarded_session
 from src.stats.gistemp import GistempParse
+from src.stats.owid_climate import CATALOG as OWID_CLIMATE_CATALOG
+from src.stats.owid_climate import OwidParse
 from src.stats.sdmx import (
     StatFigure,
     parse_csv,
@@ -68,6 +70,13 @@ OWID_GRAPHER_BASE = "https://ourworldindata.org/grapher"
 # against 1951-1980. NOT verified against a live download (the build sandbox cannot reach
 # the host): a wrong path or shape fails LOUDLY (HTTP error / looks_unrecognised).
 GISTEMP_BASE = "https://data.giss.nasa.gov/gistemp/tabledata_v4"
+# OWID's bulk CSVs live in its public GitHub data repos (owid/co2-data, owid/energy-data); the
+# path is pinned to the owid organisation, and the file name comes from the curated catalog.
+OWID_BULK_BASE = "https://raw.githubusercontent.com/owid"
+OWID_BULK_REPOS = {"co2": "co2-data", "energy": "energy-data"}
+OWID_FIRST_YEAR = 1750  # the earliest year in the CO2 table
+OWID_AREAS_ALLOWANCE = 400  # countries plus aggregates, generous (about 250 today)
+OWID_ROW_CHARS_ALLOWANCE = 2000  # a wide row, generous (about 600 to 1,500 characters today)
 # The body bound is DERIVED from the table's own shape, not a fixed number (see gistemp_max_chars).
 GISTEMP_FIRST_YEAR = 1880
 GISTEMP_LINE_ALLOWANCE = 200  # chars per row; a real row is about 120
@@ -175,6 +184,22 @@ def _default_getter(url: str) -> Any:
     non-SOCKS / no proxy), so distinct fetches are unlinkable over Tor.
     """
     session = guarded_session(user_agent=DEFAULT_USER_AGENT, isolation_token=url)
+    return session.get(url, timeout=DEFAULT_TIMEOUT_S)
+
+
+# Each climate fetcher's session may talk only to its own host: a redirect hop anywhere else is refused
+# (guarded_session(allowed_hosts=...)). The consent popup's "climate" lane names all the climate hosts.
+GISTEMP_HOSTS = ("data.giss.nasa.gov",)
+OWID_HOSTS = ("raw.githubusercontent.com",)
+
+
+def _gistemp_getter(url: str) -> Any:
+    session = guarded_session(user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=GISTEMP_HOSTS)
+    return session.get(url, timeout=DEFAULT_TIMEOUT_S)
+
+
+def _owid_bulk_getter(url: str) -> Any:
+    session = guarded_session(user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=OWID_HOSTS)
     return session.get(url, timeout=DEFAULT_TIMEOUT_S)
 
 
@@ -417,7 +442,7 @@ def fetch_gistemp(
     if kill_switch_active():
         raise RuntimeError(NETWORK_REFUSED)
     extracted_at = extracted_at or _now_iso()
-    getter = get or _default_getter
+    getter = get or _gistemp_getter
     resp = getter(gistemp_url(region))
     resp.raise_for_status()
     bound = gistemp_max_chars()
@@ -529,5 +554,52 @@ def fetch_usgs_quakes(
         raise ValueError(
             f"USGS earthquakes: the service counted {declared} events but {parsed_events} were read "
             f"({parsed.refused_total} rows refused); the catalogue changed between the two requests or the list was cut short, so no series is returned"
+        )
+    return parsed
+
+
+def owid_max_chars(now_year: int | None = None) -> int:
+    """The longest body that can still be an OWID bulk table: one row per area and year from
+    1750 to next year, times a generous per-row allowance. Grows with the data each January."""
+    year = now_year if now_year is not None else datetime.now(UTC).year
+    return (year + 1 - OWID_FIRST_YEAR + 1) * OWID_AREAS_ALLOWANCE * OWID_ROW_CHARS_ALLOWANCE
+
+
+def owid_dataset_url(dataset: str) -> str:
+    """The raw-CSV URL of a curated OWID bulk dataset (``co2`` or ``energy``)."""
+    if dataset not in OWID_BULK_REPOS or dataset not in OWID_CLIMATE_CATALOG:
+        raise ValueError(f"owid_dataset_url: dataset must be one of {sorted(OWID_BULK_REPOS)}, got {dataset!r}")
+    return f"{OWID_BULK_BASE}/{OWID_BULK_REPOS[dataset]}/master/{OWID_CLIMATE_CATALOG[dataset]['file']}"
+
+
+def fetch_owid_dataset(
+    dataset: str,
+    *,
+    get: Getter | None = None,
+    extracted_at: str | None = None,
+) -> OwidParse:
+    """Fetch one OWID bulk CSV live and parse it (kill switch refuses UP FRONT).
+
+    An unrecognisable body (an error page, a renamed file, no curated column) raises rather
+    than returning an empty series. The body bound is derived from the data's own scale.
+    """
+    from src.stats.owid_climate import parse_owid
+
+    if kill_switch_active():
+        raise RuntimeError(NETWORK_REFUSED)
+    extracted_at = extracted_at or _now_iso()
+    getter = get or _owid_bulk_getter
+    resp = getter(owid_dataset_url(dataset))
+    resp.raise_for_status()
+    text = resp.text
+    bound = owid_max_chars()
+    if len(text) > bound:
+        raise ValueError(f"OWID {dataset}: the response is {len(text)} characters, over the {bound} the table's own shape allows")
+    parsed = parse_owid(text, dataset=dataset, extracted_at=extracted_at)
+    if parsed.looks_unrecognised or parsed.all_gap:
+        raise ValueError(
+            f"OWID {dataset}: the response is not the expected table "
+            f"(all curated cells empty: {parsed.all_gap}, required columns found: {parsed.header_ok}, curated columns found: {len(parsed.columns_present)}, "
+            f"rows read: {parsed.rows_read}, records refused: {parsed.refused_total}, lines they covered: {parsed.refused_lines})"
         )
     return parsed
