@@ -43,12 +43,21 @@ echo   Your browser will open at %URL% once the app is ready.
 echo   First launch takes longer: it prepares the database and seeds sources.
 echo.
 echo   Close this window (or use the app's power button) to stop the app.
+echo   You can close the browser at any time: the app keeps running in this window.
 echo.
 
 rem Wait for the server to answer, then open the browser. Up to ~2 minutes, which a
 rem first-run database preparation can genuinely need.
 start "" /min powershell -NoProfile -ExecutionPolicy Bypass -Command "$u='%URL%'; for ($i=0; $i -lt 240; $i++) { try { $null = Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 2; Start-Process $u; break } catch { Start-Sleep -Milliseconds 500 } }"
 
+rem THE TERMINAL PANEL (R600, anticipated for Windows; not run on Windows yet). src\tui\panel.py shows the app's status and jobs with
+rem Open UI / Pause collection / Stop app. Python's curses exists on Windows only with the windows-curses package, so the panel starts only
+rem when "import curses" works there, and never with OO_PANEL=0. It opens in a window of its own, because this one holds the server's
+rem output: closing the panel window does NOT stop the app (the panel says so); closing THIS window still does.
+if not "%OO_PANEL%"=="0" if exist ".venv\Scripts\python.exe" (
+  ".venv\Scripts\python.exe" -c "import curses" >nul 2>&1
+  if not errorlevel 1 start "Open Omniscience panel" ".venv\Scripts\python.exe" -m src.tui.panel --port %PORT% --url "%URL%/"
+)
 rem Run the server through scripts\launch_server.ps1 when it is there: the window still shows every line the server prints, and the wrapper
 rem records the server's fatal-error headers and how it ended for the app's next boot to read. It leaves a marker file once it has STARTED
 rem the server; no marker means the wrapper itself could not run (PowerShell missing or blocked), and the server is then started plainly,
