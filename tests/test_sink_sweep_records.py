@@ -402,6 +402,9 @@ _MONITORING_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_memory', 'out["available_now_mb"] = _unavailable(exc)'): 1,
         ('_allocator', 'return _unavailable(exc)'): 1,
         ('_environment', 'return _unavailable(exc)'): 1,
+        ('_pragma_text', 'return _unavailable(exc)'): 1,  # R470 D4: one SQLCipher build pragma, its failure by class
+        ('_sqlcipher_build', 'return {n: _unavailable(exc) for n in names}'): 1,  # the throwaway connection would not open
+        ('_sqlcipher_build', 'return {n: _unavailable(exc) for n in names}  # fails closed: nothing is read through a connection the key was refused on'): 1,
     },
     'src/monitoring/page_reading.py': {  # failure_label: the class and the errno name, never the message or the path (src/database/damage.py)
         ('_error', 'return failure_label(exc)'): 1,
