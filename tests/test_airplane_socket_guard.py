@@ -326,28 +326,56 @@ def test_a_patch_point_that_cannot_be_read_is_left_alone_not_healed(guard, monke
 
 
 def test_absolute_form_request_target_is_guarded_before_putrequest(guard):
-    """The unit half: the real ``putrequest`` (a spy here) is never reached for a remote absolute-form target, nor for a CONNECT authority
-    or an authority two parsers could read differently; origin-form and loopback targets pass through to it."""
+    """The unit half: the real ``putrequest`` (a spy here) is never reached, in airplane mode, for ANY target that names its own
+    destination -- whatever host it names, loopback included, since a proxy chained upstream forwards ``localhost`` too -- nor for the
+    shapes a parser could read differently from a proxy (both security reads and the Opus read, 2026-11-08). Only origin-form, ``*`` and
+    the empty target reach it."""
     activate_kill_switch()
     conn = http.client.HTTPConnection("127.0.0.1", 8118)
-    remote: list[tuple[str, str | bytes]] = [
+    named: list[tuple[str, str | bytes]] = [
         ("GET", "http://example.com/x"),
         ("GET", "HTTP://EXAMPLE.COM:80/"),
         ("GET", b"http://93.184.216.34/"),
         ("GET", "http://[2606:2800:220:1::]/"),
         ("GET", "http://localhost@example.com/"),
         ("GET", "http://localhost\\@example.com/"),
+        ("GET", "http://127.0.0.1?@example.com/"),
+        ("GET", "http://127.0.0.1#@example.com/"),
+        ("GET", "http://127.0.0.1%25.example.com/"),
+        ("GET", "http://[::1]example.com/"),
         ("GET", "http://:80/"),
+        # Loopback names and literals are refused too: Privoxy with forward-socks5t hands them upstream like any other name.
+        ("GET", "http://localhost/"),
+        ("GET", "http://localhost.localdomain/"),
+        ("GET", "http://127.0.0.1:8000/x"),
+        ("GET", "http://[::1]/"),
+        # The shapes a "scheme://" rule missed (second security read).
+        ("GET", "//example.com/x"),
+        ("GET", "example.com:80"),
+        ("GET", "http:/example.com/"),
+        ("GET", "http:example.com/"),
         ("CONNECT", "example.com:443"),
+        ("CONNECT ", "example.com:443"),
+        ("connect", "127.0.0.1:9050"),
     ]
-    for method, target in remote:
+    for method, target in named:
         with pytest.raises(AirplaneModeError):
             conn.putrequest(method, target)  # type: ignore[arg-type]  # bytes is what a client may hand it; typeshed says str
-    assert guard == [], "the real putrequest was reached for a remote request target in airplane mode"
-    for method, target in [("GET", "/x"), ("OPTIONS", "*"), ("GET", "http://127.0.0.1:8000/x"), ("GET", "http://[::1]/"), ("GET", "http://localhost/")]:
+    assert guard == [], "the real putrequest was reached for a target naming its own destination in airplane mode"
+    for method, target in [("GET", "/x"), ("OPTIONS", "*"), ("GET", "/"), ("GET", "")]:
         with pytest.raises(_Reached):
             conn.putrequest(method, target)
-    assert guard == ["putrequest"] * 5
+    assert guard == ["putrequest"] * 4
+
+
+def test_the_refusal_names_no_part_of_the_target(guard):
+    """The target can carry userinfo or a signed query string (R142): the refusal says it was a proxied request line and quotes none of it."""
+    activate_kill_switch()
+    conn = http.client.HTTPConnection("127.0.0.1", 8118)
+    with pytest.raises(AirplaneModeError) as exc:
+        conn.putrequest("GET", "http://user:secret@example.com/x?sig=abc")
+    assert "secret" not in str(exc.value) and "sig=abc" not in str(exc.value) and "example.com" not in str(exc.value)
+    assert "airplane mode is engaged" in str(exc.value)
 
 
 def test_absolute_form_request_target_transparent_when_online(guard):
@@ -400,8 +428,13 @@ class _Listener:
 
 
 @pytest.fixture
-def proxy_listener():
-    """The REAL guard (no spies: the bytes must really not be written) plus a loopback listener; the guard's prior state is put back."""
+def proxy_listener(monkeypatch):
+    """The REAL guard (no spies: the bytes must really not be written) plus a loopback listener; the guard's prior state is put back.
+
+    ``no_proxy`` is cleared: both clients honour it, and a runner whose ``no_proxy`` covers the target would go DIRECT, making the
+    airplane test pass on the connect guard instead of this one and the online control fetch example.com for real."""
+    for name in ("no_proxy", "NO_PROXY", "http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"):
+        monkeypatch.delenv(name, raising=False)
     was_installed, was_armed = ap.is_installed(), ap._airplane_armed
     install_airplane_socket_guard()
     clear_kill_switch()
@@ -413,14 +446,16 @@ def proxy_listener():
         listener.close()
         uninstall_airplane_socket_guard()
         if was_installed:
-            ap.ensure_connect_guard_installed()
+            ap._install_patches()  # not ensure_connect_guard_installed: that is a no-op under OO_SSRF_CONNECT_GUARD=0
         ap._airplane_armed = was_armed
 
 
 def _fetch_with_requests(port: int) -> object:
     import requests
 
-    return requests.get("http://example.com/x", proxies={"http": f"http://127.0.0.1:{port}"}, timeout=2)
+    with requests.Session() as session:
+        session.trust_env = False  # the proxy below and nothing from the environment
+        return session.get("http://example.com/x", proxies={"http": f"http://127.0.0.1:{port}"}, timeout=2)
 
 
 def _fetch_with_urllib(port: int) -> object:
@@ -442,6 +477,21 @@ def test_no_byte_reaches_a_loopback_http_proxy_in_airplane_mode(proxy_listener, 
     clear_kill_switch()
     proxy_listener.close()
     assert bytes(proxy_listener.received) == b"", "the loopback proxy received request bytes while airplane mode was engaged"
+
+
+@pytest.mark.parametrize("target", ["http://localhost.localdomain/", "http://127.0.0.1?@example.com/", "http://127.0.0.1%25.example.com/"])
+def test_a_loopback_looking_target_through_the_proxy_is_refused_too(proxy_listener, target):
+    """The Opus read's repro, end to end through urllib (which passes the URL through untouched): a target that reads as loopback, or
+    that a parser could read as loopback, still leaves zero bytes at the proxy in airplane mode."""
+    import urllib.request
+
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({"http": f"http://127.0.0.1:{proxy_listener.port}"}))
+    activate_kill_switch()
+    with pytest.raises(Exception, match="airplane mode is engaged"):
+        opener.open(target, timeout=2)
+    clear_kill_switch()
+    proxy_listener.close()
+    assert bytes(proxy_listener.received) == b""
 
 
 @pytest.mark.parametrize("fetch", [_fetch_with_requests, _fetch_with_urllib], ids=["requests", "urllib"])

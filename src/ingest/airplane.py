@@ -47,13 +47,14 @@ is never called, so a loopback listener standing in for Privoxy received the
 whole request while airplane mode was engaged. The real destination exists only
 in that request target, so ``http.client.HTTPConnection.putrequest`` -- the one
 place every http.client-based client (requests/urllib3 call it through
-``super()``) hands the target over, before a byte is written -- is guarded on
-the host it names. Only an absolute-form target (or a ``CONNECT`` authority)
-names a destination other than the socket's own peer; an origin-form ``/path``
-goes to the host the connect guard already saw, so it is left alone. An
-authority that does not parse cleanly (userinfo, a backslash, whitespace) is
-treated as remote, because a proxy that parses it differently from us is
-exactly the bypass. Not covered: an HTTP client that does not sit on
+``super()``) hands the target over, before a byte is written -- refuses, while
+airplane mode is engaged, ANY target that names its own destination
+(absolute-form, or a ``CONNECT`` authority). The host in it is not parsed and
+a loopback name there is not exempt: a forwarding proxy chained upstream
+forwards ``http://localhost/`` like any other name, and any parse that could
+answer "loopback" is one a proxy can read differently. An origin-form
+``/path`` goes to the host the connect guard already saw, so it is left alone.
+Not covered: an HTTP client that does not sit on
 ``http.client`` (httpx/httpcore) -- in this tree those are the loopback-only
 LLM clients, which refuse a non-loopback base URL themselves.
 
@@ -89,7 +90,6 @@ from __future__ import annotations
 import http.client
 import ipaddress
 import os
-import re
 import socket
 from collections.abc import Callable
 from typing import Any, cast
@@ -264,53 +264,45 @@ def _guarded_tunnel(self):  # type: ignore[no-untyped-def]
     return _orig_tunnel(self)
 
 
-#: An absolute-form request target: a URI scheme, then ``://`` and the authority up to the first ``/``, ``?`` or ``#``.
-_ABSOLUTE_FORM = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*://([^/?#]*)")
-#: Characters that make an authority ambiguous between parsers: userinfo (``local@remote``), a backslash some parsers read as ``/``,
-#: and whitespace. With one of these present the target is treated as remote rather than guessed at.
-_AMBIGUOUS_AUTHORITY = re.compile(r"[@\\\s]")
-#: Returned by :func:`_request_target_host` for a target that names no destination of its own (origin-form ``/path``, ``*``).
-_NO_OTHER_DESTINATION = object()
+#: The one name ``_guard`` is handed for a request line that names its own destination. It is never local, so the refusal (and the
+#: egress-window exemption) apply exactly as for a remote connect; it names no part of the target, which may carry userinfo or a signed
+#: query string that must not reach a log (R142).
+_PROXIED_TARGET = "a destination named in a request line (sent through a proxy)"
 
 
-def _authority_host(authority: str) -> str:
-    """The host of a ``host[:port]`` authority: a bracketed IPv6 literal keeps its brackets off, anything else loses its ``:port``."""
-    if authority.startswith("["):
-        return authority[1:].split("]", 1)[0]
-    return authority.rsplit(":", 1)[0] if authority.count(":") == 1 else authority
+def _names_its_own_destination(method: object, url: object) -> bool:
+    """True unless the request target is origin-form (``/path``, never ``//``), exactly ``*``, or empty (``putrequest`` writes ``/``).
 
+    The rule lists the SAFE forms and refuses the rest, rather than listing dangerous ones: ``//example.com/x``, ``example.com:80``,
+    ``http:/example.com/``, ``http:example.com/`` and ``CONNECT `` with a trailing space all reached a loopback listener through a
+    rule that looked for ``scheme://`` (second security read, 2026-11-08).
 
-def _request_target_host(method: object, url: object) -> object:
-    """The destination a request line names when it is NOT the socket's own peer.
-
-    An absolute-form target (``GET http://host/x``, what a client writes to a forwarding HTTP proxy) and a ``CONNECT host:port`` authority
-    name a host the proxy will reach for us; that host is returned. An origin-form target names nothing beyond the connected peer and gets
-    :data:`_NO_OTHER_DESTINATION`. A target that is neither text nor parses cleanly comes back as itself, which ``_guard`` treats as remote.
+    Everything else -- an absolute-form ``http://host/x``, a ``CONNECT host:port`` authority, or a target that is neither -- names a
+    destination for whatever is at the other end of the socket, which is only ever a proxy, to reach. Its host is deliberately NOT
+    parsed: a loopback name or literal in it is not local either, because a forwarding proxy chained upstream (Privoxy with
+    ``forward-socks5t``, tinyproxy with ``upstream``) hands ``http://localhost/`` to the next hop like any other name, and every parse
+    that could say "loopback" is one a proxy can read differently (``http://127.0.0.1?@evil.com/``, ``%2e``, ``[::1]evil.com``, found in
+    the Opus read of the first version of this guard).
     """
+    if isinstance(method, bytes):
+        method = method.decode("latin-1")
+    if not isinstance(method, str) or method.strip().upper() == "CONNECT":
+        return True
     if isinstance(url, bytes):
         url = url.decode("latin-1")
     if not isinstance(url, str):
-        return url
-    if isinstance(method, str) and method.upper() == "CONNECT":
-        authority = url
-    else:
-        m = _ABSOLUTE_FORM.match(url)
-        if m is None:
-            return _NO_OTHER_DESTINATION
-        authority = m.group(1)
-    if not authority or _AMBIGUOUS_AUTHORITY.search(authority):
-        return url
-    # An empty host (``http://:80/``) would read as local to ``_guard``; a proxy fills it in however it likes, so it is remote here.
-    return _authority_host(authority) or url
+        return True
+    origin_form = url.startswith("/") and not url.startswith("//")
+    return not (url == "" or url == "*" or origin_form)
 
 
 def _guarded_putrequest(self, method, url, *args, **kwargs):  # type: ignore[no-untyped-def]
-    """Guard the destination named IN the request line (R619): a plain ``http://`` URL through an HTTP proxy is written as an
-    absolute-form ``GET http://host/...`` to an already-allowed loopback socket, with no CONNECT and so no ``_tunnel`` call. This runs
-    before ``putrequest`` buffers anything, so a refusal leaves zero request bytes on the wire."""
-    host = _request_target_host(method, url)
-    if host is not _NO_OTHER_DESTINATION:
-        _guard(host)
+    """Guard a destination named IN the request line (R619): a plain ``http://`` URL through an HTTP proxy is written as an
+    absolute-form ``GET http://host/...`` to an already-allowed loopback socket, with no CONNECT and so no ``_tunnel`` call. In airplane
+    mode every such target is refused, whatever host it names; an origin-form target goes to the peer the connect guard already saw.
+    This runs before ``putrequest`` buffers anything, so a refusal leaves zero request bytes on the wire."""
+    if _names_its_own_destination(method, url):
+        _guard(_PROXIED_TARGET)
     return _orig_putrequest(self, method, url, *args, **kwargs)
 
 

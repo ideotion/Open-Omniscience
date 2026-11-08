@@ -339,12 +339,15 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   2026-07-25, over `http.client.HTTPConnection._tunnel` and PySocks' `socksocket.connect`
   as well, because a proxied connection negotiates its REAL destination at an
   application-protocol layer the first three never see. Since 2026-11-08 (R619) it also guards
-  `http.client.HTTPConnection.putrequest` on the host an absolute-form request target names:
-  a plain `http://` URL through an HTTP proxy (Privoxy chained to Tor) is sent as
-  `GET http://host/x` to the loopback proxy with no CONNECT at all, and before this a loopback
-  listener received that whole request in airplane mode. Clients that do not sit on
-  `http.client` (httpx, used only by the loopback-only LLM clients) are not covered by this
-  patch point. Any **non-loopback** target raises
+  `http.client.HTTPConnection.putrequest`: a plain `http://` URL through an HTTP proxy
+  (Privoxy chained to Tor) is sent as `GET http://host/x` to the loopback proxy with no
+  CONNECT at all, and before this a loopback listener received that whole request in airplane
+  mode. While airplane mode is on, every request target that names its own destination
+  (anything but origin-form `/path`, `*` or empty, so absolute-form and `CONNECT` included) is
+  refused whatever host it names, `localhost` too, because a proxy chained upstream forwards
+  that name like any other. Not covered: clients that do not sit on `http.client` (httpx, used
+  only by the loopback-only LLM clients), and an origin-form request whose `Host` header an
+  intercepting (transparent) proxy reads as the destination; this app never configures one. Any **non-loopback** target raises
   `AirplaneModeError` **before** a real socket is opened, so no missed call
   site, third-party library, or DNS prefetch can egress. Loopback (127/8, ::1, `localhost`)
   and AF_UNIX always pass through (the app's own server, a loopback Ollama, the file DB).
@@ -356,7 +359,11 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   resolves to or connects to — closing the window between the pre-fetch check's `getaddrinfo`
   and the one `requests` performs at connect time. One patch layer, two gates, so a call site
   cannot meet one and miss the other; each has its own opt-out
-  (`OO_SSRF_CONNECT_GUARD=0` here), and neither flag disables the other.
+  (`OO_SSRF_CONNECT_GUARD=0` here), and neither flag disables the other. **Stated limit:** it
+  cannot see a PROXIED destination. Through an HTTP proxy or a remote-resolving SOCKS proxy
+  (`socks5h`), the proxy resolves the target, so the only address this process resolves or
+  connects to is the proxy's own; what the proxy reaches is checked by the pre-fetch guard
+  alone.
 
 ## Data integrity / chain of custody
 
