@@ -399,6 +399,32 @@ def test_an_operator_added_older_feed_row_does_not_swallow_the_catalogues_tags(s
     assert not ({"lean-right", "law"} & set((b.tags or "").split(",")))
 
 
+def test_an_install_that_merged_under_the_older_rule_gets_no_second_copy(session):
+    """Opus read of this change: on a store where the older rule (the catalogue's first feed entry) already merged onto a
+    row that is not the lowest id, moving the target would copy the tags onto a second row. The row whose baseline already
+    records merged tags keeps receiving them."""
+    from src.ingest.seed_sources import merge_feedless_tags
+
+    seed_sources(session, [_FEED_B])                          # B is id 1
+    seed_sources(session, [_FEED_A, _FEED_B])                 # A is id 2
+    b, a = session.query(Source).order_by(Source.id).all()
+    merge_feedless_tags(session, [(_LEAN, a)])                # what the older rule did: the catalogue's first feed, A
+    session.commit()
+    result = seed_sources(session, [_FEED_A, _FEED_B, {**_LEAN, "tags": ["lean-right", "wire"]}])
+    assert _adds_up(result) and result["merged"] == 1
+    assert not ({"lean-right", "wire"} & set((b.tags or "").split(",")))
+    assert {"lean-right", "wire"} <= set((a.tags or "").split(","))
+
+
+def test_a_feedless_entry_whose_outlet_holds_only_a_feedless_row_still_merges_onto_it(session):
+    """Opus read: the plan's feed entry can pair with a feed-less row the database held (the one-to-one fallback). The
+    outlet then has no feed row, and the entry's tags go onto that paired row, as before, never reported as held back."""
+    seed_sources(session, [{"name": "Outlet", "domain": "outlet.example", "tags": ["lean-left"]}])
+    result = seed_sources(session, [_FEED_A, {**_LEAN, "tags": ["wire"]}])
+    assert _adds_up(result) and result["merged"] == 1 and result["held_back_legacy_key"] == 0
+    assert "wire" in (session.query(Source).one().tags or "")
+
+
 def test_the_outlet_feed_row_rule(session):
     from src.ingest.seed_sources import outlet_feed_row
 

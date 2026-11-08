@@ -840,19 +840,25 @@ def repair_erased_feeds(session: Session, sources: list[dict]) -> dict:
 
 
 def outlet_feed_row(rows: list[Source]) -> Source | None:
-    """The ONE feed row of an outlet that receives a feed-less catalogue entry's tags: the lowest id among its feed rows
-    that carry a catalogue baseline, else the lowest id among its feed rows; None when it has no feed row.
+    """The ONE feed row of an outlet that receives a feed-less catalogue entry's tags, or None when it has no feed row.
+
+    In order: the lowest id among its feed rows whose baseline already records merged tags (the row earlier boots merged
+    onto keeps receiving them: an install that ran the older rule, or a catalogue since reordered, gets no second copy);
+    else the lowest id among its feed rows that carry a catalogue baseline; else the lowest id among its feed rows.
 
     Both seeds use it (OPEN_QUEUE row J (6)(b)). The main seed used to pick the catalogue's FIRST feed entry and the
     legal-only seed the lowest id, so an operator-added older feed row, or a reordered catalogue, landed one entry's tags on
-    two rows. An id never changes, so the answer is the same at every boot and in either call. A row with a baseline is
-    preferred because :func:`merge_feedless_tags` can only record a merge on such a row: an operator-added row (no baseline)
-    would take the tags nowhere and the catalogue's own row would never receive them."""
-    feed_rows = [r for r in rows if r.feed_key]
+    two rows. Every input is stable (ids never change, a baseline is kept), so the answer is the same at every boot and in
+    either call. A row with a baseline is preferred because :func:`merge_feedless_tags` can only record a merge on such a
+    row: an operator-added row (no baseline) would take the tags nowhere. The feed is read from ``rss_url``, not from
+    ``feed_key``, which the ORM derives only when the row is flushed."""
+    feed_rows = [r for r in rows if feed_key(r.rss_url)]
     if not feed_rows:
         return None
-    with_base = [r for r in feed_rows if _baseline_of(r) is not None]
-    return min(with_base or feed_rows, key=lambda r: r.id)
+    based = [(r, _baseline_of(r)) for r in feed_rows]
+    with_merges = [r for r, b in based if b is not None and b.get("merged_tags")]
+    with_base = [r for r, b in based if b is not None]
+    return min(with_merges or with_base or feed_rows, key=lambda r: r.id)
 
 
 def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
@@ -931,12 +937,14 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
         domain_rows.setdefault(entry_key(e)[0], []).append(r)
     plan_merges: list[tuple[dict, Source]] = []
     for e, t in plan.merges:
-        target = row_of.get(id(t)) if entry_key(e)[1] else outlet_feed_row(domain_rows.get(entry_key(e)[0], []))
+        # A feed-less entry falls back to its plan target when the outlet holds no feed row (the plan's feed entry was paired
+        # with a feed-less row the database held): the tags still have a row, as before.
+        target = (None if entry_key(e)[1] else outlet_feed_row(domain_rows.get(entry_key(e)[0], []))) or row_of.get(id(t))
         if target is not None:
             plan_merges.append((e, target))
-    extra_merges = [(e, outlet_feed_row(domain_rows.get(entry_key(e)[0], [])) or r) for e, r in extra_merges]
-    # A feed-less entry whose outlet holds no feed row at all (its planned feed was held back by a domain-keyed store) has no
-    # row to put its tags on: it is held back with that feed and counted so, never as merged.
+    extra_merges = [(e, outlet_feed_row(domain_rows.get(entry_key(e)[0], [])) or r) for e, r in extra_merges]  # never None
+    # A feed-less entry whose outlet holds no row for it at all (its planned feed was held back by a domain-keyed store) has
+    # no row to put its tags on: it is held back with that feed and counted so, never as merged.
     dropped_merges = len(plan.merges) - len(plan_merges)
     merges = plan_merges + extra_merges
     tag_merge = merge_feedless_tags(session, merges)
