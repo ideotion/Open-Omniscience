@@ -3232,7 +3232,18 @@
     // a prior one (the reader shows the latest + folds the rest). Honest streaming
     // progress (invariant #20). Ollama is loopback (no egress), but airplane mode
     // still refuses it — surfaced loudly. These rows are NEVER keyword-indexed.
-    let _bulkAbort = null;
+    let _bulkAbort = null;      // the custom-extractor run in progress (its AbortController), null when idle
+    let _bulkTask = null;       // that run's task-manager id (the X-OO-Task header), once the response has started
+    let _bulkStopping = false;  // its Cancel was pressed: the server is asked to stop it, the page reads on to the end
+    // A bulk or extractor run OUTLIVES ITS TAB (src/api/detached_stream.py), so aborting the fetch would only stop the PAGE
+    // reading it while the model kept writing, and the queue would start the next run beside it. A Cancel asks the SERVER to
+    // stop the run, through the task manager's own Stop (POST /api/jobs/task:N/cancel), and the page reads on until the run's
+    // aborted end arrives. False when there is no run to stop or the server refused (its reason is shown).
+    async function _stopServerRun(taskId) {
+      if (!taskId) return false;
+      try { await api(`/api/jobs/${encodeURIComponent(taskId)}/cancel`, {method: "POST"}); return true; }
+      catch (e) { toast(e.message, "err"); return false; }
+    }
     // The current UI language as an ENGLISH name the model reliably understands
     // ("French", not "Français") — the v2 language pin: summaries/synthesis come back
     // in the user's language. Translate carries its own explicit target instead.
@@ -3302,9 +3313,13 @@
       const mount = $(ctx === "an" ? "bulk-llm-an" : "bulk-llm-search");
       if (mount) mount.style.display = "none";
     }
-    // Back-compat: the custom-extractor panel's Cancel still aborts its own run + hides.
+    // The custom-extractor panel's Cancel stops its run ON THE SERVER (see _stopServerRun) and hides the panel.
     function bulkLlmStop(ctx) {
-      if (_bulkAbort) { try { _bulkAbort.abort(); } catch (e) { /* already done */ } _bulkAbort = null; }
+      if (_bulkAbort && !_bulkStopping) {
+        _bulkStopping = true;
+        // Before the response has started there is no task id yet: aiRunPromptStart sends the stop the moment it has one.
+        if (_bulkTask) _stopServerRun(_bulkTask).then((ok) => { if (!ok) _bulkStopping = false; });
+      }
       const mount = $(ctx === "an" ? "bulk-llm-an" : "bulk-llm-search");
       if (mount) mount.style.display = "none";
     }
@@ -3374,6 +3389,8 @@
           try { const j = await resp.json(); if (j.detail) detail = j.detail; } catch (e) { /* keep status */ }
           job.status = "error"; job.err = detail; _bulkRenderQueue(); return;
         }
+        job.taskId = resp.headers.get("X-OO-Task");
+        if (job.stopping && !(await _stopServerRun(job.taskId))) job.stopping = false;  // Cancel pressed before the response began
         const reader = resp.body.getReader(), dec = new TextDecoder(); let buf = "";
         for (;;) {
           const { done: fin, value } = await reader.read();
@@ -3393,13 +3410,15 @@
               else if (o.status === "skipped") job.skippedN++;
               else if (o.status === "failed") job.failedN++;
             } else if (o.event === "done") {
-              if (o.aborted) { job.status = "error"; job.err = o.reason || t("Stopped"); }
-              else job.status = "done";
+              if (o.aborted) {
+                if (job.stopping) job.status = "cancelled";  // the end the page's own Cancel asked for
+                else { job.status = "error"; job.err = o.reason || t("Stopped"); }
+              } else job.status = "done";
             }
             _bulkRenderQueue();
           }
         }
-        if (job.status === "running") job.status = "done";  // stream ended cleanly
+        if (job.status === "running") job.status = job.stopping ? "cancelled" : "done";  // stream ended with no done line
       } catch (e) {
         if (e && e.name === "AbortError") { job.status = "cancelled"; }
         else { job.status = "error"; job.err = (e && e.message) || "error"; }
@@ -3411,7 +3430,11 @@
     function bulkJobCancel(id) {
       const job = _bulkQueue.find((j) => j.id === id);
       if (!job) return;
-      if (job.status === "running") { if (_bulkJobAbort) { try { _bulkJobAbort.abort(); } catch (e) { /* already */ } } }
+      if (job.status === "running") {
+        if (job.stopping) return;  // already asked
+        job.stopping = true;       // the next run starts only once this one has really ended on the server
+        if (job.taskId) _stopServerRun(job.taskId).then((ok) => { if (!ok) job.stopping = false; _bulkRenderQueue(); });
+      }
       else if (job.status === "queued") { job.status = "cancelled"; }
       _bulkRenderQueue();
     }
@@ -3427,11 +3450,11 @@
       if (job.status === "queued") state = `<span class="chip">${esc(t("Queued"))}</span>`;
       else if (job.status === "running") {
         const head = job.total ? `${job.done}/${job.total}` : t("starting…");
-        state = `<span class="chip" style="background:var(--accent);color:#fff">${esc(t("Running"))} ${esc(head)}</span> <span class="muted">${esc(tally)}</span>`;
+        state = `<span class="chip" style="background:var(--accent);color:#fff">${esc(t(job.stopping ? "Stopping…" : "Running"))} ${esc(head)}</span> <span class="muted">${esc(tally)}</span>`;
       } else if (job.status === "done") state = `<b>${esc(t("Done."))}</b> <span class="muted">${esc(tally)}</span>`;
       else if (job.status === "cancelled") state = `<span class="muted">${esc(t("Cancelled."))}</span>`;
       else if (job.status === "error") state = `<span class="note err">${esc(t("Stopped:"))} ${esc(job.err)}</span> <span class="muted">${esc(tally)}</span>`;
-      const cancel = (job.status === "queued" || job.status === "running")
+      const cancel = (job.status === "queued" || (job.status === "running" && !job.stopping))
         ? `<button class="ghost tiny" data-on-click="bulkJobCancel(${job.id})" style="margin-inline-start:auto">${esc(t("Cancel"))}</button>` : "";
       return `<div class="row" style="gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
         <span style="font-weight:600">${esc(job.label)}</span> ${state} ${cancel}</div>`;
@@ -3510,7 +3533,8 @@
       }
       if (startBtn) startBtn.disabled = true;
       if (prog) prog.textContent = t("Starting…");
-      _bulkAbort = ("AbortController" in window) ? new AbortController() : null;
+      _bulkAbort = ("AbortController" in window) ? new AbortController() : {};  // non-null = a run is in progress
+      _bulkTask = null; _bulkStopping = false;
       let done = 0, total = 0;
       try {
         const url = (id === "builtin")
@@ -3525,6 +3549,8 @@
           if (prog) prog.innerHTML = `<span class="note err">${esc(detail)}</span>`;
           if (startBtn) startBtn.disabled = false; return;
         }
+        _bulkTask = resp.headers.get("X-OO-Task");
+        if (_bulkStopping && !(await _stopServerRun(_bulkTask))) _bulkStopping = false;  // Cancel pressed before the response began
         const reader = resp.body.getReader(), dec = new TextDecoder(); let buf = "";
         for (;;) {
           const { done: fin, value } = await reader.read();
@@ -3541,7 +3567,9 @@
               done++;
               if (prog) prog.textContent = t("Processing") + " " + done + "/" + total + "…";
             } else if (o.event === "done") {
-              if (o.aborted) {
+              if (o.aborted && _bulkStopping) {
+                if (prog) prog.textContent = t("Cancelled.");
+              } else if (o.aborted) {
                 if (prog) prog.innerHTML = `<span class="note err">${esc(t("Stopped:"))} ${esc(o.reason || "")}</span>`;
               } else if (prog) {
                 const tally = `${o.terms || 0} ${t("items")} · ${o.stored || 0} ${t("stored")} · `
@@ -3556,7 +3584,7 @@
         if (e && e.name === "AbortError") { if (prog) prog.textContent = t("Cancelled."); }
         else if (prog) prog.innerHTML = `<span class="note err">${esc(e.message)}</span>`;
       } finally {
-        if (startBtn) startBtn.disabled = false; _bulkAbort = null;
+        if (startBtn) startBtn.disabled = false; _bulkAbort = null; _bulkTask = null; _bulkStopping = false;
         loadLlmHealth();
       }
     }

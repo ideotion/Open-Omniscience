@@ -25,6 +25,7 @@ _REAL = (
 @pytest.fixture()
 def db(monkeypatch):
     monkeypatch.setattr(m, "_backlog_clear_at", 0.0)
+    monkeypatch.setattr(m, "_page_drain_at", 0.0)
     engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -136,3 +137,50 @@ def test_the_offline_timers_own_lease_is_not_a_rival(db, monkeypatch):
     monkeypatch.setattr(corpus_lease, "active_leases", lambda: [offline_maintenance._LEASE])
     _add(db, "z")
     assert m.index_backlog_slice(db, budget_s=60)["complete"] is True
+
+
+# --------------------------------------------------------------------------- the Insights page's own drain (Opus read of #1830)
+
+
+def test_the_slice_stands_back_while_the_insights_page_drains(db):
+    """The page drains the same rows with no lease and no job row: both writers would pick the same 300 rows."""
+    _add(db, "p1")
+    m.note_page_drain()
+    out = m.index_backlog_slice(db, budget_s=60)
+    assert out == {"skipped": "page_drain_running"}
+    assert _indexed(db) == set()
+
+
+def test_the_slice_takes_the_backlog_back_once_the_page_is_quiet(db, monkeypatch):
+    import time
+
+    ids = [_add(db, f"q{i}").id for i in range(2)]
+    monkeypatch.setattr(m, "_page_drain_at", time.monotonic() - m.PAGE_DRAIN_QUIET_S - 1)
+    out = m.index_backlog_slice(db, budget_s=60)
+    assert out["complete"] is True and _indexed(db) == set(ids)
+
+
+def test_a_page_that_opens_mid_slice_ends_it_between_batches(db, monkeypatch):
+    from src.analytics import store
+
+    monkeypatch.setattr(m, "BACKLOG_BATCH", 1)
+    for i in range(4):
+        _add(db, f"mid{i}")
+    real = store.backfill_corpus
+
+    def page_opens_after_one_batch(*a, **k):
+        r = real(*a, **k)
+        m.note_page_drain()
+        return r
+
+    monkeypatch.setattr(store, "backfill_corpus", page_opens_after_one_batch)
+    out = m.index_backlog_slice(db, budget_s=60)
+    assert out["ended"] == "page_drain_running" and out["batches"] == 1 and out["complete"] is False
+
+
+def test_the_insights_drain_endpoint_tells_the_slice_it_is_draining():
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parents[1] / "src" / "api" / "insights.py").read_text(encoding="utf-8")
+    body = src[src.index("def insights_reindex("):src.index("def insights_prune_keywords(")]
+    assert "note_page_drain()" in body and body.index("note_page_drain()") < body.index("return backfill_corpus(")

@@ -2734,4 +2734,6 @@ def bulk_llm(
     # The run outlives its tab (src/api/detached_stream.py): closing the browser no longer stops it; the task manager's Stop does.
     from src.api.detached_stream import detached
 
-    return StreamingResponse(detached(_stream(), _tok, name="oo-llm-bulk"), media_type="application/x-ndjson")
+    return StreamingResponse(detached(_stream(), _tok, name="oo-llm-bulk"), media_type="application/x-ndjson",
+        headers={"X-OO-Task": f"task:{_tok}"},  # the page's own Cancel stops the run through the task manager's Stop
+    )

@@ -38,6 +38,25 @@ BACKLOG_BATCH = 300
 #: re-index resume job owns it) or an article whose indexing failed at ingest, so an hour costs nothing and saves a scan a window.
 BACKLOG_RECHECK_S = 3600.0
 _backlog_clear_at = 0.0
+#: The Insights page drains the same backlog itself (``POST /api/insights/reindex``, every few seconds while it is open), with no
+#: lease and no job row: both writers would pick the same least-recently-attempted rows. The slice stands back for this long
+#: after the page's last batch, so an open Insights page owns the backlog and the slice takes it back once the page is gone.
+PAGE_DRAIN_QUIET_S = 30.0
+_page_drain_at = 0.0
+
+
+def note_page_drain() -> None:
+    """The Insights page is about to index a batch of the backlog (called by its endpoint)."""
+    import time
+
+    global _page_drain_at
+    _page_drain_at = time.monotonic()
+
+
+def _page_draining() -> bool:
+    import time
+
+    return bool(_page_drain_at) and time.monotonic() - _page_drain_at < PAGE_DRAIN_QUIET_S
 
 
 def backlog_budget_s() -> float:
@@ -54,7 +73,9 @@ def _backlog_busy_reason() -> str | None:
     """Why the slice must not run now: work that already owns the unindexed articles. The collection loop's window does not pass
     through the offline timer's yield checks, so the slice makes the ones that matter to it here: a re-index drain (an import's
     resume picks the same least-recently-attempted rows, and both writers would race for every one), any registered corpus lease,
-    and a running writer job. Unknown state is treated as busy."""
+    and a running writer job, and the Insights page's own drain. Unknown state is treated as busy."""
+    if _page_draining():
+        return "page_drain_running"
     try:
         from src.analytics.reindex_job import get_reindex_manager
 
@@ -130,6 +151,9 @@ def index_backlog_slice(session, *, should_stop: Callable[[], bool] | None = Non
     while True:
         if stop():
             ended = "stopping"
+            break
+        if _page_draining():  # the page opened mid-slice: it owns the backlog now
+            ended = "page_drain_running"
             break
         r = backfill_corpus(session, extractor=extractor, limit=BACKLOG_BATCH)
         batches += 1

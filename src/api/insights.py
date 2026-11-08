@@ -1139,7 +1139,9 @@ def insights_reindex(limit: int = Query(300, ge=1, le=5000), db: Session = Depen
     """Index up to ``limit`` not-yet-indexed articles (call repeatedly to finish)."""
     from src.analytics.extract import get_extractor
     from src.analytics.store import backfill_corpus
+    from src.scheduler.maintenance import note_page_drain
 
+    note_page_drain()  # the idle-maintenance backlog slice stands back while this page drains the same rows
     return backfill_corpus(db, extractor=get_extractor("baseline"), limit=limit)
 
 

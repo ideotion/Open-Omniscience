@@ -170,8 +170,84 @@ def test_the_three_streamed_runs_are_detached_and_stoppable():
     llm = (REPO / "src" / "api" / "llm.py").read_text(encoding="utf-8")
     assert ai.count("detail_vars={\"model\": model}, cancellable=True") == 2 and ai.count("detached(_stream(), _tok") == 2
     assert llm.count("detail_vars={\"model\": model}, cancellable=True") == 1 and llm.count("detached(_stream(), _tok") == 1
+    # The page's own Cancel needs the run's task id to stop it on the server (Opus read of #1830).
+    tag = 'headers={"X-OO-Task": f"task:{_tok}"}'
+    assert ai.count(tag) == 2 and llm.count(tag) == 1
 
 
 def test_the_task_manager_draws_stop_for_a_stoppable_run():
     js = (REPO / "src" / "static" / "app-core.js").read_text(encoding="utf-8")
     assert 'String(j.id).startsWith("task:") && Array.isArray(j.actions) && j.actions.includes("stop")' in js
+
+
+# --------------------------------------------------------------------------- Opus read of #1830
+
+
+def test_a_stalled_reader_still_gets_the_runners_own_end(monkeypatch):
+    """Once stalled, a full queue dropped every line, the runner's own done line too: a slow tab read a failed run as finished."""
+    import json
+
+    monkeypatch.setattr(ds, "BUFFER", 3)
+    monkeypatch.setattr(ds, "PUT_WAIT_S", 0.05)
+    log: list = []
+
+    def runner():
+        yield from _runner(20, log)
+        yield json.dumps({"event": "done", "aborted": True, "reason": "model went away"}, separators=(",", ":")) + "\n"
+
+    it = ds.detached(runner(), None)
+    assert _wait(lambda: "finally" in log), "the run waited on a reader that does not read"
+    time.sleep(0.2)  # the producer has finished: everything it could not feed was dropped
+    rest = list(it)
+    assert rest and json.loads(rest[-1]) == {"event": "done", "aborted": True, "reason": "model went away"}
+
+
+def test_a_stall_never_loses_a_stop_or_failure_end(monkeypatch):
+    import json
+
+    monkeypatch.setattr(ds, "BUFFER", 3)
+    monkeypatch.setattr(ds, "PUT_WAIT_S", 0.05)
+
+    def boom():
+        for i in range(10):
+            yield f"{i}\n"
+        raise RuntimeError("model went away")
+
+    it = ds.detached(boom(), None)
+    time.sleep(0.5)
+    out = list(it)
+    last = json.loads(out[-1])
+    assert last["event"] == "done" and last["aborted"] is True
+
+
+def test_a_stop_that_lands_after_the_runs_own_end_adds_no_second_end():
+    """The cancel check ran after every line, the final done line included: a Stop in that gap appended an aborted end, and the
+    page overwrote a finished run with "stopped"."""
+    import json
+
+    tok = tasks.register("llm", "Summarizing 1 article(s)", total=1, cancellable=True)
+    try:
+        def runner():
+            yield "0\n"
+            tasks.request_cancel(tok)  # pressed just as the run sends its end
+            yield json.dumps({"event": "done", "aborted": False}, separators=(",", ":")) + "\n"
+
+        out = list(ds.detached(runner(), tok))
+        dones = [json.loads(x) for x in out if '"event":"done"' in x]
+        assert dones == [{"event": "done", "aborted": False}]
+    finally:
+        tasks.finish(tok)
+
+
+def test_the_pages_cancel_stops_the_run_on_the_server_not_only_the_fetch():
+    """Opus read of #1830: aborting the fetch no longer stops a detached run, so a page Cancel that only aborted reported
+    "Cancelled" while the model kept writing, and the queue started the next run beside it."""
+    js = (REPO / "src" / "static" / "app-analysis.js").read_text(encoding="utf-8")
+    cancel = js[js.index("function bulkJobCancel("):js.index("function bulkJobClearDone(")]
+    stop = js[js.index("function bulkLlmStop("):js.index("function bulkLlmRun(")]
+    for body in (cancel, stop):
+        assert ".abort()" not in body, "a Cancel that only aborts the fetch leaves the run going on the server"
+        assert "_stopServerRun(" in body
+    helper = js[js.index("async function _stopServerRun("):]
+    assert "/api/jobs/${encodeURIComponent(taskId)}/cancel" in helper[:400]
+    assert js.count('resp.headers.get("X-OO-Task")') == 2

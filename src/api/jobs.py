@@ -1030,8 +1030,8 @@ def cancel_job(job_id: str) -> dict:
             raise HTTPException(status_code=404, detail=f"unknown OSM download {key!r}")
         return {"cancelled": job_id, "detail": "download paused (resumable; delete it in Settings → OpenStreetMap)"}
     if job_id.startswith("task:"):
-        # A background AI run that no longer ends with its tab (src/api/detached_stream.py): it stops after the article in
-        # flight; every article it finished stays stored.
+        # A background AI run that no longer ends with its tab (src/api/detached_stream.py): it stops after the articles in
+        # flight (a generation computed but not yet stored is dropped); every article it finished stays stored.
         from src.monitoring.tasks import request_cancel
 
         try:
@@ -1040,7 +1040,7 @@ def cancel_job(job_id: str) -> dict:
             raise HTTPException(status_code=404, detail=f"unknown task {job_id!r}") from None
         if not request_cancel(tok):
             raise HTTPException(status_code=404, detail=f"task {job_id!r} is not running or cannot be stopped")
-        return {"cancelled": job_id, "detail": "stopping after the article in flight; finished articles stay stored"}
+        return {"cancelled": job_id, "detail": "Stopping after the articles in flight; finished articles stay stored."}
     if job_id == "folder-backup":
         # Task-manager "cancel"/"pause" PAUSE the folder copy (resumable, like a dump);
         # a true abandon lives in the dedicated Settings → Data & backup controls.

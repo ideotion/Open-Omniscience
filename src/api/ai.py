@@ -184,7 +184,9 @@ def extract_keywords(
             _bgtasks.finish(_tok)
 
     # The run outlives its tab (src/api/detached_stream.py): closing the browser no longer stops it; the task manager's Stop does.
-    return StreamingResponse(detached(_stream(), _tok, name="oo-ai-extract"), media_type="application/x-ndjson")
+    return StreamingResponse(detached(_stream(), _tok, name="oo-ai-extract"), media_type="application/x-ndjson",
+        headers={"X-OO-Task": f"task:{_tok}"},  # the page's own Cancel stops the run through the task manager's Stop
+    )
 
 
 @router.get("/articles/{article_id}/keywords")
@@ -496,7 +498,9 @@ def run_custom_prompt(
             _bgtasks.finish(_tok)
 
     # The run outlives its tab (src/api/detached_stream.py): closing the browser no longer stops it; the task manager's Stop does.
-    return StreamingResponse(detached(_stream(), _tok, name="oo-ai-prompt"), media_type="application/x-ndjson")
+    return StreamingResponse(detached(_stream(), _tok, name="oo-ai-prompt"), media_type="application/x-ndjson",
+        headers={"X-OO-Task": f"task:{_tok}"},  # the page's own Cancel stops the run through the task manager's Stop
+    )
 
 
 # --------------------------------------------------------------------------- #
