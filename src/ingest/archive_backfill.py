@@ -45,6 +45,7 @@ import logging
 import os
 from pathlib import Path
 
+from src.ingest.fetch_verdict import failure_url
 from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
@@ -230,7 +231,7 @@ def advance_backfill(
             key = outcome.result.value if hasattr(outcome.result, "value") else str(outcome.result)
         except Exception as exc:  # noqa: BLE001 - one URL's failure must not abort the tick
             key = "error"
-            log_failure(_LOG, f"archive backfill: fetching {url!r} failed", exc, level=logging.WARNING)
+            log_failure(_LOG, f"archive backfill: fetching {failure_url(url)!r} failed", exc, level=logging.WARNING)
             # A failure that reached here can include an uncommitted/failed
             # transaction (store_fetched only catches IntegrityError itself --
             # e.g. an OperationalError from a concurrent writer propagates

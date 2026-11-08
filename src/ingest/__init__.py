@@ -1112,7 +1112,7 @@ class EthicalFetcher:
             raise FetchFailed(KILL_SWITCH_REFUSAL)
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
-            raise FetchFailed(f"unsupported or malformed URL: {url!r}")
+            raise FetchFailed(f"unsupported or malformed URL: {failure_url(url)!r}")
 
         # Cheap length check per fetch; evicts only when a cap is exceeded (E1).
         self._bound_host_caches()
@@ -1236,11 +1236,11 @@ class EthicalFetcher:
                 )
 
             if response.status_code != 200:
-                raise FetchFailed(f"HTTP {response.status_code} for {url}")
+                raise FetchFailed(f"HTTP {response.status_code} for {failure_url(url)}")
 
             content_type = response.headers.get("Content-Type", "")
             if require_html and "html" not in content_type.lower():
-                raise FetchFailed(f"non-HTML content ({content_type!r}) for {url}")
+                raise FetchFailed(f"non-HTML content ({content_type!r}) for {failure_url(url)}")
 
             content, raw_body = self._read_body(
                 response, url, token=fetch_token, keep_bytes=keep_bytes
@@ -1523,7 +1523,7 @@ class EthicalFetcher:
                         nxt = urljoin(current, location)
                         p = urlparse(nxt)
                         if p.scheme not in ("http", "https") or not p.netloc:
-                            raise FetchFailed(f"redirect to unsupported URL: {nxt!r}")
+                            raise FetchFailed(f"redirect to unsupported URL: {failure_url(nxt)!r}")
                         self._guard_target(p.hostname)  # re-validate the redirect target
                         if hasattr(resp, "close"):
                             resp.close()
@@ -1532,7 +1532,7 @@ class EthicalFetcher:
                     return resp, str(getattr(resp, "url", current) or current)
             except BlockedConnectTarget as exc:
                 raise BlockedTarget(record_text(exc, typed=False)) from None
-        raise FetchFailed(f"too many redirects for {url}")
+        raise FetchFailed(f"too many redirects for {failure_url(url)}")
 
     @staticmethod
     def _refuse_parser_mismatch(url: str) -> None:
@@ -1614,7 +1614,7 @@ class EthicalFetcher:
             try:
                 merged.update(requests.utils.get_environ_proxies(url, no_proxy=None))
             except Exception as exc:  # noqa: BLE001 - an unreadable environment is not a fetch error
-                log_failure(_LOG, f"could not read environment proxies for {url!r}", exc, level=logging.DEBUG)
+                log_failure(_LOG, f"could not read environment proxies for {failure_url(url)!r}", exc, level=logging.DEBUG)
         merged.update(explicit or {})
         return {k: v for k, v in merged.items() if k in _SELECTABLE_PROXY_KEYS or "://" in k}
 
@@ -1633,7 +1633,7 @@ class EthicalFetcher:
         """
         cl = response.headers.get("Content-Length") if hasattr(response, "headers") else None
         if cl and str(cl).isdigit() and int(cl) > self.max_bytes:
-            raise FetchFailed(f"declared length {cl} exceeds {self.max_bytes} bytes for {url}")
+            raise FetchFailed(f"declared length {cl} exceeds {self.max_bytes} bytes for {failure_url(url)}")
         if self._real_session and hasattr(response, "iter_content"):
             total = 0
             chunks: list[bytes] = []
@@ -1648,14 +1648,14 @@ class EthicalFetcher:
                     if hasattr(response, "close"):
                         response.close()
                     raise FetchFailed(
-                        f"body read exceeded {self.body_deadline_s:.0f}s for {url} "
+                        f"body read exceeded {self.body_deadline_s:.0f}s for {failure_url(url)} "
                         "(a slow or trickling response)"
                     )
                 total += len(chunk)
                 if total > self.max_bytes:
                     if hasattr(response, "close"):
                         response.close()
-                    raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {url}")
+                    raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {failure_url(url)}")
                 chunks.append(chunk)
             raw = b"".join(chunks)
             activity_monitor.fetch_bytes(total, token)  # real, app-attributed download size
@@ -1683,7 +1683,7 @@ class EthicalFetcher:
                 return raw.decode("utf-8", errors="replace"), kept
         # Injected (test) session: not streamed; check the already-materialised body.
         if response.content and len(response.content) > self.max_bytes:
-            raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {url}")
+            raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {failure_url(url)}")
         activity_monitor.fetch_bytes(len(response.content or b""), token)
         return response.text, (response.content if keep_bytes else None)
 
@@ -1725,11 +1725,11 @@ class EthicalFetcher:
             # one would put a confident wrong attribution into the pipeline's own data.
             cause = self._robots_cause.get(host_key, "unknown")
             raise RobotsUnavailable(
-                f"robots.txt for {host_key} could not be determined ({cause}); refusing to fetch",
+                f"robots.txt for {failure_url(host_key)} could not be determined ({cause}); refusing to fetch",
                 cause=cause,
             )
         if not parser.can_fetch(self.user_agent, url):
-            raise RobotsDisallowed(f"robots.txt disallows {url}")
+            raise RobotsDisallowed(f"robots.txt disallows {failure_url(url)}")
 
     def _get_robots(self, host_key: str, parsed) -> RobotFileParser | None:
         cached = self._robots.get(host_key)
