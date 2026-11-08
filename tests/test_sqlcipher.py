@@ -448,20 +448,26 @@ def test_encrypt_tool_inplace(tmp_path):
 
 def test_legacy_plaintext_keys_survive_passphrase(tmp_path, monkeypatch):
     """Signing keys created BEFORE encryption keep loading after THE passphrase
-    exists (D6 fallback): they are re-wrapped only by an explicit re-key, never
-    silently broken — and key_protection reports the file's REAL state."""
-    from src.custody.signing import HybridSigner
+    exists (D6 fallback), and the Ed25519 one is wrapped IN PLACE the first time
+    it loads under it (R449): the same key, never regenerated. key_protection
+    reports the FILES' real state: an ML-DSA key that is still plaintext (not
+    wrapped in place yet) is named as such whenever the post-quantum library is
+    installed."""
+    from src.custody.signing import PQC_AVAILABLE, HybridSigner
     from src.database.connect import set_passphrase
 
     monkeypatch.delenv("OO_KEY_PASSPHRASE", raising=False)
     ed, ml = tmp_path / "k.pem", tmp_path / "k.mldsa"
     s1 = HybridSigner(ed25519_path=ed, mldsa_path=ml)  # created plaintext
     ident = s1.public_identity().to_dict()
+    assert ed.read_bytes().startswith(b"-----BEGIN")
     set_passphrase("now-encrypted-pw")
     try:
         s2 = HybridSigner(ed25519_path=ed, mldsa_path=ml)  # must still load
         assert s2.public_identity().to_dict() == ident
-        assert s2.key_protection == "plaintext-0600"  # honest about the file
+        assert not ed.read_bytes().startswith(b"-----BEGIN")  # wrapped in place, same key
+        # honest about the files: the ML-DSA key stays plaintext until it is wrapped too
+        assert s2.key_protection == ("plaintext-0600" if PQC_AVAILABLE else "aes256gcm-scrypt")
     finally:
         set_passphrase(None)
 

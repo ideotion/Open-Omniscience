@@ -458,22 +458,31 @@ down is a RECORD of that date and carries its own disposition table.)*
   nothing has found a request that passes layers 1 and 2 and should not.
 - **At rest.** The data dir is created `0700` (best-effort, POSIX-only) so another local user
   cannot read the corpus, signing keys or custody log; signing keys are `0600`. On a store with a
-  passphrase held (`OO_KEY_PASSPHRASE`, else the database passphrase) the custody keys and the
-  evidence key are **wrapped under it**, so a copied data folder does not let its holder sign as
-  this install. The evidence key is wrapped with scrypt (N = 2^15) and AES-256-GCM (the custody
-  ML-DSA key's wrap; a wrong guess measured about 85 ms and 32 MiB here, against 170 ms for the
-  database: half in time, memory-hard where its PBKDF2 is not), and one written in the clear before 0.6 is wrapped in place, the same key,
-  the first time it is loaded under a passphrase. **Stated limit:** the custody Ed25519 key is wrapped
-  as a PKCS8 PEM, whose key derivation is 2048 rounds of PBKDF2-HMAC-SHA256 (about 0.3 ms a guess,
-  against 170 ms for the database itself): a copy of that one file is the cheapest test of a guess
-  at the passphrase, so a short passphrase is exposed through it. It is not changed here. A new evidence key is created with mode `0600` from its
-  first byte (POSIX; the custody keys are still written first and set to `0600` after). A process
-  killed while creating it can leave a private copy under `keys/.pending/`, which backups do not
-  list; the first wrap of a plaintext key removes the leftover that is a second name for it. A store
-  with no passphrase keeps its keys `0600` in the clear. A wrapped key that cannot be opened (the
-  store is locked, or a backup restored from another install brought that install's key under its
-  passphrase) is refused with the cause and never replaced, and a backup, which signs its manifest
-  with the evidence key, is refused with it; there is no recovery for a lost
+  passphrase held (`OO_KEY_PASSPHRASE`, else the database passphrase) every signing key is **wrapped
+  under it**, so a copied data folder does not let its holder sign as this install: the Ed25519 keys
+  of the custody log, of annotation bundles and of evidence bundles with scrypt (N = 2^15) and
+  AES-256-GCM, as the ML-DSA key always was (a wrong guess measured about 85 ms and 32 MiB here,
+  against 170 ms for the database: half in time, memory-hard where its PBKDF2 is not). A key written
+  before 0.6, in the clear or as a PKCS8 PEM (whose key derivation was 2048 rounds of PBKDF2-HMAC-SHA256,
+  about 0.3 ms a guess, the cheapest test of a guess at the passphrase), is wrapped in place the first
+  time it is loaded under a passphrase, the same key, read back and compared before it replaces
+  anything. When that cannot be done (a read-only folder) the key keeps working and its protection is
+  reported as what the file really holds (`plaintext-0600`, or `pkcs8-pbkdf2`), never as the wrap.
+  A new Ed25519 key is created with mode `0600` from its first byte (POSIX) and made once: two first
+  callers end with one key. Loading a signer under a passphrase now costs one scrypt for its Ed25519
+  key, about 79 ms and 32 MiB measured here, where the PKCS8 key cost 0.3 ms (two on a build with the
+  post-quantum library, which already paid one for the ML-DSA key). Derivations run at most one per core
+  at a time: fifty signers built at once, as a collection pass does, peaked at +129 MiB instead of
+  +1.3 GiB, in about the same wall time. A process killed while creating a
+  key can leave a private copy under `keys/.pending/`, which backups do not list; the first wrap of a
+  plaintext key removes the leftover that is a second name for it. **Stated limit:** the custody
+  ML-DSA keys are still written with `write_bytes` and then set to `0600`, two first callers can each
+  make one, and one written in the clear before the passphrase existed stays in the clear until it is
+  wrapped; none of that is changed here. A store with no passphrase keeps its keys `0600` in the
+  clear. A wrapped key that cannot be opened (the store is locked, or a backup restored from another
+  install brought that install's key under its passphrase) is refused with the cause and never
+  replaced, and a backup, which signs its manifest with the evidence key, is refused with it; there
+  is no recovery for a lost
   passphrase. Full at-rest encryption remains the host's job (Qubes/LUKS) — this bounds a shared
   host, not a seized one.
 - **Exported data.** CSV cells beginning `= + - @` or a control character are neutralised

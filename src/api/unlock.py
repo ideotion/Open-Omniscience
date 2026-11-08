@@ -220,8 +220,9 @@ def doctor() -> dict:
         "lanes": lanes,
         "signing_keys": {
             "files": key_files,
-            "note": "wrapped with scrypt+AES-GCM when a key passphrase is set; "
-            "plaintext 0600 otherwise (re-created wrapped after encryption)",
+            "note": "wrapped with scrypt+AES-GCM when a passphrase is held (a key written before is "
+            "wrapped in place, the same key, the first time it loads under one); "
+            "plaintext 0600 otherwise",
         },
         "threat_model": "At-rest encryption protects a seized or copied file. "
         "It cannot protect a compromised running session (keys live in memory), "
