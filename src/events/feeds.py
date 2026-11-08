@@ -348,6 +348,7 @@ def _keep_damaged_bytes(name: str, p: Path) -> None:
         if _identity(kept) != read:
             with suppress(OSError):
                 os.unlink(kept)  # the second name went to a file that replaced the damaged one: the store keeps it, the slot stays free
+            _LOG.warning("%s was replaced by another save while its damaged bytes were being kept; nothing is kept as %s", name, kept.name)
             return
         _LOG.warning("%s was read as damaged; its bytes are kept as %s before this save replaces it", name, kept.name)
         return
@@ -360,9 +361,15 @@ def _keep_damaged_bytes(name: str, p: Path) -> None:
         # The save goes on, as it did before R397 (b): a copy that cannot be made never blocks the import. The class only.
         _LOG.warning("%s was read as damaged and could not be kept as %s, so this save replaces it: %s", name, kept.name, type(exc).__name__)
         return
-    if _identity(kept) != read:
+    # After a MOVE only the modification time and the size are compared: a rename keeps both, while on a FAT or exFAT drive (the drives
+    # with no hard links, so the drives that take this path) Windows gives the file a new index when its directory entry is rewritten.
+    moved = _identity(kept)
+    if moved is None or moved[1:] != read[1:]:
         with suppress(OSError):
-            os.replace(kept, p)  # moved a file that replaced the damaged one: it goes back under the store's name, the slot stays free
+            # Moved a file that replaced the damaged one: it goes back under the store's name, the slot stays free. A newer store a third
+            # writer saved in between is overwritten by this save's own os.replace straight after, as two racing saves always did.
+            os.replace(kept, p)
+        _LOG.warning("%s was replaced by another save while its damaged bytes were being kept; nothing is kept as %s", name, kept.name)
         return
     _LOG.warning("%s was read as damaged; its bytes are kept as %s before this save replaces it", name, kept.name)
 

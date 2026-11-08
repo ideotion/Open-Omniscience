@@ -723,3 +723,19 @@ def test_json_nested_too_deeply_for_the_parser_reads_as_empty_and_is_kept(caplog
     assert "RecursionError" in caplog.text
     F.merge_imported_store("calendar_feed_imports.json", _NEW)
     assert _kept("calendar_feed_imports.json").read_text("utf-8") == "[" * 200000
+
+
+def test_a_move_that_changes_only_the_file_index_still_keeps_the_copy(monkeypatch):
+    """Windows on FAT or exFAT (no hard links, so the move path) gives a renamed file a new index: the copy is still kept, by mtime and size."""
+    p = _store("calendar_feed_imports.json")
+    p.write_text(_TORN, "utf-8")
+    real_identity = F._identity
+
+    def new_index_after_a_rename(path):
+        out = real_identity(path)
+        return (out[0] + 1, out[1], out[2]) if out is not None and path.name.endswith(".damaged") else out
+
+    monkeypatch.setattr(F, "_identity", new_index_after_a_rename)
+    scope_os(monkeypatch, F, link=_no_links)
+    F.merge_imported_store("calendar_feed_imports.json", _NEW)
+    assert _kept("calendar_feed_imports.json").read_text("utf-8") == _TORN
