@@ -450,6 +450,9 @@ from .source_samples import (
     build_sample_zip,
     source_samples,
 )
+# What a Thorough build is expected to cost (R459): the same slice position, BEFORE the release
+# run, whose eight routes test_release_run pins as the package's last.
+from .scan_estimate import _mention_rows, _remember_scan_walls, all_diagnostics_estimate
 # The 0.4 release acceptance run (2026-09-18) -- last, for the same reason the merge
 # action is second-to-last: the split guard pins every earlier route's position.
 from .release_run import (
@@ -467,8 +470,6 @@ from .release_run import (
     chronology_report,
     ResumeBody,
 )
-# What a Thorough build is expected to cost (R459): a new slice imported LAST, so every pinned route position stays.
-from .scan_estimate import _mention_rows, _remember_scan_walls, all_diagnostics_estimate
 
 __all__ = [
     "SAMPLE_ZIP_MAX_BYTES",

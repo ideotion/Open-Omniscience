@@ -63,6 +63,8 @@ _ADDED_AFTER_THE_SPLIT: tuple[str, ...] = (
     "country_form_status",
     # 2026-11-08, TEMPORARY: one random article per source in zips of at most 4 MB.
     "source_samples",
+    # 2026-11-08, R459: what a Thorough build is expected to cost, before the release run.
+    "all_diagnostics_estimate",
     # 2026-09-18, the 0.4 release acceptance run (gate rows A-E, K, P, Q, T): one job,
     # six routes, imported last -- the button the maintainer asked for.
     "release_run_start",
@@ -76,7 +78,6 @@ _ADDED_AFTER_THE_SPLIT: tuple[str, ...] = (
     "chronology_report",
     "release_run_last",
     "release_run_download",
-    "all_diagnostics_estimate",
 )
 
 
