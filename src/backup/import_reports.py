@@ -374,7 +374,8 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
     # later (the next export makes a new key), so it is said here, where the outcome is read, and not only in the JSON.
     side = report.get("side_files")
     keys = side.get("keys") if isinstance(side, dict) else None
-    not_placed = keys.get("not_placed") if isinstance(keys, dict) else None
+    keys = keys if isinstance(keys, dict) else {}
+    not_placed = keys.get("not_placed")
     if not_placed:
         lines.append("## Signing keys not restored")
         lines.append("")
@@ -387,10 +388,50 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
         lines.append("")
         for entry in not_placed:
             if isinstance(entry, dict):
-                lines.append(f"- `{entry.get('name')}`: {entry.get('reason')}")
+                lines.append(f"- {_md_code(entry.get('name'))}: {entry.get('reason')}")
+        lines.append("")
+
+    # R613: on an install that holds no passphrase a carried encrypted key is placed exactly as carried, never in the
+    # clear, and it cannot sign here until it is unlocked; that is said where the outcome is read.
+    still_encrypted = keys.get("still_encrypted")
+    if still_encrypted:
+        lines.append("## Signing keys still encrypted")
+        lines.append("")
+        lines.append(
+            "This install holds no passphrase, so these signing keys from the backup were placed exactly as they were "
+            "carried, still encrypted with the backup's passphrase (the one this restore was given for the backup or "
+            "its corpus). They were not written in the clear. To use them, set OO_KEY_PASSPHRASE to that passphrase "
+            "and restart; until then, anything this install signs with them stops with an error that names the key."
+        )
+        lines.append("")
+        for name in still_encrypted:
+            lines.append(f"- {_md_code(name)}")
+        lines.append("")
+
+    identities = keys.get("identities")
+    if identities:
+        lines.append("## Signing identity taken from the backup")
+        lines.append("")
+        lines.append(
+            "This install had no key of its own for these signers, so it now signs as the install that made the "
+            "backup. What it signs from now on carries the public key below, the same value its evidence bundles "
+            "and custody records show."
+        )
+        lines.append("")
+        for entry in identities:
+            if isinstance(entry, dict):
+                lines.append(f"- {_md_code(entry.get('name'))}: Ed25519 public key {_md_code(entry.get('ed25519_public_key'))}")
         lines.append("")
 
     return "\n".join(lines)
+
+
+def _md_code(value: object) -> str:
+    """``value`` as inline code that cannot break out of its line: a backtick and every character that is not
+    printable (a newline, a control character, a line separator) is written as its ``\\uXXXX`` escape. A name comes
+    from the backup's manifest, which whoever made the backup wrote, so it is never pasted into the Markdown raw."""
+    text = str(value)
+    return "`" + "".join(ch if ch.isprintable() and ch != "`" else f"\\u{ord(ch):04x}" for ch in text) + "`"
 
 
 def _safe_report_path(filename: str) -> Path | None:

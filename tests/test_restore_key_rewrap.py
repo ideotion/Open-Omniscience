@@ -203,15 +203,24 @@ def test_a_plaintext_key_is_wrapped_as_it_is_placed(tmp_path, monkeypatch):
 
 
 @posix_only
-def test_an_install_that_holds_no_passphrase_gets_the_plaintext_key_it_writes_itself(tmp_path):
+def test_an_install_that_holds_no_passphrase_gets_the_carried_key_still_encrypted_never_in_the_clear(tmp_path):
+    """R613: the restore could open it with the backup's passphrase, and still writes nothing in the clear: the bytes are
+    placed as carried, and the import report says how to unlock them."""
+    from src.backup.import_reports import render_import_report_markdown
+
     key = Ed25519PrivateKey.generate()
-    staged, live = _stage(tmp_path, {EVIDENCE: _wrapped(key, BACKUP)}, BACKUP)
-    out = merge.merge_side_files(staged)["keys"]
-    assert out["resealed"] == [EVIDENCE], out
+    carried = _wrapped(key, BACKUP)
+    staged, live = _stage(tmp_path, {EVIDENCE: carried}, BACKUP)
+    keys = merge.merge_side_files(staged)["keys"]
+    assert keys["still_encrypted"] == [EVIDENCE] and keys["resealed"] == [] and keys["restored"] == [EVIDENCE], keys
     placed = live / EVIDENCE
-    loaded = serialization.load_pem_private_key(placed.read_bytes(), password=None)
-    assert isinstance(loaded, Ed25519PrivateKey) and _pub(loaded) == _pub(key)
+    assert placed.read_bytes() == carried, "placed exactly as carried"
+    assert _pub(_opens_with(placed, BACKUP)) == _pub(key), "and it is the same key, under the backup's passphrase"
     assert stat.S_IMODE(placed.stat().st_mode) == 0o600
+    md = render_import_report_markdown({"outcome": "ok", "side_files": {"keys": keys}})
+    assert "## Signing keys still encrypted" in md
+    assert "still encrypted with the backup's passphrase" in md and "set OO_KEY_PASSPHRASE to that passphrase and restart" in md
+    assert f"- `{EVIDENCE}`" in md
 
 
 def test_the_restored_evidence_key_signs_on_this_install(tmp_path, monkeypatch):
@@ -326,8 +335,8 @@ def test_a_plaintext_key_is_placed_when_nothing_is_held_or_given(tmp_path):
     staged, live = _stage(tmp_path, {EVIDENCE: raw})
     out = merge.merge_side_files(staged)["keys"]
     assert out["restored"] == [EVIDENCE] and out["resealed"] == [], out
-    assert (live / EVIDENCE).read_bytes() == raw
-    assert out["written_as"].startswith("plaintext"), out["written_as"]
+    assert (live / EVIDENCE).read_bytes() == raw and out["still_encrypted"] == []
+    assert out["written_as"].startswith("as carried"), out["written_as"]
 
 
 def test_a_passphrase_this_install_cannot_encode_writes_no_key(tmp_path, monkeypatch):
@@ -517,13 +526,20 @@ def test_without_the_library_an_mldsa_key_already_wrapped_here_is_placed_as_carr
     assert (live / CUSTODY_ML).read_bytes() == raw
 
 
-def test_without_the_library_and_nothing_held_a_wrapped_mldsa_key_is_written_plaintext(tmp_path, monkeypatch):
+def test_without_the_library_and_nothing_held_a_wrapped_mldsa_key_is_placed_still_encrypted(tmp_path, monkeypatch):
+    """R613 on the move without the post-quantum library: opened to know it is a key, never written in the clear."""
+    from src.backup.import_reports import render_import_report_markdown
+
     monkeypatch.setattr(signing, "PQC_AVAILABLE", False)
     ml = os.urandom(140)
-    staged, live = _stage(tmp_path, {CUSTODY_ML: signing.seal_mldsa_key(ml, b"", BACKUP.encode())}, BACKUP)
-    out = merge.merge_side_files(staged)["keys"]
-    assert out["resealed"] == [CUSTODY_ML], out
-    assert (live / CUSTODY_ML).read_bytes() == ml
+    carried = signing.seal_mldsa_key(ml, b"", BACKUP.encode())
+    staged, live = _stage(tmp_path, {CUSTODY_ML: carried}, BACKUP)
+    keys = merge.merge_side_files(staged)["keys"]
+    assert keys["still_encrypted"] == [CUSTODY_ML] and keys["resealed"] == [], keys
+    assert (live / CUSTODY_ML).read_bytes() == carried
+    md = render_import_report_markdown({"outcome": "ok", "side_files": {"keys": keys}})
+    assert "## Signing keys still encrypted" in md and f"- `{CUSTODY_ML}`" in md
+    assert "set OO_KEY_PASSPHRASE to that passphrase and restart" in md
 
 
 def test_a_pair_whose_first_half_another_caller_made_meanwhile_is_not_completed(tmp_path, monkeypatch):
@@ -634,16 +650,177 @@ def test_no_passphrase_or_key_byte_reaches_a_log_an_exception_or_the_report_on_t
         raise OSError(28, "No space left on device", str(path))
 
     monkeypatch.setattr(keyfile, "create_new", the_disk_refuses)
-    monkeypatch.delenv("OO_KEY_PASSPHRASE")  # nothing held: the bytes handed to the write are the key itself, the worst case
     with pytest.raises(OSError) as raised:
         merge.merge_side_files(staged2)
+    texts.append("".join(traceback.format_exception(raised.value)))
+
+    # nothing held and a PLAINTEXT key carried: the bytes handed to the write are the key itself, the worst case
+    plain = Ed25519PrivateKey.generate()
+    staged3, _live3 = _stage(tmp_path / "third", {"keys/annotations_ed25519.pem": _plain_pem(plain)}, SOURCE)
+    monkeypatch.delenv("OO_KEY_PASSPHRASE")
+    with pytest.raises(OSError) as raised:
+        merge.merge_side_files(staged3)
     texts.append("".join(traceback.format_exception(raised.value)))
     texts.append(caplog.text)
 
     secrets = [SOURCE, BACKUP, HERE, "a-passphrase-nobody-gave-the-restore"]
-    key_bytes = [_seed(ed), ml]
+    key_bytes = [_seed(ed), ml, _seed(plain)]
+    pem_body = [line for line in _plain_pem(plain).decode().splitlines() if not line.startswith("-----")]
     for text in texts:
         for secret in secrets:
             assert secret not in text
         for kb in key_bytes:
             assert kb.hex() not in text and repr(kb)[2:-1] not in text
+        for line in pem_body:
+            assert line not in text
+
+
+# --------------------------------------------------------------------------- #
+#  The independent security read (Steward 3) and ruling R613 (2026-11-08).
+# --------------------------------------------------------------------------- #
+def _pkcs8_encrypted(key: Ed25519PrivateKey, passphrase: str) -> bytes:
+    return key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.BestAvailableEncryption(passphrase.encode())
+    )
+
+
+@pytest.mark.parametrize("pqc", [True, False])
+def test_a_plaintext_install_never_ends_up_with_a_decrypted_copy_of_a_carried_key(tmp_path, monkeypatch, pqc):
+    """R613: every encrypted form a backup can carry (the custody wrap, a password-protected PKCS8 PEM, a wrapped ML-DSA
+    key, with and without the post-quantum library) is opened with the backup's passphrase and placed exactly as
+    carried. No file anywhere under the data directory, the private copies included, holds the key in the clear."""
+    if pqc:
+        monkeypatch.setattr(signing, "_mldsa", _FakeMldsa)
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", pqc)
+    evidence, custody = Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
+    pk, sk = _FakeMldsa.generate_keypair()
+    carried = {
+        EVIDENCE: _wrapped(evidence, SOURCE),
+        CUSTODY_ED: _pkcs8_encrypted(custody, SOURCE),
+        CUSTODY_ML: signing.seal_mldsa_key(pk, sk, SOURCE.encode()),
+    }
+    staged, live = _stage(tmp_path, carried, SOURCE, BACKUP)
+    keys = merge.merge_side_files(staged)["keys"]
+    assert sorted(keys["still_encrypted"]) == sorted(carried) and keys["resealed"] == [] and keys["not_placed"] == [], keys
+    for name, body in carried.items():
+        assert (live / name).read_bytes() == body, name
+    clear = [_seed(evidence), _seed(custody), pk + sk, sk, b"-----BEGIN PRIVATE KEY-----"]
+    clear += [_seed(evidence).hex().encode(), _seed(custody).hex().encode()]
+    files = [f for f in live.rglob("*") if f.is_file()]
+    assert files, "the restore placed files"
+    for f in files:
+        body = f.read_bytes()
+        for secret in clear:
+            assert secret not in body, f"{f} holds a carried key in the clear"
+
+
+def test_a_pair_the_disk_refuses_halfway_leaves_neither_half(tmp_path, monkeypatch):
+    """The Ed25519 half is placed, the ML-DSA half meets a full disk: the stage fails AND takes its first half back, so
+    the next signer does not complete half the backup's identity with a key of its own."""
+    from src.custody import keyfile
+
+    monkeypatch.setattr(signing, "_mldsa", _FakeMldsa)
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", True)
+    _hold(monkeypatch, HERE)
+    pk, sk = _FakeMldsa.generate_keypair()
+    carried = {CUSTODY_ED: _wrapped(Ed25519PrivateKey.generate(), SOURCE), CUSTODY_ML: signing.seal_mldsa_key(pk, sk, SOURCE.encode())}
+    staged, live = _stage(tmp_path, carried, SOURCE)
+    real = keyfile.create_new
+    calls: list[str] = []
+
+    def the_second_create_meets_a_full_disk(path, data):
+        calls.append(path.name)
+        if len(calls) == 2:
+            raise OSError(28, "No space left on device")
+        return real(path, data)
+
+    monkeypatch.setattr(keyfile, "create_new", the_second_create_meets_a_full_disk)
+    with pytest.raises(OSError, match="No space left"):
+        merge.merge_side_files(staged)
+    assert len(calls) == 2, calls
+    assert not (live / CUSTODY_ED).exists() and not (live / CUSTODY_ML).exists()
+    assert not list((live / "keys").glob(".pending/*"))
+
+
+def test_a_half_another_caller_replaced_meanwhile_is_not_taken_back(tmp_path, monkeypatch):
+    """Only the file this restore made is removed: one that has since become another file (another inode) is theirs."""
+    from src.custody import keyfile
+
+    monkeypatch.setattr(signing, "_mldsa", _FakeMldsa)
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", True)
+    _hold(monkeypatch, HERE)
+    pk, sk = _FakeMldsa.generate_keypair()
+    carried = {CUSTODY_ED: _wrapped(Ed25519PrivateKey.generate(), SOURCE), CUSTODY_ML: signing.seal_mldsa_key(pk, sk, SOURCE.encode())}
+    staged, live = _stage(tmp_path, carried, SOURCE)
+    real = keyfile.create_new
+    theirs = _wrapped(Ed25519PrivateKey.generate(), HERE)
+    calls: list[str] = []
+
+    def a_signer_rewraps_the_first_half_then_the_disk_fills(path, data):
+        calls.append(path.name)
+        if len(calls) == 2:
+            fresh = live / "keys" / "rewrap.tmp"
+            fresh.write_bytes(theirs)
+            os.replace(fresh, live / CUSTODY_ED)  # a new inode under the same name, as replace_in_place makes
+            raise OSError(5, "Input/output error")
+        return real(path, data)
+
+    monkeypatch.setattr(keyfile, "create_new", a_signer_rewraps_the_first_half_then_the_disk_fills)
+    with pytest.raises(OSError, match="Input/output"):
+        merge.merge_side_files(staged)
+    assert (live / CUSTODY_ED).read_bytes() == theirs
+    assert not (live / CUSTODY_ML).exists()
+
+
+def test_a_manifest_name_cannot_write_markdown_into_the_import_report():
+    from src.backup.import_reports import render_import_report_markdown
+
+    hostile = "keys/x`\n## Everything restored fine\n`"
+    keys = {
+        "not_placed": [{"name": hostile, "reason": "a fixed reason"}],
+        "still_encrypted": [hostile],
+        "identities": [{"name": hostile, "ed25519_public_key": "ab`\ncd"}],
+    }
+    md = render_import_report_markdown({"outcome": "ok", "side_files": {"keys": keys}})
+    assert "\n## Everything restored fine" not in md, "a name never starts a heading of its own"
+    assert md.count("`keys/x\\u0060\\u000a## Everything restored fine\\u000a\\u0060`") == 3, md
+    for line in md.splitlines():
+        if "Everything restored fine" in line:
+            assert line.startswith("- "), line
+
+
+def test_the_import_report_names_the_signing_identity_taken_from_the_backup(tmp_path, monkeypatch):
+    from src.backup.import_reports import render_import_report_markdown
+
+    monkeypatch.setattr(signing, "_mldsa", _FakeMldsa)
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", True)
+    _hold(monkeypatch, HERE)
+    ed, ev = Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
+    pk, sk = _FakeMldsa.generate_keypair()
+    carried = {
+        EVIDENCE: _wrapped(ev, SOURCE),
+        CUSTODY_ED: _wrapped(ed, SOURCE),
+        CUSTODY_ML: signing.seal_mldsa_key(pk, sk, SOURCE.encode()),
+    }
+    staged, _live = _stage(tmp_path, carried, SOURCE)
+    keys = merge.merge_side_files(staged)["keys"]
+    assert sorted((e["name"], e["ed25519_public_key"]) for e in keys["identities"]) == sorted(
+        [(CUSTODY_ED, _pub(ed).hex()), (EVIDENCE, _pub(ev).hex())]
+    ), keys
+    md = render_import_report_markdown({"outcome": "ok", "side_files": {"keys": keys}})
+    assert "## Signing identity taken from the backup" in md
+    assert f"- `{CUSTODY_ED}`: Ed25519 public key `{_pub(ed).hex()}`" in md
+    assert f"- `{EVIDENCE}`: Ed25519 public key `{_pub(ev).hex()}`" in md
+
+
+def test_a_key_this_install_keeps_is_not_called_an_identity_taken_from_the_backup(tmp_path, monkeypatch):
+    from src.backup.import_reports import render_import_report_markdown
+
+    _hold(monkeypatch, HERE)
+    staged, live = _stage(tmp_path, {EVIDENCE: _wrapped(Ed25519PrivateKey.generate(), SOURCE)}, SOURCE)
+    (live / "keys").mkdir()
+    (live / EVIDENCE).write_bytes(_wrapped(Ed25519PrivateKey.generate(), HERE))
+    keys = merge.merge_side_files(staged)["keys"]
+    assert keys["identities"] == [] and keys["kept_local"] == [EVIDENCE], keys
+    md = render_import_report_markdown({"outcome": "ok", "side_files": {"keys": keys}})
+    assert "Signing identity" not in md
