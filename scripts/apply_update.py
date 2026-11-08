@@ -67,6 +67,10 @@ def child_env() -> dict[str, str]:
     """This process's environment without :data:`SECRET_ENV`, and with git never prompting."""
     # OO_UPDATE_WATCH too: it is for the one launcher a watched relaunch starts, never inherited by anything after it.
     env = {k: v for k, v in os.environ.items() if k not in SECRET_ENV and k != "OO_UPDATE_WATCH"}
+    if env.get("OO_ARENA_MAX_DEFAULTED") == "1":
+        # launch.sh's own malloc default (R114), not the operator's: dropped, or the relaunched launcher would take it as a choice.
+        env.pop("OO_ARENA_MAX_DEFAULTED", None)
+        env.pop("MALLOC_ARENA_MAX", None)
     env["GIT_TERMINAL_PROMPT"] = "0"
     return env
 
@@ -125,10 +129,27 @@ def wait_for_exit(pid: int, limit: float = WAIT_S, *, alive=pid_alive, sleep=tim
     return True
 
 
+def _setuptools_floor(root: Path) -> int:
+    """The major version ``[build-system] requires`` asks of setuptools (``setuptools>=77`` -> 77), 0 when it names none."""
+    import tomllib
+
+    try:
+        reqs = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8")).get("build-system", {}).get("requires", [])
+    except (OSError, ValueError):
+        return 0
+    for req in reqs if isinstance(reqs, list) else []:
+        m = re.match(r"^\s*setuptools\s*>=\s*(\d+)", str(req))
+        if m:
+            return int(m.group(1))
+    return 0
+
+
 def refresh_metadata(root: Path, py: str, run) -> bool:
     """Re-register the editable install's metadata (version, entry points) with NOTHING downloaded: no index, no dependencies, no build
-    isolation. True when done or skipped (no local setuptools to build with: the version shown then lags until the installer is re-run)."""
-    if run(root, py, "-c", "import setuptools").returncode != 0:
+    isolation. True when done or skipped: no local setuptools, or one older than the build system asks for (a build with it would fail
+    on every release); the version shown then lags until the installer is re-run."""
+    probe = f"import setuptools, sys; sys.exit(0 if int(setuptools.__version__.split('.')[0]) >= {_setuptools_floor(root)} else 1)"
+    if run(root, py, "-c", probe).returncode != 0:
         return True
     argv = (py, "-m", "pip", "install", "--no-index", "--no-deps", "--no-build-isolation", "-e", ".")
     return run(root, *argv, timeout=PIP_TIMEOUT_S).returncode == 0
@@ -208,13 +229,15 @@ def apply(plan: dict, *, git=_git, run=_run) -> tuple[str, str]:
         return "already_current", old  # the checkout already contains that version (a pull without a reinstall, a tag behind main)
     if dependencies_changed(root, old, sha, git=git):
         return "dependencies_changed", old  # nothing swapped: the installer takes this release
+    if os.name == "nt":
+        # The old window's launcher wrapper may still be finishing after the server's process exited, and cmd.exe resumes launch.cmd by byte
+        # offset when it returns: give it a moment before the checkout (and so launch.cmd) can change; the console-script .exe is freed too.
+        time.sleep(5)
     if git(root, "merge", "--ff-only", sha).returncode != 0:
         return "not_a_fast_forward", old
     changed = changed_files(root, old, sha, git=git)
     if "pyproject.toml" in changed:
         py = plan.get("python") or sys.executable
-        if os.name == "nt":
-            time.sleep(3)  # the console-script launcher may still hold its own .exe for a moment after the Python process exits
         if not refresh_metadata(root, py, run):
             return ("install_failed_rolled_back" if roll_back(root, old, changed, py, git=git, run=run) else "rollback_incomplete"), old
     return "updated", old
@@ -420,8 +443,12 @@ def _main(plan_path: Path, plan: dict, data_dir: Path, root: Path) -> int:
         # Recorded FIRST, so a helper that dies part-way leaves "started" behind rather than an older attempt's "updated".
         write_result(plan, "started", "", data_dir)
         if not wait_for_exit(int(plan["pid"])):
+            # Nothing was changed. The app has closed its port and engaged the kill switch, so it must not stay down when it does stop:
+            # keep waiting (no update), then start it again unless something already answers.
             write_result(plan, "app_did_not_stop", "", data_dir)
-            return 1  # the app is still running and untouched; nothing was changed
+            if wait_for_exit(int(plan["pid"]), LOCK_STALE_S) and not server_answers(_port(plan)):
+                relaunch(root)
+            return 1
         port = _port(plan)
         if server_answers(port):
             # Started again already (by hand, or a supervisor): swapping files under a running app would mix two versions. Touch nothing.
@@ -445,9 +472,10 @@ def _main(plan_path: Path, plan: dict, data_dir: Path, root: Path) -> int:
                 status = "start_failed_rolled_back" if ok else "rollback_incomplete"
                 write_result(plan, status, old, data_dir)
                 relaunch(root)
-            elif started != "up":
+            elif started == "unknown":
                 status = "start_unconfirmed"
                 write_result(plan, status, old, data_dir)
+            # "closed": the person closed the new window themselves; the update stands, "updated" is the truth
         return 0 if status in ("updated", "already_current", "start_unconfirmed") else 1
     finally:
         release_lock(lock)

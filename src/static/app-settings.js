@@ -2166,6 +2166,7 @@
       } catch (e) {
         const code = e && e.detail && e.detail.code;
         let say = t("The update could not start; nothing was changed.");
+        if (e && typeof e.detail === "string" && e.detail) say += " (" + e.detail + ")";  // the server's own reason, a fixed sentence
         if (code === "protected") say = protectedSay;
         else if (code === "airplane") say = t("Airplane mode is on, so the update did not start. Go online first.");
         if (msg) msg.textContent = say;

@@ -433,6 +433,9 @@ def launch_helper(ref: str, sha: str, kind: str, *, root: Path | None = None, po
 
     env = child_env()
     env.pop("OO_UPDATE_WATCH", None)  # for the one launcher a watched relaunch starts, never inherited by a later helper
+    if env.get("OO_ARENA_MAX_DEFAULTED") == "1":  # launch.sh's malloc default (R114), never handed on as if the operator had chosen it
+        env.pop("OO_ARENA_MAX_DEFAULTED", None)
+        env.pop("MALLOC_ARENA_MAX", None)
     if os.name == "nt":
         flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
         try:  # break away from a job object that would kill the helper together with this process; not every job allows it

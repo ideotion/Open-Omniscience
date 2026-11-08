@@ -9,8 +9,8 @@ rem ---------------------------------------------------------------------------
 setlocal
 title Open Omniscience
 
-rem The in-app updater's watch flag (scripts\apply_update.py) is for THIS window only: copied here, then cleared, so the server never
-rem inherits it and the next stop of a later window still waits for a key.
+rem The in-app updater's watch flag (scripts\apply_update.py) is for THIS window only: copied to OO_WATCHED, then cleared, so nothing the
+rem server starts carries it on (the server sees OO_WATCHED, which every start of this file sets afresh).
 set "OO_WATCHED=%OO_UPDATE_WATCH%"
 set "OO_UPDATE_WATCH="
 

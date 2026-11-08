@@ -583,7 +583,7 @@ def test_a_failed_start_whose_rollback_fails_says_so(tmp_path, monkeypatch):
     undone: list = []
     monkeypatch.setattr(h, "roll_back", lambda *a, **k: undone.append(1) or True)
     monkeypatch.setattr(h, "watch_start", lambda proc, port, *a, **k: "closed")
-    assert h.main(["x", str(plan)]) == 0 and undone == [] and _result(tmp_path, h) == "start_unconfirmed"
+    assert h.main(["x", str(plan)]) == 0 and undone == [] and _result(tmp_path, h) == "updated"
 
 
 def test_update_status_names_protected_mode_for_the_button(monkeypatch):
@@ -660,9 +660,15 @@ def test_the_metadata_refresh_is_skipped_without_a_local_setuptools(tmp_path):
 
     def no_setuptools(root, *argv, **k):
         calls.append(argv)
-        return subprocess.CompletedProcess([], 1 if "import setuptools" in argv else 0, "", "")
+        return subprocess.CompletedProcess([], 1 if any("import setuptools" in a for a in argv) else 0, "", "")
 
     assert h.refresh_metadata(tmp_path, "py", no_setuptools) and not any("pip" in c for c in calls)
+    # the probe asks for the build system's own floor, so an older setuptools is a skip, never a failure on every release
+    (tmp_path / "pyproject.toml").write_text('[build-system]\nrequires = ["setuptools>=77", "wheel"]\n', encoding="utf-8")
+    assert h._setuptools_floor(tmp_path) == 77
+    calls.clear()
+    h.refresh_metadata(tmp_path, "py", no_setuptools)
+    assert any(">= 77" in a for c in calls for a in c)
 
 
 def test_a_local_commit_ahead_is_never_merged_over(repos):
@@ -734,3 +740,75 @@ def test_a_helper_that_fails_unexpectedly_still_brings_the_app_back(tmp_path, mo
     assert _result(tmp_path, h) == "helper_failed"
     (tmp_path / "update-plan.json").write_text("{not json", encoding="utf-8")
     assert h.main(["x", str(tmp_path / "update-plan.json")]) == 1 and len(launched) == 2  # the script's own checkout is started
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        ("dependencies = [\"a>=1\"]", "dependencies = [\"a>=2\"]"),
+        ("[project.optional-dependencies]\nx = [\"b\"]", "[project.optional-dependencies]\nx = [\"b>=3\"]"),
+        ("requires-python = \">=3.13\"", "requires-python = \">=3.14\""),
+        ("requires = [\"setuptools>=77\"]", "requires = [\"setuptools>=80\"]"),
+    ],
+)
+def test_each_dependency_part_of_pyproject_counts(repos, change):
+    inst, work, _sha = repos
+    h = _helper()
+    body = (
+        '[build-system]\nrequires = ["setuptools>=77"]\n\n[project]\nname = "x"\nversion = "{v}"\nrequires-python = ">=3.13"\n'
+        'dependencies = ["a>=1"]\n\n[project.optional-dependencies]\nx = ["b"]\n'
+    )
+    _commit_file(work, "pyproject.toml", body.format(v="0.6.0"), "v0.6.1")
+    _g(inst, "pull", "-q", "--ff-only", "origin", "main")
+    old = _g(inst, "rev-parse", "HEAD")
+    before, after = change
+    assert before in body
+    flip = _commit_file(work, "pyproject.toml", body.format(v="0.7.0"), "v0.7.0")
+    dep = _commit_file(work, "pyproject.toml", body.format(v="0.7.1").replace(before, after), "v0.7.1")
+    _g(inst, "fetch", "-q", "origin", "main")  # as the helper's own fetch does before it compares
+    assert h.dependencies_changed(inst, old, flip) is False  # the version alone is not a dependency change
+    assert h.dependencies_changed(inst, flip, dep) is True
+
+
+def test_the_launchers_own_malloc_default_is_not_handed_on_as_a_choice(monkeypatch, tmp_path):
+    import src.paths as paths
+
+    monkeypatch.setattr(paths, "data_dir", lambda: tmp_path)
+    monkeypatch.setenv("MALLOC_ARENA_MAX", "2")
+    monkeypatch.setenv("OO_ARENA_MAX_DEFAULTED", "1")
+    h = _helper()
+    env = h.child_env()
+    assert "MALLOC_ARENA_MAX" not in env and "OO_ARENA_MAX_DEFAULTED" not in env
+    seen: list = []
+    su.launch_helper("v0.6.0", SHA_B, "tag", root=ROOT, popen=lambda argv, **k: seen.append(k["env"]))
+    assert "MALLOC_ARENA_MAX" not in seen[0]
+    monkeypatch.delenv("OO_ARENA_MAX_DEFAULTED")  # the operator's own value is kept
+    assert h.child_env()["MALLOC_ARENA_MAX"] == "2"
+
+
+def test_an_app_that_stops_late_is_still_started_again_untouched(tmp_path, monkeypatch):
+    h = _helper()
+    plan = _plan_file(tmp_path)
+    waits = iter([False, True])
+    applied: list = []
+    launched: list = []
+    monkeypatch.setattr(h, "wait_for_exit", lambda pid, *a, **k: next(waits))
+    monkeypatch.setattr(h, "server_answers", lambda port: False)
+    monkeypatch.setattr(h, "apply", lambda plan, **k: applied.append(1) or ("updated", SHA_A))
+    monkeypatch.setattr(h, "relaunch", lambda root, **k: launched.append(root))
+    assert h.main(["x", str(plan)]) == 1 and applied == [] and launched == [tmp_path]
+    assert _result(tmp_path, h) == "app_did_not_stop"
+
+
+def test_a_check_in_protected_mode_without_a_proxy_is_named_not_a_500(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    import src.safety.fetcher as fetcher
+    from src.api.main import app
+
+    def no_proxy(url):
+        raise fetcher.TransportUnavailable("no usable proxy")
+
+    monkeypatch.setattr(su, "_get_json", no_proxy)
+    r = TestClient(app, base_url="http://127.0.0.1").post("/api/system/update/check")
+    assert r.status_code == 409 and "proxy" in r.json()["detail"]

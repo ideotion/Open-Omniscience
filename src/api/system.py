@@ -89,12 +89,14 @@ class UpdateApplyBody(BaseModel):
 def update_check() -> dict:
     """Ask GitHub for the newest published version (the ONE in-process fetch of the update path; guarded session, kill-switch gated)."""
     from src.maintenance.self_update import UpdateError, check
-    from src.safety.fetcher import NetworkBlocked
+    from src.safety.fetcher import NetworkBlocked, TransportUnavailable
 
     try:
         return check()
     except NetworkBlocked:
         raise HTTPException(status_code=409, detail="Airplane mode is on: the update check did not run. Go online first.") from None
+    except TransportUnavailable:
+        raise HTTPException(status_code=409, detail="Protected mode has no usable proxy: the update check did not run.") from None
     except UpdateError as exc:
         raise HTTPException(status_code=502, detail=http_detail(exc)) from None
 
