@@ -157,7 +157,7 @@ the encrypted round trip — that in-lane checksum is **never** written back int
   `tests/test_extract_date_bound.py` and `tests/test_collect_extraction_outside_gate.py` (for a release that is not the newest on hand, put its
   unpacked wheel, and the `htmldate` it needs, first on `PYTHONPATH`); a release that changes how it builds or frees trees is read first.
   Then move the registry `{verified, current}` together. Record only a release a test run exercised: the `test` job resolves the newest
-  release, no job runs the floor (the lock file pins it; `lockfile-install` only imports the app), so the floor is verified by a hand run
+  release, no job runs the floor (the lock file pins it, and `lockfile-install` imports and type-checks the app but runs no test), so the floor is verified by a hand run
   and the entry says so.
 - **starlette** (`starlette-gzip-flush`) — fastapi's web layer, named in `pyproject.toml` (`starlette>=1.8.0`) because the app leans on two
   behaviours of it; the floor is the later release. (1) From 1.8.0 a `FileResponse` stops at a client's `http.disconnect` on a server that
@@ -172,7 +172,7 @@ the encrypted round trip — that in-lane checksum is **never** written back int
   and `requirements.lock` from drifting apart. There is no ceiling. A new release is run through that test and the API route tests (for a
   release that is not the newest on hand, put its unpacked wheel first on `PYTHONPATH`); then move the registry `{verified}` and
   `upstream_check.current` together. The floor is verified by a hand run on the 1.8.0 wheel: the `test` job resolves the newest release, and
-  `lockfile-install` only imports the app.
+  `lockfile-install` imports and type-checks the app but runs no test.
 
 ## Clearing an `on-security` artifact without re-vendoring (`reviewed_through`)
 

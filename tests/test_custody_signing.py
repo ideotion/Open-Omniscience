@@ -199,7 +199,9 @@ def test_a_legacy_plaintext_mldsa_key_of_the_exact_length_still_loads_under_a_pa
     ml = tmp_path / "ml.key"
     ml.write_bytes(b"P" * 10 + b"S" * 30)  # what the key file was before the database had a passphrase
     s = _signer(tmp_path, monkeypatch, "pass-1")
-    assert s.key_protection == "plaintext-0600" and s.is_hybrid
+    # it loads, and is wrapped in place: the same pair, now under the passphrase (R484)
+    assert s.key_protection == "aes256gcm-scrypt" and s.is_hybrid
+    assert signing.parse_mldsa_key(ml, ml.read_bytes(), b"pass-1") == (b"P" * 10, b"S" * 30, "wrapped")
 
 
 def test_a_plaintext_looking_mldsa_key_of_any_other_length_is_refused(tmp_path, monkeypatch):
@@ -231,3 +233,12 @@ def test_a_wrapped_mldsa_key_with_no_passphrase_held_raises_instead_of_signing_w
         assert "no passphrase" in str(exc) and "earlier-pass" not in str(exc)
     else:  # pragma: no cover - the defect: the wrapped blob was split into a garbage key pair
         raise AssertionError("a wrapped ML-DSA key with no passphrase held must not load")
+
+
+@pytest.mark.skipif(not signing.PQC_AVAILABLE, reason="pqcrypto/ML-DSA not installed")
+def test_the_restore_reads_a_plaintext_mldsa_key_by_the_length_the_library_writes():
+    """The restore on an install WITHOUT the library tells a plaintext ML-DSA-65 key file from a wrapped one by a
+    fixed length (src/backup/merge.py). This lane has the library, so the constant is checked against it here."""
+    from src.backup import merge
+
+    assert signing._mldsa_plain_len() == merge._MLDSA65_PLAIN_LEN

@@ -241,6 +241,32 @@ rail on narrower windows). An experimental second interface ("Desk") existed
 during earlier cycles and was retired in 0.0.8; its history is in
 [`DESIGN.md`](DESIGN.md).
 
+**Running in the background, with the browser closed.** The app lives in its launcher
+window, not in the browser tab. You can close the browser at any time: collection,
+Wikipedia and map downloads, backups to a folder or drive, imports, the AI jobs (model
+downloads, language detection, the AI checks) and the diagnostics archive all keep
+running. This is the way to leave a machine collecting for days while saving the memory a
+browser takes (often 0.5 to 1 GB, which matters on a small VM).
+
+While the app runs, the launcher window shows a small **panel**: whether the app is locked,
+the network and collection state, the server's memory and CPU, and every running job with
+its progress. Click its buttons, or press the key shown on each:
+
+- **Open UI (o)** opens the app in your browser again.
+- **Pause collection (p)** stops collecting and puts the app in airplane mode. To resume,
+  open the UI: going online always passes through its consent window, never the terminal.
+- **Show log (l)** shows the server's own messages; press Enter to come back.
+- **Stop app (s)** stops the app, after a second press. It names the jobs that would end.
+- **Close panel (q)** leaves the app running and the window showing the server's messages.
+
+The panel never asks for your passphrase: if the app is locked, it says so, and you unlock
+it in the browser. Closing the launcher window or pressing Ctrl-C still stops the app, as
+before. Set `OO_PANEL=0` to start without the panel. Some work does need the tab to stay
+open: an upload you are sending from the browser, a file the browser is downloading, and
+the AI tools that answer in the page (bulk summarize or translate, prompt runs). On
+Windows the panel opens in a window of its own (closing it does not stop the app), and only
+when Python's curses module is installed there (`pip install windows-curses`).
+
 ---
 
 ## 2. The 60-second tour
@@ -1868,7 +1894,7 @@ them and names where to move them, and nothing is moved or deleted for you.
 | `OO_NO_SCHEDULER` | Set `1` to never autostart the background scheduler. |
 | `OO_NO_INDEX` | Set `1` to skip automatic Insights indexing. |
 | `OO_CUSTODY_ON_INGEST` | Legacy default for auto-logging custody on ingest (the UI preference overrides it once saved). |
-| `OO_KEY_PASSPHRASE` | Encrypt custody private keys at rest (AES-256-GCM via scrypt). Without it, keys are written `0600` in the clear and reported honestly as `plaintext-0600`. |
+| `OO_KEY_PASSPHRASE` | Encrypt custody private keys at rest (AES-256-GCM via scrypt). Without it, the database passphrase wraps them; with neither, keys are written `0600` in the clear and reported honestly as `plaintext-0600`. |
 | `OO_FETCH_TIMEOUT` / `OO_FETCH_MIN_INTERVAL` | Tune the ethical fetcher's timeout and per-host minimum interval. |
 | `OO_LLM_MODEL` / `OO_OLLAMA_URL` (or `OLLAMA_BASE_URL`) | Default local model and Ollama endpoint. |
 | `OO_ALLOW_BIG_SCANS` | Set `1` to run the whole-corpus background scans on a machine below the memory floor (see [Memory on a small machine](#55a-memory-on-a-small-machine--the-one-real-ceiling)). The verdict then reports that you overrode it. |
@@ -3192,8 +3218,9 @@ the standardised successor to CRYSTALS‑Dilithium). Two rules make this honest:
   classical one is broken.)
 
 Private keys are encrypted at rest with AES‑256‑GCM under a scrypt‑derived key
-when `OO_KEY_PASSPHRASE` is set; otherwise they are written `0600` in the clear
-and the protection level is reported truthfully as `plaintext-0600`.
+when the app holds a passphrase (`OO_KEY_PASSPHRASE`, or else the database
+passphrase); otherwise they are written `0600` in the clear and the protection
+level is reported truthfully as `plaintext-0600`.
 
 #### 3. Custody log — `src/custody/log.py`
 An **append‑only** SQLite ledger. Each action (`ingest`, `access`, `export`,
