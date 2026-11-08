@@ -354,66 +354,42 @@ def _settings_path():
     return data_dir() / "scheduler_settings.json"
 
 
+def _store():
+    """The shared read side (src/config/settings_store.py); only the names below are this module's."""
+    from src.config.settings_store import SettingsStore
+
+    return SettingsStore(
+        kv_key=_KV_KEY,
+        file_name="scheduler_settings.json",
+        path_getter=lambda: _settings_path(),
+        refusal=SchedulerSettingsError,
+        damaged=_DamagedSchedulerSettingsError,
+        log=_LOG,
+        use_kv_hook=lambda: _use_kv(),
+        json_hook=lambda: _read_json_file(),
+    )
+
+
 def _use_kv() -> bool:
     """Use the encrypted ``app_state`` store at the DEFAULT location; honour a redirected
-    ``_settings_path`` (test isolation) as JSON instead. See app_settings._use_kv."""
-    from src.paths import data_dir
-
-    return _settings_path() == data_dir() / "scheduler_settings.json"
+    ``_settings_path`` (test isolation) as JSON instead."""
+    return _store().use_kv()
 
 
 def _read_json_file() -> dict | None:
-    path = _settings_path()
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text("utf-8"))
-    except Exception as exc:  # noqa: BLE001 - a bad file must not break startup
-        _LOG.warning("scheduler_settings.json unreadable; using defaults (%s)", type(exc).__name__)
-        return None
+    return _store().read_json_file()
 
 
 def _read_raw() -> dict | None:
-    """Scheduler prefs source of truth: the encrypted ``app_state`` row (D1), falling
-    back to (and one-time migrating) the legacy ``scheduler_settings.json`` file."""
-    if not _use_kv():
-        return _read_json_file()
-    from src.config.kv_store import kv_get_json, kv_set_json
-
-    raw = kv_get_json(_KV_KEY)
-    if raw is not None:
-        return raw
-    raw = _read_json_file()
-    if raw is None:
-        return None
-    try:
-        kv_set_json(_KV_KEY, raw)
-    except Exception as exc:  # noqa: BLE001 - migration is best-effort; retried next load
-        _LOG.debug("scheduler_settings migration into app_state deferred (%s)", type(exc).__name__)
-    return raw
+    """Preferences source of truth: the encrypted ``app_state`` row (D1), falling back to
+    (and one-time migrating) the legacy ``scheduler_settings.json`` file."""
+    return _store().read_raw()
 
 
 def _read_raw_strict() -> dict | None:
     """``_read_raw`` for a caller that will REWRITE what it read: a stored row that cannot be read raises SchedulerSettingsError (the class only)
     instead of reading as the defaults, because saving the defaults back over the user's settings is the loss this prevents."""
-    if not _use_kv():
-        return _read_json_file()
-    from src.config.kv_store import is_damaged, kv_get_json_strict, kv_set_json, refusal_text
-
-    try:
-        raw = kv_get_json_strict(_KV_KEY)
-    except Exception as exc:  # noqa: BLE001 - refused, by class
-        raise (_DamagedSchedulerSettingsError if is_damaged(exc) else SchedulerSettingsError)(refusal_text(exc)) from None
-    if raw is not None:
-        return raw
-    raw = _read_json_file()
-    if raw is None:
-        return None
-    try:
-        kv_set_json(_KV_KEY, raw)
-    except Exception as exc:  # noqa: BLE001 - migration is best-effort; retried next load
-        _LOG.debug("scheduler_settings migration into app_state deferred (%s)", type(exc).__name__)
-    return raw
+    return _store().read_raw_strict()
 
 
 def _coerce_int(value, fallback: int, lo: int, hi: int) -> int:
