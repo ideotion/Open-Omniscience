@@ -603,3 +603,47 @@ def test_without_the_library_a_moved_mldsa_key_that_does_not_read_back_is_not_wr
     assert [e["name"] for e in out["not_placed"]] == [CUSTODY_ML], out
     assert "did not read back as the same key" in out["not_placed"][0]["reason"]
     assert not (live / CUSTODY_ML).exists()
+
+
+def test_no_passphrase_or_key_byte_reaches_a_log_an_exception_or_the_report_on_the_failure_paths(tmp_path, monkeypatch, caplog):
+    """The passphrase rule on every way the step can end badly: a key no passphrase opens, a read-back that fails, a
+    pair half refused, and a write that raises. Nothing the step logs, raises or reports holds a passphrase or key bytes."""
+    import logging
+    import traceback
+
+    from src.backup.import_reports import render_import_report_markdown
+    from src.custody import keyfile
+
+    caplog.set_level(logging.DEBUG)
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", False)
+    _hold(monkeypatch, HERE)
+    ed = Ed25519PrivateKey.generate()
+    ml = os.urandom(140)
+    carried = {
+        EVIDENCE: _wrapped(Ed25519PrivateKey.generate(), "a-passphrase-nobody-gave-the-restore"),
+        CUSTODY_ED: _wrapped(ed, SOURCE),
+        CUSTODY_ML: os.urandom(200),  # refused, so its pair half is refused too
+    }
+    staged, _live = _stage(tmp_path, carried, SOURCE, BACKUP)
+    report = merge.merge_side_files(staged)
+    texts = [json.dumps(report, default=str), render_import_report_markdown({"outcome": "ok", "side_files": report}), caplog.text]
+
+    staged2, _live2 = _stage(tmp_path / "second", {"keys/annotations_ml_dsa_65.key": signing.seal_mldsa_key(ml, b"", SOURCE.encode())}, SOURCE)
+
+    def the_disk_refuses(path, data):
+        raise OSError(28, "No space left on device", str(path))
+
+    monkeypatch.setattr(keyfile, "create_new", the_disk_refuses)
+    monkeypatch.delenv("OO_KEY_PASSPHRASE")  # nothing held: the bytes handed to the write are the key itself, the worst case
+    with pytest.raises(OSError) as raised:
+        merge.merge_side_files(staged2)
+    texts.append("".join(traceback.format_exception(raised.value)))
+    texts.append(caplog.text)
+
+    secrets = [SOURCE, BACKUP, HERE, "a-passphrase-nobody-gave-the-restore"]
+    key_bytes = [_seed(ed), ml]
+    for text in texts:
+        for secret in secrets:
+            assert secret not in text
+        for kb in key_bytes:
+            assert kb.hex() not in text and repr(kb)[2:-1] not in text
