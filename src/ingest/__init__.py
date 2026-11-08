@@ -41,7 +41,7 @@ import requests
 
 # Importing urllib3_log puts the request-path filter on urllib3's loggers (R142).
 from src.ingest import urllib3_log as _urllib3_log  # noqa: F401
-from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL, KILL_SWITCH_REFUSAL_HEAD
+from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL, KILL_SWITCH_REFUSAL_HEAD, failure_url
 from src.ingest.ssrf_guard import (
     BlockedConnectTarget,
     connect_scope,
@@ -1180,7 +1180,8 @@ class EthicalFetcher:
                         url, extra_headers=extra_headers, proxies=iso_proxies
                     )
                 except requests.RequestException as exc:
-                    transient = FetchFailed(f"request error for {url}: {record_text(exc, typed=False)}")
+                    # the URL through failure_url: a link holding spaces must not continue in the guard's words (R616)
+                    transient = FetchFailed(f"request error for {failure_url(url)}: {record_text(exc, typed=False)}")
                 finally:
                     with self._host_state_guard:
                         self._last_request[parsed.netloc] = self._now()
