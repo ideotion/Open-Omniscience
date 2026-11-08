@@ -1,4 +1,4 @@
-"""Helpers that several modules used to carry as byte-identical private copies (audit A-036).
+"""Helpers that several modules used to carry as private copies (audit A-036).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -8,15 +8,19 @@ close an import cycle (``src.utils`` imports bleach and the secret scrubber, whi
 for a monitoring or ingest module to take on for a 14-line recursion).
 
 Add a helper here only when two or more modules would otherwise hold the same body. Behaviour
-is exactly what each copy did: the folding is a move, not a change
+is exactly what each copy did (a copy that differed only in a name, a constant or a docstring
+was folded; one that differed in behaviour was not): the folding is a move, not a change
 (``tests/test_shared_helpers_folded.py`` pins both halves).
 """
 
 from __future__ import annotations
 
+import json
+import os
 import statistics
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 
@@ -64,3 +68,47 @@ def snapshot_or_unavailable(snapshot: Callable[[], dict]) -> dict:
         return snapshot()
     except Exception as exc:  # noqa: BLE001 - the pass is written without the figures, saying so
         return {"unavailable": type(exc).__name__}
+
+
+def import_owns_the_machine() -> bool:
+    """True while an import run holds the exclusive window. Best-effort: an
+    unreadable scheduler must never park this job forever."""
+    try:
+        from src.scheduler.runner import exclusive_window_open
+
+        return exclusive_window_open()
+    except Exception:  # noqa: BLE001 - a courtesy check is never load-bearing
+        return False
+
+
+def rss_mb() -> float | None:
+    try:
+        import psutil
+
+        return round(psutil.Process().memory_info().rss / (1024 * 1024), 1)
+    except Exception:  # noqa: BLE001 - RSS is best-effort
+        return None
+
+
+def read_jsonl_tail(path: Path, limit: int) -> list[dict]:
+    """The last ``limit`` lines of a JSON-lines file that parse (a torn or foreign line is skipped); ``[]`` when the file is missing."""
+    if not path.exists():
+        return []
+    lines = path.read_text(encoding="utf-8").splitlines()[-limit:]
+    out = []
+    for ln in lines:
+        try:
+            out.append(json.loads(ln))
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
+def tri_state(env_name: str) -> str:
+    """'forced-on' for ``1``, 'forced-off' for ``0``, else 'auto': how a serve is decided from one environment variable."""
+    env = os.getenv(env_name)
+    if env == "1":
+        return "forced-on"
+    if env == "0":
+        return "forced-off"
+    return "auto"
