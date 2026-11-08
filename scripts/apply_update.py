@@ -233,7 +233,17 @@ def apply(plan: dict, *, git=_git, run=_run) -> tuple[str, str]:
         # The old window's launcher wrapper may still be finishing after the server's process exited, and cmd.exe resumes launch.cmd by byte
         # offset when it returns: give it a moment before the checkout (and so launch.cmd) can change; the console-script .exe is freed too.
         time.sleep(5)
-    if git(root, "merge", "--ff-only", sha).returncode != 0:
+    # Clean AGAIN, right before the swap: the fetch can take minutes, and an edit made meanwhile must stop the update rather than meet the
+    # reset below (which would discard it).
+    dirty = git(root, "status", "--porcelain")
+    if dirty.returncode != 0 or dirty.stdout.strip():
+        return "local_changes", old
+    merged = git(root, "merge", "--ff-only", sha)
+    if merged.returncode != 0:
+        if merged.returncode == 124:
+            # killed by the timeout mid-checkout: its index lock is stale (this helper holds update.lock, so no other git of ours runs here)
+            with contextlib.suppress(OSError):
+                (root / ".git" / "index.lock").unlink()
         # git writes the new files one by one BEFORE it moves HEAD: a merge that stopped part-way (a file held open, a path too long, the
         # timeout) leaves some files new under the old HEAD. Put the tree back; safe, as it was clean and HEAD is still the old commit.
         if git(root, "reset", "--hard", old).returncode != 0:
@@ -410,7 +420,8 @@ def main(argv: list[str]) -> int:
         root = Path(plan["root"])
         return _main(plan_path, plan, data_dir, root)
     except Exception:  # noqa: BLE001 - the one place that must not let any failure leave the app down
-        write_result(plan, "helper_failed", "", data_dir)
+        if not plan.get("_applied"):
+            write_result(plan, "helper_failed", "", data_dir)  # after the swap the result already written says what happened: kept
         pid = _pid(plan)
         if not plan.get("_relaunched") and (not pid or wait_for_exit(pid)) and not server_answers(_port(plan)):
             relaunch(root)
@@ -460,6 +471,7 @@ def _main(plan_path: Path, plan: dict, data_dir: Path, root: Path) -> int:
             return 1
         status, old = apply(plan)
         write_result(plan, status, old, data_dir)
+        plan["_applied"] = status
         with contextlib.suppress(OSError):
             plan_path.unlink()
         if status == "updated" and server_answers(port):

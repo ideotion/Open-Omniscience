@@ -845,3 +845,45 @@ def test_the_last_resort_handler_never_starts_a_second_launcher(tmp_path, monkey
     monkeypatch.setattr(h, "relaunch", lambda root, **k: launched.append(root) or _Proc(None))
     monkeypatch.setattr(h, "watch_start", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
     assert h.main(["x", str(plan)]) == 1 and len(launched) == 1
+
+
+def test_an_edit_made_during_the_fetch_stops_the_update_and_is_kept(repos):
+    inst, _work, sha = repos
+    h = _helper()
+    old = _g(inst, "rev-parse", "HEAD")
+
+    def git(root, *args, **k):
+        out = h._git(root, *args, **k)
+        if args[:1] == ("fetch",):
+            (inst / "a.txt").write_text("my unsaved edit", encoding="utf-8")
+        return out
+
+    assert h.apply(_plan(inst, sha), git=git)[0] == "local_changes"
+    assert (inst / "a.txt").read_text(encoding="utf-8") == "my unsaved edit" and _g(inst, "rev-parse", "HEAD") == old
+
+
+def test_a_merge_killed_by_the_timeout_clears_its_stale_lock_and_puts_the_tree_back(repos):
+    inst, _work, sha = repos
+    h = _helper()
+    old = _g(inst, "rev-parse", "HEAD")
+
+    def git(root, *args, **k):
+        if args[:1] == ("merge",):
+            (inst / "a.txt").write_text("half-written", encoding="utf-8")
+            (inst / ".git" / "index.lock").write_text("", encoding="utf-8")
+            return subprocess.CompletedProcess([], 124, "", "timeout")
+        return h._git(root, *args, **k)
+
+    assert h.apply(_plan(inst, sha), git=git)[0] == "not_a_fast_forward"
+    assert not (inst / ".git" / "index.lock").exists() and _g(inst, "status", "--porcelain") == "" and _g(inst, "rev-parse", "HEAD") == old
+
+
+def test_a_failure_after_the_swap_keeps_the_result_it_already_wrote(tmp_path, monkeypatch):
+    h = _helper()
+    plan = _plan_file(tmp_path)
+    monkeypatch.setattr(h, "wait_for_exit", lambda pid, *a, **k: True)
+    monkeypatch.setattr(h, "server_answers", lambda port: False)
+    monkeypatch.setattr(h, "apply", lambda plan, **k: ("updated", SHA_A))
+    monkeypatch.setattr(h, "relaunch", lambda root, **k: _Proc(None))
+    monkeypatch.setattr(h, "watch_start", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert h.main(["x", str(plan)]) == 1 and _result(tmp_path, h) == "updated"
