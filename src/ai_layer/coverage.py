@@ -97,8 +97,8 @@ def fixed_serving_window(tokens: int | None, source: str) -> Iterator[None]:
     the shared cache was cold, so whether a self-test opened a socket depended on what ran in the
     five minutes before it (found by tests/test_get_routes_side_effects.py, 2026-11-08)."""
     prev = getattr(_pinned, "window", None)
-    _pinned.window = {"tokens": tokens, "source": source, "backend": None}
     try:
+        _pinned.window = {"tokens": tokens, "source": source, "backend": None}
         yield
     finally:
         _pinned.window = prev
