@@ -154,7 +154,9 @@ def test_a_rep_justification_really_has_a_materialise_rep_call() -> None:
         f"materialised reps {names} do not match the steps claiming 'rep'"
     )
     for n in names:
-        assert f"temp.{n} rep ON rep.rep_id = i.id" in _SRC, (
+        # unqualified: it resolves to temp on the in-RAM path and to the encrypted scratch
+        # database on the low-memory one (_materialise_rep_in_scratch)
+        assert f" JOIN {n} rep ON rep.rep_id = i.id" in _SRC, (
             f"{n} is materialised but not joined on rep_id = i.id"
         )
 
