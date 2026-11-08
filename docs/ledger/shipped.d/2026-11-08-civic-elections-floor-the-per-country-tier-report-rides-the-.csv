@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-08,civic/elections-floor,the per-country tier report rides the network-free /elections-floor diagnostics answer,shipped (draft),PR #1829,src/api/diagnostics/system.py; tests/test_elections_coverage_floor.py,"elections_coverage_floor() now adds tier_report = country_tier_report(load_events(), floor countries) beside floor_coverage(); read-only, no network, counts and tiers only; a test pins that the report agrees with covered/missing. The Agenda UI for it is a later PR."
