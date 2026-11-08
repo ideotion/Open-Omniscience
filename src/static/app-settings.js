@@ -2112,6 +2112,7 @@
           let say = "";
           if (r && (r.status === "updated" || r.status === "already_current")) say = t("The last update was installed.");
           else if (r && (r.status === "started" || r.status === "helper_failed")) say = t("The last update did not finish. If the app misbehaves, re-run the installer.");
+          else if (r && r.status === "start_failed_rolled_back_schema") say = t("The new version did not start, so the update was undone and the previous version started again. That version also changes the database, and may already have done so before failing: if the app misbehaves, restore your last backup or re-run the installer on the new version.");
           else if (r && r.status === "start_failed_rolled_back") say = t("The new version did not start, so the update was undone and the previous version started again.");
           else if (r && r.status === "dependencies_changed") say = t("The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).");
           else if (r && r.status === "app_started_during_update") say = t("The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.");

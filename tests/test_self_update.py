@@ -889,3 +889,70 @@ def test_a_failure_after_the_swap_keeps_the_result_it_already_wrote(tmp_path, mo
     monkeypatch.setattr(h, "relaunch", lambda root, **k: _Proc(None))
     monkeypatch.setattr(h, "watch_start", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
     assert h.main(["x", str(plan)]) == 1 and _result(tmp_path, h) == "updated"
+
+
+def test_airplane_mode_switched_on_during_the_checks_still_stops_the_spawn(monkeypatch):
+    from src.ingest import activate_kill_switch, clear_kill_switch
+
+    started: list = []
+    _checked_for_apply(monkeypatch, started)
+    _standard_settings(monkeypatch)
+    real_validate = su.validate_apply
+
+    def validate_then_go_offline(*a, **k):
+        out = real_validate(*a, **k)
+        activate_kill_switch()  # the operator engages airplane mode while the git reads run
+        return out
+
+    monkeypatch.setattr(su, "validate_apply", validate_then_go_offline)
+    try:
+        with pytest.raises(su.AirplaneRefused):
+            su.begin_apply("v0.6.0", SHA_B)
+    finally:
+        clear_kill_switch()
+    assert started == [] and su._APPLYING is None
+
+
+def test_a_rollback_never_resets_a_checkout_somebody_changed_since(repos):
+    inst, _work, sha = repos
+    h = _helper()
+    old = _g(inst, "rev-parse", "HEAD")
+    assert h.apply(_plan(inst, sha))[0] == "updated"
+    (inst / "a.txt").write_text("edited while the new version ran", encoding="utf-8")
+    assert h.roll_back(inst, old, ["a.txt"], "py", new=sha) is False
+    assert (inst / "a.txt").read_text(encoding="utf-8") == "edited while the new version ran" and _g(inst, "rev-parse", "HEAD") == sha
+    _g(inst, "checkout", "-q", "a.txt")
+    _g(inst, "checkout", "-q", "-b", "side")
+    assert h.roll_back(inst, old, ["a.txt"], "py", new=sha) is False and _g(inst, "rev-parse", "--abbrev-ref", "HEAD") == "side"
+    _g(inst, "checkout", "-q", "main")
+    assert h.roll_back(inst, old, ["a.txt"], "py", new=sha) is True and _g(inst, "rev-parse", "HEAD") == old
+
+
+def test_a_failed_start_that_adds_a_migration_says_the_schema_may_have_moved(tmp_path, monkeypatch):
+    h = _helper()
+    plan = _plan_file(tmp_path)
+    monkeypatch.setattr(h, "wait_for_exit", lambda pid, *a, **k: True)
+    monkeypatch.setattr(h, "server_answers", lambda port: False)
+    monkeypatch.setattr(h, "apply", lambda plan, **k: ("updated", SHA_A))
+    monkeypatch.setattr(h, "relaunch", lambda root, **k: _Proc(1))
+    monkeypatch.setattr(h, "watch_start", lambda *a, **k: "exited")
+    monkeypatch.setattr(h, "changed_files", lambda root, old, new, **k: ["migrations/versions/abc123_add.py"])
+    seen: list = []
+    monkeypatch.setattr(h, "roll_back", lambda root, old, changed, py, **k: seen.append(k.get("new")) or True)
+    assert h.main(["x", str(plan)]) == 1 and _result(tmp_path, h) == "start_failed_rolled_back_schema"
+    assert seen == [SHA_B]  # the rollback is told which commit it must find before it resets anything
+    from tests.js_source_helper import function_body, read_static
+
+    assert '"start_failed_rolled_back_schema"' in function_body(read_static("app-settings.js"), "updLoadStatus")
+
+
+def test_a_timed_out_merge_lock_is_left_alone_on_windows():
+    import ast
+
+    src = (ROOT / "scripts" / "apply_update.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    guarded = [
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.If) and "index.lock" in ast.get_source_segment(src, n) and 'os.name != "nt"' in ast.get_source_segment(src, n.test)
+    ]
+    assert guarded, "the stale-lock removal must not run on Windows"

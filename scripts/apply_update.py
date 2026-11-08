@@ -24,10 +24,10 @@ Steps, each of which refuses by leaving the install exactly as it was:
 7. start the launcher again and watch it: when the launcher exits before the app ever answers on its port, the update is undone the same way
    (``start_failed_rolled_back``) and the launcher started once more on the old version. On Windows the launcher is started with
    ``OO_UPDATE_WATCH`` so its window ends with the server instead of waiting for a key (``scripts/launch.cmd``, which clears it before the
-   server starts), and a window the person CLOSED (``STATUS_CONTROL_C_EXIT``) is their stop, never undone. A new version that migrated the
-   database before failing is rolled back onto that database: the old code then runs on the newer schema, which works only as far as that
-   migration added rather than changed (stated, not checked here); the result says the start failed, and re-running the installer on the new
-   version is the way forward; write ``update-result.json`` in the data directory (read by Settings -> Advanced after the restart).
+   server starts), and a window the person CLOSED (``STATUS_CONTROL_C_EXIT``) is their stop, never undone. A new version that adds a migration
+   (``migrations/versions/``) may have run it before failing: it is still rolled back (a down app shows no message at all) and the result
+   is ``start_failed_rolled_back_schema``, so Settings says to restore the last backup or re-run the installer if the app misbehaves. Every
+   reset runs only while the checkout is still exactly as this helper left it (:func:`checkout_is`); write ``update-result.json`` in the data directory (read by Settings -> Advanced after the restart).
 
 Every child (git, pip, the launcher) runs WITHOUT the passphrase variables (``SECRET_ENV``): the server already starts this helper without
 them, and this strips them again, so a start that handed the app ``OO_DB_PASSPHRASE`` comes back locked. On Windows, git and pip run with no
@@ -190,10 +190,27 @@ def changed_files(root: Path, old: str, new: str, *, git=_git) -> list[str]:
     return git(root, "diff", "--name-only", f"{old}..{new}").stdout.split()
 
 
-def roll_back(root: Path, old: str, changed: list[str], py: str, *, git=_git, run=_run) -> bool:
-    """Put the checkout back on ``old`` (safe: it was clean and only this helper moved it) and, when ``pyproject.toml`` had changed, try its
-    metadata too (best effort: it only names the version; when it fails the version shown lags until the installer is re-run). No package
-    was installed by the update, so there is no environment to restore. False when the checkout could not be put back."""
+def checkout_is(root: Path, head: str, *, git=_git) -> bool:
+    """The checkout is still exactly where this helper left it: HEAD is ``head``, on ``main``, with nothing changed in the tree. Asked
+    before every reset, so a reset can never discard an edit, or move a branch, that somebody else made since."""
+    now = git(root, "rev-parse", "HEAD")
+    branch = git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    dirty = git(root, "status", "--porcelain")
+    return (
+        now.returncode == 0 and now.stdout.strip() == head
+        and branch.returncode == 0 and branch.stdout.strip() == "main"
+        and dirty.returncode == 0 and not dirty.stdout.strip()
+    )
+
+
+def roll_back(root: Path, old: str, changed: list[str], py: str, *, new: str = "", git=_git, run=_run) -> bool:
+    """Put the checkout back on ``old`` and, when ``pyproject.toml`` had changed, try its metadata too (best effort: it only names the
+    version; when it fails the version shown lags until the installer is re-run). No package was installed by the update, so there is no
+    environment to restore. ONLY while the checkout is still exactly as the update left it (``new``, on ``main``, clean): an edit or a
+    branch switch made since (the new version may have run for many minutes) is never reset; False then, the tree untouched, and False
+    when the reset itself failed."""
+    if new and not checkout_is(root, new, git=git):
+        return False
     if git(root, "reset", "--hard", old).returncode != 0:
         return False
     if "pyproject.toml" in changed:
@@ -240,10 +257,16 @@ def apply(plan: dict, *, git=_git, run=_run) -> tuple[str, str]:
         return "local_changes", old
     merged = git(root, "merge", "--ff-only", sha)
     if merged.returncode != 0:
-        if merged.returncode == 124:
-            # killed by the timeout mid-checkout: its index lock is stale (this helper holds update.lock, so no other git of ours runs here)
+        if merged.returncode == 124 and os.name != "nt":
+            # killed by the timeout mid-checkout: on POSIX the killed git is reaped before this line, so its index lock is stale (and this
+            # helper holds update.lock, so no other git of ours runs here). NOT on Windows: killing Git for Windows' cmd\git.exe wrapper can
+            # leave the real git running and holding that lock, so it is left alone and the reset below fails: rollback_incomplete, said.
             with contextlib.suppress(OSError):
                 (root / ".git" / "index.lock").unlink()
+        head = git(root, "rev-parse", "HEAD")
+        branch = git(root, "rev-parse", "--abbrev-ref", "HEAD")
+        if head.stdout.strip() != old or branch.stdout.strip() != "main":
+            return "rollback_incomplete", old  # not where this helper left it: reset nothing
         # git writes the new files one by one BEFORE it moves HEAD: a merge that stopped part-way (a file held open, a path too long, the
         # timeout) leaves some files new under the old HEAD. Put the tree back; safe, as it was clean and HEAD is still the old commit.
         if git(root, "reset", "--hard", old).returncode != 0:
@@ -253,19 +276,22 @@ def apply(plan: dict, *, git=_git, run=_run) -> tuple[str, str]:
     if "pyproject.toml" in changed:
         py = plan.get("python") or sys.executable
         if not refresh_metadata(root, py, run):
-            return ("install_failed_rolled_back" if roll_back(root, old, changed, py, git=git, run=run) else "rollback_incomplete"), old
+            ok = roll_back(root, old, changed, py, new=sha, git=git, run=run)
+            return ("install_failed_rolled_back" if ok else "rollback_incomplete"), old
     return "updated", old
 
 
 def server_answers(port: int) -> bool:
-    """Something is listening on the app's loopback port (a TCP connect, no request sent)."""
+    """Something is listening on the app's loopback port (a TCP connect, no request sent), on IPv4 or IPv6 loopback (``OO_HOST=::1``)."""
     import socket
 
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=2):
-            return True
-    except OSError:
-        return False
+    for host in ("127.0.0.1", "::1"):
+        try:
+            with socket.create_connection((host, port), timeout=2):
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def wait_for_server(port: int, limit: float = 120.0, *, answers=server_answers, sleep=time.sleep) -> bool:
@@ -485,8 +511,11 @@ def _main(plan_path: Path, plan: dict, data_dir: Path, root: Path) -> int:
             if started == "exited" and not server_answers(port):
                 # The new version did not come up: undo it and start the old one, which ran a minute ago.
                 changed = changed_files(root, old, plan["sha"])
-                ok = roll_back(root, old, changed, plan.get("python") or sys.executable)
-                status = "start_failed_rolled_back" if ok else "rollback_incomplete"
+                ok = roll_back(root, old, changed, plan.get("python") or sys.executable, new=plan["sha"])
+                # A new version that adds a migration may already have run it before failing: the old code then starts on a newer schema.
+                # It is still started (a down app shows no message at all), and the result names that case so Settings can say so.
+                schema = any(f.startswith("migrations/versions/") for f in changed)
+                status = ("start_failed_rolled_back_schema" if schema else "start_failed_rolled_back") if ok else "rollback_incomplete"
                 write_result(plan, status, old, data_dir)
                 relaunch(root)
             elif started == "unknown":
