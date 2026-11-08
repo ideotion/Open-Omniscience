@@ -214,3 +214,25 @@ def test_server_that_compresses_despite_identity_is_named(monkeypatch):
     resp = _Closing([_TEXT_PDF], {"Content-Length": "10", "Content-Encoding": "gzip"})
     with pytest.raises(ValueError, match="compressed"):
         ipcc_spm.fetch_spm("wg1", get=lambda u: resp)
+
+
+def test_response_is_closed_when_raise_for_status_fails(monkeypatch):
+    monkeypatch.setattr(ipcc_spm, "kill_switch_active", lambda: False)
+
+    class _BadClosing(_Closing):
+        def raise_for_status(self):
+            raise RuntimeError("HTTP 404")
+
+    resp = _BadClosing([], {"Content-Length": "1"})
+    with pytest.raises(RuntimeError, match="404"):
+        ipcc_spm.fetch_spm("wg1", get=lambda u: resp)
+    assert resp.closed
+
+
+def test_server_chosen_encoding_text_is_bounded_and_printable(monkeypatch):
+    monkeypatch.setattr(ipcc_spm, "kill_switch_active", lambda: False)
+    hostile = "gz\x00ip\n" + "x" * 500
+    resp = _Closing([_TEXT_PDF], {"Content-Length": "10", "Content-Encoding": hostile})
+    with pytest.raises(ValueError, match="compressed") as exc:
+        ipcc_spm.fetch_spm("wg1", get=lambda u: resp)
+    assert len(str(exc.value)) < 200 and "\x00" not in str(exc.value) and "\n" not in str(exc.value)

@@ -1061,7 +1061,7 @@ def test_an_encrypted_file_with_damaged_pages_is_salvaged_into_an_encrypted_file
     tmp_path, enc_pristine, key_held, caplog
 ):
     src = _fresh(tmp_path, enc_pristine)
-    bad_pages = H.damage_encrypted_pages(src, count=3)
+    bad_pages = H.damage_encrypted_table(src, "articles", count=3, key=H.KEY)
     before = H.sha(src)
     events: list[dict] = []
     with caplog.at_level(logging.DEBUG):
