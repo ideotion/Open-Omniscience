@@ -6592,10 +6592,10 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
     is NOT written, and is reported by name with the reason: it stays in the backup, and a key placed where it
     cannot be opened is worse than none (the next export makes a new key; the import report says so).
 
-    Stated limits: the two files of a pair are placed one after the other, so a signer that starts in between can
-    still meet one placed half; and the custody signer creates its ML-DSA file without refusing an existing one, so
-    "restored" says what the restore wrote, not what a signer did to the file afterwards. An ``OSError`` writing a
-    key leaves the stage, as it always did: the import fails before the live corpus is touched.
+    A stated limit: the two files of a pair are placed one after the other, so a signer that starts in between can
+    still meet one placed half and make the missing one itself. It makes it with the same refusing create, so neither
+    overwrites the other: the restore names the half it lost as ``kept_local`` and places no more of that pair. An
+    ``OSError`` writing a key leaves the stage, as it always did: the import fails before the live corpus is touched.
     """
     from src.custody.signing import SigningError
     from src.custody.signing import _passphrase as held_key_passphrase
