@@ -1281,7 +1281,8 @@ artifacts:
     freshness: {policy: track-duckdb-version}
     # No `reviewed_through` here on purpose: under track-duckdb-version, lagging upstream is
     # NOT a legitimate steady state (unlike an on-security artifact), so `current` moves only
-    # when the coupling is actually re-verified -- as it was, at 1.5.5, on 2026-08-22.
+    # when the coupling is actually re-verified -- as it was, at 1.5.5, on 2026-08-22, and at
+    # 2.0.0 on 2026-11-08.
     upstream_check: {github: "duckdb/duckdb", type: release, current: "v2.0.0"}
     platforms: [linux_amd64, linux_arm64, osx_amd64, osx_arm64, windows_amd64]
     couplings:
@@ -1306,7 +1307,12 @@ artifacts:
     #     bundled binary must be built for 2.0. Not run here: an ENCRYPTED 1.5 file opened by
     #     2.0 (needs a real httpfs; extensions.duckdb.org is CONNECT-refused from the sandbox).
     #     If it fails to attach, the any-open-failure path deletes it and goes in-memory.
-    #   * THE FLOOR stays 1.4, no ceiling (R392: the user ruled duckdb no ceiling, 2.0 compat).
+    #   * THE FLOOR stays 1.4, no ceiling (item (29), closed by R412: no ceiling, a duckdb<2
+    #     leg; 2.0.0 acked for this lane by R595). STORE_SCHEMA_VERSION stays 1: no table
+    #     shape changed.
+    #   * CHECKLIST (EXTERNAL_DEPENDENCIES.md): steps 1, 2 and 6 stay OPEN (no per-OS httpfs
+    #     binaries; blank by design); step 3 was run on linux_amd64 CI only; step 4 on a
+    #     plaintext 1.5 file only; step 5 done (floor unchanged, `verified` moved).
     last_verified: "2026-11-08"
 
   - id: duckdb-httpfs-extension
