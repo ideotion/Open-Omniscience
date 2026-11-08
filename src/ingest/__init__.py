@@ -641,7 +641,7 @@ _KILL = threading.Event()
 #: one a reader captured. The window a reader asks about is everything between its capture and its question,
 #: waits included (a host lock, a Crawl-delay, a retry back-off), not only the bytes on the wire.
 _KILL_EPOCH = 0
-# Re-entrant: a signal handler that engaged the switch while this thread held the lock must not deadlock it.
+# Re-entrant, so a future signal handler that engages the switch cannot deadlock a thread holding it.
 _KILL_EPOCH_LOCK = threading.RLock()
 
 
@@ -1781,6 +1781,7 @@ class EthicalFetcher:
         except (requests.RequestException, FetchError) as exc:
             # The switch's own refusal, by its sentence: engaged before the capture, it refused this read by
             # name, and a clear may land before this line, so neither the switch nor the count says so now.
+            # A wider match here could only skip a cache write (the host is asked again), never cause a fetch.
             refused_by_name = isinstance(exc, FetchError) and str(exc).startswith(KILL_SWITCH_REFUSAL_HEAD)
             if refused_by_name or kill_switch_engaged_since(epoch):
                 # A refusal BY THE SWITCH, or a request cut off by it mid-flight (the socket

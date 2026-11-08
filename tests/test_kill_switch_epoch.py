@@ -223,21 +223,40 @@ def test_a_stop_pressed_before_the_robots_read_and_cleared_after_its_refusal_cac
     assert _sidecar(tmp_path) == {}
 
 
-def test_a_clear_waits_for_an_engagement_to_be_counted():
+def test_a_clear_waits_for_an_engagement_to_be_counted(monkeypatch):
     """The set and the count are one step as far as a clear is concerned: a clear can never land between them, where
-    a reader would see the switch clear and the count unchanged (the read of R614's PR reproduced that window)."""
+    a reader would see the switch clear and the count unchanged (the read of R614's PR reproduced that window).
+
+    Driven through the real ``activate_kill_switch()``: its ``set()`` is held open on one thread while
+    ``clear_kill_switch()`` runs on another, and the clear must not finish before the engagement is counted."""
     from src import ingest
 
+    entered, release = threading.Event(), threading.Event()
+
+    class _HeldSet(threading.Event):
+        def set(self) -> None:
+            super().set()
+            entered.set()
+            release.wait(5)  # the engagement stays between its set and its count until the test lets it go
+
+    monkeypatch.setattr(ingest, "_KILL", _HeldSet())
     before = kill_switch_epoch()
+    engage = threading.Thread(target=activate_kill_switch, name="epoch-test-engage")
+    engage.start()
+    assert entered.wait(5), "activate_kill_switch never reached the switch's set()"
     cleared = threading.Event()
-    with ingest._KILL_EPOCH_LOCK:  # stands for an engagement between its set and its count
-        ingest._KILL.set()
-        t = threading.Thread(target=lambda: (clear_kill_switch(), cleared.set()), name="epoch-test-clear")
-        t.start()
+    clear = threading.Thread(target=lambda: (clear_kill_switch(), cleared.set()), name="epoch-test-clear")
+    clear.start()
+    try:
         assert not cleared.wait(0.2), "a clear went through between an engagement's set and its count"
-        ingest._KILL_EPOCH += 1
-    t.join(5)
-    assert cleared.is_set() and not kill_switch_active()
+        assert kill_switch_epoch() == before, "the count moved before the set returned"
+    finally:
+        release.set()
+        engage.join(5)
+        clear.join(5)
+    assert cleared.is_set(), "the clear finished once the engagement was counted"
+    assert kill_switch_epoch() == before + 1
+    assert not kill_switch_active(), "the clear came after the engagement"
     assert kill_switch_engaged_since(before)
 
 
