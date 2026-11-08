@@ -31,6 +31,7 @@ CRED_URL = "https://alice:hunter2@calendar.example/feed.ics"
 def _isolated_store(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     yield
+    F._READ_AS_DAMAGED.clear()  # the marks of a test's own folder go with it
 
 
 def _first_feed_ids(n: int) -> list[str]:
@@ -379,6 +380,14 @@ def test_a_store_cut_mid_character_reads_as_empty_and_is_on_the_record_instead_o
     assert "No" + "ël" not in caplog.text and "fp1" not in caplog.text, "no fragment of the store's text"
 
 
+def test_a_store_cut_mid_character_is_kept_byte_for_byte_before_the_next_save():
+    p = _store("calendar_feed_imports.json")
+    _cut_mid_character(p)
+    cut = p.read_bytes()
+    F.merge_imported_store("calendar_feed_imports.json", _NEW)
+    assert _kept("calendar_feed_imports.json").read_bytes() == cut
+
+
 def test_a_restore_merge_over_a_store_cut_mid_character_merges_instead_of_raising():
     _cut_mid_character(_store("calendar_feed_imports.json"))
     out = F.merge_imported_store("calendar_feed_imports.json", {"fam2": {"name": "G", "events": {"fp2": {"title": "new"}}}})
@@ -539,3 +548,41 @@ def test_a_null_sources_or_uids_reads_as_an_empty_list_so_the_restore_merge_does
     after = json.loads(_store("calendar_feed_imports.json").read_text("utf-8"))
     entry = after["user-f"]["events"]["x|2026-12-01"]
     assert entry["sources"] == ["b"] and entry["uids"] == ["u"]
+
+
+def test_a_store_replaced_after_the_damaged_read_is_not_moved():
+    """A reader that read the torn file can note its mark after another writer has already kept the bytes and written a healthy store: the
+    mark carries the identity of the file READ, so the healthy file that replaced it is never moved into the one ``.damaged`` slot."""
+    p = _store("calendar_feed_imports.json")
+    p.write_text(_TORN, "utf-8")
+    assert F._load_json("calendar_feed_imports.json") == {}
+    fresh = p.with_name("fresh.json")
+    fresh.write_text(json.dumps({"fam": {"name": "F", "events": {"fp1": {"title": "a later, healthy store"}}}}), "utf-8")
+    F.os.replace(fresh, p)  # what another writer's save does: a new file under the store's name
+    F._save_json("calendar_feed_imports.json", _NEW, mirror=False)
+    assert not _kept("calendar_feed_imports.json").exists()
+    assert p not in F._READ_AS_DAMAGED
+
+
+@pytest.mark.parametrize(("winerror", "kept"), [(23, True), (1117, True), (32, False)])
+def test_on_windows_a_bad_sector_marks_the_store_and_a_sharing_violation_does_not(monkeypatch, winerror, kept):
+    """CPython gives ERROR_CRC (23), ERROR_IO_DEVICE (1117) and a sharing violation (32) the same errno, EACCES: ``winerror`` tells damage from a passing lock."""
+    import errno
+    import pathlib
+
+    p = _store("calendar_feed_imports.json")
+    p.write_text("bytes on a bad sector", "utf-8")
+    real = pathlib.Path.read_text
+
+    def windows_error(self, *a, **k):
+        if self == p:
+            exc = PermissionError(errno.EACCES, "windows read error")
+            exc.winerror = winerror
+            raise exc
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", windows_error)
+    assert F._load_json("calendar_feed_imports.json") == {}
+    monkeypatch.setattr(pathlib.Path, "read_text", real)
+    F._save_json("calendar_feed_imports.json", _NEW, mirror=False)
+    assert _kept("calendar_feed_imports.json").exists() is kept
