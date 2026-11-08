@@ -19,8 +19,16 @@ permissions:
 # it unseen. Keying the exemption to `repository.default_branch` (not a hardcoded "0.09")
 # follows the same don't-rot-on-release-rename principle as the push trigger below; PRs
 # and feature-branch pushes still cancel their own superseded runs.
+# AND ONE GROUP PER COMMIT ON THE DEFAULT BRANCH (R612, 2026-11-08). cancel-in-progress
+# false stops a running main run being cancelled, but a concurrency group still holds only
+# ONE pending run: each new merge replaced the queued run of the merge before it, which
+# GitHub reports as "cancelled" (#1812, #1818 and #1824 on 2026-11-08, while runners were
+# queue-bound). Keying the default branch's group by github.sha gives every merge commit
+# its own group, so each one gets its own full run. Every other ref keeps one group per
+# ref, so a PR's new push still cancels its superseded run. Pinned by
+# tests/test_ci_concurrency.py.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref_name == github.event.repository.default_branch && github.sha || github.ref }}
   cancel-in-progress: ${{ github.ref_name != github.event.repository.default_branch }}
 
 on:
