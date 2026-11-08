@@ -1086,7 +1086,9 @@ def test_an_unreadable_engine_list_picks_it_for_any_src_change_and_says_so(repo:
 def test_a_deleted_identity_module_still_picks_the_pin_test(repo: Path) -> None:
     _with_engine(repo)
     git(repo, "rm", "-q", _IDENTITY)
+    write(repo, "src/analytics/other.py", "y = 1\n")  # not on the engine list: must NOT be picked
     commit(repo, "identity gone")
     p = plan(repo)
     assert _IDENTITY in p.indexer_pin and "src/analytics/equivalence.py" not in p.indexer_pin  # only what changed: the list is the base's
+    assert "src/analytics/other.py" not in p.indexer_pin and not any("could not be read" in n for n in p.notes)
     assert "tests/test_indexer_pin.py" in p.files()

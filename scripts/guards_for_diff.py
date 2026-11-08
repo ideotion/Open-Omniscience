@@ -296,7 +296,7 @@ def engine_modules(root: Path) -> list[str] | None:
     the tuple cannot be read as a literal, which the caller treats as "any src/ file may be an engine file"."""
     try:
         tree = ast.parse((root / _ENGINE_IDENTITY).read_text(encoding="utf-8"))
-    except (OSError, SyntaxError):
+    except (OSError, SyntaxError, ValueError):  # ValueError covers UnicodeDecodeError
         return None
     for node in tree.body:
         if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "ENGINE_MODULES" and node.value is not None:
@@ -328,7 +328,7 @@ def engine_changes(root: Path, base: str) -> tuple[list[str], list[str]]:
             (Path(scratch) / "src" / "analytics").mkdir(parents=True)
             (Path(scratch) / _ENGINE_IDENTITY).write_text(old_text, encoding="utf-8")
             old = engine_modules(Path(scratch))
-    except PlanError:
+    except (PlanError, UnicodeError):
         pass
     notes: list[str] = []
     if engine is None:
