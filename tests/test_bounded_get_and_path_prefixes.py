@@ -12,6 +12,7 @@ import requests
 from src.safety import fetcher
 from src.safety.fetcher import RedirectRefused, _checked_path_prefixes, refuse_unlisted_path
 from src.stats import fetch
+from src.stats.fetch import BodyTooLarge
 
 OWID = ("/owid/co2-data/", "/owid/energy-data/")
 
@@ -350,3 +351,84 @@ def test_on_a_real_session_the_kill_switch_stops_the_second_hop():
     finally:
         clear_kill_switch()
     assert calls == [BASE + "a.csv"], "the second hop was never sent"
+
+
+# --- the four official-statistics fetchers (R584) ----------------------------------------------------------------------------------------
+
+
+def test_the_statistics_fetchers_pin_their_directories_and_every_url_they_build_lies_under_them():
+    assert fetch.WORLDBANK_PATHS == ("/v2/",)
+    assert fetch.EUROSTAT_PATHS == ("/eurostat/api/dissemination/statistics/1.0/data/",)
+    assert fetch.OWID_GRAPHER_PATHS == ("/grapher/",)
+    refuse_unlisted_path(fetch.worldbank_url("NY.GDP.MKTP.CD", "all", per_page=500, page=3), fetch.WORLDBANK_PATHS)
+    refuse_unlisted_path(fetch.eurostat_url("prc_hicp_midx", {"geo": "FR"}), fetch.EUROSTAT_PATHS)
+    refuse_unlisted_path(fetch.owid_grapher_url("co2-emissions-per-capita"), fetch.OWID_GRAPHER_PATHS)
+    # another tenant of the same host is refused: the Eurostat host serves the whole Commission
+    with pytest.raises(RedirectRefused):
+        refuse_unlisted_path("https://ec.europa.eu/other/service", fetch.EUROSTAT_PATHS)
+
+
+def test_the_statistics_bounds_derive_from_each_requests_own_shape():
+    assert fetch.worldbank_max_chars(1000) > fetch.worldbank_max_chars(100) > 100 * fetch.WORLDBANK_OBSERVATION_ALLOWANCE
+    assert fetch.worldbank_max_chars(0) > 0  # a nonsense page size still yields a bound, never an unbounded read
+    assert fetch.eurostat_max_chars() > fetch.EUROSTAT_VALUES_PER_QUERY * fetch.EUROSTAT_CELL_ALLOWANCE
+    assert fetch.owid_grapher_max_chars(2027) > fetch.owid_grapher_max_chars(2026)  # grows with the calendar
+    assert fetch.jsonstat_max_chars(10_000) > fetch.jsonstat_max_chars(100) > 100 * fetch.JSONSTAT_CELL_ALLOWANCE
+    # a real-sized answer sits well inside each bound
+    assert fetch.worldbank_max_chars(1000) > 1000 * 300
+    assert fetch.owid_grapher_max_chars() > 266 * 65 * 100
+
+
+def test_the_statistics_getters_build_their_session_with_their_own_lists_and_scale(monkeypatch):
+    built: list[dict] = []
+    bounded: list[int] = []
+
+    def factory(**kw):
+        built.append(kw)
+        return "session"
+
+    monkeypatch.setattr(fetch, "guarded_session", factory)
+    monkeypatch.setattr(fetch, "_bounded_get", lambda session, url, *, max_chars: bounded.append(max_chars))
+    fetch._worldbank_getter(4242)("u1")
+    fetch._eurostat_getter("u2")
+    fetch._owid_grapher_getter("u3")
+    fetch._jsonstat_getter(999)("u4")
+    assert [(b.get("allowed_hosts"), b.get("allowed_path_prefixes")) for b in built] == [
+        (fetch.WORLDBANK_HOSTS, fetch.WORLDBANK_PATHS),
+        (fetch.EUROSTAT_HOSTS, fetch.EUROSTAT_PATHS),
+        (fetch.OWID_GRAPHER_HOSTS, fetch.OWID_GRAPHER_PATHS),
+        (None, None),  # JSON-stat: the caller names the publisher, so only the body is bounded
+    ]
+    assert bounded == [4242, fetch.eurostat_max_chars(), fetch.owid_grapher_max_chars(), 999]
+
+
+def test_each_fetcher_hands_its_own_bound_to_its_default_getter(monkeypatch):
+    seen: list[tuple[str, int | None]] = []
+    monkeypatch.setattr(fetch, "kill_switch_active", lambda: False)
+
+    def wb(max_chars):
+        seen.append(("wb", max_chars))
+        return lambda url: (_ for _ in ()).throw(StopIteration)
+
+    def js(max_chars):
+        seen.append(("js", max_chars))
+        return lambda url: (_ for _ in ()).throw(StopIteration)
+
+    monkeypatch.setattr(fetch, "_worldbank_getter", wb)
+    monkeypatch.setattr(fetch, "_jsonstat_getter", js)
+    for call in (
+        lambda: fetch.fetch_worldbank("X", per_page=250),
+        lambda: fetch.fetch_jsonstat("https://pub.example/t", agency="a", max_cells=77),
+    ):
+        with pytest.raises(StopIteration):
+            call()
+    assert seen == [("wb", fetch.worldbank_max_chars(250)), ("js", fetch.jsonstat_max_chars(77))]
+
+
+def test_an_endless_statistics_body_is_stopped_at_the_bound_through_the_real_default_path(monkeypatch):
+    raw = _Raw(None, endless=b"x" * 1_000_000)
+    monkeypatch.setattr(fetch, "kill_switch_active", lambda: False)
+    monkeypatch.setattr(fetch, "guarded_session", lambda **kw: _session(raw))
+    with pytest.raises(BodyTooLarge):
+        fetch.fetch_jsonstat("https://pub.example/t", agency="a", max_cells=1)
+    assert raw.pulled <= fetch.jsonstat_max_chars(1) * 4 + 1_000_000
