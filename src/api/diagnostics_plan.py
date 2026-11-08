@@ -44,7 +44,6 @@ file and imports nothing heavy, so the tests can pin it.
 from __future__ import annotations
 
 import math
-
 from typing import Any
 
 #: The two modes. ``quick`` is what the panel asks for unless the user ticks Thorough.
