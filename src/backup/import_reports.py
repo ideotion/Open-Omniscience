@@ -396,7 +396,8 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
     # meanwhile, the backup export first (a backup is the operator's safety net, and every backup is signed).
     still_encrypted = [e for e in keys.get("still_encrypted") or () if isinstance(e, dict)]
     if still_encrypted:
-        names = {e.get("name") for e in still_encrypted}
+        names = {_key_name(e.get("name")) for e in still_encrypted}
+        opened_with = {str(e.get("opened_with")) for e in still_encrypted}
         lines.append("## Signing keys still encrypted")
         lines.append("")
         if _EVIDENCE_KEY in names:
@@ -412,6 +413,12 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
             "that opens it. To use them, set OO_KEY_PASSPHRASE to that passphrase and restart; until then, anything "
             "this install signs with them stops with an error that names the key."
         )
+        if len(opened_with) > 1:
+            lines.append("")
+            lines.append(
+                "These keys open with different passphrases, and OO_KEY_PASSPHRASE holds one, so only the keys that "
+                "one opens can be unlocked at a time."
+            )
         if names & _CUSTODY_KEYS:
             lines.append("")
             lines.append(
@@ -433,6 +440,7 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
             "This install had no key of its own for these signers, so it now signs as the install that made the "
             "backup. What it signs from now on carries the public key below, the same value its evidence bundles "
             "and custody records show."
+            + (" A key listed above as still encrypted signs only once it is unlocked." if still_encrypted else "")
         )
         lines.append("")
         for entry in identities:
@@ -456,12 +464,22 @@ _OPENED_WITH = {
 }
 
 
+def _key_name(value: object) -> str:
+    """A manifest key name with ``/`` between its parts, whichever system wrote the backup (Windows writes ``\\``)."""
+    return str(value).replace("\\", "/")
+
+
 def _md_code(value: object) -> str:
     """``value`` as inline code that cannot break out of its line: a backtick and every character that is not
-    printable (a newline, a control character, a line separator) is written as its ``\\uXXXX`` escape. A name comes
-    from the backup's manifest, which whoever made the backup wrote, so it is never pasted into the Markdown raw."""
+    printable (a newline, a control character, a line separator) is written as its ``\\uXXXX`` escape (``\\UXXXXXXXX``
+    above U+FFFF, so where an escape ends is never in doubt). A name comes from the backup's manifest, which whoever made the backup wrote, so it is never pasted into the Markdown raw."""
     text = str(value)
-    return "`" + "".join(ch if ch.isprintable() and ch != "`" else f"\\u{ord(ch):04x}" for ch in text) + "`"
+    return "`" + "".join(ch if ch.isprintable() and ch != "`" else _escape(ch) for ch in text) + "`"
+
+
+def _escape(ch: str) -> str:
+    code = ord(ch)
+    return f"\\u{code:04x}" if code <= 0xFFFF else f"\\U{code:08x}"
 
 
 def _safe_report_path(filename: str) -> Path | None:

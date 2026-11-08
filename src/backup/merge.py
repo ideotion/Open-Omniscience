@@ -6470,9 +6470,14 @@ _KEY_NOT_OPENED = (
     "it is not written and stays in the backup"
 )
 _KEY_NO_PQC = (
-    "an ML-DSA key no passphrase this restore had opens, and without the post-quantum library here it cannot be "
-    "told from a plaintext one; it is not written and stays in the backup"
+    "an ML-DSA key no passphrase this restore had opens, and it is not the length of a plaintext ML-DSA-65 key, so "
+    "without the post-quantum library here it cannot be read; it is not written and stays in the backup"
 )
+#: The length of a PLAINTEXT ML-DSA-65 key file (public key + secret key, FIPS 204: 1952 + 4032 bytes). Only the
+#: restore on an install WITHOUT the post-quantum library uses it, to tell a plaintext key from a wrapped one no
+#: passphrase opens (a wrap is 44 bytes longer); the signer reads the length from the library itself, and the PQC lane
+#: pins this constant against it (tests/test_custody_signing.py).
+_MLDSA65_PLAIN_LEN = 1952 + 4032
 _KEY_PAIR_RACED = (
     "another caller made the other half of its key pair while the restore ran, and a pair is placed whole or not "
     "at all; it is not written and stays in the backup"
@@ -6571,8 +6576,10 @@ def _move_wrapped_mldsa(raw: bytes, candidates: list[bytes | None], held: bytes 
     Its wrap is the custody signer's own AES-256-GCM over the public and secret key, which needs no ML-DSA code to
     open or to make again, so a WRAPPED key is moved under this install's passphrase as it is (byte for byte through
     the read-back) and its pair is restored whole; on an install that holds no passphrase it is placed as carried,
-    still encrypted (R613). Only the library knows the plaintext length that tells a legacy plaintext key from a
-    wrapped one no passphrase opens, so a file no candidate opens is refused.
+    still encrypted (R613). A file no candidate opens is a PLAINTEXT key when it is exactly the plaintext length
+    (:data:`_MLDSA65_PLAIN_LEN`, the rule the signer applies with the library): it is placed as carried where nothing
+    is held, and wrapped under the held passphrase (and read back) where one is. Any other file is refused. The opener
+    index of a plaintext key is 0 and is never read (only a still-encrypted key's opener is reported).
     """
     from src.custody import signing
 
@@ -6593,7 +6600,16 @@ def _move_wrapped_mldsa(raw: bytes, candidates: list[bytes | None], held: bytes 
         except Exception:  # noqa: BLE001 - the sealed copy does not read back: nothing is written
             return _KEY_NOT_SAME
         return (sealed, "resealed", None, i) if back == data else _KEY_NOT_SAME
-    return _KEY_NO_PQC
+    if len(raw) != _MLDSA65_PLAIN_LEN:
+        return _KEY_NO_PQC
+    if not held:
+        return raw, "as_carried", None, 0  # a plaintext key on an install that writes plaintext: as carried
+    sealed = signing.seal_mldsa_key(raw, b"", held)
+    try:
+        back = signing._unwrap(sealed, held)
+    except Exception:  # noqa: BLE001 - the sealed copy does not read back: nothing is written
+        return _KEY_NOT_SAME
+    return (sealed, "resealed", None, 0) if back == raw else _KEY_NOT_SAME
 
 
 def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:

@@ -283,7 +283,7 @@ def test_the_passphrases_never_show_in_the_staged_artifact_repr(tmp_path):
     assert SOURCE not in repr(staged) and BACKUP not in repr(staged)
 
 
-def test_the_readers_hand_the_restore_the_passphrases_they_were_given():
+def test_key_passphrases_for_gives_each_passphrase_once_the_corpus_first():
     from src.backup.artifact import key_passphrases_for
 
     assert key_passphrases_for(SOURCE, BACKUP) == (SOURCE, BACKUP)
@@ -953,3 +953,86 @@ def test_a_half_rewritten_in_place_meanwhile_is_not_taken_back(tmp_path, monkeyp
     with pytest.raises(OSError, match="No space left"):
         merge.merge_side_files(staged)
     assert (live / CUSTODY_ED).read_bytes() == theirs
+
+
+# --------------------------------------------------------------------------- #
+#  The read of the final head (2026-11-08).
+# --------------------------------------------------------------------------- #
+def _plaintext_mldsa65() -> bytes:
+    return os.urandom(merge._MLDSA65_PLAIN_LEN)  # public + secret key as they are, the length the signer reads
+
+
+def test_without_the_library_a_plaintext_pair_is_placed_as_carried_where_nothing_is_held(tmp_path, monkeypatch):
+    """A backup from a store with the post-quantum library and no passphrase carries both halves in plaintext. On an
+    install without the library that also holds none, the pair comes back as carried, as it did before this change."""
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", False)
+    ed_raw, ml_raw = _plain_pem(Ed25519PrivateKey.generate()), _plaintext_mldsa65()
+    staged, live = _stage(tmp_path, {CUSTODY_ED: ed_raw, CUSTODY_ML: ml_raw}, BACKUP)
+    keys = merge.merge_side_files(staged)["keys"]
+    assert sorted(keys["restored"]) == [CUSTODY_ED, CUSTODY_ML] and keys["not_placed"] == [], keys
+    assert keys["resealed"] == [] and keys["still_encrypted"] == [], keys
+    assert (live / CUSTODY_ED).read_bytes() == ed_raw and (live / CUSTODY_ML).read_bytes() == ml_raw
+
+
+def test_without_the_library_a_plaintext_pair_is_wrapped_where_a_passphrase_is_held(tmp_path, monkeypatch):
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", False)
+    _hold(monkeypatch, HERE)
+    ed, ml_raw = Ed25519PrivateKey.generate(), _plaintext_mldsa65()
+    staged, live = _stage(tmp_path, {CUSTODY_ED: _plain_pem(ed), CUSTODY_ML: ml_raw}, SOURCE)
+    keys = merge.merge_side_files(staged)["keys"]
+    assert sorted(keys["resealed"]) == [CUSTODY_ED, CUSTODY_ML] and keys["not_placed"] == [], keys
+    assert _pub(_opens_with(live / CUSTODY_ED, HERE)) == _pub(ed)
+    assert signing._unwrap((live / CUSTODY_ML).read_bytes(), HERE.encode()) == ml_raw
+    assert ml_raw not in (live / CUSTODY_ML).read_bytes()
+
+
+@pytest.mark.parametrize("extra", [-1, 1, 44])
+def test_without_the_library_a_file_of_another_length_that_nothing_opens_is_refused(tmp_path, monkeypatch, extra):
+    """Only the exact plaintext length is read as a plaintext key: a wrap (44 bytes longer) no passphrase opens, or a
+    file one byte off, is not placed, and its pair half with it."""
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", False)
+    staged, live = _stage(tmp_path, {CUSTODY_ED: _plain_pem(Ed25519PrivateKey.generate()), CUSTODY_ML: os.urandom(merge._MLDSA65_PLAIN_LEN + extra)})
+    keys = merge.merge_side_files(staged)["keys"]
+    assert {e["name"] for e in keys["not_placed"]} == {CUSTODY_ED, CUSTODY_ML}, keys
+    assert not (live / CUSTODY_ED).exists() and not (live / CUSTODY_ML).exists()
+
+
+def test_a_plaintext_mldsa_moved_without_the_library_that_does_not_read_back_is_not_written(tmp_path, monkeypatch):
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", False)
+    _hold(monkeypatch, HERE)
+    staged, live = _stage(tmp_path, {CUSTODY_ML: _plaintext_mldsa65()}, SOURCE)
+    real_seal = signing.seal_mldsa_key
+    monkeypatch.setattr(signing, "seal_mldsa_key", lambda _pk, _sk, passphrase: real_seal(_plaintext_mldsa65(), b"", passphrase))
+    keys = merge.merge_side_files(staged)["keys"]
+    assert [e["name"] for e in keys["not_placed"]] == [CUSTODY_ML], keys
+    assert "did not read back as the same key" in keys["not_placed"][0]["reason"]
+    assert not (live / CUSTODY_ML).exists()
+
+
+def test_the_still_encrypted_section_reads_a_windows_name_and_says_when_one_passphrase_cannot_unlock_all():
+    from src.backup.import_reports import render_import_report_markdown
+
+    keys = {
+        "still_encrypted": [
+            {"name": "keys\\evidence_ed25519.pem", "opened_with": "backup"},
+            {"name": "keys\\custody_ed25519.pem", "opened_with": "corpus"},
+        ],
+        "identities": [{"name": "keys\\custody_ed25519.pem", "ed25519_public_key": "ab"}],
+    }
+    md = render_import_report_markdown({"outcome": "ok", "side_files": {"keys": keys}})
+    assert "**Backups cannot be exported until the evidence key is unlocked.**" in md
+    assert "custody entry waits in the pending queue" in md
+    assert "open with different passphrases" in md
+    assert "signs only once it is unlocked" in md, "the identity is named, and that it cannot sign yet"
+    one = render_import_report_markdown(
+        {"outcome": "ok", "side_files": {"keys": {"still_encrypted": keys["still_encrypted"][:1], "identities": [{"name": "keys/x_ed25519.pem", "ed25519_public_key": "ab"}]}}}
+    )
+    assert "open with different passphrases" not in one
+    alone = render_import_report_markdown({"outcome": "ok", "side_files": {"keys": {"identities": [{"name": "keys/x_ed25519.pem", "ed25519_public_key": "ab"}]}}})
+    assert "signs only once it is unlocked" not in alone
+
+
+def test_a_character_above_the_basic_plane_is_escaped_with_its_full_code():
+    from src.backup.import_reports import _md_code
+
+    assert _md_code("a\U000e0001b\u2028") == "`a\\U000e0001b\\u2028`"
