@@ -202,3 +202,70 @@ def test_a_labelless_top_level_entry_and_a_nested_labelled_one_are_one_defined_c
         parsed = _parse_text(tmp_path, body)
         assert sorted(parsed["concepts"]) == ["a", "p"]
         assert parsed["n_seen"] == 2 and parsed["gaps"] == []
+
+
+def _parse_xl(tmp_path, body):
+    f = tmp_path / "xl.rdf"
+    f.write_text(
+        '<?xml version="1.0"?><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" '
+        'xmlns:skos="http://www.w3.org/2004/02/skos/core#" xmlns:skosxl="http://www.w3.org/2008/05/skos-xl#">'
+        + body + "</rdf:RDF>",
+        encoding="utf-8",
+    )
+    return skos.parse_rdfxml(f)
+
+
+_XL_LABELS = (
+    '<skosxl:Label rdf:about="l1"><skosxl:literalForm xml:lang="en">Water</skosxl:literalForm></skosxl:Label>'
+    '<skosxl:Label rdf:about="l2"><skosxl:literalForm xml:lang="fr">Eau</skosxl:literalForm></skosxl:Label>'
+    '<skosxl:Label rdf:about="l3"><skosxl:literalForm>Aqua</skosxl:literalForm></skosxl:Label>'
+)
+
+
+def test_skos_xl_labels_are_read_whatever_the_order(tmp_path):
+    concept = (
+        '<skos:Concept rdf:about="c"><skosxl:prefLabel rdf:resource="l1"/>'
+        '<skosxl:altLabel rdf:resource="l2"/></skos:Concept>'
+    )
+    for body in (_XL_LABELS + concept, concept + _XL_LABELS):
+        parsed = _parse_xl(tmp_path, body)
+        assert parsed["concepts"]["c"]["pref"] == {"en": "Water"}
+        assert parsed["concepts"]["c"]["alt"] == {"fr": ["Eau"]}
+        assert parsed["gaps"] == [] and parsed["n_seen"] == 1
+
+
+def test_skos_xl_nested_label_and_plain_label_wins(tmp_path):
+    parsed = _parse_xl(
+        tmp_path,
+        '<skos:Concept rdf:about="c" xml:lang="en"><skos:prefLabel>Plain</skos:prefLabel>'
+        '<skosxl:prefLabel><skosxl:Label rdf:about="n1"><skosxl:literalForm xml:lang="en">Xl</skosxl:literalForm>'
+        "</skosxl:Label></skosxl:prefLabel></skos:Concept>",
+    )
+    assert parsed["concepts"]["c"]["pref"] == {"en": "Plain"}
+
+
+def test_skos_xl_gaps_are_named(tmp_path):
+    parsed = _parse_xl(
+        tmp_path,
+        _XL_LABELS
+        + '<skos:Concept rdf:about="a"><skosxl:prefLabel rdf:resource="l3"/></skos:Concept>'
+        '<skos:Concept rdf:about="b"><skosxl:prefLabel rdf:resource="missing"/></skos:Concept>',
+    )
+    assert parsed["concepts"] == {}
+    assert {"kind": "label_without_language", "detail": "a"} in parsed["gaps"]
+    assert {"kind": "xl_label_unresolved", "detail": "missing"} in parsed["gaps"]
+    assert {"kind": "concept_without_label", "detail": "a"} in parsed["gaps"]
+    assert {"kind": "concept_without_label", "detail": "b"} in parsed["gaps"]
+
+
+def test_a_dropped_unlanguaged_label_stays_a_gap_when_a_nested_entry_defines_the_concept(tmp_path):
+    # deliberate (0.6.1 b): the top-level label WAS dropped, so the gap is true even though the concept is defined
+    body = (
+        '<skos:Concept rdf:about="a"><skos:broader><skos:Concept rdf:about="p"><skos:prefLabel>P</skos:prefLabel>'
+        '</skos:Concept></skos:broader><skos:prefLabel>A</skos:prefLabel></skos:Concept>'
+        '<skos:Concept rdf:about="p"><skos:prefLabel xml:lang="">Nolang</skos:prefLabel></skos:Concept>'
+    )
+    parsed = _parse_text(tmp_path, body)
+    assert "p" in parsed["concepts"]
+    assert {"kind": "label_without_language", "detail": "p"} in parsed["gaps"]
+    assert not any(g["kind"] == "concept_without_label" for g in parsed["gaps"])
