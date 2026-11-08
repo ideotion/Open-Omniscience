@@ -18,7 +18,7 @@ from src.api.cross_site import refuse_cross_site_get
 from src.api.ingestion import get_fetcher
 from src.database.models import Source
 from src.database.session import get_db
-from src.ingest import EthicalFetcher, kill_switch_active
+from src.ingest import EthicalFetcher
 from src.ingest.fetch_verdict import is_kill_switch_refusal
 from src.monitoring.anomaly import volume_anomalies
 from src.monitoring.health import check_source
@@ -47,11 +47,11 @@ def sources_health(
     )
     results = [check_source(s, fetcher=fetcher).to_dict() for s in sources]
     # A probe the network kill switch refused never reached the host: counting it as "down" blames the source for the person's
-    # own setting (the per-source detail already names the switch, so the count has to as well).
-    stopped = kill_switch_active()
+    # own setting (the per-source detail already names the switch, so the count has to as well). Decided by the refusal sentence
+    # alone, anchored to our own words (R298): a Stop cleared again before the count is taken still refused that probe (R614).
     summary = Counter(
         "refused_by_kill_switch"
-        if stopped and r["status"] == "down" and is_kill_switch_refusal(r.get("detail"))
+        if r["status"] == "down" and is_kill_switch_refusal(r.get("detail"))
         else r["status"]
         for r in results
     )
