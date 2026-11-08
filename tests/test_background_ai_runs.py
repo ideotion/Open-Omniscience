@@ -243,13 +243,12 @@ def test_the_pages_cancel_stops_the_run_on_the_server_not_only_the_fetch():
     """Opus read of #1830: aborting the fetch no longer stops a detached run, so a page Cancel that only aborted reported
     "Cancelled" while the model kept writing, and the queue started the next run beside it."""
     js = (REPO / "src" / "static" / "app-analysis.js").read_text(encoding="utf-8")
-    cancel = js[js.index("function bulkJobCancel("):js.index("function bulkJobClearDone(")]
-    stop = js[js.index("function bulkLlmStop("):js.index("function bulkLlmRun(")]
-    for body in (cancel, stop):
+    from tests.js_source_helper import function_body
+
+    for body in (function_body(js, "bulkJobCancel"), function_body(js, "bulkLlmStop")):
         assert ".abort()" not in body, "a Cancel that only aborts the fetch leaves the run going on the server"
         assert "_stopServerRun(" in body
-    helper = js[js.index("async function _stopServerRun("):]
-    assert "/api/jobs/${encodeURIComponent(taskId)}/cancel" in helper[:400]
+    assert "/api/jobs/${encodeURIComponent(taskId)}/cancel" in function_body(js, "_stopServerRun")
     assert js.count('resp.headers.get("X-OO-Task")') == 2
 
 
@@ -258,7 +257,8 @@ def test_a_stopping_extractor_run_keeps_its_own_state_and_blocks_a_second_start(
     first run's end wiped the second's state, so the second could no longer be cancelled."""
     js = (REPO / "src" / "static" / "app-analysis.js").read_text(encoding="utf-8")
     assert "_bulkStopping" not in js and "_bulkTask" not in js
-    start = js[js.index("async function aiRunPromptStart("):]
-    start = start[: start.index("\n    }\n")]
+    from tests.js_source_helper import function_body
+
+    start = function_body(js, "aiRunPromptStart")
     assert start.index("if (_aiRuns[ctx]) {") < start.index("_aiRuns[ctx] = run;") < start.index("await fetch(")
     assert "if (_aiRuns[ctx] === run) delete _aiRuns[ctx];" in start

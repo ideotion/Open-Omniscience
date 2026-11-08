@@ -179,10 +179,14 @@ def test_a_page_that_opens_mid_slice_ends_it_between_batches(db, monkeypatch):
 
 
 def test_the_insights_drain_endpoint_tells_the_slice_it_is_draining():
-    from pathlib import Path
+    import ast
+    import inspect
 
-    src = (Path(__file__).resolve().parents[1] / "src" / "api" / "insights.py").read_text(encoding="utf-8")
-    body = src[src.index("def insights_reindex("):src.index("def insights_prune_keywords(")]
+    from src.api import insights
+
+    tree = ast.parse(inspect.getsource(insights))
+    fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "insights_reindex")
+    body = ast.unparse(fn)
     assert "note_page_drain()" in body and body.index("note_page_drain()") < body.index("return backfill_corpus(")
     tail = body[body.index("return backfill_corpus("):]
     assert "finally:" in tail and "note_page_drain()" in tail, "a batch longer than the quiet window must stamp its end too"
