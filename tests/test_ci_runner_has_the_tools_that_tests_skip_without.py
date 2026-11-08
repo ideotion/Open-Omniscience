@@ -54,6 +54,10 @@ _EXEMPT = {
         "the ``test`` job installs it with its own apt step, whose ``command -v original-awk`` makes a failed install a red job; ``core-only`` does not "
         "install it and the test that names it skips there by design"
     ),
+    "unshare": (
+        "tests/test_file_lock.py runs one sweep in an unprivileged child pid namespace (R287 L1); ubuntu-24.04 runners block unprivileged user namespaces "
+        "with AppArmor, so that test skips there by design and its probe runs ``unshare ... true`` before relying on it"
+    ),
     "flock": "tests/test_launcher_records_race.py asserts flock is ABSENT from a filtered PATH to test the launcher's no-flock path; it is not a skip gate",
 }
 

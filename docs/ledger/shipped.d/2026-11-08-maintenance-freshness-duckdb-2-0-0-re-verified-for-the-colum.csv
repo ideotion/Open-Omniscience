@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-08,maintenance/freshness,DuckDB 2.0.0 re-verified for the columnar crypto coupling (#1163),shipped,PR #1841; issue #1163,configs/external_artifacts.yml;tests/test_upstream_check.py,"Major bump read before accepting: main CI columnar job on duckdb 2.0.0 green (471 passed) incl. the real-httpfs encrypted persisted round trip; a 1.5.6 store opens under 2.0.0 and its marker reads incompatible, so it is rebuilt. verified/current -> 2.0.0; floor stays 1.4 (R392); httpfs binaries still blank by design."

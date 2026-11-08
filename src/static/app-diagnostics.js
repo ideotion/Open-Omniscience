@@ -3122,8 +3122,146 @@
       } finally {
         if (btn) btn.disabled = false;
       }
+      return {files, sources, total};
     }
     document.addEventListener("click", (ev) => {
       const b = ev.target && ev.target.closest ? ev.target.closest("#source-samples-btn") : null;
       if (b) downloadSourceSamples(b);
+    });
+
+    // ---- FIELD CHECKS (R603, 2026-11-08) ---- //
+    // The checks only the operator's own machine can run, listed by configs/field_checks.yml and run
+    // by src/monitoring/field_checks.py. Nothing is fetched when the Diagnostics section opens: the
+    // list loads on "Show field checks". A check that goes online passes the ONE consent popup
+    // (ensureOnline, invariant #14) and only then sends consent:true, which the server requires.
+    // The row buttons are wired by ONE delegated listener (no inline handlers).
+    let _fcView = null;
+    function _fcT() {
+      return (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+    }
+    function _fcTf(s, v) {
+      if (window.OOI18N && OOI18N.tf) return OOI18N.tf(s, v);
+      return String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m));
+    }
+    function _fcResultHtml(r) {
+      const t = _fcT();
+      if (!r) return `<div class="muted">${esc(t("Not run yet in this session."))}</div>`;
+      const shown = Object.assign({}, r);
+      delete shown.id; delete shown.kind;
+      return `<div>${ooLabelHtml(`<b>${esc(t("Result"))}</b>`, `${esc(String(r.outcome || ""))} · ${esc(ooIsoDateTime(r.started_at))}`)}</div>`
+        + `<pre class="small" style="white-space:pre-wrap;max-height:240px;overflow:auto;margin:4px 0">${esc(JSON.stringify(shown, null, 1))}</pre>`;
+    }
+    function _fcRowHtml(c) {
+      const t = _fcT();
+      const badges = [];
+      if (c.online) badges.push(`<span class="pill" title="${esc(t("This check goes online. It asks first through the network consent popup, and it is refused under airplane mode."))}">${esc(t("goes online"))}</span>`);
+      if (c.kind === "operator_report") badges.push(`<span class="pill">${esc(t("needs you"))}</span>`);
+      const steps = (c.steps || []).length
+        ? `<ol style="margin:4px 0 4px 18px;padding:0">${c.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>` : "";
+      let inputs = "";
+      if (c.kind === "drive_throughput") {
+        inputs = `<input type="text" data-fc-path="${esc(c.id)}" style="min-width:280px" placeholder="${esc(t("a folder on the drive to measure, e.g. /media/you/usb"))}">`;
+      } else if (c.kind === "operator_report") {
+        const opts = (c.answers || []).map((a) => `<option value="${esc(a)}">${esc(a)}</option>`).join("");
+        inputs = (c.action ? `<button type="button" class="secondary" data-fc-action="${esc(c.id)}">${esc(t("Start"))}</button> ` : "")
+          + `<select data-fc-answer="${esc(c.id)}" style="width:auto"><option value="">${esc(t("pick an answer"))}</option>${opts}</select> `
+          + `<input type="text" data-fc-note="${esc(c.id)}" maxlength="500" style="min-width:220px" placeholder="${esc(t("note (optional, never a password)"))}">`;
+      }
+      const runLabel = c.kind === "operator_report" ? t("Record the answer") : t("Run");
+      const run = c.applies_here
+        ? `<button type="button" data-fc-run="${esc(c.id)}">${esc(runLabel)}</button>`
+        : `<span class="muted">${esc(t("Does not apply on this system."))}</span>`;
+      return `<div class="fc-row" data-fc-row="${esc(c.id)}" style="border-top:1px solid var(--line, #8884);padding:6px 0">`
+        + `<div><b>${esc(c.title)}</b> ${badges.join(" ")}</div>`
+        + `<div class="hint">${esc(c.why)}</div>`
+        + `<div class="hint">${ooLabelHtml(esc(t("Added")), `${esc(ooIsoDate(c.added_on))} · ${esc(c.added_by)}`)}</div>`
+        + `<div class="hint">${ooLabelHtml(esc(t("Retired when")), esc(c.retire_when))}</div>`
+        + steps
+        + `<div class="row" style="margin-top:4px">${inputs} ${run} <span class="small" data-fc-status="${esc(c.id)}"></span></div>`
+        + `<div data-fc-result="${esc(c.id)}">${_fcResultHtml(c.result)}</div>`
+        + `</div>`;
+    }
+    function _fcRender() {
+      const t = _fcT();
+      const box = $("fc-list");
+      if (!box || !_fcView) return;
+      const active = _fcView.checks.filter((c) => c.status === "active");
+      const retired = _fcView.checks.filter((c) => c.status === "retired");
+      const ret = retired.length
+        ? `<details style="margin-top:6px"><summary class="muted">${esc(_fcTf("Retired checks ({n}): asked and answered, kept as the record", {n: retired.length}))}</summary>`
+          + retired.map((c) => `<div class="hint">${esc(c.title)} · ${esc(t("retired"))} ${esc(ooIsoDate(c.retired_on))} · ${esc(c.retired_by || "")}</div>`).join("")
+          + `</details>` : "";
+      box.innerHTML = `<div class="hint">${esc(_fcTf("List version {v}, {n} active checks. Results are kept by the running app only: a restart empties them, so save the report before you close it.", {v: _fcView.manifest_version, n: active.length}))}</div>`
+        + active.map(_fcRowHtml).join("") + ret;
+    }
+    async function fieldChecksLoad(btn) {
+      const t = _fcT();
+      const st = $("fc-status");
+      if (btn) btn.disabled = true;
+      try {
+        _fcView = await api("/api/diagnostics/field-checks");
+        _fcRender();
+        if (st) st.textContent = "";
+      } catch (e) {
+        if (st) st.textContent = t("Could not read the field checks:") + " " + (_apiErrorMessage ? _apiErrorMessage(e) : String(e));
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+    const _fcClient = {};
+    async function _fcRun(id, btn) {
+      const t = _fcT();
+      const c = (_fcView && _fcView.checks || []).find((x) => x.id === id);
+      if (!c) return;
+      const st = document.querySelector(`[data-fc-status="${CSS.escape(id)}"]`);
+      const say = (m) => { if (st) st.textContent = m; };
+      const inputs = {};
+      if (c.kind === "drive_throughput") {
+        const el = document.querySelector(`[data-fc-path="${CSS.escape(id)}"]`);
+        inputs.path = el ? el.value.trim() : "";
+        if (!inputs.path) { say(t("Type the folder first.")); return; }
+      } else if (c.kind === "operator_report") {
+        const a = document.querySelector(`[data-fc-answer="${CSS.escape(id)}"]`);
+        const n = document.querySelector(`[data-fc-note="${CSS.escape(id)}"]`);
+        inputs.answer = a ? a.value : "";
+        inputs.note = n ? n.value : "";
+        inputs.client = _fcClient[id] || {};
+        if (!inputs.answer) { say(t("Pick an answer first.")); return; }
+      }
+      let consent = false;
+      if (c.online) {
+        consent = await ensureOnline(_fcTf("Run the field check “{title}”, which goes online", {title: c.title}));
+        if (!consent) { say(t("Not run: going online was declined.")); return; }
+      }
+      if (btn) btn.disabled = true;
+      say(t("Running…"));
+      try {
+        const r = await api("/api/diagnostics/field-checks/run", {method: "POST", body: JSON.stringify({id, consent, inputs})});
+        c.result = r;
+        const box = document.querySelector(`[data-fc-result="${CSS.escape(id)}"]`);
+        if (box) box.innerHTML = _fcResultHtml(r);
+        say("");
+      } catch (e) {
+        say(_apiErrorMessage ? _apiErrorMessage(e) : String(e));
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+    async function _fcAction(id, btn) {
+      const c = (_fcView && _fcView.checks || []).find((x) => x.id === id);
+      if (!c) return;
+      if (c.action === "source_samples") {
+        // The TEMPORARY export's own walk (its button and status line stay where they are).
+        const out = await downloadSourceSamples(btn);
+        if (out) _fcClient[id] = {files_saved_by_page: out.files, sources_covered: out.sources, sources_total: out.total};
+        const st = document.querySelector(`[data-fc-status="${CSS.escape(id)}"]`);
+        const s2 = $("source-samples-status");
+        if (st && s2) st.textContent = s2.textContent;
+      }
+    }
+    document.addEventListener("click", (ev) => {
+      const el = ev.target && ev.target.closest ? ev.target.closest("[data-fc-run],[data-fc-action]") : null;
+      if (!el) return;
+      if (el.hasAttribute("data-fc-run")) _fcRun(el.getAttribute("data-fc-run"), el);
+      else _fcAction(el.getAttribute("data-fc-action"), el);
     });

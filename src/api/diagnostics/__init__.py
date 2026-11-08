@@ -448,6 +448,13 @@ from .source_samples import (
     build_sample_zip,
     source_samples,
 )
+# Field checks (2026-11-08, R603): the checks only the operator's machine can run; the same slice position.
+from .field_checks import (
+    FieldCheckRun,
+    field_checks_list,
+    field_checks_report,
+    field_checks_run,
+)
 # The 0.4 release acceptance run (2026-09-18) -- last, for the same reason the merge
 # action is second-to-last: the split guard pins every earlier route's position.
 from .release_run import (
@@ -467,6 +474,10 @@ from .release_run import (
 )
 
 __all__ = [
+    "FieldCheckRun",
+    "field_checks_list",
+    "field_checks_report",
+    "field_checks_run",
     "SAMPLE_ZIP_MAX_BYTES",
     "_RESERVE_BYTES",
     "_SECRETISH",
