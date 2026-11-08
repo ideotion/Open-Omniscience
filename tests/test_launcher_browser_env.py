@@ -81,7 +81,16 @@ def test_launch_sh_starts_every_browser_opener_through_env_minus_u():
         assert 'env "${_drop[@]}" ' in ln, f"a browser opener inherits the held names: {ln.strip()}"
     # nothing else in the launcher starts a browser
     for i, ln in enumerate(text.splitlines(), 1):
-        if re.search(r"\b(xdg-open|open)\s+\"", ln) and ln not in openers:
+        if ln in openers or ln.lstrip().startswith("#"):
+            continue
+        # an opener in command position: at the start of a statement, after a separator, or
+        # after a keyword or wrapper that runs it; prose like "will open at" is not one
+        if re.search(
+            r"(^\s*|[;&|({]\s*|\b(then|else|do|exec|command|nohup|setsid|env)\s+(\S+=\S*\s+)*)"
+            r"(xdg-open|open|gio\s+open|kde-open\d*|sensible-browser|x-www-browser|www-browser"
+            r"|\"?\$\{?BROWSER\b)(?=[\s\"'}]|$)",
+            ln,
+        ):
             pytest.fail(f"launch.sh:{i} opens something outside open_browser: {ln.strip()}")
 
 
@@ -93,6 +102,19 @@ def test_launch_cmd_clears_the_held_names_right_before_every_start():
     lines = _cmd_lines()
     starts = [i for i, ln in enumerate(lines) if ln.lower().startswith('start ""')]
     assert len(starts) == 2, "the already-running opener and the waiting PowerShell"
+    # any other way of handing an address to the shell would bypass the clears below
+    for i, ln in enumerate(lines):
+        low = ln.lower()
+        if low.startswith("rem") or i in starts:
+            continue
+        assert not re.search(
+            r"\b(start|explorer|rundll32|start-process)\b", low.split("-command")[0]
+        ), f"launch.cmd line {i + 1} may open something outside the two cleared starts: {ln}"
+    # the outer setlocal is what gives the names back to the window that ran the launcher
+    first_code = next(
+        ln.lower() for ln in lines if ln and not ln.lower().startswith(("@echo", "rem"))
+    )
+    assert first_code == "setlocal"
     for i in starts:
         before = [ln for ln in lines[:i] if ln and not ln.lower().startswith("rem")]
         cleared = before[-len(HELD_ENV_VARS) :]
