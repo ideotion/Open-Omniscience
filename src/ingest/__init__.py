@@ -627,9 +627,25 @@ def _is_remote_resolving_proxy(proxy_url: str | None) -> bool:
 # after it stops. Cleared when the operator starts collecting again.
 _KILL = threading.Event()
 
+#: THE ENGAGEMENT EPOCH (R327, ruled R614). The switch says whether it is engaged NOW; a reader that
+#: decides after a request whether the failure was the target's (R320: read the switch after the work)
+#: cannot tell from that alone that a Stop was pressed AND cleared again inside the request's flight, and
+#: it then recorded the operator's Stop as the target's failure (robots "unreachable" cached for an hour,
+#: a law document's check stamped for a day). So every :func:`activate_kill_switch` also counts itself:
+#: a reader takes :func:`kill_switch_epoch` BEFORE its request and asks
+#: :func:`kill_switch_engaged_since` after it, which is true when the switch is engaged now OR was engaged
+#: at any moment in between. Bumped AFTER the event is set: a reader whose capture lands between the two
+#: already sees the switch set at the fetcher's own check, so no Stop can fall between the check and the
+#: count. Only ever increases, so a changed value cannot come back to the one a reader captured.
+_KILL_EPOCH = 0
+_KILL_EPOCH_LOCK = threading.Lock()
+
 
 def activate_kill_switch() -> None:
+    global _KILL_EPOCH
     _KILL.set()
+    with _KILL_EPOCH_LOCK:
+        _KILL_EPOCH += 1
     # Going offline is a HARD close: an egress window (the consented "install the
     # local AI without starting the collector" exemption) must never outlive the
     # operator's decision to go offline, or the airplane button would stop meaning
@@ -660,6 +676,22 @@ def clear_kill_switch() -> None:
 
 def kill_switch_active() -> bool:
     return _KILL.is_set()
+
+
+def kill_switch_epoch() -> int:
+    """How many times the switch has been engaged in this process: capture it before a request (R614)."""
+    return _KILL_EPOCH
+
+
+def kill_switch_engaged_since(epoch: int) -> bool:
+    """True when the switch is engaged now, or was engaged at any moment after ``epoch`` was captured.
+
+    The question a recorder asks after a request whose failure it may store as the target's: a request
+    that shared its flight with a Stop, even one cleared again before the failure reached the caller, is
+    not an answer about the target, and the recorder stores nothing for it (R614 (2)). The cost is
+    conservative: a real failure that happens to share its flight with a Stop is asked again next time.
+    """
+    return _KILL.is_set() or epoch != _KILL_EPOCH
 
 
 #: Has an OPERATOR crossed ONLINE in this process? Set by
@@ -1708,6 +1740,7 @@ class EthicalFetcher:
         persist_kind = "disallow_all"
         persist_body: str | None = None
         cause = "unreachable"
+        epoch = kill_switch_epoch()  # before the request: a Stop pressed and cleared inside it is still a Stop (R614)
         try:
             # Follow redirects MANUALLY through the shared guarded loop so a
             # robots.txt that 30x-redirects to an internal address is refused
@@ -1740,12 +1773,14 @@ class EthicalFetcher:
                 decision = None
                 cause = "server_error"
         except (requests.RequestException, FetchError) as exc:
-            if _KILL.is_set():
+            if kill_switch_engaged_since(epoch):
                 # A refusal BY THE SWITCH, or a request cut off by it mid-flight (the socket
                 # guard's OSError arrives here wrapped in a requests error), is not an answer
                 # about the host: cached as "unreachable" it blamed the host for an hour and
                 # the NEXT pass acted on a verdict no request ever produced (R297). Nothing is
                 # cached or persisted, so the next fetch asks again; the refusal says what it was.
+                # The same when the switch was engaged and cleared again while this request was
+                # in flight: the epoch says a Stop happened, whatever the switch reads now (R614).
                 if isinstance(exc, FetchError):
                     raise
                 raise FetchFailed(KILL_SWITCH_REFUSAL) from None
