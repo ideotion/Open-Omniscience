@@ -13,6 +13,8 @@ plan seeks each id and reads the whole link row (two String(1000) columns, a pag
     link's url holds the write lock), and the migration, chained on b3d8f1a6c4e2, are the same statement;
   * the start-up step builds it after the article list's two, with its own words, and measures it on its own: links
     refused for memory or room do not hold the article indexes back, and the job ends declined in the links' words;
+  * each group keeps its own count of unfinished starts: two starts brought down while one group was built decline
+    that group only, in its own words;
   * the four new frames are keys in every locale, translated, with their placeholders.
 """
 
@@ -29,7 +31,7 @@ from src.analytics.convergence import _shared_origin
 from src.database import article_indexes as ai
 from src.database import damage
 from src.database.damage import DamageRegistry
-from src.database.maintenance import DEFERRED_INDEXES, HOT_INDEXES, ensure_hot_indexes
+from src.database.maintenance import DEFERRED_INDEXES, HOT_INDEXES
 from src.database.models import Article, ArticleLink, Base, Source
 from src.jobs.background import Framed
 
@@ -172,12 +174,14 @@ def test_the_model_the_deferred_self_heal_and_the_migration_are_one_statement():
     assert "DROP INDEX IF EXISTS idx_article_link_article_url" in body
 
 
-def test_init_db_leaves_it_to_the_start_up_step(tmp_path):
+def test_init_db_leaves_it_to_the_start_up_step(tmp_path, monkeypatch):
+    from src.database import session
+
     eng = _store(tmp_path)
-    created = ensure_hot_indexes(eng, include_deferred=False)
-    assert LINK not in created and LINK not in _names(eng), (
-        "never inside the call that opens the database"
-    )
+    monkeypatch.setattr(session, "engine", eng)
+    session.init_db()  # the call every start makes, on a store made before the index existed
+    assert LINK not in _names(eng), "never inside the call that opens the database"
+    assert ai.pending(eng) == ("work", [LINK]), "left for the start-up step"
 
 
 def test_the_start_up_step_builds_it_with_its_own_words(tmp_path):
@@ -222,22 +226,36 @@ def test_links_refused_for_memory_do_not_hold_the_article_indexes_back(tmp_path,
     assert snap["link_preflight"]["short_on"] == ["memory"]
 
 
-def test_the_links_are_asked_against_the_room_left_after_the_article_indexes(tmp_path, monkeypatch):
+def test_the_links_are_read_after_the_article_indexes_committed_and_the_words_show_that_reading(
+    tmp_path, monkeypatch
+):
     eng = _store(tmp_path, drop=(LANG, TITLE, LINK))
     articles_need = 60 * ai.BYTES_PER_ARTICLE
     links_need = 360 * ai.BYTES_PER_LINK
+    readings: list[int] = []
 
-    class Usage:
-        free = articles_need + links_need - 1  # each fits alone, not both
+    def usage(where):
+        # The volume as it is: enough for the article group, and what that group's build then took is gone.
+        free = articles_need + links_need - 1 - (articles_need if LANG in _names(eng) else 0)
+        readings.append(free)
+        return type("Usage", (), {"free": free})
 
-    monkeypatch.setattr(ai.shutil, "disk_usage", lambda where: Usage)
+    monkeypatch.setattr(ai.shutil, "disk_usage", usage)
+    ctx = _Ctx()
     with pytest.raises(ai.Declined):
-        ai.build_missing(eng, _Ctx())
+        ai.build_missing(eng, ctx)
     snap = ai.snapshot()
     assert list(snap["built"]) == [LANG, TITLE]
-    assert snap["link_preflight"]["reserved_bytes"] == articles_need and snap["link_preflight"][
-        "short_on"
-    ] == ["database"]
+    room = snap["link_preflight"]
+    assert room["short_on"] == ["database"] and "reserved_bytes" not in room
+    assert room["free_bytes"]["database"] == readings[-1] == links_need - 1, (
+        "read after the article group committed"
+    )
+    last = ctx.calls[-1]["detail"]
+    assert last.i18n == ai.FRAME_LINK_NO_ROOM and last.vars["free"] == (links_need - 1) // 1_000_000
+    assert f"{links_need - 1:,} bytes free" in room["detail"], (
+        "the English detail prints the reading the frame shows"
+    )
 
 
 def test_only_links_missing_and_refused_is_a_declined_row_in_the_links_words(tmp_path, monkeypatch):
@@ -255,19 +273,69 @@ def test_only_links_missing_and_refused_is_a_declined_row_in_the_links_words(tmp
     assert row["detail_vars"]["rows"] == 360
 
 
-def test_two_unfinished_starts_name_the_links_when_only_they_are_missing(tmp_path):
-    eng = _store(tmp_path)
+def _record(**counts) -> None:
     from src import __version__
 
     marker = ai._marker_path()
     marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(
-        json.dumps({"version": __version__, "attempts": ai.MAX_UNFINISHED_STARTS}), encoding="utf-8"
-    )
+    marker.write_text(json.dumps({"version": __version__, **counts}), encoding="utf-8")
+
+
+def test_two_unfinished_links_starts_decline_the_links_only_in_their_words(tmp_path):
+    eng = _store(tmp_path, drop=(LANG, TITLE, LINK))
+    _record(link_attempts=ai.MAX_UNFINISHED_STARTS)
     ctx = _Ctx()
     with pytest.raises(ai.Declined):
         ai.build_missing(eng, ctx)
+    snap = ai.snapshot()
+    assert list(snap["built"]) == [LANG, TITLE], (
+        "the article indexes are not held back by the links' record"
+    )
+    assert snap["unfinished_starts"] == 0 and snap["link_unfinished_starts"] == 2
     assert ctx.calls[-1]["detail"].i18n == ai.FRAME_LINK_UNFINISHED
+    assert ai._unfinished_starts("links") == 2 and ai._unfinished_starts("articles") == 0, (
+        "the links' record stays (declined until an update); the article build left no count behind"
+    )
+
+
+def test_two_unfinished_article_starts_do_not_hold_the_links_back(tmp_path):
+    eng = _store(tmp_path, drop=(LANG, TITLE, LINK))
+    _record(attempts=ai.MAX_UNFINISHED_STARTS)
+    ctx = _Ctx()
+    with pytest.raises(ai.Declined):
+        ai.build_missing(eng, ctx)
+    snap = ai.snapshot()
+    assert list(snap["built"]) == [LINK] and LANG not in _names(eng)
+    assert ctx.calls[-1]["detail"].i18n == ai.FRAME_UNFINISHED, (
+        "the article list's words for the article list's record"
+    )
+    assert ai._unfinished_starts("articles") == 2 and ai._unfinished_starts("links") == 0
+
+
+def test_each_group_counts_only_its_own_attempt_while_it_builds(tmp_path, monkeypatch):
+    from sqlalchemy import event
+
+    eng = _store(tmp_path, drop=(LANG, TITLE, LINK))
+    _record(attempts=1)  # an earlier start brought down during the article build
+    seen: list[tuple[str, int, int]] = []
+
+    def _look(conn, cursor, statement, parameters, context, executemany):
+        if statement.startswith("CREATE INDEX"):
+            seen.append(
+                (
+                    statement.split()[5],
+                    ai._unfinished_starts("articles"),
+                    ai._unfinished_starts("links"),
+                )
+            )
+
+    event.listen(eng, "before_cursor_execute", _look)
+    try:
+        ai.build_missing(eng, _Ctx())
+    finally:
+        event.remove(eng, "before_cursor_execute", _look)
+    assert seen == [(LANG, 2, 0), (TITLE, 2, 0), (LINK, 0, 1)], seen
+    assert ai._marker_path().exists() is False, "both groups ended: nothing is left in the record"
 
 
 def test_the_four_frames_are_keys_in_every_locale_translated_with_their_placeholders():
