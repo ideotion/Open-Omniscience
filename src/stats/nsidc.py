@@ -148,6 +148,8 @@ def _number(raw: str) -> tuple[float | None, str | None]:
 _UNIT_TEXT = "10^6 sq km"
 #: The column-names line, matched whole: a swapped or renamed column must not be read as Extent.
 _NAMES: tuple[str, ...] = ("Year", "Month", "Day", "Extent", "Missing", "Source Data")
+#: The units line's first five cells, matched whole (the sixth is free text naming the source product).
+_UNITS: tuple[str, ...] = ("YYYY", "MM", "DD", _UNIT_TEXT, _UNIT_TEXT)
 
 
 def parse_nsidc(text: str, *, region: str = "N", extracted_at: str) -> NsidcParse:
@@ -167,14 +169,13 @@ def parse_nsidc(text: str, *, region: str = "N", extracted_at: str) -> NsidcPars
         first = fields[0].lower()
         if first == "year" and not header_seen:
             out.header_lines += 1
-            if tuple(fields) == _NAMES:
-                names_seen = True
-            else:
+            names_seen = tuple(fields) == _NAMES  # a refused names line also voids an earlier good one
+            if not names_seen:
                 _refuse(out, lineno, "column names or order changed", stripped)
             continue
         if first == "yyyy" and names_seen and not header_seen:
             out.header_lines += 1
-            if len(fields) == _EXPECTED_FIELDS and fields[3] == _UNIT_TEXT and fields[4] == _UNIT_TEXT:
+            if len(fields) == _EXPECTED_FIELDS and tuple(fields[:5]) == _UNITS:
                 header_seen = True
             else:
                 _refuse(out, lineno, f"units row does not say {_UNIT_TEXT}", stripped)

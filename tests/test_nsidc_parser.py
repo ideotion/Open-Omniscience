@@ -177,3 +177,15 @@ def test_a_swapped_or_renamed_column_is_refused_not_read_as_extent():
     ):
         p = parse_nsidc(names + units + "2000, 1, 1, 0.000, 10.2, x\n", extracted_at="t")
         assert p.rows_read == 0 and p.figures == [] and p.looks_unrecognised
+
+
+def test_a_refused_names_line_voids_an_earlier_good_one_and_the_units_row_is_matched_whole():
+    good = "Year, Month, Day, Extent, Missing, Source Data\n"
+    units = "YYYY, MM, DD, 10^6 sq km, 10^6 sq km, x\n"
+    row = "2000, 1, 2, 5.0, 0.1, x\n"
+    for body in (
+        good + "Year, Month, Day, Missing, Extent, Source Data\n" + units + row,
+        good + "YYYY, DD, MM, 10^6 sq km, 10^6 sq km, x\n" + row,
+    ):
+        p = parse_nsidc(body, extracted_at="t")
+        assert p.rows_read == 0 and p.looks_unrecognised
