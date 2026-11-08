@@ -252,13 +252,15 @@ def _count_key(article: dict) -> tuple:
 
 def _sources_of(arts: list[dict]) -> list[str]:
     """One shown name per counted voice, sorted. Two outlets sharing a label appear twice, so the list's length is the
-    count; one outlet's several feed labels collapse to the first of them in sort order (deterministic)."""
-    names: dict[tuple, str] = {}
+    count; one outlet's several feed labels collapse to the first of them in sort order (deterministic), and a voice
+    shows "?" only when none of its articles carries a name."""
+    names: dict[tuple, str | None] = {}
     for a in arts:
-        k, n = _count_key(a), _outlet_name(a)
-        if k not in names or n < names[k]:
+        k, n = _count_key(a), (a.get("outlet_label") or a.get("source"))
+        cur = names.get(k)
+        if k not in names or (n is not None and (cur is None or n < cur)):
             names[k] = n
-    return sorted(names.values())
+    return sorted(n or "?" for n in names.values())
 
 
 def group_paths(articles: list[dict], shared_links: dict[str, list[int]],
@@ -298,8 +300,8 @@ def group_paths(articles: list[dict], shared_links: dict[str, list[int]],
         joins.append({"kind": kind, "detail": detail, "article_ids": members})
 
     for _sid, members in sorted(by_source.items(), key=lambda kv: str(kv[0])):
-        # The detail names the outlet by the same rule as the path's sources (the smallest name), so the two never
-        # disagree; a voice with no name at all (its source row is gone) gets no detail rather than a bare "?".
+        # The detail names the outlet by the same rule as the path's sources (the smallest name any member carries),
+        # so the two never disagree; a voice with no name at all (its source row is gone) gets no detail, not a "?".
         named = [x for m in members if (x := by_id[m].get("outlet_label") or by_id[m].get("source"))]
         _join("same_source", members, min(named) if named else None)
     for group in near_dup_groups:

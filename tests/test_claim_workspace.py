@@ -458,3 +458,13 @@ def test_a_same_source_join_with_no_name_has_no_detail():
     ]
     p = cw.group_paths(arts, {}, [])["paths"][0]
     assert p["n_sources"] == 1 and p["joins"][0]["detail"] is None
+
+
+def test_a_voice_mixing_a_named_and_a_nameless_article_shows_the_name_in_both_places():
+    for order in ((0, 1), (1, 0)):
+        pair = [
+            {"id": 1, "source_id": 5, "source": "Reuters", "wire": None, "published_at": "2026-01-01"},
+            {"id": 2, "source_id": 5, "source": None, "wire": None, "published_at": "2026-01-02"},
+        ]
+        p = cw.group_paths([pair[i] for i in order], {}, [])["paths"][0]
+        assert p["sources"] == ["Reuters"] and p["joins"][0]["detail"] == "Reuters"
