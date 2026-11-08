@@ -1388,3 +1388,19 @@ artifacts:
     refresh: "place configs/population_table.json (source, as_of, rows) as described in src/stats/population.py"
     freshness: {max_age_months: 24}
     last_verified: "2026-11-07"
+
+  - id: ghcnd-dly-shape
+    title: NOAA NCEI GHCN-Daily .dly and station-list shape
+    kind: dated-data
+    description: >-
+      The fixed-width `<station>.dly` layout src/stats/ghcnd.py targets (id 1-11, year, month, element, then 31 groups of value/MFLAG/
+      QFLAG/SFLAG; -9999 = missing; TMAX/TMIN/PRCP in tenths, SNOW/SNWD in mm) and the `ghcnd-stations.txt` columns. Documented from
+      NCEI's published readme and NOT verified against a live download -- the build sandbox has no route to www.ncei.noaa.gov; the
+      first real fetch is an operator step. GHCN-Daily is revised as sources are re-ingested, so each fetch is stored as a new vintage.
+    upstream: "https://www.ncei.noaa.gov/pub/data/ghcn/daily/ (readme.txt)"
+    check_upstream: "fetch one .dly file and ghcnd-stations.txt on a networked machine and confirm the 269-character line, the column offsets and the -9999 marker against readme.txt"
+    license: "NOAA data in the public domain (US government work); operator to confirm the exact terms text"
+    pin: {file: src/stats/ghcnd.py, const: GHCND_AS_OF}
+    refresh: "verify the live shape, update the fixtures in tests/test_ghcnd_parser.py, bump GHCND_AS_OF"
+    freshness: {max_age_months: 18}
+    last_verified: "2026-11-07"
