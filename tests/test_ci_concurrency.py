@@ -55,19 +55,19 @@ def _ctx(ref: str, sha: str) -> dict:
     return {
         "github.workflow": "CI",
         "github.ref": ref,
-        "github.ref_name": ref.removeprefix("refs/heads/").removeprefix("refs/"),
+        "github.ref_name": ref.removeprefix("refs/heads/").removeprefix("refs/pull/"),  # a PR's ref_name is "<n>/merge"
         "github.sha": sha,
         "github.event.repository.default_branch": "main",
     }
 
 
-def _group(ref: str, sha: str) -> str:
-    return str(_evaluate(_concurrency()["group"], _ctx(ref, sha)))
+def _group(ref: str, sha: str, **override: str) -> str:
+    return str(_evaluate(_concurrency()["group"], {**_ctx(ref, sha), **override}))
 
 
-def _cancels(ref: str, sha: str) -> bool:
+def _cancels(ref: str, sha: str, **override: str) -> bool:
     value = _concurrency()["cancel-in-progress"]
-    return bool(value if isinstance(value, bool) else _evaluate(value, _ctx(ref, sha)))
+    return bool(value if isinstance(value, bool) else _evaluate(value, {**_ctx(ref, sha), **override}))
 
 
 def test_two_merge_commits_on_main_never_share_a_group_and_neither_is_cancelled():
@@ -86,6 +86,17 @@ def test_a_pull_requests_pushes_share_one_group_and_the_newer_cancels_the_older(
 def test_main_and_a_pull_request_on_the_same_commit_do_not_share_a_group():
     sha = "c" * 40
     assert _group("refs/heads/main", sha) != _group("refs/pull/1831/merge", sha)
+
+
+def test_a_scheduled_run_never_shares_a_group_with_a_merge_to_main():
+    """A schedule payload carries no ``repository``, so ``default_branch`` reads empty there: the weekly run falls back to the per-ref group.
+
+    That group is no longer the one main's pushes use, so the cron run and a merge's run cannot cancel or replace each other.
+    """
+    blank = {"github.event.repository.default_branch": ""}
+    scheduled = _group("refs/heads/main", "d" * 40, **blank)
+    assert scheduled not in {_group("refs/heads/main", "d" * 40), _group("refs/heads/main", "e" * 40)}
+    assert _cancels("refs/heads/main", "d" * 40, **blank), "the per-ref fallback no longer cancels its superseded run"
 
 
 @pytest.mark.parametrize(
