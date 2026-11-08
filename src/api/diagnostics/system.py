@@ -13,7 +13,7 @@ register on one router in that order.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import Depends, Query
 from fastapi.responses import Response
@@ -108,8 +108,9 @@ def elections_coverage_floor() -> dict:
     from src.civic.coverage_floor import floor_coverage, load_floor
     from src.events.catalog import load_events
 
-    out = floor_coverage()
-    out["tier_report"] = country_tier_report(load_events(), set(load_floor()["countries"]))
+    today = date.today()  # one clock for both halves, so a request that spans midnight cannot split them
+    out = floor_coverage(today)
+    out["tier_report"] = country_tier_report(load_events(), set(load_floor()["countries"]), today)
     return out
 
 

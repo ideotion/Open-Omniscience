@@ -271,6 +271,9 @@ def test_the_payload_carries_no_score_shaped_field():
                 walk(v, f"{path}[{i}]")
 
     walk(floor_coverage(TODAY))
+    from src.api.diagnostics.system import elections_coverage_floor
+
+    walk(elections_coverage_floor())  # the endpoint's answer too, tier_report included
 
 
 def test_the_diagnostic_endpoint_serves_the_real_measurement():
@@ -319,3 +322,4 @@ def test_the_endpoint_carries_the_per_country_tier_report_and_it_agrees_with_the
     assert {r["cc"] for r in rep["countries"] if r["state"] in covered_states} == set(out["covered"])
     assert {r["cc"] for r in rep["countries"] if r["state"] == "missing"} == set(out["missing"])
     assert rep["caveat"]
+    assert all(state in rep["method"] for state in rep["counts"])  # the method names every state it counts
