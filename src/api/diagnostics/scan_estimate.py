@@ -15,15 +15,16 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
-from fastapi import Response
+from fastapi import Depends, Response
 
 from src.api import diagnostics_plan as _plan
+from src.api.cross_site import refuse_cross_site_get
 from src.monitoring.secret_scrub import log_failure
 
 from ._base import _LOG, router
 
 
-@router.get("/all-job/estimate")
+@router.get("/all-job/estimate", dependencies=[Depends(refuse_cross_site_get)])
 def all_diagnostics_estimate() -> Response:
     """What a Thorough build is expected to hold the machine for, and what it was scaled by. Quick is bounded by its own budget."""
     from src.api.country_wire import CountryWireResponse as JSONResponse
@@ -49,9 +50,9 @@ def _mention_rows() -> int | None:
     try:
         from sqlalchemy import text
 
-        from src.database.session import SessionLocal
+        from src.database.read_snapshot import read_snapshot_session
 
-        with SessionLocal() as s:
+        with read_snapshot_session() as s:
             v = s.execute(text("SELECT MAX(id) FROM keyword_mentions_all")).scalar()
         return int(v) if v else None
     except Exception:  # noqa: BLE001 - an estimate's input never fails a build

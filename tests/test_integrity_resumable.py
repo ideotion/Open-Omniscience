@@ -291,3 +291,151 @@ def test_only_the_all_diagnostics_build_saves_the_cursor_and_a_get_saves_nothing
     seen = []
     bundle._resuming_integrity(lambda: seen.append(bundle._RESUME_INTEGRITY.get()))
     assert seen == [True] and bundle._RESUME_INTEGRITY.get() is False
+
+
+# --------------------------------------------------------------------------- #
+#  A saved pass is resumed only while the corpus below its place is unchanged, and only when it is well formed (Steward 3's read)
+# --------------------------------------------------------------------------- #
+_DANGLING_ARTICLE = next(r for r in integrity._RANGE_SCANS if r[0] == "dangling_mentions_missing_article")
+
+
+def _cut_dangling_pass(session, monkeypatch, saved):
+    """Walk the missing-article check for ONE two-row range and stop, as a build whose budget ran out would."""
+    calls = _budget_for_ranges(monkeypatch, 1)
+    progress: dict = {}
+    assert integrity._range_scan(session, *_DANGLING_ARTICLE, saved, progress) is None
+    assert progress[_DANGLING_ARTICLE[0]]["next_id"] == 2 and calls["n"] == 1
+    monkeypatch.setattr(integrity, "deadline_expired", lambda _s: False)
+    monkeypatch.setattr(integrity, "_scalar", _REAL_SCALAR)
+
+
+_REAL_SCALAR = integrity._scalar
+
+
+def test_a_delete_below_the_place_restarts_the_pass_instead_of_reading_clean(session, tiny_ranges, monkeypatch):
+    """False clean: an article deleted between builds leaves mentions dangling BELOW the cursor. Resumed, the pass never sees
+    them (4 of 6); restarted, it counts all six."""
+    _corpus(session, keywords=7, orphans=3, dangling=2)
+    saved: dict = {}
+    _cut_dangling_pass(session, monkeypatch, saved)
+    session.query(Article).delete()
+    session.commit()
+    progress: dict = {}
+    got = integrity._range_scan(session, *_DANGLING_ARTICLE, saved, progress)
+    assert got == 6, progress
+    assert progress[_DANGLING_ARTICLE[0]]["cursor"] == "restarted"
+    assert "assembled_across_builds" not in progress[_DANGLING_ARTICLE[0]]
+
+
+def test_a_corpus_epoch_bump_restarts_the_pass(session, tiny_ranges, monkeypatch):
+    from datetime import UTC, datetime
+
+    from src.database.models import DerivedMeta
+
+    _corpus(session)
+    saved: dict = {}
+    _cut_dangling_pass(session, monkeypatch, saved)
+    session.add(DerivedMeta(key="corpus_epoch", value="7", updated_at=datetime.now(UTC)))  # a re-index, prune, fold or restore
+    session.commit()
+    progress: dict = {}
+    assert integrity._range_scan(session, *_DANGLING_ARTICLE, saved, progress) == 2
+    assert progress[_DANGLING_ARTICLE[0]]["cursor"] == "restarted"
+
+
+def test_rows_added_above_the_place_keep_the_pass_and_the_figure_says_it_spans_builds(session, tiny_ranges, monkeypatch):
+    _corpus(session)
+    store = MemStore()
+    _budget_for_ranges(monkeypatch, 2)
+    integrity.corpus_integrity(session, sample=100, cursor=store)
+    monkeypatch.setattr(integrity, "deadline_expired", lambda _s: False)
+    monkeypatch.setattr(integrity, "_scalar", _REAL_SCALAR)
+    session.add(Article(title="C", content="z", url="http://s.example/c", canonical_url="http://s.example/c", source_id=1, hash="h3"))
+    session.add(Keyword(term="late", normalized_term="late"))  # ingest between builds: above the pass's place
+    session.commit()
+    r = integrity.corpus_integrity(session, sample=100, cursor=store)
+    p = r["scan_progress"]["orphan_keywords"]
+    assert r["orphan_keywords"] == 3, "the pass walks to the id it began with; the new keyword is the next pass's"
+    assert "cursor" not in p and p["assembled_across_builds"] is True
+    assert p["last_complete"]["assembled_across_builds"] is True
+    assert "orphan_keywords" in r["assembled_across_builds"]
+    assert "assembled across builds: " in r["verdict"]
+    assert "are exact" not in r["method"] and "assembled_across_builds" in r["method"]
+
+
+def test_a_figure_from_one_build_does_not_say_it_spans_builds(session, tiny_ranges):
+    _corpus(session)
+    r = integrity.corpus_integrity(session, sample=100, cursor=MemStore())
+    assert r["assembled_across_builds"] == [] and "assembled" not in r["verdict"]
+    assert "assembled_across_builds" not in r["scan_progress"]["orphan_keywords"]
+
+
+_GOOD = {"through_id": 7, "next_id": 4, "tally": 0, "step": 2, "started_at": "2026-11-08T00:00:00+00:00"}
+
+
+@pytest.mark.parametrize(
+    "pending",
+    [
+        {**_GOOD, "through_id": None},
+        {**_GOOD, "next_id": "4"},
+        {**_GOOD, "tally": 0.5},
+        {**_GOOD, "tally": True},
+        {**_GOOD, "started_at": "yesterday"},
+        {**_GOOD, "through_id": 5, "next_id": 10},  # past its own end: would read complete having scanned nothing
+        {**_GOOD, "next_id": 7},  # at its end: a finished pass is saved complete, never pending
+        {**_GOOD, "through_id": 100},  # beyond the table's largest id
+        {**_GOOD, "tally": -1},
+        {**_GOOD, "next_id": -1},
+        {**_GOOD, "tally": 5},  # more breaking rows than rows walked
+        ["not", "a", "dict"],
+    ],
+)
+def test_a_malformed_or_inconsistent_place_is_discarded_and_a_fresh_pass_counts(session, tiny_ranges, pending):
+    _corpus(session)
+    store = MemStore()
+    store.state = {"orphan_keywords": {"pending": pending}}
+    r = integrity.corpus_integrity(session, sample=100, cursor=store)
+    p = r["scan_progress"]["orphan_keywords"]
+    assert r["orphan_keywords"] == 3 and p["state"] == "complete", p
+    assert p["cursor"] == "discarded" and "assembled_across_builds" not in p
+
+
+@pytest.mark.parametrize(
+    "pending",
+    [
+        {"tables": ["articles"], "started_at": "2026-11-08T00:00:00+00:00"},
+        {"tables": {"articles": "0"}, "started_at": "2026-11-08T00:00:00+00:00"},
+        {"tables": {"articles": -2}, "started_at": "2026-11-08T00:00:00+00:00"},
+        {"tables": {"articles": 0}, "violating_tables": ["articles"], "started_at": "2026-11-08T00:00:00+00:00"},
+        {"tables": {"articles": 0}, "violating_tables": "articles", "started_at": "2026-11-08T00:00:00+00:00"},
+        {"tables": {"articles": 0}},
+    ],
+)
+def test_a_malformed_foreign_key_place_is_discarded_not_a_crash(session, tiny_ranges, pending):
+    _corpus(session)
+    store = MemStore()
+    store.state = {"foreign_key_violations": {"pending": pending}}
+    r = integrity.corpus_integrity(session, sample=100, cursor=store)
+    p = r["scan_progress"]["foreign_key_violations"]
+    assert p["state"] == "complete" and p["cursor"] == "discarded", p
+    assert r["foreign_key_violations"] is not None
+
+
+def test_a_table_whose_foreign_key_check_fails_is_named_with_its_error_and_the_others_still_run(session, tiny_ranges, monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    _corpus(session)
+    real = session.execute
+
+    def failing(stmt, *a, **k):
+        if 'foreign_key_check("articles")' in str(stmt):
+            raise OperationalError("PRAGMA", {}, Exception("database disk image is malformed"))
+        return real(stmt, *a, **k)
+
+    monkeypatch.setattr(session, "execute", failing)
+    store = MemStore()
+    r = integrity.corpus_integrity(session, sample=100, cursor=store)
+    p = r["scan_progress"]["foreign_key_violations"]
+    assert r["foreign_key_violations"] is None and "foreign_key_violations" in r["incomplete_checks"]
+    assert p["state"] == "partial" and p["errors"] == [{"name": "articles", "error": "OperationalError"}]
+    assert p["tables_checked"] == p["tables_total"] - 1, "every other table was still checked"
+    assert "articles" not in store.state["foreign_key_violations"]["pending"]["tables"], "the failed table is tried again next build"

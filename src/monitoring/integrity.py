@@ -144,8 +144,119 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _int(v: Any) -> int | None:
+    """A saved integer, or ``None``: a bool, a string, a float or a null is not one (``int()`` would coerce or raise)."""
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+def _iso(v: Any) -> str | None:
+    if not isinstance(v, str):
+        return None
+    try:
+        datetime.fromisoformat(v)
+    except ValueError:
+        return None
+    return v
+
+
+#: The tables whose rows below a pass's place the generation marker watches. The mentions table is not counted (25 M rows on the
+#: 2026-11-07 corpus): every path that rewrites or deletes mentions -- re-index, prune, fold, restore, merge, salvage -- bumps the corpus
+#: epoch, which the marker carries.
+_GENERATION_TABLES = ("articles", "keywords")
+
+
+class _Generations:
+    """What the corpus looked like when a pass began, so a later build can tell whether rows below the pass's place changed since.
+
+    A marker is the corpus epoch plus, for each watched table, the largest id when the pass began and how many rows sit at or below it.
+    Rows added later sit above that id and do not move it, so ingest between builds keeps the pass; a delete below it, or any epoch
+    bump, changes the marker and the pass restarts. Read once per build per starting point, never per range."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self._cache: dict[tuple[tuple[str, int], ...], dict[str, Any] | None] = {}
+
+    def _read(self, tops: dict[str, int]) -> dict[str, Any] | None:
+        key = tuple(sorted(tops.items()))
+        if key not in self._cache:
+            from src.analytics.corpus_epoch import get_corpus_epoch
+
+            out: dict[str, Any] = {"epoch": get_corpus_epoch(self._session)}
+            for t, top in key:
+                n = _scalar(self._session, f"SELECT COUNT(*) FROM {t} WHERE id <= :top", {"top": top})  # nosec B608 - `t` is a constant above
+                if n is None:
+                    self._cache[key] = None
+                    return None
+                out[t] = [top, n]
+            self._cache[key] = out
+        return self._cache[key]
+
+    def fresh(self) -> dict[str, Any] | None:
+        """The marker for a pass starting now; ``None`` when it cannot be read (the pass then cannot be resumed and starts over next build)."""
+        tops: dict[str, int] = {}
+        for t in _GENERATION_TABLES:
+            top = _scalar(self._session, f"SELECT MAX(id) FROM {t}")  # nosec B608 - `t` is a constant above
+            if top is None:
+                return None
+            tops[t] = top
+        return self._read(tops)
+
+    def still(self, marker: Any) -> bool:
+        """Whether the corpus below a pass's starting point is as it was; anything unreadable or malformed reads as changed."""
+        if not isinstance(marker, dict) or _int(marker.get("epoch")) is None:
+            return False
+        tops: dict[str, int] = {}
+        for t in _GENERATION_TABLES:
+            pair = marker.get(t)
+            if not (isinstance(pair, list) and len(pair) == 2 and all(_int(x) is not None and x >= 0 for x in pair)):
+                return False
+            tops[t] = pair[0]
+        return self._read(tops) == marker
+
+
+def _range_pending(p: Any, top: int) -> dict[str, Any] | None:
+    """A saved pending range pass, or ``None`` when it is malformed or inconsistent with the table as it is now.
+
+    Required: integers that are not bools; ``0 <= next_id < through_id <= the table's largest id now`` (a pass saved at its end would have
+    been saved complete, so ``next_id == through_id`` is not one); ``0 <= tally <= next_id`` (each row of a range counts at most once)."""
+    if not isinstance(p, dict):
+        return None
+    through, nxt, tally = _int(p.get("through_id")), _int(p.get("next_id")), _int(p.get("tally"))
+    started = _iso(p.get("started_at"))
+    if through is None or nxt is None or tally is None or started is None:
+        return None
+    if not (0 <= nxt < through <= top and 0 <= tally <= nxt):
+        return None
+    step = _int(p.get("step"))
+    return {
+        "through_id": through, "next_id": nxt, "tally": tally, "started_at": started,
+        "step": step if step is not None and step >= 1 else _FIRST_RANGE_ROWS, "generation": p.get("generation"),
+    }
+
+
+def _fk_pending(p: Any, names: list[str]) -> dict[str, Any] | None:
+    """A saved pending foreign-key pass, or ``None`` when malformed: ``tables`` a dict of a current table name to a non-negative integer,
+    ``violating_tables`` a list of tables it holds with a non-zero count, ``started_at`` a timestamp."""
+    if not isinstance(p, dict):
+        return None
+    tables, bad, started = p.get("tables"), p.get("violating_tables", []), _iso(p.get("started_at"))
+    if not isinstance(tables, dict) or not isinstance(bad, list) or started is None:
+        return None
+    done: dict[str, int] = {}
+    for k, v in tables.items():
+        n = _int(v)
+        if not isinstance(k, str) or n is None or n < 0:
+            return None
+        if k in names:
+            done[k] = n
+    if not all(isinstance(t, str) and tables.get(t) for t in bad):
+        return None
+    return {"tables": done, "violating_tables": {t for t in bad if t in done}, "started_at": started, "generation": p.get("generation")}
+
+
 def _range_scan(
-    session: Session, check: str, table: str, sql: str, saved: dict[str, Any], progress: dict[str, Any], stop_at: float | None = None
+    session: Session, check: str, table: str, sql: str, saved: dict[str, Any], progress: dict[str, Any], stop_at: float | None = None,
+    gens: _Generations | None = None,
 ) -> int | None:
     """Count one exact check in id ranges, from where the last build stopped, until it finishes or the budget runs out.
 
@@ -155,19 +266,32 @@ def _range_scan(
     the largest id the table had when the pass began: rows added after that are the next pass's, and the progress says which id that was.
     The cursor only moves past a range whose statement finished, so an interrupted range is simply done again next build. ``stop_at`` (a
     ``time.monotonic()`` instant) is this check's share of the budget: it stops between ranges there, so the checks after it still get a turn.
-    ``progress[check]`` is written before any interrupt is re-raised, so a check cut mid-range still says where it stands."""
+    ``progress[check]`` is written before any interrupt is re-raised, so a check cut mid-range still says where it stands.
+
+    A saved pass is resumed only when it is well formed and consistent with the table now (else ``cursor: discarded``) and the corpus below
+    its place is as it was when it began (``gens``; else ``cursor: restarted``). A figure finished from a pass an earlier build began says
+    ``assembled_across_builds``: it holds for the rows at or below its ``through_id``."""
+    gens = gens if gens is not None else _Generations(session)
     prev = saved.get(check) if isinstance(saved.get(check), dict) else {}
-    pending = prev.get("pending") if isinstance(prev.get("pending"), dict) else None
     last_complete = prev.get("last_complete") if isinstance(prev.get("last_complete"), dict) else None
+    top = _scalar(session, f"SELECT MAX(id) FROM {table}")  # nosec B608 - `table` is one of three constants above
+    if top is None:
+        progress[check] = {"state": "unreadable", "last_complete": last_complete}
+        return None
+    cursor_note: dict[str, Any] = {}
+    pending = _range_pending(prev.get("pending"), top) if prev.get("pending") is not None else None
+    if prev.get("pending") is not None and pending is None:
+        cursor_note = {"cursor": "discarded", "cursor_reason": "the saved place was malformed or inconsistent with the table; a fresh pass began"}
+    elif pending is not None and not gens.still(pending["generation"]):
+        pending = None
+        cursor_note = {"cursor": "restarted", "cursor_reason": "rows below the saved place changed since its pass began (or the corpus epoch moved); a fresh pass began"}
+    resumed = pending is not None
     if pending is not None:
-        through, nxt, tally = int(pending.get("through_id", 0)), int(pending.get("next_id", 0)), int(pending.get("tally", 0))
-        step, started = int(pending.get("step") or _FIRST_RANGE_ROWS), str(pending.get("started_at") or _now_iso())
+        through, nxt, tally, step, started, generation = (
+            pending["through_id"], pending["next_id"], pending["tally"], pending["step"], pending["started_at"], pending["generation"])
     else:
-        top = _scalar(session, f"SELECT MAX(id) FROM {table}")  # nosec B608 - `table` is one of three constants above
-        if top is None:
-            progress[check] = {"state": "unreadable", "last_complete": last_complete}
-            return None
-        through, nxt, tally, step, started = top, 0, 0, _FIRST_RANGE_ROWS, _now_iso()
+        through, nxt, tally, step, started, generation = top, 0, 0, _FIRST_RANGE_ROWS, _now_iso(), gens.fresh()
+    range_error = False
     interrupted: BaseException | None = None
     while nxt < through:
         if deadline_expired(session) or (stop_at is not None and time.monotonic() >= stop_at):
@@ -180,6 +304,7 @@ def _range_scan(
             interrupted = exc
             break
         if n is None:
+            range_error = True
             break  # a missing or damaged table: degraded, and the cursor stays where it was
         tally += n
         nxt = hi
@@ -188,30 +313,40 @@ def _range_scan(
     done = nxt >= through
     if done:
         last_complete = {"value": tally, "through_id": through, "started_at": started, "at": _now_iso()}
+        if resumed:
+            last_complete["assembled_across_builds"] = True
         saved[check] = {"last_complete": last_complete}
         progress[check] = {"state": "complete", "through_id": through, "next_id": through, "tally": tally, "last_complete": last_complete}
+        if resumed:
+            progress[check]["assembled_across_builds"] = True
     else:
         saved[check] = {
-            "pending": {"through_id": through, "next_id": nxt, "tally": tally, "step": step, "started_at": started},
+            "pending": {"through_id": through, "next_id": nxt, "tally": tally, "step": step, "started_at": started, "generation": generation},
             "last_complete": last_complete,
         }
         progress[check] = {
             "state": "partial", "through_id": through, "next_id": nxt, "tally_so_far": tally,
             "started_at": started, "last_complete": last_complete,
         }
+        if range_error:
+            progress[check]["error"] = "a range read failed (a missing or damaged table); the place is kept for the next build"
+    progress[check].update(cursor_note)
     if interrupted is not None:
         raise interrupted
     return tally if done else None
 
 
-def _fk_scan(session: Session, saved: dict[str, Any], progress: dict[str, Any], stop_at: float | None = None) -> int | None:
+def _fk_scan(
+    session: Session, saved: dict[str, Any], progress: dict[str, Any], stop_at: float | None = None, gens: _Generations | None = None
+) -> int | None:
     """``PRAGMA foreign_key_check`` one table at a time, from the tables the last build had not reached.
 
     A table at a time because the whole-database pragma is one statement the deadline cannot stop and one that never finished on a 14 GB corpus.
     The mentions table is left to the two dangling-mention checks, which are the same two foreign keys counted exactly in ranges; it is named in
-    the progress, never silently dropped."""
+    the progress, never silently dropped. A saved pass is validated and its generation checked as :func:`_range_scan` does; a table whose
+    check fails for a reason other than the budget is named with its error class, the others still run, and the check stays incomplete."""
+    gens = gens if gens is not None else _Generations(session)
     prev = saved.get("foreign_key_violations") if isinstance(saved.get("foreign_key_violations"), dict) else {}
-    pending = prev.get("pending") if isinstance(prev.get("pending"), dict) else None
     last_complete = prev.get("last_complete") if isinstance(prev.get("last_complete"), dict) else None
     try:
         names = [str(r[0]) for r in session.execute(text("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")).fetchall()]
@@ -221,9 +356,19 @@ def _fk_scan(session: Session, saved: dict[str, Any], progress: dict[str, Any], 
             raise
         return None
     names = [n for n in names if _TABLE_NAME.match(n) and n != _MENTIONS_TABLE]
-    done_tables: dict[str, int] = {k: int(v) for k, v in (pending or {}).get("tables", {}).items() if k in names}
-    bad: set[str] = {str(t) for t in (pending or {}).get("violating_tables", [])}
-    started = str((pending or {}).get("started_at") or _now_iso())
+    cursor_note: dict[str, Any] = {}
+    pending = _fk_pending(prev.get("pending"), names) if prev.get("pending") is not None else None
+    if prev.get("pending") is not None and pending is None:
+        cursor_note = {"cursor": "discarded", "cursor_reason": "the saved place was malformed; a fresh pass began"}
+    elif pending is not None and not gens.still(pending["generation"]):
+        pending = None
+        cursor_note = {"cursor": "restarted", "cursor_reason": "rows below the saved place changed since its pass began (or the corpus epoch moved); a fresh pass began"}
+    resumed = pending is not None
+    if pending is not None:
+        done_tables, bad, started, generation = pending["tables"], pending["violating_tables"], pending["started_at"], pending["generation"]
+    else:
+        done_tables, bad, started, generation = {}, set(), _now_iso(), gens.fresh()
+    errors: list[dict[str, str]] = []
     interrupted: BaseException | None = None
     for name in names:
         if name in done_tables:
@@ -235,7 +380,9 @@ def _fk_scan(session: Session, saved: dict[str, Any], progress: dict[str, Any], 
         except Exception as exc:  # noqa: BLE001
             if _budget_spent(session, exc):
                 interrupted = exc
-            break
+                break
+            errors.append({"name": name, "error": type(exc).__name__})
+            continue
         done_tables[name] = len(rows)
         if rows:
             bad.add(name)
@@ -243,14 +390,18 @@ def _fk_scan(session: Session, saved: dict[str, Any], progress: dict[str, Any], 
     total = sum(done_tables.values())
     if finished:
         last_complete = {"value": total, "tables": len(names), "started_at": started, "at": _now_iso()}
+        if resumed:
+            last_complete["assembled_across_builds"] = True
         saved["foreign_key_violations"] = {"last_complete": last_complete}
         progress["foreign_key_violations"] = {
             "state": "complete", "tables_checked": len(names), "violating_tables": sorted(bad),
             "left_to_the_mention_checks": [_MENTIONS_TABLE], "last_complete": last_complete,
         }
+        if resumed:
+            progress["foreign_key_violations"]["assembled_across_builds"] = True
     else:
         saved["foreign_key_violations"] = {
-            "pending": {"tables": done_tables, "violating_tables": sorted(bad), "started_at": started},
+            "pending": {"tables": done_tables, "violating_tables": sorted(bad), "started_at": started, "generation": generation},
             "last_complete": last_complete,
         }
         progress["foreign_key_violations"] = {
@@ -258,6 +409,9 @@ def _fk_scan(session: Session, saved: dict[str, Any], progress: dict[str, Any], 
             "tally_so_far": total, "violating_tables": sorted(bad), "started_at": started,
             "left_to_the_mention_checks": [_MENTIONS_TABLE], "last_complete": last_complete,
         }
+        if errors:
+            progress["foreign_key_violations"]["errors"] = errors
+    progress["foreign_key_violations"].update(cursor_note)
     if interrupted is not None:
         raise interrupted
     return total if finished else None
@@ -419,15 +573,16 @@ def corpus_integrity(
             # read and the foreign-key check never run. A check that did not reach the end reads None (not
             # established) with its place in ``scan_progress``, never a partial tally dressed as the figure.
             resumable: list[str] = [c for c, _t, _q in _RANGE_SCANS] + ["foreign_key_violations"]
+            gens = _Generations(session)
             for i, check in enumerate(resumable):
                 left = deadline_left_s(session)
                 stop_at = None if left is None else time.monotonic() + max(left, 0.0) / (len(resumable) - i)
                 if check == "foreign_key_violations":
-                    report[check] = _fk_scan(session, saved, progress, stop_at)
+                    report[check] = _fk_scan(session, saved, progress, stop_at, gens)
                     report["foreign_key_violation_tables"] = progress[check].get("violating_tables") or []
                 else:
                     _c, table, sql = next(r for r in _RANGE_SCANS if r[0] == check)
-                    report[check] = _range_scan(session, check, table, sql, saved, progress, stop_at)
+                    report[check] = _range_scan(session, check, table, sql, saved, progress, stop_at, gens)
             # A range scan that stops between ranges raises nothing: the budget running out is read here, not inferred.
             if deadline_expired(session):
                 timed_out = True
@@ -507,9 +662,16 @@ def corpus_integrity(
     report["verdict"] = ("drift" if drift else ("no drift" if drift is False else
                          "not established: " + ", ".join(incomplete) + " did not complete"
                          + ("; " + ", ".join(report["complete_checks"]) + " did" if report["complete_checks"] else "")))
+    assembled = sorted(c for c, p in progress.items() if isinstance(p, dict) and p.get("assembled_across_builds"))
+    report["assembled_across_builds"] = assembled
+    if assembled:
+        report["verdict"] += "; assembled across builds: " + ", ".join(assembled) + " (each holds for the rows at or below its through_id)"
     report["method"] = (
-        "Read-only, deadline-guarded SQLite sweep. Orphan/dangling tallies are exact "
-        "(index-backed); counter drift is sampled over the top-mention keywords unless "
+        "Read-only, deadline-guarded SQLite sweep. Orphan/dangling tallies are counted in id "
+        "ranges (index-backed) and the foreign-key check a table at a time; a pass the budget "
+        "cuts resumes next build only while the corpus epoch and the article and keyword rows "
+        "below its place are unchanged (else it starts over), and a figure finished that way says "
+        "assembled_across_builds; counter drift is sampled over the top-mention keywords unless "
         "full=1. Reports drift, never fixes it (the reconcile/prune passes own that). "
         "Counts/names only, no score. The verdict is read from COMPLETED checks only: "
         "drift=true if any found drift, false only if all completed clean, null when a "
