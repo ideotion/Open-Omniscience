@@ -125,7 +125,7 @@ def worldbank_url(
     if not indicator or not indicator.strip():
         raise ValueError("worldbank_url: indicator must be a non-empty string")
     ind = quote(indicator.strip(), safe="")
-    ctry = quote((country or "all").strip(), safe="")
+    ctry = quote((country or "all").strip(), safe=";")  # ";" separates countries in one request; the directory pin refuses a %-escape
     url = (
         f"{WORLDBANK_API_BASE}/country/{ctry}/indicator/{ind}"
         f"?format=json&per_page={int(per_page)}"

@@ -432,3 +432,28 @@ def test_an_endless_statistics_body_is_stopped_at_the_bound_through_the_real_def
     with pytest.raises(BodyTooLarge):
         fetch.fetch_jsonstat("https://pub.example/t", agency="a", max_cells=1)
     assert raw.pulled <= fetch.jsonstat_max_chars(1) * 4 + 1_000_000
+
+
+def test_a_multi_country_world_bank_request_stays_under_the_directory_pin():
+    url = fetch.worldbank_url("NY.GDP.MKTP.CD", "USA;FRA")
+    assert "/country/USA;FRA/" in url
+    refuse_unlisted_path(url, fetch.WORLDBANK_PATHS)
+
+
+def test_eurostat_and_owid_fetch_default_to_their_own_pinned_getters(monkeypatch):
+    built: list[dict] = []
+
+    def factory(**kw):
+        built.append(kw)
+        raise StopIteration
+
+    monkeypatch.setattr(fetch, "kill_switch_active", lambda: False)
+    monkeypatch.setattr(fetch, "guarded_session", factory)
+    with pytest.raises(StopIteration):
+        fetch.fetch_eurostat("prc_hicp_midx")
+    with pytest.raises(StopIteration):
+        fetch.fetch_owid("co2-emissions-per-capita")
+    assert [(b["allowed_hosts"], b["allowed_path_prefixes"]) for b in built] == [
+        (fetch.EUROSTAT_HOSTS, fetch.EUROSTAT_PATHS),
+        (fetch.OWID_GRAPHER_HOSTS, fetch.OWID_GRAPHER_PATHS),
+    ]
