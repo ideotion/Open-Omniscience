@@ -319,7 +319,9 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
     prior_checked_at = doc.last_checked_at
     doc.last_checked_at = now
     # Before the request: a Stop pressed and cleared again inside it reads as engaged afterwards (R614), so a check the
-    # operator's Stop cut short is not stamped as the document's check.
+    # operator's Stop cut short is not stamped as the document's check. The window is the whole fetch() call, waits
+    # included (the host lock, a Crawl-delay, a retry back-off): a real failure that shares it with a Stop is asked again
+    # next pass rather than backed off, the conservative side.
     epoch = kill_switch_epoch()
     try:
         # require_html=False so an official-gazette PDF is not rejected up front;

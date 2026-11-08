@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import threading
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlparse
 
 import pytest
 import requests
@@ -166,6 +167,8 @@ def test_the_epoch_counts_every_engagement_and_a_clear_does_not_undo_it():
 
 
 def test_concurrent_engagements_are_each_counted():
+    """A lost count needs a thread switch inside the increment: standard CPython rarely makes one there, so this guards
+    a free-threaded build more than it catches a removed lock today."""
     before = kill_switch_epoch()
     start = threading.Barrier(8)
 
@@ -195,6 +198,47 @@ def test_a_stop_cleared_inside_the_robots_read_caches_nothing_and_is_the_refusal
     assert str(exc.value) == KILL_SWITCH_REFUSAL
     assert f._robots == {} and f._robots_fails == {} and f._robots_cause == {}
     assert _sidecar(tmp_path) == {}, "a Stop must not reach the persisted verdicts"
+
+
+def test_a_stop_pressed_before_the_robots_read_and_cleared_after_its_refusal_caches_nothing(tmp_path):
+    """Engaged BEFORE the read's capture, so the count does not move; the read is refused by name; a clear lands before
+    the read asks. Neither the switch nor the count says Stop then: the refusal's own sentence does."""
+    f, made = _fetcher(tmp_path, robots=["ok"], page=["ok"])
+    real = f._guarded_redirect_get
+
+    def refused_then_cleared(url, **kw):
+        try:
+            return real(url, **kw)  # the switch is engaged: refused by name before the session is touched
+        finally:
+            clear_kill_switch()
+
+    f._guarded_redirect_get = refused_then_cleared  # type: ignore[method-assign]
+    activate_kill_switch()
+    with pytest.raises(FetchFailed) as exc:
+        f._get_robots(_HOST_KEY, urlparse(_URL))
+    assert made == [], "no request was made"
+    assert not kill_switch_active()
+    assert str(exc.value) == KILL_SWITCH_REFUSAL
+    assert f._robots == {} and f._robots_fails == {} and f._robots_cause == {}
+    assert _sidecar(tmp_path) == {}
+
+
+def test_a_clear_waits_for_an_engagement_to_be_counted():
+    """The set and the count are one step as far as a clear is concerned: a clear can never land between them, where
+    a reader would see the switch clear and the count unchanged (the read of R614's PR reproduced that window)."""
+    from src import ingest
+
+    before = kill_switch_epoch()
+    cleared = threading.Event()
+    with ingest._KILL_EPOCH_LOCK:  # stands for an engagement between its set and its count
+        ingest._KILL.set()
+        t = threading.Thread(target=lambda: (clear_kill_switch(), cleared.set()), name="epoch-test-clear")
+        t.start()
+        assert not cleared.wait(0.2), "a clear went through between an engagement's set and its count"
+        ingest._KILL_EPOCH += 1
+    t.join(5)
+    assert cleared.is_set() and not kill_switch_active()
+    assert kill_switch_engaged_since(before)
 
 
 def test_a_real_unreachable_robots_read_is_still_cached_for_an_hour(tmp_path):
