@@ -57,7 +57,7 @@ def test_check_all_flags_behind_and_current_and_failures():
         if "alpinejs/alpine/releases/latest" in url:
             return {"tag_name": "v3.20.0"}            # past reviewed_through -> behind
         if "duckdb/duckdb/releases/latest" in url:
-            return {"tag_name": "v1.5.5"}             # == current -> current
+            return {"tag_name": "v2.0.0"}             # == current -> current
         if "ip-location-db/commits" in url:
             return [{"commit": {"committer": {"date": "2026-06-01T00:00:00Z"}}}]  # <= as_of
         raise AssertionError(f"unexpected url {url}")
@@ -90,7 +90,7 @@ def test_a_cleared_on_security_entry_goes_quiet_but_never_claims_we_ship_upstrea
         if "alpinejs/alpine/releases/latest" in url:
             return {"tag_name": "v3.17.5"}            # == reviewed_through -> quiet
         if "duckdb/duckdb/releases/latest" in url:
-            return {"tag_name": "v1.5.5"}
+            return {"tag_name": "v2.0.0"}
         if "ip-location-db/commits" in url:
             return [{"commit": {"committer": {"date": "2026-06-01T00:00:00Z"}}}]
         raise AssertionError(f"unexpected url {url}")
@@ -111,7 +111,7 @@ def test_a_release_past_the_review_baseline_speaks_again():
         if "alpinejs/alpine/releases/latest" in url:
             return {"tag_name": "v3.17.6"}            # one patch past the review
         if "duckdb/duckdb/releases/latest" in url:
-            return {"tag_name": "v1.5.5"}
+            return {"tag_name": "v2.0.0"}
         if "ip-location-db/commits" in url:
             return [{"commit": {"committer": {"date": "2026-06-01T00:00:00Z"}}}]
         raise AssertionError(f"unexpected url {url}")

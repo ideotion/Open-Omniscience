@@ -1251,7 +1251,7 @@ artifacts:
     upstream: https://github.com/duckdb/duckdb (+ extensions.duckdb.org)
     check_upstream: "watch duckdb releases; the storage format + extension version both move"
     license: MIT (DuckDB)
-    pin: {floor: "1.4", verified: "1.5.5"}   # pyproject [columnar] duckdb>=floor ; verified against
+    pin: {floor: "1.4", verified: "2.0.0"}   # pyproject [columnar] duckdb>=floor ; verified against
     # Re-verified 2026-08-22 at duckdb 1.5.5 (freshness issue #440). WHAT THAT COVERS, and
     # what it does not -- the two halves of this coupling are in different states:
     #   * LIVE half, verified here: `pip install -e ".[columnar]"` resolves duckdb>=1.4 to
@@ -1281,14 +1281,39 @@ artifacts:
     freshness: {policy: track-duckdb-version}
     # No `reviewed_through` here on purpose: under track-duckdb-version, lagging upstream is
     # NOT a legitimate steady state (unlike an on-security artifact), so `current` moves only
-    # when the coupling is actually re-verified -- as it was, at 1.5.5, on 2026-08-22.
-    upstream_check: {github: "duckdb/duckdb", type: release, current: "v1.5.5"}
+    # when the coupling is actually re-verified -- as it was, at 1.5.5, on 2026-08-22, and at
+    # 2.0.0 on 2026-11-08.
+    upstream_check: {github: "duckdb/duckdb", type: release, current: "v2.0.0"}
     platforms: [linux_amd64, linux_arm64, osx_amd64, osx_arm64, windows_amd64]
     couplings:
       - "pyproject.toml [project.optional-dependencies] columnar duckdb>= must equal floor"
       - "the on-disk store format is version-bound; on mismatch the disposable store is rebuilt"
       - "ci.yml runs the columnar test files twice: the `columnar` job installs the newest duckdb (2.0.0 on 2026-11-05) and `columnar-duckdb1` installs duckdb<2 (1.5.6), so both lines the floor admits are exercised; tests/test_version_floor_legs.py keeps the two file lists equal and the 1.x job on the 1.x line. The 29 files passed on 1.5.6 on 2026-11-05 (472 tests and 2 skips, each of which names its reason; the one failure of a first run was a venv without vaderSentiment, which fails the same way on 2.0.0). The floor itself is not changed and not re-verified here."
-    last_verified: "2026-08-22"
+    # Re-verified 2026-11-08 at duckdb 2.0.0 (freshness issue #1163), a MAJOR bump, read before it
+    # was accepted. What was checked, and what was not:
+    #   * LIVE half: main's `columnar` CI job already resolves duckdb>=1.4 to 2.0.0 (run
+    #     42463055993, 2026-11-08: duckdb-2.0.0 wheel installed, the 29 columnar files 471 passed
+    #     and 3 skipped, each skip naming its reason). The same 29 files ran here on 2.0.0: 471
+    #     passed and 3 skipped once vaderSentiment was installed (the one failure without it is
+    #     the venv, as recorded in couplings below). `columnar-duckdb1` keeps 1.5.6 exercised.
+    #   * THE ENCRYPTED STORE: the same CI job's CI-only httpfs trust path installed the REAL
+    #     httpfs for 2.0.0 and test_ci_encrypted_persisted_round_trip passed (1 passed), so v2
+    #     does not break the persisted encrypted columnar store. That in-lane checksum is NOT a
+    #     pin (see duckdb-httpfs-extension, still blank by design).
+    #   * MIGRATION: a store written by 1.5.6 opens under 2.0.0 (measured here: rows and oo_meta
+    #     read back), store_format_marker() is now "duckdb-2.0/schema-1", and the old
+    #     "duckdb-1.5/schema-1" marker reads as incompatible, so open_store() drops and rebuilds
+    #     it, as the disposable-store design says. _duckdb_minor() returns "2.0", so a future
+    #     bundled binary must be built for 2.0. Not run here: an ENCRYPTED 1.5 file opened by
+    #     2.0 (needs a real httpfs; extensions.duckdb.org is CONNECT-refused from the sandbox).
+    #     If it fails to attach, the any-open-failure path deletes it and goes in-memory.
+    #   * THE FLOOR stays 1.4, no ceiling (item (29), closed by R412: no ceiling, a duckdb<2
+    #     leg; 2.0.0 acked for this lane by R595). STORE_SCHEMA_VERSION stays 1: no table
+    #     shape changed.
+    #   * CHECKLIST (EXTERNAL_DEPENDENCIES.md): steps 1, 2 and 6 stay OPEN (no per-OS httpfs
+    #     binaries; blank by design); step 3 was run on linux_amd64 CI only; step 4 on a
+    #     plaintext 1.5 file only; step 5 done (floor unchanged, `verified` moved).
+    last_verified: "2026-11-08"
 
   - id: duckdb-httpfs-extension
     title: DuckDB httpfs extension binaries (persisted-store crypto backend, D1)
@@ -1305,7 +1330,7 @@ artifacts:
     upstream: https://github.com/duckdb/duckdb (httpfs built with statically-linked OpenSSL via vcpkg)
     check_upstream: "rebuild per platform on any duckdb minor bump (the version couples)"
     license: MIT (DuckDB)
-    pin: {floor: "1.4", verified: "1.5.5"}   # tracks the installed duckdb minor, like duckdb-crypto-extension
+    pin: {floor: "1.4", verified: "2.0.0"}   # tracks the installed duckdb minor, like duckdb-crypto-extension
     # Kept in step with duckdb-crypto-extension on 2026-08-22. Here `verified` names the
     # duckdb version the (still-unbundled) binaries must be BUILT at -- a target, not a
     # verification of binaries that do not exist. Nothing else changes: every `binaries`
@@ -1313,6 +1338,9 @@ artifacts:
     # 1.5.5), and enforcement is per-binary against the INSTALLED minor at run time
     # (columnar._verified_httpfs), never against this field. 1.5.4 -> 1.5.5 is a patch
     # inside minor 1.5, so it would not have invalidated a bundle even if one existed.
+    # Moved to 2.0.0 on 2026-11-08 with duckdb-crypto-extension (issue #1163). 1.5 -> 2.0 IS the
+    # kind of bump that invalidates a bundle, but there is still none to invalidate: every
+    # `binaries` entry stays blank, and the networked per-platform build must now target 2.0.
     binaries:                                # per-platform pins; version+sha256 BLANK until the networked build (NEVER fabricated)
       linux_amd64:   {version: "", sha256: "", file: ""}
       linux_arm64:   {version: "", sha256: "", file: ""}
