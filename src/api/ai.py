@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from src.ai_layer import store as ai_store
 from src.ai_layer.jobs import ArticleWork, extract_for_articles
+from src.api.detached_stream import detached
 from src.api.llm import active_model, get_llm_client
 from src.database.models import AiCustomPrompt, Article
 from src.database.session import get_db
@@ -165,7 +166,7 @@ def extract_keywords(
         "analytics", f"Extracting AI keywords · {len(work)} article(s)",
         detail=f"model {model}", total=len(work),
         label_i18n="Extracting AI keywords · {n} article(s)", label_vars={"n": len(work)},
-        detail_i18n="model {model}", detail_vars={"model": model},
+        detail_i18n="model {model}", detail_vars={"model": model}, cancellable=True,
     )
 
     def _stream():
@@ -182,7 +183,8 @@ def extract_keywords(
         finally:
             _bgtasks.finish(_tok)
 
-    return StreamingResponse(_stream(), media_type="application/x-ndjson")
+    # The run outlives its tab (src/api/detached_stream.py): closing the browser no longer stops it; the task manager's Stop does.
+    return StreamingResponse(detached(_stream(), _tok, name="oo-ai-extract"), media_type="application/x-ndjson")
 
 
 @router.get("/articles/{article_id}/keywords")
@@ -476,7 +478,7 @@ def run_custom_prompt(
         "analytics", f"AI: {label} · {len(work)} article(s)",
         detail=f"model {model}", total=len(work),
         label_i18n="AI: {label} · {n} article(s)", label_vars={"label": label, "n": len(work)},
-        detail_i18n="model {model}", detail_vars={"model": model},
+        detail_i18n="model {model}", detail_vars={"model": model}, cancellable=True,
     )
 
     def _stream():
@@ -493,7 +495,8 @@ def run_custom_prompt(
         finally:
             _bgtasks.finish(_tok)
 
-    return StreamingResponse(_stream(), media_type="application/x-ndjson")
+    # The run outlives its tab (src/api/detached_stream.py): closing the browser no longer stops it; the task manager's Stop does.
+    return StreamingResponse(detached(_stream(), _tok, name="oo-ai-prompt"), media_type="application/x-ndjson")
 
 
 # --------------------------------------------------------------------------- #

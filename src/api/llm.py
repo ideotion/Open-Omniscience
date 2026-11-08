@@ -2614,7 +2614,7 @@ def bulk_llm(
     )
     _tok = _bgtasks.register(
         "llm", f"{_verb} {total} article(s)", detail=f"model {model}", total=total, **_frame,
-        detail_i18n="model {model}", detail_vars={"model": model},
+        detail_i18n="model {model}", detail_vars={"model": model}, cancellable=True,
     )
 
     def _stream():
@@ -2731,4 +2731,7 @@ def bulk_llm(
         finally:
             _bgtasks.finish(_tok)
 
-    return StreamingResponse(_stream(), media_type="application/x-ndjson")
+    # The run outlives its tab (src/api/detached_stream.py): closing the browser no longer stops it; the task manager's Stop does.
+    from src.api.detached_stream import detached
+
+    return StreamingResponse(detached(_stream(), _tok, name="oo-llm-bulk"), media_type="application/x-ndjson")
