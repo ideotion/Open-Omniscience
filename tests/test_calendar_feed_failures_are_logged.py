@@ -341,10 +341,7 @@ def test_a_copy_that_cannot_be_made_never_blocks_the_save_and_leaves_no_mark_on_
             raise PermissionError("held open")
         return real(src, dst)
 
-    def no_links(src, dst):
-        raise OSError(1, "operation not permitted")
-
-    scope_os(monkeypatch, F, replace=refuse_the_copy, link=no_links)  # the move path: a drive with no second names, and the move refused
+    scope_os(monkeypatch, F, replace=refuse_the_copy, link=_no_links)  # the move path: a drive with no second names, and the move refused
     with caplog.at_level("WARNING"):
         F._save_json("calendar_feed_imports.json", _NEW, mirror=False)
     assert p not in F._READ_AS_DAMAGED, "the new store is healthy: a mark left on it would move it at the next save"
@@ -569,9 +566,9 @@ def test_a_store_replaced_after_the_damaged_read_is_not_moved():
     assert p not in F._READ_AS_DAMAGED
 
 
-@pytest.mark.parametrize(("winerror", "kept"), [(23, True), (1117, True), (32, False)])
-def test_on_windows_a_bad_sector_marks_the_store_and_a_sharing_violation_does_not(monkeypatch, winerror, kept):
-    """CPython gives ERROR_CRC (23), ERROR_IO_DEVICE (1117) and a sharing violation (32) the same errno, EACCES: ``winerror`` tells damage from a passing lock."""
+def test_on_windows_a_read_error_carries_no_winerror_and_does_not_mark_the_store(monkeypatch):
+    """What ``Path.read_text`` raises on Windows comes from the C runtime's errno alone (a bad sector reads as EACCES or EINVAL, as a sharing
+    violation does), so nothing tells damage from a passing lock there and the store is not marked: the residual R397 (b) states."""
     import errno
     import pathlib
 
@@ -579,18 +576,16 @@ def test_on_windows_a_bad_sector_marks_the_store_and_a_sharing_violation_does_no
     p.write_text("bytes on a bad sector", "utf-8")
     real = pathlib.Path.read_text
 
-    def windows_error(self, *a, **k):
+    def crt_error(self, *a, **k):
         if self == p:
-            exc = PermissionError(errno.EACCES, "windows read error")
-            exc.winerror = winerror
-            raise exc
+            raise PermissionError(errno.EACCES, "permission denied")
         return real(self, *a, **k)
 
-    monkeypatch.setattr(pathlib.Path, "read_text", windows_error)
+    monkeypatch.setattr(pathlib.Path, "read_text", crt_error)
     assert F._load_json("calendar_feed_imports.json") == {}
     monkeypatch.setattr(pathlib.Path, "read_text", real)
     F._save_json("calendar_feed_imports.json", _NEW, mirror=False)
-    assert _kept("calendar_feed_imports.json").exists() is kept
+    assert not _kept("calendar_feed_imports.json").exists()
 
 
 def test_a_passing_read_error_after_a_damaged_read_keeps_the_mark(monkeypatch):
@@ -655,10 +650,76 @@ def test_without_a_second_name_the_copy_is_still_made_by_a_move(monkeypatch):
     p = _store("calendar_feed_imports.json")
     p.write_text(_TORN, "utf-8")
 
-    def no_links(src, dst):
-        raise OSError(1, "operation not permitted")
-
-    scope_os(monkeypatch, F, link=no_links)
+    scope_os(monkeypatch, F, link=_no_links)
     F.merge_imported_store("calendar_feed_imports.json", _NEW)
     assert _kept("calendar_feed_imports.json").read_text("utf-8") == _TORN
     assert list(F._load_json("calendar_feed_imports.json")) == ["fam2"]
+
+
+def _no_links(src, dst):
+    raise OSError(1, "operation not permitted")
+
+
+def test_without_a_second_name_an_earlier_copy_is_still_never_overwritten(monkeypatch):
+    _kept("calendar_feed_imports.json").write_text("first evidence", "utf-8")
+    _store("calendar_feed_imports.json").write_text(_TORN, "utf-8")
+    scope_os(monkeypatch, F, link=_no_links)
+    F.merge_imported_store("calendar_feed_imports.json", _NEW)
+    assert _kept("calendar_feed_imports.json").read_text("utf-8") == "first evidence"
+
+
+def test_a_failed_write_leaves_the_damaged_store_where_it_was_and_makes_no_copy(monkeypatch):
+    import pathlib
+
+    p = _store("calendar_feed_imports.json")
+    p.write_text(_TORN, "utf-8")
+    assert F._load_json("calendar_feed_imports.json") == {}
+    real = pathlib.Path.write_text
+
+    def disk_full(self, *a, **k):
+        if self.name.endswith(".tmp"):
+            raise OSError(28, "no space left on device")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(pathlib.Path, "write_text", disk_full)
+    with pytest.raises(OSError):
+        F._save_json("calendar_feed_imports.json", _NEW, mirror=False)
+    assert p.read_text("utf-8") == _TORN and not _kept("calendar_feed_imports.json").exists()
+
+
+@pytest.mark.parametrize("links", [True, False])
+def test_a_store_replaced_between_the_check_and_the_copy_is_given_back(monkeypatch, links):
+    """Two saves race: this one passed the identity check, and another writer's new store lands under the name before the copy is made.
+    The copy's identity is checked after it is made, so the new store is not taken into the one slot."""
+    p = _store("calendar_feed_imports.json")
+    p.write_text(_TORN, "utf-8")
+    assert F._load_json("calendar_feed_imports.json") == {}
+    healthy = json.dumps({"fam": {"name": "F", "events": {}}})
+    real_identity = F._identity
+    swapped = {"done": False}
+
+    def identity_then_swap(path):
+        out = real_identity(path)
+        if path == p and not swapped["done"]:
+            swapped["done"] = True
+            fresh = p.with_name("fresh.json")
+            fresh.write_text(healthy, "utf-8")
+            F.os.replace(fresh, p)  # lands right after the check
+        return out
+
+    monkeypatch.setattr(F, "_identity", identity_then_swap)
+    if not links:
+        scope_os(monkeypatch, F, link=_no_links)
+    F._keep_damaged_bytes("calendar_feed_imports.json", p)
+    assert not _kept("calendar_feed_imports.json").exists(), "the slot stays free"
+    assert p.read_text("utf-8") == healthy, "the other writer's store is where it was"
+
+
+def test_json_nested_too_deeply_for_the_parser_reads_as_empty_and_is_kept(caplog):
+    p = _store("calendar_feed_imports.json")
+    p.write_text("[" * 200000, "utf-8")
+    with caplog.at_level("WARNING"):
+        assert F._load_json("calendar_feed_imports.json") == {}
+    assert "RecursionError" in caplog.text
+    F.merge_imported_store("calendar_feed_imports.json", _NEW)
+    assert _kept("calendar_feed_imports.json").read_text("utf-8") == "[" * 200000

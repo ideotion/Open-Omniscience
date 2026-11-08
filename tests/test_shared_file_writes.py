@@ -71,7 +71,7 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/database/maintenance.py": (1, "WAL"),
     "src/database/repair.py": (6, "WAL"),
     "src/entities/gazetteer_build.py": (1, "Plan J"),
-    "src/events/feeds.py": (3, "Plan J"),  # the third: R397 (b) keeps a damaged store as .damaged, beside the save it precedes
+    "src/events/feeds.py": (4, "Plan J"),  # the third and fourth: R397 (b) moves a damaged store to .damaged (where a drive has no hard links) and gives back a file that replaced it
     "src/geo/osm_downloads.py": (2, "OSM"),
     "src/hazards/store.py": (1, "Plan J"),
     "src/ingest/__init__.py": (2, "export"),

@@ -960,7 +960,7 @@ The extractor is high-precision: bare years and vague spans are not extracted, b
   (verdicts, folders of duplicate providers, adding your own `.ics`) is plumbing and
   lives in **Settings → Advanced → Calendar directory**.
 - **If the file of imported events is damaged so that none of it can be read** (cut off,
-  not valid JSON, or a read error from the disk), the Agenda reads it as empty and the log
+  not valid JSON, or a read error from the disk on Linux or macOS), the Agenda reads it as empty and the log
   says so. Before the next save replaces it (an import, a restore, removing a feed), the app keeps the damaged file once,
   unchanged, as `calendar_feed_imports.json.damaged` in your data folder, for you or a
   recovery tool; a second damage never overwrites that first copy. It is not part of a

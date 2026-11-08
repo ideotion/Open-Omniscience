@@ -273,9 +273,6 @@ _KEEP_DAMAGED = frozenset({_IMPORTS})
 #: file's identity when it was read (``_identity``), so that a mark noted after another thread or process replaced the file never
 #: moves the healthy file that replaced it.
 _READ_AS_DAMAGED: dict[Path, tuple[int, int, int]] = {}
-#: The Windows read errors that are damage in the file: ERROR_CRC (a bad sector) and ERROR_IO_DEVICE. CPython gives both the errno
-#: EACCES, the errno of a sharing violation too, so ``winerror`` is what tells them apart.
-_WINDOWS_READ_DAMAGE = frozenset({23, 1117})
 
 
 def _identity(p: Path) -> tuple[int, int, int] | None:
@@ -303,16 +300,18 @@ def _load_json(name: str) -> dict:
     try:
         raw = p.read_text("utf-8") if p.exists() else None
         data = json.loads(raw) if raw is not None else {}
-    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError, RecursionError) as exc:
+        # (RecursionError: JSON nested too deeply for the parser, a parse failure like the others.)
         # A store that EXISTS but cannot be read reads as empty (R386, R397). For the imported-events store the next save first keeps its
         # bytes as ``<name>.damaged`` (R397 (b)); the others are rebuilt by the next pass and are replaced as before.
         # The line does not claim the replacement: where the store is a directory or the data folder is not writable, no save succeeds.
         # The class only: the store holds the user's imported events, and what is wrong with it is not worth a line of its words.
         _LOG.warning("%s exists but could not be read, so it reads as empty: %s", name, type(exc).__name__)
-        # A parse failure, EIO or a Windows bad-sector read is damage in the file; any other OSError (too many open files, a Windows
-        # sharing violation while another thread replaces it) may pass and must not mark a healthy store, since the one ``.damaged`` slot
-        # is never overwritten.
-        damaged = not isinstance(exc, OSError) or exc.errno == errno.EIO or getattr(exc, "winerror", None) in _WINDOWS_READ_DAMAGE
+        # A parse failure or EIO is damage in the file; any other OSError (too many open files, a Windows sharing violation while another
+        # thread replaces it) may pass and must not mark a healthy store, since the one ``.damaged`` slot is never overwritten. On Windows a
+        # bad sector reaches Python through the C runtime as EACCES or EINVAL, with no ``winerror`` to tell it from a passing lock, so it is
+        # not marked there: the store reads as empty and is replaced, as it was before R397 (b).
+        damaged = not isinstance(exc, OSError) or exc.errno == errno.EIO
         if damaged:  # a passing error says nothing about the file: it neither marks it nor clears a mark an earlier read noted
             _note_read(name, p, ident, damaged=True)
         return {}
@@ -326,7 +325,9 @@ def _load_json(name: str) -> dict:
 def _keep_damaged_bytes(name: str, p: Path) -> None:
     """Move the store read as damaged to ``<name>.damaged`` before a save replaces it, ONCE: an existing copy is the first evidence and is never overwritten.
 
-    The copy sits beside the store and is not in the backup list (``src/backup/artifact.py``), so it never travels.
+    The copy sits beside the store and is not in the backup list (``src/backup/artifact.py``); a synced data folder syncs it like the
+    store. Nothing serialises two saves of the store, so after the copy is made its identity is compared with the file read as damaged,
+    and a copy of anything else (another writer's new store, replaced in between) is undone.
     """
     read = _READ_AS_DAMAGED.pop(p, None)
     # The mark goes on every path: this save replaces the damaged bytes, whether or not they were kept, and a mark left on the new,
@@ -344,6 +345,10 @@ def _keep_damaged_bytes(name: str, p: Path) -> None:
     except OSError:
         pass  # a drive that cannot give a file a second name (FAT, exFAT, some network shares): the check-then-move below instead
     else:
+        if _identity(kept) != read:
+            with suppress(OSError):
+                os.unlink(kept)  # the second name went to a file that replaced the damaged one: the store keeps it, the slot stays free
+            return
         _LOG.warning("%s was read as damaged; its bytes are kept as %s before this save replaces it", name, kept.name)
         return
     if kept.exists() or kept.is_symlink():
@@ -354,6 +359,10 @@ def _keep_damaged_bytes(name: str, p: Path) -> None:
     except OSError as exc:
         # The save goes on, as it did before R397 (b): a copy that cannot be made never blocks the import. The class only.
         _LOG.warning("%s was read as damaged and could not be kept as %s, so this save replaces it: %s", name, kept.name, type(exc).__name__)
+        return
+    if _identity(kept) != read:
+        with suppress(OSError):
+            os.replace(kept, p)  # moved a file that replaced the damaged one: it goes back under the store's name, the slot stays free
         return
     _LOG.warning("%s was read as damaged; its bytes are kept as %s before this save replaces it", name, kept.name)
 
