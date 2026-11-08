@@ -311,12 +311,15 @@ def engine_modules(root: Path) -> list[str] | None:
 def engine_changes(root: Path, base: str) -> tuple[list[str], list[str]]:
     """``(engine or pin files this branch changed, notes)``. Deletes count: a deleted engine file moves the digest too. Only the branch's own diff is
     asked: what a merge of ``base`` brought arrives with its own pin."""
-    if not (root / _ENGINE_IDENTITY).is_file() or not (root / INDEXER_PIN_TEST).is_file():
-        return [], []  # a tree without the pin (an old one, a scratch repository) has nothing to police
+    if not (root / INDEXER_PIN_TEST).is_file():
+        return [], []  # a tree without the pin test (an old one, a scratch repository) has nothing to run
     fork = _git(root, "merge-base", base, "HEAD").strip()
+    if not (root / _ENGINE_IDENTITY).is_file() and not _succeeds(root, "cat-file", "-e", f"{fork}:{_ENGINE_IDENTITY}"):
+        return [], []  # the identity module is in neither tree: no engine to police
     changed = _paths(root, "diff", "--name-only", "-z", _NO_RENAMES, _ANY_STATUS, fork, "--")
     changed += _paths(root, "ls-files", "-z", "--others", "--exclude-standard")
-    engine = engine_modules(root)
+    # a deleted or renamed identity module reads as an empty list here; the base's list below still names what it hashed
+    engine = engine_modules(root) if (root / _ENGINE_IDENTITY).is_file() else []
     # the base's list too: a file this branch REMOVED from ENGINE_MODULES moves the digest as well
     old = None
     try:

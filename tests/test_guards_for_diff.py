@@ -1081,3 +1081,12 @@ def test_an_unreadable_engine_list_picks_it_for_any_src_change_and_says_so(repo:
     commit(repo, "edit")
     p = plan(repo)
     assert p.indexer_pin == ["src/mod.py"] and any("could not be read" in n for n in p.notes)
+
+
+def test_a_deleted_identity_module_still_picks_the_pin_test(repo: Path) -> None:
+    _with_engine(repo)
+    git(repo, "rm", "-q", _IDENTITY)
+    commit(repo, "identity gone")
+    p = plan(repo)
+    assert _IDENTITY in p.indexer_pin and "src/analytics/equivalence.py" not in p.indexer_pin  # only what changed: the list is the base's
+    assert "tests/test_indexer_pin.py" in p.files()
