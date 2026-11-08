@@ -183,6 +183,11 @@ class StagedArtifact:
     # that builds a StagedArtifact by hand). run_restore folds these into its
     # own report["timings"]["stages"] under a "stage_a:" prefix.
     stage_a_timings: dict[str, float] = field(default_factory=dict)
+    # R448: the passphrases the carried key files (role "keys") may be wrapped under, most likely first: the source
+    # corpus's passphrase when the operator gave one, then the backup's. The restore opens each carried key with them
+    # and wraps it again under THIS install's passphrase (merge._restore_key_members). Secrets: never in a repr, a
+    # comparison, a log or a report; empty for every artifact that carries no keys (a plaintext one never does).
+    key_passphrases: tuple[str, ...] = field(default=(), repr=False, compare=False)
 
     def member_paths(self, role: str) -> list[tuple[str, Path]]:
         out = []
@@ -192,6 +197,16 @@ class StagedArtifact:
                 if p.exists():
                     out.append((m["name"], p))
         return out
+
+
+def key_passphrases_for(corpus_passphrase: str | None, backup_passphrase: str | None) -> tuple[str, ...]:
+    """The value of :attr:`StagedArtifact.key_passphrases` for a restore given these two: each one given, once, the
+    corpus's first (a key is wrapped under its install's database passphrase unless ``OO_KEY_PASSPHRASE`` was set)."""
+    out: list[str] = []
+    for p in (corpus_passphrase, backup_passphrase):
+        if p and p not in out:
+            out.append(p)
+    return tuple(out)
 
 
 # --------------------------------------------------------------------------- #
@@ -738,6 +753,7 @@ def read_volume_backup(
         staged = _finalize_staged(staging, was_encrypted=True)
         stage_a_timings["extract_and_verify"] = round(time.monotonic() - t1, 3)
         staged.stage_a_timings = stage_a_timings
+        staged.key_passphrases = key_passphrases_for(corpus_passphrase, passphrase)
         return staged
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
@@ -840,6 +856,7 @@ def read_artifact(
         staged = _finalize_staged(staging, was_encrypted)
         stage_a_timings["extract_and_verify"] = round(time.monotonic() - t1, 3)
         staged.stage_a_timings = stage_a_timings
+        staged.key_passphrases = key_passphrases_for(None, passphrase if was_encrypted else None)
         return staged
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)

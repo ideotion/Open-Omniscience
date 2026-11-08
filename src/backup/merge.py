@@ -59,6 +59,7 @@ from src.monitoring.secret_scrub import (
     exception_text,
     is_driver_error,
     log_failure,
+    passphrase_bytes,
     quotes_a_driver,
     record_text,
     scrubbed,
@@ -6452,22 +6453,156 @@ def merge_side_files(staged: StagedArtifact) -> dict:
         docs[role] = {"restored": restored, "kept_local": kept_local, "refused": refused}
     report["documents"] = docs
 
-    keys: dict = {"restored": [], "kept_local": []}
-    for name, path in staged.member_paths("keys"):
-        local = base / name
-        if local.exists():
-            keys["kept_local"].append(name)  # the existing identity ALWAYS wins
-            continue
-        local.parent.mkdir(parents=True, exist_ok=True)
-        tmp = local.with_name(local.name + ".tmp")
-        tmp.write_bytes(path.read_bytes())
-        os.replace(tmp, local)
-        local.chmod(0o600)
-        keys["restored"].append(name)
-    report["keys"] = keys
+    report["keys"] = _restore_key_members(staged, base)
 
     report["rings"] = _restore_ring_members(staged, base)
     return report
+
+
+#: The key files a restore can read, by the end of their name: the evidence key, the custody signer's two and the
+#: annotation signer's two (``keys/<who>_ed25519.pem``, ``keys/<who>_ml_dsa_65.key``).
+_KEY_FORMS = (("_ed25519.pem", "ed25519"), ("_ml_dsa_65.key", "ml_dsa"))
+
+_KEY_NOT_OPENED = (
+    "not opened by this install's passphrase, the backup's or the source corpus's (it was wrapped under "
+    "another one, such as OO_KEY_PASSPHRASE, or the file is damaged); it is not written and stays in the backup"
+)
+_KEY_NO_PQC = (
+    "an ML-DSA key, and the post-quantum library is not available here to read it; it is not written and "
+    "stays in the backup"
+)
+_KEY_NOT_SAME = "the copy wrapped for this install did not read back as the same key; it is not written"
+_KEY_UNSAFE_NAME = "the name is not a file directly in keys/; it is not written"
+
+
+def _ed25519_public(key: object) -> bytes:
+    from cryptography.hazmat.primitives import serialization
+
+    return key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)  # type: ignore[attr-defined]
+
+
+def _reseal_key(
+    kind: str, local: Path, raw: bytes, candidates: list[bytes | None], held: bytes | None
+) -> tuple[bytes, bool] | str:
+    """``(bytes to place, resealed)`` for one carried key file: the SAME key, sealed under ``held``; or, for a key
+    that is not to be written, why (fixed words that hold no secret and no key byte).
+
+    Each candidate passphrase is tried in turn (a wrong one costs one scrypt). A key that is already in the form
+    this install writes (wrapped under ``held``, or plaintext when nothing is held) is placed as carried; any other
+    is sealed again and the sealed copy is read back with ``held`` and compared with the key BEFORE anything is
+    written, as :func:`src.custody.keyfile.replace_in_place` does for a key wrapped in place. Never raises for a
+    passphrase that does not open the file, and never logs.
+    """
+    from src.custody import signing
+
+    if kind == "ml_dsa" and not signing.PQC_AVAILABLE:
+        return _KEY_NO_PQC
+    for cand in candidates:
+        try:
+            if kind == "ed25519":
+                key, form = signing.parse_ed25519_key(local, raw, cand)
+                if (form == "wrapped" and cand == held) or (form == "plaintext" and held is None):
+                    return raw, False
+                sealed = signing.seal_ed25519_key(key, held)
+                back, _form = signing.parse_ed25519_key(local, sealed, held)
+                same = _ed25519_public(back) == _ed25519_public(key)
+            else:
+                pk, sk, form = signing.parse_mldsa_key(local, raw, cand)
+                if (form == "wrapped" and cand == held) or (form == "plaintext" and held is None):
+                    return raw, False
+                sealed = signing.seal_mldsa_key(pk, sk, held)
+                pk2, sk2, _form = signing.parse_mldsa_key(local, sealed, held)
+                same = (pk2, sk2) == (pk, sk)
+        except signing.SigningError:
+            continue  # not this passphrase (or a damaged file): the next one, and the refusal below after the last
+        return (sealed, True) if same else _KEY_NOT_SAME
+    return _KEY_NOT_OPENED
+
+
+def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
+    """Place the artifact's key files (role ``keys``) that this install does not have, wrapped under THIS install's
+    passphrase (R448).
+
+    The existing identity ALWAYS wins: a key this install already has is kept, and the placement itself refuses to
+    replace one (:func:`src.custody.keyfile.create_new`: a private copy, then a hard link into place), so a key that
+    an export or a signer created while the restore ran is never overwritten (it used to be checked with
+    ``exists()`` and then replaced with ``os.replace``, which lost a key created in between).
+
+    A carried key is wrapped under the passphrase of the install that wrote the backup. Placed as it was, it blocked
+    every export and backup here until someone moved it aside. So each one is opened with the passphrases this
+    restore has (this install's, then the source corpus's and the backup's, see
+    :attr:`StagedArtifact.key_passphrases`) and written wrapped under this install's own (plaintext when it holds
+    none, which is how it writes its own keys). One that none of them opens is NOT written, and is reported by name
+    with the reason: it stays in the backup, and a key placed where it cannot be opened is worse than none.
+    """
+    from src.custody import keyfile
+    from src.custody.signing import SigningError
+    from src.custody.signing import _passphrase as held_key_passphrase
+    from src.monitoring.secret_scrub import UNENCODABLE_PASSPHRASE
+
+    out: dict = {
+        "restored": [],
+        "resealed": [],
+        "kept_local": [],
+        "not_placed": [],
+        "carried_unread": [],
+        "method": (
+            "a key this install has is kept; a carried key is opened with the passphrases this restore has and written "
+            "the way this install writes its own (wrapped under its passphrase, or plaintext when it holds none); "
+            "resealed names the ones written in another form than they were carried; not_placed are not written"
+        ),
+    }
+    members = staged.member_paths("keys")
+    if not members:
+        return out
+    held: bytes | None = None
+    held_refused: str | None = None
+    try:
+        held = held_key_passphrase()
+    except SigningError:
+        held_refused = UNENCODABLE_PASSPHRASE  # this install's passphrase cannot be written as UTF-8: nothing can be wrapped under it
+    candidates: list[bytes | None] = [held] if held else []
+    for given in staged.key_passphrases:
+        try:
+            p = passphrase_bytes(given)
+        except ValueError:
+            continue  # it cannot be written as UTF-8, so no key was ever wrapped under it
+        if p not in candidates:
+            candidates.append(p)
+    if not candidates:
+        candidates.append(None)  # nothing held, nothing given: only a plaintext key can be read
+    for name, path in members:
+        rel = Path(name)
+        if rel.is_absolute() or ".." in rel.parts or rel.parent != Path("keys"):
+            out["not_placed"].append({"name": name, "reason": _KEY_UNSAFE_NAME})
+            continue
+        local = base / rel
+        if local.exists() or local.is_symlink():
+            out["kept_local"].append(name)  # the existing identity ALWAYS wins
+            continue
+        kind = next((k for suffix, k in _KEY_FORMS if rel.name.endswith(suffix)), None)
+        try:
+            raw = path.read_bytes()
+            sealed: tuple[bytes, bool] | str = (raw, False)  # not a key file this app writes: carried as it is, and said so
+            if kind is not None:
+                sealed = held_refused or _reseal_key(kind, local, raw, candidates, held)
+            if isinstance(sealed, str):
+                out["not_placed"].append({"name": name, "reason": sealed})
+                continue
+            data, resealed = sealed
+            local.parent.mkdir(parents=True, exist_ok=True)
+            keyfile.create_new(local, data)
+        except FileExistsError:
+            out["kept_local"].append(name)  # another caller made this key while the restore ran: theirs wins
+            continue
+        # Any other OSError leaves the stage, as it always did: a key is the install's identity, and an import that cannot
+        # write it fails before the live corpus is touched rather than go on and have the next export make another one.
+        out["restored"].append(name)
+        if resealed:
+            out["resealed"].append(name)
+        if kind is None:
+            out["carried_unread"].append(name)
+    return out
 
 
 def _restore_ring_members(staged: StagedArtifact, base: Path) -> dict:

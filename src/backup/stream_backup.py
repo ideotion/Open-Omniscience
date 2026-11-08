@@ -2230,6 +2230,9 @@ def read_stream_backup(
             )
             stage_a_timings["finalize"] = round(time.monotonic() - t3, 3)
             staged.stage_a_timings = stage_a_timings
+            from src.backup.artifact import key_passphrases_for
+
+            staged.key_passphrases = key_passphrases_for(corpus_passphrase, passphrase)
             # The placement index travels with the staged artifact so the caller that
             # commits the restore can put the large files back without re-reading (or
             # re-trusting) the volume manifest. The bytes themselves are already in
