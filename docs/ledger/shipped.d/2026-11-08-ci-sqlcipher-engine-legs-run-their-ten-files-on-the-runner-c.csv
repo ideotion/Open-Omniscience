@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-08,ci,"SQLCipher engine legs run their ten files on the runner CPUs (pytest-xdist, the suite's fixed placement)",shipped,PR pending,.github/workflows/ci.yml,"Follow-on to #1816: the floor and newest engine legs spent 7 to 8 of their 8 minutes in one pytest process; -n auto --dist loadfile runs the same files, each whole on one worker. Measured locally on 4 cores: 2 min 11 s for the ten files."

@@ -957,8 +957,10 @@ jobs:
         env:
           # The floor leg must STILL see the 4.12 behaviours the floor exists to cover (tests/test_sqlcipher_engine_compat.py).
           OO_EXPECT_SQLCIPHER_ENGINE: ${{ matrix.engine }}
+        # `-n auto --dist loadfile`: the ten files on the runner's CPUs, each whole on one worker, in the suite's fixed placement (tests/conftest.py,
+        # tests/_xdist_placement.py), as the full-suite legs run since #1816; this step was 7 to 8 of each leg's 8 minutes in one process.
         run: >-
-          python -m pytest -q
+          python -m pytest -q -n auto --dist loadfile
           tests/test_poisoned_connection.py tests/test_database_verify_pages.py tests/test_sqlcipher_engine_compat.py
           tests/test_database_damage.py tests/test_damage_reread.py tests/test_database_verify.py
           tests/test_salvage.py tests/test_repair.py tests/test_bundle_damaged_read.py tests/test_stand_in_rows.py
