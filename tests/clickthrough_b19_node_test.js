@@ -162,6 +162,7 @@ async function run() {
     const I = i18n("fr");
     const src = [ESC, FMTNUM, "var _LOCAL_JOB_KINDS = new Set();",
       "function _isDownloadKind() { return false; } function _rateNote() { return ''; } function _jobWhy() { return ''; }",
+      "var document = {documentElement: {}};", extract("ooLtrIsolate", null, CORE),   // the pill's percent rides the rtl isolate (item 46 S4 b)
       extract("_jobPct", null, CORE), extract("_jobLabel", null, CORE), extract("_jobRow", null, CORE), "return _jobRow;"].join("\n");
     // eslint-disable-next-line no-new-func
     const row = new Function("window", "OOI18N", src)({OOI18N: I}, I)(

@@ -185,6 +185,22 @@
       "fetcher": true
     },
     {
+      "id": "climate",
+      "label": "Climate series",
+      "hosts": ["data.giss.nasa.gov", "earthquake.usgs.gov", "raw.githubusercontent.com", "www.ncei.noaa.gov"],
+      "trigger": "click",
+      "setting": null,
+      "fetcher": true
+    },
+    {
+      "id": "ipcc",
+      "label": "IPCC reports",
+      "hosts": ["www.ipcc.ch"],
+      "trigger": "click",
+      "setting": null,
+      "fetcher": true
+    },
+    {
       "id": "weather",
       "label": "Weather",
       "hosts": ["archive-api.open-meteo.com"],

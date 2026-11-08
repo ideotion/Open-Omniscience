@@ -35,6 +35,7 @@ from src.ingest import kill_switch_active
 from src.ingest.fetch_verdict import is_kill_switch_refusal
 from src.monitoring.secret_scrub import log_failure, record_text
 from src.paths import data_dir
+from src.shared import read_jsonl_tail
 
 _LOG = logging.getLogger(__name__)
 _SAMPLE_PER_PROVIDER = 3
@@ -57,17 +58,7 @@ def _append(records: list[dict]) -> None:
 
 
 def recent_results(limit: int = 1000) -> list[dict]:
-    path = _log_path()
-    if not path.exists():
-        return []
-    lines = path.read_text(encoding="utf-8").splitlines()[-limit:]
-    out = []
-    for ln in lines:
-        try:
-            out.append(json.loads(ln))
-        except json.JSONDecodeError:
-            continue
-    return out
+    return read_jsonl_tail(_log_path(), limit)
 
 
 _OFFLINE_STOP = (

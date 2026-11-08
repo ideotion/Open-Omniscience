@@ -5,8 +5,8 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 ``'${esc(x)}'`` looks safe and is not: the browser decodes the attribute before ``oo-on.js`` parses it,
 so the ``&#39;`` esc() wrote comes back as an apostrophe and closes the grammar's string. Reproduced in
-Chromium with the real parser: ``x'); appShutdown(); ooSetValue('a','b`` inside
-``ooSetValue('agenda-tag', '...')`` runs ``appShutdown``. ``tests/oo_on_arg_escape_node_test.js`` replays
+Chromium with the real parser: ``x'); appShutdown(); agendaSetTag('b`` inside
+``agendaSetTag('...')`` runs ``appShutdown``. ``tests/oo_on_arg_escape_node_test.js`` replays
 both forms through the real parser.
 
 Two rules over every ``src/static`` script that writes markup:

@@ -64,7 +64,8 @@ async function api(path) {
 }
 
 const src = [
-  "function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));}",
+  "function ooLtrIsolate(s){return String(s==null?'':s);} function ooLtrPct(s){return String(s==null?'':s);}",
+    "function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));}",
   "function ooCountryCell(v){return '<span>' + esc(v) + '</span>';}",
   extract("fmtNum"),
   extract("fmtDateTime"),

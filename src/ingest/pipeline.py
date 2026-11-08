@@ -13,6 +13,7 @@ no raw-requests bypass, and no silently-stored junk.
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -177,9 +178,12 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
     """
     doc = extract_article(fetched.content, url=fetched.final_url)
     if doc is None:
-        return IngestOutcome(
-            fetched.requested_url, IngestResult.EXTRACT_FAILED, detail="no article body extracted"
-        )
+        detail = _extract_failed_detail(fetched)
+        # trafilatura's own "discarding data" line carries no URL, so ours does (F11, 2026-11-07): without it a run of
+        # failures on one site cannot be told from a run of listing pages.
+        # No query string or fragment: a query can carry a token.
+        logging.getLogger(__name__).info("extract failed for %s: %s", _url_without_query(fetched.final_url), detail)
+        return IngestOutcome(fetched.requested_url, IngestResult.EXTRACT_FAILED, detail=detail)
 
     # Drop ad-placeholder and app-banner LINES before judging and hashing, so the stored body (and
     # its content hash, which fixity re-computes from the stored text) is the article, not the page
@@ -201,8 +205,6 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
             language=doc.language or source.language,
         )
         if verdict is not None:
-            import logging
-
             logging.getLogger(__name__).info(
                 "skipping non-article (%s) from %s: %s",
                 verdict.signal, source.domain, fetched.final_url,
@@ -515,6 +517,38 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
 #: host's, whatever the switch says afterwards. ``http_*`` joins them by prefix. ``dns``, ``connect`` and ``other`` are what a cut connection
 #: looks like (or what we cannot tell), so those are the ones a Stop reclaims.
 _RESPONSE_ANSWERS = frozenset({"not_html", "too_large", "slow_body", "bad_url"})
+
+
+#: Lowercase fragments that mark a page which is not the article: a consent wall, a bot check, a script-only shell. Looked for in the whole
+#: page (it is already in memory), and REPORTED, never acted on: a match is a hint for whoever reads the failure, not a verdict
+#: (a real article can mention "captcha"), so the outcome stays extract_failed either way.
+_PAGE_MARKERS = (
+    ("consent", ("consent", "cookie-banner", "cookiebanner", "gdpr")),
+    ("bot_check", ("just a moment", "cf-browser-verification", "captcha", "access denied", "are you a robot")),
+    ("needs_js", ("enable javascript", "requires javascript", "<noscript")),
+    ("paywall", ("paywall", "subscribe to continue", "abonnez-vous", "réservé aux abonnés")),
+)
+
+
+def _url_without_query(url: str) -> str:
+    """``url`` cut at its first ``?`` or ``#`` (a query or fragment can carry a token); never raises."""
+    return str(url).split("?", 1)[0].split("#", 1)[0]
+
+
+def _extract_failed_detail(fetched) -> str:
+    """Why-it-might-be words for an extract_failed outcome: the status, the decoded length, the content-type and any marker
+    in the page head. Numbers and fixed labels only, never page text, so nothing the page said can reach a log or a report.
+    The leading sentence is unchanged ("no article body extracted") for anything that matches on it."""
+    try:
+        head = (fetched.content or "").lower()
+        found = [name for name, needles in _PAGE_MARKERS if any(n in head for n in needles)]
+        ctype = (fetched.content_type or "unknown").split(";")[0].strip().lower()[:60] or "unknown"
+        return (
+            f"no article body extracted (status {int(fetched.status_code)}, {len(fetched.content or '')} chars, "
+            f"content-type {ctype}, markers {','.join(found) if found else 'none'})"
+        )
+    except Exception:  # noqa: BLE001 - a diagnostic must never turn a failed extraction into a raise
+        return "no article body extracted"
 
 
 def _failure_reason(detail: str | None) -> str:
