@@ -118,3 +118,10 @@ def test_the_url_the_fetcher_builds_lies_under_its_own_directory_list() -> None:
     parts = urlsplit(ONI_URL)
     assert parts.hostname in fetch.ONI_HOSTS
     assert any(parts.path.startswith(prefix) for prefix in fetch.ONI_PATHS)
+
+
+def test_a_body_of_nothing_but_sentinels_is_refused_not_shown_as_a_series(monkeypatch) -> None:
+    monkeypatch.setattr(fetch, "kill_switch_active", lambda: False)
+    body = "SEAS YR   TOTAL ANOM\nDJF  1950 -99.9 -99.9\nJFM  1950 -99.9 -99.9\n"
+    with pytest.raises(ValueError, match="missing-data sentinel"):
+        fetch_oni(get=_Getter(_Resp(body)))

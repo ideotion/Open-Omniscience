@@ -746,4 +746,8 @@ def fetch_oni(
     if parsed.rows_read == 0:
         # Covers looks_unrecognised AND an empty body, which refuses nothing: neither is a series.
         raise ValueError(f"ONI: the response is not the expected table ({len(parsed.refused)} lines refused, none parsed)")
+    if all(f.value is None for f in parsed.figures):
+        # Rows parsed but every cell is a missing-value sentinel: a success that holds no numbers is a
+        # placeholder or a drifted file, refused like fetch_owid_dataset's all_gap, never shown as a series.
+        raise ValueError(f"ONI: all {parsed.rows_read} rows parsed but every value is a missing-data sentinel")
     return parsed
