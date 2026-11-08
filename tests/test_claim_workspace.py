@@ -447,3 +447,14 @@ def test_a_feed_id_and_an_outlet_that_print_alike_stay_two_voices_like_the_join(
     ]
     out = cw.group_paths(arts, {}, [])
     assert out["n_paths"] == 2 and out["n_sources"] == 2
+
+
+def test_a_same_source_join_with_no_name_has_no_detail():
+    # Two articles of one feed whose source row is gone: joined, counted as one, and the
+    # join carries no detail (the UI shows nothing) rather than a bare "?".
+    arts = [
+        {"id": 1, "source_id": 5, "source": None, "outlet": None, "wire": None, "published_at": "2026-01-01"},
+        {"id": 2, "source_id": 5, "source": None, "outlet": None, "wire": None, "published_at": "2026-01-02"},
+    ]
+    p = cw.group_paths(arts, {}, [])["paths"][0]
+    assert p["n_sources"] == 1 and p["joins"][0]["detail"] is None

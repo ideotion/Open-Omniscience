@@ -298,8 +298,10 @@ def group_paths(articles: list[dict], shared_links: dict[str, list[int]],
         joins.append({"kind": kind, "detail": detail, "article_ids": members})
 
     for _sid, members in sorted(by_source.items(), key=lambda kv: str(kv[0])):
-        # The detail names the outlet by the same rule as the path's sources, so the two never disagree.
-        _join("same_source", members, _sources_of([by_id[m] for m in members])[0])
+        # The detail names the outlet by the same rule as the path's sources (the smallest name), so the two never
+        # disagree; a voice with no name at all (its source row is gone) gets no detail rather than a bare "?".
+        named = [x for m in members if (x := by_id[m].get("outlet_label") or by_id[m].get("source"))]
+        _join("same_source", members, min(named) if named else None)
     for group in near_dup_groups:
         _join("near_identical", list(group), None)
     for url in sorted(shared_links):
