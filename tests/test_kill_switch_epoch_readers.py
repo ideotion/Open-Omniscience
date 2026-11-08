@@ -13,9 +13,10 @@ that read was stored as the target's behaviour:
 * the crawl rung (``_lane_step_crawl``): the outlet stamped crawled, or a discovery the Stop cut short falling back to a blind crawl;
 * the archive backfill (``advance_backfill``): a cut enumeration recorded as an empty history, and a cut URL consumed;
 * the sitemap enumeration has no recorder of its own (``update_source_sitemap_url`` stores a sitemap only once one was fetched and
-  parsed), so its Stop is read by its two callers above;
+  parsed), so its Stop is read by the crawl rung and the backfill above;
 * the source preflight, the feed preflight and the feed verification it runs: a host the Stop cut logged as unreachable (a feed then
-  climbs the re-check ladder, a month per rung);
+  climbs the re-check ladder, a month per rung), and the calendar auto-import beside it: a feed the Stop cut counted failed and
+  stamped, so it waits 12 h;
 * the source health count: a probe refused by name counted as down once the switch reads clear (the security read's note on PR #1849).
 
 Where the production fetcher runs, the airplane socket guard is armed as boot arms it and a real request is only ever made with the
@@ -202,6 +203,13 @@ def test_a_stop_cleared_inside_an_entrys_last_request_is_filed_as_offline_not_co
     assert tally.get("ff:offline") == 1 and "ff:connect" not in tally, f"the Stop was filed as the host's: {tally}"
 
 
+def test_each_entry_is_judged_by_its_own_window(db, tmp_path):
+    """The Stop touched entry 1 only: entry 2's reset is the host's, though the pass as a whole saw a Stop."""
+    row = _source(db)
+    tally = ingest_source(db, row, fetcher=_fetcher(tmp_path, [], feed=True, raw_clear_on="/story-1", down_on="/story-2", retries=0))
+    assert tally.get("ff:offline") == 1 and tally.get("ff:connect") == 1, tally
+
+
 def test_a_stop_cleared_inside_the_feed_get_keeps_the_backoff_history_and_is_a_refused_feed(db, tmp_path):
     row = _source(db, seed=True)
     tally = ingest_source(db, row, fetcher=_fetcher(tmp_path, [], feed=True, raw_clear_on="/feed.xml", retries=0))
@@ -366,6 +374,21 @@ def test_a_url_cut_by_a_stop_cleared_in_its_flight_is_not_passed_over(db, tmp_pa
     assert load_state(sp)["active"]["cursor"] == 0, "the cursor stays on the cut URL"
 
 
+def test_each_url_is_judged_by_its_own_window(db, tmp_path):
+    """A Stop cleared while the first URL was being stored touches that URL only: the next URL's failure is the page's."""
+    source, sp = _backfill_source(db), tmp_path / "s.json"
+    _active(db, source, sp)
+
+    def ingest(session, src, url, *, fetcher):
+        if url.endswith("a0"):
+            _stop_and_clear()
+            return _outcome(url, IngestResult.STORED)
+        return _outcome(url, IngestResult.FETCH_FAILED if url.endswith("a1") else IngestResult.STORED)
+
+    out = _tick(db, sp, ingest=ingest)
+    assert out["attempted"] == 3 and out["tally"] == {"stored": 2, "fetch_failed": 1} and "skipped_offline" not in out, out
+
+
 def test_a_url_that_failed_with_no_stop_is_consumed_the_control(db, tmp_path):
     source, sp = _backfill_source(db), tmp_path / "s.json"
     _active(db, source, sp)
@@ -461,11 +484,23 @@ def test_a_stop_cleared_inside_a_market_feed_sample_logs_nothing(monkeypatch):
 
 
 def test_a_stop_cleared_inside_a_calendar_feed_sample_logs_nothing(monkeypatch):
+    """Through the real verification: it answers skipped_offline itself, and the sweep stops on it."""
+    from src.events import feeds as F
+
+    fp = _sweep(monkeypatch, calendar=[{"kind": "calendar_feed", "key": _FEED_ID, "url": "https://c.example/x.ics", "host": "c.example"}])
+    out = fp.run_feed_preflight(_CutFetcher())
+    assert out["complete"] is False and out["skipped_offline"] == 1, out
+    assert not fp._log_path().exists()
+    assert F.load_verdicts() == {} and F.load_attempts() == {}
+
+
+def test_the_calendar_sample_reads_the_epoch_behind_the_verification_too(monkeypatch):
+    """The sweep's own second check, behind the verification's: a verdict of unreachable whose window saw a Stop stops the sweep."""
     from src.events import feeds as F
 
     fp = _sweep(monkeypatch, calendar=[{"kind": "calendar_feed", "key": "k1", "url": "https://c.example/x.ics", "host": "c.example"}])
 
-    def verify(fetcher, key):  # a verdict from before the verification's own epoch: the sweep's window still sees the Stop
+    def verify(fetcher, key):
         _stop_and_clear()
         return {"status": "unreachable", "error": "request error"}
 
@@ -501,12 +536,35 @@ def test_a_feed_verification_that_failed_with_no_stop_is_recorded_the_control():
     assert F.load_verdicts()[_FEED_ID]["status"] == "unreachable" and F.load_attempts(), "an honest failure is no longer recorded"
 
 
+def _autoimport_stamps() -> dict:
+    from src.events import feeds as F
+
+    return F._load_json("calendar_autoimport.json")
+
+
+def test_a_stop_cleared_inside_a_calendar_auto_import_is_neither_a_failure_nor_stamped():
+    from src.events import feeds as F
+
+    out = F.auto_import_due_feeds(_CutFetcher(), batch=1)
+    assert out["picked"] == 1 and out["imported"] == 0 and out["failed"] == 0, out
+    assert _autoimport_stamps() == {}, "a feed the Stop cut was stamped as checked: it would wait 12 h"
+
+
+def test_a_calendar_auto_import_that_failed_with_no_stop_is_a_failure_and_stamped_the_control():
+    from src.events import feeds as F
+
+    out = F.auto_import_due_feeds(_CutFetcher(stop=False), batch=1)
+    assert out["picked"] == 1 and out["failed"] == 1, out
+    assert len(_autoimport_stamps()) == 1
+
+
 # --------------------------------------------------------------------------- #
 #  The source health count
 # --------------------------------------------------------------------------- #
 def test_a_probe_refused_by_name_is_counted_as_the_switch_after_the_switch_is_cleared(monkeypatch, tmp_path):
     """The probe was refused by the switch's own sentence and the operator went back online before the count: the count still names the
-    switch. The control in the same call: a host's 503 that QUOTES the sentence is a host that is down (R298)."""
+    switch, and so does the next probe the guard cut in that window. The control in the same call: a host's 503 that QUOTES the sentence
+    is a host that is down (R298)."""
     from fastapi.testclient import TestClient
 
     from src.api import monitoring
@@ -518,7 +576,7 @@ def test_a_probe_refused_by_name_is_counted_as_the_switch_after_the_switch_is_cl
     Session = sessionmaker(bind=engine, future=True)
     with Session() as s:
         s.add_all([Source(name=f"S{i}", domain=f"s{i}.example", rss_url=f"https://s{i}.example/rss", enabled=True, priority=i)
-                   for i in range(2)])
+                   for i in range(3)])
         s.commit()
 
     def _db():
@@ -528,7 +586,11 @@ def test_a_probe_refused_by_name_is_counted_as_the_switch_after_the_switch_is_cl
         finally:
             s.close()
 
-    details = iter([KILL_SWITCH_REFUSAL, f"HTTP 503 for https://s1.example (server said: {KILL_SWITCH_REFUSAL})"])
+    # the socket guard's refusal as requests wraps it on a direct connection: read as the switch's only because a Stop touched the sweep
+    wrapped = ("request error for https://s1.example/: HTTPSConnectionPool(host='s1.example', port=443): Max retries exceeded with url: / "
+               "(Caused by NewConnectionError(\"HTTPSConnection(host='s1.example', port=443): Failed to establish a new connection: "
+               "airplane mode is engaged: refusing a network connection to 's1.example'\"))")
+    details = iter([KILL_SWITCH_REFUSAL, wrapped, f"HTTP 503 for https://s2.example (server said: {KILL_SWITCH_REFUSAL})"])
 
     def probe(source, fetcher=None):
         detail = next(details)
@@ -541,11 +603,11 @@ def test_a_probe_refused_by_name_is_counted_as_the_switch_after_the_switch_is_cl
     try:
         with TestClient(app, base_url="http://127.0.0.1") as c:
             body = c.get(
-                "/api/monitoring/health?limit=2",
+                "/api/monitoring/health?limit=3",
                 headers={"Sec-Fetch-Site": "same-origin", "Referer": "http://127.0.0.1/", "Origin": "http://127.0.0.1"},
             ).json()
     finally:
         app.dependency_overrides.pop(get_db, None)
         engine.dispose()
     assert not kill_switch_active()
-    assert body["checked"] == 2 and body["summary"] == {"refused_by_kill_switch": 1, "down": 1}, body
+    assert body["checked"] == 3 and body["summary"] == {"refused_by_kill_switch": 2, "down": 1}, body

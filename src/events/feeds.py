@@ -871,7 +871,7 @@ def auto_import_due_feeds(fetcher, *, batch: int = 8, min_interval_hours: float 
     that feed and the rest are not counted as failed and are not stamped, so the next pass asks them first (``picked`` then exceeds
     ``imported`` + ``failed``: the difference is the feeds the Stop kept from being asked).
     """
-    from src.ingest import kill_switch_active
+    from src.ingest import kill_switch_active, kill_switch_engaged_since, kill_switch_epoch
 
     state = _load_json("calendar_autoimport.json")
     attempts = load_attempts()
@@ -914,15 +914,17 @@ def auto_import_due_feeds(fetcher, *, batch: int = 8, min_interval_hours: float 
     for fid in picked:
         if kill_switch_active():
             break  # a Stop: the feeds not yet asked for are neither failures nor attempts, and stay exactly as due as they were
+        epoch = kill_switch_epoch()  # this feed's window, waits included (R614)
         try:
             import_feed(fetcher, fid)
             imported += 1
         except Exception as exc:  # noqa: BLE001 - one bad feed must not abort the batch
-            if kill_switch_active():
+            if kill_switch_engaged_since(epoch):
                 # The Stop cut THIS feed's check, in whatever shape the error took (a Stop inside the request arrives as the raw requests
-                # error, which no sentence match recognises, R298): nothing was asked of the host, so it is not a failure and, because the
-                # stamp below means "this feed was checked", it is not stamped either (R293/R294). The next pass asks it first. The cost is a
-                # genuine failure coinciding with a Stop going unrecorded (R320). No new tally key: a Stop is not an outcome.
+                # error, which no sentence match recognises, R298), still engaged or cleared again before the error arrived (R614):
+                # nothing was asked of the host, so it is not a failure and, because the stamp below means "this feed was checked", it is
+                # not stamped either (R293/R294). The next pass asks it first. The cost is a genuine failure coinciding with a Stop going
+                # unrecorded (R320). No new tally key: a Stop is not an outcome.
                 break
             secrets = _feed_secrets(fid)
             if secrets is None:
