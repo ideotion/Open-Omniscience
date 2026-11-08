@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 
 from src.tui import panel as P
+from tests.os_scope import scope_os
 
 REPO = Path(__file__).resolve().parents[1]
 SRC = (REPO / "src" / "tui" / "panel.py").read_text(encoding="utf-8")
@@ -236,7 +237,7 @@ def test_pid_alive_never_calls_os_kill_on_windows(monkeypatch):
         raise AssertionError("os.kill on Windows terminates the process")
 
     monkeypatch.setattr(P, "IS_WINDOWS", True)
-    monkeypatch.setattr(P.os, "kill", boom)
+    scope_os(monkeypatch, P, kill=boom)
     assert P.pid_alive(os.getpid()) in (True, False)
     assert P.pid_alive(None) is True
 
