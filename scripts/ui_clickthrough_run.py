@@ -76,6 +76,15 @@ AXE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "vendor" / "axe-cor
 LOCALES_DIR = Path(__file__).resolve().parents[1] / "src" / "static" / "locales"
 
 
+def axe_axis_label(axe_source: str) -> str:
+    """The a11y axis label, read from the vendored file's own ``/*! axe vX.Y.Z`` banner, so a
+    re-vendor relabels the report rows by itself. Rule sets change between releases (4.14.0 turned
+    label-content-name-mismatch on by default), so this label is what tells two runs' counts apart;
+    a file without the banner says so rather than borrowing a version."""
+    m = re.match(r"/\*! axe v(\d+)\.(\d+)\.\d+", axe_source.lstrip())
+    return f"axe-core-{m.group(1)}.{m.group(2)}" if m else "axe-core-unknown-version"
+
+
 @dataclass
 class Finding:
     id: str
@@ -1438,6 +1447,7 @@ def a11y_pass(driver: PlaywrightUiWalkDriver, report: Report, reader_article_id:
 
     _log("T6: a11y axis (axe / keyboard / focus / prefers-contrast)")
     axe_source = AXE_PATH.read_text(encoding="utf-8")
+    axe_axis = axe_axis_label(axe_source)
     page = driver.page
     axe_surfaces: list[tuple[str, Surface]] = [
         ("home", Surface("axe_home", "Home", nav_tab="home", dom_id="tab-home")),
@@ -1458,7 +1468,7 @@ def a11y_pass(driver: PlaywrightUiWalkDriver, report: Report, reader_article_id:
             violations = result.get("violations", [])
             serious = [v for v in violations if v.get("impact") in ("serious", "critical")]
             report.add_coverage(
-                surface=f"a11y_axe_{label}", axis="axe-core-4.13",
+                surface=f"a11y_axe_{label}", axis=axe_axis,
                 result="verified" if not serious else "partial",
                 note=f"{len(violations)} violations ({len(serious)} serious/critical): "
                 + "; ".join(f"{v['id']}[{v['impact']}]x{v['nodes']}" for v in violations[:8]),
@@ -1473,7 +1483,7 @@ def a11y_pass(driver: PlaywrightUiWalkDriver, report: Report, reader_article_id:
                     new=True,
                 )
         except Exception as exc:  # noqa: BLE001
-            report.add_coverage(surface=f"a11y_axe_{label}", axis="axe-core-4.13",
+            report.add_coverage(surface=f"a11y_axe_{label}", axis=axe_axis,
                                 result="blocked", note=f"{type(exc).__name__}: {str(exc)[:100]}")
     # -- keyboard-only traversal + focus visibility (home + the reader) ------------------- #
     kb_surfaces = [("home", axe_surfaces[0][1])]

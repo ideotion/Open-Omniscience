@@ -327,3 +327,113 @@ def test_two_feeds_of_one_domain_are_two_rows_and_a_feedless_description_is_not_
     assert "lean-right" in (rows[0].tags or "") and "lean-right" not in (rows[1].tags or "")  # the first feed row
     again = seed_sources(session, entries)
     assert again["created"] == 0 and again["tag_merge"]["tags_merged"] == 0  # idempotent
+
+
+# --------------------------------------------------------------------------- #
+#  OPEN_QUEUE row J (6)(a) and (6)(b): the report adds up, and one rule picks the outlet's feed row
+# --------------------------------------------------------------------------- #
+_FEED_A = {"name": "Outlet A", "domain": "outlet.example", "rss_url": "https://outlet.example/a.xml"}
+_FEED_B = {"name": "Outlet B", "domain": "outlet.example", "rss_url": "https://outlet.example/b.xml"}
+_LEAN = {"name": "Outlet", "domain": "outlet.example", "tags": ["lean-right"]}
+
+
+def _adds_up(result) -> bool:
+    return result["created"] + result["skipped"] == result["total"] and result["skipped"] == (
+        result["skipped_existing"] + result["merged"] + result["shadowed"] + result["skipped_malformed"]
+        + result["held_back_legacy_key"])
+
+
+def test_a_merge_through_the_legal_only_call_is_counted_and_the_report_adds_up(session):
+    """(6)(a): a feed-less entry whose feed rows the DATABASE holds (the legal-only seed sees no feed entry for it) is a
+    merge, and lands in exactly one counter."""
+    seed_sources(session, [_FEED_A, _FEED_B])
+    legal = {**_LEAN, "_provenance": "legal"}
+    result = seed_sources(session, [legal])
+    assert result["created"] == 0 and result["merged"] == 1 and result["skipped"] == 1
+    assert _adds_up(result)
+
+
+def test_an_entry_with_a_domain_but_no_name_is_counted_and_the_report_adds_up(session):
+    """(6)(a): ``_usable`` drops an entry with a domain and no name before the plan sees it; it is ``skipped_malformed``."""
+    entries = [_FEED_A, {"domain": "outlet.example"}, {"domain": "other.example", "name": "  "}, _LEAN]
+    result = seed_sources(session, entries)
+    assert result["skipped_malformed"] == 2 and result["created"] == 1 and result["merged"] == 1
+    assert result["total"] == 4 and _adds_up(result)
+    assert _adds_up(seed_sources(session, entries))   # and on the idempotent re-run
+
+
+def test_a_reordered_catalogue_keeps_the_tags_on_the_lowest_id_feed_row(session):
+    """(6)(b): the main seed used the catalogue's FIRST feed entry, so swapping two feeds moved a feed-less entry's tags to a
+    second row on the next boot. The first boot takes the lowest id, and every later boot keeps the row whose baseline
+    already records the merged tags, so the target never moves."""
+    seed_sources(session, [_FEED_A, _FEED_B, _LEAN])
+    seed_sources(session, [_FEED_B, _FEED_A, _LEAN])
+    rows = session.query(Source).order_by(Source.id).all()
+    assert [("lean-right" in (r.tags or "")) for r in rows] == [True, False]
+
+
+def test_both_seeds_put_one_entrys_tags_on_one_row(session):
+    """(6)(b): the main seed took the catalogue's first feed entry and the legal-only seed the lowest id, so once the
+    catalogue order and the id order disagree, one entry's tags landed on two rows. Both now take the lowest id."""
+    seed_sources(session, [_FEED_B, _FEED_A])                    # B is the older row
+    legal_lean = {**_LEAN, "tags": ["lean-right", "law"], "_provenance": "legal"}
+    main = seed_sources(session, [_FEED_A, _FEED_B, _LEAN])      # the catalogue now lists A first
+    legal = seed_sources(session, [legal_lean])
+    assert _adds_up(main) and _adds_up(legal)
+    b, a = session.query(Source).order_by(Source.id).all()
+    assert b.name == "Outlet B" and "lean-right" in (b.tags or "") and "law" in (b.tags or "")
+    assert "lean-right" not in (a.tags or "") and "law" not in (a.tags or "")
+
+
+def test_an_operator_added_older_feed_row_does_not_swallow_the_catalogues_tags(session):
+    """An operator-added feed row older than the catalogue's own carries no catalogue baseline, so a merge cannot be
+    recorded on it: both seeds skip it and take the lowest-id row the catalogue made."""
+    operator = Source(name="Operator feed", domain="outlet.example", rss_url="https://outlet.example/op.xml")
+    session.add(operator)
+    session.commit()
+    main = seed_sources(session, [_FEED_A, _FEED_B, _LEAN])
+    legal = seed_sources(session, [{**_LEAN, "tags": ["law"], "_provenance": "legal"}])
+    assert main["created"] == 2 and _adds_up(main) and _adds_up(legal)
+    op, a, b = session.query(Source).order_by(Source.id).all()
+    assert op.id == operator.id and not ({"lean-right", "law"} & set((op.tags or "").split(",")))
+    assert {"lean-right", "law"} <= set((a.tags or "").split(","))
+    assert not ({"lean-right", "law"} & set((b.tags or "").split(",")))
+
+
+def test_an_install_that_merged_under_the_older_rule_gets_no_second_copy(session):
+    """Opus read of this change: on a store where the older rule (the catalogue's first feed entry) already merged onto a
+    row that is not the lowest id, moving the target would copy the tags onto a second row. The row whose baseline already
+    records merged tags keeps receiving them."""
+    from src.ingest.seed_sources import merge_feedless_tags
+
+    seed_sources(session, [_FEED_B])                          # B is id 1
+    seed_sources(session, [_FEED_A, _FEED_B])                 # A is id 2
+    b, a = session.query(Source).order_by(Source.id).all()
+    merge_feedless_tags(session, [(_LEAN, a)])                # what the older rule did: the catalogue's first feed, A
+    session.commit()
+    result = seed_sources(session, [_FEED_A, _FEED_B, {**_LEAN, "tags": ["lean-right", "wire"]}])
+    assert _adds_up(result) and result["merged"] == 1
+    assert not ({"lean-right", "wire"} & set((b.tags or "").split(",")))
+    assert {"lean-right", "wire"} <= set((a.tags or "").split(","))
+
+
+def test_a_feedless_entry_whose_outlet_holds_only_a_feedless_row_still_merges_onto_it(session):
+    """Opus read: the plan's feed entry can pair with a feed-less row the database held (the one-to-one fallback). The
+    outlet then has no feed row, and the entry's tags go onto that paired row, as before, never reported as held back."""
+    seed_sources(session, [{"name": "Outlet", "domain": "outlet.example", "tags": ["lean-left"]}])
+    result = seed_sources(session, [_FEED_A, {**_LEAN, "tags": ["wire"]}])
+    assert _adds_up(result) and result["merged"] == 1 and result["held_back_legacy_key"] == 0
+    assert "wire" in (session.query(Source).one().tags or "")
+
+
+def test_the_outlet_feed_row_rule(session):
+    from src.ingest.seed_sources import outlet_feed_row
+
+    assert outlet_feed_row([]) is None
+    seed_sources(session, [_FEED_A, _FEED_B])
+    a, b = session.query(Source).order_by(Source.id).all()
+    assert outlet_feed_row([b, a]) is a
+    feedless = Source(name="Feedless", domain="x.example")
+    session.add(feedless)
+    session.commit()
+    assert outlet_feed_row([feedless]) is None

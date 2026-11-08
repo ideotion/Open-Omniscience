@@ -267,9 +267,14 @@ def run_qualification_assist_selftest() -> dict:
         (2, "", CANARY_JUNK_TEXT),
         (3, "Odd page", "asdkjasldkjaslkdj this is nonsense text with no real signal"),
     ]
-    out = propose_qualification_flags(
-        _FakeSession(rows), source_id=1, client=_StubClient(), model="stub:test"
-    )
+    from src.ai_layer.coverage import fixed_serving_window
+
+    # No backend is asked for its window: the stub is the model here, and a probe of the real
+    # ports would make "no network" depend on whether the shared window cache happened to be warm.
+    with fixed_serving_window(None, "self-test: a stub client, no backend asked"):
+        out = propose_qualification_flags(
+            _FakeSession(rows), source_id=1, client=_StubClient(), model="stub:test"
+        )
     checks = {
         "canary_ok": out["canary"]["ok"] is True,
         "checked_all_three": out["checked"] == 3,

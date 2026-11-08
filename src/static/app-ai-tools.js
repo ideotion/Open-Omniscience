@@ -2367,6 +2367,23 @@
     function exportEvidence(scope) { return openEvidenceReview(_reportScope(scope)); }
 
     // -- Chain of custody --------------------------------------------------- //
+    // One hover per value of HybridSigner.key_protection, in English: the i18n engine translates a
+    // title by its English text, so each is keyed in the 12 locales (tests/test_custody_key_pill.py).
+    // The value describes the keys IN USE: an ML-DSA file on disk while post-quantum signing is off is
+    // not read, so it is not named (docs/SECURITY.md, "Stated limit").
+    const _KEY_PROTECTION_TIPS = {
+      "aes256gcm-scrypt": "The signing keys in use are encrypted at rest under your passphrase (scrypt, AES-256-GCM). " +
+        "This protects a copied file or a machine that is switched off, never a compromised running session.",
+      "pkcs8-pbkdf2": "A signing key in use is encrypted in an older form (PKCS8, PBKDF2) that costs far less to guess " +
+        "against than the current one. The app re-encrypts it under scrypt each time it loads it, unless its file " +
+        "cannot be replaced (a read-only folder, or a linked file). This protects a copied file, never a compromised " +
+        "running session.",
+      "plaintext-0600": "A signing key in use is stored unencrypted on disk (file mode 0600 on Linux and macOS). Keys " +
+        "are encrypted at rest when the app has a passphrase (the database passphrase, or OO_KEY_PASSPHRASE). If this " +
+        "shows while it has one, a key file could not be replaced (a read-only folder, or a linked file); the app " +
+        "tries again each time it loads it.",
+    };
+
     function renderCustodyStatus(s) {
       const id = s.signer || {};
       const trunc = (h) => h ? esc(h.slice(0, 16)) + "…" : "—";
@@ -2380,10 +2397,15 @@
         : (s.anchoring_mode === "opentimestamps" && !s.ots_available
             ? '<span class="pill warn">requested, library not installed</span>'
             : '<span class="pill">local-only</span>');
+      // The hover says what the key files hold, for the value the server reports (R484 (3)). The one
+      // hover before told every install to set OO_KEY_PASSPHRASE: an encrypted install does not need
+      // it, and the database passphrase wraps the keys too. A value with no entry gets no hover.
+      const keyTip = Object.prototype.hasOwnProperty.call(_KEY_PROTECTION_TIPS, s.key_protection)
+        ? _KEY_PROTECTION_TIPS[s.key_protection] : "";
       $("custody-status").innerHTML =
         `Signing: ${pqcPill} &nbsp; Timestamps: ${otsPill} &nbsp;` +
-        `<span class="pill ${s.key_protection==='aes256gcm-scrypt'?'ok':'warn'}" ` +
-        `title="Set OO_KEY_PASSPHRASE to encrypt keys at rest">keys: ${esc(s.key_protection)}</span>` +
+        `<span class="pill ${s.key_protection==='aes256gcm-scrypt'?'ok':'warn'}"` +
+        (keyTip ? ` title="${esc(keyTip)}"` : "") + `>keys: ${esc(s.key_protection)}</span>` +
         `<div class="muted" style="font-size:12px;margin-top:4px">` +
         `Ed25519 pub ${trunc(id.ed25519_pub)}` +
         (id.ml_dsa_pub ? ` · ${esc(id.ml_dsa_variant)} pub ${trunc(id.ml_dsa_pub)}` : "") + `</div>`;

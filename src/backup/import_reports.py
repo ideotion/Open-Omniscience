@@ -370,7 +370,116 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
             lines.append(f"  - {reason}: {_fmt_count(n)}")
         lines.append("")
 
+    # R448: a signing key the backup carried and the restore did not place is a change of identity the operator meets
+    # later (the next export makes a new key), so it is said here, where the outcome is read, and not only in the JSON.
+    side = report.get("side_files")
+    keys = side.get("keys") if isinstance(side, dict) else None
+    keys = keys if isinstance(keys, dict) else {}
+    not_placed = keys.get("not_placed")
+    if not_placed:
+        lines.append("## Signing keys not restored")
+        lines.append("")
+        lines.append(
+            "These files from the backup's keys folder were not placed on this install; each one stays in the backup, "
+            "and the reason is given beside it. A signing key that is not placed is replaced by a new one the next "
+            "time this install signs, so what it signs from then on is signed by a new identity; what the old key "
+            "signed stays verifiable against its public key."
+        )
+        lines.append("")
+        for entry in not_placed:
+            if isinstance(entry, dict):
+                lines.append(f"- {_md_code(entry.get('name'))}: {entry.get('reason')}")
+        lines.append("")
+
+    # R613: on an install that holds no passphrase a carried encrypted key is placed exactly as carried, never in the
+    # clear, and it cannot sign here until it is unlocked; that is said where the outcome is read, with what stops
+    # meanwhile, the backup export first (a backup is the operator's safety net, and every backup is signed).
+    still_encrypted = [e for e in keys.get("still_encrypted") or () if isinstance(e, dict)]
+    if still_encrypted:
+        names = {_key_name(e.get("name")) for e in still_encrypted}
+        opened_with = {str(e.get("opened_with")) for e in still_encrypted}
+        lines.append("## Signing keys still encrypted")
+        lines.append("")
+        if _EVIDENCE_KEY in names:
+            lines.append(
+                "**Backups cannot be exported until the evidence key is unlocked.** Every backup is signed with "
+                f"{_md_code(_EVIDENCE_KEY)}, so a backup export (and an evidence bundle export) stops with an error "
+                "while that key is still encrypted."
+            )
+            lines.append("")
+        lines.append(
+            "This install holds no passphrase, so these signing keys from the backup were placed exactly as they were "
+            "carried, still encrypted. They were not written in the clear. Each one is listed with the passphrase "
+            "that opens it. To use them, set OO_KEY_PASSPHRASE to that passphrase and restart; until then, anything "
+            "this install signs with them stops with an error that names the key."
+        )
+        if len(opened_with) > 1:
+            lines.append("")
+            lines.append(
+                "These keys open with different passphrases, and OO_KEY_PASSPHRASE holds one, so only the keys that "
+                "one opens can be unlocked at a time."
+            )
+        if names & _CUSTODY_KEYS:
+            lines.append("")
+            lines.append(
+                "While the custody key is locked and chain-of-custody logging is on, each article collected logs a "
+                "warning and its custody entry waits in the pending queue. The waiting entries are written, marked "
+                "late, at the end of the first collection pass after the key is unlocked."
+            )
+        lines.append("")
+        for entry in still_encrypted:
+            opened = _OPENED_WITH.get(str(entry.get("opened_with")), _OPENED_WITH["given"])
+            lines.append(f"- {_md_code(entry.get('name'))}: opens with {opened}")
+        lines.append("")
+
+    identities = keys.get("identities")
+    if identities:
+        lines.append("## Signing identity taken from the backup")
+        lines.append("")
+        lines.append(
+            "This install had no key of its own for these signers, so it now signs as the install that made the "
+            "backup. What it signs from now on carries the public key below, the same value its evidence bundles "
+            "and custody records show."
+            + (" A key listed above as still encrypted signs only once it is unlocked." if still_encrypted else "")
+        )
+        lines.append("")
+        for entry in identities:
+            if isinstance(entry, dict):
+                lines.append(f"- {_md_code(entry.get('name'))}: Ed25519 public key {_md_code(entry.get('ed25519_public_key'))}")
+        lines.append("")
+
     return "\n".join(lines)
+
+
+#: The evidence key: every backup and every evidence bundle is signed with it (R613's report section names it first).
+_EVIDENCE_KEY = "keys/evidence_ed25519.pem"
+#: The chain-of-custody signer's pair: while it is locked, ingest queues its entries as pending.
+_CUSTODY_KEYS = frozenset({"keys/custody_ed25519.pem", "keys/custody_ml_dsa_65.key"})
+#: The passphrase that opened a key still encrypted, BY ROLE (the restore records the role, never the passphrase).
+_OPENED_WITH = {
+    "backup": "the backup's passphrase",
+    "corpus": "the passphrase of the backup's corpus",
+    "backup and corpus": "the passphrase given for both the backup and its corpus",
+    "given": "a passphrase this restore was given",
+}
+
+
+def _key_name(value: object) -> str:
+    """A manifest key name with ``/`` between its parts, whichever system wrote the backup (Windows writes ``\\``)."""
+    return str(value).replace("\\", "/")
+
+
+def _md_code(value: object) -> str:
+    """``value`` as inline code that cannot break out of its line: a backtick and every character that is not
+    printable (a newline, a control character, a line separator) is written as its ``\\uXXXX`` escape (``\\UXXXXXXXX``
+    above U+FFFF, so where an escape ends is never in doubt). A name comes from the backup's manifest, which whoever made the backup wrote, so it is never pasted into the Markdown raw."""
+    text = str(value)
+    return "`" + "".join(ch if ch.isprintable() and ch != "`" else _escape(ch) for ch in text) + "`"
+
+
+def _escape(ch: str) -> str:
+    code = ord(ch)
+    return f"\\u{code:04x}" if code <= 0xFFFF else f"\\U{code:08x}"
 
 
 def _safe_report_path(filename: str) -> Path | None:

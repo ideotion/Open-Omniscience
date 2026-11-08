@@ -76,6 +76,8 @@ ${bold}${blu}Open Omniscience${rst} is starting...
 
   Your browser will open at: ${bold}${URL}${rst}
   ${bold}To stop the app:${rst} close this window (or press Ctrl-C).
+  You can close the browser at any time: collection, downloads, backups, imports and
+  AI jobs keep running here. This window shows a small panel to reopen the UI.
 
 EOF
 
@@ -508,10 +510,11 @@ SERVER_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # KNOWN RESIDUAL (R168, no fix): a bare `kill -INT <launcher pid>` is not a terminal's Ctrl-C. Nothing sends the server a SIGINT then, and INT is not
 # forwarded, so the launcher waits and the server keeps running; stop it with TERM or HUP (forwarded) or close the window. Recorded in docs/ledger/OPEN_QUEUE.md.
 STOP_REQUESTED=0
+PANEL=""
 trap 'STOP_REQUESTED=1; record_stop HUP; kill "$SERVER" 2>/dev/null || true' HUP
 trap 'STOP_REQUESTED=1; record_stop TERM; kill "$SERVER" 2>/dev/null || true' TERM
 trap 'STOP_REQUESTED=1; record_stop INT' INT
-trap 'kill "$SERVER" 2>/dev/null || true' EXIT
+trap 'kill "$SERVER" 2>/dev/null || true; [ -z "$PANEL" ] || kill "$PANEL" 2>/dev/null || true' EXIT
 
 # Wait up to ~20s for the health endpoint.
 for _ in $(seq 1 40); do
@@ -520,6 +523,30 @@ for _ in $(seq 1 40); do
 done
 
 open_browser "$URL"
+
+# THE TERMINAL PANEL (R600, 8 Nov): while the server runs, this window shows src/tui/panel.py -- status, the running jobs, and Open UI /
+# Pause collection / Stop app, clickable where the terminal sends mouse clicks -- so the browser can be closed on an instance left running
+# and reopened from here. It starts only in a real terminal (stdin AND stdout), only when this install has it and its own Python, and
+# never when OO_PANEL=0; anything else keeps the window exactly as before. It is an ordinary child of this launcher and changes no stop path:
+#   * it runs in cbreak mode, so a Ctrl-C is still ONE terminal SIGINT to the whole group (the server takes its graceful path, the INT trap
+#     records it); the panel only restores the terminal and ends;
+#   * TERM or HUP to this launcher still runs the traps above at once: `wait` on the panel is interrupted by a trapped signal, which a
+#     FOREGROUND panel would not allow (bash runs a trap only after the foreground command ends);
+#   * its "Stop app" is the app's own power button over loopback, the same 143 the exit check below already reads as a requested stop;
+#   * the panel ends by itself when the server ends, and the launcher waits for it BEFORE reading the server's status, so the crash
+#     message below is never drawn under a curses screen.
+# `<&0` keeps the terminal as its input: without an explicit redirection bash gives a background command /dev/null.
+# It never sees the passphrase: unlocking stays in the browser (R601 keeps going online there too).
+PANEL_PY="$DIR/.venv/bin/python"
+if [ "${OO_PANEL:-1}" != "0" ] && [ -t 0 ] && [ -t 1 ] && [ -f "$DIR/src/tui/panel.py" ] && [ -x "$PANEL_PY" ]; then
+    # env -u: the panel never needs the passphrases, and a browser it opens must not inherit them (secret_scrub.HELD_ENV_VARS)
+    env -u OO_DB_PASSPHRASE -u OO_KEY_PASSPHRASE "$PANEL_PY" -m src.tui.panel --port "$PORT" --server-pid "$SERVER" --url "$URL" <&0 &
+    PANEL=$!
+    while kill -0 "$PANEL" 2>/dev/null; do
+        wait "$PANEL" 2>/dev/null || true
+    done
+    PANEL=""
+fi
 
 # Keep running (and holding the server) until the user closes the window.
 status=0

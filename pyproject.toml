@@ -180,6 +180,14 @@ dependencies = [
     # project tags as such -- a scanned PDF is still honestly "no usable text" on a core
     # install, and that is a different and smaller gap than the one L6 closes.
     "pypdf>=4.0",
+    # The launcher's terminal panel (R600, src/tui/panel.py) runs on the standard library's curses, which CPython does not ship on
+    # Windows; windows-curses supplies it there (R602). The marker is narrower than "Windows" on purpose, because the project
+    # publishes WHEELS ONLY (no sdist), so a platform with no wheel would fail the whole install, where a missing curses only means
+    # no panel (launch.cmd tests `import curses` and starts the app without it): there is no ARM64 wheel, and no wheel yet for a
+    # Python after 3.14 (read on PyPI 2026-11-08: 2.4.2 ships cp313/cp314 win32 and win_amd64). FLOOR 2.4.1 = the first release
+    # with cp313 wheels (2.4.0 has none). Linux and macOS never install it, and the lock (generated on Linux) never pins it:
+    # tests/test_lock_satisfies_pyproject.py reads a requirement whose marker excludes Linux as one the lock need not pin.
+    "windows-curses>=2.4.1; sys_platform == 'win32' and platform_machine != 'ARM64' and python_version < '3.15'",
 ]
 
 [project.optional-dependencies]

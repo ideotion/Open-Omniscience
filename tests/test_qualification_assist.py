@@ -244,3 +244,31 @@ def test_last_report_can_filter_by_source_id(db, tmp_path, monkeypatch):
 def test_run_qualification_assist_selftest_passes():
     out = QA.run_qualification_assist_selftest()
     assert out["passed"] is True
+
+
+def test_the_selftest_asks_no_backend_for_its_window_even_with_a_cold_cache(monkeypatch):
+    """The self-test runs on a stub and claims no model, no network. The sweep budget behind it used to
+    probe the vLLM and Ollama ports whenever the shared window cache was cold, so the GET walk
+    (tests/test_get_routes_side_effects.py) saw a loopback socket only when nothing had warmed the
+    cache in the five minutes before (CI shard 3, 2026-11-08)."""
+    import threading
+
+    from src.ai_layer import coverage
+    from src.ai_layer.qualification_assist import run_qualification_assist_selftest
+
+    asked = []
+    monkeypatch.setattr(coverage, "_resolve_window", lambda name: asked.append(name) or {"tokens": 4096, "source": "x", "backend": "x"})
+    coverage.reset_window_cache()
+    try:
+        assert run_qualification_assist_selftest()["passed"] is True
+        assert asked == []
+        # the pin is this thread's and ends with the block: a real caller still resolves the window
+        seen = []
+        with coverage.fixed_serving_window(None, "test"):
+            t = threading.Thread(target=lambda: seen.append(coverage.serving_window_tokens()["tokens"]))
+            t.start()
+            t.join()
+            assert coverage.serving_window_tokens()["tokens"] is None
+        assert seen == [4096] and coverage.serving_window_tokens()["tokens"] == 4096
+    finally:
+        coverage.reset_window_cache()
