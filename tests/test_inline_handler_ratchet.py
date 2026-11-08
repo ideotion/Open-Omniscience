@@ -138,7 +138,7 @@ def test_no_served_page_gains_an_inline_script():
 import subprocess  # noqa: E402
 
 STATIC = ROOT / "src" / "static"
-_HELPERS = {"ooPrevent", "ooStop", "ooPreventStop", "ooCloseDialog", "ooClickId", "ooSetValue",
+_HELPERS = {"ooPrevent", "ooStop", "ooPreventStop", "ooCloseDialog",
             "ooClearValue", "ooBodyClass", "ooOpenUrl"}
 
 

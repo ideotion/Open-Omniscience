@@ -97,3 +97,81 @@ def test_suspend_checkpoint_returns_at_the_deadline_when_the_work_hangs(monkeypa
     out = win_power.suspend_checkpoint(budget_s=0.1)
     release.set()
     assert out["outcome"] == "timeout" and time.monotonic() - began < 2
+
+
+def test_the_last_power_event_reaches_the_sentinel_and_the_next_boots_end_line(monkeypatch, tmp_path):
+    """A session that dies asleep leaves nothing else: the sentinel keeps ONE field (the last suspend/resume) and an unclean end line carries it."""
+    from src.monitoring import forensics
+
+    store: dict = {}
+    monkeypatch.setattr(forensics, "_read_state", lambda: dict(store))
+    monkeypatch.setattr(forensics, "_write_state", lambda s: store.update(s))
+    monkeypatch.setattr(forensics, "_SESSION_STARTED_AT", "2026-11-07T00:00:00Z")
+    monkeypatch.setattr(forensics, "_SHUTDOWN_BEGUN", False)
+    monkeypatch.setattr(win_power, "suspend_checkpoint", lambda **k: {"outcome": "done"})
+    win_power.on_power_event(4)
+    assert store["last_power_event"]["kind"] == "suspend"
+    win_power.on_power_event(18)
+    assert store["last_power_event"]["kind"] == "resume" and set(store) == {"last_power_event"}
+    forensics.record_power_event("hibernate")  # not in the vocabulary: ignored
+    assert store["last_power_event"]["kind"] == "resume"
+
+
+def test_an_unclean_end_line_names_the_last_power_event_and_only_the_apps_words(monkeypatch):
+    from src.monitoring import session_history as sh
+
+    appended: list = []
+    monkeypatch.setattr(sh, "_append", appended.append)
+    monkeypatch.setattr(sh, "read_records", lambda: [{"kind": "boot", "session_id": "s1"}])
+    monkeypatch.setattr(sh, "_launcher_exit", lambda s: None)
+    monkeypatch.setattr(sh, "_end_evidence", lambda *a, **k: {})
+    prev = {"state": "running", "session_id": "s1", "last_power_event": {"kind": "suspend", "at": "2026-11-07T14:30:00+00:00"}}
+    rec = sh._close_previous(prev, None)
+    assert rec and rec["last_power_event"] == {"kind": "suspend", "at": "2026-11-07T14:30:00+00:00"}
+    prev["last_power_event"] = {"kind": "<script>", "at": "x"}
+    rec = sh._close_previous(prev, None)
+    assert rec and "last_power_event" not in rec
+
+
+def _fake_store(monkeypatch):
+    from src.monitoring import forensics
+
+    store: dict = {"state": "clean", "ended_at": "prev"}
+    monkeypatch.setattr(forensics, "_read_state", lambda: dict(store))
+    monkeypatch.setattr(forensics, "_write_state", lambda s: store.update(s))
+    return forensics, store
+
+
+def test_a_power_event_before_this_session_started_never_touches_the_previous_sessions_sentinel(monkeypatch):
+    forensics, store = _fake_store(monkeypatch)
+    monkeypatch.setattr(forensics, "_SESSION_STARTED_AT", None)
+    forensics.record_power_event("suspend")
+    assert "last_power_event" not in store
+
+
+def test_a_power_event_after_the_teardown_began_cannot_write_stale_state_over_it(monkeypatch):
+    forensics, store = _fake_store(monkeypatch)
+    monkeypatch.setattr(forensics, "_SESSION_STARTED_AT", "2026-11-07T00:00:00Z")
+    monkeypatch.setattr(forensics, "_SHUTDOWN_BEGUN", False)
+    forensics.record_shutdown_phase("shutting-down")
+    forensics.record_power_event("resume")
+    assert "last_power_event" not in store and store["state"] == "shutting-down"
+
+
+def test_a_new_session_start_re_arms_the_power_stamp_after_a_teardown(monkeypatch, tmp_path):
+    from src.monitoring import forensics
+
+    for name in ("_PREV_AT_BOOT", "_PREV_LOADED", "_WAL_AT_BOOT", "_PAGES_AT_BOOT", "_SESSION_STARTED_AT", "_SESSION_STARTED_MONO", "_OOM_AT_BOOT", "_BOOT_ID_AT_BOOT", "_SHUTDOWN_BEGUN"):
+        monkeypatch.setattr(forensics, name, getattr(forensics, name), raising=False)  # restored at teardown: the start rewrites them
+    monkeypatch.setattr(forensics, "_state_path", lambda: tmp_path / "session_state.json")
+    monkeypatch.setattr(forensics, "kernel_evidence", lambda: {"verdict": "not-run"})
+    monkeypatch.setattr(forensics, "_SESSION_STARTED_AT", "2026-11-07T00:00:00Z")
+    forensics.record_shutdown_phase("shutting-down")
+    assert forensics._SHUTDOWN_BEGUN is True
+    monkeypatch.setattr(forensics, "_SESSION_STARTED_AT", None)
+    forensics.record_session_start()
+    assert forensics._SHUTDOWN_BEGUN is False and forensics._SESSION_STARTED_AT is not None
+    forensics.record_power_event("suspend")
+    import json
+
+    assert json.loads((tmp_path / "session_state.json").read_text(encoding="utf-8"))["last_power_event"]["kind"] == "suspend"

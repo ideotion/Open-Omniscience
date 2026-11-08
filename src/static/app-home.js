@@ -2415,6 +2415,8 @@
       if (!confirm(t("Remove this annotation? This cannot be undone."))) return;
       try { await api("/api/annotations/mine/" + i, {method:"DELETE"}); loadMineAnnotations(); } catch (e) { toast(e.message, "err"); }
     }
+    // The "Import bundle…" button opens the hidden file chooser: the one control this clicks is the annotation bundle input (A-004).
+    function annoImportPick() { const input = $("anno-import"); if (input) input.click(); }
     function exportAnnotations() { window.open("/api/annotations/export", "_blank"); }
     async function importAnnotations(input) {
       const file = input.files && input.files[0]; if (!file) return;
