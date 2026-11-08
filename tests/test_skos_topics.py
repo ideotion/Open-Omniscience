@@ -163,3 +163,30 @@ def test_same_word_in_two_schemes_is_two_exact_tags_and_exact_beats_approx():
     idx2 = tt.Index([art("eurovoc", "e:2", "sea", alt=["ocean"])])
     (t,) = tt.tag_text("ocean and sea", "en", idx2)
     assert t.tier == "exact"
+
+
+def test_a_bare_nested_reference_is_not_a_concept_of_its_own(tmp_path):
+    parsed = _parse_text(
+        tmp_path,
+        '<skos:Concept rdf:about="u:c"><skos:prefLabel>Tax</skos:prefLabel>'
+        '<skos:broader><skos:Concept rdf:about="u:p"/></skos:broader></skos:Concept>'
+        '<skos:Concept rdf:about="u:p"><skos:prefLabel>Money</skos:prefLabel>'
+        '<skos:broader><skos:Concept rdf:about="u:z"><skos:prefLabel>partial</skos:prefLabel></skos:Concept></skos:broader>'
+        "</skos:Concept>",
+    )
+    assert parsed["n_seen"] == 3 and parsed["gaps"] == []  # u:c, u:p, and u:z defined by its nested labels
+    assert parsed["concepts"]["u:c"]["broader"] == ["u:p"]
+    assert parsed["concepts"]["u:p"]["broader"] == ["u:z"]  # the parent's links are not overwritten
+    assert parsed["concepts"]["u:z"]["pref"] == {"en": "partial"}  # a nested concept WITH labels defines it
+
+
+def test_one_gap_per_concept_for_labels_without_language(tmp_path):
+    f = tmp_path / "n.rdf"
+    f.write_text(
+        '<?xml version="1.0"?><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" '
+        'xmlns:skos="http://www.w3.org/2004/02/skos/core#"><skos:Concept rdf:about="u:a">'
+        "<skos:prefLabel>A</skos:prefLabel><skos:altLabel>B</skos:altLabel></skos:Concept></rdf:RDF>",
+        encoding="utf-8",
+    )
+    kinds = [g["kind"] for g in skos.parse_rdfxml(f)["gaps"]]
+    assert kinds.count("label_without_language") == 1

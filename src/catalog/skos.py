@@ -52,6 +52,7 @@ def parse_rdfxml(source: str | Path | BinaryIO) -> dict[str, Any]:
     concepts: dict[str, dict[str, Any]] = {}
     gaps: list[dict[str, str]] = []
     n_seen = 0
+    nested_defined: set[str] = set()
     langs: dict[int, str] = {}  # element id -> effective xml:lang (inherited from its ancestors)
     stack: list[str] = []
     depth = 0
@@ -67,20 +68,24 @@ def parse_rdfxml(source: str | Path | BinaryIO) -> dict[str, Any]:
                 continue
             depth -= 1
             stack.pop()
+            nested = depth > 1  # inside another element, e.g. <skos:broader><skos:Concept/></skos:broader>
             if el.tag != f"{SKOS}Concept" and not (
                 el.tag == f"{RDF}Description"
                 and any(c.tag == f"{RDF}type" and c.get(f"{RDF}resource", "").endswith("skos/core#Concept")
                         for c in el)
             ):
                 continue
-            n_seen += 1
             uri = el.get(f"{RDF}about") or ""
+            if not nested:
+                n_seen += 1
             if not uri:
-                gaps.append({"kind": "concept_without_id", "detail": "a concept carries no rdf:about"})
+                if not nested:
+                    gaps.append({"kind": "concept_without_id", "detail": "a concept carries no rdf:about"})
             else:
                 pref: dict[str, str] = {}
                 alt: dict[str, list[str]] = {}
                 broader: list[str] = []
+                no_lang = False
                 for c in el:
                     lang = langs.get(id(c), "").split("-")[0].lower()
                     if c.tag == f"{SKOS}prefLabel":
@@ -88,25 +93,42 @@ def parse_rdfxml(source: str | Path | BinaryIO) -> dict[str, Any]:
                         if label and lang and lang not in pref:
                             pref[lang] = label
                         elif label and not lang:
-                            gaps.append({"kind": "label_without_language", "detail": uri})
+                            no_lang = True
                     elif c.tag == f"{SKOS}altLabel":
                         label = _text(c)
                         if label and lang:
                             alt.setdefault(lang, []).append(label)
                         elif label:
-                            gaps.append({"kind": "label_without_language", "detail": uri})
+                            no_lang = True
                     elif c.tag == f"{SKOS}broader":
                         ref = c.get(f"{RDF}resource")
                         if not ref:  # the nested form: <skos:broader><skos:Concept rdf:about=.../></skos:broader>
                             ref = next((g.get(f"{RDF}about") for g in c if g.get(f"{RDF}about")), None)
                         if ref:
                             broader.append(ref)
+                if nested:
+                    # a bare reference defines nothing; one that carries labels defines the concept
+                    # unless a top-level entry exists, which always wins (it has the full record)
+                    if (pref or alt) and uri not in concepts:
+                        concepts[uri] = {"pref": pref, "alt": alt, "broader": broader}
+                        n_seen += 1
+                        nested_defined.add(uri)
+                    continue
+                if no_lang:
+                    gaps.append({"kind": "label_without_language", "detail": uri})
                 if not pref and not alt:
                     gaps.append({"kind": "concept_without_label", "detail": uri})
                 else:
+                    if uri in nested_defined:
+                        nested_defined.discard(uri)
+                        n_seen -= 1  # counted once, as the top-level entry now replaces the nested one
                     concepts[uri] = {"pref": pref, "alt": alt, "broader": broader}
-            if depth <= 1:  # a top-level concept is finished; a nested one is still its parent's to read
-                el.clear()
+            if nested:
+                continue
+            for c in el:
+                langs.pop(id(c), None)
+            langs.pop(id(el), None)
+            el.clear()  # a top-level concept is finished
     except SkosError:
         raise
     except Exception as exc:  # defusedxml/ElementTree errors: named, not swallowed
