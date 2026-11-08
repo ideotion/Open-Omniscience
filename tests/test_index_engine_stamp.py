@@ -370,15 +370,15 @@ def test_a_changed_data_file_changes_the_identity(monkeypatch):
     real = ei._read
     # stopwords_iso has NO en.txt or fr.txt -- those languages' stopwords are constants in src/services/stopwords.py -- so a
     # vendored list is exercised through de.txt; membership is asserted first so a wrong target fails as a wrong target.
+    # R415: the gazetteers moved to the www engine (tests/test_www_stamp.py pins that they move ITS id).
     targets = (
-        "configs/cities.yml",
-        "configs/places_gazetteer.yml",
         "configs/stopwords_iso/de.txt",
         "configs/stopwords_extra/de.yml",
         "configs/keyword_equivalents.yml",
     )
-    listed = set(ei._data_files())
+    listed = set(ei._kw_data_files())
     assert set(targets) <= listed, f"test targets outside the hashed list: {set(targets) - listed}"
+    assert not set(ei._kw_data_files()) & set(ei._expand(ei.WWW_DATA_GLOBS))
     for target in targets:
         def _edited(rel, _t=target):
             data = real(rel)
@@ -412,10 +412,10 @@ def test_line_endings_do_not_change_either_digest(monkeypatch):
 
 def test_an_absent_file_is_not_an_empty_file(monkeypatch):
     real = ei._read
-    monkeypatch.setattr(ei, "_read", lambda rel: None if rel == "configs/cities.yml" else real(rel))
+    monkeypatch.setattr(ei, "_read", lambda rel: None if rel == "configs/keyword_equivalents.yml" else real(rel))
     ei.data_digest.cache_clear()
     absent = ei.data_digest()
-    monkeypatch.setattr(ei, "_read", lambda rel: b"" if rel == "configs/cities.yml" else real(rel))
+    monkeypatch.setattr(ei, "_read", lambda rel: b"" if rel == "configs/keyword_equivalents.yml" else real(rel))
     ei.data_digest.cache_clear()
     empty = ei.data_digest()
     ei.data_digest.cache_clear()

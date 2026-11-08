@@ -117,10 +117,6 @@ def remove_excluded(term: str) -> KeywordFilter:
     return cur
 
 
-def excluded_set() -> set[str]:
-    return set(load_settings().excluded)
-
-
 def hidden_set() -> set[str]:
     """User exclusions plus the built-in stoplist (when enabled) — the full hide set."""
     s = load_settings()
