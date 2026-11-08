@@ -462,8 +462,9 @@ def test_a_redirect_off_the_api_host_is_refused_not_followed(monkeypatch):
 
 
 def test_the_ui_asks_the_consent_popup_before_the_update_starts():
-    js = (ROOT / "src" / "static" / "app-settings.js").read_text(encoding="utf-8")
-    body = js[js.index("async function updApply()"):js.index("(function _updWire()")]
+    from tests.js_source_helper import function_body, read_static
+
+    body = function_body(read_static("app-settings.js"), "updApply")
     gate, confirm, post = body.index("await ensureOnline("), body.index("window.confirm("), body.index('"/api/system/update/apply"')
     assert gate < confirm < post
     # protected mode is read first, so the consent popup never takes the app online for an update the server will refuse
@@ -812,8 +813,9 @@ def test_a_check_in_protected_mode_without_a_proxy_is_named_not_a_500(monkeypatc
     monkeypatch.setattr(su, "_get_json", no_proxy)
     r = TestClient(app, base_url="http://127.0.0.1").post("/api/system/update/check")
     assert r.status_code == 409 and r.json()["detail"]["code"] == "protected_no_proxy"
-    js = (ROOT / "src" / "static" / "app-settings.js").read_text(encoding="utf-8")
-    body = js[js.index("async function updCheck()"):js.index("async function updApply()")]
+    from tests.js_source_helper import function_body, read_static
+
+    body = function_body(read_static("app-settings.js"), "updCheck")
     assert 'code === "protected_no_proxy"' in body and 'code === "airplane"' in body  # never named as airplane mode
 
 
