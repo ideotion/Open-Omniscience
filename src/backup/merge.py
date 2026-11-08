@@ -989,23 +989,27 @@ def check_memory_for_encrypted_merge(
     available_mb: float | None = None,
     floor_mb: float | None = None,
     incoming_rows: dict[str, int] | None = None,
-) -> None:
-    """Refuse, before any row moves, when this machine cannot hold an encrypted merge's temp memory.
+) -> str:
+    """Refuse, before any row moves, when this machine cannot hold an encrypted merge's temp memory;
+    otherwise say WHERE the whole-source groupings run: ``"memory"`` or ``"scratch"``.
 
-    The need is :data:`_ENCRYPTED_TEMP_NEED_BYTES` (the windowed steps), plus the largest of the
-    three whole-source grouping steps for the rows ``incoming_rows`` names, plus the id maps
-    the merge keeps (~16 B per incoming row of those tables), plus the memory guard's own floor
-    (``memory_guard.avail_floor_mb``), against the memory available now. A machine that cannot
-    report its available memory is never refused: an unreadable figure is not a shortage
-    (the memory guard's own rule). The sentence is fixed in shape, so the page reads it back
-    into a keyed frame (``ooServerText``), the same way as the free-space refusals; the server's
-    English stays the log line and the API's answer."""
+    The need is :data:`_ENCRYPTED_TEMP_NEED_BYTES` (the windowed steps), plus the id maps the merge
+    keeps (~16 B per incoming row of the tables :data:`_ENCRYPTED_REP_BYTES_PER_ROW` names), plus the
+    memory guard's own floor (``memory_guard.avail_floor_mb``), against the memory available now.
+    The largest of the three whole-source grouping steps is NOT part of the refusal any more: when
+    the memory does not hold it with :data:`_INRAM_GROUPING_HEADROOM` to spare, the groupings run in
+    the encrypted scratch database instead (``"scratch"``, see :data:`_SCRATCH_SCHEMA`), whose RAM is
+    its bounded page cache. A machine that cannot report its available memory is never refused and
+    keeps the in-RAM path every merge ran before: an unreadable figure is not a shortage (the memory
+    guard's own rule). The sentence is fixed in shape, so the page reads it back into a keyed frame
+    (``ooServerText``), the same way as the free-space refusals; the server's English stays the log
+    line and the API's answer."""
     from src.backup.folder_backup import human_bytes
     from src.database.maintenance import _available_mb_now
 
     avail = available_mb if available_mb is not None else _available_mb_now()
     if avail is None:
-        return
+        return "memory"
     if floor_mb is None:
         try:
             from src.scheduler import memguard
@@ -1019,13 +1023,18 @@ def check_memory_for_encrypted_merge(
         default=0,
     )
     maps = 16 * sum(int(rows.get(t, 0)) for t in _ENCRYPTED_REP_BYTES_PER_ROW)
-    need = _ENCRYPTED_TEMP_NEED_BYTES + grouping + maps + int(max(0.0, floor_mb) * 1024 * 1024)
-    if avail * 1024 * 1024 < need:
+    need = _ENCRYPTED_TEMP_NEED_BYTES + maps + int(max(0.0, floor_mb) * 1024 * 1024)
+    need_scratch = need if grouping == 0 else need + _SCRATCH_CACHE_KIB * 1024
+    have = avail * 1024 * 1024
+    if have < need_scratch:
         raise MergeError(
             "Not enough free memory to merge into an encrypted corpus: needs about "
-            f"{human_bytes(need)}, only {human_bytes(int(avail * 1024 * 1024))} available. "
+            f"{human_bytes(need_scratch)}, only {human_bytes(int(have))} available. "
             "Close other programs and import again. Nothing was written to your corpus."
         )
+    if have >= need + _INRAM_GROUPING_HEADROOM * grouping:
+        return "memory"
+    return "scratch"
 
 
 def check_memory_before_staging() -> None:
@@ -1476,10 +1485,139 @@ def _materialise_rep(con: sqlite3.Connection, name: str, group_sql: str) -> int:
     if not _SAFE_KEY_NAME.fullmatch(name):
         raise ValueError(f"unsafe temp table name {name!r}")
     con.execute(f"DROP TABLE IF EXISTS temp.{name}")  # noqa: S608  # nosec B608 - name is regex-validated above and comes from a module literal
+    if _scratch_attached(con):
+        return _materialise_rep_in_scratch(con, name, group_sql)
     con.execute(f"CREATE TEMP TABLE {name} (rep_id INTEGER PRIMARY KEY)")  # noqa: S608  # nosec B608 - name is regex-validated above and comes from a module literal
     cur = con.execute(f"INSERT INTO temp.{name} (rep_id) {group_sql}")  # noqa: S608  # nosec B608 - name is regex-validated above; group_sql is a module literal, never input
     n = cur.rowcount
     return int(n) if n is not None and n >= 0 else _count(con, f"SELECT COUNT(*) FROM temp.{name}")  # noqa: S608  # nosec B608 - name is regex-validated above and comes from a module literal
+
+
+#: THE LOW-MEMORY PATH FOR AN ENCRYPTED MERGE (field 2026-11-08, two Qubes VMs of about 3 GB).
+#:
+#: An encrypted working copy keeps its temp structures in RAM (see _temp_store_for: the sorter's
+#: spill file is written below the codec, in the clear), and the three whole-source groupings of
+#: _materialise_rep are the part of that which grows with the backup: measured at 72 to 147 B per
+#: incoming row. On a machine without that RAM the merge was refused, or, with a thin margin, ran
+#: with swap full for days. The groupings do not need the SORTER: "the lowest id per identity
+#: group" is also an UPSERT into a table keyed on the group, which lives in a PAGER-backed b-tree.
+#: So when RAM is short the merge ATTACHes a scratch database next to the working copy, WITHOUT a
+#: KEY clause: on a SQLCipher connection that makes it inherit the working copy's own key, so every
+#: page it writes is encrypted exactly as the corpus is, and no new secret exists anywhere (none to
+#: log, none in any statement's text). Its page cache is bounded below; its journal is OFF (the file
+#: is thrown away whatever happens). Measured on 3,000,000 keywords (sqlcipher3, 2026-11-08): the
+#: in-RAM grouping +206 MB of RSS in 6.8 s, the scratch one +48 MB in 35.4 s, identical groups
+#: (count and id sum), the scratch file's header not a plaintext SQLite header, and no other file
+#: opened. Slower on a fast disk, so it is chosen only when the RAM is not there; on the field
+#: machines the in-RAM path ran 10,188 to 20,788 s for this one statement with swap full.
+_SCRATCH_SCHEMA = "oo_scratch"
+_SCRATCH_CACHE_KIB = 32 * 1024
+
+#: The in-RAM grouping is chosen only with its own size again to spare. Both field imports that
+#: passed the bare check (about 1.2x the computed need) then ran their keyword step with swap full.
+_INRAM_GROUPING_HEADROOM = 2.0
+
+_REP_GROUP_SQL = re.compile(r"SELECT MIN\(id\) FROM inc\.([A-Za-z_][A-Za-z0-9_]*) GROUP BY (.+)", re.S)
+
+
+def _scratch_attached(con: sqlite3.Connection) -> bool:
+    try:
+        return any(r[1] == _SCRATCH_SCHEMA for r in con.execute("PRAGMA database_list").fetchall())
+    except Exception:  # noqa: BLE001 - unknown is the in-RAM path, which every merge ran before
+        return False
+
+
+def _rep_schema(con: sqlite3.Connection) -> str:
+    """Where :func:`_materialise_rep` put the winning ids: the scratch when attached, else temp."""
+    return _SCRATCH_SCHEMA if _scratch_attached(con) else "temp"
+
+
+def _split_group_keys(keys: str) -> list[str]:
+    """Split a GROUP BY list at its top-level commas (``COALESCE(a,'en')`` stays one key)."""
+    out: list[str] = []
+    depth, quote = 0, False
+    cur: list[str] = []
+    for ch in keys:
+        if ch == "'":
+            quote = not quote
+        elif not quote and ch == "(":
+            depth += 1
+        elif not quote and ch == ")":
+            depth -= 1
+        if ch == "," and depth == 0 and not quote:
+            out.append("".join(cur).strip())
+            cur = []
+            continue
+        cur.append(ch)
+    out.append("".join(cur).strip())
+    if depth != 0 or quote or not all(out):
+        raise ValueError("unbalanced GROUP BY list")
+    return out
+
+
+def _materialise_rep_in_scratch(con: sqlite3.Connection, name: str, group_sql: str) -> int:
+    """:func:`_materialise_rep`'s answer, built in the encrypted scratch database (see above).
+
+    The SAME ``group_sql`` is read for its source table and its keys, so the two paths cannot be
+    handed different identities. Each key ``k`` becomes two columns, ``(k IS NULL, ifnull(k, 0))``:
+    ``GROUP BY`` puts every NULL in one group, a primary key rejects NULL, and the flag keeps a real
+    ``0`` apart from a NULL. The columns carry no type (no affinity), so values compare as the
+    ``GROUP BY`` compares them. ``MIN(id)`` is the upsert's ``min(rep_id, excluded.rep_id)``, which
+    does not depend on the order rows arrive in. The joins name the schema the result was built in
+    (:func:`_rep_schema`), never an unqualified name: that would resolve through ``main`` before the
+    scratch, and through the incoming backup (untrusted, and free to carry a ``rep_*`` table) if it
+    were ever attached first. Collation: a key column the backup declares with a non-BINARY
+    collation groups by BINARY here (``ifnull`` drops it), which is the identity ``main`` uses; the
+    app's own schema declares none on these columns."""
+    m = _REP_GROUP_SQL.fullmatch(group_sql.strip())
+    if m is None:
+        raise ValueError(f"{name}: not the lowest-id-per-group shape this path can rebuild")
+    src, keys = m.group(1), _split_group_keys(m.group(2))
+    cols = ", ".join(f"n{j}, v{j}" for j in range(len(keys)))
+    sel = ", ".join(f"({k}) IS NULL, ifnull(({k}), 0)" for k in keys)
+    # every statement names the oo_scratch schema literally (tests/test_merge_writes_name_main.py
+    # reads them): nothing here may fall through to main or to the attached backup
+    con.execute(f"DROP TABLE IF EXISTS oo_scratch.g_{name}")  # noqa: S608  # nosec B608 - name regex-validated by the caller
+    con.execute(f"DROP TABLE IF EXISTS oo_scratch.{name}")  # noqa: S608  # nosec B608 - as above
+    con.execute(
+        f"CREATE TABLE oo_scratch.g_{name} ({cols}, rep_id INTEGER NOT NULL,"  # noqa: S608  # nosec B608 - as above
+        f" PRIMARY KEY ({cols})) WITHOUT ROWID"
+    )
+    con.execute(
+        f"INSERT INTO oo_scratch.g_{name} SELECT {sel}, id FROM inc.{_ident(src)} WHERE true"  # noqa: S608  # nosec B608 - src and keys come from the module-literal group_sql matched above, never input
+        " ON CONFLICT DO UPDATE SET rep_id = min(rep_id, excluded.rep_id)"
+    )
+    con.execute(f"CREATE TABLE oo_scratch.{name} (rep_id INTEGER PRIMARY KEY)")  # noqa: S608  # nosec B608 - as above
+    con.execute(f"INSERT INTO oo_scratch.{name} (rep_id) SELECT rep_id FROM oo_scratch.g_{name}")  # noqa: S608  # nosec B608 - as above
+    con.execute(f"DROP TABLE oo_scratch.g_{name}")  # noqa: S608  # nosec B608 - as above
+    return _count(con, f"SELECT COUNT(*) FROM oo_scratch.{name}")  # noqa: S608  # nosec B608 - as above
+
+
+def _attach_scratch(con: sqlite3.Connection, working_copy: Path | str) -> Path:
+    """Attach the encrypted scratch database beside the working copy; returns its path.
+
+    No KEY clause, deliberately (see above): the scratch inherits the working copy's key."""
+    path = Path(working_copy).with_name(f".{Path(working_copy).name}.oo-scratch-{os.getpid()}-{threading.get_ident()}")
+    _remove_scratch(path)
+    con.execute("ATTACH DATABASE ? AS oo_scratch", (str(path),))
+    try:
+        # the file is thrown away whatever happens: no rollback journal, no fsync, a bounded cache
+        con.execute("PRAGMA oo_scratch.journal_mode=OFF")
+        con.execute("PRAGMA oo_scratch.synchronous=OFF")
+        con.execute(f"PRAGMA oo_scratch.cache_size=-{int(_SCRATCH_CACHE_KIB)}")
+    except BaseException:
+        # the caller has no path yet to clean up: the file the ATTACH created goes here
+        with suppress(Exception):
+            con.execute("DETACH DATABASE oo_scratch")
+        _remove_scratch(path)
+        raise
+    return path
+
+
+def _remove_scratch(path: Path) -> None:
+    for p in (path, Path(f"{path}-journal"), Path(f"{path}-wal"), Path(f"{path}-shm")):
+        with suppress(OSError):
+            p.unlink()
 
 
 def _avg_row_bytes(con: sqlite3.Connection, src: str, lo: int, hi: int, key: str = "id") -> float:
@@ -2021,14 +2159,23 @@ def merge_corpus(
     # measured reason), an ENCRYPTED one holds it in memory because the sorter's spill file is
     # written in the clear. The memory an encrypted merge may then need is checked first, so a
     # machine without it is told so before any row moves rather than killed part-way.
+    scratch: Path | None = None
     try:
         temp_store = _temp_store_for(con)
         if temp_store == "MEMORY":
-            check_memory_for_encrypted_merge(
+            grouping_in = check_memory_for_encrypted_merge(
                 incoming_rows=_incoming_group_rows(con, staged_corpus)
             )
+            if grouping_in == "scratch":
+                scratch = _attach_scratch(con, working_copy)
+                _LOG.info(
+                    "merge: memory is short for the in-RAM groupings; they run in an encrypted"
+                    " scratch file beside the working copy (bounded RAM, slower on a fast disk)"
+                )
     except BaseException:
         con.close()
+        if scratch is not None:
+            _remove_scratch(scratch)
         raise
     try:
         con.execute(f"PRAGMA temp_store={temp_store}")
@@ -2214,6 +2361,8 @@ def merge_corpus(
         raise
     finally:
         con.close()
+        if scratch is not None:
+            _remove_scratch(scratch)  # disposable whatever happened: it holds only id groups
 
 
 _MERGE_HANDLED = {
@@ -3822,7 +3971,7 @@ def _merge_keywords(con, batch_id, results) -> None:
         " i.is_ngram, i.ngram_size, i.is_entity, i.entity_type, i.relevance_score,"
         " i.extractor, i.created_at, i.updated_at"
         " FROM inc.keywords i LEFT JOIN temp.map_kwcat mc ON mc.old = i.category_id"
-        " JOIN temp.rep_keywords rep ON rep.rep_id = i.id"
+        f" JOIN {_rep_schema(con)}.rep_keywords rep ON rep.rep_id = i.id"
         f" WHERE NOT EXISTS (SELECT 1 FROM keywords m WHERE {key})"
         + _WINDOW_MARK,
         src="keywords",
@@ -4713,7 +4862,7 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
         " JOIN temp.map_articles ma ON ma.old = i.article_id"
         " LEFT JOIN temp.map_ext me ON me.old = i.external_source_id"
         " LEFT JOIN temp.map_srcart msa ON msa.old = i.source_article_id"
-        " JOIN temp.rep_links rep ON rep.rep_id = i.id"
+        f" JOIN {_rep_schema(con)}.rep_links rep ON rep.rep_id = i.id"
         f" WHERE NOT EXISTS (SELECT 1 FROM article_links t WHERE {link_key})"
         + _WINDOW_MARK,
         src="article_links",
@@ -4751,7 +4900,7 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
         " JOIN temp.map_articles ma ON ma.old = i.article_id"
         " LEFT JOIN temp.map_ext me ON me.old = i.source_id"
         " LEFT JOIN temp.map_srcart msa ON msa.old = i.source_article_id"
-        " JOIN temp.rep_asr rep ON rep.rep_id = i.id"
+        f" JOIN {_rep_schema(con)}.rep_asr rep ON rep.rep_id = i.id"
         f" WHERE NOT EXISTS (SELECT 1 FROM article_source_relationships t WHERE {rel_key})"
         + _WINDOW_MARK,
         src="article_source_relationships",

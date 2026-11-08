@@ -56,7 +56,8 @@ rem first-run database preparation can genuinely need.
 start "" /min powershell -NoProfile -ExecutionPolicy Bypass -Command "$u='%URL%'; for ($i=0; $i -lt 240; $i++) { try { $null = Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 2; Start-Process $u; break } catch { Start-Sleep -Milliseconds 500 } }"
 
 rem THE TERMINAL PANEL (R600, anticipated for Windows; not run on Windows yet). src\tui\panel.py shows the app's status and jobs with
-rem Open UI / Pause collection / Stop app. Python's curses exists on Windows only with the windows-curses package, so the panel starts only
+rem Open UI / Pause collection / Stop app. Python's curses exists on Windows only with the windows-curses package (a pyproject dependency
+rem on Intel/AMD Windows since R602; no ARM64 build exists), so the panel starts only
 rem when "import curses" works there, and never with OO_PANEL=0. It opens in a window of its own, because this one holds the server's
 rem output: closing the panel window does NOT stop the app (the panel says so); closing THIS window still does.
 if not "%OO_PANEL%"=="0" if exist ".venv\Scripts\python.exe" (

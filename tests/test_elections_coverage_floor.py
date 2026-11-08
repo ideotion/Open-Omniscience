@@ -32,6 +32,7 @@ from src.civic.coverage_floor import (
     floor_coverage,
     load_floor,
 )
+from tests.js_source_helper import array_literal, read_static
 
 TODAY = date(2026, 9, 7)
 _ROOT = Path(__file__).resolve().parents[1]
@@ -322,4 +323,10 @@ def test_the_endpoint_carries_the_per_country_tier_report_and_it_agrees_with_the
     assert {r["cc"] for r in rep["countries"] if r["state"] in covered_states} == set(out["covered"])
     assert {r["cc"] for r in rep["countries"] if r["state"] == "missing"} == set(out["missing"])
     assert rep["caveat"]
-    assert all(state in rep["method"] for state in rep["counts"])  # the method names every state it counts
+    # The method names every state by the label the Agenda shows for it, read from the
+    # Agenda's own table so the two cannot drift, each label introducing its "(...)" gloss.
+    table = array_literal(read_static("app-agenda.js"), "_AG_COV_STATES")
+    labels = re.findall(r'\["(\w+)", "([^"]+)", "[\w-]*"\]', table)
+    assert {k for k, _ in labels} == set(rep["counts"]), "one Agenda label per state the report counts"
+    for _, label in labels:
+        assert f"{label} (" in rep["method"], label
