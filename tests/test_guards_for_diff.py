@@ -1014,3 +1014,70 @@ def test_the_test_walking_guards_of_this_repository_are_picked() -> None:
     for named in ("tests/test_artifact_file_members.py", "tests/test_import_conclusion.py", "tests/test_source_slicing_discipline.py"):
         assert named in found, named
 
+
+
+# --- R510: the test that polices the engine files is picked by the files it hashes, which it does not name --------------------------------------------
+
+
+_IDENTITY = "src/analytics/engine_identity.py"
+_ENGINE_SRC = 'ENGINE_MODULES: tuple[str, ...] = (\n    "src/analytics/__init__.py",\n    "src/analytics/equivalence.py",\n)\nINDEXER_VERSION = 1\n'
+
+
+def _with_engine(r: Path) -> None:
+    write(r, _IDENTITY, _ENGINE_SRC)
+    write(r, "src/analytics/equivalence.py", "def a():\n    return 1\n\n\ndef b():\n    return 2\n")
+    write(r, "src/analytics/other.py")
+    write(r, "tests/test_indexer_pin.py")
+    commit(r, "engine")
+    git(r, "checkout", "-q", "-b", "feature")
+
+
+def test_a_changed_engine_file_picks_the_pin_test_though_no_test_names_it(repo: Path) -> None:
+    _with_engine(repo)
+    write(repo, "src/analytics/equivalence.py", "def a():\n    return 1\n")  # A-037: functions deleted, the file still exists
+    commit(repo, "delete b")
+    p = plan(repo)
+    assert p.indexer_pin == ["src/analytics/equivalence.py"]
+    assert "tests/test_indexer_pin.py" in p.files()
+    assert "tests/test_indexer_pin.py" in g.render(p)
+
+
+def test_a_file_outside_the_engine_list_does_not_pick_it(repo: Path) -> None:
+    _with_engine(repo)
+    write(repo, "src/analytics/other.py", "y = 2\n")
+    commit(repo, "unrelated")
+    p = plan(repo)
+    assert p.indexer_pin == [] and "tests/test_indexer_pin.py" not in p.files()
+
+
+def test_a_deleted_engine_file_the_identity_module_and_the_pin_all_pick_it(repo: Path) -> None:
+    _with_engine(repo)
+    git(repo, "rm", "-q", "src/analytics/equivalence.py")
+    commit(repo, "gone")
+    assert plan(repo).indexer_pin == ["src/analytics/equivalence.py"]
+    write(repo, "configs/indexer_pin.json", "{}\n")
+    commit(repo, "pin")
+    assert "configs/indexer_pin.json" in plan(repo).indexer_pin
+    write(repo, _IDENTITY, _ENGINE_SRC.replace("= 1", "= 2"))
+    commit(repo, "bump")
+    assert _IDENTITY in plan(repo).indexer_pin
+
+
+def test_a_file_removed_from_the_list_still_picks_it_because_the_digest_moved(repo: Path) -> None:
+    _with_engine(repo)
+    write(repo, _IDENTITY, _ENGINE_SRC.replace('    "src/analytics/equivalence.py",\n', ""))
+    commit(repo, "drop from list")
+    write(repo, "src/analytics/equivalence.py", "z = 1\n")
+    commit(repo, "edit it")
+    assert "src/analytics/equivalence.py" in plan(repo).indexer_pin
+
+
+def test_an_unreadable_engine_list_picks_it_for_any_src_change_and_says_so(repo: Path) -> None:
+    write(repo, _IDENTITY, "ENGINE_MODULES = tuple(_compute())\n")
+    write(repo, "tests/test_indexer_pin.py")
+    commit(repo, "engine")
+    git(repo, "checkout", "-q", "-b", "feature")
+    write(repo, "src/mod.py", "x = 2\n")
+    commit(repo, "edit")
+    p = plan(repo)
+    assert p.indexer_pin == ["src/mod.py"] and any("could not be read" in n for n in p.notes)

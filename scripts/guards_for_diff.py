@@ -63,6 +63,7 @@ tests ``main`` has added since are not in this tree, and a green run here is a r
 from __future__ import annotations
 
 import argparse
+import ast
 import contextlib
 import os
 import re
@@ -108,6 +109,15 @@ _CEILING = re.compile(r"scripts/ruff_ratchet\.py\s+--max\s+(\d+)")
 _RUFF_BLOCKING = ("--select=F,B", "--extend-ignore=B008", "src/", "tests/")
 
 
+#: The test that polices the engine files (R412, ``configs/indexer_pin.json``): red whenever a file ``engine_identity.ENGINE_MODULES`` names moves without a
+#: recorded judgement. It names no engine file, so no other rule here can pick it from a diff: A-037 (#1788) deleted functions in
+#: ``src/analytics/equivalence.py``, the digest moved, CI went red and the local guards had not run it (R510).
+INDEXER_PIN_TEST = "tests/test_indexer_pin.py"
+_ENGINE_IDENTITY = "src/analytics/engine_identity.py"
+#: Files that are not hashed but ARE the pin: the identity module (it holds INDEXER_VERSION), the pin itself and the script that writes it.
+_PIN_FILES = (_ENGINE_IDENTITY, "configs/indexer_pin.json", "scripts/indexer_pin.py")
+
+
 class PlanError(RuntimeError):
     """The plan cannot be made honestly (no such base, no ceiling in the workflow): a named stop, never a guess."""
 
@@ -125,6 +135,8 @@ class Plan:
     #: changed ``conftest.py`` / ``__init__.py`` below ``tests/`` -> every test below its directory.
     scoped: dict[str, list[str]] = field(default_factory=dict)
     tree_wide: list[str] = field(default_factory=list)
+    #: the engine files (and pin files) this branch changed, which pick :data:`INDEXER_PIN_TEST`; ``None`` in the first element's place is never used.
+    indexer_pin: list[str] = field(default_factory=list)
     #: a ``conftest.py`` / ``__init__.py`` at ``tests/`` or the repository root changed, on the branch or in a merge.
     conftest_changed: bool = False
     since: str | None = None
@@ -143,7 +155,7 @@ class Plan:
         if self.conftest_changed:
             return [WHOLE_SUITE]  # every test sees that file: a subset is a run of the wrong tree, so --files and --run say so
         seen: dict[str, None] = {}
-        for group in (self.main_added, self.own, self.uses_changed_support(), self.tree_wide):
+        for group in (self.main_added, self.own, self.uses_changed_support(), self.tree_wide, [INDEXER_PIN_TEST] if self.indexer_pin else []):
             for path in group:
                 seen.setdefault(path, None)
         return list(seen)
@@ -279,6 +291,51 @@ def _collected(root: Path) -> dict[str, str]:
     return texts
 
 
+def engine_modules(root: Path) -> list[str] | None:
+    """The files ``ENGINE_MODULES`` names in ``root``'s ``engine_identity.py``, read from the SOURCE (no import: the module pulls the app in). ``None`` when
+    the tuple cannot be read as a literal, which the caller treats as "any src/ file may be an engine file"."""
+    try:
+        tree = ast.parse((root / _ENGINE_IDENTITY).read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return None
+    for node in tree.body:
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "ENGINE_MODULES" and node.value is not None:
+            try:
+                value = ast.literal_eval(node.value)
+            except ValueError:
+                return None
+            return [str(v) for v in value] if isinstance(value, (tuple, list)) else None
+    return None
+
+
+def engine_changes(root: Path, base: str) -> tuple[list[str], list[str]]:
+    """``(engine or pin files this branch changed, notes)``. Deletes count: a deleted engine file moves the digest too. Only the branch's own diff is
+    asked: what a merge of ``base`` brought arrives with its own pin."""
+    if not (root / _ENGINE_IDENTITY).is_file() or not (root / INDEXER_PIN_TEST).is_file():
+        return [], []  # a tree without the pin (an old one, a scratch repository) has nothing to police
+    fork = _git(root, "merge-base", base, "HEAD").strip()
+    changed = _paths(root, "diff", "--name-only", "-z", _NO_RENAMES, _ANY_STATUS, fork, "--")
+    changed += _paths(root, "ls-files", "-z", "--others", "--exclude-standard")
+    engine = engine_modules(root)
+    # the base's list too: a file this branch REMOVED from ENGINE_MODULES moves the digest as well
+    old = None
+    try:
+        old_text = _git(root, "show", f"{fork}:{_ENGINE_IDENTITY}")
+        with tempfile.TemporaryDirectory() as scratch:
+            (Path(scratch) / "src" / "analytics").mkdir(parents=True)
+            (Path(scratch) / _ENGINE_IDENTITY).write_text(old_text, encoding="utf-8")
+            old = engine_modules(Path(scratch))
+    except PlanError:
+        pass
+    notes: list[str] = []
+    if engine is None:
+        notes.append(f"NOTE: ENGINE_MODULES could not be read from {_ENGINE_IDENTITY}; every changed file under src/ picks {INDEXER_PIN_TEST}.")
+        watched = {p for p in changed if p.startswith("src/")} | {p for p in changed if p in _PIN_FILES}
+        return sorted(watched), notes
+    names = set(engine) | set(old or ()) | set(_PIN_FILES)
+    return sorted({p for p in changed if p in names}), notes
+
+
 def tree_wide_guards(root: Path) -> list[str]:
     """Every collected test file whose text walks the tree (see :data:`TREE_WIDE`)."""
     return [rel for rel, text in _collected(root).items() if TREE_WIDE.search(text)]
@@ -325,6 +382,7 @@ def build_plan(root: Path = ROOT, base: str = "origin/main", since: str | None =
         brought += changed_since(root, base, since)
     mine = changed_on_branch(root, base)
     named, scoped, whole = tests_using(root, [p for p in (*brought, *mine) if _is_support(p)])
+    pinned, pin_notes = engine_changes(root, base)
     return Plan(
         base=base,
         ceiling=ceiling_from_ci(root),
@@ -334,6 +392,8 @@ def build_plan(root: Path = ROOT, base: str = "origin/main", since: str | None =
         support=named,
         scoped=scoped,
         tree_wide=tree_wide_guards(root),
+        indexer_pin=pinned,
+        notes=pin_notes,
         conftest_changed=whole,
         since=since,
     )
@@ -546,6 +606,8 @@ def render(plan: Plan) -> str:
         out.append(f"  {path}: {len(users)} {kind}" + ("" if users else " -> NONE named it; pick the tests that import it by hand"))
     if not plan.support and not plan.scoped:
         out.append("  (none changed)")
+    out.append(f"engine files changed, which pick {INDEXER_PIN_TEST} ({len(plan.indexer_pin)}):")
+    out += [f"  {path}" for path in plan.indexer_pin] or ["  (none changed)"]
     out.append(f"tree-wide guards (test files that walk the tree) ({len(plan.tree_wide)}):")
     out += [f"  {path}" for path in plan.tree_wide] or ["  (none matched)"]
     count = "the whole suite" if plan.conftest_changed else f"{len(plan.files())} distinct test file(s)"
