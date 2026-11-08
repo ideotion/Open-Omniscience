@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import socket
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -562,6 +563,56 @@ _MAX_REDIRECTS = 5
 # HTTP statuses worth retrying (transient server-side / rate-limit signals). 4xx
 # client errors are deterministic and never retried (finding BUG-02).
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+
+#: How far ``_carries_airplane_refusal`` looks. The deepest real link is three (R619's shape: requests' ProxyError -> MaxRetryError ->
+#: urllib3's ProxyError -> AirplaneModeError), so eight leaves room for a library that adds a wrapper; the node count and the seen set
+#: bound a chain that is wide or that loops (``__context__`` can point back).
+_REFUSAL_WALK_DEPTH = 8
+_REFUSAL_WALK_NODES = 64
+
+
+def _carries_airplane_refusal(exc: BaseException) -> bool:
+    """True when the socket guard's own refusal is inside ``exc``, found by TYPE and never by words (R620, Steward 3's note).
+
+    ``airplane.AirplaneModeError`` has one constructor, ``airplane._guard``, which raises only while the kill switch is engaged
+    (with the airplane half armed, the host not local and no egress window open), from the socket calls a request makes before
+    any byte reaches its destination: a name lookup, a connect, a CONNECT tunnel, and with R619 a request line that names its own
+    destination. A host's answer reaches the fetcher as bytes that the libraries turn into their own classes, never into this one,
+    so an instance found here means the switch refused this request, whatever text surrounds it and however requests and urllib3
+    wrapped it: directly (NewConnectionError's ``__cause__``, R616), at a loopback proxy's CONNECT (ProtocolError's args, R620),
+    or as a plain ``http://`` request line to a loopback proxy (urllib3's ProxyError inside MaxRetryError, R619).
+
+    The walk follows ``__cause__``, ``__context__``, the exceptions among ``args`` and urllib3's ``MaxRetryError.reason``. It is
+    bounded by depth, by node count and by a seen set, and it never turns an exception into text. The class is read from
+    ``sys.modules`` rather than imported here: if ``airplane`` was never imported, no instance can exist, and a first import from
+    inside a failure's handler would capture whatever socket calls stood at that moment. A walk that fails answers False, so the
+    failure is written as the request error it looks like (the pre-R620 reading), and the R320 switch read still applies.
+    """
+    try:
+        airplane = sys.modules.get("src.ingest.airplane")
+        if airplane is None:
+            return False
+        refusal = airplane.AirplaneModeError
+        from urllib3.exceptions import MaxRetryError
+
+        seen: set[int] = set()
+        todo: list[tuple[object, int]] = [(exc, 0)]
+        while todo and len(seen) < _REFUSAL_WALK_NODES:
+            node, depth = todo.pop()
+            if not isinstance(node, BaseException) or id(node) in seen:
+                continue
+            seen.add(id(node))
+            if isinstance(node, refusal):
+                return True
+            if depth >= _REFUSAL_WALK_DEPTH:
+                continue
+            links: list[object] = [node.__cause__, node.__context__, *node.args]
+            if isinstance(node, MaxRetryError):
+                links.append(node.reason)
+            todo.extend((link, depth + 1) for link in links)
+    except Exception:  # noqa: BLE001 - this runs inside a failure's handler and must never replace that failure
+        return False
+    return False
 
 # --------------------------------------------------------------------------- #
 # C8 (2026-07-24 throughput brief): skip local DNS resolution when the exit
@@ -1180,6 +1231,11 @@ class EthicalFetcher:
                         url, extra_headers=extra_headers, proxies=iso_proxies
                     )
                 except requests.RequestException as exc:
+                    if _carries_airplane_refusal(exc):
+                        # The guard's own refusal, found by TYPE (R620): the switch's, whatever words came with it. Raised at once
+                        # in the switch's whole sentence: never retried (it is the person's setting, not a host's passing failure,
+                        # and the next pass asks again) and carrying no host's text. Every reader reads that sentence as the switch's.
+                        raise FetchFailed(KILL_SWITCH_REFUSAL) from None
                     # the URL through failure_url: a link holding spaces must not continue in the guard's words (R616)
                     transient = FetchFailed(f"request error for {failure_url(url)}: {record_text(exc, typed=False)}")
                 finally:

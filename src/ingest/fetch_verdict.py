@@ -91,6 +91,24 @@ NETWORK_REFUSED = "network refused: airplane mode is engaged"
 #      ``BadStatusLine('<its line>')``, a proxy's refusal as ``OSError('Tunnel connection failed: <code> <its words>')``. The one class
 #      named AirplaneModeError is ours, and its one writer, ``_guard``, opens with our words. So this alternative, like 2., is spelled
 #      from its first word with no gap, and its URL token is whole for the reason 2. gives.
+# READ BY TYPE FIRST (R620, after Steward 3's note: "classified by type and never by words"). The one writer of "request error for" is
+# ``EthicalFetcher._fetch_locked`` (src/ingest/__init__.py), and before it writes that sentence it walks the live requests exception for an
+# ``AirplaneModeError`` INSTANCE (``_carries_airplane_refusal``: ``__cause__``, ``__context__``, the exceptions in ``args``, urllib3's
+# ``MaxRetryError.reason``; bounded, never through text). When it finds one it raises ``KILL_SWITCH_REFUSAL``, read by 1., at once: no retry
+# and no host's text. That covers 2. and 4. as they happen, and one shape no alternative here reads: a plain ``http://`` request line
+# refused at a loopback proxy by R619's ``putrequest`` guard (PR #1855), which urllib3 writes as "(Caused by ProxyError('Unable to connect
+# to proxy', AirplaneModeError(...)))" inside its pool sentence, with no NewConnectionError and no "Connection aborted.". That shape is
+# read by type ONLY (measured at #1855's head; tests/test_refusal_by_type_r620.py). A host cannot produce the type: the class has one
+# constructor, ``airplane._guard``, which raises only while the switch is engaged (the airplane half armed, the host not local, no egress
+# window open), before any byte reaches the destination, and a host's bytes become the libraries' own classes. Which shape is read how:
+#   - by TYPE, in the fetcher: the socket guard's refusal anywhere inside a requests error, whether direct (R616), at a loopback proxy's
+#     CONNECT (R620) or in a request line sent to a loopback proxy (R619). Over SOCKS, urllib3.contrib.socks raises its NewConnectionError
+#     ``from`` the guard's error, so the same walk finds it there; that path is not exercised here, because PySocks is not installed;
+#   - by WORDS, here: 1. (our own sentence, wherever it is passed on), 3. (our resolver wrapper's sentence, written outside the requests
+#     handler), and 2. and 4. as the net under the typed read. No live path needs 2. or 4. now, since the typed read runs first at their
+#     one writer, and no stored record needs them, since every caller classifies the text of a live exception and none re-reads a stored
+#     one. They stay for two reasons: R616 and R620(a) rule them, and if the bounded walk ever missed a link, the text would still carry
+#     the real instance's repr, which a host cannot write (the argument under 4.).
 # No ``re.DOTALL`` (R620): no ``.`` in the pattern stands outside a class or an escape, so the flag changed nothing, and a ``.`` added
 # later must not span lines because of a flag nobody needed.
 _OFFLINE_RE = re.compile(

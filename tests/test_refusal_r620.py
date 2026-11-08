@@ -51,6 +51,7 @@ from src.ingest import (
 )
 from src.ingest.airplane import AirplaneModeError
 from src.ingest.fetch_verdict import (
+    KILL_SWITCH_REFUSAL,
     UNREADABLE_URL,
     USERINFO_MASK,
     classify_fetch_failure,
@@ -186,7 +187,9 @@ def test_the_fetchers_report_of_a_stop_is_offline_and_carries_no_credential(tmp_
     """Through ``EthicalFetcher.fetch`` (its FetchFailed text, the one the recorders read) for a ``user:pass@`` URL. The switch is engaged
     after the fetcher's own check passed (engaged before it, the fetcher answers with its own sentence, which names no URL), so the real
     guard refuses the request and nothing leaves the machine: directly (R616's shape) or at the CONNECT a loopback proxy is asked for
-    (R620's). The robots read is answered here, so the page request is the one cut."""
+    (R620's). The robots read is answered here, so the page request is the one cut. The fetcher finds the guard's refusal by TYPE in the
+    live exception and reports the switch's whole sentence (R620); the text requests made of it is still read as the switch's by words,
+    the net under the typed read."""
     url = "https://alice:hunter2@a.example/story"
     with contextlib.ExitStack() as stack:
         proxy = None
@@ -196,6 +199,7 @@ def test_the_fetchers_report_of_a_stop_is_offline_and_carries_no_credential(tmp_
         f._guard_target = lambda *_a, **_k: None  # type: ignore[method-assign]  # no lookup: the host is *.example
         real_get = f.session.get
         asked: list[tuple[str, object]] = []
+        raised: list[BaseException] = []
 
         def get(target, **kw):
             asked.append((target, kw.get("proxies")))
@@ -204,6 +208,9 @@ def test_the_fetchers_report_of_a_stop_is_offline_and_carries_no_credential(tmp_
             activate_kill_switch()
             try:
                 return real_get(target, **kw)
+            except requests.RequestException as exc:
+                raised.append(exc)
+                raise
             finally:
                 clear_kill_switch()
 
@@ -214,10 +221,14 @@ def test_the_fetchers_report_of_a_stop_is_offline_and_carries_no_credential(tmp_
     assert asked[-1][0] == url, f"premise: the page was asked for with its credentials: {asked}"
     if via_proxy:
         assert asked[-1][1] == {"http": proxy, "https": proxy} and seen == [b""], f"premise: through the proxy, no CONNECT sent: {seen}"
-    text = record_text(caught.value, typed=False)
+    assert len(raised) == 1, raised
+    shape = record_text(raised[0], typed=False)
     tail = "('Connection aborted.', AirplaneModeError(" if via_proxy else "HTTPSConnectionPool(host='a.example', port=443): "
-    assert text.startswith(f"request error for https://{USERINFO_MASK}a.example/story: {tail}"), text
-    assert "alice" not in text and "hunter2" not in text, text
+    assert shape.startswith(tail), f"premise: the real guard refused this request: {shape}"
+    words = f"request error for {failure_url(url)}: {shape}"
+    assert "hunter2" not in words and is_kill_switch_refusal(words), words
+    text = record_text(caught.value, typed=False)
+    assert text == KILL_SWITCH_REFUSAL, text
     assert is_kill_switch_refusal(text) and classify_fetch_failure(text) == "offline", text
 
 

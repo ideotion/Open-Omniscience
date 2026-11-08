@@ -56,7 +56,13 @@ _S5_MODULES: set[str] = {m for m in MODULES if m.split("/")[1] not in _SWEEP_DON
 NOT_RECORDS: dict[str, dict[str, int]] = {
     "src/api/heavy.py": {"db.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: the enclosing statement deadline
     "src/analytics/rollup_serve.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},  # ``_library_replaced(exc)`` walks the exception's ``__cause__``/``__context__`` chain for the generation guard's class; it reads no text, stores nothing and logs nothing
-    "src/ingest/__init__.py": {"the caught exception 'cause' is used outside a scrubbing call": 2},  # RobotsUnavailable's own ``cause`` word, not an exception
+    # RobotsUnavailable's own ``cause`` word, not an exception; and ``_carries_airplane_refusal(exc)`` (R620), which walks the exception's
+    # ``__cause__``/``__context__``/``args``/``MaxRetryError.reason`` links for the guard's class: it reads no text, stores nothing and logs
+    # nothing (the call at the handler, and the walk's start inside the helper, whose parameter is read as bound)
+    "src/ingest/__init__.py": {
+        "the caught exception 'cause' is used outside a scrubbing call": 2,
+        "the caught exception 'exc' is used outside a scrubbing call": 2,
+    },
     "src/ingest/airplane.py": {"a ** mapping handed to a log call can carry exc_info": 1},  # the socks connect's own kwargs
     "src/ingest/batch.py": {"deriv.error is kept as a name, a log call the scan cannot read": 1},  # a precompute's error flag
     # the extraction lock: ``_release_frames`` clears the FRAMES of a raising extraction (the exception is handed to it and to the
