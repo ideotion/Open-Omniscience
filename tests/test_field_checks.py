@@ -275,3 +275,37 @@ def test_the_temporary_sample_export_button_is_kept_and_reused():
     assert "await downloadSourceSamples(btn)" in js
     man = {c["id"]: c for c in fc.load_manifest()["checks"]}
     assert man["sample-export-multi-download"]["params"]["action"] == "source_samples"
+
+
+def test_the_law_residue_check_uses_the_ingest_reports_own_test_and_carries_no_text(tmp_path, monkeypatch):
+    from datetime import datetime
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from src.database.models import Base, LawDocument
+    from src.law import ingest_report
+
+    eng = create_engine(f"sqlite:///{tmp_path / 'law.db'}")
+    Base.metadata.create_all(eng, tables=[LawDocument.__table__])
+    secret_body = "Section 1. The secretary of state may by regulations"
+    with Session(eng) as db:
+        db.add_all([
+            LawDocument(jurisdiction="uk", title="Data Protection Act", url="https://x.invalid/a",
+                        latest_text=f"Skip to main content {secret_body}", last_status="ok",
+                        last_checked_at=datetime(2026, 11, 1, 9, 0)),
+            LawDocument(jurisdiction="fr", title="Code civil", url="https://x.invalid/b",
+                        baseline_text=secret_body, last_status="ok"),
+        ])
+        db.commit()
+        rec = fc.run_check("x-check", manifest=_manifest(_check(kind="law_residue")), db=db)
+    assert rec["documents"] == 2 and rec["with_residue"] == 1
+    row = rec["residue"][0]
+    assert row["jurisdiction"] == "uk" and row["last_checked_at"] == "2026-11-01T09:00:00"
+    assert row["markers"] == ["Skip to main content"]
+    assert secret_body not in json.dumps(rec) and "Data Protection Act" not in json.dumps(rec)
+    assert rec["strip_version"]
+    # the list is the report's own: a marker added there is found here with no edit
+    monkeypatch.setattr(ingest_report, "CHROME_MARKERS", ingest_report.CHROME_MARKERS + ("Section 1.",))
+    with Session(eng) as db:
+        assert fc.run_check("x-check", manifest=_manifest(_check(kind="law_residue")), db=db)["with_residue"] == 2

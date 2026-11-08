@@ -562,6 +562,45 @@ def _clock_step(params: dict, inputs: dict, db: Any, check: dict) -> dict[str, A
     }
 
 
+def _law_residue(params: dict, inputs: dict, db: Any, check: dict) -> dict[str, Any]:
+    """Which tracked law documents still carry chrome, with what tells the two causes apart (R604): when each
+    was last checked and its last status, beside this install's strip version. No document text or title: the
+    residue test is the ingest report's own ``_residue_in`` (imported, so the two lists cannot disagree), and the
+    markers named are that fixed list's own entries, never a piece of a document."""
+    from sqlalchemy import select
+
+    from src.database.models import LawDocument
+    from src.law.ingest_report import _residue_in
+    from src.services.boilerplate import BOILERPLATE_STRIP_VERSION
+
+    rows: list[dict[str, Any]] = []
+    total = 0
+    q = select(LawDocument.id, LawDocument.jurisdiction, LawDocument.watched, LawDocument.last_status,
+               LawDocument.last_checked_at, LawDocument.latest_text, LawDocument.baseline_text).order_by(LawDocument.id)
+    for did, jur, watched, status, checked, latest, baseline in db.execute(q).yield_per(50):
+        total += 1
+        markers = _residue_in(latest or baseline)
+        if markers:
+            rows.append({
+                "id": did, "jurisdiction": jur, "watched": watched,
+                "last_status": status,  # written through record_text by the tracker
+                "last_checked_at": checked.isoformat() if checked else None,
+                "text_read": "latest_text" if latest else "baseline_text",
+                "markers": markers,
+            })
+    return {
+        "outcome": "measured",
+        "strip_version": BOILERPLATE_STRIP_VERSION,
+        "documents": total,
+        "with_residue": len(rows),
+        "residue": rows,
+        "method": "Residue is src/law/ingest_report.py::_residue_in on the newest stored text (the baseline when there "
+                  "is none). A document last checked before the strip shipped, or whose last status is deferred or an "
+                  "error, was likely stored before the strip and never re-read; one checked after it carries chrome the "
+                  "strip keeps on purpose.",
+    }
+
+
 RUNNERS: dict[str, Callable[[dict, dict, Any, dict], dict[str, Any]]] = {
     "import_headroom": _import_headroom,
     "drive_throughput": _drive_throughput,
@@ -569,6 +608,7 @@ RUNNERS: dict[str, Callable[[dict, dict, Any, dict], dict[str, Any]]] = {
     "host_reach": _host_reach,
     "operator_report": _operator_report,
     "clock_step": _clock_step,
+    "law_residue": _law_residue,
 }
 #: The kinds that go online. The route refuses them without the consent the popup gives.
 ONLINE_KINDS = frozenset({"live_fetch", "host_reach"})

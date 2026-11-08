@@ -190,3 +190,19 @@ checks:
       - Keep the app running. In your system settings, turn off automatic time and move the clock BACK by 15 minutes (back, not forward: outside Linux a forward move looks the same as a sleep and is recorded as one).
       - Wait three minutes, then press Run.
       - Restore the right time (turn automatic time on again).
+
+  - id: law-chrome-residue
+    title: Which tracked law documents still carry page chrome, and why
+    kind: law_residue
+    status: active
+    added_on: "2026-11-08"
+    added_by: "R604 (Export lane); the 2026-11-07 Diagnostics bundle (\"10 still carry chrome\")"
+    why: >-
+      The last report counted ten law documents still carrying website chrome (cookie banners, menu
+      text). That has two causes that look the same in a count: text stored before the cleanup
+      existed and never read again, or chrome the cleanup keeps on purpose. This lists, for each
+      such document, its id, jurisdiction, last status and when it was last checked, beside this
+      install's cleanup version. No document text is read into the report.
+    retire_when: >-
+      One report classes every document with residue as one cause or the other, and the fix for
+      each cause has shipped.
