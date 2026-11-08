@@ -25,8 +25,9 @@ as a terminal SIGINT (the server takes its graceful path, the launcher records t
 ends. Closing the window still sends the hangup that stops the app. "Stop app" is the in-app power button over loopback, so the launcher
 sees the same exit (143) it already reads as a stop somebody asked for.
 
-WINDOWS (anticipated, R600; not run on Windows). Python's curses is absent there unless the ``windows-curses`` package is installed, so
-:func:`main` says so and ends, and ``launch.cmd`` only starts the panel when ``import curses`` works. There the panel opens in a window of
+WINDOWS (anticipated, R600; not run on Windows). Python's curses is absent there unless the ``windows-curses`` package is installed (a
+marker dependency since R602, on the platforms it publishes wheels for), so without it :func:`main` says so and ends, and ``launch.cmd``
+only starts the panel when ``import curses`` works. There the panel opens in a window of
 its own beside the server's console: closing it does not stop the app (the footer says so), ``os.kill`` is never used to test a pid
 (on Windows it TERMINATES the process), and the browser opens through ``os.startfile``.
 """
