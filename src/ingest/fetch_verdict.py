@@ -58,8 +58,14 @@ NETWORK_REFUSED = "network refused: airplane mode is engaged"
 #   1. the kill switch's refusal (``KILL_SWITCH_REFUSAL`` above), raised in ``src/ingest/__init__.py`` and ``src/safety/fetcher.py``, optionally
 #      led by an exception class a caller prefixed ("FetchFailed: ...");
 #   2. the socket guard's refusal (``airplane.py``, an ``AirplaneModeError``), bare, or as ``requests`` wraps it when the switch is engaged
-#      AFTER the fetcher's own check passed: "request error for <url>: ...Failed to establish a new connection: airplane mode is engaged: ...".
-#      That wrapped text is built locally by requests/urllib3 (the URL in it is percent-encoded, so it cannot carry these words);
+#      AFTER the fetcher's own check passed: "request error for <url>: HTTPSConnectionPool(host='<host>', port=<n>): Max retries exceeded
+#      with url: <path> (Caused by NewConnectionError("HTTPSConnection(host='<host>', port=<n>): Failed to establish a new connection: airplane
+#      mode is engaged: ...", the cause led by "ProxyError('Unable to connect to proxy', " when the guard refused a proxy that is not on
+#      loopback. The alternative spells that construction out from its first word with no gap, because a host's OWN words can sit
+#      in the same sentence: urllib3 quotes a status line it could not parse (``('Connection aborted.', BadStatusLine('<the host's line>'))``),
+#      and a gap (the ``.*`` this alternative had) read a host that wrote the guard's words there as the person's airplane mode (OPEN_QUEUE
+#      2026-11-08 item 42, R616). The host tokens take no whitespace, quote or backslash (as in 3.), and the path is percent-encoded, so neither can
+#      carry the words that follow it;
 #   3. the same guard sentence under OUR resolver wrapper (``EthicalFetcher._resolve_cached``), when the switch is engaged between the
 #      pre-fetch check and the lookup: "cannot resolve host '<host>': airplane mode is engaged: refusing a network connection ...". The host
 #      is the only part another party shapes (a redirect's Location, a feed item's link: an IPvFuture "[v1.<anything>]" host reaches a lookup
@@ -68,7 +74,9 @@ NETWORK_REFUSED = "network refused: airplane mode is engaged"
 #      (read as ``dns``). A gaierror's own text ("[Errno -2] ...") between the two never matches.
 _OFFLINE_RE = re.compile(
     r"^\s*(?:[\w.]+:\s*)?(?:" + re.escape(KILL_SWITCH_REFUSAL_HEAD) + r"|airplane mode is engaged: refusing a network connection)\b"
-    r"|^\s*request error for \S+: .*Failed to establish a new connection: airplane mode is engaged: refusing a network connection"
+    r"|^\s*request error for \S+: HTTPS?ConnectionPool\(host='[^'\s\\]*', port=\d+\): Max retries exceeded with url: \S* "
+    r"\(Caused by (?:ProxyError\('Unable to connect to proxy', )?NewConnectionError\([\"']HTTPS?Connection\(host='[^'\s\\]*', port=\d+\): Failed to establish a new connection: "
+    r"airplane mode is engaged: refusing a network connection"
     r"|^\s*cannot resolve host (?:'[^'\s\\]*'|\"[^\"\s\\]*\"): airplane mode is engaged: refusing a network connection",
     re.IGNORECASE | re.DOTALL,
 )
