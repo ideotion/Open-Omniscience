@@ -237,14 +237,8 @@ def main(argv: list[str]) -> int:
     # taken over.
     lock = data_dir / LOCK_FILE
     if not take_lock(lock, int(plan["pid"])):
-        holder = lock_holder_alive(lock)
-        if holder is None or holder[0] == int(plan["pid"]):
-            return 1  # a live helper already serves this same shutdown: it applies and relaunches; this one touches nothing
-        # The holder serves an EARLIER app run (the server checks the lock before stopping, so this is a race). This helper touches nothing,
-        # but the app it was started for is stopping: wait for the holder to finish, then start the launcher so the app is not left down.
-        if wait_for_exit(int(plan["pid"])):
-            wait_for_exit(holder[1], LOCK_STALE_S)
-            relaunch(root)
+        # A live helper holds the checkout (this same shutdown, or an earlier run still applying; the server checks before stopping, so the
+        # second is a race). It relaunches the app when it finishes, so this one touches nothing and starts nothing: two launchers would race.
         return 1
     try:
         # Recorded FIRST, so a helper that dies part-way leaves "started" behind rather than an older attempt's "updated".

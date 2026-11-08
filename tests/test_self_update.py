@@ -224,7 +224,7 @@ def test_a_second_apply_is_refused_and_the_check_is_spent(monkeypatch):
     monkeypatch.setattr(su, "_checkout_contains", lambda root, sha: False)
     monkeypatch.setattr(su, "install_status", lambda root=None: {"kind": "git", "can_apply": True, "reason": "", "manual_steps": []})
     monkeypatch.setattr(su, "launch_helper", lambda *a, **k: None)
-    monkeypatch.setattr(su, "_helper_running", lambda: False)
+    monkeypatch.setattr(su, "_helper_running", lambda root=None: False)
     monkeypatch.setattr(su, "_APPLYING", None)
     monkeypatch.setattr(su, "_LAST_CHECK", {})
     su.check(lambda url: _tags(("v0.6.0", SHA_B)), now=1000.0)
@@ -291,7 +291,7 @@ def test_apply_is_refused_before_the_app_stops_while_a_helper_is_still_running(m
     monkeypatch.setattr(su, "install_status", lambda root=None: {"kind": "git", "can_apply": True, "reason": "", "manual_steps": []})
     started = []
     monkeypatch.setattr(su, "launch_helper", lambda *a, **k: started.append(a))
-    monkeypatch.setattr(su, "_helper_running", lambda: True)
+    monkeypatch.setattr(su, "_helper_running", lambda root=None: True)
     monkeypatch.setattr(su, "_APPLYING", None)
     monkeypatch.setattr(su, "_LAST_CHECK", {})
     su.check(lambda url: _tags(("v0.6.0", SHA_B)), now=1000.0)
@@ -306,3 +306,19 @@ def test_helper_reports_already_current_when_the_checkout_is_ahead(repos):
     (inst / "a.txt").write_text("3", encoding="utf-8")
     _g(inst, "-c", "user.email=t@example.org", "-c", "user.name=t", "commit", "-qam", "ahead")
     assert _helper().apply(_plan(inst, sha))[0] == "already_current"
+
+
+def test_the_server_reads_the_real_helper_lock(tmp_path, monkeypatch):
+    import src.paths as paths
+
+    monkeypatch.setattr(paths, "data_dir", lambda: tmp_path)
+    assert su._helper_running(ROOT) is False  # no lock
+    (tmp_path / "update.lock").write_text(f"1 {os.getpid() + 0}", encoding="utf-8")
+    # the lock names THIS test process as its helper, which lock_holder_alive never counts as another holder
+    assert su._helper_running(ROOT) is False
+    (tmp_path / "update.lock").write_text(f"1 {os.getppid()}", encoding="utf-8")
+    assert su._helper_running(ROOT) is True  # a live helper (our parent stands in for it)
+    bad = tmp_path / "scripts"
+    bad.mkdir()
+    (bad / "apply_update.py").write_text("def broken(:\n", encoding="utf-8")
+    assert su._helper_running(tmp_path) is False  # a script mid-swap answers False, never raises

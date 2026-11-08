@@ -272,31 +272,35 @@ def begin_apply(ref: str, sha: str, *, now: float | None = None, root: Path | No
         if _APPLYING is not None and time.monotonic() - _APPLYING < _APPLY_HOLD_S:
             raise UpdateError("An update is already starting.")
         checked = validate_apply(ref, sha, now=now, root=root)
-        if _helper_running():
-            raise UpdateError("An earlier update is still being applied; try again in a few minutes.")
+        if _helper_running(root):
+            raise UpdateError("An earlier update is still being applied; try again later.")
         launch_helper(checked["ref"], checked["sha"], checked["kind"], root=root, popen=popen)
         _APPLYING = time.monotonic()
         _LAST_CHECK.clear()
         return checked
 
 
-def _helper_running() -> bool:
+def _helper_running(root: Path | None = None) -> bool:
     """True while an update helper holds a fresh lock and is still running (checked BEFORE this app stops, so it is never stopped for an
-    update that would then wait behind another)."""
+    update that would then wait behind another). A check that cannot run answers False: the helper's own lock still refuses a duplicate."""
     import importlib.util
 
     from src.paths import data_dir, repo_root
 
-    script = repo_root() / "scripts" / "apply_update.py"
+    script = (root or repo_root()) / "scripts" / "apply_update.py"
     lock = data_dir() / "update.lock"
     if not lock.exists() or not script.is_file():
         return False
-    spec = importlib.util.spec_from_file_location("oo_apply_update", script)
-    if spec is None or spec.loader is None:
+    try:
+        spec = importlib.util.spec_from_file_location("oo_apply_update", script)
+        if spec is None or spec.loader is None:
+            return False
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.lock_holder_alive(lock) is not None
+    except Exception:  # noqa: BLE001 - a script mid-swap (a SyntaxError, a missing name) must not turn the click into a 500
+        _LOG.warning("update: could not read the helper lock")
         return False
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.lock_holder_alive(lock) is not None
 
 
 def validate_apply(ref: str, sha: str, *, now: float | None = None, root: Path | None = None) -> dict[str, Any]:
