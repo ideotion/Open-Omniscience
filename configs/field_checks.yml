@@ -258,15 +258,15 @@ checks:
       when Python's curses module works there (the windows-curses package), and nobody has run it
       on Windows yet. Pressing Record also checks, on this machine, whether the app's Python can
       import curses and which windows-curses version is installed.
-    retire_when: Two Windows reports (Windows 10 and 11) say the panel opened and its keys worked.
+    retire_when: Two Windows reports (Windows 10 and 11) say the panel opened, o and p worked and q left the app running.
     platforms: [windows]
     steps:
       - "If the app's Python lacks curses, install it first: in the app folder run .venv\\Scripts\\pip install windows-curses, then start the app again with launch.cmd."
-      - "A second window titled \"Open Omniscience panel\" should open beside the server window. Try o (Open UI), l (Show log, then Enter), and p (Pause collection)."
-      - Close the panel window and check the app still answers in the browser, then pick the answer that fits.
+      - "A second window titled \"Open Omniscience panel\" should open beside the server window (the server's log stays in that window; the panel has no log key on Windows). Try o (Open UI), then p (Pause collection, shown only while collecting or online)."
+      - Press q to close the panel (do not press s, which stops the app), check the app still answers in the browser, then pick the answer that fits.
     answers:
       - the panel opened and every key worked
-      - the panel opened but a key did not work (say which in the note)
+      - the panel opened but o, p or q did not work (say which in the note)
       - the panel window opened and closed at once
       - no panel window opened
     params:
