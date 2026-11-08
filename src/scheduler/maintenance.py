@@ -92,7 +92,8 @@ def index_backlog_slice(session, *, should_stop: Callable[[], bool] | None = Non
     from sqlalchemy import exists
 
     from src.analytics.store import backfill_corpus
-    from src.database.models import Article, KeywordMention
+    from src.database.derived_views import KeywordMentionRead
+    from src.database.models import Article
     from src.database.stand_in import not_a_stand_in_article_id
 
     stop = should_stop or (lambda: False)
@@ -108,7 +109,7 @@ def index_backlog_slice(session, *, should_stop: Callable[[], bool] | None = Non
     # NOT EXISTS per row, not backfill's NOT IN over every mention: an article indexed before keyword_indexed_at existed also
     # reads NULL, so the NULL rows alone are not the backlog, and materialising the distinct ids of every mention each window
     # is the cost this check exists to avoid.
-    has_mention = exists().where(KeywordMention.article_id == Article.id)
+    has_mention = exists().where(KeywordMentionRead.article_id == Article.id)
     pending = (
         session.query(Article.id)
         .filter(Article.keyword_indexed_at.is_(None), ~has_mention, not_a_stand_in_article_id(Article.id))
