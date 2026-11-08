@@ -184,3 +184,5 @@ def test_the_insights_drain_endpoint_tells_the_slice_it_is_draining():
     src = (Path(__file__).resolve().parents[1] / "src" / "api" / "insights.py").read_text(encoding="utf-8")
     body = src[src.index("def insights_reindex("):src.index("def insights_prune_keywords(")]
     assert "note_page_drain()" in body and body.index("note_page_drain()") < body.index("return backfill_corpus(")
+    tail = body[body.index("return backfill_corpus("):]
+    assert "finally:" in tail and "note_page_drain()" in tail, "a batch longer than the quiet window must stamp its end too"

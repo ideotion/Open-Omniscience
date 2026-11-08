@@ -251,3 +251,14 @@ def test_the_pages_cancel_stops_the_run_on_the_server_not_only_the_fetch():
     helper = js[js.index("async function _stopServerRun("):]
     assert "/api/jobs/${encodeURIComponent(taskId)}/cancel" in helper[:400]
     assert js.count('resp.headers.get("X-OO-Task")') == 2
+
+
+def test_a_stopping_extractor_run_keeps_its_own_state_and_blocks_a_second_start():
+    """Opus re-read of #1830: with one global state, a reopened panel's Start launched a second run beside a stopping one and the
+    first run's end wiped the second's state, so the second could no longer be cancelled."""
+    js = (REPO / "src" / "static" / "app-analysis.js").read_text(encoding="utf-8")
+    assert "_bulkStopping" not in js and "_bulkTask" not in js
+    start = js[js.index("async function aiRunPromptStart("):]
+    start = start[: start.index("\n    }\n")]
+    assert start.index("if (_aiRuns[ctx]) {") < start.index("_aiRuns[ctx] = run;") < start.index("await fetch(")
+    assert "if (_aiRuns[ctx] === run) delete _aiRuns[ctx];" in start
