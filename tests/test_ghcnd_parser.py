@@ -177,3 +177,18 @@ def test_the_default_getter_is_held_to_the_ghcn_directory(monkeypatch):
     assert seen["allowed_hosts"] == ("www.ncei.noaa.gov",)
     assert all(fetch.ghcnd_url(STN).split("//", 1)[1].split("/", 1)[1].startswith(p.lstrip("/")) for p in seen["allowed_path_prefixes"])
     assert max_chars == fetch.ghcnd_max_chars()
+
+
+def test_a_flagged_out_of_bounds_value_is_one_counted_gap_not_a_refused_month():
+    p = _parse(_line("TMAX", 2020, 7, {1: (1100, " ", "X", "S"), 2: (250, " ", " ", "S")}))
+    assert p.refused_total == 0
+    assert p.figures[0].value is None and p.figures[1].value == 25.0
+    assert p.quality_flagged == {"X": 1}
+    # the same value UNflagged is still refused as not-a-measurement
+    assert _parse(_line("TMAX", 2020, 7, {1: (1100, " ", " ", "S")})).refused_total == 1
+
+
+def test_a_station_id_with_a_trailing_newline_is_not_valid():
+    assert not ghcnd.valid_station_id(STN + "\n")
+    with pytest.raises(ValueError):
+        fetch.ghcnd_url(STN + "\n")

@@ -94,7 +94,7 @@ _INT = re.compile(r"^ *-?[0-9]+$")
 
 def valid_station_id(station: str) -> bool:
     """True for an 11-character GHCN id (country + network + 8); also what a URL may carry."""
-    return bool(_STATION_ID.match(station))
+    return bool(_STATION_ID.fullmatch(station))
 
 
 @dataclass
@@ -236,7 +236,8 @@ def _parse_days(line: str, days_in_month: int, element: str) -> list[tuple[int, 
             if value != _MISSING:
                 return None  # a measurement on a day the month does not have
             continue
-        if value != _MISSING:
+        # A value NCEI itself flagged (QFLAG) is blanked by the caller, so a bound that only a flagged value can break must not refuse the line.
+        if value != _MISSING and qflag == " ":
             if element in ("TMAX", "TMIN") and abs(value) > _MAX_ABS_TEMP_TENTHS:
                 return None
             if element not in ("TMAX", "TMIN") and value < 0:
