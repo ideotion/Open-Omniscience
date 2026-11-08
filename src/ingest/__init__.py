@@ -41,7 +41,7 @@ import requests
 
 # Importing urllib3_log puts the request-path filter on urllib3's loggers (R142).
 from src.ingest import urllib3_log as _urllib3_log  # noqa: F401
-from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL
+from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL, KILL_SWITCH_REFUSAL_HEAD
 from src.ingest.ssrf_guard import (
     BlockedConnectTarget,
     connect_scope,
@@ -627,9 +627,29 @@ def _is_remote_resolving_proxy(proxy_url: str | None) -> bool:
 # after it stops. Cleared when the operator starts collecting again.
 _KILL = threading.Event()
 
+#: THE ENGAGEMENT EPOCH (R327, ruled R614). The switch says whether it is engaged NOW; a reader that
+#: decides after a request whether the failure was the target's (R320: read the switch after the work)
+#: cannot tell from that alone that a Stop was pressed AND cleared again inside the request's flight, and
+#: it then recorded the operator's Stop as the target's failure (robots "unreachable" cached for an hour,
+#: a law document's check stamped for a day). So every :func:`activate_kill_switch` also counts itself:
+#: a reader takes :func:`kill_switch_epoch` BEFORE its request and asks
+#: :func:`kill_switch_engaged_since` after it, which is true when the switch is engaged now OR was engaged
+#: at any moment in between. The set and the count happen together under ``_KILL_EPOCH_LOCK``, and a
+#: clear takes the same lock, so a clear can never land between them (a reader would then see the switch
+#: clear and the count unchanged); a capture before the pair sees the count change, a capture after it sees
+#: the switch set at the fetcher's own check. Only ever increases, so a changed value cannot come back to the
+#: one a reader captured. The window a reader asks about is everything between its capture and its question,
+#: waits included (a host lock, a Crawl-delay, a retry back-off), not only the bytes on the wire.
+_KILL_EPOCH = 0
+# Re-entrant, so a future signal handler that engages the switch cannot deadlock a thread holding it.
+_KILL_EPOCH_LOCK = threading.RLock()
+
 
 def activate_kill_switch() -> None:
-    _KILL.set()
+    global _KILL_EPOCH
+    with _KILL_EPOCH_LOCK:
+        _KILL.set()
+        _KILL_EPOCH += 1
     # Going offline is a HARD close: an egress window (the consented "install the
     # local AI without starting the collector" exemption) must never outlive the
     # operator's decision to go offline, or the airplane button would stop meaning
@@ -655,11 +675,29 @@ def clear_kill_switch() -> None:
     That is the wrong direction to be wrong in -- it weakens zero-network boot, the
     non-negotiable the flag was written to leave untouched.
     """
-    _KILL.clear()
+    with _KILL_EPOCH_LOCK:  # never between an engagement's set and its count (R614)
+        _KILL.clear()
 
 
 def kill_switch_active() -> bool:
     return _KILL.is_set()
+
+
+def kill_switch_epoch() -> int:
+    """How many times the switch has been engaged in this process: capture it before a request (R614)."""
+    return _KILL_EPOCH
+
+
+def kill_switch_engaged_since(epoch: int) -> bool:
+    """True when the switch is engaged now, or was engaged at any moment after ``epoch`` was captured.
+
+    The question a recorder asks after a request whose failure it may store as the target's: a request
+    that shared its flight with a Stop, even one cleared again before the failure reached the caller, is
+    not an answer about the target, and the recorder stores nothing for it (R614 (2)). The cost is
+    conservative: a real failure that happens to share its window with a Stop (waits included) is asked
+    again next time.
+    """
+    return kill_switch_active() or epoch != _KILL_EPOCH
 
 
 #: Has an OPERATOR crossed ONLINE in this process? Set by
@@ -1708,6 +1746,7 @@ class EthicalFetcher:
         persist_kind = "disallow_all"
         persist_body: str | None = None
         cause = "unreachable"
+        epoch = kill_switch_epoch()  # before the request: a Stop pressed and cleared inside it is still a Stop (R614)
         try:
             # Follow redirects MANUALLY through the shared guarded loop so a
             # robots.txt that 30x-redirects to an internal address is refused
@@ -1740,12 +1779,18 @@ class EthicalFetcher:
                 decision = None
                 cause = "server_error"
         except (requests.RequestException, FetchError) as exc:
-            if _KILL.is_set():
+            # The switch's own refusal, by its sentence: engaged before the capture, it refused this read by
+            # name, and a clear may land before this line, so neither the switch nor the count says so now.
+            # A wider match here could only skip a cache write (the host is asked again), never cause a fetch.
+            refused_by_name = isinstance(exc, FetchError) and record_text(exc, typed=False).startswith(KILL_SWITCH_REFUSAL_HEAD)
+            if refused_by_name or kill_switch_engaged_since(epoch):
                 # A refusal BY THE SWITCH, or a request cut off by it mid-flight (the socket
                 # guard's OSError arrives here wrapped in a requests error), is not an answer
                 # about the host: cached as "unreachable" it blamed the host for an hour and
                 # the NEXT pass acted on a verdict no request ever produced (R297). Nothing is
                 # cached or persisted, so the next fetch asks again; the refusal says what it was.
+                # The same when the switch was engaged and cleared again while this request was
+                # in flight: the epoch says a Stop happened, whatever the switch reads now (R614).
                 if isinstance(exc, FetchError):
                     raise
                 raise FetchFailed(KILL_SWITCH_REFUSAL) from None
