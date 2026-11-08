@@ -1083,6 +1083,86 @@ artifacts:
     freshness: {max_age_months: 12}
     last_verified: "2026-09-30"
 
+  - id: skos-eurovoc
+    title: EuroVoc multilingual thesaurus (topic tagging, C-L3)
+    kind: vendored-data
+    description: >
+      src/catalog/data/skos/eurovoc.json: the EuroVoc multilingual thesaurus reduced to concept -> prefLabel /
+      altLabel per language (+ broader), written by src.catalog.skos.build_artifact from the
+      operator's downloaded SKOS RDF/XML. Read by src/catalog/topic_tagging.py, whose rules
+      assign topics as a lens, never a verdict, with the approximate share stated (Q913, Q1146 = a).
+      Languages: en, fr, de, es, pt (the five of ours EuroVoc carries); the other seven UI languages are reached through Wikidata's EuroVoc-ID property, whose id (P5437) is FROM MEMORY and must be confirmed first. OPERATOR-BUILT AFTER A LICENCE FETCH: absent until then, and this entry
+      reads "not built yet" -- nothing is bundled before the licence is read (S06-02 S4). The
+      24-month window is a proposed default, not a ruling.
+    upstream: https://op.europa.eu/en/web/eu-vocabularies/dataset/-/resource?uri=http://publications.europa.eu/resource/dataset/eurovoc
+    fetched_from: a SKOS RDF/XML file the operator downloaded; the build opens no connection
+    check_upstream: "thesaurus releases are periodic; rebuild when the window lapses"
+    license: "CC0 -- TO CONFIRM by the licence fetch (the sheet records one result saying CC0); until confirmed the file is not bundled"
+    pin: {path: src/catalog/data/skos/eurovoc.json, sha256: "", vintage_key: vintage, optional: true}
+    refresh: "build_artifact('eurovoc', parse_rdfxml(<file.rdf>), vintage=..., license=..., upstream=...) from src/catalog/skos.py, written as JSON to the path above"
+    freshness: {max_age_months: 24}
+    last_verified: "2026-11-07"
+
+  - id: skos-unesco-thesaurus
+    title: UNESCO Thesaurus (topic tagging, C-L3)
+    kind: vendored-data
+    description: >
+      src/catalog/data/skos/unesco-thesaurus.json: the UNESCO Thesaurus reduced to concept -> prefLabel /
+      altLabel per language (+ broader), written by src.catalog.skos.build_artifact from the
+      operator's downloaded SKOS RDF/XML. Read by src/catalog/topic_tagging.py, whose rules
+      assign topics as a lens, never a verdict, with the approximate share stated (Q913, Q1146 = a).
+      Languages: ar, en, fr, ru, es. OPERATOR-BUILT AFTER A LICENCE FETCH: absent until then, and this entry
+      reads "not built yet" -- nothing is bundled before the licence is read (S06-02 S4). The
+      24-month window is a proposed default, not a ruling.
+    upstream: https://vocabularies.unesco.org/
+    fetched_from: a SKOS RDF/XML file the operator downloaded; the build opens no connection
+    check_upstream: "thesaurus releases are periodic; rebuild when the window lapses"
+    license: "TO CONFIRM by the licence fetch (E4) before bundling"
+    pin: {path: src/catalog/data/skos/unesco-thesaurus.json, sha256: "", vintage_key: vintage, optional: true}
+    refresh: "build_artifact('unesco-thesaurus', parse_rdfxml(<file.rdf>), vintage=..., license=..., upstream=...) from src/catalog/skos.py, written as JSON to the path above"
+    freshness: {max_age_months: 24}
+    last_verified: "2026-11-07"
+
+  - id: skos-agrovoc
+    title: AGROVOC (FAO) (topic tagging, C-L3)
+    kind: vendored-data
+    description: >
+      src/catalog/data/skos/agrovoc.json: the AGROVOC reduced to concept -> prefLabel /
+      altLabel per language (+ broader), written by src.catalog.skos.build_artifact from the
+      operator's downloaded SKOS RDF/XML. Read by src/catalog/topic_tagging.py, whose rules
+      assign topics as a lens, never a verdict, with the approximate share stated (Q913, Q1146 = a).
+      Languages: the languages of ours AGROVOC carries, recorded at the build. OPERATOR-BUILT AFTER A LICENCE FETCH: absent until then, and this entry
+      reads "not built yet" -- nothing is bundled before the licence is read (S06-02 S4). The
+      24-month window is a proposed default, not a ruling.
+    upstream: https://www.fao.org/agrovoc/
+    fetched_from: a SKOS RDF/XML file the operator downloaded; the build opens no connection
+    check_upstream: "thesaurus releases are periodic; rebuild when the window lapses"
+    license: "TO CONFIRM by the licence fetch (E4) before bundling (published by FAO as open data; the exact licence is read, not remembered)"
+    pin: {path: src/catalog/data/skos/agrovoc.json, sha256: "", vintage_key: vintage, optional: true}
+    refresh: "build_artifact('agrovoc', parse_rdfxml(<file.rdf>), vintage=..., license=..., upstream=...) from src/catalog/skos.py, written as JSON to the path above"
+    freshness: {max_age_months: 24}
+    last_verified: "2026-11-07"
+
+  - id: skos-iptc-media-topics
+    title: IPTC Media Topics (topic tagging, C-L3)
+    kind: vendored-data
+    description: >
+      src/catalog/data/skos/iptc-media-topics.json: the IPTC Media Topics reduced to concept -> prefLabel /
+      altLabel per language (+ broader), written by src.catalog.skos.build_artifact from the
+      operator's downloaded SKOS RDF/XML. Read by src/catalog/topic_tagging.py, whose rules
+      assign topics as a lens, never a verdict, with the approximate share stated (Q913, Q1146 = a).
+      Languages: the languages of ours the file carries, recorded at the build. OPERATOR-BUILT AFTER A LICENCE FETCH: absent until then, and this entry
+      reads "not built yet" -- nothing is bundled before the licence is read (S06-02 S4). The
+      24-month window is a proposed default, not a ruling.
+    upstream: https://iptc.org/standards/media-topics/
+    fetched_from: a SKOS RDF/XML file the operator downloaded; the build opens no connection
+    check_upstream: "thesaurus releases are periodic; rebuild when the window lapses"
+    license: "TO CONFIRM by the licence fetch (E4), IPTC Media Topics first per the register"
+    pin: {path: src/catalog/data/skos/iptc-media-topics.json, sha256: "", vintage_key: vintage, optional: true}
+    refresh: "build_artifact('iptc-media-topics', parse_rdfxml(<file.rdf>), vintage=..., license=..., upstream=...) from src/catalog/skos.py, written as JSON to the path above"
+    freshness: {max_age_months: 24}
+    last_verified: "2026-11-07"
+
   - id: offline-bundle-python-runtime
     title: Self-contained CPython for the air-gapped installer (OPERATOR-SUPPLIED)
     kind: vendored-binary
