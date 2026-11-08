@@ -851,7 +851,12 @@ def outlet_feed_row(rows: list[Source]) -> Source | None:
     two rows. Every input is stable (ids never change, a baseline is kept), so the answer is the same at every boot and in
     either call. A row with a baseline is preferred because :func:`merge_feedless_tags` can only record a merge on such a
     row: an operator-added row (no baseline) would take the tags nowhere. The feed is read from ``rss_url``, not from
-    ``feed_key``, which the ORM derives only when the row is flushed."""
+    ``feed_key``, which the ORM derives only when the row is flushed. When the outlet holds no feed row, ``seed_sources``
+    falls back to the plan's target, which can be the outlet's one feed-less row.
+
+    KNOWN LIMIT: ``merged_tags`` also records tags from an entry that names a feed (the same feed described twice), so an
+    operator-added older feed row that later gains a baseline and such a merge would become the target, and a feed-less
+    entry's tags would reach a second row once. Rare, and stable afterwards."""
     feed_rows = [r for r in rows if feed_key(r.rss_url)]
     if not feed_rows:
         return None
