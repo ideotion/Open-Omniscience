@@ -440,7 +440,7 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
             from src.custody.log import CustodyLog as log_factory
         log = log_factory()
         try:
-            for it in todo:
+            for at, it in enumerate(todo):
                 aid = int(it["article_id"])
                 item_id = f"article:{aid}"
                 try:
@@ -485,9 +485,12 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
                     recorded += 1
                     settled.append(it)
                 except Exception as exc:  # noqa: BLE001 - this one waits for the next drain
-                    if isinstance(exc, TimestampRefusedOffline):
-                        refused += 1  # R618: the kill switch refused its OpenTimestamps submission; the answer says so
                     log_failure(_LOG, f"custody: late entry for article {aid} still pending", exc, level=logging.DEBUG)
+                    if isinstance(exc, TimestampRefusedOffline):
+                        # R618: the kill switch refused its OpenTimestamps submission, so the drain stops here (while it stays engaged,
+                        # every later one is refused the same way). This entry and the rest of this drain's share stay owed, counted.
+                        refused = len(todo) - at
+                        break
         finally:
             with contextlib.suppress(Exception):
                 log.close()
@@ -509,7 +512,7 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
     out: dict[str, Any] = {"recorded": recorded, "already_present": already, "article_gone": gone,
                            "still_pending": len(remaining)}
     if refused:
-        out["refused_offline"] = refused  # present ONLY when the kill switch refused entries (OpenTimestamps mode, R618)
+        out["refused_offline"] = refused  # present ONLY when the kill switch stopped the drain (OpenTimestamps mode, R618)
     if read_error:
         out["read_error"] = read_error
     if queue_error:

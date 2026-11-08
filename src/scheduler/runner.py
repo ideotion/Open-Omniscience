@@ -1458,7 +1458,7 @@ def _lane_step_markets(session, fetcher, settings: SchedulerSettings) -> dict:
                 settings.max_sources_per_run,
             ).all()
             result = run_rules(session, rules, fetcher=fetcher)
-            out["rules_run"] = len(rules)
+            out["rules_run"] = len(result.get("outcomes", ()))  # the rules it went through: a Stop ends the batch (R617)
             out["prices_stored"] = result.get("prices_stored", 0)
         except Exception as exc:  # noqa: BLE001 - the feeds above already counted
             log_failure(_LOG, "markets lane: price rules failed", exc, level=logging.WARNING)

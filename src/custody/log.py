@@ -299,11 +299,11 @@ class CustodyLog:
         says so plainly -- we never fabricate an OTS proof, and ingestion is never
         broken by an unreachable calendar.
 
-        EXCEPT WHEN THE FAILURE WAS A STOP (R618). A submission the network kill switch refused or cut -- engaged now, or pressed and
-        cleared again since the epoch taken before it (R614) -- says nothing about the calendars, and a local proof written in its place
-        is permanent: the log is append-only, so that entry could never carry an independent anchor. So nothing is written: the refusal
-        is raised (``TimestampRefusedOffline``, a ``TimestampUnavailable`` naming the switch) before the entry is inserted, the same
-        refusal ``ots_stamp`` gives by name. Ingestion is still never broken: its auto-log is fail-open and queues the entry as owed
+        EXCEPT WHEN THE FAILURE WAS A STOP (R618). A submission the network kill switch refused or cut -- ``ots_stamp``'s own refusal,
+        by type, whatever the switch reads now; engaged now; or pressed and cleared again since the epoch taken before it (R614) -- says
+        nothing about the calendars, and a local proof written in its place is permanent: the log is append-only, so that entry could
+        never carry an independent anchor. So nothing is written: the refusal is raised (``TimestampRefusedOffline``, a
+        ``TimestampUnavailable`` naming the switch, ``ENTRY_REFUSED_OFFLINE``) before the entry is inserted. Ingestion is still never broken: its auto-log is fail-open and queues the entry as owed
         (``src.custody.pending``), and the drain at the end of a later collection pass writes it, marked late, with the anchor this mode
         asks for. A direct caller is told why. Only a submission that could have been made: with OpenTimestamps not installed the switch
         is not why it failed, and the local proof below is written as before. The cost: a genuine calendar failure that shares its
@@ -320,11 +320,12 @@ class CustodyLog:
             try:
                 return ots_stamp(digest)
             except TimestampUnavailable as exc:
-                if _timestamp.OTS_AVAILABLE and kill_switch_engaged_since(epoch):
-                    raise _timestamp.TimestampRefusedOffline(
-                        "The network kill switch (airplane mode) refused or cut the OpenTimestamps submission; no local-only "
-                        "proof is written in its place, and the entry is left for a later anchor."
-                    ) from None
+                # The switch's refusal BY TYPE (``ots_stamp``'s own check: a switch engaged before the epoch was taken and cleared
+                # before this read moves neither), or a Stop the epoch saw (a cut submission, or one pressed and cleared again).
+                if isinstance(exc, _timestamp.TimestampRefusedOffline) or (
+                    _timestamp.OTS_AVAILABLE and kill_switch_engaged_since(epoch)
+                ):
+                    raise _timestamp.TimestampRefusedOffline(_timestamp.ENTRY_REFUSED_OFFLINE) from None
                 proof = local_timestamp(digest)
                 proof.detail = (
                     "OpenTimestamps was requested but unavailable (" + record_text(exc) + "); "

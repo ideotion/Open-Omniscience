@@ -725,10 +725,10 @@ def _probe_run_rule(c):
         rid = rule.id
     r = c.post(f"/api/markets/rules/{rid}/run", headers=_H)
     j = r.json()
-    with c.sessionmaker() as s:
-        # R617: the refusal is named and stamps nothing on the rule (a fetch_failed stamp read as "price feed needs attention" on Home)
-        unstamped = s.get(MarketExtractionRule, rid).last_status is None
-    return r, r.status_code == 200 and j.get("status") == "skipped_offline" and unstamped and (
+    # R617: the refusal is named, as skipped_offline. That nothing is stamped on the rule cannot be read here (the route never commits
+    # after a failed fetch, and its session closes with a rollback): it is proved on a shared session by
+    # tests/test_kill_switch_epoch_recorders_r617b.py::test_rule_a_page_a_stop_cut_is_skipped_offline_and_stamps_nothing.
+    return r, r.status_code == 200 and j.get("status") == "skipped_offline" and (
         _kill(j.get("detail")) or _kill(j.get("reason"))
     )
 

@@ -132,8 +132,17 @@ class TimestampUnavailable(TimestampError):
 class TimestampRefusedOffline(TimestampUnavailable):
     """The network kill switch refused or cut the submission (R618): the entry is owed, not failed, and nothing was written.
 
-    Raised by ``CustodyLog._default_timestamp`` before the entry is inserted, so a caller tells the switch's refusal from a
-    failure by its TYPE, never by its words, and keeps the log it wrote through (``src.ingest.pipeline._maybe_record_custody``)."""
+    Raised by :func:`ots_stamp`'s own early check (a switch engaged before the submission) and by ``CustodyLog._default_timestamp``
+    before the entry is inserted, so a caller tells the switch's refusal from a failure by its TYPE, never by its words, and keeps the
+    log it wrote through (``src.ingest.pipeline._maybe_record_custody``). The type holds whatever the switch reads by the time the
+    caller looks: a switch engaged before the caller's epoch and cleared since moves neither the epoch nor the switch."""
+
+
+#: The custody log's words for an entry the switch refused (R618): fixed, so a route can answer them without any exception's text.
+ENTRY_REFUSED_OFFLINE = (
+    "The network kill switch (airplane mode) refused or cut the OpenTimestamps submission; no local-only "
+    "proof is written in its place, and the entry is left for a later anchor."
+)
 
 
 @dataclass
@@ -230,7 +239,7 @@ def ots_stamp(
     from src.ingest import kill_switch_active
 
     if kill_switch_active():
-        raise TimestampUnavailable(
+        raise TimestampRefusedOffline(  # typed (R618): a caller reads the switch's refusal by type, even once the switch is cleared
             "The network kill switch is engaged (airplane mode) -- OpenTimestamps "
             "requires egress to public calendar servers, so this submission is "
             "refused rather than silently queued for later."

@@ -1340,7 +1340,10 @@ and written later, marked late, with its anchor. The owed queue has no size limi
 the end of each collection pass writes at most 200 of it, each entry with up to three
 calendar submissions made while the custody log is held for writing. So a large backlog
 slows the end of collection passes for a while once you are back online.
-`POST /api/custody/reconcile` reports `refused_offline` while the switch is still engaged.
+While the switch is still engaged, writing owed entries ("Record them, marked late", or
+`POST /api/custody/reconcile`) stops at the first refusal and says the kill switch refused
+it; the entries stay owed. A gap check alone still answers, and its `drained` block
+reports `refused_offline`.
 
 Verify a bundle anywhere, without this app:
 

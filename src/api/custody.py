@@ -25,7 +25,7 @@ from src.custody.settings import (
     save_settings,
 )
 from src.custody.signing import HybridSigner
-from src.custody.timestamp import TimestampUnavailable
+from src.custody.timestamp import ENTRY_REFUSED_OFFLINE, TimestampUnavailable
 from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/custody", tags=["custody"])
@@ -185,17 +185,29 @@ RECONCILE_DRAIN_MAX = 1000
 @router.post("/reconcile")
 def reconcile(req: ReconcileRequest) -> dict:
     """Write the owed INGEST entries (each marked late); optionally scan for older gaps,
-    and -- only when asked -- queue what the scan found. Local, no network."""
+    and -- only when asked -- queue what the scan found. Local, no network, except that in
+    OpenTimestamps mode each entry written is anchored (calendar submissions).
+
+    A drain the kill switch stopped (R618: OpenTimestamps mode, a Stop) is answered as ``/log`` answers it, 503 in the refusal's
+    fixed words, whenever writing was what the request asked for: answered as a result, it read "Recorded 0 entries" (invariant
+    #14e's corollary). Nothing after it is done, and the entries stay owed. A scan alone answers with the scan, and its drain's
+    ``refused_offline`` says the same in the body."""
     from src.custody.pending import drain, gap_scan, queue_gaps
 
-    out: dict = {"drained": drain(limit=RECONCILE_DRAIN_MAX)}
+    def _drain() -> dict:
+        drained = drain(limit=RECONCILE_DRAIN_MAX)
+        if drained.get("refused_offline") and (req.record_gaps or not req.scan):
+            raise HTTPException(status_code=503, detail=ENTRY_REFUSED_OFFLINE)  # fixed words, no exception's text
+        return drained
+
+    out: dict = {"drained": _drain()}
     if req.scan:
         scan = gap_scan()
         ids = scan.pop("missing_ids", [])
         out["scan"] = scan
         if req.record_gaps and ids:
             out["queued"] = queue_gaps(ids)
-            out["drained_after_queue"] = drain(limit=RECONCILE_DRAIN_MAX)
+            out["drained_after_queue"] = _drain()
     out["late"] = _late_block()
     return out
 

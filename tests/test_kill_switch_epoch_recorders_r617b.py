@@ -44,7 +44,7 @@ from sqlalchemy.pool import StaticPool
 from src.database.models import Base, MarketExtractionRule, Source, WikiPage, WikiRevision
 from src.ingest import FetchFailed, activate_kill_switch, clear_kill_switch, kill_switch_active
 from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL
-from src.safety.fetcher import GuardedSession, make_fetcher
+from src.safety.fetcher import GuardedSession, RedirectRefused, make_fetcher
 
 _PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 #: A host's own reset, no Stop anywhere: the control's failure.
@@ -92,6 +92,9 @@ class _Session(GuardedSession):
     def _send(self, method, url, *args, **kwargs):
         self.urls.append(url)
         step = self.script.pop(0)
+        if step == "redirect-across-a-stop":  # the host's own redirect off the list, with a Stop pressed and cleared while it was in flight
+            _stop_and_clear()
+            raise RedirectRefused("the host is not one this client talks to")
         if step == "busy-across-a-stop":  # the host's own 503, with a Stop pressed and cleared while it was in flight
             _stop_and_clear()
             resp = requests.Response()
@@ -438,6 +441,15 @@ def test_ores_a_refusal_by_name_is_the_switchs_after_the_switch_is_cleared():
     assert client.last_outcome == "refused_offline", client.last_outcome
 
 
+def test_ores_a_redirect_sharing_its_window_with_a_stop_is_still_the_hosts_answer():
+    """Q717's signal (a redirect off ``ores.wikimedia.org``) is the host's answer, which a Stop cannot produce: not refused_offline."""
+    from src.wiki.ores import OresClient
+
+    client = OresClient(session=_Session(["redirect-across-a-stop"]))
+    assert client.score(EDITION, [1]) == {} and not kill_switch_active()
+    assert client.last_outcome == "refused_redirect", client.last_outcome
+
+
 def test_ores_a_hosts_reset_with_no_stop_is_a_transport_error_the_control():
     from src.wiki.ores import OresClient
 
@@ -727,6 +739,23 @@ def test_field_test_a_step_a_stop_cut_is_not_done_and_runs_again(keep):
     assert rec["ok"] is False and "kill switch" in rec["stopped"] and rec["result"] == {"imported": 3, "failed": 37}
 
 
+def test_field_test_a_step_started_under_the_switch_and_cleared_during_it_is_not_done():
+    """Engaged when the step starts and cleared while it runs: neither the epoch nor the switch moves, and the step's requests were
+    refused by name all the same."""
+    from src.monitoring import field_test as FT
+
+    def step():
+        assert kill_switch_active(), "premise: engaged when the step starts"
+        clear_kill_switch()
+        return {"imported": 0, "failed": 0}
+
+    activate_kill_switch()
+    FT._run_step("markets_import_all", step)
+    assert not FT._step_done("markets_import_all"), "a step run under the switch was recorded done: it would never run again"
+    rec = FT.recent_results()[-1]
+    assert rec["ok"] is False and "kill switch" in rec["stopped"]
+
+
 def test_field_test_a_step_with_no_stop_is_done_as_before_the_control():
     from src.monitoring import field_test as FT
 
@@ -868,6 +897,29 @@ def test_custody_a_submission_refused_with_the_switch_still_engaged_writes_nothi
         assert log.all_entries() == []
 
 
+def test_custody_a_switch_engaged_before_the_epoch_and_cleared_after_the_refusal_writes_nothing(tmp_path, monkeypatch, ots):
+    """Engaged before the entry's epoch is taken, refused BY NAME by the real ``ots_stamp``, and cleared before the log reads its epoch:
+    neither moved, so only the refusal's TYPE says it was the switch. A local proof here would be permanent."""
+    import src.custody.log as L
+    from src.custody.timestamp import TimestampRefusedOffline
+
+    real = L.ots_stamp
+
+    def ots_stamp(digest):
+        assert kill_switch_active(), "premise: engaged before the submission"
+        try:
+            return real(digest)
+        finally:
+            clear_kill_switch()
+
+    monkeypatch.setattr(L, "ots_stamp", ots_stamp)
+    activate_kill_switch()
+    with _custody(tmp_path) as log:
+        with pytest.raises(TimestampRefusedOffline, match="kill switch"):
+            log.record("article:1", "h1", "ingest")
+        assert log.all_entries() == [], "a permanent local-only proof was written for a Stop"
+
+
 def test_custody_the_log_route_names_the_switch_when_a_stop_refuses_the_entry(tmp_path, monkeypatch, ots):
     """The manual route answers the refusal in its own words (503), never a bare 500 that would point the operator elsewhere."""
     from fastapi import HTTPException
@@ -986,6 +1038,82 @@ def test_custody_a_drain_the_switch_still_refuses_says_so_and_keeps_the_entry_ow
     assert [int(r["article_id"]) for r in pending.read_pending()] == [aid]
     with CustodyLog() as log:
         assert log.all_entries() == []
+
+
+def _owed(n: int) -> list[int]:
+    from src.custody import pending
+
+    ids = [100 + i for i in range(1, n + 1)]
+    for aid in ids:
+        pending.note_failed(aid, item_hash=f"h{aid}", url=f"https://x.example/{aid}")
+    return ids
+
+
+def _submissions(monkeypatch) -> list[bytes]:
+    """Counts the calls into the REAL ``ots_stamp`` (which refuses by name while the switch is engaged)."""
+    import src.custody.log as L
+
+    real, asked = L.ots_stamp, []
+
+    def ots_stamp(digest):
+        asked.append(digest)
+        return real(digest)
+
+    monkeypatch.setattr(L, "ots_stamp", ots_stamp)
+    return asked
+
+
+@pytest.mark.parametrize("body", [{}, {"scan": True, "record_gaps": True}], ids=["reconcile", "record-gaps"])
+def test_custody_reconcile_a_drain_the_switch_stops_answers_503_in_its_words_after_one_submission(monkeypatch, ots, body):
+    """Answered as a result, the refusal read "Recorded 0 entries, each marked late." and hid the button (invariant #14e's corollary);
+    and the drain went on submitting every owed entry through the Stop."""
+    from fastapi import HTTPException
+
+    import src.api.custody as C
+    from src.custody import pending
+
+    _ots_auto_log(monkeypatch)
+    ids = _owed(3)
+    asked = _submissions(monkeypatch)
+    activate_kill_switch()
+    with pytest.raises(HTTPException) as caught:
+        C.reconcile(C.ReconcileRequest(**body))
+    assert caught.value.status_code == 503 and "kill switch" in str(caught.value.detail), caught.value.detail
+    assert len(asked) == 1, f"the drain went on submitting through a Stop ({len(asked)} submissions for {len(ids)} entries)"
+    assert sorted(int(r["article_id"]) for r in pending.read_pending()) == ids, "an entry the Stop refused is no longer owed"
+
+
+def test_custody_reconcile_record_gaps_with_nothing_owed_answers_503_when_the_drain_of_the_gaps_is_refused(monkeypatch, ots):
+    """The button's common case under the switch: nothing owed yet, the scan's gaps queued, and THEIR drain refused."""
+    from fastapi import HTTPException
+
+    import src.api.custody as C
+    from src.custody import pending
+
+    _ots_auto_log(monkeypatch)
+    gaps = [201, 202]
+    monkeypatch.setattr(pending, "gap_scan", lambda: {"missing_ids": list(gaps), "missing": len(gaps), "complete": True})
+    monkeypatch.setattr(pending, "_columns_for", lambda ids, session_factory=None: {
+        i: {"item_hash": f"h{i}", "url": f"https://x.example/{i}", "canonical_url": None, "source_id": None} for i in ids
+    })
+    asked = _submissions(monkeypatch)
+    activate_kill_switch()
+    with pytest.raises(HTTPException) as caught:
+        C.reconcile(C.ReconcileRequest(scan=True, record_gaps=True))
+    assert caught.value.status_code == 503 and "kill switch" in str(caught.value.detail), caught.value.detail
+    assert len(asked) == 1 and sorted(int(r["article_id"]) for r in pending.read_pending()) == gaps, "the gaps are owed, for a later anchor"
+
+
+def test_custody_reconcile_a_scan_alone_still_answers_and_its_drain_says_the_switch_stopped_it(monkeypatch, ots):
+    import src.api.custody as C
+
+    _ots_auto_log(monkeypatch)
+    _owed(2)
+    asked = _submissions(monkeypatch)
+    activate_kill_switch()
+    out = C.reconcile(C.ReconcileRequest(scan=True))
+    assert "scan" in out and len(asked) == 1
+    assert (out["drained"]["refused_offline"], out["drained"]["still_pending"], out["drained"]["recorded"]) == (2, 2, 0), out["drained"]
 
 
 def test_custody_back_online_the_drain_writes_a_refused_entry_once_late_with_its_anchor(db, monkeypatch, ots):
