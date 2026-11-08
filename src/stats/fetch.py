@@ -188,7 +188,7 @@ def _default_getter(url: str) -> Any:
 
 
 # Each climate fetcher's session may talk only to its own host: a redirect hop anywhere else is refused
-# (guarded_session(allowed_hosts=...)). The consent popup's "climate" lane names both hosts.
+# (guarded_session(allowed_hosts=...)). The consent popup's "climate" lane names all the climate hosts.
 GISTEMP_HOSTS = ("data.giss.nasa.gov",)
 OWID_HOSTS = ("raw.githubusercontent.com",)
 

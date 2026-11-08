@@ -775,6 +775,9 @@ artifacts:
     license: "CC BY 4.0 (OWID processing); original producers' terms per column, operator to confirm"
     pin: {file: src/stats/owid_climate.py, const: OWID_CLIMATE_AS_OF}
     refresh: "verify the live headers and codebook units, update the fixtures in tests/test_owid_climate_parser.py, bump OWID_CLIMATE_AS_OF"
+    freshness: {max_age_months: 18}
+    last_verified: "2026-11-07"
+
   - id: usgs-quakes-csv-shape
     title: USGS ComCat earthquake catalogue CSV shape (FDSN event service)
     kind: dated-data
