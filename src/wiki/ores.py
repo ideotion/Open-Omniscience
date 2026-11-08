@@ -159,6 +159,9 @@ class OresClient:
             self._note("empty_request")
             return {}
         params = {"models": "damaging|goodfaith", "revids": "|".join(str(r) for r in revids)}
+        from src.ingest import kill_switch_engaged_since, kill_switch_epoch
+
+        epoch = kill_switch_epoch()  # the request's window (R617, R614)
         try:
             resp = self.session.get(
                 f"{ORES_ENDPOINT}/{dbname(wiki)}/", params=params, timeout=self.timeout
@@ -167,10 +170,11 @@ class OresClient:
             # OUR OWN REFUSAL IS NAMED AS OURS. Invariant #14e's corollary: an
             # operator pointed at Wikimedia for their own airplane mode has been sent
             # to look in the wrong place.
-            from src.ingest import kill_switch_active
-            from src.safety.fetcher import RedirectRefused
+            from src.safety.fetcher import NetworkBlocked, RedirectRefused
 
-            if kill_switch_active():
+            # R617: a Stop pressed and cleared again inside the request is the switch's too (the epoch), and so is the session's own
+            # refusal BY NAME, written before any request (a switch engaged before the epoch was taken and cleared before this read).
+            if kill_switch_engaged_since(epoch) or isinstance(exc, NetworkBlocked):
                 self._note("refused_offline", "the network kill switch is active (airplane mode)")
                 _LOG.info("ORES scoring refused by THIS APP: airplane mode is engaged")
             elif isinstance(exc, RedirectRefused):

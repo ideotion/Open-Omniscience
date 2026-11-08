@@ -725,7 +725,10 @@ def _probe_run_rule(c):
         rid = rule.id
     r = c.post(f"/api/markets/rules/{rid}/run", headers=_H)
     j = r.json()
-    return r, r.status_code == 200 and j.get("status") == "fetch_failed" and (
+    with c.sessionmaker() as s:
+        # R617: the refusal is named and stamps nothing on the rule (a fetch_failed stamp read as "price feed needs attention" on Home)
+        unstamped = s.get(MarketExtractionRule, rid).last_status is None
+    return r, r.status_code == 200 and j.get("status") == "skipped_offline" and unstamped and (
         _kill(j.get("detail")) or _kill(j.get("reason"))
     )
 

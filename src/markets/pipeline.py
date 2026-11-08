@@ -27,6 +27,8 @@ from src.ingest import (
     RobotsDisallowed,
     RobotsUnavailable,
     kill_switch_active,
+    kill_switch_engaged_since,
+    kill_switch_epoch,
 )
 from src.ingest.pipeline import IngestResult, store_fetched
 from src.markets.extract import extract_price
@@ -39,7 +41,7 @@ _LOG = logging.getLogger(__name__)
 class RuleOutcome:
     rule_id: int
     symbol: str
-    status: str  # stored_price | duplicate_price | no_match | fetch_failed | blocked_robots | robots_unavailable
+    status: str  # stored_price | duplicate_price | no_match | fetch_failed | blocked_robots | robots_unavailable | skipped_offline (R617)
     value: float | None = None
     observed_on: str | None = None
     reason: str | None = None
@@ -63,13 +65,18 @@ def _record(rule: MarketExtractionRule, status: str) -> None:
 
 
 def run_rule(
-    session: Session, rule: MarketExtractionRule, *, fetcher: EthicalFetcher
+    session: Session, rule: MarketExtractionRule, *, fetcher: EthicalFetcher, since: int | None = None
 ) -> RuleOutcome:
     """Fetch the rule's page and store one price point (and a raw capture) for today.
 
     Idempotent per day: a second run on the same date is reported as a duplicate
     rather than appending another point for the same (symbol, market, date).
+
+    A fetch the kill switch refused or cut (R617: engaged now, or since ``since``, the engagement epoch the caller took before its own
+    switch check, else one taken here before the fetch, R614) is ``skipped_offline`` and stamps nothing on the rule: ``fetch_failed`` on
+    ``last_status`` is what Home's "price feed(s) need attention" reads, and the Stop is the person's setting, not the page's.
     """
+    epoch = kill_switch_epoch() if since is None else since
     try:
         fetched = fetcher.fetch(rule.url, require_html=True)
     except RobotsDisallowed as exc:
@@ -79,6 +86,10 @@ def run_rule(
         _record(rule, f"robots_unavailable: {record_text(exc)}")
         return RuleOutcome(rule.id, rule.symbol, "robots_unavailable", reason=record_text(exc))
     except FetchError as exc:
+        if kill_switch_engaged_since(epoch):
+            # R617 (R320): the Stop's, whatever shape the error took; nothing is stamped, so the rule is exactly as it was. The cost: a
+            # genuine failure sharing the window with a Stop is not recorded and is asked again.
+            return RuleOutcome(rule.id, rule.symbol, "skipped_offline", reason=record_text(exc))
         _record(rule, f"fetch_failed: {record_text(exc)}")
         return RuleOutcome(rule.id, rule.symbol, "fetch_failed", reason=record_text(exc))
 
@@ -148,8 +159,11 @@ def run_rules(
     tally: dict[str, int] = {}
     outcomes: list[dict] = []
     for rule in rules:
+        epoch = kill_switch_epoch()  # this rule's window (R617, R614), opened before the check that lets its fetch go
+        if kill_switch_active():
+            break  # R617: a Stop ends the batch; the rules not yet asked are neither run nor stamped
         try:
-            outcome = run_rule(session, rule, fetcher=fetcher)
+            outcome = run_rule(session, rule, fetcher=fetcher, since=epoch)
         except Exception as exc:  # noqa: BLE001 - one bad rule must not abort the batch
             log_failure(_LOG, f"market rule {rule.id} failed", exc, level=logging.WARNING)
             session.rollback()
@@ -187,6 +201,7 @@ def import_due_feeds(session: Session, *, fetcher: EthicalFetcher, now=None) -> 
     today = now or _date.today()
     tally = {"checked": 0, "imported": 0, "fresh": 0, "failed": 0}
     for feed in (*load_feeds(), *load_index_feeds()):
+        feed_epoch = kill_switch_epoch()  # this feed's window (R617, R614), opened before the check that lets it go
         if kill_switch_active():
             break  # a Stop: the feeds not yet asked for are neither checked nor failed, and stay exactly as due as they were (R377)
         tally["checked"] += 1
@@ -222,7 +237,7 @@ def import_due_feeds(session: Session, *, fetcher: EthicalFetcher, now=None) -> 
                 break
             tally["imported" if getattr(result, "status", "") == "imported" else "failed"] += 1
         except Exception as exc:  # noqa: BLE001 - one feed must not abort the markets pass
-            stopped = kill_switch_active()
+            stopped = kill_switch_engaged_since(feed_epoch)  # engaged now, or pressed and cleared again inside this feed (R617, R614)
             # Logged either way (a real exception during a Stop must not disappear), but a Stop's is not labelled a failure (R317).
             log_failure(_LOG, f"market feed {feed.key} {'raised during a Stop' if stopped else 'import failed'}", exc, level=logging.WARNING)
             session.rollback()
