@@ -191,7 +191,7 @@ def test_a_merge_through_the_scratch_gives_the_same_corpus_and_leaves_nothing(tm
     def mat(con, name, sql):  # noqa: ANN001, ANN202
         n = real_mat(con, name, sql)
         seen.setdefault("names", []).append(name)
-        seen["header"] = seen["path"].read_bytes()[:16]
+        seen.setdefault("bodies", []).append((name, seen["path"].read_bytes()))
         return n
 
     monkeypatch.setattr(merge_mod, "check_memory_for_encrypted_merge", lambda **kw: "scratch")
@@ -200,7 +200,9 @@ def test_a_merge_through_the_scratch_gives_the_same_corpus_and_leaves_nothing(tm
     scr_counts, _ = merge_corpus(staged, scr_copy, _META)
 
     assert sorted(seen["names"]) == ["rep_asr", "rep_keywords", "rep_links"]
-    assert seen["header"] != b"SQLite format 3\x00", "the scratch is encrypted while it exists"
+    # whether the file is ENCRYPTED is pinned by test_the_scratch_inherits_the_working_copys_key:
+    # inside the merge's one transaction a few rows never leave the scratch's page cache
+    assert seen["bodies"], "the scratch existed while the groupings ran"
     assert seen["path"].parent == scr_copy.parent
     assert not list(tmp_path.glob("*oo-scratch*")), "the scratch is removed after the merge"
     for k in ("keywords", "article_links", "articles", "article_source_relationships"):
@@ -297,3 +299,68 @@ def test_a_scratch_whose_setup_fails_is_removed_by_the_attach_itself(tmp_path) -
     finally:
         con.close()
     assert not list(tmp_path.glob("*oo-scratch*"))
+
+
+def test_a_scratch_left_by_a_killed_merge_is_removed_by_the_next_one(tmp_path) -> None:
+    """Its name carries the dead process's pid and thread, so nothing would ever pick it up by name."""
+    working = tmp_path / "working.db"
+    sqlite3.connect(working).close()
+    stale = tmp_path / ".working.db.oo-scratch-1-2"
+    stale.write_bytes(b"x" * 64)
+    (tmp_path / ".working.db.oo-scratch-1-2-journal").write_bytes(b"j")
+    other = tmp_path / ".other.db.oo-scratch-1-2"  # another working copy's: not ours to touch
+    other.write_bytes(b"y")
+    con = sqlite3.connect(working)
+    try:
+        path = merge_mod._attach_scratch(con, working)
+        assert not stale.exists()
+        assert not (tmp_path / ".working.db.oo-scratch-1-2-journal").exists()
+        assert other.exists()
+        assert path.name.startswith(".working.db.oo-scratch-")
+    finally:
+        con.close()
+
+
+def test_the_scratch_disk_need_covers_what_the_groupings_were_measured_to_write() -> None:
+    rows = {"keywords": 1_000_000, "article_links": 1_000_000, "article_source_relationships": 0}
+    need = merge_mod._scratch_disk_bytes(rows)
+    # measured: 37.6 B per keyword row and 80 B per link row on disk (see the docstring)
+    assert need >= 1_000_000 * (37.6 + 80)
+    assert merge_mod._scratch_disk_bytes({}) == merge_mod._SCRATCH_DISK_SLACK_BYTES
+
+
+def test_a_drive_too_small_for_the_scratch_refuses_before_any_row_moves(tmp_path, keyed, monkeypatch) -> None:
+    import src.backup.folder_backup as fb
+
+    staged = tmp_path / "staged.db"
+    _corpus(staged, first=100, kw=[("Oslo", None)])
+    copy = _encrypted(tmp_path, "w")
+    before = _dump(copy)
+    monkeypatch.setattr(merge_mod, "check_memory_for_encrypted_merge", lambda **kw: "scratch")
+    monkeypatch.setattr(fb, "free_bytes", lambda target: 1024)
+    attached: list = []
+    monkeypatch.setattr(merge_mod, "_attach_scratch", lambda *a: attached.append(a))
+    with pytest.raises(merge_mod.MergeError, match="Not enough free space for the restore"):
+        merge_corpus(staged, copy, _META)
+    assert not attached
+    assert _dump(copy) == before
+
+
+def test_the_scratch_inherits_the_working_copys_key(tmp_path, keyed) -> None:
+    """The scratch's whole security: attached with no KEY clause, it is encrypted with the working
+    copy's key. Committed here so every page reaches the file, then looked at byte for byte."""
+    copy = _encrypted(tmp_path, "w")
+    con = connect_mod.connect(copy)
+    try:
+        path = merge_mod._attach_scratch(con, copy)
+        con.execute("CREATE TABLE oo_scratch.t (v TEXT)")
+        con.executemany("INSERT INTO oo_scratch.t VALUES (?)", [("scratch-marker-term",)] * 500)
+        con.commit()
+        body = path.read_bytes()
+        assert len(body) >= 4096
+        assert b"scratch-marker-term" not in body
+        assert not body.startswith(b"SQLite format 3")
+        with pytest.raises(sqlite3.DatabaseError):
+            sqlite3.connect(path).execute("SELECT COUNT(*) FROM t").fetchone()
+    finally:
+        con.close()
