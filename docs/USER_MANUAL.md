@@ -1868,7 +1868,7 @@ them and names where to move them, and nothing is moved or deleted for you.
 | `OO_NO_SCHEDULER` | Set `1` to never autostart the background scheduler. |
 | `OO_NO_INDEX` | Set `1` to skip automatic Insights indexing. |
 | `OO_CUSTODY_ON_INGEST` | Legacy default for auto-logging custody on ingest (the UI preference overrides it once saved). |
-| `OO_KEY_PASSPHRASE` | Encrypt custody private keys at rest (AES-256-GCM via scrypt). Without it, keys are written `0600` in the clear and reported honestly as `plaintext-0600`. |
+| `OO_KEY_PASSPHRASE` | Encrypt custody private keys at rest (AES-256-GCM via scrypt). Without it, the database passphrase wraps them; with neither, keys are written `0600` in the clear and reported honestly as `plaintext-0600`. |
 | `OO_FETCH_TIMEOUT` / `OO_FETCH_MIN_INTERVAL` | Tune the ethical fetcher's timeout and per-host minimum interval. |
 | `OO_LLM_MODEL` / `OO_OLLAMA_URL` (or `OLLAMA_BASE_URL`) | Default local model and Ollama endpoint. |
 | `OO_ALLOW_BIG_SCANS` | Set `1` to run the whole-corpus background scans on a machine below the memory floor (see [Memory on a small machine](#55a-memory-on-a-small-machine--the-one-real-ceiling)). The verdict then reports that you overrode it. |
@@ -3187,8 +3187,9 @@ the standardised successor to CRYSTALS‑Dilithium). Two rules make this honest:
   classical one is broken.)
 
 Private keys are encrypted at rest with AES‑256‑GCM under a scrypt‑derived key
-when `OO_KEY_PASSPHRASE` is set; otherwise they are written `0600` in the clear
-and the protection level is reported truthfully as `plaintext-0600`.
+when the app holds a passphrase (`OO_KEY_PASSPHRASE`, or else the database
+passphrase); otherwise they are written `0600` in the clear and the protection
+level is reported truthfully as `plaintext-0600`.
 
 #### 3. Custody log — `src/custody/log.py`
 An **append‑only** SQLite ledger. Each action (`ingest`, `access`, `export`,
