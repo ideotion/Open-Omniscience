@@ -1,0 +1,9 @@
+[
+  {"id": "s1", "lang": "en", "text": "New asylum law passes parliament", "expected": ["http://example.org/c/asylum"]},
+  {"id": "s2", "lang": "fr", "text": "Réforme du Droit d'asile en France", "expected": ["http://example.org/c/asylum"]},
+  {"id": "s3", "lang": "de", "text": "Datenschutz bei Behörden", "expected": ["http://example.org/c/data"]},
+  {"id": "s4", "lang": "en", "text": "A right of asylum is recognised", "expected": ["http://example.org/c/asylum"]},
+  {"id": "s5", "lang": "en", "text": "Weather and sport results", "expected": []},
+  {"id": "s6", "lang": "en", "text": "Data protection and privacy rules", "expected": ["http://example.org/c/data", "http://example.org/c/privacy"]},
+  {"id": "s7", "lang": "zh", "text": "资料保护法", "expected": ["http://example.org/c/data"]}
+]
