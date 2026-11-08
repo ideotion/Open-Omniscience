@@ -7,6 +7,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -219,10 +220,11 @@ def test_a_timeout_or_missing_program_is_a_failed_step_not_a_crash(tmp_path):
 
 def test_a_second_apply_is_refused_and_the_check_is_spent(monkeypatch):
     monkeypatch.setattr(su, "current_version", lambda: "0.5.0")
-    monkeypatch.setattr(su, "_local_head", lambda root: SHA_A)
+    monkeypatch.setattr(su, "_checkout_contains", lambda root, sha: False)
     monkeypatch.setattr(su, "install_status", lambda root=None: {"kind": "git", "can_apply": True, "reason": "", "manual_steps": []})
     monkeypatch.setattr(su, "launch_helper", lambda *a, **k: None)
-    monkeypatch.setattr(su, "_APPLYING", False)
+    monkeypatch.setattr(su, "_APPLYING", None)
+    monkeypatch.setattr(su, "_LAST_CHECK", {})
     su.check(lambda url: _tags(("v0.6.0", SHA_B)), now=1000.0)
     su.begin_apply("v0.6.0", SHA_B, now=1001.0)
     with pytest.raises(su.UpdateError, match="already starting"):
@@ -246,3 +248,34 @@ def test_helper_never_touches_the_install_when_the_app_does_not_exit():
 def test_install_status_reports_a_non_checkout_with_manual_steps(tmp_path):
     st = su.install_status(tmp_path)
     assert st["can_apply"] is False and st["reason"] == "not_a_git_checkout" and st["manual_steps"]
+
+
+def test_check_says_up_to_date_when_the_checkout_is_ahead_of_the_tag(repos, monkeypatch):
+    inst, work, tag_sha = repos
+    _g(inst, "pull", "-q", "--ff-only", "origin", "main")
+    (inst / "a.txt").write_text("3", encoding="utf-8")
+    _g(inst, "-c", "user.email=t@example.org", "-c", "user.name=t", "commit", "-qam", "ahead")
+    monkeypatch.setattr(su, "current_version", lambda: "0.3.0")
+    monkeypatch.setattr(su, "install_status", lambda root=None: {"kind": "git", "can_apply": True, "reason": "", "manual_steps": []})
+    assert su.check(lambda url: _tags(("v0.6.0", tag_sha)), root=inst)["update_available"] is False
+    # a commit this checkout has never seen is not "contained"
+    assert su.check(lambda url: _tags(("v0.6.0", "c" * 40)), root=inst)["update_available"] is True
+
+
+def test_the_helper_lock_obeys_a_live_owner_and_takes_over_a_dead_one(tmp_path):
+    h = _helper()
+    lock = tmp_path / "update.lock"
+    lock.write_text("424242", encoding="utf-8")
+    assert h.take_lock(lock, alive=lambda pid: True) is False
+    assert h.take_lock(lock, alive=lambda pid: False) is True
+    assert lock.read_text(encoding="utf-8") == str(os.getpid())
+    lock.write_text("garbage", encoding="utf-8")
+    assert h.take_lock(lock, alive=lambda pid: True) is True
+
+
+def test_helper_reports_already_current_when_the_checkout_is_ahead(repos):
+    inst, _work, sha = repos
+    _g(inst, "pull", "-q", "--ff-only", "origin", "main")
+    (inst / "a.txt").write_text("3", encoding="utf-8")
+    _g(inst, "-c", "user.email=t@example.org", "-c", "user.name=t", "commit", "-qam", "ahead")
+    assert _helper().apply(_plan(inst, sha))[0] == "already_current"

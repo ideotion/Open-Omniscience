@@ -148,7 +148,8 @@ def relaunch(root: Path, *, popen=subprocess.Popen) -> None:
     quiet = subprocess.DEVNULL
     if os.name == "nt":
         # A console of its own: the launcher says "close this window to stop the app", so it needs a window (never DETACHED_PROCESS here).
-        popen(["cmd", "/c", str(root / "scripts" / "launch.cmd")], stdin=quiet, cwd=str(root), creationflags=0x00000010)  # noqa: S603
+        # No std handle redirected: passing any one makes Popen hand the console ALL of this helper's (NUL) handles, and the window is blank.
+        popen(["cmd", "/c", str(root / "scripts" / "launch.cmd")], cwd=str(root), creationflags=0x00000010)  # noqa: S603
     else:
         popen(["bash", str(root / "scripts" / "launch.sh")], stdin=quiet, stdout=quiet, stderr=quiet, cwd=str(root), start_new_session=True)  # noqa: S603
 
@@ -159,21 +160,37 @@ def write_result(plan: dict, status: str, old: str, data_dir: Path) -> None:
         (data_dir / RESULT_FILE).write_text(json.dumps(body), encoding="utf-8")
 
 
+def take_lock(lock: Path, *, alive=pid_alive) -> bool:
+    """Create ``lock`` holding this process's pid, or take it over when its owner is no longer running. False only while a live owner holds it."""
+    for _ in range(3):
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            try:
+                owner = int(lock.read_text(encoding="utf-8").strip() or 0)
+            except (OSError, ValueError):
+                owner = 0
+            if owner and owner != os.getpid() and alive(owner):
+                return False
+            with contextlib.suppress(OSError):
+                lock.unlink()
+            continue
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+        return True
+    return False
+
+
 def main(argv: list[str]) -> int:
     plan_path = Path(argv[1])
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     data_dir = plan_path.parent
     root = Path(plan["root"])
-    # One helper at a time: a second one (a double click that slipped past the server's own guard) exits without touching anything.
+    # One helper at a time: a second one (a double click that slipped past the server's own guard) exits without touching anything; the live
+    # owner relaunches the app. A lock whose owner is gone (a reboot, a helper killed with its job) is taken over, never obeyed.
     lock = data_dir / LOCK_FILE
-    try:
-        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
-        if time.time() - lock.stat().st_mtime < WAIT_S + 2 * PIP_TIMEOUT_S:
-            return 1
-        lock.unlink()
-        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    os.close(fd)
+    if not take_lock(lock):
+        return 1
     try:
         # Recorded FIRST, so a helper that dies part-way leaves "started" behind rather than an older attempt's "updated".
         write_result(plan, "started", "", data_dir)

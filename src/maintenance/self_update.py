@@ -209,7 +209,7 @@ def check(get_json: Any = None, *, root: Path | None = None, now: float | None =
         latest_t = _vtuple(ref) or (0, 0, 0)
         # The installed metadata can lag the checkout (a tag cut before its version flip, a pull without a reinstall): the commit we run being
         # the tag's commit is "up to date" whatever the metadata says.
-        available = latest_t > cur_t and _local_head(root) != sha
+        available = latest_t > cur_t and not _checkout_contains(root, sha)
         latest = ref.lstrip("v")
     else:
         # No release tag exists: main's tip is only "newer" when it is not the commit we run. Without a readable local head, say so.
@@ -232,6 +232,18 @@ def check(get_json: Any = None, *, root: Path | None = None, now: float | None =
     return result
 
 
+def _checkout_contains(root: Path | None, sha: str) -> bool:
+    """True when the commit we run IS ``sha`` or descends from it (a checkout ahead of the tag). A commit not present locally is not contained."""
+    from src.paths import repo_root
+
+    if _local_head(root) == sha:
+        return True
+    try:
+        return _git(root or repo_root(), "merge-base", "--is-ancestor", sha, "HEAD").returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def _local_head(root: Path | None) -> str:
     from src.paths import repo_root
 
@@ -246,7 +258,10 @@ def _local_head(root: Path | None) -> str:
 
 
 _APPLY_LOCK = threading.Lock()
-_APPLYING = False
+#: When this process last started a helper (monotonic seconds), or None. A second apply is refused until the helper's own wait for this
+#: process could have run out, so a shutdown that hung does not refuse updates for the rest of the process's life.
+_APPLYING: float | None = None
+_APPLY_HOLD_S = 1900
 
 
 def begin_apply(ref: str, sha: str, *, now: float | None = None, root: Path | None = None, popen: Any = None) -> dict[str, Any]:
@@ -254,11 +269,11 @@ def begin_apply(ref: str, sha: str, *, now: float | None = None, root: Path | No
     spent, so the same answer cannot start a second helper either."""
     global _APPLYING
     with _APPLY_LOCK:
-        if _APPLYING:
+        if _APPLYING is not None and time.monotonic() - _APPLYING < _APPLY_HOLD_S:
             raise UpdateError("An update is already starting.")
         checked = validate_apply(ref, sha, now=now, root=root)
         launch_helper(checked["ref"], checked["sha"], checked["kind"], root=root, popen=popen)
-        _APPLYING = True
+        _APPLYING = time.monotonic()
         _LAST_CHECK.clear()
         return checked
 
