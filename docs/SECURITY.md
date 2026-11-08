@@ -467,19 +467,20 @@ down is a RECORD of that date and carries its own disposition table.)*
   before 0.6, in the clear or as a PKCS8 PEM (whose key derivation was 2048 rounds of PBKDF2-HMAC-SHA256,
   about 0.3 ms a guess, the cheapest test of a guess at the passphrase), is wrapped in place the first
   time it is loaded under a passphrase, the same key, read back and compared before it replaces
-  anything. When that cannot be done (a read-only folder) the key keeps working and its protection is
-  reported as what the file really holds (`plaintext-0600`, or `pkcs8-pbkdf2`), never as the wrap.
-  A new Ed25519 key is created with mode `0600` from its first byte (POSIX) and made once: two first
-  callers end with one key. Loading a signer under a passphrase now costs one scrypt for its Ed25519
+  anything; so is an ML-DSA key pair written in the clear before the passphrase existed. When that
+  cannot be done (a read-only folder) the key keeps working and its protection is reported as what
+  the file really holds (`plaintext-0600`, or `pkcs8-pbkdf2`), never as the wrap.
+  A new key, Ed25519 or ML-DSA, is created with mode `0600` from its first byte (POSIX) and made
+  once: two first callers end with one key. Loading a signer under a passphrase now costs one scrypt for its Ed25519
   key, about 79 ms and 32 MiB measured here, where the PKCS8 key cost 0.3 ms (two on a build with the
   post-quantum library, which already paid one for the ML-DSA key). Derivations run at most one per core
   at a time: fifty signers built at once, as a collection pass does, peaked at +129 MiB instead of
   +1.3 GiB, in about the same wall time. A process killed while creating a
   key can leave a private copy under `keys/.pending/`, which backups do not list; the first wrap of a
-  plaintext key removes the leftover that is a second name for it. **Stated limit:** the custody
-  ML-DSA keys are still written with `write_bytes` and then set to `0600`, two first callers can each
-  make one, and one written in the clear before the passphrase existed stays in the clear until it is
-  wrapped; none of that is changed here. A store with no passphrase keeps its keys `0600` in the
+  plaintext key removes the leftover that is a second name for it. **Stated limit:** an ML-DSA key
+  file is wrapped only when a signer loads it, so one left in the clear by an earlier run stays in the
+  clear while post-quantum signing is off or the library is missing, and `key_protection`, which
+  describes the keys in use, does not name it. A store with no passphrase keeps its keys `0600` in the
   clear. A wrapped key that cannot be opened (the store is locked, or a backup restored from another
   install brought that install's key under its passphrase) is refused with the cause and never
   replaced, and a backup, which signs its manifest with the evidence key, is refused with it; there
