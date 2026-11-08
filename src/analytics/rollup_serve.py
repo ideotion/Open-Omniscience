@@ -70,6 +70,7 @@ from sqlalchemy.orm import Session
 
 from src.config.power_profiles import rollup_serve_ttl_s
 from src.monitoring.secret_scrub import log_failure, record_text
+from src.shared import tri_state
 
 _LOG = logging.getLogger(__name__)
 
@@ -131,12 +132,7 @@ _CHECK_EVERY_S = 30.0
 def serve_mode() -> str:
     """How the serve is decided: 'forced-on'/'forced-off' via OO_COLUMNAR_SERVE, else
     'auto' (the default — on whenever the columnar extra is installed)."""
-    env = os.getenv("OO_COLUMNAR_SERVE")
-    if env == "1":
-        return "forced-on"
-    if env == "0":
-        return "forced-off"
-    return "auto"
+    return tri_state("OO_COLUMNAR_SERVE")
 
 
 def serving_state() -> dict:

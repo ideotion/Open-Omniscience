@@ -91,6 +91,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from src.monitoring.secret_scrub import log_failure
+from src.paths import diagnostics_dir as _report_dir
 
 _LOG = logging.getLogger(__name__)
 
@@ -1920,14 +1921,6 @@ def _avg_content_chars(session) -> dict:
     # ~6 chars per word including separators — a stated approximation, used only for a
     # size ESTIMATE and never presented as a measured content length.
     return {"avg_chars": float(avg_words) * 6.0 if avg_words else None, "articles": n}
-
-
-def _report_dir():
-    from src.paths import data_dir
-
-    d = data_dir() / "diagnostics"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
 
 
 def _report_path(stamp: str):

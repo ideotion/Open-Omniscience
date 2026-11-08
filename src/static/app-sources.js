@@ -202,7 +202,7 @@
       const over = tc.max_share_pct != null && tc.share_pct > tc.max_share_pct;
       const located = reg.located_share_pct != null
         ? " · " + esc(tf("{pct}% of sources carry a country", {pct: reg.located_share_pct})) +
-          (reg.min_located_share_pct != null ? ` <span class="muted">(${esc(tf("floor {pct}%", {pct: reg.min_located_share_pct}))})</span>` : "")
+          (reg.min_located_share_pct != null ? ` <span class="muted">(${ooLtrPct(esc(tf("floor {pct}%", {pct: reg.min_located_share_pct})))})</span>` : "")
         : "";
       host.innerHTML =
         `<strong>Regional balance</strong> <span class="muted">(floors are working targets from configs/catalog_targets.yml)</span>` +
@@ -213,7 +213,7 @@
         `<div style="margin-top:6px">${ooLabelHtml(esc(t("Top country")), `<strong>${ooCountryCell(tc.code, {empty: "—"})}</strong>`)} — ` +
         esc(tf("{n} sources, {pct}% of located", {n: tc.sources, pct: tc.share_pct})) +
         (tc.max_share_pct != null
-          ? ` <span class="pill ${over ? "warn" : "ok"}">${esc(tf(over ? "above the {pct}% guard" : "within the {pct}% guard", {pct: tc.max_share_pct}))}</span>` : "") +
+          ? ` <span class="pill ${over ? "warn" : "ok"}">${ooLtrPct(esc(tf(over ? "above the {pct}% guard" : "within the {pct}% guard", {pct: tc.max_share_pct})))}</span>` : "") +
         `${located}</div>`;
     }
 
