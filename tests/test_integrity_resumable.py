@@ -439,3 +439,36 @@ def test_a_table_whose_foreign_key_check_fails_is_named_with_its_error_and_the_o
     assert p["state"] == "partial" and p["errors"] == [{"name": "articles", "error": "OperationalError"}]
     assert p["tables_checked"] == p["tables_total"] - 1, "every other table was still checked"
     assert "articles" not in store.state["foreign_key_violations"]["pending"]["tables"], "the failed table is tried again next build"
+
+
+def test_an_already_counted_orphan_that_gains_a_mention_restarts_the_orphan_pass(session, tiny_ranges, monkeypatch):
+    """False drift: keyword 5 is counted an orphan in build 1; ingest gives it a mention before build 2. The orphan pass watches the
+    largest mention id, so it starts over and counts 2, not the resumed 3."""
+    _corpus(session)
+    store = MemStore()
+    _budget_for_ranges(monkeypatch, 3)  # ranges of two: ids 1-2, 3-4, 5-6 -> keywords 5 and 6 counted as orphans
+    first = integrity.corpus_integrity(session, sample=100, cursor=store)
+    assert first["scan_progress"]["orphan_keywords"]["tally_so_far"] == 2
+    monkeypatch.setattr(integrity, "deadline_expired", lambda _s: False)
+    monkeypatch.setattr(integrity, "_scalar", _REAL_SCALAR)
+    session.add(KeywordMention(keyword_id=5, article_id=1, count=1))
+    session.commit()
+    r = integrity.corpus_integrity(session, sample=100, cursor=store)
+    p = r["scan_progress"]["orphan_keywords"]
+    assert r["orphan_keywords"] == 2 and p["cursor"] == "restarted", p
+    assert "assembled_across_builds" not in p
+
+
+def test_without_a_cursor_store_no_generation_marker_is_read(session, tiny_ranges, monkeypatch):
+    """A plain GET keeps no pass, so it spends none of its budget counting rows for a marker it would throw away."""
+    _corpus(session)
+    seen: list[str] = []
+    real = integrity._scalar
+
+    def watching(session_, sql, params=None):
+        seen.append(sql)
+        return real(session_, sql, params)
+
+    monkeypatch.setattr(integrity, "_scalar", watching)
+    integrity.corpus_integrity(session, sample=100)
+    assert not [q for q in seen if "WHERE id <= :top" in q], seen

@@ -159,6 +159,11 @@ def _iso(v: Any) -> str | None:
     return v
 
 
+#: The orphan-keyword rule reads mentions, which the epoch does not cover (ingest adds a keyword's first mention, and re-indexing an
+#: existing article rewrites its mentions without a bump), so that pass ALSO watches the largest mention id: any insert or rewrite
+#: allocates a new one. O(1). The dangling checks read a mention's article and keyword, which the counts above already watch.
+_RANGE_ALSO_WATCH: dict[str, tuple[str, ...]] = {"orphan_keywords": ("keyword_mentions_all",)}
+
 #: The tables whose rows below a pass's place the generation marker watches. The mentions table is not counted (25 M rows on the
 #: 2026-11-07 corpus): every path that rewrites or deletes mentions -- re-index, prune, fold, restore, merge, salvage -- bumps the corpus
 #: epoch, which the marker carries.
@@ -172,8 +177,9 @@ class _Generations:
     Rows added later sit above that id and do not move it, so ingest between builds keeps the pass; a delete below it, or any epoch
     bump, changes the marker and the pass restarts. Read once per build per starting point, never per range."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, enabled: bool = True) -> None:
         self._session = session
+        self._enabled = enabled  # False where there is nowhere to keep a pass (no cursor store): nothing is read
         self._cache: dict[tuple[tuple[str, int], ...], dict[str, Any] | None] = {}
 
     def _read(self, tops: dict[str, int]) -> dict[str, Any] | None:
@@ -191,19 +197,34 @@ class _Generations:
             self._cache[key] = out
         return self._cache[key]
 
-    def fresh(self) -> dict[str, Any] | None:
-        """The marker for a pass starting now; ``None`` when it cannot be read (the pass then cannot be resumed and starts over next build)."""
+    def _maxes(self, also: tuple[str, ...]) -> dict[str, int] | None:
+        out: dict[str, int] = {}
+        for t in also:
+            m = _scalar(self._session, f"SELECT MAX(id) FROM {t}")  # nosec B608 - `t` is a constant above
+            if m is None:
+                return None
+            out["max_" + t] = m
+        return out
+
+    def fresh(self, also: tuple[str, ...] = ()) -> dict[str, Any] | None:
+        """The marker for a pass starting now, plus the largest id of each table in ``also``; ``None`` when it cannot be read or there is
+        nowhere to keep a pass (it then cannot be resumed and starts over next build)."""
+        if not self._enabled:
+            return None
         tops: dict[str, int] = {}
         for t in _GENERATION_TABLES:
             top = _scalar(self._session, f"SELECT MAX(id) FROM {t}")  # nosec B608 - `t` is a constant above
             if top is None:
                 return None
             tops[t] = top
-        return self._read(tops)
+        base, maxes = self._read(tops), self._maxes(also)
+        return None if base is None or maxes is None else {**base, **maxes}
 
-    def still(self, marker: Any) -> bool:
+    def still(self, marker: Any, also: tuple[str, ...] = ()) -> bool:
         """Whether the corpus below a pass's starting point is as it was; anything unreadable or malformed reads as changed."""
         if not isinstance(marker, dict) or _int(marker.get("epoch")) is None:
+            return False
+        if {k for k in marker if k.startswith("max_")} != {"max_" + t for t in also}:
             return False
         tops: dict[str, int] = {}
         for t in _GENERATION_TABLES:
@@ -211,7 +232,8 @@ class _Generations:
             if not (isinstance(pair, list) and len(pair) == 2 and all(_int(x) is not None and x >= 0 for x in pair)):
                 return False
             tops[t] = pair[0]
-        return self._read(tops) == marker
+        base = {k: v for k, v in marker.items() if not k.startswith("max_")}
+        return self._read(tops) == base and self._maxes(also) == {k: v for k, v in marker.items() if k.startswith("max_")}
 
 
 def _range_pending(p: Any, top: int) -> dict[str, Any] | None:
@@ -282,15 +304,16 @@ def _range_scan(
     pending = _range_pending(prev.get("pending"), top) if prev.get("pending") is not None else None
     if prev.get("pending") is not None and pending is None:
         cursor_note = {"cursor": "discarded", "cursor_reason": "the saved place was malformed or inconsistent with the table; a fresh pass began"}
-    elif pending is not None and not gens.still(pending["generation"]):
+    elif pending is not None and not gens.still(pending["generation"], _RANGE_ALSO_WATCH.get(check, ())):
         pending = None
-        cursor_note = {"cursor": "restarted", "cursor_reason": "rows below the saved place changed since its pass began (or the corpus epoch moved); a fresh pass began"}
+        cursor_note = {"cursor": "restarted", "cursor_reason": "rows the check reads changed since its pass began (or the corpus epoch moved); a fresh pass began"}
     resumed = pending is not None
     if pending is not None:
         through, nxt, tally, step, started, generation = (
             pending["through_id"], pending["next_id"], pending["tally"], pending["step"], pending["started_at"], pending["generation"])
     else:
-        through, nxt, tally, step, started, generation = top, 0, 0, _FIRST_RANGE_ROWS, _now_iso(), gens.fresh()
+        through, nxt, tally, step, started = top, 0, 0, _FIRST_RANGE_ROWS, _now_iso()
+        generation = gens.fresh(_RANGE_ALSO_WATCH.get(check, ()))
     range_error = False
     interrupted: BaseException | None = None
     while nxt < through:
@@ -490,7 +513,7 @@ def corpus_integrity(
                 source_rows = "keywords"
             else:
                 source_rows = (
-                    "(SELECT id, term, mention_count, article_count FROM keywords "
+                    "(SELECT id, term, mention_count, article_count FROM keywords "  # nosec B608 - the only input is int(sample)
                     f"ORDER BY mention_count DESC LIMIT {int(sample)})"
                 )
             checked = 0
@@ -573,7 +596,7 @@ def corpus_integrity(
             # read and the foreign-key check never run. A check that did not reach the end reads None (not
             # established) with its place in ``scan_progress``, never a partial tally dressed as the figure.
             resumable: list[str] = [c for c, _t, _q in _RANGE_SCANS] + ["foreign_key_violations"]
-            gens = _Generations(session)
+            gens = _Generations(session, enabled=cursor is not None)  # no cursor store: no pass is kept, so no marker is read
             for i, check in enumerate(resumable):
                 left = deadline_left_s(session)
                 stop_at = None if left is None else time.monotonic() + max(left, 0.0) / (len(resumable) - i)
@@ -670,8 +693,10 @@ def corpus_integrity(
         "Read-only, deadline-guarded SQLite sweep. Orphan/dangling tallies are counted in id "
         "ranges (index-backed) and the foreign-key check a table at a time; a pass the budget "
         "cuts resumes next build only while the corpus epoch and the article and keyword rows "
-        "below its place are unchanged (else it starts over), and a figure finished that way says "
-        "assembled_across_builds; counter drift is sampled over the top-mention keywords unless "
+        "below its place are unchanged, and for orphan keywords the largest mention id too (else "
+        "it starts over), and a figure finished that way says assembled_across_builds. The "
+        "foreign-key pass watches articles and keywords only: a change confined to another table "
+        "between builds is not seen by a resumed pass. Counter drift is sampled over the top-mention keywords unless "
         "full=1. Reports drift, never fixes it (the reconcile/prune passes own that). "
         "Counts/names only, no score. The verdict is read from COMPLETED checks only: "
         "drift=true if any found drift, false only if all completed clean, null when a "
