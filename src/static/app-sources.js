@@ -729,6 +729,7 @@
       const id = $("ing-source").value;
       if (!id) { toast("No RSS source selected.", "err"); return; }
       $("ingest-result").textContent = "Fetching feed… (rate-limited, may take a moment)";
+      $("ingest-result").title = "";   // a Stop hover from the last run never explains this one
       try {
         const r = await api(`/api/sources/${id}/ingest`, {method: "POST"});
         if (r.tally && r.tally.skipped_offline) {   // refused by airplane mode: a clean zero would read as "the feed is quiet"
@@ -892,6 +893,7 @@
       if (!ids.length) { toast("Select at least one source with a feed.", "err"); return; }
       btn.disabled = true;
       $("bi-status").textContent = `Fetching ${ids.length} feed(s)… (ethical & rate-limited; may take a while)`;
+      $("bi-status").title = "";
       $("bi-results").innerHTML = "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
@@ -907,11 +909,11 @@
           : `Done: ${r.ingested - off}/${r.requested} fetched` + (off ? ` · ${tf("{n} not fetched (airplane mode)", {n: off})}` : "") + ` · ${tally(r.aggregate)}`;
         $("bi-status").title = allOff ? "" : tallyHover(r.aggregate);
         $("bi-results").innerHTML = `<table class="bi-res"><tr><th>Source</th><th>Result</th></tr>` +
-          r.results.map(x => `<tr><td>${esc(x.source || ("#" + x.source_id))}</td>` +
-            `<td${(x.status === "ok" && x.tally && !x.tally.skipped_offline && tallyHover(x.tally))
-                ? ` title="${esc(tallyHover(x.tally))}"` : ""}>${x.status === "ok"
+          r.results.map(x => { const hov = (x.status === "ok" && x.tally && !x.tally.skipped_offline) ? tallyHover(x.tally) : "";
+            return `<tr><td>${esc(x.source || ("#" + x.source_id))}</td>` +
+            `<td${hov ? ` title="${esc(hov)}"` : ""}>${x.status === "ok"
               ? ((x.tally && x.tally.skipped_offline) ? `<span class="pill warn">${esc(t("Not fetched (airplane mode)"))}</span>` : esc(tally(x.tally)))
-              : `<span class="pill warn">${esc(x.status)}</span>${x.detail ? " " + esc(x.detail) : ""}`}</td></tr>`).join("") +
+              : `<span class="pill warn">${esc(x.status)}</span>${x.detail ? " " + esc(x.detail) : ""}`}</td></tr>`; }).join("") +
           `</table>`;
         if (allOff) { toast(t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again."), "warn"); return; }
         toast("Batch ingest complete."); doSearch({refresh: true});
