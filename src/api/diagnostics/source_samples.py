@@ -58,10 +58,11 @@ def _plain(value: Any) -> Any:
 
 def _row_dict(obj: Any) -> dict[str, Any]:
     out: dict[str, Any] = {}
+    state = inspect(obj)   # the instance state: its attrs read each loaded column without a dynamic getattr
     for prop in inspect(type(obj)).column_attrs:
         if _SECRETISH.search(prop.key):
             continue
-        out[prop.key] = _plain(getattr(obj, prop.key))
+        out[prop.key] = _plain(state.attrs[prop.key].value)
     return out
 
 
