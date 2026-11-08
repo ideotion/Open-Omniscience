@@ -389,11 +389,39 @@ _SECONDS_BY_KEYS = ("insert", "savepoint", "other_statement", "commit", "between
 _WIDEST_CLASS = "Module." + "E" * (se._CLASS_NAME_MAX - len("Module."))  # 80 characters, the most the journal lets through
 
 
+class _StoppedClock:
+    """``time`` as ``storage_events`` reads it, with ``monotonic`` stopped at one reading and everything else the real module.
+
+    A run's ``seconds`` is ``round(time.monotonic() - started, 3)``. With a running clock it was the fixture's 99,999.999 plus however long the
+    hooks took between the fixture setting ``started`` and the run's end: under half a millisecond that is written ``99999.999``, but a loaded
+    machine adds a millisecond or more and it is written ``100000.0`` or ``100000.002``, so the journal's size, pinned to the byte below, moved
+    with the load (the field checks lane saw 124,250 once in three runs under xdist -n 6; a 1 ms pause between the two gave 124,223). Stopped,
+    the seconds are exactly what the fixture says. Only ``storage_events``'s own name is replaced, and only while the runs are written."""
+
+    def __init__(self) -> None:
+        self._at = time.monotonic()
+
+    def monotonic(self) -> float:
+        return self._at
+
+    def __getattr__(self, name: str):
+        return getattr(time, name)
+
+
 def _fill_runs() -> None:
     """Each run kind to its cap with the WIDEST event the hooks can write: every measured field present at a large value, the longest
     class name the journal accepts, the longest refusal sentence, the backup's summary failure beside its end and the seconds of a run
     of more than a day. The last event of each kind is then checked to carry every key the sink knows, so a hook parameter that is
-    renamed (the sink drops what it does not know) shrinks this measurement visibly and not silently."""
+    renamed (the sink drops what it does not know) shrinks this measurement visibly and not silently. The clock ``storage_events`` reads is
+    stopped meanwhile (:class:`_StoppedClock`), so the seconds do not depend on how busy the machine is."""
+    from unittest import mock
+
+    clock = _StoppedClock()
+    with mock.patch.object(se, "time", clock):
+        _fill_runs_on(clock)
+
+
+def _fill_runs_on(clock: _StoppedClock) -> None:
     assert len(_WIDEST_CLASS) == se._CLASS_NAME_MAX
     longest = max(se.RUN_REFUSALS, key=lambda k: len(se.RUN_REFUSALS[k]))
     every_key = set(se._RUN_NUMBERS) | set(se._RUN_FLAGS) | set(se._RUN_CLASSES) | {"verify", "error", "reason", "outcome", "seconds", "via"}
@@ -402,7 +430,7 @@ def _fill_runs() -> None:
         for _ in range(se.KEEP[kind] + 4):
             note = se.run_started(what, via=widest_via)
             assert note is not None
-            note.started = time.monotonic() - 99_999.999  # more than a day, the widest the seconds can be written
+            note.started = clock.monotonic() - 99_999.999  # more than a day, the widest the seconds can be written
             se.run_free_space(note, "dest_free_bytes" if what == "export" else "data_free_bytes", "/")
             se.run_facts(note, dest_free_bytes=123_456_789_012_345, data_free_bytes=123_456_789_012_345, summary_error=_WIDEST_CLASS)
             se.run_ended(note, "ended-without-a-recorded-outcome", failure=_WIDEST_CLASS, reason=longest, volumes=1234, bytes=123_456_789_012_345,
@@ -412,7 +440,7 @@ def _fill_runs() -> None:
                          restored=12_345_678, checked=12_345_678, mismatches=12_345_678)
         last = se._STATE[kind]["events"][-1]
         assert every_key <= set(last), f"{kind}: the widest run lost {sorted(every_key - set(last))}"
-        assert last["error"] == _WIDEST_CLASS and last["seconds"] >= 99_999.0
+        assert last["error"] == _WIDEST_CLASS and last["seconds"] == 99_999.999, "the seconds are the fixture's, whatever the load"
 
 
 def _fill_like_the_hooks(long_names: bool) -> None:
