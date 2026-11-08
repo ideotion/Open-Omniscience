@@ -26,6 +26,10 @@ import pytest
 from src.database import writer
 
 BURN_S = 0.05
+#: ``stats()`` rounds each figure to 4 places, so the DIFFERENCE of two readings can fall short of the true one by up to 1e-4 (each
+#: reading loses at most 5e-5), plus the float error of subtracting two totals near 33 s. CI read 33.1771 then 33.2271 for a hold of at
+#: least 0.05 s, and 33.2271 - 33.1771 is 0.0499999... in floats. A test that compares such a difference allows exactly that much.
+TWO_READINGS = 1e-4 + 1e-9
 
 
 def _burn(seconds: float = BURN_S) -> None:
@@ -52,7 +56,7 @@ def test_a_hold_that_computes_adds_its_cpu_and_one_that_waits_adds_about_none():
     time.sleep(0.25)
     gate.release()
     waited = gate.stats()
-    assert waited["total_held_s"] - worked["total_held_s"] >= 0.25, "the sleep is held time"
+    assert waited["total_held_s"] - worked["total_held_s"] >= 0.25 - TWO_READINGS, "the sleep is held time"
     assert waited["total_hold_cpu_s"] - worked["total_hold_cpu_s"] < BURN_S, "and it is not CPU: waiting is told from working"
     assert waited["total_hold_cpu_s"] >= worked["total_hold_cpu_s"], "a hold adds to the total, it never replaces it"
 
@@ -125,7 +129,7 @@ def test_the_public_window_adds_to_the_process_gate(monkeypatch):
     before = writer.write_gate.stats()["total_hold_cpu_s"] or 0.0
     with writer.write_lock():
         _burn()
-    assert (writer.write_gate.stats()["total_hold_cpu_s"] or 0.0) - before >= BURN_S
+    assert (writer.write_gate.stats()["total_hold_cpu_s"] or 0.0) - before >= BURN_S - TWO_READINGS
 
 
 @pytest.mark.parametrize("fails_at", ["grant", "release", "grant_only"])
