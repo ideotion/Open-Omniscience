@@ -2142,8 +2142,7 @@
       const t = _updT();
       const msg = $("upd-msg");
       if (!_updCheck || !_updCheck.update_available) return;
-      if (!window.confirm(t("Update now? The app stops, the new version is downloaded with git, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click.")
-          + " " + t("If the new version changes the app's dependencies, pip also downloads them from pypi.org. Neither download goes through this app's proxy."))) return;
+      if (!window.confirm(t("Update now? The app stops, the new version is downloaded with git, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org. Neither download goes through this app's proxy."))) return;
       const go = $("upd-apply"), chk = $("upd-check");
       if (go) go.disabled = true;
       if (chk) chk.disabled = true;
