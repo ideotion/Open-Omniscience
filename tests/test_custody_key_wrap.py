@@ -439,6 +439,44 @@ def test_the_loser_of_a_creation_race_uses_the_winners_key(tmp_path, monkeypatch
     assert _pending_left(tmp_path) == []
 
 
+def test_a_pending_folder_that_is_gone_again_after_mkdir_answered_exists_is_not_an_error(
+    tmp_path, monkeypatch
+):
+    """Path.mkdir(exist_ok=True) answers EEXIST and then asks is_dir(): a caller that removed the empty
+    folder in between made it raise FileExistsError for a folder that was there when it looked, and
+    create_new quietly took the in-place fallback, which a reader can meet half done."""
+    import pathlib
+
+    p = tmp_path / "ed.pem"
+    (tmp_path / kf.PENDING).mkdir()
+    real = pathlib.Path.is_dir
+    monkeypatch.setattr(
+        pathlib.Path, "is_dir", lambda self: False if self.name == kf.PENDING else real(self)
+    )
+    name = kf.private_name(p, "new")
+    assert name.parent == tmp_path / kf.PENDING
+
+
+def test_a_pending_folder_removed_before_the_file_is_created_is_made_again(tmp_path, monkeypatch):
+    p = tmp_path / "ed.pem"
+    real = kf.write_new
+    gone = {"left": 7}
+
+    def folder_gone_again(path, data):
+        if gone["left"]:
+            gone["left"] -= 1
+            raise FileNotFoundError(path)
+        return real(path, data)
+
+    monkeypatch.setattr(kf, "write_new", folder_gone_again)
+    tmp = kf.write_private(p, "new", b"x")
+    assert tmp.read_bytes() == b"x" and gone["left"] == 0
+    tmp.unlink()
+    gone["left"] = 100
+    with pytest.raises(FileNotFoundError, match="kept disappearing"):
+        kf.write_private(p, "new", b"x")
+
+
 def test_the_annotation_signers_key_is_wrapped_the_same_way(tmp_path, monkeypatch):
     """``annotation_signer`` is a HybridSigner on its own file: it gets the same protection with no code of its own."""
     from src.annotations.bundle import annotation_signer

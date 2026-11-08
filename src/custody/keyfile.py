@@ -71,7 +71,12 @@ def private_name(path: Path, kind: str) -> Path:
     file over the key.
     """
     pending = path.parent / PENDING
-    pending.mkdir(mode=0o700, exist_ok=True)
+    # os.mkdir, not Path.mkdir(exist_ok=True): that one answers EEXIST, then asks is_dir(), and a caller
+    # that removed the (empty) folder in between made it raise FileExistsError for a folder that was
+    # there when it looked. The folder is created by the first file written into it, and write_private
+    # retries when it has gone again.
+    with contextlib.suppress(FileExistsError):
+        os.mkdir(pending, 0o700)
     token = secrets.token_hex(6)
     return pending / f"{path.name}.{os.getpid()}.{threading.get_ident()}.{token}.{kind}"
 
@@ -80,9 +85,10 @@ def write_private(path: Path, kind: str, data: bytes) -> Path:
     """Write ``data`` to a new private file for ``path`` and return its name; a failure leaves none.
 
     The directory is removed again when nothing is in it (:func:`drop_pending`), and another caller
-    can do that between this one's ``mkdir`` and its create: three tries cover it.
+    can do that between this one's ``mkdir`` and its create. Each retry means another caller finished and
+    removed the folder, so one is starved only by more finishers than tries: eight cover it.
     """
-    for _attempt in range(3):
+    for _attempt in range(8):
         tmp = private_name(path, kind)
         try:
             write_new(tmp, data)
