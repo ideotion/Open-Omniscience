@@ -176,6 +176,12 @@ class WriterGate:
         # for the max, and this is one float add on that same line, inside a lock it
         # already holds (the 2026-08-06 rule about instruments on hot paths).
         self._total_held_s = 0.0
+        # The holder threads' CPU seconds over EVERY finished hold, beside ``_total_held_s`` (the same holds, the same release): the two
+        # together say whether the gate's busy share was spent WORKING (cpu close to held) or WAITING (cpu far below it: starved of the
+        # GIL, blocked on a read, descheduled). The journal keeps ``cpu_ms`` only for the 20 holds it keeps, which are the extremes; this
+        # is every hold's, so it describes the typical one. ``None`` until a hold whose CPU the OS could give has ended (a platform
+        # without ``time.thread_time``): absent state, never a 0 that would read as "the holders did no work".
+        self._total_hold_cpu_s: float | None = None
         # WHO used the window, by thread name: [holds, held_s, longest_s]. At most ``_HOLDER_NAMES_MAX`` names (a thread pool names
         # its workers, and a restart names a new set), the rest summed under ``_OTHER_HOLDERS``, so the table is bounded whatever the
         # app does; one dict lookup and three adds inside the lock the release already holds.
@@ -323,6 +329,7 @@ class WriterGate:
                     # Outermost release only (``_depth == 0``), so a reentrant nested write
                     # is counted once rather than once per level.
                     self._total_held_s += held
+                    self._add_hold_cpu_locked(usage0)
                     if held > self._max_hold_s:
                         self._max_hold_s = held
                         # Retained AFTER release on purpose: the peak hold is
@@ -345,6 +352,23 @@ class WriterGate:
                 _log_long_release(released[0], released[1])
             if released[1] >= HOLD_RECORD_S:  # a separate comparison: the journal's threshold is its own, not the log line's
                 _note_hold_end(*released)
+
+    def _add_hold_cpu_locked(self, usage0: thread_usage.Sample | None) -> None:
+        """Add the CPU the holder's thread used since it was granted the window (``usage0``) to the process total. Caller holds the lock and
+        IS the holder's thread (the outermost release runs where the hold was taken), which is the only thread ``time.thread_time`` can
+        read. One clock read (0.3 microseconds, ``thread_usage``'s measurement) on a path every writer takes. Never raises: a clock the OS
+        cannot give leaves the total as it was, so it stays ``None`` rather than reading 0.
+
+        A STATED LIMIT: on Windows the clock moves in scheduler ticks (about 15 ms), so one short hold reads 0 or a tick; the sum over many
+        holds is what means something, and it is a sum."""
+        cpu0 = usage0[0] if usage0 is not None else None
+        if cpu0 is None:
+            return
+        try:
+            cpu1 = time.thread_time()
+        except (OSError, ValueError, AttributeError):
+            return
+        self._total_hold_cpu_s = (self._total_hold_cpu_s or 0.0) + max(0.0, cpu1 - cpu0)
 
     def _account_holder_locked(self, name: str | None, held: float) -> None:
         """Add one finished hold to the per-holder table. Caller holds the lock."""
@@ -507,6 +531,9 @@ class WriterGate:
                 # ``held_for_s`` beside it is that hold, and adding them would be the
                 # reader's decision, not a number this method may invent.
                 "total_held_s": round(self._total_held_s, 4),
+                # The holders' CPU over the same finished holds (R458): ``total_hold_cpu_s / total_held_s`` is the share of the busy time
+                # spent computing, the rest waiting. None where the OS cannot give a thread's CPU; not a share of uptime (see busy_share).
+                "total_hold_cpu_s": None if self._total_hold_cpu_s is None else round(self._total_hold_cpu_s, 4),
                 # S2.6: the name, not just the number. ``holder``/``held_for_s``
                 # are None when the gate is free -- absent state, never a 0 that
                 # would read as "held for no time".
