@@ -314,15 +314,21 @@ def test_the_registry_section_is_reentrant_for_the_same_thread():
 
 
 def _another_thread_takes_it(target: Path) -> bool:
-    """True when a second thread gets the lock within 10 s (a daemon thread, so a stuck lock fails this test and does not hang the suite)."""
+    """True when a second thread gets the lock within 10 s and has let it go within 10 s more (a daemon thread, so a stuck lock fails this test and does not hang the suite).
+
+    It returns only after that thread has left the lock: a caller that probes the operating-system lock next would otherwise race the helper's own release.
+    """
     got = threading.Event()
 
     def run() -> None:
         with lock(target):
             got.set()
 
-    threading.Thread(target=run, daemon=True).start()
-    return got.wait(10)
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    ok = got.wait(10)
+    t.join(10)
+    return ok and not t.is_alive()
 
 
 def test_an_interrupt_in_the_hold_statistic_after_the_section_leaves_nothing_held(tmp_path, monkeypatch):
