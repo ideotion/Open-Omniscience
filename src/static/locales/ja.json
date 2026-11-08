@@ -7419,5 +7419,6 @@
   "Protected mode is on, so the update did not start: it would connect to GitHub and PyPI directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.": "保護モードがオンのため、更新は開始されませんでした。更新はプロキシを経由せず GitHub と PyPI に直接接続します。更新するには標準モードに切り替えるか、プロキシ経由で手動で更新してください。",
   "Airplane mode is on, so the update did not start. Go online first.": "機内モードがオンのため、更新は開始されませんでした。先にオンラインにしてください。",
   "The new version did not start, so the update was undone and the previous version started again.": "新しいバージョンが起動しなかったため、更新を取り消し、以前のバージョンを再起動しました。",
-  "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "前回の更新はインストールされましたが、アプリの起動に長い時間がかかりました。動作がおかしい場合は、インストーラーを再実行してください。"
+  "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "前回の更新はインストールされましたが、アプリの起動に長い時間がかかりました。動作がおかしい場合は、インストーラーを再実行してください。",
+  "The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.": "更新のインストール中にアプリが再び起動されました。新しいバージョン全体で動作するよう、いったん閉じてもう一度起動してください。"
 }

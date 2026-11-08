@@ -7419,5 +7419,6 @@
   "Protected mode is on, so the update did not start: it would connect to GitHub and PyPI directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.": "संरक्षित मोड चालू है, इसलिए अपडेट शुरू नहीं हुआ: यह आपके प्रॉक्सी के बजाय सीधे GitHub और PyPI से जुड़ता। अपडेट करने के लिए मानक मोड पर जाएँ, या अपने प्रॉक्सी के माध्यम से हाथ से अपडेट करें।",
   "Airplane mode is on, so the update did not start. Go online first.": "हवाई जहाज़ मोड चालू है, इसलिए अपडेट शुरू नहीं हुआ। पहले ऑनलाइन जाएँ।",
   "The new version did not start, so the update was undone and the previous version started again.": "नया संस्करण शुरू नहीं हुआ, इसलिए अपडेट वापस लिया गया और पिछला संस्करण फिर से शुरू हुआ।",
-  "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "पिछला अपडेट इंस्टॉल हो गया, लेकिन ऐप को शुरू होने में बहुत समय लगा। यदि यह ठीक से काम न करे, तो इंस्टॉलर फिर से चलाएँ।"
+  "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "पिछला अपडेट इंस्टॉल हो गया, लेकिन ऐप को शुरू होने में बहुत समय लगा। यदि यह ठीक से काम न करे, तो इंस्टॉलर फिर से चलाएँ।",
+  "The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.": "अपडेट इंस्टॉल होते समय ऐप फिर से शुरू किया गया। इसे बंद करें और एक बार फिर शुरू करें ताकि यह पूरा नया संस्करण चलाए।"
 }

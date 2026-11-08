@@ -8,6 +8,7 @@ Started detached by ``src/maintenance/self_update.py:launch_helper`` with one ar
 Steps, each of which refuses by leaving the install exactly as it was:
 
 1. wait for the app's process to exit (up to ``WAIT_S``, 30 min; if it does not, touch NOTHING and say so: this never kills the app);
+   then, when something already answers on the app's port (the person or a supervisor started it again), refuse and touch nothing;
 2. the checkout must be on ``main``, clean, with ``origin`` = this repository over https;
 3. ``git fetch`` the named ref, and require the fetched commit to equal the planned ``sha`` byte for byte;
 4. ``git merge --ff-only`` it (cannot discard a local commit);
@@ -17,7 +18,11 @@ Steps, each of which refuses by leaving the install exactly as it was:
    version shown can lag until the installer is re-run); if the install fails, ``git reset --hard`` back to the old commit (safe: the tree was clean and only this script moved it) AND the old lock is installed
    again, so the old code never starts on the new packages (``rollback_incomplete`` when even that fails: re-run the installer);
 6. start the launcher again and watch it: when the launcher exits before the app ever answers on its port, the update is undone the same way
-   (``start_failed_rolled_back``) and the launcher started once more on the old version; write ``update-result.json`` in the data directory
+   (``start_failed_rolled_back``) and the launcher started once more on the old version. On Windows the launcher is started with
+   ``OO_UPDATE_WATCH`` so its window ends with the server instead of waiting for a key (``scripts/launch.cmd``), and a window the person CLOSED
+   (``STATUS_CONTROL_C_EXIT``) is their stop, never undone. A new version that migrated the database before failing is rolled back onto that
+   database: the old code then runs on the newer schema, which works only as far as that migration added rather than changed (stated, not
+   checked here); the result says the start failed, and re-running the installer on the new version is the way forward; write ``update-result.json`` in the data directory
    (read by Settings -> Advanced after the restart).
 
 Every child (git, pip, the build step, the launcher) runs WITHOUT the passphrase variables (``SECRET_ENV``): the server already starts this
@@ -197,31 +202,42 @@ def wait_for_server(port: int, limit: float = 120.0, *, answers=server_answers, 
     return True
 
 
-def relaunch(root: Path, *, popen=subprocess.Popen):
-    """Start the launcher again; returns its process (``None`` when it could not be started)."""
+def relaunch(root: Path, *, popen=subprocess.Popen, watched: bool = False):
+    """Start the launcher again; returns its process (``None`` when it could not be started). ``watched``: the Windows launcher ends with its
+    server instead of waiting for a key, so :func:`watch_start` can see a failed start."""
     quiet = subprocess.DEVNULL
+    env = child_env()
+    if watched:
+        env["OO_UPDATE_WATCH"] = "1"
     try:
         if os.name == "nt":
             # A console of its own: the launcher says "close this window to stop the app", so it needs a window (never DETACHED_PROCESS here).
             # No std handle redirected: passing any one makes Popen hand the console ALL of this helper's (NUL) handles, and the window is blank.
-            return popen(["cmd", "/c", str(root / "scripts" / "launch.cmd")], cwd=str(root), env=child_env(), creationflags=0x00000010)  # noqa: S603
+            return popen(["cmd", "/c", str(root / "scripts" / "launch.cmd")], cwd=str(root), env=env, creationflags=0x00000010)  # noqa: S603
         return popen(  # noqa: S603 - fixed argv, no shell
-            ["bash", str(root / "scripts" / "launch.sh")], stdin=quiet, stdout=quiet, stderr=quiet, cwd=str(root), env=child_env(), start_new_session=True,
+            ["bash", str(root / "scripts" / "launch.sh")], stdin=quiet, stdout=quiet, stderr=quiet, cwd=str(root), env=env, start_new_session=True,
         )
     except OSError:
         return None
 
 
+#: The exit status of a console process whose window was closed (or that got Ctrl-C), as Python reports it on Windows, unsigned and signed.
+CLOSED_BY_PERSON = (0xC000013A, -1073741510)
+
+
 def watch_start(proc, port: int, limit: float = BOOT_WAIT_S, *, answers=server_answers, sleep=time.sleep) -> str:
     """``up`` once the app answers on its port; ``exited`` when the launcher ended (or never started) before it did, which is a failed start;
-    ``unknown`` when neither happened within ``limit`` (a long first boot, or a prompt waiting in the launcher's window): never undone then,
-    because the new version may be mid-migration."""
+    ``closed`` when it ended because the person closed its window (their stop, never undone); ``unknown`` when nothing happened within ``limit``
+    (a long first boot): never undone then either, because the new version may be mid-migration."""
     deadline = time.monotonic() + limit
     while True:
         if answers(port):
             return "up"
-        if proc is None or proc.poll() is not None:
-            return "up" if answers(port) else "exited"
+        code = None if proc is None else proc.poll()
+        if proc is None or code is not None:
+            if answers(port):
+                return "up"
+            return "closed" if code in CLOSED_BY_PERSON else "exited"
         if time.monotonic() >= deadline:
             return "unknown"
         sleep(2)
@@ -338,21 +354,30 @@ def main(argv: list[str]) -> int:
         if not wait_for_exit(int(plan["pid"])):
             write_result(plan, "app_did_not_stop", "", data_dir)
             return 1  # the app is still running and untouched; nothing was changed
+        port = int(plan.get("port") or 8000)
+        if server_answers(port):
+            # Started again already (by hand, or a supervisor): swapping files under a running app would mix two versions. Touch nothing.
+            write_result(plan, "app_running_again", "", data_dir)
+            return 1
         status, old = apply(plan)
         write_result(plan, status, old, data_dir)
         with contextlib.suppress(OSError):
             plan_path.unlink()
-        proc = relaunch(root)
+        if status == "updated" and server_answers(port):
+            # Somebody started the app while the files were being swapped: it may have loaded some of each version. Say so; do not start a second.
+            write_result(plan, "app_started_during_update", old, data_dir)
+            return 1
+        proc = relaunch(root, watched=status == "updated")
         if status == "updated":
-            started = watch_start(proc, int(plan.get("port") or 8000))
-            if started == "exited":
+            started = watch_start(proc, port)
+            if started == "exited" and not server_answers(port):
                 # The new version did not come up: undo it and start the old one, which ran a minute ago.
                 changed = changed_files(root, old, plan["sha"])
                 ok = roll_back(root, old, changed, plan.get("python") or sys.executable)
                 status = "start_failed_rolled_back" if ok else "rollback_incomplete"
                 write_result(plan, status, old, data_dir)
                 relaunch(root)
-            elif started == "unknown":
+            elif started != "up":
                 status = "start_unconfirmed"
                 write_result(plan, status, old, data_dir)
         return 0 if status in ("updated", "already_current", "start_unconfirmed") else 1

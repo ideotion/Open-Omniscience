@@ -67,5 +67,11 @@ if exist "%MARK%" (
 :stopped
 echo.
 echo   Open Omniscience has stopped. Press any key to close.
+rem Started again by the in-app updater (scripts\apply_update.py), which watches this window's process to tell a failed start from a
+rem running app: it ends here instead of waiting for a key, or the updater could not see that the new version never came up.
+if defined OO_UPDATE_WATCH (
+  endlocal
+  exit /b 0
+)
 pause >nul
 endlocal

@@ -112,6 +112,12 @@ def pick_newest_tag(tags: Any) -> tuple[str, str] | None:
 # --- the install we are running from ---------------------------------------- #
 
 
+def _env_without_passphrases() -> dict[str, str]:
+    from src.llm.model_store import child_env
+
+    return child_env()
+
+
 def _git(root: Path, *args: str, timeout: int = 20) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603 - fixed argv, no shell
         ["git", "-C", str(root), *args],
@@ -119,7 +125,7 @@ def _git(root: Path, *args: str, timeout: int = 20) -> subprocess.CompletedProce
         text=True,
         timeout=timeout,
         check=False,
-        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        env={**_env_without_passphrases(), "GIT_TERMINAL_PROMPT": "0"},
     )
 
 
@@ -317,6 +323,17 @@ PROTECTED_REFUSAL = (
 )
 
 
+def protected_mode_chosen() -> bool:
+    """True when protected mode is chosen, or the settings cannot be read (the app's own rule, R117: then it is protected)."""
+    try:
+        from src.safety.settings import load_settings
+
+        st = load_settings()
+        return bool(st.is_protected or st.read_failed)
+    except Exception:  # noqa: BLE001 - unreadable settings: protected, never assume a direct connection is allowed
+        return True
+
+
 def refuse_offline_or_protected() -> None:
     """Refuse an apply while airplane mode is on or protected mode is chosen. The helper's ``git fetch`` and ``pip install`` run in a separate
     process after this app has exited, where neither the socket guard nor the proxy settings reach, so the gate has to be HERE, before anything
@@ -326,14 +343,7 @@ def refuse_offline_or_protected() -> None:
 
     if kill_switch_active():
         raise AirplaneRefused(AIRPLANE_REFUSAL)
-    try:
-        from src.safety.settings import load_settings
-
-        st = load_settings()
-        protected = bool(st.is_protected or st.read_failed)
-    except Exception:  # noqa: BLE001 - unreadable settings: refuse, never assume a direct connection is allowed
-        protected = True
-    if protected:
+    if protected_mode_chosen():
         raise ProtectedRefused(PROTECTED_REFUSAL)
 
 

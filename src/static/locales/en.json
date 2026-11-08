@@ -7419,5 +7419,6 @@
   "Protected mode is on, so the update did not start: it would connect to GitHub and PyPI directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.": "Protected mode is on, so the update did not start: it would connect to GitHub and PyPI directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.",
   "Airplane mode is on, so the update did not start. Go online first.": "Airplane mode is on, so the update did not start. Go online first.",
   "The new version did not start, so the update was undone and the previous version started again.": "The new version did not start, so the update was undone and the previous version started again.",
-  "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer."
+  "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.",
+  "The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.": "The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version."
 }

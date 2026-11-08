@@ -7419,5 +7419,6 @@
   "Protected mode is on, so the update did not start: it would connect to GitHub and PyPI directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.": "O modo protegido está ativo, por isso a atualização não começou: ela se conectaria diretamente ao GitHub e ao PyPI, não pelo seu proxy. Mude para o modo padrão para atualizar, ou atualize manualmente pelo seu proxy.",
   "Airplane mode is on, so the update did not start. Go online first.": "O modo avião está ativo, por isso a atualização não começou. Fique online primeiro.",
   "The new version did not start, so the update was undone and the previous version started again.": "A nova versão não iniciou, por isso a atualização foi desfeita e a versão anterior foi iniciada de novo.",
-  "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "A última atualização foi instalada, mas a aplicação demorou muito a iniciar. Se algo falhar, execute o instalador de novo."
+  "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "A última atualização foi instalada, mas a aplicação demorou muito a iniciar. Se algo falhar, execute o instalador de novo.",
+  "The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.": "A aplicação foi iniciada de novo enquanto a atualização era instalada. Feche-a e inicie-a mais uma vez para que execute toda a nova versão."
 }

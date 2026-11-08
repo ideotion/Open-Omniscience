@@ -489,6 +489,8 @@ def test_the_ui_asks_the_consent_popup_before_the_update_starts():
     body = js[js.index("async function updApply()"):js.index("(function _updWire()")]
     gate, confirm, post = body.index("await ensureOnline("), body.index("window.confirm("), body.index('"/api/system/update/apply"')
     assert gate < confirm < post
+    # protected mode is read first, so the consent popup never takes the app online for an update the server will refuse
+    assert body.index('st.blocked === "protected"') < gate
     assert 'code === "protected"' in body and 'code === "airplane"' in body
 
 
@@ -533,6 +535,9 @@ def test_watch_start_tells_up_from_a_failed_start_from_a_slow_one():
     assert h.watch_start(_Proc(1), 1, 5.0, answers=lambda p: False, sleep=nap) == "exited"
     assert h.watch_start(None, 1, 5.0, answers=lambda p: False, sleep=nap) == "exited"
     assert h.watch_start(_Proc(None), 1, 0.0, answers=lambda p: False, sleep=nap) == "unknown"
+    # a window the person closed is their stop, not a failed start
+    assert h.watch_start(_Proc(0xC000013A), 1, 5.0, answers=lambda p: False, sleep=nap) == "closed"
+    assert h.watch_start(_Proc(-1073741510), 1, 5.0, answers=lambda p: False, sleep=nap) == "closed"
 
 
 def test_a_new_version_that_does_not_start_is_undone_and_the_old_one_started(tmp_path, monkeypatch):
@@ -542,6 +547,7 @@ def test_a_new_version_that_does_not_start_is_undone_and_the_old_one_started(tmp
     plan = tmp_path / "update-plan.json"
     plan.write_text(_json.dumps({"ref": "v0.6.0", "sha": SHA_B, "kind": "tag", "pid": 111, "root": str(tmp_path), "port": "1"}), encoding="utf-8")
     monkeypatch.setattr(h, "wait_for_exit", lambda pid, *a, **k: True)
+    monkeypatch.setattr(h, "server_answers", lambda port: False)
     monkeypatch.setattr(h, "apply", lambda plan, **k: ("updated", SHA_A))
     launched: list = []
     monkeypatch.setattr(h, "relaunch", lambda root, **k: launched.append(root) or _Proc(1))
@@ -585,3 +591,80 @@ def test_every_tag_page_is_read(monkeypatch):
 
     out = su.check(fetch)
     assert out["ref"] == "v0.10.0" and seen == [su.TAGS_URL, su.TAGS_URL + "&page=2"]
+
+
+def _plan_file(tmp_path):
+    import json as _json
+
+    plan = tmp_path / "update-plan.json"
+    plan.write_text(_json.dumps({"ref": "v0.6.0", "sha": SHA_B, "kind": "tag", "pid": 111, "root": str(tmp_path), "port": "1"}), encoding="utf-8")
+    return plan
+
+
+def _result(tmp_path, h):
+    import json as _json
+
+    return _json.loads((tmp_path / h.RESULT_FILE).read_text(encoding="utf-8"))["status"]
+
+
+def test_an_app_already_running_again_is_never_swapped_under(tmp_path, monkeypatch):
+    h = _helper()
+    plan = _plan_file(tmp_path)
+    applied: list = []
+    launched: list = []
+    monkeypatch.setattr(h, "wait_for_exit", lambda pid, *a, **k: True)
+    monkeypatch.setattr(h, "apply", lambda plan, **k: applied.append(1) or ("updated", SHA_A))
+    monkeypatch.setattr(h, "relaunch", lambda root, **k: launched.append(k) or _Proc(None))
+    monkeypatch.setattr(h, "server_answers", lambda port: True)
+    assert h.main(["x", str(plan)]) == 1 and applied == [] and launched == []
+    assert _result(tmp_path, h) == "app_running_again"
+    # started by hand WHILE the files were swapped: said so, and no second launcher
+    plan = _plan_file(tmp_path)
+    answers = iter([False, True])
+    monkeypatch.setattr(h, "server_answers", lambda port: next(answers))
+    assert h.main(["x", str(plan)]) == 1 and applied == [1] and launched == []
+    assert _result(tmp_path, h) == "app_started_during_update"
+
+
+def test_a_failed_start_whose_rollback_fails_says_so(tmp_path, monkeypatch):
+    h = _helper()
+    plan = _plan_file(tmp_path)
+    monkeypatch.setattr(h, "wait_for_exit", lambda pid, *a, **k: True)
+    monkeypatch.setattr(h, "server_answers", lambda port: False)
+    monkeypatch.setattr(h, "apply", lambda plan, **k: ("updated", SHA_A))
+    launched: list = []
+    monkeypatch.setattr(h, "relaunch", lambda root, **k: launched.append(k) or _Proc(1))
+    monkeypatch.setattr(h, "watch_start", lambda proc, port, *a, **k: "exited")
+    monkeypatch.setattr(h, "changed_files", lambda root, old, new, **k: ["requirements.lock"])
+    monkeypatch.setattr(h, "roll_back", lambda *a, **k: False)
+    assert h.main(["x", str(plan)]) == 1 and _result(tmp_path, h) == "rollback_incomplete"
+    assert launched[0] == {"watched": True} and launched[1] == {}  # only the start being judged is watched
+    # a window the person closed is their stop: never undone
+    plan = _plan_file(tmp_path)
+    undone: list = []
+    monkeypatch.setattr(h, "roll_back", lambda *a, **k: undone.append(1) or True)
+    monkeypatch.setattr(h, "watch_start", lambda proc, port, *a, **k: "closed")
+    assert h.main(["x", str(plan)]) == 0 and undone == [] and _result(tmp_path, h) == "start_unconfirmed"
+
+
+def test_the_watched_windows_launcher_ends_with_its_server_instead_of_waiting_for_a_key(tmp_path):
+    h = _helper()
+    seen: list = []
+    h.relaunch(tmp_path, popen=lambda argv, **k: seen.append(k), watched=True)
+    h.relaunch(tmp_path, popen=lambda argv, **k: seen.append(k))
+    assert seen[0]["env"].get("OO_UPDATE_WATCH") == "1" and "OO_UPDATE_WATCH" not in seen[1]["env"]
+    cmd = (ROOT / "scripts" / "launch.cmd").read_text(encoding="utf-8")
+    stopped = cmd[cmd.index(":stopped"):]
+    assert stopped.index("if defined OO_UPDATE_WATCH") < stopped.index("pause >nul")
+
+
+def test_update_status_names_protected_mode_for_the_button(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    c = TestClient(app, base_url="http://127.0.0.1")
+    _standard_settings(monkeypatch, fetch_mode="protected")
+    assert c.get("/api/system/update/status").json()["blocked"] == "protected"
+    _standard_settings(monkeypatch)
+    assert c.get("/api/system/update/status").json()["blocked"] is None

@@ -102,11 +102,18 @@ def update_check() -> dict:
 @router.get("/update/status")
 def update_status() -> dict:
     """Local reads only: this install's updatability and what the helper recorded about the last attempt."""
-    from src.maintenance.self_update import current_version, install_status, last_result
+    from src.maintenance.self_update import (
+        current_version,
+        install_status,
+        last_result,
+        protected_mode_chosen,
+    )
 
     st = install_status()
     return {
         "current": current_version(),
+        # read first by the button, so protected mode is named before the consent popup would switch airplane mode off for nothing
+        "blocked": "protected" if protected_mode_chosen() else None,
         "install": {k: st[k] for k in ("kind", "can_apply", "reason", "manual_steps")},
         "last_result": last_result(),
     }

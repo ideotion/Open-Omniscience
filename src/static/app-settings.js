@@ -2113,6 +2113,7 @@
           if (r && (r.status === "updated" || r.status === "already_current")) say = t("The last update was installed.");
           else if (r && r.status === "started") say = t("The last update did not finish. If the app misbehaves, re-run the installer.");
           else if (r && r.status === "start_failed_rolled_back") say = t("The new version did not start, so the update was undone and the previous version started again.");
+          else if (r && r.status === "app_started_during_update") say = t("The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.");
           else if (r && r.status === "start_unconfirmed") say = t("The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.");
           else if (r && r.status === "rollback_incomplete") say = t("The last update failed and could not fully restore the previous version. Re-run the installer.");
           else if (r) say = t("The last update was not applied; the previous version was kept.");
@@ -2144,6 +2145,12 @@
       const t = _updT();
       const msg = $("upd-msg");
       if (!_updCheck || !_updCheck.update_available) return;
+      const protectedSay = t("Protected mode is on, so the update did not start: it would connect to GitHub and PyPI directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.");
+      // Protected mode is refused by the server anyway: say so BEFORE the consent popup, which would otherwise take the app online for nothing.
+      try {
+        const st = await api("/api/system/update/status", { polled: true });
+        if (st && st.blocked === "protected") { if (msg) msg.textContent = protectedSay; return; }
+      } catch (_e) { /* the server's own refusal below still names it */ }
       // The helper downloads after this app has stopped, where no socket guard reaches: so the ONE consent popup comes first (invariant #14),
       // and the server refuses the apply anyway while airplane mode is on.
       if (!await ensureOnline(t("Download and install the app update from GitHub and PyPI"))) return;
@@ -2158,7 +2165,7 @@
       } catch (e) {
         const code = e && e.detail && e.detail.code;
         let say = t("The update could not start; nothing was changed.");
-        if (code === "protected") say = t("Protected mode is on, so the update did not start: it would connect to GitHub and PyPI directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.");
+        if (code === "protected") say = protectedSay;
         else if (code === "airplane") say = t("Airplane mode is on, so the update did not start. Go online first.");
         if (msg) msg.textContent = say;
         if (go) go.disabled = false;
