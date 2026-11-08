@@ -1200,6 +1200,7 @@ POPUP_LANE_LISTS = [
     ("src.stats.fetch", "OWID_HOSTS", ("climate",)),
     ("src.stats.fetch", "ONI_HOSTS", ("climate",)),
     ("src.stats.fetch", "USGS_HOSTS", ("climate",)),
+    ("src.stats.fetch", "GHCND_HOSTS", ("climate",)),
     ("src.stats.fetch", "WORLDBANK_HOSTS", ("statistics",)),
     ("src.stats.fetch", "EUROSTAT_HOSTS", ("statistics",)),
     ("src.stats.fetch", "OWID_GRAPHER_HOSTS", ("statistics",)),

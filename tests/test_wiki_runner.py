@@ -501,3 +501,89 @@ def test_the_production_service_creates_the_lane_FILE_rather_than_raising_into_t
     assert opener.index('create_lane("wiki")') < opener.index('lane_session("wiki")'), (
         "the lane must be created WITH its schema before it is opened"
     )
+
+
+# --------------------------------------------------------------------------- #
+# The stream's per-event stop check reads the setting at most once per STATE_READ_TTL_S.
+# --------------------------------------------------------------------------- #
+def _clocked_runner(state_of, now):
+    return WikiLaneRunner(
+        adapter=_filled_adapter(),
+        stream=WikiEventStream(
+            session=FixtureStreamSession(), editions=(EDITION,), sleep=lambda _s: None
+        ),
+        lane_session=lambda: lane_session("wiki"),
+        state_of=state_of,
+        hot_sets=lambda: _hot(),
+        budget=_plenty,
+        sleep=lambda _s: None,
+        monotonic=lambda: now["t"],
+    )
+
+
+def test_the_per_event_stop_check_reads_the_setting_once_per_ttl_not_once_per_event(lane):
+    """The measured cost (Windows run, 2026-11-07, F3): one settings read per firehose event."""
+    from src.wiki.runner import STATE_READ_TTL_S
+
+    reads = {"n": 0}
+    now = {"t": 100.0}
+
+    def state_of() -> str:
+        reads["n"] += 1
+        return "running"
+
+    runner = _clocked_runner(state_of, now)
+    assert [runner._stream_should_stop() for _ in range(5000)] == [False] * 5000
+    assert reads["n"] == 1, "5,000 events inside the window cost ONE read"
+    now["t"] += STATE_READ_TTL_S + 0.01
+    assert runner._stream_should_stop() is False
+    assert reads["n"] == 2, "the answer is read again once the window has passed"
+
+
+def test_a_STOP_is_never_reused_and_is_seen_within_the_window(lane):
+    from src.wiki.runner import STATE_READ_TTL_S
+
+    state = {"value": "running"}
+    now = {"t": 0.0}
+    runner = _clocked_runner(lambda: state["value"], now)
+    assert runner._stream_should_stop() is False
+    state["value"] = "halted"
+    assert runner._stream_should_stop() is False, "inside the window the keep-going answer stands (the stated trade)"
+    now["t"] += STATE_READ_TTL_S + 0.01
+    assert runner._stream_should_stop() is True, "the Stop is seen as soon as the window ends"
+    assert runner._stream_should_stop() is True, "and a stop is read live every time after"
+    state["value"] = "running"
+    assert runner._stream_should_stop() is False, "nothing about a stop is remembered either"
+
+
+def test_the_runners_own_stop_event_is_read_live_inside_the_window(lane):
+    now = {"t": 0.0}
+    runner = _clocked_runner(lambda: "running", now)
+    assert runner._stream_should_stop() is False
+    runner._stop.set()
+    assert runner._stream_should_stop() is True, "stop() takes effect at the next event, window or not"
+
+
+def test_an_UNREADABLE_setting_is_not_cached_as_keep_going(lane):
+    calls = {"n": 0}
+    now = {"t": 0.0}
+
+    def flaky() -> str:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("unreadable")
+        return "running"
+
+    runner = _clocked_runner(flaky, now)
+    assert runner._stream_should_stop() is True, "an unreadable setting stops the stream at once"
+    assert runner._stream_should_stop() is False, "and that stop left no keep-going answer behind"
+    assert calls["n"] == 2
+
+
+def test_the_stream_is_handed_the_cached_check_not_the_raw_one(lane):
+    import inspect
+
+    from src.wiki import runner as mod
+
+    body = inspect.getsource(mod.WikiLaneRunner._stream_body)
+    assert "should_stop=self._stream_should_stop" in body

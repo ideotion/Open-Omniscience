@@ -6809,7 +6809,7 @@ org.zw
 
 // newGTLDs
 
-// List of new gTLDs imported from https://www.icann.org/resources/registries/gtlds/v2/gtlds.json on 2026-07-24T16:40:16Z
+// List of new gTLDs imported from https://www.icann.org/resources/registries/gtlds/v2/gtlds.json on 2026-10-30T19:51:02Z
 // This list is auto-generated, don't edit it manually.
 // aaa : American Automobile Association, Inc.
 // https://www.iana.org/domains/root/db/aaa.html
@@ -7627,7 +7627,7 @@ coffee
 // https://www.iana.org/domains/root/db/college.html
 college
 
-// cologne : dotKoeln GmbH
+// cologne : domainworx Service & Management GmbH
 // https://www.iana.org/domains/root/db/cologne.html
 cologne
 
@@ -8495,10 +8495,6 @@ healthcare
 // https://www.iana.org/domains/root/db/help.html
 help
 
-// helsinki : City of Helsinki
-// https://www.iana.org/domains/root/db/helsinki.html
-helsinki
-
 // here : Charleston Road Registry Inc.
 // https://www.iana.org/domains/root/db/here.html
 here
@@ -8795,10 +8791,6 @@ jprs
 // https://www.iana.org/domains/root/db/juegos.html
 juegos
 
-// juniper : JUNIPER NETWORKS, INC.
-// https://www.iana.org/domains/root/db/juniper.html
-juniper
-
 // kaufen : Dog Beach, LLC
 // https://www.iana.org/domains/root/db/kaufen.html
 kaufen
@@ -8843,7 +8835,7 @@ kitchen
 // https://www.iana.org/domains/root/db/kiwi.html
 kiwi
 
-// koeln : dotKoeln GmbH
+// koeln : domainworx Service & Management GmbH
 // https://www.iana.org/domains/root/db/koeln.html
 koeln
 
@@ -10219,7 +10211,7 @@ stada
 // https://www.iana.org/domains/root/db/staples.html
 staples
 
-// star : Star India Private Limited
+// star : JioStar India Private Limited
 // https://www.iana.org/domains/root/db/star.html
 star
 
@@ -11347,9 +11339,10 @@ barsy.ca
 *.compute.estate
 *.alces.network
 
-// Alibaba Cloud API Gateway
+// Alibaba
 // Submitted by Alibaba Cloud Security <cloud_product_security_team@alibaba-inc.com>
 alibabacloudcs.com
+*.ztna-dingtalk.com
 ms.fun
 ms.show
 
@@ -11411,6 +11404,32 @@ execute-api.us-gov-west-1.amazonaws.com
 execute-api.us-west-1.amazonaws.com
 execute-api.us-west-2.amazonaws.com
 
+// Amazon Bedrock AgentCore Identity Consent Portal
+// Submitted by AWS Security <psl-maintainers@amazon.com>
+// Reference: _MPIAF4IUV7E6TWCRJLOA3T4PHY
+consent-portal.bedrock-agentcore.ap-northeast-1.amazonaws.com
+consent-portal.bedrock-agentcore.ap-northeast-2.amazonaws.com
+consent-portal.bedrock-agentcore.ap-south-1.amazonaws.com
+consent-portal.bedrock-agentcore.ap-south-2.amazonaws.com
+consent-portal.bedrock-agentcore.ap-southeast-1.amazonaws.com
+consent-portal.bedrock-agentcore.ap-southeast-2.amazonaws.com
+consent-portal.bedrock-agentcore.ap-southeast-5.amazonaws.com
+consent-portal.bedrock-agentcore.ap-southeast-7.amazonaws.com
+consent-portal.bedrock-agentcore.ca-central-1.amazonaws.com
+consent-portal.bedrock-agentcore.eu-central-1.amazonaws.com
+consent-portal.bedrock-agentcore.eu-north-1.amazonaws.com
+consent-portal.bedrock-agentcore.eu-south-1.amazonaws.com
+consent-portal.bedrock-agentcore.eu-south-2.amazonaws.com
+consent-portal.bedrock-agentcore.eu-west-1.amazonaws.com
+consent-portal.bedrock-agentcore.eu-west-2.amazonaws.com
+consent-portal.bedrock-agentcore.eu-west-3.amazonaws.com
+consent-portal.bedrock-agentcore.sa-east-1.amazonaws.com
+consent-portal.bedrock-agentcore.us-east-1.amazonaws.com
+consent-portal.bedrock-agentcore.us-east-2.amazonaws.com
+consent-portal.bedrock-agentcore.us-gov-west-1.amazonaws.com
+consent-portal.bedrock-agentcore.us-west-1.amazonaws.com
+consent-portal.bedrock-agentcore.us-west-2.amazonaws.com
+
 // Amazon CloudFront
 // Submitted by Donavan Miller <donavanm@amazon.com>
 // Reference: 54144616-fd49-4435-8535-19c6a601bdb3
@@ -11418,9 +11437,10 @@ cloudfront.net
 
 // Amazon Cognito
 // Submitted by AWS Security <psl-maintainers@amazon.com>
-// Reference: d7d4a954-976e-403e-a010-de9ed0cfbbd1
+// Reference: dd7b1be3-c336-4750-8e69-85d381b572dd
 auth.af-south-1.amazoncognito.com
 auth.ap-east-1.amazoncognito.com
+auth.ap-east-2.amazoncognito.com
 auth.ap-northeast-1.amazoncognito.com
 auth.ap-northeast-2.amazoncognito.com
 auth.ap-northeast-3.amazoncognito.com
@@ -11431,6 +11451,7 @@ auth.ap-southeast-2.amazoncognito.com
 auth.ap-southeast-3.amazoncognito.com
 auth.ap-southeast-4.amazoncognito.com
 auth.ap-southeast-5.amazoncognito.com
+auth.ap-southeast-6.amazoncognito.com
 auth.ap-southeast-7.amazoncognito.com
 auth.ca-central-1.amazoncognito.com
 auth.ca-west-1.amazoncognito.com
@@ -11570,9 +11591,33 @@ emrappui-prod.us-west-2.amazonaws.com
 emrnotebooks-prod.us-west-2.amazonaws.com
 emrstudio-prod.us-west-2.amazonaws.com
 
+// Amazon Lightsail
+// Submitted by AWS Security <psl-maintainers@amazon.com>
+// Reference: _BNEF4RCADXL7ELNLFZHYJMSMW4
+amazonlightsail.com
+*.ap-east-1.cs.amazonlightsail.com
+*.ap-northeast-1.cs.amazonlightsail.com
+*.ap-northeast-2.cs.amazonlightsail.com
+*.ap-south-1.cs.amazonlightsail.com
+*.ap-southeast-1.cs.amazonlightsail.com
+*.ap-southeast-2.cs.amazonlightsail.com
+*.ap-southeast-3.cs.amazonlightsail.com
+*.ap-southeast-5.cs.amazonlightsail.com
+*.ca-central-1.cs.amazonlightsail.com
+*.eu-central-1.cs.amazonlightsail.com
+*.eu-north-1.cs.amazonlightsail.com
+*.eu-south-2.cs.amazonlightsail.com
+*.eu-west-1.cs.amazonlightsail.com
+*.eu-west-2.cs.amazonlightsail.com
+*.eu-west-3.cs.amazonlightsail.com
+*.sa-east-1.cs.amazonlightsail.com
+*.us-east-1.cs.amazonlightsail.com
+*.us-east-2.cs.amazonlightsail.com
+*.us-west-2.cs.amazonlightsail.com
+
 // Amazon Managed Workflows for Apache Airflow
 // Submitted by AWS Security <psl-maintainers@amazon.com>
-// Reference: bfd043cc-2816-451d-894e-612c6b61a438
+// Reference: _2D43DR7RQE2YAOU6AMDMC65YVY
 *.airflow.af-south-1.on.aws
 *.airflow.ap-east-1.on.aws
 *.airflow.ap-northeast-1.on.aws
@@ -11585,6 +11630,7 @@ emrstudio-prod.us-west-2.amazonaws.com
 *.airflow.ap-southeast-3.on.aws
 *.airflow.ap-southeast-4.on.aws
 *.airflow.ap-southeast-5.on.aws
+*.airflow.ap-southeast-7.on.aws
 *.airflow.ca-central-1.on.aws
 *.airflow.ca-west-1.on.aws
 *.airflow.eu-central-1.on.aws
@@ -12191,7 +12237,7 @@ awsapps.com
 
 // AWS Elastic Beanstalk
 // Submitted by AWS Security <psl-maintainers@amazon.com>
-// Reference: e4e02a54-eaf9-4fe7-b662-39ccbc011a04
+// Reference: _CCBN322SBHBCSUGB7BBDVTREDI
 cn-north-1.eb.amazonaws.com.cn
 cn-northwest-1.eb.amazonaws.com.cn
 elasticbeanstalk.com
@@ -12201,13 +12247,18 @@ ap-northeast-1.elasticbeanstalk.com
 ap-northeast-2.elasticbeanstalk.com
 ap-northeast-3.elasticbeanstalk.com
 ap-south-1.elasticbeanstalk.com
+ap-south-2.elasticbeanstalk.com
 ap-southeast-1.elasticbeanstalk.com
 ap-southeast-2.elasticbeanstalk.com
 ap-southeast-3.elasticbeanstalk.com
+ap-southeast-4.elasticbeanstalk.com
 ap-southeast-5.elasticbeanstalk.com
+ap-southeast-6.elasticbeanstalk.com
 ap-southeast-7.elasticbeanstalk.com
 ca-central-1.elasticbeanstalk.com
+ca-west-1.elasticbeanstalk.com
 eu-central-1.elasticbeanstalk.com
+eu-central-2.elasticbeanstalk.com
 eu-north-1.elasticbeanstalk.com
 eu-south-1.elasticbeanstalk.com
 eu-south-2.elasticbeanstalk.com
@@ -12269,9 +12320,10 @@ lambda-url.us-west-2.on.aws
 
 // AWS Transfer Family web apps
 // Submitted by AWS Security <psl-maintainers@amazon.com>
-// Reference: 9265cdd3-f017-42ab-98bb-08bf427d3fc9
+// Reference: _PYLGNY4SQAVGHDG4DGP234KPQY
 transfer-webapp.af-south-1.on.aws
 transfer-webapp.ap-east-1.on.aws
+transfer-webapp.ap-east-2.on.aws
 transfer-webapp.ap-northeast-1.on.aws
 transfer-webapp.ap-northeast-2.on.aws
 transfer-webapp.ap-northeast-3.on.aws
@@ -12282,6 +12334,7 @@ transfer-webapp.ap-southeast-2.on.aws
 transfer-webapp.ap-southeast-3.on.aws
 transfer-webapp.ap-southeast-4.on.aws
 transfer-webapp.ap-southeast-5.on.aws
+transfer-webapp.ap-southeast-6.on.aws
 transfer-webapp.ap-southeast-7.on.aws
 transfer-webapp.ca-central-1.on.aws
 transfer-webapp.ca-west-1.on.aws
@@ -12308,6 +12361,7 @@ transfer-webapp.us-west-1.on.aws
 transfer-webapp.us-west-2.on.aws
 transfer-webapp.cn-north-1.on.amazonwebservices.com.cn
 transfer-webapp.cn-northwest-1.on.amazonwebservices.com.cn
+transfer-webapp.eusc-de-east-1.on.amazonwebservices.eu
 
 // eero
 // Submitted by Yue Kang <eero-dynamic-dns@amazon.com>
@@ -12330,10 +12384,6 @@ antagonist.cloud
 claude.app
 claudeusercontent.com
 frame.claudeusercontent.com
-
-// Anysphere Inc : https://cursor.com
-// Submitted by Benson Liu <security@cursor.com>
-*.cursorusercontent.com
 
 // Apigee : https://apigee.com/
 // Submitted by Apigee Security Team <security@apigee.com>
@@ -12545,6 +12595,10 @@ radio.fm
 // Submitted by Merlin Zhao <devops@bubble.io>
 cdn.bubble.io
 bubbleapps.io
+
+// Butterfly Effect Pte. Ltd. : https://manus.im
+// Submitted by Manus Security Team <security@manus.ai>
+manus.space
 
 // bwCloud-OS : https://bwcloud-os.de/
 // Submitted by Klara Mall <dns@bwcloud-os.de>
@@ -12766,8 +12820,10 @@ co.no
 // Combell.com : https://www.combell.com
 // Submitted by Combell Team <support@combell.com>
 webhosting.be
+site.webhosting.be
 prvw.eu
 hosting-cluster.nl
+site.hosting-cluster.nl
 
 // Contentful GmbH : https://www.contentful.com
 // Submitted by Contentful Developer Experience Team <prd-ecosystem-dx@contentful.com>
@@ -12840,6 +12896,13 @@ dyndns.dappnode.io
 // Submitted by Paul Biggar <ops@darklang.com>
 builtwithdark.com
 darklang.io
+
+// Databricks, Inc. : https://www.databricks.com/
+// Submitted by Databricks Enterprise Security <entsec@databricks.com>
+aws.databricksapps.com
+*.azure.databricksapps.com
+gcp.databricksapps.com
+aws-gov.databricksapps.us
 
 // DataDetect, LLC. : https://datadetect.com
 // Submitted by Andrew Banchich <abanchich@sceven.com>
@@ -12979,6 +13042,10 @@ dnshome.it
 dyn.now
 heimdns.online
 ddns.wtf
+
+// Docs Flowy : https://docsflowy.com
+// Submitted by Haykel Maaoui <hello@docsflowy.com>
+docsflowy.site
 
 // DotArai : https://www.dotarai.com/
 // Submitted by Atsadawat Netcharadsang <atsadawat@dotarai.co.th>
@@ -13622,6 +13689,10 @@ preview.site
 // Submitted by Jason Zhu <jason@owtware.com>
 filegear.me
 
+// Files.com : https://www.files.com/
+// Submitted by Caleb Hearth <ops+public-suffix@files.com>
+hosted-by-files.com
+
 // Firebase, Inc.
 // Submitted by Chris Raynor <chris@firebase.com>
 firebaseapp.com
@@ -13720,10 +13791,6 @@ futuremailing.at
 gadget.app
 gadget.host
 
-// GCom Internet : https://www.gcom.net.au
-// Submitted by Leo Julius <support@gcom.net.au>
-aliases121.com
-
 // GDS : https://www.gov.uk/service-manual/technology/managing-domain-names
 // Submitted by Stephen Ford <hostmaster@digital.cabinet-office.gov.uk>
 campaign.gov.uk
@@ -13768,8 +13835,11 @@ gitlab.io
 
 // Gitplac.si : https://gitplac.si
 // Submitted by Aljaž Starc <me@aljaxus.eu>
-gitapp.si
 gitpage.si
+
+// Glide : https://www.glideapps.com
+// Submitted by Glide Engineering <engineering@heyglide.com>
+glideos.app
 
 // Global NOG Alliance : https://nogalliance.org/
 // Submitted by Sander Steffann <sander@nogalliance.org>
@@ -13923,6 +13993,8 @@ cloud.goog
 translate.goog
 *.usercontent.goog
 cloudfunctions.net
+cloud.run
+ai.studio
 
 // Goupile : https://goupile.fr
 // Submitted by Niels Martignene <hello@goupile.fr>
@@ -14013,6 +14085,7 @@ here.now
 // Heroku : https://www.heroku.com/
 // Submitted by Shumon Huque <public-dns@salesforce.com>
 herokuapp.com
+*.compute.herokuapp.com
 
 // Heyflow : https://www.heyflow.com
 // Submitted by Mirko Nitschke <tech@heyflow.com>
@@ -14219,6 +14292,10 @@ home64.de
 ipv64.de
 ipv64.net
 
+// IQHost / IQ Group : https://iqhost.pl/
+// Submitted by Adam Buhl <admin@iqhost.pl>
+iqhs.pl
+
 // ir.md : https://nic.ir.md
 // Submitted by Ali Soizi <info@nic.ir.md>
 ir.md
@@ -14393,10 +14470,6 @@ kiloapps.io
 kinghost.net
 uni5.net
 
-// KnightPoint Systems, LLC : http://www.knightpoint.com/
-// Submitted by Roy Keene <rkeene@knightpoint.com>
-knightpoint.systems
-
 // KoobinEvent, SL : https://www.koobin.com
 // Submitted by Iván Oliva <ivan.oliva@koobin.com>
 koobin.events
@@ -14405,10 +14478,6 @@ koobin.events
 // Submitted by Ben Francis <ben@krellian.com>
 webthings.io
 krellian.net
-
-// KUROKU LTD : https://kuroku.ltd/
-// Submitted by DisposaBoy <security@oya.to>
-oya.to
 
 // KV GmbH : https://www.nic.co.de
 // Submitted by KV GmbH <registry@kv-gmbh.de>
@@ -14474,6 +14543,10 @@ co.technology
 linkyard-cloud.ch
 linkyard.cloud
 
+// Linkyhost : https://www.linkyhost.com
+// Submitted by Linkyhost Support <support@linkyhost.com>
+linkyhost.page
+
 // Linode : https://linode.com
 // Submitted by <security@linode.com>
 members.linode.com
@@ -14523,6 +14596,7 @@ lohmus.me
 // Lovable : https://lovable.dev
 // Submitted by Fabian Hedin <security@lovable.dev>
 lovable.app
+auth.lovable.app
 lovableproject.com
 lovable.run
 lovable.sh
@@ -14845,6 +14919,48 @@ cust.retrosnub.co.uk
 // Nabu Casa : https://www.nabucasa.com
 // Submitted by Paulus Schoutsen <infra@nabucasa.com>
 ui.nabu.casa
+
+// NAVER Cloud : https://www.ncloud.com
+// Submitted by Storage Team <dl_ns_psl@navercorp.com>
+kr.object.fin-ncloudstorage.com
+s3-website.kr.object.fin-ncloudstorage.com
+kr.object.private.fin-ncloudstorage.com
+kr.gov-ncloudstorage.com
+kr-private.gov-ncloudstorage.com
+kr.object.gov-ncloudstorage.com
+s3-website.kr.object.gov-ncloudstorage.com
+krs.object.gov-ncloudstorage.com
+s3-website.krs.object.gov-ncloudstorage.com
+kr.object.private.gov-ncloudstorage.com
+krs.object.private.gov-ncloudstorage.com
+kr.objectstorage.ncloud.com
+sg.objectstorage.ncloud.com
+kr.ncloudstorage.com
+kr-naver.ncloudstorage.com
+kr-naver-dev.ncloudstorage.com
+kr-private.ncloudstorage.com
+de.object.ncloudstorage.com
+s3-website.de.object.ncloudstorage.com
+kr.object.ncloudstorage.com
+s3-website.kr.object.ncloudstorage.com
+sg.object.ncloudstorage.com
+s3-website.sg.object.ncloudstorage.com
+us.object.ncloudstorage.com
+s3-website.us.object.ncloudstorage.com
+kr.object.private.ncloudstorage.com
+sg.object.private.ncloudstorage.com
+kr.website.ncloudstorage.com
+kr-naver.website.ncloudstorage.com
+kr-naver-dev.website.ncloudstorage.com
+jp.object.ncpstorage.com
+jp.jp4.object.ncpstorage.com
+jp.jp5.object.ncpstorage.com
+kr.object.ncpstorage.com
+s3-website-jp.object.ncpstorage.com
+jp.object.private.ncpstorage.com
+jp.jp4.object.private.ncpstorage.com
+jp.jp5.object.private.ncpstorage.com
+kr.object.private.ncpstorage.com
 
 // Needle Tools GmbH : https://needle.tools
 // Submitted by Felix Herbst <security@needle.tools>
@@ -15208,6 +15324,10 @@ ox.rs
 // Submitted by Charly Coste <changaco@changaco.oy.lc>
 oy.lc
 
+// Page Lemon : https://pagelemon.com
+// Submitted by Aporia Research Ltd <hi@pagelemon.com>
+pagelemon.dev
+
 // Pagefog : https://pagefog.com/
 // Submitted by Derek Myers <derek@pagefog.com>
 pgfog.com
@@ -15237,10 +15357,6 @@ mypep.link
 // Perplexity AI : https://www.perplexity.ai/
 // Submitted by Alec Xiang <security@perplexity.ai>
 pplx.app
-
-// Perspecta : https://perspecta.com/
-// Submitted by Kenneth Van Alstyne <kvanalstyne@perspecta.com>
-perspecta.cloud
 
 // Ping Identity : https://www.pingidentity.com
 // Submitted by Ping Identity <security@pingidentity.com>
@@ -15358,8 +15474,6 @@ qcx.io
 // QNAP System Inc : https://www.qnap.com
 // Submitted by Nick Chang <cloudadmin@qnap.com>
 myqnapcloud.cn
-alpha-myqnapcloud.com
-dev-myqnapcloud.com
 mycloudnas.com
 mynascloud.com
 myqnapcloud.com
@@ -15460,39 +15574,18 @@ firewalledreplit.co
 id.firewalledreplit.co
 repl.co
 id.repl.co
-replit.dev
-archer.replit.dev
-bones.replit.dev
-canary.replit.dev
-global.replit.dev
-hacker.replit.dev
-id.replit.dev
-janeway.replit.dev
-kim.replit.dev
-kira.replit.dev
-kirk.replit.dev
-odo.replit.dev
-paris.replit.dev
-picard.replit.dev
-pike.replit.dev
-prerelease.replit.dev
-reed.replit.dev
-riker.replit.dev
-sisko.replit.dev
-spock.replit.dev
-staging.replit.dev
-sulu.replit.dev
-tarpit.replit.dev
-teams.replit.dev
-tucker.replit.dev
-wesley.replit.dev
-worf.replit.dev
+*.replit.dev
+*.teams.replit.dev
 repl.run
 
 // Resin.io : https://resin.io
 // Submitted by Tim Perry <tim@resin.io>
 resindevice.io
 devices.resinstaging.io
+
+// Retool : https://retool.com
+// Submitted by Andrew Guan <security@retool.com>
+retool.app
 
 // Rico Developments Limited : https://adimo.co
 // Submitted by Colin Brown <hello@adimo.co>
@@ -15633,6 +15726,11 @@ sakura.tv
 // Sandstorm Development Group, Inc. : https://sandcats.io/
 // Submitted by Asheesh Laroia <asheesh@sandstorm.io>
 sandcats.io
+
+// Sanity Inc. : https://www.sanity.io/
+// Submitted by Josh Ellis <security@sanity.io>
+sanity.run
+sanity.studio
 
 // Sav.com, LLC : https://marketing.sav.com/
 // Submitted by Mukul Kudegave <mukul@sav.com>
@@ -15802,6 +15900,10 @@ vipsinaapp.com
 // Submitted by Skylar Challand <support@siteleaf.com>
 siteleaf.net
 
+// Sliplane GmbH : https://sliplane.io
+// Submitted by Jonas Scholz <support@sliplane.io>
+sliplane.app
+
 // Small Technology Foundation : https://small-tech.org
 // Submitted by Aral Balkan <aral@small-tech.org>
 small-web.org
@@ -15863,6 +15965,13 @@ my.at
 my.de
 *.nxa.eu
 nx.gw
+
+// SpaceXSI : https://x.ai/
+// Submitted by Benson Liu <security@x.ai>
+*.apps.grok.bot
+*.pages.grok.bot
+*.cursorusercontent.com
+grok.me
 
 // Spawnbase : https://spawnbase.ai
 // Submitted by Alexander Zuev <security@spawnbase.ai>
@@ -15988,6 +16097,10 @@ realtime.supabase.co
 storage.supabase.co
 supabase.in
 supabase.net
+
+// Surge : https://surge.sh
+// Submitted by Brock Whitten <support@surge.sh>
+surge.sh
 
 // Syncloud : https://syncloud.org
 // Submitted by Boris Rybalkin <syncloud@syncloud.it>
@@ -16390,10 +16503,6 @@ weeklylottery.org.uk
 // Submitted by Brandon DuRette <brandon.durette@wpengine.com>
 wpenginepowered.com
 js.wpenginepowered.com
-
-// xAI : https://x.ai/
-// Submitted by Asim Shrestha <security@x.ai>
-grok.me
 
 // XenonCloud GbR : https://xenoncloud.net
 // Submitted by Julian Uphoff <publicsuffixlist@xenoncloud.net>

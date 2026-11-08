@@ -635,6 +635,9 @@ USGS_QUAKES_QUERY_LIMIT = 20000
 USGS_QUAKES_ROW_ALLOWANCE = 1200  # chars per CSV row; a real row is about 250-350
 USGS_QUAKES_HEADER_ALLOWANCE = 4096
 _USGS_COUNT_MAX_CHARS = 16  # the count response is a plain integer of at most nine digits (the regex below), plus a newline
+#: What an FDSN 204 (No Content: no event matches) means for the parser: the catalogue header and no
+#: row, so a window with no qualifying event reads as true zeros instead of an unrecognised body.
+_USGS_EMPTY_CATALOGUE = "time,mag,type,id,status\n"
 
 
 def _quakes_params(start_month: str, end_month: str, min_magnitude: float) -> dict[str, str]:
@@ -647,7 +650,8 @@ def _quakes_params(start_month: str, end_month: str, min_magnitude: float) -> di
     if last < first:
         raise ValueError("end_month is before start_month")
     # The FDSN endtime is "on or before", so the window ends one millisecond short of the next month.
-    after = month_index(month_label(last + 1))
+    # Computed from the index directly: a label round trip would refuse 2101-01 and so 2100-12.
+    after = last + 1
     end = datetime(after // 12, after % 12 + 1, 1) - timedelta(milliseconds=1)
     return {
         "starttime": f"{month_label(first)}-01T00:00:00",
@@ -695,33 +699,43 @@ def fetch_usgs_quakes(
     query_url = usgs_quakes_query_url(start_month, end_month, min_magnitude)
     extracted_at = extracted_at or _now_iso()
     count_getter = get or _usgs_getter(_USGS_COUNT_MAX_CHARS)
-    resp = count_getter(count_url)
-    resp.raise_for_status()
-    text = resp.text.strip()
-    if not re.fullmatch(r"[0-9]{1,9}", text):
-        raise ValueError("USGS earthquakes: the count response is not a plain integer")
-    declared = int(text)
-    if declared > USGS_QUAKES_QUERY_LIMIT:
-        raise ValueError(
-            f"USGS earthquakes: {declared} events in {start_month}..{end_month} at M>={min_magnitude:g} is over the "
-            f"{USGS_QUAKES_QUERY_LIMIT} one request returns; ask for a shorter window or a higher threshold"
+    # A window that reaches the month still in progress can gain an event between the two requests,
+    # so a mismatch there is retried once with a fresh count; anywhere else it is refused at once.
+    for attempt in (1, 2):
+        resp = count_getter(count_url)
+        resp.raise_for_status()
+        text = resp.text.strip()
+        if not re.fullmatch(r"[0-9]{1,9}", text):
+            raise ValueError("USGS earthquakes: the count response is not a plain integer")
+        declared = int(text)
+        if declared > USGS_QUAKES_QUERY_LIMIT:
+            raise ValueError(
+                f"USGS earthquakes: {declared} events in {start_month}..{end_month} at M>={min_magnitude:g} is over the "
+                f"{USGS_QUAKES_QUERY_LIMIT} one request returns; ask for a shorter window or a higher threshold"
+            )
+        bound = declared * USGS_QUAKES_ROW_ALLOWANCE + USGS_QUAKES_HEADER_ALLOWANCE
+        query_getter = get or _usgs_getter(bound)  # the read stops at the bound the count just fixed
+        resp = query_getter(query_url)
+        resp.raise_for_status()
+        body = _USGS_EMPTY_CATALOGUE if getattr(resp, "status_code", None) == 204 else resp.text
+        if len(body) > bound:
+            raise ValueError(f"USGS earthquakes: the response is {len(body)} characters, over the {bound} its declared {declared} events allow")
+        parsed = parse_usgs_quakes(
+            body, start_month=start_month, end_month=end_month, min_magnitude=min_magnitude, extracted_at=extracted_at
         )
-    bound = declared * USGS_QUAKES_ROW_ALLOWANCE + USGS_QUAKES_HEADER_ALLOWANCE
-    query_getter = get or _usgs_getter(bound)  # the read stops at the bound the count just fixed
-    resp = query_getter(query_url)
-    resp.raise_for_status()
-    if len(resp.text) > bound:
-        raise ValueError(f"USGS earthquakes: the response is {len(resp.text)} characters, over the {bound} its declared {declared} events allow")
-    parsed = parse_usgs_quakes(
-        resp.text, start_month=start_month, end_month=end_month, min_magnitude=min_magnitude, extracted_at=extracted_at
-    )
-    if parsed.looks_unrecognised:
-        raise ValueError(
-            f"USGS earthquakes: the response is not the expected catalogue ({parsed.refused_total} lines refused, none parsed)"
-        )
-    parsed.declared_count = declared
-    parsed_events = parsed.rows_read - parsed.excluded_non_earthquake
-    if parsed_events != declared:
+        if parsed.looks_unrecognised:
+            raise ValueError(
+                f"USGS earthquakes: the response is not the expected catalogue ({parsed.refused_total} lines refused, none parsed)"
+            )
+        parsed.declared_count = declared
+        # A refused event row was still sent by the service: it counts toward the comparison and leaves
+        # its month a gap (the parser's own rule), rather than failing the whole window.
+        parsed_events = parsed.rows_read - parsed.excluded_non_earthquake + parsed.refused_events
+        if parsed_events == declared:
+            break
+        in_progress = "month still in progress at the vintage" in parsed.partial_periods.values()
+        if attempt == 1 and in_progress:
+            continue
         raise ValueError(
             f"USGS earthquakes: the service counted {declared} events but {parsed_events} were read "
             f"({parsed.refused_total} rows refused); the catalogue changed between the two requests or the list was cut short, so no series is returned"
@@ -775,6 +789,82 @@ def fetch_owid_dataset(
         )
     return parsed
 
+
+# NOAA NCEI GHCN-Daily: one fixed-width ``.dly`` file per station. NOT verified against a live
+# download (the build sandbox cannot reach the host): a wrong path or shape fails LOUDLY (HTTP
+# error / looks_unrecognised), never a fabricated figure.
+GHCND_BASE = "https://www.ncei.noaa.gov/pub/data/ghcn/daily/ghcnd-all"
+GHCND_HOSTS = ("www.ncei.noaa.gov",)
+GHCND_PATHS = ("/pub/data/ghcn/daily/ghcnd-all/",)  # the host serves far more than this directory: the directory is the pin
+# The body bound is DERIVED from the file's own shape (see ghcnd_max_chars), not a fixed number.
+GHCND_FIRST_YEAR = 1750  # earlier than any published record; a bound, not a claim about coverage
+GHCND_ELEMENT_FAMILIES = 100  # documented element codes (core five, WT01.., WV.., ...) with slack
+
+
+def _ghcnd_getter(url: str) -> Any:
+    session = guarded_session(
+        user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=GHCND_HOSTS, allowed_path_prefixes=GHCND_PATHS
+    )
+    return _bounded_get(session, url, max_chars=ghcnd_max_chars())
+
+
+def ghcnd_url(station: str) -> str:
+    """The ``.dly`` URL for a GHCN-Daily station id; the id is validated so it cannot carry a path."""
+    from src.stats.ghcnd import valid_station_id
+
+    if not valid_station_id(station):
+        raise ValueError(f"ghcnd_url: not a GHCN station id: {station!r}")
+    return f"{GHCND_BASE}/{station}.dly"
+
+
+def ghcnd_max_chars(now_year: int | None = None) -> int:
+    """The longest body that can still be one station's file.
+
+    One line per (year, month, element): every year from ``GHCND_FIRST_YEAR`` to the current
+    one, twelve months, each documented element family, at the format's fixed line length plus
+    its newline. Grows with the calendar rather than being a number someone must raise.
+    """
+    from datetime import UTC
+
+    from src.stats.ghcnd import LINE_LENGTH
+
+    year = now_year if now_year is not None else datetime.now(UTC).year
+    lines = max(year - GHCND_FIRST_YEAR + 1, 1) * 12 * GHCND_ELEMENT_FAMILIES
+    return lines * (LINE_LENGTH + 2)
+
+
+def fetch_ghcnd_station(
+    station: str,
+    *,
+    get: Getter | None = None,
+    extracted_at: str | None = None,
+) -> Any:
+    """Fetch one GHCN-Daily station file live and parse it (kill switch refuses UP FRONT).
+
+    Returns the :class:`~src.stats.ghcnd.GhcndParse` (figures AND refusals). A body that parses
+    to nothing but refusals (an HTML error page, a moved product) raises rather than returning
+    an empty series, because an empty list and a wrong file look the same once the refusals
+    are dropped.
+    """
+    from src.stats.ghcnd import parse_ghcnd_dly
+
+    if kill_switch_active():
+        raise RuntimeError(NETWORK_REFUSED)
+    url = ghcnd_url(station)
+    extracted_at = extracted_at or _now_iso()
+    getter = get or _ghcnd_getter
+    resp = getter(url)
+    resp.raise_for_status()
+    bound = ghcnd_max_chars()
+    if len(resp.text) > bound:
+        raise ValueError(f"GHCN-Daily {station}: the response is {len(resp.text)} characters, over the {bound} the file's own shape allows")
+    parsed = parse_ghcnd_dly(resp.text, station=station, extracted_at=extracted_at)
+    if parsed.looks_unrecognised:
+        raise ValueError(
+            f"GHCN-Daily {station}: the response is not the expected station file "
+            f"({parsed.refused_total} lines refused, none parsed)"
+        )
+    return parsed
 
 def oni_max_chars(now_year: int | None = None) -> int:
     """The longest body that can still be the ONI table.

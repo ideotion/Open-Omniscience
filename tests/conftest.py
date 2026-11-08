@@ -745,3 +745,20 @@ def pytest_runtest_teardown(item, nextitem):
                     "(see tests/test_entity_spine.py::test_airplane_mode_refuses_by_name_with_the_socket_guard_armed_and_ZERO_resolutions)",
                     pytrace=False,
                 )
+
+
+# `--dist loadfile` runs here with a FIXED placement of test files on workers instead of xdist's own first-free-worker one (CI's `test`,
+# `core-only` and docs-only jobs run `-n auto --dist loadfile`). xdist's order moves with the runner's timing, and this suite has tests that
+# read what an earlier test in the same process left behind: two full runs at one commit (2026-11-08) went red on two different sets of
+# tests. tests/_xdist_placement.py says how a file is placed; tests/test_xdist_file_placement.py pins it. `optionalhook`: the hook exists
+# only when pytest-xdist is installed, and a run without it must not fail on an unknown hook.
+@pytest.hookimpl(optionalhook=True)
+def pytest_xdist_make_scheduler(config, log):
+    if config.getvalue("dist") != "loadfile":
+        return None
+    from tests._xdist_placement import FilePlacementScheduling
+
+    config.get_terminal_writer().line(
+        "xdist: --dist loadfile runs with the suite's fixed file placement (tests/_xdist_placement.py), not xdist's first-free-worker order"
+    )
+    return FilePlacementScheduling(config, log)

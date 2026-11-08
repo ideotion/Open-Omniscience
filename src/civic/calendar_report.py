@@ -23,9 +23,11 @@ shadowed snapshot row is returned with its reason rather than dropped silently.
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Any
 
+from src.catalog.countries import config_country
 from src.civic.elections import (
     PROJECTED,
     SCHEDULED,
@@ -55,6 +57,37 @@ STATES: tuple[str, ...] = (
 
 _PRECISIONS = ("day", "month", "year")
 
+#: A Wikidata time value: an optional sign, the date, and an optional time part (``+2027-04-10T00:00:00Z``).
+_WIKIDATA_TIME = re.compile(r"^\+?(\d{4}-\d{2}-\d{2})(?:T[0-9:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$")
+
+
+def _snapshot_date(value: object, precision: str = "") -> date | None:
+    """A snapshot date, read the way Wikidata writes it, then through the shared ``_iso_date``.
+
+    The sign and the time part are stripped (a Wikidata time is midnight UTC with a precision, so the
+    time says nothing). Below day precision Wikidata writes the unknown parts as ``00``; those become
+    the 1st of the period ONLY when the row's precision says so, which is how a coarser date is
+    already stored here. A ``00`` under a day precision stays unreadable, never a guessed day.
+    """
+    if not isinstance(value, str):
+        return _iso_date(value)
+    m = _WIKIDATA_TIME.match(value.strip())
+    if not m:
+        return _iso_date(value)
+    text = m.group(1)
+    if precision == "year":
+        text = text[:4] + "-01-01"  # only the year is read at this precision
+    elif precision == "month" and text.endswith("-00"):
+        text = text[:8] + "01"
+    return _iso_date(text)
+
+
+def _cc(value: object) -> str:
+    """One comparable country form: lowercase alpha-2 through the config conversion layer, so the
+    curated catalogue's alpha-3 (``FRA``) and a snapshot's alpha-2 (``fr``) meet; a value it cannot
+    place is compared as written, lower-cased."""
+    return str(config_country(value) or "").strip().lower()
+
 
 def _inferred(event: dict[str, Any], why: str) -> dict[str, Any]:
     event["inferred"] = True
@@ -80,9 +113,9 @@ def snapshot_to_event(
         return None, "row names no office or election id"
     url = str(row.get("official_url") or "").strip()
 
-    point = _iso_date(row.get("point_in_time"))
-    start, end = _iso_date(row.get("start")), _iso_date(row.get("end"))
     precision = str(row.get("precision") or "").strip().lower()
+    point = _snapshot_date(row.get("point_in_time"), precision)
+    start, end = _snapshot_date(row.get("start")), _snapshot_date(row.get("end"))
 
     event: dict[str, Any] = {
         "title": f"{cc} — {office}",
@@ -165,36 +198,79 @@ def snapshot_to_events(
     return events, refused
 
 
-def layer(
-    curated: list[dict[str, Any]], snapshot_events: list[dict[str, Any]]
-) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
-    """Curated entries win; a snapshot entry for a country+office they cover is SHADOWED.
+def _curated_year(entry: dict[str, Any], today: date) -> int | None:
+    """The year a curated entry STATES (``window_year``) or projects from a sourced rule; never a
+    year read off its title (``elections.py`` refuses that: "due by 2029" is not "in 2029")."""
+    stated = entry.get("window_year")
+    if isinstance(stated, int) and not isinstance(stated, bool):
+        return stated
+    if date_confidence(entry) == PROJECTED:
+        proj = projection(entry, today)
+        return proj["year"] if proj else None
+    return None
 
-    A curated entry naming no ``office`` shadows every snapshot entry of its country (it cannot
-    be told apart). Returns ``(entries, shadowed)`` — nothing is dropped without a record.
+
+def _same_election(curated: dict[str, Any], ev: dict[str, Any], today: date) -> str | None:
+    """Why ``curated`` covers snapshot entry ``ev``, or None when nothing shows it is the same election.
+
+    Same country is never enough on its own. The curated entry must carry a date tier, the offices
+    must agree when the curated entry names one, and the dates must overlap: the same year when both
+    years are known (and the same month when both state one), or, for a curated entry with no year,
+    the same stated month. Anything less keeps both entries visible rather than hiding one.
     """
+    if date_confidence(curated) is None:
+        return None
+    office = str(curated.get("office") or "").strip()
+    if office and office.casefold() != str(ev.get("office") or "").strip().casefold():
+        return None
+    ey, em = ev.get("window_year"), ev.get("month")
+    if ey is None:
+        return None  # an undated snapshot row is kept with its own reason
+    cy, cm = _curated_year(curated, today), curated.get("month")
+    if cy is not None:
+        if cy != ey or (cm is not None and em is not None and cm != em):
+            return None
+        basis = f"year {ey}" + (f", month {em}" if cm is not None and em is not None else "")
+    elif cm is not None and em is not None and cm == em:
+        basis = f"month {em}"
+    else:
+        return None
+    return f"same country, {'office ' + office if office else 'no office named'}, {basis}"
+
+
+def layer(
+    curated: list[dict[str, Any]], snapshot_events: list[dict[str, Any]], today: date | None = None
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """Curated entries win; a snapshot entry a curated one demonstrably covers is SHADOWED.
+
+    "Covers" is :func:`_same_election`: same country (alpha-2 or alpha-3 on either side), a dated
+    curated entry, agreeing offices and overlapping dates. A curated entry with no office no longer
+    shadows every row of its country. Returns ``(entries, shadowed)``; each shadowed row carries the
+    reason, so nothing is dropped without a record.
+    """
+    today = today or date.today()
     cur = [e for e in curated if is_election(e)]
     shadowed: list[dict[str, str]] = []
     kept = []
     for ev in snapshot_events:
-        cc = str(ev.get("country") or "").upper()
-        hit = next(
-            (
-                c
-                for c in cur
-                if str(c.get("country") or "").upper() == cc
-                and (not c.get("office") or c.get("office") == ev.get("office"))
-            ),
-            None,
-        )
+        cc = _cc(ev.get("country"))
+        hit, why = None, None
+        for c in cur:
+            if _cc(c.get("country")) != cc:
+                continue
+            why = _same_election(c, ev, today)
+            if why:
+                hit = c
+                break
         if hit is None:
             kept.append(ev)
         else:
             shadowed.append(
                 {
                     "qid": str(ev.get("source_qid") or ""),
-                    "country": cc,
+                    "country": cc.upper(),
                     "shadowed_by": str(hit.get("title") or ""),
+                    "reason": str(why),
                 }
             )
     return list(curated) + kept, shadowed
@@ -208,10 +284,10 @@ def country_tier_report(
     per: dict[str, list[dict[str, Any]]] = {}
     for ev in events:
         if is_election(ev):
-            per.setdefault(str(ev.get("country") or "").strip().lower(), []).append(ev)
+            per.setdefault(_cc(ev.get("country")), []).append(ev)
 
     rows = []
-    for cc in sorted(floor):
+    for cc in sorted({_cc(c) for c in floor}):
         entries = []
         for ev in per.get(cc, []):
             tier = date_confidence(ev)
