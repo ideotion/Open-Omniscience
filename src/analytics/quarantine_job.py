@@ -43,22 +43,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 from src.database.corpus_lease import corpus_lease
+from src.shared import import_owns_the_machine as _import_owns_the_machine
 
 _BATCH = 300  # candidates scanned per loop iteration (mirrors ReindexJobManager's _BATCH)
 
 #: How often a parked job re-checks whether the import still owns the machine.
 _EXCLUSIVE_POLL_S = 5.0
-
-
-def _import_owns_the_machine() -> bool:
-    """True while an import run holds the exclusive window. Best-effort: an
-    unreadable scheduler must never park this job forever."""
-    try:
-        from src.scheduler.runner import exclusive_window_open
-
-        return exclusive_window_open()
-    except Exception:  # noqa: BLE001 - a courtesy check is never load-bearing
-        return False
 
 
 _STATE_FILE = "quarantine_job.json"  # OWN state file -- never touches reindex_job.json

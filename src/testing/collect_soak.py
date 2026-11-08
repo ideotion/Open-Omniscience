@@ -46,6 +46,8 @@ import threading
 import time
 import uuid
 
+from src.shared import rss_mb as _rss_mb
+
 REPORT_SCHEMA = "oo-collect-soak-1"
 
 _RSS_XML = (
@@ -116,15 +118,6 @@ class SyntheticSession:
             return _Resp(text=self._feed(host), ct="application/rss+xml", url=url)
         slug = url.rsplit("/", 1)[-1]
         return _Resp(text=self._article(host, slug), url=url)
-
-
-def _rss_mb() -> float | None:
-    try:
-        import psutil
-
-        return round(psutil.Process().memory_info().rss / (1024 * 1024), 1)
-    except Exception:  # noqa: BLE001
-        return None
 
 
 def _gate_stats() -> dict:
