@@ -110,7 +110,7 @@ def test_build_snapshot_records_its_query_and_refusals_without_a_socket():
 
     snap = gen.build_snapshot(TODAY, getter=getter)
     assert len(asked) == 1 and asked[0].startswith(gen.WDQS_ENDPOINT + "?")
-    assert "2026-11-08T00:00:00Z" in snap["query"] and "wd:Q40231" in snap["query"]
+    assert "2026-01-01T00:00:00Z" in snap["query"] and "wd:Q40231" in snap["query"]
     assert snap["as_of"] == "2026-11-08" and snap["n_rows"] == 1 and len(snap["refused"]) == 1
     assert len(snap["query_sha256"]) == 64
 
@@ -121,3 +121,21 @@ def test_the_output_is_never_written_over_a_non_empty_file(tmp_path, monkeypatch
     monkeypatch.setattr(gen, "build_snapshot", lambda today: pytest.fail("must refuse before fetching"))
     assert gen.main(["-o", str(out)]) == 2
     assert out.read_text("utf-8") == "{}"
+
+
+def test_the_query_keeps_this_year_and_this_month_elections():
+    # WDQS writes "2026" as 2026-01-01 and "November 2026" as 2026-11-01: a cut-off at today would
+    # drop both, unrecorded, though both are still upcoming. The cut-off is the year's first day.
+    q = gen.build_query(TODAY)
+    assert '"2026-01-01T00:00:00Z"' in q
+    assert TODAY.isoformat() not in q
+    assert "DeprecatedRank" in q  # a deprecated old date is not a "conflicting" P585
+
+
+def test_the_official_url_does_not_depend_on_binding_order():
+    a = _b("Q1", time="2027-04-10T00:00:00Z", precision="11", url="https://b.example/")
+    b = _b("Q1", time="2027-04-10T00:00:00Z", precision="11", url="https://a.example/")
+    one = gen.rows_from_sparql({"results": {"bindings": [a, b]}})
+    two = gen.rows_from_sparql({"results": {"bindings": [b, a]}})
+    assert one == two
+    assert one[0][0]["official_url"] == "https://a.example/"

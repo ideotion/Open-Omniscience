@@ -58,18 +58,23 @@ SELECT ?election ?iso2 ?officeLabel ?time ?precision ?start ?end ?url WHERE {
   OPTIONAL { ?country wdt:P297 ?iso2 . }
   OPTIONAL { ?election wdt:P541 ?office .
              ?office rdfs:label ?officeLabel . FILTER(LANG(?officeLabel) = "en") }
-  OPTIONAL { ?election p:P585/psv:P585 [ wikibase:timeValue ?time ; wikibase:timePrecision ?precision ] . }
+  OPTIONAL { ?election p:P585 ?st . ?st wikibase:rank ?rank . FILTER(?rank != wikibase:DeprecatedRank)
+             ?st psv:P585 [ wikibase:timeValue ?time ; wikibase:timePrecision ?precision ] . }
   OPTIONAL { ?election wdt:P580 ?start . }
   OPTIONAL { ?election wdt:P582 ?end . }
   OPTIONAL { ?election wdt:P856 ?url . }
-  FILTER( (BOUND(?time) && ?time >= "{today}T00:00:00Z"^^xsd:dateTime)
-       || (!BOUND(?time) && BOUND(?end) && ?end >= "{today}T00:00:00Z"^^xsd:dateTime) )
+  FILTER( (BOUND(?time) && ?time >= "{year_start}T00:00:00Z"^^xsd:dateTime)
+       || (!BOUND(?time) && BOUND(?end) && ?end >= "{year_start}T00:00:00Z"^^xsd:dateTime) )
 }
 """
 
 
 def build_query(today: date) -> str:
-    return QUERY_TEMPLATE.replace("{today}", today.isoformat())
+    """The cut-off is the 1st of January of ``today``'s year, never ``today`` itself: WDQS writes a
+    year-precision date as ``YYYY-01-01`` and a month-precision one as ``YYYY-MM-01``, so a
+    ``>= today`` filter would drop an election stated as "this year" or "this month" before it ever
+    reached the converter, unrecorded. The converter decides what has passed, at each precision."""
+    return QUERY_TEMPLATE.replace("{year_start}", f"{today.year:04d}-01-01")
 
 
 def query_url(query: str) -> str:
@@ -145,7 +150,9 @@ def rows_from_sparql(payload: dict) -> tuple[list[dict], list[dict]]:
             row["points"].add((_day(time), PRECISIONS.get(precision, f"unknown:{precision}")))
         row["start"] = row["start"] or _day(_val(b, "start"))
         row["end"] = row["end"] or _day(_val(b, "end"))
-        row["official_url"] = row["official_url"] or _val(b, "url")
+        url = _val(b, "url")
+        if url and (not row["official_url"] or url < row["official_url"]):
+            row["official_url"] = url  # WDQS order is not stable: the smallest URL, so reruns agree
     rows: list[dict] = []
     for (qid, office), row in sorted(grouped.items()):
         points = sorted(row.pop("points"))
