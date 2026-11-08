@@ -28,6 +28,7 @@ from defusedxml import ElementTree as SafeET
 
 SKOS = "{http://www.w3.org/2004/02/skos/core#}"
 RDF = "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}"
+SKOSXL = "{http://www.w3.org/2008/05/skos-xl#}"
 XML_LANG = "{http://www.w3.org/XML/1998/namespace}lang"
 
 SCHEMES = ("eurovoc", "unesco-thesaurus", "agrovoc", "iptc-media-topics")
@@ -45,9 +46,14 @@ def parse_rdfxml(source: str | Path | BinaryIO) -> dict[str, Any]:
     """Parse SKOS RDF/XML into ``{"concepts": {uri: {...}}, "gaps": [...], "n_seen": int}``.
 
     Each concept: ``{"pref": {lang: label}, "alt": {lang: [labels]}, "broader": [uri]}``.
-    Streaming (``iterparse``): each top-level concept is cleared once read. Elements that are not
-    concepts (a ConceptScheme, SKOS-XL label resources) are not cleared and stay in memory; a SKOS-XL-only
-    file (labels as ``skosxl:Label``) is not read and every concept in it is reported as a gap.
+    Streaming (``iterparse``): each top-level concept and each top-level SKOS-XL label is cleared once read.
+    Other elements (a ConceptScheme) are not cleared and stay in memory.
+
+    SKOS-XL (``skosxl:prefLabel`` / ``skosxl:altLabel`` pointing at a ``skosxl:Label`` with a
+    ``skosxl:literalForm``) is read like a plain label, resolved after the stream so the order of
+    labels and concepts never matters. A plain label of the same language wins over an XL one. A
+    reference to a label the file never defines is a named gap (``xl_label_unresolved``). A nested
+    concept that carries only XL labels is still a bare reference (it defines nothing).
     """
     concepts: dict[str, dict[str, Any]] = {}
     gaps: list[dict[str, str]] = []
@@ -57,6 +63,15 @@ def parse_rdfxml(source: str | Path | BinaryIO) -> dict[str, Any]:
     langs: dict[int, str] = {}  # element id -> effective xml:lang (inherited from its ancestors)
     stack: list[str] = []
     depth = 0
+    xl_labels: dict[str, tuple[str, str]] = {}  # label uri -> (lang, literalForm)
+    xl_refs: dict[str, list[tuple[str, str]]] = {}  # concept uri -> [("pref"|"alt", label uri)]
+    no_lang_gapped: set[str] = set()
+
+    def forget(node: Any) -> None:
+        # drop the language entry of every child of a finished element (ids are reused once freed)
+        for child in node:
+            langs.pop(id(child), None)
+
     try:
         for event, el in SafeET.iterparse(
             source, events=("start", "end"), forbid_dtd=False, forbid_entities=True, forbid_external=True,
@@ -70,11 +85,21 @@ def parse_rdfxml(source: str | Path | BinaryIO) -> dict[str, Any]:
             depth -= 1
             stack.pop()
             nested = depth > 1  # inside another element, e.g. <skos:broader><skos:Concept/></skos:broader>
+            if el.tag == f"{SKOSXL}Label":
+                label_uri = el.get(f"{RDF}about")
+                form = next((c for c in el if c.tag == f"{SKOSXL}literalForm"), None)
+                if label_uri and form is not None:
+                    xl_labels[label_uri] = (langs.get(id(form), "").split("-")[0].lower(), _text(form))
+                forget(el)
+                if not nested:
+                    el.clear()
+                continue
             if el.tag != f"{SKOS}Concept" and not (
                 el.tag == f"{RDF}Description"
                 and any(c.tag == f"{RDF}type" and c.get(f"{RDF}resource", "").endswith("skos/core#Concept")
                         for c in el)
             ):
+                forget(el)
                 continue
             uri = el.get(f"{RDF}about") or ""
             if not nested:
@@ -86,6 +111,7 @@ def parse_rdfxml(source: str | Path | BinaryIO) -> dict[str, Any]:
                 pref: dict[str, str] = {}
                 alt: dict[str, list[str]] = {}
                 broader: list[str] = []
+                xl: list[tuple[str, str]] = []
                 no_lang = False
                 for c in el:
                     lang = langs.get(id(c), "").split("-")[0].lower()
@@ -101,6 +127,12 @@ def parse_rdfxml(source: str | Path | BinaryIO) -> dict[str, Any]:
                             alt.setdefault(lang, []).append(label)
                         elif label:
                             no_lang = True
+                    elif c.tag in (f"{SKOSXL}prefLabel", f"{SKOSXL}altLabel"):
+                        ref = c.get(f"{RDF}resource") or next(
+                            (g.get(f"{RDF}about") for g in c if g.get(f"{RDF}about")), None
+                        )
+                        if ref:
+                            xl.append(("pref" if c.tag == f"{SKOSXL}prefLabel" else "alt", ref))
                     elif c.tag == f"{SKOS}broader":
                         ref = c.get(f"{RDF}resource")
                         if not ref:  # the nested form: <skos:broader><skos:Concept rdf:about=.../></skos:broader>
@@ -108,6 +140,7 @@ def parse_rdfxml(source: str | Path | BinaryIO) -> dict[str, Any]:
                         if ref:
                             broader.append(ref)
                 if nested:
+                    forget(el)
                     # a bare reference defines nothing; one that carries labels defines the concept, but
                     # only if no top-level entry gives it (settled after the stream, so order never matters)
                     if pref or alt:
@@ -116,16 +149,42 @@ def parse_rdfxml(source: str | Path | BinaryIO) -> dict[str, Any]:
                 top_seen.add(uri)
                 if no_lang:
                     gaps.append({"kind": "label_without_language", "detail": uri})
-                if not pref and not alt:
+                    no_lang_gapped.add(uri)
+                if xl:
+                    xl_refs[uri] = xl
+                    concepts[uri] = {"pref": pref, "alt": alt, "broader": broader}  # settled after the stream
+                elif not pref and not alt:
                     gaps.append({"kind": "concept_without_label", "detail": uri})
                 else:
                     concepts[uri] = {"pref": pref, "alt": alt, "broader": broader}
             if nested:
+                forget(el)
                 continue
             for c in el:
                 langs.pop(id(c), None)
             langs.pop(id(el), None)
             el.clear()  # a top-level concept is finished
+        for uri, refs in xl_refs.items():
+            entry = concepts[uri]
+            for kind, ref in refs:
+                found = xl_labels.get(ref)
+                if found is None:
+                    gaps.append({"kind": "xl_label_unresolved", "detail": ref})
+                    continue
+                lang, label = found
+                if not label:
+                    continue
+                if not lang:
+                    if uri not in no_lang_gapped:
+                        no_lang_gapped.add(uri)
+                        gaps.append({"kind": "label_without_language", "detail": uri})
+                elif kind == "pref":
+                    entry["pref"].setdefault(lang, label)
+                elif label not in entry["alt"].get(lang, []):
+                    entry["alt"].setdefault(lang, []).append(label)
+            if not entry["pref"] and not entry["alt"]:
+                del concepts[uri]
+                gaps.append({"kind": "concept_without_label", "detail": uri})
         for uri, entry in nested_defs.items():
             if uri in concepts:
                 continue  # a top-level entry with labels wins

@@ -199,7 +199,9 @@ def test_a_legacy_plaintext_mldsa_key_of_the_exact_length_still_loads_under_a_pa
     ml = tmp_path / "ml.key"
     ml.write_bytes(b"P" * 10 + b"S" * 30)  # what the key file was before the database had a passphrase
     s = _signer(tmp_path, monkeypatch, "pass-1")
-    assert s.key_protection == "plaintext-0600" and s.is_hybrid
+    # it loads, and is wrapped in place: the same pair, now under the passphrase (R484)
+    assert s.key_protection == "aes256gcm-scrypt" and s.is_hybrid
+    assert signing.parse_mldsa_key(ml, ml.read_bytes(), b"pass-1") == (b"P" * 10, b"S" * 30, "wrapped")
 
 
 def test_a_plaintext_looking_mldsa_key_of_any_other_length_is_refused(tmp_path, monkeypatch):
