@@ -100,6 +100,7 @@ async function run() {
   function langTile() {
     const calls = [];
     const src = [
+      "function ooLtrIsolate(s){return String(s==null?'':s);} function ooLtrPct(s){return String(s==null?'':s);}",
       constLine(LIB, "LIB_WINDOWS"), constLine(LIB, "LIB_DEFAULT_DAYS"), constLine(LIB, "LIB_LANG_TOP_N"),
       "let _libTileDays = {};",
       "const _libFetched = new Map();",
@@ -323,7 +324,7 @@ async function run() {
   function appRow(lang) {
     const I = i18n(lang);
     const stmt = (head) => { const at = CORE.indexOf(head); assert(at !== -1, head); return CORE.slice(at, CORE.indexOf(";", at) + 1); };
-    const src = [ESC, FMTNUM, extract("_sizeText", null, CORE), extract("_fmtBytes", null, CORE),
+    const src = [ESC, "function ooLtrIsolate(s){return String(s==null?'':s);}", FMTNUM, extract("_sizeText", null, CORE), extract("_fmtBytes", null, CORE),
       "function _rateNote(){return '';}", stmt("const _isDownloadKind"), stmt("const _LOCAL_JOB_KINDS"), stmt("const _dlKey"),
       extract("_jobWhy", null, CORE), extract("_jobPct", null, CORE), extract("_jobLabel", null, CORE),
       extract("_jobRow", null, CORE), "return _jobRow;"].join("\n");

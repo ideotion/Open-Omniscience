@@ -1293,7 +1293,7 @@
         const seg = `<circle cx="${cx}" cy="${cy}" r="${rMid.toFixed(2)}" fill="none" stroke="${color(i)}"`
           + ` stroke-width="${sw.toFixed(2)}" stroke-dasharray="${(frac * C).toFixed(2)} ${C.toFixed(2)}"`
           + ` stroke-dashoffset="${(-acc * C).toFixed(2)}"><title>${esc(d.label)}: ${esc(fmtNum(d.value))}`
-          + `${opts.unit ? " " + esc(opts.unit) : ""} (${Math.round(frac * 100)}%)</title></circle>`;
+          + `${opts.unit ? " " + esc(opts.unit) : ""} (${ooLtrIsolate(Math.round(frac * 100) + "%")})</title></circle>`;
         acc += frac;
         return seg;
       }).join("");

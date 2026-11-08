@@ -68,6 +68,83 @@ jobs:
           python -m pip install pip-audit==2.10.1  # pinned (OO-D15-004): an unpinned audit tool can redden PRs through no code change, exactly like bandit/mypy
           pip-audit --skip-editable
 
+  # ----------------------------------------------------------------------- #
+  # DOCS-ONLY FAST PATH (R462). A pull request whose every changed file is documentation (scripts/ci_changed_kind.py: docs/, root Markdown, the two
+  # GitHub templates) skips the heavy jobs and runs `docs-checks` instead, about 15 minutes against 100 with backed-up runners. It FAILS OPEN: a push to
+  # main, the weekly run, workflow_dispatch, the `ci-full` label (read from the event that started the run: a re-run reuses that event, so add the label and then PUSH; a label alone starts nothing) and any git error all give
+  # docs_only=false and the full matrix. The required checks still report: `test` and "Core-only install (no [analysis] extra)" are the aggregators below,
+  # green when their legs are, or when docs_only and `docs-checks` are; every other gated job reports "skipped", which branch protection reads as passing.
+  # ----------------------------------------------------------------------- #
+  changes:
+    runs-on: ubuntu-latest
+    name: Changed files (docs-only fast path)
+    outputs:
+      docs_only: ${{ steps.kind.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2  # a pull request checks out the merge commit: HEAD^1 is the base tip, so the diff below is exactly what the PR changes
+
+      - name: Is this change documentation only?
+        id: kind
+        env:
+          EVENT: ${{ github.event_name }}
+          FORCE_FULL: ${{ contains(github.event.pull_request.labels.*.name, 'ci-full') }}
+        run: |
+          verdict="docs_only=false"
+          if [ "$EVENT" = "pull_request" ] && [ "$FORCE_FULL" != "true" ]; then
+            verdict="$(python3 scripts/ci_changed_kind.py HEAD^1 HEAD || echo docs_only=false)"
+          fi
+          echo "$verdict" | tee -a "$GITHUB_OUTPUT"
+
+  docs-checks:
+    needs: [changes]
+    if: needs.changes.outputs.docs_only == 'true'
+    runs-on: ubuntu-latest
+    name: Docs-only checks (fast path)
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install (core + analysis + dev)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[analysis,dev]"
+
+      - name: Planned-work index — blocked or forbidden paths (BLOCKING)
+        run: |
+          git fetch --no-tags --depth=200 origin "${{ github.base_ref }}" || true
+          python scripts/planned.py --diff "origin/${{ github.base_ref }}" --strict
+
+      - name: Ledger fragments (format)
+        run: python scripts/ledger_fold.py check
+
+      - name: i18n locale completeness (x12)
+        run: python scripts/i18n_report.py --min 100
+
+      # The tests that read documentation: every test file that names docs (as `docs/...` or as a `Path(...) / "docs"` join), CLAUDE.md or the ledger, chosen
+      # at run time so a new one needs no edit here. The first pattern here was `docs/` and missed the joined form (twelve files, among them the ones that read
+      # docs/USER_MANUAL.md and docs/ETHICS.md; the Opus read of the final head found it), hence the bare word. A named file is not subject to
+      # collect_ignore, which is harmless here (the analysis extra is installed above).
+      - name: Tests that read the documentation
+        run: |
+          grep -lE 'docs|CLAUDE\.md|ledger' tests/test_*.py > "$RUNNER_TEMP/docs.args"
+          echo "$(wc -l < "$RUNNER_TEMP/docs.args") test files"
+          python -m pytest -q -rsfE @"$RUNNER_TEMP/docs.args"
+
+      # The wheel carries docs/legal/, docs/i18n/ and docs/USER_MANUAL.md, and scripts/check_wheel_layout.py wants them in it (the `lockfile-install` job's step of the
+      # same name): a documentation-only PR that renames or deletes one would otherwise pass here and break the wheel on main.
+      - name: Wheel carries the runtime data trees (built as release.yml builds it, read from its own file list)
+        run: |
+          python -m pip install --upgrade build
+          python -m build --outdir "$RUNNER_TEMP/oo-dist"
+          python scripts/check_wheel_layout.py "$RUNNER_TEMP"/oo-dist/*.whl
+
   # THE `test` JOB IS THREE SHARDS (C10, decision 27, R412): it ran the whole suite in one process, 70 to 80 minutes, and the run's wall time was the slower
   # of it and Core-only. Each leg now runs a third of the test FILES, chosen by scripts/ci_shard.py from the measured cost table
   # configs/ci_shard_costs.json (longest file first to the least-loaded shard; a file the table does not name goes to crc32(path) % 3 + 1, so a new test
@@ -81,13 +158,15 @@ jobs:
   # NOT AN ISOLATION MODEL: the old single process ran every file in one order, and nothing proved a file did not lean on a neighbour. The one sharded
   # run against an unsharded run of the same commit that settled it is docs/ledger/shipped_log.d/2026-11-05-ci-test-and-core-only-run-in-three-shards.md.
   test:
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'
+    needs: [changes]
     runs-on: ubuntu-latest
     name: Test (shard ${{ matrix.shard }} of 3)
     strategy:
       fail-fast: false  # a red leg must not hide what the other two found
       matrix:
         shard: [1, 2, 3]
+    timeout-minutes: 75  # R475: a hung job holds a runner slot for the default six hours; the slowest measured run of this job is well under half of this
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -486,16 +565,18 @@ jobs:
   # `success`), so a leg that never started fails this job instead of vanishing from it. It installs nothing.
   test-all:
     if: always() && github.event_name != 'schedule'
-    needs: [test]
+    needs: [test, changes, docs-checks]
     runs-on: ubuntu-latest
     name: test
     steps:
       - name: All three shards of the test job passed
         env:
           LEGS: ${{ needs.test.result }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
+          DOCS_CHECKS: ${{ needs.docs-checks.result }}
         run: |
-          echo "the three shards of the test job: $LEGS"
-          test "$LEGS" = "success"
+          echo "the three shards of the test job: $LEGS (docs-only fast path: $DOCS_ONLY, its checks: $DOCS_CHECKS)"
+          test "$LEGS" = "success" || { test "$DOCS_ONLY" = "true" && test "$DOCS_CHECKS" = "success"; }
 
   # The "extras are optional" contract (audit finding TEST-06): a core-only
   # install must boot and its suite must be green, with analysis-dependent tests
@@ -504,13 +585,15 @@ jobs:
   # THREE SHARDS, like `test` above (see there): the same planner and cost table, no static steps. The check named "Core-only install (no [analysis] extra)"
   # is the `core-only-all` job below.
   core-only:
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'
+    needs: [changes]
     runs-on: ubuntu-latest
     name: Core-only install, shard ${{ matrix.shard }} of 3 (no [analysis] extra)
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3]
+    timeout-minutes: 75  # R475: a hung job holds a runner slot for the default six hours; the slowest measured run of this job is well under half of this
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -568,21 +651,25 @@ jobs:
   # The required check "Core-only install (no [analysis] extra)": green only if all three core-only shards are (see `test-all`).
   core-only-all:
     if: always() && github.event_name != 'schedule'
-    needs: [core-only]
+    needs: [core-only, changes, docs-checks]
     runs-on: ubuntu-latest
     name: Core-only install (no [analysis] extra)
     steps:
       - name: All three shards of the core-only job passed
         env:
           LEGS: ${{ needs.core-only.result }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
+          DOCS_CHECKS: ${{ needs.docs-checks.result }}
         run: |
-          echo "the three shards of the core-only job: $LEGS"
-          test "$LEGS" = "success"
+          echo "the three shards of the core-only job: $LEGS (docs-only fast path: $DOCS_ONLY, its checks: $DOCS_CHECKS)"
+          test "$LEGS" = "success" || { test "$DOCS_ONLY" = "true" && test "$DOCS_CHECKS" = "success"; }
 
   crypto:
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'
+    needs: [changes]
     runs-on: ubuntu-latest
     name: PQC signing path (hybrid Ed25519 + ML-DSA)
+    timeout-minutes: 20  # R475: a hung job holds a runner slot for the default six hours; the slowest measured run of this job is well under half of this
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -632,9 +719,11 @@ jobs:
   # (the shipped pins stay blank until the operator's audited build).
   # ----------------------------------------------------------------------- #
   columnar:
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'
+    needs: [changes]
     runs-on: ubuntu-latest
     name: Columnar store (DuckDB rollup + D1 persisted-httpfs)
+    timeout-minutes: 30  # R475: a hung job holds a runner slot for the default six hours; the slowest measured run of this job is well under half of this
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -688,7 +777,8 @@ jobs:
   # the job above. The floor of the registry entry duckdb-crypto-extension stays equal to pyproject's `duckdb>=` (test-enforced).
   # ----------------------------------------------------------------------- #
   columnar-duckdb1:
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'
+    needs: [changes]
     runs-on: ubuntu-latest
     name: Columnar store on DuckDB 1.x
     timeout-minutes: 30
@@ -726,38 +816,29 @@ jobs:
             tests/test_wave7_poll_cache.py tests/test_external_freshness.py
 
   # ----------------------------------------------------------------------- #
-  # UNIVERSAL PORTABILITY (maintainer-ruled 2026-06-11): the 3-OS matrix IS
-  # the definition of "supported". The Windows/macOS lanes start as
-  # OBSERVATION lanes (continue-on-error) while platform-specific failures
-  # are discovered and fixed honestly -- they graduate to required (drop the
-  # flag) once green; Linux remains the release gate meanwhile. Never claim
-  # an OS works without this proof.
-  #
-  # WINDOWS RUNS WEEKLY + ON DEMAND, NOT PER PUSH (maintainer pick 2026-09-26,
-  # "trim three"): the Windows leg hit its 45-minute cap on every run sampled
-  # (PRH-29 hang), so per push it produced no signal -- and a timed-out job made
-  # every CI run, main included, read "cancelled" instead of green. It still
-  # runs on the Monday schedule and on workflow_dispatch, so the lane (and the
-  # PRH-29 bisect it exists for) is kept; it returns to every push once the hang
-  # is fixed. macOS stays per push. The SQLCipher smoke below still proves the
-  # encrypted store on Windows on every push.
+  # PORTABILITY (macOS and Windows) RUNS WEEKLY + ON DEMAND, IN THREE SHARDS, NOT PER PUSH (R461, 2026-11-07). Windows came off the per-push path on
+  # 2026-09-26 (it hit its 45-minute cap on every run sampled, PRH-29). macOS followed because the cap was ARITHMETIC, not a hang: the job ran the whole
+  # suite in ONE process, which Linux needs three shards of 26 to 31 minutes to cover, so on run 42377447182 pytest began 13:43:20 and `timeout-minutes: 45`
+  # cancelled it 14:27:42. Every push held a macOS runner for 44 minutes (the scarcest pool) and produced no result. Now each OS runs the same three
+  # shards the Linux jobs use (scripts/ci_shard.py, the same cost table, so N stays 3), under a 60-minute cap per leg; the per-push macOS signal that
+  # remains is the SQLCipher wheel smoke below (a second). The lane stays an observation: continue-on-error, never required.
   # ----------------------------------------------------------------------- #
   portability:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && fromJSON('["macos-latest"]') || fromJSON('["windows-latest", "macos-latest"]') }}
+        os: [windows-latest, macos-latest]
+        shard: [1, 2, 3]
     runs-on: ${{ matrix.os }}
-    name: Portability observation (${{ matrix.os }})
+    name: Portability observation (${{ matrix.os }}, shard ${{ matrix.shard }} of 3)
     continue-on-error: true  # observation lane: graduates to required when green
-    # PRH-29: the Windows leg HANGS -- 3 h 21 m to failure, about 6 h to cancellation.
-    # continue-on-error means it never blocked anything, so it was left to burn six
-    # hours of runner time per push, and a job killed by the workflow-level cap is also
-    # the least diagnosable outcome there is. This bound does NOT fix the hang (that
-    # wants a bisect against the suite, as its own task): it caps the cost, and it turns
-    # the hang into a log that stops at a known minute, which is where a bisect starts.
-    # 45 min is ~2x the Linux `test` lane's own wall time, so it cannot clip a healthy run.
-    timeout-minutes: 45
+    # 60 min per leg: a third of the suite is about 28 min on Linux; a macOS or Windows leg that needs more than twice that is a finding, and the cap keeps it
+    # from burning six hours (the Windows hang, PRH-29) before anyone reads the log.
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash  # one shell on every OS: the Windows default is PowerShell, which does not expand "$RUNNER_TEMP" or read `@FILE` the same way
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -774,10 +855,13 @@ jobs:
       - name: Boot check
         run: python -c "from src.api.main import app; print(sum(1 for _ in app.routes), 'routes')"
 
-      # `-rsfE`, the same flags as the `test` job's (see there for why `s` comes first and why `-r` needs `fE` beside it): a macOS skip count that differs from
-      # Linux's is read from this log. No junit report here: the matrix has a Windows leg whose default shell is PowerShell, which reads `$RUNNER_TEMP` as one of its own (unset) variables.
+      # The file list is written inside the workspace (shard.args), not under $RUNNER_TEMP: on Windows that is a drive-lettered backslash path.
+      - name: Plan this shard (which test files it runs)
+        run: python scripts/ci_shard.py plan --shard ${{ matrix.shard }}/3 --out shard.args
+
+      # `-rsfE`, the same flags as the `test` job's (see there for why `s` comes first and why `-r` needs `fE` beside it): a macOS skip count that differs from Linux's is read from this log. No junit report here.
       - name: Test (pytest)
-        run: python -m pytest -q -rsfE
+        run: python -m pytest -q -rsfE @shard.args
 
   # SQLCipher driver proof on every OS (gate zero, executed for real): the
   # at-rest encryption batch (PR-E) must not land on wheel inspection alone.
@@ -836,7 +920,8 @@ jobs:
   # install the project first and then force the driver with --no-deps, because the pyproject ceiling would
   # refuse the newest release.
   sqlcipher-engines:
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'
+    needs: [changes]
     strategy:
       fail-fast: false
       matrix:
@@ -881,7 +966,8 @@ jobs:
   # The table of urllib3 log calls (src/ingest/urllib3_log.py) was read from two releases, and the `test` job resolves the newest one the
   # pyproject range admits, so the OLDEST is exercised here: "verified on 2.7.0" is a sentence that nothing else keeps true.
   urllib3-floor:
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'
+    needs: [changes]
     runs-on: ubuntu-latest
     name: urllib3 log table (floor release)
     timeout-minutes: 15
@@ -915,9 +1001,11 @@ jobs:
   # requirements.lock's own covered extras would, so a future PR can't regress the
   # wiring without CI catching it.
   lockfile-install:
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'
+    needs: [changes]
     runs-on: ubuntu-latest
     name: Lock file installs clean (requirements.lock, real install)
+    timeout-minutes: 30  # R475: a hung job holds a runner slot for the default six hours; the slowest measured run of this job is well under half of this
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

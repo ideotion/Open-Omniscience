@@ -63,7 +63,8 @@ const LIVING = [
 // `window` is defined so `window.OOI18N && ...` resolves to the fallbacks: a sandbox
 // without it raises ReferenceError on the bare global read (the recorded node trap).
 const src =
-  extractConst("esc") + "\n" +
+  "function ooLtrIsolate(s){return String(s==null?'':s);} function ooLtrPct(s){return String(s==null?'':s);}" + "\n" +
+    extractConst("esc") + "\n" +
   extractConst("_LTR_ISOLATE") + "\n" +
   extract("_ltrIsolate") + "\n" +
   extractConst("_isDownloadKind") + "\n" +

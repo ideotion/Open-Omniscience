@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-07,help,Help coverage banner on every served document (S06-05 S2 + S4),shipped,PR #1748,src/static/app-settings.js; tests/test_help_banner.py; tests/help_banner_node_test.js,"Help states the served language, machine-draft status and a measured sections-translated-of-total figure (fence-aware headings, the unit the ratchet uses); a language without a draft says English is shown; keys x12 AI-drafted, native review owed; 12-locale Chromium record in qual-lane. Drafts: 0 of 110 complete; renderer cost untouched."
