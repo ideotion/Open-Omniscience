@@ -41,7 +41,7 @@ try:
     from xdist.report import report_collection_diff
     from xdist.scheduler.each import EachScheduling
 except ImportError:  # no pytest-xdist: ``place`` still imports (its test runs); the scheduler is only ever built by xdist itself
-    EachScheduling = object  # type: ignore[assignment,misc]
+    EachScheduling = object
 
 _ROOT = Path(__file__).resolve().parents[1]
 _COSTS = _ROOT / "configs" / "ci_shard_costs.json"
@@ -125,8 +125,9 @@ class FilePlacementScheduling(EachScheduling):
             for rank, node in enumerate(nodes):
                 self._start(node, [i for i, nodeid in enumerate(self.node2collection[node]) if where[_file_of(nodeid)] == rank])
             return
-        for node in nodes:  # later calls: a replacement for a crashed worker gets that worker's remaining tests, or nothing
-            if node not in self._started:
+        for node in nodes:  # later calls: a replacement for a crashed worker gets that worker's remaining tests, or nothing,
+            # once ITS collection is in (two crashes close together: the second replacement may still be collecting when the first calls this)
+            if node not in self._started and node in self.node2collection:
                 self._start(node, list(self.node2pending[node]))
 
     @property
