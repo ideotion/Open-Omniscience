@@ -294,7 +294,7 @@ def _range_scan(
     its place is as it was when it began (``gens``; else ``cursor: restarted``). A figure finished from a pass an earlier build began says
     ``assembled_across_builds``: it holds for the rows at or below its ``through_id``."""
     gens = gens if gens is not None else _Generations(session)
-    prev = saved.get(check) if isinstance(saved.get(check), dict) else {}
+    prev: dict[str, Any] = saved[check] if isinstance(saved.get(check), dict) else {}
     last_complete = prev.get("last_complete") if isinstance(prev.get("last_complete"), dict) else None
     top = _scalar(session, f"SELECT MAX(id) FROM {table}")  # nosec B608 - `table` is one of three constants above
     if top is None:
@@ -369,7 +369,7 @@ def _fk_scan(
     the progress, never silently dropped. A saved pass is validated and its generation checked as :func:`_range_scan` does; a table whose
     check fails for a reason other than the budget is named with its error class, the others still run, and the check stays incomplete."""
     gens = gens if gens is not None else _Generations(session)
-    prev = saved.get("foreign_key_violations") if isinstance(saved.get("foreign_key_violations"), dict) else {}
+    prev: dict[str, Any] = saved["foreign_key_violations"] if isinstance(saved.get("foreign_key_violations"), dict) else {}
     last_complete = prev.get("last_complete") if isinstance(prev.get("last_complete"), dict) else None
     try:
         names = [str(r[0]) for r in session.execute(text("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")).fetchall()]
