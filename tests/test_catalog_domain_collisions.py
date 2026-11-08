@@ -364,7 +364,8 @@ def test_an_entry_with_a_domain_but_no_name_is_counted_and_the_report_adds_up(se
 
 def test_a_reordered_catalogue_keeps_the_tags_on_the_lowest_id_feed_row(session):
     """(6)(b): the main seed used the catalogue's FIRST feed entry, so swapping two feeds moved a feed-less entry's tags to a
-    second row on the next boot. The target is the outlet's lowest id, which never moves."""
+    second row on the next boot. The first boot takes the lowest id, and every later boot keeps the row whose baseline
+    already records the merged tags, so the target never moves."""
     seed_sources(session, [_FEED_A, _FEED_B, _LEAN])
     seed_sources(session, [_FEED_B, _FEED_A, _LEAN])
     rows = session.query(Source).order_by(Source.id).all()
