@@ -102,7 +102,7 @@ jobs:
     if: needs.changes.outputs.docs_only == 'true'
     runs-on: ubuntu-latest
     name: Docs-only checks (fast path)
-    timeout-minutes: 30
+    timeout-minutes: 75  # the docs tests are most of the suite (the grep below is broad): on a backed-up runner 30 was not enough (#1800)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
