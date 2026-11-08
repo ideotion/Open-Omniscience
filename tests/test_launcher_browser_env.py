@@ -72,6 +72,11 @@ def test_launch_sh_drops_exactly_the_servers_held_names():
     m = re.search(r'^OO_HELD_ENV_VARS="([^"]*)"$', text, re.M)
     assert m, "launch.sh names the held variables in one place"
     assert tuple(m.group(1).split()) == HELD_ENV_VARS
+    # a command started with a literal `env -u` list (the terminal panel's) drops exactly these too
+    for i, ln in enumerate(text.splitlines(), 1):
+        if ln.lstrip().startswith("#") or not re.search(r"\benv\s+-u\s", ln):
+            continue
+        assert tuple(re.findall(r"-u\s+(\w+)", ln)) == HELD_ENV_VARS, f"launch.sh:{i}: {ln.strip()}"
 
 
 def test_launch_sh_starts_every_browser_opener_through_env_minus_u():
@@ -111,6 +116,13 @@ def test_launch_cmd_clears_the_held_names_right_before_every_start():
     for i, ln in enumerate(lines):
         low = ln.lower()
         if low.startswith("rem") or i in starts:
+            continue
+        # the terminal panel (#1817, R600) is the app's own Python and drops the held names from its
+        # own environment as it starts, before it can open a browser (tests/test_terminal_panel.py);
+        # it holds no address of its own to hand to the shell, so it is not a browser start
+        if re.fullmatch(
+            r'if not errorlevel 1 start "open omniscience panel" \S+ -m src\.tui\.panel .*', low
+        ):
             continue
         assert not re.search(
             r"\b(start|explorer|rundll32|start-process)\b", low.split("-command")[0]
