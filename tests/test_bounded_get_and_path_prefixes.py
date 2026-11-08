@@ -112,15 +112,38 @@ class _Raw:
         pass
 
 
+def _response(url, raw, headers=None, status=200):
+    r = requests.Response()
+    r.status_code = status
+    r.raw = raw
+    r.url = url
+    r.headers.update(headers or {})
+    r.encoding = "utf-8"
+    return r
+
+
 def _session(raw, headers=None, status=200):
     class Session:
+        max_redirects = 30
+
         def get(self, url, **kw):
-            r = requests.Response()
-            r.status_code = status
-            r.raw = raw
-            r.headers.update(headers or {})
-            r.encoding = "utf-8"
-            return r
+            return _response(url, raw, headers, status)
+
+    return Session()
+
+
+def _routes(table):
+    """A fake session answering each URL from ``table``: url -> (raw, headers, status)."""
+
+    class Session:
+        max_redirects = 30
+        asked: list[str] = []
+
+        def get(self, url, **kw):
+            assert kw.get("allow_redirects") is False, "redirects are followed by hand, never by requests"
+            Session.asked.append(url)
+            raw, headers, status = table[url]
+            return _response(url, raw, headers, status)
 
     return Session()
 
@@ -157,12 +180,61 @@ def test_exactly_at_the_byte_bound_passes_and_one_byte_over_is_refused():
         _get(_session(_Raw(b"x" * 4001)), 1000)
 
 
-def test_an_error_status_is_read_under_the_same_bound_and_still_raises_for_status():
-    resp = _get(_session(_Raw(b"nope"), status=503), 100)
+def test_an_error_status_is_not_read_at_all_and_still_raises_for_status():
+    raw = _Raw(b"x" * 500)
+    resp = _get(_session(raw, status=503), 100)
+    assert raw.pulled == 0
     with pytest.raises(requests.HTTPError):
         resp.raise_for_status()
+
+
+def test_a_redirect_body_is_never_read_and_the_hop_is_followed_by_hand():
+    big = _Raw(None, endless=b"x" * 65536)
+    final = _Raw(b"ok")
+    session = _routes(
+        {
+            "https://h/p/x": (big, {"Location": "/p/y"}, 302),
+            "https://h/p/y": (final, {}, 200),
+        }
+    )
+    resp = _get(session, 100)
+    assert resp.text == "ok" and big.pulled == 0, "the redirect's body is closed unread"
+    assert session.asked == ["https://h/p/x", "https://h/p/y"]
+
+
+def test_a_redirect_loop_stops_at_the_sessions_own_limit():
+    session = _routes({"https://h/p/x": (_Raw(b""), {"Location": "/p/x"}, 302)})
+    session.max_redirects = 3
     with pytest.raises(fetch.BodyTooLarge):
-        _get(_session(_Raw(b"x" * 500), status=503), 100)
+        _get(session, 100)
+    assert len(session.asked) == 4  # the first request plus three hops
+
+
+def test_a_redirect_hop_to_another_directory_is_refused_by_the_real_session_and_never_sent(monkeypatch):
+    sent: list[str] = []
+
+    def fake_send(self, request, **kw):
+        sent.append(request.url)
+        if request.url.endswith("/owid/co2-data/master/f.csv"):
+            return _response(request.url, _Raw(b""), {"Location": "/evil/repo/master/f.csv"}, 302)
+        return _response(request.url, _Raw(b"pwned"))
+
+    monkeypatch.setattr(requests.Session, "send", fake_send)
+    session = fetcher.guarded_session(allowed_hosts=("raw.githubusercontent.com",), allowed_path_prefixes=OWID)
+    with pytest.raises(RedirectRefused):
+        fetch._bounded_get(session, "https://raw.githubusercontent.com/owid/co2-data/master/f.csv", max_chars=100)
+    assert sent == ["https://raw.githubusercontent.com/owid/co2-data/master/f.csv"]
+
+
+def test_a_control_character_in_the_url_is_refused_not_normalised_away():
+    for bad in (
+        "https://raw.githubusercontent.com/owid/co2-data/..\t/../evil",
+        "https://raw.githubusercontent.com/owid/co2-data/a b",
+        "https://raw.githubusercontent.com/owid/co2-data/a\nb",
+        "https://raw.githubusercontent.com/owid/co2-data/a\x7fb",
+    ):
+        with pytest.raises(RedirectRefused):
+            refuse_unlisted_path(bad, OWID)
 
 
 def test_the_default_getters_build_their_session_with_their_own_lists_and_scale(monkeypatch):

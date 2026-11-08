@@ -34,7 +34,7 @@ import logging
 import re
 from datetime import UTC, datetime, timezone
 from typing import Any, Callable
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urljoin
 
 from src.ingest import DEFAULT_USER_AGENT, kill_switch_active
 from src.ingest.fetch_verdict import NETWORK_REFUSED
@@ -214,25 +214,38 @@ def _bounded_get(session: Any, url: str, *, max_chars: int) -> Any:
     ``max_chars * 4`` bytes (a UTF-8 character is at most four bytes, so a body over that is over ``max_chars`` characters whatever it
     holds), or at once when the server DECLARES a longer ``Content-Length``. ``iter_content`` decodes a compressed body, so the bound
     holds on the decoded size and a compression bomb is stopped the same way. The bytes read are put back on the response, so
-    ``.text``, ``.json()`` and ``.raise_for_status()`` behave as on any other response; an error status is read under the same bound.
+    ``.text``, ``.json()`` and ``.raise_for_status()`` behave as on any other response; an error status is not read at all (the caller's
+    ``raise_for_status`` names it), and a redirect body is closed unread.
 
     What it does NOT bound is time: the request timeout limits each read, not the whole transfer, so a server that drips bytes just
     under the bound keeps the call waiting. That is named, not hidden.
     """
     max_bytes = max_chars * _UTF8_MAX_BYTES_PER_CHAR
-    resp = session.get(url, timeout=DEFAULT_TIMEOUT_S, stream=True)
+    resp = session.get(url, timeout=DEFAULT_TIMEOUT_S, stream=True, allow_redirects=False)
     try:
+        # Redirects are followed HERE, one hop at a time, never by ``requests``: its own loop reads each 3xx body whole
+        # (``resp.content``) before following it, which is an unbounded read of a body nobody asked for. A redirect body is closed
+        # unread, and every hop goes through ``session.get`` -> ``send``, so the host list, the directory list and the kill switch run
+        # on each hop exactly as on the first request.
+        hops = 0
+        while resp.is_redirect:
+            hops += 1
+            if hops > session.max_redirects:
+                raise BodyTooLarge("too many redirects")
+            target = urljoin(resp.url, resp.headers["Location"])
+            resp.close()
+            resp = session.get(target, timeout=DEFAULT_TIMEOUT_S, stream=True, allow_redirects=False)
+        if resp.status_code >= 400:
+            return resp  # the caller's ``raise_for_status`` names the status; an error page is not read at all
         declared = (resp.headers.get("Content-Length") or "").strip()
         if declared.isascii() and declared.isdigit() and int(declared) > max_bytes:
             raise BodyTooLarge(f"the server declares {declared} bytes, over the {max_bytes} the table's own shape allows")
-        chunks: list[bytes] = []
-        total = 0
+        body = bytearray()  # one copy, not a list of chunks joined into a second one
         for chunk in resp.iter_content(_READ_CHUNK):
-            total += len(chunk)
-            if total > max_bytes:
+            body += chunk
+            if len(body) > max_bytes:
                 raise BodyTooLarge(f"the body went past {max_bytes} bytes, the most the table's own shape allows; reading stopped")
-            chunks.append(chunk)
-        resp._content = b"".join(chunks)  # what ``Response.content`` would have built; ``text`` and ``json`` read it
+        resp._content = bytes(body)  # what ``Response.content`` would have built; ``text`` and ``json`` read it
         resp._content_consumed = True
     except BaseException:
         resp.close()

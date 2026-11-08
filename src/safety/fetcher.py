@@ -223,6 +223,8 @@ def refuse_unlisted_path(url: str, prefixes: tuple[str, ...]) -> None:
     by the server than by either parser, and a backslash for the same reason; no endpoint a session with a list talks to needs either.
     Only the path is compared: the query and the fragment are the caller's. Call it after :func:`refuse_unlisted_host`, which owns the
     scheme, authority and port."""
+    if any(ord(ch) <= 0x20 or ord(ch) == 0x7F for ch in url):
+        raise RedirectRefused("the URL carries a control character or a space")  # urllib3 encodes one, and its dot-segment removal can then hide a ``..``
     by_urllib3 = parse_url(url).path or ""
     try:
         by_urlparse = urlparse(url).path
