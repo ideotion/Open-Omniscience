@@ -33,6 +33,12 @@ rem one (it would fail to bind the port and look like a crash).
 powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $null = Invoke-WebRequest -Uri '%URL%' -UseBasicParsing -TimeoutSec 2; exit 0 } catch { exit 1 }"
 if not errorlevel 1 (
   echo   Open Omniscience is already running -- opening %URL%
+  rem The browser never inherits a passphrase: the two names the server holds,
+  rem secret_scrub.HELD_ENV_VARS, are cleared first. This is inside setlocal,
+  rem so the window that ran this launcher keeps them. No brackets in these
+  rem lines: they sit inside a bracketed block.
+  set "OO_DB_PASSPHRASE="
+  set "OO_KEY_PASSPHRASE="
   start "" "%URL%"
   exit /b 0
 )
@@ -47,7 +53,16 @@ echo.
 
 rem Wait for the server to answer, then open the browser. Up to ~2 minutes, which a
 rem first-run database preparation can genuinely need.
+rem The waiting PowerShell and the browser it starts never inherit a passphrase: the
+rem two names the server holds (src\monitoring\secret_scrub.py HELD_ENV_VARS, which
+rem tests\test_launcher_browser_env.py holds this list to) are cleared in a nested
+rem setlocal for that one start, and endlocal gives them back for the server below,
+rem which needs them.
+setlocal
+set "OO_DB_PASSPHRASE="
+set "OO_KEY_PASSPHRASE="
 start "" /min powershell -NoProfile -ExecutionPolicy Bypass -Command "$u='%URL%'; for ($i=0; $i -lt 240; $i++) { try { $null = Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 2; Start-Process $u; break } catch { Start-Sleep -Milliseconds 500 } }"
+endlocal
 
 rem Run the server through scripts\launch_server.ps1 when it is there: the window still shows every line the server prints, and the wrapper
 rem records the server's fatal-error headers and how it ended for the app's next boot to read. It leaves a marker file once it has STARTED
