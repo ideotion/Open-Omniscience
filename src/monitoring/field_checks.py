@@ -313,7 +313,7 @@ def _import_headroom(params: dict, inputs: dict, db: Any, check: dict) -> dict[s
     rows: dict[str, int | None] = {}
     for table in _ENCRYPTED_REP_BYTES_PER_ROW:  # literal names from the merge module, never input
         try:
-            rows[table] = int(db.execute(text(f'SELECT MAX(rowid) FROM "{table}"')).scalar() or 0)
+            rows[table] = int(db.execute(text(f'SELECT MAX(rowid) FROM "{table}"')).scalar() or 0)  # noqa: S608  # nosec B608 - table is a literal key of _ENCRYPTED_REP_BYTES_PER_ROW, never input
         except Exception as exc:  # noqa: BLE001
             rows[table] = None
             out.setdefault("row_errors", {})[table] = tokenise_paths(record_text(exc, limit=_ERR_MAX, typed=True))
