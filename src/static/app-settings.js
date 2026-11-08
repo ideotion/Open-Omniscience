@@ -2112,6 +2112,8 @@
           let say = "";
           if (r && (r.status === "updated" || r.status === "already_current")) say = t("The last update was installed.");
           else if (r && r.status === "started") say = t("The last update did not finish. If the app misbehaves, re-run the installer.");
+          else if (r && r.status === "start_failed_rolled_back") say = t("The new version did not start, so the update was undone and the previous version started again.");
+          else if (r && r.status === "start_unconfirmed") say = t("The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.");
           else if (r && r.status === "rollback_incomplete") say = t("The last update failed and could not fully restore the previous version. Re-run the installer.");
           else if (r) say = t("The last update was not applied; the previous version was kept.");
           last.textContent = say;
@@ -2142,7 +2144,10 @@
       const t = _updT();
       const msg = $("upd-msg");
       if (!_updCheck || !_updCheck.update_available) return;
-      if (!window.confirm(t("Update now? The app stops, the new version is downloaded with git, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org. Neither download goes through this app's proxy."))) return;
+      // The helper downloads after this app has stopped, where no socket guard reaches: so the ONE consent popup comes first (invariant #14),
+      // and the server refuses the apply anyway while airplane mode is on.
+      if (!await ensureOnline(t("Download and install the app update from GitHub and PyPI"))) return;
+      if (!window.confirm(t("Update now? The app stops, the new version is downloaded with git from github.com, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org, checked against the hashes in the release. Both downloads use a direct connection, which is why updating is refused in protected mode."))) return;
       const go = $("upd-apply"), chk = $("upd-check");
       if (go) go.disabled = true;
       if (chk) chk.disabled = true;
@@ -2151,7 +2156,11 @@
         if (msg) msg.textContent = t("The app is stopping to update and will start again by itself. Reload this page in a minute.");
         if (go) go.hidden = true;
       } catch (e) {
-        if (msg) msg.textContent = t("The update could not start; nothing was changed.");
+        const code = e && e.detail && e.detail.code;
+        let say = t("The update could not start; nothing was changed.");
+        if (code === "protected") say = t("Protected mode is on, so the update did not start: it would connect to GitHub and PyPI directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.");
+        else if (code === "airplane") say = t("Airplane mode is on, so the update did not start. Go online first.");
+        if (msg) msg.textContent = say;
         if (go) go.disabled = false;
         if (chk) chk.disabled = false;
       }

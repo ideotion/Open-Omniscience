@@ -118,6 +118,13 @@ EGRESS: tuple[Row, ...] = (
         why="the handler imports its checker inside the function body, which the one-hop scan does not follow",
     ),
     Row(
+        ("system.py", "update_apply"),
+        ("updApply",),
+        "consent",
+        found="hand",
+        why="the egress is the helper process the handler starts (git fetch, pip), after this app exits; the handler refuses in airplane mode",
+    ),
+    Row(
         ("governments.py", "load_standard"),
         ("govLoadStandard",),
         "consent",

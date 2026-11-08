@@ -5557,7 +5557,7 @@
   "Update an OpenStreetMap country with the daily change files": "দৈনিক পরিবর্তন ফাইল দিয়ে একটি OpenStreetMap দেশ হালনাগাদ করুন",
   "Update and restart": "আপডেট করুন ও পুনরায় চালু করুন",
   "Update failed: {error}": "আপডেট ব্যর্থ: {error}",
-  "Update now? The app stops, the new version is downloaded with git, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org. Neither download goes through this app's proxy.": "এখনই আপডেট করবেন? অ্যাপ বন্ধ হবে, git দিয়ে নতুন সংস্করণ ডাউনলোড হবে এবং অ্যাপ নিজে থেকেই আবার চালু হবে। আপনার ডেটা ফোল্ডারে হাত দেওয়া হবে না। এই ক্লিক ছাড়া কিছু ইনস্টল হবে না। নতুন সংস্করণ অ্যাপের নির্ভরতা বদলালে pip সেগুলো pypi.org থেকেও ডাউনলোড করে। কোনো ডাউনলোডই এই অ্যাপের প্রক্সি দিয়ে যায় না।",
+  "Update now? The app stops, the new version is downloaded with git from github.com, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org, checked against the hashes in the release. Both downloads use a direct connection, which is why updating is refused in protected mode.": "এখনই আপডেট করবেন? অ্যাপটি থামবে, নতুন সংস্করণ github.com থেকে git দিয়ে ডাউনলোড হবে, এবং অ্যাপটি নিজে থেকেই আবার চালু হবে। আপনার ডেটা ফোল্ডার স্পর্শ করা হয় না। এই ক্লিক ছাড়া কিছুই ইনস্টল হয় না। নতুন সংস্করণ অ্যাপের নির্ভরতা বদলালে pip সেগুলোও pypi.org থেকে ডাউনলোড করে, রিলিজের হ্যাশের সাথে মিলিয়ে। দুটি ডাউনলোডই সরাসরি সংযোগ ব্যবহার করে, তাই সুরক্ষিত মোডে আপডেট প্রত্যাখ্যাত হয়।",
   "Update queued. The task manager shows its progress.": "হালনাগাদ সারিতে রাখা হয়েছে। টাস্ক ম্যানেজার এর অগ্রগতি দেখায়।",
   "Update with the daily files": "দৈনিক ফাইল দিয়ে হালনাগাদ করুন",
   "Updated": "আপডেট হয়েছে",
@@ -7414,5 +7414,10 @@
   "＋ zoom": "＋ জুম",
   "－ zoom": "－ জুম",
   "📍 places": "📍 স্থান",
-  "🛒 Draft (": "🛒 খসড়া ("
+  "🛒 Draft (": "🛒 খসড়া (",
+  "Download and install the app update from GitHub and PyPI": "GitHub ও PyPI থেকে অ্যাপের আপডেট ডাউনলোড ও ইনস্টল করুন",
+  "Protected mode is on, so the update did not start: it would connect to GitHub and PyPI directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.": "সুরক্ষিত মোড চালু আছে, তাই আপডেট শুরু হয়নি: এটি আপনার প্রক্সির মাধ্যমে নয়, সরাসরি GitHub ও PyPI-তে সংযোগ করত। আপডেট করতে স্ট্যান্ডার্ড মোডে যান, অথবা আপনার প্রক্সির মাধ্যমে হাতে আপডেট করুন।",
+  "Airplane mode is on, so the update did not start. Go online first.": "এয়ারপ্লেন মোড চালু আছে, তাই আপডেট শুরু হয়নি। আগে অনলাইনে যান।",
+  "The new version did not start, so the update was undone and the previous version started again.": "নতুন সংস্করণ চালু হয়নি, তাই আপডেট বাতিল করা হয়েছে এবং আগের সংস্করণ আবার চালু হয়েছে।",
+  "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "শেষ আপডেটটি ইনস্টল হয়েছে, কিন্তু অ্যাপটি চালু হতে অনেক সময় নিয়েছে। সমস্যা হলে ইনস্টলারটি আবার চালান।"
 }

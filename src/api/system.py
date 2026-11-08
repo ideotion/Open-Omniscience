@@ -117,10 +117,23 @@ def update_apply(body: UpdateApplyBody) -> dict:
     """Stop the app cleanly and let the helper apply the checked version, then start the app again. Needs ``confirm`` and the exact checked ref/sha."""
     if not body.confirm:
         raise HTTPException(status_code=400, detail="confirmation required to update")
-    from src.maintenance.self_update import UpdateError, begin_apply
+    from src.maintenance.self_update import (
+        AIRPLANE_REFUSAL,
+        PROTECTED_REFUSAL,
+        AirplaneRefused,
+        ProtectedRefused,
+        UpdateError,
+        begin_apply,
+    )
 
     try:
-        begin_apply(body.ref, body.sha)  # the helper waits for this process to exit before touching anything
+        # Refused first, before anything stops, while airplane mode is on or protected mode is chosen: the helper's git and pip run in a
+        # separate process the socket guard and the proxy do not reach. Then the helper waits for this process to exit before touching anything.
+        begin_apply(body.ref, body.sha)
+    except AirplaneRefused:
+        raise HTTPException(status_code=409, detail={"code": "airplane", "message": AIRPLANE_REFUSAL}) from None
+    except ProtectedRefused:
+        raise HTTPException(status_code=409, detail={"code": "protected", "message": PROTECTED_REFUSAL}) from None
     except UpdateError as exc:
         raise HTTPException(status_code=409, detail=http_detail(exc)) from None
     # Pause everything: the kill switch refuses every new request, then the ordinary shutdown closes the database and the WAL.

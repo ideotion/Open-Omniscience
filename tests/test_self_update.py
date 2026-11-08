@@ -200,8 +200,8 @@ def test_helper_rolls_back_when_the_dependency_install_fails(repos):
         return fail if len(calls) == 1 else good
 
     status, _ = h.apply(_plan(inst, new, "v0.7.0"), run=first_fails)
-    # the checkout is back AND the old lock was installed again (two pip calls after the failed one)
-    assert status == "dependencies_failed_rolled_back" and _g(inst, "rev-parse", "HEAD") == before and len(calls) == 3
+    # the checkout is back AND the old lock was installed again (one pip call after the failed one; pyproject did not change, so no refresh)
+    assert status == "dependencies_failed_rolled_back" and _g(inst, "rev-parse", "HEAD") == before and len(calls) == 2
     status, _ = h.apply(_plan(inst, new, "v0.7.0"), run=lambda *a, **k: fail)
     assert status == "rollback_incomplete" and _g(inst, "rev-parse", "HEAD") == before
 
@@ -225,6 +225,7 @@ def test_a_second_apply_is_refused_and_the_check_is_spent(monkeypatch):
     monkeypatch.setattr(su, "install_status", lambda root=None: {"kind": "git", "can_apply": True, "reason": "", "manual_steps": []})
     monkeypatch.setattr(su, "launch_helper", lambda *a, **k: None)
     monkeypatch.setattr(su, "_helper_running", lambda root=None: False)
+    monkeypatch.setattr(su, "refuse_offline_or_protected", lambda: None)
     monkeypatch.setattr(su, "_APPLYING", None)
     monkeypatch.setattr(su, "_LAST_CHECK", {})
     su.check(lambda url: _tags(("v0.6.0", SHA_B)), now=1000.0)
@@ -292,6 +293,7 @@ def test_apply_is_refused_before_the_app_stops_while_a_helper_is_still_running(m
     started = []
     monkeypatch.setattr(su, "launch_helper", lambda *a, **k: started.append(a))
     monkeypatch.setattr(su, "_helper_running", lambda root=None: True)
+    monkeypatch.setattr(su, "refuse_offline_or_protected", lambda: None)
     monkeypatch.setattr(su, "_APPLYING", None)
     monkeypatch.setattr(su, "_LAST_CHECK", {})
     su.check(lambda url: _tags(("v0.6.0", SHA_B)), now=1000.0)
@@ -318,10 +320,19 @@ def test_the_server_reads_the_real_helper_lock(tmp_path, monkeypatch):
     assert su._helper_running(ROOT) is False
     (tmp_path / "update.lock").write_text(f"1 {os.getppid()}", encoding="utf-8")
     assert su._helper_running(ROOT) is True  # a live helper (our parent stands in for it)
-    bad = tmp_path / "scripts"
-    bad.mkdir()
-    (bad / "apply_update.py").write_text("def broken(:\n", encoding="utf-8")
-    assert su._helper_running(tmp_path) is False  # a script mid-swap answers False, never raises
+    assert su._helper_running(ROOT, now=lambda: time.time() + su.LOCK_STALE_S + 1) is False  # too old to be a real run
+    assert su._helper_running(ROOT, alive=lambda pid: False) is False  # its helper is gone
+    (tmp_path / "update.lock").write_text("garbage", encoding="utf-8")
+    assert su._helper_running(ROOT) is False  # unreadable: no holder, never a 500
+    # the server's reading and the helper's own agree on every case above
+    h = _helper()
+    lock = tmp_path / "update.lock"
+    for text, alive, later in ((f"1 {os.getppid()}", True, 0), (f"1 {os.getppid()}", False, 0), (f"1 {os.getppid()}", True, h.LOCK_STALE_S + 1), ("x", True, 0)):
+        lock.write_text(text, encoding="utf-8")
+        clock = (lambda d: (lambda: time.time() + d))(later)
+        assert su._helper_running(ROOT, alive=lambda pid, a=alive: a, now=clock) == (
+            h.lock_holder_alive(lock, alive=lambda pid, a=alive: a, now=clock) is not None
+        )
 
 
 def test_wait_for_server_gives_up_and_reports(tmp_path):
@@ -348,3 +359,229 @@ def test_main_refused_by_a_live_holder_touches_nothing_and_relaunches_only_for_a
     lock.write_text("50 999", encoding="utf-8")  # an earlier run's helper, still alive
     monkeypatch.setattr(h, "wait_for_exit", lambda pid, *a, **k: True)
     assert h.main(["x", str(plan)]) == 1 and len(relaunched) == 1 and applied == []
+
+
+# --- the security read's must-fixes (2026-11-08): each guard below fails when it is removed --------------------------- #
+
+
+def _checked_for_apply(monkeypatch, started):
+    monkeypatch.setattr(su, "current_version", lambda: "0.5.0")
+    monkeypatch.setattr(su, "_checkout_contains", lambda root, sha: False)
+    monkeypatch.setattr(su, "install_status", lambda root=None: {"kind": "git", "can_apply": True, "reason": "", "manual_steps": []})
+    monkeypatch.setattr(su, "launch_helper", lambda *a, **k: started.append(a))
+    monkeypatch.setattr(su, "_helper_running", lambda root=None: False)
+    monkeypatch.setattr(su, "_APPLYING", None)
+    monkeypatch.setattr(su, "_LAST_CHECK", {})
+    su.check(lambda url: _tags(("v0.6.0", SHA_B)), now=time.time())
+
+
+def _standard_settings(monkeypatch, **kw):
+    import src.safety.settings as settings
+
+    st = settings.SafetySettings(**kw)
+    monkeypatch.setattr(settings, "load_settings", lambda: st)
+    return st
+
+
+def test_apply_is_refused_in_airplane_mode_before_any_helper_starts(monkeypatch):
+    from src.ingest import activate_kill_switch, clear_kill_switch
+
+    started: list = []
+    _checked_for_apply(monkeypatch, started)
+    _standard_settings(monkeypatch)
+    activate_kill_switch()
+    try:
+        with pytest.raises(su.UpdateError) as exc:
+            su.begin_apply("v0.6.0", SHA_B)
+    finally:
+        clear_kill_switch()
+    assert str(exc.value) == su.AIRPLANE_REFUSAL and started == [] and su._APPLYING is None
+
+
+def test_the_apply_endpoint_names_airplane_mode_and_never_stops_the_app(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    import src.safety.shutdown as shutdown
+    from src.api.main import app
+    from src.ingest import activate_kill_switch, clear_kill_switch
+
+    started: list = []
+    stopped: list = []
+    _checked_for_apply(monkeypatch, started)
+    _standard_settings(monkeypatch)
+    monkeypatch.setattr(shutdown, "request_shutdown", lambda **k: stopped.append(k) or {})
+    activate_kill_switch()
+    try:
+        r = TestClient(app, base_url="http://127.0.0.1").post(
+            "/api/system/update/apply", json={"confirm": True, "ref": "v0.6.0", "sha": SHA_B}
+        )
+    finally:
+        clear_kill_switch()
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "airplane"
+    assert started == [] and stopped == []
+
+
+def test_apply_is_refused_in_protected_mode_and_when_settings_cannot_be_read(monkeypatch):
+    started: list = []
+    _checked_for_apply(monkeypatch, started)
+    _standard_settings(monkeypatch, fetch_mode="protected")
+    with pytest.raises(su.UpdateError) as exc:
+        su.begin_apply("v0.6.0", SHA_B)
+    assert str(exc.value) == su.PROTECTED_REFUSAL and started == []
+    st = _standard_settings(monkeypatch)
+    st.read_failed = True
+    with pytest.raises(su.UpdateError):
+        su.begin_apply("v0.6.0", SHA_B)
+    import src.safety.settings as settings
+
+    monkeypatch.setattr(settings, "load_settings", lambda: (_ for _ in ()).throw(RuntimeError("locked")))
+    with pytest.raises(su.UpdateError):
+        su.begin_apply("v0.6.0", SHA_B)
+    assert started == []
+    _standard_settings(monkeypatch)
+    su.begin_apply("v0.6.0", SHA_B)  # standard mode, online: it starts
+    assert len(started) == 1
+
+
+def test_the_helper_is_started_without_the_passphrase_and_starts_nothing_with_it(monkeypatch, tmp_path):
+    import src.paths as paths
+    from src.monitoring.secret_scrub import HELD_ENV_VARS
+
+    monkeypatch.setattr(paths, "data_dir", lambda: tmp_path)
+    for name in HELD_ENV_VARS:
+        monkeypatch.setenv(name, "s3cret-value")
+    seen: list = []
+    su.launch_helper("v0.6.0", SHA_B, "tag", root=ROOT, popen=lambda argv, **k: seen.append(k))
+    assert seen and all(name not in seen[0]["env"] for name in HELD_ENV_VARS)
+    assert "s3cret-value" not in (tmp_path / su.PLAN_FILE).read_text(encoding="utf-8")
+    h = _helper()
+    assert tuple(h.SECRET_ENV) == tuple(HELD_ENV_VARS) and h.LOCK_STALE_S == su.LOCK_STALE_S
+    env = h.child_env()
+    assert all(name not in env for name in HELD_ENV_VARS) and env["GIT_TERMINAL_PROMPT"] == "0"
+    out = h._run(tmp_path, sys.executable, "-c", "import os; print(os.environ.get('OO_DB_PASSPHRASE', 'absent'))")
+    assert out.stdout.strip() == "absent"
+    launched: list = []
+    h.relaunch(tmp_path, popen=lambda argv, **k: launched.append(k))
+    assert all(name not in launched[0]["env"] for name in HELD_ENV_VARS)
+
+
+def test_a_redirect_off_the_api_host_is_refused_not_followed(monkeypatch):
+    import src.safety.fetcher as fetcher
+
+    class _Session:
+        def get(self, *a, **k):
+            raise fetcher.RedirectRefused("a redirect left the hosts this session may reach")
+
+    seen: dict = {}
+
+    def fake_session(**k):
+        seen.update(k)
+        return _Session()
+
+    monkeypatch.setattr(fetcher, "guarded_session", fake_session)
+    with pytest.raises(su.UpdateError, match="refused"):
+        su._get_json(su.TAGS_URL)
+    assert seen["allowed_hosts"] == ("api.github.com",)
+
+
+def test_the_ui_asks_the_consent_popup_before_the_update_starts():
+    js = (ROOT / "src" / "static" / "app-settings.js").read_text(encoding="utf-8")
+    body = js[js.index("async function updApply()"):js.index("(function _updWire()")]
+    gate, confirm, post = body.index("await ensureOnline("), body.index("window.confirm("), body.index('"/api/system/update/apply"')
+    assert gate < confirm < post
+    assert 'code === "protected"' in body and 'code === "airplane"' in body
+
+
+def test_dependencies_install_hash_pinned_and_the_metadata_refresh_downloads_nothing(tmp_path):
+    h = _helper()
+    calls: list = []
+    ok = subprocess.CompletedProcess([], 0, "", "")
+
+    def run(root, *argv, **k):
+        calls.append(argv)
+        return ok
+
+    assert h._install_deps(tmp_path, "py", run, refresh_metadata=True)
+    pips = [c for c in calls if "pip" in c]
+    assert "--require-hashes" in pips[0]
+    assert pips[1][-1] == "." and "--no-build-isolation" in pips[1] and "--no-deps" in pips[1]
+    # no local setuptools: the refresh is skipped, never fetched
+    calls.clear()
+
+    def no_setuptools(root, *argv, **k):
+        calls.append(argv)
+        return subprocess.CompletedProcess([], 1 if "import setuptools" in argv else 0, "", "")
+
+    assert h._install_deps(tmp_path, "py", no_setuptools, refresh_metadata=True)
+    assert not any("-e" in c for c in calls)
+    calls.clear()
+    assert h._install_deps(tmp_path, "py", run, refresh_metadata=False) and len(calls) == 1
+
+
+class _Proc:
+    def __init__(self, code):
+        self.code = code
+
+    def poll(self):
+        return self.code
+
+
+def test_watch_start_tells_up_from_a_failed_start_from_a_slow_one():
+    h = _helper()
+    nap = lambda s: None  # noqa: E731
+    assert h.watch_start(_Proc(None), 1, 5.0, answers=lambda p: True, sleep=nap) == "up"
+    assert h.watch_start(_Proc(1), 1, 5.0, answers=lambda p: False, sleep=nap) == "exited"
+    assert h.watch_start(None, 1, 5.0, answers=lambda p: False, sleep=nap) == "exited"
+    assert h.watch_start(_Proc(None), 1, 0.0, answers=lambda p: False, sleep=nap) == "unknown"
+
+
+def test_a_new_version_that_does_not_start_is_undone_and_the_old_one_started(tmp_path, monkeypatch):
+    import json as _json
+
+    h = _helper()
+    plan = tmp_path / "update-plan.json"
+    plan.write_text(_json.dumps({"ref": "v0.6.0", "sha": SHA_B, "kind": "tag", "pid": 111, "root": str(tmp_path), "port": "1"}), encoding="utf-8")
+    monkeypatch.setattr(h, "wait_for_exit", lambda pid, *a, **k: True)
+    monkeypatch.setattr(h, "apply", lambda plan, **k: ("updated", SHA_A))
+    launched: list = []
+    monkeypatch.setattr(h, "relaunch", lambda root, **k: launched.append(root) or _Proc(1))
+    monkeypatch.setattr(h, "watch_start", lambda proc, port, *a, **k: "exited")
+    monkeypatch.setattr(h, "changed_files", lambda root, old, new, **k: ["a.txt"])
+    undone: list = []
+    monkeypatch.setattr(h, "roll_back", lambda root, old, changed, py, **k: undone.append(old) or True)
+    assert h.main(["x", str(plan)]) == 1
+    assert undone == [SHA_A] and len(launched) == 2
+    assert _json.loads((tmp_path / h.RESULT_FILE).read_text(encoding="utf-8"))["status"] == "start_failed_rolled_back"
+    # a slow start is reported, never undone
+    plan.write_text(_json.dumps({"ref": "v0.6.0", "sha": SHA_B, "kind": "tag", "pid": 111, "root": str(tmp_path), "port": "1"}), encoding="utf-8")
+    monkeypatch.setattr(h, "watch_start", lambda proc, port, *a, **k: "unknown")
+    undone.clear()
+    assert h.main(["x", str(plan)]) == 0 and undone == []
+    assert _json.loads((tmp_path / h.RESULT_FILE).read_text(encoding="utf-8"))["status"] == "start_unconfirmed"
+
+
+def test_roll_back_reinstalls_the_old_lock_only_when_dependencies_changed(repos):
+    inst, _work, sha = repos
+    h = _helper()
+    old = _g(inst, "rev-parse", "HEAD")
+    assert h.apply(_plan(inst, sha))[0] == "updated"
+    calls: list = []
+    ok = subprocess.CompletedProcess([], 0, "", "")
+    assert h.roll_back(inst, old, ["a.txt"], "py", run=lambda *a, **k: calls.append(a) or ok) and calls == []
+    assert _g(inst, "rev-parse", "HEAD") == old
+    assert h.roll_back(inst, old, ["requirements.lock"], "py", run=lambda *a, **k: calls.append(a) or ok) and len(calls) == 1
+
+
+def test_every_tag_page_is_read(monkeypatch):
+    monkeypatch.setattr(su, "current_version", lambda: "0.5.0")
+    monkeypatch.setattr(su, "_checkout_contains", lambda root, sha: False)
+    monkeypatch.setattr(su, "install_status", lambda root=None: {"kind": "git", "can_apply": True, "reason": "", "manual_steps": []})
+    page_one = _tags(*((f"v0.0.{i}", SHA_A) for i in range(100)))
+    seen: list = []
+
+    def fetch(url):
+        seen.append(url)
+        return page_one if url == su.TAGS_URL else _tags(("v0.10.0", SHA_B))
+
+    out = su.check(fetch)
+    assert out["ref"] == "v0.10.0" and seen == [su.TAGS_URL, su.TAGS_URL + "&page=2"]

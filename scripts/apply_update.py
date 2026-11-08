@@ -11,10 +11,17 @@ Steps, each of which refuses by leaving the install exactly as it was:
 2. the checkout must be on ``main``, clean, with ``origin`` = this repository over https;
 3. ``git fetch`` the named ref, and require the fetched commit to equal the planned ``sha`` byte for byte;
 4. ``git merge --ff-only`` it (cannot discard a local commit);
-5. when ``requirements.lock`` or ``pyproject.toml`` changed, ``pip install --require-hashes -r requirements.lock`` then ``pip install -e . --no-deps``;
-   if that fails, ``git reset --hard`` back to the old commit (safe: the tree was clean and only this script moved it) AND the old lock is installed
+5. when ``requirements.lock`` or ``pyproject.toml`` changed, ``pip install --require-hashes -r requirements.lock``, then (``pyproject.toml`` changed,
+   and setuptools is already installed) ``pip install -e . --no-deps --no-build-isolation``, which refreshes the version metadata with NOTHING
+   downloaded (build isolation would fetch the build backend from PyPI with no hash; without setuptools the refresh is skipped and the
+   version shown can lag until the installer is re-run); if the install fails, ``git reset --hard`` back to the old commit (safe: the tree was clean and only this script moved it) AND the old lock is installed
    again, so the old code never starts on the new packages (``rollback_incomplete`` when even that fails: re-run the installer);
-6. start the launcher again, and write ``update-result.json`` in the data directory (read by Settings -> Advanced after the restart).
+6. start the launcher again and watch it: when the launcher exits before the app ever answers on its port, the update is undone the same way
+   (``start_failed_rolled_back``) and the launcher started once more on the old version; write ``update-result.json`` in the data directory
+   (read by Settings -> Advanced after the restart).
+
+Every child (git, pip, the build step, the launcher) runs WITHOUT the passphrase variables (``SECRET_ENV``): the server already starts this
+helper without them, and this strips them again, so a start that handed the app ``OO_DB_PASSPHRASE`` comes back locked.
 
 The result file holds a fixed ``status`` word, the two versions' commit prefixes and nothing else: no path to a secret, no command output.
 """
@@ -38,8 +45,19 @@ PIP_TIMEOUT_S = 3600
 ORIGIN_OK = "https://github.com/ideotion/open-omniscience"
 TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+#: How long the restarted app gets to answer on its port before its start is called unconfirmed (a first boot after an update can migrate).
+BOOT_WAIT_S = 900
+#: The passphrase variables (``src/monitoring/secret_scrub.py:HELD_ENV_VARS``; a test pins the two equal). No child of this helper gets them.
+SECRET_ENV = ("OO_DB_PASSPHRASE", "OO_KEY_PASSPHRASE")
 LOCK_FILE = "update.lock"
 RESULT_FILE = "update-result.json"
+
+
+def child_env() -> dict[str, str]:
+    """This process's environment without :data:`SECRET_ENV`, and with git never prompting."""
+    env = {k: v for k, v in os.environ.items() if k not in SECRET_ENV}
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
 
 
 def _run(root: Path, *argv: str, timeout: int = GIT_TIMEOUT_S) -> subprocess.CompletedProcess:
@@ -48,7 +66,7 @@ def _run(root: Path, *argv: str, timeout: int = GIT_TIMEOUT_S) -> subprocess.Com
     try:
         return subprocess.run(  # noqa: S603 - fixed argv, no shell
             argv, cwd=str(root), capture_output=True, text=True, timeout=timeout, check=False,
-            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+            env=child_env(),
         )
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(argv, 124, "", "timeout")
@@ -96,9 +114,27 @@ def wait_for_exit(pid: int, limit: float = WAIT_S, *, alive=pid_alive, sleep=tim
     return True
 
 
-def _install_deps(root: Path, py: str, run) -> bool:
-    ok = run(root, py, "-m", "pip", "install", "--require-hashes", "-r", "requirements.lock", timeout=PIP_TIMEOUT_S).returncode == 0
-    return ok and run(root, py, "-m", "pip", "install", "-e", ".", "--no-deps", timeout=PIP_TIMEOUT_S).returncode == 0
+def _install_deps(root: Path, py: str, run, *, refresh_metadata: bool = True) -> bool:
+    """The hash-pinned lock, then (``refresh_metadata``) the editable metadata with no build isolation, so nothing unhashed is downloaded."""
+    if run(root, py, "-m", "pip", "install", "--require-hashes", "-r", "requirements.lock", timeout=PIP_TIMEOUT_S).returncode != 0:
+        return False
+    if not refresh_metadata or run(root, py, "-c", "import setuptools").returncode != 0:
+        return True  # nothing else to do, or no local build backend: skip the refresh rather than fetch one unhashed
+    return run(root, py, "-m", "pip", "install", "--no-deps", "--no-build-isolation", "-e", ".", timeout=PIP_TIMEOUT_S).returncode == 0
+
+
+def changed_files(root: Path, old: str, new: str, *, git=_git) -> list[str]:
+    return git(root, "diff", "--name-only", f"{old}..{new}").stdout.split()
+
+
+def roll_back(root: Path, old: str, changed: list[str], py: str, *, git=_git, run=_run) -> bool:
+    """Put the checkout back on ``old`` (safe: it was clean and only this helper moved it) and, when the update changed the dependencies, the
+    environment from the old lock too, so the old code never starts on the new packages. False when either step failed."""
+    if git(root, "reset", "--hard", old).returncode != 0:
+        return False
+    if any(f in ("requirements.lock", "pyproject.toml") for f in changed):
+        return _install_deps(root, py, run, refresh_metadata="pyproject.toml" in changed)
+    return True
 
 
 def apply(plan: dict, *, git=_git, run=_run) -> tuple[str, str]:
@@ -129,16 +165,13 @@ def apply(plan: dict, *, git=_git, run=_run) -> tuple[str, str]:
         return "already_current", old  # the checkout already contains that version (a pull without a reinstall, a tag behind main)
     if git(root, "merge", "--ff-only", sha).returncode != 0:
         return "not_a_fast_forward", old
-    changed = git(root, "diff", "--name-only", f"{old}..{sha}").stdout.split()
+    changed = changed_files(root, old, sha, git=git)
     if any(f in ("requirements.lock", "pyproject.toml") for f in changed):
         py = plan.get("python") or sys.executable
         if os.name == "nt":
             time.sleep(3)  # the console-script launcher may still hold its own .exe for a moment after the Python process exits
-        if not _install_deps(root, py, run):
-            # Put BOTH back: the checkout, then the environment from the old lock, so the old code does not start on the new packages.
-            if git(root, "reset", "--hard", old).returncode != 0:
-                return "rollback_incomplete", old
-            if not _install_deps(root, py, run):
+        if not _install_deps(root, py, run, refresh_metadata="pyproject.toml" in changed):
+            if not roll_back(root, old, changed, py, git=git, run=run):
                 return "rollback_incomplete", old
             return "dependencies_failed_rolled_back", old
     return "updated", old
@@ -164,14 +197,34 @@ def wait_for_server(port: int, limit: float = 120.0, *, answers=server_answers, 
     return True
 
 
-def relaunch(root: Path, *, popen=subprocess.Popen) -> None:
+def relaunch(root: Path, *, popen=subprocess.Popen):
+    """Start the launcher again; returns its process (``None`` when it could not be started)."""
     quiet = subprocess.DEVNULL
-    if os.name == "nt":
-        # A console of its own: the launcher says "close this window to stop the app", so it needs a window (never DETACHED_PROCESS here).
-        # No std handle redirected: passing any one makes Popen hand the console ALL of this helper's (NUL) handles, and the window is blank.
-        popen(["cmd", "/c", str(root / "scripts" / "launch.cmd")], cwd=str(root), creationflags=0x00000010)  # noqa: S603
-    else:
-        popen(["bash", str(root / "scripts" / "launch.sh")], stdin=quiet, stdout=quiet, stderr=quiet, cwd=str(root), start_new_session=True)  # noqa: S603
+    try:
+        if os.name == "nt":
+            # A console of its own: the launcher says "close this window to stop the app", so it needs a window (never DETACHED_PROCESS here).
+            # No std handle redirected: passing any one makes Popen hand the console ALL of this helper's (NUL) handles, and the window is blank.
+            return popen(["cmd", "/c", str(root / "scripts" / "launch.cmd")], cwd=str(root), env=child_env(), creationflags=0x00000010)  # noqa: S603
+        return popen(  # noqa: S603 - fixed argv, no shell
+            ["bash", str(root / "scripts" / "launch.sh")], stdin=quiet, stdout=quiet, stderr=quiet, cwd=str(root), env=child_env(), start_new_session=True,
+        )
+    except OSError:
+        return None
+
+
+def watch_start(proc, port: int, limit: float = BOOT_WAIT_S, *, answers=server_answers, sleep=time.sleep) -> str:
+    """``up`` once the app answers on its port; ``exited`` when the launcher ended (or never started) before it did, which is a failed start;
+    ``unknown`` when neither happened within ``limit`` (a long first boot, or a prompt waiting in the launcher's window): never undone then,
+    because the new version may be mid-migration."""
+    deadline = time.monotonic() + limit
+    while True:
+        if answers(port):
+            return "up"
+        if proc is None or proc.poll() is not None:
+            return "up" if answers(port) else "exited"
+        if time.monotonic() >= deadline:
+            return "unknown"
+        sleep(2)
 
 
 def write_result(plan: dict, status: str, old: str, data_dir: Path) -> None:
@@ -289,8 +342,20 @@ def main(argv: list[str]) -> int:
         write_result(plan, status, old, data_dir)
         with contextlib.suppress(OSError):
             plan_path.unlink()
-        relaunch(root)
-        return 0 if status in ("updated", "already_current") else 1
+        proc = relaunch(root)
+        if status == "updated":
+            started = watch_start(proc, int(plan.get("port") or 8000))
+            if started == "exited":
+                # The new version did not come up: undo it and start the old one, which ran a minute ago.
+                changed = changed_files(root, old, plan["sha"])
+                ok = roll_back(root, old, changed, plan.get("python") or sys.executable)
+                status = "start_failed_rolled_back" if ok else "rollback_incomplete"
+                write_result(plan, status, old, data_dir)
+                relaunch(root)
+            elif started == "unknown":
+                status = "start_unconfirmed"
+                write_result(plan, status, old, data_dir)
+        return 0 if status in ("updated", "already_current", "start_unconfirmed") else 1
     finally:
         release_lock(lock)
 

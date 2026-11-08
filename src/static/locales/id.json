@@ -5557,7 +5557,7 @@
   "Update an OpenStreetMap country with the daily change files": "Perbarui satu negara OpenStreetMap dengan file perubahan harian",
   "Update and restart": "Perbarui dan mulai ulang",
   "Update failed: {error}": "Pembaruan gagal: {error}",
-  "Update now? The app stops, the new version is downloaded with git, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org. Neither download goes through this app's proxy.": "Perbarui sekarang? Aplikasi berhenti, versi baru diunduh dengan git, dan aplikasi mulai lagi sendiri. Folder data Anda tidak disentuh. Tidak ada yang dipasang tanpa klik ini. Jika versi baru mengubah dependensi aplikasi, pip juga mengunduhnya dari pypi.org. Kedua unduhan tidak melalui proxy aplikasi ini.",
+  "Update now? The app stops, the new version is downloaded with git from github.com, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org, checked against the hashes in the release. Both downloads use a direct connection, which is why updating is refused in protected mode.": "Perbarui sekarang? Aplikasi berhenti, versi baru diunduh dengan git dari github.com, lalu aplikasi berjalan lagi dengan sendirinya. Folder data Anda tidak disentuh. Tidak ada yang dipasang tanpa klik ini. Jika versi baru mengubah dependensi aplikasi, pip juga mengunduhnya dari pypi.org, diperiksa dengan hash dalam rilis. Kedua unduhan memakai koneksi langsung, karena itu pembaruan ditolak dalam mode terlindungi.",
   "Update queued. The task manager shows its progress.": "Pembaruan masuk antrean. Pengelola tugas menampilkan kemajuannya.",
   "Update with the daily files": "Perbarui dengan file harian",
   "Updated": "Diperbarui",
@@ -7414,5 +7414,10 @@
   "＋ zoom": "＋ perbesar",
   "－ zoom": "－ perkecil",
   "📍 places": "📍 tempat",
-  "🛒 Draft (": "🛒 Draf ("
+  "🛒 Draft (": "🛒 Draf (",
+  "Download and install the app update from GitHub and PyPI": "Unduh dan pasang pembaruan aplikasi dari GitHub dan PyPI",
+  "Protected mode is on, so the update did not start: it would connect to GitHub and PyPI directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.": "Mode terlindungi aktif, jadi pembaruan tidak dimulai: pembaruan akan terhubung langsung ke GitHub dan PyPI, bukan melalui proxy Anda. Beralihlah ke mode standar untuk memperbarui, atau perbarui secara manual melalui proxy Anda.",
+  "Airplane mode is on, so the update did not start. Go online first.": "Mode pesawat aktif, jadi pembaruan tidak dimulai. Hubungkan ke internet terlebih dahulu.",
+  "The new version did not start, so the update was undone and the previous version started again.": "Versi baru tidak berjalan, jadi pembaruan dibatalkan dan versi sebelumnya dijalankan lagi.",
+  "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "Pembaruan terakhir sudah terpasang, tetapi aplikasi lama sekali mulai. Jika bermasalah, jalankan ulang penginstal."
 }

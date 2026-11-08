@@ -5557,7 +5557,7 @@
   "Update an OpenStreetMap country with the daily change files": "Atualizar um país do OpenStreetMap com os arquivos de alterações diários",
   "Update and restart": "Atualizar e reiniciar",
   "Update failed: {error}": "Falha em a atualização: {error}",
-  "Update now? The app stops, the new version is downloaded with git, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org. Neither download goes through this app's proxy.": "Atualizar agora? O aplicativo para, a nova versão é baixada com git e o aplicativo inicia de novo sozinho. Sua pasta de dados não é tocada. Nada é instalado sem este clique. Se a nova versão mudar as dependências do aplicativo, o pip também as baixa do pypi.org. Nenhum dos dois downloads passa pelo proxy deste aplicativo.",
+  "Update now? The app stops, the new version is downloaded with git from github.com, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org, checked against the hashes in the release. Both downloads use a direct connection, which is why updating is refused in protected mode.": "Atualizar agora? A aplicação para, a nova versão é baixada com git de github.com e a aplicação reinicia sozinha. A sua pasta de dados não é tocada. Nada é instalado sem este clique. Se a nova versão mudar as dependências da aplicação, o pip também as baixa de pypi.org, verificadas com os hashes da versão. Ambos os downloads usam uma conexão direta, por isso a atualização é recusada no modo protegido.",
   "Update queued. The task manager shows its progress.": "Atualização na fila. O gerenciador de tarefas mostra o andamento.",
   "Update with the daily files": "Atualizar com os arquivos diários",
   "Updated": "Atualizado",
@@ -7414,5 +7414,10 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 locais",
-  "🛒 Draft (": "🛒 Rascunho ("
+  "🛒 Draft (": "🛒 Rascunho (",
+  "Download and install the app update from GitHub and PyPI": "Baixar e instalar a atualização da aplicação a partir do GitHub e do PyPI",
+  "Protected mode is on, so the update did not start: it would connect to GitHub and PyPI directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.": "O modo protegido está ativo, por isso a atualização não começou: ela se conectaria diretamente ao GitHub e ao PyPI, não pelo seu proxy. Mude para o modo padrão para atualizar, ou atualize manualmente pelo seu proxy.",
+  "Airplane mode is on, so the update did not start. Go online first.": "O modo avião está ativo, por isso a atualização não começou. Fique online primeiro.",
+  "The new version did not start, so the update was undone and the previous version started again.": "A nova versão não iniciou, por isso a atualização foi desfeita e a versão anterior foi iniciada de novo.",
+  "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "A última atualização foi instalada, mas a aplicação demorou muito a iniciar. Se algo falhar, execute o instalador de novo."
 }

@@ -5557,7 +5557,7 @@
   "Update an OpenStreetMap country with the daily change files": "用每日变更文件更新一个 OpenStreetMap 国家",
   "Update and restart": "更新并重启",
   "Update failed: {error}": "更新失败：{error}",
-  "Update now? The app stops, the new version is downloaded with git, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org. Neither download goes through this app's proxy.": "现在更新？应用将停止，用 git 下载新版本，然后自行重新启动。您的数据文件夹不会被改动。未经此次点击不会安装任何内容。如果新版本更改了应用的依赖项，pip 还会从 pypi.org 下载它们。两次下载都不经过本应用的代理。",
+  "Update now? The app stops, the new version is downloaded with git from github.com, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org, checked against the hashes in the release. Both downloads use a direct connection, which is why updating is refused in protected mode.": "现在更新吗？应用会停止，新版本通过 git 从 github.com 下载，然后应用会自动重新启动。您的数据文件夹不会被改动。没有这次点击就不会安装任何东西。如果新版本更改了应用的依赖项，pip 也会从 pypi.org 下载它们，并按发布中的哈希值校验。两次下载都使用直接连接，因此在保护模式下拒绝更新。",
   "Update queued. The task manager shows its progress.": "更新已加入队列。任务管理器会显示其进度。",
   "Update with the daily files": "用每日文件更新",
   "Updated": "更新时间",
@@ -7414,5 +7414,10 @@
   "＋ zoom": "＋ 放大",
   "－ zoom": "－ 缩小",
   "📍 places": "📍 地点",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "Download and install the app update from GitHub and PyPI": "从 GitHub 和 PyPI 下载并安装应用更新",
+  "Protected mode is on, so the update did not start: it would connect to GitHub and PyPI directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.": "保护模式已开启，因此更新没有开始：更新会直接连接 GitHub 和 PyPI，而不是通过您的代理。请切换到标准模式再更新，或通过您的代理手动更新。",
+  "Airplane mode is on, so the update did not start. Go online first.": "飞行模式已开启，因此更新没有开始。请先联网。",
+  "The new version did not start, so the update was undone and the previous version started again.": "新版本没有启动，因此已撤销更新并重新启动了之前的版本。",
+  "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "上次更新已安装，但应用启动用了很长时间。如果运行异常，请重新运行安装程序。"
 }

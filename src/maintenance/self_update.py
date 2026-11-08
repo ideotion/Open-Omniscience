@@ -15,7 +15,9 @@ WHAT "NEWER" MEANS. The highest ``vX.Y.Z`` tag the repository publishes, when it
 THE NETWORK. The CHECK is the one in-process fetch: one ``GET`` on ``api.github.com`` through :func:`src.safety.fetcher.guarded_session`, so the kill
 switch (airplane mode), the protected-mode proxy and the host list all apply, and the UI asks the ONE consent popup first. The ``git fetch`` of the update
 itself runs in :mod:`scripts.apply_update`, a separate process that starts only after this app has exited cleanly (the database and WAL closed through
-the ordinary shutdown path), so there is no in-process socket for it to bypass; the confirm dialog says so before it is started.
+the ordinary shutdown path). Neither the socket guard nor the proxy reaches that process, so the apply is REFUSED before anything stops while airplane
+mode is on or protected mode is chosen (:func:`refuse_offline_or_protected`), the UI asks the consent popup first, and the helper is started without
+the passphrase variables.
 
 NEVER UNVERIFIED CODE, NEVER WITHOUT A CLICK. Applying needs ``confirm: true`` AND the exact ``ref``/``sha`` of a check this process made in the last hour,
 so a request cannot name a ref of its own. The helper re-verifies after fetching: the fetched commit must be byte-for-byte the ``sha`` the check read, the
@@ -63,6 +65,14 @@ _LAST_CHECK: dict[str, Any] = {}
 
 class UpdateError(Exception):
     """A refusal or failure with a fixed, address-free sentence (``str(exc)``) safe to show."""
+
+
+class AirplaneRefused(UpdateError):
+    """The apply was refused because airplane mode is on (the endpoint names it with ``code: "airplane"``)."""
+
+
+class ProtectedRefused(UpdateError):
+    """The apply was refused because protected mode is chosen (``code: "protected"``)."""
 
 
 def current_version() -> str:
@@ -189,13 +199,31 @@ def _get_json(url: str) -> Any:
     return body
 
 
+#: GitHub lists tags by NAME, not by version, 100 to a page: every page is read (up to this many), so a ``v0.10.0`` on page two is never missed.
+_TAG_PAGES_MAX = 10
+
+
+def _all_tags(fetch: Any) -> Any:
+    """Every tag row, page after page until a short page (``TAGS_URL`` itself is page one). A page that is not a list ends the walk; when the
+    FIRST one is not, that answer goes to :func:`pick_newest_tag` unchanged (which reads it as no tags)."""
+    rows: list[Any] = []
+    for page in range(1, _TAG_PAGES_MAX + 1):
+        body = fetch(TAGS_URL if page == 1 else f"{TAGS_URL}&page={page}")
+        if not isinstance(body, list):
+            return body if page == 1 else rows
+        rows.extend(body)
+        if len(body) < 100:
+            break
+    return rows
+
+
 def check(get_json: Any = None, *, root: Path | None = None, now: float | None = None) -> dict[str, Any]:
     """Ask GitHub what is newest and compare it to the running version. Raises :class:`UpdateError` (fixed words) on a refusal or failure and
     ``NetworkBlocked`` while airplane mode is engaged (the caller names that one). Remembers the answer for :func:`validate_apply`."""
     fetch = get_json or _get_json
     cur = current_version()
     cur_t = _vtuple(cur) or (0, 0, 0)
-    newest = pick_newest_tag(fetch(TAGS_URL))
+    newest = pick_newest_tag(_all_tags(fetch))
     kind = "tag"
     if newest is None:
         kind = "main"
@@ -271,6 +299,7 @@ def begin_apply(ref: str, sha: str, *, now: float | None = None, root: Path | No
     with _APPLY_LOCK:
         if _APPLYING is not None and time.monotonic() - _APPLYING < _APPLY_HOLD_S:
             raise UpdateError("An update is already starting.")
+        refuse_offline_or_protected()
         checked = validate_apply(ref, sha, now=now, root=root)
         if _helper_running(root):
             raise UpdateError("An earlier update is still being applied; try again later.")
@@ -280,27 +309,78 @@ def begin_apply(ref: str, sha: str, *, now: float | None = None, root: Path | No
         return checked
 
 
-def _helper_running(root: Path | None = None) -> bool:
-    """True while an update helper holds a fresh lock and is still running (checked BEFORE this app stops, so it is never stopped for an
-    update that would then wait behind another). A check that cannot run answers False: the helper's own lock still refuses a duplicate."""
-    import importlib.util
+#: The two refusals ``refuse_offline_or_protected`` raises, kept as constants so the endpoint test and the UI read the same words.
+AIRPLANE_REFUSAL = "Airplane mode is on: the update did not start. Go online first (the update downloads from GitHub and PyPI)."
+PROTECTED_REFUSAL = (
+    "Protected mode is on: the update did not start. It would download from GitHub and PyPI over a direct connection, not through your "
+    "proxy, which would reveal this machine's address. Switch to standard mode to update, or update by hand through your proxy."
+)
 
-    from src.paths import data_dir, repo_root
 
-    script = (root or repo_root()) / "scripts" / "apply_update.py"
-    lock = data_dir() / "update.lock"
-    if not lock.exists() or not script.is_file():
-        return False
+def refuse_offline_or_protected() -> None:
+    """Refuse an apply while airplane mode is on or protected mode is chosen. The helper's ``git fetch`` and ``pip install`` run in a separate
+    process after this app has exited, where neither the socket guard nor the proxy settings reach, so the gate has to be HERE, before anything
+    stops: an apply in airplane mode would egress while the app shows offline, and one in protected mode would silently drop the proxy (a
+    deanonymisation, never a retry). Settings that cannot be read count as protected (the app's own rule, R117)."""
+    from src.ingest import kill_switch_active
+
+    if kill_switch_active():
+        raise AirplaneRefused(AIRPLANE_REFUSAL)
     try:
-        spec = importlib.util.spec_from_file_location("oo_apply_update", script)
-        if spec is None or spec.loader is None:
-            return False
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod.lock_holder_alive(lock) is not None
-    except Exception:  # noqa: BLE001 - a script mid-swap (a SyntaxError, a missing name) must not turn the click into a 500
-        _LOG.warning("update: could not read the helper lock")
+        from src.safety.settings import load_settings
+
+        st = load_settings()
+        protected = bool(st.is_protected or st.read_failed)
+    except Exception:  # noqa: BLE001 - unreadable settings: refuse, never assume a direct connection is allowed
+        protected = True
+    if protected:
+        raise ProtectedRefused(PROTECTED_REFUSAL)
+
+
+def _lock_reading(lock: Path) -> tuple[int, int, float] | None:
+    """``(app pid, helper pid, mtime)`` of the helper's lock file, or None when it cannot be read (same format as ``scripts/apply_update.py``)."""
+    try:
+        app, helper = (int(x) for x in lock.read_text(encoding="utf-8").split())
+        return (app, helper, lock.stat().st_mtime)
+    except (OSError, ValueError):
+        return None
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        import psutil
+
+        return bool(psutil.pid_exists(pid))
+    except ImportError:
+        pass
+    if os.name == "nt":
+        return True  # cannot tell without psutil: count it as running, so the click is refused rather than racing a live helper
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
         return False
+    except PermissionError:
+        return True
+    return True
+
+
+#: Same as ``scripts/apply_update.py:LOCK_STALE_S`` (a test pins the two equal).
+LOCK_STALE_S = 8 * 3600
+
+
+def _helper_running(root: Path | None = None, *, alive: Any = None, now: Any = None) -> bool:
+    """True while an update helper holds a fresh lock and is still running (checked BEFORE this app stops, so it is never stopped for an
+    update that would then wait behind another). Read here, in-process, with the helper's own rule (fresh and its helper alive); the script is
+    never imported into the server. A lock that cannot be read is no holder: the helper's own exclusive lock still refuses a duplicate."""
+    from src.paths import data_dir
+
+    del root  # the lock lives in the data directory whatever the checkout
+    reading = _lock_reading(data_dir() / "update.lock")
+    if reading is None:
+        return False
+    _app, helper, mtime = reading
+    t = (now or time.time)()
+    return bool(helper) and helper != os.getpid() and t - mtime < LOCK_STALE_S and (alive or _pid_alive)(helper)
 
 
 def validate_apply(ref: str, sha: str, *, now: float | None = None, root: Path | None = None) -> dict[str, Any]:
@@ -337,14 +417,19 @@ def launch_helper(ref: str, sha: str, kind: str, *, root: Path | None = None, po
     argv = [sys.executable, "-I", str(script), str(plan_path)]
     spawn = popen or subprocess.Popen
     quiet = subprocess.DEVNULL
+    # WITHOUT the passphrases: the helper runs git, pip and the fetched release's build step, none of which may hold the key that opens the
+    # corpus (the passphrase rule). The app it starts again opens locked, as any start without OO_DB_PASSPHRASE does.
+    from src.llm.model_store import child_env
+
+    env = child_env()
     if os.name == "nt":
         flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
         try:  # break away from a job object that would kill the helper together with this process; not every job allows it
-            spawn(argv, stdin=quiet, stdout=quiet, stderr=quiet, cwd=str(root), creationflags=flags | 0x01000000)  # noqa: S603 - fixed argv
+            spawn(argv, stdin=quiet, stdout=quiet, stderr=quiet, cwd=str(root), env=env, creationflags=flags | 0x01000000)  # noqa: S603 - fixed argv
         except OSError:
-            spawn(argv, stdin=quiet, stdout=quiet, stderr=quiet, cwd=str(root), creationflags=flags)  # noqa: S603 - fixed argv, no shell
+            spawn(argv, stdin=quiet, stdout=quiet, stderr=quiet, cwd=str(root), env=env, creationflags=flags)  # noqa: S603 - fixed argv, no shell
     else:
-        spawn(argv, stdin=quiet, stdout=quiet, stderr=quiet, cwd=str(root), start_new_session=True)  # noqa: S603 - fixed argv, no shell
+        spawn(argv, stdin=quiet, stdout=quiet, stderr=quiet, cwd=str(root), env=env, start_new_session=True)  # noqa: S603 - fixed argv, no shell
 
 
 def last_result() -> dict[str, Any] | None:

@@ -5557,7 +5557,7 @@
   "Update an OpenStreetMap country with the daily change files": "تحديث بلد من OpenStreetMap بملفات التغييرات اليومية",
   "Update and restart": "تحديث وإعادة التشغيل",
   "Update failed: {error}": "فشل التحديث: {error}",
-  "Update now? The app stops, the new version is downloaded with git, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org. Neither download goes through this app's proxy.": "التحديث الآن؟ سيتوقف التطبيق، وسيُنزَّل الإصدار الجديد باستخدام git، ثم يبدأ التطبيق من جديد تلقائيًا. لا يُمَسّ مجلد بياناتك. لا يُثبَّت شيء دون هذه النقرة. إذا غيّر الإصدار الجديد اعتماديات التطبيق، فإن pip ينزّلها أيضًا من pypi.org. لا يمر أي من التنزيلين عبر وكيل هذا التطبيق.",
+  "Update now? The app stops, the new version is downloaded with git from github.com, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org, checked against the hashes in the release. Both downloads use a direct connection, which is why updating is refused in protected mode.": "هل تريد التحديث الآن؟ يتوقف التطبيق، ويُنزَّل الإصدار الجديد باستخدام git من github.com، ثم يعيد التطبيق التشغيل تلقائيًا. لا يُمسّ مجلد بياناتك. لا يُثبَّت شيء دون هذه النقرة. إذا غيّر الإصدار الجديد اعتماديات التطبيق، فإن pip ينزّلها أيضًا من pypi.org ويتحقق منها مقابل بصمات الإصدار. يستخدم التنزيلان اتصالًا مباشرًا، ولهذا يُرفض التحديث في الوضع المحمي.",
   "Update queued. The task manager shows its progress.": "أُدرج التحديث في الطابور. يعرض مدير المهام تقدّمه.",
   "Update with the daily files": "التحديث بالملفات اليومية",
   "Updated": "محدّث",
@@ -7414,5 +7414,10 @@
   "＋ zoom": "＋ تكبير",
   "－ zoom": "－ تصغير",
   "📍 places": "📍 أماكن",
-  "🛒 Draft (": "🛒 المسودة ("
+  "🛒 Draft (": "🛒 المسودة (",
+  "Download and install the app update from GitHub and PyPI": "تنزيل تحديث التطبيق وتثبيته من GitHub وPyPI",
+  "Protected mode is on, so the update did not start: it would connect to GitHub and PyPI directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.": "الوضع المحمي مفعّل، لذا لم يبدأ التحديث: كان سيتصل بـ GitHub وPyPI مباشرة وليس عبر الوكيل الخاص بك. انتقل إلى الوضع القياسي للتحديث، أو حدّث يدويًا عبر الوكيل.",
+  "Airplane mode is on, so the update did not start. Go online first.": "وضع الطيران مفعّل، لذا لم يبدأ التحديث. اتصل بالإنترنت أولًا.",
+  "The new version did not start, so the update was undone and the previous version started again.": "لم يبدأ الإصدار الجديد، لذا أُلغي التحديث وأُعيد تشغيل الإصدار السابق.",
+  "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "ثُبّت التحديث الأخير، لكن التطبيق استغرق وقتًا طويلًا للبدء. إذا أساء العمل، فأعد تشغيل المثبّت."
 }

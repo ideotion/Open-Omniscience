@@ -5557,7 +5557,7 @@
   "Update an OpenStreetMap country with the daily change files": "Mettre à jour un pays OpenStreetMap avec les fichiers de modifications quotidiens",
   "Update and restart": "Mettre à jour et redémarrer",
   "Update failed: {error}": "Échec de la mise à jour : {error}",
-  "Update now? The app stops, the new version is downloaded with git, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org. Neither download goes through this app's proxy.": "Mettre à jour maintenant ? L'application s'arrête, la nouvelle version est téléchargée avec git, puis l'application redémarre d'elle-même. Votre dossier de données n'est pas touché. Rien n'est installé sans ce clic. Si la nouvelle version modifie les dépendances de l'application, pip les télécharge aussi depuis pypi.org. Aucun des deux téléchargements ne passe par le proxy de l'application.",
+  "Update now? The app stops, the new version is downloaded with git from github.com, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click. If the new version changes the app's dependencies, pip also downloads them from pypi.org, checked against the hashes in the release. Both downloads use a direct connection, which is why updating is refused in protected mode.": "Mettre à jour maintenant ? L'application s'arrête, la nouvelle version est téléchargée avec git depuis github.com, puis l'application redémarre d'elle-même. Votre dossier de données n'est pas touché. Rien n'est installé sans ce clic. Si la nouvelle version modifie les dépendances de l'application, pip les télécharge aussi depuis pypi.org, vérifiées avec les empreintes de la version. Les deux téléchargements utilisent une connexion directe ; c'est pourquoi la mise à jour est refusée en mode protégé.",
   "Update queued. The task manager shows its progress.": "Mise à jour mise en file d'attente. Le gestionnaire de tâches montre sa progression.",
   "Update with the daily files": "Mettre à jour avec les fichiers quotidiens",
   "Updated": "Mis à jour",
@@ -7414,5 +7414,10 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lieux",
-  "🛒 Draft (": "🛒 Brouillon ("
+  "🛒 Draft (": "🛒 Brouillon (",
+  "Download and install the app update from GitHub and PyPI": "Télécharger et installer la mise à jour de l'application depuis GitHub et PyPI",
+  "Protected mode is on, so the update did not start: it would connect to GitHub and PyPI directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.": "Le mode protégé est actif, la mise à jour n'a donc pas démarré : elle se connecterait directement à GitHub et PyPI, sans passer par votre proxy. Passez en mode standard pour mettre à jour, ou mettez à jour à la main via votre proxy.",
+  "Airplane mode is on, so the update did not start. Go online first.": "Le mode avion est actif, la mise à jour n'a donc pas démarré. Passez d'abord en ligne.",
+  "The new version did not start, so the update was undone and the previous version started again.": "La nouvelle version n'a pas démarré : la mise à jour a été annulée et la version précédente a redémarré.",
+  "The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.": "La dernière mise à jour a été installée, mais l'application a mis longtemps à démarrer. En cas de problème, relancez l'installateur."
 }
