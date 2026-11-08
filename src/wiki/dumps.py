@@ -334,8 +334,14 @@ class DumpDownloadManager:
         claims its slot (status -> "downloading") UNDER THE LOCK before launch, so
         two concurrent pumps can never exceed the capacity; the launch itself runs
         outside the lock."""
+        from src.ingest import kill_switch_active
+
         to_launch: list[DownloadEntry] = []
         with self._lock:
+            # R617: a worker that airplane mode paused frees its slot and pumps. The entry it would launch is presented PAUSED
+            # (resumable), as start() presents one under airplane mode, instead of a worker whose refused request said "error".
+            offline = kill_switch_active()
+            claimed = False
             free = self.max_concurrent - self._downloading_now()
             for k in list(self._order):
                 if free <= 0:
@@ -345,10 +351,16 @@ class DumpDownloadManager:
                     self._order.remove(k)
                     continue
                 self._order.remove(k)
-                e.status = "downloading"  # claim the slot atomically
-                to_launch.append(e)
+                if offline:
+                    e.status = "paused"
+                    e.error = None
+                    e.paused_by = "airplane"
+                else:
+                    e.status = "downloading"  # claim the slot atomically
+                    to_launch.append(e)
+                claimed = True
                 free -= 1
-            if to_launch:
+            if claimed:
                 self._save()
         for entry in to_launch:
             try:
@@ -566,6 +578,10 @@ class DumpDownloadManager:
         self, entry: DownloadEntry, stop_event: threading.Event | None = None
     ) -> DownloadEntry:
         """Run the (resumable) download loop. Synchronous; used by start() in a thread."""
+        from src.ingest import kill_switch_engaged_since, kill_switch_epoch
+
+        # This attempt's window (R614), opened before its first request (a mirror probe, a size read, the GET).
+        epoch = kill_switch_epoch()
         http_get = self._http_get or _default_get
         dest = Path(entry.dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -639,6 +655,17 @@ class DumpDownloadManager:
             entry.status = "done"
             self._save()
         except Exception as exc:  # noqa: BLE001 - record, never crash the worker thread
+            if isinstance(exc, NetworkBlocked) or kill_switch_engaged_since(epoch):
+                # R617 (R320, R614): the Stop refused or cut this attempt, still engaged or cleared again before the failure
+                # arrived. ``NetworkBlocked`` is raised only by the switch, so it also covers a Stop that landed after start()'s
+                # check and before this worker opened its window. Stored as "error" the entry would wait for the operator; it is
+                # presented as the chunk loop presents a Stop, PAUSED by airplane mode, resumable from the partial file. The cost:
+                # a genuine failure sharing its window with a Stop reads as paused, and Resume asks again.
+                entry.status = "paused"
+                entry.error = None
+                entry.paused_by = "airplane"
+                self._save()
+                return entry
             entry.status = "error"
             entry.error = type(exc).__name__
             self._save()

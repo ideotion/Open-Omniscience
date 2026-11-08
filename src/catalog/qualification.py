@@ -1739,9 +1739,15 @@ def run_qualification_pass(
     trial_errors = 0
     deferred = 0
     if fetcher is not None:
+        from src.ingest import kill_switch_engaged_since, kill_switch_epoch
+
         started = time.monotonic()
         attempted: list[Source] = []
+        stopped = False
         for source in candidates:
+            # This candidate's trial window (R614), from before its first request to the read below: a Stop pressed and cleared
+            # again anywhere inside it is a Stop, as when the switch is still engaged.
+            epoch = kill_switch_epoch()
             # The first candidate is always tried; after that a pass gives up on the rest when
             # its wall-clock budget is spent or the memory guard says stop.
             if attempted and (
@@ -1753,14 +1759,32 @@ def run_qualification_pass(
             try:
                 trial_fetch(session, source, fetcher)
             except Exception as exc:  # noqa: BLE001 - one bad candidate must not abort the pass
-                trial_errors += 1
-                log_failure(_LOG, f"qualification trial fetch failed for {getattr(source, 'domain', '?')!r}", exc, level=logging.WARNING)
+                if not kill_switch_engaged_since(epoch):  # a Stop's failure is not the candidate's (R617): read just below
+                    trial_errors += 1
+                    log_failure(_LOG, f"qualification trial fetch failed for {getattr(source, 'domain', '?')!r}", exc, level=logging.WARNING)
+            if kill_switch_engaged_since(epoch):
+                # R617 (R320, R614): the Stop touched this candidate's trial, whether it raised or came back with what it read
+                # before the cut (``trial_fetch`` refuses by name or returns a tally; neither is evidence about the source). Judged
+                # here it would be stamped, climb the backoff ladder, or be logged as having no evidence and sent to the back of
+                # the queue; every later candidate would be refused the same way. So it and the rest are deferred, exactly as a
+                # spent budget defers them, and stay first in line. The cost: a genuine failure sharing its window with a Stop is
+                # not recorded, and the candidate is tried again.
+                attempted.pop()
+                stopped = True
+                break
         deferred = len(candidates) - len(attempted)
         if deferred:
             done = {int(x.id) for x in attempted}
             new_candidates = [x for x in new_candidates if int(x.id) in done]
             rechecks = [x for x in rechecks if int(x.id) in done]
             candidates = attempted
+        if stopped and not attempted:
+            # Nothing to judge (R617): no cohort freeze, no stamp, no forced-list bookkeeping. Named as the ride-along names its
+            # own airplane skip, so the bulk job pauses on it instead of reading ``evaluated: 0`` as an empty backlog.
+            return {
+                "enabled": True, "evaluated": 0, "skipped": "airplane mode engaged",
+                "trial_fetch_errors": trial_errors, "deferred": deferred,
+            }
 
     # S5.1: the COHORT is frozen (once per run, by the caller that knows what a run is) and
     # only the CANDIDATES' own metrics are read here, scoped in SQL. A caller that passes no
