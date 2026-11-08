@@ -195,3 +195,14 @@ def test_the_summary_counts_the_skipped_no_rollup_and_the_determinism_pass_does_
     assert "skipped-no-rollup" in inv["note"]
     det = card_audit._determinism_check(object(), first)
     assert "rising_now" in det["not_compared_budget"]
+
+
+def test_the_measured_slow_scans_run_after_the_cheap_producers(spent):
+    """F8, 2026-11-07: space_time_convergence (225.6 s) and coverage_advisor (35.0 s) ate the budget and 25 producers skipped."""
+    assert {"space_time_convergence", "coverage_advisor"} <= card_audit._RUN_LAST
+    assert not ({"space_time_convergence", "coverage_advisor"} & card_audit._TRENDING_SCAN_PRODUCERS)
+    names = _register_pass(spent, slow_name="space_time_convergence")
+    out = card_audit.observe_producers(object())
+    by = {o.name: o for o in out}
+    assert [by[f"p{i}"].outcome for i in range(5)] == ["ok"] * 5
+    assert [o.name for o in out] == names, "registration order is kept in the result"
