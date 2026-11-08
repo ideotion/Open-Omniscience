@@ -96,7 +96,7 @@ def test_launch_sh_starts_every_browser_opener_through_env_minus_u():
         # an opener in command position: at the start of a statement, after a separator, or
         # after a keyword or wrapper that runs it; prose like "will open at" is not one
         if re.search(
-            r"(^\s*|[;&|({]\s*|\b(then|else|do|exec|command|nohup|setsid|env)\s+(?:[A-Za-z_]\w*=\S*\s+)*)"
+            r"(^\s*|[;&|({`!]\s*|\b(if|elif|while|until|then|else|do|time|sudo|exec|command|nohup|setsid|env)\s+(?:[A-Za-z_]\w*=\S*\s+)*)"
             r"(xdg-open|open|gio\s+open|kde-open\d*|sensible-browser|x-www-browser|www-browser"
             r"|\"?\$\{?BROWSER\b)(?=[\s\"'}]|$)",
             ln,
@@ -120,12 +120,17 @@ def test_launch_cmd_clears_the_held_names_right_before_every_start():
         # the terminal panel (#1817, R600) is the app's own Python and drops the held names from its
         # own environment as it starts, before it can open a browser (tests/test_terminal_panel.py);
         # it holds no address of its own to hand to the shell, so it is not a browser start
+        # pinned to the exact program and to a tail with no command separator, so nothing can be
+        # chained after it under the exemption
         if re.fullmatch(
-            r'if not errorlevel 1 start "open omniscience panel" \S+ -m src\.tui\.panel .*', low
+            r'if not errorlevel 1 start "open omniscience panel" "\.venv\\scripts\\python\.exe"'
+            r" -m src\.tui\.panel [^&|^]*",
+            low,
         ):
             continue
+        # the whole line, a PowerShell -Command script included
         assert not re.search(
-            r"\b(start|explorer|rundll32|start-process)\b", low.split("-command")[0]
+            r"\b(start|explorer|rundll32|start-process|startfile|shellexecute)\b", low
         ), f"launch.cmd line {i + 1} may open something outside the two cleared starts: {ln}"
     # the outer setlocal is what gives the names back to the window that ran the launcher
     first_code = next(
