@@ -21,7 +21,10 @@ own that).
 from __future__ import annotations
 
 import logging
-from typing import Any
+import re
+import time
+from datetime import UTC, datetime
+from typing import Any, Protocol
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -49,14 +52,201 @@ def _budget_spent(session: Session, exc: BaseException) -> bool:
     return deadline_expired(session) and "interrupt" in str(exc).lower()
 
 
-def _scalar(session: Session, sql: str) -> int | None:
+def _scalar(session: Session, sql: str, params: dict[str, Any] | None = None) -> int | None:
     try:
-        row = session.execute(text(sql)).fetchone()
+        row = session.execute(text(sql), params or {}).fetchone()
         return int(row[0]) if row and row[0] is not None else 0
     except Exception as exc:  # noqa: BLE001 - a diagnostic must degrade, never crash
         if _budget_spent(session, exc):
             raise  # the budget ran out: the enclosing deadline types it (INT-1)
         return None
+
+
+#: Where the exact scans keep their place between builds. ``load`` returns the saved cursor (``{}`` when there is none or it cannot be read)
+#: and ``save`` writes it back; both must never raise. ``None`` for a caller that has nowhere to keep it: the scan then starts from the
+#: beginning every time, as before, and a check the budget cuts says so.
+class CursorStore(Protocol):
+    def load(self) -> dict[str, Any]: ...
+
+    def save(self, state: dict[str, Any]) -> None: ...
+
+
+_CURSOR_KEY = "diagnostics.integrity.cursor.v1"
+
+#: Rows a range scan starts with before it has measured anything, and how long one range should take. The SIZE of the next range is derived
+#: from how long the last one took, so a large corpus gets small ranges and a small one a single range; these two are only where it starts and
+#: what it steers toward (a statement the deadline can stop, since a bare count over a whole table is ONE progress opcode and cannot be).
+_FIRST_RANGE_ROWS = 50_000
+_RANGE_TARGET_S = 1.0
+#: A range may grow by at most this factor per step, so one fast range (a warm cache) cannot ask for a table's worth next.
+_RANGE_GROWTH = 4
+
+
+class KvCursorStore:
+    """The cursor kept in the app-state key-value store. Never raises: an unreadable cursor is an absent one, an unwritable one is logged."""
+
+    def load(self) -> dict[str, Any]:
+        try:
+            from src.config.kv_store import kv_get_json
+
+            blob = kv_get_json(_CURSOR_KEY)
+            return blob if isinstance(blob, dict) else {}
+        except Exception as exc:  # noqa: BLE001 - a diagnostic cursor must never break the sweep
+            log_failure(_LOG, "corpus-integrity: could not read the saved cursor", exc, level=logging.DEBUG)
+            return {}
+
+    def save(self, state: dict[str, Any]) -> None:
+        try:
+            from src.config.kv_store import kv_set_json
+
+            kv_set_json(_CURSOR_KEY, state)
+        except Exception as exc:  # noqa: BLE001
+            log_failure(_LOG, "corpus-integrity: could not save the cursor", exc, level=logging.WARNING)
+
+
+#: The exact scans: (check, the table whose id range is walked, the statement over one range). Each counts the rows of its range that break the
+#: rule; the sum over the ranges is the whole-table figure.
+_RANGE_SCANS = (
+    (
+        "orphan_keywords",
+        "keywords",
+        "SELECT COUNT(*) FROM keywords k WHERE k.id > :lo AND k.id <= :hi "
+        "AND NOT EXISTS (SELECT 1 FROM keyword_mentions m WHERE m.keyword_id = k.id)",
+    ),
+    (
+        "dangling_mentions_missing_article",
+        "keyword_mentions",
+        "SELECT COUNT(*) FROM keyword_mentions m WHERE m.id > :lo AND m.id <= :hi "
+        "AND NOT EXISTS (SELECT 1 FROM articles a WHERE a.id = m.article_id)",
+    ),
+    (
+        "dangling_mentions_missing_keyword",
+        "keyword_mentions",
+        "SELECT COUNT(*) FROM keyword_mentions m WHERE m.id > :lo AND m.id <= :hi "
+        "AND NOT EXISTS (SELECT 1 FROM keywords k WHERE k.id = m.keyword_id)",
+    ),
+)
+
+_TABLE_NAME = re.compile(r"^[A-Za-z0-9_]+$")
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _range_scan(
+    session: Session, check: str, table: str, sql: str, saved: dict[str, Any]
+) -> tuple[int | None, dict[str, Any]]:
+    """Count one exact check in id ranges, from where the last build stopped, until it finishes or the budget runs out.
+
+    Returns ``(value, progress)``: ``value`` is the whole-table figure when the scan reached the end THIS build, else ``None`` (not established);
+    ``progress`` says where it is (``state`` complete or partial, the highest id it has through, the largest id it is walking to, the tally so
+    far) and carries the last COMPLETED figure with its date and the id it was through, so a reader sees an older result as old. A pass walks to
+    the largest id the table had when the pass began: rows added after that are the next pass's, and the progress says which id that was.
+    The cursor only moves past a range whose statement finished, so an interrupted range is simply done again next build."""
+    prev = saved.get(check) if isinstance(saved.get(check), dict) else {}
+    pending = prev.get("pending") if isinstance(prev.get("pending"), dict) else None
+    last_complete = prev.get("last_complete") if isinstance(prev.get("last_complete"), dict) else None
+    if pending is not None:
+        through, nxt, tally = int(pending.get("through_id", 0)), int(pending.get("next_id", 0)), int(pending.get("tally", 0))
+        step, started = int(pending.get("step") or _FIRST_RANGE_ROWS), str(pending.get("started_at") or _now_iso())
+    else:
+        top = _scalar(session, f"SELECT MAX(id) FROM {table}")  # nosec B608 - `table` is one of three constants above
+        if top is None:
+            return None, {"state": "unreadable", "last_complete": last_complete}
+        through, nxt, tally, step, started = top, 0, 0, _FIRST_RANGE_ROWS, _now_iso()
+    interrupted: BaseException | None = None
+    while nxt < through:
+        if deadline_expired(session):
+            break
+        hi = min(nxt + max(1, step), through)
+        t0 = time.monotonic()
+        try:
+            n = _scalar(session, sql, {"lo": nxt, "hi": hi})
+        except Exception as exc:  # noqa: BLE001 - the budget's own interrupt: keep the place, then let the deadline type it
+            interrupted = exc
+            break
+        if n is None:
+            break  # a missing or damaged table: degraded, and the cursor stays where it was
+        tally += n
+        nxt = hi
+        took = max(time.monotonic() - t0, 1e-3)
+        step = max(1, min(step * _RANGE_GROWTH, int(step * _RANGE_TARGET_S / took)))
+    done = nxt >= through
+    if done:
+        last_complete = {"value": tally, "through_id": through, "at": _now_iso()}
+        saved[check] = {"last_complete": last_complete}
+        progress = {"state": "complete", "through_id": through, "next_id": through, "tally": tally, "last_complete": last_complete}
+    else:
+        saved[check] = {
+            "pending": {"through_id": through, "next_id": nxt, "tally": tally, "step": step, "started_at": started},
+            "last_complete": last_complete,
+        }
+        progress = {
+            "state": "partial", "through_id": through, "next_id": nxt, "tally_so_far": tally,
+            "started_at": started, "last_complete": last_complete,
+        }
+    if interrupted is not None:
+        raise interrupted
+    return (tally if done else None), progress
+
+
+def _fk_scan(session: Session, saved: dict[str, Any]) -> tuple[int | None, dict[str, Any]]:
+    """``PRAGMA foreign_key_check`` one table at a time, from the tables the last build had not reached.
+
+    A table at a time because the whole-database pragma is one statement the deadline cannot stop and one that never finished on a 14 GB corpus.
+    ``keyword_mentions`` is left to the two dangling-mention checks, which are the same two foreign keys counted exactly in ranges; it is named in
+    the progress, never silently dropped."""
+    prev = saved.get("foreign_key_violations") if isinstance(saved.get("foreign_key_violations"), dict) else {}
+    pending = prev.get("pending") if isinstance(prev.get("pending"), dict) else None
+    last_complete = prev.get("last_complete") if isinstance(prev.get("last_complete"), dict) else None
+    try:
+        names = [str(r[0]) for r in session.execute(text("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")).fetchall()]
+    except Exception as exc:  # noqa: BLE001
+        if _budget_spent(session, exc):
+            raise
+        return None, {"state": "unreadable", "last_complete": last_complete}
+    names = [n for n in names if _TABLE_NAME.match(n) and n != "keyword_mentions"]
+    done_tables: dict[str, int] = {k: int(v) for k, v in (pending or {}).get("tables", {}).items() if k in names}
+    bad: set[str] = {str(t) for t in (pending or {}).get("violating_tables", [])}
+    started = str((pending or {}).get("started_at") or _now_iso())
+    interrupted: BaseException | None = None
+    for name in names:
+        if name in done_tables:
+            continue
+        if deadline_expired(session):
+            break
+        try:
+            rows = session.execute(text(f'PRAGMA foreign_key_check("{name}")')).fetchall()  # nosec B608 - `name` matched [A-Za-z0-9_]+ above
+        except Exception as exc:  # noqa: BLE001
+            if _budget_spent(session, exc):
+                interrupted = exc
+            break
+        done_tables[name] = len(rows)
+        if rows:
+            bad.add(name)
+    finished = all(n in done_tables for n in names)
+    total = sum(done_tables.values())
+    if finished:
+        last_complete = {"value": total, "tables": len(names), "at": _now_iso()}
+        saved["foreign_key_violations"] = {"last_complete": last_complete}
+        progress = {
+            "state": "complete", "tables_checked": len(names), "violating_tables": sorted(bad),
+            "left_to_the_mention_checks": ["keyword_mentions"], "last_complete": last_complete,
+        }
+    else:
+        saved["foreign_key_violations"] = {
+            "pending": {"tables": done_tables, "violating_tables": sorted(bad), "started_at": started},
+            "last_complete": last_complete,
+        }
+        progress = {
+            "state": "partial", "tables_checked": len(done_tables), "tables_total": len(names),
+            "tally_so_far": total, "violating_tables": sorted(bad), "started_at": started,
+            "left_to_the_mention_checks": ["keyword_mentions"], "last_complete": last_complete,
+        }
+    if interrupted is not None:
+        raise interrupted
+    return (total if finished else None), progress
 
 
 #: The checks whose results the verdict is read from, and the report key each lives at.
@@ -93,7 +283,9 @@ def _verdict(report: dict[str, Any]) -> tuple[bool | None, list[str], list[str]]
     return (None if incomplete else False), found, incomplete
 
 
-def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False) -> dict[str, Any]:
+def corpus_integrity(
+    session: Session, *, sample: int = 500, full: bool = False, cursor: CursorStore | None = None
+) -> dict[str, Any]:
     """Sweep the corpus for silent drift. Read-only, bounded, deadline-guarded.
 
     - orphan keywords (a keyword with zero mentions — the prune target);
@@ -114,31 +306,33 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
 
     report: dict[str, Any] = {"supported": True, "dialect": dialect}
     timed_out = False
+    saved: dict[str, Any] = cursor.load() if cursor is not None else {}
+    progress: dict[str, Any] = {}
 
     try:
         with statement_deadline(session):
-            # -- orphan / dangling row tallies (index-backed EXISTS) -------------- #
-            report["orphan_keywords"] = _scalar(
-                session,
-                "SELECT COUNT(*) FROM keywords k "
-                "WHERE NOT EXISTS (SELECT 1 FROM keyword_mentions m WHERE m.keyword_id = k.id)",
-            )
-            report["dangling_mentions_missing_article"] = _scalar(
-                session,
-                "SELECT COUNT(*) FROM keyword_mentions m "
-                "WHERE NOT EXISTS (SELECT 1 FROM articles a WHERE a.id = m.article_id)",
-            )
-            report["dangling_mentions_missing_keyword"] = _scalar(
-                session,
-                "SELECT COUNT(*) FROM keyword_mentions m "
-                "WHERE NOT EXISTS (SELECT 1 FROM keywords k WHERE k.id = m.keyword_id)",
-            )
+            # -- orphan / dangling row tallies: exact, in id ranges, resumable ---- #
+            # One statement per range (the deadline can stop a range, and cannot stop a bare count over a whole
+            # table), from where the last build stopped when a cursor store was given. A check that did not reach
+            # the end reads None (not established) with its place in ``scan_progress``, never a partial tally
+            # dressed as the figure.
+            for check, table, sql in _RANGE_SCANS:
+                report[check], progress[check] = _range_scan(session, check, table, sql, saved)
 
             # -- counter drift (sampled by default) ------------------------------ #
             # Recompute the true mention/article counts for the highest-mention
             # keywords and compare to the maintained counters. Drift here means the
             # reconcile pass is due; the exact live aggregate is the source of truth.
-            scope = "" if full else f"ORDER BY mention_count DESC LIMIT {int(sample)}"
+            # SAMPLED: the top-``sample`` keywords are picked FIRST (an index-only read of ``mention_count``) and only
+            # those are joined to their mentions. The earlier form grouped EVERY keyword and sorted afterwards: on the
+            # 4.09 M keywords of the 2026-11-07 Windows run it never finished inside the budget. The rows are the same.
+            if full:
+                source_rows = "keywords"
+            else:
+                source_rows = (
+                    "(SELECT id, term, mention_count, article_count FROM keywords "
+                    f"ORDER BY mention_count DESC LIMIT {int(sample)})"
+                )
             checked = 0
             mention_drift = 0
             article_drift = 0
@@ -151,11 +345,11 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
             try:
                 rows = session.execute(
                     text(
-                        "SELECT k.id, k.term, k.mention_count, k.article_count, "  # nosec B608 - `scope` is a constant "ORDER BY mention_count DESC LIMIT <int>" built from int(sample); no user input
+                        "SELECT k.id, k.term, k.mention_count, k.article_count, "  # nosec B608 - `source_rows` is a constant or built from int(sample); no user input
                         "COALESCE(SUM(m.count),0) AS live_mentions, "
                         "COUNT(m.article_id) AS live_articles "
-                        "FROM keywords k LEFT JOIN keyword_mentions m ON m.keyword_id = k.id "
-                        f"GROUP BY k.id {scope}"
+                        f"FROM {source_rows} k LEFT JOIN keyword_mentions m ON m.keyword_id = k.id "
+                        "GROUP BY k.id"
                     )
                 ).fetchall()
             except StatementTimeout:
@@ -212,17 +406,12 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
             #  below — so its authoritative sqlite_master read and its own bounded row COUNT
             #  never race the counter-drift scan for the shared budget.)
 
-            # -- foreign-key integrity (bounded) --------------------------------- #
-            try:
-                fk_rows = session.execute(text("PRAGMA foreign_key_check")).fetchall()
-                report["foreign_key_violations"] = len(fk_rows)
-                report["foreign_key_violation_tables"] = sorted(
-                    {str(r[0]) for r in fk_rows[:5000]}
-                )
-            except Exception as exc:  # noqa: BLE001
-                if _budget_spent(session, exc):
-                    raise  # the budget ran out (INT-1)
-                report["foreign_key_violations"] = None
+            # -- foreign-key integrity: a table at a time, resumable -------------- #
+            report["foreign_key_violations"], progress["foreign_key_violations"] = _fk_scan(session, saved)
+            report["foreign_key_violation_tables"] = (progress["foreign_key_violations"].get("violating_tables") or [])
+            # A range scan that stops between ranges raises nothing: the budget running out is read here, not inferred.
+            if deadline_expired(session):
+                timed_out = True
     except StatementTimeout:
         timed_out = True
 
@@ -284,13 +473,18 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
     except Exception:  # noqa: BLE001
         report["auto_incremental_vacuum"] = {"last_run": None}
 
+    if cursor is not None:
+        cursor.save(saved)
+    report["scan_progress"] = progress
     report["timed_out"] = timed_out
     drift, found, incomplete = _verdict(report)
     report["drift"] = drift
     report["drift_found_in"] = found
     report["incomplete_checks"] = incomplete
+    report["complete_checks"] = [name for name, _ in _VERDICT_CHECKS if name not in incomplete]
     report["verdict"] = ("drift" if drift else ("no drift" if drift is False else
-                         "not established: " + ", ".join(incomplete) + " did not complete"))
+                         "not established: " + ", ".join(incomplete) + " did not complete"
+                         + ("; " + ", ".join(report["complete_checks"]) + " did" if report["complete_checks"] else "")))
     report["method"] = (
         "Read-only, deadline-guarded SQLite sweep. Orphan/dangling tallies are exact "
         "(index-backed); counter drift is sampled over the top-mention keywords unless "

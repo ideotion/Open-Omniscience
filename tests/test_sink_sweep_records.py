@@ -387,7 +387,12 @@ _MONITORING_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     'src/monitoring/integrity.py': {  # _budget_spent is a bool classifier (statement deadline expired and "interrupt" in the text); the text goes nowhere
         ('_budget_spent', 'return deadline_expired(session) and "interrupt" in str(exc).lower()'): 1,
         ('_scalar', 'if _budget_spent(session, exc):'): 1,
-        ('corpus_integrity', 'if _budget_spent(session, exc):'): 2,
+        ('corpus_integrity', 'if _budget_spent(session, exc):'): 1,
+        # the range and table scans keep the exception OBJECT only to re-raise it after saving their place (the enclosing deadline types it);
+        # no text of it is read, and _budget_spent is the same bool classifier
+        ('_range_scan', 'interrupted = exc'): 1,
+        ('_fk_scan', 'if _budget_spent(session, exc):'): 2,
+        ('_fk_scan', 'interrupted = exc'): 1,
     },
     'src/monitoring/keyword_write_cost.py': {  # engine_text is record_text (a driver by class only): _cut_reason's text is composed by it
         ('keyword_write_cost', 'cut = _cut_reason(exc)'): 1,

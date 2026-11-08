@@ -3252,6 +3252,7 @@
         <label class="small" style="margin-left:6px" title="QUICK (box empty, the default) writes the records first, with collection still running, then runs the scans in the time left of a ten-minute budget, shortest first, with collection paused; a scan that did not fit is named in the file as not run, with why. THOROUGH runs every scan, each up to five minutes, with collection paused while they run: 27 to 47 minutes measured on a large corpus. Applies to this run only: the box is empty again each time this panel opens and is never remembered.">
           <input type="checkbox" id="diag-thorough"> Thorough
         </label>
+        <span id="diag-thorough-note" class="small card-caveat" style="margin-left:6px" hidden></span>
         <span id="all-diag-status" class="small" style="margin-left:6px"></span>
       </div>
       <div class="row small" style="margin-top:2px">

@@ -76,6 +76,7 @@ _ADDED_AFTER_THE_SPLIT: tuple[str, ...] = (
     "chronology_report",
     "release_run_last",
     "release_run_download",
+    "all_diagnostics_estimate",
 )
 
 

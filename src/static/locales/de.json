@@ -5318,6 +5318,8 @@
   "This window updates on its own. Collection runs continuously while online; airplane mode stops it.": "Dieses Fenster aktualisiert sich selbst. Die Sammlung läuft im Online-Betrieb kontinuierlich; der Flugmodus stoppt sie.",
   "This word or name suddenly appears much more often in the articles you collected than it did before. A jump like that usually means a story is moving.": "Dieses Wort oder dieser Name taucht plötzlich viel häufiger in Ihren gesammelten Artikeln auf als zuvor. Ein solcher Sprung bedeutet meist, dass eine Geschichte in Bewegung ist.",
   "Thorough": "Gründlich",
+  "Thorough pauses collection for about {minutes} min: {timed} of {total} scans timed on this machine, the rest from field medians. It can take longer; Quick stops after about ten minutes.": "Gründlich pausiert die Erfassung für etwa {minutes} Min.: {timed} von {total} Prüfungen auf dieser Maschine gemessen, der Rest nach Feldmedianen. Es kann länger dauern; Schnell endet nach etwa zehn Minuten.",
+  "Thorough pauses collection while every scan runs, each up to five minutes; this machine could not give an expected time.": "Gründlich pausiert die Erfassung, solange jede Prüfung läuft, jede bis zu fünf Minuten; diese Maschine konnte keine erwartete Dauer nennen.",
   "Threat model, local-first posture, and the security audit.": "Bedrohungsmodell, lokale Ausrichtung und das Sicherheitsaudit.",
   "Threshold for this Lead: one origin at or above 60%": "Schwelle dieser Spur: ein Ursprung bei mindestens 60 %",
   "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "Schwellen: jung unter {a} Artikeln oder {d} Tagen; etabliert ab {b} Artikeln und {e} Tagen; wachsend dazwischen.",

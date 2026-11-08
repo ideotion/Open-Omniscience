@@ -465,6 +465,8 @@ from .release_run import (
     chronology_report,
     ResumeBody,
 )
+# What a Thorough build is expected to cost (R459): a new slice imported LAST, so every pinned route position stays.
+from .scan_estimate import _mention_rows, _remember_scan_walls, all_diagnostics_estimate
 
 __all__ = [
     "SAMPLE_ZIP_MAX_BYTES",
@@ -814,4 +816,7 @@ __all__ = [
     "release_run_resume",
     "chronology_report",
     "ResumeBody",
+    "_mention_rows",
+    "_remember_scan_walls",
+    "all_diagnostics_estimate",
 ]

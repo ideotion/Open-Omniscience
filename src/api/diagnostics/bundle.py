@@ -277,6 +277,7 @@ def debug_bundle(
     from src.monitoring.errorlog import summary as error_log_summary
     from src.monitoring.field_test import recent_results as _field_test_results
     from src.monitoring.forensics import session_forensics as _session_forensics
+    from src.monitoring.integrity import KvCursorStore as _KvCursorStore
     from src.monitoring.integrity import corpus_integrity as _corpus_integrity
     from src.monitoring.keyword_write_cost import keyword_write_cost as _keyword_write_cost
     from src.monitoring.latency import summary as _latency_summary
@@ -532,8 +533,10 @@ def debug_bundle(
         "schema_drift": _member(
             "schema_drift", lambda: _bounded(lambda: _schema_drift(db)), threaded=False
         ),
+        # With a cursor in the app-state store: the exact scans keep their place between builds, so a corpus too large for one
+        # 60 s budget is finished across several (the member names which checks are complete and where the rest stand).
         "corpus_integrity": _member(
-            "corpus_integrity", lambda: _corpus_integrity(db), threaded=False
+            "corpus_integrity", lambda: _corpus_integrity(db, cursor=_KvCursorStore()), threaded=False
         ),
         # Session forensics (2026-07-09 field event): data-dir inventory (what IS the
         # disk usage — orphaned PLAINTEXT backup staging detected loudly), the previous
@@ -1740,7 +1743,7 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     "/ir-eval": "needs an operator-graded gold-set file (manifest 'excluded')",
     "/gold-builder/sample": "interactive grading sampler, not a report (manifest 'excluded')",
     "/all": "the bundle itself",
-    "/all-job/status": "job control", "/all-job/download": "job control",
+    "/all-job/status": "job control", "/all-job/estimate": "job control — the Thorough build's expected time", "/all-job/download": "job control",
     "/all-job/volumes": (
         "the bundle itself, re-packed — the SAME published archive split into "
         "attachment-sized zips, never a separate report that could disagree with it"
@@ -3573,6 +3576,9 @@ def _all_diagnostics_build(ctx, profile: str, fname: str, mode: str = "thorough"
             journal_path.unlink()
         return {"cancelled": True, "members": results}
     _os.replace(part_path, final_path)  # atomic publish
+    from .scan_estimate import _remember_scan_walls
+
+    _remember_scan_walls(results)  # after the window closed: a key-value write never rides the exclusive hold
     with contextlib.suppress(OSError):
         journal_path.unlink()  # folded into the zip as bundle-journal.jsonl already
     # Keep only the newest archive (the channel is one-shot; old ones just consume disk).
