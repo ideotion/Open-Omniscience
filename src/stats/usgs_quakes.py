@@ -148,6 +148,10 @@ class QuakeParse:
     refused_total: int = 0
     #: Rows that parsed as events (counted or excluded below).
     rows_read: int = 0
+    #: Rows refused AFTER the header was found: each is an event row the service sent but this parse
+    #: could not use (its month becomes a gap). The fetch adds them to ``rows_read`` when it compares
+    #: against the service's own count, so the gap logic is reachable live, not only offline.
+    refused_events: int = 0
     #: Rows with ``type`` other than ``earthquake`` (explosions, quarry blasts...), EXCLUDED, stated.
     excluded_non_earthquake: int = 0
     #: Earthquake rows under the threshold or outside the window; excluded, stated.
@@ -192,6 +196,7 @@ class QuakeParse:
             "excluded_outside_window": self.excluded_outside_window,
             "partial_periods": dict(self.partial_periods),
             "refused_total": self.refused_total,
+            "refused_events": self.refused_events,
             "refused_sample": list(self.refused),
             "refused_is_sample": self.refused_is_sample,
         }
@@ -269,22 +274,26 @@ def parse_usgs_quakes(
             continue
         if len(row) <= max(columns[c] for c in _REQUIRED_COLUMNS):
             _refuse(out, lineno, "too few fields", ",".join(row))
+            out.refused_events += 1  # an event row the service sent (a duplicate id is not)
             unplaced += 1
             continue
         t = _TIME.match(row[columns["time"]].strip())
         if not t:
             _refuse(out, lineno, "time is not ISO-8601 UTC", row[columns["time"]])
+            out.refused_events += 1
             unplaced += 1
             continue
         year = int(t.group(1))
         month = int(t.group(2))
         if not (_MIN_YEAR <= year <= _MAX_YEAR) or not (1 <= month <= 12):
             _refuse(out, lineno, "time out of range", row[columns["time"]])
+            out.refused_events += 1
             unplaced += 1
             continue
         event_id = row[columns["id"]].strip()
         if not event_id:
             _refuse(out, lineno, "no event id", ",".join(row))
+            out.refused_events += 1
             refused_months.add(year * 12 + month - 1)
             continue
         if event_id in seen_ids:
@@ -297,6 +306,7 @@ def parse_usgs_quakes(
             # A blank magnitude on a non-earthquake row is plausible; on an earthquake it is a gap in
             # the data we must not count as an event of unknown size.
             _refuse(out, lineno, "magnitude is not a finite number", mag_raw)
+            out.refused_events += 1
             refused_months.add(year * 12 + month - 1)
             continue
         seen_ids.add(event_id)
@@ -313,7 +323,8 @@ def parse_usgs_quakes(
             out.excluded_below_threshold += 1
             continue
         counts[idx] += 1
-        if maxima[idx] is None or mag > maxima[idx]:  # type: ignore[operator]
+        top = maxima[idx]
+        if top is None or mag > top:
             maxima[idx] = mag
         if "status" in columns and (columns["status"] >= len(row) or row[columns["status"]].strip().lower() != "reviewed"):
             unreviewed_rows += 1
