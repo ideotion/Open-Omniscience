@@ -188,6 +188,9 @@ class StagedArtifact:
     # and wraps it again under THIS install's passphrase (merge._restore_key_members). Secrets: never in a repr, a
     # comparison, a log or a report; empty for every artifact that carries no keys (a plaintext one never does).
     key_passphrases: tuple[str, ...] = field(default=(), repr=False, compare=False)
+    # What each of ``key_passphrases`` was given as, in the same order: "corpus", "backup", or "backup and corpus" (one
+    # passphrase given as both). Names, never a secret: the import report says which one a still-encrypted key needs.
+    key_passphrase_roles: tuple[str, ...] = field(default=(), repr=False, compare=False)
 
     def member_paths(self, role: str) -> list[tuple[str, Path]]:
         out = []
@@ -202,11 +205,28 @@ class StagedArtifact:
 def key_passphrases_for(corpus_passphrase: str | None, backup_passphrase: str | None) -> tuple[str, ...]:
     """The value of :attr:`StagedArtifact.key_passphrases` for a restore given these two: each one given, once, the
     corpus's first (a key is wrapped under its install's database passphrase unless ``OO_KEY_PASSPHRASE`` was set)."""
-    out: list[str] = []
-    for p in (corpus_passphrase, backup_passphrase):
-        if p and p not in out:
-            out.append(p)
-    return tuple(out)
+    return tuple(p for p, _role in _given_key_passphrases(corpus_passphrase, backup_passphrase))
+
+
+def give_key_passphrases(staged: StagedArtifact, corpus_passphrase: str | None, backup_passphrase: str | None) -> None:
+    """Set :attr:`StagedArtifact.key_passphrases` and :attr:`StagedArtifact.key_passphrase_roles` together."""
+    given = _given_key_passphrases(corpus_passphrase, backup_passphrase)
+    staged.key_passphrases = tuple(p for p, _role in given)
+    staged.key_passphrase_roles = tuple(role for _p, role in given)
+
+
+def _given_key_passphrases(corpus_passphrase: str | None, backup_passphrase: str | None) -> list[tuple[str, str]]:
+    out: list[tuple[str, str]] = []
+    for p, role in ((corpus_passphrase, "corpus"), (backup_passphrase, "backup")):
+        if not p:
+            continue
+        for i, (q, _role) in enumerate(out):
+            if q == p:
+                out[i] = (q, "backup and corpus")
+                break
+        else:
+            out.append((p, role))
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -753,7 +773,7 @@ def read_volume_backup(
         staged = _finalize_staged(staging, was_encrypted=True)
         stage_a_timings["extract_and_verify"] = round(time.monotonic() - t1, 3)
         staged.stage_a_timings = stage_a_timings
-        staged.key_passphrases = key_passphrases_for(corpus_passphrase, passphrase)
+        give_key_passphrases(staged, corpus_passphrase, passphrase)
         return staged
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
@@ -856,7 +876,7 @@ def read_artifact(
         staged = _finalize_staged(staging, was_encrypted)
         stage_a_timings["extract_and_verify"] = round(time.monotonic() - t1, 3)
         staged.stage_a_timings = stage_a_timings
-        staged.key_passphrases = key_passphrases_for(None, passphrase if was_encrypted else None)
+        give_key_passphrases(staged, None, passphrase if was_encrypted else None)
         return staged
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)

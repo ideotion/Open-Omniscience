@@ -6487,6 +6487,11 @@ _KEY_PAIR_HALF = (
     "as neither install); it is not written and stays in the backup"
 )
 _KEY_UNSAFE_NAME = "the name is not a file directly in keys/; it is not written"
+_KEY_EVIDENCE_PKCS8 = (
+    "a password-protected PEM, a form the evidence signer never reads, and this install holds no passphrase to wrap "
+    "it under in a form it does read; it is not written and stays in the backup"
+)
+_EVIDENCE_KEY_FILE = "evidence_ed25519.pem"
 #: How a carried key that is placed was written (:func:`_reseal_key`).
 _KEY_PLACED_HOW = ("as_carried", "resealed", "still_encrypted")
 
@@ -6507,17 +6512,19 @@ def _ed25519_public(key: object) -> bytes:
 
 def _reseal_key(
     kind: str, local: Path, raw: bytes, candidates: list[bytes | None], held: bytes | None
-) -> tuple[bytes, str, str | None] | str:
-    """``(bytes to place, how, public key)`` for one carried key file; or, for a key that is not to be written, why
-    (fixed words that hold no secret and no key byte).
+) -> tuple[bytes, str, str | None, int] | str:
+    """``(bytes to place, how, public key, opener)`` for one carried key file; or, for a key that is not to be
+    written, why (fixed words that hold no secret and no key byte). ``opener`` is the index in ``candidates`` of the
+    passphrase that opened it (an index, so no secret travels further than this function).
 
     ``how`` is one of :data:`_KEY_PLACED_HOW`: ``as_carried`` (already in the form this install writes: wrapped
     under ``held``, or plaintext when nothing is held), ``resealed`` (the SAME key sealed under ``held``, read back
     with ``held`` and compared with the key BEFORE anything is written, as
     :func:`src.custody.keyfile.replace_in_place` does for a key wrapped in place), or ``still_encrypted``: an
     install that holds no passphrase never gets a carried ENCRYPTED key written in the clear (R613); the bytes are
-    placed exactly as carried and the import report says how to unlock them. The public key is the Ed25519 one as
-    hex (the value an evidence bundle carries), ``None`` for an ML-DSA file.
+    placed exactly as carried and the import report says how to unlock them; except an evidence key that is a
+    password-protected PEM, which the evidence signer never reads under any passphrase, so it is not written. The
+    public key is the Ed25519 one as hex (the value an evidence bundle carries), ``None`` for an ML-DSA file.
 
     Each candidate passphrase is tried in turn (a wrong one costs one scrypt). Never raises for a file it cannot read
     (a wrong passphrase, a damaged file, a PEM of an algorithm the library does not know: the import goes on and the
@@ -6527,7 +6534,7 @@ def _reseal_key(
 
     if kind == "ml_dsa" and not signing.PQC_AVAILABLE:
         return _move_wrapped_mldsa(raw, candidates, held)
-    for cand in candidates:
+    for i, cand in enumerate(candidates):
         try:
             if kind == "ed25519":
                 key, form = signing.parse_ed25519_key(local, raw, cand)
@@ -6538,9 +6545,11 @@ def _reseal_key(
         except Exception:  # noqa: BLE001 - SigningError, and what the library raises for a file it cannot read: not this passphrase
             continue
         if (form == "wrapped" and cand == held) or (form == "plaintext" and held is None):
-            return raw, "as_carried", public
-        if held is None:
-            return raw, "still_encrypted", public  # R613: never decrypted to disk on an install that holds no passphrase
+            return raw, "as_carried", public, i
+        if held is None:  # R613: never decrypted to disk on an install that holds no passphrase
+            if form == "pkcs8" and local.name == _EVIDENCE_KEY_FILE:
+                return _KEY_EVIDENCE_PKCS8
+            return raw, "still_encrypted", public, i
         try:
             if kind == "ed25519":
                 sealed = signing.seal_ed25519_key(key, held)
@@ -6552,11 +6561,11 @@ def _reseal_key(
                 same = (pk2, sk2) == (pk, sk)
         except Exception:  # noqa: BLE001 - the sealed copy does not read back: nothing is written
             return _KEY_NOT_SAME
-        return (sealed, "resealed", public) if same else _KEY_NOT_SAME
+        return (sealed, "resealed", public, i) if same else _KEY_NOT_SAME
     return _KEY_NOT_OPENED
 
 
-def _move_wrapped_mldsa(raw: bytes, candidates: list[bytes | None], held: bytes | None) -> tuple[bytes, str, None] | str:
+def _move_wrapped_mldsa(raw: bytes, candidates: list[bytes | None], held: bytes | None) -> tuple[bytes, str, None, int] | str:
     """The ML-DSA key file of a pair, on an install WITHOUT the post-quantum library (the optional extra).
 
     Its wrap is the custody signer's own AES-256-GCM over the public and secret key, which needs no ML-DSA code to
@@ -6567,7 +6576,7 @@ def _move_wrapped_mldsa(raw: bytes, candidates: list[bytes | None], held: bytes 
     """
     from src.custody import signing
 
-    for cand in candidates:
+    for i, cand in enumerate(candidates):
         if not cand:
             continue
         try:
@@ -6575,15 +6584,15 @@ def _move_wrapped_mldsa(raw: bytes, candidates: list[bytes | None], held: bytes 
         except Exception:  # noqa: BLE001 - the GCM tag check: not this passphrase
             continue
         if cand == held:
-            return raw, "as_carried", None
+            return raw, "as_carried", None, i
         if not held:
-            return raw, "still_encrypted", None  # R613: never decrypted to disk on an install that holds no passphrase
+            return raw, "still_encrypted", None, i  # R613: never decrypted to disk on an install that holds no passphrase
         sealed = signing.seal_mldsa_key(data, b"", held)  # the wrap of public + secret key as one run of bytes
         try:
             back = signing._unwrap(sealed, held)
         except Exception:  # noqa: BLE001 - the sealed copy does not read back: nothing is written
             return _KEY_NOT_SAME
-        return (sealed, "resealed", None) if back == data else _KEY_NOT_SAME
+        return (sealed, "resealed", None, i) if back == data else _KEY_NOT_SAME
     return _KEY_NO_PQC
 
 
@@ -6604,8 +6613,9 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
     then the source corpus's and the backup's, see :attr:`StagedArtifact.key_passphrases`) and written the way this
     install writes its own: wrapped under its passphrase. An install that holds NO passphrase never gets a carried
     encrypted key written in the clear (R613): the bytes are placed exactly as carried, still encrypted, and listed
-    in ``still_encrypted`` so the import report can say how to unlock them (set ``OO_KEY_PASSPHRASE`` and restart); a
-    carried plaintext key is placed as carried there too. One that none of the passphrases opens is NOT written, and
+    in ``still_encrypted`` with the passphrase that opened them BY ROLE (the backup's, the corpus's), so the import
+    report can say how to unlock them (set ``OO_KEY_PASSPHRASE`` to it and restart); a carried plaintext key is
+    placed as carried there too. One that none of the passphrases opens is NOT written, and
     is reported by name with the reason: it stays in the backup, and a key placed where it cannot be opened is worse
     than none (the next export makes a new key; the import report says so). Every Ed25519 key placed is listed in
     ``identities`` with its public key, because this install now signs as the backup's identity.
@@ -6617,6 +6627,7 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
     touched; the halves of that pair this call already placed are taken back first (only while each is still the file
     this call made), so a full disk never leaves half an identity for the next signer to complete with a key of its own.
     """
+    from src.custody import keyfile
     from src.custody.signing import SigningError
     from src.custody.signing import _passphrase as held_key_passphrase
     from src.database.connect import get_passphrase
@@ -6634,7 +6645,8 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
             "a key this install has is kept, and a signer's key pair is placed whole or not at all; a carried key is "
             "opened with the passphrases this restore has and written the way this install writes its own; resealed "
             "names the ones written in another form than they were carried; still_encrypted names the ones placed "
-            "exactly as carried, still encrypted, because this install holds no passphrase to wrap them under; "
+            "exactly as carried, still encrypted, because this install holds no passphrase to wrap them under, with "
+            "the passphrase that opens them by what it was given as (never the passphrase); "
             "identities gives the public key of each Ed25519 key placed; not_placed are not written and stay in the "
             "backup"
         ),
@@ -6659,7 +6671,10 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
         )
     )
     candidates: list[bytes | None] = [held] if held else []
-    for given in (get_passphrase(), *staged.key_passphrases):
+    roles: list[str] = ["this install's"] if held else []  # what each candidate is, by name: never the passphrase
+    # a reader that sets no roles (or fewer) leaves the rest named "given": the list is at least as long as the passphrases
+    given_roles = [*staged.key_passphrase_roles, *(["given"] * len(staged.key_passphrases))]
+    for given, role in ((get_passphrase(), "this install's database"), *zip(staged.key_passphrases, given_roles, strict=False)):
         if not given:
             continue
         try:
@@ -6668,8 +6683,10 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
             continue  # it cannot be written as UTF-8, so no key was ever wrapped under it
         if p not in candidates:
             candidates.append(p)
+            roles.append(role)
     if not candidates:
         candidates.append(None)  # nothing held, nothing given: only a plaintext key can be read
+        roles.append("none")
 
     pairs: dict[str, list[tuple[str, Path, str]]] = {}
     for name, path in members:
@@ -6701,7 +6718,7 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
         ):
             out["kept_local"].extend(names)  # the existing identity ALWAYS wins, both halves of it
             continue
-        placeable: list[tuple[str, bytes, str, str | None]] = []
+        placeable: list[tuple[str, bytes, str, str | None, int]] = []
         refused: dict[str, str] = {}
         for name, path, kind in halves:
             sealed = _KEY_HELD_UNUSABLE if held_unusable else _reseal_key(kind, base / name, path.read_bytes(), candidates, held)
@@ -6713,41 +6730,43 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
             for name in names:
                 out["not_placed"].append({"name": name, "reason": refused.get(name, _KEY_PAIR_HALF)})
             continue
-        made: list[tuple[Path, tuple[int, int]]] = []  # the halves THIS call created, with the file each one is
-        for i, (name, data, how, public) in enumerate(placeable):
+        made: list[tuple[Path, tuple[int, int, int, int]]] = []  # the halves THIS call created, and which file each is
+        for i, (name, data, how, public, opener) in enumerate(placeable):
             local = base / name
             try:
                 placed = _place_key_file(local, data)
-            except OSError:
-                _take_back_key_files(made)  # a full disk or an I/O error: no half identity is left behind
+            except BaseException:
+                # a full disk, an I/O error, an interrupt: no half identity is left behind for the next signer
+                _take_back_key_files(made)
                 raise
             if not placed:
                 # another caller made this key while the restore ran: theirs wins, and so does the rest of its pair
                 out["kept_local"].append(name)
-                for later, _data, _how, _public in placeable[i + 1 :]:
+                for later, *_rest in placeable[i + 1 :]:
                     out["not_placed"].append({"name": later, "reason": _KEY_PAIR_RACED})
                 break
             with suppress(OSError):
-                st = os.lstat(local)
-                made.append((local, (st.st_dev, st.st_ino)))
+                made.append((local, keyfile.identity(os.lstat(local))))
             out["restored"].append(name)
             if how == "resealed":
                 out["resealed"].append(name)
             elif how == "still_encrypted":
-                out["still_encrypted"].append(name)
+                out["still_encrypted"].append({"name": name, "opened_with": roles[opener]})
             if public is not None:
                 out["identities"].append({"name": name, "ed25519_public_key": public})
     return out
 
 
-def _take_back_key_files(made: list[tuple[Path, tuple[int, int]]]) -> None:
-    """Remove the key files this restore created, each only while it is still the file the restore made (same device
-    and inode): one that another caller has since replaced is theirs and stays. Never raises, so the error that
-    called this is the one the stage leaves with."""
+def _take_back_key_files(made: list[tuple[Path, tuple[int, int, int, int]]]) -> None:
+    """Remove the key files this restore created, each only while it is still the file the restore made (device,
+    inode, size and modification time, :func:`src.custody.keyfile.identity`): one that another caller has since
+    replaced or rewritten is theirs and stays. Never raises, so the error that called this is the one the stage
+    leaves with."""
+    from src.custody import keyfile
+
     for path, ident in made:
         with suppress(OSError):
-            st = os.lstat(path)
-            if (st.st_dev, st.st_ino) == ident:
+            if keyfile.identity(os.lstat(path)) == ident:
                 path.unlink()
 
 

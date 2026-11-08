@@ -392,20 +392,37 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
         lines.append("")
 
     # R613: on an install that holds no passphrase a carried encrypted key is placed exactly as carried, never in the
-    # clear, and it cannot sign here until it is unlocked; that is said where the outcome is read.
-    still_encrypted = keys.get("still_encrypted")
+    # clear, and it cannot sign here until it is unlocked; that is said where the outcome is read, with what stops
+    # meanwhile, the backup export first (a backup is the operator's safety net, and every backup is signed).
+    still_encrypted = [e for e in keys.get("still_encrypted") or () if isinstance(e, dict)]
     if still_encrypted:
+        names = {e.get("name") for e in still_encrypted}
         lines.append("## Signing keys still encrypted")
         lines.append("")
+        if _EVIDENCE_KEY in names:
+            lines.append(
+                "**Backups cannot be exported until the evidence key is unlocked.** Every backup is signed with "
+                f"{_md_code(_EVIDENCE_KEY)}, so a backup export (and an evidence bundle export) stops with an error "
+                "while that key is still encrypted."
+            )
+            lines.append("")
         lines.append(
             "This install holds no passphrase, so these signing keys from the backup were placed exactly as they were "
-            "carried, still encrypted with the backup's passphrase (the one this restore was given for the backup or "
-            "its corpus). They were not written in the clear. To use them, set OO_KEY_PASSPHRASE to that passphrase "
-            "and restart; until then, anything this install signs with them stops with an error that names the key."
+            "carried, still encrypted. They were not written in the clear. Each one is listed with the passphrase "
+            "that opens it. To use them, set OO_KEY_PASSPHRASE to that passphrase and restart; until then, anything "
+            "this install signs with them stops with an error that names the key."
         )
+        if names & _CUSTODY_KEYS:
+            lines.append("")
+            lines.append(
+                "While the custody key is locked and chain-of-custody logging is on, each article collected logs a "
+                "warning and its custody entry waits in the pending queue. The waiting entries are written, marked "
+                "late, at the end of the first collection pass after the key is unlocked."
+            )
         lines.append("")
-        for name in still_encrypted:
-            lines.append(f"- {_md_code(name)}")
+        for entry in still_encrypted:
+            opened = _OPENED_WITH.get(str(entry.get("opened_with")), _OPENED_WITH["given"])
+            lines.append(f"- {_md_code(entry.get('name'))}: opens with {opened}")
         lines.append("")
 
     identities = keys.get("identities")
@@ -424,6 +441,19 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
         lines.append("")
 
     return "\n".join(lines)
+
+
+#: The evidence key: every backup and every evidence bundle is signed with it (R613's report section names it first).
+_EVIDENCE_KEY = "keys/evidence_ed25519.pem"
+#: The chain-of-custody signer's pair: while it is locked, ingest queues its entries as pending.
+_CUSTODY_KEYS = frozenset({"keys/custody_ed25519.pem", "keys/custody_ml_dsa_65.key"})
+#: The passphrase that opened a key still encrypted, BY ROLE (the restore records the role, never the passphrase).
+_OPENED_WITH = {
+    "backup": "the backup's passphrase",
+    "corpus": "the passphrase of the backup's corpus",
+    "backup and corpus": "the passphrase given for both the backup and its corpus",
+    "given": "a passphrase this restore was given",
+}
 
 
 def _md_code(value: object) -> str:
