@@ -1,1 +1,1 @@
-"""The terminal panel the launcher window shows beside the server (R600). See :mod:`src.tui.panel`."""
+"""The terminal panel the launcher window shows beside the server (R600): a process of its own, see ``panel.py``."""

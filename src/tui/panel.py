@@ -49,8 +49,10 @@ from src.monitoring.secret_scrub import HELD_ENV_VARS
 
 try:  # absent on Windows without windows-curses; main() says so and ends
     import curses
+    from curses import error as CursesError
 except ImportError:  # pragma: no cover - exercised on Windows only
     curses = None  # type: ignore[assignment]
+    CursesError = OSError  # type: ignore[misc,assignment]  # never raised: main() ends before any curses call
 
 #: The only host this panel ever connects to. Loopback by construction, never read from argv or the environment.
 HOST = "127.0.0.1"
@@ -443,14 +445,14 @@ def _attrs() -> dict[str, int]:
     a["title"] = curses.A_BOLD
     a["dim"] = curses.A_DIM
     if curses.has_colors():
-        with contextlib.suppress(curses.error):
+        with contextlib.suppress(CursesError):
             curses.use_default_colors()
         pairs = {"ok": curses.COLOR_GREEN, "warn": curses.COLOR_YELLOW, "button": curses.COLOR_CYAN}
         for i, (name, color) in enumerate(pairs.items(), start=1):
             try:
                 curses.init_pair(i, color, -1)
                 a[name] = curses.color_pair(i) | (curses.A_BOLD if name == "warn" else 0)
-            except curses.error:
+            except CursesError:
                 pass
     a["button"] |= curses.A_REVERSE
     return a
@@ -464,11 +466,11 @@ def _draw(scr: Any, lines: list[Line], buttons: list[Button], attrs: dict[str, i
     else:
         scr.erase()
     for y, (text, style) in enumerate(lines[: h]):
-        with contextlib.suppress(curses.error):
+        with contextlib.suppress(CursesError):
             scr.addnstr(y, 0, text, max(w - 1, 0), attrs.get(style, 0))
     for b in buttons:
         if b.row < h and b.col + b.width < w:
-            with contextlib.suppress(curses.error):
+            with contextlib.suppress(CursesError):
                 scr.addstr(b.row, b.col, f"[ {b.label} ]", attrs["button"])
     scr.refresh()
 
@@ -497,7 +499,7 @@ def _show_log(scr: Any, server_pid: int | None) -> bool:
                     back = False  # end of input: no terminal to come back to
                 break
     finally:
-        with contextlib.suppress(curses.error):
+        with contextlib.suppress(CursesError):
             scr.clear()
             scr.refresh()
     return back
@@ -505,7 +507,7 @@ def _show_log(scr: Any, server_pid: int | None) -> bool:
 
 def run(scr: Any, port: int, url: str, server_pid: int | None, stopping: list[bool]) -> int:
     assert curses is not None
-    with contextlib.suppress(curses.error):
+    with contextlib.suppress(CursesError):
         curses.curs_set(0)
     scr.keypad(True)
     scr.timeout(250)
@@ -516,7 +518,7 @@ def run(scr: Any, port: int, url: str, server_pid: int | None, stopping: list[bo
         avail, _ = curses.mousemask(curses.BUTTON1_PRESSED)
         mouse_ok = bool(avail)
         curses.mouseinterval(0)
-    except curses.error:
+    except CursesError:
         pass
     attrs = _attrs()
     state = PanelState()
@@ -553,7 +555,7 @@ def run(scr: Any, port: int, url: str, server_pid: int | None, stopping: list[bo
         if ch == curses.KEY_MOUSE:
             try:
                 _id, x, y, _z, bstate = curses.getmouse()
-            except curses.error:
+            except CursesError:
                 continue
             if not bstate & curses.BUTTON1_PRESSED:
                 continue
@@ -599,19 +601,18 @@ def main(argv: list[str] | None = None) -> int:
         stopping[0] = True
         raise _Stop
 
-    for name in ("SIGINT", "SIGTERM", "SIGHUP"):
-        sig = getattr(signal, name, None)
-        if sig is not None:
-            with contextlib.suppress(OSError, ValueError):
-                signal.signal(sig, _end)
+    # The panel is a process of its own, started by the launcher and imported by no server code (tests/test_event_loop_signal_exemption.py).
+    for sig in (signal.SIGINT, signal.SIGTERM, *([signal.SIGHUP] if hasattr(signal, "SIGHUP") else [])):
+        with contextlib.suppress(OSError, ValueError):
+            signal.signal(sig, _end)
     try:
         code = curses.wrapper(run, args.port, url, args.server_pid, stopping)
         if code == 10:
             print("\nPanel closed. Open Omniscience keeps running: close this window or press Ctrl-C to stop it.\n", flush=True)
     except _Stop:  # a signal: curses.wrapper has already restored the terminal
         return 0
-    except curses.error as exc:
-        print(f"The terminal panel could not start ({exc}). The app keeps running.", file=sys.stderr)
+    except CursesError as exc:
+        print(f"The terminal panel could not start ({type(exc).__name__}). The app keeps running.", file=sys.stderr)
         return 3
     return int(code)
 
