@@ -1116,6 +1116,15 @@ def test_custody_reconcile_a_scan_alone_still_answers_and_its_drain_says_the_swi
     assert (out["drained"]["refused_offline"], out["drained"]["still_pending"], out["drained"]["recorded"]) == (2, 2, 0), out["drained"]
 
 
+def test_custody_gap_button_counts_what_both_drains_recorded():
+    """A refused drain of the gaps leaves them owed (503 above); the next press online writes them in its FIRST drain, before the
+    scan, so the button's count reads both drains or it says "Recorded 0" for entries it has just written."""
+    from tests.js_source_helper import function_source, read_static
+
+    src = function_source(read_static("app-ai-tools.js"), "custodyGapRecord")
+    assert "(d.drained || {}).recorded" in src and "(d.drained_after_queue || {}).recorded" in src, src
+
+
 def test_custody_back_online_the_drain_writes_a_refused_entry_once_late_with_its_anchor(db, monkeypatch, ots):
     from src.custody import pending
     from src.custody.log import CustodyLog
