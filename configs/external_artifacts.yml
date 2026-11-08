@@ -759,6 +759,25 @@ artifacts:
     freshness: {max_age_months: 18}
     last_verified: "2026-11-07"
 
+  - id: usgs-quakes-csv-shape
+    title: USGS ComCat earthquake catalogue CSV shape (FDSN event service)
+    kind: dated-data
+    description: >-
+      The FDSN `count?format=plain` and `query?format=csv` shapes src/stats/usgs_quakes.py targets
+      (columns looked up by name: time, mag, type, id, status; one UTC month per figure; only
+      `type == earthquake` counted; 4.5 = the documented global completeness floor, a refusal below
+      it). Documented from the published shape and NOT verified against a live download -- the build
+      sandbox has no route to earthquake.usgs.gov; the first real fetch is an operator step. The
+      catalogue is revised after the fact (automatic -> reviewed, deletions), so each fetch is stored
+      as a new vintage. Separate from the live hazards relay in src/hazards.
+    upstream: "https://earthquake.usgs.gov/fdsnws/event/1/"
+    check_upstream: "run count and query (format=csv) for one past month on a networked machine; confirm the header names, the plain-integer count, and the 20000 per-request maximum"
+    license: "USGS-authored data is public domain (US Government work); operator to confirm the credit line the USGS asks for"
+    pin: {file: src/stats/usgs_quakes.py, const: USGS_QUAKES_AS_OF}
+    refresh: "verify the live shape, update the fixtures in tests/test_usgs_quakes.py, bump USGS_QUAKES_AS_OF"
+    freshness: {max_age_months: 18}
+    last_verified: "2026-11-07"
+
   - id: wikimedia-scoring-endpoint
     title: Wikimedia edit-scoring endpoint (ORES / Lift Wing)
     kind: dated-data

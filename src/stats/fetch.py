@@ -31,6 +31,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import re
 from datetime import UTC, datetime, timezone
 from typing import Any, Callable
 from urllib.parse import quote, urlencode
@@ -427,5 +428,106 @@ def fetch_gistemp(
         raise ValueError(
             f"GISTEMP {region}: the response is not the expected table "
             f"({parsed.refused_total} lines refused, none parsed)"
+        )
+    return parsed
+
+
+# USGS ComCat via the FDSN event service. NOT verified against a live download (the build sandbox
+# cannot reach the host): a wrong path or shape fails LOUDLY (HTTP error / looks_unrecognised).
+USGS_QUAKES_BASE = "https://earthquake.usgs.gov/fdsnws/event/1"
+# The service's own documented per-request maximum; a window that would exceed it is refused
+# up front instead of being silently truncated.
+USGS_QUAKES_QUERY_LIMIT = 20000
+USGS_QUAKES_ROW_ALLOWANCE = 1200  # chars per CSV row; a real row is about 250-350
+USGS_QUAKES_HEADER_ALLOWANCE = 4096
+
+
+def _quakes_params(start_month: str, end_month: str, min_magnitude: float) -> dict[str, str]:
+    from datetime import timedelta
+
+    from src.stats.usgs_quakes import month_index, month_label, validate_min_magnitude
+
+    magnitude = validate_min_magnitude(min_magnitude)
+    first, last = month_index(start_month), month_index(end_month)
+    if last < first:
+        raise ValueError("end_month is before start_month")
+    # The FDSN endtime is "on or before", so the window ends one millisecond short of the next month.
+    after = month_index(month_label(last + 1))
+    end = datetime(after // 12, after % 12 + 1, 1) - timedelta(milliseconds=1)
+    return {
+        "starttime": f"{month_label(first)}-01T00:00:00",
+        "endtime": end.strftime("%Y-%m-%dT%H:%M:%S.") + f"{end.microsecond // 1000:03d}",
+        "minmagnitude": f"{magnitude:.1f}",
+        "eventtype": "earthquake",
+    }
+
+
+def usgs_quakes_count_url(start_month: str, end_month: str, min_magnitude: float) -> str:
+    params = {"format": "plain", **_quakes_params(start_month, end_month, min_magnitude)}
+    return f"{USGS_QUAKES_BASE}/count?{urlencode(params)}"
+
+
+def usgs_quakes_query_url(start_month: str, end_month: str, min_magnitude: float) -> str:
+    params = {
+        "format": "csv",
+        **_quakes_params(start_month, end_month, min_magnitude),
+        "orderby": "time-asc",
+        "limit": str(USGS_QUAKES_QUERY_LIMIT),
+    }
+    return f"{USGS_QUAKES_BASE}/query?{urlencode(params)}"
+
+
+def fetch_usgs_quakes(
+    start_month: str,
+    end_month: str,
+    min_magnitude: float = 5.0,
+    *,
+    get: Getter | None = None,
+    extracted_at: str | None = None,
+) -> Any:
+    """Fetch the monthly earthquake counts for a window live (kill switch refuses UP FRONT).
+
+    Two requests: the service's own COUNT first, so a window over the per-request maximum is
+    refused rather than truncated, and so the body bound is derived from the data's shape
+    (count x a per-row allowance) instead of a constant. The second reads the events and parses
+    them. A body that parses to nothing but refusals raises.
+    """
+    from src.stats.usgs_quakes import parse_usgs_quakes
+
+    if kill_switch_active():
+        raise RuntimeError(NETWORK_REFUSED)
+    count_url = usgs_quakes_count_url(start_month, end_month, min_magnitude)  # validates the arguments
+    query_url = usgs_quakes_query_url(start_month, end_month, min_magnitude)
+    extracted_at = extracted_at or _now_iso()
+    getter = get or _default_getter
+    resp = getter(count_url)
+    resp.raise_for_status()
+    text = resp.text.strip()
+    if not re.fullmatch(r"[0-9]{1,9}", text):
+        raise ValueError("USGS earthquakes: the count response is not a plain integer")
+    declared = int(text)
+    if declared > USGS_QUAKES_QUERY_LIMIT:
+        raise ValueError(
+            f"USGS earthquakes: {declared} events in {start_month}..{end_month} at M>={min_magnitude:g} is over the "
+            f"{USGS_QUAKES_QUERY_LIMIT} one request returns; ask for a shorter window or a higher threshold"
+        )
+    resp = getter(query_url)
+    resp.raise_for_status()
+    bound = declared * USGS_QUAKES_ROW_ALLOWANCE + USGS_QUAKES_HEADER_ALLOWANCE
+    if len(resp.text) > bound:
+        raise ValueError(f"USGS earthquakes: the response is {len(resp.text)} characters, over the {bound} its declared {declared} events allow")
+    parsed = parse_usgs_quakes(
+        resp.text, start_month=start_month, end_month=end_month, min_magnitude=min_magnitude, extracted_at=extracted_at
+    )
+    if parsed.looks_unrecognised:
+        raise ValueError(
+            f"USGS earthquakes: the response is not the expected catalogue ({parsed.refused_total} lines refused, none parsed)"
+        )
+    parsed.declared_count = declared
+    parsed_events = parsed.rows_read - parsed.excluded_non_earthquake
+    if parsed_events != declared:
+        raise ValueError(
+            f"USGS earthquakes: the service counted {declared} events but {parsed_events} were read "
+            f"({parsed.refused_total} rows refused); the catalogue changed between the two requests or the list was cut short, so no series is returned"
         )
     return parsed
