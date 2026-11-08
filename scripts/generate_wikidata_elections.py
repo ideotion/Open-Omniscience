@@ -12,15 +12,29 @@ WHAT A ROW IS, and the refusals that keep it honest:
   SAME country item as its ``P17``, so a regional or municipal vote is not read as national.
   The country must carry an ISO 3166-1 alpha-2 code (``P297``); one that does not is refused
   with the reason, never guessed from a label.
+* Primaries, caucuses, party-leadership contests, nominations and by-elections are NOT asked for:
+  an item any of whose classes has an English label matching ``EXCLUDED_CLASS_PATTERN`` is left
+  out (matched on the class LABEL, not on a hand-copied QID list, because this sandbox cannot look
+  a QID up and a wrong QID would exclude the wrong thing silently). A "2028 Democratic
+  presidential primaries" item otherwise passes P17 = P1001 = USA and reads as a national vote.
 * ``office`` is the English label of ``P541`` (office contested). An election that names no
-  office is refused (the converter needs one to layer against curated entries).
-* The date is ``P585`` with its OWN precision (11 day, 10 month, 9 year) or a ``P580``/``P582``
-  range. Two different ``P585`` values for one election and office are a CONFLICT: the row is
-  refused with both values named, never resolved by picking one.
+  office is refused, and so is one whose office has no English label, each with its own reason
+  (the converter needs an office to layer against curated entries).
+* The date is ``P585`` with its OWN precision (11 day, 10 month, 9 year; finer than a day is
+  read as a day) or a ``P580``/``P582`` range. Deprecated-rank ``P585`` statements are ignored.
+  Two different ``P585`` values for one election and office are a CONFLICT, refused with both
+  values named and never resolved by picking one, with ONE exception: when EVERY value carries an
+  ``applies to part`` (``P518``) qualifier, they are the ROUNDS of one election (France, Brazil,
+  Portugal...), and the row takes the earliest upcoming round and lists them all under ``rounds``.
+  A range end is the LATEST stated ``P582`` and its start the EARLIEST ``P580``, so reruns agree.
 * ``official_url`` is ``P856`` (official website) when the item states one, else empty: the
   converter then degrades a day to a window, which is the point.
-* Only upcoming or current elections are asked for (a date or range end on or after the run
-  date); the converter refuses a past one again in any case.
+* Only upcoming or current elections are asked for: a date, a range end or (with no end) a range
+  start on or after 1 January of the run year, because WDQS writes "this year" as ``YYYY-01-01``
+  and "this month" as ``YYYY-MM-01``; the converter decides, per precision, what has passed.
+  What the query does NOT ask for (no ``P1001``, the excluded classes, an item with no date at
+  all) is named in the snapshot's ``not_asked_for``, so an absence is never mistaken for a refusal
+  the file forgot.
 
 The output is a COMPLETE REPLACEMENT of ``-o`` and refuses to overwrite a non-empty file without
 ``--force``. It carries ``as_of``, the query text and its sha256, the row count and every refusal.
@@ -47,24 +61,40 @@ from pathlib import Path
 WDQS_ENDPOINT = "https://query.wikidata.org/sparql"
 _UA = "OpenOmniscience-election-snapshot/0.1 (local-first research app)"
 
-#: Wikidata time precision -> the converter's vocabulary. Anything coarser than a year is not a date.
-PRECISIONS = {"11": "day", "10": "month", "9": "year"}
+#: Wikidata time precision -> the converter's vocabulary. Anything coarser than a year is not a date;
+#: anything finer than a day (12 hour, 13 minute, 14 second) still names a day.
+PRECISIONS = {"14": "day", "13": "day", "12": "day", "11": "day", "10": "month", "9": "year"}
+
+#: Classes whose items are not the national vote for an office (case-insensitive, on English labels).
+EXCLUDED_CLASS_PATTERN = "primar|caucus|leadership|nominat|by-election|by election"
+
+#: What the query deliberately leaves out, stated in every snapshot.
+NOT_ASKED_FOR = [
+    "elections whose jurisdiction (P1001) is not the country item itself, or that state none",
+    f"items with a class whose English label matches /{EXCLUDED_CLASS_PATTERN}/i",
+    "items with no P585 date and no P580/P582 range at all (nothing tells upcoming from past)",
+    "items whose every date or range end is before 1 January of the run year",
+]
 
 QUERY_TEMPLATE = """\
-SELECT ?election ?iso2 ?officeLabel ?time ?precision ?start ?end ?url WHERE {
+SELECT ?election ?iso2 ?office ?officeLabel ?time ?precision ?part ?start ?end ?url WHERE {
   ?election wdt:P31/wdt:P279* wd:Q40231 ;
             wdt:P17 ?country ;
             wdt:P1001 ?country .
+  FILTER NOT EXISTS { ?election wdt:P31 ?cls . ?cls rdfs:label ?clsLabel .
+                      FILTER(LANG(?clsLabel) = "en" && REGEX(?clsLabel, "{excluded}", "i")) }
   OPTIONAL { ?country wdt:P297 ?iso2 . }
   OPTIONAL { ?election wdt:P541 ?office .
-             ?office rdfs:label ?officeLabel . FILTER(LANG(?officeLabel) = "en") }
+             OPTIONAL { ?office rdfs:label ?officeLabel . FILTER(LANG(?officeLabel) = "en") } }
   OPTIONAL { ?election p:P585 ?st . ?st wikibase:rank ?rank . FILTER(?rank != wikibase:DeprecatedRank)
-             ?st psv:P585 [ wikibase:timeValue ?time ; wikibase:timePrecision ?precision ] . }
+             ?st psv:P585 [ wikibase:timeValue ?time ; wikibase:timePrecision ?precision ] .
+             OPTIONAL { ?st pq:P518 ?part . } }
   OPTIONAL { ?election wdt:P580 ?start . }
   OPTIONAL { ?election wdt:P582 ?end . }
   OPTIONAL { ?election wdt:P856 ?url . }
   FILTER( (BOUND(?time) && ?time >= "{year_start}T00:00:00Z"^^xsd:dateTime)
-       || (!BOUND(?time) && BOUND(?end) && ?end >= "{year_start}T00:00:00Z"^^xsd:dateTime) )
+       || (!BOUND(?time) && BOUND(?end) && ?end >= "{year_start}T00:00:00Z"^^xsd:dateTime)
+       || (!BOUND(?time) && !BOUND(?end) && BOUND(?start) && ?start >= "{year_start}T00:00:00Z"^^xsd:dateTime) )
 }
 """
 
@@ -74,7 +104,9 @@ def build_query(today: date) -> str:
     year-precision date as ``YYYY-01-01`` and a month-precision one as ``YYYY-MM-01``, so a
     ``>= today`` filter would drop an election stated as "this year" or "this month" before it ever
     reached the converter, unrecorded. The converter decides what has passed, at each precision."""
-    return QUERY_TEMPLATE.replace("{year_start}", f"{today.year:04d}-01-01")
+    return QUERY_TEMPLATE.replace("{year_start}", f"{today.year:04d}-01-01").replace(
+        "{excluded}", EXCLUDED_CLASS_PATTERN
+    )
 
 
 def query_url(query: str) -> str:
@@ -108,7 +140,19 @@ def _qid(uri: str) -> str:
     return uri.rsplit("/", 1)[-1] if uri.startswith("http") else uri
 
 
-def rows_from_sparql(payload: dict) -> tuple[list[dict], list[dict]]:
+def _not_passed(point: tuple[str, str], today: date | None) -> bool:
+    """Has this (ISO day, precision) not passed by ``today``? The current month or year has not."""
+    if today is None:
+        return True
+    day, precision = point
+    if precision == "year":
+        return day[:4] >= f"{today.year:04d}"
+    if precision == "month":
+        return day[:7] >= today.isoformat()[:7]
+    return day >= today.isoformat()
+
+
+def rows_from_sparql(payload: dict, today: date | None = None) -> tuple[list[dict], list[dict]]:
     """WDQS JSON -> ``(rows, refused)``; one row per (election, office). Pure and offline.
 
     Raises ``ValueError`` when the payload is not a SPARQL JSON result at all (an error page),
@@ -139,7 +183,12 @@ def rows_from_sparql(payload: dict) -> tuple[list[dict], list[dict]]:
             key = (qid, "")
             if key not in refused_keys:
                 refused_keys.add(key)
-                refused.append({"qid": qid, "reason": "the election names no office contested (P541)"})
+                why = (
+                    "the office contested (P541) has no English label"
+                    if _val(b, "office")
+                    else "the election names no office contested (P541)"
+                )
+                refused.append({"qid": qid, "reason": why})
             continue
         row = grouped.setdefault(
             (qid, office),
@@ -147,15 +196,30 @@ def rows_from_sparql(payload: dict) -> tuple[list[dict], list[dict]]:
         )
         time, precision = _val(b, "time"), _val(b, "precision")
         if time:
-            row["points"].add((_day(time), PRECISIONS.get(precision, f"unknown:{precision}")))
-        row["start"] = row["start"] or _day(_val(b, "start"))
-        row["end"] = row["end"] or _day(_val(b, "end"))
+            point = (_day(time), PRECISIONS.get(precision, f"unknown:{precision}"))
+            row["points"].add(point)
+            if _val(b, "part"):
+                row.setdefault("parted", set()).add(point)
+        # Several P580/P582 values: the widest range, so the answer does not hang on WDQS order.
+        start, end = _day(_val(b, "start")), _day(_val(b, "end"))
+        if start and (not row["start"] or start < row["start"]):
+            row["start"] = start
+        if end and end > row["end"]:
+            row["end"] = end
         url = _val(b, "url")
         if url and (not row["official_url"] or url < row["official_url"]):
             row["official_url"] = url  # WDQS order is not stable: the smallest URL, so reruns agree
     rows: list[dict] = []
     for (qid, office), row in sorted(grouped.items()):
         points = sorted(row.pop("points"))
+        parted = row.pop("parted", set())
+        if len(points) > 1 and parted == set(points):
+            # Every value is qualified "applies to part": the rounds of ONE election. The earliest
+            # round not yet passed is the date (else the last, which the converter refuses as past);
+            # all of them are named.
+            row["rounds"] = [f"{t} ({p})" for t, p in points]
+            upcoming = [pt for pt in points if _not_passed(pt, today)]
+            points = (upcoming or points)[:1]
         if len(points) > 1:
             refused.append(
                 {"qid": qid, "reason": f"conflicting P585 values for office {office!r}: "
@@ -170,7 +234,7 @@ def rows_from_sparql(payload: dict) -> tuple[list[dict], list[dict]]:
 
 def build_snapshot(today: date, getter: Callable[[str], bytes] | None = None) -> dict:
     query = build_query(today)
-    rows, refused = rows_from_sparql(fetch_json(query_url(query), getter))
+    rows, refused = rows_from_sparql(fetch_json(query_url(query), getter), today)
     return {
         "as_of": today.isoformat(),
         "source": "Wikidata (CC0) via the Wikidata Query Service",
@@ -179,6 +243,7 @@ def build_snapshot(today: date, getter: Callable[[str], bytes] | None = None) ->
         "n_rows": len(rows),
         "rows": rows,
         "refused": refused,
+        "not_asked_for": NOT_ASKED_FOR,
     }
 
 
@@ -200,6 +265,9 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     if (msg := _refuse_overwrite(args.out, args.force)):
         print(msg, file=sys.stderr)
+        return 2
+    if not args.out.parent.is_dir():  # checked before the query, so a typo costs no WDQS call
+        print(f"refusing: the directory {args.out.parent} does not exist", file=sys.stderr)
         return 2
     snap = build_snapshot(date.today())
     args.out.write_text(json.dumps(snap, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")

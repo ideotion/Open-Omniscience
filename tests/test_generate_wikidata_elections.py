@@ -26,13 +26,14 @@ def _mod():
 gen = _mod()
 
 
-def _b(qid, iso2="FR", office="President of France", time=None, precision=None, start=None, end=None, url=None):
+def _b(qid, iso2="FR", office="President of France", time=None, precision=None, start=None, end=None, url=None,
+       part=None):
     def lit(v):
         return {"type": "literal", "value": v}
 
     b = {"election": {"type": "uri", "value": f"http://www.wikidata.org/entity/{qid}"}}
     for key, v in (("iso2", iso2), ("officeLabel", office), ("time", time), ("precision", precision),
-                   ("start", start), ("end", end), ("url", url)):
+                   ("start", start), ("end", end), ("url", url), ("part", part)):
         if v is not None:
             b[key] = lit(v)
     return b
@@ -139,3 +140,82 @@ def test_the_official_url_does_not_depend_on_binding_order():
     two = gen.rows_from_sparql({"results": {"bindings": [b, a]}})
     assert one == two
     assert one[0][0]["official_url"] == "https://a.example/"
+
+
+def test_rounds_qualified_applies_to_part_are_one_election_not_a_conflict():
+    # France, Brazil, Portugal: one item, one P585 per round, each qualified P518.
+    rows, refused = gen.rows_from_sparql(_payload(
+        _b("Q10", time="2027-04-10T00:00:00Z", precision="11", part="Q1"),
+        _b("Q10", time="2027-04-24T00:00:00Z", precision="11", part="Q2"),
+    ), TODAY)
+    assert refused == []
+    assert rows[0]["point_in_time"] == "2027-04-10"
+    assert rows[0]["rounds"] == ["2027-04-10 (day)", "2027-04-24 (day)"]
+
+
+def test_a_passed_first_round_hands_the_date_to_the_next_round():
+    rows, _ = gen.rows_from_sparql(_payload(
+        _b("Q11", time="2026-10-04T00:00:00Z", precision="11", part="Q1"),
+        _b("Q11", time="2026-11-29T00:00:00Z", precision="11", part="Q2"),
+    ), TODAY)
+    assert rows[0]["point_in_time"] == "2026-11-29"
+
+
+def test_rounds_with_only_one_value_qualified_stay_a_conflict():
+    rows, refused = gen.rows_from_sparql(_payload(
+        _b("Q12", time="2027-04-10T00:00:00Z", precision="11", part="Q1"),
+        _b("Q12", time="2027-04-24T00:00:00Z", precision="11"),
+    ), TODAY)
+    assert rows == [] and "conflicting" in refused[0]["reason"]
+
+
+def test_an_office_with_no_english_label_is_refused_for_that_reason():
+    b = _b("Q13", office=None)
+    b["office"] = {"type": "uri", "value": "http://www.wikidata.org/entity/Q999"}
+    rows, refused = gen.rows_from_sparql(_payload(b))
+    assert rows == [] and refused[0]["reason"] == "the office contested (P541) has no English label"
+
+
+def test_finer_than_a_day_is_a_day_and_several_ranges_take_the_widest():
+    rows, _ = gen.rows_from_sparql(_payload(
+        _b("Q14", time="2027-06-01T00:00:00Z", precision="14"),
+        _b("Q15", start="2027-07-10T00:00:00Z", end="2027-07-20T00:00:00Z"),
+        _b("Q15", start="2027-07-01T00:00:00Z", end="2027-07-31T00:00:00Z"),
+    ))
+    by = {r["qid"]: r for r in rows}
+    assert by["Q14"]["precision"] == "day"
+    assert (by["Q15"]["start"], by["Q15"]["end"]) == ("2027-07-01", "2027-07-31")
+
+
+def test_the_query_names_its_exclusions_and_keeps_the_national_join():
+    q = gen.build_query(TODAY)
+    assert "wdt:P1001 ?country" in q and "wdt:P17 ?country" in q
+    assert gen.EXCLUDED_CLASS_PATTERN in q and "FILTER NOT EXISTS" in q
+    assert "pq:P518" in q
+    assert "{" + "excluded}" not in q and "{" + "year_start}" not in q
+    assert "BOUND(?start) && ?start >=" in q  # a start-only upcoming range is asked for
+
+
+def test_the_fetch_refuses_any_url_but_the_wdqs_endpoint(monkeypatch):
+    monkeypatch.setattr(gen.urllib.request, "urlopen", lambda *a, **k: pytest.fail("opened"))
+    with pytest.raises(ValueError, match="Wikidata Query Service"):
+        gen.fetch_json("https://example.org/sparql?query=x")
+    with pytest.raises(ValueError):
+        gen.fetch_json("file:///etc/passwd")
+
+
+def test_main_writes_a_snapshot_the_converter_reads_back(tmp_path, monkeypatch):
+    payload = json.dumps(_payload(_b("Q1", time="2027-04-10T00:00:00Z", precision="11"))).encode()
+    real = gen.build_snapshot
+    monkeypatch.setattr(gen, "build_snapshot", lambda today: real(TODAY, getter=lambda url: payload))
+    out = tmp_path / "snap.json"
+    assert gen.main(["-o", str(out)]) == 0
+    snap = json.loads(out.read_text("utf-8"))
+    assert snap["n_rows"] == 1 and snap["not_asked_for"] == gen.NOT_ASKED_FOR
+    events, refused = snapshot_to_events(snap["rows"], TODAY)
+    assert refused == [] and events[0]["source_qid"] == "Q1"
+
+
+def test_a_missing_output_directory_is_refused_before_the_query(tmp_path, monkeypatch):
+    monkeypatch.setattr(gen, "build_snapshot", lambda today: pytest.fail("must refuse before fetching"))
+    assert gen.main(["-o", str(tmp_path / "nope" / "snap.json")]) == 2
