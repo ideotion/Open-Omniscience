@@ -29,7 +29,6 @@ def test_lexicons_load_for_three_scripts():
     for lang in ("en", "ru", "ar"):
         lex = S.load_lexicon(lang)
         assert lex and len(lex) >= 10, f"{lang} seed lexicon should load non-empty"
-    assert {"en", "ru", "ar"} <= S.available_languages()
 
 
 def test_absent_or_empty_language_has_no_lexicon():

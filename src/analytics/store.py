@@ -544,6 +544,96 @@ def _stamp_index_engine(
         )
 
 
+def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country) -> None:
+    """Record which www engine, on which inputs, produced this article's places + entities (R415).
+
+    An UPSERT and nothing else: the two stores land together inside one savepoint, so
+    this is called only after that savepoint succeeded, and a pass whose savepoint
+    failed leaves the previous stamp true of the previous rows (the savepoint put them
+    back). An identity that cannot be computed writes nothing and clears the stamp --
+    the stamp only ever makes a restore cheaper, so its absence costs a re-extraction
+    and never a wrong row."""
+    from sqlalchemy import delete
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+    from src.database.models import ArticleWwwStamp
+
+    try:
+        from src.analytics.engine_identity import www_engine_id, www_inputs_digest
+
+        current = www_engine_id()
+        inputs = www_inputs_digest(raw_content=raw_content, country=country)
+    except Exception as exc:  # noqa: BLE001 - an uncertified article is safe; a failed index is not
+        log_failure(_LOG, "could not compute the www identity; clearing the stamp", exc, level=logging.WARNING)
+        session.execute(delete(ArticleWwwStamp).where(ArticleWwwStamp.article_id == article_id))
+        return
+    stmt = sqlite_insert(ArticleWwwStamp).values(
+        article_id=article_id, engine=current, inputs=inputs, stamped_at=datetime.now(UTC)
+    )
+    session.execute(
+        stmt.on_conflict_do_update(
+            index_elements=[ArticleWwwStamp.article_id],
+            set_={
+                "engine": stmt.excluded.engine,
+                "inputs": stmt.excluded.inputs,
+                "stamped_at": stmt.excluded.stamped_at,
+            },
+        )
+    )
+
+
+def _index_article_www(
+    session: Session,
+    article: Article,
+    *,
+    commit: bool,
+    precomputed_www: dict | None,
+    timings: dict | None,
+) -> dict:
+    """The ``scope="www"`` pass (R415): places + entities ONLY, then the www stamp.
+
+    Dates are not touched (they merge on their own path and the keyword stamp covers
+    them); keywords, mentions, sentiment and counters are not touched either. Same
+    savepoint discipline as the full pass: a swallowed extraction failure leaves the
+    previous rows and the previous stamp, a lock error re-raises for the retry wrapper."""
+    www = {"dates": 0, "places": 0, "entities_stored": 0}
+    article_id = article.id
+    raw_content, country = article.content, article.country
+    try:
+        from src.timemap.whostore import store_entities_for_article as _store_ents
+        from src.timemap.whostore import store_places_for_article as _store_places
+
+        _pw = precomputed_www or {}
+        if "__www_error__" in _pw:
+            _pw = {}
+        _t_www = time.monotonic() if timings is not None else 0.0
+        with session.begin_nested():
+            www["places"] = _store_places(session, article, precomputed=_pw.get("places"))
+            www["entities_stored"] = _store_ents(session, article, precomputed=_pw.get("entities"))
+            _stamp_www_engine(session, article_id, raw_content=raw_content, country=country)
+        if timings is not None:
+            timings["www_s"] = timings.get("www_s", 0.0) + time.monotonic() - _t_www
+    except Exception as exc:  # noqa: BLE001 - deductions are a bonus, never a blocker
+        from src.database.write import is_locked_error
+
+        if is_locked_error(exc):
+            raise
+        log_failure(_LOG, f"places/entities persistence failed for {article_id}", exc, level=logging.WARNING)
+    if commit:
+        session.commit()
+    return {
+        "article_id": article_id,
+        "mentions": 0,
+        "mentions_kept": 0,
+        "mentions_updated": 0,
+        "mentions_removed": 0,
+        "mentions_added": 0,
+        "entities": 0,
+        "self_name_suppressed": 0,
+        **www,
+    }
+
+
 def index_article(
     session: Session,
     article: Article,
@@ -595,7 +685,9 @@ def index_article(
     when/where/who (dates/places/entities) + sentiment; ``"keywords"`` does the keyword
     pass ONLY and leaves the dates/places/entities + sentiment untouched — ≈⅔ less work
     for a keyword-only cleanup. The language deduction stays in BOTH (it picks the
-    extraction stoplist + the keyword's analytic language).
+    extraction stoplist + the keyword's analytic language). ``"www"`` (R415) re-extracts the
+    places + entities ONLY and writes the www stamp (``article_www_stamps``); it touches no
+    keyword, date, sentiment or counter.
 
     ``commit`` (keyword-engine Phase 1.3, COLLECTOR_WRITER_BATCHING.md): ``True``
     (default) commits this article's work — byte-identical to every existing caller.
@@ -620,6 +712,10 @@ def index_article(
     counter deltas, when/where/who, commit) is unchanged and still runs HERE, in this
     session, serially — only the CPU-bound text extraction itself may have happened
     elsewhere."""
+    if scope == "www":
+        return _index_article_www(
+            session, article, commit=commit, precomputed_www=precomputed_www, timings=timings
+        )
     if content is None:
         content = article.get_content() if hasattr(article, "get_content") else (article.content or "")
 
@@ -883,6 +979,10 @@ def index_article(
                 www["places"] = _store_places(session, article, precomputed=_pw.get("places"))
                 www["entities_stored"] = _store_ents(
                     session, article, precomputed=_pw.get("entities")
+                )
+                # R415: the www stamp rides the SAME savepoint as the rows it certifies.
+                _stamp_www_engine(
+                    session, article_id, raw_content=article.content, country=article.country
                 )
             if timings is not None:
                 timings["www_s"] = timings.get("www_s", 0.0) + time.monotonic() - _t_www
@@ -1534,7 +1634,7 @@ def _reindex_articles_impl(
                 observed.date().isoformat() if observed else None,
                 None,  # `today`: the store's own default, never a worker's clock
             )
-            if scope == "full":
+            if scope in ("full", "www"):
                 tasks.append((art.id, body, art.title or "", lang or "en", lang, www_ctx))
             else:
                 # KEYWORDS-ONLY: index_article skips the when/where/who pass entirely, so

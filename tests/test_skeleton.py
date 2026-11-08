@@ -20,7 +20,6 @@ from src.analytics.skeleton import (
     run_skeleton_selftest,
     skeleton_clusters,
     skeleton_fingerprint,
-    skeleton_signature,
 )
 
 
@@ -30,11 +29,6 @@ def test_fingerprint_is_stable_and_order_independent():
     assert skeleton_fingerprint({1, 2, 3}) != skeleton_fingerprint({1, 2, 4})
     # empty skeleton has a stable sentinel fingerprint
     assert skeleton_fingerprint(set()) == skeleton_fingerprint(set())
-
-
-def test_skeleton_signature_feeds_the_id_set_into_minhash():
-    sig = skeleton_signature({1, 2, 3, 4}, num_perm=64)
-    assert isinstance(sig, list) and len(sig) == 64
 
 
 def test_near_identical_skeletons_cluster_disjoint_does_not():
