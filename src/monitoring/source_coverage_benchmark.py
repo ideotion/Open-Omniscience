@@ -18,24 +18,11 @@ the per-read win so the amortization is honest. Counts + milliseconds only, neve
 
 from __future__ import annotations
 
-import statistics
 import time
 
 from sqlalchemy.orm import Session
 
-
-def _median_ms(fn, repeats: int) -> tuple[float, float, int | None]:
-    """Run ``fn`` ``repeats`` times; return (cold_ms, warm_median_ms, result_size)."""
-    runs: list[float] = []
-    size: int | None = None
-    for i in range(repeats):
-        t0 = time.perf_counter()
-        out = fn()
-        runs.append((time.perf_counter() - t0) * 1000.0)
-        if i == 0:
-            size = len(out) if hasattr(out, "__len__") else None
-    warm = runs[1:] or runs
-    return round(runs[0], 1), round(statistics.median(warm), 1), size
+from src.shared import median_ms
 
 
 def run_source_coverage_benchmark(session: Session, *, repeats: int = 3) -> dict:
@@ -80,10 +67,10 @@ def run_source_coverage_benchmark(session: Session, *, repeats: int = 3) -> dict
 
         parity = columnar.source_coverage_parity(con, session)
 
-        live_cold, live_med, live_n = _median_ms(
+        live_cold, live_med, live_n = median_ms(
             lambda: source_country_counts(session)["by_country"], repeats
         )
-        roll_cold, roll_med, roll_n = _median_ms(
+        roll_cold, roll_med, roll_n = median_ms(
             lambda: columnar.source_coverage_rows(con), repeats
         )
         speedup = round(live_med / roll_med, 1) if roll_med > 0 else None

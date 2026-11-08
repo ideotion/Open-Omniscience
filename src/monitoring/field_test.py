@@ -36,6 +36,7 @@ from typing import Any
 
 from src.monitoring.secret_scrub import record_text
 from src.paths import data_dir
+from src.shared import read_jsonl_tail
 
 _LOG = logging.getLogger(__name__)
 _CAL_BATCH = 50  # calendar feeds verified per collect pass (polite, resumable)
@@ -58,16 +59,7 @@ def _append(rec: dict) -> None:
 
 
 def recent_results(limit: int = 500) -> list[dict]:
-    path = _log_path()
-    if not path.exists():
-        return []
-    out = []
-    for ln in path.read_text(encoding="utf-8").splitlines()[-limit:]:
-        try:
-            out.append(json.loads(ln))
-        except json.JSONDecodeError:
-            continue
-    return out
+    return read_jsonl_tail(_log_path(), limit)
 
 
 def _step_done(step: str) -> bool:

@@ -31,13 +31,17 @@ from __future__ import annotations
 import csv
 import io
 import logging
-from datetime import datetime, timezone
+import re
+from datetime import UTC, datetime, timezone
 from typing import Any, Callable
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urljoin
 
 from src.ingest import DEFAULT_USER_AGENT, kill_switch_active
 from src.ingest.fetch_verdict import NETWORK_REFUSED
-from src.safety.fetcher import guarded_session
+from src.safety.fetcher import RedirectRefused, guarded_session
+from src.stats.gistemp import GistempParse
+from src.stats.owid_climate import CATALOG as OWID_CLIMATE_CATALOG
+from src.stats.owid_climate import OwidParse
 from src.stats.sdmx import (
     StatFigure,
     parse_csv,
@@ -62,6 +66,21 @@ EUROSTAT_API_BASE = (
 # column names). Verify-on-use — a wrong slug/param fails LOUDLY (HTTP error / no rows),
 # never a fabricated figure; re-confirm against OWID's published data API if it moves.
 OWID_GRAPHER_BASE = "https://ourworldindata.org/grapher"
+# NASA GISS GISTEMP v4 table data: one CSV per region (GLB / NH / SH), anomalies in degC
+# against 1951-1980. NOT verified against a live download (the build sandbox cannot reach
+# the host): a wrong path or shape fails LOUDLY (HTTP error / looks_unrecognised).
+GISTEMP_BASE = "https://data.giss.nasa.gov/gistemp/tabledata_v4"
+# OWID's bulk CSVs live in its public GitHub data repos (owid/co2-data, owid/energy-data); the
+# path is pinned to the owid organisation, and the file name comes from the curated catalog.
+OWID_BULK_BASE = "https://raw.githubusercontent.com/owid"
+OWID_BULK_REPOS = {"co2": "co2-data", "energy": "energy-data"}
+OWID_FIRST_YEAR = 1750  # the earliest year in the CO2 table
+OWID_AREAS_ALLOWANCE = 400  # countries plus aggregates, generous (about 250 today)
+OWID_ROW_CHARS_ALLOWANCE = 2000  # a wide row, generous (about 600 to 1,500 characters today)
+# The body bound is DERIVED from the table's own shape, not a fixed number (see gistemp_max_chars).
+GISTEMP_FIRST_YEAR = 1880
+GISTEMP_LINE_ALLOWANCE = 200  # chars per row; a real row is about 120
+GISTEMP_HEADER_ALLOWANCE = 4096  # title, blank and header lines, with slack
 
 # Generous default timeout: a fetch may egress over Tor, which is slow — a tight
 # timeout would spuriously fail honest requests. Seconds.
@@ -166,6 +185,102 @@ def _default_getter(url: str) -> Any:
     """
     session = guarded_session(user_agent=DEFAULT_USER_AGENT, isolation_token=url)
     return session.get(url, timeout=DEFAULT_TIMEOUT_S)
+
+
+# Each climate fetcher's session may talk only to its own host AND, on a host that serves many tenants, only to its own directories:
+# a redirect hop anywhere else is refused (guarded_session(allowed_hosts=..., allowed_path_prefixes=...)). The consent popup's
+# "climate" lane names all the climate hosts.
+GISTEMP_HOSTS = ("data.giss.nasa.gov",)
+GISTEMP_PATHS = ("/gistemp/tabledata_v4/",)
+OWID_HOSTS = ("raw.githubusercontent.com",)
+OWID_PATHS = ("/owid/co2-data/", "/owid/energy-data/")  # raw.githubusercontent.com serves EVERY repository: the directory is the pin
+USGS_HOSTS = ("earthquake.usgs.gov",)
+USGS_PATHS = ("/fdsnws/event/1/",)
+_UTF8_MAX_BYTES_PER_CHAR = 4
+_READ_CHUNK = 64 * 1024
+
+
+class BodyTooLarge(ValueError):
+    """A response body went past the bound its table's own shape allows. The message names the sizes, never the URL."""
+
+
+def _bounded_get(session: Any, url: str, *, max_chars: int) -> Any:
+    """A GET on ``session`` (a ``guarded_session`` the caller built with its own host and directory lists) that STOPS READING at
+    ``max_chars`` characters' worth of bytes, instead of reading everything and measuring after.
+
+    The bound each fetcher derives from its table's shape (``gistemp_max_chars``, ``owid_max_chars``, the USGS count) was checked after
+    ``requests`` had already downloaded and decoded the whole body, so an upstream that sent an endless or oversized body grew memory
+    without limit before the check ran. Here the body is read in chunks and the read is abandoned the moment it passes
+    ``max_chars * 4`` bytes (a UTF-8 character is at most four bytes, so a body over that is over ``max_chars`` characters whatever it
+    holds), or at once when the server DECLARES a longer ``Content-Length``. ``iter_content`` decodes a compressed body, so the bound
+    holds on the decoded size and a compression bomb is stopped the same way. The bytes read are put back on the response, so
+    ``.text``, ``.json()`` and ``.raise_for_status()`` behave as on any other response; an error status is not read at all (the caller's
+    ``raise_for_status`` names it), and a redirect body is closed unread.
+
+    What it does NOT bound is time: the request timeout limits each read, not the whole transfer, so a server that drips bytes just
+    under the bound keeps the call waiting. That is named, not hidden.
+    """
+    max_bytes = max_chars * _UTF8_MAX_BYTES_PER_CHAR
+    # Redirects are followed HERE, one hop at a time, never by ``requests``. Passing ``allow_redirects=False`` is NOT enough: ``Session.send``
+    # still starts ``resolve_redirects`` on the first response (to fill ``_next``), and that generator reads the whole 3xx body
+    # (``resp.content``) before it yields, an unbounded read of a body nobody asked for. ``get_redirect_target`` answering ``None`` makes
+    # it yield nothing, so no 3xx body is read; the ``Location`` is read below. Every hop goes through ``session.get`` -> ``request`` ->
+    # ``send``, so the kill switch, the host list and the directory list run on each hop exactly as on the first request.
+    session.get_redirect_target = lambda _resp: None
+    resp = session.get(url, timeout=DEFAULT_TIMEOUT_S, stream=True, allow_redirects=False)
+    try:
+        hops = 0
+        while resp.is_redirect:
+            hops += 1
+            if hops > session.max_redirects:
+                raise RedirectRefused("too many redirects")
+            location = resp.headers["Location"]
+            if not location.isascii():
+                raise RedirectRefused("the redirect target is not plain ASCII")
+            target = urljoin(resp.url, location)
+            resp.close()  # unread
+            resp = session.get(target, timeout=DEFAULT_TIMEOUT_S, stream=True, allow_redirects=False)
+        if resp.status_code >= 400:
+            resp.close()  # unread: the caller's ``raise_for_status`` names the status; an error page is not read at all
+            return resp
+        declared = (resp.headers.get("Content-Length") or "").strip()
+        if declared.isascii() and declared.isdigit() and int(declared) > max_bytes:
+            raise BodyTooLarge(f"the server declares {declared} bytes, over the {max_bytes} the table's own shape allows")
+        body = bytearray()  # one copy, not a list of chunks joined into a second one
+        for chunk in resp.iter_content(_READ_CHUNK):
+            body += chunk
+            if len(body) > max_bytes:
+                raise BodyTooLarge(f"the body went past {max_bytes} bytes, the most the table's own shape allows; reading stopped")
+        resp._content = bytes(body)  # what ``Response.content`` would have built; ``text`` and ``json`` read it
+        resp._content_consumed = True
+    except BaseException:
+        resp.close()
+        raise
+    return resp
+
+
+def _gistemp_getter(url: str) -> Any:
+    session = guarded_session(
+        user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=GISTEMP_HOSTS, allowed_path_prefixes=GISTEMP_PATHS
+    )
+    return _bounded_get(session, url, max_chars=gistemp_max_chars())
+
+
+def _owid_bulk_getter(url: str) -> Any:
+    session = guarded_session(
+        user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=OWID_HOSTS, allowed_path_prefixes=OWID_PATHS
+    )
+    return _bounded_get(session, url, max_chars=owid_max_chars())
+
+
+def _usgs_getter(max_chars: int) -> Getter:
+    def getter(url: str) -> Any:
+        session = guarded_session(
+            user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=USGS_HOSTS, allowed_path_prefixes=USGS_PATHS
+        )
+        return _bounded_get(session, url, max_chars=max_chars)
+
+    return getter
 
 
 def _worldbank_page_count(payload: Any) -> int:
@@ -366,3 +481,207 @@ def fetch_jsonstat(
     resp.raise_for_status()
     payload = resp.json()
     return parse_jsonstat(payload, agency=agency, extracted_at=extracted_at, series_id=series_id)
+
+
+def gistemp_url(region: str = "GLB") -> str:
+    """The GISTEMP v4 table CSV URL for ``region`` (``GLB``, ``NH`` or ``SH``)."""
+    from src.stats.gistemp import REGIONS
+
+    if region not in REGIONS:
+        raise ValueError(f"gistemp_url: region must be one of {REGIONS}, got {region!r}")
+    return f"{GISTEMP_BASE}/{region}.Ts+dSST.csv"
+
+
+def gistemp_max_chars(now_year: int | None = None) -> int:
+    """The longest body that can still be this table.
+
+    One row per year from 1880 to the current year plus one (the next year's row may appear
+    early), times a generous per-row allowance, plus the header lines. It grows with the data
+    each January instead of being a constant someone must remember to raise.
+    """
+    year = now_year if now_year is not None else datetime.now(UTC).year
+    rows = max(year + 1 - GISTEMP_FIRST_YEAR + 1, 1)
+    return rows * GISTEMP_LINE_ALLOWANCE + GISTEMP_HEADER_ALLOWANCE
+
+
+def fetch_gistemp(
+    region: str = "GLB",
+    *,
+    get: Getter | None = None,
+    extracted_at: str | None = None,
+) -> GistempParse:
+    """Fetch one GISTEMP v4 table live and parse it (kill switch refuses UP FRONT).
+
+    Returns the :class:`~src.stats.gistemp.GistempParse` (figures AND refusals). A body that
+    parses to nothing but refusals (an HTML error page, a renamed product) raises rather than
+    returning an empty series, because an empty list and a wrong file look the same once the
+    refusals are dropped.
+    """
+    from src.stats.gistemp import parse_gistemp
+
+    if kill_switch_active():
+        raise RuntimeError(NETWORK_REFUSED)
+    extracted_at = extracted_at or _now_iso()
+    getter = get or _gistemp_getter
+    resp = getter(gistemp_url(region))
+    resp.raise_for_status()
+    bound = gistemp_max_chars()
+    if len(resp.text) > bound:
+        raise ValueError(f"GISTEMP {region}: the response is {len(resp.text)} characters, over the {bound} the table's own shape allows")
+    parsed = parse_gistemp(resp.text, region=region, extracted_at=extracted_at)
+    if parsed.looks_unrecognised:
+        raise ValueError(
+            f"GISTEMP {region}: the response is not the expected table "
+            f"({parsed.refused_total} lines refused, none parsed)"
+        )
+    return parsed
+
+
+# USGS ComCat via the FDSN event service. NOT verified against a live download (the build sandbox
+# cannot reach the host): a wrong path or shape fails LOUDLY (HTTP error / looks_unrecognised).
+USGS_QUAKES_BASE = "https://earthquake.usgs.gov/fdsnws/event/1"
+# The service's own documented per-request maximum; a window that would exceed it is refused
+# up front instead of being silently truncated.
+USGS_QUAKES_QUERY_LIMIT = 20000
+USGS_QUAKES_ROW_ALLOWANCE = 1200  # chars per CSV row; a real row is about 250-350
+USGS_QUAKES_HEADER_ALLOWANCE = 4096
+_USGS_COUNT_MAX_CHARS = 16  # the count response is a plain integer of at most nine digits (the regex below), plus a newline
+
+
+def _quakes_params(start_month: str, end_month: str, min_magnitude: float) -> dict[str, str]:
+    from datetime import timedelta
+
+    from src.stats.usgs_quakes import month_index, month_label, validate_min_magnitude
+
+    magnitude = validate_min_magnitude(min_magnitude)
+    first, last = month_index(start_month), month_index(end_month)
+    if last < first:
+        raise ValueError("end_month is before start_month")
+    # The FDSN endtime is "on or before", so the window ends one millisecond short of the next month.
+    after = month_index(month_label(last + 1))
+    end = datetime(after // 12, after % 12 + 1, 1) - timedelta(milliseconds=1)
+    return {
+        "starttime": f"{month_label(first)}-01T00:00:00",
+        "endtime": end.strftime("%Y-%m-%dT%H:%M:%S.") + f"{end.microsecond // 1000:03d}",
+        "minmagnitude": f"{magnitude:.1f}",
+        "eventtype": "earthquake",
+    }
+
+
+def usgs_quakes_count_url(start_month: str, end_month: str, min_magnitude: float) -> str:
+    params = {"format": "plain", **_quakes_params(start_month, end_month, min_magnitude)}
+    return f"{USGS_QUAKES_BASE}/count?{urlencode(params)}"
+
+
+def usgs_quakes_query_url(start_month: str, end_month: str, min_magnitude: float) -> str:
+    params = {
+        "format": "csv",
+        **_quakes_params(start_month, end_month, min_magnitude),
+        "orderby": "time-asc",
+        "limit": str(USGS_QUAKES_QUERY_LIMIT),
+    }
+    return f"{USGS_QUAKES_BASE}/query?{urlencode(params)}"
+
+
+def fetch_usgs_quakes(
+    start_month: str,
+    end_month: str,
+    min_magnitude: float = 5.0,
+    *,
+    get: Getter | None = None,
+    extracted_at: str | None = None,
+) -> Any:
+    """Fetch the monthly earthquake counts for a window live (kill switch refuses UP FRONT).
+
+    Two requests: the service's own COUNT first, so a window over the per-request maximum is
+    refused rather than truncated, and so the body bound is derived from the data's shape
+    (count x a per-row allowance) instead of a constant. The second reads the events and parses
+    them. A body that parses to nothing but refusals raises.
+    """
+    from src.stats.usgs_quakes import parse_usgs_quakes
+
+    if kill_switch_active():
+        raise RuntimeError(NETWORK_REFUSED)
+    count_url = usgs_quakes_count_url(start_month, end_month, min_magnitude)  # validates the arguments
+    query_url = usgs_quakes_query_url(start_month, end_month, min_magnitude)
+    extracted_at = extracted_at or _now_iso()
+    count_getter = get or _usgs_getter(_USGS_COUNT_MAX_CHARS)
+    resp = count_getter(count_url)
+    resp.raise_for_status()
+    text = resp.text.strip()
+    if not re.fullmatch(r"[0-9]{1,9}", text):
+        raise ValueError("USGS earthquakes: the count response is not a plain integer")
+    declared = int(text)
+    if declared > USGS_QUAKES_QUERY_LIMIT:
+        raise ValueError(
+            f"USGS earthquakes: {declared} events in {start_month}..{end_month} at M>={min_magnitude:g} is over the "
+            f"{USGS_QUAKES_QUERY_LIMIT} one request returns; ask for a shorter window or a higher threshold"
+        )
+    bound = declared * USGS_QUAKES_ROW_ALLOWANCE + USGS_QUAKES_HEADER_ALLOWANCE
+    query_getter = get or _usgs_getter(bound)  # the read stops at the bound the count just fixed
+    resp = query_getter(query_url)
+    resp.raise_for_status()
+    if len(resp.text) > bound:
+        raise ValueError(f"USGS earthquakes: the response is {len(resp.text)} characters, over the {bound} its declared {declared} events allow")
+    parsed = parse_usgs_quakes(
+        resp.text, start_month=start_month, end_month=end_month, min_magnitude=min_magnitude, extracted_at=extracted_at
+    )
+    if parsed.looks_unrecognised:
+        raise ValueError(
+            f"USGS earthquakes: the response is not the expected catalogue ({parsed.refused_total} lines refused, none parsed)"
+        )
+    parsed.declared_count = declared
+    parsed_events = parsed.rows_read - parsed.excluded_non_earthquake
+    if parsed_events != declared:
+        raise ValueError(
+            f"USGS earthquakes: the service counted {declared} events but {parsed_events} were read "
+            f"({parsed.refused_total} rows refused); the catalogue changed between the two requests or the list was cut short, so no series is returned"
+        )
+    return parsed
+
+
+def owid_max_chars(now_year: int | None = None) -> int:
+    """The longest body that can still be an OWID bulk table: one row per area and year from
+    1750 to next year, times a generous per-row allowance. Grows with the data each January."""
+    year = now_year if now_year is not None else datetime.now(UTC).year
+    return (year + 1 - OWID_FIRST_YEAR + 1) * OWID_AREAS_ALLOWANCE * OWID_ROW_CHARS_ALLOWANCE
+
+
+def owid_dataset_url(dataset: str) -> str:
+    """The raw-CSV URL of a curated OWID bulk dataset (``co2`` or ``energy``)."""
+    if dataset not in OWID_BULK_REPOS or dataset not in OWID_CLIMATE_CATALOG:
+        raise ValueError(f"owid_dataset_url: dataset must be one of {sorted(OWID_BULK_REPOS)}, got {dataset!r}")
+    return f"{OWID_BULK_BASE}/{OWID_BULK_REPOS[dataset]}/master/{OWID_CLIMATE_CATALOG[dataset]['file']}"
+
+
+def fetch_owid_dataset(
+    dataset: str,
+    *,
+    get: Getter | None = None,
+    extracted_at: str | None = None,
+) -> OwidParse:
+    """Fetch one OWID bulk CSV live and parse it (kill switch refuses UP FRONT).
+
+    An unrecognisable body (an error page, a renamed file, no curated column) raises rather
+    than returning an empty series. The body bound is derived from the data's own scale.
+    """
+    from src.stats.owid_climate import parse_owid
+
+    if kill_switch_active():
+        raise RuntimeError(NETWORK_REFUSED)
+    extracted_at = extracted_at or _now_iso()
+    getter = get or _owid_bulk_getter
+    resp = getter(owid_dataset_url(dataset))
+    resp.raise_for_status()
+    text = resp.text
+    bound = owid_max_chars()
+    if len(text) > bound:
+        raise ValueError(f"OWID {dataset}: the response is {len(text)} characters, over the {bound} the table's own shape allows")
+    parsed = parse_owid(text, dataset=dataset, extracted_at=extracted_at)
+    if parsed.looks_unrecognised or parsed.all_gap:
+        raise ValueError(
+            f"OWID {dataset}: the response is not the expected table "
+            f"(all curated cells empty: {parsed.all_gap}, required columns found: {parsed.header_ok}, curated columns found: {len(parsed.columns_present)}, "
+            f"rows read: {parsed.rows_read}, records refused: {parsed.refused_total}, lines they covered: {parsed.refused_lines})"
+        )
+    return parsed

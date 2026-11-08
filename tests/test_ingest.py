@@ -253,3 +253,21 @@ def test_fetcher_raises_typed_errors_directly():
     f2 = EthicalFetcher(min_interval_s=0.0, session=sess2)
     with pytest.raises(RobotsUnavailable):
         f2.fetch("https://y.test/page")
+
+
+def test_extract_failure_detail_names_status_length_type_and_markers(db, source, caplog):
+    """F11: a failed extraction says what it was handed (numbers and labels, never page text) and the log line carries the URL."""
+    import logging
+
+    sess = FakeSession()
+    sess.route("https://example.com/robots.txt", status_code=404, text="")
+    sess.route("https://example.com/wall?token=SECRET#frag", text="<html><body><p>Please enable JavaScript. Cookie consent</p></body></html>")
+    with caplog.at_level(logging.INFO, logger="src.ingest.pipeline"):
+        out = ingest_url(db, source, "https://example.com/wall?token=SECRET#frag", fetcher=_fetcher(sess))
+    assert out.result is IngestResult.EXTRACT_FAILED
+    assert out.detail.startswith("no article body extracted (status 200, ")
+    assert "content-type text/html" in out.detail
+    assert "consent" in out.detail and "needs_js" in out.detail
+    assert "Please enable" not in out.detail
+    logged = " ".join(r.getMessage() for r in caplog.records)
+    assert "https://example.com/wall" in logged and "SECRET" not in logged and "#frag" not in logged

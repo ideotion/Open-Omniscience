@@ -171,14 +171,24 @@ def refresh_due(
                     s.dataset or "", params=params, get=get, agency=(s.agency or "eurostat")
                 )
             tally = store_figures(session, figs)
-            stored += tally["stored"]
-            refreshed += 1
             s.last_fetched_at = now_dt
             s.last_status = f"stored {tally['stored']} (new vintage)"
+            # ``store_figures`` flushes, and a flush takes the single-writer gate and keeps it to
+            # the end of the transaction, so without this commit the NEXT subscription's
+            # World Bank / Eurostat request (30 s timeout, up to 200 pages) would run with every
+            # other writer waiting. One unit, one commit -- as ``governments.py`` does per indicator.
+            session.commit()
+            stored += tally["stored"]  # counted only once the commit has held
+            refreshed += 1
         except Exception as exc:  # noqa: BLE001 - best-effort; record + continue
             errors += 1
+            # A failed flush/commit leaves the transaction unusable AND the write gate held (it is
+            # released only when the transaction ends), so end it before the next subscription's
+            # request; the rollback discards only this subscription's own uncommitted rows.
+            session.rollback()
             s.last_fetched_at = now_dt
             s.last_status = f"error: {record_text(exc, limit=160)}"
+            session.commit()
     session.flush()
     return {"checked": len(due), "refreshed": refreshed, "stored": stored,
             "skipped_offline": 0, "errors": errors}

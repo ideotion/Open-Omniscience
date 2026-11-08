@@ -53,11 +53,6 @@ def note_unlock_done(at: float | None = None) -> None:
         _count += 1
 
 
-def last_done_at() -> float | None:
-    with _LOCK:
-        return _done_at
-
-
 def started_after_unlock_s(started_epoch: float) -> float | None:
     """Seconds from the last finished unlock to ``started_epoch`` (signed), or ``None`` when
     this process has not finished one. Rounded to a tenth of a second."""
