@@ -22,6 +22,7 @@ import shutil
 import tempfile
 import threading
 from collections.abc import Callable
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any
 
@@ -233,6 +234,18 @@ def _scheduler_section(slim: bool) -> dict:
     if slim and isinstance(status, dict):
         status = {**status, "storage_guard": _damage_named_not_copied(status.get("storage_guard"))}
     return {"status": status, "recent_runs": recent_runs(30)}
+
+
+#: Set only while the all-diagnostics build assembles its debug-bundle member: the one caller allowed to save the integrity cursor.
+_RESUME_INTEGRITY: ContextVar[bool] = ContextVar("oo_diag_resume_integrity", default=False)
+
+
+def _resuming_integrity(build: Callable[[], Any]) -> Any:
+    token = _RESUME_INTEGRITY.set(True)
+    try:
+        return build()
+    finally:
+        _RESUME_INTEGRITY.reset(token)
 
 
 @router.get("/debug-bundle", dependencies=[Depends(refuse_cross_site_get)])
@@ -533,10 +546,13 @@ def debug_bundle(
         "schema_drift": _member(
             "schema_drift", lambda: _bounded(lambda: _schema_drift(db)), threaded=False
         ),
-        # With a cursor in the app-state store: the exact scans keep their place between builds, so a corpus too large for one
-        # 60 s budget is finished across several (the member names which checks are complete and where the rest stand).
+        # Inside the all-diagnostics build only (_RESUME_INTEGRITY), with a cursor in the app-state store: the exact scans keep
+        # their place between builds, so a corpus too large for one 60 s budget is finished across several (the member names
+        # which checks are complete and where the rest stand). A plain GET of this route saves nothing: a GET has no side effects.
         "corpus_integrity": _member(
-            "corpus_integrity", lambda: _corpus_integrity(db, cursor=_KvCursorStore()), threaded=False
+            "corpus_integrity",
+            lambda: _corpus_integrity(db, cursor=_KvCursorStore() if _RESUME_INTEGRITY.get() else None),
+            threaded=False,
         ),
         # Session forensics (2026-07-09 field event): data-dir inventory (what IS the
         # disk usage — orphaned PLAINTEXT backup staging detected loudly), the previous
@@ -1125,7 +1141,7 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
     return [
         # slim=True EXPLICITLY (a Query default is a truthy sentinel OBJECT when called directly):
         # in the archive the bundle names the eight sections that are members of their own.
-        ("debug-bundle.json", lambda: debug_bundle(db=db, slim=True)),
+        ("debug-bundle.json", lambda: _resuming_integrity(lambda: debug_bundle(db=db, slim=True))),
         ("home-cards.json", lambda: home_card_diagnostics(download=False, db=db)),
         ("keyword-engine.json", lambda: keyword_engine(download=False, db=db)),
         # THE MECHANISM SELF-TESTS, one verdict each in ONE member (R119): thirteen files that said

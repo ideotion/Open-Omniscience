@@ -194,6 +194,7 @@ from .system import (
     write_gate_report,
 )
 from .bundle import (
+    _RESUME_INTEGRITY,
     _ALL_DIAG_DEADLINE_SENTINEL,
     _ALL_DIAG_JOB,
     _ALL_DIAG_TRIM_AFTER_KB,
@@ -264,6 +265,7 @@ from .bundle import (
     _all_diagnostics_members,
     _all_diagnostics_volumes_dir,
     _all_diagnostics_build,
+    _resuming_integrity,
     _all_diagnostics_worker,
     _ascii_clip,
     _bundle_exclusive_window,
@@ -589,6 +591,8 @@ __all__ = [
     "_all_diagnostics_members",
     "_all_diagnostics_volumes_dir",
     "_all_diagnostics_build",
+    "_RESUME_INTEGRITY",
+    "_resuming_integrity",
     "_all_diagnostics_worker",
     "_ascii_clip",
     "_bundle_exclusive_window",

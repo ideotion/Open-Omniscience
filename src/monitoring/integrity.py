@@ -29,7 +29,12 @@ from typing import Any, Protocol
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from src.database.maintenance import StatementTimeout, deadline_expired, statement_deadline
+from src.database.maintenance import (
+    StatementTimeout,
+    deadline_expired,
+    deadline_left_s,
+    statement_deadline,
+)
 from src.monitoring.secret_scrub import log_failure, record_text
 
 _LOG = logging.getLogger(__name__)
@@ -135,15 +140,17 @@ def _now_iso() -> str:
 
 
 def _range_scan(
-    session: Session, check: str, table: str, sql: str, saved: dict[str, Any]
-) -> tuple[int | None, dict[str, Any]]:
+    session: Session, check: str, table: str, sql: str, saved: dict[str, Any], progress: dict[str, Any], stop_at: float | None = None
+) -> int | None:
     """Count one exact check in id ranges, from where the last build stopped, until it finishes or the budget runs out.
 
     Returns ``(value, progress)``: ``value`` is the whole-table figure when the scan reached the end THIS build, else ``None`` (not established);
     ``progress`` says where it is (``state`` complete or partial, the highest id it has through, the largest id it is walking to, the tally so
     far) and carries the last COMPLETED figure with its date and the id it was through, so a reader sees an older result as old. A pass walks to
     the largest id the table had when the pass began: rows added after that are the next pass's, and the progress says which id that was.
-    The cursor only moves past a range whose statement finished, so an interrupted range is simply done again next build."""
+    The cursor only moves past a range whose statement finished, so an interrupted range is simply done again next build. ``stop_at`` (a
+    ``time.monotonic()`` instant) is this check's share of the budget: it stops between ranges there, so the checks after it still get a turn.
+    ``progress[check]`` is written before any interrupt is re-raised, so a check cut mid-range still says where it stands."""
     prev = saved.get(check) if isinstance(saved.get(check), dict) else {}
     pending = prev.get("pending") if isinstance(prev.get("pending"), dict) else None
     last_complete = prev.get("last_complete") if isinstance(prev.get("last_complete"), dict) else None
@@ -153,11 +160,12 @@ def _range_scan(
     else:
         top = _scalar(session, f"SELECT MAX(id) FROM {table}")  # nosec B608 - `table` is one of three constants above
         if top is None:
-            return None, {"state": "unreadable", "last_complete": last_complete}
+            progress[check] = {"state": "unreadable", "last_complete": last_complete}
+            return None
         through, nxt, tally, step, started = top, 0, 0, _FIRST_RANGE_ROWS, _now_iso()
     interrupted: BaseException | None = None
     while nxt < through:
-        if deadline_expired(session):
+        if deadline_expired(session) or (stop_at is not None and time.monotonic() >= stop_at):
             break
         hi = min(nxt + max(1, step), through)
         t0 = time.monotonic()
@@ -174,24 +182,24 @@ def _range_scan(
         step = max(1, min(step * _RANGE_GROWTH, int(step * _RANGE_TARGET_S / took)))
     done = nxt >= through
     if done:
-        last_complete = {"value": tally, "through_id": through, "at": _now_iso()}
+        last_complete = {"value": tally, "through_id": through, "started_at": started, "at": _now_iso()}
         saved[check] = {"last_complete": last_complete}
-        progress = {"state": "complete", "through_id": through, "next_id": through, "tally": tally, "last_complete": last_complete}
+        progress[check] = {"state": "complete", "through_id": through, "next_id": through, "tally": tally, "last_complete": last_complete}
     else:
         saved[check] = {
             "pending": {"through_id": through, "next_id": nxt, "tally": tally, "step": step, "started_at": started},
             "last_complete": last_complete,
         }
-        progress = {
+        progress[check] = {
             "state": "partial", "through_id": through, "next_id": nxt, "tally_so_far": tally,
             "started_at": started, "last_complete": last_complete,
         }
     if interrupted is not None:
         raise interrupted
-    return (tally if done else None), progress
+    return tally if done else None
 
 
-def _fk_scan(session: Session, saved: dict[str, Any]) -> tuple[int | None, dict[str, Any]]:
+def _fk_scan(session: Session, saved: dict[str, Any], progress: dict[str, Any], stop_at: float | None = None) -> int | None:
     """``PRAGMA foreign_key_check`` one table at a time, from the tables the last build had not reached.
 
     A table at a time because the whole-database pragma is one statement the deadline cannot stop and one that never finished on a 14 GB corpus.
@@ -203,9 +211,10 @@ def _fk_scan(session: Session, saved: dict[str, Any]) -> tuple[int | None, dict[
     try:
         names = [str(r[0]) for r in session.execute(text("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")).fetchall()]
     except Exception as exc:  # noqa: BLE001
+        progress["foreign_key_violations"] = {"state": "unreadable", "last_complete": last_complete}
         if _budget_spent(session, exc):
             raise
-        return None, {"state": "unreadable", "last_complete": last_complete}
+        return None
     names = [n for n in names if _TABLE_NAME.match(n) and n != "keyword_mentions"]
     done_tables: dict[str, int] = {k: int(v) for k, v in (pending or {}).get("tables", {}).items() if k in names}
     bad: set[str] = {str(t) for t in (pending or {}).get("violating_tables", [])}
@@ -214,7 +223,7 @@ def _fk_scan(session: Session, saved: dict[str, Any]) -> tuple[int | None, dict[
     for name in names:
         if name in done_tables:
             continue
-        if deadline_expired(session):
+        if deadline_expired(session) or (stop_at is not None and time.monotonic() >= stop_at):
             break
         try:
             rows = session.execute(text(f'PRAGMA foreign_key_check("{name}")')).fetchall()  # nosec B608 - `name` matched [A-Za-z0-9_]+ above
@@ -228,9 +237,9 @@ def _fk_scan(session: Session, saved: dict[str, Any]) -> tuple[int | None, dict[
     finished = all(n in done_tables for n in names)
     total = sum(done_tables.values())
     if finished:
-        last_complete = {"value": total, "tables": len(names), "at": _now_iso()}
+        last_complete = {"value": total, "tables": len(names), "started_at": started, "at": _now_iso()}
         saved["foreign_key_violations"] = {"last_complete": last_complete}
-        progress = {
+        progress["foreign_key_violations"] = {
             "state": "complete", "tables_checked": len(names), "violating_tables": sorted(bad),
             "left_to_the_mention_checks": ["keyword_mentions"], "last_complete": last_complete,
         }
@@ -239,14 +248,14 @@ def _fk_scan(session: Session, saved: dict[str, Any]) -> tuple[int | None, dict[
             "pending": {"tables": done_tables, "violating_tables": sorted(bad), "started_at": started},
             "last_complete": last_complete,
         }
-        progress = {
+        progress["foreign_key_violations"] = {
             "state": "partial", "tables_checked": len(done_tables), "tables_total": len(names),
             "tally_so_far": total, "violating_tables": sorted(bad), "started_at": started,
             "left_to_the_mention_checks": ["keyword_mentions"], "last_complete": last_complete,
         }
     if interrupted is not None:
         raise interrupted
-    return (total if finished else None), progress
+    return total if finished else None
 
 
 #: The checks whose results the verdict is read from, and the report key each lives at.
@@ -311,14 +320,6 @@ def corpus_integrity(
 
     try:
         with statement_deadline(session):
-            # -- orphan / dangling row tallies: exact, in id ranges, resumable ---- #
-            # One statement per range (the deadline can stop a range, and cannot stop a bare count over a whole
-            # table), from where the last build stopped when a cursor store was given. A check that did not reach
-            # the end reads None (not established) with its place in ``scan_progress``, never a partial tally
-            # dressed as the figure.
-            for check, table, sql in _RANGE_SCANS:
-                report[check], progress[check] = _range_scan(session, check, table, sql, saved)
-
             # -- counter drift (sampled by default) ------------------------------ #
             # Recompute the true mention/article counts for the highest-mention
             # keywords and compare to the maintained counters. Drift here means the
@@ -406,14 +407,30 @@ def corpus_integrity(
             #  below — so its authoritative sqlite_master read and its own bounded row COUNT
             #  never race the counter-drift scan for the shared budget.)
 
-            # -- foreign-key integrity: a table at a time, resumable -------------- #
-            report["foreign_key_violations"], progress["foreign_key_violations"] = _fk_scan(session, saved)
-            report["foreign_key_violation_tables"] = (progress["foreign_key_violations"].get("violating_tables") or [])
+            # -- the resumable checks: orphan / dangling tallies in id ranges, foreign keys a table at a time ------ #
+            # They run AFTER the one-statement sampled drift read, and each takes an equal share of what is left of
+            # the budget (recomputed as each one finishes, so time a quick check leaves goes to the next): one long
+            # walk over a 25 M-row table must not starve the others, which on the 2026-11-07 corpus left the drift
+            # read and the foreign-key check never run. A check that did not reach the end reads None (not
+            # established) with its place in ``scan_progress``, never a partial tally dressed as the figure.
+            resumable: list[str] = [c for c, _t, _q in _RANGE_SCANS] + ["foreign_key_violations"]
+            for i, check in enumerate(resumable):
+                left = deadline_left_s(session)
+                stop_at = None if left is None else time.monotonic() + max(left, 0.0) / (len(resumable) - i)
+                if check == "foreign_key_violations":
+                    report[check] = _fk_scan(session, saved, progress, stop_at)
+                    report["foreign_key_violation_tables"] = progress[check].get("violating_tables") or []
+                else:
+                    _c, table, sql = next(r for r in _RANGE_SCANS if r[0] == check)
+                    report[check] = _range_scan(session, check, table, sql, saved, progress, stop_at)
             # A range scan that stops between ranges raises nothing: the budget running out is read here, not inferred.
             if deadline_expired(session):
                 timed_out = True
     except StatementTimeout:
         timed_out = True
+    # A check the budget never reached says so, rather than vanishing from the progress.
+    for check in [c for c, _t, _q in _RANGE_SCANS] + ["foreign_key_violations"]:
+        progress.setdefault(check, {"state": "not reached"})
 
     # -- FTS presence / health / staleness (D4) --------------------------------- #
     # Probed OUTSIDE the shared counter-drift deadline (which has now exited, restoring the

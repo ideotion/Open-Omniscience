@@ -227,3 +227,67 @@ def test_the_kv_store_holds_the_cursor_and_an_unreadable_one_is_an_absent_one(mo
     monkeypatch.setattr("src.config.kv_store.kv_set_json", lambda k, v: saved.update({k: v}))
     store.save({"x": 1})
     assert saved == {integrity._CURSOR_KEY: {"x": 1}}
+
+
+def test_one_long_walk_cannot_starve_the_drift_read_and_the_foreign_key_check(session, tiny_ranges, monkeypatch):
+    """The 2026-11-07 shape: the range walks never finish inside the budget. The one-statement drift read runs first and
+    each resumable check gets an equal share of what is left, so the foreign-key check is still reached."""
+    _corpus(session, keywords=40, orphans=30)
+    clock = {"t": 0.0}
+    monkeypatch.setattr(integrity, "deadline_left_s", lambda _s: 100.0 - clock["t"])
+    monkeypatch.setattr(integrity, "deadline_expired", lambda _s: clock["t"] >= 100.0)
+    import types
+
+    monkeypatch.setattr(integrity, "time", types.SimpleNamespace(monotonic=lambda: clock["t"]))  # integrity's clock only
+    real = integrity._scalar
+
+    def slow_range(session_, sql, params=None):
+        if params is not None and "lo" in params:
+            clock["t"] += 5.0  # every range costs 5 s of the 100 s budget
+        return real(session_, sql, params)
+
+    monkeypatch.setattr(integrity, "_scalar", slow_range)
+    r = integrity.corpus_integrity(session, sample=100, cursor=MemStore())
+    assert r["counter_drift"]["count_status"] == "ok", "the sampled drift read ran"
+    assert r["scan_progress"]["foreign_key_violations"]["state"] == "complete", "the last check still got its share"
+    assert r["scan_progress"]["orphan_keywords"]["state"] == "partial", "the long walk stopped at its share"
+
+
+def test_a_check_cut_mid_range_and_the_checks_after_it_still_say_where_they_stand(session, tiny_ranges, monkeypatch):
+    _corpus(session)
+    real = integrity._scalar
+    state = {"n": 0}
+
+    def interrupting(session_, sql, params=None):
+        if params is not None and "lo" in params:
+            state["n"] += 1
+            if state["n"] == 2:
+                raise integrity.StatementTimeout("the budget ran out")
+        return real(session_, sql, params)
+
+    monkeypatch.setattr(integrity, "_scalar", interrupting)
+    r = integrity.corpus_integrity(session, sample=100, cursor=MemStore())
+    assert r["scan_progress"]["orphan_keywords"]["state"] == "partial"
+    assert r["scan_progress"]["dangling_mentions_missing_keyword"] == {"state": "not reached"}
+    assert r["scan_progress"]["foreign_key_violations"] == {"state": "not reached"}
+
+
+def test_a_completed_figure_says_when_its_pass_began_as_well_as_when_it_ended(session, tiny_ranges):
+    _corpus(session)
+    r = integrity.corpus_integrity(session, sample=100, cursor=MemStore())
+    lc = r["scan_progress"]["orphan_keywords"]["last_complete"]
+    assert lc["started_at"] and lc["at"] and lc["started_at"] <= lc["at"]
+
+
+def test_only_the_all_diagnostics_build_saves_the_cursor_and_a_get_saves_nothing():
+    import inspect
+
+    from src.api.diagnostics import bundle
+
+    src = inspect.getsource(bundle)
+    assert "_KvCursorStore() if _RESUME_INTEGRITY.get() else None" in src
+    assert "_resuming_integrity(lambda: debug_bundle(db=db, slim=True))" in src
+    assert bundle._RESUME_INTEGRITY.get() is False, "a GET of /debug-bundle runs with the flag off"
+    seen = []
+    bundle._resuming_integrity(lambda: seen.append(bundle._RESUME_INTEGRITY.get()))
+    assert seen == [True] and bundle._RESUME_INTEGRITY.get() is False
