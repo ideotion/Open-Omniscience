@@ -89,7 +89,16 @@ artifacts:
     # from publicsuffix.org, and that host is CONNECT-refused from the build sandbox, so
     # this snapshot came from the project's own upstream repository. An operator with
     # clearnet should refresh from the canonical URL named in `refresh` above.
-    last_verified: "2026-09-07"
+    #
+    # Refreshed 2026-11-08 to publicsuffix/list@aae37acca5d0f3d09e7c1fe4da9024c514674ac9 (the
+    # last commit touching public_suffix_list.dat, 2026-11-04; freshness issue #1163), same
+    # route and same deviation as above (publicsuffix.org still CONNECT-refused). 31 upstream
+    # commits to the file since 24fdb51; 159 non-comment lines changed. tests/tests.txt is
+    # byte-identical upstream (last touched 2016), re-fetched at the same commit anyway.
+    # Re-checked the platform-inversion claim against the new bytes: substack.com,
+    # beehiiv.com, ghost.io, mailchimp.com, buttondown.email, kit.com and medium.com are
+    # still in neither section, so NEWSLETTER_PLATFORM_HOSTS stays load-bearing.
+    last_verified: "2026-11-08"
 
   - id: ip-geo-country
     title: DB-IP IP-to-Country Lite
@@ -121,7 +130,15 @@ artifacts:
     # another routine monthly delta. Re-ran the same production-reader verification: the same
     # four known IPs still resolve to their same countries (db_vintage now "2026-09"), and the
     # RFC-5737 range still returns the honest level="unavailable".
-    last_verified: "2026-09-08"
+    #
+    # Refreshed AGAIN 2026-11-08 to the 2026-11 DB-IP release (freshness issue #1163). Mirror's
+    # last dbip-country data commit is 4bedcc4 "20261102_005016 Update" (the 2026-10 release,
+    # 0446a11 of 2026-10-02, was skipped by the cycle, not missed in the data). 717,152 ->
+    # 732,778 rows; 0 malformed; country vocabulary unchanged at 250 codes (none gained, none
+    # lost); v4/v6 362,984 / 369,794 -- a routine delta. Production reader re-run: 8.8.8.8 us,
+    # 1.1.1.1 au, 212.27.48.10 fr, 2001:4860:4860::8888 ca (db_vintage "2026-11"), and the
+    # RFC-5737 range still returns the honest level="unavailable".
+    last_verified: "2026-11-08"
 
   - id: windows-x64-python-nuget
     title: CPython x64 for Windows (NuGet, Python Software Foundation)
