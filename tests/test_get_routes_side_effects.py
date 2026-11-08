@@ -43,6 +43,7 @@ refusal; the socket guard is the net beneath it and is not installed in a test).
 from __future__ import annotations
 
 import _thread
+import contextlib
 import errno
 import importlib.util
 import ipaddress
@@ -223,6 +224,11 @@ class _Monitor:
         self.dirs = dirs
         self.watchers = watchers
         self.connects: list[str] = []
+        #: LOOPBACK connects made by a thread that was already running when the request began and is not one of the client's own (the main
+        #: thread, the TestClient's asyncio portal, anyio's worker threads): a thread an EARLIER test left behind. Kept for the record, not charged
+        #: to the route: under pytest-xdist (2026-11-08) such a leftover's loopback connect landed inside one GET's window and named a stub-only
+        #: self-test route. A non-loopback connect is charged whoever made it: egress with the kill switch engaged is a fault from any thread.
+        self.background_connects: list[str] = []
         self.lookups: list[str] = []
         self.threads: list[str] = []
         self.files: set[str] = set()
@@ -254,18 +260,27 @@ class _Monitor:
         self._before = self._snapshot()
         self._dv_before = self._versions()
         monitor = self
+        client_threads = ("MainThread", "asyncio-portal", "AnyIO worker thread")
+        leftover = {t.ident for t in threading.enumerate() if not t.name.startswith(client_threads)}
         real_start = threading.Thread.start
         real_gai = socket.getaddrinfo
 
         def host_of(address) -> str:  # noqa: ANN001
             return str(address[0]) if isinstance(address, tuple) else str(address)
 
+        def charge(address) -> None:  # noqa: ANN001
+            host = host_of(address)
+            if threading.get_ident() in leftover and _is_loopback(host):
+                monitor.background_connects.append(f"{host} ({threading.current_thread().name})")
+            else:
+                monitor.connects.append(host)
+
         def connect(sock, address, *a, **k):  # noqa: ANN001
-            monitor.connects.append(host_of(address))
+            charge(address)
             raise OSError(f"blocked by the side-effect monitor: {address!r}")
 
         def connect_ex(sock, address, *a, **k):  # noqa: ANN001
-            monitor.connects.append(host_of(address))
+            charge(address)
             return errno.ECONNREFUSED
 
         def sendto(sock, data, *args):  # noqa: ANN001
@@ -699,6 +714,36 @@ def test_the_monitors_see_every_socket_call_they_patch(tmp_path):
             socket.getaddrinfo("probe-c.invalid", 80)
     assert mon.connects == ["192.0.2.1", "192.0.2.2", "192.0.2.3"], mon.connects
     assert mon.lookups == ["probe-a.invalid", "probe-b.invalid", "probe-c.invalid"], mon.lookups
+
+
+def test_a_leftover_threads_loopback_connect_is_recorded_but_not_charged_and_its_egress_is(tmp_path):
+    """A thread already running when the monitor opens (left by an earlier test) is not the request: its LOOPBACK connect is kept apart, its
+    non-loopback one is charged like any other. A thread the request itself starts is charged for both."""
+    go, done = threading.Event(), threading.Event()
+
+    def leftover() -> None:
+        go.wait(5)
+        for addr in (("127.0.0.1", 9), ("192.0.2.4", 9)):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s, contextlib.suppress(OSError):
+                s.connect(addr)
+        done.set()
+
+    t = threading.Thread(target=leftover, name="left-by-an-earlier-test", daemon=True)
+    t.start()
+    with _Monitor([tmp_path]) as mon:
+        go.set()
+        assert done.wait(5)
+
+        def own() -> None:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s, contextlib.suppress(OSError):
+                s.connect(("127.0.0.1", 9))
+
+        started = threading.Thread(target=own, name="started-by-the-request")
+        started.start()
+        started.join(5)
+    t.join(5)
+    assert mon.background_connects == ["127.0.0.1 (left-by-an-earlier-test)"], mon.background_connects
+    assert mon.connects == ["192.0.2.4", "127.0.0.1"], mon.connects
 
 
 def test_the_monitors_see_a_thread_a_file_a_removal_and_a_write(tmp_path):
