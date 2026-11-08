@@ -19,6 +19,7 @@ for the JSON-file state that is read at runtime.
 from __future__ import annotations
 
 import atexit
+import contextlib
 import importlib.util
 import os
 import shutil
@@ -455,6 +456,40 @@ def _briefing_threads_quiesced(request):
     """No briefing rebuild thread runs into the next test (see ``_quiesce_briefing_threads``)."""
     yield
     _quiesce_briefing_threads(request.node.nodeid)
+
+
+#: A retired resume watcher (``oo-resume-watch``) leaves the moment ``cancel_pending_resume`` sets its wake Event, so a short join is enough; one
+#: still alive after it is a real leak.
+_RESUME_WATCHER_JOIN_S = 2.0
+#: The real ``threading.enumerate`` and ``time.monotonic``, taken at import. Every test's ``monkeypatch`` is set up before this fixture (the autouse
+#: ``_isolated_robots_cache_path`` asks for it) and so is undone AFTER this fixture's teardown: a test that patched ``threading.enumerate`` with nameless
+#: fakes (``test_thread_census``) or ``time.monotonic`` with a short script of ticks (``test_diagnostics_runs``, ``test_session_history``) is still patched here.
+_enumerate_threads = threading.enumerate
+_monotonic = time.monotonic
+
+
+@pytest.fixture(autouse=True)
+def _resume_watchers_retired(request):
+    """No ``oo-resume-watch`` thread outlives the test that started it. A watcher a test left behind (a backup/restore path whose resume retries ran
+    out) was still alive in a LATER test of another file, in whatever order the shard dealt them: ``test_resume_watcher_thread_start_failure``
+    failed on CI shard 2 with 'a watcher is alive' although it starts none. Retire the claim (``cancel_pending_resume`` bumps the generation and wakes
+    the watcher), join briefly, and fail the test that left one still running, by name. Looked up in ``sys.modules`` so a test that never imported the
+    scheduler pays nothing."""
+    yield
+    import sys
+
+    runner = sys.modules.get("src.scheduler.runner")
+    if runner is None:
+        return
+    runner.cancel_pending_resume()
+    me = threading.current_thread()
+    live = [t for t in _enumerate_threads() if t.name == "oo-resume-watch" and t is not me]
+    end = _monotonic() + _RESUME_WATCHER_JOIN_S
+    for t in live:
+        with contextlib.suppress(RuntimeError):  # listed but not yet started
+            t.join(timeout=max(0.0, end - _monotonic()))
+    left = [f"{t.name} (ident {t.ident})" for t in live if t.is_alive()]
+    assert not left, f"{request.node.nodeid} left a resume watcher running: {left}"
 
 
 @pytest.fixture(autouse=True)

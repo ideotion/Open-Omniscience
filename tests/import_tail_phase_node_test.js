@@ -79,7 +79,8 @@ const rxState = APP.slice(
 assert(rxState.length > 10, "the chain's re-index cache declaration did not extract");
 
 const src = [
-  extract("function _uxVolPhase("),
+  "function ooLtrIsolate(s){return String(s==null?'':s);} function ooLtrPct(s){return String(s==null?'':s);}",
+    extract("function _uxVolPhase("),
   extract("function _uxImPhaseBits("),
   extract("function _uxImLive("),
   extract("function _uxImDur("),

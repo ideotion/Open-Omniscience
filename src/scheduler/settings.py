@@ -354,74 +354,42 @@ def _settings_path():
     return data_dir() / "scheduler_settings.json"
 
 
+def _store():
+    """The shared read side (src/config/settings_store.py); only the names below are this module's."""
+    from src.config.settings_store import SettingsStore
+
+    return SettingsStore(
+        kv_key=_KV_KEY,
+        file_name="scheduler_settings.json",
+        path_getter=lambda: _settings_path(),
+        refusal=SchedulerSettingsError,
+        damaged=_DamagedSchedulerSettingsError,
+        log=_LOG,
+        use_kv_hook=lambda: _use_kv(),
+        json_hook=lambda: _read_json_file(),
+    )
+
+
 def _use_kv() -> bool:
     """Use the encrypted ``app_state`` store at the DEFAULT location; honour a redirected
-    ``_settings_path`` (test isolation) as JSON instead. See app_settings._use_kv."""
-    from src.paths import data_dir
-
-    return _settings_path() == data_dir() / "scheduler_settings.json"
+    ``_settings_path`` (test isolation) as JSON instead."""
+    return _store().use_kv()
 
 
 def _read_json_file() -> dict | None:
-    path = _settings_path()
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text("utf-8"))
-    except Exception as exc:  # noqa: BLE001 - a bad file must not break startup
-        _LOG.warning("scheduler_settings.json unreadable; using defaults (%s)", type(exc).__name__)
-        return None
+    return _store().read_json_file()
 
 
 def _read_raw() -> dict | None:
-    """Scheduler prefs source of truth: the encrypted ``app_state`` row (D1), falling
-    back to (and one-time migrating) the legacy ``scheduler_settings.json`` file."""
-    if not _use_kv():
-        return _read_json_file()
-    from src.config.kv_store import kv_get_json, kv_set_json
-
-    raw = kv_get_json(_KV_KEY)
-    if raw is not None:
-        return raw
-    raw = _read_json_file()
-    if raw is None:
-        return None
-    try:
-        kv_set_json(_KV_KEY, raw)
-    except Exception as exc:  # noqa: BLE001 - migration is best-effort; retried next load
-        _LOG.debug("scheduler_settings migration into app_state deferred (%s)", type(exc).__name__)
-    return raw
+    """Preferences source of truth: the encrypted ``app_state`` row (D1), falling back to
+    (and one-time migrating) the legacy ``scheduler_settings.json`` file."""
+    return _store().read_raw()
 
 
 def _read_raw_strict() -> dict | None:
     """``_read_raw`` for a caller that will REWRITE what it read: a stored row that cannot be read raises SchedulerSettingsError (the class only)
     instead of reading as the defaults, because saving the defaults back over the user's settings is the loss this prevents."""
-    if not _use_kv():
-        return _read_json_file()
-    from src.config.kv_store import is_damaged, kv_get_json_strict, kv_set_json, refusal_text
-
-    try:
-        raw = kv_get_json_strict(_KV_KEY)
-    except Exception as exc:  # noqa: BLE001 - refused, by class
-        raise (_DamagedSchedulerSettingsError if is_damaged(exc) else SchedulerSettingsError)(refusal_text(exc)) from None
-    if raw is not None:
-        return raw
-    raw = _read_json_file()
-    if raw is None:
-        return None
-    try:
-        kv_set_json(_KV_KEY, raw)
-    except Exception as exc:  # noqa: BLE001 - migration is best-effort; retried next load
-        _LOG.debug("scheduler_settings migration into app_state deferred (%s)", type(exc).__name__)
-    return raw
-
-
-def _coerce_bool(value, fallback: bool) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in ("1", "true", "yes", "on")
-    return fallback
+    return _store().read_raw_strict()
 
 
 def _coerce_int(value, fallback: int, lo: int, hi: int) -> int:
@@ -741,6 +709,9 @@ def retired_settings_disclosures() -> list[str]:
 
 def load_settings(*, strict: bool = False) -> SchedulerSettings:
     """Load scheduler settings, falling back to safe defaults."""
+    # Function-local: this module takes no module-level src import (tests/test_wiki_tiers.py).
+    from src.shared import coerce_bool
+
     d = SchedulerSettings()
     raw = _read_raw_strict() if strict else _read_raw()  # strict: a save that rewrites what it read
     if raw is None:
@@ -750,11 +721,11 @@ def load_settings(*, strict: bool = False) -> SchedulerSettings:
     if rate_mode not in VALID_RATE_MODES:
         rate_mode = d.collect_rate_mode
     settings = SchedulerSettings(
-        autostart=_coerce_bool(raw.get("autostart"), d.autostart),
+        autostart=coerce_bool(raw.get("autostart"), d.autostart),
         interval_minutes=_coerce_int(
             raw.get("interval_minutes"), d.interval_minutes, _MIN_INTERVAL, _MAX_INTERVAL
         ),
-        continuous=_coerce_bool(raw.get("continuous"), d.continuous),
+        continuous=coerce_bool(raw.get("continuous"), d.continuous),
         collect_rate_mode=rate_mode,
         collect_target_kbps=_coerce_int(
             raw.get("collect_target_kbps"), d.collect_target_kbps, _MIN_TARGET_KBPS, _MAX_TARGET_KBPS
@@ -783,10 +754,10 @@ def load_settings(*, strict: bool = False) -> SchedulerSettings:
         qualification_recheck_per_pass=_coerce_int(
             raw.get("qualification_recheck_per_pass"), d.qualification_recheck_per_pass, 0, 100
         ),
-        qualification_budget_auto=_coerce_bool(
+        qualification_budget_auto=coerce_bool(
             raw.get("qualification_budget_auto"), d.qualification_budget_auto
         ),
-        scrape_app_provided_only=_coerce_bool(
+        scrape_app_provided_only=coerce_bool(
             raw.get("scrape_app_provided_only"), d.scrape_app_provided_only
         ),
         language_equilibrium=_coerce_target(raw.get("language_equilibrium")),
@@ -794,9 +765,9 @@ def load_settings(*, strict: bool = False) -> SchedulerSettings:
         # Reuses _coerce_target: a {iso2: weight} map cleaned to {lowercased-key: float>0},
         # exactly the shape the priority ladder needs (empty = OFF).
         country_priority=_coerce_target(raw.get("country_priority")),
-        auto_track_signals=_coerce_bool(raw.get("auto_track_signals"), d.auto_track_signals),
-        auto_import_calendars=_coerce_bool(raw.get("auto_import_calendars"), d.auto_import_calendars),
-        auto_track_law=_coerce_bool(raw.get("auto_track_law"), d.auto_track_law),
+        auto_track_signals=coerce_bool(raw.get("auto_track_signals"), d.auto_track_signals),
+        auto_import_calendars=coerce_bool(raw.get("auto_import_calendars"), d.auto_import_calendars),
+        auto_track_law=coerce_bool(raw.get("auto_track_law"), d.auto_track_law),
         wiki_lane_state=_coerce_wiki_lane_state(raw.get("wiki_lane_state"), d.wiki_lane_state),
         wiki_lane_editions=_coerce_wiki_lane_editions(
             raw.get("wiki_lane_editions"), d.wiki_lane_editions
@@ -807,23 +778,23 @@ def load_settings(*, strict: bool = False) -> SchedulerSettings:
             WIKI_LANE_BUDGET_GB_MIN,
             WIKI_LANE_BUDGET_GB_MAX,
         ),
-        wiki_lane_wizard_done=_coerce_bool(
+        wiki_lane_wizard_done=coerce_bool(
             raw.get("wiki_lane_wizard_done"), d.wiki_lane_wizard_done
         ),
-        wiki_walk_enabled=_coerce_bool(raw.get("wiki_walk_enabled"), d.wiki_walk_enabled),
-        wiki_warm_enabled=_coerce_bool(raw.get("wiki_warm_enabled"), d.wiki_warm_enabled),
+        wiki_walk_enabled=coerce_bool(raw.get("wiki_walk_enabled"), d.wiki_walk_enabled),
+        wiki_warm_enabled=coerce_bool(raw.get("wiki_warm_enabled"), d.wiki_warm_enabled),
         country_data_per_pass=_coerce_int(
             raw.get("country_data_per_pass"), d.country_data_per_pass, 0, 100
         ),
-        crawl_supplement=_coerce_bool(raw.get("crawl_supplement"), d.crawl_supplement),
+        crawl_supplement=coerce_bool(raw.get("crawl_supplement"), d.crawl_supplement),
         crawl_per_pass=_coerce_int(raw.get("crawl_per_pass"), d.crawl_per_pass, 0, 100),
         archive_backfill_per_pass=_coerce_int(
             raw.get("archive_backfill_per_pass"), d.archive_backfill_per_pass, 0, 100
         ),
-        auto_run_market_rules=_coerce_bool(
+        auto_run_market_rules=coerce_bool(
             raw.get("auto_run_market_rules"), d.auto_run_market_rules
         ),
-        auto_refresh_stat_subscriptions=_coerce_bool(
+        auto_refresh_stat_subscriptions=coerce_bool(
             raw.get("auto_refresh_stat_subscriptions"), d.auto_refresh_stat_subscriptions
         ),
         retired_mode=_coerce_retired_mode(raw.get("retired_mode")),
@@ -870,6 +841,9 @@ def _coerce_retired_mode(value) -> str:
 
 def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerSettings:
     """Apply a partial update and persist atomically. Validates before writing."""
+    # Function-local: this module takes no module-level src import (tests/test_wiki_tiers.py).
+    from src.shared import coerce_bool
+
     # A RETIRED key is REFUSED BY NAME, never accepted and dropped. Pydantic would drop an
     # undeclared field silently and this endpoint would answer 200 having changed nothing,
     # which tells a caller their scope decision took effect when it did not (the
@@ -928,13 +902,13 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
         "auto_track_law",
     ):
         if key in updates and updates[key] is not None:
-            setattr(current, key, _coerce_bool(updates[key], getattr(current, key)))
+            setattr(current, key, coerce_bool(updates[key], getattr(current, key)))
     if "autostart" in updates and updates["autostart"] is not None:
-        current.autostart = _coerce_bool(updates["autostart"], current.autostart)
+        current.autostart = coerce_bool(updates["autostart"], current.autostart)
     if "continuous" in updates and updates["continuous"] is not None:
-        current.continuous = _coerce_bool(updates["continuous"], current.continuous)
+        current.continuous = coerce_bool(updates["continuous"], current.continuous)
     if "auto_track_signals" in updates and updates["auto_track_signals"] is not None:
-        current.auto_track_signals = _coerce_bool(
+        current.auto_track_signals = coerce_bool(
             updates["auto_track_signals"], current.auto_track_signals
         )
     if "wiki_lane_state" in updates and updates["wiki_lane_state"] is not None:
@@ -947,27 +921,27 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> SchedulerS
     if "wiki_lane_budget_gb" in updates and updates["wiki_lane_budget_gb"] is not None:
         current.wiki_lane_budget_gb = _require_wiki_lane_budget_gb(updates["wiki_lane_budget_gb"])
     if "wiki_lane_wizard_done" in updates and updates["wiki_lane_wizard_done"] is not None:
-        current.wiki_lane_wizard_done = _coerce_bool(
+        current.wiki_lane_wizard_done = coerce_bool(
             updates["wiki_lane_wizard_done"], current.wiki_lane_wizard_done
         )
     if "wiki_walk_enabled" in updates and updates["wiki_walk_enabled"] is not None:
-        current.wiki_walk_enabled = _coerce_bool(
+        current.wiki_walk_enabled = coerce_bool(
             updates["wiki_walk_enabled"], current.wiki_walk_enabled
         )
     if "wiki_warm_enabled" in updates and updates["wiki_warm_enabled"] is not None:
-        current.wiki_warm_enabled = _coerce_bool(
+        current.wiki_warm_enabled = coerce_bool(
             updates["wiki_warm_enabled"], current.wiki_warm_enabled
         )
     if "crawl_supplement" in updates and updates["crawl_supplement"] is not None:
-        current.crawl_supplement = _coerce_bool(
+        current.crawl_supplement = coerce_bool(
             updates["crawl_supplement"], current.crawl_supplement
         )
     if "qualification_budget_auto" in updates and updates["qualification_budget_auto"] is not None:
-        current.qualification_budget_auto = _coerce_bool(
+        current.qualification_budget_auto = coerce_bool(
             updates["qualification_budget_auto"], current.qualification_budget_auto
         )
     if "scrape_app_provided_only" in updates and updates["scrape_app_provided_only"] is not None:
-        current.scrape_app_provided_only = _coerce_bool(
+        current.scrape_app_provided_only = coerce_bool(
             updates["scrape_app_provided_only"], current.scrape_app_provided_only
         )
     if "collect_rate_mode" in updates and updates["collect_rate_mode"] is not None:

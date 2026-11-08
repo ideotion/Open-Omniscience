@@ -605,6 +605,9 @@ def _close_previous(prev_state: dict[str, Any] | None, liveness: dict[str, Any] 
             # A string of the app's own vocabulary is carried as it is; anything else (an unknown phrase, a non-string from a
             # damaged sidecar) is said to be unrecognised, never dropped (every absence has a reason) and never copied.
             rec["reason"] = said if isinstance(said, str) and said in _SHUTDOWN_REASONS else "unrecognised"
+        power = (prev_state or {}).get("last_power_event")
+        if isinstance(power, dict) and power.get("kind") in ("suspend", "resume") and isinstance(power.get("at"), str):
+            rec["last_power_event"] = {"kind": power["kind"], "at": power["at"][:32]}  # the app's own two words and a stamp, nothing else
         exit_seen = _launcher_exit(prev_state)
         if exit_seen:
             rec["exit"] = exit_seen

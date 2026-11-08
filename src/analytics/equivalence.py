@@ -244,11 +244,6 @@ def is_ring_term(normalized: str) -> bool:
     return _norm(normalized) in _index()[0]
 
 
-def ring_terms() -> frozenset[str]:
-    """All normalized member terms across all rings (for candidate pre-filtering)."""
-    return _index()[0]
-
-
 def ring_of(language: str | None, normalized: str) -> str | None:
     """The ring id for (effective-language, normalized), or None.
 
@@ -419,27 +414,6 @@ def _merge_group(
     merged["members"] = member_view
     merged["variants"] = len(member_view)
     return merged
-
-
-def candidate_languages(
-    pairs: Iterable[tuple[str, str | None, dict[str, int] | None]],
-) -> dict[str, str | None]:
-    """Resolve effective language for ring-candidate terms.
-
-    ``pairs`` = (normalized, stored_language, signature) for every term that IS a
-    ring member. Effective language = the stored language if known, else the
-    dominant of the signature (signature-supported join), else None. Returns
-    {normalized: effective_language} — the ``lang_of`` map for merge_equivalents.
-    """
-    out: dict[str, str | None] = {}
-    for norm, stored, sig in pairs:
-        if stored:
-            out[norm] = stored
-        elif sig:
-            out[norm] = max(sig, key=lambda k: sig[k])
-        else:
-            out[norm] = None
-    return out
 
 
 # --------------------------------------------------------------------------- #

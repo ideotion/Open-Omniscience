@@ -125,3 +125,21 @@ def test_kill_switch_refuses_before_any_request(monkeypatch):
 
 def test_as_of_is_stamped():
     assert NSIDC_AS_OF == "2026-11"
+
+
+def test_the_session_is_pinned_to_its_own_host_and_directory_and_the_read_is_bounded(monkeypatch):
+    built: dict = {}
+    bounded: list[int] = []
+
+    def factory(**kw):
+        built.update(kw)
+        return "session"
+
+    monkeypatch.setattr(fetch_mod, "guarded_session", factory)
+    monkeypatch.setattr(fetch_mod, "_bounded_get", lambda session, url, *, max_chars: bounded.append(max_chars))
+    fetch_mod._nsidc_getter("u")
+    assert built["allowed_hosts"] == fetch_mod.NSIDC_HOSTS == ("noaadata.apps.nsidc.org",)
+    assert built["allowed_path_prefixes"] == fetch_mod.NSIDC_PATHS == ("/NOAA/G02135/",)
+    assert bounded == [fetch_mod.nsidc_max_chars()]
+    for region in ("N", "S"):
+        assert fetch_mod.nsidc_url(region).startswith("https://noaadata.apps.nsidc.org/NOAA/G02135/")
