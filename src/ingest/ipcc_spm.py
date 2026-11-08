@@ -131,10 +131,12 @@ def _read_declared(resp: Any, label: str) -> bytes:
     declared = headers.get("Content-Length")
     if declared is None or not str(declared).isdigit():
         raise ValueError(f"{label}: the server declared no length, so the read cannot be bounded")
-    encoding = str(headers.get("Content-Encoding") or "identity").lower()
+    encoding = str(headers.get("Content-Encoding") or "identity").strip().lower()
     if encoding != "identity":
+        # A server-chosen string goes into the message: bounded and printable-ASCII only.
+        shown = "".join(c for c in encoding[:32] if c.isascii() and c.isprintable())
         raise ValueError(
-            f"{label}: the server compressed the body ({encoding}) despite the identity request, "
+            f"{label}: the server compressed the body ({shown}) despite the identity request, "
             "so its declared length is not the document's"
         )
     limit = int(declared)

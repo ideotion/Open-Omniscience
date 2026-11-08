@@ -3070,6 +3070,22 @@
       <div id="stat-ingest-msg" class="hint" role="status" aria-live="polite" style="margin-top:8px"></div>
       <div style="overflow:auto;margin-top:10px" id="stat-agencies"><div class="muted">Loading…</div></div>
     </section>
+
+    </details>
+
+    <details class="adv-sec" data-adv="ipcc">
+      <summary><span class="adv-sec-t">IPCC reports</span> <span class="muted">— the four Summaries for Policymakers, fetched on a click</span></summary>
+    <!-- A3 click surface: the four IPCC AR6 Summaries for Policymakers. The fetch egresses, so the
+         button passes the ONE network consent (invariant #14) in app-ipcc.js and the endpoint refuses
+         on its own as well (#14f). The disclosure is VISIBLE, not behind a toggle. No inline handlers. -->
+    <section class="panel" id="ipcc-spm">
+      <h2 style="margin-top:0;font-size:13px">IPCC reports <span class="muted">&mdash; Summaries for Policymakers</span></h2>
+      <p class="hint" style="margin-top:0">The four Summaries for Policymakers of the IPCC&rsquo;s Sixth Assessment Report, each one a PDF on www.ipcc.ch. Fetching one stores its text in your corpus as a single document under the source &ldquo;IPCC reports&rdquo;; a copy you already have is never overwritten.</p>
+      <p class="card-caveat" style="margin-top:6px">IPCC reports track predictions over time; they never assert futures.</p>
+      <p class="hint" style="margin-top:6px">The addresses and approval dates come from the IPCC&rsquo;s own site and were not checked against a live download, so a wrong address fails with a visible error rather than a guess.</p>
+      <div id="ipcc-list" class="hint" style="margin-top:10px"><div class="muted">Loading…</div></div>
+      <div id="ipcc-status" class="hint" role="status" aria-live="polite" style="margin-top:8px"></div>
+    </section>
     </details>
 
     <details class="adv-sec" data-adv="keywords">
@@ -4269,6 +4285,7 @@
   <script src="/static/app-sources.js"></script>
   <script src="/static/app-markets.js"></script>
   <script src="/static/app-insights.js"></script>
+  <script src="/static/app-ipcc.js"></script>
   <script src="/static/app-observatory.js"></script>
   <script src="/static/app-living.js"></script>
   <script src="/static/app-maintenance.js"></script>
