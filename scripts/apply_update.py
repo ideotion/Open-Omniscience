@@ -169,14 +169,29 @@ def _lock_owner(lock: Path) -> tuple[int, int]:
     return (app, helper)
 
 
-def take_lock(lock: Path, app_pid: int, *, alive=pid_alive) -> bool:
-    """Create ``lock`` naming the app process this helper serves and this helper, or take over a lock that is not a live duplicate. False only
-    when a LIVE helper already serves the SAME app process: a second helper for one shutdown, whose owner will apply and relaunch.
+#: A lock older than this is stale whoever it names: longer than any real run (a 30 min wait, four pip runs of up to an hour, the git steps),
+#: so only a helper pid that a reboot recycled could still look alive at that age.
+LOCK_STALE_S = 8 * 3600
 
-    A lock naming ANOTHER app process belongs to an earlier run (that app is gone, or this app could not have been started to ask again), so
-    it is stale by construction: no age guess, and no pid that a reboot recycled can make it look alive. Two helpers can only serve the same
-    app process, and the server starts one per process (``begin_apply``), so the take-over is not contended in practice. The pid is written
-    beside the lock and hard-linked into place, so a reader never sees an empty lock where links exist."""
+
+def lock_holder_alive(lock: Path, *, alive=pid_alive, now=time.time) -> tuple[int, int] | None:
+    """The ``(app pid, helper pid)`` of a lock whose helper is still running and which is younger than :data:`LOCK_STALE_S`, else None."""
+    owner_app, owner_helper = _lock_owner(lock)
+    try:
+        fresh = now() - lock.stat().st_mtime < LOCK_STALE_S
+    except OSError:
+        return None
+    if fresh and owner_helper and owner_helper != os.getpid() and alive(owner_helper):
+        return (owner_app, owner_helper)
+    return None
+
+
+def take_lock(lock: Path, app_pid: int, *, alive=pid_alive, now=time.time) -> bool:
+    """Create ``lock`` naming the app process this helper serves and this helper, or take over a stale one. False while a LIVE helper holds a
+    fresh lock, whichever app it served: it may be mid-pip for an earlier app while the person started the app again by hand, and two
+    helpers on one checkout would undo each other. A lock whose helper is gone, or older than :data:`LOCK_STALE_S`, is taken over. The
+    content is written beside the lock and hard-linked into place, so a reader never sees an empty lock where hard links exist (on a
+    filesystem without them the exclusive create is followed by the write: a short window, stated)."""
     mine = f"{app_pid} {os.getpid()}"
     tmp = lock.with_name(f"{lock.name}.{os.getpid()}.tmp")
     tmp.write_text(mine, encoding="utf-8")
@@ -196,8 +211,7 @@ def take_lock(lock: Path, app_pid: int, *, alive=pid_alive) -> bool:
                     os.write(fd, mine.encode())
                     os.close(fd)
                     return True
-            owner_app, owner_helper = _lock_owner(lock)
-            if owner_app == app_pid and owner_helper != os.getpid() and alive(owner_helper):
+            if lock_holder_alive(lock, alive=alive, now=now) is not None:
                 return False
             with contextlib.suppress(OSError):
                 lock.unlink()
@@ -219,11 +233,19 @@ def main(argv: list[str]) -> int:
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     data_dir = plan_path.parent
     root = Path(plan["root"])
-    # One helper per shutdown: a second one for the same app process exits without touching anything (its live owner applies and relaunches);
-    # a lock from an earlier app process, or whose helper is gone, is taken over, never obeyed.
+    # One helper at a time on a checkout: a live helper's fresh lock is obeyed; a lock whose helper is gone, or that is older than any run, is
+    # taken over.
     lock = data_dir / LOCK_FILE
     if not take_lock(lock, int(plan["pid"])):
-        return 1  # a live helper already serves this same shutdown: it applies and relaunches; this one touches nothing
+        holder = lock_holder_alive(lock)
+        if holder is None or holder[0] == int(plan["pid"]):
+            return 1  # a live helper already serves this same shutdown: it applies and relaunches; this one touches nothing
+        # The holder serves an EARLIER app run (the server checks the lock before stopping, so this is a race). This helper touches nothing,
+        # but the app it was started for is stopping: wait for the holder to finish, then start the launcher so the app is not left down.
+        if wait_for_exit(int(plan["pid"])):
+            wait_for_exit(holder[1], LOCK_STALE_S)
+            relaunch(root)
+        return 1
     try:
         # Recorded FIRST, so a helper that dies part-way leaves "started" behind rather than an older attempt's "updated".
         write_result(plan, "started", "", data_dir)

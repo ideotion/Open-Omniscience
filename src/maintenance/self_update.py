@@ -272,10 +272,31 @@ def begin_apply(ref: str, sha: str, *, now: float | None = None, root: Path | No
         if _APPLYING is not None and time.monotonic() - _APPLYING < _APPLY_HOLD_S:
             raise UpdateError("An update is already starting.")
         checked = validate_apply(ref, sha, now=now, root=root)
+        if _helper_running():
+            raise UpdateError("An earlier update is still being applied; try again in a few minutes.")
         launch_helper(checked["ref"], checked["sha"], checked["kind"], root=root, popen=popen)
         _APPLYING = time.monotonic()
         _LAST_CHECK.clear()
         return checked
+
+
+def _helper_running() -> bool:
+    """True while an update helper holds a fresh lock and is still running (checked BEFORE this app stops, so it is never stopped for an
+    update that would then wait behind another)."""
+    import importlib.util
+
+    from src.paths import data_dir, repo_root
+
+    script = repo_root() / "scripts" / "apply_update.py"
+    lock = data_dir() / "update.lock"
+    if not lock.exists() or not script.is_file():
+        return False
+    spec = importlib.util.spec_from_file_location("oo_apply_update", script)
+    if spec is None or spec.loader is None:
+        return False
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.lock_holder_alive(lock) is not None
 
 
 def validate_apply(ref: str, sha: str, *, now: float | None = None, root: Path | None = None) -> dict[str, Any]:

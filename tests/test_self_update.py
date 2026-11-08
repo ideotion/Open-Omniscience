@@ -10,6 +10,7 @@ import importlib.util
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -223,6 +224,7 @@ def test_a_second_apply_is_refused_and_the_check_is_spent(monkeypatch):
     monkeypatch.setattr(su, "_checkout_contains", lambda root, sha: False)
     monkeypatch.setattr(su, "install_status", lambda root=None: {"kind": "git", "can_apply": True, "reason": "", "manual_steps": []})
     monkeypatch.setattr(su, "launch_helper", lambda *a, **k: None)
+    monkeypatch.setattr(su, "_helper_running", lambda: False)
     monkeypatch.setattr(su, "_APPLYING", None)
     monkeypatch.setattr(su, "_LAST_CHECK", {})
     su.check(lambda url: _tags(("v0.6.0", SHA_B)), now=1000.0)
@@ -262,13 +264,14 @@ def test_check_says_up_to_date_when_the_checkout_is_ahead_of_the_tag(repos, monk
     assert su.check(lambda url: _tags(("v0.6.0", "c" * 40)), root=inst)["update_available"] is True
 
 
-def test_the_helper_lock_obeys_only_a_live_helper_for_the_same_app(tmp_path):
+def test_the_helper_lock_obeys_a_live_fresh_holder_and_takes_over_a_stale_one(tmp_path):
     h = _helper()
     lock = tmp_path / "update.lock"
     lock.write_text("111 424242", encoding="utf-8")
     assert h.take_lock(lock, 111, alive=lambda pid: True) is False  # a live duplicate for this same shutdown
-    # a lock from another app process is stale by construction, even when its helper pid is alive (recycled after a reboot)
-    assert h.take_lock(lock, 222, alive=lambda pid: True) is True
+    assert h.take_lock(lock, 222, alive=lambda pid: True) is False  # a live helper still applying for an earlier app run
+    # older than any real run: stale even if its helper pid looks alive (recycled after a reboot)
+    assert h.take_lock(lock, 222, alive=lambda pid: True, now=lambda: time.time() + h.LOCK_STALE_S + 1) is True
     assert lock.read_text(encoding="utf-8") == f"222 {os.getpid()}"
     lock.write_text("222 424242", encoding="utf-8")
     assert h.take_lock(lock, 222, alive=lambda pid: False) is True  # its helper is gone
@@ -280,6 +283,21 @@ def test_the_helper_lock_obeys_only_a_live_helper_for_the_same_app(tmp_path):
     lock.write_text("222 424242", encoding="utf-8")
     h.release_lock(lock)  # not ours: left alone
     assert lock.exists()
+
+
+def test_apply_is_refused_before_the_app_stops_while_a_helper_is_still_running(monkeypatch):
+    monkeypatch.setattr(su, "current_version", lambda: "0.5.0")
+    monkeypatch.setattr(su, "_checkout_contains", lambda root, sha: False)
+    monkeypatch.setattr(su, "install_status", lambda root=None: {"kind": "git", "can_apply": True, "reason": "", "manual_steps": []})
+    started = []
+    monkeypatch.setattr(su, "launch_helper", lambda *a, **k: started.append(a))
+    monkeypatch.setattr(su, "_helper_running", lambda: True)
+    monkeypatch.setattr(su, "_APPLYING", None)
+    monkeypatch.setattr(su, "_LAST_CHECK", {})
+    su.check(lambda url: _tags(("v0.6.0", SHA_B)), now=1000.0)
+    with pytest.raises(su.UpdateError, match="still being applied"):
+        su.begin_apply("v0.6.0", SHA_B, now=1001.0)
+    assert started == [] and su._APPLYING is None
 
 
 def test_helper_reports_already_current_when_the_checkout_is_ahead(repos):
