@@ -40,6 +40,9 @@ _LOG = logging.getLogger(__name__)
 BUFFER = 2000
 #: How long the producer waits on a full queue before it decides nobody reads any more.
 PUT_WAIT_S = 10.0
+#: The reason a Stop's closing line carries. The page reads it to tell its own Cancel from a run the model ended first
+#: (src/static/app-analysis.js ``_STOPPED_REASON``), so the two spellings are pinned equal by tests/test_background_ai_runs.py.
+STOPPED_REASON = "stopped from the task manager"
 #: How often the reader wakes while waiting, so a reader whose response was dropped is collected promptly.
 GET_WAIT_S = 1.0
 
@@ -107,7 +110,7 @@ def detached(gen: Generator[str], token: int | None, *, name: str = "oo-detached
                 if token is not None and _tasks.cancel_requested(token):
                     _LOG.info("%s: stopped from the task manager", name)
                     last = None
-                    _put_last(_closing_line("stopped from the task manager"))
+                    _put_last(_closing_line(STOPPED_REASON))
                     break
             else:
                 if last is not None and not last_fed:

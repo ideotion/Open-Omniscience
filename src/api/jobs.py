@@ -310,8 +310,9 @@ def _task_jobs() -> list[dict]:
 
     Read-only visibility — the answer to "is an LLM translating? are keywords being
     extracted?". Each carries only the owner's real facts (label/detail and an
-    optional done/total it published), never a fabricated percentage. No actions:
-    these are short, in-request operations the user did not queue."""
+    optional done/total it published), never a fabricated percentage. Actions: Stop
+    only on a task registered ``cancellable`` (an AI run that outlives its tab,
+    src/api/detached_stream.py); the rest are short, in-request operations with none."""
     from src.monitoring.tasks import snapshot
 
     out: list[dict] = []

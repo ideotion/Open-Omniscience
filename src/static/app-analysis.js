@@ -3236,6 +3236,8 @@
     // state with the next one: { task: its task-manager id (the X-OO-Task header, once the response began), stopping: its
     // Cancel was pressed, the server is asked to stop it and the page reads on to its end }. Absent = that panel is idle.
     const _aiRuns = {};
+    // The reason detached_stream.py's closing line carries for a Stop (the page's Cancel or the task manager's).
+    const _STOPPED_REASON = "stopped from the task manager";
     // A bulk or extractor run OUTLIVES ITS TAB (src/api/detached_stream.py), so aborting the fetch would only stop the PAGE
     // reading it while the model kept writing, and the queue would start the next run beside it. A Cancel asks the SERVER to
     // stop the run, through the task manager's own Stop (POST /api/jobs/task:N/cancel), and the page reads on until the run's
@@ -3413,7 +3415,8 @@
               else if (o.status === "failed") job.failedN++;
             } else if (o.event === "done") {
               if (o.aborted) {
-                if (job.stopping) job.status = "cancelled";  // the end the page's own Cancel asked for
+                // The end the page's own Cancel asked for; any other abort (the model went away first) keeps its reason.
+                if (job.stopping && o.reason === _STOPPED_REASON) job.status = "cancelled";
                 else { job.status = "error"; job.err = o.reason || t("Stopped"); }
               } else job.status = "done";
             }
@@ -3572,7 +3575,7 @@
               done++;
               if (prog) prog.textContent = t("Processing") + " " + done + "/" + total + "…";
             } else if (o.event === "done") {
-              if (o.aborted && run.stopping) {
+              if (o.aborted && run.stopping && o.reason === _STOPPED_REASON) {
                 if (prog) prog.textContent = t("Cancelled.");
               } else if (o.aborted) {
                 if (prog) prog.innerHTML = `<span class="note err">${esc(t("Stopped:"))} ${esc(o.reason || "")}</span>`;

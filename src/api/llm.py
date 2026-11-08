@@ -2626,7 +2626,10 @@ def bulk_llm(
         def emit(obj: dict) -> str:
             return _json.dumps(obj, separators=(",", ":")) + "\n"
 
-        yield emit({
+        # The start line comes before the try below, so a close while the run sits here (a Stop landing at once, a client gone)
+        # would skip its finish and leave the task row behind with a Stop that does nothing: finish it on that path too.
+        try:
+          yield emit({
             "event": "start", "op": op, "total": total, "requested": requested,
             "to_process": to_process, "already_done": len(already),
             "same_language": len(same_lang), "capped": capped, "model": model,
@@ -2637,7 +2640,10 @@ def bulk_llm(
             # lane resumes on its own afterwards). Announced in the start event so
             # the UI can say so rather than leaving the pause invisible.
             "pauses_background_ai": True,
-        })
+          })
+        except GeneratorExit:
+            _bgtasks.finish(_tok)
+            raise
         stored = skipped = failed = 0
         from src.database.session import SessionLocal
 

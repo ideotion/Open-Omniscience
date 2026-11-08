@@ -263,9 +263,10 @@ The panel never asks for your passphrase: if the app is locked, it says so, and 
 it in the browser. Closing the launcher window or pressing Ctrl-C still stops the app, as
 before. Set `OO_PANEL=0` to start without the panel. The AI tools that answer in the page
 (bulk summarize or translate, AI keyword extraction, prompt runs) keep going too once the
-tab is closed: they show in the panel and the task manager, and stop after the article in
-flight when you press **Stop** there or **Cancel** in the page; the articles already done
-stay stored. The keyword index of articles Insights has not indexed yet also catches up on
+tab is closed, and show in the panel's job list. To stop one, open the UI and press **Stop**
+on its row in the task manager, or **Cancel** in the page (the panel's own Stop app stops
+the whole app): it stops after the article in flight, and the articles already done stay
+stored. The keyword index of articles Insights has not indexed yet also catches up on
 its own while the app is idle. Only two things need the tab to stay open: an upload you are
 sending from the browser, and a file the browser is downloading. On
 Windows the panel opens in a window of its own (closing it does not stop the app), and only

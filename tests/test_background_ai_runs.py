@@ -262,3 +262,19 @@ def test_a_stopping_extractor_run_keeps_its_own_state_and_blocks_a_second_start(
     start = function_body(js, "aiRunPromptStart")
     assert start.index("if (_aiRuns[ctx]) {") < start.index("_aiRuns[ctx] = run;") < start.index("await fetch(")
     assert "if (_aiRuns[ctx] === run) delete _aiRuns[ctx];" in start
+
+
+def test_the_page_tells_its_own_cancel_from_a_run_the_model_ended_first():
+    """Final Opus read of #1830: any aborted end read as "Cancelled." once Cancel was pressed, so a model outage that ended the
+    run first lost its reason. The page matches the Stop's own reason, spelled once on each side."""
+    js = (REPO / "src" / "static" / "app-analysis.js").read_text(encoding="utf-8")
+    assert f'const _STOPPED_REASON = "{ds.STOPPED_REASON}";' in js
+    assert js.count("o.reason === _STOPPED_REASON") == 2
+
+
+def test_a_run_closed_at_its_start_line_still_leaves_the_task_manager():
+    """Final Opus read of #1830: the bulk start line came before the try that finishes the task, so a close right there (a Stop
+    landing at once) left the row in the task manager with a Stop that did nothing."""
+    llm = (REPO / "src" / "api" / "llm.py").read_text(encoding="utf-8")
+    assert '        try:\n          yield emit({\n            "event": "start", "op": op,' in llm
+    assert "        except GeneratorExit:\n            _bgtasks.finish(_tok)\n            raise\n        stored = skipped = failed = 0" in llm
