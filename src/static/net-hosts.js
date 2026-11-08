@@ -195,7 +195,7 @@
     {
       "id": "climate",
       "label": "Climate series",
-      "hosts": ["data.giss.nasa.gov", "earthquake.usgs.gov", "raw.githubusercontent.com", "www.ncei.noaa.gov"],
+      "hosts": ["data.giss.nasa.gov", "earthquake.usgs.gov", "raw.githubusercontent.com", "www.ncei.noaa.gov", "noaadata.apps.nsidc.org"],
       "trigger": "click",
       "setting": null,
       "fetcher": true
