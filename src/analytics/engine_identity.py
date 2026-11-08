@@ -193,6 +193,11 @@ NOT_OUTPUT_AFFECTING: dict[str, str] = {
         "by the merge in both modes, so a carry and a re-index cannot differ here"
     ),
     "src/analytics/engine_identity.py": "this module; it computes the stamp, not the rows",
+    "src/shared.py": (
+        "stdlib-only helpers shared by self-tests, benchmarks, a settings parser and a snapshot wrapper "
+        "(A-036); none of them is on a path that writes an indexed row, so a change here can make no "
+        "indexed article stale"
+    ),
     "src/config/kv_store.py": (
         "the settings store; the country column type reads the store's country FORM through it when a pass binds "
         "a code. The form is a fact about the file, and the value a pass hands over is the same lowercase "

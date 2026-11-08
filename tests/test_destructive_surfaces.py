@@ -31,11 +31,11 @@ import re
 from pathlib import Path
 
 from tests.js_source_helper import _function_span
+from tests.trusted_click_table import TRUSTED_CLICK_ONLY
 
 _ROOT = Path(__file__).resolve().parent.parent
 _STATIC = _ROOT / "src" / "static"
 _API = _ROOT / "src" / "api"
-_OO_ON = (_STATIC / "oo-on.js").read_text(encoding="utf-8")
 
 # The words that destroy, stop, hide or override something, plus the words a ROUTE adds (a restore or a merge is
 # additive today, and listed so the day it stops being additive it is read again).
@@ -50,12 +50,6 @@ _VERBS = frozenset(
 
 def _words(text: str) -> set[str]:
     return {w.lower() for w in re.findall(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])", text)}
-
-
-def _set_literal(name: str) -> set[str]:
-    m = re.search(rf"const {name} = new Set\(\[(.*?)\]\);", _OO_ON, re.S)
-    assert m, f"oo-on.js must declare {name} as a literal Set"
-    return set(re.findall(r'"([^"]*)"', m.group(1)))
 
 
 # --------------------------------------------------------------------------------------------------------------- #
@@ -267,14 +261,14 @@ def test_every_orm_cascade_that_deletes_children_is_accounted_for() -> None:
 
 
 # --------------------------------------------------------------------------------------------------------------- #
-# The UI: every named function that makes a destructive request confirms, is gated to a gesture, or is listed.
+# The UI: every named function that makes a destructive request confirms, is on the trusted-click table, or is listed.
 # --------------------------------------------------------------------------------------------------------------- #
 
 _NOT_SCANNED = {"i18n.js", "sw.js", "oo-on.js"}
 
-#: Functions that make a destructive-shaped request without confirming and without being gesture-gated, each with the
-#: reason it is safe as it is. The test checks every entry still makes that request, still does not confirm and is
-#: not in GESTURE_ONLY, so an entry cannot outlive the reason for it.
+#: Functions that make a destructive-shaped request without confirming and without a row on the trusted-click table, each
+#: with the reason it is safe as it is. The test checks every entry still makes that request, still does not confirm and is
+#: not on that table, so an entry cannot outlive the reason for it.
 _REQUEST_EXEMPT = {
     "_dismissCardNow": "files a dismissed card with its reason; the briefing's Restore puts it back (/api/briefing/restore)",
     "_leadDismissWith": "records the reason a lead was dismissed; additive, nothing is removed",
@@ -335,26 +329,26 @@ def _request_sites() -> dict[str, tuple[str, bool, str]]:
 def test_every_function_that_makes_a_destructive_request_confirms_or_is_accounted_for() -> None:
     sites = _request_sites()
     assert len(sites) >= 65, f"the request finder saw only {len(sites)} functions: it has stopped finding them"
-    gated = _set_literal("GESTURE_ONLY")
+    gated = set(TRUSTED_CLICK_ONLY)
     bare = sorted(n for n, (_, confirms, _) in sites.items() if not confirms and n not in gated and n not in _REQUEST_EXEMPT)
-    assert not bare, "functions that make a destructive request and neither confirm, nor run only for a gesture, nor are listed: " + ", ".join(
+    assert not bare, "functions that make a destructive request and neither confirm, nor are on tests/trusted_click_table.py, nor are listed: " + ", ".join(
         f"{n} ({sites[n][0]}: {sites[n][2]})" for n in bare
     )
 
 
 def test_the_request_exemptions_are_real_and_not_also_guarded() -> None:
     sites = _request_sites()
-    gated = _set_literal("GESTURE_ONLY")
+    gated = set(TRUSTED_CLICK_ONLY)
     dead = sorted(set(_REQUEST_EXEMPT) - set(sites))
     assert not dead, f"_REQUEST_EXEMPT names functions that make no destructive request any more: {dead}"
     guarded = sorted(n for n in _REQUEST_EXEMPT if sites[n][1] or n in gated)
     assert not guarded, f"_REQUEST_EXEMPT lists functions that are now guarded (remove the entry): {guarded}"
 
 
-def test_the_functions_the_request_finder_added_to_the_gesture_gate_stay_there() -> None:
-    gated = _set_literal("GESTURE_ONLY")
+def test_the_functions_the_request_finder_added_to_the_trusted_click_table_stay_there() -> None:
+    gated = set(TRUSTED_CLICK_ONLY)
     for name in ("toggleAiCoordinator", "mbRun", "runAiCheck", "familySplit", "maintAction"):
-        assert name in gated, f"{name} makes a destructive request on an allowlisted binding and must run only for a gesture"
+        assert name in gated, f"{name} makes a destructive request on an allowlisted binding and must be on the trusted-click table with its reason"
     sites = _request_sites()
     assert "deleteCustomPrompt" in sites and sites["deleteCustomPrompt"][1], "deleteCustomPrompt must ask before it deletes"
 

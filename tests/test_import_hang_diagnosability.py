@@ -277,7 +277,7 @@ def test_request_shutdown_reaps_before_it_signals(monkeypatch):
         order.append("sigterm")
         done.set()
 
-    scope_os(monkeypatch, shutdown, kill=_fake_kill)
+    scope_os(monkeypatch, shutdown, kill=_fake_kill, name="posix")  # stop_self on Windows raises a real SIGINT, which would hit pytest
 
     # ISOLATE the process-global registry. Other suites in the same pytest process
     # legitimately leave real pools in it (the start-method probe registers one), and

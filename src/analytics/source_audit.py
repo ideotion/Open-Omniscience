@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 from src.analytics import source_quality as sq
 from src.database.models import Source
 from src.database.outlet import OutletMap
+from src.shared import walk_no_score
 
 SCHEMA = "oo-source-audit-1"
 
@@ -770,22 +771,6 @@ def audit_sources(
     }
 
 
-def _walk_no_score(obj: Any) -> None:
-    """Raises explicitly (never a bare ``assert``, which ``python -O``/
-    ``PYTHONOPTIMIZE`` strips silently and would let this self-test's own
-    no-fabricated-score check false-pass under that flag — transversal
-    audit 09, 2026-07-25, §10.4)."""
-    banned = ("score", "ranking", "rating", "grade")
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if any(b in str(k).lower() for b in banned):
-                raise AssertionError(f"score-like key: {k}")
-            _walk_no_score(v)
-    elif isinstance(obj, list):
-        for v in obj:
-            _walk_no_score(v)
-
-
 def run_source_audit_selftest() -> dict:
     """Prove the PURE mechanism (flag_criteria / derive_status / should_auto_demote / region
     self-audit) on hand-built per-source metrics — no DB, no score. The load-bearing checks: the
@@ -914,8 +899,8 @@ def run_source_audit_selftest() -> dict:
     check("region_self_audit_counts", gb_failing == 1)
     no_score = True
     try:
-        _walk_no_score({"criteria": list(CRITERIA)})
-        _walk_no_score(ra)
+        walk_no_score({"criteria": list(CRITERIA)})
+        walk_no_score(ra)
     except AssertionError:
         no_score = False
     check("no_score_field", no_score)
