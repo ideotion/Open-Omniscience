@@ -936,27 +936,19 @@ jobs:
         include:
           - {engine: floor, spec: "sqlcipher3==0.6.2", observe: false}
           - {engine: newest, spec: "sqlcipher3", observe: true}
-    # The newest leg is observation only (continue-on-error below), so it can block nothing: on a pull request every step of it
-    # is skipped and the leg ends in seconds instead of holding a runner for its whole run. It still runs in full on each push
-    # to main and on workflow_dispatch, so an unqualified sqlcipher3 release shows up within one merge. A matrix `exclude`
-    # cannot do this: GitHub applies `include` after `exclude`, so an include-only leg comes back. The floor leg blocks and
-    # runs on every pull request.
     runs-on: ubuntu-latest
     name: SQLCipher engine (${{ matrix.engine }})
     continue-on-error: ${{ matrix.observe }}  # observation leg only: an unqualified release must be visible, not block
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: ${{ !matrix.observe || github.event_name != 'pull_request' }}
 
       - name: Set up Python 3.13
-        if: ${{ !matrix.observe || github.event_name != 'pull_request' }}
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
 
       - name: Install (core + dev), then force the engine under test
-        if: ${{ !matrix.observe || github.event_name != 'pull_request' }}
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
@@ -970,7 +962,6 @@ jobs:
           PY
 
       - name: Test (the files that run a real damaged store through the engine)
-        if: ${{ !matrix.observe || github.event_name != 'pull_request' }}
         env:
           # The floor leg must STILL see the 4.12 behaviours the floor exists to cover (tests/test_sqlcipher_engine_compat.py).
           OO_EXPECT_SQLCIPHER_ENGINE: ${{ matrix.engine }}
