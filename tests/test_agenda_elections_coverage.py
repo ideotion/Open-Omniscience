@@ -17,6 +17,8 @@ import pathlib
 import re
 import subprocess
 
+from tests.js_source_helper import array_literal, function_body, function_source
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "static"
 HTML = (STATIC / "index.html").read_text(encoding="utf-8")
@@ -25,9 +27,7 @@ BOOT = (STATIC / "app-boot.js").read_text(encoding="utf-8")
 
 
 def _render_fn() -> str:
-    start = AGENDA.index("function renderAgendaCoverage(")
-    end = AGENDA.index("function agNavToday()", start)
-    return AGENDA[start:end]
+    return function_source(AGENDA, "renderAgendaCoverage")
 
 
 def test_it_is_a_view_of_the_one_agenda_switch_with_its_own_container():
@@ -59,7 +59,7 @@ def test_the_counts_are_the_full_counts_and_there_is_no_score():
 
 
 def test_every_string_the_view_draws_is_keyed_in_all_twelve_locales():
-    fn = _render_fn() + AGENDA[AGENDA.index("const _AG_COV_STATES"):AGENDA.index("function _agCovRepaint")]
+    fn = _render_fn() + array_literal(AGENDA, "_AG_COV_STATES")
     literals = set(re.findall(r'\bTF?\("((?:[^"\\]|\\.)*)"', fn))
     literals |= set(re.findall(r'\["\w+", "([^"]+)", "[\w-]*"\]', fn))
     button = re.search(r'<button data-tab="coverage" title="([^"]+)">([^<]+)</button>', HTML)
@@ -87,8 +87,7 @@ def test_the_servers_own_sentences_are_keyed_so_they_translate_too():
 
 def test_a_language_switch_repaints_it_from_the_held_payload_without_a_request():
     assert '_agCovRepaint === "function") _agCovRepaint()' in BOOT
-    start = AGENDA.index("function _agCovRepaint()")
-    body = AGENDA[start:AGENDA.index("function agCovFilter", start)]
+    body = function_body(AGENDA, "_agCovRepaint")
     assert "api(" not in body and "_agCov.then" in body
 
 

@@ -1450,7 +1450,10 @@
         const code = ooCountryCode(r.cc), name = ooCountryName(r.cc, "");
         const label = name && name !== code ? `${name} (${code})` : code;
         const entries = (r.entries || []).map(e => esc(e.title)).join("<br>") || "—";
-        const needs = [...new Set((r.entries || []).flatMap(e => e.missing_fields || []))];
+        // Only a dateless country is asked "why no date"; a dated one may carry a second,
+        // undated entry whose missing fields would contradict its own row.
+        const needs = r.state === "dateless" || r.state === "missing"
+          ? [...new Set((r.entries || []).flatMap(e => e.missing_fields || []))] : [];
         const why = [r.reason ? esc(T(r.reason)) : "",
                      needs.length ? esc(TF("fields needed: {fields}", { fields: needs.join(", ") })) : ""]
           .filter(Boolean).join("<br>");

@@ -15,7 +15,7 @@ let calls = 0, answer = null, view = "coverage";
 const ctx = {
   window: {}, document: { documentElement: { dir: "ltr" } },
   $: (id) => (id === "agenda-coverage" ? box : null),
-  esc: (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"),
+  esc: (s) => (s == null ? "" : String(s)).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"),
   agView: () => view,
   api: () => { calls++; const a = answer; return a instanceof Error ? Promise.reject(a) : Promise.resolve(a); },
   agFlag: () => "", ooCountryCode: (c) => c, ooCountryName: (c) => ({ FR: "France", NG: "Nigeria" }[c] || ""),
@@ -34,7 +34,7 @@ const REPORT = {
     counts: { scheduled: 1, dateless: 1, window: 0, projected_upcoming: 0, projected_passed: 0, missing: 0 },
     countries: [
       { cc: "NG", state: "dateless", reason: "WHY <b>", entries: [{ title: "Vote <script>", missing_fields: ["date", "rule"] }] },
-      { cc: "FR", state: "scheduled", entries: [{ title: "Présidentielle" }] },
+      { cc: "FR", state: "scheduled", entries: [{ title: "Présidentielle" }, { title: "Municipales", missing_fields: ["SHOULD-NOT-SHOW"] }] },
     ],
   },
 };
@@ -46,6 +46,7 @@ const REPORT = {
   for (const s of ["FLOOR CAVEAT", "TIER CAVEAT", "THE METHOD", "2 floor countries", "2025-12-14", "France (FR)"]) assert(h.includes(s), "draws " + s);
   assert(!h.includes("<script>") && h.includes("Vote &lt;script&gt;") && h.includes("WHY &lt;b&gt;"), "server text is escaped");
   assert(h.includes("fields needed: date, rule"), "names the missing fields");
+  assert(!h.includes("SHOULD-NOT-SHOW"), "a dated country is never asked why it has no date");
   assert(h.indexOf("France") < h.indexOf("Nigeria"), "rows sorted by country");
   assert(!/%|score/i.test(h.replace(/style="[^"]*"/g, "")), "no percentage or score");
   assert.strictEqual(calls, 1);
