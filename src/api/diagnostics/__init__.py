@@ -436,6 +436,18 @@ from .vitals_history import vitals_history_report
 from .runs import diagnostics_runs_report
 # Which form the store keeps its country codes in (2026-10-15, row B1): the same slice position.
 from .country_form import country_form_status
+# One random article per source, zipped <= 4 MB (2026-11-08, TEMPORARY): the same slice position.
+from .source_samples import (
+    SAMPLE_ZIP_MAX_BYTES,
+    _RESERVE_BYTES,
+    _SECRETISH,
+    _TEXT_MAX_CHARS,
+    _pick,
+    _plain,
+    _row_dict,
+    build_sample_zip,
+    source_samples,
+)
 # The 0.4 release acceptance run (2026-09-18) -- last, for the same reason the merge
 # action is second-to-last: the split guard pins every earlier route's position.
 from .release_run import (
@@ -455,6 +467,15 @@ from .release_run import (
 )
 
 __all__ = [
+    "SAMPLE_ZIP_MAX_BYTES",
+    "_RESERVE_BYTES",
+    "_SECRETISH",
+    "_TEXT_MAX_CHARS",
+    "_pick",
+    "_plain",
+    "_row_dict",
+    "build_sample_zip",
+    "source_samples",
     "_MAX_MERGE_UPLOADS",
     "_PEAK_RISE_ABSENT_REASON",
     "_PREVIOUS_JOURNAL_MAX_BYTES",

@@ -127,13 +127,6 @@ def strip_honorifics(normalized: str) -> str:
     return " ".join(parts)
 
 
-def _is_contiguous_sub(short_toks: list[str], long_toks: list[str]) -> bool:
-    n, m = len(short_toks), len(long_toks)
-    if n == 0 or n >= m:
-        return False
-    return any(long_toks[i : i + n] == short_toks for i in range(m - n + 1))
-
-
 # Bases where the plural is a DISTINCT concept, so a plural must NOT collapse into
 # it (mean/means, right/rights, force/forces). Evidence-based + log-tunable, like
 # the stoplists — start small, grow from the keyword-diagnostics logs. The scariest

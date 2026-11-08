@@ -3082,3 +3082,47 @@
     }
 
     // ---- T10 slice 1: the corpora window (keyword-click entry) ---- //
+
+    // TEMPORARY / REMOVABLE (2026-11-08): one random article per source as zips of at most 4 MB.
+    // Delete with the button (#source-samples-btn) and /api/diagnostics/source-samples. The server is
+    // stateless: each call returns one zip and a cursor header; this walks the cursor and saves each zip.
+    async function downloadSourceSamples(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
+      const out = $("source-samples-status");
+      const say = (m) => { if (out) out.textContent = m; };
+      if (btn) btn.disabled = true;
+      let after = 0, files = 0, sources = 0, total = 0;
+      try {
+        for (;;) {
+          say(tf("Packing the next sources… {files} zip files saved, {sources} of {total} sources.", {files, sources, total: total || "?"}));
+          const r = await fetch("/api/diagnostics/source-samples?after=" + after);
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          const blob = await r.blob();
+          total = Number(r.headers.get("X-Source-Samples-Total")) || total;
+          sources += Number(r.headers.get("X-Source-Samples-Covered")) || 0;
+          files += 1;
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "oo-source-samples-" + String(files).padStart(3, "0") + ".zip";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+          const nxt = r.headers.get("X-Source-Samples-Next");
+          if (!nxt) break;
+          after = Number(nxt);
+          await new Promise((res) => setTimeout(res, 400));   // let the browser take each download
+        }
+        say(tf("Done: {files} zip files covering {sources} sources.", {files, sources}));
+      } catch (e) {
+        say(tf("Stopped after {files} zip files: {why}", {files, why: (e && e.message) || t("unknown error")}));
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+    document.addEventListener("click", (ev) => {
+      const b = ev.target && ev.target.closest ? ev.target.closest("#source-samples-btn") : null;
+      if (b) downloadSourceSamples(b);
+    });

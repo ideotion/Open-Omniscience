@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "c2bdcb117a46b8789c864e9a3ea1821306ec3a667a6fa9c7bd3b2c23a362d185",
+  "digest": "52374bdda6beafe0415069d9bf300c2230f4fa137dd0b088a6b6e55023b2cfa4",
   "log": [
     {
       "version": 1,
@@ -13,6 +13,12 @@
       "digest": "c2bdcb117a46b8789c864e9a3ea1821306ec3a667a6fa9c7bd3b2c23a362d185",
       "kind": "same",
       "note": "A-037 deletes two functions of equivalence.py that nothing calls (ring_terms and candidate_languages; not index_article, not anything else); no row an article gets is written differently"
+    },
+    {
+      "version": 1,
+      "digest": "52374bdda6beafe0415069d9bf300c2230f4fa137dd0b088a6b6e55023b2cfa4",
+      "kind": "same",
+      "note": "R415 on the A-037 base: the www modules and gazetteers left the keyword digest and index_article gained the www stamp write; keyword rows are unchanged"
     }
   ]
 }

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:skos="http://www.w3.org/2004/02/skos/core#">
+  <skos:ConceptScheme rdf:about="http://example.org/mini"/>
+  <skos:Concept rdf:about="http://example.org/c/asylum">
+    <skos:prefLabel xml:lang="en">asylum law</skos:prefLabel>
+    <skos:prefLabel xml:lang="fr">droit d'asile</skos:prefLabel>
+    <skos:altLabel xml:lang="en">right of asylum</skos:altLabel>
+  </skos:Concept>
+  <skos:Concept rdf:about="http://example.org/c/data">
+    <skos:prefLabel xml:lang="en">data protection</skos:prefLabel>
+    <skos:prefLabel xml:lang="de">Datenschutz</skos:prefLabel>
+    <skos:broader rdf:resource="http://example.org/c/privacy"/>
+  </skos:Concept>
+  <skos:Concept rdf:about="http://example.org/c/privacy">
+    <skos:prefLabel xml:lang="en">privacy</skos:prefLabel>
+    <skos:altLabel xml:lang="en">right of asylum</skos:altLabel>
+  </skos:Concept>
+  <skos:Concept rdf:about="http://example.org/c/nolabel">
+    <skos:broader rdf:resource="http://example.org/c/privacy"/>
+  </skos:Concept>
+</rdf:RDF>

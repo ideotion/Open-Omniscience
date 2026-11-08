@@ -69,7 +69,7 @@ def test_the_begin_line_is_on_disk_before_the_build_does_anything(monkeypatch):
     seen: list[list[dict]] = []
 
     def build(ctx, profile, fname, mode="thorough"):
-        seen.append(r._read_lines())
+        seen.append(r._read_lines_marked()[0])
         return {"path": "x", "bytes": 5, "members": [], "filename": fname}
 
     monkeypatch.setattr(b, "_all_diagnostics_build", build)
@@ -299,6 +299,7 @@ _UNRECORDED_ZIP_SITES = {
     "bundle.py": 1,    # the synchronous GET /all: it builds in the request and answers with the bytes
     "keywords.py": 1,  # the keyword log's scratch zip, deleted once sent
     "sources.py": 1,   # the temporary source-quality zip, answered with the bytes
+    "source_samples.py": 1,   # the temporary one-article-per-source zips, answered with the bytes
 }
 
 
