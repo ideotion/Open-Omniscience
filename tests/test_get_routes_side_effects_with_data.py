@@ -516,7 +516,8 @@ def test_no_seeded_get_reaches_a_non_loopback_address_with_the_kill_switch_engag
 
 def test_only_the_listed_routes_open_a_loopback_socket_with_data(walk):
     bad = sorted(p for p, m in walk.seen.items() if m.connects and not _LOOPBACK_ROUTES.match(p))
-    assert not bad, f"these GETs opened a socket and are not in _LOOPBACK_ROUTES: {bad}"
+    who = {p: walk.seen[p].connect_origins for p in bad}
+    assert not bad, f"these GETs opened a socket and are not in _LOOPBACK_ROUTES: {bad}; host (thread): {who}"
 
 
 def test_every_thread_and_file_with_data_is_accounted_for(walk):

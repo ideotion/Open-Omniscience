@@ -375,6 +375,9 @@ dev = [
     "pytest>=8.2",
     "pytest-cov>=5.0",
     "pytest-mock>=3.14",
+    # Pinned to one release: CI's `test`, `core-only` and docs-only jobs run `-n auto --dist loadfile` (one worker per CPU, each test file whole on
+    # one worker), so a new xdist release that changed scheduling would change how every PR's suite runs with no commit of ours. Bump deliberately.
+    "pytest-xdist==3.8.0",
     "hypothesis>=6.100",
     # Pinned to ONE release, exactly as mypy is two lines down: scripts/ruff_ratchet.py holds the advisory style lane to a non-growth
     # ceiling, and a count over a tool is only a number about a tree while the tool is fixed. The same tree reads 414 on ruff 0.16.9
