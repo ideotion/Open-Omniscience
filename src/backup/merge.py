@@ -34,6 +34,7 @@ spliced into the local chain.
 from __future__ import annotations
 
 import functools
+import glob
 import heapq
 import json
 import logging
@@ -1593,12 +1594,57 @@ def _materialise_rep_in_scratch(con: sqlite3.Connection, name: str, group_sql: s
     return _count(con, f"SELECT COUNT(*) FROM oo_scratch.{name}")  # noqa: S608  # nosec B608 - as above
 
 
+# Headroom on top of the groupings' own bytes: the file's header, page rounding and the per-page
+# reserve SQLCipher keeps for its IV and HMAC.
+_SCRATCH_DISK_SLACK_BYTES = 32 * 1024 * 1024
+
+
+def _scratch_disk_bytes(incoming_rows: dict[str, int]) -> int:
+    """Disk the scratch file can reach: the groupings' rows at the in-RAM bytes per row.
+
+    MEASURED (500k rows each, random 4-20 letter terms, 20-80 letter URLs): the file reached 37.6
+    bytes per keyword row and 80 more per link row, below the 90 and 150 the in-RAM figures carry.
+    The figures are summed, not maxed: each grouping's id set stays in the file until the merge
+    ends, and the pages a dropped grouping frees are reused rather than returned, so the file
+    only grows."""
+    return _SCRATCH_DISK_SLACK_BYTES + sum(
+        max(0, int(incoming_rows.get(t, 0))) * b for t, b in _ENCRYPTED_REP_BYTES_PER_ROW.items()
+    )
+
+
+def _preflight_scratch_space(working_copy: Path | str, incoming_rows: dict[str, int]) -> None:
+    """Refuse before any row moves when the working copy's drive cannot hold the scratch file,
+    rather than an SQLITE_FULL part-way (the rollback would hold, but after the time was spent)."""
+    from src.backup.folder_backup import free_bytes, human_bytes
+
+    target = Path(working_copy).parent
+    needed = _scratch_disk_bytes(incoming_rows)
+    free = free_bytes(target)  # fails safe to 0 on an unreadable path, as every space preflight
+    if needed > free:
+        # artifact.preflight_free_space's sentence for "restore" (a keyed frame, _OO_SPACE_WHAT), in
+        # the merge's own refusal class so callers report it beside the memory refusal
+        raise MergeError(
+            f"Not enough free space for the restore: needs about {human_bytes(needed)}, "
+            f"only {human_bytes(free)} free at {target}. Free up space or choose another "
+            "location, or use the large-data/volume backup for a big corpus."
+        )
+
+
 def _attach_scratch(con: sqlite3.Connection, working_copy: Path | str) -> Path:
     """Attach the encrypted scratch database beside the working copy; returns its path.
 
-    No KEY clause, deliberately (see above): the scratch inherits the working copy's key."""
-    path = Path(working_copy).with_name(f".{Path(working_copy).name}.oo-scratch-{os.getpid()}-{threading.get_ident()}")
-    _remove_scratch(path)
+    No KEY clause, deliberately (see above): the scratch inherits the working copy's key.
+
+    A scratch left by an earlier merge into this same working copy (a killed process: its name
+    carries that process's pid and thread, so no later merge would ever pick it up by name) is
+    removed first. Only one merge at a time writes a given working copy, so every other scratch
+    beside it is a leftover; the ``.restore-*`` janitor covers a working copy nobody merges into
+    again."""
+    wc = Path(working_copy)
+    for stale in wc.parent.glob(f".{glob.escape(wc.name)}.oo-scratch-*"):
+        with suppress(OSError):
+            stale.unlink()
+    path = wc.with_name(f".{wc.name}.oo-scratch-{os.getpid()}-{threading.get_ident()}")
     con.execute("ATTACH DATABASE ? AS oo_scratch", (str(path),))
     try:
         # the file is thrown away whatever happens: no rollback journal, no fsync, a bounded cache
@@ -2163,10 +2209,10 @@ def merge_corpus(
     try:
         temp_store = _temp_store_for(con)
         if temp_store == "MEMORY":
-            grouping_in = check_memory_for_encrypted_merge(
-                incoming_rows=_incoming_group_rows(con, staged_corpus)
-            )
+            incoming = _incoming_group_rows(con, staged_corpus)
+            grouping_in = check_memory_for_encrypted_merge(incoming_rows=incoming)
             if grouping_in == "scratch":
+                _preflight_scratch_space(working_copy, incoming)
                 scratch = _attach_scratch(con, working_copy)
                 _LOG.info(
                     "merge: memory is short for the in-RAM groupings; they run in an encrypted"
@@ -2362,7 +2408,9 @@ def merge_corpus(
     finally:
         con.close()
         if scratch is not None:
-            _remove_scratch(scratch)  # disposable whatever happened: it holds only id groups
+            # disposable whatever happened. Not only ids: while it exists it holds the incoming
+            # rows' group keys (terms, URLs), encrypted with the corpus key like the corpus itself
+            _remove_scratch(scratch)
 
 
 _MERGE_HANDLED = {

@@ -58,7 +58,10 @@ _PROXY_SHAPED_STOP = (
     "connection to 'h.test'. No packet leaves the machine while offline\"))"
 )
 
-# What the pattern said BEFORE the head became a constant, copied here so the change is proved to be a pure refactor of the reader.
+# What the pattern said BEFORE the head became a constant, copied here so the change is proved to be a pure refactor of the reader. Its
+# second alternative has since been narrowed on purpose (OPEN_QUEUE 2026-11-08 item 42: a host's status line could carry the guard's words
+# after its ``.*``): the corpus below holds the real urllib3 shape, which both accept, and the host-written shapes on which they differ are
+# pinned in tests/test_refusal_wrapped_shape.py.
 _OLD_OFFLINE_RE = re.compile(
     r"^\s*(?:[\w.]+:\s*)?(?:network kill switch is active|airplane mode is engaged: refusing a network connection)\b"
     r"|^\s*request error for \S+: .*Failed to establish a new connection: airplane mode is engaged: refusing a network connection"
@@ -223,8 +226,9 @@ def test_the_reader_is_built_from_the_head_and_accepts_exactly_what_it_accepted(
         "HTTP 503 for https://h.test/a (server said: " + KILL_SWITCH_REFUSAL + ")",
         "redirect to unsupported URL: 'ftp://h.test/" + KILL_SWITCH_REFUSAL + "'",
         "airplane mode is engaged: refusing a network connection to 'h.test'. No packet leaves the machine while offline",
-        "request error for https://h.test/a: HTTPSConnectionPool(host='h.test'): Failed to establish a new connection: "
-        "airplane mode is engaged: refusing a network connection to 'h.test'",
+        "request error for https://h.test/a: HTTPSConnectionPool(host='h.test', port=443): Max retries exceeded with url: /a "
+        "(Caused by NewConnectionError(\"HTTPSConnection(host='h.test', port=443): Failed to establish a new connection: "
+        "airplane mode is engaged: refusing a network connection to 'h.test'\"))",
         "cannot resolve host 'h.test': airplane mode is engaged: refusing a network connection to 'h.test'",
         "cannot resolve host 'a b': airplane mode is engaged: refusing a network connection to 'a b'",
         "cannot resolve host 'h.test': [Errno -2] Name or service not known",
@@ -263,8 +267,9 @@ def test_the_law_tracker_reads_the_head_and_not_the_wider_predicate():
     from src.law.track import track_document
 
     wrapped = (
-        "request error for https://gazette.test/act1: HTTPSConnectionPool(host='gazette.test'): Failed to establish a new connection: "
-        "airplane mode is engaged: refusing a network connection to 'gazette.test'"
+        "request error for https://gazette.test/act1: HTTPSConnectionPool(host='gazette.test', port=443): Max retries exceeded with url: "
+        "/act1 (Caused by NewConnectionError(\"HTTPSConnection(host='gazette.test', port=443): Failed to establish a new connection: "
+        "airplane mode is engaged: refusing a network connection to 'gazette.test'\"))"
     )
     assert is_kill_switch_refusal(wrapped), "premise: the predicate reads this shape as a refusal"
 
