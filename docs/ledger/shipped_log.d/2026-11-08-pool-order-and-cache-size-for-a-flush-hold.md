@@ -1,4 +1,4 @@
-## 2026-11-08 — the pool hands out the last-returned connection, the gate counts its holders' CPU, and the machine record names the SQLCipher build (R458, R470; PR #@@PR@@)
+## 2026-11-08 — the pool hands out the last-returned connection, the gate counts its holders' CPU, and the machine record names the SQLCipher build (R458, R470; PR #1824)
 
 **What was found.** Long write-gate holds on the Windows run (36 to 68 s, 83 to 97 percent thread CPU) had no explained cause. A scratch measurement on a Linux VM showed the cache size and the auto-checkpoint threshold are not the lever and the pool's first-in-first-out order costs every flush a cold cache; the one lever with a plausible large effect on Windows, SQLCipher memory security, had never been read from the running build.
 
