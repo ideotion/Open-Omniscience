@@ -33,9 +33,11 @@ refusal; the socket guard is the net beneath it and is not installed in a test).
   removes it after streaming (it has its own cross-site guard, R214);
 * effects are attributed by the request's time window, so work from a long-running background thread lands on a later route (the
   ambient tables absorb the known writers) and an effect after the last request is lost; and a LOOPBACK connect from a thread that was
-  already running when a request began and is not the app's own (not ``oo-*``, not the client's portal or worker threads) is recorded
-  apart and not charged (``background_connects``): that is a thread a test left behind, and under pytest-xdist its connect named an
-  unrelated route. A non-``oo-`` thread a route started that connects only after the route returned is therefore missed;
+  already running when a request began and whose name does not start with ``oo-`` (nor is the client's portal or worker thread) is
+  recorded apart and not charged (``background_connects``). That is meant for a thread a test left behind (under pytest-xdist its connect
+  named an unrelated route), but the name rule also exempts the app's running threads that are not named ``oo-*`` (``model-pull``,
+  ``served-cache-*``, ``vllm-*``, ``dbg:*``, unnamed timers among them) and a non-``oo-`` thread a route started that connects only after
+  the route returned: a GET handing work to one of those, which then calls a model server, is missed;
 * a file allowance matches the file's basename anywhere under the data folders, a REMOVED file is accounted for like a changed one, and a
   thread allowance matches by name only;
 * the app's local-model autostart is off in the suite (``OO_LLM_AUTOSTART=0``), so a GET that would start a model server in production
@@ -228,8 +230,8 @@ class _Monitor:
         self.watchers = watchers
         self.connects: list[str] = []
         #: LOOPBACK connects made by a thread that was already running when the request began, is not one of the client's own (the main
-        #: thread, the TestClient's asyncio portal, anyio's worker threads) and is NOT one of the app's own named threads (``oo-*``): a thread a
-        #: test left behind. Kept for the record, not charged to the route: under pytest-xdist (2026-11-08) such a leftover's loopback connect
+        #: thread, the TestClient's asyncio portal, anyio's worker threads) and is not named ``oo-*``: meant for a thread a test left behind,
+        #: though it also covers the app's running threads with other names (see the module docstring's limits). Kept for the record, not charged to the route: under pytest-xdist (2026-11-08) such a leftover's loopback connect
         #: landed inside one GET's window and named a stub-only self-test route. Still charged: any connect from an ``oo-*`` thread (so a GET
         #: that hands work to a running app worker which then calls a model server is still seen) and any non-loopback connect from any thread.
         self.background_connects: list[str] = []
