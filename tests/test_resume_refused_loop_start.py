@@ -50,6 +50,17 @@ class _Sched:
         return True
 
 
+def _watchers_gone(secs: float = 10.0) -> None:
+    """Wait for every resume-watcher thread to leave (the watchers here poll every 10 ms, so this is a moment). Without it the next test
+    file starts while a retired watcher is still in its last sleep, and a test that asserts "no watcher thread" fails on it."""
+    import threading
+    import time
+
+    end = time.monotonic() + secs
+    while time.monotonic() < end and any(t.name == "oo-resume-watch" for t in threading.enumerate()):
+        time.sleep(0.005)
+
+
 @pytest.fixture()
 def sched(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
@@ -66,6 +77,7 @@ def sched(monkeypatch, tmp_path):
     R.cancel_pending_resume()
     yield s
     R.cancel_pending_resume()
+    _watchers_gone()  # a retired watcher leaves at its next look: do not hand a live one to the next test file
     monkeypatch.undo()
 
 

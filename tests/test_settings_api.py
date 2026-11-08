@@ -61,7 +61,8 @@ def test_ai_langdetect_auto_setting_defaults_on_and_round_trips(tmp_path, monkey
 def test_backup_download_returns_valid_sqlite(tmp_path):
     init_db()
     with TestClient(app) as client:
-        r = client.get("/api/database/backup")
+        # a script, not a page: on a name that is not loopback it says so (R445)
+        r = client.get("/api/database/backup", headers={"X-OO-Download": "1"})
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("application/x-sqlite3")
     out = tmp_path / "dl.db"

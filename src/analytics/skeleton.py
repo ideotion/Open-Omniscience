@@ -29,9 +29,9 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping
-from typing import Any
 
 from src.briefing.card import Card
+from src.shared import walk_no_score
 from src.signals.near_dup import (
     _connected_components,
     jaccard_estimate,
@@ -152,22 +152,6 @@ def build_skeleton_echo_card(
     )
 
 
-def _walk_no_score(obj: Any) -> None:
-    """Raises explicitly (never a bare ``assert``, which ``python -O``/
-    ``PYTHONOPTIMIZE`` strips silently and would let this self-test's own
-    no-fabricated-score check false-pass under that flag — transversal
-    audit 09, 2026-07-25, §10.4)."""
-    banned = ("score", "ranking", "rating", "grade")
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if any(b in str(k).lower() for b in banned):
-                raise AssertionError(f"score-like key: {k}")
-            _walk_no_score(v)
-    elif isinstance(obj, list):
-        for v in obj:
-            _walk_no_score(v)
-
-
 def run_skeleton_selftest() -> dict:
     """Prove the §3 mechanism on hand-built skeletons — no DB/network/score. Pins fingerprint
     stability + order-independence, MinHash clustering (near-identical skeletons cluster, a
@@ -223,7 +207,7 @@ def run_skeleton_selftest() -> dict:
     no_score = True
     try:
         if card is not None:
-            _walk_no_score(card.signal)
+            walk_no_score(card.signal)
     except AssertionError:
         no_score = False
     check("no_score_field", no_score)
