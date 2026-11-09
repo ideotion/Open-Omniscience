@@ -316,6 +316,26 @@ def _stop_requested() -> bool:
     return kill_switch_active()
 
 
+class _MailboxStopped(Exception):
+    """Raised from inside imaplib when it would send a command of its own after the Stop (R640): never leaves this module."""
+
+
+def _stop_aware(cls):  # type: ignore[no-untyped-def]
+    """``cls`` (an imaplib class) with the one command imaplib sends on its OWN -- CAPABILITY, from the constructor when the greeting
+    carries none and from ``login`` when its reply carries none -- held to the switch like every command this module sends (R640,
+    security read B: a Stop during LOGIN let a CAPABILITY out). Anything that is not a class (a test's stand-in) is returned as is."""
+    if not isinstance(cls, type):
+        return cls
+
+    class _StopAware(cls):  # type: ignore[valid-type,misc]
+        def _get_capabilities(self):  # type: ignore[no-untyped-def]
+            if _stop_requested():
+                raise _MailboxStopped
+            return super()._get_capabilities()
+
+    return _StopAware
+
+
 def _drop_connection(conn, how: str) -> None:  # type: ignore[no-untyped-def]
     """Close a live mailbox connection WITHOUT a protocol command (``how`` is ``shutdown`` for imaplib, ``close`` for poplib).
 
@@ -356,10 +376,15 @@ def fetch_imap(
     if own_conn:
         import imaplib
 
-        if use_ssl:
-            conn = imaplib.IMAP4_SSL(host, port or 993)
-        else:
-            conn = imaplib.IMAP4(host, port or 143)
+        try:
+            # imaplib closes its own socket (shutdown, no command) when its constructor raises.
+            if use_ssl:
+                conn = _stop_aware(imaplib.IMAP4_SSL)(host, port or 993)
+            else:
+                conn = _stop_aware(imaplib.IMAP4)(host, port or 143)
+        except _MailboxStopped:
+            raws.stopped = True
+            return raws
     try:
         if own_conn:
             if _stop_requested():
@@ -385,6 +410,13 @@ def fetch_imap(
             if typ == "OK" and msg_data and msg_data[0]:
                 raws.append(msg_data[0][1])
         return raws
+    except Exception:
+        # A failure that surfaces once the switch is engaged (imaplib's own CAPABILITY refused above, or the connection failing after
+        # the Stop) ends the pull as the Stop it follows: what was fetched is kept (R640, security read B), never discarded with an error.
+        if raws.stopped or _stop_requested():
+            raws.stopped = True
+            return raws
+        raise
     finally:
         if own_conn:
             if raws.stopped or _stop_requested():
@@ -446,6 +478,12 @@ def fetch_pop3(
             resp, lines, octets = conn.retr(i)
             raws.append(b"\r\n".join(lines))
         return raws
+    except Exception:
+        # As in fetch_imap: a failure once the switch is engaged keeps what was fetched (R640).
+        if raws.stopped or _stop_requested():
+            raws.stopped = True
+            return raws
+        raise
     finally:
         if own_conn:
             if raws.stopped or _stop_requested():

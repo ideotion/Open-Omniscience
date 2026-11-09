@@ -328,3 +328,31 @@ def test_a_pull_cut_by_a_stop_says_so_and_keeps_what_it_fetched(client, monkeypa
     clear_kill_switch()
     _run_pull(c, ing, Sess, monkeypatch)
     assert c.get("/api/newsletters/mailbox/status").json()["result"]["stopped_by_airplane_mode"] is False
+
+
+def test_the_direct_ingest_email_answer_names_a_stop_too(client, monkeypatch):
+    """R640, the legacy ``/api/sources/{id}/ingest-email`` answer carries the same flag."""
+    from src.ingest.email import MailboxPull
+
+    c, Sess = client
+    clear_kill_switch()
+    import src.api.ingestion as ing
+
+    with Sess() as s:
+        src = Source(name="Mail", domain="mail.example", rss_url=None, enabled=False)
+        s.add(src)
+        s.commit()
+        sid = src.id
+
+    def _cut(*a, **k):
+        raws = MailboxPull([_EML])
+        raws.stopped = True
+        return raws
+
+    monkeypatch.setattr(ing, "fetch_imap", _cut)
+    body = {"host": "mail.example", "user": "me", "password": "pw"}
+    r = c.post(f"/api/sources/{sid}/ingest-email", json=body)
+    assert r.status_code == 200, r.text
+    assert r.json()["fetched"] == 1 and r.json()["stopped_by_airplane_mode"] is True
+    monkeypatch.setattr(ing, "fetch_imap", lambda *a, **k: MailboxPull([_EML]))
+    assert c.post(f"/api/sources/{sid}/ingest-email", json=body).json()["stopped_by_airplane_mode"] is False

@@ -825,10 +825,11 @@ def _mailbox_pull_worker(
 # see it, and the task manager's Stop could not reach it. It is a DB writer, so it
 # joins the writer-arbitration set.
 #
-# cancellable=False is the HONEST setting, not a shortcut: `fetch_mailbox` is one
-# opaque imaplib/poplib call and `ingest_emails` loops internally without a ctx, so
-# nothing here checks ctx.stopping. Advertising a Cancel button that cannot stop the
-# work is the theater this module's own docstring rules out.
+# cancellable=False is the HONEST setting, not a shortcut: nothing here checks
+# ctx.stopping (`ingest_emails` loops internally without a ctx). What does stop the
+# FETCH is airplane mode: `fetch_mailbox` reads the kill switch before every command
+# and message (R640) and ends with what it had. Advertising a per-job Cancel button
+# that cannot stop the work is the theater this module's own docstring rules out.
 _MAILBOX_JOB = register_job(
     BackgroundJob("mailbox-pull", "Pulling newsletters from your mailbox", _mailbox_pull_worker,
                   is_writer=True)

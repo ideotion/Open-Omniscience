@@ -374,7 +374,10 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   (login, select, search; user, pass, list) and before every message fetched, so a Stop during a
   live pull sends nothing further, closes the connection the pull opened without a LOGOUT/QUIT (that
   would be one more write to the mail server), and keeps the messages already fetched, marked as
-  stopped by airplane mode. A command already on the wire when the Stop lands finishes; httpx
+  stopped by airplane mode. The one command imaplib sends on its own, CAPABILITY (from its constructor
+  or from `login` when the server did not volunteer its capabilities), is held to the switch the same
+  way, and a failure that surfaces after the Stop still keeps what was fetched. A command already on
+  the wire when the Stop lands finishes, and so does the read of its answer; httpx
   in the loopback-only LLM clients; urllib3's opt-in HTTP/2 connection, which writes frames itself and
   is never turned on here (a test pins that); a bare `socket` port probe (`src/llm/vllm_lifecycle.py`, connect
   only, which the connect guard sees); and native code that opens its own sockets outside Python,

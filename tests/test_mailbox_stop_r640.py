@@ -168,8 +168,9 @@ def test_a_pull_with_no_stop_is_whole_and_logs_out(monkeypatch, cls):
     assert cls.last.commands[-1] == ("logout" if cls is _Imap else "quit")
 
 
-def test_an_error_while_the_switch_is_engaged_does_not_send_logout(monkeypatch):
-    """A failure that surfaces after the Stop closes the connection without LOGOUT too."""
+def test_an_error_while_the_switch_is_engaged_ends_the_pull_as_the_stop(monkeypatch):
+    """A failure that surfaces after the Stop closes the connection without LOGOUT too, and the pull ends as the Stop it follows: a
+    stopped (here empty) pull, never an error that would throw away what came before it."""
 
     class _Failing(_Imap):
         def select(self, folder):
@@ -177,9 +178,134 @@ def test_an_error_while_the_switch_is_engaged_does_not_send_logout(monkeypatch):
             raise OSError("connection reset")
 
     monkeypatch.setattr(imaplib, "IMAP4_SSL", lambda host, port: _Failing(host, port))
-    with pytest.raises(OSError):
-        fetch_imap("h", "u", "p")
+    raws = fetch_imap("h", "u", "p")
+    assert list(raws) == [] and raws.stopped is True
     assert _Failing.last.shut is True and "logout" not in _Failing.last.commands
+
+
+@pytest.mark.parametrize("cls", [_Imap, _Pop])
+def test_an_error_after_the_stop_keeps_what_was_fetched(monkeypatch, cls):
+    """Security read B: an exception after the Stop used to discard the messages already fetched."""
+    if cls is _Imap:
+
+        class _Late(_Imap):
+            def fetch(self, mid, parts):
+                if int(mid) == 2:
+                    activate_kill_switch()
+                    raise OSError("connection reset")
+                return super().fetch(mid, parts)
+
+        monkeypatch.setattr(imaplib, "IMAP4_SSL", lambda host, port: _Late(host, port))
+        raws = fetch_imap("h", "u", "p", limit=5)
+        assert _Late.last.shut is True and "logout" not in _Late.last.commands
+    else:
+
+        class _LatePop(_Pop):
+            def retr(self, i):
+                if i == 2:
+                    activate_kill_switch()
+                    raise OSError("connection reset")
+                return super().retr(i)
+
+        monkeypatch.setattr(poplib, "POP3_SSL", lambda host, port: _LatePop(host, port))
+        raws = fetch_pop3("h", "u", "p", limit=5)
+        assert _LatePop.last.closed is True and "quit" not in _LatePop.last.commands
+    assert list(raws) == [b"message 1"] and raws.stopped is True
+
+
+@pytest.mark.parametrize("cls", [_Imap, _Pop])
+def test_an_error_while_online_is_still_an_error_and_logs_out(monkeypatch, cls):
+    if cls is _Imap:
+
+        class _Broken(_Imap):
+            def select(self, folder):
+                raise OSError("connection reset")
+
+        monkeypatch.setattr(imaplib, "IMAP4_SSL", lambda host, port: _Broken(host, port))
+        with pytest.raises(OSError):
+            fetch_imap("h", "u", "p")
+        assert _Broken.last.commands[-1] == "logout"
+    else:
+
+        class _BrokenPop(_Pop):
+            def list(self):
+                raise OSError("connection reset")
+
+        monkeypatch.setattr(poplib, "POP3_SSL", lambda host, port: _BrokenPop(host, port))
+        with pytest.raises(OSError):
+            fetch_pop3("h", "u", "p")
+        assert _BrokenPop.last.commands[-1] == "quit"
+
+
+@pytest.mark.parametrize("cls", [_Imap, _Pop])
+def test_a_stopped_pull_never_logs_out_even_if_the_switch_is_cleared_again(monkeypatch, cls):
+    """The finally reads the pull's own ``stopped`` first: a switch turned off again before the cleanup must not bring LOGOUT/QUIT back."""
+    import src.ingest.email as email_mod
+
+    answers = iter([False, False, False, False, True])  # clear for the setup commands and message 1, engaged before message 2
+    monkeypatch.setattr(email_mod, "_stop_requested", lambda: next(answers, False))
+    _use(monkeypatch, cls)
+    raws = fetch_imap("h", "u", "p", limit=3) if cls is _Imap else fetch_pop3("h", "u", "p", limit=3)
+    assert raws.stopped is True and len(raws) == 1
+    assert cls.last.commands[-1] not in ("logout", "quit")
+
+
+class _CapImap:
+    """A real class (so the module's stop-aware subclass wraps it) whose constructor and login ask for CAPABILITY themselves, as imaplib
+    does when the greeting or the LOGIN reply carries none."""
+
+    last: _CapImap
+    stop_on: str | None = None
+
+    def __init__(self, host, port):
+        self.commands: list[str] = []
+        self.shut = False
+        _CapImap.last = self  # on this class: the module wraps it in a subclass of its own
+        if self.stop_on == "connect":
+            activate_kill_switch()
+        self._get_capabilities()
+
+    def _get_capabilities(self):
+        self.commands.append("capability")
+
+    def login(self, user, password):
+        self.commands.append("login")
+        if self.stop_on == "login":
+            activate_kill_switch()
+        self._get_capabilities()
+
+    def logout(self):
+        self.commands.append("logout")
+
+    def shutdown(self):
+        self.shut = True
+
+
+@pytest.mark.parametrize(("stop_on", "sent"), [("connect", []), ("login", ["capability", "login"])])
+def test_imaplibs_own_capability_command_is_held_to_the_switch(monkeypatch, stop_on, sent):
+    """Security read B: a Stop during LOGIN let imaplib send CAPABILITY from inside ``login``. It is now refused like any command."""
+    monkeypatch.setattr(_CapImap, "stop_on", stop_on)
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", _CapImap)
+    raws = fetch_imap("h", "u", "p")
+    assert list(raws) == [] and raws.stopped is True
+    assert _CapImap.last.commands == sent
+    assert "logout" not in _CapImap.last.commands
+
+
+def test_imaplibs_capability_command_goes_out_while_online(monkeypatch):
+    monkeypatch.setattr(_CapImap, "stop_on", None)
+
+    class _Full(_CapImap):
+        def select(self, folder):
+            self.commands.append("select")
+
+        def search(self, charset, criteria):
+            return ("OK", [b""])
+
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", _Full)
+    raws = fetch_imap("h", "u", "p")
+    assert raws.stopped is False
+    assert _CapImap.last.commands == ["capability", "login", "capability", "select", "logout"]
 
 
 def test_an_injected_connection_is_its_callers_and_is_left_open():
