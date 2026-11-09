@@ -416,6 +416,102 @@ def test_the_awk_filter_no_longer_holds_the_file_open():
 
 # --- PowerShell 7 on Linux, a fake server: the same 8-launcher run -----------------------------------------------------------------------------
 
+#: WHAT THIS BOUND PROTECTS (item 66): a PowerShell launcher that misses the mutex hands its row to a deferred writer that is a whole new, cold pwsh
+#: process, and a launcher can start two (its stderr summary row, then its exit row). On a loaded CI runner (PR #1887, run 42593941896, shard 3 beside
+#: three other pytest workers) the look at 30 s after the last launcher found 25 of 26 lines, and could not say whether the eighth row was late or lost.
+#: The pwsh tests no longer guess a time: they wait until every process that carries the run's token (the launchers' deferred writers inherit it) has
+#: ended, THEN look once. A row missing then is LOST, whatever the load; this bound only stops a writer that never ends from hanging the suite, and its
+#: message says the writers were still running, so a late row is never reported as a lost one.
+WRITERS_END_WAIT_S = 240.0
+
+
+def _token_env(tmp: Path) -> tuple[dict[str, str], str]:
+    token = f"item66-{os.getpid()}-{time.monotonic_ns()}-{tmp.name}"
+    env = {k: v for k, v in os.environ.items() if not k.startswith("OO_")}
+    env["OO_TEST_WRITER_TOKEN"] = token
+    return env, token
+
+
+def _writers_alive(token: str) -> list[int]:
+    """The live processes that carry ``token`` in their environment: the launchers and every deferred writer they started (a child inherits it)."""
+    import psutil
+
+    alive = []
+    for proc in psutil.process_iter():
+        try:
+            if proc.status() == psutil.STATUS_ZOMBIE:
+                continue
+            if proc.environ().get("OO_TEST_WRITER_TOKEN") == token:
+                alive.append(proc.pid)
+        except (psutil.Error, OSError):
+            continue
+    return alive
+
+
+def _logs(tmp: Path) -> str:
+    tails = []
+    for e in sorted(tmp.glob("*.err")):
+        t = e.read_text(encoding="utf-8", errors="replace").strip()
+        if t:
+            tails.append(f"{e.name}: {t[-400:]}")
+    return "; ".join(tails) or "no writer said anything on stderr"
+
+
+def _assert_all_present_once_writers_end(pids: list[int], f: Path, what: str, token: str, tmp: Path, wait_s: float = WRITERS_END_WAIT_S) -> None:
+    """Wait for every writer of the run to END, then look once: a row missing then was lost, not late (item 66)."""
+    start = time.monotonic()
+    while True:
+        alive = _writers_alive(token)
+        if not alive or time.monotonic() - start >= wait_s:
+            break
+        time.sleep(0.1)
+    waited = time.monotonic() - start
+    rows, torn = _rows(f)
+    missing = [p for p in pids if p not in {r.get("pid") for r in rows}]
+    assert not alive, (f"{what}: LATE, not proven lost: {len(alive)} deferred writer(s) still running after {waited:.1f} s, "
+                       f"{len(missing)} of {len(pids)} rows not in yet ({_logs(tmp)})")
+    assert not missing, (f"{what}: {len(missing)} of {len(pids)} rows LOST: every writer had ended ({waited:.1f} s) and {len(rows)} lines are left, "
+                         f"{torn} torn ({_logs(tmp)})")
+    assert not torn, f"{what}: {torn} torn lines"
+    assert len(rows) <= 40, f"{what}: the trim did not run ({len(rows)} lines)"
+
+
+def test_the_writer_wait_tells_late_from_lost(tmp_path):
+    """Red before (item 66): the look at a fixed 30 s could not tell a writer still running from a row that was dropped. A writer that carries the token
+    holds the look until it ends; once none is left, a missing row fails as LOST, and a writer that outlives the bound fails as LATE."""
+    pytest.importorskip("psutil")
+    f = tmp_path / "launcher_exits.jsonl"
+    _seed(f, 5)
+    env, token = _token_env(tmp_path)
+    w = subprocess.Popen([sys.executable, "-c", f"import json,time; time.sleep(1.5); open({str(f)!r},'a').write(json.dumps({{'pid': 444}})+'\\n')"],
+                         env=env)
+    try:
+        _assert_all_present_once_writers_end([444], f, "late", token, tmp_path, wait_s=60)
+    finally:
+        w.wait()
+    with pytest.raises(AssertionError, match="rows LOST: every writer had ended"):
+        _assert_all_present_once_writers_end([555], f, "lost", token, tmp_path, wait_s=5)
+    w = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], env=env)
+    try:
+        with pytest.raises(AssertionError, match="LATE, not proven lost: 1 deferred writer"):
+            _assert_all_present_once_writers_end([666], f, "late", token, tmp_path, wait_s=0.5)
+    finally:
+        w.kill()
+        w.wait()
+
+
+def _start_ps_launchers(tmp_path: Path, copy: Path, data: Path, env: dict[str, str], n: int) -> list[tuple[subprocess.Popen, Path]]:
+    procs = []
+    for i in range(n):
+        server = tmp_path / f"server_{i}"
+        _exe(server, "#!/usr/bin/env bash\nexit 3\n")
+        marker = tmp_path / f"{i}.marker"
+        with open(tmp_path / f"{i}.err", "wb") as err:  # the launcher's stderr, which its deferred writers inherit: what a writer says is read on failure
+            procs.append((subprocess.Popen([_PWSH, "-NoProfile", "-File", str(copy), "-App", str(server), "-Marker", str(marker), "-DataDir", str(data)],
+                                           env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=err), marker))
+    return procs
+
+
 @_needs_pwsh
 def test_eight_powershell_launchers_lose_no_exit_row_and_tear_no_line(tmp_path):
     copy = tmp_path / "w.ps1"
@@ -423,22 +519,58 @@ def test_eight_powershell_launchers_lose_no_exit_row_and_tear_no_line(tmp_path):
     data = tmp_path / "data"
     f = data / "diagnostics" / "launcher_exits.jsonl"
     _seed(f, 39)
-    env = {k: v for k, v in os.environ.items() if not k.startswith("OO_")}
-    procs = []
-    for i in range(8):
-        server = tmp_path / f"server_{i}"
-        _exe(server, "#!/usr/bin/env bash\nexit 3\n")
-        marker = tmp_path / f"{i}.marker"
-        procs.append((subprocess.Popen([_PWSH, "-NoProfile", "-File", str(copy), "-App", str(server), "-Marker", str(marker), "-DataDir", str(data)],
-                                       env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL), marker))
+    env, token = _token_env(tmp_path)
+    procs = _start_ps_launchers(tmp_path, copy, data, env, 8)
     for p, _ in procs:
         p.wait(timeout=120)
-    _assert_all_present([int(m.read_text(encoding="utf-8")) for _, m in procs], f, "pwsh exits")
+    _assert_all_present_once_writers_end([int(m.read_text(encoding="utf-8")) for _, m in procs], f, "pwsh exits", token, tmp_path)
     assert not list((data / "diagnostics").glob("*.tmp.*")), "no temp file left behind"
+
+
+@_needs_pwsh
+def test_a_powershell_row_whose_deferred_writer_cannot_start_is_written_late_by_the_launcher_itself(tmp_path):
+    """Item 66, red before: when no deferred writer could be started, Start-DeferredRow returned $false and the row was dropped. Now the launcher waits for
+    the mutex itself, with no bound: it ends after the holder lets go, and its row is there exactly once."""
+    import hashlib
+
+    data = tmp_path / "data"
+    f = data / "diagnostics" / "launcher_exits.jsonl"
+    _seed(f, 5)
+    name = "OOLauncherRecords-" + hashlib.sha1(str(f).lower().encode("utf-8")).hexdigest().upper()
+    holder = tmp_path / "hold.ps1"
+    # the holder lets go only once the launcher has started its server (its marker is written before any row) and 2 s more: a fixed sleep could end
+    # before a cold launcher reached its rows, and the test would then pass on the old code without ever reaching the path it is about
+    holder.write_text(f'$m = New-Object System.Threading.Mutex($false, "{name}"); [void]$m.WaitOne(); Set-Content "{tmp_path}/held" 1; '
+                      f'$end = (Get-Date).AddSeconds(90); while (-not (Test-Path "{tmp_path}/m") -and (Get-Date) -lt $end) {{ Start-Sleep -Milliseconds 50 }}; '
+                      f'Start-Sleep 2; Set-Content "{tmp_path}/released" 1; $m.ReleaseMutex()', encoding="utf-8")
+    text = LAUNCH_PS1.read_text(encoding="utf-8").replace("$RecLockWaitMs = 520", "$RecLockWaitMs = 100")
+    assert text.count("$psi.FileName = (Get-Process -Id $PID).Path") == 1
+    copy = tmp_path / "w.ps1"
+    copy.write_text(text.replace("$psi.FileName = (Get-Process -Id $PID).Path", '$psi.FileName = "/nonexistent/item66-no-writer"'), encoding="utf-8")
+    env, token = _token_env(tmp_path)
+    h = subprocess.Popen([_PWSH, "-NoProfile", "-File", str(holder)], env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        assert _wait_for(lambda: (tmp_path / "held").exists(), 30), "the holder never took the mutex"
+        server = tmp_path / "server"
+        _exe(server, "#!/usr/bin/env bash\nexit 3\n")
+        marker = tmp_path / "m"
+        subprocess.run([_PWSH, "-NoProfile", "-File", str(copy), "-App", str(server), "-Marker", str(marker), "-DataDir", str(data)], env=env,
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+        assert (tmp_path / "released").exists(), "the launcher ended before the holder let go: it did not wait for the mutex"
+        h.wait(timeout=30)
+    finally:
+        h.kill()
+        h.wait()
+    assert marker.exists(), "the launcher never started its server"
+    pid = int(marker.read_text(encoding="utf-8"))
+    assert sum(1 for r in _rows(f)[0] if r.get("pid") == pid) == 1, "the row is written once, by the launcher itself"
 
 
 def test_the_ps1_text_has_the_mutex_the_replace_and_a_row_per_attempt():
     t = LAUNCH_PS1.read_text(encoding="utf-8")
+    assert "if (Start-DeferredRow $Path $text $Max $Keep) { return $true }" in t, "a row no writer took is waited for, never dropped (item 66)"
+    assert "if (`$m) { `$held = `$false;" not in t, "the deferred child no longer drops a row whose mutex it cannot make (item 66)"
+    assert "a deferred row could not be appended" in t and "arrived cut short" in t, "what the child cannot write it says, in fixed words"
     assert "System.Threading.Mutex" in t and "[System.IO.File]::Replace(" in t and "[NullString]::Value" in t
     assert "$writable = $false" not in t, "a failed append no longer switches the later rows off"
     assert "WriteAllLines($exitRecord" not in t and "WriteAllLines($stopRecord" not in t and "WriteAllLines($stderrRecord" not in t

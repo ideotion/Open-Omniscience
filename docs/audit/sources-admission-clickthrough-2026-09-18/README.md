@@ -121,7 +121,7 @@ OO_DATA_DIR=/tmp/ct-state OO_DB_PLAINTEXT=1 OO_NO_SCHEDULER=1 OO_AUTOSEED=0 \
   .venv/bin/python docs/audit/sources-admission-clickthrough-2026-09-18/seed.py
 ( OO_DATA_DIR=/tmp/ct-state OO_DB_PLAINTEXT=1 OO_NO_SCHEDULER=1 OO_AUTOSEED=0 \
   OO_PORT=8213 OO_LLM_AUTOSTART=0 \
-  .venv/bin/uvicorn src.api.main:app --host 127.0.0.1 --port 8213 & echo $! > /tmp/ct.pid )
+  .venv/bin/uvicorn src.api.main:app --loop asyncio --host 127.0.0.1 --port 8213 & echo $! > /tmp/ct.pid )
 .venv/bin/python docs/audit/sources-admission-clickthrough-2026-09-18/walk.py \
   http://127.0.0.1:8213 /tmp/walk-out
 kill "$(cat /tmp/ct.pid)"     # by PID; never `pkill -f`, which matches your own command line
