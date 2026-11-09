@@ -350,8 +350,11 @@ def _starttls_refusal(host: str, port: int, why: str) -> MailboxStarttlsError:
 def _mailbox_tls_context() -> ssl.SSLContext:
     """The TLS context of every mailbox pull (R650): the platform's trust store, the certificate chain AND the host name checked
     (``ssl.create_default_context``). The stdlib's own default for imaplib/poplib verifies neither, which left LOGIN/PASS open to
-    anyone able to answer for the server. There is deliberately no switch that turns the checks off."""
-    return ssl.create_default_context()
+    anyone able to answer for the server. There is deliberately no switch that turns the checks off. TLS 1.2 is the floor, set here
+    and not only left to the default (CodeQL on #1898: the default's floor depends on the Python and OpenSSL build)."""
+    ctx = ssl.create_default_context()
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    return ctx
 
 
 #: OpenSSL's wrapping of the reason: "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: <reason> (_ssl.c:NNNN)".
