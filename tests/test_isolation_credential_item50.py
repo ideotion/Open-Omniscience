@@ -152,6 +152,24 @@ def test_the_key_is_made_fresh_in_each_process():
     assert len(runs) == 2, runs
 
 
+def test_the_key_comes_from_the_os_random_source_and_nowhere_else():
+    """A key from the PID or the clock would pass every test above, and lets the handshake reader enumerate it and confirm a guess."""
+    import ast
+
+    src = ROOT / "src"
+    tree = ast.parse((src / "safety" / "fetcher.py").read_text(encoding="utf-8"))
+    values = [
+        ast.unparse(node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(target, ast.Name) and target.id == "_ISOLATION_KEY"
+    ]
+    assert values == ["secrets.token_bytes(32)"]
+    named_in = {p.relative_to(ROOT).as_posix() for p in src.rglob("*.py") if "_ISOLATION_KEY" in p.read_text(encoding="utf-8")}
+    assert named_in == {"src/safety/fetcher.py"}
+
+
 def test_the_same_token_keeps_its_circuit():
     for token in ("news.example", wbentities_url("Q42"), "日本"):
         assert _with_stream_isolation(_SOCKS, token) == _with_stream_isolation(_SOCKS, token)

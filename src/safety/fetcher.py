@@ -352,8 +352,9 @@ _ISOLATION_KEY = secrets.token_bytes(32)
 def _isolation_credential(token: str) -> str:
     """The SOCKS username (and password) that names ``token``'s Tor circuit: distinct tokens, distinct credentials.
 
-    A short token made only of ``[A-Za-z0-9_.-]`` is used as written, as before (a host key, which a ``socks5h`` proxy is told
-    anyway, or a fixed label such as ``dl-1``). Any other token (a URL, a segment's ``url#seg-a-b``, a host key with a port or
+    A short token made only of ``[A-Za-z0-9_.-]`` is used as written, as before: a host key (which a ``socks5h`` proxy is told
+    anyway; a ``socks5`` or ``socks4`` one is told the address instead, and learns the name from this credential), or a fixed
+    label such as ``dl-1``. Any other token (a URL, a segment's ``url#seg-a-b``, a host key with a port or
     an IPv6 bracket, a Unicode name, anything longer than 32 characters) is named by ``oo.`` and the first 32 hex digits of an
     HMAC-SHA256 of the WHOLE token under :data:`_ISOLATION_KEY`: 128 bits, and 35 characters, so it can never equal an
     as-written credential. Keyed, because a plain digest of a URL would let whoever reads the SOCKS handshake (a pool member
@@ -418,9 +419,11 @@ def validate_socks_pool(proxies: list[str]) -> None:
 
 def shard_host_to_proxy(host: str, proxies: list[str]) -> str:
     """Stable mapping of ``host`` to ONE pool member -- a host maps to the SAME
-    endpoint (and, via ``_with_stream_isolation`` layered on top by the caller,
-    the same dedicated circuit) for the LIFETIME of the app's configuration,
-    not just one process. Uses a cryptographic hash, never Python's built-in
+    endpoint for the LIFETIME of the app's configuration, not just one process.
+    The circuit on that endpoint is named by ``_with_stream_isolation``, layered
+    on top by the caller: by the host key itself when it is a short plain name,
+    and otherwise by a digest under a key made per process (queue item 50(a)),
+    so such a host asks for another circuit after a restart. Uses a cryptographic hash, never Python's built-in
     ``hash()`` -- CPython randomises string hashing per process
     (``PYTHONHASHSEED``) by default, which would reshuffle every host's
     endpoint on every restart, defeating the whole point of a stable mapping.
