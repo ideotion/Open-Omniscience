@@ -223,6 +223,9 @@ _RAW_CEILING: dict[str, int] = {
     "src/analytics/bulk_build.py": 3,
     "src/analytics/columnar.py": 14,
     "src/analytics/concentration.py": 3,
+    # R625: the two triggers that mark a day stale (a trigger must name its table, never the view) and the install
+    # that checks the table and its triggers in sqlite_master; every read goes through the view.
+    "src/analytics/day_counts.py": 7,
     "src/analytics/group_stats.py": 1,
     "src/analytics/keyword_fold.py": 1,
     "src/analytics/keyword_growth.py": 6,

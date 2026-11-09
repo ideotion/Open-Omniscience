@@ -311,6 +311,25 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
                 log_failure(_LOG, "off-peak incremental vacuum failed", exc, level=logging.WARNING)
                 out["incremental_vacuum"] = {"skipped": "error"}
             if stop():
+                out["day_counts"] = {"skipped": "stopping"}
+                return out
+            # R625: fold the per-day keyword counts' stale days (the mentions added since the last fold, and the days
+            # a delete or a move marked), so Home trending reads them from the table; or start their build when they
+            # are not current. Here, between passes, is the throttle. It stands back while a re-index or another
+            # writer job owns the mentions (a drain bumps the corpus epoch every batch, which would restart a build).
+            try:
+                busy = _backlog_busy_reason()
+                if busy:
+                    out["day_counts"] = {"skipped": busy}
+                else:
+                    from src.analytics.day_counts import fold_tail
+                    from src.database.session import engine as _dc_engine
+
+                    out["day_counts"] = fold_tail(_dc_engine, should_stop=stop)
+            except Exception as exc:  # noqa: BLE001
+                log_failure(_LOG, "off-peak daily keyword counts fold failed", exc, level=logging.WARNING)
+                out["day_counts"] = {"skipped": "error"}
+            if stop():
                 out["stat_snapshot"] = {"skipped": "stopping"}
                 return out
             # S2 (2026-07-23 field-feedback workflow): an hourly snapshot of the
