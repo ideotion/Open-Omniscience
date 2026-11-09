@@ -346,11 +346,11 @@ _OPENSSL_VERIFY_REASON = re.compile(r"certificate verify failed: (?P<reason>.+?)
 def _certificate_refusal(host: str, scrubbed: str) -> MailboxCertificateError:
     """The honest refusal (R650). ``scrubbed`` is OpenSSL's text as ``record_text`` keeps it (the mailbox password and every held
     passphrase out of it); only its reason is quoted ("self-signed certificate", "Hostname mismatch, ..."), so the sentence fits
-    the job status's 300 characters with what matters first: refused, nothing sent, why."""
+    the job status's 300 characters with what matters first: refused, no command or password sent, why."""
     found = _OPENSSL_VERIFY_REASON.search(scrubbed)
     reason = found.group("reason") if found else scrubbed
     return MailboxCertificateError(
-        f"refused before logging in, nothing sent: the TLS certificate of the mail server {host} failed its check ({reason}). "
+        f"refused before logging in, no command or password sent: the TLS certificate of the mail server {host} failed its check ({reason}). "
         "Check the server name and port."
     )
 

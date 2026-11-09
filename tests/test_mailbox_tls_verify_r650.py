@@ -131,7 +131,7 @@ def test_a_certificate_no_trusted_authority_issued_is_refused_before_any_command
         with pytest.raises(MailboxCertificateError) as info:
             fn("127.0.0.1", "u", "secret-pw", use_ssl=True, port=srv.port)
         msg = str(info.value)
-        assert msg.startswith("refused before logging in, nothing sent: "), msg  # what matters first: the job status keeps 300 characters
+        assert msg.startswith("refused before logging in, no command or password sent: "), msg  # what matters first: the job status keeps 300 characters
         assert "127.0.0.1" in msg and "failed its check (self-signed certificate)" in msg, msg  # OpenSSL's own reason, unwrapped
         assert "_ssl.c" not in msg and "CERTIFICATE_VERIFY_FAILED" not in msg
         assert "secret-pw" not in msg
@@ -189,6 +189,15 @@ def test_a_host_name_is_checked_and_sent_as_the_server_name(fn, greeting, script
         assert srv.done.wait(5) and srv.received == []
     finally:
         srv.close()
+    srv = _TlsServer(pki.wrong_name_server, greeting, script)
+    try:
+        # A trusted certificate for another DNS name, reached by a DNS name (security read B on #1895: a pull that dropped the name
+        # check for DNS hosts only, or checked the peer's IP instead of the typed name, passed every IP-only test).
+        with pytest.raises(MailboxCertificateError, match="Hostname mismatch"):
+            fn("localhost", "u", "p", use_ssl=True, port=srv.port)
+        assert srv.done.wait(5) and srv.received == []
+    finally:
+        srv.close()
 
 
 def test_the_route_answers_a_certificate_refusal_as_the_mail_servers_failure_with_its_words(monkeypatch):
@@ -206,7 +215,7 @@ def test_the_route_answers_a_certificate_refusal_as_the_mail_servers_failure_wit
     with pytest.raises(HTTPException) as info:
         ingestion.ingest_email_endpoint(1, req, db=None)
     assert info.value.status_code == 502
-    assert "refused before logging in, nothing sent" in info.value.detail and "self-signed certificate" in info.value.detail
+    assert "refused before logging in, no command or password sent" in info.value.detail and "self-signed certificate" in info.value.detail
     assert "pw-needle-xyz" not in info.value.detail
 
 
