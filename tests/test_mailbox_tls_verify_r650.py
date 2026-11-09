@@ -227,6 +227,40 @@ def test_the_context_checks_the_chain_and_the_name_and_uses_the_platform_trust()
     assert email_mod._mailbox_tls_context() is not ctx  # a fresh one per pull: nothing a caller sets on one leaks into the next
 
 
+def test_the_context_is_built_by_create_default_context_so_it_carries_the_platform_trust(monkeypatch):
+    """A bare ``ssl.SSLContext(PROTOCOL_TLS_CLIENT)`` also checks the chain and the name, but trusts no authority at all, so every
+    real server would be refused (security read B on #1895): the platform's store comes from ``create_default_context``."""
+    calls: list[tuple] = []
+    real = ssl.create_default_context
+
+    def spy(*args, **kwargs):
+        calls.append((args, kwargs))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(email_mod.ssl, "create_default_context", spy)
+    email_mod._mailbox_tls_context()
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert kwargs.get("purpose", args[0] if args else ssl.Purpose.SERVER_AUTH) == ssl.Purpose.SERVER_AUTH
+    assert not {"cafile", "capath", "cadata"} & set(kwargs), "the platform trust is replaced, not used"
+
+
+@pytest.mark.parametrize(("fn", "attr"), [(fetch_imap, "IMAP4_SSL"), (fetch_pop3, "POP3_SSL")], ids=_IDS)
+def test_a_stop_engaged_when_the_certificate_fails_reports_the_stop(fn, attr, monkeypatch):
+    """A Stop wins over a certificate failure: the pull reports itself stopped, not refused (security read B on #1895)."""
+    from src.ingest import activate_kill_switch
+
+    class _Spy:
+        def __init__(self, *args, **kwargs):
+            activate_kill_switch()
+            raise ssl.SSLCertVerificationError("certificate verify failed: self-signed certificate")
+
+    lib = email_mod.imaplib if attr == "IMAP4_SSL" else email_mod.poplib
+    monkeypatch.setattr(lib, attr, _Spy)
+    raws = fn("mail.example", "u", "p", use_ssl=True)
+    assert raws.stopped is True and list(raws) == []
+
+
 @pytest.mark.parametrize(("fn", "attr", "kw"), [(fetch_imap, "imaplib", "ssl_context"), (fetch_pop3, "poplib", "context")], ids=_IDS)
 def test_each_pull_hands_the_library_the_verifying_context(fn, attr, kw, monkeypatch):
     """Pins the wiring: dropping the context from a constructor falls back to the stdlib's unverified one, silently."""
