@@ -585,6 +585,7 @@ def test_no_get_changes_the_main_database_file(observed):
 
 # Programs a GET may start, by basename, with the reason. Measured on 2026-10-27: about 30 GETs start one of the first three; sudo shows only where the host has it and the process is not root (the Linux CI runner).
 _PROGRAMS_ALLOWED = {
+    "git": "/api/system/update/status reads this checkout's origin URL, branch and cleanliness (`git config`, `rev-parse`, `status`; src/maintenance/self_update.py install_status): local queries, no network; the update FETCH is the spawned helper's, after the app has stopped",
     "nvidia-smi": "reads the GPU's name and memory (the /api/llm/*, /api/bulletin/* and diagnostics routes); a local query, no network",
     "uname": "reads the processor name; a local query",
     "xdg-user-dir": "reads the user's folders; a local query",

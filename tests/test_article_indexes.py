@@ -217,7 +217,7 @@ def test_a_plain_title_index_cannot_serve_the_nocase_sort(eng):
 # --------------------------------------------------------------------------- #
 def test_the_entries_the_model_the_deferral_and_the_migration_agree():
     assert ai.NAMES == (LANG, TITLE)
-    assert frozenset(ai.NAMES) == DEFERRED_INDEXES
+    assert frozenset(ai.ALL_NAMES) == DEFERRED_INDEXES, "R611: the links' index is the third deferred entry"
     assert all(n in HOT_INDEXES for n in ai.NAMES)
     on_model = {ix.name for ix in Article.__table__.indexes}
     assert set(ai.NAMES) <= on_model, "a HOT_INDEXES entry the model does not declare reads as schema drift"
