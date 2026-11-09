@@ -47,6 +47,10 @@ _VALUE_ENTRIES: dict[str, str] = {
 
 #: row (file::scope, as the loop-heads table names it) -> every function that can reach it by name, in this file's reading.
 _PINNED: dict[str, tuple[str, ...]] = {
+    "src/database/article_indexes.py::build_missing": (  # _worker is ARTICLE_INDEX_JOB's BackgroundJob worker; boot only joins it
+        "src/database/article_indexes.py::_worker",
+        "src/database/article_indexes.py::build_missing",
+    ),
     "src/database/fts_reindex.py::SearchReindexJobManager._park": (
         "src/database/fts_reindex.py::SearchReindexJobManager._park",
         "src/database/fts_reindex.py::SearchReindexJobManager._run",

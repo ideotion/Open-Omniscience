@@ -164,23 +164,80 @@ def test_a_probe_the_kill_switch_refused_is_not_counted_as_down(monkeypatch: pyt
         def to_dict(self) -> dict:
             return self.d
 
+    from src.ingest import activate_kill_switch, clear_kill_switch, kill_switch_active
+
     monkeypatch.setattr(monitoring, "check_source", lambda *_a, **_k: _Result(next(answers)))
-    monkeypatch.setattr(monitoring, "kill_switch_active", lambda: True)
-    out = monitoring.sources_health(limit=2, db=_Rows(), fetcher=object())
+    was = kill_switch_active()
+    activate_kill_switch()
+    try:
+        out = monitoring.sources_health(limit=2, db=_Rows(), fetcher=object())
+    finally:
+        (activate_kill_switch if was else clear_kill_switch)()
     assert out["summary"] == {"refused_by_kill_switch": 1, "down": 1}
 
 
-def test_with_the_switch_off_a_down_stays_down(monkeypatch: pytest.MonkeyPatch) -> None:
+#: A host's own status line in the socket guard's words, as urllib3 reports it inside OUR "request error for" sentence: the wrapped
+#: alternative of the refusal match reaches into it, so it may be read as the switch's only when a Stop touched the sweep (R298, R614).
+_HOST_IN_GUARD_WORDS = (
+    "request error for https://h.example/: ('Connection aborted.', BadStatusLine('Failed to establish a new connection: "
+    "airplane mode is engaged: refusing a network connection'))"
+)
+
+
+def test_with_the_switch_off_a_host_writing_the_guards_words_stays_down(monkeypatch: pytest.MonkeyPatch) -> None:
     from src.api import monitoring
+    from src.ingest import kill_switch_active
 
     class _Result:
         def to_dict(self) -> dict:
-            return _health("down", "network kill switch is active -- collection stopped by operator")
+            return _health("down", _HOST_IN_GUARD_WORDS)
 
+    assert not kill_switch_active()
     monkeypatch.setattr(monitoring, "check_source", lambda *_a, **_k: _Result())
-    monkeypatch.setattr(monitoring, "kill_switch_active", lambda: False)
     out = monitoring.sources_health(limit=1, db=_Rows(), fetcher=object())
     assert out["summary"] == {"down": 2}
+
+
+def test_with_the_switch_off_a_detail_that_only_opens_with_the_refusal_head_stays_down(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The narrower control: only the fetcher's WHOLE refusal sentence is the switch's with the switch off. A redirect's hostname keeps
+    its spaces, so a BlockedTarget can open with the head's words and still be the host's own failure."""
+    from src.api import monitoring
+    from src.ingest import kill_switch_active
+
+    class _Result:
+        def to_dict(self) -> dict:
+            return _health("down", "network kill switch is active.evil.example resolves to a non-public address")
+
+    assert not kill_switch_active()
+    monkeypatch.setattr(monitoring, "check_source", lambda *_a, **_k: _Result())
+    out = monitoring.sources_health(limit=1, db=_Rows(), fetcher=object())
+    assert out["summary"] == {"down": 2}
+
+
+def test_a_refusal_by_name_is_the_switchs_after_a_clear(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The switch was engaged before the sweep and cleared during it: the count did not move, but the fetcher wrote its own refusal
+    sentence before any request, so that probe is still the switch's (R614)."""
+    from src.api import monitoring
+    from src.ingest import activate_kill_switch, clear_kill_switch, kill_switch_active
+
+    was = kill_switch_active()
+    activate_kill_switch()
+    answers = iter([_health("down", "network kill switch is active -- collection stopped by operator"), _health("down", "HTTP 503")])
+
+    class _Result:
+        def __init__(self) -> None:
+            self.d = next(answers)
+            clear_kill_switch()  # back online once the first probe was refused
+
+        def to_dict(self) -> dict:
+            return self.d
+
+    monkeypatch.setattr(monitoring, "check_source", lambda *_a, **_k: _Result())
+    try:
+        out = monitoring.sources_health(limit=2, db=_Rows(), fetcher=object())
+    finally:
+        (activate_kill_switch if was else clear_kill_switch)()
+    assert out["summary"] == {"refused_by_kill_switch": 1, "down": 1}
 
 
 def _request_on(scheme: str, headers: dict[str, str]) -> Request:
