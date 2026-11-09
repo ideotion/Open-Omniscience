@@ -37,6 +37,7 @@ from src.ingest import (
     BlockedTarget,
     EthicalFetcher,
     FetchError,
+    FetchFailed,
     RobotsUnavailable,
     airplane,
     clear_kill_switch,
@@ -183,6 +184,71 @@ def test_a_robots_redirect_spelling_the_sentence_is_the_hosts_failure_and_backs_
     assert f._robots_fails == {f"http://{PUBLIC}": 1} and f._robots_cause == {f"http://{PUBLIC}": "unreachable"}
     assert S not in guarded and _crafted(asked) == [], (guarded, asked)
     _not_the_switch(caught.value)
+
+
+# --- the independent read of R622: two ValueErrors that escaped the fetch raw ----------------------------------------------------------
+
+#: Locations ``urljoin`` cannot read (an unclosed IPv6 bracket). Before the read's fold the ValueError escaped ``fetch()``: the robots read
+#: re-raised it uncounted (the host was never backed off) and ``ingest_url``, which catches FetchError, did not catch it.
+UNREADABLE = ["http://[::1/x", "//[::1/x", "http://[a/"]
+
+
+@pytest.mark.parametrize("location", UNREADABLE)
+def test_an_unreadable_redirect_is_the_hosts_failure_not_a_raw_value_error(tmp_path, asked, location):
+    with _proxy({f"http://{PUBLIC}/": (302, {"Location": location})}) as proxy:
+        f, guarded = _fetcher(tmp_path, proxy)
+        with pytest.raises(FetchError) as caught:
+            f.fetch(f"http://{PUBLIC}/", require_html=False)
+    assert type(caught.value) is FetchFailed
+    # requests itself reads the Location to build ``Response.next`` and raises first; the fetcher writes its own fixed words
+    assert record_text(caught.value, typed=False) == f"redirect to a URL that cannot be read, from http://{PUBLIC}/", caught.value
+    assert guarded == [PUBLIC] and _crafted(asked) == [], (guarded, asked)
+    _not_the_switch(caught.value)
+
+
+@pytest.mark.parametrize("location", UNREADABLE)
+def test_an_unreadable_location_the_session_hands_back_is_refused_in_fixed_words(tmp_path, asked, monkeypatch, location):
+    """The fetcher's own ``urljoin`` of the Location is read the same way, for a session that hands a 3xx back without parsing it."""
+    f, guarded = _fetcher(tmp_path)
+    answer = SimpleNamespace(status_code=302, headers={"Location": location}, url=f"http://{PUBLIC}/", close=lambda: None)
+    monkeypatch.setattr(f.session, "get", lambda *_a, **_k: answer)
+    with pytest.raises(FetchError) as caught:
+        f._guarded_redirect_get(f"http://{PUBLIC}/")
+    assert type(caught.value) is FetchFailed
+    assert record_text(caught.value, typed=False).startswith("redirect to a URL that cannot be read: "), caught.value
+    _not_the_switch(caught.value)
+
+
+@pytest.mark.parametrize("location", UNREADABLE)
+def test_an_unreadable_robots_redirect_backs_the_host_off(tmp_path, asked, location):
+    with _proxy({f"http://{PUBLIC}/robots.txt": (302, {"Location": location})}) as proxy:
+        f, _guarded = _fetcher(tmp_path, proxy)
+        with pytest.raises(RobotsUnavailable) as caught:
+            f.fetch(f"http://{PUBLIC}/story", require_html=False)
+    assert f._robots_fails == {f"http://{PUBLIC}": 1}, f._robots_fails
+    _not_the_switch(caught.value)
+
+
+@pytest.mark.parametrize("host", ["a..example", "x" * 64 + ".example"])
+def test_a_name_the_resolver_cannot_encode_is_a_dns_failure_not_a_raw_unicode_error(tmp_path, monkeypatch, host):
+    """``socket.getaddrinfo`` IDNA-encodes the name before any query and raises a UnicodeError (a ValueError) for an empty label or one
+    over 63 characters. The stand-in resolver does exactly that encoding, so no name is sent anywhere."""
+
+    def resolver(name, *a, **k):
+        (name.decode() if isinstance(name, bytes) else str(name)).encode("idna")
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 0))]
+
+    monkeypatch.setattr(airplane, "_orig_getaddrinfo", resolver)
+    f, _guarded = _fetcher(tmp_path)
+    with pytest.raises(FetchError) as caught:
+        f._guard_target(host)
+    assert type(caught.value) is FetchFailed, caught.value
+    text = record_text(caught.value, typed=False)
+    assert text.startswith(f"cannot resolve host {host!r}: "), text
+    assert classify_fetch_failure(text) == "dns", text
+    _not_the_switch(caught.value)
+    with pytest.raises(FetchError):  # and through the fetch itself, never a raw ValueError
+        f.fetch(f"http://{host}/story", require_html=False)
 
 
 def test_the_health_count_does_not_take_a_hosts_redirect_for_the_stop(tmp_path, asked, monkeypatch):
