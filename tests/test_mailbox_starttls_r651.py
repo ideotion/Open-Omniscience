@@ -230,6 +230,7 @@ def test_a_plain_server_on_the_tls_port_is_refused_naming_the_server_and_the_por
         assert not isinstance(info.value, MailboxCertificateError)
         assert msg.startswith("refused before logging in, no command or password sent: no TLS connection could be made"), msg
         assert f"127.0.0.1 on port {srv.port} (" in msg and "_ssl.c" not in msg and "[SSL:" not in msg
+        assert msg.endswith("usually 993 for IMAP and 995 for POP3."), msg  # the TLS-port advice, never the STARTTLS one
         # The server reads the ClientHello as text, so a random CR LF in it can make a "line": no line is a mail command.
         assert not any(word in line.upper() for line in srv.received for word in (b"LOGIN", b"USER", b"PASS", b"CAPA"))
     finally:
