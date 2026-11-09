@@ -52,6 +52,7 @@ G = "https://good.example"
 # The shown surfaces compare by registrable domain through the Public Suffix List, which has no rule for ".example": they use
 # real top-level domains (nothing here touches the network).
 SITE, SUBDOMAIN, ELSEWHERE = "goodnews.org", "en.goodnews.org", "othersite.net"
+HOSTILE = "x<b>'y.net"  # urllib.parse reads such a host from a URL as written: it is data, and every surface escapes it
 OTHER = "https://other.example"
 _ALLOW_ALL = "User-agent: *\nAllow: /\n"
 
@@ -248,7 +249,7 @@ def _store(tmp_path):
         s.add(Source(name="Good News", domain=SITE, status="qualified"))  # qualified, so the Home feed shows them
         s.commit()
         for i, (host, title) in enumerate(
-            [(ELSEWHERE, "Redirected story"), (SUBDOMAIN, "Home story"), (None, "Older story")], start=1
+            [(ELSEWHERE, "Redirected story"), (SUBDOMAIN, "Home story"), (None, "Older story"), (HOSTILE, "Odd host")], start=1
         ):
             s.add(
                 Article(
@@ -300,6 +301,13 @@ def test_the_reader_shows_no_row_for_an_article_stored_before_the_column(client)
     assert "Fetched from (app-observed" not in body and "fetched from another site" not in body
 
 
+def test_the_reader_escapes_the_host_in_both_places(client):
+    body = client.get("/api/articles/4/view").text
+    assert "fetched from another site, x&lt;b&gt;&#x27;y.net</span>" in body
+    assert "<code>x&lt;b&gt;&#x27;y.net</code>" in body
+    assert "<b>'y.net" not in body
+
+
 def test_the_home_feed_card_carries_it_beside_the_source(client):
     cards = {c["id"]: c for c in client.get("/api/feed?order=recent&limit=10").json()["results"]}
     assert (cards[1]["source"], cards[1]["fetched_host"], cards[1]["fetched_off_site"]) == ("Good News", ELSEWHERE, True)
@@ -321,9 +329,9 @@ def test_both_exports_carry_it_and_the_csv_keeps_every_earlier_column_in_place(c
     assert rows[0] == [
         "ID", "Title", "URL", "Canonical URL", "Source", "Published At", "Language", "Content", "Hash", "Fetched From Host",
     ]
-    assert {row[0]: row[-1] for row in rows[1:]} == {"1": ELSEWHERE, "2": SUBDOMAIN, "3": ""}
+    assert {row[0]: row[-1] for row in rows[1:]} == {"1": ELSEWHERE, "2": SUBDOMAIN, "3": "", "4": HOSTILE}
     j = client.get("/api/articles/export?format=json").json()
-    assert {a["id"]: a["fetched_host"] for a in j["articles"]} == {1: ELSEWHERE, 2: SUBDOMAIN, 3: None}
+    assert {a["id"]: a["fetched_host"] for a in j["articles"]} == {1: ELSEWHERE, 2: SUBDOMAIN, 3: None, 4: HOSTILE}
 
 
 def test_the_briefing_evidence_audit_carries_it_beside_the_source(tmp_path):
