@@ -144,9 +144,21 @@ def test_the_configured_loop_is_not_uvloop():
         asyncio.set_event_loop_policy(None)
 
 
+#: Where core's ``uvicorn[standard]`` installs uvloop: its own marker (``sys_platform != 'win32'`` and CPython, not cygwin). There the
+#: tests below import it outright, so a core install without it FAILS rather than skips (a skip would be green in every CI job).
+_UVLOOP_INSTALLED_BY_CORE = (
+    sys.platform not in ("win32", "cygwin") and sys.implementation.name == "cpython"
+)
+_needs_uvloop = pytest.mark.skipif(
+    not _UVLOOP_INSTALLED_BY_CORE, reason="uvicorn[standard] installs no uvloop on this platform"
+)
+
+
+@_needs_uvloop
 def test_auto_would_have_picked_uvloop():
     """The control: where uvloop is installed (it is, through uvicorn[standard]), "auto" chooses it and the detector says so."""
-    pytest.importorskip("uvloop")
+    import uvloop  # noqa: F401 - present by construction here; an ImportError is the failure this test exists to report
+
     loop = _loop_from_config("auto")
     try:
         assert not main_mod._event_loop_is_stdlib(loop), type(loop)
@@ -209,9 +221,11 @@ def _run_lifespan_on(loop: asyncio.AbstractEventLoop) -> None:
     loop.run_until_complete(enter())
 
 
+@_needs_uvloop
 def test_lifespan_refuses_to_start_on_uvloop(caplog):
     """A start that ends up on uvloop (a bare ``python -m uvicorn``) fails closed before the lifespan does anything else."""
-    pytest.importorskip("uvloop")
+    import uvloop  # noqa: F401 - see test_auto_would_have_picked_uvloop
+
     loop = _loop_from_config("auto")
     try:
         assert not main_mod._event_loop_is_stdlib(loop)
