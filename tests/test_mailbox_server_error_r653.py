@@ -412,3 +412,41 @@ def test_the_route_and_the_job_show_the_fixed_words_for_a_real_pull(monkeypatch,
         assert "before logging in; no password was sent" in detail and "Unicode" not in detail and "ZQXR653" not in detail
     finally:
         srv.close()
+
+
+@pytest.mark.parametrize(
+    ("fn", "greeting", "script", "words"),
+    [
+        (fetch_imap, _IMAP_GREETING, _answering(_imap, b"STARTTLS", b"TAG BAD " + _MARK + b"\r\n"), "refused STARTTLS"),
+        (fetch_pop3, _POP_GREETING, _answering(_pop, b"STLS", b"-ERR " + _MARK + b"\r\n", pop=True), "refused STLS"),
+        (
+            fetch_pop3,
+            _POP_GREETING,
+            _answering(_pop, b"CAPA", b"+OK\r\nSTLS\r\nZQXR653\xff\r\n.\r\n", pop=True),
+            "gave no usable answer to CAPA",
+        ),
+    ],
+    ids=["imap-starttls-bad", "pop3-stls-err", "pop3-capa-undecodable"],
+)
+def test_a_starttls_refusal_carries_no_chained_server_error(fn, greeting, script, words):
+    """Delta re-read 3 on R653: a refusal raised inside the ``except`` kept imaplib's or poplib's error (or poplib's decode error,
+    whose ``.object`` is the server's bytes) as its ``__context__``, and ``http_detail`` showed that instead of the refusal's words."""
+    from src.ingest.email import MailboxStarttlsError
+    from src.monitoring.secret_scrub import http_detail
+
+    srv = _Server(greeting, script)
+    try:
+        with pytest.raises(MailboxStarttlsError) as info:
+            fn("127.0.0.1", "u", _PW, port=srv.port, use_ssl=False)
+        assert info.value.__context__ is None and info.value.__cause__ is None
+        detail = http_detail(info.value)
+        assert words in detail and "ZQXR653" not in detail and "Unicode" not in detail
+    finally:
+        srv.close()
+
+
+def test_a_host_name_python_cannot_encode_is_not_blamed_on_the_server():
+    """Delta re-read 3 on R653: a label over 63 characters fails IDNA encoding on this side, before any connection."""
+    with pytest.raises(UnicodeError) as info:
+        fetch_imap("a" * 64 + ".example", "u", _PW, use_ssl=False)
+    assert not isinstance(info.value, MailboxServerError)

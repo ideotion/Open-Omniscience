@@ -645,6 +645,9 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
                     raise _starttls_refusal(self.host, port, "greeted the pull as already logged in (PREAUTH), where no upgrade is possible")
                 if "STARTTLS" not in self.capabilities:
                     raise _starttls_refusal(self.host, port, "does not offer STARTTLS")
+                # Each refusal below is raised outside the ``except`` it was decided in (R653): raised inside, it would carry
+                # imaplib's or poplib's error, the server's line in it, as its ``__context__``, which ``http_detail`` reads.
+                why = None
                 try:
                     typ, _ = self._simple_command("STARTTLS")
                 except _MailboxStopped:
@@ -653,9 +656,9 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
                     if _stop_requested():
                         raise _MailboxStopped from None  # the Stop shut the socket down while the answer was awaited
                     lost = isinstance(exc, (self.abort, OSError))
-                    raise _starttls_refusal(
-                        self.host, port, "did not answer STARTTLS (the connection was lost or timed out)" if lost else "refused STARTTLS"
-                    ) from None
+                    why = "did not answer STARTTLS (the connection was lost or timed out)" if lost else "refused STARTTLS"
+                if why is not None:
+                    raise _starttls_refusal(self.host, port, why)
                 if typ != "OK":
                     # Fixed words only (R652): the server's reply type is never echoed, since imaplib accepts any run of capitals there.
                     answer = {"NO": "NO", "BAD": "BAD"}.get(typ, "an unexpected reply") if isinstance(typ, str) else "an unexpected reply"
@@ -665,6 +668,8 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
                 self._tls_established = True
                 self._get_capabilities()  # what the server offered in plaintext is not trusted past the upgrade (RFC 3501 6.2.1)
                 return
+            why = None
+            caps: dict = {}
             try:
                 caps = self.capa()
             except poplib.error_proto:
@@ -674,7 +679,9 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
             except Exception:  # noqa: BLE001 - a lost connection, a timeout, or a CAPA list poplib cannot parse
                 if _stop_requested():
                     raise _MailboxStopped from None
-                raise _starttls_refusal(self.host, port, "gave no usable answer to CAPA (the connection was lost or timed out, or the list was malformed)") from None
+                why = "gave no usable answer to CAPA (the connection was lost or timed out, or the list was malformed)"
+            if why is not None:
+                raise _starttls_refusal(self.host, port, why)  # outside the except, as for IMAP (R653)
             if "STLS" not in {name.upper() for name in caps}:  # capability names are case-insensitive (RFC 2449)
                 raise _starttls_refusal(self.host, port, "does not offer STARTTLS (STLS)")
             if _stop_requested():
@@ -682,13 +689,15 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
             try:
                 self._shortcmd("STLS")
             except poplib.error_proto:
-                raise _starttls_refusal(self.host, port, "refused STLS") from None
+                why = "refused STLS"
             except _MailboxStopped:
                 raise
             except Exception:  # noqa: BLE001 - a lost connection or a timeout while the answer was awaited
                 if _stop_requested():
                     raise _MailboxStopped from None
-                raise _starttls_refusal(self.host, port, "did not answer STLS (the connection was lost or timed out)") from None
+                why = "did not answer STLS (the connection was lost or timed out)"
+            if why is not None:
+                raise _starttls_refusal(self.host, port, why)  # outside the except (R653)
             self.sock = _upgraded(self.sock, self.host, port)
             _rebind_reader(self)
             self._tls_established = True
