@@ -4698,6 +4698,7 @@
   "Stopped": "已停止",
   "Stopped after {files} zip files: {why}": "在 {files} 个 zip 文件后停止:{why}",
   "Stopped before the end of the files owed; the next update continues from here.": "在应有文件处理完之前停止；下次更新将从此处继续。",
+  "Stopped by airplane mode: only the messages fetched before it were imported.": "已被飞行模式停止：只导入了在此之前获取的邮件。",
   "Stopped by an error before its result could be measured": "在结果可被测量之前因错误而停止",
   "Stopped itself — memory stayed exhausted": "已自行停止 — 内存持续耗尽",
   "Stopped qualifying": "不再符合条件",
