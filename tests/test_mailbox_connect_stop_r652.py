@@ -19,7 +19,7 @@ import pytest
 import src.ingest as ingest
 import src.ingest.email as email_mod
 from src.ingest import activate_kill_switch, clear_kill_switch
-from src.ingest.email import fetch_imap, fetch_pop3
+from src.ingest.email import MailboxStarttlsError, fetch_imap, fetch_pop3
 
 #: Far below the timeout the stalled tests use and far above a loopback round trip.
 _PROMPT_S = 5.0
@@ -320,3 +320,27 @@ def test_both_pulls_catch_the_stop_by_its_type_at_the_connect(fn, monkeypatch):
     monkeypatch.setattr(email_mod, "_connect_registered", stopped)
     raws = fn("127.0.0.1", "u", "p", use_ssl=False, port=1)
     assert raws.stopped is True and list(raws) == []
+
+
+def test_an_unexpected_starttls_reply_type_is_named_in_fixed_words_never_echoed():
+    """S1's should-fix under R652: imaplib takes any run of capitals as a tagged reply's type, so the refusal names NO or BAD
+    in fixed words and anything else as "an unexpected reply", never the server's bytes."""
+    from tests.test_mailbox_starttls_r651 import (
+        _IMAP_GREETING,
+        _commands,
+        _imap_answering_starttls_with,
+        _Server,
+    )
+
+    marker = "ZQX" * 400
+    srv = _Server(_IMAP_GREETING, _imap_answering_starttls_with(b"TAG " + marker.encode() + b" text\r\n"))
+    try:
+        with pytest.raises(MailboxStarttlsError) as info:
+            fetch_imap("127.0.0.1", "u", "pw-r652-needle", use_ssl=False, port=srv.port)
+        text = str(info.value)
+        assert "answered STARTTLS with an unexpected reply" in text
+        assert "ZQX" not in text
+        assert srv.eof.wait(5)
+        assert _commands(srv, fetch_imap) == [b"CAPABILITY", b"STARTTLS", b"LOGOUT"]
+    finally:
+        srv.close()

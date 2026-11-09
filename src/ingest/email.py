@@ -633,7 +633,9 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
                         self.host, port, "did not answer STARTTLS (the connection was lost or timed out)" if lost else "refused STARTTLS"
                     ) from None
                 if typ != "OK":
-                    raise _starttls_refusal(self.host, port, f"answered STARTTLS with {typ}")
+                    # Fixed words only (R652): the server's reply type is never echoed, since imaplib accepts any run of capitals there.
+                    answer = {"NO": "NO", "BAD": "BAD"}.get(typ, "an unexpected reply") if isinstance(typ, str) else "an unexpected reply"
+                    raise _starttls_refusal(self.host, port, f"answered STARTTLS with {answer}")
                 self.sock = _upgraded(self.sock, self.host, port)  # type: ignore[has-type]
                 _rebind_reader(self)
                 self._tls_established = True
