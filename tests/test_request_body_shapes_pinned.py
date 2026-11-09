@@ -62,8 +62,9 @@ _RAW_BODY_READERS: dict[str, tuple[tuple[str, str], str]] = {
     "src/api/claims.py::verify_claim_trail_bundle": (
         ("POST", "/api/claims/trail-bundle/verify"),
         "a trail bundle is posted as the raw ZIP body; a pure check (no database, no write); the ANSWER is bounded at MAX_VERIFY_BYTES (413) but the "
-        "whole body is read first and no middleware limits request size. Accepts any Content-Type "
-        "(measured 2026-10-27: text/plain, form and multipart all reach the parser); proposal to answer 415 is in the audit folder, not decided",
+        "whole body is read first and no middleware limits request size. Reads only application/zip or application/octet-stream: any other "
+        "Content-Type, or none, answers 415 before the body is read (R315 option 1, taken 2026-11-08; pinned by "
+        "test_the_trail_bundle_verify_refuses_the_simple_request_types)",
     ),
     "src/api/ingestion.py::import_newsletters": (
         ("POST", "/api/newsletters/import"),
@@ -254,3 +255,15 @@ def test_the_scanner_finds_a_raw_reader_and_only_a_raw_reader():
 def test_the_real_scan_runs_over_real_files():
     """An empty glob must not pass: the real scan finds the known readers."""
     assert "src/api/claims.py::verify_claim_trail_bundle" in _raw_readers(_ROOT)
+
+
+@pytest.mark.parametrize("content_type", ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x"])
+def test_the_trail_bundle_verify_refuses_the_simple_request_types(content_type):
+    """R315 option 1 (OPEN_QUEUE item 14): the raw-ZIP reader answers 415 to the three types a browser sends cross-site without a
+    preflight, so none of them reaches the parser even if the Origin layer were bypassed. Measured 2026-10-27, all three answered 200
+    ``not_zip``. The route is a pure check that needs no database, so a private app answers it."""
+    from fastapi.testclient import TestClient
+
+    with TestClient(_fresh_app()) as c:
+        r = c.post("/api/claims/trail-bundle/verify", content=b"x=1", headers={"content-type": content_type})
+    assert r.status_code == 415, (content_type, r.status_code, r.text)

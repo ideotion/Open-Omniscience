@@ -250,3 +250,12 @@ Correct the text in `src/static/locales/ar.json` (the key is the English text).
 | 12 | {n} of {m} pages seen | {n} من {m} صفحة شوهدت |
 | 13 | {n} pages seen, total unknown | {n} صفحة شوهدت، والإجمالي غير معروف |
 | 14 | {n} stretches the lane did not see. | {n} فترات لم يرها المسار. |
+
+## extra-4: Start-up step: the links' covering index (PR #1839)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Building the index that keeps the shared-origin counts fast. One time only; anything the app saves waits until it is done. | جارٍ بناء الفهرس الذي يُبقي عدّ المصادر المشتركة سريعًا. مرة واحدة فقط؛ كل ما يحفظه التطبيق ينتظر حتى ينتهي. |
+| 2 | The index of the articles' links was not built: it needs about {needed} MB of free memory (sorting up to {rows} links, plus the memory the app always keeps free) and this computer has {free} MB. Close other programs and restart the app; until then the shared-origin counts stay slow. | لم يُبنَ فهرس روابط المقالات: يحتاج إلى نحو {needed} ميغابايت من الذاكرة الفارغة (فرز ما يصل إلى {rows} رابطًا، إضافة إلى الذاكرة التي يبقيها التطبيق فارغة دائمًا) وفي هذا الحاسوب {free} ميغابايت. أغلق البرامج الأخرى وأعد تشغيل التطبيق؛ وحتى ذلك الحين يبقى عدّ المصادر المشتركة بطيئًا. |
+| 3 | The index of the articles' links was not built: the volume your data file is on has {free} MB free and it needs about {needed} MB (up to {rows} links). Free some space and restart the app; until then the shared-origin counts stay slow. | لم يُبنَ فهرس روابط المقالات: المجلد الذي يوجد عليه ملف بياناتك فيه {free} ميغابايت فارغة ويحتاج الفهرس إلى نحو {needed} ميغابايت (حتى {rows} رابطًا). حرّر بعض المساحة وأعد تشغيل التطبيق؛ وحتى ذلك الحين يبقى عدّ المصادر المشتركة بطيئًا. |
+| 4 | The index of the articles' links was not built: two starts in a row ended while it was being built (the computer ran out of memory or power, or the app was ended abruptly), so it is not tried again until the app is updated. The shared-origin counts stay slow. | لم يُبنَ فهرس روابط المقالات: انتهى تشغيلان متتاليان أثناء بنائه (نفدت ذاكرة الحاسوب أو طاقته، أو أُنهي التطبيق فجأة)، لذا لن يُعاد المحاولة حتى يُحدَّث التطبيق. يبقى عدّ المصادر المشتركة بطيئًا. |

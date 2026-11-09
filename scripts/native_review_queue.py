@@ -68,6 +68,13 @@ GROUPS = [
     ("extra-1", "not in item 33", "OSM daily change files: update a country (J1)", 1720, "ea88a6e"),
     ("extra-2", "not in item 33", "Living sources: OSM daily change files (B1)", 1725, "c0c66ff"),
     ("extra-3", "not in item 33", "Living sources: per-edition coverage group", 1727, "7139c68"),
+    (
+        "extra-4",
+        "not in item 33, R611",
+        "Start-up step: the links' covering index",
+        1839,
+        "328a996b2",
+    ),
 ]
 
 # Item 33 (b) asks for no translation (a tree and operator fact).

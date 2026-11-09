@@ -174,6 +174,11 @@ _ALLOWED_SOCKET_IMPORTERS: dict[str, str] = {
         "CONSTANTS ONLY -- socket.AF_INET/AF_INET6 to filter psutil.net_if_addrs() "
         "when listing LOCAL interface IPs for the consent popup (invariant #14). "
         "No socket is constructed and nothing connects",
+    "src/tui/panel.py":
+        "the launcher window's terminal panel (R600). http.client to the literal HOST "
+        "127.0.0.1 on the app's own port, never read from argv or the environment; "
+        "it POSTs only scheduler/stop (toward offline) and system/shutdown, never a "
+        "move online (R601). Pinned by tests/test_terminal_panel.py",
     "src/llm/vllm_lifecycle.py":
         "a port probe (connect_ex) against the CONFIGURED vLLM URL, defaulting to "
         "127.0.0.1. A remote URL would egress here, which the airplane socket guard "

@@ -250,3 +250,12 @@ Correct the text in `src/static/locales/zh.json` (the key is the English text).
 | 12 | {n} of {m} pages seen | 已见 {n} / {m} 页 |
 | 13 | {n} pages seen, total unknown | 已见 {n} 页，总数未知 |
 | 14 | {n} stretches the lane did not see. | 该通道未曾看到的 {n} 段时间。 |
+
+## extra-4: Start-up step: the links' covering index (PR #1839)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Building the index that keeps the shared-origin counts fast. One time only; anything the app saves waits until it is done. | 正在建立让共同来源计数保持快速的索引。仅此一次；应用保存的任何内容都会等待其完成。 |
+| 2 | The index of the articles' links was not built: it needs about {needed} MB of free memory (sorting up to {rows} links, plus the memory the app always keeps free) and this computer has {free} MB. Close other programs and restart the app; until then the shared-origin counts stay slow. | 未建立文章链接的索引：它需要约 {needed} MB 可用内存（对最多 {rows} 个链接排序，加上应用始终保留的内存），而这台电脑有 {free} MB。请关闭其他程序并重新启动应用；在此之前，共同来源计数仍然较慢。 |
+| 3 | The index of the articles' links was not built: the volume your data file is on has {free} MB free and it needs about {needed} MB (up to {rows} links). Free some space and restart the app; until then the shared-origin counts stay slow. | 未建立文章链接的索引：您的数据文件所在的卷有 {free} MB 可用空间，而它需要约 {needed} MB（最多 {rows} 个链接）。请释放空间并重新启动应用；在此之前，共同来源计数仍然较慢。 |
+| 4 | The index of the articles' links was not built: two starts in a row ended while it was being built (the computer ran out of memory or power, or the app was ended abruptly), so it is not tried again until the app is updated. The shared-origin counts stay slow. | 未建立文章链接的索引：连续两次启动在建立过程中结束（电脑内存或电源耗尽，或应用被强行结束），因此在应用更新前不会再次尝试。共同来源计数仍然较慢。 |

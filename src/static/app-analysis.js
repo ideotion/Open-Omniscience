@@ -3232,7 +3232,21 @@
     // a prior one (the reader shows the latest + folds the rest). Honest streaming
     // progress (invariant #20). Ollama is loopback (no egress), but airplane mode
     // still refuses it — surfaced loudly. These rows are NEVER keyword-indexed.
-    let _bulkAbort = null;
+    // The custom-extractor run of each panel ("an" / "search"), one object PER RUN so a run still stopping can never share
+    // state with the next one: { task: its task-manager id (the X-OO-Task header, once the response began), stopping: its
+    // Cancel was pressed, the server is asked to stop it and the page reads on to its end }. Absent = that panel is idle.
+    const _aiRuns = {};
+    // The reason detached_stream.py's closing line carries for a Stop (the page's Cancel or the task manager's).
+    const _STOPPED_REASON = "stopped from the task manager";
+    // A bulk or extractor run OUTLIVES ITS TAB (src/api/detached_stream.py), so aborting the fetch would only stop the PAGE
+    // reading it while the model kept writing, and the queue would start the next run beside it. A Cancel asks the SERVER to
+    // stop the run, through the task manager's own Stop (POST /api/jobs/task:N/cancel), and the page reads on until the run's
+    // aborted end arrives. False when there is no run to stop or the server refused (its reason is shown).
+    async function _stopServerRun(taskId) {
+      if (!taskId) return false;
+      try { await api(`/api/jobs/${encodeURIComponent(taskId)}/cancel`, {method: "POST"}); return true; }
+      catch (e) { toast(e.message, "err"); return false; }
+    }
     // The current UI language as an ENGLISH name the model reliably understands
     // ("French", not "Français") — the v2 language pin: summaries/synthesis come back
     // in the user's language. Translate carries its own explicit target instead.
@@ -3255,7 +3269,7 @@
     // being hidden or the custom-extractor panel reusing the same mount.
     let _bulkQueue = [];        // jobs, see _bulkSelLabel for the shape
     let _bulkActive = null;     // the running job (one at a time)
-    let _bulkJobAbort = null;   // its AbortController (separate from _bulkAbort = extractor)
+    let _bulkJobAbort = null;   // its AbortController (the extractor's runs live in _aiRuns)
     let _bulkJobSeq = 1;
 
     function _bulkSelLabel(op, body) {
@@ -3302,9 +3316,14 @@
       const mount = $(ctx === "an" ? "bulk-llm-an" : "bulk-llm-search");
       if (mount) mount.style.display = "none";
     }
-    // Back-compat: the custom-extractor panel's Cancel still aborts its own run + hides.
+    // The custom-extractor panel's Cancel stops its run ON THE SERVER (see _stopServerRun) and hides the panel.
     function bulkLlmStop(ctx) {
-      if (_bulkAbort) { try { _bulkAbort.abort(); } catch (e) { /* already done */ } _bulkAbort = null; }
+      const run = _aiRuns[ctx];
+      if (run && !run.stopping) {
+        run.stopping = true;
+        // Before the response has started there is no task id yet: aiRunPromptStart sends the stop the moment it has one.
+        if (run.task) _stopServerRun(run.task).then((ok) => { if (!ok) run.stopping = false; });
+      }
       const mount = $(ctx === "an" ? "bulk-llm-an" : "bulk-llm-search");
       if (mount) mount.style.display = "none";
     }
@@ -3374,6 +3393,8 @@
           try { const j = await resp.json(); if (j.detail) detail = j.detail; } catch (e) { /* keep status */ }
           job.status = "error"; job.err = detail; _bulkRenderQueue(); return;
         }
+        job.taskId = resp.headers.get("X-OO-Task");
+        if (job.stopping && !(await _stopServerRun(job.taskId))) job.stopping = false;  // Cancel pressed before the response began
         const reader = resp.body.getReader(), dec = new TextDecoder(); let buf = "";
         for (;;) {
           const { done: fin, value } = await reader.read();
@@ -3393,13 +3414,16 @@
               else if (o.status === "skipped") job.skippedN++;
               else if (o.status === "failed") job.failedN++;
             } else if (o.event === "done") {
-              if (o.aborted) { job.status = "error"; job.err = o.reason || t("Stopped"); }
-              else job.status = "done";
+              if (o.aborted) {
+                // The end the page's own Cancel asked for; any other abort (the model went away first) keeps its reason.
+                if (job.stopping && o.reason === _STOPPED_REASON) job.status = "cancelled";
+                else { job.status = "error"; job.err = o.reason || t("Stopped"); }
+              } else job.status = "done";
             }
             _bulkRenderQueue();
           }
         }
-        if (job.status === "running") job.status = "done";  // stream ended cleanly
+        if (job.status === "running") job.status = job.stopping ? "cancelled" : "done";  // stream ended with no done line
       } catch (e) {
         if (e && e.name === "AbortError") { job.status = "cancelled"; }
         else { job.status = "error"; job.err = (e && e.message) || "error"; }
@@ -3411,7 +3435,11 @@
     function bulkJobCancel(id) {
       const job = _bulkQueue.find((j) => j.id === id);
       if (!job) return;
-      if (job.status === "running") { if (_bulkJobAbort) { try { _bulkJobAbort.abort(); } catch (e) { /* already */ } } }
+      if (job.status === "running") {
+        if (job.stopping) return;  // already asked
+        job.stopping = true;       // the next run starts only once this one has really ended on the server
+        if (job.taskId) _stopServerRun(job.taskId).then((ok) => { if (!ok) job.stopping = false; _bulkRenderQueue(); });
+      }
       else if (job.status === "queued") { job.status = "cancelled"; }
       _bulkRenderQueue();
     }
@@ -3427,11 +3455,11 @@
       if (job.status === "queued") state = `<span class="chip">${esc(t("Queued"))}</span>`;
       else if (job.status === "running") {
         const head = job.total ? `${job.done}/${job.total}` : t("starting…");
-        state = `<span class="chip" style="background:var(--accent);color:#fff">${esc(t("Running"))} ${esc(head)}</span> <span class="muted">${esc(tally)}</span>`;
+        state = `<span class="chip" style="background:var(--accent);color:#fff">${esc(t(job.stopping ? "Stopping…" : "Running"))} ${esc(head)}</span> <span class="muted">${esc(tally)}</span>`;
       } else if (job.status === "done") state = `<b>${esc(t("Done."))}</b> <span class="muted">${esc(tally)}</span>`;
       else if (job.status === "cancelled") state = `<span class="muted">${esc(t("Cancelled."))}</span>`;
       else if (job.status === "error") state = `<span class="note err">${esc(t("Stopped:"))} ${esc(job.err)}</span> <span class="muted">${esc(tally)}</span>`;
-      const cancel = (job.status === "queued" || job.status === "running")
+      const cancel = (job.status === "queued" || (job.status === "running" && !job.stopping))
         ? `<button class="ghost tiny" data-on-click="bulkJobCancel(${job.id})" style="margin-inline-start:auto">${esc(t("Cancel"))}</button>` : "";
       return `<div class="row" style="gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
         <span style="font-weight:600">${esc(job.label)}</span> ${state} ${cancel}</div>`;
@@ -3453,7 +3481,7 @@
 
     // --- Run a user-defined custom extractor over the analysis OR search selection (the
     // on-demand path for the #386 managed list). ``ctx`` is "an" or "search" (mirrors
-    // bulkLlm): same selection (_bulkParams), same NDJSON stream + abort (_bulkAbort /
+    // bulkLlm): same selection (_bulkParams), same NDJSON stream + stop (_aiRuns /
     // bulkLlmStop), ctx-scoped element ids so both surfaces can be open at once. Results
     // store as ai_keyword rows of the prompt's kind — AI-derived, labelled unreliable,
     // NEVER the trusted keyword index (the backend writes ai_keyword, not KeywordMention). //
@@ -3508,16 +3536,20 @@
         if (p.get("start_date")) body.start_date = p.get("start_date");
         if (p.get("end_date")) body.end_date = p.get("end_date");
       }
+      // One run per panel: a Cancel ends a run only once the server has finished the article in flight, and a reopened
+      // panel's fresh Start must not launch a second model run beside it.
+      if (_aiRuns[ctx]) { if (prog) prog.textContent = t(_aiRuns[ctx].stopping ? "Stopping…" : "Running"); return; }
+      const run = { task: null, stopping: false };
+      _aiRuns[ctx] = run;
       if (startBtn) startBtn.disabled = true;
       if (prog) prog.textContent = t("Starting…");
-      _bulkAbort = ("AbortController" in window) ? new AbortController() : null;
       let done = 0, total = 0;
       try {
         const url = (id === "builtin")
           ? "/api/ai/keywords/extract" : `/api/ai/prompts/${id}/run`;
         const resp = await fetch(url, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body), signal: _bulkAbort ? _bulkAbort.signal : undefined,
+          body: JSON.stringify(body),
         });
         if (!resp.ok || !resp.body) {
           let detail = "HTTP " + resp.status;
@@ -3525,6 +3557,8 @@
           if (prog) prog.innerHTML = `<span class="note err">${esc(detail)}</span>`;
           if (startBtn) startBtn.disabled = false; return;
         }
+        run.task = resp.headers.get("X-OO-Task");
+        if (run.stopping && !(await _stopServerRun(run.task))) run.stopping = false;  // Cancel pressed before the response began
         const reader = resp.body.getReader(), dec = new TextDecoder(); let buf = "";
         for (;;) {
           const { done: fin, value } = await reader.read();
@@ -3541,7 +3575,9 @@
               done++;
               if (prog) prog.textContent = t("Processing") + " " + done + "/" + total + "…";
             } else if (o.event === "done") {
-              if (o.aborted) {
+              if (o.aborted && run.stopping && o.reason === _STOPPED_REASON) {
+                if (prog) prog.textContent = t("Cancelled.");
+              } else if (o.aborted) {
                 if (prog) prog.innerHTML = `<span class="note err">${esc(t("Stopped:"))} ${esc(o.reason || "")}</span>`;
               } else if (prog) {
                 const tally = `${o.terms || 0} ${t("items")} · ${o.stored || 0} ${t("stored")} · `
@@ -3556,7 +3592,8 @@
         if (e && e.name === "AbortError") { if (prog) prog.textContent = t("Cancelled."); }
         else if (prog) prog.innerHTML = `<span class="note err">${esc(e.message)}</span>`;
       } finally {
-        if (startBtn) startBtn.disabled = false; _bulkAbort = null;
+        if (startBtn) startBtn.disabled = false;
+        if (_aiRuns[ctx] === run) delete _aiRuns[ctx];
         loadLlmHealth();
       }
     }

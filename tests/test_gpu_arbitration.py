@@ -38,6 +38,13 @@ def _isolate_venv(tmp_path, monkeypatch):
     so a fake process left alive by one test does not make the next one read as
     "already running"."""
     monkeypatch.setenv("OO_VLLM_VENV_DIR", str(tmp_path / "vllm_venv"))
+    # start() asks vLLM's real port whether something holds it before it spawns. The port
+    # is not this file's subject, and a test on a parallel worker (or a developer's own
+    # server) can hold it, so the probe answers "free" here. The port refusal is
+    # tests/test_vllm_port_collision.py's subject.
+    monkeypatch.setattr(
+        V, "port_occupant", lambda **kw: {"state": "free", "port": 0, "detail": "stubbed: free"}
+    )
     V._proc = None
     V._history_disabled = False
     V._history_disabled_reason = None

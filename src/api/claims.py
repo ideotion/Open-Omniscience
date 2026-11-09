@@ -68,6 +68,13 @@ class TrailBundleRequest(BaseModel):
 #: articles; this is far above any honest one and keeps a stray upload from filling memory.
 MAX_VERIFY_BYTES = 256 * 1024 * 1024
 
+#: The body types the verify endpoint reads (R315, OPEN_QUEUE item 14, option 1). Anything else,
+#: and a POST with no Content-Type, answers 415 before the body is read: ``text/plain``,
+#: ``application/x-www-form-urlencoded`` and ``multipart/form-data`` are the types a browser sends
+#: cross-site without a preflight, so they never reach the ZIP parser. The Claim tab sends
+#: ``application/zip``; ``application/octet-stream`` is what a generic client sends for a file.
+VERIFY_CONTENT_TYPES = frozenset({"application/zip", "application/octet-stream"})
+
 
 @router.post("/trail-bundle")
 def claim_trail_bundle(req: TrailBundleRequest, db: Session = Depends(get_db)) -> dict:
@@ -89,11 +96,18 @@ def claim_trail_bundle(req: TrailBundleRequest, db: Session = Depends(get_db)) -
 @router.post("/trail-bundle/verify")
 async def verify_claim_trail_bundle(request: Request) -> dict:
     """Check a trail bundle posted as the raw ZIP body. Needs no database; the signature is
-    checked against the key the bundle carries (``key_checked`` says so)."""
+    checked against the key the bundle carries (``key_checked`` says so). The body must be
+    sent as ``application/zip`` or ``application/octet-stream`` (415 otherwise)."""
     from starlette.concurrency import run_in_threadpool
 
     from src.analytics.claim_bundle import verify_trail_bundle
 
+    media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if media_type not in VERIFY_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=415,
+            detail="send the bundle as application/zip or application/octet-stream",
+        )
     data = await request.body()
     if not data:
         raise HTTPException(status_code=400, detail="no file was sent")
