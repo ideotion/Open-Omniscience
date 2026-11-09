@@ -303,6 +303,11 @@ def _end_read(conn: Connection) -> None:
         conn.commit()
 
 
+def _day(value: Any) -> date:
+    """A day from a stored ``observed_on``: the first ten characters, so a value that ever carries a time part is still its day."""
+    return value if isinstance(value, date) and not isinstance(value, datetime) else date.fromisoformat(str(value)[:10])
+
+
 def _iso(d: Any) -> str:
     return d.isoformat() if isinstance(d, date) else str(d)
 
@@ -386,8 +391,8 @@ def build(engine: Engine, ctx: JobContext | None = None) -> dict[str, Any]:
             bounds = conn.exec_driver_sql(
                 "SELECT min(observed_on), max(observed_on) FROM keyword_mentions_all WHERE observed_on IS NOT NULL"
             ).fetchone()
-            first = date.fromisoformat(str(bounds[0])) if bounds and bounds[0] else None
-            last = date.fromisoformat(str(bounds[1])) if bounds and bounds[1] else None
+            first = _day(bounds[0]) if bounds and bounds[0] else None
+            last = _day(bounds[1]) if bounds and bounds[1] else None
             span = ((last - first).days + 1) if first and last else 0
             days = 0
             while True:
@@ -411,7 +416,7 @@ def build(engine: Engine, ctx: JobContext | None = None) -> dict[str, Any]:
                 cursor = day
                 days += 1
                 if ctx is not None and first is not None:
-                    at = (date.fromisoformat(day) - first).days + 1
+                    at = (_day(day) - first).days + 1
                     at = max(1, min(at, max(span, at)))
                     ctx.set_progress(
                         done=at, total=max(span, at),
@@ -502,6 +507,28 @@ def fold_tail(engine: Engine, *, should_stop=None) -> dict[str, Any]:
         _WORK.release()
 
 
+def drop_keywords(session: Session, keyword_ids: list[int]) -> int:
+    """R632: the prune's own step, in ITS transaction (the caller holds the writer gate and commits): delete the day-count
+    rows of keywords it is deleting, and return how many of them counted a mention. A keyword is pruned only when it has
+    no mention left, so the answer is 0 whenever the counts are right; anything else means they were not, and the caller
+    bumps the corpus epoch so they are rebuilt (fails closed)."""
+    if not keyword_ids:
+        return 0
+    conn = session.connection()
+    if conn.exec_driver_sql("SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?", (TABLE,)).fetchone() is None:
+        return 0  # a store from before the table: nothing to drop, nothing wrong
+    holes = ",".join("?" for _ in keyword_ids)
+    counted = int(
+        conn.exec_driver_sql(
+            f"SELECT count(*) FROM {TABLE} WHERE keyword_id IN ({holes}) AND mentions <> 0",  # nosec B608 - placeholders only
+            tuple(keyword_ids),
+        ).scalar()
+        or 0
+    )
+    conn.exec_driver_sql(f"DELETE FROM {TABLE} WHERE keyword_id IN ({holes})", tuple(keyword_ids))  # nosec B608 - placeholders only
+    return counted
+
+
 # --------------------------------------------------------------------------------------------- serve
 
 
@@ -509,11 +536,15 @@ def _memo(session: Session) -> dict:
     return session.info.setdefault("keyword_day_counts", {})
 
 
-def windowed_counts(session: Session, *, lo: date, hi: date) -> dict[int, int] | None:
+def windowed_counts(session: Session, *, lo: date, hi: date, deadline: float | None = None) -> dict[int, int] | None:
     """``{keyword_id: SUM(count)}`` over the INCLUSIVE day range ``[lo, hi]`` (the rollup's convention), or
     ``None`` to read live. Read-only. Exact: the window's stale days are summed live, the others come from the
     table. Within one session the live sums of a day and the tail's days are computed once (``trending_windows``
-    asks for six windows in one request)."""
+    asks for six windows in one request).
+
+    ``deadline`` (a ``time.monotonic()`` instant, trending's ``read_deadline``) bounds the live per-day reads: once it
+    has passed, the answer is ``None``, and trending's live path then reports the window as over budget (a partial
+    Home answer) instead of running into the statement deadline."""
     try:
         conn = session.connection()
         if current(conn) is not None:
@@ -558,6 +589,8 @@ def windowed_counts(session: Session, *, lo: date, hi: date) -> dict[int, int] |
             ).fetchall()
         }
         for day in stale:
+            if deadline is not None and time.monotonic() >= deadline:
+                return None
             dkey = ("day", day, m)
             live = memo.get(dkey)
             if live is None:
@@ -649,6 +682,7 @@ __all__ = [
     "basis",
     "build",
     "current",
+    "drop_keywords",
     "ensure_day_counts",
     "fold_tail",
     "install",

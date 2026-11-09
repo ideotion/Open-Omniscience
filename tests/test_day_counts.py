@@ -24,7 +24,7 @@ from src.analytics import day_counts
 from src.analytics.corpus_epoch import CORPUS_EPOCH_KEY, get_corpus_epoch
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article, prune_orphan_keywords, reindex_articles
-from src.database.models import Article, Base, DerivedMeta, Keyword, Source
+from src.database.models import Article, Base, DerivedMeta, Keyword, KeywordMention, Source
 
 LO, HI = date(2026, 1, 1), date(2026, 12, 31)
 
@@ -545,3 +545,137 @@ def test_salvage_writes_the_same_unbuilt_mark():
 
     body = " ".join(inspect.getsource(salvage.Salvage._finish).split()).replace('" "', "")
     assert " ".join(day_counts.UNBUILT_SQL.split()) in body  # salvage knows no app module, so it carries a copy
+
+
+# --------------------------------------------------------------------------- Steward 1's read (2026-11-09): the wiring
+
+
+def test_init_db_installs_the_triggers_and_the_state_row():
+    from src.database import session as db_session
+
+    db_session.init_db()
+    with db_session.engine.connect() as conn:
+        names = {r[0] for r in conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='trigger'")}
+        assert set(day_counts.TRIGGERS) <= names
+        assert conn.exec_driver_sql("SELECT count(*) FROM keyword_day_state WHERE id = 1").scalar() == 1
+
+
+def test_the_idle_maintenance_folds_the_counts(monkeypatch):
+    from src.database.session import init_db
+    from src.scheduler import maintenance as maint
+
+    init_db()
+    seen: list = []
+    monkeypatch.setattr(maint, "_backlog_busy_reason", lambda: None)
+    monkeypatch.setattr(day_counts, "fold_tail", lambda engine, should_stop=None: seen.append(engine) or {"days": 0})
+    out = maint.run_idle_maintenance()
+    assert out["day_counts"] == {"days": 0} and len(seen) == 1
+
+
+def test_the_idle_maintenance_stands_back_while_a_rewrite_runs(monkeypatch):
+    from src.database.session import init_db
+    from src.scheduler import maintenance as maint
+
+    init_db()
+    monkeypatch.setattr(maint, "_backlog_busy_reason", lambda: "reindex_running")
+    monkeypatch.setattr(day_counts, "fold_tail", lambda *a, **k: pytest.fail("folded during a re-index"))
+    assert maint.run_idle_maintenance()["day_counts"] == {"skipped": "reindex_running"}
+
+
+def test_the_boot_queues_the_build_unless_a_reindex_resumes(monkeypatch):
+    from src.api import boot_sequence as bs
+    from src.backup import volume_job
+
+    seen: list[str] = []
+    monkeypatch.setenv("OO_NO_SCHEDULER", "0")
+    monkeypatch.delenv("OO_DAY_COUNTS_AUTOBUILD", raising=False)
+    monkeypatch.setenv("OO_TITLE_INDEX_AUTOBUILD", "0")
+    monkeypatch.setattr(day_counts, "start_build_if_needed", lambda engine=None: seen.append("queued") or "started")
+    monkeypatch.setattr(volume_job, "start_reindex_drain", lambda: (False, "test"))
+    bs._reset()
+    with pytest.raises(bs._Skipped):
+        bs._start_reindex()  # no re-index pending
+    assert seen == ["queued"]
+    bs._reset()
+    monkeypatch.setitem(bs._STATE, "reindex_pending", 12)  # restored after the test
+    with pytest.raises(bs._Skipped):
+        bs._start_reindex()  # a re-index resumes: its drain would move the epoch under the build
+    assert seen == ["queued"]
+    bs._reset()
+    monkeypatch.setenv("OO_DAY_COUNTS_AUTOBUILD", "0")
+    bs._queue_day_counts()
+    assert seen == ["queued"]
+
+
+def test_the_serve_gives_up_at_trendings_read_deadline(tmp_path):
+    import time
+
+    eng, s, ex = _corpus(tmp_path)
+    _build(eng)
+    _add(s, ex, 801, 2)  # one stale day to read live
+    s.info.pop("keyword_day_counts", None)
+    assert day_counts.windowed_counts(s, lo=LO, hi=HI, deadline=time.monotonic() - 1) is None
+    s.info.pop("keyword_day_counts", None)
+    assert day_counts.windowed_counts(s, lo=LO, hi=HI, deadline=time.monotonic() + 60) == _live(s)
+
+
+def test_an_observed_on_with_a_time_part_is_still_its_day():
+    assert day_counts._day("2026-03-02 00:00:00.000000") == date(2026, 3, 2)
+    assert day_counts._day(date(2026, 3, 2)) == date(2026, 3, 2)
+
+
+# --------------------------------------------------------------------------- R632: the prune leaves the epoch alone
+
+
+def test_a_prune_of_mention_less_keywords_changes_no_sum_and_rebuilds_nothing(tmp_path):
+    eng, s, _ex = _corpus(tmp_path)
+    _build(eng)
+    top = s.query(Keyword).order_by(Keyword.id.desc()).first().id
+    s.add(Keyword(id=top + 10, term="zz-orphan", normalized_term="zz-orphan"))  # a mention-less keyword...
+    s.commit()
+    s.add(Keyword(id=top + 20, term="zz-keeper", normalized_term="zz-keeper"))  # ...below the top id, so no id is freed
+    s.commit()
+    s.add(KeywordMention(keyword_id=top + 20, article_id=s.query(Article.id).first()[0], count=1, observed_on=date(2026, 3, 1)))
+    s.commit()
+    day_counts.fold_tail(eng)
+    e0, before = get_corpus_epoch(s), _table_rows(eng)
+    r = prune_orphan_keywords(s)
+    s.commit()
+    assert r["pruned"] == 1 and r["epoch_bumped"] is False
+    assert get_corpus_epoch(s) == e0  # no rebuild
+    assert _table_rows(eng) == before  # the sums are unchanged
+    with eng.connect() as conn:
+        assert day_counts.current(conn) is None
+    _exact(s)
+
+
+def test_a_prune_fails_closed_when_the_counts_still_counted_the_keyword(tmp_path):
+    eng, s, _ex = _corpus(tmp_path)
+    _build(eng)
+    top = s.query(Keyword).order_by(Keyword.id.desc()).first().id
+    s.add(Keyword(id=top + 10, term="zz-orphan", normalized_term="zz-orphan"))
+    s.add(Keyword(id=top + 20, term="zz-keeper", normalized_term="zz-keeper"))
+    s.commit()
+    s.add(KeywordMention(keyword_id=top + 20, article_id=s.query(Article.id).first()[0], count=1, observed_on=date(2026, 3, 1)))
+    s.commit()
+    day_counts.fold_tail(eng)
+    with eng.connect() as conn:  # counts that are wrong: they count the orphan
+        conn.exec_driver_sql("INSERT INTO keyword_day_counts VALUES ('2026-03-01', ?, 3)", (top + 10,))
+        conn.commit()
+    e0 = get_corpus_epoch(s)
+    r = prune_orphan_keywords(s)
+    assert r["pruned"] == 1 and r["epoch_bumped"] is True
+    assert get_corpus_epoch(s) == e0 + 1  # the counts are rebuilt
+    with eng.connect() as conn:
+        assert conn.exec_driver_sql("SELECT count(*) FROM keyword_day_counts WHERE keyword_id = ?", (top + 10,)).scalar() == 0
+
+
+def test_a_prune_of_the_top_keyword_id_still_bumps_the_epoch(tmp_path):
+    """The id SQLite would give the next new keyword: the columnar rollup's keyword_meta would keep the old term."""
+    eng, s, _ex = _corpus(tmp_path)
+    top = s.query(Keyword).order_by(Keyword.id.desc()).first().id
+    s.add(Keyword(id=top + 10, term="zz-orphan", normalized_term="zz-orphan"))
+    s.commit()
+    e0 = get_corpus_epoch(s)
+    r = prune_orphan_keywords(s)
+    assert r["pruned"] == 1 and r["epoch_bumped"] is True and get_corpus_epoch(s) == e0 + 1

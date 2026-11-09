@@ -377,10 +377,13 @@ def _queue_day_counts() -> None:
 
 def _start_reindex() -> None:
     _queue_title_index()
-    _queue_day_counts()
     with _LOCK:
         pending = _STATE["reindex_pending"]
     if pending is None:
+        # Not while a re-index resumes: its drain bumps the corpus epoch every batch, so a build started now would end
+        # "epoch-moved" and be thrown away. The idle maintenance starts it once the drain is over (it stands back while
+        # a re-index runs, the same rule).
+        _queue_day_counts()
         raise _Skipped
     from src.backup.volume_job import start_reindex_drain
 

@@ -2698,8 +2698,11 @@ def trending(
     if not country and not _served:
         from src.analytics import day_counts
 
-        _r = day_counts.windowed_counts(session, lo=w_start, hi=w_end - timedelta(days=1))
-        _p = None if _r is None else day_counts.windowed_counts(session, lo=b_start, hi=w_start - timedelta(days=1))
+        _r = day_counts.windowed_counts(session, lo=w_start, hi=w_end - timedelta(days=1), deadline=read_deadline)
+        _p = (
+            None if _r is None
+            else day_counts.windowed_counts(session, lo=b_start, hi=w_start - timedelta(days=1), deadline=read_deadline)
+        )
         if _r is not None and _p is not None:
             recent, prior, _served, _served_days = _r, _p, True, True
             recent_keywords = len(recent)

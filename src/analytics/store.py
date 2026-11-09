@@ -25,7 +25,7 @@ from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from sqlalchemy import Table, bindparam, delete, insert, select, text, update
+from sqlalchemy import Table, bindparam, delete, func, insert, select, text, update
 from sqlalchemy.orm import Session
 
 from src.analytics.baseline import baseline_tags
@@ -2004,14 +2004,11 @@ def prune_orphan_keywords(session: Session, *, chunk: int = 500, budget_s: float
                         kept_curated += 1
                     else:
                         prunable.append(kid)
-        # Pruning DELETES mention-less keyword rows, so the disposable columnar rollup
-        # must FULL-rebuild rather than incrementally merge (the D3 double-count guard).
-        # Bump once per pass, before the first delete, only when something is pruned.
-        if prunable and not epoch_bumped:
-            from src.analytics.corpus_epoch import bump_corpus_epoch
-
-            bump_corpus_epoch(session, reason="prune_orphan_keywords")
-            epoch_bumped = True
+        # R632: a pruned keyword has no mention, so no count anywhere includes it and the prune leaves the corpus epoch
+        # alone (it used to bump it once per pass, which rebuilt the per-day keyword counts and the columnar rollup every
+        # 12 h for nothing). It bumps it, failing closed, in the two cases where something derived could still be wrong:
+        # a deleted keyword the per-day counts still counted (they were not right), and a deleted keyword id above every
+        # id left (SQLite gives that id to the next new keyword, and the rollup's keyword_meta would keep the old term).
         # One hold of the gate PER CHUNK, the connection checked out first: the commit that ends a chunk gives the session's connection
         # back to the pool, so a hold across the chunks took the pool again UNDER the gate for every chunk after the first (a pool
         # timeout with the gate held and the write queue behind it). The ids were decided before the first chunk, and a writer can run
@@ -2039,6 +2036,19 @@ def prune_orphan_keywords(session: Session, *, chunk: int = 500, budget_s: float
                             .delete(synchronize_session=False)
                             or 0
                         )
+                        from src.analytics import day_counts
+
+                        counted = day_counts.drop_keywords(session, batch)  # R632: in this transaction
+                        top = session.query(func.max(Keyword.id)).scalar() or 0
+                        if not epoch_bumped and (counted or max(batch) > top):
+                            from src.analytics.corpus_epoch import bump_corpus_epoch
+
+                            # commits the chunk with it, still under the gate
+                            bump_corpus_epoch(
+                                session,
+                                reason="prune_orphan_keywords: " + ("counted keyword" if counted else "top keyword id"),
+                            )
+                            epoch_bumped = True
                     session.commit()
             except Exception as exc:  # noqa: BLE001 - one bad chunk must not abort the GC
                 session.rollback()
@@ -2058,6 +2068,7 @@ def prune_orphan_keywords(session: Session, *, chunk: int = 500, budget_s: float
         "orphans": orphans,
         "pruned": int(pruned),
         "kept_curated": kept_curated,
+        "epoch_bumped": epoch_bumped,
         "complete": complete,
         "resumed_from_id": resumed_from,
         "cursor_id": 0 if complete else after_id,
