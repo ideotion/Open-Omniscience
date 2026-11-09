@@ -34,8 +34,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, Source
-from src.ingest import EthicalFetcher
-from src.ingest.crawl import CrawlConfig, _registrable_host, crawl_source
+from src.ingest import EthicalFetcher, _host_netloc
+from src.ingest.crawl import CrawlConfig, _off_site, _registrable_host, crawl_source
+from src.ingest.fetch_verdict import failure_url
 from src.ingest.sitemap import discover_sitemap_urls
 
 _EVIL = "evil.example"
@@ -133,7 +134,9 @@ _SAME_SITE = [
     "https://www.good.example/x",
     "/x",
 ]
-# A real userinfo for the SAME host: the old cut read it as the host ``u`` and refused it (not a control: it changed).
+# A userinfo for the SAME host. The old cut read it as the host ``u`` and refused it; the host key reads good.example, but a
+# netloc holding an ``@`` stays OFF the site (the independent read's S1): following it would send the userinfo as a login and
+# store it in the article and canonical URLs, so it is refused as before, now for that reason.
 _SAME_HOST_USERINFO = [
     "https://u:p@good.example/x",
     "https://u@good.example/x",
@@ -185,7 +188,25 @@ def test_control_a_plain_host_reads_as_before(netloc, host):
 def test_a_netloc_urllib_cannot_read_again_never_raises_and_names_no_site():
     # urlsplit refuses a lone bracket after the @; the key comes back as written, and must not raise out of the crawl
     assert _registrable_host("u@good.example]") not in ("", "good.example")
+    assert _registrable_host("u@GOOD.example:7]") == "GOOD.example:7]"  # exactly as written: never lower-cased or cut to a site
     assert _registrable_host("") == ""  # no host at all: no site, and no exception
+
+
+@pytest.mark.parametrize("netloc", ["u:p@good.example", "u@good.example", "u:p@www.good.example:8443", "@good.example"])
+def test_a_netloc_holding_an_at_is_off_the_site_even_when_its_host_is_the_site(netloc):
+    assert _registrable_host(netloc) == "good.example"  # the host is read right
+    assert _off_site(netloc, "good.example")  # and the link is still not the site's to follow
+
+
+@pytest.mark.parametrize("netloc", ["good.example", "GOOD.example:443", "www.good.example:8443"])
+def test_control_a_plain_netloc_of_the_site_is_on_it(netloc):
+    assert not _off_site(netloc, "good.example")
+
+
+@pytest.mark.parametrize("netloc, scheme", [("good.example:0", "https"), ("good.example:0", "http"), ("good.example:00", ""), ("good.example:0", "")])
+def test_port_zero_is_the_default_port_in_the_host_key(netloc, scheme):
+    # requests drops ``:0`` and connects to the scheme's default, so the key must not make it a host of its own
+    assert _host_netloc(netloc, scheme) == "good.example"
 
 
 # --------------------------------------------------------------------------- #
@@ -233,12 +254,11 @@ def test_control_crawl_follows_the_same_site_however_it_is_spelled(db, source, l
 
 
 @pytest.mark.parametrize("link", _SAME_HOST_USERINFO)
-def test_crawl_follows_a_real_userinfo_for_the_same_host(db, source, link):
-    # the old cut read these as the host "u": a link the site wrote to itself was refused as off the site
-    sess, report, target = _crawl(db, source, link)
-    assert target in sess.fetched
-    assert report.tally["stored"] == 1
-    assert _EVIL not in _hosts(sess)
+def test_crawl_never_follows_a_link_that_carries_a_userinfo_for_the_same_host(db, source, link):
+    sess, _report, target = _crawl(db, source, link)
+    assert target not in sess.fetched  # the userinfo is never sent to the site as a login
+    assert db.query(Article).count() == 0
+    assert not [u for u in sess.fetched if "@" in u]
 
 
 def test_crawl_keeps_two_ipv6_hosts_apart(db, source):
@@ -260,12 +280,15 @@ def test_crawl_from_a_credentialed_start_stays_on_its_host(db, source):
     sess = _Session()
     sess.route("https://good.example/robots.txt", status_code=404, text="")
     sess.route(f"https://{_EVIL}/robots.txt", status_code=404, text="")
-    sess.route(start, text=_page("Home", "x", links=[("https://good.example/a", "a"), ("https://u:z@evil.example/b", "b")]))
+    links = [("https://good.example/a", "a"), ("https://u:z@evil.example/b", "b"), ("https://u:q@good.example/c", "c")]
+    sess.route(start, text=_page("Home", "x", links=links))
     sess.route("https://good.example/a", text=_page("A", "A real article body, long enough to be stored."))
     sess.route("https://u:z@evil.example/b", text=_page("B", "A real article body, long enough to be stored."))
+    sess.route("https://u:q@good.example/c", text=_page("C", "A real article body, long enough to be stored."))
     crawl_source(db, source, fetcher=_fetcher(sess), config=CrawlConfig(max_depth=1, max_pages=50), start_url=start)
-    assert "https://good.example/a" in sess.fetched
+    assert "https://good.example/a" in sess.fetched  # the start's own host is still read through the key
     assert _EVIL not in _hosts(sess)
+    assert "https://u:q@good.example/c" not in sess.fetched  # a harvested link's userinfo is never followed
 
 
 # --------------------------------------------------------------------------- #
@@ -310,7 +333,7 @@ _URLSET_OWN = _urlset(_OWN)
 @pytest.mark.parametrize("link", _BUG)
 def test_sitemap_does_not_follow_a_child_that_only_looks_like_the_site(link):
     sess, report, child = _discover(link)
-    assert child in report.skipped_off_host
+    assert failure_url(child) in report.skipped_off_host  # written masked (R621)
     assert child not in sess.fetched
     assert _EVIL not in _hosts(sess)
     assert _PLANTED not in report.urls
@@ -323,7 +346,8 @@ def test_sitemap_never_requests_the_variants(link):
     assert _EVIL not in _hosts(sess)
     assert report.urls == []
     # reported either way: as off the site, or as the fetcher's refusal
-    assert child in report.skipped_off_host or any(e.startswith(child) for e in report.errors)
+    shown = failure_url(child)
+    assert shown in report.skipped_off_host or any(e.startswith(shown) for e in report.errors)
 
 
 @pytest.mark.parametrize("link", [u for u in _SAME_SITE if "://" in u])
@@ -335,9 +359,33 @@ def test_control_sitemap_follows_a_child_on_the_same_site(link):
 
 
 @pytest.mark.parametrize("link", _SAME_HOST_USERINFO)
-def test_sitemap_follows_a_child_with_a_real_userinfo_for_the_same_host(link):
-    # the old cut read these as the host "u" and reported the site's own child as off it
+def test_sitemap_never_follows_a_child_that_carries_a_userinfo_for_the_same_host(link):
     sess, report, child = _discover(link)
-    assert child in sess.fetched
-    assert child not in report.skipped_off_host
+    assert child not in sess.fetched
+    assert failure_url(child) in report.skipped_off_host and "p@" not in " ".join(report.skipped_off_host)
+    assert report.urls == []
+
+
+def test_a_credentialed_sitemap_declared_in_robots_is_never_fetched_saved_or_written():
+    # the independent read's measured case: robots.txt declares a sitemap with a login in it
+    declared = "https://bot:s3cret-FAKE@good.example/sitemap.xml"
+    sess = _Session()
+    sess.route("https://good.example/robots.txt", text=f"User-agent: *\nAllow: /\nSitemap: {declared}\n", content_type="text/plain")
+    sess.route(declared, text=_URLSET_OWN, content_type="text/xml")
+    report = discover_sitemap_urls(_fetcher(sess), "good.example")
+    assert declared not in sess.fetched
+    assert report.root_sitemap_url is None  # nothing for update_source_sitemap_url to save
+    assert "s3cret" not in repr(report)
+    assert failure_url(declared) in report.skipped_off_host
+
+
+def test_a_www_source_domain_reads_its_children_on_the_bare_host_as_its_own():
+    # the base host goes through the same www. strip as each child
+    sess = _Session()
+    sess.route("https://www.good.example/robots.txt", status_code=404, text="")
+    sess.route("https://www.good.example/sitemap.xml", text=_index("https://good.example/sitemap-child.xml"), content_type="text/xml")
+    sess.route("https://good.example/robots.txt", status_code=404, text="")
+    sess.route("https://good.example/sitemap-child.xml", text=_URLSET_OWN, content_type="text/xml")
+    report = discover_sitemap_urls(_fetcher(sess), "www.good.example")
+    assert "https://good.example/sitemap-child.xml" in sess.fetched
     assert report.urls == [_OWN]

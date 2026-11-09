@@ -126,9 +126,21 @@ def _registrable_host(netloc: str) -> str:
     key = _host_netloc(netloc)
     try:
         host = urlsplit("//" + key).hostname or ""
-    except ValueError:
+    except ValueError:  # a defence: on Python 3.13 the callers' own urlparse already raises on what would reach it
         host = key
     return host[4:] if host.startswith("www.") else host
+
+
+def _off_site(netloc: str, base_host: str) -> bool:
+    """Whether a harvested link or a child sitemap with ``netloc`` is outside the site ``base_host`` (R624).
+
+    A netloc holding an ``@`` is ALWAYS off-site, even when the host after it is the site: following it would send that
+    userinfo to the site as a login (requests turns it into an ``Authorization`` header) and write it into the stored article
+    URL, the canonical URL and a saved sitemap address (the independent read of R624, S1). The fetcher's other lane already
+    refuses any userinfo (``src/safety/fetcher.py``), and before R624 such a link read as the host ``u`` and was never followed.
+    The site's own host, read from the start URL or the source's domain, still goes through :func:`_registrable_host`, so a
+    start URL the operator wrote with a login keeps its host."""
+    return "@" in netloc or _registrable_host(netloc) != base_host
 
 
 def _harvest_links(html: str, base_url: str) -> list[str]:
@@ -221,7 +233,7 @@ def crawl_source(
             if depth >= cfg.max_depth:
                 continue
             for link in _harvest_links(fetched.content, fetched.final_url):
-                if cfg.same_domain_only and _registrable_host(urlparse(link).netloc) != base_host:
+                if cfg.same_domain_only and _off_site(urlparse(link).netloc, base_host):
                     continue
                 canon = canonicalize_url(link)
                 if canon in queued:
