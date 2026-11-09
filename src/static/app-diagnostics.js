@@ -243,11 +243,20 @@
     // THE THOROUGH BOX WARNS BEFORE IT PAUSES COLLECTION (R459, F9 of the 2026-11-07 Windows run: 53 minutes on a large corpus). The line is
     // visible while the box is ticked, never behind a hover: the expected time comes from /api/diagnostics/all-job/estimate (this machine's own
     // scan times scaled by its mention rows, the field medians for a scan never timed here) and says how much of it is measured here.
-    function _thoroughNoteText(est) {
+    function _thoroughNoteText(est, limitMin) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s2, v) => String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
       const th = est && est.thorough;
+      // S3: an operator limit shorter than the estimate (or with no estimate) is the pause the person will see, so it is what
+      // the note states, with the few seconds a stopped scan takes to save its place.
+      const known = th && typeof th.est_s === "number" && th.scans > 0;
+      if (limitMin > 0 && Number.isFinite(limitMin * 60) && (!known || limitMin < th.est_s / 60)) {
+        return tf(
+          "With your limit, Thorough pauses collection for at most about {limit} min, plus up to 15 s while a stopped scan saves its place; scans not reached are named in the file.",
+          {limit: Math.max(1, Math.round(limitMin))}
+        );
+      }
       if (!th || typeof th.est_s !== "number" || !(th.scans > 0)) {
         return t("Thorough pauses collection while every scan runs, each up to five minutes; this machine could not give an expected time.");
       }
@@ -260,18 +269,37 @@
       const note = $("diag-thorough-note");
       const box = $("diag-thorough");
       if (!note || !box) return;
+      // S3: the operator's scan budget is offered only beside a ticked Thorough box (Quick has its own budget).
+      const budgetWrap = $("diag-budget-wrap");
+      if (budgetWrap) budgetWrap.hidden = !box.checked;
       if (!box.checked) { note.hidden = true; note.textContent = ""; return; }
       let est = null;
       try { est = await api("/api/diagnostics/all-job/estimate"); } catch (_e) { est = null; }
       if (!box.checked) return;   // unticked while the estimate was coming
-      note.textContent = _thoroughNoteText(est);
+      _thoroughEst = est;
+      _repaintThoroughLimit();
+    }
+    let _thoroughEst = null;
+    function _repaintThoroughLimit() {
+      const note = $("diag-thorough-note");
+      const box = $("diag-thorough");
+      if (!note || !box || !box.checked) return;
+      const budgetEl = $("diag-budget-min");
+      const raw = budgetEl ? String(budgetEl.value || "").trim() : "";
+      note.textContent = _thoroughNoteText(_thoroughEst, raw ? Number(raw) : 0);
       note.hidden = false;
     }
     let _thoroughNoteBound = false;
     async function diagnosticsPanelOpened() {
       const box = $("diag-thorough");
       if (box) box.checked = false;
-      if (box && !_thoroughNoteBound) { _thoroughNoteBound = true; box.addEventListener("change", paintThoroughNote); }
+      const budgetEl = $("diag-budget-min");
+      if (budgetEl) budgetEl.value = "";   // per run, never remembered (the box's own rule)
+      if (box && !_thoroughNoteBound) {
+        _thoroughNoteBound = true;
+        box.addEventListener("change", paintThoroughNote);
+        if (budgetEl) budgetEl.addEventListener("input", _repaintThoroughLimit);   // the estimate is not fetched again per key
+      }
       paintThoroughNote();
       try {
         const s = await api("/api/diagnostics/all-job/status");
@@ -1210,12 +1238,21 @@
         // panel opens (R124). The profile is not sent: the panel has no light bundle since R122.
         const thoroughEl = $("diag-thorough");
         const mode = (thoroughEl && thoroughEl.checked) ? "thorough" : "quick";
+        // S3: the operator's budget rides the start call too, Thorough only. An entry that is not a number of minutes above
+        // zero is said so here and the build is not started, rather than read as "no limit" (the backend refuses it with 400).
+        const budgetEl = $("diag-budget-min");
+        const budgetRaw = (mode === "thorough" && budgetEl) ? String(budgetEl.value || "").trim() : "";
+        if (budgetRaw && !(Number(budgetRaw) > 0 && Number.isFinite(Number(budgetRaw) * 60))) {
+          set(t("The scan time limit must be a number of minutes above zero, or blank for none."));
+          return;   // the finally below gives the button back
+        }
+        const budgetQs = budgetRaw ? "&budget_min=" + encodeURIComponent(budgetRaw) : "";
         // ``started: false`` is a build that was ALREADY running (another tab, the API, or this page before a reload):
         // this page follows it, and its status line says so, because the Thorough box applies to a build the person
         // starts, and a ticked box answered by a Quick build must not read as having been honoured.
         let followed = false;
         try {
-          const began = await api("/api/diagnostics/all-job?mode=" + mode, { method: "POST" });
+          const began = await api("/api/diagnostics/all-job?mode=" + mode + budgetQs, { method: "POST" });
           followed = !!began && began.started === false;
         }
         catch (e) { /* a transient start failure still lets us poll an existing job */ }
