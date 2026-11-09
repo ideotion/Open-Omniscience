@@ -19,12 +19,17 @@ from __future__ import annotations
 
 import contextlib
 import email
+import errno
 import imaplib
 import ipaddress
 import logging
+import os
 import poplib
 import re
+import select
+import socket
 import ssl
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.header import decode_header
@@ -387,6 +392,82 @@ def _tls_refusal(host: str, port: int, scrubbed: str, *, sent: str) -> MailboxTl
     )
 
 
+#: How often a TCP connect in progress reads the switch again (R652). The Stop also shuts the registered socket down, which ends a
+#: connect at once where the platform aborts a connect on shutdown (Linux); this slice is the bound everywhere else.
+_CONNECT_STOP_SLICE_S = 0.1
+
+#: connect_ex's "in progress" answers: POSIX, and Windows' WSAEWOULDBLOCK.
+_CONNECT_IN_PROGRESS = {errno.EINPROGRESS, errno.EWOULDBLOCK, errno.EAGAIN, errno.EALREADY, 10035}
+
+
+def _connect_watching_stop(sock: socket.socket, address: Any, timeout: float | None) -> None:
+    """Connect ``sock`` (already registered for the Stop) to ``address``, reading the switch while the connect is in progress (R652).
+    Bounded by ``timeout`` as ``socket.create_connection`` is; raises ``_MailboxStopped`` on a Stop, an ``OSError`` otherwise."""
+    deadline = None if timeout is None else time.monotonic() + timeout
+    sock.setblocking(False)
+    if _stop_requested():
+        raise _MailboxStopped
+    rc = sock.connect_ex(address)
+    if rc != 0 and rc not in _CONNECT_IN_PROGRESS:
+        raise OSError(rc, os.strerror(rc))
+    while rc != 0:
+        if _stop_requested():
+            raise _MailboxStopped
+        wait = _CONNECT_STOP_SLICE_S
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("timed out")
+            wait = min(wait, remaining)
+        _, writable, failed = select.select([], [sock], [sock], wait)
+        if writable or failed:
+            rc = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+            if rc != 0:
+                if _stop_requested():  # the Stop shut the socket down mid-connect
+                    raise _MailboxStopped
+                raise OSError(rc, os.strerror(rc))
+            break
+    if _stop_requested():
+        raise _MailboxStopped
+    sock.settimeout(timeout)
+
+
+def _connect_registered(host: str, port: int, timeout: float | None) -> socket.socket:
+    """``socket.create_connection`` with each candidate socket registered for the Stop BEFORE its connect (R652): a Stop cuts a stalled
+    TCP connect at once instead of waiting out the timeout. The name lookup before it is not covered (the resolver cannot be
+    interrupted); it is bounded by the system resolver's own timeout. On failure the socket is closed and leaves the Stop's list."""
+    from src.ingest import register_mailbox_socket, unregister_mailbox_socket
+
+    if timeout is not None and not timeout:
+        raise ValueError("Non-blocking socket (timeout=0) is not supported")
+    candidates = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+    if not candidates:
+        raise OSError(f"getaddrinfo returned no address for {host!r}")
+
+    def discard(sock: socket.socket) -> None:
+        unregister_mailbox_socket(sock)
+        with contextlib.suppress(Exception):
+            sock.close()
+
+    for n, (family, kind, proto, _, address) in enumerate(candidates, 1):
+        if _stop_requested():
+            raise _MailboxStopped
+        sock = socket.socket(family, kind, proto)
+        try:
+            register_mailbox_socket(sock)
+            _connect_watching_stop(sock, address, timeout)
+        except OSError:
+            discard(sock)
+            if n == len(candidates):
+                raise  # the last candidate's own error, as it was
+            continue  # the next address, as socket.create_connection tries them
+        except BaseException:
+            discard(sock)  # a Stop (or an interrupt): no further address is tried
+            raise
+        return sock
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
 def _registered_tls(ctx: ssl.SSLContext, raw: Any, host: str) -> Any:
     """Wrap ``raw`` (already registered for the Stop) in TLS and run the handshake here, registered too, after a second read of the
     switch (R647): no TLS byte goes out after a Stop that landed before it, and a Stop during a stalled handshake reaches it. On any
@@ -428,7 +509,7 @@ def _upgraded(raw: Any, host: str, port: int) -> Any:
 
 
 def _stop_aware(cls):  # type: ignore[no-untyped-def]
-    """``cls`` (an imaplib or poplib class) with its socket registered for the Stop the moment the TCP connect returns, before any TLS
+    """``cls`` (an imaplib or poplib class) with its socket registered for the Stop before the TCP connect (R652), and so before any TLS
     handshake and before the greeting is read (R647: ``activate_kill_switch`` shuts it down, so a pull blocked on a stalled server ends at once), and with the one command imaplib
     sends on its OWN -- CAPABILITY, from the constructor when the greeting carries none and from ``login`` when its reply carries none --
     held to the switch like every command this module sends (R640, security read B: a Stop during LOGIN let a CAPABILITY out). Anything
@@ -441,14 +522,13 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
             from src.ingest import register_mailbox_socket
 
             # The TLS classes' own ``_create_socket`` connects AND completes the TLS handshake before returning, so registering what
-            # it returns left a Stop unable to reach a server stalled in the handshake (security read B on #1892). So the plain
-            # socket is made by the plain class, registered as soon as the TCP connect returns, and only then wrapped, with the
-            # handshake run here after a second read of the switch: no TLS byte goes out after a Stop that landed during the connect.
+            # it returns left a Stop unable to reach a server stalled in the handshake (security read B on #1892). So the plain socket
+            # is made here, registered before its TCP connect (R652: a Stop cuts a stalled connect too), and only then wrapped, with
+            # the handshake run here after a second read of the switch: no TLS byte goes out after a Stop that landed during the connect.
             ctx = getattr(self, "ssl_context", None) if isinstance(self, imaplib.IMAP4_SSL) else None
             if isinstance(self, poplib.POP3_SSL):
                 ctx = getattr(self, "context", None)
-            plain: Any = imaplib.IMAP4 if isinstance(self, imaplib.IMAP4) else poplib.POP3
-            raw = plain._create_socket(self, timeout) if ctx is not None else super()._create_socket(timeout)
+            raw = _connect_registered(self.host, self.port, timeout)
             register_mailbox_socket(raw)
             if ctx is None:
                 return raw
@@ -682,6 +762,10 @@ def fetch_pop3(
                 conn = _stop_aware(poplib.POP3_SSL)(host, port or 995, timeout=MAILBOX_TIMEOUT_S, context=_mailbox_tls_context())
             else:
                 conn = _stop_aware(poplib.POP3)(host, port or 110, timeout=MAILBOX_TIMEOUT_S)
+        except _MailboxStopped:
+            # The Stop by its type, as in fetch_imap (R652): a Stop read during the connect or the TLS handshake.
+            raws.stopped = True
+            return raws
         except ssl.SSLCertVerificationError as exc:
             # R650: the certificate failed its check (a Stop still wins: the refusal is not the Stop's to report).
             if _stop_requested():
