@@ -1783,7 +1783,9 @@
         const tl = res.tally || {}, n = (x) => fmtNum(x || 0, 0);
         if (out) out.innerHTML = `<b>${n(tl.stored)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))}`
           + `<div class="muted" style="margin-top:5px">${esc(_nlAnonLine(tl))}</div>`
-          + (res.disclosure ? `<div class="muted" style="margin-top:4px">${esc(res.disclosure)}</div>` : "");
+          + (res.disclosure ? `<div class="muted" style="margin-top:4px">${esc(res.disclosure)}</div>` : "")
+          // R640: a Stop during the pull ended it; the tally is what came before it, never the mailbox's size.
+          + (res.stopped_by_airplane_mode ? `<div class="note" style="margin-top:4px">${esc(t("Stopped by airplane mode: only the messages fetched before it were imported."))}</div>` : "");
       } catch (e) {
         // 409 = airplane refusal (named as the kill switch), 422 = a network-free
         // validation refusal. Both still answer synchronously, before any socket.

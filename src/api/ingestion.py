@@ -184,7 +184,13 @@ def ingest_email_endpoint(
         except RuntimeError as exc:  # the airplane-mode refusal (ruling #11 kill-switch gate)
             raise HTTPException(status_code=409, detail=http_detail(exc, "", req.password, withheld=UNREADABLE_TEXT)) from None
     tally = ingest_emails(db, source, raws)
-    return {"source_id": source_id, "source": source.name, "fetched": len(raws), "tally": tally}
+    return {
+        "source_id": source_id,
+        "source": source.name,
+        "fetched": len(raws),
+        "stopped_by_airplane_mode": bool(getattr(raws, "stopped", False)),  # R640
+        "tally": tally,
+    }
 
 
 # A single dedicated, FILTERABLE provenance bucket for locally-imported .eml
@@ -799,10 +805,17 @@ def _mailbox_pull_worker(
             "source_id": source.id,
             "protocol": protocol,
             "fetched": len(raws),
+            # R640: airplane mode engaged during the pull. "fetched" is then what came before the Stop, never the mailbox's size.
+            "stopped_by_airplane_mode": bool(getattr(raws, "stopped", False)),
             "tally": tally,
             "disclosure": _MAILBOX_DISCLOSURE,
         }
-    ctx.set_progress(done=len(raws), total=len(raws), detail="done")
+    ctx.set_progress(
+        done=len(raws),
+        total=len(raws),
+        detail=("stopped: airplane mode was engaged during the pull; the messages fetched before it are kept"
+                if getattr(raws, "stopped", False) else "done"),
+    )
     return out
 
 
@@ -812,10 +825,11 @@ def _mailbox_pull_worker(
 # see it, and the task manager's Stop could not reach it. It is a DB writer, so it
 # joins the writer-arbitration set.
 #
-# cancellable=False is the HONEST setting, not a shortcut: `fetch_mailbox` is one
-# opaque imaplib/poplib call and `ingest_emails` loops internally without a ctx, so
-# nothing here checks ctx.stopping. Advertising a Cancel button that cannot stop the
-# work is the theater this module's own docstring rules out.
+# cancellable=False is the HONEST setting, not a shortcut: nothing here checks
+# ctx.stopping (`ingest_emails` loops internally without a ctx). What does stop the
+# FETCH is airplane mode: `fetch_mailbox` reads the kill switch before every command
+# and message (R640) and ends with what it had. Advertising a per-job Cancel button
+# that cannot stop the work is the theater this module's own docstring rules out.
 _MAILBOX_JOB = register_job(
     BackgroundJob("mailbox-pull", "Pulling newsletters from your mailbox", _mailbox_pull_worker,
                   is_writer=True)

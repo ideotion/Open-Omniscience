@@ -4700,6 +4700,7 @@
   "Stopped": "Dihentikan",
   "Stopped after {files} zip files: {why}": "Berhenti setelah {files} berkas zip: {why}",
   "Stopped before the end of the files owed; the next update continues from here.": "Berhenti sebelum akhir file yang tertunda; pembaruan berikutnya melanjutkan dari sini.",
+  "Stopped by airplane mode: only the messages fetched before it were imported.": "Dihentikan oleh mode pesawat: hanya pesan yang diambil sebelumnya yang diimpor.",
   "Stopped by an error before its result could be measured": "Dihentikan oleh galat sebelum hasilnya dapat diukur",
   "Stopped itself — memory stayed exhausted": "Berhenti sendiri — memori tetap habis",
   "Stopped qualifying": "Tidak lagi memenuhi syarat",

@@ -1,0 +1,568 @@
+"""R641: the name-taking calls that resolve in C, and the datagram sends that need no connect, meet R639's rule in airplane mode.
+
+``socket.gethostbyname``/``gethostbyname_ex``, ``gethostbyaddr`` (and ``getfqdn``, which calls it), ``getnameinfo``, a ``bind`` handed a
+host NAME and a ``sendto``/``sendmsg`` handed one all resolve through libc and never reach the patched ``getaddrinfo``; a datagram to a
+remote address needs no connect, so no other guard point saw it. While the kill switch is engaged: no name, exactly ``localhost`` and
+a loopback literal pass (``localhost`` answered from its literal); a localhost alias is refused in R639's fixed words; anything else is
+refused; and a datagram to a non-loopback destination is refused. No real network: the real calls are replaced by recorders, and the
+datagram tests that do reach the real call send only to loopback.
+"""
+
+from __future__ import annotations
+
+import socket
+
+import pytest
+
+import src.ingest.airplane as ap
+from src.ingest import activate_kill_switch, clear_kill_switch
+from src.ingest.airplane import AirplaneModeError
+
+_NAMES = (
+    "gethostbyname",
+    "gethostbyname_ex",
+    "gethostbyaddr",
+    "getnameinfo",
+    "bind",
+    "sendto",
+    "sendmsg",
+)
+
+
+@pytest.fixture
+def reached():
+    """The guard installed and armed, with recorders standing in for the real calls this file covers. The real ones are put back
+    BEFORE the uninstall, which copies ``_orig_*`` back onto ``socket``."""
+    was_installed, was_armed = ap.is_installed(), ap._airplane_armed
+    assert ap.install_airplane_socket_guard(), (
+        "the guard is disabled here (OO_AIRPLANE_SOCKET_GUARD=0?)"
+    )
+    saved = {name: getattr(ap, f"_orig_{name}") for name in _NAMES}
+    calls: list[tuple[str, object]] = []
+
+    def recorder(name):
+        def _f(*a, **k):
+            # The address-bearing argument: the first for the lookups, the last positional (or keyword) for the socket methods.
+            arg = (
+                a[0]
+                if name.startswith(("get",))
+                else (k.get("address") if "address" in k else a[-1])
+            )
+            calls.append((name, arg))
+            return {
+                "gethostbyname_ex": ("x", [], []),
+                "gethostbyaddr": ("x", [], []),
+                "getnameinfo": ("x", "0"),
+            }.get(name, 0)
+
+        return _f
+
+    for name in _NAMES:
+        if saved[name] is not None:
+            setattr(ap, f"_orig_{name}", recorder(name))
+    clear_kill_switch()
+    try:
+        yield calls
+    finally:
+        for name, real in saved.items():
+            setattr(ap, f"_orig_{name}", real)
+        clear_kill_switch()
+        ap.uninstall_airplane_socket_guard()
+        if was_installed:
+            ap._install_patches()
+        ap._airplane_armed = was_armed
+
+
+_REMOTE = ("example.com", "93.184.215.14", "2606:2800:21f:cb07:6820:80da:af6b:8b2c")
+_ALIASES = ("localhost.localdomain", "ip6-localhost", " localhost")
+
+
+# --- the lookups --------------------------------------------------------------------------------------------------------------------
+
+
+def _lookup(name: str, host: str):
+    if name == "getnameinfo":
+        return socket.getnameinfo((host, 80), 0)
+    return getattr(socket, name)(host)
+
+
+@pytest.mark.parametrize(
+    "name", ["gethostbyname", "gethostbyname_ex", "gethostbyaddr", "getnameinfo"]
+)
+@pytest.mark.parametrize("host", _REMOTE)
+def test_a_remote_lookup_is_refused_before_libc(reached, name, host):
+    activate_kill_switch()
+    with pytest.raises(AirplaneModeError):
+        _lookup(name, host)
+    assert reached == [], "the real call (and so libc's resolver) was reached for a remote target"
+
+
+@pytest.mark.parametrize(
+    "name", ["gethostbyname", "gethostbyname_ex", "gethostbyaddr", "getnameinfo"]
+)
+@pytest.mark.parametrize("host", _ALIASES)
+def test_a_localhost_alias_lookup_is_refused_in_fixed_words(reached, name, host):
+    activate_kill_switch()
+    with pytest.raises(AirplaneModeError) as exc:
+        _lookup(name, host)
+    assert reached == []
+    assert ap._ALIAS_LOOKUP_TARGET in str(exc.value) and repr(host) not in str(exc.value)
+
+
+def test_localhost_is_answered_from_its_literal(reached):
+    activate_kill_switch()
+    assert socket.gethostbyname("localhost") == "127.0.0.1"
+    assert socket.gethostbyname("LocalHost") == "127.0.0.1"
+    assert socket.gethostbyname_ex("localhost") == ("localhost", [], ["127.0.0.1"])
+    assert socket.gethostbyaddr("localhost") == ("localhost", [], ["127.0.0.1"])
+    assert socket.getnameinfo(("localhost", 80), 0)[0] == "localhost"
+    assert reached == [("getnameinfo", ("127.0.0.1", 80))], (
+        "localhost was handed to libc as a name, or its reverse lookup reached libc"
+    )
+
+
+@pytest.mark.parametrize("name", ["gethostbyname", "gethostbyname_ex"])
+@pytest.mark.parametrize("host", ["127.0.0.1", "::1", "127.8.9.10"])
+def test_a_forward_lookup_of_a_loopback_literal_reaches_the_real_call(reached, name, host):
+    """A forward lookup of a literal is parsed as a number by libc and asks nothing."""
+    activate_kill_switch()
+    _lookup(name, host)
+    assert [n for n, _ in reached] == [name]
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "::1", "127.0.0.2", "127.8.9.10"])
+def test_a_reverse_lookup_of_a_loopback_literal_never_reaches_libc(reached, host):
+    """A reverse lookup of a literal is a PTR query (glibc reads /etc/hosts, then asks DNS; security read A measured it for 127.0.0.2
+    and ::1), so while engaged it is answered without the real call, and getfqdn of the literal gets that answer."""
+    activate_kill_switch()
+    assert socket.gethostbyaddr(host) == ("localhost", [], [host])
+    assert socket.getfqdn(host) == "localhost"
+    assert reached == []
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "::1", "127.8.9.10"])
+@pytest.mark.parametrize(
+    ("flags", "answer"),
+    [(0, "localhost"), (socket.NI_NAMEREQD, "localhost"), (socket.NI_NUMERICHOST, "x")],
+)
+def test_getnameinfo_of_a_loopback_literal_asks_libc_for_numbers_only(reached, host, flags, answer):
+    """libc is handed NI_NUMERICHOST | NI_NUMERICSERV, so it makes neither a PTR query nor a service lookup; the host is answered as
+    localhost unless the caller asked for the number."""
+    seen: list[int] = []
+
+    def _numeric_only(sockaddr, fl):
+        seen.append(fl)
+        return ("x", "80")
+
+    recorder, ap._orig_getnameinfo = ap._orig_getnameinfo, _numeric_only  # the fixture puts the real one back
+    try:
+        activate_kill_switch()
+        assert socket.getnameinfo((host, 80), flags) == (answer, "80")
+    finally:
+        ap._orig_getnameinfo = recorder
+    want = socket.NI_NUMERICHOST | socket.NI_NUMERICSERV
+    handed = (flags | want) & ~socket.NI_NAMEREQD if answer == "localhost" else flags | want
+    assert seen == [handed]
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "127.0.0.2"])
+def test_the_real_getnameinfo_with_namereqd_answers_localhost(host):
+    """With the REAL call: glibc refuses NI_NAMEREQD beside NI_NUMERICHOST, so the wrapper clears it and answers the name itself."""
+    was_installed, was_armed = ap.is_installed(), ap._airplane_armed
+    assert ap.install_airplane_socket_guard()
+    try:
+        activate_kill_switch()
+        assert socket.getnameinfo((host, 80), socket.NI_NAMEREQD) == ("localhost", "80")
+    finally:
+        clear_kill_switch()
+        ap.uninstall_airplane_socket_guard()
+        if was_installed:
+            ap._install_patches()
+        ap._airplane_armed = was_armed
+
+
+def test_the_real_reverse_lookup_of_a_loopback_literal_makes_no_query():
+    """With the REAL calls: the libc entry points are replaced by tripwires, so a reverse lookup that reached them fails the test."""
+    was_installed, was_armed = ap.is_installed(), ap._airplane_armed
+    assert ap.install_airplane_socket_guard()
+    saved = ap._orig_gethostbyaddr
+
+    def _tripwire(*a, **k):
+        raise AssertionError("libc's gethostbyaddr was reached")
+
+    ap._orig_gethostbyaddr = _tripwire
+    try:
+        activate_kill_switch()
+        assert socket.gethostbyaddr("::1")[0] == "localhost"
+        name, port = socket.getnameinfo(("127.0.0.5", 80), 0)
+        assert (name, port) == ("localhost", "80")
+    finally:
+        ap._orig_gethostbyaddr = saved
+        clear_kill_switch()
+        ap.uninstall_airplane_socket_guard()
+        if was_installed:
+            ap._install_patches()
+        ap._airplane_armed = was_armed
+
+
+@pytest.mark.parametrize(
+    "name", ["gethostbyname", "gethostbyname_ex", "gethostbyaddr", "getnameinfo"]
+)
+def test_online_every_lookup_is_untouched(reached, name):
+    _lookup(name, "example.com")
+    assert reached == [(name, "example.com" if name != "getnameinfo" else ("example.com", 80))]
+
+
+def test_getfqdn_falls_back_to_the_name_instead_of_asking_dns(reached):
+    """``socket.getfqdn`` calls the module's ``gethostbyaddr``, so it meets the rule and, on the refusal, returns the name itself (its
+    own behaviour on any lookup failure) without a query."""
+    activate_kill_switch()
+    assert socket.getfqdn("some-host.example") == "some-host.example"
+    assert reached == []
+
+
+# --- bind ---------------------------------------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "address", [("127.0.0.1", 0), ("0.0.0.0", 0), ("", 0), ("93.184.215.14", 0)]
+)
+def test_a_bind_to_a_literal_or_no_name_is_left_alone(reached, address):
+    """A bind sends nothing: any literal, or none, is the real call's to judge."""
+    activate_kill_switch()
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.bind(address)
+    finally:
+        s.close()
+    assert reached == [("bind", address)]
+
+
+@pytest.mark.parametrize(
+    ("family", "literal"), [(socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")]
+)
+def test_a_bind_to_localhost_is_handed_the_familys_literal(reached, family, literal):
+    activate_kill_switch()
+
+    class _Sock:  # a stand-in carrying the family, so the IPv6 case runs where the host has no IPv6
+        pass
+
+    sock = _Sock()
+    sock.family = family  # type: ignore[attr-defined]
+    ap._guarded_bind(sock, ("localhost", 0))
+    assert reached == [("bind", (literal, 0))]
+
+
+@pytest.mark.parametrize("host", ["example.com", *_ALIASES])
+def test_a_bind_to_any_other_name_is_refused_before_libc(reached, host):
+    activate_kill_switch()
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        with pytest.raises(AirplaneModeError):
+            s.bind((host, 0))
+    finally:
+        s.close()
+    assert reached == []
+
+
+def test_online_a_bind_to_a_name_is_untouched(reached):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.bind(("example.com", 0))
+    finally:
+        s.close()
+    assert reached == [("bind", ("example.com", 0))]
+
+
+# --- datagrams ----------------------------------------------------------------------------------------------------------------------
+
+
+def _send(method: str, sock: socket.socket, address, flags: bool):
+    if method == "sendto":
+        return sock.sendto(b"x", 0, address) if flags else sock.sendto(b"x", address)
+    return sock.sendmsg([b"x"], [], 0, address) if flags else sock.sendmsg([b"x"], (), 0, address)
+
+
+_METHODS = [
+    "sendto",
+    pytest.param(
+        "sendmsg",
+        marks=pytest.mark.skipif(not hasattr(socket.socket, "sendmsg"), reason="no sendmsg"),
+    ),
+]
+
+
+@pytest.mark.parametrize("method", _METHODS)
+@pytest.mark.parametrize("flags", [False, True])
+@pytest.mark.parametrize("host", ["93.184.215.14", "example.com", *_ALIASES])
+def test_a_datagram_to_a_remote_destination_or_name_is_refused(reached, method, flags, host):
+    activate_kill_switch()
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        with pytest.raises(AirplaneModeError):
+            _send(method, s, (host, 9), flags)
+    finally:
+        s.close()
+    assert reached == [], "the real send was reached"
+
+
+@pytest.mark.parametrize("method", _METHODS)
+@pytest.mark.parametrize(
+    ("host", "handed"), [("127.0.0.1", "127.0.0.1"), ("localhost", "127.0.0.1")]
+)
+def test_a_datagram_to_loopback_reaches_the_real_call(reached, method, host, handed):
+    activate_kill_switch()
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        _send(method, s, (host, 9), flags=False)
+    finally:
+        s.close()
+    assert reached == [(method, (handed, 9))]
+
+
+@pytest.mark.parametrize("method", _METHODS)
+def test_online_a_datagram_is_untouched(reached, method):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        _send(method, s, ("93.184.215.14", 9), flags=False)
+    finally:
+        s.close()
+    assert reached == [(method, ("93.184.215.14", 9))]
+
+
+@pytest.mark.skipif(not hasattr(socket.socket, "sendmsg"), reason="no sendmsg")
+def test_a_sendmsg_without_an_address_is_a_connected_socket_and_untouched(reached):
+    activate_kill_switch()
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.sendmsg([b"x"])
+    finally:
+        s.close()
+    assert [n for n, _ in reached] == ["sendmsg"]
+
+
+def test_the_real_datagram_path_end_to_end():
+    """With the REAL calls (no recorders): a datagram to a remote literal is refused and one to a loopback listener arrives."""
+    was_installed, was_armed = ap.is_installed(), ap._airplane_armed
+    assert ap.install_airplane_socket_guard()
+    rx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        rx.bind(("127.0.0.1", 0))
+        rx.settimeout(5)
+        activate_kill_switch()
+        with pytest.raises(AirplaneModeError):
+            tx.sendto(b"out", ("192.0.2.1", 9))
+        tx.sendto(b"in", ("localhost", rx.getsockname()[1]))
+        assert rx.recvfrom(16)[0] == b"in"
+    finally:
+        clear_kill_switch()
+        rx.close()
+        tx.close()
+        ap.uninstall_airplane_socket_guard()
+        if was_installed:
+            ap._install_patches()
+        ap._airplane_armed = was_armed
+
+
+def test_every_new_point_is_patched_and_put_back():
+    """The new calls are among the guard's patch points (so a removal while installed is healed and reported) and an uninstall puts the
+    stdlib's own functions back."""
+    was_installed, was_armed = ap.is_installed(), ap._airplane_armed
+    owners = {(o, a) for o, a, *_ in ap._patch_points()}
+    for name in ("gethostbyname", "gethostbyname_ex", "gethostbyaddr", "getnameinfo"):
+        assert (socket, name) in owners
+    for name in ("bind", "sendto") + (("sendmsg",) if hasattr(socket.socket, "sendmsg") else ()):
+        assert (socket.socket, name) in owners
+    assert len(ap._patch_points()) == len(ap._REAL_AT_IMPORT) == len(ap._standing_calls())
+    ap.uninstall_airplane_socket_guard()
+    try:
+        assert (
+            socket.gethostbyname is ap._orig_gethostbyname
+            and socket.socket.sendto is ap._orig_sendto
+        )
+    finally:
+        if was_installed:
+            ap._install_patches()
+        ap._airplane_armed = was_armed
+
+
+# --- read B's gaps ------------------------------------------------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="no AF_UNIX")
+def test_an_af_unix_bind_is_left_alone(reached, tmp_path):
+    """A filesystem path is local IPC, never a host name: an AF_UNIX bind in airplane mode reaches the real call untouched."""
+    activate_kill_switch()
+    path = str(tmp_path / "s")
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    try:
+        s.bind(path)
+    finally:
+        s.close()
+    assert reached == [("bind", path)]
+
+
+class _FakeSocksSocket:
+    """Stands in for a PySocks ``socksocket`` (PySocks need not be installed): ``proxy`` is its (type, host, port, ...) tuple."""
+
+    def __init__(self, proxied: bool):
+        self.proxy = (2, "127.0.0.1", 9050) if proxied else (None, None, None)
+
+
+@pytest.mark.parametrize("host", ["93.184.215.14", "example.com", "127.0.0.1", "localhost"])
+def test_a_proxied_socks_datagram_is_refused_for_any_destination(monkeypatch, host):
+    """Through a proxy every destination is the proxy's to reach, a loopback one included: the wrapper refuses before PySocks runs."""
+    sent: list[object] = []
+    monkeypatch.setattr(ap, "_orig_socks_sendto", lambda self, data, *a: sent.append(a) or 1)
+    monkeypatch.setattr(ap, "_airplane_armed", True)
+    clear_kill_switch()
+    activate_kill_switch()
+    try:
+        with pytest.raises(AirplaneModeError):
+            ap._guarded_socks_sendto(_FakeSocksSocket(proxied=True), b"x", (host, 9))
+        with pytest.raises(AirplaneModeError):
+            ap._guarded_socks_sendto(_FakeSocksSocket(proxied=True), b"x", 0, (host, 9))
+    finally:
+        clear_kill_switch()
+    assert sent == []
+
+
+def test_a_socks_datagram_is_handed_on_unproxied_or_online(monkeypatch):
+    """Unproxied, PySocks sends on the plain socket, whose patched sendto applies; online, nothing is checked."""
+    sent: list[object] = []
+    monkeypatch.setattr(ap, "_orig_socks_sendto", lambda self, data, *a: sent.append(a) or 1)
+    monkeypatch.setattr(ap, "_airplane_armed", True)
+    clear_kill_switch()
+    ap._guarded_socks_sendto(_FakeSocksSocket(proxied=True), b"x", ("93.184.215.14", 9))
+    activate_kill_switch()
+    try:
+        ap._guarded_socks_sendto(_FakeSocksSocket(proxied=False), b"x", ("93.184.215.14", 9))
+    finally:
+        clear_kill_switch()
+    assert sent == [(("93.184.215.14", 9),), (("93.184.215.14", 9),)]
+
+
+def test_a_leaked_stand_in_is_put_back_on_its_own_call():
+    """The conftest checker writes each saved call back onto ITS owner. It used to send every name it did not list to
+    ``HTTPConnection._tunnel``, so a stand-in left on ``socket.gethostbyname`` replaced the tunnel guard for the rest of the worker."""
+    import http.client
+
+    from tests.conftest import _process_wide_network_calls, _put_network_call_back
+
+    saved = _process_wide_network_calls()
+    tunnel = http.client.HTTPConnection._tunnel  # type: ignore[attr-defined]
+    socket.gethostbyname = lambda name: "stand-in"  # type: ignore[assignment]
+    try:
+        for name in ("socket.gethostbyname", "socket.socket.sendto", "socket.socket.bind", "socket.getnameinfo"):
+            _put_network_call_back(name, saved[name])
+        assert socket.gethostbyname is saved["socket.gethostbyname"]
+        assert http.client.HTTPConnection._tunnel is tunnel  # type: ignore[attr-defined]
+    finally:
+        socket.gethostbyname = saved["socket.gethostbyname"]  # type: ignore[assignment]
+
+
+@pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="no AF_UNIX")
+def test_an_af_unix_datagram_is_left_alone(reached, tmp_path):
+    """A filesystem path is local IPC: an AF_UNIX sendto in airplane mode reaches the real call untouched."""
+    activate_kill_switch()
+    path = str(tmp_path / "d")
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    try:
+        s.sendto(b"x", path)
+    finally:
+        s.close()
+    assert reached == [("sendto", path)]
+
+
+# --- R645: S1's follow-ups -------------------------------------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not hasattr(socket, "AF_NETLINK"), reason="no AF_NETLINK")
+def test_an_af_netlink_bind_and_datagram_are_left_alone(reached):
+    """Netlink talks to this machine's own kernel: its (pid, groups) address names no host, so bind and sendto reach the real call."""
+    activate_kill_switch()
+
+    class _Sock:
+        family = socket.AF_NETLINK
+
+    ap._guarded_bind(_Sock(), (0, 0))
+    ap._guarded_sendto(_Sock(), b"x", (0, 0))
+    assert reached == [("bind", (0, 0)), ("sendto", (0, 0))]
+
+
+@pytest.mark.skipif(not hasattr(socket, "AF_NETLINK"), reason="no AF_NETLINK")
+def test_an_af_netlink_connect_is_left_alone(reached):
+    """Exempt like AF_UNIX on every path, connect and connect_ex included (security read A on #1886: they still tested AF_UNIX alone,
+    so a real NETLINK_ROUTE connect((0, 0)) was refused as "a network connection to 0")."""
+    activate_kill_switch()
+    seen: list[tuple[str, object]] = []
+    saved = ap._orig_connect, ap._orig_connect_ex
+    ap._orig_connect = lambda self, address: seen.append(("connect", address))  # type: ignore[assignment]
+    ap._orig_connect_ex = lambda self, address: seen.append(("connect_ex", address)) or 0  # type: ignore[assignment]
+    try:
+
+        class _Sock:
+            family = socket.AF_NETLINK
+
+        ap._guarded_connect(_Sock(), (0, 0))
+        ap._guarded_connect_ex(_Sock(), (0, 0))
+    finally:
+        ap._orig_connect, ap._orig_connect_ex = saved  # type: ignore[assignment]
+    assert seen == [("connect", (0, 0)), ("connect_ex", (0, 0))]
+
+
+@pytest.mark.skipif(not hasattr(socket, "AF_PACKET"), reason="no AF_PACKET")
+def test_an_af_packet_bind_and_datagram_stay_refused(reached):
+    """AF_PACKET puts raw frames on the wire: it is not a local family, so while engaged its interface-name address is refused."""
+    activate_kill_switch()
+
+    class _Sock:
+        family = socket.AF_PACKET
+
+    with pytest.raises(AirplaneModeError):
+        ap._guarded_bind(_Sock(), ("eth0", 0))
+    with pytest.raises(AirplaneModeError):
+        ap._guarded_sendto(_Sock(), b"x", ("eth0", 0))
+    assert reached == []
+
+
+_NUMERIC = socket.NI_NUMERICHOST | socket.NI_NUMERICSERV
+
+
+@pytest.mark.parametrize("host", _REMOTE[1:] + ("127.0.0.5", "::1"))
+def test_getnameinfo_numeric_only_on_any_literal_reaches_the_real_call(reached, host):
+    """Both numeric flags on a literal make no lookup at all (R645), so it is handed on unchanged, a remote literal included."""
+    activate_kill_switch()
+    socket.getnameinfo((host, 80), _NUMERIC)
+    assert reached == [("getnameinfo", (host, 80))]
+
+
+@pytest.mark.parametrize("flags", [socket.NI_NUMERICHOST, socket.NI_NUMERICSERV, 0])
+def test_getnameinfo_on_a_remote_literal_without_both_numeric_flags_stays_refused(reached, flags):
+    activate_kill_switch()
+    with pytest.raises(AirplaneModeError):
+        socket.getnameinfo(("93.184.215.14", 80), flags)
+    assert reached == []
+
+
+def test_getnameinfo_numeric_only_on_a_name_stays_refused(reached):
+    activate_kill_switch()
+    with pytest.raises(AirplaneModeError):
+        socket.getnameinfo(("example.com", 80), _NUMERIC)
+    assert reached == []
+
+
+def test_the_real_numeric_getnameinfo_of_a_remote_literal_answers_the_number():
+    """With the REAL call, engaged: libc formats the number it was handed (no query is possible with both numeric flags)."""
+    was_installed, was_armed = ap.is_installed(), ap._airplane_armed
+    assert ap.install_airplane_socket_guard()
+    try:
+        activate_kill_switch()
+        assert socket.getnameinfo(("192.0.2.1", 80), _NUMERIC) == ("192.0.2.1", "80")
+    finally:
+        clear_kill_switch()
+        ap.uninstall_airplane_socket_guard()
+        if was_installed:
+            ap._install_patches()
+        ap._airplane_armed = was_armed
