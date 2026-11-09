@@ -392,6 +392,14 @@ def _tls_refusal(host: str, port: int, scrubbed: str, *, sent: str, hint: str = 
     )
 
 
+class _HandshakeFailed(ssl.SSLError):
+    """A TLS handshake that timed out or lost its connection, worded plainly (an ``SSLError`` built from one string prints its args
+    tuple, security read B on #1898)."""
+
+    def __str__(self) -> str:
+        return str(self.args[0])
+
+
 def _registered_tls(ctx: ssl.SSLContext, raw: Any, host: str) -> Any:
     """Wrap ``raw`` (already registered for the Stop) in TLS and run the handshake here, registered too, after a second read of the
     switch (R647): no TLS byte goes out after a Stop that landed before it, and a Stop during a stalled handshake reaches it. On any
@@ -400,22 +408,23 @@ def _registered_tls(ctx: ssl.SSLContext, raw: Any, host: str) -> Any:
 
     tls = None
     try:
-        if _stop_requested():
-            raise _MailboxStopped
-        tls = ctx.wrap_socket(raw, server_hostname=host, do_handshake_on_connect=False)
-        register_mailbox_socket(tls)
-        if _stop_requested():
-            raise _MailboxStopped
         try:
+            if _stop_requested():
+                raise _MailboxStopped
+            tls = ctx.wrap_socket(raw, server_hostname=host, do_handshake_on_connect=False)  # can read already: a reset raises here
+            register_mailbox_socket(tls)
+            if _stop_requested():
+                raise _MailboxStopped
             tls.do_handshake()
         except ssl.SSLError:
             raise
         except OSError as exc:
-            # A timeout or a dropped connection during the handshake is a TLS failure like any other (security read A on #1898: it
-            # surfaced as "_ssl.c:1018: The handshake operation timed out", with neither the server nor what was not sent). A Stop
-            # that shut the socket down still reads as the Stop: every caller reads the switch before mapping an SSLError.
+            # A timeout or a dropped connection during the wrap or the handshake is a TLS failure like any other (security reads on
+            # #1898: it surfaced as "_ssl.c:1018: The handshake operation timed out" or "[Errno 104]", with neither the server nor
+            # what was not sent). A Stop that shut the socket down still reads as the Stop: every caller reads the switch before
+            # mapping an SSLError.
             timed_out = isinstance(exc, TimeoutError)
-            raise ssl.SSLError("the TLS handshake timed out" if timed_out else "the connection closed during the TLS handshake") from None
+            raise _HandshakeFailed("the TLS handshake timed out" if timed_out else "the connection closed during the TLS handshake") from None
     except BaseException:
         # A constructor raises before it holds the socket, and a failed STARTTLS leaves the connection's own socket detached, so
         # nothing else would close it.
@@ -466,6 +475,23 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
         return cls
 
     class _StopAware(cls):  # type: ignore[valid-type,misc]
+        def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            # A constructor that fails after the connect (a refused greeting, a reset, a timeout) leaves the socket registered and,
+            # for poplib, open, for as long as the error's traceback lives (security read B on #1898): it is closed and forgotten here.
+            try:
+                super().__init__(*args, **kwargs)
+            except BaseException:
+                sock = getattr(self, "sock", None)
+                for reader in (getattr(self, "_file", None), self.__dict__.get("file")):
+                    with contextlib.suppress(Exception):
+                        if reader is not None:
+                            reader.close()
+                if sock is not None:
+                    _forget_socket(sock)
+                    with contextlib.suppress(Exception):
+                        sock.close()
+                raise
+
         def _create_socket(self, timeout):  # type: ignore[no-untyped-def]
             from src.ingest import register_mailbox_socket
 
@@ -503,7 +529,7 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
                         raise _MailboxStopped from None  # the Stop shut the socket down while the answer was awaited
                     lost = isinstance(exc, (self.abort, OSError))
                     raise _starttls_refusal(
-                        self.host, port, "closed the connection before answering STARTTLS" if lost else "refused STARTTLS"
+                        self.host, port, "did not answer STARTTLS (the connection was lost or timed out)" if lost else "refused STARTTLS"
                     ) from None
                 if typ != "OK":
                     raise _starttls_refusal(self.host, port, f"answered STARTTLS with {typ}")
@@ -516,6 +542,12 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
                 caps = self.capa()
             except poplib.error_proto:
                 caps = {}
+            except _MailboxStopped:
+                raise
+            except Exception:  # noqa: BLE001 - a lost connection, a timeout, or a CAPA list poplib cannot parse
+                if _stop_requested():
+                    raise _MailboxStopped from None
+                raise _starttls_refusal(self.host, port, "gave no usable answer to CAPA (the connection was lost or timed out, or the list was malformed)") from None
             if "STLS" not in {name.upper() for name in caps}:  # capability names are case-insensitive (RFC 2449)
                 raise _starttls_refusal(self.host, port, "does not offer STARTTLS (STLS)")
             if _stop_requested():
@@ -524,6 +556,12 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
                 self._shortcmd("STLS")
             except poplib.error_proto:
                 raise _starttls_refusal(self.host, port, "refused STLS") from None
+            except _MailboxStopped:
+                raise
+            except Exception:  # noqa: BLE001 - a lost connection or a timeout while the answer was awaited
+                if _stop_requested():
+                    raise _MailboxStopped from None
+                raise _starttls_refusal(self.host, port, "did not answer STLS (the connection was lost or timed out)") from None
             self.sock = _upgraded(self.sock, self.host, port)
             _rebind_reader(self)
             self._tls_established = True

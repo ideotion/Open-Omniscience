@@ -308,7 +308,7 @@ def test_a_connection_lost_before_the_starttls_answer_says_so():
     t = threading.Thread(target=serve, daemon=True)
     t.start()
     try:
-        with pytest.raises(MailboxStarttlsError, match="closed the connection before answering STARTTLS"):
+        with pytest.raises(MailboxStarttlsError, match=r"did not answer STARTTLS \(the connection was lost or timed out\)"):
             fetch_imap("127.0.0.1", "u", "p", use_ssl=False, port=lst.getsockname()[1])
     finally:
         t.join(5)
@@ -399,7 +399,7 @@ def test_a_starttls_handshake_that_times_out_is_refused_naming_the_server(fn, gr
         with pytest.raises(MailboxTlsRefusal) as info:
             fn("127.0.0.1", "u", "p", use_ssl=False, port=srv.port)
         msg = str(info.value)
-        assert "the TLS handshake timed out" in msg and f"port {srv.port}" in msg and "no password sent" in msg, msg
+        assert f"port {srv.port} (the TLS handshake timed out)." in msg and "no password sent" in msg, msg  # no args tuple
         assert "_ssl.c" not in msg and "accepted the upgrade" in msg
     finally:
         srv.close()
@@ -417,5 +417,61 @@ def test_a_lower_case_stls_capability_is_honoured(monkeypatch):
         with pytest.raises(MailboxTlsRefusal):  # the upgrade is attempted (no TLS server here), not refused as "not offered"
             fetch_pop3("127.0.0.1", "u", "p", use_ssl=False, port=srv.port)
         assert b"STLS" in _commands(srv, fetch_pop3)
+    finally:
+        srv.close()
+
+
+@pytest.mark.parametrize(("fn", "greeting", "script"), [(fetch_imap, _IMAP_GREETING, _imap), (fetch_pop3, _POP_GREETING, _pop)], ids=["imap", "pop3"])
+def test_a_reset_as_the_tls_wrap_starts_is_refused_as_a_tls_failure(fn, greeting, script, monkeypatch):
+    """The wrap itself can read, so a reset right after the upgrade answer raised there, outside the handshake's mapping (security read
+    B on #1898): it is the same named refusal now."""
+
+    class _Resetting:
+        def wrap_socket(self, *a, **k):
+            raise ConnectionResetError(104, "Connection reset by peer")
+
+    monkeypatch.setattr(email_mod, "_mailbox_tls_context", lambda: _Resetting())
+    srv = _Server(greeting, script)
+    try:
+        with pytest.raises(MailboxTlsRefusal) as info:
+            fn("127.0.0.1", "u", "p", use_ssl=False, port=srv.port)
+        msg = str(info.value)
+        assert "(the connection closed during the TLS handshake)." in msg and "accepted the upgrade" in msg, msg
+        assert not ingest._LIVE_MAILBOX_SOCKETS
+    finally:
+        srv.close()
+
+
+@pytest.mark.parametrize("capa", [b"+OK\r\n\r\n.\r\n", b"+OK\r\n\xff\xfe\r\n.\r\n"], ids=["empty-line", "not-ascii"])
+def test_a_capa_list_poplib_cannot_parse_is_refused_honestly(capa):
+    def script(line: bytes) -> bytes | None:
+        if line.split(b" ", 1)[0].upper() == b"CAPA":
+            return capa
+        return _pop(line)
+
+    srv = _Server(_POP_GREETING, script)
+    try:
+        with pytest.raises(MailboxStarttlsError, match="gave no usable answer to CAPA"):
+            fetch_pop3("127.0.0.1", "u", "p", use_ssl=False, port=srv.port)
+    finally:
+        srv.close()
+
+
+@pytest.mark.parametrize(("fn", "greeting"), [(fetch_imap, b"* BYE go away\r\n"), (fetch_pop3, b"-ERR go away\r\n")], ids=["imap", "pop3"])
+def test_a_constructor_that_fails_after_the_connect_closes_and_forgets_its_socket(fn, greeting, monkeypatch):
+    held: list = []
+    real = ingest.register_mailbox_socket
+
+    def spy(sock):
+        held.append(sock)
+        real(sock)
+
+    monkeypatch.setattr(ingest, "register_mailbox_socket", spy)
+    srv = _Server(greeting, lambda line: None)
+    try:
+        with pytest.raises(Exception):  # noqa: B017 - the library's own refusal of the greeting
+            fn("127.0.0.1", "u", "p", use_ssl=False, port=srv.port)
+        assert held and all(s.fileno() == -1 for s in held), "the socket was left open"
+        assert not any(s in ingest._LIVE_MAILBOX_SOCKETS for s in held)
     finally:
         srv.close()
