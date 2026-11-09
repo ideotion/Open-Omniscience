@@ -70,6 +70,7 @@ def _refused(fn, srv, **kw) -> str:
         fn("127.0.0.1", "u", _PW, port=srv.port, **kw)
     text = str(info.value)
     assert "ZQXR653" not in text and _PW not in text
+    assert info.value.__context__ is None and info.value.__cause__ is None  # nothing chained holds the server's line (delta read 2)
     assert "the server's own reply is not shown" in text and str(srv.port) in text
     return text
 
@@ -309,7 +310,7 @@ def test_the_server_error_carries_no_chained_exception():
 
     with pytest.raises(MailboxServerError) as info:
         fetch_imap("mail.example", "u", _PW, conn=_Bad())
-    assert info.value.__cause__ is None and info.value.__suppress_context__
+    assert info.value.__cause__ is None and info.value.__context__ is None
 
     class _PopBad(_PopStoppedMidRetr):
         def retr(self, i):
@@ -318,7 +319,7 @@ def test_the_server_error_carries_no_chained_exception():
     with pytest.raises(MailboxServerError, match="after logging in") as info:
         fetch_pop3("mail.example", "u", _PW, conn=_PopBad())
     assert "ZQXR653" not in str(info.value)
-    assert info.value.__cause__ is None and info.value.__suppress_context__
+    assert info.value.__cause__ is None and info.value.__context__ is None
 
 
 def test_a_stop_still_wins_over_a_pop3_error_greeting(monkeypatch):
@@ -376,3 +377,38 @@ def test_a_folder_name_imaplib_cannot_encode_is_not_blamed_on_the_server():
 
     with pytest.raises(UnicodeEncodeError):
         fetch_imap("mail.example", "u", _PW, folder="Boîte", conn=_Encoding())
+
+
+@pytest.mark.parametrize(
+    "greeting",
+    [b"* BYE " + _MARK + b"\r\n", b"* OK [CAPABILITY IMAP4rev1 STARTTLS ZQXR653\xff] hi\r\n"],
+    ids=["bye", "undecodable-capability"],
+)
+def test_the_route_and_the_job_show_the_fixed_words_for_a_real_pull(monkeypatch, greeting):
+    """Delta read 2 on R653: ``http_detail`` reads the ``__context__`` chain, so a refusal raised inside the handler showed the
+    imaplib or decode error it replaced instead of its own words. End to end, through the real pull: the route and the job."""
+    from fastapi import HTTPException
+
+    import src.api.ingestion as ingestion
+    from src.monitoring.secret_scrub import http_detail
+
+    srv = _Server(greeting, _imap)
+    try:
+        real = ingestion.fetch_imap
+        monkeypatch.setattr(ingestion, "fetch_imap", lambda *a, **k: real(*a, port=srv.port, **k))
+        monkeypatch.setattr(ingestion, "_get_source", lambda db, sid: object())
+        req = ingestion.IngestEmailRequest(host="127.0.0.1", user="u", password=_PW, use_ssl=False)
+        with pytest.raises(HTTPException) as info:
+            ingestion.ingest_email_endpoint(1, req, db=None)
+        assert info.value.status_code == 502
+        assert "before logging in; no password was sent" in info.value.detail and "ZQXR653" not in info.value.detail
+    finally:
+        srv.close()
+    srv = _Server(greeting, _imap)
+    try:
+        with pytest.raises(MailboxServerError) as raised:
+            fetch_imap("127.0.0.1", "u", _PW, port=srv.port, use_ssl=False)
+        detail = http_detail(raised.value)
+        assert "before logging in; no password was sent" in detail and "Unicode" not in detail and "ZQXR653" not in detail
+    finally:
+        srv.close()

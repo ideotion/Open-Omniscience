@@ -755,6 +755,9 @@ def fetch_imap(
     """
     _refuse_if_offline()
     raws = MailboxPull()
+    # R653: a server error is raised only once outside every ``except`` block, so it carries no ``__context__``: the imaplib or poplib
+    # error it replaces holds the server's line, and ``http_detail`` reads the context chain (``from None`` only hides it from a print).
+    failure: MailboxServerError | None = None
     own_conn = conn is None
     if own_conn:
         try:
@@ -788,13 +791,15 @@ def fetch_imap(
             if _stop_requested():
                 raws.stopped = True
                 return raws
-            raise _server_error(host, port or (993 if use_ssl else 143), "greeting") from None
+            failure = _server_error(host, port or (993 if use_ssl else 143), "greeting")
         except Exception:
             # A Stop while the greeting was awaited shut the socket down (R647): that is the Stop, not a failure.
             if _stop_requested():
                 raws.stopped = True
                 return raws
             raise
+    if failure is not None:
+        raise failure
     step = "greeting"
     try:
         if own_conn:
@@ -846,7 +851,7 @@ def fetch_imap(
         if raws.stopped or _stop_requested():
             raws.stopped = True
             return raws
-        raise _server_error(host, port or (993 if use_ssl else 143), step) from None
+        failure = _server_error(host, port or (993 if use_ssl else 143), step)
     except Exception:
         # A failure that surfaces once the switch is engaged (the connection failing after the Stop) ends the pull as the Stop it
         # follows: what was fetched is kept (R640, security read B), never discarded with an error.
@@ -866,6 +871,9 @@ def fetch_imap(
                     pass
             # Only now: a Stop during the LOGOUT read must still reach the socket (security read B on #1892).
             _forget_socket(sock)
+    if failure is not None:
+        raise failure  # after the LOGOUT, outside the handler (R653)
+    return raws  # not reached: every other path returned or raised inside the try
 
 
 def fetch_pop3(
@@ -891,6 +899,9 @@ def fetch_pop3(
     """
     _refuse_if_offline()
     raws = MailboxPull()
+    # R653: a server error is raised only once outside every ``except`` block, so it carries no ``__context__``: the imaplib or poplib
+    # error it replaces holds the server's line, and ``http_detail`` reads the context chain (``from None`` only hides it from a print).
+    failure: MailboxServerError | None = None
     own_conn = conn is None
     if own_conn:
         try:
@@ -923,13 +934,15 @@ def fetch_pop3(
             if _stop_requested():
                 raws.stopped = True
                 return raws
-            raise _server_error(host, port or (995 if use_ssl else 110), "greeting") from None
+            failure = _server_error(host, port or (995 if use_ssl else 110), "greeting")
         except Exception:
             # As in fetch_imap: a Stop while the greeting was awaited shut the socket down (R647).
             if _stop_requested():
                 raws.stopped = True
                 return raws
             raise
+    if failure is not None:
+        raise failure
     step = "greeting"
     try:
         if own_conn:
@@ -972,7 +985,7 @@ def fetch_pop3(
         if raws.stopped or _stop_requested():
             raws.stopped = True
             return raws
-        raise _server_error(host, port or (995 if use_ssl else 110), step) from None
+        failure = _server_error(host, port or (995 if use_ssl else 110), step)
     except Exception:
         # As in fetch_imap: a failure once the switch is engaged keeps what was fetched (R640).
         if raws.stopped or _stop_requested():
@@ -990,6 +1003,9 @@ def fetch_pop3(
                 except Exception:  # noqa: BLE001
                     pass
             _forget_socket(sock)  # after QUIT, as in fetch_imap
+    if failure is not None:
+        raise failure  # after the QUIT, outside the handler (R653)
+    return raws  # not reached: every other path returned or raised inside the try
 
 
 def fetch_mailbox(protocol: str, host: str, user: str, password: str, **kwargs) -> MailboxPull:
