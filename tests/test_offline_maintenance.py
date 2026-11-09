@@ -115,8 +115,9 @@ def test_boot_upkeep_starts_it_inside_the_no_scheduler_gate():
     src = (ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
     call = src.index("_start_offline_maintenance()")
     gate = src.rindex('if os.getenv("OO_NO_SCHEDULER", "0") != "1":', 0, call)
-    # Same block as the airplane engage: tests and headless setups never get a thread.
-    assert "install_airplane_socket_guard()" in src[gate:call]
+    # Same block as the airplane ENGAGE: tests and headless setups never get a thread. (The socket guard's install left this block in
+    # R646: it is installed whatever OO_NO_SCHEDULER says.)
+    assert "activate_kill_switch()" in src[gate:call]
 
 
 def _fake_continuation(monkeypatch, sched, incomplete_for: int):

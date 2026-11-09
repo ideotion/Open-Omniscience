@@ -157,19 +157,28 @@ def test_boot_path_installs_the_socket_guard():
 
 
 def test_uninstall_restores_real_socket_calls():
-    """After uninstall the stdlib functions are exactly the originals (no residue)."""
-    real_gai, real_cc = socket.getaddrinfo, socket.create_connection
-    real_conn = socket.socket.connect
-    real_tunnel = http.client.HTTPConnection._tunnel
-    real_putrequest = http.client.HTTPConnection.putrequest
-    install_airplane_socket_guard()
-    assert socket.getaddrinfo is not real_gai  # patched
+    """After uninstall the stdlib functions are exactly the originals (no residue).
+
+    Starts from an uninstalled guard and puts back what it found: since R646 every in-process lifespan installs the guard, so an
+    earlier test on the same worker can leave it installed, and "the originals" read then would be the guard's own functions."""
+    was_installed, was_armed = ap._installed, ap._airplane_armed
     uninstall_airplane_socket_guard()
-    assert socket.getaddrinfo is real_gai
-    assert socket.create_connection is real_cc
-    assert socket.socket.connect is real_conn
-    assert http.client.HTTPConnection._tunnel is real_tunnel
-    assert http.client.HTTPConnection.putrequest is real_putrequest
+    try:
+        real_gai, real_cc = socket.getaddrinfo, socket.create_connection
+        real_conn = socket.socket.connect
+        real_tunnel = http.client.HTTPConnection._tunnel
+        real_putrequest = http.client.HTTPConnection.putrequest
+        install_airplane_socket_guard()
+        assert socket.getaddrinfo is not real_gai  # patched
+        uninstall_airplane_socket_guard()
+        assert socket.getaddrinfo is real_gai
+        assert socket.create_connection is real_cc
+        assert socket.socket.connect is real_conn
+        assert http.client.HTTPConnection._tunnel is real_tunnel
+        assert http.client.HTTPConnection.putrequest is real_putrequest
+    finally:
+        if was_installed:
+            install_airplane_socket_guard() if was_armed else ap.ensure_connect_guard_installed()
 
 
 def test_http_connect_tunnel_destination_is_guarded(guard):

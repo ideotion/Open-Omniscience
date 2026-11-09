@@ -1,8 +1,8 @@
 """R644: the app refuses every request with a fixed 503 until its lifespan's loop check (R642) ran and airplane mode's guard is armed.
 
 ``uvicorn --lifespan off`` and this app mounted inside another ASGI app skip the lifespan, so they skip the loop check and the guard it
-arms. These tests run both for real (a uvicorn server on loopback, a Starlette mount) with ``OO_NO_SCHEDULER`` cleared, so the gate is
-live. No network: the only sockets are loopback.
+arms. These tests run both for real (a uvicorn server on loopback, a Starlette mount); since R646 ``OO_NO_SCHEDULER=1``, which the
+suite sets, waives nothing, so the gate is live under it. No network: the only sockets are loopback.
 """
 
 from __future__ import annotations
@@ -37,11 +37,10 @@ _needs_uvloop = pytest.mark.skipif(
 
 @pytest.fixture
 def gate(monkeypatch):
-    """The gate as a fresh process sees it: closed, no loop check recorded, OO_NO_SCHEDULER cleared."""
+    """The gate as a fresh process sees it: closed, no loop check recorded. ``OO_NO_SCHEDULER`` keeps the suite's ``1`` (R646)."""
     monkeypatch.setattr(main, "_serving_loop_checked", False)
     monkeypatch.setattr(main, "_serving_gate_open", False)
     monkeypatch.setattr(main, "_serving_gate_logged", False)
-    monkeypatch.setenv("OO_NO_SCHEDULER", "0")
     monkeypatch.delenv("OO_AIRPLANE_SOCKET_GUARD", raising=False)
     return monkeypatch
 
@@ -204,9 +203,17 @@ def test_the_documented_guard_opt_out_waives_only_the_guard(gate):
     assert TestClient(main.app).get("/unlock").status_code == 200
 
 
-def test_a_headless_process_is_waived(gate):
-    """OO_NO_SCHEDULER=1 is the mode in which the boot never arms the guard at all (tests, headless): the gate has nothing to hold."""
+def test_a_headless_process_is_not_waived(gate):
+    """R646: OO_NO_SCHEDULER=1 no longer waives the gate (R644 had waived it, when the boot never armed the guard under it). The boot
+    now arms it there too, so a headless start without the lifespan is refused like any other."""
     gate.setenv("OO_NO_SCHEDULER", "1")
+    gate.setattr(ap, "is_armed", lambda: False)
+    r = TestClient(main.app).get("/unlock")
+    _assert_refused(r.status_code, r.json())
+    gate.setattr(main, "_serving_loop_checked", True)
+    r = TestClient(main.app).get("/unlock")
+    _assert_refused(r.status_code, r.json())  # the loop check alone is not enough under it either
+    gate.setattr(ap, "is_armed", lambda: True)
     assert TestClient(main.app).get("/unlock").status_code == 200
 
 
@@ -222,7 +229,7 @@ def test_is_armed_is_false_for_the_ssrf_half_alone(monkeypatch):
 
 def test_the_lifespan_records_the_loop_check_right_after_it_and_arms_the_guard():
     """Source-level: the flag is set by the lifespan, immediately after R642's refusal, and the guard is installed before the yield.
-    Running the real lifespan with OO_NO_SCHEDULER cleared would start the whole deferred startup."""
+    Since R646 the install is not inside any ``if`` (tests/test_guard_always_installed_r646.py runs the real lifespan)."""
     fn = ast.parse(inspect.getsource(main.lifespan)).body[0]
     assert isinstance(fn, ast.AsyncFunctionDef)
     body = [n for n in fn.body if not (isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant))]
@@ -230,8 +237,7 @@ def test_the_lifespan_records_the_loop_check_right_after_it_and_arms_the_guard()
     assert ast.unparse(body[refusal + 1]) == "global _serving_loop_checked"
     assert ast.unparse(body[refusal + 2]) == "_serving_loop_checked = True"
     arm = body[refusal + 3]
-    assert isinstance(arm, ast.If)
-    assert ast.unparse(arm.test) == "os.getenv('OO_NO_SCHEDULER', '0') != '1'"
+    assert isinstance(arm, ast.Try)
     assert "install_airplane_socket_guard()" in ast.unparse(arm.body)
     # Nothing else in src/ sets the flag.
     assert inspect.getsource(main).count("_serving_loop_checked = True") == 1
