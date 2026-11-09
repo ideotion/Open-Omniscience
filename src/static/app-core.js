@@ -2521,6 +2521,9 @@
         }
         const acts = [];
         if (j.id === "collect:current") acts.push(`<button class="tiny danger" title="${esc(t("Stopping collection engages the network kill switch — the app goes offline."))}" data-on-click="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Stop"))}</button>`);
+        // A background AI run that outlives its tab offers Stop when its owner can stop between articles (jobs.py, detached_stream.py).
+        if (String(j.id).startsWith("task:") && Array.isArray(j.actions) && j.actions.includes("stop"))
+          acts.push(`<button class="tiny secondary" data-on-click="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Stop"))}</button>`);
         if (_isDownloadKind(j.kind) && j.state === "running") acts.push(`<button class="tiny secondary" data-on-click="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Pause"))}</button>`);
         if (_isDownloadKind(j.kind) && j.state === "queued") {
           const k = _dlKey(j), keys = queuedKeysByKind[j.kind] || [], idx = keys.indexOf(k);
