@@ -327,15 +327,100 @@ def test_a_subdomain_page_loc_is_off_the_host_by_the_same_rule_as_a_child_sitema
     assert report.skipped_off_host == [sub_child, sub_page]
 
 
-def test_an_idn_source_written_in_its_unicode_form_does_not_match_its_punycode_locs():
-    # A stated effect of "same rule" (_registrable_host compares the host as written, lower-cased, never IDNA-encoded): the
-    # three catalogue sources with a Unicode domain lose any page loc their sitemap writes in punycode, as their punycode child
-    # sitemaps and crawl links already were.
+# --- R631: a Unicode host and its punycode are one site, either way round; a host that cannot be encoded is off ---------------
+# Before, the comparison read the host as written, so the three catalogue sources with a Unicode domain (공유.net, åa.no,
+# севернаяправда.рф) lost every punycode child sitemap, page loc and crawl link, and a source written in punycode lost the
+# Unicode ones. Both sides are now the form requests connects to (idna, UTS 46); a host that cannot be encoded fails closed.
+
+_U, _A = "b\u00fccher.example", "xn--bcher-kva.example"
+
+
+@pytest.mark.parametrize(("base", "other"), [(_U, _A), (_A, _U), ("\u00e5a.no", "xn--a-1fa.no"), ("xn--a-1fa.no", "\u00e5a.no")])
+def test_a_unicode_host_and_its_punycode_are_one_site_either_way_round(base, other):
     from src.ingest.sitemap import _off_host
 
-    base = _registrable_host("b\u00fccher.example")
-    assert _off_host("https://b\u00fccher.example/a", base) is False
-    assert _off_host("https://xn--bcher-kva.example/a", base) is True
+    site = _registrable_host(base)
+    assert _off_host(f"https://{other}/a", site) is False
+    assert _off_host(f"https://www.{other}/a", site) is False
+    assert _off_host(f"https://{other.upper() if other.isascii() else other}/a", site) is False
+    assert _off_host("https://evil.example/a", site) is True
+
+
+@pytest.mark.parametrize(("base", "loc"), [(_U, f"https://{_A}/own"), (_A, f"https://{_U}/own")])
+def test_a_sitemap_keeps_the_page_locs_its_source_writes_in_the_other_form(base, loc):
+    _sess, report = _discover(host=base, sitemap=_urlset(loc, f"https://{_EVIL}/planted"))
+    assert report.urls == [loc]
+    assert report.skipped_off_host == [f"https://{_EVIL}/planted"]
+
+
+@pytest.mark.parametrize(("base", "child"), [(_U, f"https://{_A}/sitemap-a.xml"), (_A, f"https://{_U}/sitemap-a.xml")])
+def test_a_sitemap_index_follows_a_child_written_in_the_other_form(base, child):
+    sess, report = _discover(host=base, sitemap=_index(child), routes=[(child, _urlset(f"https://{base}/own"))])
+    assert child in sess.fetched
+    assert report.urls == [f"https://{base}/own"]
+
+
+@pytest.fixture()
+def idn_db():
+    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    yield s
+    s.close()
+
+
+@pytest.mark.parametrize(("domain", "link_host"), [(_U, _A), (_A, _U)])
+def test_a_crawl_kept_to_one_site_follows_its_own_links_in_the_other_form(idn_db, domain, link_host):
+    idn_db.add(Source(name="IDN", domain=domain, language="de", rss_url=None, enabled=True, status=STATUS_QUALIFIED))
+    idn_db.commit()
+    src = idn_db.query(Source).one()
+    link = f"https://{link_host}/eigen"
+    sess = _Session()
+    sess.route(f"https://{domain}/robots.txt", status_code=404, text="")
+    sess.route(f"https://{link_host}/robots.txt", status_code=404, text="")
+    sess.route(f"https://{_EVIL}/robots.txt", status_code=404, text="")
+    sess.route(f"https://{domain}", text=_page("Home", "x", links=[(link, "own"), (f"https://{_EVIL}/x", "evil")]))
+    sess.route(link, text=_article("Eigen"))
+    sess.route(f"https://{_EVIL}/x", text=_article("Evil"))
+    crawl_source(idn_db, src, fetcher=_fetcher(sess), config=CrawlConfig(max_depth=1, max_pages=50, same_domain_only=True))
+    assert link in sess.fetched
+    assert f"https://{_EVIL}/x" not in sess.fetched
+
+
+_UNENCODABLE = [
+    "a\u00e9" + "x" * 70 + ".example",  # a label over 63 once encoded
+    "\u00e9..example",  # an empty label
+    "\u00e9" * 300 + ".example",  # longer than any host name: never handed to the encoder
+]
+
+
+@pytest.mark.parametrize("bad", _UNENCODABLE)
+def test_a_host_that_cannot_be_encoded_is_off_the_site_never_a_crash(bad):
+    from src.ingest.crawl import _off_site, _site_key
+
+    assert _site_key(bad) is None
+    assert _off_site(bad, "good.example") is True
+    assert _off_site("good.example", bad) is True  # a site that cannot be encoded matches nothing
+    assert _off_site(bad, bad) is True  # not even its own text: fail closed
+
+
+def test_a_crawl_skips_a_link_whose_host_cannot_be_encoded_and_walks_the_rest(db, source):
+    bad = "https://a\u00e9" + "x" * 70 + ".example/p"
+    sess = _Session()
+    sess.route("https://good.example/robots.txt", status_code=404, text="")
+    sess.route("https://good.example", text=_page("Home", "x", links=[(bad, "bad"), (_OWN_A, "a")]))
+    sess.route(_OWN_A, text=_article("A"))
+    crawl_source(db, source, fetcher=_fetcher(sess), config=CrawlConfig(max_depth=1, max_pages=50, same_domain_only=True))
+    assert _OWN_A in sess.fetched
+    assert bad not in sess.fetched
+
+
+def test_control_ascii_hosts_are_compared_as_before():
+    from src.ingest.crawl import _site_key
+
+    assert _site_key("good.example") == "good.example"
+    assert _site_key("xn--bcher-kva.example") == "xn--bcher-kva.example"
+    assert _site_key("") == ""
 
 
 def test_a_page_loc_without_a_host_is_off_the_host_by_the_same_rule():

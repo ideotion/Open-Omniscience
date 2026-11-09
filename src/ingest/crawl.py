@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from typing import cast
 from urllib.parse import urldefrag, urljoin, urlparse, urlsplit
 
+import idna  # the encoder requests itself uses for a non-ASCII host (R631)
 from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
@@ -143,8 +144,39 @@ def _off_site(netloc: str, base_host: str) -> bool:
     URL, the canonical URL and a saved sitemap address (the independent read of R624, S1). The fetcher's other lane already
     refuses any userinfo (``src/safety/fetcher.py``), and before R624 such a link read as the host ``u`` and was never followed.
     The site's own host, read from the start URL or the source's domain, still goes through :func:`_registrable_host`, so a
-    start URL the operator wrote with a login keeps its host."""
-    return "@" in netloc or _registrable_host(netloc) != base_host
+    start URL the operator wrote with a login keeps its host.
+
+    Both hosts are compared in the form the request names them (:func:`_site_key`, R631): ``bücher.example`` and
+    ``xn--bcher-kva.example`` are one site, either way round, and a host that cannot be encoded is off the site (fail closed)."""
+    if "@" in netloc:
+        return True
+    ours, site = _site_key(_registrable_host(netloc)), _site_key(base_host)
+    return ours is None or site is None or ours != site
+
+
+#: The longest host name DNS can carry (RFC 1035): a longer one is no host requests could reach, and the punycode encoder is
+#: never handed it (its cost grows with the square of the length).
+_MAX_HOST_LEN = 253
+
+
+def _site_key(host: str) -> str | None:
+    """``host`` (a :func:`_registrable_host`) as the request names it, for the same-site comparison (R631). Never raises.
+
+    An ASCII host is compared as it is (urllib.parse has lower-cased it), punycode included. A host with any other character
+    is encoded as requests encodes it before connecting (``idna.encode(host, uts46=True)``, ``PreparedRequest
+    ._get_idna_encoded_host``), so a source written in its Unicode form matches the punycode links its pages and its sitemap
+    carry, and the other way round: before, ``bücher.example`` and ``xn--bcher-kva.example`` read as two sites, and the three
+    catalogue sources with a Unicode domain lost their punycode links and page locs. ``None`` when the host cannot be encoded
+    (an empty label, a label over 63, a disallowed character) or is longer than any host name: requests refuses such a host
+    (``InvalidURL``), and a comparison with ``None`` is off the site."""
+    if host.isascii():
+        return host
+    if len(host) > _MAX_HOST_LEN:
+        return None
+    try:
+        return idna.encode(host, uts46=True).decode("ascii")
+    except ValueError:  # idna.IDNAError and UnicodeError both are one
+        return None
 
 
 def _harvest_links(html: str, base_url: str) -> tuple[list[str], set[str]]:
