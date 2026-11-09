@@ -5,11 +5,11 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 The Settings note, the user manual and docs/SECURITY.md said protected mode sends a generic User-Agent. The collector did; a guarded
 session did not: ``_session_for`` set the caller's own agent before it read the mode, so every API client built on it (the Wikidata
-ring loader, statistics, OSM, self-update) named the app through Tor, and two operator probes (a field check and the release run's law
-probe) built their fetcher by hand, so they went out with no proxy at all. R657: in protected mode a guarded session sends
+ring loader, statistics, OSM, self-update) named the app through Tor, and the release run's law probe built its fetcher by hand, so it
+went out with no proxy at all (a field-check probe did the same until #1921 removed it). R657: in protected mode a guarded session sends
 ``GENERIC_USER_AGENT`` to every host except the Wikimedia hosts the app's own clients name (``DESCRIPTIVE_AGENT_HOSTS``), whose
 User-Agent policy asks API clients to name themselves, and only over https. The decision is taken in ``GuardedSession.send``, so it holds
-for the first request and for every redirect hop, whatever User-Agent a request carried; the two probes build their fetcher through
+for the first request and for every redirect hop, whatever User-Agent a request carried; the law probe builds its fetcher through
 ``make_fetcher``. Each test drives real code through a recording adapter or a recording fetch; nothing leaves the machine.
 """
 
@@ -266,18 +266,8 @@ def _recording_fetch(monkeypatch) -> list[tuple[str, str | None, str]]:
     return seen
 
 
-def test_the_field_checks_host_probe_fetches_through_the_proxy_with_the_generic_agent(mode, monkeypatch):
-    """It built ``EthicalFetcher(timeout=45.0)`` by hand: in protected mode it went out with no proxy and the bot's name."""
-    from src.monitoring import field_checks
-
-    mode("protected")
-    seen = _recording_fetch(monkeypatch)
-    out = field_checks._host_reach({"urls": [_ELSEWHERE[0]]}, {}, None, {})
-    assert out["hosts"][0]["reached"] is False
-    assert seen == [(_ELSEWHERE[0], _SOCKS, GENERIC_USER_AGENT)]
-
-
 def test_the_release_runs_law_probe_fetches_through_the_proxy_with_the_generic_agent(mode, monkeypatch):
+    """It built ``EthicalFetcher(timeout=45.0)`` by hand: in protected mode it went out with no proxy and the bot's name."""
     from src.monitoring import release_run
 
     mode("protected")
@@ -287,18 +277,14 @@ def test_the_release_runs_law_probe_fetches_through_the_proxy_with_the_generic_a
     assert {(proxy, agent) for _url, proxy, agent in seen} == {(_SOCKS, GENERIC_USER_AGENT)}
 
 
-def test_protected_mode_with_no_proxy_refuses_both_probes_by_name(mode, monkeypatch):
-    """No proxy in protected mode: ``make_fetcher`` refuses before any fetch, and each probe records the refusal as its result."""
+def test_protected_mode_with_no_proxy_refuses_the_law_probe_by_name(mode, monkeypatch):
+    """No proxy in protected mode: ``make_fetcher`` refuses before any fetch, and the probe records the refusal as its result."""
     from src.monitoring import release_run
 
     mode("protected")
     monkeypatch.delenv("OO_HTTP_PROXY")
     seen = _recording_fetch(monkeypatch)
     assert "TransportUnavailable" in release_run._law_probe()["error"]
-    with pytest.raises(fetcher_mod.TransportUnavailable):
-        from src.monitoring import field_checks
-
-        field_checks._host_reach({"urls": [_ELSEWHERE[0]]}, {}, None, {})
     assert seen == []
 
 

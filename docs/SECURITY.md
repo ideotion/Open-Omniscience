@@ -656,8 +656,8 @@ imply a protection we cannot deliver.
   http and an address that either of the two URL parsers reads as a host off the list. The collector
   (`make_fetcher`) sends the generic agent everywhere, Wikimedia included. Those Wikimedia requests
   still go through the proxy, so they name the tool but not your address. Every in-app fetcher is built
-  by `make_fetcher` (a test fails on any other module that builds one by hand; a field check and the
-  release run's law probe did, and went out with no proxy in protected mode until R657). **Honest
+  by `make_fetcher` (a test fails on any other module that builds one by hand; the release run's law
+  probe did, and went out with no proxy in protected mode until R657). **Honest
   limit:** this cannot guarantee anonymity — you must run and trust the proxy (e.g. Tor)
   yourself. Refuses to enable without a proxy URL. HTTP/HTTPS proxies work out of the box;
   **SOCKS** proxies (e.g. `socks5h://127.0.0.1:9050` for Tor) use **PySocks**, which the app
