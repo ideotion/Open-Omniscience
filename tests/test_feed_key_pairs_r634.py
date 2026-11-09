@@ -515,7 +515,10 @@ def test_no_module_that_answers_reports_or_shows_names_the_feed_key():
     assert named <= _NAMES_FEED_KEY, sorted(named - _NAMES_FEED_KEY)
 
 
-def test_the_csv_and_yaml_exports_carry_no_key(db, tmp_path):
+def test_the_csv_and_yaml_exports_carry_no_key_and_keep_the_url_as_written(db, tmp_path):
+    """No export names the key column, and a kept key is in none of them. The exports DO carry the login: through ``rss_url``, as
+    written, by R637, so a re-import fetches the feed again (Steward 3's read: this test used to pass while the password stood in
+    the body, because it looked only for the key). The answers the UI shows mask it: tests/test_rss_url_masked_r637.py."""
     from src.api.source_io import export_csv
     from src.database.source_manager import SourceManager
 
@@ -525,10 +528,12 @@ def test_the_csv_and_yaml_exports_carry_no_key(db, tmp_path):
 
     body = asyncio.run(_body(export_csv(db)))
     assert _legacy(_CRED) not in body and "feed_key" not in body
+    assert _CRED in body and _PLAIN in body  # both rows of the pair, each URL as written (R637)
     path = tmp_path / "out.yml"
     SourceManager(db).export_sources_to_yaml(str(path))
     said = path.read_text(encoding="utf-8")
     assert _legacy(_CRED) not in said and "feed_key" not in said
+    assert _CRED in said and _PLAIN in said
 
 
 # --------------------------------------------------------------------------- #

@@ -2308,6 +2308,8 @@
     <section class="panel">
       <div class="phead"><h2>Export / Backup</h2></div>
       <p class="muted" style="margin-top:0">One place to back up everything, at any database size. Pick a destination folder or drive, choose what to include, and it streams into that folder — the encrypted corpus as volumes&nbsp;+&nbsp;parity, the large public blobs (models&nbsp;/&nbsp;maps&nbsp;/&nbsp;dumps) copied as-is. No size limit. (The older single-file backup below is being replaced by this.)</p>
+      <!-- R637: a backup keeps a feed's login as written, so a restore can still fetch it; visible by default, long form on hover. -->
+      <p class="card-caveat" id="backup-feed-logins" style="margin:4px 0 0" title="Everywhere the app shows a feed address, a user name and password written into it are shown as ***@. The CSV export and the backups keep the address as written, so a re-import or a restore can still fetch a feed that needs that login.">A backup keeps each feed address as you wrote it, a user name and password in it included, so a restore can still fetch that feed.</p>
       <div class="row" style="margin-top:6px">
         <button data-on-click="openUnifiedExport()">Export / Back up…</button>
         <button data-on-click="openUnifiedImport()">Import…</button>
@@ -2941,6 +2943,9 @@
         <button class="secondary" data-on-click="ooOpenUrl('/api/catalog/export.csv')">Export all (CSV)</button>
         <button class="secondary" data-on-click="ooOpenUrl('/api/catalog/template.csv')">Download template</button>
       </div>
+      <!-- R637: every answer shows a feed's login as ***@, and the export keeps it as written so it imports back. Visible by
+           default (informed consent), the long form in the hover bubble. -->
+      <p class="card-caveat" id="src-export-logins" style="margin:6px 0 0" title="Everywhere the app shows a feed address, a user name and password written into it are shown as ***@. The CSV export and the backups keep the address as written, so a re-import or a restore can still fetch a feed that needs that login.">The export keeps each feed address as you wrote it, a user name and password in it included, so the file imports back unchanged. Keep it private.</p>
       <hr>
       <label for="imp-file">Import sources from a CSV file</label>
       <input type="file" id="imp-file" accept=".csv,text/csv">

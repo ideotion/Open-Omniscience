@@ -53,6 +53,45 @@ router = APIRouter(prefix="/api/sources", tags=["Source Management"])
 # Rate limiter
 from src.api.ratelimit import limiter
 
+
+def _shown(url: str | None) -> str | None:
+    """A source's ``rss_url`` (or a discovered feed URL) as an answer or a log line shows it (R637): its login masked as ``***@``
+    by the fetcher's own ``failure_url``. The stored value, the fetch and the exports keep the URL as written. Imported on use, as
+    every reader of the mask imports it (``src.ingest`` is heavy)."""
+    from src.ingest.fetch_verdict import shown_url
+
+    return shown_url(url)
+
+
+def _shown_data(data: Any) -> Any:
+    """A request body as a log line writes it: a dict's ``rss_url`` shown as :func:`_shown` shows it, everything else as sent."""
+    if isinstance(data, dict) and isinstance(data.get("rss_url"), str):
+        return {**data, "rss_url": _shown(data["rss_url"])}
+    return data
+
+
+def _shown_found(row: Any) -> Any:
+    """A discovery result as the answer shows it: its ``url``, ``rss_url`` and each of its ``rss_urls`` through :func:`_shown`.
+    ``/discover/rss`` hands back a listed source's stored ``rss_url`` as both ``url`` and ``rss_url``."""
+    if not isinstance(row, dict):
+        return row
+    out = dict(row)
+    for key in ("url", "rss_url"):
+        if isinstance(out.get(key), str):
+            out[key] = _shown(out[key])
+    if isinstance(out.get("rss_urls"), list):
+        out["rss_urls"] = [_shown(u) if isinstance(u, str) else u for u in out["rss_urls"]]
+    return out
+
+
+def _to_store(sent: Any, stored: str | None) -> Any:
+    """The ``rss_url`` a write from the UI stores (R637): the answers show a login as ``***@``, so the masked form sent back for a
+    row means that row's stored URL; ``fetch_verdict.url_to_store`` holds the rule (a login never goes to another host)."""
+    from src.ingest.fetch_verdict import url_to_store
+
+    return url_to_store(sent, stored)
+
+
 # ==================== DISCOVERY CANDIDATES (WP5 / RM-19) ====================
 # Machine-suggested sources, staged for the operator's decision. Transparent by
 # construction: evidence travels with every candidate; promotion creates a
@@ -784,7 +823,7 @@ def list_sources(
                 "id": s.id,
                 "name": s.name,
                 "domain": s.domain,
-                "rss_url": s.rss_url,
+                "rss_url": _shown(s.rss_url),
                 "rate_limit_ms": s.rate_limit_ms,
                 "enabled": s.enabled,
                 "priority": s.priority,
@@ -903,7 +942,7 @@ def get_source(request: Request, source_id: int, db: Session = Depends(get_db)):
             "id": source.id,
             "name": source.name,
             "domain": source.domain,
-            "rss_url": source.rss_url,
+            "rss_url": _shown(source.rss_url),
             "rate_limit_ms": source.rate_limit_ms,
             "enabled": source.enabled,
             "priority": source.priority,
@@ -963,7 +1002,7 @@ def create_source(request: Request, source_data: dict, db: Session = Depends(get
     """
     Create a new source.
     """
-    logger.info(f"Create source request: {source_data}")
+    logger.info(f"Create source request: {_shown_data(source_data)}")
 
     required_fields = ["name", "domain"]
     for field in required_fields:
@@ -980,7 +1019,7 @@ def create_source(request: Request, source_data: dict, db: Session = Depends(get
         source = manager.create_source(
             name=source_data["name"],
             domain=source_data["domain"],
-            rss_url=source_data.get("rss_url"),
+            rss_url=_to_store(source_data.get("rss_url"), None),  # a new row has no login to keep: a sent ***@ is dropped (R637)
             rate_limit_ms=source_data.get("rate_limit_ms", 2000),
             enabled=source_data.get("enabled", True),
             priority=source_data.get("priority", 2),
@@ -1028,7 +1067,7 @@ def update_source(
     allowlisted field with the wrong type is a clean 400, not the generic 500 a bad
     value used to surface as at commit() time.
     """
-    logger.info(f"Update source request: source_id={source_id}, data={source_data}")
+    logger.info(f"Update source request: source_id={source_id}, data={_shown_data(source_data)}")
 
     updates: dict[str, Any] = {}
     for field, expected_type in _SOURCE_UPDATE_FIELD_TYPES.items():
@@ -1049,6 +1088,11 @@ def update_source(
         updates[field] = value
 
     with SourceManager(session=db) as manager:
+        if "rss_url" in updates:
+            # The form shows the stored URL masked (R637): sent back unchanged, it keeps the stored login, and the login never goes to another host.
+            current = manager.get_source_by_id(source_id)
+            if current is not None:
+                updates["rss_url"] = _to_store(updates["rss_url"], current.rss_url)
         source = manager.update_source(source_id, **updates)
         if not source:
             raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
@@ -1263,7 +1307,7 @@ def get_group(request: Request, group_id: int, db: Session = Depends(get_db)):
                     "id": s.id,
                     "name": s.name,
                     "domain": s.domain,
-                    "rss_url": s.rss_url,
+                    "rss_url": _shown(s.rss_url),
                     "enabled": s.enabled,
                     "priority": s.priority,
                     "tags": [t.strip() for t in (s.tags or "").split(",") if t.strip()],
@@ -1681,10 +1725,10 @@ def discover_rss_feeds(
         # Count how many got RSS feeds
         with_rss = len([r for r in results if r.get("rss_url")])
 
-        out = {
+        out: dict[str, Any] = {
             "total_checked": len(results),
             "with_rss_found": with_rss,
-            "results": results,
+            "results": [_shown_found(r) for r in results],
             "message": f"Discovered RSS feeds for {with_rss} sources",
         }
         if kill_switch_active():
@@ -1748,11 +1792,11 @@ def discover_sources_by_topic(
     with SourceManager(session=db) as manager:
         sources = manager.discover_sources_by_topic(topic, max_sources, region=region)
 
-        out = {
+        out: dict[str, Any] = {
             "topic": topic,
             "max_sources": max_sources,
             "region": region,
-            "sources": sources,
+            "sources": [_shown_found(r) for r in sources],
             "count": len(sources),
             "message": f"Discovered {len(sources)} sources for topic '{topic}'",
         }
@@ -1779,6 +1823,8 @@ def add_discovered_sources(
     """
     logger.info(f"Add discovered sources: {len(sources)} sources, group={group_name}")
 
+    # A discovery answer shows each URL masked (R637), and a discovered source is new or gains a feed it had none of: a sent ***@ is dropped.
+    sources = [{**d, "rss_url": _to_store(d["rss_url"], None)} if isinstance(d, dict) and "rss_url" in d else d for d in sources]
     with SourceManager(session=db) as manager:
         created_sources = manager.add_discovered_sources(sources, group_name)
 
@@ -1786,7 +1832,7 @@ def add_discovered_sources(
             "added": len(created_sources),
             "group_name": group_name,
             "sources": [
-                {"id": s.id, "name": s.name, "domain": s.domain, "rss_url": s.rss_url}
+                {"id": s.id, "name": s.name, "domain": s.domain, "rss_url": _shown(s.rss_url)}
                 for s in created_sources
             ],
             "message": f"Added {len(created_sources)} discovered sources",
@@ -1944,7 +1990,7 @@ def search_sources(
                 "id": s.id,
                 "name": s.name,
                 "domain": s.domain,
-                "rss_url": s.rss_url,
+                "rss_url": _shown(s.rss_url),
                 "enabled": s.enabled,
                 "priority": s.priority,
                 "tags": [t.strip() for t in (s.tags or "").split(",") if t.strip()],

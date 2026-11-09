@@ -219,6 +219,64 @@ def failure_netloc(netloc: str) -> str:
         return UNREADABLE_URL
 
 
+def shown_url(url: str | None) -> str | None:
+    """A stored URL as an answer, a log line or a report shows it (R637): :func:`failure_url`'s form, its userinfo masked as
+    :data:`USERINFO_MASK`. ``None`` and ``""`` stay what they are, so "no feed" still reads as no feed. Only what is SHOWN changes:
+    the stored value, the request and the exports keep the URL as written. NEVER raises."""
+    if not url:
+        return url
+    return failure_url(url)
+
+
+def url_to_store(sent: object, stored: str | None) -> object:
+    """The URL to store when a form sends ``sent`` back for a row that stores ``stored`` (``None`` for a new row) (R637).
+
+    The answers show a stored URL through :func:`shown_url`, so a form saved without touching the address sends the masked form
+    back, and storing it as sent would replace the login with ``***``. In order:
+
+    1. ``sent`` IS what the answers show for ``stored``: the stored URL, its login included (the form was saved unchanged);
+    2. ``sent`` holds no userinfo, or one that is not exactly the mask: ``sent`` as typed (a login removed is removed, a new one
+       typed is stored);
+    3. ``sent`` holds the mask, ``stored`` holds a userinfo and the two URLs name the same scheme, host and port (the fetcher's
+       host key): ``sent`` with the stored userinfo in place of the mask, so editing the path keeps the login;
+    4. otherwise the mask is taken out and ``sent`` is stored without a login: a login is never carried to another host, port or
+       scheme, and ``***`` is never stored as a user name.
+
+    A ``sent`` that is not a non-empty string comes back as it is (the caller's own type check answers it). Stated: a login that
+    is literally ``***`` cannot be typed through a form. NEVER raises."""
+    if not isinstance(sent, str) or not sent:
+        return sent
+    try:
+        if stored and sent == shown_url(stored):
+            return stored
+        span = _userinfo_span(sent)
+        if span is None or sent[span[0] : span[1]] != USERINFO_MASK:
+            return sent
+        bare = sent[: span[0]] + sent[span[1] :]
+        own = _userinfo_span(stored) if stored else None
+        if stored and own is not None and _origin(bare) is not None and _origin(bare) == _origin(stored):
+            return sent[: span[0]] + stored[own[0] : own[1]] + sent[span[1] :]
+        return bare
+    except Exception:  # noqa: BLE001 - a URL this cannot read is stored as the person sent it, as before R637
+        return sent
+
+
+def _origin(url: str) -> tuple[str, str] | None:
+    """``url``'s scheme and the fetcher's host key of its authority (host and port, the scheme's default port gone), or ``None``
+    when either cannot be read. Imported on use: ``src.ingest`` imports this module."""
+    from urllib.parse import urlsplit
+
+    from src.ingest import _readable_host_key
+
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return None
+    scheme = parts.scheme.lower()
+    key = _readable_host_key(parts.netloc, scheme) if parts.netloc else None
+    return (scheme, key) if scheme and key else None
+
+
 def userinfo_secrets(url: str) -> tuple[str, ...]:
     """The credentials ``url`` carries, as the secrets a scrub takes out of an exception's text written AFTER the URL (R620, Steward 3
     #1): the whole userinfo, then the user and the password apart (split at the first ``:``), each also with the characters
