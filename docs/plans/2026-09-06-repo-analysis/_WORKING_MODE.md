@@ -96,7 +96,7 @@ than lowering the budget. `test_import_graph.py` holds `TRUE_CYCLE_CEILING = 0`.
   per fork-3" caveat is a habit, not a limit — but the honest stamp is still *"Chromium-verified (remote
   sandbox) · awaiting human UX pass"*, never "verified".
 - Seed a synthetic corpus through the **real** `index_article`, never by inserting rows; serve with
-  `OO_DATA_DIR=<tmp> OO_DB_PLAINTEXT=1 OO_NO_SCHEDULER=1 .venv/bin/uvicorn src.api.main:app`.
+  `OO_DATA_DIR=<tmp> OO_DB_PLAINTEXT=1 OO_NO_SCHEDULER=1 .venv/bin/uvicorn src.api.main:app --loop asyncio` (R642: without it the app refuses to start on uvloop).
 - **Egress is allowlisted.** `pypi.org` and `github.com` pass; essentially every publisher host answers
   `CONNECT … 403` with `"selective": false`. Six consecutive sessions have failed a reach-a-publisher task
   through six different tool surfaces (the sixth, 2026-09-07, probed first and reported it as a finding —
