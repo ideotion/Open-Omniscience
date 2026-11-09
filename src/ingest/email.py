@@ -336,13 +336,6 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
     return _StopAware
 
 
-def _note_after_stop(exc: BaseException) -> None:
-    """Keep a failure that followed the Stop visible without letting it decide the answer: its CLASS only, never its text (a mail
-    library's message can echo what it was sent, the password included)."""
-    if not isinstance(exc, _MailboxStopped):
-        _LOG.info("mailbox pull: %s after the airplane-mode Stop; the pull ends as stopped", type(exc).__name__)
-
-
 def _drop_connection(conn, how: str) -> None:  # type: ignore[no-untyped-def]
     """Close a live mailbox connection WITHOUT a protocol command (``how`` is ``shutdown`` for imaplib, ``close`` for poplib).
 
@@ -350,7 +343,10 @@ def _drop_connection(conn, how: str) -> None:  # type: ignore[no-untyped-def]
     socket ends the session from our side; the server drops it on its own. Never raises.
     """
     with contextlib.suppress(Exception):  # the connection is being abandoned; nothing to report
-        getattr(conn, how)()
+        if how == "shutdown":
+            conn.shutdown()
+        else:
+            conn.close()
 
 
 def fetch_imap(
@@ -422,7 +418,8 @@ def fetch_imap(
         # the Stop) ends the pull as the Stop it follows: what was fetched is kept (R640, security read B), never discarded with an error.
         # ``_MailboxStopped`` counts by its type, so a switch cleared again in between cannot let it out (and LOGOUT with it).
         if isinstance(exc, _MailboxStopped) or raws.stopped or _stop_requested():
-            _note_after_stop(exc)
+            if not isinstance(exc, _MailboxStopped):  # kept visible, by its CLASS only: a mail library's words can echo the password
+                _LOG.info("mailbox pull: %s after the airplane-mode Stop; the pull ends as stopped", type(exc).__name__)
             raws.stopped = True
             return raws
         raise
@@ -490,7 +487,8 @@ def fetch_pop3(
     except Exception as exc:
         # As in fetch_imap: a failure once the switch is engaged keeps what was fetched (R640).
         if raws.stopped or _stop_requested():
-            _note_after_stop(exc)
+            if not isinstance(exc, _MailboxStopped):  # kept visible, by its CLASS only: a mail library's words can echo the password
+                _LOG.info("mailbox pull: %s after the airplane-mode Stop; the pull ends as stopped", type(exc).__name__)
             raws.stopped = True
             return raws
         raise
