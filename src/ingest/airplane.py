@@ -53,8 +53,23 @@ airplane mode is engaged, ANY target that names its own destination
 a loopback name there is not exempt: a forwarding proxy chained upstream
 forwards ``http://localhost/`` like any other name, and any parse that could
 answer "loopback" is one a proxy can read differently. An origin-form
-``/path`` goes to the host the connect guard already saw, so it is left alone.
-Not covered: an HTTP client that does not sit on
+``/path`` goes to the host the connect guard already saw -- when that
+connection was opened.
+
+A KEEP-ALIVE connection opened before the Stop is the fourth shape (R638, from
+an independent read of R636, 2026-11-09, probed first): the connect guard met it
+while it was still transparent, and every later request on it is an origin-form
+write with no resolve, connect or tunnel left to refuse it, so a pooled
+``requests`` session kept fetching from the same host after airplane mode was
+engaged. The same ``putrequest`` point therefore also refuses, while the switch
+is engaged, a request on a connection whose OWN destination is not local
+(its socket's peer must be a loopback address and its ``self.host`` a loopback
+name; any tunnelling or SOCKS-proxied connection counts as not local),
+and ``activate_kill_switch`` closes the pooled connections of every
+``EthicalFetcher`` and ``GuardedSession`` so none is left idle to be reused. Not covered: a
+library that writes to a socket without ``http.client`` (see ``docs/SECURITY.md``
+for the list checked, and for why the raw socket ``send`` is not patched).
+Also not covered: an HTTP client that does not sit on
 ``http.client`` (httpx/httpcore) -- in this tree those are the loopback-only
 LLM clients, which refuse a non-loopback base URL themselves.
 
@@ -219,10 +234,79 @@ def _addr_host(address: object) -> object:
     return address
 
 
+#: The one name ``_guard`` is handed for a lookup of a localhost ALIAS in airplane mode (R639). Fixed words, never the name.
+_ALIAS_LOOKUP_TARGET = "a localhost alias that may be answered by DNS (in airplane mode only localhost and loopback literals are looked up)"
+
+
+def _lookup_exempt(host: object) -> bool:
+    """True for the only names a lookup may be made for while airplane mode is engaged (R639): no name at all (``None`` or empty: a
+    bind, or the local service), exactly ``localhost``, or a loopback LITERAL (an IPv6 one may carry a zone id).
+
+    Narrower than :func:`_is_local_host` on purpose. ``localhost.localdomain`` and ``ip6-localhost`` are local only if
+    ``/etc/hosts`` says so: where it does not (this project's CI container lists neither alias; Debian and Qubes lack
+    ``localhost.localdomain``), the resolver asks DNS, so the QUERY egresses even though the connect to whatever it answers is refused.
+    Nothing is stripped or normalised: a name that needs normalising is not one of these.
+    """
+    if host is None:
+        return True
+    if isinstance(host, bytes):
+        try:
+            host = host.decode("ascii")
+        except UnicodeDecodeError:
+            return False
+    if not isinstance(host, str):
+        return False
+    if host == "" or host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host.split("%", 1)[0] if ":" in host else host).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_localhost_name(host: object) -> bool:
+    """Exactly ``localhost`` (any ASCII case, text or bytes)."""
+    if isinstance(host, bytes):
+        try:
+            host = host.decode("ascii")
+        except UnicodeDecodeError:
+            return False
+    return isinstance(host, str) and host.lower() == "localhost"
+
+
+def _localhost_in_process(args: tuple[Any, ...], kwargs: dict[str, Any]) -> list[Any]:
+    """Answer ``localhost`` from its loopback LITERALS, in airplane mode only (R639, security read A's follow-up).
+
+    ``localhost`` is exempt from the airplane refusal, but libc still consults ``/etc/hosts`` and then DNS: where the file has no entry
+    for the family asked for (a container listing only ``127.0.0.1 localhost``, asked for ``AF_INET6``), the query went to the
+    configured nameservers. Resolving the literals instead is numeric, so no query can leave; RFC 6761 reserves the name for loopback.
+    IPv4 first for an unspecified family, the order the app's own server and a loopback Ollama listen on. A literal the host cannot
+    use (no IPv6) is skipped; none usable is the resolver's own "name unknown" error.
+    """
+    family = args[1] if len(args) > 1 else kwargs.get("family", 0)
+    literals = {socket.AF_INET: ("127.0.0.1",), socket.AF_INET6: ("::1",)}.get(family, ("127.0.0.1", "::1"))
+    infos: list[Any] = []
+    for literal in literals:
+        try:
+            infos.extend(_orig_getaddrinfo(literal, *args, **kwargs))
+        except socket.gaierror:
+            continue
+    if not infos:
+        raise socket.gaierror(socket.EAI_NONAME, "localhost has no loopback address of the requested family")
+    return infos
+
+
 def _guarded_getaddrinfo(host, *args, **kwargs):  # type: ignore[no-untyped-def]
+    # A name the connect guard would call local but that is not exempt from a lookup (a localhost alias) is refused in fixed words
+    # before any lookup (R639); every other name meets _guard as it always has, so its refusal sentence is unchanged.
+    if _is_local_host(host) and not _lookup_exempt(host):
+        _guard(_ALIAS_LOOKUP_TARGET)
     _guard(host)
     with native_call("dns"):
-        infos = _orig_getaddrinfo(host, *args, **kwargs)
+        if _airplane_armed and kill_switch_active() and _is_localhost_name(host):
+            infos = _localhost_in_process(args, kwargs)
+        else:
+            infos = _orig_getaddrinfo(host, *args, **kwargs)
     # The SSRF half checks the ANSWER, not the question: inside a guarded fetch a
     # name that resolves to an internal address is refused here, which is the
     # only place a destination lookup performed by a library that then hands the
@@ -231,7 +315,32 @@ def _guarded_getaddrinfo(host, *args, **kwargs):  # type: ignore[no-untyped-def]
     return infos
 
 
+def _name_rule_for_connect(address: object, family: object) -> object:
+    """Apply :func:`_guarded_getaddrinfo`'s name rule to a connect target, while airplane mode is engaged (R639, S1's read).
+
+    ``socket.connect``/``connect_ex`` with a host NAME resolve it inside CPython's C code, which calls libc directly and never the
+    patched ``socket.getaddrinfo``: ``connect(("localhost.localdomain", 80))`` sent its query to DNS in airplane mode (strace), and so did
+    ``localhost`` on an ``AF_INET6`` socket where ``/etc/hosts`` has no ``::1`` line. So here, before the real call: a localhost alias
+    that is not exempt from a lookup is refused in fixed words, and exactly ``localhost`` is swapped for the loopback literal of the
+    socket's family (``::1`` for ``AF_INET6``, else ``127.0.0.1``), which libc parses without a query. Any other address is returned
+    unchanged. Online, and with the airplane half unarmed, nothing changes.
+    """
+    if not (_airplane_armed and kill_switch_active()):
+        return address
+    host = _addr_host(address)
+    if _is_local_host(host) and not _lookup_exempt(host):
+        _guard(_ALIAS_LOOKUP_TARGET)
+    if _is_localhost_name(host) and isinstance(address, (tuple, list)):
+        literal = "::1" if family == socket.AF_INET6 else "127.0.0.1"
+        return (literal, *tuple(address)[1:])
+    return address
+
+
 def _guarded_create_connection(address, *args, **kwargs):  # type: ignore[no-untyped-def]
+    # create_connection resolves through the patched getaddrinfo (which refuses an alias and answers localhost itself) and then
+    # connects to the numeric answer; the rule is applied here too, so a refusal comes before anything else in the same words. The
+    # address handed on is unchanged: getaddrinfo picks the family, so the localhost swap is its to make.
+    _name_rule_for_connect(address, None)
     _guard(_addr_host(address))
     check_connect_target(address)
     return _orig_create_connection(address, *args, **kwargs)
@@ -240,6 +349,7 @@ def _guarded_create_connection(address, *args, **kwargs):  # type: ignore[no-unt
 def _guarded_connect(self, address):  # type: ignore[no-untyped-def]
     # AF_UNIX is local IPC (a filesystem path) — never network; always allow.
     if getattr(self, "family", None) != getattr(socket, "AF_UNIX", object()):
+        address = _name_rule_for_connect(address, getattr(self, "family", None))
         _guard(_addr_host(address))
         check_connect_target(address)
     with native_call("connect"):
@@ -248,6 +358,7 @@ def _guarded_connect(self, address):  # type: ignore[no-untyped-def]
 
 def _guarded_connect_ex(self, address):  # type: ignore[no-untyped-def]
     if getattr(self, "family", None) != getattr(socket, "AF_UNIX", object()):
+        address = _name_rule_for_connect(address, getattr(self, "family", None))
         _guard(_addr_host(address))
         check_connect_target(address)
     with native_call("connect"):
@@ -312,13 +423,81 @@ def _names_its_own_destination(method: object, url: object) -> bool:
     return not (url == "" or url == "*" or origin_form)
 
 
+#: The one name ``_guard`` is handed for a request on a connection whose OWN destination is not local (R638). Fixed words, never
+#: ``self.host``: a caller can build an ``HTTPConnection`` from a string that still carries userinfo, and that must not reach a log (R142).
+_CONNECTION_TARGET = "a non-local host over a connection already open (opened before airplane mode was engaged)"
+
+
+def _connection_destination(conn: object) -> object:
+    """What ``_guard`` is handed for the OPEN connection a request is about to be written to (R638), or ``None`` when that is local.
+
+    Only a connection that already holds a socket is classified: a fresh one (``sock is None``) connects lazily inside ``send``, where the
+    connect guard reads the switch itself and refuses a remote target exactly as it always has (same words, same wrapping).
+
+    Not local, whatever name the connection carries:
+    - a connection that TUNNELS (``_tunnel_host`` set: a CONNECT through an HTTP proxy) -- the same rule ``_guarded_tunnel`` applies;
+    - a urllib3 SOCKS connection (``_socks_options`` set), or a socket carrying a PySocks ``proxy`` -- read from the CONNECTION as well as
+      the socket, because over HTTPS ``sock`` is an ``ssl.SSLSocket`` built anew from the PySocks socket and the attribute is gone
+      (both security reads of R638);
+    - a socket whose PEER is not a loopback address -- the name alone is not enough (urllib3 reports ``localhost.`` as ``localhost``, and
+      ``localhost.localdomain`` may be resolved by DNS); a peer that cannot be read fails closed;
+    - a connection whose ``host`` is missing, not text, or not a loopback name or literal.
+    """
+    sock = getattr(conn, "sock", None)
+    if sock is None:
+        return None
+    if getattr(conn, "_tunnel_host", None):
+        return _PROXIED_TARGET
+    if getattr(conn, "_socks_options", None):
+        return _PROXIED_TARGET
+    sock_proxy = getattr(sock, "proxy", None)
+    if isinstance(sock_proxy, tuple) and sock_proxy and sock_proxy[0] is not None:
+        return _PROXIED_TARGET
+    if getattr(sock, "family", None) != getattr(socket, "AF_UNIX", object()):
+        try:
+            peer = sock.getpeername()
+        except Exception:  # noqa: BLE001 - an unreadable peer is not local
+            return _CONNECTION_TARGET
+        if not _is_loopback_peer(peer):
+            return _CONNECTION_TARGET
+    host = getattr(conn, "host", None)
+    if isinstance(host, (str, bytes)) and host and _is_local_host(host):
+        return None
+    return _CONNECTION_TARGET
+
+
+def _is_loopback_peer(peer: object) -> bool:
+    """True when a ``getpeername()`` answer is a loopback ADDRESS (never a name: a peer is always numeric)."""
+    host = _addr_host(peer)
+    if not isinstance(host, str):
+        return False
+    try:
+        return ipaddress.ip_address(host.split("%", 1)[0]).is_loopback
+    except ValueError:
+        return False
+
+
 def _guarded_putrequest(self, method, url, *args, **kwargs):  # type: ignore[no-untyped-def]
-    """Guard a destination named IN the request line (R619): a plain ``http://`` URL through an HTTP proxy is written as an
-    absolute-form ``GET http://host/...`` to an already-allowed loopback socket, with no CONNECT and so no ``_tunnel`` call. In airplane
-    mode every such target is refused, whatever host it names; an origin-form target goes to the peer the connect guard already saw.
-    This runs before ``putrequest`` buffers anything, so a refusal leaves zero request bytes on the wire."""
+    """Guard every request written over http.client while airplane mode is engaged, before ``putrequest`` buffers anything, so a
+    refusal leaves zero request bytes on the wire. Two checks:
+
+    1. A destination named IN the request line (R619): a plain ``http://`` URL through an HTTP proxy is written as an absolute-form
+       ``GET http://host/...`` to an already-allowed loopback socket, with no CONNECT and so no ``_tunnel`` call. Every such target is
+       refused, whatever host it names.
+    2. The connection's OWN destination (R638): a keep-alive connection opened BEFORE the Stop met the connect guard while it was still
+       transparent, so an origin-form ``/path`` written to it afterwards would reach a remote host with no connect, resolve or tunnel to
+       stop it (``requests``/urllib3 reuse pooled connections exactly so). While the switch is engaged, a request on a connection whose
+       destination is not local (:func:`_connection_destination`) is refused. A fresh connection is left to the connect guard, which
+       reads the switch when its lazy connect runs; a local one (the app's own server, a loopback Ollama) is untouched. The switch is read at the moment the request is written, so a Stop that lands after a caller's own check is still met.
+
+    The ordinary path (switch clear) costs one flag read and one ``Event.is_set``: the destination is only classified while airplane
+    mode is engaged."""
     if _names_its_own_destination(method, url):
         _guard(_PROXIED_TARGET)
+    if _airplane_armed and kill_switch_active():
+        destination = _connection_destination(self)
+        if destination is not None:
+            _guard(destination)
     return _orig_putrequest(self, method, url, *args, **kwargs)
 
 

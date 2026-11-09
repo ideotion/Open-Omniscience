@@ -29,6 +29,7 @@ import socket
 import sys
 import threading
 import time
+import weakref
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError
@@ -725,6 +726,37 @@ _KILL_EPOCH = 0
 # Re-entrant, so a future signal handler that engages the switch cannot deadlock a thread holding it.
 _KILL_EPOCH_LOCK = threading.RLock()
 
+#: Every ``requests.Session`` an :class:`EthicalFetcher` fetches through, and every ``GuardedSession`` (R638). Weak, so a fetcher that is gone takes its session with
+#: it. :func:`activate_kill_switch` closes their pooled keep-alive connections: the socket guard refuses a request written to one after
+#: the Stop (``airplane._guarded_putrequest``), and closing them leaves none idle to be written to at all. A closed ``Session`` stays
+#: usable; its adapters open new pools on the next request, which then meets the connect guard.
+_FETCHER_SESSIONS: weakref.WeakSet[requests.Session] = weakref.WeakSet()
+# Re-entrant for the reason _KILL_EPOCH_LOCK is: activate_kill_switch takes it, and must not deadlock a thread already inside it.
+_FETCHER_SESSIONS_LOCK = threading.RLock()
+
+
+def _register_fetcher_session(session: requests.Session) -> None:
+    with _FETCHER_SESSIONS_LOCK:
+        _FETCHER_SESSIONS.add(session)
+
+
+def _close_fetcher_pools() -> int:
+    """Close the pooled connections of every registered fetcher session; how many sessions were closed. Never raises.
+
+    A connection a request is using at this moment is not in its pool: urllib3 closes it when the request hands it back to the closed
+    pool, and the request itself finishes or fails on its own (the single request already on the wire, as the Stop has always meant)."""
+    with _FETCHER_SESSIONS_LOCK:
+        sessions = list(_FETCHER_SESSIONS)
+    closed = 0
+    for session in sessions:
+        try:
+            session.close()
+            closed += 1
+        except Exception as exc:  # noqa: BLE001 - the Stop must complete whatever one session does
+            # The class only, never the words or a traceback: an error from a pool can carry a URL with its login (R142).
+            logging.getLogger(__name__).debug("kill switch: closing a fetcher session's pool failed (%s)", type(exc).__name__)
+    return closed
+
 
 def activate_kill_switch() -> None:
     global _KILL_EPOCH
@@ -742,6 +774,9 @@ def activate_kill_switch() -> None:
         close_window()
     except Exception:  # noqa: BLE001 - the kill switch must engage no matter what
         pass
+    # No keep-alive connection is left idle to be reused after the Stop (R638). After the switch is set, so a request that takes a
+    # connection from a pool between the two meets the putrequest guard instead.
+    _close_fetcher_pools()
 
 
 def clear_kill_switch() -> None:
@@ -893,6 +928,8 @@ class EthicalFetcher:
             self._proxy_pool = list(proxy_pool)
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": user_agent})
+        if isinstance(self.session, requests.Session):
+            _register_fetcher_session(self.session)  # its pool is closed on a Stop (R638)
         # Size the connection pool for parallel collection: with up to ~50
         # concurrent DISTINCT hosts (per-host concurrency stays 1 via the host
         # lock), the default urllib3 pool (10) would churn host-pools and warn.
