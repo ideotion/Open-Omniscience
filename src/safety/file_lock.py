@@ -40,6 +40,13 @@ from src.utils.interrupts import wait as _wait
 #: but the holder letting go. 50 ms keeps a waiter's cost under a thousandth of a core.
 _POLL_S = 0.05
 _SIDECAR = ".lock"
+#: The youngest a temp may be and still be removed by :func:`sweep_dead_temps`, in seconds of its last modification (R287 L1). A pid is judged only inside this
+#: host's pid namespace, so a writer in a container or on another machine sharing the folder looks dead by pid while its copy is in flight. A copy is in flight
+#: from its open to its swap; the longest write-to-swap is measured per file name (``max_swap_s`` in :func:`stats`) and pinned far under this bound by
+#: ``tests/test_file_lock.py`` (measured 2026-11-08 in the sandbox: 0.05 s for 32 MiB flushed, 0.35 s for 256 MiB;
+#: a disk at 30 MB/s would take about 9 s for the 256 MiB). An hour costs only that a dead writer's copy waits an hour to be
+#: swept. It is not a wait and nothing blocks on it.
+SWEEP_MIN_AGE_S = 3600.0
 
 _UNLOCKED_WARNED: set[str] = set()
 _DIR_FLUSH_SKIPPED: dict[str, int] = {}
@@ -201,12 +208,13 @@ def _note(name: str, field: str, seconds: float) -> None:
         return
     with _registry():
         row = _STATS.setdefault(name, {"max_wait_s": 0.0, "max_hold_s": 0.0})
-        if seconds > row[field]:
+        if seconds > row.get(field, 0.0):
             row[field] = seconds
 
 
 def stats() -> dict[str, dict[str, float]]:
-    """The longest wait and the longest hold seen per file name since the process began (seconds). Absent until a lock on that file was taken."""
+    """The longest wait and the longest hold seen per file name since the process began (seconds), and ``max_swap_s``, the longest
+    :func:`atomic_replace` from opening its temp to the swap. A row is absent until a lock on that file was taken or the file was replaced."""
     with _registry():
         return {k: dict(v) for k, v in _STATS.items()}
 
@@ -294,13 +302,37 @@ def temp_name(path: Path) -> Path:
 
 
 def sweep_dead_temps(path: Path) -> None:
-    """Remove ``<name>.tmp.<pid>.<thread>`` left by a process that no longer runs. Where that cannot be told (no psutil) nothing is removed."""
+    """Remove ``<name>.tmp.<pid>.<thread>`` left by a process that no longer runs. Where that cannot be told (no psutil) nothing is removed.
+
+    A copy is removed only when it was last modified at least :data:`SWEEP_MIN_AGE_S` ago AND its owner is gone: its pid does not exist here, or the pid is
+    this process's own and the copy is older than this process (a predecessor that got the same pid, as a container's server does, and was killed at the swap:
+    R287 L2). The age test is what keeps a live writer in another pid namespace or on another machine safe (R287 L1): its pid means nothing here.
+    Stated limits: the age is this host's clock against an mtime another clock may have set (a NAS or file server, an SMB client that stamps on close). So a
+    sweeper whose clock runs ahead of the folder's by more than the bound (a machine keeping its hardware clock in local time is off by whole hours), a forward
+    clock step of more than the bound during one write, or a writer stopped for longer than the bound (a suspended VM on a shared folder) can still lose that
+    one write to a peer's sweep; its ``os.replace`` then raises and the old file stays whole. A clock BEHIND the folder's only keeps copies longer."""
     try:
         import psutil
 
+        now = time.time()
+        me = os.getpid()
+        my_start: float | None = None
         for old in path.parent.glob(path.name + ".tmp.*"):
             pid = old.name.rsplit(".tmp.", 1)[1].split(".")[0]
-            if pid.isdigit() and int(pid) != os.getpid() and not psutil.pid_exists(int(pid)):
+            if not pid.isdigit():
+                continue
+            try:
+                mtime = old.stat().st_mtime
+            except OSError:
+                continue  # gone already, or unreadable: never a reason to remove
+            if now - mtime < SWEEP_MIN_AGE_S:
+                continue
+            if int(pid) == me:
+                if my_start is None:
+                    my_start = psutil.Process().create_time()
+                if mtime < my_start:
+                    old.unlink(missing_ok=True)
+            elif not psutil.pid_exists(int(pid)):
                 old.unlink(missing_ok=True)
     except Exception:  # noqa: BLE001, S110 - a sweep never breaks the writer
         pass
@@ -336,6 +368,7 @@ def atomic_replace(
     every replace)."""
     path = Path(path)
     tmp = temp_name(path)
+    began = time.perf_counter()
     try:
         fh: IO[Any] = tmp.open("wb") if isinstance(data, bytes) else tmp.open("w", encoding=encoding, newline=newline)
         with fh as f:
@@ -350,11 +383,13 @@ def atomic_replace(
                     if not _fsync_unsupported(fault):
                         raise
         os.replace(tmp, path)
+        swap_s = time.perf_counter() - began
         if fsync:
             _flush_directory(path)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+    _note(path.name, "max_swap_s", swap_s)
     if _sweep_due(path, sweep_every_s):
         sweep_dead_temps(path)
 

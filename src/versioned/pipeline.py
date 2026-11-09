@@ -331,6 +331,8 @@ def run_feed_once(
     a lane that said "gone" when it meant "not this tier" would mark live pages
     deleted.
     """
+    from src.ingest import kill_switch_engaged_since, kill_switch_epoch
+
     budget = budget or ReadBudget()
     result = PassResult(feed=feed)
 
@@ -474,9 +476,19 @@ def run_feed_once(
         # whole-second times and a little clock skew): an edit that lands while we fetch, store or
         # index is not in the text we got, and stamping "now" afterwards would call it covered.
         covered_through = _utcnow() - timedelta(seconds=COVERED_MARGIN_S)
+        epoch = kill_switch_epoch()  # this fetch's window (R617, R614): a Stop pressed and cleared again inside it is a Stop
         try:
             version = adapter.fetch_version(external_id)
         except Exception as exc:  # noqa: BLE001 - one entity must not end the pass
+            if kill_switch_engaged_since(epoch):
+                # R617: the Stop's failure, not the page's. The attempt is forgotten (the catch-up would hold the page back for
+                # BACKLOG_COOLDOWN_S), it is not counted as an error, and the pass stops fetching: with the switch still engaged every
+                # later fetch would be refused the same way. The change is already recorded with no text, which the catch-up asks
+                # for again. The cost: a genuine failure sharing the window with a Stop is asked again.
+                log_failure(_LOG, f"fetching {external_id} was cut by the network kill switch", exc, level=logging.INFO)
+                if attempts is not None:
+                    attempts.pop(entity.id, None)
+                break
             log_failure(_LOG, f"fetching {external_id} failed", exc, level=logging.WARNING)
             result.errors.append(f"{external_id}: {type(exc).__name__}")
             continue

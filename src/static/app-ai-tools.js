@@ -2493,7 +2493,9 @@
       if (btn) btn.disabled = true;
       try {
         const d = await _custodyReconcile({ scan: true, record_gaps: true });
-        const n = ((d.drained_after_queue || {}).recorded || 0);
+        // Both drains write owed entries marked late: the gaps a refused drain left queued are written by the FIRST one of the next
+        // press (R618), so counting only the second said "Recorded 0" for entries it had just written.
+        const n = ((d.drained || {}).recorded || 0) + ((d.drained_after_queue || {}).recorded || 0);
         out.textContent = _qualTf("Recorded {n} entries, each marked late.", { n: n });
         if (btn) btn.style.display = "none";
       } catch (e) {

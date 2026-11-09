@@ -57,7 +57,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.ingest import kill_switch_active
+from src.ingest import kill_switch_active, kill_switch_engaged_since, kill_switch_epoch
 from src.monitoring.secret_scrub import log_failure
 from src.wiki.sse import SseEvent, SseParser
 
@@ -429,6 +429,9 @@ class WikiEventStream:
         while True:
             if should_stop is not None and should_stop():
                 return self.counters
+            # This connection's window (R617, R614), opened BEFORE the check that lets it go: a Stop landing between the check and
+            # the GET is in it.
+            epoch = kill_switch_epoch()
             self._refuse_if_offline("opening the Wikipedia change stream")
             if max_connections is not None and self.counters.connections >= max_connections:
                 return self.counters
@@ -442,6 +445,13 @@ class WikiEventStream:
             except StreamStopped:
                 raise
             except Exception as exc:  # noqa: BLE001 - every transport fault is a retry
+                if kill_switch_engaged_since(epoch):
+                    # R617: a connection a Stop cut (the socket guard refuses the connect and requests wraps it), still engaged or
+                    # cleared again, is not a transport fault: not counted, no backoff. The loop top then refuses by name while the
+                    # switch is engaged, or reconnects at once when it was cleared. The cost: a genuine fault sharing the window is
+                    # not counted either.
+                    log_failure(_LOG, "wiki stream connection cut by the network kill switch", exc, level=logging.INFO)
+                    continue
                 self.counters.transport_errors += 1
                 self.counters.consecutive_failures += 1
                 self.counters.last_failure = type(exc).__name__

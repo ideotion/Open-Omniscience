@@ -29,7 +29,7 @@ from typing import Any
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
-from src.ingest import EthicalFetcher, kill_switch_active
+from src.ingest import EthicalFetcher, kill_switch_engaged_since, kill_switch_epoch
 from src.ingest.fetch_verdict import is_kill_switch_refusal
 from src.monitoring.secret_scrub import record_text
 
@@ -86,6 +86,9 @@ def _check_one(fetcher, source) -> dict:
     does.
     """
     base = f"https://{source.domain}"
+    # The engagement epoch (R614), captured before this source's first request: a Stop pressed and cleared again anywhere in the check,
+    # waits included, makes a failure the switch's, as when the switch is still engaged.
+    epoch = kill_switch_epoch()
     rec: dict = {
         "source_id": source.id,
         "domain": source.domain,
@@ -95,7 +98,7 @@ def _check_one(fetcher, source) -> dict:
         EthicalFetcher._refuse_parser_mismatch(base)  # before the guard looks the domain up (R622)
         fetcher._guard_target(urlparse(base).hostname)
     except Exception as exc:  # noqa: BLE001 - a refused/unresolvable target must not stop the sweep
-        if is_kill_switch_refusal(record_text(exc)) or kill_switch_active():  # our sentence on the WHOLE scrubbed text (R298), or a switch engaged now
+        if is_kill_switch_refusal(record_text(exc)) or kill_switch_engaged_since(epoch):  # our sentence on the WHOLE scrubbed text (R298), or a Stop in the check (R614)
             return _skipped_offline(rec, record_text(exc, limit=200, typed=False))
         rec["robots"] = "unreachable"
         rec["robots_error"] = record_text(exc, limit=200, typed=False)
@@ -125,7 +128,7 @@ def _check_one(fetcher, source) -> dict:
         else:
             rec["robots"] = f"http_{code}"
     except Exception as exc:  # noqa: BLE001 - per-source problems must not stop the sweep
-        if is_kill_switch_refusal(record_text(exc)) or kill_switch_active():  # our sentence on the WHOLE scrubbed text (R298), or a switch engaged now
+        if is_kill_switch_refusal(record_text(exc)) or kill_switch_engaged_since(epoch):  # our sentence on the WHOLE scrubbed text (R298), or a Stop in the check (R614)
             return _skipped_offline(rec, record_text(exc, limit=200, typed=False))
         rec["robots"] = "unreachable"
         rec["robots_error"] = record_text(exc, limit=200, typed=False)
@@ -139,7 +142,7 @@ def _check_one(fetcher, source) -> dict:
         rec["homepage_status"] = resp.status_code
         rec["reachable"] = 200 <= resp.status_code < 400
     except Exception as exc:  # noqa: BLE001
-        if is_kill_switch_refusal(record_text(exc)) or kill_switch_active():  # our sentence on the WHOLE scrubbed text (R298), or a switch engaged now
+        if is_kill_switch_refusal(record_text(exc)) or kill_switch_engaged_since(epoch):  # our sentence on the WHOLE scrubbed text (R298), or a Stop in the check (R614)
             return _skipped_offline(rec, record_text(exc, limit=200, typed=False))
         rec["reachable"] = False
         rec["homepage_error"] = record_text(exc, limit=200, typed=False)

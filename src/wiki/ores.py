@@ -159,6 +159,9 @@ class OresClient:
             self._note("empty_request")
             return {}
         params = {"models": "damaging|goodfaith", "revids": "|".join(str(r) for r in revids)}
+        from src.ingest import kill_switch_engaged_since, kill_switch_epoch
+
+        epoch = kill_switch_epoch()  # the request's window (R617, R614)
         try:
             resp = self.session.get(
                 f"{ORES_ENDPOINT}/{dbname(wiki)}/", params=params, timeout=self.timeout
@@ -167,17 +170,20 @@ class OresClient:
             # OUR OWN REFUSAL IS NAMED AS OURS. Invariant #14e's corollary: an
             # operator pointed at Wikimedia for their own airplane mode has been sent
             # to look in the wrong place.
-            from src.ingest import kill_switch_active
-            from src.safety.fetcher import RedirectRefused
+            from src.safety.fetcher import NetworkBlocked, RedirectRefused
 
-            if kill_switch_active():
-                self._note("refused_offline", "the network kill switch is active (airplane mode)")
-                _LOG.info("ORES scoring refused by THIS APP: airplane mode is engaged")
-            elif isinstance(exc, RedirectRefused):
+            if isinstance(exc, RedirectRefused):
                 # R143: the list is exactly ``ores.wikimedia.org``, so a redirect to Lift Wing (or any other host) is refused here and is
                 # named as ours, not as a network fault: this is the signal Q717's verification reads. ``reason`` is a fixed sentence.
+                # FIRST (R617): a redirect is the host's own answer, which a Stop cannot produce, so a Stop sharing its window does not
+                # hide it (walk keeps an HTTP answer the host's the same way).
                 self._note("refused_redirect", exc.reason)
                 log_failure(_LOG, f"ORES scoring failed for {wiki}", exc, level=logging.WARNING)
+            elif kill_switch_engaged_since(epoch) or isinstance(exc, NetworkBlocked):
+                # R617: a Stop pressed and cleared again inside the request is the switch's too (the epoch), and so is the session's own
+                # refusal BY NAME, written before any request (a switch engaged before the epoch was taken and cleared before this read).
+                self._note("refused_offline", "the network kill switch is active (airplane mode)")
+                _LOG.info("ORES scoring refused by THIS APP: airplane mode is engaged")
             else:
                 self._note("transport_error", type(exc).__name__)
                 log_failure(_LOG, f"ORES scoring failed for {wiki}", exc, level=logging.WARNING)

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "52374bdda6beafe0415069d9bf300c2230f4fa137dd0b088a6b6e55023b2cfa4",
+  "digest": "14ce535ce31fbb78a596b6081ba762bb7166d4748bed567d8b498653ba6d42f6",
   "log": [
     {
       "version": 1,
@@ -19,6 +19,12 @@
       "digest": "52374bdda6beafe0415069d9bf300c2230f4fa137dd0b088a6b6e55023b2cfa4",
       "kind": "same",
       "note": "R415 on the A-037 base: the www modules and gazetteers left the keyword digest and index_article gained the www stamp write; keyword rows are unchanged"
+    },
+    {
+      "version": 1,
+      "digest": "14ce535ce31fbb78a596b6081ba762bb7166d4748bed567d8b498653ba6d42f6",
+      "kind": "same",
+      "note": "store.py changed only in prune_orphan_keywords (R632: the epoch bump moved behind the day-count check) and its imports; index_article and every function it calls are untouched, so the rows an article gets are identical"
     }
   ]
 }

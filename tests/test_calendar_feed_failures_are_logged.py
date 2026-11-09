@@ -22,6 +22,7 @@ import json
 import pytest
 
 from src.events import feeds as F
+from tests.os_scope import scope_os
 
 CRED_URL = "https://alice:hunter2@calendar.example/feed.ics"
 
@@ -30,6 +31,7 @@ CRED_URL = "https://alice:hunter2@calendar.example/feed.ics"
 def _isolated_store(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     yield
+    F._READ_AS_DAMAGED.clear()  # the marks of a test's own folder go with it
 
 
 def _first_feed_ids(n: int) -> list[str]:
@@ -198,17 +200,153 @@ def _store(name: str):
     return F._store_path(name)
 
 
-def test_a_damaged_store_is_on_the_record_and_the_next_save_still_replaces_it(caplog):
-    """The reproduction: a torn ``calendar_feed_imports.json`` holding one imported event, then a restore-merge of one new event. The merge stands as before (added 1) and
-    the file afterwards holds ONLY the new event: that residual is pinned here so the day the damaged bytes are kept (proposal item 31) this test changes on purpose."""
+_TORN = '{"fam": {"name": "F", "events": {"fp1": {"title": "kept?"}}}  <-- torn'
+_NEW = {"fam2": {"name": "G", "events": {"fp2": {"title": "new"}}}}
+
+
+def _kept(name: str):
+    return _store(name + ".damaged")
+
+
+def test_a_damaged_store_is_on_the_record_and_its_bytes_are_kept_before_the_next_save_replaces_it(caplog):
+    """The reproduction: a torn ``calendar_feed_imports.json`` holding one imported event, then a restore-merge of one new event. The merge stands as before (added 1)
+    and the store holds the new event; since R397 (b) (item 31) the damaged bytes are kept, byte for byte, as ``calendar_feed_imports.json.damaged``."""
     p = _store("calendar_feed_imports.json")
-    p.write_text('{"fam": {"name": "F", "events": {"fp1": {"title": "kept?"}}}  <-- torn', "utf-8")
+    p.write_text(_TORN, "utf-8")
     with caplog.at_level("WARNING"):
-        out = F.merge_imported_store("calendar_feed_imports.json", {"fam2": {"name": "G", "events": {"fp2": {"title": "new"}}}})
+        out = F.merge_imported_store("calendar_feed_imports.json", _NEW)
     assert out["added"] == 1, "behaviour unchanged"
     assert "calendar_feed_imports.json exists but could not be read" in caplog.text and "JSONDecodeError" in caplog.text
+    assert "kept as calendar_feed_imports.json.damaged" in caplog.text
     assert "kept?" not in caplog.text and "torn" not in caplog.text, "the class only: nothing of the store's content or the parser's words"
-    assert list(F._load_json("calendar_feed_imports.json")) == ["fam2"], "the residual: the damaged store is gone after the save"
+    assert list(F._load_json("calendar_feed_imports.json")) == ["fam2"], "the save still writes the new store"
+    assert _kept("calendar_feed_imports.json").read_text("utf-8") == _TORN, "the damaged bytes survive, unchanged"
+
+
+def test_an_earlier_kept_copy_is_never_overwritten_by_a_second_damage(caplog):
+    _kept("calendar_feed_imports.json").write_text("first evidence", "utf-8")
+    _store("calendar_feed_imports.json").write_text(_TORN, "utf-8")
+    with caplog.at_level("WARNING"):
+        F.merge_imported_store("calendar_feed_imports.json", _NEW)
+    assert _kept("calendar_feed_imports.json").read_text("utf-8") == "first evidence"
+    assert "an earlier copy is already kept as calendar_feed_imports.json.damaged" in caplog.text
+    assert list(F._load_json("calendar_feed_imports.json")) == ["fam2"], "the save goes on, as it did before"
+
+
+def test_the_copy_is_made_once_and_a_later_healthy_save_moves_nothing():
+    _store("calendar_feed_imports.json").write_text(_TORN, "utf-8")
+    F.merge_imported_store("calendar_feed_imports.json", _NEW)
+    F.merge_imported_store("calendar_feed_imports.json", {"fam3": {"name": "H", "events": {"fp3": {"title": "later"}}}})
+    assert _kept("calendar_feed_imports.json").read_text("utf-8") == _TORN
+    assert sorted(F._load_json("calendar_feed_imports.json")) == ["fam2", "fam3"], "the second save read a healthy store and replaced it as usual"
+
+
+def test_a_store_repaired_between_the_damaged_read_and_the_save_is_not_moved():
+    p = _store("calendar_feed_imports.json")
+    p.write_text(_TORN, "utf-8")
+    assert F._load_json("calendar_feed_imports.json") == {}
+    p.write_text(json.dumps({"fam": {"name": "F", "events": {"fp1": {"title": "repaired"}}}}), "utf-8")
+    assert list(F._load_json("calendar_feed_imports.json")) == ["fam"]
+    assert p not in F._READ_AS_DAMAGED, "the healthy read cleared the mark"
+    F.merge_imported_store("calendar_feed_imports.json", _NEW)
+    assert not _kept("calendar_feed_imports.json").exists(), "the healthy read cleared the mark"
+    assert sorted(F._load_json("calendar_feed_imports.json")) == ["fam", "fam2"]
+
+
+@pytest.mark.parametrize("body", ["[1]", "null", '{"fam": "not a family"}'])
+def test_an_imports_store_that_parses_but_reads_as_empty_is_kept_too(body):
+    _store("calendar_feed_imports.json").write_text(body, "utf-8")
+    F.merge_imported_store("calendar_feed_imports.json", _NEW)
+    assert _kept("calendar_feed_imports.json").read_text("utf-8") == body
+
+
+@pytest.mark.parametrize("body", [None, "{}"])
+def test_an_absent_or_empty_imports_store_leaves_no_copy(body):
+    if body is not None:
+        _store("calendar_feed_imports.json").write_text(body, "utf-8")
+    F.merge_imported_store("calendar_feed_imports.json", _NEW)
+    assert not _kept("calendar_feed_imports.json").exists()
+
+
+def test_the_stores_the_next_pass_rebuilds_are_replaced_as_before_with_no_copy():
+    """Only the imported-events store holds the user's own imports; the re-check ladder is rebuilt by the next pass (the proposal's scope)."""
+    _store("calendar_feed_attempts.json").write_text("{torn", "utf-8")
+    F.record_attempt(_first_feed_ids(1)[0], "ok")
+    assert not _kept("calendar_feed_attempts.json").exists()
+    assert _first_feed_ids(1)[0] in F.load_attempts()
+
+
+def test_a_read_under_one_data_folder_never_moves_a_store_under_another(monkeypatch, tmp_path):
+    _store("calendar_feed_imports.json").write_text(_TORN, "utf-8")
+    assert F._load_json("calendar_feed_imports.json") == {}
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "calendar_feed_imports.json").write_text(json.dumps(_NEW), "utf-8")  # a healthy store there, so only the PATH key keeps it in place
+    monkeypatch.setenv("OO_DATA_DIR", str(other))
+    F._save_json("calendar_feed_imports.json", {"fam3": {"name": "H", "events": {}}}, mirror=False)
+    assert not (other / "calendar_feed_imports.json.damaged").exists()
+
+
+def test_a_passing_read_error_does_not_mark_a_healthy_store(monkeypatch):
+    """EMFILE, or a Windows sharing violation while another thread replaces the file, is not damage: marking it would spend the one copy on healthy bytes."""
+    import errno
+    import pathlib
+
+    p = _store("calendar_feed_imports.json")
+    p.write_text(json.dumps(_NEW), "utf-8")
+    real = pathlib.Path.read_text
+
+    def flaky(self, *a, **k):
+        if self == p:
+            raise OSError(errno.EMFILE, "too many open files")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", flaky)
+    assert F._load_json("calendar_feed_imports.json") == {}
+    monkeypatch.setattr(pathlib.Path, "read_text", real)
+    F._save_json("calendar_feed_imports.json", {"fam3": {"name": "H", "events": {}}}, mirror=False)
+    assert not _kept("calendar_feed_imports.json").exists()
+
+
+def test_an_io_error_in_the_file_marks_it(monkeypatch):
+    import errno
+    import pathlib
+
+    p = _store("calendar_feed_imports.json")
+    p.write_text("bytes on a bad sector", "utf-8")
+    real = pathlib.Path.read_text
+
+    def eio(self, *a, **k):
+        if self == p:
+            raise OSError(errno.EIO, "input/output error")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", eio)
+    assert F._load_json("calendar_feed_imports.json") == {}
+    monkeypatch.setattr(pathlib.Path, "read_text", real)
+    F._save_json("calendar_feed_imports.json", _NEW, mirror=False)
+    assert _kept("calendar_feed_imports.json").read_text("utf-8") == "bytes on a bad sector"
+
+
+def test_a_copy_that_cannot_be_made_never_blocks_the_save_and_leaves_no_mark_on_the_new_store(monkeypatch, caplog):
+    p = _store("calendar_feed_imports.json")
+    p.write_text(_TORN, "utf-8")
+    assert F._load_json("calendar_feed_imports.json") == {}
+    real = F.os.replace
+    calls = {"n": 0}
+
+    def refuse_the_copy(src, dst):
+        if str(dst).endswith(".damaged") and calls["n"] == 0:
+            calls["n"] += 1
+            raise PermissionError("held open")
+        return real(src, dst)
+
+    scope_os(monkeypatch, F, replace=refuse_the_copy, link=_no_links)  # the move path: a drive with no second names, and the move refused
+    with caplog.at_level("WARNING"):
+        F._save_json("calendar_feed_imports.json", _NEW, mirror=False)
+    assert p not in F._READ_AS_DAMAGED, "the new store is healthy: a mark left on it would move it at the next save"
+    assert "could not be kept as calendar_feed_imports.json.damaged" in caplog.text and "PermissionError" in caplog.text
+    assert list(F._load_json("calendar_feed_imports.json")) == ["fam2"], "the save went on"
 
 
 def test_a_store_that_cannot_be_opened_is_on_the_record(caplog):
@@ -242,6 +380,14 @@ def test_a_store_cut_mid_character_reads_as_empty_and_is_on_the_record_instead_o
         assert F.load_imports() == {}, "the reader the API serves from reads it as empty too"
     assert "calendar_feed_imports.json exists but could not be read" in caplog.text and "UnicodeDecodeError" in caplog.text
     assert "No" + "ël" not in caplog.text and "fp1" not in caplog.text, "no fragment of the store's text"
+
+
+def test_a_store_cut_mid_character_is_kept_byte_for_byte_before_the_next_save():
+    p = _store("calendar_feed_imports.json")
+    _cut_mid_character(p)
+    cut = p.read_bytes()
+    F.merge_imported_store("calendar_feed_imports.json", _NEW)
+    assert _kept("calendar_feed_imports.json").read_bytes() == cut
 
 
 def test_a_restore_merge_over_a_store_cut_mid_character_merges_instead_of_raising():
@@ -404,3 +550,192 @@ def test_a_null_sources_or_uids_reads_as_an_empty_list_so_the_restore_merge_does
     after = json.loads(_store("calendar_feed_imports.json").read_text("utf-8"))
     entry = after["user-f"]["events"]["x|2026-12-01"]
     assert entry["sources"] == ["b"] and entry["uids"] == ["u"]
+
+
+def test_a_store_replaced_after_the_damaged_read_is_not_moved():
+    """A reader that read the torn file can note its mark after another writer has already kept the bytes and written a healthy store: the
+    mark carries the identity of the file READ, so the healthy file that replaced it is never moved into the one ``.damaged`` slot."""
+    p = _store("calendar_feed_imports.json")
+    p.write_text(_TORN, "utf-8")
+    assert F._load_json("calendar_feed_imports.json") == {}
+    fresh = p.with_name("fresh.json")
+    fresh.write_text(json.dumps({"fam": {"name": "F", "events": {"fp1": {"title": "a later, healthy store"}}}}), "utf-8")
+    F.os.replace(fresh, p)  # what another writer's save does: a new file under the store's name
+    F._save_json("calendar_feed_imports.json", _NEW, mirror=False)
+    assert not _kept("calendar_feed_imports.json").exists()
+    assert p not in F._READ_AS_DAMAGED
+
+
+def test_on_windows_a_read_error_carries_no_winerror_and_does_not_mark_the_store(monkeypatch):
+    """What ``Path.read_text`` raises on Windows comes from the C runtime's errno alone (a bad sector reads as EACCES or EINVAL, as a sharing
+    violation does), so nothing tells damage from a passing lock there and the store is not marked: the residual R397 (b) states."""
+    import errno
+    import pathlib
+
+    p = _store("calendar_feed_imports.json")
+    p.write_text("bytes on a bad sector", "utf-8")
+    real = pathlib.Path.read_text
+
+    def crt_error(self, *a, **k):
+        if self == p:
+            raise PermissionError(errno.EACCES, "permission denied")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", crt_error)
+    assert F._load_json("calendar_feed_imports.json") == {}
+    monkeypatch.setattr(pathlib.Path, "read_text", real)
+    F._save_json("calendar_feed_imports.json", _NEW, mirror=False)
+    assert not _kept("calendar_feed_imports.json").exists()
+
+
+def test_a_passing_read_error_after_a_damaged_read_keeps_the_mark(monkeypatch):
+    """The Agenda reads the torn store (marked), a second read hits EMFILE: that says nothing about the file, so the next save still keeps it."""
+    import errno
+    import pathlib
+
+    p = _store("calendar_feed_imports.json")
+    p.write_text(_TORN, "utf-8")
+    assert F._load_json("calendar_feed_imports.json") == {}
+    real = pathlib.Path.read_text
+
+    def emfile(self, *a, **k):
+        if self == p:
+            raise OSError(errno.EMFILE, "too many open files")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", emfile)
+    assert F._load_json("calendar_feed_imports.json") == {}
+    monkeypatch.setattr(pathlib.Path, "read_text", real)
+    F._save_json("calendar_feed_imports.json", _NEW, mirror=False)
+    assert _kept("calendar_feed_imports.json").read_text("utf-8") == _TORN
+
+
+@pytest.mark.parametrize("body", ["", "  \n"])
+def test_an_empty_store_does_not_spend_the_one_copy(body):
+    """A file left empty (a power cut before the data reached the disk) holds nothing to recover; a later real damage must still find the slot free."""
+    p = _store("calendar_feed_imports.json")
+    p.write_text(body, "utf-8")
+    F.merge_imported_store("calendar_feed_imports.json", _NEW)
+    if body == "":
+        assert not _kept("calendar_feed_imports.json").exists()
+    else:
+        assert _kept("calendar_feed_imports.json").read_text("utf-8") == body, "whitespace is kept: a few bytes, and not the common case"
+
+
+def test_the_identity_is_the_file_read_not_the_file_found_after_the_read(monkeypatch):
+    """The store is replaced by a healthy one WHILE the torn one is being read: the mark carries the torn file's identity, so the save moves nothing."""
+    import pathlib
+
+    p = _store("calendar_feed_imports.json")
+    p.write_text(_TORN, "utf-8")
+    real = pathlib.Path.read_text
+
+    def read_then_replaced(self, *a, **k):
+        text = real(self, *a, **k)
+        if self == p:
+            fresh = p.with_name("fresh.json")
+            fresh.write_text(json.dumps({"fam": {"name": "F", "events": {}}}), "utf-8")
+            F.os.replace(fresh, p)
+        return text
+
+    monkeypatch.setattr(pathlib.Path, "read_text", read_then_replaced)
+    assert F._load_json("calendar_feed_imports.json") == {}
+    monkeypatch.setattr(pathlib.Path, "read_text", real)
+    F._save_json("calendar_feed_imports.json", _NEW, mirror=False)
+    assert not _kept("calendar_feed_imports.json").exists()
+
+
+def test_without_a_second_name_the_copy_is_still_made_by_a_move(monkeypatch):
+    """A FAT or exFAT data folder cannot hard-link: the copy falls back to the check-then-move, and the bytes survive the same way."""
+    p = _store("calendar_feed_imports.json")
+    p.write_text(_TORN, "utf-8")
+
+    scope_os(monkeypatch, F, link=_no_links)
+    F.merge_imported_store("calendar_feed_imports.json", _NEW)
+    assert _kept("calendar_feed_imports.json").read_text("utf-8") == _TORN
+    assert list(F._load_json("calendar_feed_imports.json")) == ["fam2"]
+
+
+def _no_links(src, dst):
+    raise OSError(1, "operation not permitted")
+
+
+def test_without_a_second_name_an_earlier_copy_is_still_never_overwritten(monkeypatch):
+    _kept("calendar_feed_imports.json").write_text("first evidence", "utf-8")
+    _store("calendar_feed_imports.json").write_text(_TORN, "utf-8")
+    scope_os(monkeypatch, F, link=_no_links)
+    F.merge_imported_store("calendar_feed_imports.json", _NEW)
+    assert _kept("calendar_feed_imports.json").read_text("utf-8") == "first evidence"
+
+
+def test_a_failed_write_leaves_the_damaged_store_where_it_was_and_makes_no_copy(monkeypatch):
+    import pathlib
+
+    p = _store("calendar_feed_imports.json")
+    p.write_text(_TORN, "utf-8")
+    assert F._load_json("calendar_feed_imports.json") == {}
+    real = pathlib.Path.write_text
+
+    def disk_full(self, *a, **k):
+        if self.name.endswith(".tmp"):
+            raise OSError(28, "no space left on device")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(pathlib.Path, "write_text", disk_full)
+    with pytest.raises(OSError):
+        F._save_json("calendar_feed_imports.json", _NEW, mirror=False)
+    assert p.read_text("utf-8") == _TORN and not _kept("calendar_feed_imports.json").exists()
+
+
+@pytest.mark.parametrize("links", [True, False])
+def test_a_store_replaced_between_the_check_and_the_copy_is_given_back(monkeypatch, links):
+    """Two saves race: this one passed the identity check, and another writer's new store lands under the name before the copy is made.
+    The copy's identity is checked after it is made, so the new store is not taken into the one slot."""
+    p = _store("calendar_feed_imports.json")
+    p.write_text(_TORN, "utf-8")
+    assert F._load_json("calendar_feed_imports.json") == {}
+    healthy = json.dumps({"fam": {"name": "F", "events": {}}})
+    real_identity = F._identity
+    swapped = {"done": False}
+
+    def identity_then_swap(path):
+        out = real_identity(path)
+        if path == p and not swapped["done"]:
+            swapped["done"] = True
+            fresh = p.with_name("fresh.json")
+            fresh.write_text(healthy, "utf-8")
+            F.os.replace(fresh, p)  # lands right after the check
+        return out
+
+    monkeypatch.setattr(F, "_identity", identity_then_swap)
+    if not links:
+        scope_os(monkeypatch, F, link=_no_links)
+    F._keep_damaged_bytes("calendar_feed_imports.json", p)
+    assert not _kept("calendar_feed_imports.json").exists(), "the slot stays free"
+    assert p.read_text("utf-8") == healthy, "the other writer's store is where it was"
+
+
+def test_json_nested_too_deeply_for_the_parser_reads_as_empty_and_is_kept(caplog):
+    p = _store("calendar_feed_imports.json")
+    p.write_text("[" * 200000, "utf-8")
+    with caplog.at_level("WARNING"):
+        assert F._load_json("calendar_feed_imports.json") == {}
+    assert "RecursionError" in caplog.text
+    F.merge_imported_store("calendar_feed_imports.json", _NEW)
+    assert _kept("calendar_feed_imports.json").read_text("utf-8") == "[" * 200000
+
+
+def test_a_move_that_changes_only_the_file_index_still_keeps_the_copy(monkeypatch):
+    """Windows on FAT or exFAT (no hard links, so the move path) gives a renamed file a new index: the copy is still kept, by mtime and size."""
+    p = _store("calendar_feed_imports.json")
+    p.write_text(_TORN, "utf-8")
+    real_identity = F._identity
+
+    def new_index_after_a_rename(path):
+        out = real_identity(path)
+        return (out[0] + 1, out[1], out[2]) if out is not None and path.name.endswith(".damaged") else out
+
+    monkeypatch.setattr(F, "_identity", new_index_after_a_rename)
+    scope_os(monkeypatch, F, link=_no_links)
+    F.merge_imported_store("calendar_feed_imports.json", _NEW)
+    assert _kept("calendar_feed_imports.json").read_text("utf-8") == _TORN

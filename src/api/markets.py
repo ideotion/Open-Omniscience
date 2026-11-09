@@ -282,7 +282,7 @@ def import_all_feeds(
     the feed the Stop cut and the ones after it are not results and not failures;
     ``skipped_offline`` (present only then) says how many were not answered (R377).
     """
-    from src.ingest import kill_switch_active
+    from src.ingest import kill_switch_active, kill_switch_engaged_since, kill_switch_epoch
     from src.markets.csv_feeds import import_feed
     from src.markets.feed_catalog import feeds_for_category
 
@@ -290,6 +290,7 @@ def import_all_feeds(
     todo = [f for f in feeds_for_category(category) if wanted is None or f.key in wanted]
     results, imported, failed, skipped_offline = [], 0, 0, 0
     for i, feed in enumerate(todo):
+        feed_epoch = kill_switch_epoch()  # this feed's window (R617, R614), opened before the check that lets it go
         if kill_switch_active():
             # A Stop: the feeds not yet asked for are neither results nor failures, and the response says how many were not answered (R377).
             skipped_offline = len(todo) - i
@@ -321,8 +322,8 @@ def import_all_feeds(
                 failed += 1
         except Exception as exc:  # noqa: BLE001 - one feed must never 500 the whole batch
             db.rollback()
-            if kill_switch_active():
-                # the Stop cut this feed's check in whatever shape the error took (R320); the exception is still logged, as the markets pass does
+            if kill_switch_engaged_since(feed_epoch):
+                # the Stop cut this feed's check in whatever shape the error took (R320), still engaged or cleared again (R617, R614); the exception is still logged, as the markets pass does
                 log_failure(_LOG, f"market feed {feed.key} raised during a Stop", exc, level=logging.WARNING)
                 skipped_offline = len(todo) - i
                 break

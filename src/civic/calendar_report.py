@@ -334,11 +334,10 @@ def country_tier_report(
         "countries": rows,
         "method": (
             "Each floor country takes ONE state from its election entries in the shipped catalogue, "
-            "first match wins: 'scheduled' (an entry states an official date), 'window' (a stated "
-            "month or year), 'projected_upcoming' (a sourced recurrence rule projects a date not yet "
-            "passed), 'projected_passed' (every projection has passed), 'dateless' (an entry with no "
-            "date and no rule) or 'missing' (no entry). 'tier' is the best date tier found; counts "
-            "are plain tallies of the states."
+            "first match wins: scheduled (an entry states an official date), window (a stated month "
+            "or year), projected (a sourced recurrence rule projects a year not yet passed), "
+            "projected · passed (every projection has passed), dateless (an entry with no date and "
+            "no rule) or missing (no entry). The counts are plain tallies of these states."
         ),
         "caveat": (
             "States describe calendar ENTRIES, never a claim that an election will be held. "
