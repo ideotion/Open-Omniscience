@@ -159,16 +159,6 @@ def _iso(v: Any) -> str | None:
     return v
 
 
-def _began_in(started_at: str, build_started: str | None) -> bool:
-    """Whether a pass began during the build that started at ``build_started`` (a second round in the same build continues it as is)."""
-    if build_started is None:
-        return False
-    try:
-        return datetime.fromisoformat(started_at) >= datetime.fromisoformat(build_started)
-    except ValueError:
-        return False
-
-
 #: The orphan-keyword rule reads mentions, which the epoch does not cover (ingest adds a keyword's first mention, and re-indexing an
 #: existing article rewrites its mentions without a bump), so that pass ALSO watches the largest mention id: any insert or rewrite
 #: allocates a new one. O(1). The dangling checks read a mention's article and keyword, which the counts above already watch.
@@ -202,7 +192,11 @@ class _Generations:
 
             out: dict[str, Any] = {"epoch": get_corpus_epoch(self._session)}
             for t, top in key:
-                n = _scalar(self._session, f"SELECT COUNT(*) FROM {t} WHERE id <= :top", {"top": top})  # nosec B608 - `t` is a constant above
+                try:
+                    n = _scalar(self._session, f"SELECT COUNT(*) FROM {t} WHERE id <= :top", {"top": top})  # nosec B608 - `t` is a constant above
+                except Exception:
+                    self._cache[key] = None  # a count the deadline cut is not tried again in this build: unknown, so changed
+                    raise
                 if n is None:
                     self._cache[key] = None
                     return None
@@ -306,7 +300,7 @@ def _fk_pending(p: Any, names: list[str]) -> dict[str, Any] | None:
 
 def _range_scan(
     session: Session, check: str, table: str, sql: str, saved: dict[str, Any], progress: dict[str, Any], stop_at: float | None = None,
-    gens: _Generations | None = None, build_started: str | None = None,
+    gens: _Generations | None = None, begun: set[str] | None = None,
 ) -> int | None:
     """Count one exact check in id ranges, from where the last build stopped, until it finishes or the budget runs out.
 
@@ -319,8 +313,9 @@ def _range_scan(
     ``progress[check]`` is written before any interrupt is re-raised, so a check cut mid-range still says where it stands.
 
     A saved pass is resumed only when it is well formed and consistent with the table now (else ``cursor: discarded``) and the corpus below
-    its place is as it was when it began (``gens``; else ``cursor: restarted``). A pass THIS build began (``build_started``: a second round
-    over the budget left) is simply continued. A figure finished from a pass an earlier build began says ``assembled_across_builds``: it
+    its place is as it was when it began (``gens``; else ``cursor: restarted``). A pass THIS build began (its check is in ``begun``, the
+    set of checks that started a fresh pass in this build -- kept in memory, never read off a clock: a second round over the budget left)
+    is simply continued. A figure finished from a pass an earlier build began says ``assembled_across_builds``: it
     holds for the rows at or below its ``through_id``."""
     gens = gens if gens is not None else _Generations(session)
     prev: dict[str, Any] = saved[check] if isinstance(saved.get(check), dict) else {}
@@ -333,7 +328,7 @@ def _range_scan(
     pending = _range_pending(prev.get("pending"), top) if prev.get("pending") is not None else None
     if prev.get("pending") is not None and pending is None:
         cursor_note = {"cursor": "discarded", "cursor_reason": "the saved place was malformed or inconsistent with the table; a fresh pass began"}
-    this_build = pending is not None and _began_in(pending["started_at"], build_started)
+    this_build = pending is not None and begun is not None and check in begun
     if pending is not None and not this_build and not gens.still(pending["generation"], _RANGE_ALSO_WATCH.get(check, ())):
         pending = None
         reason = "rows the check reads changed since its pass began (or the corpus epoch moved); a fresh pass began"
@@ -347,6 +342,8 @@ def _range_scan(
     else:
         through, nxt, tally, step, started = top, 0, 0, _FIRST_RANGE_ROWS, _now_iso()
         generation = gens.seed(_RANGE_ALSO_WATCH.get(check, ()))
+        if begun is not None:
+            begun.add(check)
     range_error = False
     interrupted: BaseException | None = None
     while nxt < through:
@@ -394,7 +391,7 @@ def _range_scan(
 
 def _fk_scan(
     session: Session, saved: dict[str, Any], progress: dict[str, Any], stop_at: float | None = None, gens: _Generations | None = None,
-    build_started: str | None = None,
+    begun: set[str] | None = None,
 ) -> int | None:
     """``PRAGMA foreign_key_check`` one table at a time, from the tables the last build had not reached.
 
@@ -417,7 +414,7 @@ def _fk_scan(
     pending = _fk_pending(prev.get("pending"), names) if prev.get("pending") is not None else None
     if prev.get("pending") is not None and pending is None:
         cursor_note = {"cursor": "discarded", "cursor_reason": "the saved place was malformed; a fresh pass began"}
-    this_build = pending is not None and _began_in(pending["started_at"], build_started)
+    this_build = pending is not None and begun is not None and "foreign_key_violations" in begun
     if pending is not None and not this_build and not gens.still(pending["generation"]):
         pending = None
         cursor_note = {"cursor": "restarted", "cursor_reason": "rows below the saved place changed since its pass began (or the corpus epoch moved); a fresh pass began"}
@@ -426,6 +423,8 @@ def _fk_scan(
         done_tables, bad, started, generation = pending["tables"], pending["violating_tables"], pending["started_at"], pending["generation"]
     else:
         done_tables, bad, started, generation = {}, set(), _now_iso(), gens.seed()
+        if begun is not None:
+            begun.add("foreign_key_violations")
     errors: list[dict[str, str]] = []
     interrupted: BaseException | None = None
     for name in names:
@@ -540,7 +539,7 @@ def corpus_integrity(
     timed_out = False
     saved: dict[str, Any] = cursor.load() if cursor is not None else {}
     progress: dict[str, Any] = {}
-    build_started = _now_iso()
+    begun: set[str] = set()  # the checks that began a fresh pass in this build: a later round continues them without re-checking
     gens = _Generations(session, enabled=cursor is not None)  # no cursor store: no pass is kept, so no marker is read
 
     try:
@@ -649,10 +648,10 @@ def corpus_integrity(
                     left = deadline_left_s(session)
                     stop_at = None if left is None else time.monotonic() + max(left, 0.0) / (len(todo) - i)
                     if check == "foreign_key_violations":
-                        report[check] = _fk_scan(session, saved, progress, stop_at, gens, build_started)
+                        report[check] = _fk_scan(session, saved, progress, stop_at, gens, begun)
                     else:
                         _c, table, sql = next(r for r in _RANGE_SCANS if r[0] == check)
-                        report[check] = _range_scan(session, check, table, sql, saved, progress, stop_at, gens, build_started)
+                        report[check] = _range_scan(session, check, table, sql, saved, progress, stop_at, gens, begun)
                 todo = [c for c in todo if (progress.get(c) or {}).get("state") == "partial"]
                 if deadline_expired(session) or all(_place(progress.get(c)) == before[c] for c in todo):
                     break
@@ -729,14 +728,21 @@ def corpus_integrity(
 
     if cursor is not None:
         # An unfinished pass carries a marker of the corpus as it began; its row counts are taken here, once, only for what is saved.
-        for entry in saved.values():
-            pend = entry.get("pending") if isinstance(entry, dict) else None
-            if isinstance(pend, dict) and isinstance(pend.get("generation"), dict) and pend["generation"].get("seed"):
-                try:
-                    with statement_deadline(session, seconds=15):
-                        pend["generation"] = gens.finalize(pend["generation"])
-                except Exception:  # noqa: BLE001 - no marker: the next build starts this pass over, which is the safe direction
-                    pend["generation"] = None
+        # ONE 15 s deadline for all of them: this runs after the main budget, inside the exclusive window, so a deadline per pass would
+        # hold collection paused for 15 s per pending pass. A pass whose marker is not taken in time keeps none, and the next build starts
+        # it over, which is the safe direction.
+        seeded = [pend for entry in saved.values()
+                  for pend in [entry.get("pending") if isinstance(entry, dict) else None]
+                  if isinstance(pend, dict) and isinstance(pend.get("generation"), dict) and pend["generation"].get("seed")]
+        try:
+            with statement_deadline(session, seconds=15):
+                for pend in seeded:  # once the 15 s are spent every statement is interrupted, which ends the loop below
+                    pend["generation"] = gens.finalize(pend["generation"])
+        except Exception:  # noqa: BLE001 - see above
+            pass
+        for pend in seeded:
+            if isinstance(pend.get("generation"), dict) and pend["generation"].get("seed"):
+                pend["generation"] = None
         cursor.save(saved)
     report["scan_progress"] = progress
     report["timed_out"] = timed_out

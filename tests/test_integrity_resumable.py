@@ -355,8 +355,8 @@ def test_a_partial_foreign_key_pass_lists_no_violating_tables_beside_its_none(se
     monkeypatch.setattr(integrity, "deadline_expired", lambda _s: False)
     real = integrity._fk_scan
 
-    def cut(session_, saved, progress, stop_at=None, gens=None, build_started=None):
-        return real(session_, saved, progress, -1.0, gens, build_started)  # a share already spent: the walk stops at once
+    def cut(session_, saved, progress, stop_at=None, gens=None, begun=None):
+        return real(session_, saved, progress, -1.0, gens, begun)  # a share already spent: the walk stops at once
 
     import types
 
@@ -561,3 +561,86 @@ def test_without_a_cursor_store_no_generation_marker_is_read(session, tiny_range
     monkeypatch.setattr(integrity, "_scalar", watching)
     integrity.corpus_integrity(session, sample=100)
     assert not [q for q in seen if "WHERE id <= :top" in q], seen
+
+
+# --------------------------------------------------------------------------- #
+#  The markers of the passes saved unfinished share ONE short deadline after the main budget (Steward 1's should-fix)
+# --------------------------------------------------------------------------- #
+def test_the_markers_of_every_unfinished_pass_share_one_deadline_and_a_cut_leaves_none(session, tiny_ranges, monkeypatch):
+    """This runs inside the exclusive window after the 60 s budget, so collection is still paused: a 15 s deadline per pending
+    pass would hold it 15 s more for each one. One deadline covers them all; the first count it cuts ends the loop, and every
+    pass not finalized keeps no marker, so the next build starts it over."""
+    import contextlib
+    import types
+
+    _corpus(session, keywords=40, orphans=30)
+    clock = {"t": 0.0}
+    monkeypatch.setattr(integrity, "deadline_left_s", lambda _s: 100.0 - clock["t"])
+    monkeypatch.setattr(integrity, "deadline_expired", lambda _s: clock["t"] >= 100.0)
+    monkeypatch.setattr(integrity, "time", types.SimpleNamespace(monotonic=lambda: clock["t"]))
+    real = integrity._scalar
+
+    def costly(session_, sql, params=None):
+        if params is not None and "lo" in params:
+            clock["t"] += 10.0  # every range of every walk: none of the three finishes inside the budget
+        return real(session_, sql, params)
+
+    monkeypatch.setattr(integrity, "_scalar", costly)
+    deadlines: list = []
+    real_deadline = integrity.statement_deadline
+
+    @contextlib.contextmanager
+    def recording(session_, seconds=None):
+        deadlines.append(seconds)
+        with real_deadline(session_, seconds=seconds):
+            yield
+
+    monkeypatch.setattr(integrity, "statement_deadline", recording)
+    calls = {"n": 0}
+
+    def cut(self, seed):
+        calls["n"] += 1
+        raise RuntimeError("interrupted")  # the 15 s ran out on the first pass's counts
+
+    monkeypatch.setattr(integrity._Generations, "finalize", cut)
+    store = MemStore()
+    integrity.corpus_integrity(session, sample=100, cursor=store)
+    pending = [e["pending"] for e in store.state.values() if isinstance(e, dict) and isinstance(e.get("pending"), dict)]
+    assert len(pending) >= 2, store.state
+    assert deadlines[-1] == 15 and deadlines.count(15) == 2, deadlines  # the FTS article count's own, and ONE for the markers
+    assert calls["n"] == 1, "the passes after the cut were not tried under a fresh deadline each"
+    assert all(p["generation"] is None for p in pending), "a pass without a finished marker is started over"
+
+
+def test_a_count_the_deadline_cuts_is_not_tried_again_in_the_same_build(session, monkeypatch):
+    _corpus(session)
+    calls = {"n": 0}
+
+    def cut(session_, sql, params=None):
+        calls["n"] += 1
+        raise RuntimeError("interrupted")
+
+    gens = integrity._Generations(session)
+    monkeypatch.setattr(integrity, "_scalar", cut)
+    with pytest.raises(RuntimeError):
+        gens._read({"articles": 1, "keywords": 7})
+    assert gens._read({"articles": 1, "keywords": 7}) is None and calls["n"] == 1
+
+
+def test_a_pass_stamped_later_than_this_build_still_has_its_corpus_checked(session, tiny_ranges, monkeypatch):
+    """Steward 1's nit: "began in this build" is the in-memory record of the passes this build started, never a clock compare.
+    A pass an earlier build saved with a timestamp ahead of this build's clock (a clock set back between builds) is checked
+    against its marker like any other, and an article deleted below its place restarts it."""
+    _corpus(session, keywords=7, orphans=3, dangling=2)
+    saved: dict = {}
+    _cut_dangling_pass(session, monkeypatch, saved)
+    pend = saved[_DANGLING_ARTICLE[0]]["pending"]
+    pend["generation"] = integrity._Generations(session).finalize(pend["generation"])
+    pend["started_at"] = "2999-01-01T00:00:00+00:00"
+    session.query(Article).delete()
+    session.commit()
+    store = MemStore()
+    store.state = saved
+    r = integrity.corpus_integrity(session, sample=100, cursor=store)
+    assert r[_DANGLING_ARTICLE[0]] == 6, r["scan_progress"][_DANGLING_ARTICLE[0]]
+    assert r["scan_progress"][_DANGLING_ARTICLE[0]]["cursor"] == "restarted"
