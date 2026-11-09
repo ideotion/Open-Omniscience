@@ -350,9 +350,71 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   like any other. For the same reason a CONNECT tunnel, or a SOCKS connection with a proxy set,
   to a LOOPBACK destination is refused in airplane mode too (until then it was let through). Not covered: clients that do not sit on `http.client` (httpx, used
   only by the loopback-only LLM clients), and an origin-form request whose `Host` header an
-  intercepting (transparent) proxy reads as the destination; this app never configures one. Any **non-loopback** target raises
-  `AirplaneModeError` **before** a real socket is opened, so no missed call
-  site, third-party library, or DNS prefetch can egress. Loopback (127/8, ::1, `localhost`)
+  intercepting (transparent) proxy reads as the destination; this app never configures one.
+  Since 2026-11-09 (R638) the same `putrequest` point also covers a **keep-alive connection opened
+  before the Stop**: such a connection met the connect guard while it was still transparent, and a
+  pooled `requests` session went on fetching from the same host after airplane mode was engaged,
+  because an origin-form request on an open connection resolves, connects and tunnels nothing. While
+  airplane mode is on, a request on an open connection is now refused, in fixed words, before a byte
+  is written, unless its socket's peer is a loopback address AND its host is a loopback name or
+  literal (the name alone is not trusted: `localhost.` or `localhost.localdomain` can be answered by
+  DNS); any connection that tunnels through a proxy or rides SOCKS (read from the urllib3 connection
+  too, because under TLS the socket no longer says so) is refused whatever name it carries. The switch is read where
+  the request is written, so a Stop that lands after a caller's own check is met too. A Stop also
+  closes the pooled connections of every `EthicalFetcher` session and every `GuardedSession`, so none is
+  left idle. Only those pools are closed: any other client's pooled connection (a plain `requests`
+  session, say `src/monitoring/preflight.py`'s) stays open, and the `putrequest` refusal is the
+  barrier that keeps it from sending. A request
+  whose first line was already accepted when the Stop landed finishes, as the Stop has always meant.
+  **Residual, checked against the 16 socket-capable libraries the socket-importer ratchet
+  (`tests/test_network_consent.py`) tracks:** this point sees only what is written through
+  `http.client`. `requests`, `urllib3`, `urllib.request` (and so the OpenTimestamps calendar client,
+  which submits through it) and `src/tui/panel.py` sit on it. The ones that do not: `imaplib`/`poplib`
+  in `src/ingest/email.py`, where a mailbox pull that had already connected when the Stop landed
+  finishes its pull (at most its message limit) because its loop does not read the switch again
+  (ruled R640: the loop will re-read the switch before each command and each message, close the
+  connection on a Stop and keep what it already fetched, in the PR after R638's); httpx
+  in the loopback-only LLM clients; urllib3's opt-in HTTP/2 connection, which writes frames itself and
+  is never turned on here (a test pins that); a bare `socket` port probe (`src/llm/vllm_lifecycle.py`, connect
+  only, which the connect guard sees); and native code that opens its own sockets outside Python,
+  which no Python-level guard has ever seen. **Why the raw socket `send` is not
+  patched instead (option (b), declined):** it would run on every write in the process, the app's
+  own server answering the browser included; it cannot see an HTTPS request at all, because an
+  `ssl.SSLSocket` writes through the TLS library rather than `socket.send`; it would refuse in the
+  middle of a request instead of before its first byte, leaving a half-written request on the wire;
+  and through a proxy it sees only the proxy's loopback address, the very thing the request-line
+  check already handles.
+  **Lookups (R639, 2026-11-09):** while airplane mode is on, `getaddrinfo` is made only for no name,
+  exactly `localhost`, or a loopback literal. `localhost` itself is answered from `127.0.0.1` and `::1`, never looked
+  up as a name, so a hosts file without an entry for the family asked for cannot send it to DNS. A localhost alias the connect guard treats as local
+  (`localhost.localdomain`, `ip6-localhost`) is refused before any lookup, in fixed words, because it
+  is resolved from `/etc/hosts` only where that file lists it, and elsewhere the resolver sent the
+  query to DNS (the connect to whatever DNS answered was refused, but the query had already left).
+  So a local LLM address that names an alias (`OO_OLLAMA_URL` or `OO_VLLM_URL` set to
+  `http://localhost.localdomain:…`), which the LLM clients accept as loopback, works online where the system resolves it and is
+  refused in airplane mode: name it as `127.0.0.1` (the default) or `localhost` instead.
+  The same rule applies to `socket.connect`/`connect_ex` and `create_connection` handed a host
+  NAME, because CPython resolves that name in C, through libc and not through the patched
+  `getaddrinfo` (S1's read: `connect(("localhost.localdomain", 80))` queried DNS in airplane mode):
+  an alias is refused in fixed words, and `localhost` is swapped for the loopback literal of the
+  socket's family before the real call.
+  **Stated residuals (ruled R641, to be closed in the PR after R640's):** `socket.gethostbyname` and
+  `gethostbyname_ex` are not patched, so a library calling them resolves a name through libc in
+  airplane mode; a UDP `sendto`/`sendmsg` to a remote address on an unconnected socket is not refused
+  (no connect, so no guard point), and one handed a host NAME resolves it through libc first. The
+  same is true of three more calls security read A measured querying DNS with the switch engaged:
+  `socket.bind` handed a host name, and reverse lookups (`gethostbyaddr`, `getnameinfo`, and
+  `getfqdn`, which calls `gethostbyaddr`). No in-tree code calls any of these directly; the stdlib's
+  `HTTPServer.server_bind` calls `getfqdn` on its bind host, which with the default `OO_HOST`
+  (`127.0.0.1`) is answered from `/etc/hosts`. **And the server's own event loop:** `uvicorn[standard]`
+  installs uvloop and `uvicorn.run` picks it, and uvloop resolves and connects in libuv's C code, so
+  an `async` client on that loop (`httpx.AsyncClient`, `asyncio.open_connection`) would bypass every
+  patched point (security read B reached a non-loopback listener that way with the switch engaged).
+  No in-tree code opens an outbound connection from the event loop today; the stdlib asyncio loop
+  does go through the guard. Any **non-loopback** target
+  handed to a patched point raises `AirplaneModeError` **before** a real socket is opened, so a
+  missed call site, third-party library, or DNS prefetch that goes through those points cannot
+  egress; what does not go through them is the residual list above and in this section. Loopback (127/8, ::1, `localhost`)
   and AF_UNIX always pass through (the app's own server, a loopback Ollama, the file DB).
   It is transparent while online. `OO_AIRPLANE_SOCKET_GUARD=0` disables the backstop; the
   per-call refusals remain as the friendly layer above it. App boot makes zero network calls.
