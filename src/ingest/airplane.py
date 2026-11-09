@@ -234,7 +234,41 @@ def _addr_host(address: object) -> object:
     return address
 
 
+#: The one name ``_guard`` is handed for a lookup of a localhost ALIAS in airplane mode (R639). Fixed words, never the name.
+_ALIAS_LOOKUP_TARGET = "a localhost alias that may be answered by DNS (in airplane mode only localhost and loopback literals are looked up)"
+
+
+def _lookup_exempt(host: object) -> bool:
+    """True for the only names a lookup may be made for while airplane mode is engaged (R639): no name at all (``None`` or empty: a
+    bind, or the local service), exactly ``localhost``, or a loopback LITERAL (an IPv6 one may carry a zone id).
+
+    Narrower than :func:`_is_local_host` on purpose. ``localhost.localdomain``, ``ip6-localhost`` and ``localhost.`` are local only if
+    ``/etc/hosts`` says so: where it does not (this project's CI container lists neither alias; Debian and Qubes lack
+    ``localhost.localdomain``), the resolver asks DNS, so the QUERY egresses even though the connect to whatever it answers is refused.
+    Nothing is stripped or normalised: a name that needs normalising is not one of these.
+    """
+    if host is None:
+        return True
+    if isinstance(host, bytes):
+        try:
+            host = host.decode("ascii")
+        except UnicodeDecodeError:
+            return False
+    if not isinstance(host, str):
+        return False
+    if host == "" or host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host.split("%", 1)[0] if ":" in host else host).is_loopback
+    except ValueError:
+        return False
+
+
 def _guarded_getaddrinfo(host, *args, **kwargs):  # type: ignore[no-untyped-def]
+    # A name the connect guard would call local but that is not exempt from a lookup (a localhost alias) is refused in fixed words
+    # before any lookup (R639); every other name meets _guard as it always has, so its refusal sentence is unchanged.
+    if _is_local_host(host) and not _lookup_exempt(host):
+        _guard(_ALIAS_LOOKUP_TARGET)
     _guard(host)
     with native_call("dns"):
         infos = _orig_getaddrinfo(host, *args, **kwargs)

@@ -526,3 +526,59 @@ def test_without_the_putrequest_patch_the_bytes_arrive(proxy_listener):
         assert bytes(proxy_listener.received).startswith(b"GET http://example.com/x HTTP/1.1\r\n")
     finally:
         http.client.HTTPConnection.putrequest = ap._guarded_putrequest  # type: ignore[method-assign]
+
+
+# --------------------------------------------------------------------------- #
+# R639: in airplane mode a lookup is made only for "localhost" and loopback LITERALS. A localhost alias the connect guard treats as
+# local (localhost.localdomain, ip6-localhost) is resolved from /etc/hosts only where that file lists it; elsewhere the resolver asks
+# DNS, so the query itself egressed (security read A of R638). The resolver here is the fixture's spy: no real lookup is made.
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("host", ["localhost.localdomain", "ip6-localhost", "LOCALHOST.LOCALDOMAIN", "localhost.", " localhost", "[::1]"])
+def test_a_localhost_alias_is_not_looked_up_in_airplane_mode(guard, host):
+    activate_kill_switch()
+    with pytest.raises(AirplaneModeError) as exc:
+        socket.getaddrinfo(host, 80)
+    assert guard == [], f"the resolver was reached for {host!r} in airplane mode"
+    assert "airplane mode is engaged" in str(exc.value)
+
+
+def test_an_alias_refusal_is_in_fixed_words(guard):
+    activate_kill_switch()
+    with pytest.raises(AirplaneModeError) as exc:
+        socket.getaddrinfo("ip6-localhost", 80)
+    assert str(exc.value).startswith("airplane mode is engaged: refusing a network connection to ")
+    assert ap._ALIAS_LOOKUP_TARGET in str(exc.value) and "ip6-localhost" not in str(exc.value)
+
+
+@pytest.mark.parametrize("host", ["example.com", "intranet", "a.example"])
+def test_a_plain_name_is_refused_before_any_lookup_with_the_sentence_callers_parse(guard, host):
+    """A plain name was already refused before the lookup; its sentence (which the offline readers parse) is unchanged."""
+    activate_kill_switch()
+    with pytest.raises(AirplaneModeError) as exc:
+        socket.getaddrinfo(host, 80)
+    assert guard == []
+    assert f"refusing a network connection to {host!r}" in str(exc.value)
+
+
+@pytest.mark.parametrize("host", [None, "", "localhost", "LocalHost", "127.0.0.1", "127.8.9.10", "::1", "::1%lo", b"localhost"])
+def test_localhost_and_loopback_literals_are_still_looked_up(guard, host):
+    activate_kill_switch()
+    with pytest.raises(_Reached):
+        socket.getaddrinfo(host, 80)
+    assert guard == ["getaddrinfo"]
+
+
+def test_a_localhost_alias_is_looked_up_while_online(guard):
+    with pytest.raises(_Reached):
+        socket.getaddrinfo("localhost.localdomain", 80)
+    assert guard == ["getaddrinfo"]
+
+
+def test_lookup_exemption_is_narrower_than_the_connect_classification():
+    """Every name exempt from a lookup is local, and the aliases are local to connect but NOT exempt from a lookup."""
+    for host in (None, "", "localhost", "127.0.0.1", "::1"):
+        assert ap._lookup_exempt(host) and ap._is_local_host(host)
+    for host in ("localhost.localdomain", "ip6-localhost", " localhost", "[::1]"):
+        assert ap._is_local_host(host) and not ap._lookup_exempt(host)

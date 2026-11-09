@@ -369,7 +369,9 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   `http.client`. `requests`, `urllib3`, `urllib.request` (and so the OpenTimestamps calendar client,
   which submits through it) and `src/tui/panel.py` sit on it. The ones that do not: `imaplib`/`poplib`
   in `src/ingest/email.py`, where a mailbox pull that had already connected when the Stop landed
-  finishes its pull (at most its message limit) because its loop does not read the switch again; httpx
+  finishes its pull (at most its message limit) because its loop does not read the switch again
+  (ruled R640: the loop will re-read the switch before each command and each message, close the
+  connection on a Stop and keep what it already fetched, in the PR after R638's); httpx
   in the loopback-only LLM clients; urllib3's opt-in HTTP/2 connection, which writes frames itself and
   is never turned on here (a test pins that); a bare `socket` port probe (`src/llm/vllm_lifecycle.py`, connect
   only, which the connect guard sees); and native code that opens its own sockets outside Python,
@@ -379,7 +381,13 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   `ssl.SSLSocket` writes through the TLS library rather than `socket.send`; it would refuse in the
   middle of a request instead of before its first byte, leaving a half-written request on the wire;
   and through a proxy it sees only the proxy's loopback address, the very thing the request-line
-  check already handles. Any **non-loopback** target raises
+  check already handles.
+  **Lookups (R639, 2026-11-09):** while airplane mode is on, `getaddrinfo` is made only for no name,
+  exactly `localhost`, or a loopback literal. A localhost alias the connect guard treats as local
+  (`localhost.localdomain`, `ip6-localhost`) is refused before any lookup, in fixed words, because it
+  is resolved from `/etc/hosts` only where that file lists it, and elsewhere the resolver sent the
+  query to DNS (the connect to whatever DNS answered was refused, but the query had already left).
+  Any **non-loopback** target raises
   `AirplaneModeError` **before** a real socket is opened, so no missed call
   site, third-party library, or DNS prefetch can egress. Loopback (127/8, ::1, `localhost`)
   and AF_UNIX always pass through (the app's own server, a loopback Ollama, the file DB).
