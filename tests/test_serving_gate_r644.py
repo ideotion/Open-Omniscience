@@ -39,7 +39,6 @@ _needs_uvloop = pytest.mark.skipif(
 def gate(monkeypatch):
     """The gate as a fresh process sees it: closed, no loop check recorded. ``OO_NO_SCHEDULER`` keeps the suite's ``1`` (R646)."""
     monkeypatch.setattr(main, "_serving_loop_checked", False)
-    monkeypatch.setattr(main, "_serving_gate_open", False)
     monkeypatch.setattr(main, "_serving_gate_logged", False)
     monkeypatch.delenv("OO_AIRPLANE_SOCKET_GUARD", raising=False)
     return monkeypatch
@@ -54,7 +53,6 @@ def test_a_request_without_the_lifespan_is_refused_in_fixed_words(gate):
     """TestClient without ``with`` runs no lifespan, exactly as ``--lifespan off``."""
     r = TestClient(main.app).get("/unlock")
     _assert_refused(r.status_code, r.json())
-    assert main._serving_gate_open is False
 
 
 def _serve_once(loop: str) -> tuple[int, object]:
@@ -97,7 +95,6 @@ def test_a_second_server_on_uvloop_cannot_ride_on_an_earlier_check(gate):
     gate.setattr(main, "_serving_loop_checked", True)
     gate.setattr(ap, "is_armed", lambda: True)
     _assert_refused(*_serve_once("uvloop"))
-    assert main._serving_gate_open is False
 
 
 @_needs_uvloop
@@ -109,7 +106,6 @@ def test_an_open_gate_still_refuses_a_second_server_on_uvloop(gate):
     gate.setattr(main, "_serving_loop_checked", True)
     gate.setattr(ap, "is_armed", lambda: True)
     assert TestClient(main.app).get("/unlock").status_code == 200
-    assert main._serving_gate_open is True
     _assert_refused(*_serve_once("uvloop"))
 
 
@@ -184,14 +180,53 @@ def test_the_loop_check_alone_is_not_enough_without_the_armed_guard(gate):
     _assert_refused(r.status_code, r.json())
 
 
-def test_both_preconditions_open_the_gate_once(gate):
+def test_the_gate_reads_both_facts_on_every_request(gate):
+    """R649: nothing latches. A guard that is no longer armed closes an open gate again on the next request."""
     gate.setattr(main, "_serving_loop_checked", True)
     gate.setattr(ap, "is_armed", lambda: True)
     client = TestClient(main.app)
     assert client.get("/unlock").status_code == 200
-    assert main._serving_gate_open is True
-    gate.setattr(ap, "is_armed", lambda: False)  # once open, the gate reads only its flag
+    gate.setattr(ap, "is_armed", lambda: False)
+    r = client.get("/unlock")
+    _assert_refused(r.status_code, r.json())
+    gate.setattr(ap, "is_armed", lambda: True)
     assert client.get("/unlock").status_code == 200
+
+
+def test_an_uninstalled_guard_closes_the_gate_again(gate):
+    """R649, with the real guard: serving, then ``uninstall_airplane_socket_guard()``, then the next request is refused."""
+    gate.setattr(main, "_serving_loop_checked", True)
+    was_installed, was_armed = ap.is_installed(), ap._airplane_armed
+    assert ap.install_airplane_socket_guard()
+    try:
+        client = TestClient(main.app)
+        assert client.get("/unlock").status_code == 200
+        ap.uninstall_airplane_socket_guard()
+        r = client.get("/unlock")
+        _assert_refused(r.status_code, r.json())
+    finally:
+        ap.uninstall_airplane_socket_guard()
+        if was_installed:
+            ap._install_patches()
+        ap._airplane_armed = was_armed
+
+
+def test_a_websocket_is_refused_while_the_gate_is_closed(gate):
+    """R649: a pure ASGI middleware, so a websocket scope meets the gate too; ``@app.middleware("http")`` never saw one, and a
+    websocket route added later would have gone round it. Refused before it is accepted, with close code 1013."""
+    from starlette.websockets import WebSocketDisconnect
+
+    client = TestClient(main.app)
+    with pytest.raises(WebSocketDisconnect) as refused:
+        with client.websocket_connect("/any-websocket"):
+            pass
+    assert refused.value.code == 1013
+    gate.setattr(main, "_serving_loop_checked", True)
+    gate.setattr(ap, "is_armed", lambda: True)
+    with pytest.raises(WebSocketDisconnect) as routed:  # open: the router answers (no websocket route exists), not the gate
+        with client.websocket_connect("/any-websocket"):
+            pass
+    assert routed.value.code != 1013
 
 
 def test_the_documented_guard_opt_out_waives_only_the_guard(gate):
@@ -256,4 +291,4 @@ def test_the_gate_is_the_outermost_layer_but_compression():
     order = [n for n in tree.body if adds_middleware(n)]
     names = [n.name if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) else ast.unparse(n) for n in order]
     assert names[-1] == "app.add_middleware(GZipMiddleware, minimum_size=500)"
-    assert names[-2] == "_serving_gate"
+    assert names[-2] == "app.add_middleware(_ServingGate)"
