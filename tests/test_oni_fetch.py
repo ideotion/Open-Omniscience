@@ -97,7 +97,9 @@ def test_a_body_over_the_derived_bound_is_refused_before_parsing(monkeypatch) ->
         fetch_oni(get=_Getter(_Resp(huge)))
 
 
-def test_the_default_getter_builds_its_session_with_its_own_host_directory_and_scale(monkeypatch) -> None:
+def test_the_default_getter_builds_its_session_with_its_own_host_directory_and_scale(
+    monkeypatch,
+) -> None:
     built: list[dict] = []
     bounded: list[int] = []
 
@@ -106,9 +108,13 @@ def test_the_default_getter_builds_its_session_with_its_own_host_directory_and_s
         return "session"
 
     monkeypatch.setattr(fetch, "guarded_session", factory)
-    monkeypatch.setattr(fetch, "_bounded_get", lambda session, url, *, max_chars: bounded.append(max_chars))
+    monkeypatch.setattr(
+        fetch, "_bounded_get", lambda session, url, *, max_chars: bounded.append(max_chars)
+    )
     fetch._oni_getter(ONI_URL)
-    assert [(b["allowed_hosts"], b["allowed_path_prefixes"]) for b in built] == [(fetch.ONI_HOSTS, fetch.ONI_PATHS)]
+    assert [(b["allowed_hosts"], b["allowed_path_prefixes"]) for b in built] == [
+        (fetch.ONI_HOSTS, fetch.ONI_PATHS)
+    ]
     assert bounded == [oni_max_chars()]
 
 

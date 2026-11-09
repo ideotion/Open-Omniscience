@@ -936,6 +936,7 @@ def fetch_nsidc(
         )
     return parsed
 
+
 def oni_max_chars(now_year: int | None = None) -> int:
     """The longest body that can still be the ONI table.
 
