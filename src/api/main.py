@@ -3425,12 +3425,15 @@ def list_sources(
         query = query.offset(offset)
     if limit is not None:
         query = query.limit(limit)
+    # The feed's login is shown as ***@ (R637); the stored URL is the one fetched.
+    from src.ingest.fetch_verdict import shown_url
+
     rows = [
         {
             "id": s.id,
             "name": s.name,
             "domain": s.domain,
-            "rss_url": s.rss_url,
+            "rss_url": shown_url(s.rss_url),
             "rate_limit_ms": s.rate_limit_ms,
             "enabled": s.enabled,
             "priority": s.priority,
