@@ -470,3 +470,53 @@ def test_a_stop_during_the_logout_after_a_server_error_still_wins(pki, trust_tes
         assert fetch_imap("127.0.0.1", "u", _PW, port=srv.port, use_ssl=False).stopped
     finally:
         srv.close()
+
+
+def _engaging_on(base, command: bytes, *, pop: bool = False):
+    """``base`` that engages the kill switch when ``command`` arrives, then answers it as ``base`` would."""
+    from src.ingest import activate_kill_switch
+
+    def script(line: bytes) -> bytes | None:
+        word = line.split(b" ", 1)[0] if pop else line.partition(b" ")[2].split(b" ", 1)[0]
+        if word.upper() == command:
+            activate_kill_switch()
+        return base(line)
+
+    return script
+
+
+def test_a_stop_during_the_quit_after_a_pop3_server_error_still_wins(pki, trust_test_ca):
+    """Delta re-reads 5 and 6 on R653: the POP3 twin of the LOGOUT case. A short reply: poplib leaves the rest of a line over its
+    2048-byte limit unread and takes it as the QUIT's answer without waiting for the server."""
+    script = _engaging_on(_answering(_pop, b"PASS", b"-ERR no\r\n", pop=True), b"QUIT", pop=True)
+    srv = _Server(_POP_GREETING, script, starttls=pki.server)
+    try:
+        assert fetch_pop3("127.0.0.1", "u", _PW, port=srv.port, use_ssl=False).stopped
+    finally:
+        srv.close()
+
+
+@pytest.mark.parametrize(
+    ("fn", "greeting", "script"),
+    [
+        (
+            fetch_imap,
+            _IMAP_GREETING,
+            _engaging_on(_answering(_imap, b"STARTTLS", b"TAG BAD no\r\n"), b"LOGOUT"),
+        ),
+        (
+            fetch_pop3,
+            _POP_GREETING,
+            _engaging_on(_answering(_pop, b"STLS", b"-ERR no\r\n", pop=True), b"QUIT", pop=True),
+        ),
+    ],
+    ids=["imap-starttls", "pop3-stls"],
+)
+def test_a_stop_during_the_logout_after_a_starttls_refusal_still_wins(fn, greeting, script):
+    """Delta re-read 6 on R653: a STARTTLS refusal (or any failure) is held until after the LOGOUT/QUIT, so a Stop that lands
+    during it ends the pull as the Stop, as every other path does."""
+    srv = _Server(greeting, script)
+    try:
+        assert fn("127.0.0.1", "u", _PW, port=srv.port, use_ssl=False).stopped
+    finally:
+        srv.close()

@@ -766,7 +766,7 @@ def fetch_imap(
     raws = MailboxPull()
     # R653: a server error is raised only once outside every ``except`` block, so it carries no ``__context__``: the imaplib or poplib
     # error it replaces holds the server's line, and ``http_detail`` reads the context chain (``from None`` only hides it from a print).
-    failure: MailboxServerError | None = None
+    failure: BaseException | None = None
     own_conn = conn is None
     if own_conn:
         try:
@@ -813,79 +813,88 @@ def fetch_imap(
             return raws
         raise failure
     step = "greeting"
-    try:
-        if own_conn:
-            if not use_ssl:
-                _upgrade_plain(conn, port or 143)  # R651: never LOGIN in plaintext
+    try:  # outer: a failure re-raised below waits for the LOGOUT/QUIT in the inner finally, and a Stop that lands during it wins
+        try:
+            if own_conn:
+                if not use_ssl:
+                    _upgrade_plain(conn, port or 143)  # R651: never LOGIN in plaintext
+                if _stop_requested():
+                    raws.stopped = True
+                    return raws
+                if getattr(conn, "state", "NONAUTH") != "NONAUTH":
+                    # PREAUTH on the TLS port: imaplib would refuse LOGIN itself, and "refused the login" would blame the password
+                    # (security read B on R653). Nothing is sent; the pull is refused in its own words.
+                    raise _server_error(host, port or (993 if use_ssl else 143), "preauth")
+                step = "login"
+                conn.login(user, password)
+            step = "read"
             if _stop_requested():
                 raws.stopped = True
                 return raws
-            if getattr(conn, "state", "NONAUTH") != "NONAUTH":
-                # PREAUTH on the TLS port: imaplib would refuse LOGIN itself, and "refused the login" would blame the password
-                # (security read B on R653). Nothing is sent; the pull is refused in its own words.
-                raise _server_error(host, port or (993 if use_ssl else 143), "preauth")
-            step = "login"
-            conn.login(user, password)
-        step = "read"
-        if _stop_requested():
-            raws.stopped = True
-            return raws
-        conn.select(folder)
-        if _stop_requested():
-            raws.stopped = True
-            return raws
-        typ, data = conn.search(None, "ALL")
-        if typ != "OK" or not data or not data[0]:
-            return raws
-        ids = data[0].split()[-max(1, int(limit)):]
-        for mid in ids:
+            conn.select(folder)
             if _stop_requested():
                 raws.stopped = True
                 return raws
-            typ, msg_data = conn.fetch(mid, "(RFC822)")
-            if typ == "OK" and msg_data and msg_data[0]:
-                raws.append(msg_data[0][1])
-        return raws
-    except _MailboxStopped:
-        # imaplib's own CAPABILITY, refused above: the Stop by its type, so a switch cleared again in between cannot let it out (and
-        # LOGOUT with it).
-        raws.stopped = True
-        return raws
-    except ssl.SSLCertVerificationError as exc:
-        # R651: the STARTTLS handshake's certificate failed its check (a Stop still wins), before any credential.
-        if raws.stopped or _stop_requested():
+            typ, data = conn.search(None, "ALL")
+            if typ != "OK" or not data or not data[0]:
+                return raws
+            ids = data[0].split()[-max(1, int(limit)):]
+            for mid in ids:
+                if _stop_requested():
+                    raws.stopped = True
+                    return raws
+                typ, msg_data = conn.fetch(mid, "(RFC822)")
+                if typ == "OK" and msg_data and msg_data[0]:
+                    raws.append(msg_data[0][1])
+            return raws
+        except _MailboxStopped:
+            # imaplib's own CAPABILITY, refused above: the Stop by its type, so a switch cleared again in between cannot let it out (and
+            # LOGOUT with it).
             raws.stopped = True
             return raws
-        raise _certificate_refusal(host, record_text(exc, password, limit=300), sent="no password sent") from None
-    except (_IMAP_ERROR, UnicodeDecodeError):
-        # R653: the server's error reply at any step (or a capability list after STARTTLS that imaplib cannot decode), in fixed words;
-        # a Stop still wins and keeps what was fetched.
-        if raws.stopped or _stop_requested():
-            raws.stopped = True
-            return raws
-        failure = _server_error(host, port or (993 if use_ssl else 143), step)
+        except ssl.SSLCertVerificationError as exc:
+            # R651: the STARTTLS handshake's certificate failed its check (a Stop still wins), before any credential.
+            if raws.stopped or _stop_requested():
+                raws.stopped = True
+                return raws
+            failure = _certificate_refusal(host, record_text(exc, password, limit=300), sent="no password sent")
+        except (_IMAP_ERROR, UnicodeDecodeError):
+            # R653: the server's error reply at any step (or a capability list after STARTTLS that imaplib cannot decode), in fixed words;
+            # a Stop still wins and keeps what was fetched.
+            if raws.stopped or _stop_requested():
+                raws.stopped = True
+                return raws
+            failure = _server_error(host, port or (993 if use_ssl else 143), step)
+        except Exception:
+            # A failure that surfaces once the switch is engaged (the connection failing after the Stop) ends the pull as the Stop it
+            # follows: what was fetched is kept (R640, security read B), never discarded with an error.
+            if raws.stopped or _stop_requested():
+                raws.stopped = True
+                return raws
+            raise
+        finally:
+            if own_conn:
+                sock = getattr(conn, "sock", None)
+                if raws.stopped or _stop_requested():
+                    _drop_connection(conn, "shutdown")
+                else:
+                    try:
+                        conn.logout()
+                    except Exception:  # noqa: BLE001 - logout failure must not mask the result
+                        pass
+                # Only now: a Stop during the LOGOUT read must still reach the socket (security read B on #1892).
+                _forget_socket(sock)
     except Exception:
-        # A failure that surfaces once the switch is engaged (the connection failing after the Stop) ends the pull as the Stop it
-        # follows: what was fetched is kept (R640, security read B), never discarded with an error.
+        # Delta re-read 6 on R653: a STARTTLS or PREAUTH refusal, or any other failure, leaves the inner block only after its
+        # LOGOUT/QUIT; a Stop engaged by then ends the pull as the Stop, as everywhere else.
         if raws.stopped or _stop_requested():
             raws.stopped = True
             return raws
         raise
-    finally:
-        if own_conn:
-            sock = getattr(conn, "sock", None)
-            if raws.stopped or _stop_requested():
-                _drop_connection(conn, "shutdown")
-            else:
-                try:
-                    conn.logout()
-                except Exception:  # noqa: BLE001 - logout failure must not mask the result
-                    pass
-            # Only now: a Stop during the LOGOUT read must still reach the socket (security read B on #1892).
-            _forget_socket(sock)
     if failure is not None:
         if raws.stopped or _stop_requested():
-            # A Stop that landed after the handler's own check (during the LOGOUT/QUIT, say) still wins (delta re-read 4 on R653).
+            # A Stop that landed after the handler's own check (during the LOGOUT/QUIT, say) still wins (delta re-read 4 on R653), over
+            # every held failure.
             raws.stopped = True
             return raws
         raise failure  # after the LOGOUT, outside the handler (R653)
@@ -917,7 +926,7 @@ def fetch_pop3(
     raws = MailboxPull()
     # R653: a server error is raised only once outside every ``except`` block, so it carries no ``__context__``: the imaplib or poplib
     # error it replaces holds the server's line, and ``http_detail`` reads the context chain (``from None`` only hides it from a print).
-    failure: MailboxServerError | None = None
+    failure: BaseException | None = None
     own_conn = conn is None
     if own_conn:
         try:
@@ -963,68 +972,77 @@ def fetch_pop3(
             return raws
         raise failure
     step = "greeting"
-    try:
-        if own_conn:
-            if not use_ssl:
-                _upgrade_plain(conn, port or 110)  # R651: never USER/PASS in plaintext
+    try:  # outer: a failure re-raised below waits for the LOGOUT/QUIT in the inner finally, and a Stop that lands during it wins
+        try:
+            if own_conn:
+                if not use_ssl:
+                    _upgrade_plain(conn, port or 110)  # R651: never USER/PASS in plaintext
+                if _stop_requested():
+                    raws.stopped = True
+                    return raws
+                step = "login"
+                conn.user(user)
+                if _stop_requested():
+                    raws.stopped = True
+                    return raws
+                conn.pass_(password)
+            step = "read"
             if _stop_requested():
                 raws.stopped = True
                 return raws
-            step = "login"
-            conn.user(user)
-            if _stop_requested():
+            count = len(conn.list()[1])
+            start = max(1, count - max(1, int(limit)) + 1)
+            for i in range(start, count + 1):
+                if _stop_requested():
+                    raws.stopped = True
+                    return raws
+                resp, lines, octets = conn.retr(i)
+                raws.append(b"\r\n".join(lines))
+            return raws
+        except _MailboxStopped:
+            # A Stop read before the STARTTLS commands (R651): the Stop by its type, as in fetch_imap.
+            raws.stopped = True
+            return raws
+        except ssl.SSLCertVerificationError as exc:
+            # R651: the STARTTLS handshake's certificate failed its check (a Stop still wins), before any credential.
+            if raws.stopped or _stop_requested():
                 raws.stopped = True
                 return raws
-            conn.pass_(password)
-        step = "read"
-        if _stop_requested():
-            raws.stopped = True
-            return raws
-        count = len(conn.list()[1])
-        start = max(1, count - max(1, int(limit)) + 1)
-        for i in range(start, count + 1):
-            if _stop_requested():
+            failure = _certificate_refusal(host, record_text(exc, password, limit=300), sent="no password sent")
+        except poplib.error_proto:
+            # R653: as in fetch_imap, the server's error reply at any step in fixed words; a Stop still wins.
+            if raws.stopped or _stop_requested():
                 raws.stopped = True
                 return raws
-            resp, lines, octets = conn.retr(i)
-            raws.append(b"\r\n".join(lines))
-        return raws
-    except _MailboxStopped:
-        # A Stop read before the STARTTLS commands (R651): the Stop by its type, as in fetch_imap.
-        raws.stopped = True
-        return raws
-    except ssl.SSLCertVerificationError as exc:
-        # R651: the STARTTLS handshake's certificate failed its check (a Stop still wins), before any credential.
-        if raws.stopped or _stop_requested():
-            raws.stopped = True
-            return raws
-        raise _certificate_refusal(host, record_text(exc, password, limit=300), sent="no password sent") from None
-    except poplib.error_proto:
-        # R653: as in fetch_imap, the server's error reply at any step in fixed words; a Stop still wins.
-        if raws.stopped or _stop_requested():
-            raws.stopped = True
-            return raws
-        failure = _server_error(host, port or (995 if use_ssl else 110), step)
+            failure = _server_error(host, port or (995 if use_ssl else 110), step)
+        except Exception:
+            # As in fetch_imap: a failure once the switch is engaged keeps what was fetched (R640).
+            if raws.stopped or _stop_requested():
+                raws.stopped = True
+                return raws
+            raise
+        finally:
+            if own_conn:
+                sock = getattr(conn, "sock", None)
+                if raws.stopped or _stop_requested():
+                    _drop_connection(conn, "close")
+                else:
+                    try:
+                        conn.quit()
+                    except Exception:  # noqa: BLE001
+                        pass
+                _forget_socket(sock)  # after QUIT, as in fetch_imap
     except Exception:
-        # As in fetch_imap: a failure once the switch is engaged keeps what was fetched (R640).
+        # Delta re-read 6 on R653: a STARTTLS or PREAUTH refusal, or any other failure, leaves the inner block only after its
+        # LOGOUT/QUIT; a Stop engaged by then ends the pull as the Stop, as everywhere else.
         if raws.stopped or _stop_requested():
             raws.stopped = True
             return raws
         raise
-    finally:
-        if own_conn:
-            sock = getattr(conn, "sock", None)
-            if raws.stopped or _stop_requested():
-                _drop_connection(conn, "close")
-            else:
-                try:
-                    conn.quit()
-                except Exception:  # noqa: BLE001
-                    pass
-            _forget_socket(sock)  # after QUIT, as in fetch_imap
     if failure is not None:
         if raws.stopped or _stop_requested():
-            # A Stop that landed after the handler's own check (during the LOGOUT/QUIT, say) still wins (delta re-read 4 on R653).
+            # A Stop that landed after the handler's own check (during the LOGOUT/QUIT, say) still wins (delta re-read 4 on R653), over
+            # every held failure.
             raws.stopped = True
             return raws
         raise failure  # after the QUIT, outside the handler (R653)
