@@ -25,7 +25,7 @@ OO_DATA_DIR=…/state-d-src OO_DB_PLAINTEXT=1 .venv/bin/python scripts/ui_clickt
 #   -> write_volume_backup(…/artifact, '…')      24 articles, 2 volumes + parity, 1.6 MB
 
 OO_DATA_DIR=…/state-d OO_DB_PLAINTEXT=1 OO_NO_SCHEDULER=1 OO_LLM_AUTOSTART=0 \
-    OO_AIRPLANE_SOCKET_GUARD=1 .venv/bin/python -m uvicorn src.api.main:app \
+    OO_AIRPLANE_SOCKET_GUARD=1 .venv/bin/python -m uvicorn src.api.main:app --loop asyncio \
     --host 127.0.0.1 --port 8003
 
 OO_UIWALK_IMPORT_ARTIFACT=…/artifact OO_UIWALK_IMPORT_PASS='…' \
