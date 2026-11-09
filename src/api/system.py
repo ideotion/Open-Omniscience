@@ -77,6 +77,90 @@ except Exception:  # noqa: BLE001 - any failure -> degrade honestly, never fabri
 _BOOT_TS = time.time()
 
 
+class UpdateApplyBody(BaseModel):
+    """Install the version a check just read. ``ref``/``sha`` must equal that check's answer; ``confirm`` must be true."""
+
+    confirm: bool = False
+    ref: str = ""
+    sha: str = ""
+
+
+@router.post("/update/check")
+def update_check() -> dict:
+    """Ask GitHub for the newest published version (the ONE in-process fetch of the update path; guarded session, kill-switch gated)."""
+    from src.maintenance.self_update import UpdateError, check
+    from src.safety.fetcher import NetworkBlocked, TransportUnavailable
+
+    try:
+        return check()
+    except NetworkBlocked:
+        raise HTTPException(
+            status_code=409, detail={"code": "airplane", "message": "Airplane mode is on: the update check did not run. Go online first."}
+        ) from None
+    except TransportUnavailable:
+        # never named as airplane mode (#14e's corollary): it is the proxy protected mode needs, not the operator's switch
+        raise HTTPException(
+            status_code=409, detail={"code": "protected_no_proxy", "message": "Protected mode has no usable proxy: the update check did not run."}
+        ) from None
+    except UpdateError as exc:
+        raise HTTPException(status_code=502, detail=http_detail(exc)) from None
+
+
+@router.get("/update/status")
+def update_status() -> dict:
+    """Local reads only: this install's updatability and what the helper recorded about the last attempt."""
+    from src.maintenance.self_update import (
+        current_version,
+        install_status,
+        last_result,
+        protected_mode_chosen,
+    )
+
+    st = install_status()
+    return {
+        "current": current_version(),
+        # read first by the button, so protected mode is named before the consent popup would switch airplane mode off for nothing
+        "blocked": "protected" if protected_mode_chosen() else None,
+        "install": {k: st[k] for k in ("kind", "can_apply", "reason", "manual_steps")},
+        "last_result": last_result(),
+    }
+
+
+@router.post("/update/apply")
+def update_apply(body: UpdateApplyBody) -> dict:
+    """Stop the app cleanly and let the helper apply the checked version, then start the app again. Needs ``confirm`` and the exact checked ref/sha."""
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="confirmation required to update")
+    from src.maintenance.self_update import (
+        AIRPLANE_REFUSAL,
+        PROTECTED_REFUSAL,
+        AirplaneRefused,
+        ProtectedRefused,
+        UpdateError,
+        begin_apply,
+    )
+
+    try:
+        # Refused first, before anything stops, while airplane mode is on or protected mode is chosen: the helper's git and pip run in a
+        # separate process the socket guard and the proxy do not reach. Then the helper waits for this process to exit before touching anything.
+        begin_apply(body.ref, body.sha)
+    except AirplaneRefused:
+        raise HTTPException(status_code=409, detail={"code": "airplane", "message": AIRPLANE_REFUSAL}) from None
+    except ProtectedRefused:
+        raise HTTPException(status_code=409, detail={"code": "protected", "message": PROTECTED_REFUSAL}) from None
+    except UpdateError as exc:
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from None
+    # Pause everything: the kill switch refuses every new request, then the ordinary shutdown closes the database and the WAL.
+    from src.ingest import activate_kill_switch
+
+    activate_kill_switch()
+    from src.safety.shutdown import request_shutdown
+
+    out = request_shutdown(confirm=True)
+    out["detail"] = "The app is stopping to update; it starts again by itself. Reload this page in a minute."
+    return out
+
+
 def _process_vitals() -> dict:
     """Per-process CPU / memory / disk I/O via psutil, or nulls if unavailable."""
     out: dict = {

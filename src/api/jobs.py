@@ -310,8 +310,9 @@ def _task_jobs() -> list[dict]:
 
     Read-only visibility — the answer to "is an LLM translating? are keywords being
     extracted?". Each carries only the owner's real facts (label/detail and an
-    optional done/total it published), never a fabricated percentage. No actions:
-    these are short, in-request operations the user did not queue."""
+    optional done/total it published), never a fabricated percentage. Actions: Stop
+    only on a task registered ``cancellable`` (an AI run that outlives its tab,
+    src/api/detached_stream.py); the rest are short, in-request operations with none."""
     from src.monitoring.tasks import snapshot
 
     out: list[dict] = []
@@ -338,7 +339,8 @@ def _task_jobs() -> list[dict]:
                 "state": "running",
                 "elapsed_s": t.get("elapsed_s"),
                 "progress": prog,
-                "actions": [],
+                # Stop only where the owner checks for it between units of work (a run that outlives its tab: detached_stream).
+                "actions": ["stop"] if t.get("cancellable") else [],
             }
         )
     return out
@@ -1028,6 +1030,18 @@ def cancel_job(job_id: str) -> dict:
         if not ok:
             raise HTTPException(status_code=404, detail=f"unknown OSM download {key!r}")
         return {"cancelled": job_id, "detail": "download paused (resumable; delete it in Settings → OpenStreetMap)"}
+    if job_id.startswith("task:"):
+        # A background AI run that no longer ends with its tab (src/api/detached_stream.py): it stops after the articles in
+        # flight (a generation computed but not yet stored is dropped); every article it finished stays stored.
+        from src.monitoring.tasks import request_cancel
+
+        try:
+            tok = int(job_id.split(":", 1)[1])
+        except ValueError:
+            raise HTTPException(status_code=404, detail=f"unknown task {job_id!r}") from None
+        if not request_cancel(tok):
+            raise HTTPException(status_code=404, detail=f"task {job_id!r} is not running or cannot be stopped")
+        return {"cancelled": job_id, "detail": "Stopping after the articles in flight; finished articles stay stored."}
     if job_id == "folder-backup":
         # Task-manager "cancel"/"pause" PAUSE the folder copy (resumable, like a dump);
         # a true abandon lives in the dedicated Settings → Data & backup controls.

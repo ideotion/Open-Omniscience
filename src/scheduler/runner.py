@@ -1602,7 +1602,7 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
     source with no discoverable sitemap keeps the ORIGINAL BFS crawl
     unchanged -- this rung never regresses a source it previously covered."""
     from src.database.models import Source
-    from src.ingest import kill_switch_active
+    from src.ingest import kill_switch_active, kill_switch_engaged_since, kill_switch_epoch
     from src.ingest.crawl import CrawlConfig, crawl_source
     from src.ingest.pipeline import IngestResult, ingest_url
     from src.ingest.sitemap import discover_sitemap_urls, update_source_sitemap_url
@@ -1623,6 +1623,10 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
         # A Stop is the person's setting, not an outcome of the outlet: the lane checks the switch once, before it starts, so a Stop pressed
         # between two outlets (or inside one) is read HERE, by the switch itself and never by the words of a refusal (R320). An outlet
         # stopped this way is not stamped, so it keeps its place at the front of the rotation.
+        # The engagement epoch (R614), captured BEFORE the check that lets this outlet's first request go: its step runs from here to the
+        # stamp, waits included, so a Stop pressed and cleared again anywhere inside it is read below as a Stop, as when the switch is still
+        # engaged. Taken after the check, a Stop landing between the two would be counted into the epoch and missed.
+        epoch = kill_switch_epoch()
         if kill_switch_active():
             break
         try:
@@ -1630,13 +1634,13 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
             if update_source_sitemap_url(session, source, sm_report):
                 # Written before the walk below fetches: the fetcher hands a connection back only for a session with nothing pending, so a staged row would make it decline for the whole walk.
                 session.commit()
-            if kill_switch_active():
+            if kill_switch_engaged_since(epoch):
                 break  # a discovery cut short by the Stop found "no sitemap" only because it was stopped: no BFS fallback either
             if sm_report.urls:
                 attempted = 0
                 for url in sm_report.urls[:max_pages]:
                     outcome = ingest_url(session, source, url, fetcher=fetcher)
-                    if kill_switch_active():
+                    if kill_switch_engaged_since(epoch):
                         # a page the Stop refused or cut was not an attempt; one that was fetched and stored before it was, and the rest of the
                         # walk would each be refused
                         if outcome.result is not IngestResult.FETCH_FAILED:
@@ -1652,8 +1656,8 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
                     start_url=crawl_start_url_for(source),
                 )
                 pages_fetched += report.pages_fetched
-            if kill_switch_active():
-                break  # stopped inside this outlet's step: what it fetched is kept, but it was not crawled
+            if kill_switch_engaged_since(epoch):
+                break  # stopped inside this outlet's step (or stopped and cleared again, R614): what it fetched is kept, but it was not crawled
             now = datetime.now(UTC)
             source.last_crawled_at = now
             # The outlet was crawled once; its other feeds are not due again before the rest of the rotation.
