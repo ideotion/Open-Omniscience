@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from src.database.feed_key import feed_key
+from src.database.feed_key import feed_key, read_feed_key
 from src.database.models import Source
 
 
@@ -46,12 +46,28 @@ def source_for_feed(session: Session, domain: str | None, rss_url: str | None) -
         return None
     if domain_keyed(session):
         return source_for_domain(session, domain)
-    return (
+    fk = feed_key(rss_url)
+    row = (
         session.query(Source)
-        .filter(Source.domain == domain, Source.feed_key == feed_key(rss_url))
+        .filter(Source.domain == domain, Source.feed_key == fk)
         .order_by(Source.id)
         .first()
     )
+    if row is None and fk:
+        # A key stored before R628 kept the feed URL's userinfo and holds an "@": read as its feed's key today
+        # (``read_feed_key``), so adding the same feed again is not a second row. Only on a miss, and only the domain's
+        # keys that hold an "@".
+        row = next(
+            (
+                r
+                for r in session.query(Source)
+                .filter(Source.domain == domain, Source.feed_key.contains("@"))
+                .order_by(Source.id)
+                if read_feed_key(r.feed_key, r.rss_url) == fk
+            ),
+            None,
+        )
+    return row
 
 
 def match_import(rows: list[tuple[int, str]], fk: str, batch_records: int = 1, legacy: bool = False) -> int | None:
@@ -78,6 +94,7 @@ def source_for_import(session: Session, domain: str | None, rss_url: str | None,
     """The source an imported record (YAML, CSV) updates, per :func:`match_import`, or ``None`` when it is a new feed."""
     rows = sources_for_domain(session, domain)
     sid = match_import(
-        [(r.id, r.feed_key or "") for r in rows], feed_key(rss_url), batch_records, legacy=domain_keyed(session)
+        [(r.id, read_feed_key(r.feed_key, r.rss_url)) for r in rows], feed_key(rss_url), batch_records,
+        legacy=domain_keyed(session),
     )
     return next((r for r in rows if r.id == sid), None) if sid is not None else None

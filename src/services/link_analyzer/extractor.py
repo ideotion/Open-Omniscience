@@ -32,7 +32,7 @@ import logging
 import re
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import urljoin, urlparse, urlsplit, urlunparse
 
 from bs4 import BeautifulSoup
 
@@ -40,6 +40,32 @@ from src.monitoring.secret_scrub import log_failure
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+
+def _host_label(netloc: str) -> str:
+    """A link's ``domain`` label: the host and port of ``netloc``, lower-cased, without its userinfo (R628).
+
+    The userinfo is everything before the LAST ``@``, as ``urllib.parse`` reads it (``.hostname`` and ``.port`` read what follows),
+    and a host and port hold no ``@``. Before, the label was the whole netloc lower-cased, so a link kept its credentials in the
+    label, and the social, ad and tracking checks (a substring search over the label) could be steered by them:
+    ``https://twitter.com:x@news.example/a`` read as social. Pure string work, so it never raises."""
+    return netloc.rpartition("@")[2].lower()
+
+
+def _site(netloc: str) -> str:
+    """The site ``netloc`` names, for internal against external: the host after the LAST ``@``, as ``urllib.parse`` reads it
+    (lower-cased, an IPv6 literal without its brackets), without its port or a leading ``www.`` (R628).
+
+    The same reading as ``src.ingest.crawl._registrable_host`` (R624), written here so that this module does not load ``src.ingest``
+    (R621); a test holds the two equal. Before, two whole netlocs were compared, so a link to the page's own host written with a
+    userinfo, a port or ``www.`` read as external and was stored as an outbound link with its credentials. Never raises: a host
+    ``urllib.parse`` cannot read comes back as written after the userinfo, as the crawl's does."""
+    after = netloc.rpartition("@")[2]
+    try:
+        host = urlsplit("//" + after).hostname or ""
+    except ValueError:
+        host = after
+    return host[4:] if host.startswith("www.") else host
 
 
 class LinkExtractor:
@@ -274,7 +300,7 @@ class LinkExtractor:
             "link_type": link_type,
             "html_tag": tag_name,
             "html_attributes": html_attributes,
-            "domain": parsed_url.netloc.lower() if parsed_url.netloc else "",
+            "domain": _host_label(parsed_url.netloc) if parsed_url.netloc else "",
             "path": parsed_url.path,
             "query": parsed_url.query,
             "fragment": parsed_url.fragment,
@@ -352,7 +378,7 @@ class LinkExtractor:
                         ),
                         "html_tag": tag.split("_")[0],
                         "html_attributes": {},
-                        "domain": parsed_url.netloc.lower() if parsed_url.netloc else "",
+                        "domain": _host_label(parsed_url.netloc) if parsed_url.netloc else "",
                         "path": parsed_url.path,
                         "query": parsed_url.query,
                         "fragment": parsed_url.fragment,
@@ -473,8 +499,8 @@ class LinkExtractor:
         elif tag_name in ["video", "audio", "source"]:
             return "media"
 
-        # Check by URL pattern
-        domain = parsed_url.netloc.lower() if parsed_url.netloc else ""
+        # Check by URL pattern: the host, never the userinfo (R628)
+        domain = _host_label(parsed_url.netloc) if parsed_url.netloc else ""
         path = parsed_url.path.lower()
 
         # Check for social media
@@ -517,10 +543,12 @@ class LinkExtractor:
         if scheme in ("javascript", "data", "file"):
             return "other"
 
-        # internal vs external is same-site vs cross-site (by domain). Relative
-        # links (no netloc, e.g. an unresolved anchor) are treated as internal.
+        # internal vs external is same-site vs cross-site, by the host after the last @
+        # without its port or www. (R628). Relative links (no netloc, e.g. an
+        # unresolved anchor) are treated as internal.
         if parsed_url.netloc:
-            if base_domain and parsed_url.netloc.lower() == base_domain.lower():
+            site = _site(parsed_url.netloc)
+            if base_domain and site and site == _site(base_domain):
                 return "internal"
             return "external"
         return "internal"

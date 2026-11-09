@@ -87,7 +87,7 @@ from src.ingest.extract import extract_article
 from src.ingest.fetch_verdict import classify_fetch_failure, fetch_reason_key
 from src.ingest.furniture import strip_furniture
 from src.ingest.non_article import classify_non_article, skip_non_articles_enabled
-from src.utils.url_utils import canonicalize_url, generate_content_hash
+from src.utils.url_utils import canonicalize_url, generate_content_hash, url_v1_canonical
 
 
 class IngestResult(str, Enum):
@@ -139,7 +139,7 @@ def ingest_url(
     """
     canonical = canonicalize_url(url)
 
-    if _exists(session, canonical_url=canonical) or (
+    if _canonical_stored(session, url, canonical) or (
         batch is not None and batch.has_canonical(canonical)
     ):
         return IngestOutcome(url, IngestResult.DUPLICATE, detail="canonical url already stored")
@@ -829,6 +829,20 @@ def feed_is_due(state: FeedFetchState | Row | None, *, now: datetime | None = No
         # Stored naive (SQLite DateTime) — interpret as UTC, the only thing we write.
         deadline = deadline.replace(tzinfo=UTC)
     return (now or datetime.now(UTC)) >= deadline
+
+
+def _canonical_stored(session: Session, url: str, canonical: str) -> bool:
+    """The pre-fetch dedup: is an article with ``canonical`` (``url``'s canonical form) already stored?
+
+    :func:`_exists` on it, then, only for a URL whose authority holds a userinfo, on the form ``url-v1`` gave it (R628): an
+    article stored before R628 from ``https://alice:pw@a.example/x`` holds that canonical_url with the userinfo, and without
+    this the page would be fetched again on every pass that lists it (the content hash then names it a duplicate, after the
+    request). That second read goes to the database directly and marks nothing in the dedup front, whose entries stay exactly
+    the canonical forms stored. Costs nothing for a URL without an ``@`` in its authority."""
+    if _exists(session, canonical_url=canonical):
+        return True
+    legacy = url_v1_canonical(url)
+    return legacy is not None and session.query(Article.id).filter_by(canonical_url=legacy).first() is not None
 
 
 def _exists(session: Session, **filters) -> bool:

@@ -43,7 +43,7 @@ from src.ingest import (
     RobotsUnavailable,
     _host_netloc,
 )
-from src.ingest.pipeline import IngestResult, _exists, store_fetched
+from src.ingest.pipeline import IngestResult, _canonical_stored, store_fetched
 from src.utils.url_utils import canonicalize_url
 
 # Conservative defaults: a shallow, small discovery crawl, not a mirror.
@@ -239,10 +239,12 @@ def crawl_source(
                 if canon in queued:
                     continue
                 # Skip links whose canonical form is already stored — or staged
-                # in the uncommitted batch (cheap pre-filter, no double fetch).
+                # in the uncommitted batch (cheap pre-filter, no double fetch). The
+                # canonical form has no userinfo (R628), so a link written with and
+                # without credentials is one page, queued once.
                 if batch is not None and batch.has_canonical(canon):
                     continue
-                if _exists(session, canonical_url=canon):
+                if _canonical_stored(session, link, canon):
                     continue
                 queued.add(canon)
                 queue.append((link, depth + 1))

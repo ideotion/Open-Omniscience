@@ -20,7 +20,7 @@ import io
 from src.catalog.countries import normalize_country
 from src.catalog.languages import language_storage_code
 from src.catalog.normalize import registrable_domain
-from src.database.feed_key import feed_key
+from src.database.feed_key import feed_key, read_feed_key
 from src.database.source_lookup import domain_keyed, match_import
 from src.monitoring.secret_scrub import record_text
 
@@ -279,8 +279,9 @@ def upsert_sources(session, rows: list[dict]) -> dict:
     # feed of a registered domain is a new sibling row. Matching on the domain alone made every row of a sheet that
     # exports thirty feeds of one outlet overwrite the first.
     by_domain: dict[str, list[tuple[int, str]]] = {}
-    for sid, d, fk in session.query(Source.id, Source.domain, Source.feed_key).order_by(Source.id).all():
-        by_domain.setdefault(d, []).append((sid, fk or ""))
+    # each stored key read as its feed's key today (R628: one stored before it kept a feed URL's userinfo)
+    for sid, d, fk, rss in session.query(Source.id, Source.domain, Source.feed_key, Source.rss_url).order_by(Source.id).all():
+        by_domain.setdefault(d, []).append((sid, read_feed_key(fk, rss)))
 
     legacy = domain_keyed(session)
     # DISTINCT feeds per domain: one corrected row repeated twice is still one source, not a sibling. A record WITHOUT a

@@ -31,7 +31,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
-from src.ingest import EthicalFetcher, kill_switch_active
+from src.ingest import EthicalFetcher, _host_netloc, kill_switch_active
 from src.ingest.fetch_verdict import is_kill_switch_refusal
 from src.monitoring.secret_scrub import log_failure, record_text
 from src.paths import data_dir
@@ -118,6 +118,15 @@ def _check_host_robots(fetcher, host: str) -> dict:
     return rec
 
 
+def _host_of(url: str) -> str:
+    """A target's ``host``: the fetcher's host key of its URL (R628), so the report and the robots read name the host and port
+    with no userinfo, in the one spelling the fetcher uses for that host (R621: lower-cased, the scheme's default port gone).
+    Before, it was the URL's whole netloc, so a feed URL written with a user name and password put them in the report's host
+    field and sent them with the robots read. Raises what ``urlparse`` raises, as before."""
+    parts = urlparse(url)
+    return _host_netloc(parts.netloc, parts.scheme) if parts.netloc else ""
+
+
 def _feed_targets() -> tuple[list[dict], list[dict]]:
     """(market_feeds, calendar_feeds) as {kind, key, url, host} — from the
     bundled catalogs only; nothing is invented."""
@@ -131,7 +140,7 @@ def _feed_targets() -> tuple[list[dict], list[dict]]:
                     "kind": "market_feed",
                     "key": f.key,
                     "url": f.url,
-                    "host": urlparse(f.url).netloc,
+                    "host": _host_of(f.url),
                 }
             )
     except Exception as exc:  # noqa: BLE001
@@ -147,7 +156,7 @@ def _feed_targets() -> tuple[list[dict], list[dict]]:
                         "kind": "calendar_feed",
                         "key": fd["id"],
                         "url": fd["url"],
-                        "host": urlparse(fd["url"]).netloc,
+                        "host": _host_of(fd["url"]),
                     }
                 )
     except Exception as exc:  # noqa: BLE001
