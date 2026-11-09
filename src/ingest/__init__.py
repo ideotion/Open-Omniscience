@@ -1938,6 +1938,19 @@ class EthicalFetcher:
                             except ValueError:  # shown as a space, a bracketed host is no longer an address
                                 raise BlockedTarget("URL host cannot be read") from None
                         self._refuse_parser_mismatch(nxt)
+                        if _carries_userinfo(location):
+                            # A Location that writes a user name or password (R633): followed, the server's choice of login went out
+                            # as an Authorization header and the address, login included, came back as the page's URL to be stored
+                            # (a review measured it). Refused before anything is asked of its host, for every caller, robots reads
+                            # included. The Location is read, not the joined URL: a relative Location writes no authority and keeps
+                            # the one of the request it answers, so an address the caller wrote with a login keeps it on that host,
+                            # as before; any Location that writes one is refused, the caller's own login included, so a login is
+                            # never handed to another host. (``urljoin`` above has already read the Location, so this reads it the
+                            # same way, and never raises.) A BlockedTarget, as R622's refusals of the address beside it: deterministic,
+                            # never retried, and the type a caller holding a fetch to one host already reads as a refused hop.
+                            raise BlockedTarget(
+                                f"redirect to an address that carries a user name or password, not followed: {failure_url(nxt)!r}"
+                            )
                         if chain is not None:
                             self._refuse_out_of_scope(chain, nxt)  # before the guard looks the host up: nothing is asked of it (R629)
                         self._guard_target(p.hostname)  # re-validate the redirect target

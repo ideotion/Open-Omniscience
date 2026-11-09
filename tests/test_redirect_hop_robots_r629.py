@@ -40,6 +40,7 @@ from sqlalchemy.pool import StaticPool
 import src.ingest as ingest
 from src.database.models import Article, Base, Source
 from src.ingest import (
+    BlockedTarget,
     CrawlDelayDeferred,
     EthicalFetcher,
     FetchError,
@@ -662,8 +663,8 @@ def test_the_scope_is_asked_about_every_hop_and_never_about_the_first_url(tmp_pa
 @pytest.mark.parametrize("answer", ["false", "raise"])
 def test_a_hop_the_scope_refuses_or_cannot_judge_asks_nothing_of_its_host(tmp_path, answer):
     s = _Session()
-    s.redirect(f"{A}/start", "https://u:fake-secret@b.example/page")
-    s.page("https://u:fake-secret@b.example/page")
+    s.redirect(f"{A}/start", f"{B}/page")  # a plain Location: one that writes a login is refused before any scope is asked (R633)
+    s.page(f"{B}/page")
 
     def scope(url):
         if answer == "raise":
@@ -679,7 +680,6 @@ def test_a_hop_the_scope_refuses_or_cannot_judge_asks_nothing_of_its_host(tmp_pa
     assert isinstance(caught.value, FetchFailed) and not isinstance(caught.value, requests.RequestException)
     text = record_text(caught.value, typed=False)
     assert text.startswith("redirect leaves the site the fetch is kept to, not followed: "), text
-    assert "fake-secret" not in text
     assert s.asked_of("b.example") == [] and guarded == ["a.example"]  # the hop's host was not even looked up
     _no_lock_held(f, "a.example", "b.example")
 
@@ -811,3 +811,125 @@ def test_the_preflight_homepage_ping_is_unchanged(tmp_path):
     rec = _bounded(lambda: _check_one(f, SimpleNamespace(id=1, domain="a.example")))
     assert rec["homepage_status"] == 200 and rec["robots"] == "missing"
     assert s.fetched == [f"{A}/robots.txt", f"{A}/", f"{B}/"]
+
+
+# --- a Location that writes a user name or password is never followed (R633) -------------------------------------------------------
+#
+# Measured by a review: a plain on-site link that 302s to https://alice:hunter2@good.example/landing was followed with
+# ``Authorization: Basic`` and stored as the article's canonical_url. These run on a REAL requests.Session (the in-memory adapter),
+# so what requests would send is what is recorded: every request's URL and headers.
+
+
+class _RecordingAdapter(_MemoryAdapter):
+    def __init__(self, routes: dict, asked: list, on: dict, sent: list):
+        super().__init__(routes, asked, on)
+        self.sent = sent
+
+    def send(self, request, **kwargs):
+        self.sent.append((request.url, dict(request.headers)))
+        return super().send(request, **kwargs)
+
+
+def _real_fetcher(tmp_path, monkeypatch, routes: dict):
+    for var in {*_PROXY_VARS, *(v for v in __import__("os").environ if v.lower().endswith("_proxy"))}:
+        monkeypatch.delenv(var, raising=False)
+    asked: list[str] = []
+    sent: list[tuple[str, dict]] = []
+    f = EthicalFetcher(min_interval_s=0, retry_backoff_s=0, max_retries=0, robots_cache_path=tmp_path / "robots_cache.json")
+    adapter = _RecordingAdapter(routes, asked, {}, sent)
+    f.session.mount("https://", adapter)
+    f.session.mount("http://", adapter)
+    f._resolve_cached = lambda host: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.215.14", 0))]  # type: ignore[method-assign]
+    return f, asked, sent
+
+
+def _logins(sent) -> list[str]:
+    return [url for url, headers in sent if any(k.lower() == "authorization" for k in headers)]
+
+
+_CREDENTIALED = "https://alice:hunter2@{host}/landing"
+
+
+@pytest.mark.parametrize("host", ["a.example", "b.example"])
+def test_a_location_with_a_login_is_never_requested_and_no_login_is_sent(tmp_path, monkeypatch, host):
+    location = _CREDENTIALED.format(host=host)
+    routes = {f"{A}/a": (302, {"Location": location}, b""), location: (200, {}, _html().encode())}
+    f, asked, sent = _real_fetcher(tmp_path, monkeypatch, routes)
+    with pytest.raises(BlockedTarget) as caught:  # the type of R622's refusals of the address (R633)
+        _fetch(f, f"{A}/a")
+    text = record_text(caught.value, typed=False)
+    assert text.startswith("redirect to an address that carries a user name or password, not followed: "), text
+    assert "hunter2" not in text and "alice" not in text
+    assert [u for u in asked if "@" in urlsplit(u).netloc] == [] and _logins(sent) == []
+    assert asked == [f"{A}/robots.txt", f"{A}/a"]  # nothing asked of the other host either, not even its robots.txt
+    _no_lock_held(f, "a.example", "b.example")
+
+
+def test_a_robots_read_that_redirects_to_a_login_is_refused_fail_closed(tmp_path, monkeypatch):
+    location = "https://alice:hunter2@a.example/private-robots.txt"
+    routes = {f"{A}/robots.txt": (302, {"Location": location}, b""), location: (200, {"Content-Type": "text/plain"}, b""),
+              f"{A}/page": (200, {}, _html().encode())}
+    f, asked, sent = _real_fetcher(tmp_path, monkeypatch, routes)
+    with pytest.raises(RobotsUnavailable) as caught:
+        _fetch(f, f"{A}/page")
+    assert caught.value.cause == "unreachable"
+    assert asked == [f"{A}/robots.txt"] and _logins(sent) == []
+
+
+def test_an_ingested_link_that_redirects_to_a_login_stores_nothing(db, source, tmp_path):
+    s = _Session()
+    s.redirect("https://good.example/a", "https://alice:hunter2@good.example/landing")
+    s.page("https://alice:hunter2@good.example/landing", _html("Landing", "A landing page behind a login nobody asked for."))
+    out = _bounded(lambda: ingest_url(db, source, "https://good.example/a", fetcher=_fetcher(tmp_path, s)))
+    assert out.result is IngestResult.FETCH_FAILED
+    assert "hunter2" not in (out.detail or "")
+    assert "https://alice:hunter2@good.example/landing" not in s.fetched
+    assert db.query(Article).count() == 0
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https://a.example/landing?by=alice@example.org",  # an @ in the query
+        "/people/@alice",  # an @ in the path
+        "https://a.example/x#me@frag",  # an @ in the fragment
+    ],
+)
+def test_an_at_sign_outside_the_authority_is_followed(tmp_path, monkeypatch, location):
+    target = location if location.startswith("https") else f"{A}{location}"  # requests sends the fragment as written
+    routes = {f"{A}/a": (302, {"Location": location}, b""), target: (200, {}, _html().encode())}
+    f, asked, sent = _real_fetcher(tmp_path, monkeypatch, routes)
+    result = _fetch(f, f"{A}/a")
+    assert result.status_code == 200 and asked[-1] == target and _logins(sent) == []
+
+
+def test_an_operators_login_stays_on_its_own_host_across_a_relative_hop(tmp_path, monkeypatch):
+    """Unchanged: a relative Location writes no authority, so the address the caller wrote with a login keeps it, on that host
+    only, as it did before."""
+    first = "https://op:fake-token@a.example/feed"
+    routes = {first: (301, {"Location": "/feed/"}, b""), f"{first}/": (200, {}, _html().encode())}
+    f, asked, sent = _real_fetcher(tmp_path, monkeypatch, routes)
+    assert _fetch(f, first, require_html=False).status_code == 200
+    assert asked == [f"{A}/robots.txt", first, f"{first}/"]
+    assert _logins(sent) == [first, f"{first}/"]
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https://other:fake-2@a.example/feed/",  # another login on the same host
+        "https://op:fake-token@b.example/feed/",  # the caller's own login, handed to another host
+        "https://op:fake-token@a.example/feed/",  # the caller's own login written out again: a Location that writes one is refused
+        "//op:fake-token@a.example/feed/",  # the same, as a network-path reference
+    ],
+)
+def test_a_location_that_writes_a_login_is_refused_even_the_callers_own(tmp_path, monkeypatch, location):
+    first = "https://op:fake-token@a.example/feed"
+    routes = {first: (302, {"Location": location}, b""), location: (200, {}, _html().encode())}
+    f, asked, sent = _real_fetcher(tmp_path, monkeypatch, routes)
+    with pytest.raises(BlockedTarget) as caught:  # the type of R622's refusals of the address (R633)
+        _fetch(f, first, require_html=False)
+    text = record_text(caught.value, typed=False)
+    assert text.startswith("redirect to an address that carries a user name or password"), text
+    assert "fake-token" not in text and "fake-2" not in text
+    assert asked == [f"{A}/robots.txt", first] and _logins(sent) == [first]
