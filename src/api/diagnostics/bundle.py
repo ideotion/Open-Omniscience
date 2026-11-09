@@ -2445,7 +2445,7 @@ def _machine_record_block() -> dict:
         return {"unavailable": type(exc).__name__}
 
 
-def _profile_block(profile: str, results: list[dict], mode: str = "thorough") -> dict:
+def _profile_block(profile: str, results: list[dict], mode: str = "thorough", operator_budget: bool = False) -> dict:
     """The manifest's `profile` block: what was declined, by whom, and whether the
     bundle is COMPLETE.
 
@@ -2477,7 +2477,9 @@ def _profile_block(profile: str, results: list[dict], mode: str = "thorough") ->
         note = (
             f"This is a {mode.upper()} build, and it is INCOMPLETE: " + ", ".join(over_budget)
             + " did not start because the scan budget was spent (see `scans`). Nothing was "
-            "declined by the machine or by the operator. Run the Thorough build to collect them."
+            "declined by the machine or by the operator. "
+            + ("Run it again with a longer budget, or none, to collect them." if operator_budget
+               else "Run the Thorough build to collect them.")
         )
     elif not declined:
         note = "Every member ran; nothing was declined."
@@ -2528,6 +2530,7 @@ def _all_diagnostics_manifest(
     mode: str = "thorough",
     phases: dict | None = None,
     machine: dict | None = None,
+    thorough_budget_s: float | None = None,
 ) -> dict:
     import platform
     import sys as _sys
@@ -2636,15 +2639,17 @@ def _all_diagnostics_manifest(
         # member non-zero") is only meaningful against a FULL run. `complete_profile` is
         # the one boolean a gate check should read -- never the member count, which a light
         # run keeps intact by design because the declined members are still listed.
-        "profile": _profile_block(profile, results, mode),
+        "profile": _profile_block(profile, results, mode, operator_budget=mode != "quick" and thorough_budget_s is not None),
         # THE MODE AND WHAT IT LEFT OUT (R124): Quick spends one budget on the scans and names
         # every scan it did not reach; Thorough runs them all under their own deadlines. Read from
         # the members this run wrote, so it cannot disagree with them.
         "mode": mode,
-        "scan_budget_s": _plan.SCAN_BUDGET_S if mode == "quick" else None,
-        "scans": _plan.scans_block(
-            results, mode=mode, budget_s=_plan.SCAN_BUDGET_S if mode == "quick" else None
+        # S3: a Thorough build runs under the budget its operator set, when one was set (none by default).
+        "scan_budget_s": _plan.scan_budget_for(mode, thorough_budget_s),
+        "scan_budget_set_by": (
+            "product" if mode == "quick" else ("operator" if thorough_budget_s is not None else None)
         ),
+        "scans": _plan.scans_block(results, mode=mode, budget_s=_plan.scan_budget_for(mode, thorough_budget_s)),
         # HONESTY (2026-07-17): what is deliberately NOT in this archive, and why —
         # so "all diagnostics" states its own boundary instead of implying totality.
         "excluded": [
@@ -2733,6 +2738,7 @@ def _scan_deadline(
 def _write_all_diagnostics_zip(
     members, zf, *, progress=None, should_stop=None, journal_path=None, db=None,
     exclusive=None, profile="full", previous_runs=None, mode="thorough", scan_window=None,
+    thorough_budget_s: float | None = None,
 ) -> list[dict]:
     """Write every member (+ manifest) into the open ZipFile ``zf``; return the per-member
     results. Shared by the sync endpoint (an in-memory BytesIO) and the job (a file on disk).
@@ -2809,7 +2815,7 @@ def _write_all_diagnostics_zip(
 
     results: list[dict] = []
     mode = _plan.resolve_mode(mode)
-    budget_s = _plan.SCAN_BUDGET_S if mode == "quick" else None
+    budget_s = _plan.scan_budget_for(mode, thorough_budget_s)
     records, scans = _plan.split_members(list(members))
     ordered = records + scans
     scan_names = {m[0] for m in scans}
@@ -2911,10 +2917,13 @@ def _write_all_diagnostics_zip(
                 budget_s is not None and is_scan_member and declined_reason is None
                 and _plan.scan_deadline_s(_plan.DEFAULT_SCAN_S, elapsed_s, budget_s)[0] is None
             ):
+                whose = "the Quick build's scan budget" if mode == "quick" else "the scan budget the operator set"
                 skipped_reason = (
-                    f"the Quick build's scan budget of {budget_s:.0f} s was spent ({elapsed_s:.0f} s "
+                    f"{whose} of {budget_s:.0f} s was spent ({elapsed_s:.0f} s "
                     f"used by the scans before this one); this scan is expected to take about "
-                    f"{_plan.scan_est_s(name):.0f} s. Run the Thorough build to collect it"
+                    f"{_plan.scan_est_s(name):.0f} s. "
+                    + ("Run the Thorough build to collect it" if mode == "quick"
+                       else "Run it again with a longer budget, or none, to collect it")
                 )
             budget_cut = False
             abandoned = False
@@ -3172,7 +3181,7 @@ def _write_all_diagnostics_zip(
         results, db=db, run_started_at=run_started_at, run_ended_at=run_ended_at, run_wall_s=run_wall_s,
         exclusive=exclusive if exclusive is not None else scan_claim, profile=profile,
         previous_runs=previous_block, read_release=read_release if db is not None else None,
-        mode=mode, phases=phases, machine=machine,
+        mode=mode, phases=phases, machine=machine, thorough_budget_s=thorough_budget_s,
     )
     zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
     # Fold the durable journal into the finished archive as bundle-journal.jsonl -- the
@@ -3512,7 +3521,7 @@ def _fold_previous_run_journals(previous: dict[str, Any]) -> tuple[str, dict]:
     return text, block
 
 
-def _all_diagnostics_worker(ctx, profile: str = "full", mode: str = "thorough") -> dict:
+def _all_diagnostics_worker(ctx, profile: str = "full", mode: str = "thorough", budget_s: float | None = None) -> dict:
     """Build the all-diagnostics archive to a server-side file (D2), and record that it began
     and how it ended in ``data/diagnostics/runs.jsonl`` (R119): a run that fails by an
     exception or is killed left nothing that any later bundle carried, and the operator pressed
@@ -3525,7 +3534,7 @@ def _all_diagnostics_worker(ctx, profile: str = "full", mode: str = "thorough") 
     mode = _plan.resolve_mode(mode)
     run = _diag_runs.begin_run(fname, profile=profile, mode=mode)
     try:
-        result = _all_diagnostics_build(ctx, profile, fname, mode)
+        result = _all_diagnostics_build(ctx, profile, fname, mode, budget_s)
     except BaseException as exc:
         # The failure's words enter a record that ships in the zip and answers GET /runs. ``exc_line`` writes
         # them through ``secret_scrub.exception_text`` (the passphrase out of the whole text, fixed words for a
@@ -3545,7 +3554,7 @@ def _all_diagnostics_worker(ctx, profile: str = "full", mode: str = "thorough") 
     return result
 
 
-def _all_diagnostics_build(ctx, profile: str, fname: str, mode: str = "thorough") -> dict:
+def _all_diagnostics_build(ctx, profile: str, fname: str, mode: str = "thorough", budget_s: float | None = None) -> dict:
     """Build the all-diagnostics archive to a server-side file (D2). Read-only; opens its own
     session so it never borrows the request's. Writes to a ``.part`` file and atomically
     renames on success, so a cancelled/failed run never leaves a half-written archive that
@@ -3588,7 +3597,7 @@ def _all_diagnostics_build(ctx, profile: str, fname: str, mode: str = "thorough"
                 members, z, progress=_progress, should_stop=lambda: ctx.stopping,
                 journal_path=journal_path, db=db, scan_window=_bundle_exclusive_window,
                 profile=resolve_bundle_profile(profile), previous_runs=previous_runs,
-                mode=mode,
+                mode=mode, thorough_budget_s=budget_s,
             ))
     if ctx.stopping:
         # Cancelled between members: drop the partial, never present it as a good archive.
@@ -3638,6 +3647,7 @@ _ALL_DIAG_JOB = register_job(
 def all_diagnostics_job_start(
     profile: str = Query("full", description="full | light"),
     mode: str = Query("quick", description="quick | thorough"),
+    budget_min: str | None = Query(None, description="thorough only: stop starting scans after this many minutes (none by default)"),
 ) -> JSONResponse:
     """Start the all-diagnostics archive build as a BACKGROUND job (D2). Returns immediately;
     poll ``/all-job/status`` (or the task manager) for per-member progress, then GET
@@ -3654,14 +3664,36 @@ def all_diagnostics_job_start(
     then spends one budget on the scans and names the ones it did not reach; ``thorough`` runs every
     scan under its own deadline. A name that is not one of the two is ``thorough``, so a typo never
     makes a smaller build than the caller meant. ``profile=light`` stays for the maintainers; the
-    panel no longer sends it."""
+    panel no longer sends it.
+
+    ``budget_min`` (S3, per run, not stored, for the reason ``profile`` is not): a Thorough build's scan budget, in
+    minutes, set by the operator; none by default. A scan starts only while the budget has :data:`SCAN_FLOOR_S` left and
+    is asked to stop when it runs out, exactly as in Quick, and every scan it did not reach is named in the manifest's
+    ``scans.skipped``. A scan asked to stop still saves its place first, which can take up to 15 s past the budget (the
+    corpus-integrity scan's one marker deadline); the panel's note says so. Ignored for Quick, whose budget is the product's, and
+    said so in the answer. A value that is not a
+    finite number of minutes above zero is refused (400), never read as "no limit"."""
+    resolved_mode = _plan.resolve_mode(mode)
+    if not isinstance(budget_min, (str, int, float)):
+        budget_min = None  # a direct call that left the Query default in place (a truthy sentinel object) set no budget
+    try:
+        budget_s = _plan.operator_budget_s(budget_min)
+    except ValueError:
+        # Fixed words, never the exception's (the sink sweep's rule): the two refusals say the same thing to the caller.
+        raise HTTPException(status_code=400, detail="budget_min must be a finite number of minutes above zero") from None
+    ignored = budget_s is not None and resolved_mode == "quick"
+    if ignored:
+        budget_s = None
     try:
         return JSONResponse(
             {
                 "started": True,
                 "job": _ALL_DIAG_JOB.start(
-                    profile=resolve_bundle_profile(profile), mode=_plan.resolve_mode(mode)
+                    profile=resolve_bundle_profile(profile), mode=resolved_mode,
+                    **({"budget_s": budget_s} if budget_s is not None else {}),
                 ),
+                "scan_budget_s": _plan.scan_budget_for(resolved_mode, budget_s),
+                **({"budget_ignored": "a Quick build runs under its own scan budget"} if ignored else {}),
             }
         )
     except RuntimeError:
