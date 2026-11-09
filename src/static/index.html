@@ -3593,8 +3593,9 @@
       <h3 style="margin-bottom:6px">Network fetch mode</h3>
       <p class="muted" style="margin-top:0" id="fetch-note">Transparent mode names this tool in the
         User-Agent (polite, but identifiable). Protected mode routes every fetch through a proxy you run
-        and sends a generic User-Agent, except to Wikimedia's sites (Wikipedia, Wikidata, the dumps):
-        their API policy asks each tool to name itself, so those requests still name this one.</p>
+        and sends a generic User-Agent, except in the requests its Wikipedia, Wikidata and dump features
+        make to Wikimedia's servers: Wikimedia's API policy asks each tool to name itself, so those still
+        name this one.</p>
       <div class="row">
         <div><label for="fetch-mode">Mode</label>
           <select id="fetch-mode" data-on-change="onFetchModeChange()">

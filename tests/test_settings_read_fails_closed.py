@@ -22,6 +22,7 @@ from src.safety.fetcher import (
     guarded_session,
     make_fetcher,
 )
+from src.safety.settings import GENERIC_USER_AGENT
 
 SOCKS = "socks5h://127.0.0.1:9050"
 _REAL: dict = {}
@@ -337,7 +338,9 @@ def test_a_held_session_is_returned_on_a_failed_read_only_for_the_user_agent_it_
     _fail_reads(env)
     kv_store.kv_invalidate()
     other = following_session("wiki", "ua-two")
-    assert other is not good and other.transport_refusal and other.headers["User-Agent"] == "ua-two"
+    # Unreadable settings read as protected, so the session carries the generic agent and keeps its own for Wikimedia (R657).
+    assert other is not good and other.transport_refusal and other.protected_agent == "ua-two"
+    assert other.headers["User-Agent"] == GENERIC_USER_AGENT
 
 
 def test_no_module_that_logs_around_the_store_or_the_ledger_writes_a_traceback():

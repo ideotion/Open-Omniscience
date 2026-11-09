@@ -10,9 +10,9 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
     collection (announces the bot, as a good crawler should).
   * ``protected`` — route through ``http_proxy`` (e.g. Tor at ``socks5h://127.0.0.1:9050``)
     and send a generic User-Agent, so investigating a powerful target need not announce the
-    journalist from their real IP. The one exception is Wikimedia's sites (Wikipedia, Wikidata,
-    the dumps), which still receive the tool's own User-Agent through the proxy because their API
-    policy asks for it (R657; ``DESCRIPTIVE_AGENT_DOMAINS`` in ``src.safety.fetcher``). Source protection is itself a journalistic duty; it is
+    journalist from their real IP. The one exception is the Wikimedia hosts the app's Wikipedia,
+    Wikidata and dump clients call, which still receive the tool's own User-Agent through the proxy
+    because their API policy asks for it (R657; ``DESCRIPTIVE_AGENT_HOSTS`` in ``src.safety.fetcher``). Source protection is itself a journalistic duty; it is
     opt-in and never the silent default. The recommended scheme is ``socks5h`` (not
     ``socks5``) — the trailing "h" means the PROXY resolves the hostname (the curl/PySocks
     convention), so DNS queries never reach the local/ISP resolver either; a plain

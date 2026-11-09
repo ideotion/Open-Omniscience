@@ -166,8 +166,8 @@ may persist.
    set once by the trainer — a one-click "ephemeral session" launcher entry is RM-09]**.
 3. Trainees **Collect** from a workshop fixture site; the trainer flips its robots to
    `Disallow:` to demonstrate the **fail-closed refusal** live **[works today]**.
-4. **Settings → Safety** → demonstrate **Protected fetch** (proxy + generic UA, with its
-   honest "you must run and trust the proxy" note) and **Panic wipe** (with its honest SSD
+4. **Settings → Safety** → demonstrate **Protected fetch** (proxy + generic UA, the app's own
+   Wikimedia requests excepted, with its honest "you must run and trust the proxy" note) and **Panic wipe** (with its honest SSD
    limit) — all toggles, no commands **[works today]**.
 5. Session ends by disposing the VM; nothing was written outside the ephemeral dir.
 

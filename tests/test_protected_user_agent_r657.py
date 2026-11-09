@@ -1,24 +1,28 @@
-"""Protected mode names the app to Wikimedia only (R657).
+"""Protected mode names the app to the Wikimedia hosts its Wikipedia, Wikidata and dump features call, and nowhere else (R657).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 The Settings note, the user manual and docs/SECURITY.md said protected mode sends a generic User-Agent. The collector did; a guarded
 session did not: ``_session_for`` set the caller's own agent before it read the mode, so every API client built on it (the Wikidata
-ring loader, statistics, OSM, self-update) named the app through Tor. R657: in protected mode a guarded session sends
-``GENERIC_USER_AGENT`` to every host except Wikimedia's (Wikipedia, Wikidata, the dumps), whose User-Agent policy asks API clients to
-name themselves. The decision is taken in ``GuardedSession.send``, so it holds for the first request and for every redirect hop, whatever
-User-Agent a request carried. Each test drives a real session through a recording adapter; nothing leaves the machine.
+ring loader, statistics, OSM, self-update) named the app through Tor, and two operator probes (a field check and the release run's law
+probe) built their fetcher by hand, so they went out with no proxy at all. R657: in protected mode a guarded session sends
+``GENERIC_USER_AGENT`` to every host except the Wikimedia hosts the app's own clients name (``DESCRIPTIVE_AGENT_HOSTS``), whose
+User-Agent policy asks API clients to name themselves, and only over https. The decision is taken in ``GuardedSession.send``, so it holds
+for the first request and for every redirect hop, whatever User-Agent a request carried; the two probes build their fetcher through
+``make_fetcher``. Each test drives real code through a recording adapter or a recording fetch; nothing leaves the machine.
 """
 
 from __future__ import annotations
+
+from urllib.parse import urlparse
 
 import pytest
 import requests
 from requests.adapters import BaseAdapter
 
 from src.safety import fetcher as fetcher_mod
-from src.safety.fetcher import DESCRIPTIVE_AGENT_DOMAINS, keeps_descriptive_agent
+from src.safety.fetcher import DESCRIPTIVE_AGENT_HOSTS, keeps_descriptive_agent
 from src.safety.settings import GENERIC_USER_AGENT
 
 _SOCKS = "socks5h://127.0.0.1:9050"
@@ -30,7 +34,7 @@ _WIKIMEDIA = (
     "https://query.wikidata.org/sparql?query=x",
     "https://en.wikipedia.org/w/api.php?action=query",
     "https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2",
-    "https://wikimedia.org/api/rest_v1/metrics/pageviews/",
+    "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia/all-access/user/X/daily/20260101/20260131",
     "https://stream.wikimedia.org/v2/stream/recentchange",
     "https://ores.wikimedia.org/v3/scores/",
     "https://EN.WIKIPEDIA.ORG./wiki/X",
@@ -47,11 +51,26 @@ _ELSEWHERE = (
     "https://wikidata.org.example/",
     "https://www.wikiquote.org/",
     "https://127.0.0.1:11434/api/tags",
+    "https://shop.wikimedia.org/",  # under wikimedia.org, but no client of the app's calls it
+    "https://meta.wikimedia.org/w/api.php",
+    "https://wikidata.org/w/api.php",  # the bare domain: the app calls www. and query.
+    "https://wikipedia.org/",  # the portal, not an edition
+    "http://en.wikipedia.org/w/api.php",  # plain http: the agent would cross the exit in clear text
 )
 
 
-def test_the_allowlist_is_wikimedias_three_domains_and_nothing_else():
-    assert DESCRIPTIVE_AGENT_DOMAINS == ("wikipedia.org", "wikidata.org", "wikimedia.org")
+def test_the_allowlist_is_exactly_the_wikimedia_hosts_the_apps_clients_name():
+    """One explicit list, and every entry on it is a host one of the app's own Wikimedia clients is confined to: nothing wider."""
+    from src.analytics.wikidata_rings import API_HOSTS as rings_hosts
+    from src.catalog.wikidata import WDQS_HOSTS
+    from src.catalog.wikidata_enrich import API_HOSTS as enrich_hosts
+    from src.wiki.client import WIKI_SESSION_HOSTS
+    from src.wiki.dumps import dump_url
+    from src.wiki.ores import ORES_HOSTS
+
+    named = {*WIKI_SESSION_HOSTS, *ORES_HOSTS, *WDQS_HOSTS, *enrich_hosts, *rings_hosts, urlparse(dump_url("en", "pages-articles")).hostname}
+    assert len(DESCRIPTIVE_AGENT_HOSTS) == len(set(DESCRIPTIVE_AGENT_HOSTS))
+    assert set(DESCRIPTIVE_AGENT_HOSTS) == named
 
 
 @pytest.mark.parametrize("url", _WIKIMEDIA)
@@ -64,7 +83,18 @@ def test_any_other_host_gets_the_generic_agent(url):
     assert not keeps_descriptive_agent(url)
 
 
-@pytest.mark.parametrize("url", ["", "not a url", "https://", "https://[::1/", "http://a.wikipedia.org\\@evil.example/"])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "",
+        "not a url",
+        "https://",
+        "https://[::1/",
+        "https://a.wikipedia.org\\@evil.example/",  # urllib3 reads a.wikipedia.org, urlparse evil.example
+        "https://evil.example\\@en.wikipedia.org/",  # the other way round: urlparse reads en.wikipedia.org, urllib3 evil.example
+        "https://en.wikipedia.org\t.evil.example/",
+    ],
+)
 def test_an_unreadable_or_ambiguous_url_gets_the_generic_agent(url):
     assert not keeps_descriptive_agent(url)
 
@@ -170,8 +200,8 @@ def test_transparent_mode_names_the_app_everywhere_as_before(mode):
 _ROOT = __import__("pathlib").Path(__file__).resolve().parent.parent
 _NOTE = (
     "Transparent mode names this tool in the User-Agent (polite, but identifiable). Protected mode routes every fetch through a proxy you "
-    "run and sends a generic User-Agent, except to Wikimedia's sites (Wikipedia, Wikidata, the dumps): their API policy asks each tool to "
-    "name itself, so those requests still name this one."
+    "run and sends a generic User-Agent, except in the requests its Wikipedia, Wikidata and dump features make to Wikimedia's servers: "
+    "Wikimedia's API policy asks each tool to name itself, so those still name this one."
 )
 _HINT = "Protected mode cannot guarantee anonymity — you must run and trust the proxy yourself. SOCKS proxies such as Tor need nothing extra installed."
 _LOCALES = ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh")
@@ -197,10 +227,10 @@ def test_the_settings_note_states_the_exception_and_every_locale_carries_it():
 @pytest.mark.parametrize(
     ("path", "exception"),
     [
-        ("src/static/index.html", "except to Wikimedia's sites (Wikipedia, Wikidata, the dumps)"),
-        ("src/api/safety.py", "except to Wikimedia's sites (Wikipedia, Wikidata, the dumps)"),
-        ("docs/USER_MANUAL.md", "The one exception is Wikimedia's sites (Wikipedia, Wikidata, the dumps)"),
-        ("docs/SECURITY.md", "The list is `DESCRIPTIVE_AGENT_DOMAINS` in `src/safety/fetcher.py`"),
+        ("src/static/index.html", "except in the requests its Wikipedia, Wikidata and dump features make to Wikimedia's servers"),
+        ("src/api/safety.py", "except in the requests its Wikipedia, Wikidata and dump features make to Wikimedia's servers"),
+        ("docs/USER_MANUAL.md", "The one exception is the requests the app's Wikipedia, Wikidata and dump features make to Wikimedia's"),
+        ("docs/SECURITY.md", "The list is `DESCRIPTIVE_AGENT_HOSTS` in `src/safety/fetcher.py`"),
     ],
 )
 def test_no_text_says_protected_mode_hides_the_app_from_everyone(path, exception):
@@ -211,3 +241,77 @@ def test_no_text_says_protected_mode_hides_the_app_from_everyone(path, exception
         text = _flat((_ROOT / path).read_text(encoding="utf-8"))
     assert exception in text, path
     assert "[safety] extra" not in text, path
+
+
+def test_the_manuals_other_protected_mode_sentence_names_the_exception_too():
+    """The manual describes protected mode twice; the second place (its anonymity note) said "a generic User-Agent" with no exception."""
+    text = _flat((_ROOT / "docs" / "USER_MANUAL.md").read_text(encoding="utf-8"))
+    assert "the app's part is a generic User-Agent and routing every fetch through it." not in text
+    assert "except in the requests its Wikipedia, Wikidata and dump features make to Wikimedia" in text
+
+
+def _recording_fetch(monkeypatch) -> list[tuple[str, str | None, str]]:
+    """Replaces ``EthicalFetcher.fetch`` with one that records the fetcher's proxy and agent and refuses, so nothing is sent."""
+    from src.ingest import EthicalFetcher, FetchError
+
+    seen: list[tuple[str, str | None, str]] = []
+
+    def fetch(self, url, *a, **kw):
+        seen.append((str(url), self.proxy, self.user_agent))
+        raise FetchError("recorded, not sent")
+
+    monkeypatch.setattr(EthicalFetcher, "fetch", fetch)
+    return seen
+
+
+def test_the_field_checks_host_probe_fetches_through_the_proxy_with_the_generic_agent(mode, monkeypatch):
+    """It built ``EthicalFetcher(timeout=45.0)`` by hand: in protected mode it went out with no proxy and the bot's name."""
+    from src.monitoring import field_checks
+
+    mode("protected")
+    seen = _recording_fetch(monkeypatch)
+    out = field_checks._host_reach({"urls": [_ELSEWHERE[0]]}, {}, None, {})
+    assert out["hosts"][0]["reached"] is False
+    assert seen == [(_ELSEWHERE[0], _SOCKS, GENERIC_USER_AGENT)]
+
+
+def test_the_release_runs_law_probe_fetches_through_the_proxy_with_the_generic_agent(mode, monkeypatch):
+    from src.monitoring import release_run
+
+    mode("protected")
+    seen = _recording_fetch(monkeypatch)
+    release_run._law_live_checks()
+    assert seen, "the catalogue names no priority-host document to probe"
+    assert {(proxy, agent) for _url, proxy, agent in seen} == {(_SOCKS, GENERIC_USER_AGENT)}
+
+
+def test_protected_mode_with_no_proxy_refuses_both_probes_by_name(mode, monkeypatch):
+    """No proxy in protected mode: ``make_fetcher`` refuses before any fetch, and each probe records the refusal as its result."""
+    from src.monitoring import release_run
+
+    mode("protected")
+    monkeypatch.delenv("OO_HTTP_PROXY")
+    seen = _recording_fetch(monkeypatch)
+    assert "error" in release_run._law_probe()
+    with pytest.raises(fetcher_mod.TransportUnavailable):
+        from src.monitoring import field_checks
+
+        field_checks._host_reach({"urls": [_ELSEWHERE[0]]}, {}, None, {})
+    assert seen == []
+
+
+def test_only_the_safety_module_and_the_soak_harness_build_an_ethical_fetcher_by_hand():
+    """Every other module gets its fetcher from ``make_fetcher``/``following_fetcher``, which read the fetch mode. A fetcher built by
+    hand follows no mode: no proxy and the bot's name in protected mode. The soak harness hands its fetcher a stand-in session."""
+    import ast
+
+    built_in: set[str] = set()
+    for path in (_ROOT / "src").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                f = node.func
+                name = f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else ""
+                if name == "EthicalFetcher":
+                    built_in.add(path.relative_to(_ROOT).as_posix())
+    assert built_in == {"src/safety/fetcher.py", "src/testing/collect_soak.py"}

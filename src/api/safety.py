@@ -36,9 +36,9 @@ _PANIC_DONE = threading.Event()
 _ERASE_LOCK = threading.Lock()
 
 _PROXY_NOTE = (
-    "Protected mode routes fetches through your proxy and sends a generic User-Agent, except to "
-    "Wikimedia's sites (Wikipedia, Wikidata, the dumps), whose API policy asks each tool to name "
-    "itself, so those requests still name this one. "
+    "Protected mode routes fetches through your proxy and sends a generic User-Agent, except in the "
+    "requests its Wikipedia, Wikidata and dump features make to Wikimedia's servers: Wikimedia's API "
+    "policy asks each tool to name itself, so those still name this one. "
     "We use and verify the proxy is set; we cannot guarantee anonymity — run and trust "
     "the proxy (e.g. Tor) yourself. SOCKS proxies such as Tor need nothing extra installed."
 )

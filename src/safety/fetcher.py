@@ -8,7 +8,7 @@ The single place that builds an :class:`~src.ingest.EthicalFetcher` from the use
 settings, so every ingest path (single URL, feeds, crawl, markets, law) goes through the
 *same* protected/transparent decision. Protected mode routes through the user's proxy and
 sends a generic User-Agent (a guarded session keeps the caller's own agent for Wikimedia's hosts
-only, R657: :data:`DESCRIPTIVE_AGENT_DOMAINS`); the robots/rate-limit/SSRF guards are unchanged.
+only, R657: :data:`DESCRIPTIVE_AGENT_HOSTS`); the robots/rate-limit/SSRF guards are unchanged.
 """
 
 from __future__ import annotations
@@ -245,28 +245,42 @@ def refuse_unlisted_path(url: str, prefixes: tuple[str, ...]) -> None:
 
 
 #: R657: in protected mode a guarded session sends :data:`GENERIC_USER_AGENT` to every host except these, which keep the caller's
-#: own descriptive agent. Wikimedia's User-Agent policy asks API clients to name themselves, and a browser-like agent may be throttled
-#: or refused there, so Wikipedia, Wikidata and the dumps (``dumps.wikimedia.org``) keep the app's name; any other host is not told
-#: which tool is asking. A host matches when it IS one of these domains or ends with a dot and one of them. Nothing else is on it.
-DESCRIPTIVE_AGENT_DOMAINS: tuple[str, ...] = ("wikipedia.org", "wikidata.org", "wikimedia.org")
+#: own descriptive agent: the Wikimedia hosts the app's Wikipedia, Wikidata and dump features call, whose User-Agent policy asks API
+#: clients to name themselves (a browser-like agent may be throttled or refused there). Entries follow :func:`_checked_hosts`: a host,
+#: or a leading-dot suffix for any host under a domain (``.wikipedia.org``: every language edition, never the bare portal). Each one is
+#: a host a client names: ``.wikipedia.org`` and the bare ``wikimedia.org`` (pageviews) and ``stream.wikimedia.org`` are
+#: ``src.wiki.client.WIKI_SESSION_HOSTS``; ``ores.wikimedia.org`` is ``src.wiki.ores.ORES_HOSTS``; ``dumps.wikimedia.org`` is the
+#: dumps' own host; ``www.wikidata.org`` and ``query.wikidata.org`` are the Wikidata API and query service. No other host under
+#: ``wikimedia.org`` or ``wikidata.org`` is on it, so a redirect to one of Wikimedia's other or third-party-hosted names gets the
+#: generic agent.
+DESCRIPTIVE_AGENT_HOSTS: tuple[str, ...] = (
+    ".wikipedia.org",
+    "www.wikidata.org",
+    "query.wikidata.org",
+    "wikimedia.org",
+    "dumps.wikimedia.org",
+    "stream.wikimedia.org",
+    "ores.wikimedia.org",
+)
 
 
 def keeps_descriptive_agent(url: str) -> bool:
     """True when a protected-mode request to ``url`` keeps the caller's descriptive User-Agent (R657).
 
-    The host is read both ways ``requests`` and urllib3 read it (``urlparse`` and ``parse_url``), and BOTH readings must name a host
-    under :data:`DESCRIPTIVE_AGENT_DOMAINS`: a URL the two read differently gets the generic agent. Never raises.
+    The URL is read both ways ``requests`` and urllib3 read it (``urlparse`` and ``parse_url``), and BOTH readings must be https to a
+    host on :data:`DESCRIPTIVE_AGENT_HOSTS`: a URL the two read differently gets the generic agent, and so does plain http, where the
+    agent would cross the proxy's exit in clear text. Never raises.
     """
     try:
-        hosts = (urlparse(url).hostname, parse_url(url).host)
+        by_urlparse, by_urllib3 = urlparse(url), parse_url(url)
+        readings = ((by_urlparse.scheme, by_urlparse.hostname), (by_urllib3.scheme, by_urllib3.host))
     except Exception:  # noqa: BLE001 - an unreadable URL gets the generic agent
         return False
-
-    def _listed(host: str | None) -> bool:
+    for scheme, host in readings:
         h = (host or "").strip().rstrip(".").lower()
-        return bool(h) and any(h == d or h.endswith("." + d) for d in DESCRIPTIVE_AGENT_DOMAINS)
-
-    return all(_listed(h) for h in hosts)
+        if (scheme or "").lower() != "https" or not h or not _host_listed(h, DESCRIPTIVE_AGENT_HOSTS):
+            return False
+    return True
 
 
 class GuardedSession(requests.Session):
@@ -514,10 +528,12 @@ def guarded_session(
       * the global kill switch refuses new requests (airplane mode is real);
       * protected mode routes through the user's proxy (e.g. Tor) -- transport
         is NEVER silently downgraded to clearnet (a §0.5 non-negotiable);
-      * an explicit, honest User-Agent (callers pass the one their endpoint's
-        policy requires -- e.g. Wikimedia's API mandates a descriptive bot UA,
-        even over Tor, so a generic browser UA would be both dishonest and
-        against policy; the DuckDuckGo HTML endpoint wants a browser UA).
+      * an explicit User-Agent: callers pass the one their endpoint's policy
+        requires (Wikimedia's API mandates a descriptive bot UA, even over Tor;
+        the DuckDuckGo HTML endpoint wants a browser UA). In protected mode the
+        session sends it only to :data:`DESCRIPTIVE_AGENT_HOSTS` and
+        :data:`GENERIC_USER_AGENT` to every other host, so the app is not named
+        where the operator asked not to be (R657, :meth:`GuardedSession.send`).
 
     ``isolation_token`` requests a dedicated Tor circuit for this session (see
     ``_with_stream_isolation``) so parallel downloads to one host don't share a

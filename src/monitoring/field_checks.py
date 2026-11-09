@@ -523,10 +523,15 @@ _TITLE = re.compile(rb"<title[^>]*>(.*?)</title>", re.I | re.S)
 
 
 def _host_reach(params: dict, inputs: dict, db: Any, check: dict) -> dict[str, Any]:
-    """Each URL once through the ethical fetcher (robots.txt honoured); status, size and page title."""
-    from src.ingest import EthicalFetcher, FetchError
+    """Each URL once through the ethical fetcher (robots.txt honoured); status, size and page title.
 
-    fetcher = EthicalFetcher(timeout=45.0)
+    The fetcher comes from ``make_fetcher``, so it follows the fetch mode: in protected mode it goes through the operator's proxy with
+    the generic User-Agent, and with no proxy it is refused by name (the runner records that as the result). Built by hand, it had
+    gone out directly with the bot's name in protected mode too (R657)."""
+    from src.ingest import FetchError
+    from src.safety.fetcher import make_fetcher
+
+    fetcher = make_fetcher(timeout=45.0)
     rows = []
     for url in params.get("urls") or []:
         entry: dict[str, Any] = {"url": url}
