@@ -383,7 +383,8 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   and through a proxy it sees only the proxy's loopback address, the very thing the request-line
   check already handles.
   **Lookups (R639, 2026-11-09):** while airplane mode is on, `getaddrinfo` is made only for no name,
-  exactly `localhost`, or a loopback literal. A localhost alias the connect guard treats as local
+  exactly `localhost`, or a loopback literal. `localhost` itself is answered from `127.0.0.1` and `::1`, never looked
+  up as a name, so a hosts file without an entry for the family asked for cannot send it to DNS. A localhost alias the connect guard treats as local
   (`localhost.localdomain`, `ip6-localhost`) is refused before any lookup, in fixed words, because it
   is resolved from `/etc/hosts` only where that file lists it, and elsewhere the resolver sent the
   query to DNS (the connect to whatever DNS answered was refused, but the query had already left).

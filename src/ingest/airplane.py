@@ -264,6 +264,38 @@ def _lookup_exempt(host: object) -> bool:
         return False
 
 
+def _is_localhost_name(host: object) -> bool:
+    """Exactly ``localhost`` (any ASCII case, text or bytes)."""
+    if isinstance(host, bytes):
+        try:
+            host = host.decode("ascii")
+        except UnicodeDecodeError:
+            return False
+    return isinstance(host, str) and host.lower() == "localhost"
+
+
+def _localhost_in_process(args: tuple[Any, ...], kwargs: dict[str, Any]) -> list[Any]:
+    """Answer ``localhost`` from its loopback LITERALS, in airplane mode only (R639, security read A's follow-up).
+
+    ``localhost`` is exempt from the airplane refusal, but libc still consults ``/etc/hosts`` and then DNS: where the file has no entry
+    for the family asked for (a container listing only ``127.0.0.1 localhost``, asked for ``AF_INET6``), the query went to the
+    configured nameservers. Resolving the literals instead is numeric, so no query can leave; RFC 6761 reserves the name for loopback.
+    IPv4 first for an unspecified family, the order the app's own server and a loopback Ollama listen on. A literal the host cannot
+    use (no IPv6) is skipped; none usable is the resolver's own "name unknown" error.
+    """
+    family = args[1] if len(args) > 1 else kwargs.get("family", 0)
+    literals = {socket.AF_INET: ("127.0.0.1",), socket.AF_INET6: ("::1",)}.get(family, ("127.0.0.1", "::1"))
+    infos: list[Any] = []
+    for literal in literals:
+        try:
+            infos.extend(_orig_getaddrinfo(literal, *args, **kwargs))
+        except socket.gaierror:
+            continue
+    if not infos:
+        raise socket.gaierror(socket.EAI_NONAME, "localhost has no loopback address of the requested family")
+    return infos
+
+
 def _guarded_getaddrinfo(host, *args, **kwargs):  # type: ignore[no-untyped-def]
     # A name the connect guard would call local but that is not exempt from a lookup (a localhost alias) is refused in fixed words
     # before any lookup (R639); every other name meets _guard as it always has, so its refusal sentence is unchanged.
@@ -271,7 +303,10 @@ def _guarded_getaddrinfo(host, *args, **kwargs):  # type: ignore[no-untyped-def]
         _guard(_ALIAS_LOOKUP_TARGET)
     _guard(host)
     with native_call("dns"):
-        infos = _orig_getaddrinfo(host, *args, **kwargs)
+        if _airplane_armed and kill_switch_active() and _is_localhost_name(host):
+            infos = _localhost_in_process(args, kwargs)
+        else:
+            infos = _orig_getaddrinfo(host, *args, **kwargs)
     # The SSRF half checks the ANSWER, not the question: inside a guarded fetch a
     # name that resolves to an internal address is refused here, which is the
     # only place a destination lookup performed by a library that then hands the

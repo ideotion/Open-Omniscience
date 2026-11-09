@@ -582,3 +582,28 @@ def test_lookup_exemption_is_narrower_than_the_connect_classification():
         assert ap._lookup_exempt(host) and ap._is_local_host(host)
     for host in ("localhost.localdomain", "ip6-localhost", " localhost", "[::1]"):
         assert ap._is_local_host(host) and not ap._lookup_exempt(host)
+
+
+def test_localhost_is_answered_from_its_literals_in_airplane_mode(guard):
+    """Exactly ``localhost`` is resolved from 127.0.0.1 / ::1, never handed to libc as a NAME, so a hosts file without an entry for the
+    family asked for cannot send the query to DNS (security read A's follow-up on R639). Online, the name is resolved as before."""
+    seen: list[object] = []
+
+    def resolver(host, *a, **k):
+        seen.append((host, a[1] if len(a) > 1 else k.get("family", 0)))
+        if host == "::1":
+            raise socket.gaierror(socket.EAI_ADDRFAMILY, "no IPv6 here")
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (host, a[0] if a else 0))]
+
+    ap._orig_getaddrinfo = resolver  # type: ignore[assignment]
+    activate_kill_switch()
+    assert socket.getaddrinfo("LOCALHOST", 80)[0][4] == ("127.0.0.1", 80)
+    socket.getaddrinfo(b"localhost", 80, socket.AF_INET)
+    with pytest.raises(socket.gaierror):
+        socket.getaddrinfo("localhost", 80, socket.AF_INET6)  # no usable ::1: the resolver's own error, no name lookup
+    assert all(host in ("127.0.0.1", "::1") for host, _family in seen), seen
+    assert seen == [("127.0.0.1", 0), ("::1", 0), ("127.0.0.1", socket.AF_INET), ("::1", socket.AF_INET6)]
+    clear_kill_switch()
+    seen.clear()
+    socket.getaddrinfo("localhost", 80)
+    assert seen == [("localhost", 0)]
