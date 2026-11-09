@@ -682,6 +682,15 @@ _REMOTE_RESOLVE_SOCKS_SCHEMES = frozenset({"socks5h", "socks4a"})
 #: allowlists (see ``EthicalFetcher._request_proxy_endpoints``).
 _SELECTABLE_PROXY_KEYS = frozenset({"http", "https", "all"})
 
+#: The characters Python's ``urlsplit`` deletes wherever they stand (``urllib.parse._UNSAFE_URL_BYTES_TO_REMOVE``), mapped to a space, so a
+#: redirect's Location can be read with them still visible (R622). ``urljoin`` drops them on a same-scheme hop before anything else sees them.
+_URLSPLIT_DELETES_AS_SPACE = {ord("\t"): " ", ord("\r"): " ", ord("\n"): " "}
+
+
+def _unsafe_url_text(text: str) -> bool:
+    """A backslash, any whitespace or a control character: what may not stand in a URL's authority or in a host (R622)."""
+    return any(ch == "\\" or ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in text)
+
 
 def _is_remote_resolving_proxy(proxy_url: str | None) -> bool:
     """True when ``proxy_url``'s scheme resolves DNS AT THE PROXY/EXIT
@@ -1042,6 +1051,7 @@ class EthicalFetcher:
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             return []
+        self._refuse_parser_mismatch(url)  # before the guard looks the host up (R622)
         self._guard_target(parsed.hostname)  # SSRF: never reach internal addresses
         host_key = f"{parsed.scheme}://{parsed.netloc}"
         with self._host_lock(parsed.netloc):
@@ -1189,6 +1199,7 @@ class EthicalFetcher:
         # Cheap length check per fetch; evicts only when a cap is exceeded (E1).
         self._bound_host_caches()
 
+        self._refuse_parser_mismatch(url)  # before the guard looks the host up (R622)
         self._guard_target(parsed.hostname)  # SSRF: never reach internal addresses
 
         host_key = f"{parsed.scheme}://{parsed.netloc}"
@@ -1416,6 +1427,9 @@ class EthicalFetcher:
             raise FetchFailed(KILL_SWITCH_REFUSAL)
         if not host:
             raise FetchFailed("missing host")
+        if _unsafe_url_text(host):
+            # Never looked up, and never written: a name with spaces could otherwise be the opening words of a sentence (R622).
+            raise BlockedTarget("URL host contains a backslash, whitespace or control character")
         host = host.strip("[]")  # IPv6 literal brackets
         try:
             if _is_blocked_ip(ipaddress.ip_address(host)):
@@ -1429,7 +1443,7 @@ class EthicalFetcher:
         for info in infos:
             ip = ipaddress.ip_address(info[4][0])
             if _is_blocked_ip(ip):
-                raise BlockedTarget(f"{host} resolves to a non-public address ({ip})")
+                raise BlockedTarget(f"refusing to fetch {host!r}: it resolves to a non-public address ({ip})")  # fixed words first (R622)
 
     def _resolve_cached(self, host: str) -> list:
         """``socket.getaddrinfo(host, None)`` with a short-TTL cache (C8/A6) — a
@@ -1444,9 +1458,16 @@ class EthicalFetcher:
         if cached is not None and now < cached[1]:
             return cached[0]
         try:
-            infos = socket.getaddrinfo(host, None)
+            infos: list | None = socket.getaddrinfo(host, None)
         except OSError as exc:
             raise FetchFailed(f"cannot resolve host {host!r}: {record_text(exc, typed=False)}") from None
+        except UnicodeError:
+            # The name cannot be IDNA-encoded (an empty label, ``a..example``, or one over 63 characters), raised before any query. It
+            # is a ValueError, not an OSError, and escaped the fetch raw (R622 read). Raised below, outside this handler, so that the
+            # UnicodeError is not its context: record_text writes any error a UnicodeError is reachable from as that error's fixed record.
+            infos = None
+        if infos is None:
+            raise FetchFailed(f"cannot resolve host {host!r}: the name cannot be encoded for a lookup")
         if len(self._dns_cache) >= _DNS_CACHE_MAX:
             self._dns_cache.clear()
         self._dns_cache[host] = (infos, now + _DNS_CACHE_TTL_S)
@@ -1577,6 +1598,7 @@ class EthicalFetcher:
 
         ensure_connect_guard_installed()
         current = url
+        unreadable_from: str | None = None
         with connect_scope(
             enabled=self._real_session,
             proxies=self._request_proxy_endpoints(url, proxies),
@@ -1603,10 +1625,25 @@ class EthicalFetcher:
                     status = resp.status_code
                     location = resp.headers.get("Location") if hasattr(resp, "headers") else None
                     if 300 <= status < 400 and location:
-                        nxt = urljoin(current, location)
-                        p = urlparse(nxt)
+                        try:
+                            nxt = urljoin(current, location)
+                            p = urlparse(nxt)
+                        except ValueError:
+                            # An unclosed IPv6 bracket (``http://[::1/x``) or a netloc NFKC would change: a bare ValueError escaped the
+                            # fetch, so the robots read never backed the host off and ``ingest_url`` did not catch it (R622 read).
+                            raise FetchFailed(f"redirect to a URL that cannot be read: {failure_url(location)!r}") from None
                         if p.scheme not in ("http", "https") or not p.netloc:
                             raise FetchFailed(f"redirect to unsupported URL: {failure_url(nxt)!r}")
+                        # The hop is read BEFORE the guard looks its host up (R622), not on the next turn of the loop: a Location
+                        # can name a host with spaces in it, which reached the resolver and began the guard's sentence. A tab, CR
+                        # or LF is read as a space, as the first request's own check reads it, since ``urljoin`` deletes them.
+                        visible = location.translate(_URLSPLIT_DELETES_AS_SPACE)
+                        if visible != location:
+                            try:
+                                self._refuse_parser_mismatch(urljoin(current, visible))
+                            except ValueError:  # shown as a space, a bracketed host is no longer an address
+                                raise BlockedTarget("URL host cannot be read") from None
+                        self._refuse_parser_mismatch(nxt)
                         self._guard_target(p.hostname)  # re-validate the redirect target
                         if hasattr(resp, "close"):
                             resp.close()
@@ -1615,6 +1652,20 @@ class EthicalFetcher:
                     return resp, str(getattr(resp, "url", current) or current)
             except BlockedConnectTarget as exc:
                 raise BlockedTarget(record_text(exc, typed=False)) from None
+            except requests.RequestException:
+                raise
+            except ValueError:
+                # requests parses a 3xx answer's Location even when it is told not to follow it (``Session.send`` builds
+                # ``Response.next`` through ``resolve_redirects``), and a Location urlsplit cannot read (an unclosed IPv6
+                # bracket) raised a bare ValueError out of the request: the robots read never backed the host off, and
+                # ``ingest_url`` did not catch it (R622 read). Handled here, round the loop, and not round the request itself,
+                # so the request line stays as main has it (the CodeQL fingerprint lesson of 2026-10-16); the loop's own reads
+                # already turn theirs into BlockedTarget or FetchFailed, so what reaches this handler is the request's. Raised below, outside
+                # this handler, so no UnicodeError is its context (record_text writes any error a UnicodeError is reachable
+                # from as that error's fixed record).
+                unreadable_from = current
+        if unreadable_from is not None:
+            raise FetchFailed(f"redirect to a URL that cannot be read, from {failure_url(unreadable_from)}")
         raise FetchFailed(f"too many redirects for {failure_url(url)}")
 
     @staticmethod
@@ -1635,7 +1686,7 @@ class EthicalFetcher:
         authority = rest
         for stop in ("/", "?", "#"):
             authority = authority.split(stop, 1)[0]
-        if any(ch == "\\" or ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in authority):
+        if _unsafe_url_text(authority):
             raise BlockedTarget("URL authority contains a backslash, whitespace or control character")
         from urllib3.util import parse_url
 
