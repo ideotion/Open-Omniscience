@@ -477,12 +477,18 @@ def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None
 
     # Engage airplane mode synchronously so there is never a window where the corpus
     # is unlocked but the socket-level guard is not yet installed.
+    # The guard whatever OO_NO_SCHEDULER says (R646; OO_AIRPLANE_SOCKET_GUARD=0 is the only opt-out); the engage stays gated, since a
+    # headless or test process with OO_NO_SCHEDULER=1 manages the kill switch itself.
+    try:
+        from src.ingest.airplane import install_airplane_socket_guard
+
+        install_airplane_socket_guard()
+    except Exception as exc:  # noqa: BLE001 - never block the unlock on this; the serving gate refuses every request (R644)
+        log_failure(_LOG, "could not install the airplane socket guard at unlock", exc, level=logging.ERROR)
     if os.getenv("OO_NO_SCHEDULER", "0") != "1":
         try:
             from src.ingest import activate_kill_switch
-            from src.ingest.airplane import install_airplane_socket_guard
 
-            install_airplane_socket_guard()
             activate_kill_switch()
         except Exception as exc:  # noqa: BLE001 - never block the unlock on this
             log_failure(_LOG, "could not engage airplane mode at unlock", exc, level=logging.WARNING)
