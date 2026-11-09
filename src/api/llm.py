@@ -2614,7 +2614,7 @@ def bulk_llm(
     )
     _tok = _bgtasks.register(
         "llm", f"{_verb} {total} article(s)", detail=f"model {model}", total=total, **_frame,
-        detail_i18n="model {model}", detail_vars={"model": model},
+        detail_i18n="model {model}", detail_vars={"model": model}, cancellable=True,
     )
 
     def _stream():
@@ -2626,7 +2626,10 @@ def bulk_llm(
         def emit(obj: dict) -> str:
             return _json.dumps(obj, separators=(",", ":")) + "\n"
 
-        yield emit({
+        # The start line comes before the try below, so a close while the run sits here (a Stop landing at once, a client gone)
+        # would skip its finish and leave the task row behind with a Stop that does nothing: finish it on that path too.
+        try:
+          yield emit({
             "event": "start", "op": op, "total": total, "requested": requested,
             "to_process": to_process, "already_done": len(already),
             "same_language": len(same_lang), "capped": capped, "model": model,
@@ -2637,7 +2640,10 @@ def bulk_llm(
             # lane resumes on its own afterwards). Announced in the start event so
             # the UI can say so rather than leaving the pause invisible.
             "pauses_background_ai": True,
-        })
+          })
+        except GeneratorExit:
+            _bgtasks.finish(_tok)
+            raise
         stored = skipped = failed = 0
         from src.database.session import SessionLocal
 
@@ -2731,4 +2737,9 @@ def bulk_llm(
         finally:
             _bgtasks.finish(_tok)
 
-    return StreamingResponse(_stream(), media_type="application/x-ndjson")
+    # The run outlives its tab (src/api/detached_stream.py): closing the browser no longer stops it; the task manager's Stop does.
+    from src.api.detached_stream import detached
+
+    return StreamingResponse(detached(_stream(), _tok, name="oo-llm-bulk"), media_type="application/x-ndjson",
+        headers={"X-OO-Task": f"task:{_tok}"},  # the page's own Cancel stops the run through the task manager's Stop
+    )

@@ -250,3 +250,12 @@ Correct the text in `src/static/locales/id.json` (the key is the English text).
 | 12 | {n} of {m} pages seen | {n} dari {m} halaman terlihat |
 | 13 | {n} pages seen, total unknown | {n} halaman terlihat, total tidak diketahui |
 | 14 | {n} stretches the lane did not see. | {n} rentang yang tidak dilihat jalur ini. |
+
+## extra-4: Start-up step: the links' covering index (PR #1839)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Building the index that keeps the shared-origin counts fast. One time only; anything the app saves waits until it is done. | Membangun indeks yang menjaga penghitungan asal bersama tetap cepat. Hanya sekali; semua yang disimpan aplikasi menunggu sampai selesai. |
+| 2 | The index of the articles' links was not built: it needs about {needed} MB of free memory (sorting up to {rows} links, plus the memory the app always keeps free) and this computer has {free} MB. Close other programs and restart the app; until then the shared-origin counts stay slow. | Indeks tautan artikel tidak dibangun: indeks ini memerlukan sekitar {needed} MB memori kosong (mengurutkan hingga {rows} tautan, ditambah memori yang selalu dibiarkan kosong oleh aplikasi) dan komputer ini memiliki {free} MB. Tutup program lain dan mulai ulang aplikasi; sampai saat itu penghitungan asal bersama tetap lambat. |
+| 3 | The index of the articles' links was not built: the volume your data file is on has {free} MB free and it needs about {needed} MB (up to {rows} links). Free some space and restart the app; until then the shared-origin counts stay slow. | Indeks tautan artikel tidak dibangun: volume tempat berkas data Anda memiliki {free} MB kosong dan indeks ini memerlukan sekitar {needed} MB (hingga {rows} tautan). Kosongkan ruang dan mulai ulang aplikasi; sampai saat itu penghitungan asal bersama tetap lambat. |
+| 4 | The index of the articles' links was not built: two starts in a row ended while it was being built (the computer ran out of memory or power, or the app was ended abruptly), so it is not tried again until the app is updated. The shared-origin counts stay slow. | Indeks tautan artikel tidak dibangun: dua kali mulai berturut-turut berakhir saat indeks sedang dibangun (komputer kehabisan memori atau daya, atau aplikasi dihentikan mendadak), jadi tidak dicoba lagi sampai aplikasi diperbarui. Penghitungan asal bersama tetap lambat. |

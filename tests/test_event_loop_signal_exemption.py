@@ -39,7 +39,9 @@ _STOP_CLEANUP = ("src/api/database.py", "install_stop_signal_cleanup")
 
 #: modules that install handlers for those signals in a process of their own, and are imported by no server code (checked below): the OSM reference run
 #: is a CLI (scripts/osm_reference_run.py) whose handlers last for the length of its ``with`` and end its own process
-_OWN_PROCESS = {"src/osm/reference_run.py": "reference_run"}
+_OWN_PROCESS = {"src/osm/reference_run.py": "reference_run",
+                # the launcher's terminal panel (R600): ``python -m src.tui.panel`` in a process beside the server; its handlers only restore the terminal
+                "src/tui/panel.py": "src.tui.panel"}
 
 
 def _signal_calls(tree: ast.AST):

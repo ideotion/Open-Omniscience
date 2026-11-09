@@ -143,6 +143,15 @@ HOT_INDEXES: dict[str, str] = {
         "CREATE INDEX IF NOT EXISTS idx_article_link_dedup "
         "ON article_links (article_id, url, position)"
     ),
+    # convergence._shared_origin's GROUP BY normalized_url over a set of article ids (R455/R611): answered
+    # from the index instead of one row read per link (1,392 -> 171 ms on 4.16 M scattered links, SQLCipher,
+    # cold). DEFERRED: a sort of every link's url, about 100 bytes of RAM per link measured, so it is built by
+    # the ``article-indexes`` start-up step (src/database/article_indexes.py) with its free-space and memory
+    # gates, never inside init_db. Mirrored on the model and in migration a7c3e5f19b20.
+    "idx_article_link_article_url": (
+        "CREATE INDEX IF NOT EXISTS idx_article_link_article_url "
+        "ON article_links (article_id, normalized_url)"
+    ),
     # Per-language corpus-growth feed (snapshots.article_counts_by_language): a
     # created_at range scan that reads `language` per row to GROUP BY it. Without
     # this, idx_article_created_at finds the rows and then fetches each full article
@@ -195,7 +204,7 @@ HOT_INDEXES: dict[str, str] = {
 # files, one at a time, with the free space measured first and its progress in the task manager. A
 # database that has no articles yet (a fresh one) gets them from create_all with the table.
 DEFERRED_INDEXES: frozenset[str] = frozenset(
-    {"idx_article_language_published", "idx_article_title_nocase"}
+    {"idx_article_language_published", "idx_article_title_nocase", "idx_article_link_article_url"}
 )
 
 # --------------------------------------------------------------------------- #

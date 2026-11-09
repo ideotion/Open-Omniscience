@@ -1223,14 +1223,15 @@
             <button data-tab="semester">Semester</button>
             <button data-tab="year">Year</button>
             <button data-tab="decade">Decade</button>
-            <button data-tab="list">List</button></nav></div>
-        <div style="flex:1 1 auto"><label>Category</label>
+            <button data-tab="list">List</button>
+            <button data-tab="coverage" title="Which floor countries the elections calendar dates, and how firmly">Elections coverage</button></nav></div>
+        <div class="ag-filter" style="flex:1 1 auto"><label>Category</label>
           <div class="ag-cats" id="agenda-cats"></div></div>
-        <div><label for="agenda-country">Country</label><select id="agenda-country" data-on-change="renderAgenda()"><option value="">all</option></select></div>
-        <div><label for="agenda-tag">Tag</label><select id="agenda-tag" data-on-change="renderAgenda()"><option value="">all</option></select></div>
+        <div class="ag-filter"><label for="agenda-country">Country</label><select id="agenda-country" data-on-change="renderAgenda()"><option value="">all</option></select></div>
+        <div class="ag-filter"><label for="agenda-tag">Tag</label><select id="agenda-tag" data-on-change="renderAgenda()"><option value="">all</option></select></div>
         <div id="agenda-group-wrap"><label for="agenda-group">Group by</label><select id="agenda-group" data-on-change="renderAgenda()">
           <option value="month">month</option><option value="calendar">calendar</option><option value="country">country</option></select></div>
-        <div style="flex:0 0 auto;align-self:end"><label class="switch" style="margin-top:0"><input type="checkbox" id="agenda-subonly" checked data-on-change="renderAgenda()"> subscribed only</label></div>
+        <div class="ag-filter" style="flex:0 0 auto;align-self:end"><label class="switch" style="margin-top:0"><input type="checkbox" id="agenda-subonly" checked data-on-change="renderAgenda()"> subscribed only</label></div>
         <div style="flex:1"></div>
         <div class="hint" style="align-self:end"><a href="#settings" data-on-click="openSettingsAgenda();return false">Manage calendars &amp; sources in Settings → Agenda.</a></div>
       </div>
@@ -1248,6 +1249,7 @@
       <div id="agenda-decade" style="margin-top:10px"></div>
       <div id="agenda-day"></div>
       <div id="agenda-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
+      <div id="agenda-coverage" data-i18n-dyn style="margin-top:10px;display:none"></div>
     </section>
     </div>
 
@@ -3622,6 +3624,26 @@
          second one is not obvious. Kept at the end (only the folded Bulletin, ruled to the
          very bottom, follows it) so it is never mistaken for an ordinary setting, and
          marked so it reads as destructive before it is opened. -->
+    <details class="adv-sec" data-adv="update">
+      <summary><span class="adv-sec-t">Updates</span> <span class="muted">— check for a newer version and install it</span></summary>
+    <section class="panel" id="update-panel">
+      <h2>Updates</h2>
+      <p class="hint" style="margin-top:0">Checking asks GitHub's API (api.github.com) for the newest published version. That is a network request, so it asks before going online.</p>
+      <p class="card-caveat">Updating stops the app, downloads the new version with git, and starts it again. Your data folder is not touched, and nothing is installed without your click. Release tags are not signature-verified: the app checks that the commit it fetches is the one GitHub named, from this project's repository only.</p>
+      <div class="row" style="gap:14px;flex-wrap:wrap;align-items:center;margin-top:10px">
+        <span>Installed version: <code id="upd-current">…</code></span>
+        <span>Newest version: <code id="upd-latest">—</code></span>
+      </div>
+      <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
+        <button id="upd-check" data-on-click="updCheck()">Check for update</button>
+        <button id="upd-apply" class="secondary" hidden data-on-click="updApply()">Update and restart</button>
+        <span id="upd-msg" class="hint"></span>
+      </div>
+      <div id="upd-manual" class="hint" style="margin-top:8px" hidden></div>
+      <p id="upd-last" class="hint" style="margin-top:8px"></p>
+    </section>
+    </details>
+
     <details class="adv-sec adv-sec-danger" data-adv="uninstall">
       <summary><span class="adv-sec-t">Uninstall &amp; wipe</span> <span class="muted">— irreversible: destroy the key and remove this install</span></summary>
     <section class="panel" id="uninstall-panel">

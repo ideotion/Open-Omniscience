@@ -241,6 +241,40 @@ rail on narrower windows). An experimental second interface ("Desk") existed
 during earlier cycles and was retired in 0.0.8; its history is in
 [`DESIGN.md`](DESIGN.md).
 
+**Running in the background, with the browser closed.** The app lives in its launcher
+window, not in the browser tab. You can close the browser at any time: collection,
+Wikipedia and map downloads, backups to a folder or drive, imports, the AI jobs (model
+downloads, language detection, the AI checks) and the diagnostics archive all keep
+running. This is the way to leave a machine collecting for days while saving the memory a
+browser takes (often 0.5 to 1 GB, which matters on a small VM).
+
+While the app runs, the launcher window shows a small **panel**: whether the app is locked,
+the network and collection state, the server's memory and CPU, and every running job with
+its progress. Click its buttons, or press the key shown on each:
+
+- **Open UI (o)** opens the app in your browser again.
+- **Pause collection (p)** stops collecting and puts the app in airplane mode. To resume,
+  open the UI: going online always passes through its consent window, never the terminal.
+- **Show log (l)** shows the server's own messages; press Enter to come back.
+- **Stop app (s)** stops the app, after a second press. It names the jobs that would end.
+- **Close panel (q)** leaves the app running and the window showing the server's messages.
+
+The panel never asks for your passphrase: if the app is locked, it says so, and you unlock
+it in the browser. Closing the launcher window or pressing Ctrl-C still stops the app, as
+before. Set `OO_PANEL=0` to start without the panel. The AI tools that answer in the page
+(bulk summarize or translate, AI keyword extraction, prompt runs) keep going too once the
+tab is closed, and show in the panel's job list. To stop one, open the UI and press **Stop**
+on its row in the task manager, or **Cancel** in the page (the panel's own Stop app stops
+the whole app): it stops after the article in flight, and the articles already done stay
+stored. The keyword index of articles Insights has not indexed yet also catches up on
+its own while the app is idle. Only two things need the tab to stay open: an upload you are
+sending from the browser, and a file the browser is downloading. On
+Windows the panel opens in a window of its own (closing it does not stop the app). It needs
+Python's curses module, which Windows gets from the windows-curses package: the installer
+adds it on Intel and AMD PCs, and on an install made before this version you can add it with
+`.venv\Scripts\python -m pip install windows-curses` in the app's folder. Windows on ARM has
+no build of it yet, so there the app starts without the panel.
+
 ---
 
 ## 2. The 60-second tour
@@ -959,6 +993,14 @@ The extractor is high-precision: bare years and vague spans are not extracted, b
   tab**. None of it runs at startup or offline. The ~500-feed **catalogue** itself
   (verdicts, folders of duplicate providers, adding your own `.ics`) is plumbing and
   lives in **Settings → Advanced → Calendar directory**.
+- **If the file of imported events is damaged so that none of it can be read** (cut off,
+  not valid JSON, or a read error from the disk on Linux or macOS), the Agenda reads it as empty and the log
+  says so. Before the next save replaces it (an import, a restore, removing a feed), the app keeps the damaged file once,
+  unchanged, as `calendar_feed_imports.json.damaged` in your data folder, for you or a
+  recovery tool; a second damage never overwrites that first copy. It is not part of a
+  backup. You can remove it yourself at any time. A file with only some damaged entries
+  is still read: those entries are left out, the log counts them, and no copy is made. An
+  empty file is not copied either: it holds nothing to recover.
 
 ### 3.6b Living sources
 
@@ -1306,6 +1348,18 @@ The panel has three parts:
 > hash permanently and reveals your IP/timing to the calendar operators. Prefer
 > local + OpenTimestamps over funded on-chain wallets; route via Tor (`HTTPS_PROXY`)
 > if you need anonymity; or stay local-only (the default leaks nothing).
+
+**OpenTimestamps and airplane mode.** In OpenTimestamps mode, an ingest entry whose
+submission the network kill switch refused (a Stop during collection) is not given a
+local-only proof in its place, because that proof would be permanent: the entry is owed,
+and written later, marked late, with its anchor. The owed queue has no size limit, and
+the end of each collection pass writes at most 200 of it, each entry with up to three
+calendar submissions made while the custody log is held for writing. So a large backlog
+slows the end of collection passes for a while once you are back online.
+While the switch is still engaged, writing owed entries ("Record them, marked late", or
+`POST /api/custody/reconcile`) stops at the first refusal and says the kill switch refused
+it; the entries stay owed. A gap check alone still answers, and its `drained` block
+reports `refused_offline`.
 
 Verify a bundle anywhere, without this app:
 

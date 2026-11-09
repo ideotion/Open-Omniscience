@@ -204,11 +204,18 @@ def signals_hazards_snapshot(
     records = list((body.records if body else None) or [])
     failures: list[str] = []
     if refresh:
+        from src.ingest import kill_switch_engaged_since, kill_switch_epoch
+
+        epoch = kill_switch_epoch()  # the refresh's window (R614): a Stop pressed and cleared again inside it is a Stop
         try:
             from src.api.hazards import fetch_hazards
 
             fetched, failures = fetch_hazards(source="all")
-            records = fetched or records
+            # R617 (R320, R614): a feed that failed under a Stop (still engaged, or cleared again inside the refresh) makes the
+            # fetched set the feeds that happened to answer, not the hazards: it does not replace the snapshot, exactly as a refresh
+            # that answered nothing does not. The failures are still reported, and posted records are still saved.
+            if not (failures and kill_switch_engaged_since(epoch)):
+                records = fetched or records
         except Exception as exc:  # noqa: BLE001 - a bad relay must not 500 the local write
             failures.append(f"refresh: {record_text(exc, typed=True)}")
     if not records:

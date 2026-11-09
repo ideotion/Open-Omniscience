@@ -62,6 +62,18 @@ def _burst_count(new_revs: list[dict], rev: dict) -> int:
     )
 
 
+def _refuse_if_stopped(session: Session, epoch: int) -> None:
+    """Roll back and raise the switch's own refusal when a Stop touched this page's window (R617, R614): see :func:`update_page`."""
+    from src.ingest import kill_switch_engaged_since
+
+    if kill_switch_engaged_since(epoch):
+        from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL
+        from src.safety.fetcher import NetworkBlocked
+
+        session.rollback()
+        raise NetworkBlocked(KILL_SWITCH_REFUSAL)
+
+
 def update_page(
     session: Session,
     client,
@@ -71,7 +83,16 @@ def update_page(
     max_new: int = 50,
     fetch_diffs: bool = True,
 ) -> dict:
-    """Fetch and store new revisions for one page. Returns a small tally."""
+    """Fetch and store new revisions for one page. Returns a small tally.
+
+    A Stop inside the page's window (R617, the R614 epoch taken here, before the first request) stores nothing: the enrichment fetches
+    below fail open, so a categories, text, diff or ORES fetch the Stop refused or cut would otherwise be committed as a revision with no
+    text, diff or score, and ``last_revid`` moved past it for good. The page is rolled back and :class:`NetworkBlocked` raised, which
+    :func:`track_watched` already counts as ``skipped_offline``; the page keeps its old revid and is asked again. The cost: a genuine
+    enrichment failure that shares the window with a Stop is asked again too."""
+    from src.ingest import kill_switch_epoch
+
+    epoch = kill_switch_epoch()
     now = datetime.now(UTC)
 
     # First contact: store a single baseline snapshot and start tracking from here.
@@ -98,6 +119,7 @@ def update_page(
                     page.wiki_categories = json.dumps(cats[:50], ensure_ascii=False)
             except Exception as exc:  # noqa: BLE001
                 log_failure(_LOG, f"category fetch failed for {page.title}", exc, level=logging.WARNING)
+        _refuse_if_stopped(session, epoch)  # R617: a baseline a Stop cut short is not stored
         page.last_checked_at = now
         session.commit()
         return {"page": page.title, "new": 0, "flagged": 0, "baseline": True}
@@ -207,6 +229,7 @@ def update_page(
             except Exception as exc:  # noqa: BLE001 - latest-text refresh must not drop the revisions
                 log_failure(_LOG, f"latest-text refresh failed for {page.title}", exc, level=logging.WARNING)
 
+    _refuse_if_stopped(session, epoch)  # R617: revisions a Stop left without text, diff or score are not stored
     page.last_checked_at = now
     session.commit()
     return {"page": page.title, "new": stored, "flagged": flagged, "baseline": False}

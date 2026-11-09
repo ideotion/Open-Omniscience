@@ -211,6 +211,11 @@ def run_bulk_qualification(
             )
             ctx.set_progress(done=0, total=total_backlog, detail=paused_reason)
             break
+        if result.get("skipped") == "airplane mode engaged":
+            # R617 (R614): a Stop touched the batch's first trial, still engaged or cleared again, so the pass judged nothing and
+            # deferred the batch. Its ``evaluated: 0`` is not an empty backlog: the run pauses as the check at the top does.
+            paused_reason = _fixed("airplane mode engaged — progress is saved, start again to resume")
+            break
 
         evaluated = int(result.get("evaluated", 0))
         totals["batches_run"] += 1
