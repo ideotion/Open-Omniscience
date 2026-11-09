@@ -40,7 +40,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 _TESTS = Path(__file__).resolve().parent
 
 #: Tools whose absence turns tests into skips, each provided by the runner image (``ci.yml`` has no setup or install step for any of them).
-_REQUIRED = ("node", "bash", "git", "unzip")
+_REQUIRED = ("node", "bash", "git", "unzip", "env")
 #: ``test_malloc_arena_default.py`` builds a stand-in library with whichever of these it finds and skips where there is none.
 _C_COMPILERS = ("cc", "gcc", "clang")
 #: Probed by tests, covered by another test that asserts them on a runner.
