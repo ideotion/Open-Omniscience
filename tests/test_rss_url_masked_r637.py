@@ -349,6 +349,15 @@ def test_the_export_and_backup_caveats_are_visible_and_translated():
         shown[cid] = (m.group(1), m.group(2))
         assert "hidden" not in m.group(0)
     assert html.index('id="src-export-logins"') > html.index("/api/catalog/export.csv")  # beside the export button
+    # R637 amended 2026-11-09 06:13Z: a backup made without encryption is a plain file like the export, so the backup
+    # line says so and asks for it to be kept private; the hover both lines share says it for both.
+    backup_title, backup_line = shown["backup-feed-logins"]
+    assert "A backup made without encryption is a plain file, so keep it private." in backup_line
+    assert "so a restore can still fetch that feed" in backup_line
+    for title, _line in shown.values():
+        assert title == backup_title
+        assert "The export, like a backup made without encryption, is a plain file, so keep it private." in title
+    assert shown["src-export-logins"][1].endswith("so the file imports back unchanged. Keep it private.")
     for code in ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"):
         table = json.loads((static / "locales" / f"{code}.json").read_text(encoding="utf-8"))
         for title, line in shown.values():

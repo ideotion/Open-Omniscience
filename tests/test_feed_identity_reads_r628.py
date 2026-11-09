@@ -243,6 +243,46 @@ def test_control_an_integrity_error_no_row_explains_is_not_named_a_held_feed(cli
     assert r.json()["detail"] == "internal error: IntegrityError (a database driver's text is withheld)"  # its class, never its words
 
 
+def test_an_integrity_error_that_goes_on_carries_no_login_in_its_text(sess_factory):
+    """Steward 3's low on the R637 fold: the refusal that is not a held feed goes on to the server's own error line ("Exception
+    in ASGI application", the whole traceback), and its text carried the UPDATE's parameters, the stored address with its login
+    among them. A real refusal by the store (a trigger), raised into the test the way the server sees it."""
+    import traceback
+
+    from sqlalchemy.exc import IntegrityError
+
+    from src.api.main import app
+    from src.database.session import get_db
+
+    with sess_factory() as s:
+        (cred,) = _plant(s, [_ALICE])
+        s.execute(text("CREATE TRIGGER refuse_any_edit BEFORE UPDATE ON sources BEGIN SELECT RAISE(ABORT, 'refused by the test'); END"))
+        s.commit()
+
+    def _db():
+        s = sess_factory()
+        try:
+            yield s
+        finally:
+            s.close()
+
+    app.dependency_overrides[get_db] = _db
+    try:
+        with TestClient(app) as c, pytest.raises(IntegrityError) as caught:
+            # the masked form with a new path: the stored login is put back in, so the UPDATE carries it (R637's rule 3)
+            c.put(f"/api/sources/{cred}", json={"rss_url": f"https://***@{_DOMAIN}/world"})
+    finally:
+        app.dependency_overrides.clear()
+    exc = caught.value
+    assert f"alice:{_PASSWORD}@{_DOMAIN}/world" in repr(exc.params)  # the login did reach the statement: the check below is not vacuous
+    for said in (str(exc), "".join(traceback.format_exception(exc))):
+        assert "refused by the test" in said  # the store's own words stay: only the parameters are hidden
+        _secret_free(said)
+    assert exc.hide_parameters is True
+    with sess_factory() as s:
+        assert _rows(s) == [_ALICE]  # nothing was written
+
+
 # --------------------------------------------------------------------------- #
 # 3. An import finds the row an add finds
 # --------------------------------------------------------------------------- #

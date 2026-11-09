@@ -1104,13 +1104,16 @@ def update_source(
             raise HTTPException(status_code=409, detail=FEED_HELD.format(domain=domain))
         try:
             source = manager.update_source(source_id, **updates)
-        except IntegrityError:
+        except IntegrityError as exc:
             # The unique (domain, feed) index refused the edit (independent S2: a new login on the kept row of a plain+login pair
             # derives the plain row's key). Answered as the twin refusal it is, in the add's words, never the driver's text, and
             # only when another row of the domain does store that feed, read back from the store rather than from the error.
             db.rollback()
             if moving is not None and feed_held_by_another(db, moving, domain, url) is not None:
                 raise HTTPException(status_code=409, detail=FEED_HELD.format(domain=domain)) from None
+            # Any other refusal goes on as the error it is, but its text would carry the UPDATE's parameters, the stored
+            # address with its login among them, to the server's own error line (Steward 3's low on the R637 fold).
+            exc.hide_parameters = True
             raise
         if not source:
             raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
