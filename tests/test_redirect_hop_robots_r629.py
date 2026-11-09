@@ -1279,3 +1279,47 @@ def test_a_crawl_whose_start_url_redirects_to_another_subdomain_is_a_failed_fetc
     assert report.pages_fetched == 0 and report.tally[IngestResult.FETCH_FAILED.value] == 1
     assert s.asked_of("edition.good.example") == []
     assert db.query(Article).count() == 0
+
+
+# --- a ValueError while the hop's host is taken (Steward 3's note at the R622 rebase) ----------------------------------------------
+
+
+@pytest.mark.parametrize("where", ["move", "robots", "wait"])
+def test_a_value_error_while_the_hop_takes_another_host_is_the_unreadable_redirect_failure(tmp_path, where):
+    """Since R622, ``_take_hop_host`` runs inside the redirect loop's outer ``except ValueError`` (R622's handler for a Location
+    requests could not read). So a ValueError raised while the hop moves the chain to b.example, reads b.example's robots.txt or
+    waits its interval is NOT a bare ValueError out of the fetch: it is R622's FetchFailed, ``redirect to a URL that cannot be read,
+    from <the URL that answered the redirect>``, raised outside the handler with no context, and the hop's page is never requested.
+    No real input is known to raise one there (``_host_netloc`` never raises; the robots read has its own handler); this pins what
+    the fetch says if one ever does, and that no lock is left held."""
+    s = _Session()
+    s.redirect(f"{A}/start", f"{B}/page")
+    s.page(f"{B}/page")
+    f = _fetcher(tmp_path, s)
+
+    def boom(*args, **kwargs):
+        raise ValueError("planted inside the hop")
+
+    if where == "move":
+        real_move = ingest._RedirectChain.move
+        ingest._RedirectChain.move = lambda chain, key: (real_move(chain, key), boom())[1]  # type: ignore[method-assign]
+    elif where == "robots":
+        real_robots = f._enforce_robots
+        f._enforce_robots = lambda *a, hop=False, **k: boom() if hop else real_robots(*a, **k)  # type: ignore[method-assign]
+    else:
+        f._respect_rate_limit = lambda key, host_key, hop_url=None: boom() if hop_url else None  # type: ignore[method-assign]
+    try:
+        with pytest.raises(FetchFailed) as caught:
+            _fetch(f, f"{A}/start")
+    finally:
+        if where == "move":
+            ingest._RedirectChain.move = real_move  # type: ignore[method-assign]
+    assert type(caught.value) is FetchFailed
+    assert str(caught.value) == f"redirect to a URL that cannot be read, from {A}/start"
+    assert caught.value.__context__ is None and caught.value.__cause__ is None
+    assert "planted" not in record_text(caught.value, typed=False)
+    assert f"{B}/page" not in s.fetched
+    for host in ("a.example", "b.example"):
+        lock = f._host_lock(host)
+        assert lock.acquire(blocking=False), f"the lock of {host} was left held after a ValueError at the hop's {where}"
+        lock.release()

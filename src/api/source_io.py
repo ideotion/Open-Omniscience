@@ -64,6 +64,8 @@ def _source_to_row(s: Source | Row) -> dict:  # a Source, or a row of the _EXPOR
     return {
         "name": s.name,
         "domain": s.domain,
+        # As written, a login included (R637): the export is a file the person keeps and imports back, and a masked URL would come
+        # back without its login. Every ANSWER the UI shows masks it (list_sources below); the Sources tab says so beside the button.
         "rss_url": s.rss_url,
         "source_type": s.source_type,
         # Q313 (S05-02 S2): the export has ONE country column, alpha-3. It is not a JSON
@@ -205,6 +207,9 @@ def list_sources(
         aware = ra if ra.tzinfo is not None else ra.replace(tzinfo=UTC)
         return "exact" if (_now - aware) < timedelta(hours=24) else "estimated"
 
+    # The list shows a feed's login as ***@ (R637); the CSV export below keeps the URL as written, so it imports back unchanged.
+    from src.ingest.fetch_verdict import shown_url
+
     return {
         "total": int(total_n),
         "limit": limit,
@@ -216,7 +221,7 @@ def list_sources(
                 "id": s.id,
                 "name": s.name,
                 "domain": s.domain,
-                "rss_url": s.rss_url,
+                "rss_url": shown_url(s.rss_url),
                 "enabled": s.enabled,
                 "priority": s.priority,
                 "source_type": s.source_type,

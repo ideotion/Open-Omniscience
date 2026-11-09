@@ -47,7 +47,9 @@ function makePage() {
   const mk = (id, extra) => (els[id] = Object.assign({id, hidden: true, textContent: "", value: ""}, extra));
   mk("parts-bar"); mk("parts-status"); mk("parts-next"); mk("parts-rest"); mk("parts-from-wrap"); mk("parts-from-go");
   mk("parts-from", {value: "1"}); mk("all-diag-status");
-  mk("all-diag-again"); mk("diag-thorough", {checked: false});
+  // the Thorough box binds its estimate line once when the panel opens (R459): a listener is recorded, never run here
+  mk("all-diag-again"); mk("diag-thorough", {checked: false, listeners: [], addEventListener(ev, fn) { this.listeners.push(ev); }});
+  mk("diag-thorough-note");
   const clicked = [];
   const document = {
     body: {appendChild() {}},
@@ -67,8 +69,10 @@ function load(page, opts) {
     extract("_partsStatus"), extract("_partsRender"), extract("_partsOffer"), extract("_partsTyped"),
     extract("_partsSave"), extract("partsSaveNext"), extract("partsSaveRest"), extract("partsSaveFrom"),
     extract("_partsReady"), extract("_partsShow"), extract("downloadKeywordParts"), extract("downloadDiagnosticsVolumes"),
-    extract("runAllDiagnostics"), extract("_paintDiagAgain"), extract("_repaintDiagAgain"), extract("diagnosticsPanelOpened"),
-    "return {_paintDiagAgain, _repaintDiagAgain, diagnosticsPanelOpened, _partsReady, _partsFiles, _partsWindow, _partsNextLabel, _partsOffer, _partsSave, _partsShow, partsSaveNext," +
+    extract("runAllDiagnostics"), extract("_paintDiagAgain"), extract("_repaintDiagAgain"),
+    "let _thoroughNoteBound = false;", "let _thoroughEst = null;", extract("_thoroughNoteText"), extract("paintThoroughNote"),
+    extract("_repaintThoroughLimit"), extract("diagnosticsPanelOpened"),
+    "return {_thoroughNoteText, _repaintThoroughLimit, paintThoroughNote, _paintDiagAgain, _repaintDiagAgain, diagnosticsPanelOpened, _partsReady, _partsFiles, _partsWindow, _partsNextLabel, _partsOffer, _partsSave, _partsShow, partsSaveNext," +
     " partsSaveRest, partsSaveFrom, downloadKeywordParts, downloadDiagnosticsVolumes, runAllDiagnostics," +
     " state: () => _partsSet};",
   ].join("\n");
@@ -1183,12 +1187,41 @@ const READY_SENTENCE = "The Diagnostics file is ready. Use “Save the last Diag
     }});
     await api.diagnosticsPanelOpened();
     assert.strictEqual(page.els["diag-thorough"].checked, false, "the box is empty again");
+    assert.deepStrictEqual(page.els["diag-thorough"].listeners, ["change"], "the estimate line is bound to the box once");
+    assert.strictEqual(page.els["diag-thorough-note"].hidden, true, "an empty box shows no estimate and asks for none");
     assert.strictEqual(page.els["all-diag-again"].hidden, false);
     const pg = makePage(); pg.els["diag-thorough"].checked = true; pg.els["all-diag-again"].hidden = false;
     const a2 = load(pg, {api: async () => { throw new Error("down"); }});
     await a2.diagnosticsPanelOpened();
     assert.strictEqual(pg.els["diag-thorough"].checked, false);
     assert.strictEqual(pg.els["all-diag-again"].hidden, false, "a status that failed to load does not remove a link already shown");
+  }
+  {
+    // S3 (steward 1's S1): a limit shorter than the estimate is the pause the note states, and typing repaints it from the
+    // estimate already fetched; a limit at or above the estimate, none, or one whose seconds are not finite leaves the estimate
+    const api = load(makePage(), {api: async () => ({})});
+    const est = {thorough: {est_s: 3000, scans: 5, from_this_machine: 2}};
+    const limitLine = (n) => "With your limit, Thorough pauses collection for at most about " + n
+      + " min, plus up to 15 s while a stopped scan saves its place; scans not reached are named in the file.";
+    assert.strictEqual(api._thoroughNoteText(est, 20), limitLine(20));
+    assert.strictEqual(api._thoroughNoteText(null, 20), limitLine(20), "no estimate: the limit is the one figure there is");
+    for (const lim of [0, 50, 60, 1e307]) {
+      assert.ok(api._thoroughNoteText(est, lim).startsWith("Thorough pauses collection for about 50 min"), String(lim));
+    }
+    const page = makePage();
+    page.els["diag-thorough"].checked = true;
+    page.els["diag-budget-wrap"] = {hidden: true};
+    page.els["diag-budget-min"] = {value: "", listeners: [], addEventListener(ev) { this.listeners.push(ev); }};
+    let fetched = 0;
+    const a3 = load(page, {api: async (url) => { if (url.endsWith("/estimate")) fetched++; return est; }});
+    await a3.paintThoroughNote();
+    assert.ok(page.els["diag-thorough-note"].textContent.startsWith("Thorough pauses collection for about 50 min"));
+    page.els["diag-budget-min"].value = "15";
+    a3._repaintThoroughLimit();
+    assert.strictEqual(page.els["diag-thorough-note"].textContent, limitLine(15));
+    assert.strictEqual(fetched, 1, "a keystroke repaints from the estimate already fetched");
+    await a3.diagnosticsPanelOpened();
+    assert.deepStrictEqual(page.els["diag-budget-min"].listeners, ["input"], "the limit box repaints the note, bound once");
   }
   {
     // a finished build repaints the link from the final status, so the new archive's age and size show

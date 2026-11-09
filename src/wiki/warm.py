@@ -60,6 +60,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import defer
 
+from src.ingest import kill_switch_epoch
 from src.monitoring.secret_scrub import log_failure
 from src.wiki.mediawiki import MAX_PAGES_PER_REQUEST
 from src.wiki.walk import (
@@ -544,10 +545,11 @@ class WarmFetcher:
         if not ask:
             return {"promoted": promoted}
         asked_now.update(ask)
+        epoch = kill_switch_epoch()  # this request's window (R617, R614): a Stop pressed and cleared again inside it is a Stop
         try:
             result = self._client.fetch_warm_texts(edition, ask)
         except Exception as exc:  # noqa: BLE001 - classified, never swallowed
-            return {**self._refused(edition, refusal_token(exc), refusal_detail(exc)), "promoted": promoted}
+            return {**self._refused(edition, refusal_token(exc, since=epoch), refusal_detail(exc)), "promoted": promoted}
         self._note_request()
         if result.get("error"):
             code = str(result["error"])

@@ -219,6 +219,64 @@ def test_an_unreadable_location_the_session_hands_back_is_refused_in_fixed_words
     _not_the_switch(caught.value)
 
 
+def test_a_value_error_the_request_raises_is_the_hosts_failure_and_carries_no_context(tmp_path, monkeypatch):
+    """The handler sits round the loop, not round the request line (that line stays as main has it, for CodeQL). The error is raised
+    after the handler, so no ValueError (or UnicodeError) is its context, and the redirect chain is never followed further."""
+    f, guarded = _fetcher(tmp_path)
+
+    def get(*_a, **_k):
+        raise ValueError("Invalid IPv6 URL")
+
+    monkeypatch.setattr(f.session, "get", get)
+    with pytest.raises(FetchError) as caught:
+        f._guarded_redirect_get(f"http://{PUBLIC}/")
+    assert type(caught.value) is FetchFailed
+    assert record_text(caught.value, typed=False) == f"redirect to a URL that cannot be read, from http://{PUBLIC}/", caught.value
+    assert caught.value.__context__ is None and caught.value.__cause__ is None
+    assert guarded == []
+    _not_the_switch(caught.value)
+
+
+def test_the_unreadable_redirect_names_the_hop_whose_answer_could_not_be_read(tmp_path, monkeypatch):
+    """After one good hop, the sentence names the URL the failing request was for, not the first one."""
+    f, _guarded = _fetcher(tmp_path)
+    hops: list[str] = []
+    f._guard_target = hops.append  # type: ignore[method-assign]
+    hop = f"http://{PUBLIC}/next"
+    answer = SimpleNamespace(status_code=302, headers={"Location": hop}, url=f"http://{PUBLIC}/", close=lambda: None)
+    calls: list[str] = []
+
+    def get(url, **_k):
+        calls.append(url)
+        if len(calls) == 1:
+            return answer
+        raise ValueError("Invalid IPv6 URL")
+
+    monkeypatch.setattr(f.session, "get", get)
+    with pytest.raises(FetchFailed) as caught:
+        f._guarded_redirect_get(f"http://{PUBLIC}/")
+    assert calls == [f"http://{PUBLIC}/", hop] and hops == [PUBLIC]
+    assert record_text(caught.value, typed=False) == f"redirect to a URL that cannot be read, from {hop}", caught.value
+
+
+@pytest.mark.parametrize("name", ["InvalidURL", "InvalidHeader", "MissingSchema", "InvalidSchema"])
+def test_a_request_error_that_is_also_a_value_error_stays_a_request_error(tmp_path, monkeypatch, name):
+    """requests' own URL and header errors are RequestException AND ValueError: they keep the request error's path (the fetcher's
+    "request error for <url>" and its retries), not the unreadable-redirect words."""
+    import requests
+
+    cls = getattr(requests.exceptions, name)
+    assert issubclass(cls, ValueError)
+    f, _guarded = _fetcher(tmp_path)
+
+    def get(*_a, **_k):
+        raise cls("no")
+
+    monkeypatch.setattr(f.session, "get", get)
+    with pytest.raises(cls):
+        f._guarded_redirect_get(f"http://{PUBLIC}/")
+
+
 @pytest.mark.parametrize("location", UNREADABLE)
 def test_an_unreadable_robots_redirect_backs_the_host_off(tmp_path, asked, location):
     with _proxy({f"http://{PUBLIC}/robots.txt": (302, {"Location": location})}) as proxy:
@@ -269,7 +327,8 @@ def test_the_health_count_does_not_take_a_hosts_redirect_for_the_stop(tmp_path, 
     source = SimpleNamespace(id=1, name="s", rss_url=f"http://{PUBLIC}/feed", domain=PUBLIC)
     with _proxy({f"http://{PUBLIC}/feed": (302, {"Location": f"http://{S}/feed"})}) as proxy:
         f, _guarded = _fetcher(tmp_path, proxy)
-        monkeypatch.setattr(api_monitoring, "kill_switch_active", lambda: True)  # a Stop pressed after the probe, before the count
+        # a Stop pressed after the probe, before the count (main reads the window since R617, no longer the switch as it is now)
+        monkeypatch.setattr(api_monitoring, "kill_switch_engaged_since", lambda _epoch: True)
         out = api_monitoring.sources_health(limit=1, db=_OneSource(source), fetcher=f)
     assert out["summary"] == {"down": 1}, out
     assert out["sources"][0]["detail"] == AUTHORITY and _crafted(asked) == [], (out, asked)

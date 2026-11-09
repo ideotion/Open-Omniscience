@@ -250,3 +250,12 @@ Correct the text in `src/static/locales/hi.json` (the key is the English text).
 | 12 | {n} of {m} pages seen | {m} में से {n} पृष्ठ देखे गए |
 | 13 | {n} pages seen, total unknown | {n} पृष्ठ देखे गए, कुल अज्ञात |
 | 14 | {n} stretches the lane did not see. | {n} अवधियाँ जो लेन ने नहीं देखीं। |
+
+## extra-4: Start-up step: the links' covering index (PR #1839)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Building the index that keeps the shared-origin counts fast. One time only; anything the app saves waits until it is done. | वह इंडेक्स बनाया जा रहा है जो साझा-स्रोत गिनती को तेज़ रखता है। केवल एक बार; ऐप जो कुछ भी सहेजता है वह इसके पूरा होने तक प्रतीक्षा करता है। |
+| 2 | The index of the articles' links was not built: it needs about {needed} MB of free memory (sorting up to {rows} links, plus the memory the app always keeps free) and this computer has {free} MB. Close other programs and restart the app; until then the shared-origin counts stay slow. | लेखों के लिंक का इंडेक्स नहीं बना: इसे लगभग {needed} MB खाली मेमोरी चाहिए (अधिकतम {rows} लिंक छाँटना, साथ में वह मेमोरी जो ऐप हमेशा खाली रखता है) और इस कंप्यूटर में {free} MB है। दूसरे प्रोग्राम बंद करें और ऐप फिर से शुरू करें; तब तक साझा-स्रोत गिनती धीमी रहेगी। |
+| 3 | The index of the articles' links was not built: the volume your data file is on has {free} MB free and it needs about {needed} MB (up to {rows} links). Free some space and restart the app; until then the shared-origin counts stay slow. | लेखों के लिंक का इंडेक्स नहीं बना: आपकी डेटा फ़ाइल वाले वॉल्यूम पर {free} MB खाली है और इसे लगभग {needed} MB चाहिए (अधिकतम {rows} लिंक)। कुछ जगह खाली करें और ऐप फिर से शुरू करें; तब तक साझा-स्रोत गिनती धीमी रहेगी। |
+| 4 | The index of the articles' links was not built: two starts in a row ended while it was being built (the computer ran out of memory or power, or the app was ended abruptly), so it is not tried again until the app is updated. The shared-origin counts stay slow. | लेखों के लिंक का इंडेक्स नहीं बना: इसके बनते समय लगातार दो बार शुरुआत बीच में समाप्त हुई (कंप्यूटर की मेमोरी या बिजली खत्म हुई, या ऐप अचानक बंद किया गया), इसलिए ऐप अपडेट होने तक इसे फिर नहीं आज़माया जाएगा। साझा-स्रोत गिनती धीमी रहेगी। |

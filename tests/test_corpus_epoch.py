@@ -204,3 +204,74 @@ def test_epoch_guard_forces_full_rebuild_and_prevents_double_count(db):
         assert parity["mentions_exact"], "the full rebuild must restore exact counts"
     finally:
         con.close()
+
+
+# --------------------------------------------------------------------------- #
+# A source delete (R632 delta): its cascade removes mentions BELOW the rollup's watermark, which an incremental merge
+# (new rows by id only) never sees; the 12 h prune bump used to heal it by accident, R632 took that bump away.
+
+
+def test_a_source_delete_moves_the_epoch_so_the_rollup_stops_serving_its_mentions(tmp_path):
+    pytest.importorskip("duckdb")
+    from sqlalchemy import event
+
+    from src.analytics import columnar
+    from src.database.source_manager import SourceManager
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'e.db'}", future=True, connect_args={"check_same_thread": False})
+
+    @event.listens_for(engine, "connect")
+    def _fk(dbapi, _rec):  # the app's connections cascade
+        dbapi.execute("PRAGMA foreign_keys = ON")
+
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine, future=True)()
+    ex = _seed(db, n=2)
+    gone = Source(name="Gone", domain="gone.test", country="fr")
+    db.add(gone)
+    db.commit()
+    art = _article(db, "g0", "Climate policy and trade dominated the summit. Climate policy again.")
+    art.source_id = gone.id
+    db.commit()
+    index_article(db, art, extractor=ex, country="fr")
+    con = columnar.connect()
+    assert con is not None
+    try:
+        epoch0 = get_corpus_epoch(db)
+        assert columnar.refresh_keyword_daily(con, db, corpus_epoch=epoch0)["mode"] == "full"
+        assert columnar.keyword_daily_parity(con, db)["mentions_exact"]
+
+        assert SourceManager(session=db).delete_source(gone.id) is True
+        assert db.get(Article, art.id) is None
+        new_epoch = get_corpus_epoch(db)
+        assert new_epoch == epoch0 + 1  # the delete moved it, in its own transaction
+
+        # the trap without the bump: an incremental merge keeps the deleted source's mentions
+        stale = columnar.refresh_keyword_daily(con, db, corpus_epoch=epoch0)
+        assert stale["mode"] == "incremental"
+        assert not columnar.keyword_daily_parity(con, db)["mentions_exact"]
+        # with it: the moved epoch forces the full rebuild, and the sums are the live ones again
+        assert columnar.refresh_keyword_daily(con, db, corpus_epoch=new_epoch)["mode"] == "full"
+        assert columnar.keyword_daily_parity(con, db)["mentions_exact"]
+    finally:
+        con.close()
+
+
+def test_a_source_delete_whose_bump_fails_deletes_nothing(db, monkeypatch):
+    from src.analytics import corpus_epoch
+    from src.database.source_manager import SourceManager
+
+    _seed(db, n=1)
+    sid = db.query(Source.id).scalar()
+
+    class _Broken:
+        @staticmethod
+        def now(_tz=None):
+            raise RuntimeError("bump failed")
+
+    monkeypatch.setattr(corpus_epoch, "datetime", _Broken)
+    with pytest.raises(RuntimeError):
+        SourceManager(session=db).delete_source(sid)
+    db.rollback()
+    assert db.get(Source, sid) is not None and db.query(Article).count() == 1  # failed closed: nothing deleted
+    assert get_corpus_epoch(db) == 0

@@ -299,6 +299,9 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
     ensure_source_last_crawled_column(engine)
     ensure_source_composite_key(engine)
     ensure_source_outlet_id(engine)
+    from src.analytics.day_counts import ensure_day_counts
+
+    ensure_day_counts(engine)
     ensure_merged_rows_row_key_column(engine)
     analyze = optimize_at_boot(engine)
     return {"hot_indexes_created": created, "analyze": analyze}
@@ -314,7 +317,7 @@ def _bench_engine(db_path: Path, passphrase: str | None) -> Any:
             return connect(str(db_path), key=passphrase, check_same_thread=False, timeout=60)
         return connect(str(db_path), create_encrypted=False, check_same_thread=False, timeout=60)
 
-    engine = create_engine(f"sqlite:///{db_path}", future=True, creator=_creator)
+    engine = create_engine(f"sqlite:///{db_path}", future=True, creator=_creator, hide_parameters=True)  # as the corpus engine
 
     @event.listens_for(engine, "connect")
     def _pragmas(dbapi_conn: Any, _rec: Any) -> None:  # pragma: no cover - trivial

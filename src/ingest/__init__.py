@@ -30,6 +30,7 @@ import socket
 import sys
 import threading
 import time
+import weakref
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
@@ -38,7 +39,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlparse, urlsplit, urlunsplit
+from urllib.parse import ParseResult, urljoin, urlparse, urlsplit, urlunsplit
 from urllib.robotparser import RobotFileParser
 
 import requests
@@ -907,6 +908,37 @@ _KILL_EPOCH = 0
 # Re-entrant, so a future signal handler that engages the switch cannot deadlock a thread holding it.
 _KILL_EPOCH_LOCK = threading.RLock()
 
+#: Every ``requests.Session`` an :class:`EthicalFetcher` fetches through, and every ``GuardedSession`` (R638). Weak, so a fetcher that is gone takes its session with
+#: it. :func:`activate_kill_switch` closes their pooled keep-alive connections: the socket guard refuses a request written to one after
+#: the Stop (``airplane._guarded_putrequest``), and closing them leaves none idle to be written to at all. A closed ``Session`` stays
+#: usable; its adapters open new pools on the next request, which then meets the connect guard.
+_FETCHER_SESSIONS: weakref.WeakSet[requests.Session] = weakref.WeakSet()
+# Re-entrant for the reason _KILL_EPOCH_LOCK is: activate_kill_switch takes it, and must not deadlock a thread already inside it.
+_FETCHER_SESSIONS_LOCK = threading.RLock()
+
+
+def _register_fetcher_session(session: requests.Session) -> None:
+    with _FETCHER_SESSIONS_LOCK:
+        _FETCHER_SESSIONS.add(session)
+
+
+def _close_fetcher_pools() -> int:
+    """Close the pooled connections of every registered fetcher session; how many sessions were closed. Never raises.
+
+    A connection a request is using at this moment is not in its pool: urllib3 closes it when the request hands it back to the closed
+    pool, and the request itself finishes or fails on its own (the single request already on the wire, as the Stop has always meant)."""
+    with _FETCHER_SESSIONS_LOCK:
+        sessions = list(_FETCHER_SESSIONS)
+    closed = 0
+    for session in sessions:
+        try:
+            session.close()
+            closed += 1
+        except Exception as exc:  # noqa: BLE001 - the Stop must complete whatever one session does
+            # The class only, never the words or a traceback: an error from a pool can carry a URL with its login (R142).
+            logging.getLogger(__name__).debug("kill switch: closing a fetcher session's pool failed (%s)", type(exc).__name__)
+    return closed
+
 
 def activate_kill_switch() -> None:
     global _KILL_EPOCH
@@ -924,6 +956,9 @@ def activate_kill_switch() -> None:
         close_window()
     except Exception:  # noqa: BLE001 - the kill switch must engage no matter what
         pass
+    # No keep-alive connection is left idle to be reused after the Stop (R638). After the switch is set, so a request that takes a
+    # connection from a pool between the two meets the putrequest guard instead.
+    _close_fetcher_pools()
 
 
 def clear_kill_switch() -> None:
@@ -1127,6 +1162,8 @@ class EthicalFetcher:
             self._proxy_pool = list(proxy_pool)
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": user_agent})
+        if isinstance(self.session, requests.Session):
+            _register_fetcher_session(self.session)  # its pool is closed on a Stop (R638)
         # Size the connection pool for parallel collection: with up to ~50
         # concurrent DISTINCT hosts (per-host concurrency stays 1 via the host
         # lock), the default urllib3 pool (10) would churn host-pools and warn.
@@ -1440,8 +1477,15 @@ class EthicalFetcher:
         """
         if _KILL.is_set():
             raise FetchFailed(KILL_SWITCH_REFUSAL)
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        try:
+            parsed: ParseResult | None = urlparse(url)
+        except ValueError:
+            # A link urlsplit cannot read (an unclosed IPv6 bracket ``http://[::1``, a bracketed host that is no address, a netloc
+            # NFKC would change) raised a bare ValueError out of the fetch, which ended the source's whole feed pass: a feed
+            # item's link reaches here through ``ingest_url`` (R626's read). Refused below, outside this handler, as the
+            # unsupported or malformed URL it is.
+            parsed = None
+        if parsed is None or parsed.scheme not in ("http", "https") or not parsed.netloc:
             raise FetchFailed(f"unsupported or malformed URL: {failure_url(url)!r}")
 
         # Cheap length check per fetch; evicts only when a cap is exceeded (E1).
@@ -1891,6 +1935,7 @@ class EthicalFetcher:
 
         ensure_connect_guard_installed()
         current = url
+        unreadable_from: str | None = None
         with connect_scope(
             enabled=self._real_session,
             proxies=self._request_proxy_endpoints(url, proxies),
@@ -1913,19 +1958,7 @@ class EthicalFetcher:
                     if stream and self._real_session:
                         kwargs["stream"] = True
                     self._refuse_parser_mismatch(current)
-                    try:
-                        resp = self.session.get(current, **kwargs)
-                    except requests.RequestException:
-                        raise
-                    except ValueError:
-                        # requests parses a 3xx answer's Location even when it is told not to follow it (``Session.send`` builds
-                        # ``Response.next`` through ``resolve_redirects``), and a Location urlsplit cannot read (an unclosed IPv6
-                        # bracket) raised a bare ValueError out of the request: the robots read never backed the host off, and
-                        # ``ingest_url`` did not catch it (R622 read). Raised below, outside this handler, so no UnicodeError is its
-                        # context (record_text writes any error a UnicodeError is reachable from as that error's fixed record).
-                        resp = None
-                    if resp is None:
-                        raise FetchFailed(f"redirect to a URL that cannot be read, from {failure_url(current)}")
+                    resp = self.session.get(current, **kwargs)
                     status = resp.status_code
                     location = resp.headers.get("Location") if hasattr(resp, "headers") else None
                     if 300 <= status < 400 and location:
@@ -1975,6 +2008,20 @@ class EthicalFetcher:
                     return resp, str(getattr(resp, "url", current) or current)
             except BlockedConnectTarget as exc:
                 raise BlockedTarget(record_text(exc, typed=False)) from None
+            except requests.RequestException:
+                raise
+            except ValueError:
+                # requests parses a 3xx answer's Location even when it is told not to follow it (``Session.send`` builds
+                # ``Response.next`` through ``resolve_redirects``), and a Location urlsplit cannot read (an unclosed IPv6
+                # bracket) raised a bare ValueError out of the request: the robots read never backed the host off, and
+                # ``ingest_url`` did not catch it (R622 read). Handled here, round the loop, and not round the request itself,
+                # so the request line stays as main has it (the CodeQL fingerprint lesson of 2026-10-16); the loop's own reads
+                # already turn theirs into BlockedTarget or FetchFailed, so what reaches this handler is the request's. Raised below, outside
+                # this handler, so no UnicodeError is its context (record_text writes any error a UnicodeError is reachable
+                # from as that error's fixed record).
+                unreadable_from = current
+        if unreadable_from is not None:
+            raise FetchFailed(f"redirect to a URL that cannot be read, from {failure_url(unreadable_from)}")
         raise FetchFailed(f"too many redirects for {failure_url(url)}")
 
     @staticmethod

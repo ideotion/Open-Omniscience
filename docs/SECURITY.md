@@ -11,7 +11,7 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   robots.txt is honoured and **fail-closed** (if it can't be confirmed, the URL is not
   fetched), per-host rate-limited, identifying User-Agent. As of the v0.0.7 audit
   (finding ETH-01) this includes RSS-feed **discovery** — same fetcher, same guards.
-  *Outside* collection the app can also reach the endpoints enumerated below; three of
+  *Outside* collection the app can also reach the endpoints enumerated below; four of
   them do not use the ethical fetcher and each says so on its own row. **That table is
   the complete answer to "what can this app contact"** — it is derived from the tree by
   a sweep a repo test re-runs, not from anyone's memory.
@@ -47,7 +47,7 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   an honest bot User-Agent, bounded redirects re-validated per hop, and the connect-time
   SSRF check. With protected fetch mode on, that path carries your proxy (e.g. Tor), and
   **a lane never silently downgrades Tor → clearnet** — the fetch is refused and the
-  refusal is surfaced. The three rows that do *not* use the ethical fetcher say so, and say
+  refusal is surfaced. The four rows that do *not* use the ethical fetcher say so, and say
   what they use instead.
 
   **What "carries your proxy" covers.** A proxy pool (`OO_HTTP_PROXIES`) counts as your
@@ -94,6 +94,7 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
 | **Weather** | `archive-api.open-meteo.com` | Click — "Fetch weather context" on a corroboration Lead. CC BY 4.0, disclosed at the point of use. | ethical fetcher | `src/weather/openmeteo.py:ARCHIVE_BASE` |
 | **Discover by topic** | `html.duckduckgo.com` — and only that host; the redirector DuckDuckGo wraps its results in is unwrapped locally and never followed (see under the table) | **Opt-in, off by default** — the endpoint refuses with an honest message until you enable *Settings → Advanced → Safety → External topic discovery* (`OO_DISCOVERY_EXTERNAL=1` headless). Strictly user-triggered: never part of ingestion, the scheduler, or any default path. | ethical fetcher | `src/services/duckduckgo.py:DuckDuckGoSearch.BASE_URL` · `src/services/duckduckgo.py:DuckDuckGoSearch._unwrap_search_redirect` (the refusal) |
 | **Local AI install & weights** | `api.github.com` (the official Ollama installer and its attested `sha256`); `github.com`, the host of the installer's download URL that API response names (`browser_download_url`) — a value read from the response, not a URL we build — which redirects to GitHub's release-asset storage: `release-assets.githubusercontent.com` when measured on 2026-09-27, `objects.githubusercontent.com` before GitHub moved it; `ollama.com`, from which the verified install script then downloads the Ollama program itself; `huggingface.co` (vLLM model weights), `pypi.org` (installing vLLM into the managed venv) — plus whatever registry **Ollama's own daemon** contacts for a model pull (see Transport) | Click, through the **separate AI-egress consent window** — a third state in which the kill switch stays engaged, the collector stays stopped, and only the install is exempted | **Mixed.** The installer check is two guarded fetches: the release lookup on `api.github.com`, whose session is held to that one host (`GITHUB_API_HOSTS`: a redirect off it is refused, not followed, and the 502 says so without naming where it pointed), then the release asset it names, whose session is held to `GITHUB_ASSET_HOSTS` (`github.com`, `release-assets.githubusercontent.com`, `objects.githubusercontent.com`: the address the release names and each redirect hop must be on that list, so a redirect or an address off it is refused, not followed, and answers 502 with a fixed sentence that names no host; any other failure of either fetch, including a `Location` on a followed hop that `requests` cannot read (the address the release names is checked first and an unreadable one is a refusal), answers 502 with its own fixed sentence and only `HTTP <status>` or the exception's class name, R142: the signed storage address that a failed download would quote never reaches the response, the UI or this app's log, and the HTTP library's own log lines carry neither path nor query (`src/ingest/urllib3_log.py`, see the fixed-endpoint paragraph below for what that does not cover)) and verified against GitHub's attested `sha256` (`src/llm/installer.py:resolve_and_verify`). **The storage host is GitHub's to choose and has moved once**, and the list was set from this repository's own record rather than a fresh look at the live redirect (the build sandbox cannot reach it), so when GitHub moves it again the download is refused and the install says to use `ollama.com/download` until the list is updated (the registry entry `github-release-asset-hosts` dates it); what comes back is also checked byte for byte against the attested `sha256`, so a different script is refused whichever host served it. `huggingface.co` (for the weights) and `pypi.org` are reached by a **spawned process** — `huggingface_hub` and `pip`/`uv` — over **clearnet, not through this app's fetcher or proxy**; the one in-app read of `huggingface.co` is the release run's, described under the table. `ollama.com` is also the spawned process's: running the verified, staged script (`src/llm/installer.py:run_installer`) hands the rest of the install to **Ollama's own script**, which downloads the Ollama program with `curl` over clearnet (maintainer Q9) and, on a machine with an NVIDIA GPU but no driver, fetches that driver from NVIDIA's package repository and the distribution's own mirrors. We verify the script's bytes, not what it then fetches; its reach is Ollama's to change. A model pull is a loopback `POST /api/pull` to the Ollama daemon, which then egresses on its own: this app neither builds that URL nor can name the host, and saying so is more honest than guessing one. Every `ollama.com` literal in our source is a **page we link you to**; the one fetch of that host is the install script's, never this app's. Disclosed at the consent step, and in the consent popup's hover for this lane. | `src/llm/installer.py:GITHUB_LATEST_RELEASE` · `src/llm/installer.py:GITHUB_API_HOSTS` · `src/llm/installer.py:GITHUB_ASSET_HOSTS` · `src/llm/ollama.py:OllamaClient.pull` (the loopback `POST /api/pull` that asks the daemon to fetch) · `src/llm/vllm_lifecycle.py:_SNAPSHOT_SCRIPT` · `src/llm/vllm_lifecycle.py:_resolver_argv` · `src/llm/weights_pin.py` |
+| **App updates** | `api.github.com` (the tags list, or `main`'s tip when no release tag exists); `github.com` (the `git fetch` of the checked version from this repository). Nothing else: no package is ever downloaded | Click only: **Check for update** and **Update and restart** each go through the one consent popup, and the update is a second, separate confirm; the server refuses the update (409, named) while airplane mode is on or protected mode is chosen; never automatic | **Mixed.** The check is one guarded fetch on `api.github.com` whose session is held to that one host (a redirect off it is refused, not followed; the answer names no address), gated by the kill switch like every in-process fetch. The install itself is a **spawned process**: after the app has stopped cleanly (database and WAL closed through the ordinary shutdown) `scripts/apply_update.py` runs `git fetch` over clearnet, **not through this app's fetcher or proxy** and out of reach of the in-process socket guard, which is why the gate sits before anything stops: the server refuses the apply while the kill switch is on (the spawned process would otherwise egress while the app shows offline) and in protected mode (it would otherwise drop the proxy, a deanonymisation), and this lane's hover in the consent popup says so. The helper and every child it starts (git, pip, the launcher) run without the passphrase variables, so the restarted app opens locked. It refuses unless the configured `origin` URL names this repository, the tree is clean and on `main`, and the fetched commit equals the commit the check read; a version that changes the dependencies (`requirements.lock`, or the dependency lists, extras, `requires-python` or build system in `pyproject.toml`) is **refused before anything is swapped** and left to the installer, because installs resolve packages differently; otherwise the swap is `git merge --ff-only` and the version metadata is refreshed with `pip install --no-index --no-deps --no-build-isolation -e .` (no network; skipped without a local setuptools). Before swapping, the helper refuses when the app's port already answers (it was started again by hand or by a supervisor). After the restart it watches the launcher: when it exits before the app ever answers on its port, the checkout is put back and the old version started again (on Windows the launcher is started so its window ends with the server, and a window the person closed is their stop, never undone); a new version whose database code changed (`migrations/versions/` or `src/database/`) and fails may already have altered the store at start-up (tables, FTS triggers, self-heals), so the old code can start on it: that rollback is recorded as such and Settings says to restore the last backup or re-run the installer if the app misbehaves. A rollback (or a reset after a failed merge) runs only while the checkout is still exactly as the helper left it (that commit, on `main`, clean), so an edit or branch switch made meanwhile is never discarded; on Windows a lock left by a merge killed on timeout is not removed (the real git may still hold it), and the result says the restore is incomplete. A helper that fails unexpectedly still starts the app again. One update at a time: the server refuses a second apply and the helper holds a lock file. Release tags are **not** signature-verified (no signing key is published); this is "the commit GitHub named is the commit fetched", not more: the origin pin is on the configured `remote.origin.url` string (a git `insteadOf` rewrite in the user's own git config can still point the fetch elsewhere), so what binds the code is the commit check. An install that is not such a checkout is shown the manual steps instead. | `src/maintenance/self_update.py:TAGS_URL` · `src/maintenance/self_update.py:GITHUB_API_HOSTS` · `scripts/apply_update.py:ORIGIN_OK` |
 | **Newsletter mailbox** | The **mail server you configure** (IMAP/POP3) | Click — only when you trigger a pull | **Not the ethical fetcher:** raw `imaplib`/`poplib` (mail protocols have no robots.txt or HTML to parse). Its own explicit kill-switch check refuses while offline is engaged. | `src/ingest/email.py` · `POST /api/newsletters/mailbox` |
 | **Chain of custody** | `a.pool.opentimestamps.org`, `b.pool.opentimestamps.org`, `alice.btc.calendar.opentimestamps.org` | **Opt-in, off by default** — the "opentimestamps" anchoring mode. All three reachable paths are consent-gated (invariant #14f): the "Anchor root" button, the endpoint itself (`consent: true`), and turning the setting on (`ots_consent: true`, demanded once on the local→OTS transition, never re-stamped on every save). | **Not the ethical fetcher:** the OpenTimestamps client library's own HTTP calls. `ots_stamp()` refuses **by name** when the kill switch is on. | `src/custody/timestamp.py:DEFAULT_CALENDARS` |
 
@@ -338,9 +339,82 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   `socket.getaddrinfo` / `create_connection` / `socket.connect(_ex)` — and, since
   2026-07-25, over `http.client.HTTPConnection._tunnel` and PySocks' `socksocket.connect`
   as well, because a proxied connection negotiates its REAL destination at an
-  application-protocol layer the first three never see. Any **non-loopback** target raises
-  `AirplaneModeError` **before** a real socket is opened, so no missed call
-  site, third-party library, or DNS prefetch can egress. Loopback (127/8, ::1, `localhost`)
+  application-protocol layer the first three never see. Since 2026-11-08 (R619) it also guards
+  `http.client.HTTPConnection.putrequest`: a plain `http://` URL through an HTTP proxy
+  (Privoxy chained to Tor) is sent as `GET http://host/x` to the loopback proxy with no
+  CONNECT at all, and before this a loopback listener received that whole request in airplane
+  mode. While airplane mode is on, every request target that names its own destination
+  (anything but origin-form `/path` (never `//`), exactly `*` or empty, so absolute-form and
+  `CONNECT` included), and every request whose method is not an RFC 7230 token, is refused
+  whatever host it names, `localhost` too, because a proxy chained upstream forwards that name
+  like any other. For the same reason a CONNECT tunnel, or a SOCKS connection with a proxy set,
+  to a LOOPBACK destination is refused in airplane mode too (until then it was let through). Not covered: clients that do not sit on `http.client` (httpx, used
+  only by the loopback-only LLM clients), and an origin-form request whose `Host` header an
+  intercepting (transparent) proxy reads as the destination; this app never configures one.
+  Since 2026-11-09 (R638) the same `putrequest` point also covers a **keep-alive connection opened
+  before the Stop**: such a connection met the connect guard while it was still transparent, and a
+  pooled `requests` session went on fetching from the same host after airplane mode was engaged,
+  because an origin-form request on an open connection resolves, connects and tunnels nothing. While
+  airplane mode is on, a request on an open connection is now refused, in fixed words, before a byte
+  is written, unless its socket's peer is a loopback address AND its host is a loopback name or
+  literal (the name alone is not trusted: `localhost.` or `localhost.localdomain` can be answered by
+  DNS); any connection that tunnels through a proxy or rides SOCKS (read from the urllib3 connection
+  too, because under TLS the socket no longer says so) is refused whatever name it carries. The switch is read where
+  the request is written, so a Stop that lands after a caller's own check is met too. A Stop also
+  closes the pooled connections of every `EthicalFetcher` session and every `GuardedSession`, so none is
+  left idle. Only those pools are closed: any other client's pooled connection (a plain `requests`
+  session, say `src/monitoring/preflight.py`'s) stays open, and the `putrequest` refusal is the
+  barrier that keeps it from sending. A request
+  whose first line was already accepted when the Stop landed finishes, as the Stop has always meant.
+  **Residual, checked against the 16 socket-capable libraries the socket-importer ratchet
+  (`tests/test_network_consent.py`) tracks:** this point sees only what is written through
+  `http.client`. `requests`, `urllib3`, `urllib.request` (and so the OpenTimestamps calendar client,
+  which submits through it) and `src/tui/panel.py` sit on it. The ones that do not: `imaplib`/`poplib`
+  in `src/ingest/email.py`, where a mailbox pull that had already connected when the Stop landed
+  finishes its pull (at most its message limit) because its loop does not read the switch again
+  (ruled R640: the loop will re-read the switch before each command and each message, close the
+  connection on a Stop and keep what it already fetched, in the PR after R638's); httpx
+  in the loopback-only LLM clients; urllib3's opt-in HTTP/2 connection, which writes frames itself and
+  is never turned on here (a test pins that); a bare `socket` port probe (`src/llm/vllm_lifecycle.py`, connect
+  only, which the connect guard sees); and native code that opens its own sockets outside Python,
+  which no Python-level guard has ever seen. **Why the raw socket `send` is not
+  patched instead (option (b), declined):** it would run on every write in the process, the app's
+  own server answering the browser included; it cannot see an HTTPS request at all, because an
+  `ssl.SSLSocket` writes through the TLS library rather than `socket.send`; it would refuse in the
+  middle of a request instead of before its first byte, leaving a half-written request on the wire;
+  and through a proxy it sees only the proxy's loopback address, the very thing the request-line
+  check already handles.
+  **Lookups (R639, 2026-11-09):** while airplane mode is on, `getaddrinfo` is made only for no name,
+  exactly `localhost`, or a loopback literal. `localhost` itself is answered from `127.0.0.1` and `::1`, never looked
+  up as a name, so a hosts file without an entry for the family asked for cannot send it to DNS. A localhost alias the connect guard treats as local
+  (`localhost.localdomain`, `ip6-localhost`) is refused before any lookup, in fixed words, because it
+  is resolved from `/etc/hosts` only where that file lists it, and elsewhere the resolver sent the
+  query to DNS (the connect to whatever DNS answered was refused, but the query had already left).
+  So a local LLM address that names an alias (`OO_OLLAMA_URL` or `OO_VLLM_URL` set to
+  `http://localhost.localdomain:…`), which the LLM clients accept as loopback, works online where the system resolves it and is
+  refused in airplane mode: name it as `127.0.0.1` (the default) or `localhost` instead.
+  The same rule applies to `socket.connect`/`connect_ex` and `create_connection` handed a host
+  NAME, because CPython resolves that name in C, through libc and not through the patched
+  `getaddrinfo` (S1's read: `connect(("localhost.localdomain", 80))` queried DNS in airplane mode):
+  an alias is refused in fixed words, and `localhost` is swapped for the loopback literal of the
+  socket's family before the real call.
+  **Stated residuals (ruled R641, to be closed in the PR after R640's):** `socket.gethostbyname` and
+  `gethostbyname_ex` are not patched, so a library calling them resolves a name through libc in
+  airplane mode; a UDP `sendto`/`sendmsg` to a remote address on an unconnected socket is not refused
+  (no connect, so no guard point), and one handed a host NAME resolves it through libc first. The
+  same is true of three more calls security read A measured querying DNS with the switch engaged:
+  `socket.bind` handed a host name, and reverse lookups (`gethostbyaddr`, `getnameinfo`, and
+  `getfqdn`, which calls `gethostbyaddr`). No in-tree code calls any of these directly; the stdlib's
+  `HTTPServer.server_bind` calls `getfqdn` on its bind host, which with the default `OO_HOST`
+  (`127.0.0.1`) is answered from `/etc/hosts`. **And the server's own event loop:** `uvicorn[standard]`
+  installs uvloop and `uvicorn.run` picks it, and uvloop resolves and connects in libuv's C code, so
+  an `async` client on that loop (`httpx.AsyncClient`, `asyncio.open_connection`) would bypass every
+  patched point (security read B reached a non-loopback listener that way with the switch engaged).
+  No in-tree code opens an outbound connection from the event loop today; the stdlib asyncio loop
+  does go through the guard. Any **non-loopback** target
+  handed to a patched point raises `AirplaneModeError` **before** a real socket is opened, so a
+  missed call site, third-party library, or DNS prefetch that goes through those points cannot
+  egress; what does not go through them is the residual list above and in this section. Loopback (127/8, ::1, `localhost`)
   and AF_UNIX always pass through (the app's own server, a loopback Ollama, the file DB).
   It is transparent while online. `OO_AIRPLANE_SOCKET_GUARD=0` disables the backstop; the
   per-call refusals remain as the friendly layer above it. App boot makes zero network calls.
@@ -350,7 +424,11 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   resolves to or connects to — closing the window between the pre-fetch check's `getaddrinfo`
   and the one `requests` performs at connect time. One patch layer, two gates, so a call site
   cannot meet one and miss the other; each has its own opt-out
-  (`OO_SSRF_CONNECT_GUARD=0` here), and neither flag disables the other.
+  (`OO_SSRF_CONNECT_GUARD=0` here), and neither flag disables the other. **Stated limit:** it
+  cannot see a PROXIED destination. Through an HTTP proxy or a remote-resolving SOCKS proxy
+  (`socks5h`), the proxy resolves the target, so the only address this process resolves or
+  connects to is the proxy's own; what the proxy reaches is checked by the pre-fetch guard
+  alone.
 
 ## Data integrity / chain of custody
 
