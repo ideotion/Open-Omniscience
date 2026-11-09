@@ -39,11 +39,11 @@ def upgrade() -> None:
     if not cols:
         return  # no articles table yet (a brand-new store; create_all builds it)
     if "fetched_host" not in cols:
-        with op.batch_alter_table("articles", schema=None) as batch_op:
-            batch_op.add_column(sa.Column("fetched_host", sa.String(length=255), nullable=True))
+        op.add_column("articles", sa.Column("fetched_host", sa.String(length=255), nullable=True))
 
 
 def downgrade() -> None:
+    # A plain ALTER TABLE ... DROP COLUMN (SQLite 3.35+), never batch_alter_table: a batch rebuilds the table, and the
+    # rebuilt articles table has none of its triggers (the full-text and title-search sync triggers among them).
     if "fetched_host" in _columns("articles"):
-        with op.batch_alter_table("articles", schema=None) as batch_op:
-            batch_op.drop_column("fetched_host")
+        op.drop_column("articles", "fetched_host")

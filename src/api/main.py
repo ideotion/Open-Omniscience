@@ -2653,7 +2653,8 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
 
     src_name = _html.escape(a.source.name) if a.source else None
     # Queue item 61: where the page was fetched from, after its redirects, and whether that is another site than the
-    # source's. Said beside the source's name, since that is the credit it qualifies, and in full with the capture facts.
+    # source's (by registrable domain, as the quarantine host-mismatch report compares them: a source's own subdomain is its
+    # site). Said beside the source's name, since that is the credit it qualifies, and in full with the capture facts.
     _src_domain = a.source.domain if a.source else None
     _off_site = off_the_source_site(a.fetched_host, _src_domain)
     if src_name and _off_site:
@@ -2665,8 +2666,7 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
         _fetched_val = f"<code>{_html.escape(a.fetched_host)}</code>"
         if _off_site:
             _fetched_val += (
-                f" <span class='muted'>— not the source's site ({_html.escape(_src_domain or '')}): "
-                "the article's link led there</span>"
+                f" <span class='muted'>— another site than the source's ({_html.escape(_src_domain or '')})</span>"
             )
     else:
         _fetched_val = None

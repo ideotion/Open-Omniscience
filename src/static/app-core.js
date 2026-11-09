@@ -101,15 +101,16 @@
     // WHERE THE PAGE CAME FROM, BESIDE THE SOURCE IT IS CREDITED TO (queue item 61, R635). A feed item's
     // link may redirect to another site, and the article is still the source's: this says so on the row
     // that credits the source. HTML, escaped here; empty unless the server said the host it was fetched
-    // from is another site than the source's (`fetched_off_site` true), so a row stored before the column
-    // existed, or one with nothing to compare, says nothing rather than guessing.
+    // from is another site than the source's (`fetched_off_site` true: another registrable domain, so a
+    // source's own subdomain is its site), so a row stored before the column existed, or one with nothing
+    // to compare, says nothing rather than guessing. Led by " · ", so the source never reads as the fetcher.
     function ooFetchedOffSiteNote(a) {
       if (!a || a.fetched_off_site !== true || !a.fetched_host) return "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
-      const why = t("The source listed this article, but its link led to another site, and the stored page was fetched from there.");
-      return ` <span class="muted fetched-off-site" title="${esc(why)}">${esc(tf("fetched from {host}", {host: a.fetched_host}))}</span>`;
+      const why = t("This article is credited to the source, but the stored page was fetched from another site.");
+      return ` · <span class="muted fetched-off-site" title="${esc(why)}">${esc(tf("fetched from {host}", {host: a.fetched_host}))}</span>`;
     }
 
     // ===================================================================== //

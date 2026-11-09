@@ -3757,11 +3757,6 @@ _ADOPTABLE_ARTICLE_COLUMNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("content_multihash", ("content_multihash",)),
     ("sentiment_score", ("sentiment_score", "sentiment_label")),
     ("server_ip", ("server_ip", "ip_observed_at", "server_ip_reason")),
-    # Where the page was fetched from, after its redirects (queue item 61). Adoptable on the server_ip argument: a local NULL
-    # means "not recorded on this machine" (stored before the column, or never fetched), and the incoming row's text is
-    # byte-identical (the dedup matches on HASH), so its host is a true answer for where this body was fetched from by the
-    # install that stored it, never "where THIS install fetched it". Unrecoverable like server_ip: the redirects are gone.
-    ("fetched_host", ("fetched_host",)),
     # THE VERSION ANCHOR (S4). Adoptable, and the safety argument is the dedup predicate
     # itself: a duplicate matches on HASH, so the incoming row's text is BYTE-IDENTICAL
     # to the local one, and a revision that produced this exact body is a true answer for
@@ -3797,6 +3792,10 @@ _NOT_ADOPTABLE_ARTICLE_COLUMNS: dict[str, str] = {
     "url": "identity, not metadata: two articles duplicate on HASH and may legitimately "
            "carry different URLs, so copying one over the other rewrites provenance",
     "canonical_url": "NOT NULL, so never absent; and same identity argument as url",
+    # Queue item 61 (the independent read, must-fix 3): a hash twin is often the same wire copy stored by another source from
+    # another address, and adopting its host would say this article's own URL was fetched from that other site, for good.
+    "fetched_host": "where THIS row's URL was fetched from, so the url argument applies: a duplicate matches on HASH and may "
+                    "be another source's copy fetched from another site",
     "source_id": "remapped through temp.map_sources, never copied raw",
     "title": "content, and content equality is the dedup predicate itself",
     "content": "content (see title)",

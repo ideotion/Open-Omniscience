@@ -856,8 +856,10 @@ class Article(Base):
     # Where the stored page was actually fetched from (queue item 61, R635's follow-up): the host of the address the fetch
     # ended on, after its redirects. A feed's items are followed wherever their link redirects (feeds stay unscoped, R635),
     # and the article is credited to the source, so this is what says it came from another site. The host only, as
-    # urllib.parse reads it (lower-cased, no login, no port). NULL when nothing was fetched (an imported newsletter) and for
-    # every article stored before the column existed: not recorded, never a guess.
+    # urllib.parse reads it (lower-cased, no login, no port). Written by the page fetch (src.ingest.pipeline, which every
+    # feed, crawl, sitemap, archive, markets and manual-URL path stores through) and the collector's batch. NULL means not
+    # recorded, never a guess: an article stored before the column existed, an imported newsletter (nothing was fetched),
+    # and the paths that store without that fetch record (the Wikipedia, law, hazards, IPCC and statistics imports).
     fetched_host: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, onupdate=lambda: datetime.now(UTC))

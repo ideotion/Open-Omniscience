@@ -11,11 +11,13 @@ What is pinned here:
 - the page fetch, run through the real ``EthicalFetcher`` over an in-memory session, the real ``ingest_url`` and the real
   per-source batch, records the host of the final address;
 - the API row, the Home feed's cards, the reader, both exports and the briefing's evidence audit carry it, beside the source;
-- a backup merge carries it on a new article and adopts it onto a duplicate that never recorded one, never over one it did;
-- the SPA says "fetched from <host>" beside the source on every row it draws from ``/api/articles`` and ``/api/feed`` (the helper run as real code
-  by ``tests/fetched_host_node_test.js``, and each of those rows checked to call it);
-- the same-site test that says "another site" gives the crawl's own answers;
-- the boot self-heal adds the column to an older store, with nothing backfilled.
+- a backup merge carries it on a new article and never adopts it onto a duplicate (a hash twin may be another source's copy);
+- the SPA says "fetched from <host>" beside the source on every row it draws from ``/api/articles`` and ``/api/feed``, and so
+  does the investigate page (the helper run as real code by ``tests/fetched_host_node_test.js``, each row checked to call it);
+- "another site" is a different registrable domain, the quarantine host-mismatch report's own answer, so a source's own
+  subdomain is its site and an unknown is never "another site";
+- the boot self-heal adds the column to an older store, with nothing backfilled, and the migration goes down without
+  rebuilding the articles table (its triggers stay).
 """
 
 from __future__ import annotations
@@ -40,13 +42,16 @@ from src.database.maintenance import ensure_article_fetched_host_column
 from src.database.models import Article, Base, Source
 from src.ingest import EthicalFetcher
 from src.ingest.batch import ArticleBatch
-from src.ingest.crawl import _off_site, _registrable_host
+from src.ingest.host_mismatch import check_host
 from src.ingest.pipeline import IngestResult, ingest_url
 from src.utils.url_utils import fetched_host, off_the_source_site
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "src" / "static"
 G = "https://good.example"
+# The shown surfaces compare by registrable domain through the Public Suffix List, which has no rule for ".example": they use
+# real top-level domains (nothing here touches the network).
+SITE, SUBDOMAIN, ELSEWHERE = "goodnews.org", "en.goodnews.org", "othersite.net"
 OTHER = "https://other.example"
 _ALLOW_ALL = "User-agent: *\nAllow: /\n"
 
@@ -158,8 +163,7 @@ def test_a_redirect_through_a_relay_to_the_source_site_records_the_source_site(d
     s.page(f"{G}/landed", "Landed")
     _bounded(lambda: ingest_url(db, source, "https://relay.example/r/1", fetcher=_fetcher(tmp_path, s)))
     art = db.query(Article).one()
-    assert art.url == "https://relay.example/r/1" and art.fetched_host == "good.example"
-    assert off_the_source_site(art.fetched_host, source.domain) is False
+    assert art.url == "https://relay.example/r/1" and art.fetched_host == "good.example"  # the source's own host, not the relay's
 
 
 def test_the_collectors_batch_records_it_too(db, source, tmp_path):
@@ -201,31 +205,31 @@ def test_fetched_host_is_cut_to_the_column(db):
     assert fetched_host(f"https://{long}/") == long[:255]
 
 
-# --- "another site" is the crawl's own same-site answer --------------------------------------------------------------------------
+# --- "another site" is the quarantine report's own answer -----------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
-    ("host", "domain"),
+    ("host", "domain", "expected"),
     [
-        ("good.example", "good.example"),
-        ("www.good.example", "good.example"),
-        ("good.example", "www.good.example"),
-        ("GOOD.example", "good.example"),
-        ("news.good.example", "good.example"),  # a subdomain is another host to the crawl too
-        ("other.example", "good.example"),
-        ("xn--bcher-kva.example", "bücher.example"),  # one site in Unicode and punycode (R631)
-        ("bücher.example", "xn--bcher-kva.example"),
-        ("good.example", "good.example:8443"),  # the port is left out
-        ("good.example", "u:p@good.example"),  # so is a login written into the domain
-        ("2001:db8::1", "[2001:db8::1]"),
-        ("a" * 70 + ".example", "good.example"),  # an ASCII host is compared as written, as the crawl does
-        ("☃.example", "☃.example"),  # a host idna refuses is another site even beside the same text: fail closed
-        ("ü" + "a" * 63 + ".example", "ü" + "a" * 63 + ".example"),  # a label over 63 that idna refuses, the same
+        (SITE, SITE, False),
+        ("www." + SITE, SITE, False),
+        (SUBDOMAIN, SITE, False),  # a source that publishes on its own subdomain: its site
+        ("en.yna.co.kr", "yna.co.kr", False),  # ... as 50 enabled catalogue sources do (the independent read, must-fix 2)
+        ("news.bbc.co.uk", "bbc.co.uk", False),
+        ("GOODNEWS.org", SITE, False),
+        (ELSEWHERE, SITE, True),
+        ("example.co.uk", "other.co.uk", True),  # a public suffix is never the site
+        ("xn--bcher-kva.de", "bücher.de", False),  # a Unicode name and its punycode are one site
+        (SITE, "https://goodnews.org/", False),  # a domain written with a scheme, a port or a login
+        (SITE, SITE + ":8443", False),
+        (SITE, "u:p@" + SITE, False),
+        ("192.0.2.1", SITE, None),  # an IP address: nothing is said
+        ("other.example", "good.example", None),  # a top-level domain the list has no rule for: nothing is said
     ],
 )
-def test_off_the_source_site_agrees_with_the_crawls_same_site_test(host, domain):
-    netloc = f"[{host}]" if ":" in host else host
-    assert off_the_source_site(host, domain) is _off_site(netloc, _registrable_host(domain))
+def test_another_site_is_another_registrable_domain(host, domain, expected):
+    assert off_the_source_site(host, domain) is expected
+    assert {"mismatch": True, "same": False, "unknown": None}[check_host(host, domain).state] is expected
 
 
 @pytest.mark.parametrize(("host", "domain"), [(None, "good.example"), ("good.example", None), ("good.example", ""), ("", "x")])
@@ -241,10 +245,10 @@ def _store(tmp_path):
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     with Sess() as s:
-        s.add(Source(name="Good News", domain="good.example", status="qualified"))  # qualified, so the Home feed shows them
+        s.add(Source(name="Good News", domain=SITE, status="qualified"))  # qualified, so the Home feed shows them
         s.commit()
         for i, (host, title) in enumerate(
-            [("other.example", "Redirected story"), ("www.good.example", "Home story"), (None, "Older story")], start=1
+            [(ELSEWHERE, "Redirected story"), (SUBDOMAIN, "Home story"), (None, "Older story")], start=1
         ):
             s.add(
                 Article(
@@ -280,15 +284,15 @@ def client(tmp_path):
 
 def test_the_reader_says_beside_the_source_that_the_page_came_from_another_site(client):
     body = client.get("/api/articles/1/view").text
-    assert "Good News <span class='muted'>— this page was fetched from another site, other.example</span>" in body
+    assert "Good News <span class='muted'>— this page was fetched from another site, othersite.net</span>" in body
     assert "Fetched from (app-observed, after redirects)" in body
-    assert "<code>other.example</code> <span class='muted'>— not the source's site (good.example): the article's link led there</span>" in body
+    assert "<code>othersite.net</code> <span class='muted'>— another site than the source's (goodnews.org)</span>" in body
 
 
 def test_the_reader_shows_an_on_site_host_without_the_warning(client):
     body = client.get("/api/articles/2/view").text
-    assert "<code>www.good.example</code>" in body
-    assert "fetched from another site" not in body and "not the source's site" not in body
+    assert "<code>en.goodnews.org</code>" in body  # the source's own subdomain: shown, and not called another site
+    assert "fetched from another site" not in body and "another site than the source" not in body
 
 
 def test_the_reader_shows_no_row_for_an_article_stored_before_the_column(client):
@@ -298,15 +302,15 @@ def test_the_reader_shows_no_row_for_an_article_stored_before_the_column(client)
 
 def test_the_home_feed_card_carries_it_beside_the_source(client):
     cards = {c["id"]: c for c in client.get("/api/feed?order=recent&limit=10").json()["results"]}
-    assert (cards[1]["source"], cards[1]["fetched_host"], cards[1]["fetched_off_site"]) == ("Good News", "other.example", True)
-    assert (cards[2]["fetched_host"], cards[2]["fetched_off_site"]) == ("www.good.example", False)
+    assert (cards[1]["source"], cards[1]["fetched_host"], cards[1]["fetched_off_site"]) == ("Good News", ELSEWHERE, True)
+    assert (cards[2]["fetched_host"], cards[2]["fetched_off_site"]) == (SUBDOMAIN, False)
     assert (cards[3]["fetched_host"], cards[3]["fetched_off_site"]) == (None, None)
 
 
 def test_the_api_row_carries_the_host_and_whether_it_is_another_site(client):
     rows = {r["id"]: r for r in client.get("/api/articles?limit=10").json()["results"]}
-    assert (rows[1]["fetched_host"], rows[1]["fetched_off_site"]) == ("other.example", True)
-    assert (rows[2]["fetched_host"], rows[2]["fetched_off_site"]) == ("www.good.example", False)
+    assert (rows[1]["fetched_host"], rows[1]["fetched_off_site"]) == (ELSEWHERE, True)
+    assert (rows[2]["fetched_host"], rows[2]["fetched_off_site"]) == (SUBDOMAIN, False)
     assert (rows[3]["fetched_host"], rows[3]["fetched_off_site"]) == (None, None)
 
 
@@ -317,9 +321,9 @@ def test_both_exports_carry_it_and_the_csv_keeps_every_earlier_column_in_place(c
     assert rows[0] == [
         "ID", "Title", "URL", "Canonical URL", "Source", "Published At", "Language", "Content", "Hash", "Fetched From Host",
     ]
-    assert {row[0]: row[-1] for row in rows[1:]} == {"1": "other.example", "2": "www.good.example", "3": ""}
+    assert {row[0]: row[-1] for row in rows[1:]} == {"1": ELSEWHERE, "2": SUBDOMAIN, "3": ""}
     j = client.get("/api/articles/export?format=json").json()
-    assert {a["id"]: a["fetched_host"] for a in j["articles"]} == {1: "other.example", 2: "www.good.example", 3: None}
+    assert {a["id"]: a["fetched_host"] for a in j["articles"]} == {1: ELSEWHERE, 2: SUBDOMAIN, 3: None}
 
 
 def test_the_briefing_evidence_audit_carries_it_beside_the_source(tmp_path):
@@ -331,8 +335,8 @@ def test_the_briefing_evidence_audit_carries_it_beside_the_source(tmp_path):
             s, [1, 2, 3], depth="summary", excerpt_chars=0, max_linked_rows=5, shown_ids=[1, 2, 3]
         )
     items = {i["id"]: i for i in out["items"]}
-    assert (items[1]["fetched_host"], items[1]["fetched_off_site"]) == ("other.example", True)
-    assert (items[2]["fetched_host"], items[2]["fetched_off_site"]) == ("www.good.example", False)
+    assert (items[1]["fetched_host"], items[1]["fetched_off_site"]) == (ELSEWHERE, True)
+    assert (items[2]["fetched_host"], items[2]["fetched_off_site"]) == (SUBDOMAIN, False)
     assert (items[3]["fetched_host"], items[3]["fetched_off_site"]) == (None, None)
 
 
@@ -354,39 +358,85 @@ def test_the_boot_self_heal_adds_the_column_with_nothing_backfilled():
 # --- a backup merge ------------------------------------------------------------------------------------------------------------------
 
 
-def _merged(tmp_path, local_host, incoming_host):
-    """The same article (same hash) on both sides of a merge; returns the local row's ``fetched_host`` after it."""
+def _merged(tmp_path, local_host, incoming_host, *, same_hash=True):
+    """One article on each side of a merge (the same hash, so a duplicate, unless told otherwise); returns {hash: fetched_host}
+    of the working store after it."""
     from src.backup.merge import merge_corpus
 
     meta = {"artifact_kind": "oo-backup-2", "origin_fingerprint": "test", "app_version": "0.5.0", "alembic_rev": "head",
             "manifest": None}
     staged, working = tmp_path / "inc.db", tmp_path / "live.db"
-    for path, host in ((working, local_host), (staged, incoming_host)):
+    for path, host, (h, body) in ((working, local_host, ("H1", "Same wire story.")),
+                                  (staged, incoming_host, ("H1", "Same wire story.") if same_hash else ("H2", "Another story."))):
         engine = create_engine(f"sqlite:///{path}", future=True)
         Base.metadata.create_all(engine)
         with sessionmaker(bind=engine, future=True)() as s:
-            s.add(Source(name="Good News", domain="good.example"))
+            s.add(Source(name="Good News", domain=SITE))
             s.flush()
-            s.add(Article(url=f"{G}/a", canonical_url=f"{G}/a", source_id=1, title="T", content="Same body.", hash="H1",
-                          fetched_host=host))
+            s.add(Article(url=f"https://{SITE}/{h}", canonical_url=f"https://{SITE}/{h}", source_id=1, title="T", content=body,
+                          hash=h, fetched_host=host))
             s.commit()
         engine.dispose()
     counts, _ = merge_corpus(staged, working, meta)
-    assert counts["articles"]["duplicate"] == 1, "the fixture must exercise the duplicate path"
+    assert counts["articles"]["duplicate" if same_hash else "new"] == 1, "the fixture must exercise the path it names"
     engine = create_engine(f"sqlite:///{working}", future=True)
     try:
         with sessionmaker(bind=engine, future=True)() as s:
-            return s.query(Article).one().fetched_host
+            return {a.hash: a.fetched_host for a in s.query(Article).all()}
     finally:
         engine.dispose()
 
 
-def test_a_merge_adopts_the_host_onto_a_duplicate_that_never_recorded_one(tmp_path):
-    assert _merged(tmp_path, None, "other.example") == "other.example"
+def test_a_merge_never_adopts_a_host_onto_a_duplicate(tmp_path):
+    """A hash twin is often another source's copy of the same wire story, fetched from its own site: adopting its host would say
+    this article's own URL was fetched from there (the independent read, must-fix 3)."""
+    assert _merged(tmp_path, None, ELSEWHERE) == {"H1": None}
 
 
 def test_a_merge_never_replaces_a_host_this_install_recorded(tmp_path):
-    assert _merged(tmp_path, "good.example", "other.example") == "good.example"
+    assert _merged(tmp_path, SITE, ELSEWHERE) == {"H1": SITE}
+
+
+def test_a_merge_carries_the_host_of_a_new_article(tmp_path):
+    assert _merged(tmp_path, SITE, ELSEWHERE, same_hash=False) == {"H1": SITE, "H2": ELSEWHERE}
+
+
+def test_the_migration_goes_down_and_up_without_rebuilding_the_articles_table(tmp_path):
+    """A batch drop rebuilds the table and the rebuilt one has none of its triggers (the full-text sync among them): the
+    downgrade drops the column in place (the independent read, should-fix 4)."""
+    from alembic import command
+
+    from src.database.migrate import _alembic_config
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'm.db'}", future=True)
+    Base.metadata.create_all(engine)
+
+    def shape(c):
+        trig = {r[0] for r in c.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='articles'")}
+        idx = {r[0] for r in c.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='articles' AND name NOT LIKE 'sqlite_%'")}
+        cols = {r[1] for r in c.exec_driver_sql("PRAGMA table_info(articles)")}
+        return trig, idx, cols
+
+    with engine.begin() as c:
+        c.exec_driver_sql("CREATE TABLE trig_log (n INTEGER)")
+        c.exec_driver_sql("CREATE TRIGGER art_probe_ai AFTER INSERT ON articles BEGIN INSERT INTO trig_log VALUES (new.id); END")
+        c.exec_driver_sql("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)")
+        c.exec_driver_sql("INSERT INTO alembic_version VALUES ('f61a2b3c4d5e')")
+        trig0, idx0, cols0 = shape(c)
+    assert "art_probe_ai" in trig0 and "fetched_host" in cols0
+    try:
+        for target, has_column in (("c4e8a2d6f1b9", False), ("f61a2b3c4d5e", True)):
+            with engine.begin() as conn:
+                cfg = _alembic_config()
+                cfg.attributes["connection"] = conn
+                (command.downgrade if not has_column else command.upgrade)(cfg, target)
+            with engine.begin() as c:
+                trig, idx, cols = shape(c)
+            assert (trig, idx) == (trig0, idx0), target
+            assert ("fetched_host" in cols) is has_column, target
+    finally:
+        engine.dispose()
 
 
 def test_the_boot_path_runs_the_self_heal():
@@ -416,6 +466,7 @@ _SPA_ROWS = [
     ("app-analysis.js", r'font-size:12px">\$\{esc\(a\.source \|\| ""\)\}\$\{ooFetchedOffSiteNote\(a\)\} · '),
     ("app-home.js", r'\[esc\(a\.source \|\| ""\) \+ ooFetchedOffSiteNote\(a\), esc\(ooIsoDate'),
     ("app-home.js", r'feed-meta muted">\$\{esc\(a\.source \|\| ""\)\}\$\{ooFetchedOffSiteNote\(a\)\}'),
+    ("investigate.js", r'<td>\$\{esc\(a\.source \|\| ""\)\}\$\{offSiteNote\(a\)\}</td>'),
 ]
 
 
@@ -433,7 +484,7 @@ def test_the_helper_is_declared_once_across_the_spa():
 def test_both_strings_are_keyed_in_every_locale():
     keys = (
         "fetched from {host}",
-        "The source listed this article, but its link led to another site, and the stored page was fetched from there.",
+        "This article is credited to the source, but the stored page was fetched from another site.",
     )
     files = sorted((STATIC / "locales").glob("*.json"))
     assert len(files) == 12

@@ -34,9 +34,7 @@ Author: Ideotion
 
 import hashlib
 import logging
-from urllib.parse import parse_qs, urlparse, urlsplit, urlunparse
-
-import idna  # UTS 46, as src.ingest.crawl._site_key encodes a non-ASCII host (R631)
+from urllib.parse import parse_qs, urlparse, urlunparse
 
 from src.monitoring.secret_scrub import log_failure
 
@@ -327,37 +325,26 @@ def fetched_host(url: str | None) -> str | None:
     return host[:255] if host else None
 
 
-def _same_site_key(host: str) -> str | None:
-    """``host`` (a bare host name) as the same-site test compares it: a leading ``www.`` left out, a non-ASCII name encoded with
-    UTS 46. ``None`` when it cannot be encoded. The rule of :func:`src.ingest.crawl._off_site` (R624, R627, R631), written here
-    without the fetcher, so a reader that only shows a stored host (the briefing's evidence audit) never imports it;
-    ``tests/test_fetched_host_item61.py`` holds the two to the same answers."""
-    host = host[4:] if host.startswith("www.") else host
-    if host.isascii():
-        return host
-    try:
-        return idna.encode(host, uts46=True).decode("ascii")
-    except ValueError:  # idna.IDNAError and UnicodeError both are one
-        return None
-
-
 def off_the_source_site(host: str | None, source_domain: str | None) -> bool | None:
     """Whether ``host``, where an article was fetched from (``Article.fetched_host``), is another site than its source's
-    ``source_domain`` (queue item 61). ``None`` when either is unknown or empty, or the domain names no host: nothing is said.
+    ``source_domain`` (queue item 61). ``None`` when nothing can be said.
 
-    The same-site test a crawl and a sitemap keep to: the port, a login and a leading ``www.`` are left out, a Unicode host and
-    its punycode are one site, and a host that cannot be encoded is another site (fail closed). Never raises.
+    Sites are compared by registrable domain, the comparison the quarantine host-mismatch report already makes
+    (:func:`src.ingest.host_mismatch.check_host`): ``en.yna.co.kr`` is Yonhap's own site beside ``yna.co.kr``, ``www.`` and
+    other subdomains are the same site, a Unicode name and its punycode agree, and ``example.co.uk`` is never ``co.uk``. Its
+    UNKNOWN is ``None`` here, never "another site": a missing or unreadable host or domain, an IP address, a top-level domain
+    the Public Suffix List has no rule for. NOT the crawl's same-site rule (:func:`src.ingest.crawl._off_site`), which reads
+    every other host as off the site: right for keeping a crawl in bounds, wrong as a statement shown to the reader, since
+    many sources publish on a subdomain of the domain they are listed under. Never raises.
     """
     if not host or not source_domain:
         return None
-    try:
-        domain_host = urlsplit("//" + source_domain.strip()).hostname
-    except ValueError:  # a domain urllib.parse cannot read names no site to compare with
-        return None
-    if not domain_host:
-        return None
-    ours, site = _same_site_key(host.lower()), _same_site_key(domain_host)
-    return ours is None or site is None or ours != site
+    # Imported here: this module is imported by src.ingest's own modules, and check_host is network-free (urllib.parse and
+    # the bundled Public Suffix List), so a reader that only shows a stored host never needs the fetcher.
+    from src.ingest.host_mismatch import check_host
+
+    state = check_host(host, source_domain).state
+    return True if state == "mismatch" else False if state == "same" else None
 
 
 def fetched_host_fields(host: str | None, source_domain: str | None) -> dict:

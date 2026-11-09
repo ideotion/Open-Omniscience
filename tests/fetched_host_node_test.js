@@ -38,11 +38,11 @@ function load(i18n) {
 // No i18n engine: the English key is the text.
 const note = load(undefined);
 
-// Another site: the host, escaped, beside the source, with the reason on hover.
+// Another site: the host, escaped, after a separator (so the source never reads as the fetcher), the reason on hover.
 const off = note({fetched_host: "other.example", fetched_off_site: true});
-assert.ok(off.startsWith(" <span class=\"muted fetched-off-site\" title=\""), off);
+assert.ok(off.startsWith(" · <span class=\"muted fetched-off-site\" title=\""), off);
 assert.ok(off.includes(">fetched from other.example</span>"), off);
-assert.ok(off.includes("its link led to another site"), off);
+assert.ok(off.includes("title=\"This article is credited to the source, but the stored page was fetched from another site.\""), off);
 
 // The host is data from the network: it is escaped, never read as markup.
 const hostile = note({fetched_host: "a<b>\"'&.example", fetched_off_site: true});
@@ -72,9 +72,9 @@ const fr = load({
 });
 const frOut = fr({fetched_host: "other.example", fetched_off_site: true});
 assert.ok(frOut.includes(">récupéré depuis other.example</span>"), frOut);
-assert.ok(frOut.includes("title=\"[fr] The source listed this article"), frOut);
+assert.ok(frOut.includes("title=\"[fr] This article is credited to the source"), frOut);
 assert.deepStrictEqual(seen.sort(), [
-  "The source listed this article, but its link led to another site, and the stored page was fetched from there.",
+  "This article is credited to the source, but the stored page was fetched from another site.",
   "fetched from {host}",
 ]);
 

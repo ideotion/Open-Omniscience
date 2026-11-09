@@ -18,6 +18,16 @@ const Q = new URLSearchParams(location.search);
 const VIEW = Q.get("view") || "";
 const esc = s => String(s ?? "").replace(/[&<>"']/g,
   m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+// Queue item 61: the SPA's "fetched from <host>" note beside the source (app-core.js's ooFetchedOffSiteNote, which this
+// standalone page does not load), the same two keyed strings; empty unless the server said "another site".
+function offSiteNote(a) {
+  if (!a || a.fetched_off_site !== true || !a.fetched_host) return "";
+  const I = window.OOI18N;
+  const t = (I && I.t) ? I.t : (s => s);
+  const tf = (I && I.tf) ? I.tf : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+  const why = t("This article is credited to the source, but the stored page was fetched from another site.");
+  return ` · <span class="muted" title="${esc(why)}">${esc(tf("fetched from {host}", {host: a.fetched_host}))}</span>`;
+}
 async function api(path) {
   const r = await fetch(path);
   if (!r.ok) throw new Error(`${path} -> HTTP ${r.status}`);
@@ -66,7 +76,7 @@ async function viewPromise() {
       follow = "<table><tr><th>Published</th><th>Title</th><th>Source</th></tr>" +
         r.results.map(a => `<tr><td>${esc((a.published_at || "").slice(0,10))}</td>` +
           `<td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">${esc(a.title)}</a></td>` +
-          `<td>${esc(a.source || "")}</td></tr>`).join("") + "</table>";
+          `<td>${esc(a.source || "")}${offSiteNote(a)}</td></tr>`).join("") + "</table>";
     }
   } catch (e) { follow = `<p class="err">${esc(e.message)}</p>`; }
   html += panel(`Coverage since ${date} (query: “${terms}”)`, follow,
