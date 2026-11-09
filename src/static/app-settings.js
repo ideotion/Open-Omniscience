@@ -2072,3 +2072,112 @@
     // drives the ALWAYS-WORKS streaming engines — the encrypted corpus (volumes +
     // parity) then the large public blobs (folder stream) — into that one folder.
     // No new backend: reuses /backup/v2/volumes + /backup/folder. English-only.
+
+    // ---- Updates (Settings -> Advanced): check for a newer version, then install it ---------------------------------- //
+    // The CHECK is the one in-process fetch (api.github.com, guarded session) so it asks the ONE consent popup first; the INSTALL is a click of its
+    // own that stops the app, lets a helper process fast-forward the git checkout, and starts the app again. Never automatic, never silent.
+    let _updCheck = null;
+    function _updT() { return (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s); }
+    function _updReason(reason) {
+      const t = _updT();
+      if (reason === "not_a_git_checkout") return t("This install is not a git checkout.");
+      if (reason === "origin_not_this_repository") return t("This checkout's origin is not the project's repository.");
+      if (reason === "not_on_main") return t("This checkout is not on the main branch.");
+      if (reason === "local_changes") return t("This checkout has local changes.");
+      if (reason === "git_unavailable") return t("git is not available on this computer.");
+      return "";
+    }
+    function _updPaintInstall(install) {
+      const box = $("upd-manual");
+      if (!box) return;
+      const t = _updT();
+      if (!install || install.can_apply) { box.hidden = true; box.textContent = ""; return; }
+      box.hidden = false;
+      box.innerHTML = "";
+      const p = document.createElement("p");
+      p.textContent = t("This install cannot be updated from here.") + " " + _updReason(install.reason) + " " + t("To update it yourself:");
+      const pre = document.createElement("pre");
+      pre.textContent = (install.manual_steps || []).join("\n");
+      box.appendChild(p); box.appendChild(pre);
+    }
+    async function updLoadStatus() {
+      const t = _updT();
+      const cur = $("upd-current"), last = $("upd-last");
+      try {
+        const st = await api("/api/system/update/status", { polled: true });
+        if (cur) cur.textContent = st.current || "";
+        _updPaintInstall(st.install);
+        if (last) {
+          const r = st.last_result;
+          let say = "";
+          if (r && (r.status === "updated" || r.status === "already_current")) say = t("The last update was installed.");
+          else if (r && (r.status === "started" || r.status === "helper_failed")) say = t("The last update did not finish. If the app misbehaves, re-run the installer.");
+          else if (r && r.status === "start_failed_rolled_back_schema") say = t("The new version did not start, so the update was undone and the previous version started again. That version also changes the database, and may already have done so before failing: if the app misbehaves, restore your last backup or re-run the installer on the new version.");
+          else if (r && r.status === "start_failed_rolled_back") say = t("The new version did not start, so the update was undone and the previous version started again.");
+          else if (r && r.status === "dependencies_changed") say = t("The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).");
+          else if (r && r.status === "app_started_during_update") say = t("The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.");
+          else if (r && r.status === "start_unconfirmed") say = t("The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.");
+          else if (r && r.status === "rollback_incomplete") say = t("The last update failed and could not fully restore the previous version. Re-run the installer.");
+          else if (r) say = t("The last update was not applied; the previous version was kept.");
+          last.textContent = say;
+        }
+      } catch (e) { /* the check below reports its own failure */ }
+    }
+    async function updCheck() {
+      const t = _updT();
+      const msg = $("upd-msg"), go = $("upd-apply");
+      if (go) go.hidden = true;
+      if (msg) msg.textContent = "";
+      if (!await ensureOnline(t("Check GitHub for a newer version of the app"))) return;
+      if (msg) msg.textContent = t("Checking…");
+      try {
+        _updCheck = await api("/api/system/update/check", { method: "POST" });
+      } catch (e) {
+        _updCheck = null;
+        const code = e && e.detail && e.detail.code;
+        if (msg) msg.textContent = code === "airplane" ? t("Airplane mode is on: the update check did not run.")
+          : code === "protected_no_proxy" ? t("Protected mode has no usable proxy: the update check did not run.") : t("The update check failed.");
+        return;
+      }
+      const latest = $("upd-latest"); if (latest) latest.textContent = _updCheck.latest || "";
+      _updPaintInstall(_updCheck.install);
+      if (!_updCheck.update_available) { if (msg) msg.textContent = t("You are up to date."); return; }
+      if (msg) msg.textContent = t("A newer version is available.");
+      if (go) go.hidden = !(_updCheck.install && _updCheck.install.can_apply);
+    }
+    async function updApply() {
+      const t = _updT();
+      const msg = $("upd-msg");
+      if (!_updCheck || !_updCheck.update_available) return;
+      const protectedSay = t("Protected mode is on, so the update did not start: it would connect to GitHub directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.");
+      // Protected mode is refused by the server anyway: say so BEFORE the consent popup, which would otherwise take the app online for nothing.
+      try {
+        const st = await api("/api/system/update/status", { polled: true });
+        if (st && st.blocked === "protected") { if (msg) msg.textContent = protectedSay; return; }
+      } catch (_e) { /* the server's own refusal below still names it */ }
+      // The helper downloads after this app has stopped, where no socket guard reaches: so the ONE consent popup comes first (invariant #14),
+      // and the server refuses the apply anyway while airplane mode is on.
+      if (!await ensureOnline(t("Download the app update from GitHub"))) return;
+      if (!window.confirm(t("Update now? The app stops, the new version is downloaded with git from github.com, and the app starts again by itself. Your data folder is not touched. Nothing is installed without this click, and no package is downloaded: a version that changes the app's dependencies is left to the installer. The download uses a direct connection, which is why updating is refused in protected mode."))) return;
+      const go = $("upd-apply"), chk = $("upd-check");
+      if (go) go.disabled = true;
+      if (chk) chk.disabled = true;
+      try {
+        await api("/api/system/update/apply", { method: "POST", body: JSON.stringify({ confirm: true, ref: _updCheck.ref, sha: _updCheck.sha }) });
+        if (msg) msg.textContent = t("The app is stopping to update and will start again by itself. Reload this page in a minute.");
+        if (go) go.hidden = true;
+      } catch (e) {
+        const code = e && e.detail && e.detail.code;
+        let say = t("The update could not start; nothing was changed.");
+        if (e && typeof e.detail === "string" && e.detail) say += " (" + e.detail + ")";  // the server's own reason, a fixed sentence
+        if (code === "protected") say = protectedSay;
+        else if (code === "airplane") say = t("Airplane mode is on, so the update did not start. Go online first.");
+        if (msg) msg.textContent = say;
+        if (go) go.disabled = false;
+        if (chk) chk.disabled = false;
+      }
+    }
+    (function _updWire() {
+      const sec = document.querySelector('details[data-adv="update"]');
+      if (sec) sec.addEventListener("toggle", () => { if (sec.open) updLoadStatus(); });
+    })();

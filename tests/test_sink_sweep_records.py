@@ -982,6 +982,10 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_get_within', 'failure = failure_words(exc)'): 1,
         ('_default_get_json', 'failure = failure_words(exc)'): 1,
     },
+    'src/maintenance/self_update.py': {
+        # the update check: failure_words returns "HTTP <status>" or the exception's class name and nothing of its text, as the installer's does
+        ('_get_json', 'failure = failure_words(exc)'): 1,
+    },
     'src/llm/ollama.py': {
         # the SERVER'S OWN words of an HTTP status error (a response body or reason phrase, never a driver's or a held key); the exception is httpx's
         ('OllamaClient.generate', 'f"Ollama error for model {model!r}: {_http_error_text(exc)}"'): 1,

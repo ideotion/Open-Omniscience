@@ -589,23 +589,25 @@ def verify_feed(fetcher, feed_id: str) -> dict:
         raise KeyError(f"unknown feed id: {feed_id}")
     _fam, feed = hit
     verdict: dict = {"checked_at": datetime.now(UTC).isoformat(timespec="seconds")}
+    from src.ingest import kill_switch_engaged_since, kill_switch_epoch
+
+    epoch = kill_switch_epoch()  # the fetch's window, waits included (R614): a Stop pressed and cleared again inside it is a Stop
     try:
         text = _fetch_text(fetcher, feed["url"])
         events = parse_ics(text)
         verdict["status"] = "ok" if events else ("not_ical" if text else "empty")
         verdict["events"] = len(events)
     except Exception as exc:  # noqa: BLE001 - the verdict IS the error report
-        from src.ingest import kill_switch_active
         from src.ingest.fetch_verdict import classify_fetch_failure
 
         # Classify the WHOLE scrubbed text and cut only what is stored: the socket guard's sentence, as requests wraps it, ends past
         # 300 characters for a realistic URL, and a cut text reads as a host failure.
         full = record_text(exc)
         text = full[:300]
-        # OR the switch is engaged now: a Stop that lands mid-fetch reaches here in shapes the anchored sentence match rightly refuses
-        # (a robots read the refusal cut is "robots.txt ... could not be determined (unreachable)"), and a feed filed as unreachable
-        # under the person's own Stop moves up the ladder. The cost is a genuine failure coinciding with a Stop going unrecorded (R320).
-        if classify_fetch_failure(full) == "offline" or kill_switch_active():
+        # OR the switch is engaged now, or was since the fetch began (R614): a Stop that lands mid-fetch reaches here in shapes the
+        # anchored sentence match rightly refuses (a raw cut connection), and a feed filed as unreachable under the person's own Stop
+        # moves up the ladder. The cost is a genuine failure coinciding with a Stop going unrecorded (R320).
+        if classify_fetch_failure(full) == "offline" or kill_switch_engaged_since(epoch):
             # The network kill switch refused the fetch: nothing was asked of the host, so there is no verdict about it. Storing
             # "unreachable" would blame the feed for the person's own airplane mode AND move it up the re-check ladder (a month per
             # rung); the feed stays exactly as eligible as it was, and the caller is told why nothing was checked.
@@ -869,7 +871,7 @@ def auto_import_due_feeds(fetcher, *, batch: int = 8, min_interval_hours: float 
     that feed and the rest are not counted as failed and are not stamped, so the next pass asks them first (``picked`` then exceeds
     ``imported`` + ``failed``: the difference is the feeds the Stop kept from being asked).
     """
-    from src.ingest import kill_switch_active
+    from src.ingest import kill_switch_active, kill_switch_engaged_since, kill_switch_epoch
 
     state = _load_json("calendar_autoimport.json")
     attempts = load_attempts()
@@ -910,17 +912,19 @@ def auto_import_due_feeds(fetcher, *, batch: int = 8, min_interval_hours: float 
     picked = [fid for _, fid in due[: max(0, batch)]]
     imported = failed = 0
     for fid in picked:
+        epoch = kill_switch_epoch()  # this feed's window, waits included (R614), opened before the check that lets it go
         if kill_switch_active():
             break  # a Stop: the feeds not yet asked for are neither failures nor attempts, and stay exactly as due as they were
         try:
             import_feed(fetcher, fid)
             imported += 1
         except Exception as exc:  # noqa: BLE001 - one bad feed must not abort the batch
-            if kill_switch_active():
+            if kill_switch_engaged_since(epoch):
                 # The Stop cut THIS feed's check, in whatever shape the error took (a Stop inside the request arrives as the raw requests
-                # error, which no sentence match recognises, R298): nothing was asked of the host, so it is not a failure and, because the
-                # stamp below means "this feed was checked", it is not stamped either (R293/R294). The next pass asks it first. The cost is a
-                # genuine failure coinciding with a Stop going unrecorded (R320). No new tally key: a Stop is not an outcome.
+                # error, which no sentence match recognises, R298), still engaged or cleared again before the error arrived (R614):
+                # nothing was asked of the host, so it is not a failure and, because the stamp below means "this feed was checked", it is
+                # not stamped either (R293/R294). The next pass asks it first. The cost is a genuine failure coinciding with a Stop going
+                # unrecorded (R320). No new tally key: a Stop is not an outcome.
                 break
             secrets = _feed_secrets(fid)
             if secrets is None:

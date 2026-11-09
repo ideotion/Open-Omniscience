@@ -18,8 +18,8 @@ from src.api.cross_site import refuse_cross_site_get
 from src.api.ingestion import get_fetcher
 from src.database.models import Source
 from src.database.session import get_db
-from src.ingest import EthicalFetcher, kill_switch_active
-from src.ingest.fetch_verdict import is_kill_switch_refusal
+from src.ingest import EthicalFetcher, kill_switch_engaged_since, kill_switch_epoch
+from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL, is_kill_switch_refusal
 from src.monitoring.anomaly import volume_anomalies
 from src.monitoring.health import check_source
 
@@ -45,14 +45,22 @@ def sources_health(
         .limit(limit)
         .all()
     )
+    epoch = kill_switch_epoch()  # before the first probe (R614)
     results = [check_source(s, fetcher=fetcher).to_dict() for s in sources]
     # A probe the network kill switch refused never reached the host: counting it as "down" blames the source for the person's
-    # own setting (the per-source detail already names the switch, so the count has to as well).
-    stopped = kill_switch_active()
+    # own setting (the per-source detail already names the switch, so the count has to as well). The fetcher's own refusal is
+    # written before any request, so its WHOLE sentence at the start of the detail is the switch's whatever the switch reads now (a
+    # Stop cleared again before the count, R614); the whole sentence, not its head, because a detail can open with a host name
+    # (a redirect's hostname keeps its spaces, so a BlockedTarget for "network kill switch is active.evil.example" starts with the
+    # head) and every writer raises the full constant. The socket guard's sentence as requests wraps it is matched only when a Stop
+    # touched the sweep (R298).
+    stopped = kill_switch_engaged_since(epoch)
+
+    def _refused(detail: str | None) -> bool:
+        return detail is not None and (detail.startswith(KILL_SWITCH_REFUSAL) or (stopped and is_kill_switch_refusal(detail)))
+
     summary = Counter(
-        "refused_by_kill_switch"
-        if stopped and r["status"] == "down" and is_kill_switch_refusal(r.get("detail"))
-        else r["status"]
+        "refused_by_kill_switch" if r["status"] == "down" and _refused(r.get("detail")) else r["status"]
         for r in results
     )
     return {"checked": len(results), "limit": limit, "summary": dict(summary), "sources": results}
