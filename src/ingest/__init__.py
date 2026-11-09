@@ -1830,6 +1830,7 @@ class EthicalFetcher:
         proxies: dict[str, str] | None = None,
         stream: bool = False,
         chain: _RedirectChain | None = None,
+        hop_robots: bool = False,
     ):
         """The ONE redirect path: follow bounded redirects manually, re-running the
         SSRF guard on EVERY hop's target (CWE-918). Returns ``(response, final_url)``.
@@ -1837,9 +1838,14 @@ class EthicalFetcher:
         ``chain`` is given by the page fetch alone (``fetch`` -> ``_http_get``, R629): its
         scope is asked about every hop before the guard looks the hop's host up, and a hop
         to another host then takes that host's lock, robots.txt and interval before it is
-        requested (:meth:`_take_hop_host`). Every other caller passes none and keeps the
-        behaviour it had: the robots read (``_get_robots``, so ``declared_sitemaps`` too),
-        whose own hops are never made to read robots.txt again, and the two preflights.
+        requested (:meth:`_take_hop_host`); a hop on the same host is robots-checked again
+        when its robots key or path changed (R636). ``hop_robots`` is given by the source
+        preflight's homepage ping alone (R636): each hop it will request is robots-checked
+        the same way (:meth:`_recheck_hop_robots`), fail-closed, and nothing else is taken,
+        since the ping takes no lock and waits no interval. Every other caller passes
+        neither and keeps the behaviour it had: the robots reads (``_get_robots``, so
+        ``declared_sitemaps`` too, and both preflights' own reads of robots.txt), whose own
+        hops are never made to read robots.txt again, so a read can never recurse.
 
         Both the page fetch (``_http_get``, ``stream=True``) and the robots.txt
         fetch (``_get_robots``, ``stream=False``) route through here, so a 30x
@@ -1957,7 +1963,9 @@ class EthicalFetcher:
                         if hasattr(resp, "close"):
                             resp.close()
                         if chain is not None and hop < self._max_redirects:  # never for a hop the bound will not request
-                            self._take_hop_host(chain, nxt, p)
+                            self._take_hop_host(chain, current, nxt, p)
+                        elif hop_robots and hop < self._max_redirects:  # the homepage ping's hop (R636)
+                            self._recheck_hop_robots(current, nxt, p)
                         current = nxt
                         continue
                     return resp, str(getattr(resp, "url", current) or current)
@@ -1978,12 +1986,15 @@ class EthicalFetcher:
         if not inside:
             raise RedirectOutOfScope(f"redirect leaves the site the fetch is kept to, not followed: {failure_url(nxt)!r}")
 
-    def _take_hop_host(self, chain: _RedirectChain, nxt: str, p) -> None:
+    def _take_hop_host(self, chain: _RedirectChain, current: str, nxt: str, p) -> None:
         """Make a page fetch's hop to ANOTHER host a first request to it (R629), before it is requested.
 
         Another host is another host key (``_host_netloc``: the host and the port a request goes to), the key every per-host
-        record already uses. A hop on the same key (another path, or ``http`` -> ``https`` on the same host) is unchanged: it is
-        under that host's lock, and the robots decision and the interval of the first request stand for it. For another host,
+        record already uses. A hop on the same key (another path, or ``http`` -> ``https`` on the same host) stays under that
+        host's lock, and the interval of the first request stands for it (the interval is per host: a second wait would charge
+        one host twice). Its robots decision is taken again, fail-closed, when its robots key or path changed
+        (:meth:`_recheck_hop_robots`, R636): from the cached robots.txt for another path or query, and from the https robots.txt,
+        read under the lock already held, for an upgrade. For another host,
         in the order ``fetch()`` takes them for a first request, each fail-closed:
           - the chain's lock moves to the new host (the old one stamped and released first, never two held: see _RedirectChain);
           - its robots.txt (``_enforce_robots``: a disallow is RobotsDisallowed, an unreadable robots.txt RobotsUnavailable, the
@@ -1995,6 +2006,8 @@ class EthicalFetcher:
         robots.txt themselves, so a read can never recurse."""
         key = _host_netloc(p.netloc, p.scheme)
         if key == chain.netloc:
+            if self.respect_robots:
+                self._recheck_hop_robots(current, nxt, p)
             return
         if _KILL.is_set():
             raise FetchFailed(KILL_SWITCH_REFUSAL)
@@ -2006,6 +2019,31 @@ class EthicalFetcher:
         if _KILL.is_set():
             raise FetchFailed(KILL_SWITCH_REFUSAL)
         chain.requested = True
+
+    def _recheck_hop_robots(self, current: str, nxt: str, p) -> None:
+        """Refuse a redirect hop that robots.txt does not allow, when its robots key or path changed (R636), before it is requested.
+
+        ``current`` is the address that answered with the redirect; it was robots-checked before it was requested (the first by
+        ``fetch()``, each hop by this), so a hop to the same robots key and request target (:meth:`_robots_target`) is the same
+        decision and is not taken again. Any other hop is checked through ``_enforce_robots``, fail-closed, with the refusals and
+        the "(reached by a redirect)" words of a first request's: another path or query on the same key is answered by the cached
+        robots.txt (no new read), and another scheme or host by that key's robots.txt, read through ``_get_robots``, which passes
+        no chain and no ``hop_robots`` on, so a robots read never recurses. The query counts, since robots rules match the path
+        and the query together (``Disallow: /page?session`` refuses ``/page?session=1`` and allows ``/page?a=1``)."""
+        if self._robots_target(current) == self._robots_target(nxt):
+            return
+        key = _host_netloc(p.netloc, p.scheme)
+        self._enforce_robots(nxt, f"{p.scheme}://{key}", p._replace(netloc=key), hop=True)
+
+    @staticmethod
+    def _robots_target(url: str) -> tuple[str, str]:
+        """What one robots.txt decision about ``url`` is taken from (R636): its robots key (the scheme and the host key, which
+        name the robots.txt read) and the request target the rules are matched against (the path, its ``;params`` and the query,
+        as ``RobotFileParser.can_fetch`` matches them). The fragment is out: it is never sent. Two URLs with the same pair are one
+        decision. The callers have already parsed ``url``, so this does not raise."""
+        p = urlparse(url)
+        target = p.path + (f";{p.params}" if p.params else "") + (f"?{p.query}" if p.query else "")
+        return f"{p.scheme}://{_host_netloc(p.netloc, p.scheme)}", target
 
     @staticmethod
     def _refuse_parser_mismatch(url: str) -> None:
