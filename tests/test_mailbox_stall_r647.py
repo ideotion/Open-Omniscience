@@ -33,13 +33,15 @@ def _net():
 class _Server:
     """One loopback connection, answered by ``script`` (the lines received so far -> the reply, or None to stall)."""
 
-    def __init__(self, greeting: bytes | None, script):
+    def __init__(self, greeting: bytes | None, script, tls=None, handshake: bool = True):
         self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.listener.bind(("127.0.0.1", 0))
         self.listener.listen(1)
         self.port = self.listener.getsockname()[1]
         self.greeting = greeting
         self.script = script
+        self.tls = tls  # a server-side SSLContext, or None for plain
+        self.handshake = handshake  # False: accept the TCP connection and never answer the TLS handshake
         self.received: list[bytes] = []
         self.stalled = threading.Event()
         self.eof = threading.Event()
@@ -49,6 +51,15 @@ class _Server:
     def _run(self) -> None:
         conn, _ = self.listener.accept()
         conn.settimeout(30)
+        if self.tls is not None:
+            if not self.handshake:
+                self.stalled.set()
+                with conn:
+                    while conn.recv(4096):  # swallow the ClientHello, answer nothing, until the client goes
+                        pass
+                self.eof.set()
+                return
+            conn = self.tls.wrap_socket(conn, server_side=True)
         with conn:
             if self.greeting is None:
                 self.stalled.set()
@@ -214,3 +225,132 @@ def test_the_stop_shuts_every_registered_socket():
         ingest.unregister_mailbox_socket(a)
         a.close()
         b.close()
+
+
+# --- TLS, the default path (security read B on #1892) ----------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def tls_server_context(tmp_path_factory):
+    """A throwaway self-signed certificate for 127.0.0.1. (The pull's own TLS context does not verify it today; that is tracked
+    separately, and these tests are about the Stop, not about trust.)"""
+    import datetime
+    import ipaddress
+    import ssl
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")])
+    now = datetime.datetime.now(datetime.UTC)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(minutes=5))
+        .not_valid_after(now + datetime.timedelta(days=1))
+        .add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]), critical=False)
+        .sign(key, hashes.SHA256())
+    )
+    d = tmp_path_factory.mktemp("tls")
+    (d / "c.pem").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    (d / "k.pem").write_bytes(
+        key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    )
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(d / "c.pem", d / "k.pem")
+    return ctx
+
+
+def _pull_tls(fn, port: int):
+    t0 = time.monotonic()
+    raws = fn("127.0.0.1", "u", "p", use_ssl=True, port=port, limit=3)
+    return raws, time.monotonic() - t0
+
+
+@pytest.mark.parametrize("fn", [fetch_imap, fetch_pop3], ids=["imap", "pop3"])
+def test_a_stop_reaches_a_pull_stalled_in_the_tls_handshake(fn, tls_server_context):
+    """The plain socket is registered when the TCP connect returns, before the handshake: a server that never answers the
+    ClientHello is cut off by the Stop, not by the timeout."""
+    srv = _Server(None, lambda line: None, tls=tls_server_context, handshake=False)
+    try:
+        stopper = _stop_when(srv.stalled)
+        raws, took = _pull_tls(fn, srv.port)
+        stopper.join(5)
+        assert took < _PROMPT_S, f"the Stop did not reach the TLS handshake ({took:.1f} s)"
+        assert raws.stopped is True and list(raws) == []
+        assert not ingest._LIVE_MAILBOX_SOCKETS
+    finally:
+        srv.close()
+
+
+def test_a_stop_ends_a_tls_imap_pull_blocked_mid_session(tls_server_context):
+    srv = _Server(b"* OK ready\r\n", _imap_script, tls=tls_server_context)
+    try:
+        stopper = _stop_when(srv.stalled)
+        raws, took = _pull_tls(fetch_imap, srv.port)
+        stopper.join(5)
+        assert took < _PROMPT_S
+        assert raws.stopped is True and len(raws) == 1
+        assert srv.eof.wait(5)
+        assert [line.split(b" ", 2)[1].upper() for line in srv.received][-2:] == [b"FETCH", b"FETCH"]
+        assert not ingest._LIVE_MAILBOX_SOCKETS
+    finally:
+        srv.close()
+
+
+def test_a_stop_ends_a_tls_pop3_pull_blocked_mid_session(tls_server_context):
+    srv = _Server(b"+OK ready\r\n", _pop_script, tls=tls_server_context)
+    try:
+        stopper = _stop_when(srv.stalled)
+        raws, took = _pull_tls(fetch_pop3, srv.port)
+        stopper.join(5)
+        assert took < _PROMPT_S
+        assert raws.stopped is True and len(raws) == 1
+        assert not ingest._LIVE_MAILBOX_SOCKETS
+    finally:
+        srv.close()
+
+
+@pytest.mark.parametrize("fn", [fetch_imap, fetch_pop3], ids=["imap", "pop3"])
+def test_the_tls_constructors_carry_the_bounded_timeout(fn, tls_server_context, monkeypatch):
+    """Pins the timeout on the TLS path (security read B: removing it from IMAP4_SSL left every test green)."""
+    monkeypatch.setattr(email_mod, "MAILBOX_TIMEOUT_S", 0.5)
+    srv = _Server(None, lambda line: None, tls=tls_server_context, handshake=False)
+    try:
+        t0 = time.monotonic()
+        with pytest.raises(OSError):
+            fn("127.0.0.1", "u", "p", use_ssl=True, port=srv.port)
+        assert time.monotonic() - t0 < _PROMPT_S
+        assert not ingest._LIVE_MAILBOX_SOCKETS
+    finally:
+        srv.close()
+
+
+def test_a_stop_during_the_logout_read_still_reaches_the_socket():
+    """The socket stays registered until LOGOUT has been answered (security read B: it used to be forgotten first, so a server
+    stalling on LOGOUT held the pull for the whole timeout after a Stop)."""
+
+    def script(line: bytes) -> bytes | None:
+        tag, _, rest = line.partition(b" ")
+        if rest.split(b" ", 1)[0].upper() == b"LOGOUT":
+            return None
+        if rest.split(b" ", 1)[0].upper() == b"SEARCH":
+            return b"* SEARCH\r\n" + tag + b" OK done\r\n"
+        return _imap_script(line)
+
+    srv = _Server(b"* OK ready\r\n", script)
+    try:
+        stopper = _stop_when(srv.stalled)
+        raws, took = _pull(fetch_imap, srv.port)
+        stopper.join(5)
+        assert took < _PROMPT_S, f"the Stop did not reach the LOGOUT read ({took:.1f} s)"
+        assert list(raws) == []
+        assert not ingest._LIVE_MAILBOX_SOCKETS
+    finally:
+        srv.close()

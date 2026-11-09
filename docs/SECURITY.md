@@ -379,8 +379,10 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   way, and a failure that surfaces after the Stop still keeps what was fetched. **The window (R647):**
   the switch is read, then the command is written; a Stop that lands between the two lets that ONE
   command go out (no second one can: the next read of the switch comes first, and the Stop has already
-  shut the socket down). The live socket is registered for the Stop the moment it exists, before the
-  greeting is read, and `activate_kill_switch` shuts it down at the TCP level (no LOGOUT/QUIT, no TLS
+  shut the socket down). The live socket is registered for the Stop the moment its TCP connect returns,
+  before any TLS handshake (the switch is read again before the handshake starts, so a Stop that landed
+  during the connect lets no TLS byte out) and before the greeting is read, and it stays registered until
+  LOGOUT/QUIT has been answered; `activate_kill_switch` shuts it down at the TCP level (no LOGOUT/QUIT, no TLS
   close record), so a pull blocked on a server that stopped answering ends at the Stop, not at its
   timeout; every read and write also gives up after 60 s (`MAILBOX_TIMEOUT_S`). A command already on
   the wire when the Stop lands gets no answer read back; httpx

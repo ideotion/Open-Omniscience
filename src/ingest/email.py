@@ -19,8 +19,10 @@ from __future__ import annotations
 
 import contextlib
 import email
+import imaplib
 import ipaddress
 import logging
+import poplib
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -29,7 +31,7 @@ from email.message import Message
 from email.utils import getaddresses, parsedate_to_datetime
 from html import unescape
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from sqlalchemy import Table, or_
 from sqlalchemy.orm import Session
@@ -326,8 +328,8 @@ MAILBOX_TIMEOUT_S = 60.0
 
 
 def _stop_aware(cls):  # type: ignore[no-untyped-def]
-    """``cls`` (an imaplib or poplib class) with its socket registered for the Stop the moment it exists, before the greeting is read
-    (R647: ``activate_kill_switch`` shuts it down, so a pull blocked on a stalled server ends at once), and with the one command imaplib
+    """``cls`` (an imaplib or poplib class) with its socket registered for the Stop the moment the TCP connect returns, before any TLS
+    handshake and before the greeting is read (R647: ``activate_kill_switch`` shuts it down, so a pull blocked on a stalled server ends at once), and with the one command imaplib
     sends on its OWN -- CAPABILITY, from the constructor when the greeting carries none and from ``login`` when its reply carries none --
     held to the switch like every command this module sends (R640, security read B: a Stop during LOGIN let a CAPABILITY out). Anything
     that is not a class (a test's stand-in) is returned as is."""
@@ -336,11 +338,38 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
 
     class _StopAware(cls):  # type: ignore[valid-type,misc]
         def _create_socket(self, timeout):  # type: ignore[no-untyped-def]
-            sock = super()._create_socket(timeout)
-            from src.ingest import register_mailbox_socket
+            from src.ingest import register_mailbox_socket, unregister_mailbox_socket
 
-            register_mailbox_socket(sock)
-            return sock
+            # The TLS classes' own ``_create_socket`` connects AND completes the TLS handshake before returning, so registering what
+            # it returns left a Stop unable to reach a server stalled in the handshake (security read B on #1892). So the plain
+            # socket is made by the plain class, registered as soon as the TCP connect returns, and only then wrapped, with the
+            # handshake run here after a second read of the switch: no TLS byte goes out after a Stop that landed during the connect.
+            ctx = getattr(self, "ssl_context", None) if isinstance(self, imaplib.IMAP4_SSL) else None
+            if isinstance(self, poplib.POP3_SSL):
+                ctx = getattr(self, "context", None)
+            plain: Any = imaplib.IMAP4 if isinstance(self, imaplib.IMAP4) else poplib.POP3
+            raw = plain._create_socket(self, timeout) if ctx is not None else super()._create_socket(timeout)
+            register_mailbox_socket(raw)
+            if ctx is None:
+                return raw
+            tls = None
+            try:
+                if _stop_requested():
+                    raise _MailboxStopped
+                tls = ctx.wrap_socket(raw, server_hostname=self.host, do_handshake_on_connect=False)
+                register_mailbox_socket(tls)
+                if _stop_requested():
+                    raise _MailboxStopped
+                tls.do_handshake()
+            except BaseException:
+                # The constructor raises before it holds the socket, so nothing else would close it.
+                unregister_mailbox_socket(tls)
+                with contextlib.suppress(Exception):
+                    (tls or raw).close()
+                raise
+            finally:
+                unregister_mailbox_socket(raw)  # detached by the wrap (or closed above); the TLS socket is the live one now
+            return tls
 
         def _get_capabilities(self):  # type: ignore[no-untyped-def]
             if _stop_requested():
@@ -455,7 +484,6 @@ def fetch_imap(
         raise
     finally:
         if own_conn:
-            _forget_socket(conn)
             if raws.stopped or _stop_requested():
                 _drop_connection(conn, "shutdown")
             else:
@@ -463,6 +491,8 @@ def fetch_imap(
                     conn.logout()
                 except Exception:  # noqa: BLE001 - logout failure must not mask the result
                     pass
+            # Only now: a Stop during the LOGOUT read must still reach the socket (security read B on #1892).
+            _forget_socket(conn)
 
 
 def fetch_pop3(
@@ -493,7 +523,8 @@ def fetch_pop3(
         import poplib
 
         try:
-            # poplib closes its own socket when its constructor raises.
+            # poplib does NOT close its socket when its constructor raises (imaplib does); after a Stop it is already shut down, and
+            # it is closed when collected. A TLS socket whose handshake failed is closed by _stop_aware itself.
             if use_ssl:
                 conn = _stop_aware(poplib.POP3_SSL)(host, port or 995, timeout=MAILBOX_TIMEOUT_S)
             else:
@@ -534,7 +565,6 @@ def fetch_pop3(
         raise
     finally:
         if own_conn:
-            _forget_socket(conn)
             if raws.stopped or _stop_requested():
                 _drop_connection(conn, "close")
             else:
@@ -542,6 +572,7 @@ def fetch_pop3(
                     conn.quit()
                 except Exception:  # noqa: BLE001
                     pass
+            _forget_socket(conn)  # after QUIT, as in fetch_imap
 
 
 def fetch_mailbox(protocol: str, host: str, user: str, password: str, **kwargs) -> MailboxPull:
