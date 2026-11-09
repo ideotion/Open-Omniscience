@@ -1030,7 +1030,7 @@ _GUARDED_MODULES = {
                 "its `except Exception` around the connect and every `except Exception` of the pull raise the library's own error again as it was when the kill switch is not engaged; its only callers, ingest_email_endpoint (inside `with scrub_and_reraise` naming the mailbox password) and _mailbox_pull_worker (http_detail with the password), are read by this guard in api/ingestion and write what they catch with the password out of it"
             ),
             "fetch_pop3": (
-                "its `except Exception` around the connect and every `except Exception` of the pull raise the library's own error again as it was when the kill switch is not engaged; its only callers, ingest_email_endpoint (inside `with scrub_and_reraise` naming the mailbox password) and _mailbox_pull_worker (http_detail with the password), are read by this guard in api/ingestion and write what they catch with the password out of it"
+                "its `except Exception` around the connect and every `except Exception` of the pull raise the library's own error again as it was when the kill switch is not engaged; its only caller is fetch_mailbox, reached from _mailbox_pull_worker (http_detail with the password), which this guard reads in api/ingestion and which writes what it catches with the password out of it"
             ),
         },
     ),
