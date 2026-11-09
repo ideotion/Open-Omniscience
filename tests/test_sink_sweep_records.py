@@ -55,6 +55,7 @@ _S5_MODULES: set[str] = {m for m in MODULES if m.split("/")[1] not in _SWEEP_DON
 #: second one in the same file is reported.
 NOT_RECORDS: dict[str, dict[str, int]] = {
     "src/api/heavy.py": {"db.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: the enclosing statement deadline
+    "src/analytics/day_counts.py": {"session.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: one request's memo of the live per-day sums (R625)
     "src/analytics/rollup_serve.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},  # ``_library_replaced(exc)`` walks the exception's ``__cause__``/``__context__`` chain for the generation guard's class; it reads no text, stores nothing and logs nothing
     # RobotsUnavailable's own ``cause`` word, not an exception; and ``_carries_airplane_refusal(exc)`` (R620), which walks the exception's
     # ``__cause__``/``__context__``/``args``/``MaxRetryError.reason`` links for the guard's class: it reads no text, stores nothing and logs
@@ -398,7 +399,12 @@ _MONITORING_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     'src/monitoring/integrity.py': {  # _budget_spent is a bool classifier (statement deadline expired and "interrupt" in the text); the text goes nowhere
         ('_budget_spent', 'return deadline_expired(session) and "interrupt" in str(exc).lower()'): 1,
         ('_scalar', 'if _budget_spent(session, exc):'): 1,
-        ('corpus_integrity', 'if _budget_spent(session, exc):'): 2,
+        ('corpus_integrity', 'if _budget_spent(session, exc):'): 1,
+        # the range and table scans keep the exception OBJECT only to re-raise it after saving their place (the enclosing deadline types it);
+        # no text of it is read, and _budget_spent is the same bool classifier
+        ('_range_scan', 'interrupted = exc'): 1,
+        ('_fk_scan', 'if _budget_spent(session, exc):'): 2,
+        ('_fk_scan', 'interrupted = exc'): 1,
     },
     'src/monitoring/keyword_write_cost.py': {  # engine_text is record_text (a driver by class only): _cut_reason's text is composed by it
         ('keyword_write_cost', 'cut = _cut_reason(exc)'): 1,

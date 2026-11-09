@@ -240,9 +240,39 @@
     // When the Diagnostics section opens: the Thorough box is empty (R124: never remembered, so a run
     // that was thorough once is not thorough the next time by default), and the link shows the last
     // archive. The link is a courtesy line: a status that cannot be read leaves it as it was.
+    // THE THOROUGH BOX WARNS BEFORE IT PAUSES COLLECTION (R459, F9 of the 2026-11-07 Windows run: 53 minutes on a large corpus). The line is
+    // visible while the box is ticked, never behind a hover: the expected time comes from /api/diagnostics/all-job/estimate (this machine's own
+    // scan times scaled by its mention rows, the field medians for a scan never timed here) and says how much of it is measured here.
+    function _thoroughNoteText(est) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s2, v) => String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
+      const th = est && est.thorough;
+      if (!th || typeof th.est_s !== "number" || !(th.scans > 0)) {
+        return t("Thorough pauses collection while every scan runs, each up to five minutes; this machine could not give an expected time.");
+      }
+      return tf(
+        "Thorough pauses collection for about {minutes} min: {timed} of {total} scans timed on this machine, the rest from field medians. It can take longer; Quick stops after about ten minutes.",
+        {minutes: Math.max(1, Math.round(th.est_s / 60)), timed: th.from_this_machine || 0, total: th.scans}
+      );
+    }
+    async function paintThoroughNote() {
+      const note = $("diag-thorough-note");
+      const box = $("diag-thorough");
+      if (!note || !box) return;
+      if (!box.checked) { note.hidden = true; note.textContent = ""; return; }
+      let est = null;
+      try { est = await api("/api/diagnostics/all-job/estimate"); } catch (_e) { est = null; }
+      if (!box.checked) return;   // unticked while the estimate was coming
+      note.textContent = _thoroughNoteText(est);
+      note.hidden = false;
+    }
+    let _thoroughNoteBound = false;
     async function diagnosticsPanelOpened() {
       const box = $("diag-thorough");
       if (box) box.checked = false;
+      if (box && !_thoroughNoteBound) { _thoroughNoteBound = true; box.addEventListener("change", paintThoroughNote); }
+      paintThoroughNote();
       try {
         const s = await api("/api/diagnostics/all-job/status");
         _paintDiagAgain(s && s.last_archive);

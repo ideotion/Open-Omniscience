@@ -248,3 +248,60 @@ def scans_block(
         "declined": declined,
         "scan_seconds": round(sum(float(r.get("wall_s") or 0.0) for r in scans), 1),
     }
+
+
+#: Where a build keeps how long each scan took, per scan, with the mention-row count of that day (the app-state key-value store).
+SCAN_WALLS_KEY = "diagnostics.scan_walls.v1"
+
+
+def walls_to_remember(results: list[dict[str, Any]], rows_now: int | None, at_iso: str) -> dict[str, dict[str, Any]]:
+    """What a finished build teaches the next estimate: for each scan that did its own work, its wall time and the mention rows then.
+
+    A scan that did not begin, was declined, or ended on the BUDGET's deadline (not its own) says nothing about its cost and is left out; one
+    that reached its own 300 s deadline is kept at that figure (it cost at least that). No rows reading, nothing to scale by: nothing kept."""
+    if not rows_now or rows_now <= 0:
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for r in results:
+        name = r.get("file")
+        if name not in SCAN_EST_S or r.get("budget_cut") or r.get("outcome") not in ("ok", "partial-deadline"):
+            continue
+        wall = r.get("wall_s")
+        if isinstance(wall, int | float) and wall >= 0:
+            out[str(name)] = {"wall_s": round(float(wall), 1), "rows": int(rows_now), "at": at_iso}
+    return out
+
+
+def thorough_estimate(
+    history: dict[str, Any] | None, rows_now: int | None, table: dict[str, float] | None = None
+) -> dict[str, Any]:
+    """How long a Thorough build is expected to hold the machine, read from THIS machine's earlier builds where it has them.
+
+    Per scan: the wall time it took here last time, scaled by the mention rows now against the rows then (a scan's cost is assumed to grow
+    with them: an assumption, named in ``basis``), and never above its 300 s deadline, which every scan in Thorough runs under. A scan this
+    machine has not timed uses the field median of :data:`SCAN_EST_S`. The figure is the SUM, because the scans run one after another. It is an
+    estimate and says so: the field table's own medians undershot on the largest corpus read (card-audit 60.5 s expected, 302 s taken)."""
+    est = SCAN_EST_S if table is None else table
+    hist = history if isinstance(history, dict) else {}
+    total = 0.0
+    from_history = 0
+    for name, table_s in est.items():
+        h = hist.get(name)
+        wall, rows = (h.get("wall_s"), h.get("rows")) if isinstance(h, dict) else (None, None)
+        if isinstance(wall, int | float) and isinstance(rows, int) and rows > 0 and rows_now and rows_now > 0:
+            total += min(DEFAULT_SCAN_S, float(wall) * rows_now / rows)
+            from_history += 1
+        else:
+            total += min(DEFAULT_SCAN_S, float(table_s))
+    return {
+        "est_s": round(total),
+        "scans": len(est),
+        "from_this_machine": from_history,
+        "from_field_medians": len(est) - from_history,
+        "basis": (
+            "each scan's time on this machine's last build, scaled by today's mention rows against that day's (an assumption: cost grows with them), "
+            "never above its 300 s deadline; a scan not yet timed here uses the field median"
+        ),
+        "pauses_collection": True,
+    }
+

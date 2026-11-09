@@ -229,8 +229,17 @@ def test_the_newsletter_removal_holds_the_gate_for_one_chunk_at_a_time(gated, ga
     widths = gate_log.hold_widths("delete-articles")
     assert -1 not in widths, "an article DELETE ran outside any hold of the gate"
     assert [w for w in widths if w] == [1, 1, 1]  # the holds that carry a DELETE; the counter repair after them carries none
-    # The holds were not nested in a longer one: each chunk found the gate free.
-    assert gate_log.free_on_entry[:3] == [True, True, True]
+    # The holds were not nested in a longer one: each chunk found the gate free. (Each chunk's epoch bump re-enters
+    # the gate INSIDE its chunk's hold, R632 delta; only the outermost entries say whether a hold was nested.)
+    outer, depth, k = [], 0, 0
+    for e in gate_log.events:
+        if e == "enter":
+            if depth == 0:
+                outer.append(gate_log.free_on_entry[k])
+            depth, k = depth + 1, k + 1
+        elif e == "exit":
+            depth -= 1
+    assert outer[:3] == [True, True, True]
     gated.expire_all()
     assert [r[0] for r in _persisted(gated, "SELECT id FROM articles")] == [keep_id]  # committed, not only pending in the session
     assert [a.id for a in gated.query(Article).all()] == [keep_id]
