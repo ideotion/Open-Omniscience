@@ -209,8 +209,13 @@ def test_a_connect_on_a_descriptor_numbered_past_1024_works():
     waits on a selector instead (security read A on #1899)."""
     resource = pytest.importorskip("resource")
 
-    soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
-    if soft != resource.RLIM_INFINITY and soft < 1200:
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft != resource.RLIM_INFINITY and soft < 1200 and (hard == resource.RLIM_INFINITY or hard >= 1200):
+        resource.setrlimit(resource.RLIMIT_NOFILE, (1200, hard))  # a typical soft limit is 1024; restored below
+        request_restore = soft
+    else:
+        request_restore = None
+    if request_restore is None and soft != resource.RLIM_INFINITY and soft < 1200:
         pytest.skip(f"the open-file limit ({soft}) is below what the test needs")
     lst = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     lst.bind(("127.0.0.1", 0))
@@ -227,6 +232,17 @@ def test_a_connect_on_a_descriptor_numbered_past_1024_works():
         for f in fillers:
             f.close()
         lst.close()
+        if request_restore is not None:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (request_restore, hard))
+
+
+def test_the_imaplib_open_audit_event_is_still_raised(monkeypatch):
+    seen: list[tuple] = []
+    monkeypatch.setattr(email_mod.sys, "audit", lambda event, *args: seen.append((event, args[1:])))
+    monkeypatch.setattr(email_mod, "_connect_registered", lambda *a: (_ for _ in ()).throw(ConnectionRefusedError("spy")))
+    with pytest.raises(OSError):
+        fetch_imap("127.0.0.1", "u", "p", use_ssl=False, port=1)
+    assert ("imaplib.open", ("127.0.0.1", 1)) in seen
 
 
 def test_a_zero_timeout_is_refused_as_create_connection_refuses_it():

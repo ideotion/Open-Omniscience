@@ -29,6 +29,7 @@ import re
 import selectors
 import socket
 import ssl
+import sys
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -543,6 +544,8 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
             ctx = getattr(self, "ssl_context", None) if isinstance(self, imaplib.IMAP4_SSL) else None
             if isinstance(self, poplib.POP3_SSL):
                 ctx = getattr(self, "context", None)
+            if isinstance(self, imaplib.IMAP4):
+                sys.audit("imaplib.open", self, self.host, self.port)  # raised by the IMAP4._create_socket this replaces
             raw = _connect_registered(self.host, self.port, timeout)
             register_mailbox_socket(raw)
             if ctx is None:
