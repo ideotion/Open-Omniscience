@@ -3266,7 +3266,6 @@
       </div>
       <div class="row small" style="margin-top:2px">
         <button type="button" id="all-diag-again" class="linkish" data-on-click="downloadDiagnosticsVolumes(this)" hidden title="Saves the Diagnostics built last again, without a new build: the same one file, or the same numbered .zip files of at most 4 MB each (type a part number in the box that appears to start from it; every file opens on its own in any unzip tool). It never starts a new build.">Save the last Diagnostics again</button>
-        <button type="button" id="fc-open-link" class="linkish" data-on-click="fieldChecksOpen()" title="Opens the Field checks section of Advanced, right after this one: the checks no test machine can run, which only this computer can answer. The number counts the checks for this system that have no result yet in this session.">Field checks <span id="fc-count-link"></span></button>
         <button type="button" class="linkish" data-on-click="downloadKeywordParts(this, 'all')" title="Every keyword in the corpus (not just the top 5000 per language), as numbered .zip files of at most 4 MB each: the first files hold every language's top 5,000, so if you cannot send them all, send them in number order. No total size cap. It is written to disk a batch at a time, so the app's memory stays flat, but a big corpus makes many files (the page says how many before you save any) and takes minutes, and the export stops with a clear message if memory or disk runs short.">All keywords</button>
       </div>
       <!-- The ONE bar that saves a numbered set (keyword files or the diagnostics archive), five files
@@ -3283,6 +3282,11 @@
           <input id="parts-from" type="number" min="1" value="1">
         </label>
         <button id="parts-from-go" class="secondary" data-on-click="partsSaveFrom()" hidden>Save from this part</button>
+      </div>
+      <!-- The way to the Field checks section (field report 2026-11-09: "I can't find the button for the
+           field testing"). AFTER the parts bar: only the buttons that fill the bar may sit above it. -->
+      <div class="row small" style="margin-top:2px">
+        <button type="button" id="fc-open-link" class="linkish" data-on-click="fieldChecksOpen()" title="Opens the Field checks section of Advanced, right after this one: the checks no test machine can run, which only this computer can answer. The number counts the checks for this system that have no result yet in this session.">Field checks <span id="fc-count-link"></span></button>
       </div>
       <!-- Session forensics (E2, #596): the previous-session clean/unclean verdict (with the
            OOM-inference wording shown verbatim as a caveat), the last unlock's phase timings +
