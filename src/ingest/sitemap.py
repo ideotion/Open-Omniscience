@@ -47,8 +47,9 @@ from defusedxml.ElementTree import fromstring as _safe_fromstring
 from sqlalchemy.orm import Session
 
 from src.database.models import Source
-from src.ingest import EthicalFetcher, FetchError
-from src.ingest.crawl import _registrable_host
+from src.ingest import EthicalFetcher, FetchError, _carries_userinfo
+from src.ingest.crawl import _off_site, _registrable_host
+from src.ingest.fetch_verdict import failure_url
 from src.ingest.pipeline import IngestResult, ingest_url
 from src.monitoring.secret_scrub import record_text
 
@@ -219,23 +220,24 @@ def discover_sitemap_urls(
             continue
         visited.add(sm_url)
 
-        if _registrable_host(urlparse(sm_url).netloc) != base_host:
-            report.skipped_off_host.append(sm_url)
+        # the host the fetch would go to (after the last ``@``), and never a child that carries a userinfo (R624)
+        if _off_site(urlparse(sm_url).netloc, base_host):
+            report.skipped_off_host.append(failure_url(sm_url))  # a report line: the userinfo masked (R621)
             continue
         if sm_url.lower().split("?")[0].endswith(".gz"):
-            report.errors.append(f"unsupported (gzip): {sm_url}")
+            report.errors.append(f"unsupported (gzip): {failure_url(sm_url)}")
             continue
 
         tried += 1
         try:
             fetched = fetcher.fetch(sm_url, require_html=False)
         except FetchError as exc:
-            report.errors.append(f"{sm_url}: {record_text(exc, typed=False)}")
+            report.errors.append(f"{failure_url(sm_url)}: {record_text(exc, typed=False)}")
             continue
         try:
             parsed = parse_sitemap_xml(fetched.content)
         except SitemapError as exc:
-            report.errors.append(f"{sm_url}: {record_text(exc, typed=False)}")
+            report.errors.append(f"{failure_url(sm_url)}: {record_text(exc, typed=False)}")
             continue
 
         report.child_sitemaps_fetched += 1
@@ -253,6 +255,10 @@ def discover_sitemap_urls(
             if len(report.urls) >= max_urls:
                 report.stopped_reason = "max_urls"
                 break
+            if _carries_userinfo(entry.loc):
+                # R630: a page address written with a user name or password is never fetched or stored, as a child sitemap
+                report.skipped_off_host.append(failure_url(entry.loc))
+                continue
             if entry.loc not in seen_urls:
                 seen_urls.add(entry.loc)
                 report.urls.append(entry.loc)

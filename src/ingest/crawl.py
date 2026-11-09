@@ -29,7 +29,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, field
 from typing import cast
-from urllib.parse import urldefrag, urljoin, urlparse
+from urllib.parse import urldefrag, urljoin, urlparse, urlsplit
 
 from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
@@ -41,6 +41,8 @@ from src.ingest import (
     FetchError,
     RobotsDisallowed,
     RobotsUnavailable,
+    _carries_userinfo,
+    _host_netloc,
 )
 from src.ingest.pipeline import IngestResult, _exists, store_fetched
 from src.utils.url_utils import canonicalize_url
@@ -110,9 +112,36 @@ class CrawlReport:
 
 
 def _registrable_host(netloc: str) -> str:
-    """Lowercased host without a leading ``www.`` (cheap same-site heuristic)."""
-    host = netloc.lower().split(":")[0]
+    """The host a request to ``netloc`` goes to, without its port or a leading ``www.`` (cheap same-site heuristic).
+
+    Read out of the fetcher's host key (:func:`src.ingest._host_netloc`, R624): the host is what follows the LAST ``@``, as
+    ``urllib.parse`` reads it (lower-cased, an IPv6 literal without its brackets), so ``good.example:x@evil.example`` is
+    ``evil.example``. Before, the netloc was lower-cased and cut at its first ``:`` with the userinfo still in it: that link
+    read as ``good.example``, and a crawl or a sitemap index kept to good.example followed it to evil.example (robots, the SSRF
+    guard and politeness still applied there; the crawl's scope did not). The same cut read a real same-host userinfo
+    (``u:p@good.example``) as ``u``, and every IPv6 literal as ``[`` and its first group.
+
+    The port is left out, as before: the check is same-site, not same-origin, and the sitemap compares with a bare domain that
+    has no scheme to name a default port by. A trailing dot stays, as in the key. Never raises: a key ``urllib.parse`` cannot
+    read again comes back as written, which names no readable host (the fetcher refuses such a URL)."""
+    key = _host_netloc(netloc)
+    try:
+        host = urlsplit("//" + key).hostname or ""
+    except ValueError:  # a defence: on Python 3.13 the callers' own urlparse already raises on what would reach it
+        host = key
     return host[4:] if host.startswith("www.") else host
+
+
+def _off_site(netloc: str, base_host: str) -> bool:
+    """Whether a harvested link or a child sitemap with ``netloc`` is outside the site ``base_host`` (R624).
+
+    A netloc holding an ``@`` is ALWAYS off-site, even when the host after it is the site: following it would send that
+    userinfo to the site as a login (requests turns it into an ``Authorization`` header) and write it into the stored article
+    URL, the canonical URL and a saved sitemap address (the independent read of R624, S1). The fetcher's other lane already
+    refuses any userinfo (``src/safety/fetcher.py``), and before R624 such a link read as the host ``u`` and was never followed.
+    The site's own host, read from the start URL or the source's domain, still goes through :func:`_registrable_host`, so a
+    start URL the operator wrote with a login keeps its host."""
+    return "@" in netloc or _registrable_host(netloc) != base_host
 
 
 def _harvest_links(html: str, base_url: str) -> list[str]:
@@ -205,7 +234,11 @@ def crawl_source(
             if depth >= cfg.max_depth:
                 continue
             for link in _harvest_links(fetched.content, fetched.final_url):
-                if cfg.same_domain_only and _registrable_host(urlparse(link).netloc) != base_host:
+                if _carries_userinfo(link):
+                    # R630: a link written with a user name or password is never followed or stored, whatever the scope:
+                    # requests would send it as a login and it would land in the stored URLs (R624's read)
+                    continue
+                if cfg.same_domain_only and _off_site(urlparse(link).netloc, base_host):
                     continue
                 canon = canonicalize_url(link)
                 if canon in queued:
