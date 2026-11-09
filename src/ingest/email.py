@@ -381,15 +381,20 @@ def _certificate_refusal(host: str, scrubbed: str, *, sent: str = "no command or
 _OPENSSL_REASON = re.compile(r"^(?:\[SSL: [A-Z0-9_]+\] )?(?P<reason>.+?)(?: \(_ssl\.c:\d+\))?$")
 
 
-def _tls_refusal(host: str, port: int, scrubbed: str, *, sent: str) -> MailboxTlsRefusal:
+#: The advice after a TLS failure on a TLS port, and after one that followed an accepted STARTTLS (security reads on #1898: "143/110
+#: upgrade with STARTTLS" misled a user of the app's form, which always speaks TLS at once).
+_TLS_PORT_HINT = "Check the port: a mail server's TLS port is usually 993 for IMAP and 995 for POP3."
+_STARTTLS_HINT = "The server accepted the upgrade to TLS, but no TLS connection followed."
+
+
+def _tls_refusal(host: str, port: int, scrubbed: str, *, sent: str, hint: str = _TLS_PORT_HINT) -> MailboxTlsRefusal:
     """A TLS connection that failed for another reason than the certificate (a plain server on a TLS port, a server that only speaks
     TLS 1.0/1.1, a broken handshake): refused like the certificate, naming the host, the port and OpenSSL's reason (security read B
     on #1895: these used to surface as OpenSSL's raw text, with neither the server nor what was not sent)."""
     found = _OPENSSL_REASON.search(scrubbed)
     reason = found.group("reason") if found else scrubbed
     return MailboxTlsRefusal(
-        f"refused before logging in, {sent}: no TLS connection could be made with the mail server {host} on port {port} ({reason}). "
-        "Check the port: 993/995 speak TLS at once, 143/110 upgrade with STARTTLS."
+        f"refused before logging in, {sent}: no TLS connection could be made with the mail server {host} on port {port} ({reason}). {hint}"
     )
 
 
@@ -498,7 +503,16 @@ def _registered_tls(ctx: ssl.SSLContext, raw: Any, host: str) -> Any:
         register_mailbox_socket(tls)
         if _stop_requested():
             raise _MailboxStopped
-        tls.do_handshake()
+        try:
+            tls.do_handshake()
+        except ssl.SSLError:
+            raise
+        except OSError as exc:
+            # A timeout or a dropped connection during the handshake is a TLS failure like any other (security read A on #1898: it
+            # surfaced as "_ssl.c:1018: The handshake operation timed out", with neither the server nor what was not sent). A Stop
+            # that shut the socket down still reads as the Stop: every caller reads the switch before mapping an SSLError.
+            timed_out = isinstance(exc, TimeoutError)
+            raise ssl.SSLError("the TLS handshake timed out" if timed_out else "the connection closed during the TLS handshake") from None
     except BaseException:
         # A constructor raises before it holds the socket, and a failed STARTTLS leaves the connection's own socket detached, so
         # nothing else would close it.
@@ -521,7 +535,22 @@ def _upgraded(raw: Any, host: str, port: int) -> Any:
     except ssl.SSLError as exc:
         if _stop_requested():
             raise _MailboxStopped from None
-        raise _tls_refusal(host, port, record_text(exc, limit=300), sent="no password sent") from None
+        raise _tls_refusal(host, port, record_text(exc, limit=300), sent="no password sent", hint=_STARTTLS_HINT) from None
+
+
+def _rebind_reader(conn) -> None:  # type: ignore[no-untyped-def]
+    """Read the upgraded socket from here on, with nothing the server sent in plaintext carried past the upgrade (security read A on
+    #1898): a fresh reader (``file`` on 3.13; a read-only property over ``_file`` and a ``_readbuf`` on 3.14), an emptied read buffer,
+    and no untagged response kept (RFC 3501 6.2.1, the STARTTLS response-injection class)."""
+    fresh = conn.sock.makefile("rb")
+    if isinstance(getattr(type(conn), "file", None), property):
+        conn._file = fresh
+    else:
+        conn.file = fresh
+    if hasattr(conn, "_readbuf"):
+        conn._readbuf = []
+    if hasattr(conn, "untagged_responses"):
+        conn.untagged_responses = {}
 
 
 def _stop_aware(cls):  # type: ignore[no-untyped-def]
@@ -559,18 +588,25 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
             if _stop_requested():
                 raise _MailboxStopped
             if isinstance(self, imaplib.IMAP4):
+                if self.state != "NONAUTH":
+                    raise _starttls_refusal(self.host, port, "greeted the pull as already logged in (PREAUTH), where no upgrade is possible")
                 if "STARTTLS" not in self.capabilities:
                     raise _starttls_refusal(self.host, port, "does not offer STARTTLS")
                 try:
                     typ, _ = self._simple_command("STARTTLS")
-                except (_MailboxStopped, OSError):
+                except _MailboxStopped:
                     raise
-                except Exception:  # noqa: BLE001 - imaplib's own error class (a BAD answer): the server refused the upgrade
-                    raise _starttls_refusal(self.host, port, "refused STARTTLS") from None
+                except Exception as exc:  # noqa: BLE001 - imaplib's own classes: abort (the connection was lost), error (a BAD answer)
+                    if _stop_requested():
+                        raise _MailboxStopped from None  # the Stop shut the socket down while the answer was awaited
+                    lost = isinstance(exc, (self.abort, OSError))
+                    raise _starttls_refusal(
+                        self.host, port, "closed the connection before answering STARTTLS" if lost else "refused STARTTLS"
+                    ) from None
                 if typ != "OK":
                     raise _starttls_refusal(self.host, port, f"answered STARTTLS with {typ}")
                 self.sock = _upgraded(self.sock, self.host, port)  # type: ignore[has-type]
-                self.file = self.sock.makefile("rb")
+                _rebind_reader(self)
                 self._tls_established = True
                 self._get_capabilities()  # what the server offered in plaintext is not trusted past the upgrade (RFC 3501 6.2.1)
                 return
@@ -578,7 +614,7 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
                 caps = self.capa()
             except poplib.error_proto:
                 caps = {}
-            if "STLS" not in caps:
+            if "STLS" not in {name.upper() for name in caps}:  # capability names are case-insensitive (RFC 2449)
                 raise _starttls_refusal(self.host, port, "does not offer STARTTLS (STLS)")
             if _stop_requested():
                 raise _MailboxStopped
@@ -587,7 +623,7 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
             except poplib.error_proto:
                 raise _starttls_refusal(self.host, port, "refused STLS") from None
             self.sock = _upgraded(self.sock, self.host, port)
-            self.file = self.sock.makefile("rb")
+            _rebind_reader(self)
             self._tls_established = True
 
         def _get_capabilities(self):  # type: ignore[no-untyped-def]

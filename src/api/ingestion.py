@@ -759,9 +759,10 @@ class MailboxFetchRequest(BaseModel):
 
 
 _MAILBOX_DISCLOSURE = (
-    "Pulled live from your mailbox over TLS (on a plain port the connection is "
-    "upgraded with STARTTLS first; the server's certificate is checked either way, "
-    "and your password is never sent unencrypted) and anonymised at ingest: the "
+    "Pulled live from your mailbox over TLS (the server's certificate is checked; "
+    "an API call that turns TLS-at-once off gets a STARTTLS upgrade, checked the "
+    "same way, or a refusal, so your password is never sent unencrypted) and "
+    "anonymised at ingest: the "
     "recipient is never stored, no raw message is retained, tracking links are "
     "de-toxed and never followed. Your IP is visible to the mail provider (not "
     "via Tor). Stored under a disabled, filterable 'mailbox' source."

@@ -230,6 +230,7 @@ def test_a_plain_server_on_the_tls_port_is_refused_naming_the_server_and_the_por
         assert not isinstance(info.value, MailboxCertificateError)
         assert msg.startswith("refused before logging in, no command or password sent: no TLS connection could be made"), msg
         assert f"127.0.0.1 on port {srv.port} (" in msg and "_ssl.c" not in msg and "[SSL:" not in msg
+        assert msg.endswith("usually 993 for IMAP and 995 for POP3."), msg  # the TLS-port advice, never the STARTTLS one
         # The server reads the ClientHello as text, so a random CR LF in it can make a "line": no line is a mail command.
         assert not any(word in line.upper() for line in srv.received for word in (b"LOGIN", b"USER", b"PASS", b"CAPA"))
     finally:
@@ -245,5 +246,176 @@ def test_a_starttls_answered_with_plaintext_is_refused_before_any_credential(fn,
             fn("127.0.0.1", "u", "secret-pw-r651", use_ssl=False, port=srv.port)
         assert not any(cmd in (b"LOGIN", b"USER", b"PASS") for cmd in _commands(srv, fn))
         assert not ingest._LIVE_MAILBOX_SOCKETS
+    finally:
+        srv.close()
+
+
+# --- Security reads A and B on #1898 -------------------------------------------------------------------------------------------------
+
+
+def _imap_answering_starttls_with(answer: bytes):
+    def script(line: bytes) -> bytes | None:
+        tag, _, rest = line.partition(b" ")
+        if rest.split(b" ", 1)[0].upper() == b"STARTTLS":
+            return answer.replace(b"TAG", tag)
+        return _imap(line)
+
+    return script
+
+
+def test_a_no_answer_to_starttls_is_refused_and_no_handshake_or_credential_follows():
+    srv = _Server(_IMAP_GREETING, _imap_answering_starttls_with(b"TAG NO not today\r\n"))
+    try:
+        with pytest.raises(MailboxStarttlsError, match="answered STARTTLS with NO"):
+            fetch_imap("127.0.0.1", "u", "secret-pw-r651", use_ssl=False, port=srv.port)
+        assert srv.eof.wait(5)
+        assert _commands(srv, fetch_imap) == [b"CAPABILITY", b"STARTTLS", b"LOGOUT"]
+    finally:
+        srv.close()
+
+
+def test_a_preauth_greeting_is_refused_without_sending_starttls():
+    srv = _Server(b"* PREAUTH [CAPABILITY IMAP4rev1 STARTTLS] welcome\r\n", _imap)
+    try:
+        with pytest.raises(MailboxStarttlsError, match=r"already logged in \(PREAUTH\)"):
+            fetch_imap("127.0.0.1", "u", "p", use_ssl=False, port=srv.port)
+        assert srv.eof.wait(5)
+        assert b"STARTTLS" not in _commands(srv, fetch_imap)
+    finally:
+        srv.close()
+
+
+def test_a_connection_lost_before_the_starttls_answer_says_so():
+    """imaplib turns the lost connection into its ``abort``: named as such, not as a refusal of the upgrade (security read A)."""
+    # A server that closes on STARTTLS: built on a raw socket so the close is immediate.
+    import socket as _socket
+
+    lst = _socket.socket()
+    lst.bind(("127.0.0.1", 0))
+    lst.listen(1)
+
+    def serve() -> None:
+        conn, _ = lst.accept()
+        with conn:
+            conn.sendall(_IMAP_GREETING)
+            f = conn.makefile("rb")
+            while line := f.readline():
+                tag = line.split(b" ", 1)[0]
+                if b" STARTTLS" in line.upper():
+                    return
+                conn.sendall(b"* CAPABILITY IMAP4rev1 STARTTLS\r\n" + tag + b" OK done\r\n")
+
+    t = threading.Thread(target=serve, daemon=True)
+    t.start()
+    try:
+        with pytest.raises(MailboxStarttlsError, match="closed the connection before answering STARTTLS"):
+            fetch_imap("127.0.0.1", "u", "p", use_ssl=False, port=lst.getsockname()[1])
+    finally:
+        t.join(5)
+        lst.close()
+
+
+@pytest.mark.parametrize(("fn", "greeting", "script"), [(fetch_imap, _IMAP_GREETING, _imap), (fetch_pop3, _POP_GREETING, _pop)], ids=["imap", "pop3"])
+def test_starttls_to_a_trusted_certificate_for_another_name_is_refused_naming_what_was_sent(fn, greeting, script, pki, trust_test_ca):
+    """The name check is on along the STARTTLS path too (security read A on #1898), and the refusal says only the password was not
+    sent: the capability and upgrade requests did go out."""
+    srv = _Server(greeting, script, starttls=pki.wrong_name_server)
+    try:
+        with pytest.raises(MailboxCertificateError) as info:
+            fn("127.0.0.1", "u", "secret-pw-r651", use_ssl=False, port=srv.port)
+        msg = str(info.value)
+        assert msg.startswith("refused before logging in, no password sent: ") and "mismatch" in msg, msg
+        assert srv.eof.wait(5)
+        assert not any(cmd in (b"LOGIN", b"USER", b"PASS") for cmd in _commands(srv, fn))
+    finally:
+        srv.close()
+
+
+@pytest.mark.parametrize("fn", [fetch_imap, fetch_pop3], ids=["imap", "pop3"])
+def test_a_stop_when_the_capabilities_are_answered_sends_no_upgrade_request(fn):
+    """The switch is read before STARTTLS/STLS: a Stop that lands while the capability request is answered stops there."""
+    from src.ingest import activate_kill_switch
+
+    base = _imap if fn is fetch_imap else _pop
+
+    def stopping(line: bytes) -> bytes | None:
+        reply = base(line)
+        if b"CAPA" in line.upper():
+            activate_kill_switch()
+        return reply
+
+    srv = _Server(_IMAP_GREETING if fn is fetch_imap else _POP_GREETING, stopping)
+    try:
+        raws = fn("127.0.0.1", "u", "p", use_ssl=False, port=srv.port)
+        assert raws.stopped is True
+        assert srv.eof.wait(5)
+        assert not any(cmd in (b"STARTTLS", b"STLS", b"LOGIN", b"USER") for cmd in _commands(srv, fn))
+    finally:
+        srv.close()
+
+
+def test_responses_injected_around_the_starttls_answer_are_not_carried_past_the_upgrade(pki, trust_test_ca):
+    """An untagged SEARCH before the OK and a forged FETCH right after it, in the same segment (the STARTTLS response-injection
+    class): neither reaches the pull, which fetches only the one real message over TLS."""
+    injected = b"* SEARCH 7 8 9\r\nTAG OK go\r\n* 9 FETCH (RFC822 {9}\r\nEVIL!!!\r\n)\r\n"
+    srv = _Server(_IMAP_GREETING, _imap_answering_starttls_with(injected), starttls=pki.server)
+    try:
+        raws = fetch_imap("127.0.0.1", "u", "p", use_ssl=False, port=srv.port, limit=5)
+        assert len(raws) == 1 and b"message 1" in raws[0] and not any(b"EVIL" in r for r in raws)
+    finally:
+        srv.close()
+
+
+def test_the_reader_is_rebound_with_nothing_buffered_on_either_imaplib_layout():
+    """3.13 reads ``file``; 3.14 reads a ``_file`` behind a read-only ``file`` property and buffers in ``_readbuf`` (security read A
+    on #1898: assigning ``file`` there raises). Both are rebound, emptied, and no untagged response survives."""
+
+    class _Sock:
+        def makefile(self, mode):
+            return ("fresh", mode)
+
+    class _Old:
+        def __init__(self):
+            self.sock, self.file, self.untagged_responses = _Sock(), "stale", {"SEARCH": [b"7 8 9"]}
+
+    class _New:
+        file = property(lambda self: self._file)
+
+        def __init__(self):
+            self.sock, self._file, self._readbuf, self.untagged_responses = _Sock(), "stale", [b"* 9 FETCH"], {"EXISTS": [b"3"]}
+
+    old, new = _Old(), _New()
+    email_mod._rebind_reader(old)
+    email_mod._rebind_reader(new)
+    assert old.file == ("fresh", "rb") and old.untagged_responses == {}
+    assert new.file == ("fresh", "rb") and new._readbuf == [] and new.untagged_responses == {}
+
+
+@pytest.mark.parametrize(("fn", "greeting", "script"), [(fetch_imap, _IMAP_GREETING, _imap), (fetch_pop3, _POP_GREETING, _pop)], ids=["imap", "pop3"])
+def test_a_starttls_handshake_that_times_out_is_refused_naming_the_server(fn, greeting, script, monkeypatch):
+    monkeypatch.setattr(email_mod, "MAILBOX_TIMEOUT_S", 0.5)
+    srv = _Server(greeting, script)  # answers the upgrade and never handshakes
+    try:
+        with pytest.raises(MailboxTlsRefusal) as info:
+            fn("127.0.0.1", "u", "p", use_ssl=False, port=srv.port)
+        msg = str(info.value)
+        assert "the TLS handshake timed out" in msg and f"port {srv.port}" in msg and "no password sent" in msg, msg
+        assert "_ssl.c" not in msg and "accepted the upgrade" in msg
+    finally:
+        srv.close()
+
+
+def test_a_lower_case_stls_capability_is_honoured(monkeypatch):
+    monkeypatch.setattr(email_mod, "MAILBOX_TIMEOUT_S", 0.5)
+    def lower(line: bytes) -> bytes | None:
+        if line.split(b" ", 1)[0].upper() == b"CAPA":
+            return b"+OK\r\nuser\r\nstls\r\n.\r\n"
+        return _pop(line)
+
+    srv = _Server(_POP_GREETING, lower)
+    try:
+        with pytest.raises(MailboxTlsRefusal):  # the upgrade is attempted (no TLS server here), not refused as "not offered"
+            fetch_pop3("127.0.0.1", "u", "p", use_ssl=False, port=srv.port)
+        assert b"STLS" in _commands(srv, fetch_pop3)
     finally:
         srv.close()
