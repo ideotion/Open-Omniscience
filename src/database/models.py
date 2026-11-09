@@ -2606,8 +2606,9 @@ class KeywordDayState(Base):
     ``complete``: every day was written by a build that finished. ``built_epoch``: the corpus epoch that build started at (a
     different epoch now means a full rebuild). ``watermark``: every mention with an id at or below it is in the counts, unless
     its day is dirty. ``reuse_floor``: the lowest id of a mention deleted from the TOP of the table since then (SQLite gives
-    such an id out again, so a new row can land at or below the watermark; the delete trigger records it). ``cursor``: the last
-    day a build wrote, so a stopped build resumes there."""
+    such an id out again, so a new row can land at or below the watermark; the delete trigger records it). ``floor_gen``: counts
+    those deletes, so a fold clears the floor only when none ran while it worked. ``cursor``: the last day a build wrote, so a
+    stopped build resumes there."""
 
     __tablename__ = "keyword_day_state"
 
@@ -2616,6 +2617,7 @@ class KeywordDayState(Base):
     built_epoch: Mapped[int | None] = mapped_column(Integer)
     watermark: Mapped[int | None] = mapped_column(Integer)
     reuse_floor: Mapped[int | None] = mapped_column(Integer)
+    floor_gen: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     cursor: Mapped[date | None] = mapped_column(Date)
     started_at: Mapped[datetime | None] = mapped_column(DateTime)
     built_at: Mapped[datetime | None] = mapped_column(DateTime)

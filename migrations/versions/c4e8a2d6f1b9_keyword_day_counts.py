@@ -60,6 +60,7 @@ def upgrade() -> None:
             sa.Column("built_epoch", sa.Integer(), nullable=True),
             sa.Column("watermark", sa.Integer(), nullable=True),
             sa.Column("reuse_floor", sa.Integer(), nullable=True),
+            sa.Column("floor_gen", sa.Integer(), nullable=False, server_default="0"),
             sa.Column("cursor", sa.Date(), nullable=True),
             sa.Column("started_at", sa.DateTime(), nullable=True),
             sa.Column("built_at", sa.DateTime(), nullable=True),

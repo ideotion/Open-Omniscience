@@ -26,11 +26,14 @@ fires, past the 5 % gate R623 set. So nothing here runs on an INSERT. Instead:
     and never fires either; a re-index pays them (+5.7 % measured on that pattern).
   * One more way a row can hide below the watermark: SQLite gives a new row ``max(id) + 1``, so deleting the
     TOP rows lets their ids be used again. The delete trigger records the lowest such id in
-    ``reuse_floor``, and the tail starts there.
+    ``reuse_floor`` and counts the event in ``floor_gen``, and the tail starts there. A fold moves the watermark to
+    the ``max(id)`` it read (never above it: ids between the two would be given out again unseen) and clears the
+    floor only when no such delete ran while it worked (``floor_gen`` unchanged).
   * A FULL rebuild runs when the corpus epoch changed (re-index, prune, restore, keyword fold:
     ``src/analytics/corpus_epoch.py``), at the backstop (:data:`BACKSTOP_S`), or when the triggers had to be
-    (re)made. The epoch also covers an insert BELOW the watermark with an explicit id, which no trigger sees:
-    the restore merge, the one writer that does that, bumps it.
+    (re)made, which resets the watermark too, so the build starts over rather than resuming. No writer inserts a
+    mention with an explicit id (the export lane's read of 2026-11-09 checked every one); the restore swaps in a
+    merged copy and bumps the epoch.
 
 READS go through the ``keyword_mentions_all`` view (R96); only the triggers and the install name the table, as a
 trigger must. Like ``database.query.windowed_group_counts``, the watermark assumes ONE id space behind the view.
@@ -98,10 +101,12 @@ TRIGGERS: dict[str, str] = {
         "BEGIN "
         "INSERT OR IGNORE INTO keyword_day_dirty (observed_on) "
         "SELECT old.observed_on WHERE old.observed_on IS NOT NULL; "
-        "UPDATE keyword_day_state SET reuse_floor = (SELECT coalesce(max(id), 0) + 1 FROM keyword_mentions) "
+        "UPDATE keyword_day_state SET "
+        "reuse_floor = min(coalesce(reuse_floor, (SELECT coalesce(max(id), 0) + 1 FROM keyword_mentions)), "
+        "(SELECT coalesce(max(id), 0) + 1 FROM keyword_mentions)), "
+        "floor_gen = coalesce(floor_gen, 0) + 1 "
         "WHERE id = 1 AND watermark IS NOT NULL "
-        "AND (SELECT coalesce(max(id), 0) FROM keyword_mentions) < watermark "
-        "AND (reuse_floor IS NULL OR reuse_floor > (SELECT coalesce(max(id), 0) + 1 FROM keyword_mentions)); "
+        "AND (SELECT coalesce(max(id), 0) FROM keyword_mentions) < watermark; "
         "END"
     ),
     # A row whose count, keyword or day changed: both its old and its new day are stale.
@@ -118,6 +123,13 @@ TRIGGERS: dict[str, str] = {
         "END"
     ),
 }
+
+#: Marks the counts unbuilt so the next build STARTS OVER (a build resumes only from a watermark it set at the
+#: current epoch): used when a trigger had to be (re)made, and by a salvaged copy (src/database/salvage.py).
+UNBUILT_SQL = (
+    "UPDATE keyword_day_state SET complete = 0, watermark = NULL, cursor = NULL, built_epoch = NULL, "
+    "reuse_floor = NULL WHERE id = 1"
+)
 
 #: Held by the build for its whole run and by a fold for its own, so the two never write at once.
 _WORK = threading.Lock()
@@ -165,7 +177,7 @@ def install(conn: Connection) -> dict[str, Any]:
             made += 1
         conn.exec_driver_sql(f"INSERT OR IGNORE INTO {STATE} (id, complete) VALUES (1, 0)")  # nosec B608 - a constant
         if made:
-            conn.exec_driver_sql(f"UPDATE {STATE} SET complete = 0 WHERE id = 1")  # nosec B608 - a constant
+            conn.exec_driver_sql(UNBUILT_SQL)
     except BaseException:
         if own:
             conn.exec_driver_sql("ROLLBACK")
@@ -197,7 +209,7 @@ def ensure_day_counts(engine: Engine) -> dict[str, Any]:
 def _state(conn: Connection) -> dict[str, Any] | None:
     try:
         row = conn.exec_driver_sql(
-            f"SELECT complete, built_epoch, watermark, reuse_floor, cursor, started_at, built_at FROM {STATE} WHERE id = 1"  # nosec B608 - a constant
+            f"SELECT complete, built_epoch, watermark, reuse_floor, cursor, started_at, built_at, floor_gen FROM {STATE} WHERE id = 1"  # nosec B608 - a constant
         ).fetchone()
     except Exception:  # noqa: BLE001 - no table yet (a store made before it): not built
         return None
@@ -211,6 +223,7 @@ def _state(conn: Connection) -> dict[str, Any] | None:
         "cursor": row[4],
         "started_at": row[5],
         "built_at": row[6],
+        "floor_gen": row[7],
     }
 
 
@@ -442,8 +455,21 @@ def fold_tail(engine: Engine, *, should_stop=None) -> dict[str, Any]:
             st = _state(conn)
             if st is None or not st["complete"]:
                 return {"skipped": "not-built"}
-            floor, w0, f0 = _tail_floor(st), st["watermark"], st["reuse_floor"]
-            m = _max_id(conn)
+            # Under the gate, one transaction: the watermark becomes the max(id) read NOW (lower than before when the top
+            # rows went, and never above what exists), and what is still unread is said as a floor, so the state means
+            # the same thing while the fold works: every id up to ``floor`` is in the table.
+            _end_read(conn)
+            with write_lock(), conn.begin():
+                st = _state(conn)
+                if st is None or not st["complete"]:
+                    return {"skipped": "not-built"}
+                m = _max_id(conn)
+                floor = min(_tail_floor(st), m)
+                gen = st["floor_gen"]
+                conn.exec_driver_sql(
+                    f"UPDATE {STATE} SET watermark = ?, reuse_floor = ? WHERE id = 1",  # nosec B608 - a constant
+                    (m, floor + 1 if floor < m else None),
+                )
             stale = {
                 _iso(r[0])
                 for r in conn.exec_driver_sql(f"SELECT observed_on FROM {DIRTY}").fetchall()  # nosec B608 - a constant
@@ -462,16 +488,16 @@ def fold_tail(engine: Engine, *, should_stop=None) -> dict[str, Any]:
                     return {"stopped": True, "days": folded, "left": len(stale) - folded}
                 _fold_day(conn, day)
                 folded += 1
-            # The watermark moves only if no delete moved the reuse floor while this ran: a floor set meanwhile
-            # names ids this fold did not read, and the next fold reads them.
+            # The floor is cleared only if no delete from the top ran while this worked (``floor_gen`` unchanged): such
+            # a delete names ids this fold may not have read, and the next fold reads them.
             _end_read(conn)
             with write_lock(), conn.begin():
-                conn.exec_driver_sql(
-                    f"UPDATE {STATE} SET watermark = ?, reuse_floor = NULL "  # nosec B608 - a constant
-                    "WHERE id = 1 AND watermark IS ? AND reuse_floor IS ?",
-                    (max(m, int(w0 or 0)), w0, f0),
-                )
-            return {"days": folded, "watermark": max(m, int(w0 or 0))}
+                cleared = conn.exec_driver_sql(
+                    f"UPDATE {STATE} SET reuse_floor = NULL "  # nosec B608 - a constant
+                    "WHERE id = 1 AND watermark IS ? AND floor_gen IS ?",
+                    (m, gen),
+                ).rowcount
+            return {"days": folded, "watermark": m, "floor_cleared": bool(cleared)}
     finally:
         _WORK.release()
 

@@ -458,3 +458,90 @@ def test_the_real_keyword_fold_job_with_the_epoch_put_back(tmp_path, monkeypatch
     _exact(s, windows=((LO, HI),))
     day_counts.fold_tail(eng)
     assert _table_rows(eng) == _truth(eng)
+
+
+# --------------------------------------------------------------------------- the export lane's read (2026-11-09)
+
+
+def test_a_fold_after_a_top_delete_does_not_hide_the_next_insert(tmp_path):
+    """Gap 1 of the read: the newest article goes (no epoch bump, as a source delete), a fold runs, THEN a new row
+    takes a freed id. The fold must not have left the watermark above max(id)."""
+    eng, s, ex = _corpus(tmp_path)
+    _build(eng)
+    newest = s.query(Article).order_by(Article.id.desc()).first()
+    s.delete(newest)
+    s.commit()
+    r = day_counts.fold_tail(eng)
+    assert r["floor_cleared"] is True
+    with eng.connect() as conn:
+        st = day_counts._state(conn)
+        top = conn.exec_driver_sql("SELECT max(id) FROM keyword_mentions").scalar()
+    assert st["watermark"] == top and st["reuse_floor"] is None
+    _add(s, ex, 601, 1)  # takes ids at and above top + 1, which the deleted rows had
+    _exact(s)
+    day_counts.fold_tail(eng)
+    assert _table_rows(eng) == _truth(eng)
+    _exact(s)
+
+
+def test_a_top_delete_while_a_fold_works_keeps_the_floor(tmp_path):
+    """A delete from the top and an insert into the freed ids WHILE the fold runs: the floor must survive the fold."""
+    eng, s, ex = _corpus(tmp_path)
+    _build(eng)
+    _add(s, ex, 701, 2)  # a tail, so the fold has days to walk
+    _add(s, ex, 702, 3)
+    fired = []
+
+    def _meanwhile():
+        if not fired:
+            fired.append(1)
+            s.delete(s.query(Article).order_by(Article.id.desc()).first())
+            s.commit()
+            _add(s, ex, 703, 4)
+        return False
+
+    r = day_counts.fold_tail(eng, should_stop=_meanwhile)
+    assert fired and r["floor_cleared"] is False
+    _exact(s)
+    day_counts.fold_tail(eng)
+    assert _table_rows(eng) == _truth(eng)
+    _exact(s)
+
+
+def test_a_remade_trigger_rebuilds_from_scratch_rather_than_resuming(tmp_path):
+    """Gap 2 of the read: while the delete trigger was missing a delete went unmarked; install must make the next
+    build start over, not resume from its last day and call the table current."""
+    eng, s, _ex = _corpus(tmp_path)
+    _build(eng)
+    with eng.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        conn.exec_driver_sql("DROP TRIGGER trg_keyword_day_dirty_ad")
+    s.delete(s.query(Article).order_by(Article.id).first())
+    s.commit()
+    with eng.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        assert day_counts.install(conn) == {"triggers": 1}
+        assert day_counts.current(conn) == "not-built"
+    r = day_counts.build(eng)
+    assert r["outcome"] == "built" and r["days"] == len({d for d, _k in _truth(eng)})
+    assert _table_rows(eng) == _truth(eng)
+    _exact(s)
+
+
+def test_the_unbuilt_mark_a_salvage_writes_rebuilds_from_scratch(tmp_path):
+    eng, s, _ex = _corpus(tmp_path)
+    _build(eng)
+    with eng.connect() as conn:  # a salvaged copy that lost a day's counts
+        conn.exec_driver_sql("DELETE FROM keyword_day_counts WHERE observed_on = '2026-03-02'")
+        conn.exec_driver_sql(day_counts.UNBUILT_SQL)
+        conn.commit()
+    r = day_counts.build(eng)
+    assert r["outcome"] == "built" and r["days"] == 4
+    assert _table_rows(eng) == _truth(eng)
+
+
+def test_salvage_writes_the_same_unbuilt_mark():
+    import inspect
+
+    from src.database import salvage
+
+    body = " ".join(inspect.getsource(salvage.Salvage._finish).split()).replace('" "', "")
+    assert " ".join(day_counts.UNBUILT_SQL.split()) in body  # salvage knows no app module, so it carries a copy
