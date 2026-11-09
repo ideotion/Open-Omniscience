@@ -20,6 +20,7 @@ class Pki:
     server: ssl.SSLContext  #: a server presenting a leaf for 127.0.0.1 signed by that authority
     self_signed_server: ssl.SSLContext  #: a server presenting a self-signed certificate for 127.0.0.1
     wrong_name_server: ssl.SSLContext  #: a server presenting a leaf for mail.example signed by the authority
+    localhost_server: ssl.SSLContext  #: a server presenting a leaf for the DNS name localhost signed by the authority
 
 
 def _name(cn: str) -> x509.Name:
@@ -82,6 +83,7 @@ def build(d: Path) -> Pki:
     loop = x509.IPAddress(ipaddress.ip_address("127.0.0.1"))
     good, good_key = leaf("127.0.0.1", loop)
     wrong, wrong_key = leaf("mail.example", x509.DNSName("mail.example"))
+    named, named_key = leaf("localhost", x509.DNSName("localhost"))
     own_key = ec.generate_private_key(ec.SECP256R1())
     own, _ = leaf("127.0.0.1", loop, issuer=None, signer=own_key, key=own_key)
     return Pki(
@@ -89,4 +91,5 @@ def build(d: Path) -> Pki:
         server=_server(d, "good", good, good_key),
         self_signed_server=_server(d, "own", own, own_key),
         wrong_name_server=_server(d, "wrong", wrong, wrong_key),
+        localhost_server=_server(d, "named", named, named_key),
     )

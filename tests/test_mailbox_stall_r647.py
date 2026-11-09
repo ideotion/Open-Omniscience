@@ -414,13 +414,19 @@ def test_a_wrap_that_fails_online_raises_its_own_error_and_closes_the_socket(cls
     stop_aware = email_mod._stop_aware(getattr(lib, cls))
     kw = {"ssl_context": _Boom(ssl.PROTOCOL_TLS_CLIENT)} if cls == "IMAP4_SSL" else {"context": _Boom(ssl.PROTOCOL_TLS_CLIENT)}
     srv = _Server(None, lambda line: None)
-    closed: list[object] = []
-    real_close = socket.socket.close
-    monkeypatch.setattr(socket.socket, "close", lambda self: (closed.append(self), real_close(self))[1])
+    registered: list[socket.socket] = []  # strong references: the client's own socket, never one the server closes
+    real_register = ingest.register_mailbox_socket
+
+    def holding(sock):
+        registered.append(sock)
+        real_register(sock)
+
+    monkeypatch.setattr(ingest, "register_mailbox_socket", holding)
     try:
         with pytest.raises(ValueError, match="the wrap failed"):
             stop_aware("127.0.0.1", srv.port, timeout=5, **kw)
-        assert closed, "the plain socket was left open"
+        assert registered, "the plain socket was never registered"
+        assert all(s.fileno() == -1 for s in registered), "the plain socket was left open"
         assert not ingest._LIVE_MAILBOX_SOCKETS
         assert srv.stalled.wait(5)  # the server took the connection before its listener is closed
     finally:

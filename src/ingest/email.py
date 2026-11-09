@@ -339,12 +339,19 @@ def _mailbox_tls_context() -> ssl.SSLContext:
     return ssl.create_default_context()
 
 
-def _certificate_refusal(host: str, reason: str) -> MailboxCertificateError:
-    """``reason`` is OpenSSL's own reason, as ``record_text`` keeps it (scrubbed of the mailbox password and every held passphrase)."""
+#: OpenSSL's wrapping of the reason: "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: <reason> (_ssl.c:NNNN)".
+_OPENSSL_VERIFY_REASON = re.compile(r"certificate verify failed: (?P<reason>.+?)(?: \(_ssl\.c:\d+\))?$")
+
+
+def _certificate_refusal(host: str, scrubbed: str) -> MailboxCertificateError:
+    """The honest refusal (R650). ``scrubbed`` is OpenSSL's text as ``record_text`` keeps it (the mailbox password and every held
+    passphrase out of it); only its reason is quoted ("self-signed certificate", "Hostname mismatch, ..."), so the sentence fits
+    the job status's 300 characters with what matters first: refused, nothing sent, why."""
+    found = _OPENSSL_VERIFY_REASON.search(scrubbed)
+    reason = found.group("reason") if found else scrubbed
     return MailboxCertificateError(
-        f"the mail server {host}'s TLS certificate could not be verified ({reason}), so the pull was refused before logging in and "
-        "nothing was sent. Check the server name and port; a server whose certificate does not match its name, or is not issued by "
-        "an authority this computer trusts, cannot be used."
+        f"refused before logging in, nothing sent: the TLS certificate of the mail server {host} failed its check ({reason}). "
+        "Check the server name and port."
     )
 
 
@@ -463,13 +470,17 @@ def fetch_imap(
         except _MailboxStopped:
             raws.stopped = True
             return raws
-        except Exception as exc:
+        except ssl.SSLCertVerificationError as exc:
+            # R650: the certificate failed its check (a Stop still wins: the refusal is not the Stop's to report).
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            raise _certificate_refusal(host, record_text(exc, password, limit=300)) from None
+        except Exception:
             # A Stop while the greeting was awaited shut the socket down (R647): that is the Stop, not a failure.
             if _stop_requested():
                 raws.stopped = True
                 return raws
-            if isinstance(exc, ssl.SSLCertVerificationError):
-                raise _certificate_refusal(host, record_text(exc, password, limit=300)) from None
             raise
     try:
         if own_conn:
@@ -556,13 +567,17 @@ def fetch_pop3(
                 conn = _stop_aware(poplib.POP3_SSL)(host, port or 995, timeout=MAILBOX_TIMEOUT_S, context=_mailbox_tls_context())
             else:
                 conn = _stop_aware(poplib.POP3)(host, port or 110, timeout=MAILBOX_TIMEOUT_S)
-        except Exception as exc:
+        except ssl.SSLCertVerificationError as exc:
+            # R650: the certificate failed its check (a Stop still wins: the refusal is not the Stop's to report).
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            raise _certificate_refusal(host, record_text(exc, password, limit=300)) from None
+        except Exception:
             # As in fetch_imap: a Stop while the greeting was awaited shut the socket down (R647).
             if _stop_requested():
                 raws.stopped = True
                 return raws
-            if isinstance(exc, ssl.SSLCertVerificationError):
-                raise _certificate_refusal(host, record_text(exc, password, limit=300)) from None
             raise
     try:
         if own_conn:

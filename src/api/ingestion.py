@@ -26,6 +26,7 @@ from src.database.source_lookup import source_for_domain
 from src.database.stand_in import not_a_stand_in_source
 from src.ingest import EthicalFetcher  # noqa: F401 (kept for type/back-compat)
 from src.ingest.email import (
+    MailboxCertificateError,
     count_imported_newsletters,
     delete_imported_newsletters,
     fetch_imap,
@@ -183,6 +184,8 @@ def ingest_email_endpoint(
             )
         except RuntimeError as exc:  # the airplane-mode refusal (ruling #11 kill-switch gate)
             raise HTTPException(status_code=409, detail=http_detail(exc, "", req.password, withheld=UNREADABLE_TEXT)) from None
+        except MailboxCertificateError as exc:  # R650: the server's certificate failed its check; the mail server's fault, not ours
+            raise HTTPException(status_code=502, detail=http_detail(exc, "", req.password, withheld=UNREADABLE_TEXT)) from None
     tally = ingest_emails(db, source, raws)
     return {
         "source_id": source_id,

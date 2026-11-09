@@ -131,8 +131,9 @@ def test_a_certificate_no_trusted_authority_issued_is_refused_before_any_command
         with pytest.raises(MailboxCertificateError) as info:
             fn("127.0.0.1", "u", "secret-pw", use_ssl=True, port=srv.port)
         msg = str(info.value)
-        assert "127.0.0.1" in msg and "could not be verified" in msg
-        assert "self-signed" in msg or "self signed" in msg, msg  # the cause is named, from OpenSSL's own words
+        assert msg.startswith("refused before logging in, nothing sent: "), msg  # what matters first: the job status keeps 300 characters
+        assert "127.0.0.1" in msg and "failed its check (self-signed certificate)" in msg, msg  # OpenSSL's own reason, unwrapped
+        assert "_ssl.c" not in msg and "CERTIFICATE_VERIFY_FAILED" not in msg
         assert "secret-pw" not in msg
         assert info.value.__cause__ is None and info.value.__suppress_context__
         assert srv.done.wait(5)
@@ -165,6 +166,48 @@ def test_a_certificate_that_checks_out_pulls_as_before(fn, greeting, script, pki
         assert raws.stopped is False
     finally:
         srv.close()
+
+
+@pytest.mark.parametrize(("fn", "greeting", "script"), _PROTOCOLS, ids=_IDS)
+def test_a_host_name_is_checked_and_sent_as_the_server_name(fn, greeting, script, pki, trust_test_ca):
+    """The name checked is the host the pull was given, and it goes out as SNI (security read A on #1895: every other test connects
+    to the IP 127.0.0.1, so a pull that checked a fixed name would have passed them)."""
+    seen: list[str | None] = []
+    ctx = pki.localhost_server
+    ctx.sni_callback = lambda sock, name, c: seen.append(name)
+    srv = _TlsServer(ctx, greeting, script)
+    try:
+        raws = fn("localhost", "u", "p", use_ssl=True, port=srv.port, limit=1)
+        assert len(raws) == 1 and seen == ["localhost"]
+    finally:
+        ctx.sni_callback = None
+        srv.close()
+    srv = _TlsServer(pki.localhost_server, greeting, script)
+    try:
+        with pytest.raises(MailboxCertificateError, match="mismatch"):
+            fn("127.0.0.1", "u", "p", use_ssl=True, port=srv.port)  # the same certificate does not name the IP
+        assert srv.done.wait(5) and srv.received == []
+    finally:
+        srv.close()
+
+
+def test_the_route_answers_a_certificate_refusal_as_the_mail_servers_failure_with_its_words(monkeypatch):
+    """``/ingest-email`` answers 502 with the refusal's own sentence, not a 500 "internal error" (security read A on #1895)."""
+    import src.api.ingestion as ingestion
+
+    def refuse(*a, **k):
+        raise email_mod._certificate_refusal("mail.example", "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate (_ssl.c:1035)")
+
+    monkeypatch.setattr(ingestion, "fetch_imap", refuse)
+    from fastapi import HTTPException
+
+    req = ingestion.IngestEmailRequest(host="mail.example", user="u", password="pw-needle-xyz")
+    monkeypatch.setattr(ingestion, "_get_source", lambda db, sid: object())
+    with pytest.raises(HTTPException) as info:
+        ingestion.ingest_email_endpoint(1, req, db=None)
+    assert info.value.status_code == 502
+    assert "refused before logging in, nothing sent" in info.value.detail and "self-signed certificate" in info.value.detail
+    assert "pw-needle-xyz" not in info.value.detail
 
 
 def test_the_context_checks_the_chain_and_the_name_and_uses_the_platform_trust():

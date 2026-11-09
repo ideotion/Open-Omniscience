@@ -1021,6 +1021,19 @@ _GUARDED_MODULES = {
         },
     ),
     "ingest/import_job": (set(), 2, False, {}),
+    "ingest/email": (
+        {"fetch_imap", "fetch_pop3"},
+        2,
+        False,
+        {
+            "fetch_imap": (
+                "its `except Exception` around the connect and every `except Exception` of the pull raise the library's own error again as it was when the kill switch is not engaged; its only callers, ingest_email_endpoint (inside `with scrub_and_reraise` naming the mailbox password) and _mailbox_pull_worker (http_detail with the password), are read by this guard in api/ingestion and write what they catch with the password out of it"
+            ),
+            "fetch_pop3": (
+                "its `except Exception` around the connect and every `except Exception` of the pull raise the library's own error again as it was when the kill switch is not engaged; its only callers, ingest_email_endpoint (inside `with scrub_and_reraise` naming the mailbox password) and _mailbox_pull_worker (http_detail with the password), are read by this guard in api/ingestion and write what they catch with the password out of it"
+            ),
+        },
+    ),
     "backup/import_reports": (set(), 0, False, {}),
     "analytics/columnar": ({"connect", "encryption_gate", "refresh_persisted_read_model"}, 3, False, {}),
     # The OSM reference run: its runner holds the passphrase of the throwaway store it makes (or the operator's key file's) and
