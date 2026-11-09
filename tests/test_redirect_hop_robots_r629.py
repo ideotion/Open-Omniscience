@@ -141,8 +141,9 @@ class _Clock:
 
 def _fetcher(tmp_path, session, *, interval=0.0, clock=None, **kw) -> EthicalFetcher:
     kw.setdefault("max_retries", 0)
+    kw.setdefault("retry_backoff_s", 0)
     f = EthicalFetcher(
-        min_interval_s=interval, session=session, robots_cache_path=tmp_path / "robots_cache.json", retry_backoff_s=0, **kw
+        min_interval_s=interval, session=session, robots_cache_path=tmp_path / "robots_cache.json", **kw
     )
     if clock is not None:
         f._now = clock.now  # type: ignore[method-assign]
@@ -936,3 +937,345 @@ def test_a_location_that_writes_a_login_is_refused_even_the_callers_own(tmp_path
     assert text.startswith("redirect to an address that carries a user name or password"), text
     assert "fake-token" not in text and "fake-2" not in text
     assert asked == [f"{A}/robots.txt", first] and _logins(sent) == [first]
+
+
+# --- folded from the two security reads of R629 ----------------------------------------------------------------------------------------
+#
+# Steward 3's read and the independent read both said GO with should-fixes; each block below names the item it answers.
+
+
+def test_a_hops_deferral_names_the_hops_address_and_says_a_redirect_led_there(db, source, tmp_path, monkeypatch):
+    """Steward 3's item 1: a hop's deferral is the hop host's Crawl-delay. Filed against the page asked for (ingest_url, and
+    law/track.py, which writes "deferred: " before it), it names the hop's address and ends with the fixed words, AFTER the sentence
+    every reader reads; the readers key on the type and on that prefix, so it still reads as a deferral. A direct deferral's words are
+    unchanged."""
+    from src.api.law import _verdict_of
+
+    monkeypatch.setenv("OO_CRAWL_DELAY_MAX_WAIT", "60")
+    s = _Session()
+    s.robots(B, "User-agent: *\nCrawl-delay: 600\n")
+    s.page(f"{B}/first")
+    s.redirect("https://good.example/a", f"{B}/page")
+    s.page(f"{B}/page")
+    f = _fetcher(tmp_path, s)
+    _fetch(f, f"{B}/first")  # the first touch is free
+    with pytest.raises(CrawlDelayDeferred) as caught:
+        _fetch(f, "https://good.example/a")
+    text = record_text(caught.value, typed=False)
+    assert text.startswith("Crawl-delay 600 s: not before "), text
+    assert text.endswith(f", for '{B}/page' {_NOTE}"), text
+    assert caught.value.netloc == "b.example"
+    assert _verdict_of(f"deferred: {record_text(caught.value)}") == "deferred"  # what law/track.py stores, read as it reads it
+    out = _bounded(lambda: ingest_url(db, source, "https://good.example/a", fetcher=f))
+    assert out.result is IngestResult.CRAWL_DELAY_DEFERRED
+    assert (out.detail or "").endswith(f", for '{B}/page' {_NOTE}"), out.detail
+    assert f"{B}/page" not in s.fetched
+    with pytest.raises(CrawlDelayDeferred) as direct:
+        _fetch(f, f"{B}/first")
+    plain = record_text(direct.value, typed=False)
+    assert plain.startswith("Crawl-delay 600 s: not before ") and ", for " not in plain and _NOTE not in plain, plain
+
+
+# The independent read's S1 (it predates R629, and hops inherited it): RobotFileParser compared an EMPTY path with what follows it,
+# so https://b.example?x was compared as "?x", which "Disallow: /" does not cover, while requests asks for "/?x".
+
+
+@pytest.mark.parametrize("tail", ["?x", "#f", "?x#f"])
+def test_a_hop_to_an_empty_path_is_checked_as_the_root_its_request_asks_for(tmp_path, tail):
+    s = _Session()
+    s.robots(B, _DISALLOW_ALL)
+    s.redirect(f"{A}/start", f"{B}{tail}")
+    for page in (f"{B}{tail}", f"{B}/{tail}"):  # either spelling answers, so a follow is seen
+        s.page(page)
+    f = _fetcher(tmp_path, s)
+    with pytest.raises(RobotsDisallowed) as caught:
+        _fetch(f, f"{A}/start")
+    text = record_text(caught.value, typed=False)
+    assert text == f"robots.txt disallows {B}{tail} {_NOTE}", text  # the address as written
+    assert s.asked_of("b.example") == [f"{B}/robots.txt"]
+
+
+@pytest.mark.parametrize("tail", ["?x", "#f"])
+def test_a_direct_fetch_of_an_empty_path_is_checked_as_the_root_too(tmp_path, tail):
+    s = _Session()
+    s.robots(A, _DISALLOW_ALL)
+    for page in (f"{A}{tail}", f"{A}/{tail}"):
+        s.page(page)
+    f = _fetcher(tmp_path, s)
+    with pytest.raises(RobotsDisallowed):
+        _fetch(f, f"{A}{tail}")
+    assert s.fetched == [f"{A}/robots.txt"]
+
+
+@pytest.mark.parametrize(
+    ("url", "allowed"),
+    [
+        (f"{A}?x", True),  # the root, which "Disallow: /private" does not cover: fetched, as before
+        (f"{A}/public?x", True),  # a non-empty path is compared as before
+        (f"{A}/private?x", False),
+        (f"{A}/private#f", False),
+    ],
+)
+def test_a_non_empty_path_or_an_allowed_root_is_judged_as_before(tmp_path, url, allowed):
+    s = _Session()
+    s.robots(A, "User-agent: *\nDisallow: /private\n")
+    s.page(url)
+    f = _fetcher(tmp_path, s)
+    if allowed:
+        assert _fetch(f, url).status_code == 200
+        assert s.fetched == [f"{A}/robots.txt", url]
+    else:
+        with pytest.raises(RobotsDisallowed):
+            _fetch(f, url)
+        assert s.fetched == [f"{A}/robots.txt"]
+
+
+def test_a_retrys_back_off_holds_only_the_first_hosts_lock(tmp_path):
+    """The independent read's nit: a hop answered 503 left the retry's back-off sleeping inside b.example's lock. The back-off now
+    holds the first host's lock only, as before R629: b.example is stamped and released before the sleep."""
+    events: list = []
+    s, clock = _Session(events), _Clock(events)
+    s.redirect(f"{A}/start", f"{B}/page")
+    s.page(f"{B}/page")
+    once = {"n": 0}
+
+    def busy_once():
+        once["n"] += 1
+        if once["n"] == 1:
+            s.routes[f"{B}/page"] = (503, "busy", {"Content-Type": "text/html"})
+        else:
+            s.page(f"{B}/page")
+
+    s.on[f"{B}/page"] = busy_once
+    f = _fetcher(tmp_path, s, clock=clock, max_retries=1, retry_backoff_s=0.5)
+    held: list = []
+    clock.on_sleep = lambda: held.append(
+        (clock.slept[-1], [h for h in ("a.example", "b.example") if f._host_lock(h).locked()], f._last_request.get("b.example"))
+    )
+    assert _fetch(f, f"{A}/start").final_url == f"{B}/page"
+    assert held == [(0.5, ["a.example"], 1000.0)], held  # b.example stamped when its 503 was answered, before the back-off
+    assert s.fetched == [f"{A}/robots.txt", f"{A}/start", f"{B}/robots.txt", f"{B}/page", f"{A}/start", f"{B}/page"]
+    _no_lock_held(f, "a.example", "b.example")
+
+
+# Steward 3's item 2 and the independent read's S2 and S3: the hand-over, the stamps and the order, pinned where a mutant survived.
+
+
+def test_a_chain_that_comes_back_waits_the_first_hosts_interval_again_under_its_lock(tmp_path):
+    """A -> B -> A: a.example was stamped when the chain left it, so the way back waits its interval again; a.example's second request
+    is made under a.example's lock with b.example's released, and a.example is stamped again when it is answered."""
+    events: list = []
+    s, clock = _Session(events), _Clock(events)
+    s.redirect(f"{A}/start", f"{B}/mid")
+    s.redirect(f"{B}/mid", f"{A}/end")
+    s.page(f"{A}/end")
+    f = _fetcher(tmp_path, s, interval=2.0, clock=clock)
+    held: list = []
+    s.on[f"{A}/end"] = lambda: held.append((f._host_lock("a.example").locked(), f._host_lock("b.example").locked()))
+    assert _fetch(f, f"{A}/start").final_url == f"{A}/end"
+    tail = events[events.index(("get", f"{A}/start")):]
+    assert tail == [("get", f"{A}/start"), ("get", f"{B}/robots.txt"), ("get", f"{B}/mid"), ("sleep", 2.0), ("get", f"{A}/end")], tail
+    assert held == [(True, False)]
+    assert f._last_request["a.example"] == 1002.0 and f._last_request["b.example"] == 1000.0
+    _no_lock_held(f, "a.example", "b.example")
+
+
+def test_the_hops_robots_read_and_wait_are_under_the_hop_hosts_lock_with_the_first_released(tmp_path):
+    events: list = []
+    s, clock = _Session(events), _Clock(events)
+    s.page(f"{B}/first")
+    s.redirect(f"{A}/start", f"{B}/page")
+    s.page(f"{B}/page")
+    f = _fetcher(tmp_path, s, interval=2.0, clock=clock)
+    _fetch(f, f"{B}/first")
+    f._robots.pop(B, None)  # b.example's robots.txt read again, by the hop
+    held: list = []
+
+    def locks(what):
+        return lambda: held.append((what, f._host_lock("a.example").locked(), f._host_lock("b.example").locked()))
+
+    s.on[f"{B}/robots.txt"] = locks("robots")
+    clock.on_sleep = locks("wait")
+    _fetch(f, f"{A}/start")
+    assert held == [("robots", False, True), ("wait", False, True)], held
+
+
+def _refused_hop(kind, tmp_path, monkeypatch):
+    """A fetcher, a session and the call that ends in a hop refused the ``kind`` way, with b.example asked once before where the
+    refusal needs it (a Crawl-delay counts from a request)."""
+    s = _Session()
+    s.page(f"{B}/first")
+    s.page(f"{B}/page")
+    location = f"{B}/page"
+    kw: dict = {}
+    if kind == "scope":
+        kw["redirect_scope"] = lambda url: False
+    elif kind == "userinfo":
+        location = "https://u:fake-secret@b.example/page"
+    elif kind == "robots disallowed":
+        s.robots(B, "User-agent: *\nDisallow: /page\n")
+    elif kind == "robots unavailable":
+        s.robots(B, "", status=500)
+    elif kind == "deferral":
+        monkeypatch.setenv("OO_CRAWL_DELAY_MAX_WAIT", "60")
+        s.robots(B, "User-agent: *\nCrawl-delay: 600\n")
+    s.redirect(f"{A}/start", location)
+    f = _fetcher(tmp_path, s)
+    if kind == "deferral":
+        _fetch(f, f"{B}/first")
+    return f, s, lambda: _fetch(f, f"{A}/start", **kw)
+
+
+_REFUSALS = {
+    "scope": ingest.RedirectOutOfScope,
+    "userinfo": BlockedTarget,
+    "robots disallowed": RobotsDisallowed,
+    "robots unavailable": RobotsUnavailable,
+    "deferral": CrawlDelayDeferred,
+}
+
+
+@pytest.mark.parametrize("kind", list(_REFUSALS))
+def test_every_refused_hop_leaves_no_lock_held_and_never_stamps_the_hop_host(tmp_path, monkeypatch, kind):
+    f, s, call = _refused_hop(kind, tmp_path, monkeypatch)
+    before = f._last_request.get("b.example")
+    with pytest.raises(_REFUSALS[kind]):
+        call()
+    assert f"{B}/page" not in s.fetched
+    assert f._last_request.get("b.example") == before  # a refused hop made no request to b.example: nothing to count from
+    for host in ("a.example", "b.example"):  # free for any thread, not only unheld as seen from this one
+        lock = f._host_lock(host)
+        assert lock.acquire(blocking=False), f"the lock of {host} was left held after a {kind} refusal"
+        lock.release()
+
+
+@pytest.mark.parametrize("where", ["robots", "wait", "request"])
+def test_a_base_exception_in_the_middle_of_a_hop_leaves_no_lock_held(tmp_path, where):
+    """Steward 3's item 2: a KeyboardInterrupt while the hop reads b.example's robots.txt, waits its interval or is requested."""
+    events: list = []
+    s, clock = _Session(events), _Clock(events)
+    s.page(f"{B}/first")
+    s.redirect(f"{A}/start", f"{B}/page")
+    s.page(f"{B}/page")
+    f = _fetcher(tmp_path, s, interval=2.0, clock=clock)
+    _fetch(f, f"{B}/first")
+
+    def interrupt():
+        raise KeyboardInterrupt
+
+    if where == "robots":
+        f._robots.pop(B, None)
+        s.on[f"{B}/robots.txt"] = interrupt
+    elif where == "wait":
+        clock.on_sleep = interrupt
+    else:
+        clock.t += 10  # nothing to wait for: the interrupt comes with the request
+        s.on[f"{B}/page"] = interrupt
+    with pytest.raises(KeyboardInterrupt):
+        _fetch(f, f"{A}/start")
+    for host in ("a.example", "b.example"):
+        lock = f._host_lock(host)
+        assert lock.acquire(blocking=False), f"the lock of {host} was left held after an interrupt at the hop's {where}"
+        lock.release()
+
+
+def test_a_hop_to_a_host_whose_cached_robots_disallows_the_page_is_refused(tmp_path):
+    """The independent read's S2 (its M27): b.example's robots.txt is already cached, by a direct fetch, and disallows the page."""
+    s = _Session()
+    s.robots(B, "User-agent: *\nDisallow: /page\n")
+    s.page(f"{B}/other")
+    s.redirect(f"{A}/start", f"{B}/page")
+    s.page(f"{B}/page")
+    f = _fetcher(tmp_path, s)
+    _fetch(f, f"{B}/other")
+    assert f._robots[B][0] is not None
+    with pytest.raises(RobotsDisallowed) as caught:
+        _fetch(f, f"{A}/start")
+    assert record_text(caught.value, typed=False).endswith(_NOTE)
+    assert s.fetched.count(f"{B}/robots.txt") == 1 and f"{B}/page" not in s.fetched
+
+
+class _WatchedLock:
+    """A host lock that runs ``on_release`` just before it is released (the chain enters and exits it as a ``with`` would)."""
+
+    def __init__(self, on_release):
+        self._lock, self._on_release = threading.Lock(), on_release
+
+    def __enter__(self):
+        self._lock.acquire()
+        return self
+
+    def __exit__(self, *exc):
+        self._on_release()
+        self._lock.release()
+
+    def acquire(self, *args, **kwargs):
+        return self._lock.acquire(*args, **kwargs)
+
+    def release(self):
+        self._on_release()
+        self._lock.release()
+
+    def locked(self):
+        return self._lock.locked()
+
+
+def test_the_host_left_is_stamped_before_its_lock_is_released(tmp_path):
+    """The independent read's S3 (its M18): stamped AFTER the release, another thread taking a.example's lock in between would read
+    a.example's old stamp and send a request inside its interval."""
+    events: list = []
+    s, clock = _Session(events), _Clock(events)
+    s.page(f"{A}/first")
+    s.redirect(f"{A}/start", f"{B}/page")
+    s.page(f"{B}/page")
+    f = _fetcher(tmp_path, s, clock=clock)
+    seen: list = []
+    watched = _WatchedLock(lambda: seen.append(f._last_request.get("a.example")))
+    real = f._host_lock
+    f._host_lock = lambda netloc: watched if netloc == "a.example" else real(netloc)  # type: ignore[method-assign]
+    _fetch(f, f"{A}/first")
+    clock.t += 10
+    _fetch(f, f"{A}/start")
+    assert seen == [1000.0, 1010.0], seen  # at each release, a.example's stamp is already the request just answered
+
+
+def test_a_hop_its_robots_disallows_is_refused_by_robots_even_when_its_interval_would_defer(tmp_path, monkeypatch):
+    """The independent read's S3 (its M4): robots.txt is read before the interval, as for a first request, so a disallowed hop is a
+    RobotsDisallowed, never a deferral that would bring the fetch back to a page it may not ask for."""
+    monkeypatch.setenv("OO_CRAWL_DELAY_MAX_WAIT", "60")
+    s = _Session()
+    s.robots(B, "User-agent: *\nDisallow: /page\nCrawl-delay: 600\n")
+    s.page(f"{B}/first")
+    s.redirect(f"{A}/start", f"{B}/page")
+    s.page(f"{B}/page")
+    f = _fetcher(tmp_path, s)
+    _fetch(f, f"{B}/first")
+    with pytest.raises(RobotsDisallowed):
+        _fetch(f, f"{A}/start")
+
+
+def test_the_hops_robots_read_rides_the_circuit_of_the_hop_hosts_key(tmp_path):
+    """The independent read's S3 (its M13): a host's robots.txt rides that host's circuit, chosen by its host key, so another
+    spelling of b.example (capitals, the default port) is the same circuit as b.example's own reads."""
+    s = _Session()
+    s.redirect(f"{A}/start", "https://B.Example:443/page")
+    s.page("https://B.Example:443/page")
+    f = _fetcher(tmp_path, s)
+    keys: list = []
+    real = f._isolated_proxies
+    f._isolated_proxies = lambda netloc: (keys.append(netloc), real(netloc))[1]  # type: ignore[method-assign]
+    _fetch(f, f"{A}/start")
+    assert set(keys) == {"a.example", "b.example"}, keys  # every circuit chosen by a host key, never by "B.Example:443"
+
+
+def test_a_crawl_whose_start_url_redirects_to_another_subdomain_is_a_failed_fetch(db, source, tmp_path):
+    """Stated in the row (Steward 3's item 3): a crawl kept to good.example whose start URL redirects to edition.good.example (as
+    cnn.com does to edition.cnn.com) is refused at the hop and counted as fetch_failed. Before R629 it stored that one page and
+    harvested nothing from it, since every link there was off the site."""
+    s = _Session()
+    s.redirect("https://good.example", "https://edition.good.example/")
+    s.page("https://edition.good.example/", _html("Edition", "The edition front page of the good site.", links=["/story"]))
+    report = _crawl(db, source, _fetcher(tmp_path, s))
+    assert report.pages_fetched == 0 and report.tally[IngestResult.FETCH_FAILED.value] == 1
+    assert s.asked_of("edition.good.example") == []
+    assert db.query(Article).count() == 0

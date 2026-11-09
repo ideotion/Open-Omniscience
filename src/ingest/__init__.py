@@ -38,7 +38,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlparse, urlsplit
+from urllib.parse import urljoin, urlparse, urlsplit, urlunsplit
 from urllib.robotparser import RobotFileParser
 
 import requests
@@ -1501,7 +1501,6 @@ class EthicalFetcher:
             transient: Exception | None = None
             response = final_url = None
             while True:
-                chain.move(chain.first)  # a retry starts again from the first host, under its lock (R629); nothing to do on the first try
                 try:
                     self._respect_rate_limit(parsed.netloc, host_key)
                 except CrawlDelayDeferred:
@@ -1566,6 +1565,11 @@ class EthicalFetcher:
                     break  # out of retries: fall through to handle the status below
 
                 attempt += 1
+                # A retry starts again from the first host, under its lock (R629), and moves there BEFORE its back-off, so the sleep
+                # holds only that lock, as before R629: a hop host the attempt ended on is stamped and released first and its other
+                # fetches are not held up by this one's sleep (the independent read's nit). The one move: no path reaches the next
+                # attempt without passing here.
+                chain.move(chain.first)
                 self._sleep(self.retry_backoff_s * (2 ** (attempt - 1)))
 
             # the loop exits with either a definitive response or a raised error
@@ -1999,7 +2003,8 @@ class EthicalFetcher:
           - the chain's lock moves to the new host (the old one stamped and released first, never two held: see _RedirectChain);
           - its robots.txt (``_enforce_robots``: a disallow is RobotsDisallowed, an unreadable robots.txt RobotsUnavailable, the
             same refusals as a first request's, ending with fixed words that say a redirect led there);
-          - its interval or Crawl-delay is waited, or deferred past the cap (CrawlDelayDeferred, the stamp written first);
+          - its interval or Crawl-delay is waited, or deferred past the cap (CrawlDelayDeferred, the stamp written first, its
+            sentence naming the hop's address and ending with the same fixed words);
           - the switch is read before and after the waits: a Stop pressed while the hop waited for a lock or an interval refuses
             it, for an injected session as for a real one (the hop's own ``_guard_target`` reads it first only for a real one).
         The robots read is ``_get_robots``, which passes no chain on: its own redirect hops keep today's behaviour and never read
@@ -2015,7 +2020,7 @@ class EthicalFetcher:
         host_key = f"{p.scheme}://{key}"
         if self.respect_robots:
             self._enforce_robots(nxt, host_key, p._replace(netloc=key), hop=True)
-        self._respect_rate_limit(key, host_key)
+        self._respect_rate_limit(key, host_key, hop_url=nxt)
         if _KILL.is_set():
             raise FetchFailed(KILL_SWITCH_REFUSAL)
         chain.requested = True
@@ -2254,7 +2259,14 @@ class EthicalFetcher:
                 f"robots.txt for {failure_url(host_key)} could not be determined ({cause}); refusing to fetch{caveat}{via}",
                 cause=cause,
             )
-        if not parser.can_fetch(self.user_agent, url):
+        # RobotFileParser compares the path AND what follows it, so an address with an EMPTY path and a query or a fragment
+        # (https://b.example?x, https://b.example#f) was compared as "?x" or "#f", which no "Disallow: /" covers, while requests
+        # asks for "/?x": the page was fetched against its host's robots.txt (the independent read of R629, S1; it predates R629,
+        # and direct fetches had it too). Checked as the "/" it is fetched as; the refusal still names the address as written.
+        # (``url`` was read by urlparse before this call, so urlsplit reads it too.)
+        parts = urlsplit(url)
+        checked = urlunsplit(parts._replace(path="/")) if not parts.path else url
+        if not parser.can_fetch(self.user_agent, checked):
             raise RobotsDisallowed(f"robots.txt disallows {failure_url(url)}{via}")
 
     def _get_robots(self, host_key: str, parsed) -> RobotFileParser | None:
@@ -2349,7 +2361,7 @@ class EthicalFetcher:
 
     # -- rate limiting ----------------------------------------------------- #
 
-    def _respect_rate_limit(self, netloc: str, host_key: str) -> None:
+    def _respect_rate_limit(self, netloc: str, host_key: str, *, hop_url: str | None = None) -> None:
         """Wait out this host's interval, or REFUSE when the wait is too long.
 
         S04-13 S2 (Q1013 = a). Two stamps CAN decide the wait and they live in
@@ -2425,9 +2437,14 @@ class EthicalFetcher:
             # refusal, which is the "refuse and retry next pass" failure this whole
             # sidecar exists to prevent.
             resume_at = self._stamp_host_schedule(netloc, wait, declared_delay)
+            # A redirect hop's deferral (R629) is the hop host's Crawl-delay, not the page asked for's: its address and the fixed
+            # words that say a redirect led there come after the sentence every reader reads (Steward 3's item 1), so a caller
+            # filing it against the page it asked for still says whose Crawl-delay it was. Readers key on the type and on the
+            # "deferred" prefix law/track.py writes before it (src/api/law.py _verdict_of), never on these words.
+            where = f", for {failure_url(hop_url)!r} ({_REDIRECT_HOP_NOTE})" if hop_url else ""
             raise CrawlDelayDeferred(
                 f"Crawl-delay {declared_delay or interval:g} s: not before "
-                f"{datetime.fromtimestamp(resume_at, UTC).isoformat(timespec='seconds')}",
+                f"{datetime.fromtimestamp(resume_at, UTC).isoformat(timespec='seconds')}{where}",
                 netloc=netloc,
                 delay_s=declared_delay or interval,
                 not_before=resume_at,
