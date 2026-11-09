@@ -634,3 +634,9 @@ def uninstall_airplane_socket_guard() -> None:
 
 def is_installed() -> bool:
     return _installed
+
+
+def is_armed() -> bool:
+    """True once ``install_airplane_socket_guard`` armed airplane mode's refusal: the patches may be in place for the SSRF half
+    alone (``ensure_connect_guard_installed``), which refuses nothing while the kill switch is engaged."""
+    return _installed and _airplane_armed

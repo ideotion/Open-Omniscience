@@ -54,7 +54,7 @@ reading; the four screenshots are the box before and after the safe presses.
 rm -rf /tmp/ct-rr
 ( OO_DATA_DIR=/tmp/ct-rr OO_DB_PLAINTEXT=1 OO_NO_SCHEDULER=1 OO_AUTOSEED=0 \
   OO_PORT=8231 OO_LLM_AUTOSTART=0 \
-  .venv/bin/uvicorn src.api.main:app --host 127.0.0.1 --port 8231 & echo $! > /tmp/ct-rr.pid )
+  .venv/bin/uvicorn src.api.main:app --loop asyncio --host 127.0.0.1 --port 8231 & echo $! > /tmp/ct-rr.pid )
 .venv/bin/python docs/audit/release-run-clickthrough-2026-09-18/walk.py \
   http://127.0.0.1:8231 /tmp/walk-out
 kill "$(cat /tmp/ct-rr.pid)"     # by PID; never `pkill -f`, which matches your own command line

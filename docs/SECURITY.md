@@ -411,9 +411,15 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   libuv's C code, past every patched point. `_serve` therefore pins `loop="asyncio"`, and the
   lifespan refuses to start on any loop that is not one of asyncio's own (fixed words naming the
   launcher and `--loop asyncio`), so a bare `python -m uvicorn src.api.main:app` no longer serves on
-  uvloop. What the refusal cannot reach: a server started with `--lifespan off` or mounted inside
-  another ASGI app runs no lifespan (deliberate developer commands no shipped launcher uses; such a
-  server never ran the deferred startup that installs the guard either). **Residual, Windows:** the
+  uvloop. A server started with `--lifespan off`, or mounted inside another ASGI app, runs no
+  lifespan, so neither the loop check nor the guard it arms: the **serving gate** (R644) answers
+  every request with a fixed 503 ("started without its own startup … start the app with its own
+  launcher") until the lifespan's loop check has run AND airplane mode's guard is armed, which the
+  lifespan now does before the first request, a locked store's unlock flow included. Once both hold,
+  the gate is one flag read. Waived only where the boot itself never arms the guard: the guard half
+  under `OO_AIRPLANE_SOCKET_GUARD=0` (the documented opt-out), both halves under
+  `OO_NO_SCHEDULER=1` (a headless or test process that manages the kill switch itself, and boots
+  online with no guard to bypass). **Residual, Windows:** the
   stdlib's proactor loop (what `loop="asyncio"` gives on win32) connects through `ConnectEx`, not
   `socket.connect`, and an IP-literal target skips `getaddrinfo`, so an `asyncio.open_connection` to
   a literal address on that loop would meet no guard (a host name still does). No in-tree code opens
