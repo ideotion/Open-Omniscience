@@ -455,13 +455,6 @@ from .source_samples import (
     include_newsletter_text,
     source_samples,
 )
-# Field checks (2026-11-08, R603): the checks only the operator's machine can run; the same slice position.
-from .field_checks import (
-    FieldCheckRun,
-    field_checks_list,
-    field_checks_report,
-    field_checks_run,
-)
 # What a Thorough build is expected to cost (R459): the same slice position, BEFORE the release
 # run, whose eight routes test_release_run pins as the package's last.
 from .scan_estimate import _mention_rows, _remember_scan_walls, all_diagnostics_estimate
@@ -484,10 +477,6 @@ from .release_run import (
 )
 
 __all__ = [
-    "FieldCheckRun",
-    "field_checks_list",
-    "field_checks_report",
-    "field_checks_run",
     "SAMPLE_ZIP_MAX_BYTES",
     "_BODY_COLUMNS",
     "_RESERVE_BYTES",
