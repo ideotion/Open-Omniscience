@@ -250,3 +250,12 @@ Correct the text in `src/static/locales/ru.json` (the key is the English text).
 | 12 | {n} of {m} pages seen | {n} из {m} страниц просмотрено |
 | 13 | {n} pages seen, total unknown | {n} страниц просмотрено, общее число неизвестно |
 | 14 | {n} stretches the lane did not see. | {n} промежутков, которых полоса не видела. |
+
+## extra-4: Start-up step: the links' covering index (PR #1839)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Building the index that keeps the shared-origin counts fast. One time only; anything the app saves waits until it is done. | Строится индекс, который ускоряет подсчёт общих источников. Только один раз; всё, что сохраняет приложение, ждёт его завершения. |
+| 2 | The index of the articles' links was not built: it needs about {needed} MB of free memory (sorting up to {rows} links, plus the memory the app always keeps free) and this computer has {free} MB. Close other programs and restart the app; until then the shared-origin counts stay slow. | Индекс ссылок статей не построен: ему нужно около {needed} МБ свободной памяти (сортировка до {rows} ссылок плюс память, которую приложение всегда оставляет свободной), а на этом компьютере {free} МБ. Закройте другие программы и перезапустите приложение; до тех пор подсчёт общих источников остаётся медленным. |
+| 3 | The index of the articles' links was not built: the volume your data file is on has {free} MB free and it needs about {needed} MB (up to {rows} links). Free some space and restart the app; until then the shared-origin counts stay slow. | Индекс ссылок статей не построен: на томе с вашим файлом данных свободно {free} МБ, а ему нужно около {needed} МБ (до {rows} ссылок). Освободите место и перезапустите приложение; до тех пор подсчёт общих источников остаётся медленным. |
+| 4 | The index of the articles' links was not built: two starts in a row ended while it was being built (the computer ran out of memory or power, or the app was ended abruptly), so it is not tried again until the app is updated. The shared-origin counts stay slow. | Индекс ссылок статей не построен: два запуска подряд завершились во время его построения (компьютеру не хватило памяти или питания, либо приложение было резко закрыто), поэтому он не будет повторён до обновления приложения. Подсчёт общих источников остаётся медленным. |
