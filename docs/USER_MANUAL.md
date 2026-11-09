@@ -1919,7 +1919,7 @@ them and names where to move them, and nothing is moved or deleted for you.
 | `OO_DATA_DIR` | Override the data directory (see above). |
 | `OO_HOST` / `OO_PORT` | Bind address/port (default `127.0.0.1:8000`). |
 | `OO_AUTOSEED` | Seed the worldwide catalog on first run (default on; `0` to disable). |
-| `OO_NO_SCHEDULER` | Set `1` to never autostart the background scheduler. |
+| `OO_NO_SCHEDULER` | Set `1` to never autostart the background scheduler; the app then boots online instead of in airplane mode. Airplane mode's socket guard is installed either way (only `OO_AIRPLANE_SOCKET_GUARD=0` leaves it out), so turning airplane mode on later still blocks every outside connection. |
 | `OO_NO_INDEX` | Set `1` to skip automatic Insights indexing. |
 | `OO_CUSTODY_ON_INGEST` | Legacy default for auto-logging custody on ingest (the UI preference overrides it once saved). |
 | `OO_KEY_PASSPHRASE` | Encrypt custody private keys at rest (AES-256-GCM via scrypt). Without it, the database passphrase wraps them; with neither, keys are written `0600` in the clear and reported honestly as `plaintext-0600`. |

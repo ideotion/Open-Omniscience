@@ -439,11 +439,12 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   launcher") until the lifespan's loop check has run, the loop serving the request is the stdlib's,
   AND airplane mode's guard is armed, which the
   lifespan now does before the first request, a locked store's unlock flow included. Once the loop check
-  has run and the guard is armed, the gate reads a flag and checks the serving loop on each request. Waived only where the boot itself never arms the guard: the guard half
-  under `OO_AIRPLANE_SOCKET_GUARD=0` (the documented opt-out), both halves under
-  `OO_NO_SCHEDULER=1` (a headless or test process that manages the kill switch itself: it boots
-  online, and an airplane mode engaged there later rests on the per-call refusals alone, since the
-  boot never armed the socket guard). **Windows' proactor loop
+  has run and the guard is armed, the gate reads a flag and checks the serving loop on each request. Only the guard half is ever
+  waived, under `OO_AIRPLANE_SOCKET_GUARD=0` (the documented opt-out, the one setting under which the boot never arms the
+  guard); the loop half never is. `OO_NO_SCHEDULER=1` waives neither (R646): it stops the background scheduler and the boot's
+  kill-switch engage (a headless or test process manages the switch itself, and boots online), but the lifespan, the deferred
+  startup and the unlock install and arm the socket guard under it too, so an airplane mode engaged later on a headless instance
+  is held at the socket like anywhere else. **Windows' proactor loop
   (R643):** the stdlib's proactor (what `loop="asyncio"` gives on win32) connects through
   `_overlapped.ConnectEx` (`WSAConnect` for a datagram socket) and sends datagrams through
   `WSASendTo`, never through `socket.connect`/`sendto`, and an IP-literal target skips

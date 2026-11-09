@@ -266,6 +266,20 @@ def _clear_network_kill_switch():
 
 
 @pytest.fixture(autouse=True)
+def _serving_gate_open_for_in_process_clients():
+    """R644's serving gate answers 503 until a lifespan has run the loop check and armed airplane mode's guard, and most of this suite
+    drives the app through ``TestClient`` WITHOUT ``with``, which runs no lifespan. Since R646 no environment setting waives the gate
+    (``OO_NO_SCHEDULER=1`` used to), so the suite opens it here, the way it lists ``testserver`` in ``OO_ALLOWED_HOSTS``: as the harness,
+    for every in-process client, on the stdlib loop TestClient runs on (the gate still re-checks the loop on every request).
+    ``tests/test_serving_gate_r644.py`` closes it again in its own fixture and pins the refusal. A test that imports ``src.api.main``
+    inside its body, after this ran, finds it closed: import the app at module level."""
+    main = sys.modules.get("src.api.main")
+    if main is not None:
+        main._serving_gate_open = True
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _write_gate_not_leaked(request):
     """Guard against the gate-leak HANG class of bug: a test must never leave the
     single-writer gate held — the next writer would block forever (it once did,

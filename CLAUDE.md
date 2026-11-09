@@ -122,8 +122,8 @@ finding things, or it finds so much that every answer is the same answer).
   (ruled 2026-06-19 field test P0-1/#3/#8/#68; SHIPPED same day):** the kill switch
   was checked at the top of every KNOWN fetch path — airtight only as far as our
   memory. `src/ingest/airplane.py:install_airplane_socket_guard()` (wired into the
-  boot path in `run_deferred_startup`, alongside the boot kill-switch activation,
-  inside the same `OO_NO_SCHEDULER!=1` block) now wraps `socket.getaddrinfo` /
+  boot path in `run_deferred_startup`, the lifespan and the unlock, WHATEVER
+  `OO_NO_SCHEDULER` says (R646); only the boot ENGAGE is gated on it) wraps `socket.getaddrinfo` /
   `create_connection` / `socket.socket.connect(_ex)` process-wide: while the kill
   switch is engaged, ANY non-loopback target raises `AirplaneModeError(OSError)`
   BEFORE the real socket call is reached — so no missed call site, third-party lib,

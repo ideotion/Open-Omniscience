@@ -492,23 +492,26 @@ def _run_startup_upkeep() -> None:
     # once (the one consent, POST /api/scheduler/start), after which collection
     # is continuous. Zero-network boot is preserved AND now explicit/visible: we
     # engage the offline state at boot and never auto-start scraping (the old
-    # autostart-at-boot is retired by this ruling). Gated by OO_NO_SCHEDULER so
-    # tests/headless setups, which manage the kill switch themselves, are
-    # untouched.
+    # autostart-at-boot is retired by this ruling).
+    #
+    # Socket-level backstop FIRST, then engage offline: while airplane mode is on, no
+    # non-loopback packet can leave this process by ANY path (a missed call site, a
+    # third-party lib, a DNS prefetch). The guard is transparent while online, so it
+    # costs nothing during collection. It is installed whatever OO_NO_SCHEDULER says
+    # (R646): a headless instance an operator later takes offline needs it as much as a
+    # desktop one, and OO_AIRPLANE_SOCKET_GUARD=0 is the only switch that leaves it out.
+    try:
+        from src.ingest.airplane import install_airplane_socket_guard
+
+        install_airplane_socket_guard()
+    except Exception as exc:  # noqa: BLE001 - never block startup; the serving gate then refuses every request (R644)
+        log_failure(logger, "could not install the airplane socket guard at boot", exc, level=logging.ERROR)
+    # Only the ENGAGE is gated by OO_NO_SCHEDULER, so tests/headless setups, which
+    # manage the kill switch themselves, are untouched.
     if os.getenv("OO_NO_SCHEDULER", "0") != "1":
         try:
             from src.ingest import activate_kill_switch, crossed_online_since_boot
-            from src.ingest.airplane import install_airplane_socket_guard
 
-            # Socket-level backstop FIRST, then engage offline: while airplane mode
-            # is on, no non-loopback packet can leave this process by ANY path
-            # (a missed call site, a third-party lib, a DNS prefetch). The guard is
-            # transparent while online, so it costs nothing during collection.
-            #
-            # The guard is installed UNCONDITIONALLY -- it is a no-op while online and
-            # is exactly what must already be in place if the operator goes offline
-            # later. Only the ENGAGE is conditional.
-            install_airplane_socket_guard()
             if crossed_online_since_boot():
                 # On the UNLOCK path this function runs in a background thread, and a
                 # new instance's upkeep (catalog seed, ANALYZE, counts, cache warm) is
@@ -577,14 +580,13 @@ async def lifespan(app: FastAPI):
     _serving_loop_checked = True
     # The airplane guard is armed HERE, before any request (R644): ``_serving_gate`` answers 503 until it is, and the unlock flow of a
     # locked store is served before ``run_deferred_startup`` (which arms it again, idempotently) ever runs. Transparent while online.
-    # Gated like the boot engage below: a headless or test process with OO_NO_SCHEDULER=1 manages the kill switch itself.
-    if os.getenv("OO_NO_SCHEDULER", "0") != "1":
-        try:
-            from src.ingest.airplane import install_airplane_socket_guard
+    # Whatever OO_NO_SCHEDULER says (R646): only OO_AIRPLANE_SOCKET_GUARD=0 leaves it out.
+    try:
+        from src.ingest.airplane import install_airplane_socket_guard
 
-            install_airplane_socket_guard()
-        except Exception as exc:  # noqa: BLE001 - the gate then refuses every request, which is the fail-closed answer
-            log_failure(logger, "could not install the airplane socket guard at start", exc, level=logging.ERROR)
+        install_airplane_socket_guard()
+    except Exception as exc:  # noqa: BLE001 - the gate then refuses every request, which is the fail-closed answer
+        log_failure(logger, "could not install the airplane socket guard at start", exc, level=logging.ERROR)
     # The same guard ``_serve`` sets first, for a server that was not started by it (``python -m uvicorn src.api.main:app --loop asyncio``,
     # which the encrypted click-through uses): before the boot record below names the mechanism, and before any request can bring a
     # typed passphrase into this process. ``connect`` guards every place it hands a key to the engine as well.
@@ -3783,12 +3785,9 @@ SERVING_GATE_REFUSAL = (
 
 
 def _serving_preconditions_hold() -> bool:
-    """R644: the lifespan's loop check ran, and airplane mode's guard is armed. The guard half is waived only where the boot itself
-    never arms it: ``OO_AIRPLANE_SOCKET_GUARD=0`` (the operator's documented opt-out) or ``OO_NO_SCHEDULER=1`` (a headless or test
-    process that manages the kill switch itself). The loop half is waived under ``OO_NO_SCHEDULER=1`` only, where no guard exists for
-    a foreign loop to bypass."""
-    if os.getenv("OO_NO_SCHEDULER", "0") == "1":
-        return True
+    """R644: the lifespan's loop check ran, and airplane mode's guard is armed. The guard half is waived only by
+    ``OO_AIRPLANE_SOCKET_GUARD=0``, the operator's documented opt-out, where the boot itself never arms it; the loop half is never
+    waived. ``OO_NO_SCHEDULER=1`` waives neither (R646): the boot arms the guard under it too."""
     # The flag says a lifespan passed the check somewhere in this process; the loop serving THIS request is checked too, so a second
     # server started on another loop with --lifespan off after it cannot ride on the first one's check (security read A).
     import asyncio as _asyncio
