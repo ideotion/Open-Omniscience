@@ -1501,7 +1501,6 @@ class EthicalFetcher:
             transient: Exception | None = None
             response = final_url = None
             while True:
-                chain.move(chain.first)  # a retry starts again from the first host, under its lock (R629); nothing to do on the first try
                 try:
                     self._respect_rate_limit(parsed.netloc, host_key)
                 except CrawlDelayDeferred:
@@ -1566,8 +1565,10 @@ class EthicalFetcher:
                     break  # out of retries: fall through to handle the status below
 
                 attempt += 1
-                # the back-off holds only the first host's lock, as before R629: a hop host the attempt ended on is stamped and
-                # released first, so its other fetches are not held up by this one's sleep (the independent read's nit)
+                # A retry starts again from the first host, under its lock (R629), and moves there BEFORE its back-off, so the sleep
+                # holds only that lock, as before R629: a hop host the attempt ended on is stamped and released first and its other
+                # fetches are not held up by this one's sleep (the independent read's nit). The one move: no path reaches the next
+                # attempt without passing here.
                 chain.move(chain.first)
                 self._sleep(self.retry_backoff_s * (2 ** (attempt - 1)))
 
