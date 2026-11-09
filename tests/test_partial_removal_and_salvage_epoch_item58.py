@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import inspect
 import logging
-import re
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -325,14 +325,31 @@ def test_the_route_answers_a_partial_removal_in_the_removals_own_words(db, clien
     assert {r_[0] for r_ in _persisted(db, "SELECT id FROM articles")} == {keep_id}
 
 
-def test_the_settings_panel_shows_what_is_left_and_the_note_as_text():
-    js = (ROOT / "src" / "static" / "app-settings.js").read_text(encoding="utf-8")
-    start = js.index("async function removeImportedNewsletters(")
-    body = js[start : js.index("\n    }\n", start)]
-    fin = body[body.index("} finally {") :]
-    assert "loadNewsletterRemoveCount()" in fin, "the count is refreshed after a removal that stopped partway too"
-    assert "w.textContent = d.note" in body, "the server's note is set as text, never parsed as markup"
-    assert not re.search(r"innerHTML[^;]*d\.note", body)
+def test_the_route_answers_a_complete_removal_whose_counts_were_not_refreshed_with_its_note(db, client, monkeypatch):
+    ids, keep_id = _seed(db, 2)
+    from src.analytics import store
+
+    def _no_backfill(session):
+        raise RuntimeError(f"planted counter failure {_NEEDLE}")
+
+    monkeypatch.setattr(store, "backfill_keyword_counters", _no_backfill)
+    r = client.post("/api/newsletters/remove-imported", json={"confirm": True})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["removed"] is True and body["removed_articles"] == 2
+    assert body["counts_refreshed"] is False and body["note"] == NEWSLETTER_COUNTS_NOT_REFRESHED
+    assert _NEEDLE not in r.text
+    assert {r_[0] for r_ in _persisted(db, "SELECT id FROM articles")} == {keep_id}
+
+
+def test_the_settings_panel_node_suite():
+    """The panel's handler run as real code (tests/newsletter_remove_node_test.js): the note reaches the user although the panel
+    hides once nothing is left, a stopped removal leaves the panel showing its words and what is left, nothing is re-sent."""
+    proc = subprocess.run(
+        ["node", str(ROOT / "tests" / "newsletter_remove_node_test.js")], capture_output=True, text=True, check=False
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "all assertions passed" in proc.stdout
 
 
 # --------------------------------------------------------------------------------------------------
@@ -358,6 +375,13 @@ def _scoped(db, monkeypatch):
     monkeypatch.setattr(session_mod, "session_scope", _scope)
 
 
+#: The repair's log line when the bump fails: the type only, and what lags.
+_LAG_LINE = (
+    "database repair: the corpus epoch was not bumped (OperationalError); until the next epoch bump the keyword rollup may count "
+    "mentions the repair could not keep and miss new mentions that reuse their ids"
+)
+
+
 def test_a_salvage_epoch_bump_that_fails_reads_none_not_the_epoch_the_damaged_file_had(db, monkeypatch, caplog):
     from src.analytics.corpus_epoch import bump_corpus_epoch
     from src.database import repair
@@ -378,11 +402,54 @@ def test_a_salvage_epoch_bump_that_fails_reads_none_not_the_epoch_the_damaged_fi
     assert out["corpus_epoch"] is None, "a swallowed failure handed back the old epoch, which read as bumped"
     assert out["source_counts_cleared"] == 1, "the next step still ran"
     assert _epoch(db) == 4
-    assert (
-        "database repair: the corpus epoch was not bumped (OperationalError); the keyword rollup may count rows the repair "
-        "could not keep until the next epoch bump"
-    ) in caplog.text
+    assert _LAG_LINE in caplog.text
     assert _NEEDLE not in caplog.text, "the repair logs the type only"
+
+
+def test_through_the_real_session_scope_a_failed_salvage_bump_reads_none(tmp_path, monkeypatch, caplog):
+    """The same, through ``session.session_scope`` itself (commit on success, rollback on error, close, the gate given back):
+    only its session factory points at the test's file, and only the first commit, the bump's, fails."""
+    from sqlalchemy.orm import Session
+
+    from src.analytics.corpus_epoch import get_corpus_epoch
+    from src.database import repair
+    from src.database import session as session_mod
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'scope.db'}", future=True, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    maker = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)
+    event.listen(maker, "before_flush", writer._on_before_flush)
+    event.listen(maker, "do_orm_execute", writer._on_orm_execute)
+    event.listen(maker, "after_transaction_end", writer._on_after_transaction_end)
+    monkeypatch.setattr(session_mod, "SessionLocal", maker)
+    from src.analytics.corpus_epoch import bump_corpus_epoch
+
+    with session_mod.session_scope() as s:
+        s.add(Source(name="S", domain="s.test", article_count=7))
+    for _ in range(3):
+        with session_mod.session_scope() as s:
+            bump_corpus_epoch(s, reason="seed", strict=True)
+
+    real_commit = Session.commit
+    seen = {"n": 0}
+
+    def _commit(self):
+        seen["n"] += 1
+        if seen["n"] == 1:
+            raise sqlalchemy.exc.OperationalError("COMMIT", {}, Exception(f"disk I/O error {_NEEDLE}"))
+        return real_commit(self)
+
+    monkeypatch.setattr(Session, "commit", _commit)
+    with caplog.at_level(logging.DEBUG):
+        out = repair._after_the_swap()
+    monkeypatch.setattr(Session, "commit", real_commit)
+    assert out == {"corpus_epoch": None, "source_counts_cleared": 1}
+    with session_mod.session_scope() as s:
+        assert get_corpus_epoch(s) == 3, "the bump rolled back"
+        assert s.query(Source.article_count).scalar() is None, "the next step committed"
+    assert _LAG_LINE in caplog.text
+    assert _NEEDLE not in caplog.text
+    engine.dispose()
 
 
 def test_a_salvage_epoch_bump_that_works_reads_the_new_epoch(db, monkeypatch):
