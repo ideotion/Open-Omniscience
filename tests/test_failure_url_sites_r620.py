@@ -316,8 +316,14 @@ def test_the_archive_backfill_logs_a_failed_url_masked_inside_its_repr(tmp_path,
             out = advance_backfill(db, fetcher=object(), per_pass=1, state_path=state, ingest_fn=ingest, discover_fn=discover)
     finally:
         db.close()
-    assert out["tally"] == {"error": 1}
     lines = [r.getMessage() for r in caplog.records if r.name == "src.ingest.archive_backfill"]
+    if "@" in url:
+        # Since the independent read of R626 (S1) the walk holds a saved list to the enumeration's rule, so a page address
+        # written with a login is passed over and counted, never handed to the ingest (R630), and nothing is logged.
+        assert out["tally"] == {"skipped_off_host": 1}
+        assert lines == []
+        return
+    assert out["tally"] == {"error": 1}
     assert len(lines) == 1 and lines[0].startswith(f"archive backfill: fetching {written!r} failed: "), lines
     assert "hunter2" not in lines[0] and "alice" not in lines[0]
     quoted = url.replace("alice:hunter2", REDACTED)

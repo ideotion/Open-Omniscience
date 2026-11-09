@@ -93,8 +93,8 @@ dependencies = [
     # (docs/maintenance/EXTERNAL_DEPENDENCIES.md), never by loosening a test.
     "urllib3>=2.7.0,<2.8.1",
     "requests>=2.31",
-    # idna is imported directly by src/ingest/crawl.py (R631: the same-site check encodes a non-ASCII host as requests does before it
-    # connects, idna.encode(host, uts46=True)), so it is declared rather than left to arrive through requests. The floor is 3.7, the
+    # idna is imported directly by src/ingest/crawl.py (R631: the same-site check encodes a non-ASCII host with UTS 46,
+    # idna.encode(host, uts46=True)), so it is declared rather than left to arrive through requests and urllib3. The floor is 3.7, the
     # first release without the quadratic idna.encode on crafted input (CVE-2024-3651): crawl.py hands it hosts from fetched pages.
     "idna>=3.7,<4",
     "httpx>=0.27",

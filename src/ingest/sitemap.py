@@ -60,6 +60,13 @@ from src.monitoring.secret_scrub import record_text
 # never a runaway crawl of the whole site's history in one pass.
 DEFAULT_MAX_SITEMAPS = 5
 DEFAULT_MAX_URLS = 500
+# A discovery keeps the first 100 skipped-off-host lines and counts them all (the independent read of R626, S2): nothing reads the
+# list but tests and a person debugging, and five 9.9 MB urlsets of off-host locs made it 1,191,790 lines and 83 MB.
+SKIPPED_OFF_HOST_KEPT = 100
+# A discovery stops once it has skipped four times ``max_urls`` page locs (off the host or unreadable), so the locs it walks and
+# remembers stay bounded. Never narrower than before R627: then every loc counted toward ``max_urls``, so a page this stop leaves
+# unread was left unread then too.
+SKIPPED_LOCS_PER_URL = 4
 
 # Conventional sitemap locations tried ONLY when the host declares none via
 # robots.txt (declared_sitemaps() is always preferred -- it is the site's OWN
@@ -202,12 +209,19 @@ class SitemapDiscoveryReport:
     urls: list[str] = field(default_factory=list)
     child_sitemaps_fetched: int = 0
     # Child sitemaps AND page locs off the source's host, never fetched or handed on (page locs since R627, written through
-    # failure_url so no user name or password is kept here).
+    # failure_url so no user name or password is kept here): the first SKIPPED_OFF_HOST_KEPT of them, and the count of all.
     skipped_off_host: list[str] = field(default_factory=list)
+    skipped_off_host_count: int = 0
     # Distinct child sitemap and page locs urllib.parse could not read, skipped (R626).
     skipped_unreadable: int = 0
     errors: list[str] = field(default_factory=list)
     stopped_reason: str = "completed"
+
+    def skip_off_host(self, url: str) -> None:
+        """Count ``url`` off the host, and list it (its userinfo masked, R621) while the list is under its cap."""
+        self.skipped_off_host_count += 1
+        if len(self.skipped_off_host) < SKIPPED_OFF_HOST_KEPT:
+            self.skipped_off_host.append(failure_url(url))
 
 
 def discover_sitemap_urls(
@@ -232,6 +246,10 @@ def discover_sitemap_urls(
     loc is recorded in ``skipped_off_host`` (through ``failure_url``) and never returned. A child sitemap or page loc
     ``urllib.parse`` cannot read (``http://[::1``) is counted in ``skipped_unreadable`` and skipped (R626): its bare
     ``ValueError`` ended the whole discovery, and a page loc handed on ended the caller's walk of the rest.
+
+    Both kinds of skip are bounded: ``skipped_off_host`` keeps its first :data:`SKIPPED_OFF_HOST_KEPT` lines beside
+    ``skipped_off_host_count``, and once :data:`SKIPPED_LOCS_PER_URL` times ``max_urls`` page locs have been skipped the
+    discovery stops (``stopped_reason`` ``"max_skipped"``).
     """
     base_host = _registrable_host(host)
     report = SitemapDiscoveryReport(source_host=host)
@@ -243,6 +261,8 @@ def discover_sitemap_urls(
     visited: set[str] = set()
     seen_urls: set[str] = set()
     tried = 0
+    skipped_locs = 0
+    max_skipped_locs = SKIPPED_LOCS_PER_URL * max_urls
 
     while queue:
         if tried >= max_sitemaps:
@@ -259,7 +279,7 @@ def discover_sitemap_urls(
             report.skipped_unreadable += 1
             continue
         if off:
-            report.skipped_off_host.append(failure_url(sm_url))  # a report line: the userinfo masked (R621)
+            report.skip_off_host(sm_url)  # a report line: the userinfo masked (R621)
             continue
         if sm_url.lower().split("?")[0].endswith(".gz"):
             report.errors.append(f"unsupported (gzip): {failure_url(sm_url)}")
@@ -292,18 +312,26 @@ def discover_sitemap_urls(
             if len(report.urls) >= max_urls:
                 report.stopped_reason = "max_urls"
                 break
+            if skipped_locs >= max_skipped_locs:
+                report.stopped_reason = "max_skipped"
+                break
             if entry.loc in seen_urls:
                 continue
             seen_urls.add(entry.loc)
             off = _off_host(entry.loc, base_host)  # the child sitemaps' rule (R627), a userinfo always off (R630)
             if off is None:  # urllib.parse cannot read it (R626)
                 report.skipped_unreadable += 1
+                skipped_locs += 1
                 continue
             if off:
-                report.skipped_off_host.append(failure_url(entry.loc))
+                report.skip_off_host(entry.loc)
+                skipped_locs += 1
                 continue
             report.urls.append(entry.loc)
         if len(report.urls) >= max_urls:
+            break
+        if skipped_locs >= max_skipped_locs:
+            report.stopped_reason = "max_skipped"
             break
 
     return report
