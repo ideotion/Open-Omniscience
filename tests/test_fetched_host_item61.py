@@ -229,6 +229,8 @@ def test_fetched_host_is_cut_to_the_column(db):
         ("bbc.com", "bbc.co.uk", False),
         (ELSEWHERE + ".", SITE, True),  # a trailing dot (the stored host keeps it) is left out of the comparison
         (SITE + ".", SITE, False),
+        (ELSEWHERE, SITE + ".", True),  # ... and from the source's domain
+        ("www." + SITE, SITE + ".", False),
         ("192.0.2.1", SITE, None),  # an IP address: nothing is said
         ("other.example", "good.example", None),  # a top-level domain the list has no rule for: nothing is said
     ],
