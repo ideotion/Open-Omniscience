@@ -355,16 +355,3 @@ def test_a_refused_capability_stays_a_stop_even_if_the_switch_is_cleared_again(m
     raws = fetch_imap("h", "u", "p")
     assert raws.stopped is True and list(raws) == []
     assert _CapImap.last.commands == ["capability", "login"] and _CapImap.last.shut is True
-
-
-def test_a_failure_after_the_stop_is_logged_by_its_class_only(monkeypatch, caplog):
-    class _Late(_Imap):
-        def fetch(self, mid, parts):
-            activate_kill_switch()
-            raise OSError("server said: p4ssw0rd rejected")
-
-    monkeypatch.setattr(imaplib, "IMAP4_SSL", lambda host, port: _Late(host, port))
-    with caplog.at_level("INFO", logger="src.ingest.email"):
-        raws = fetch_imap("h", "u", "p4ssw0rd")
-    assert raws.stopped is True
-    assert "OSError after the airplane-mode Stop" in caplog.text and "p4ssw0rd" not in caplog.text

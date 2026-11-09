@@ -413,13 +413,15 @@ def fetch_imap(
             if typ == "OK" and msg_data and msg_data[0]:
                 raws.append(msg_data[0][1])
         return raws
-    except Exception as exc:
-        # A failure that surfaces once the switch is engaged (imaplib's own CAPABILITY refused above, or the connection failing after
-        # the Stop) ends the pull as the Stop it follows: what was fetched is kept (R640, security read B), never discarded with an error.
-        # ``_MailboxStopped`` counts by its type, so a switch cleared again in between cannot let it out (and LOGOUT with it).
-        if isinstance(exc, _MailboxStopped) or raws.stopped or _stop_requested():
-            if not isinstance(exc, _MailboxStopped):  # kept visible, by its CLASS only: a mail library's words can echo the password
-                _LOG.info("mailbox pull: %s after the airplane-mode Stop; the pull ends as stopped", type(exc).__name__)
+    except _MailboxStopped:
+        # imaplib's own CAPABILITY, refused above: the Stop by its type, so a switch cleared again in between cannot let it out (and
+        # LOGOUT with it).
+        raws.stopped = True
+        return raws
+    except Exception:
+        # A failure that surfaces once the switch is engaged (the connection failing after the Stop) ends the pull as the Stop it
+        # follows: what was fetched is kept (R640, security read B), never discarded with an error.
+        if raws.stopped or _stop_requested():
             raws.stopped = True
             return raws
         raise
@@ -484,11 +486,9 @@ def fetch_pop3(
             resp, lines, octets = conn.retr(i)
             raws.append(b"\r\n".join(lines))
         return raws
-    except Exception as exc:
+    except Exception:
         # As in fetch_imap: a failure once the switch is engaged keeps what was fetched (R640).
         if raws.stopped or _stop_requested():
-            if not isinstance(exc, _MailboxStopped):  # kept visible, by its CLASS only: a mail library's words can echo the password
-                _LOG.info("mailbox pull: %s after the airplane-mode Stop; the pull ends as stopped", type(exc).__name__)
             raws.stopped = True
             return raws
         raise
