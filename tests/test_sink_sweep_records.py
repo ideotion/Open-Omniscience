@@ -66,6 +66,7 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
     },
     "src/ingest/airplane.py": {"a ** mapping handed to a log call can carry exc_info": 1},  # the socks connect's own kwargs
     "src/ingest/batch.py": {"deriv.error is kept as a name, a log call the scan cannot read": 1},  # a precompute's error flag
+    "src/ingest/email.py": {"imaplib.IMAP4.error is kept as a name, a log call the scan cannot read": 1},  # imaplib's exception class (R653)
     # the extraction lock: ``_release_frames`` clears the FRAMES of a raising extraction (the exception is handed to it and to the
     # traceback walk, its ``__cause__``/``__context__`` are followed) so the parsed trees die while the lock is held; it reads no text,
     # stores nothing and logs nothing, and the exception is re-raised unchanged
