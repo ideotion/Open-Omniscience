@@ -360,6 +360,13 @@ def off_the_source_site(host: str | None, source_domain: str | None) -> bool | N
     return ours is None or site is None or ours != site
 
 
+def fetched_host_fields(host: str | None, source_domain: str | None) -> dict:
+    """``fetched_host`` and ``fetched_off_site`` for a payload that credits an article to its source (queue item 61): the host
+    as stored (null when not recorded) and :func:`off_the_source_site` against the source's domain. One place, so the article
+    rows, the Home feed's cards and the briefing's evidence audit cannot come to disagree about the same article."""
+    return {"fetched_host": host, "fetched_off_site": off_the_source_site(host, source_domain)}
+
+
 def get_base_url(url: str) -> str | None:
     """
     Get the base URL (scheme + netloc) from a URL.

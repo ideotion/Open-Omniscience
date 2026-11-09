@@ -373,7 +373,7 @@
       return `<article class="feed-card" data-aid="${a.id}">`
         + `<h3 class="feed-t"><a href="${esc(a.reader_url)}" target="_blank" rel="noopener">`
         + `${esc(a.title) || `<span class="muted">${esc(t("(untitled)"))}</span>`}</a></h3>`
-        + `<div class="feed-meta muted">${esc(a.source || "")}`
+        + `<div class="feed-meta muted">${esc(a.source || "")}${ooFetchedOffSiteNote(a)}`
         + (when ? ` · ${esc(when)}` : "")
         + (lang ? ` · ${ooLangCell(lang)}` : "")
         // The tone this article ALREADY carries (scored at ingest, stored on the row).

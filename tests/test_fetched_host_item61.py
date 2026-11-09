@@ -10,8 +10,9 @@ Before this, the stored ``url`` was the address ASKED for, so nothing said the p
 What is pinned here:
 - the page fetch, run through the real ``EthicalFetcher`` over an in-memory session, the real ``ingest_url`` and the real
   per-source batch, records the host of the final address;
-- the API row, the reader, both exports and the briefing's evidence audit carry it, beside the source;
-- the SPA says "fetched from <host>" beside the source on every row it draws from ``/api/articles`` (the helper run as real code
+- the API row, the Home feed's cards, the reader, both exports and the briefing's evidence audit carry it, beside the source;
+- a backup merge carries it on a new article and adopts it onto a duplicate that never recorded one, never over one it did;
+- the SPA says "fetched from <host>" beside the source on every row it draws from ``/api/articles`` and ``/api/feed`` (the helper run as real code
   by ``tests/fetched_host_node_test.js``, and each of those rows checked to call it);
 - the same-site test that says "another site" gives the crawl's own answers;
 - the boot self-heal adds the column to an older store, with nothing backfilled.
@@ -43,6 +44,8 @@ from src.ingest.crawl import _off_site, _registrable_host
 from src.ingest.pipeline import IngestResult, ingest_url
 from src.utils.url_utils import fetched_host, off_the_source_site
 
+ROOT = Path(__file__).resolve().parent.parent
+STATIC = ROOT / "src" / "static"
 G = "https://good.example"
 OTHER = "https://other.example"
 _ALLOW_ALL = "User-agent: *\nAllow: /\n"
@@ -215,7 +218,9 @@ def test_fetched_host_is_cut_to_the_column(db):
         ("good.example", "good.example:8443"),  # the port is left out
         ("good.example", "u:p@good.example"),  # so is a login written into the domain
         ("2001:db8::1", "[2001:db8::1]"),
-        ("a" * 70 + ".example", "good.example"),  # a label idna refuses: another site, fail closed
+        ("a" * 70 + ".example", "good.example"),  # an ASCII host is compared as written, as the crawl does
+        ("☃.example", "☃.example"),  # a host idna refuses is another site even beside the same text: fail closed
+        ("ü" + "a" * 63 + ".example", "ü" + "a" * 63 + ".example"),  # a label over 63 that idna refuses, the same
     ],
 )
 def test_off_the_source_site_agrees_with_the_crawls_same_site_test(host, domain):
@@ -236,7 +241,7 @@ def _store(tmp_path):
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     with Sess() as s:
-        s.add(Source(name="Good News", domain="good.example"))
+        s.add(Source(name="Good News", domain="good.example", status="qualified"))  # qualified, so the Home feed shows them
         s.commit()
         for i, (host, title) in enumerate(
             [("other.example", "Redirected story"), ("www.good.example", "Home story"), (None, "Older story")], start=1
@@ -291,6 +296,13 @@ def test_the_reader_shows_no_row_for_an_article_stored_before_the_column(client)
     assert "Fetched from (app-observed" not in body and "fetched from another site" not in body
 
 
+def test_the_home_feed_card_carries_it_beside_the_source(client):
+    cards = {c["id"]: c for c in client.get("/api/feed?order=recent&limit=10").json()["results"]}
+    assert (cards[1]["source"], cards[1]["fetched_host"], cards[1]["fetched_off_site"]) == ("Good News", "other.example", True)
+    assert (cards[2]["fetched_host"], cards[2]["fetched_off_site"]) == ("www.good.example", False)
+    assert (cards[3]["fetched_host"], cards[3]["fetched_off_site"]) == (None, None)
+
+
 def test_the_api_row_carries_the_host_and_whether_it_is_another_site(client):
     rows = {r["id"]: r for r in client.get("/api/articles?limit=10").json()["results"]}
     assert (rows[1]["fetched_host"], rows[1]["fetched_off_site"]) == ("other.example", True)
@@ -338,10 +350,54 @@ def test_the_boot_self_heal_adds_the_column_with_nothing_backfilled():
     assert ensure_article_fetched_host_column(eng) == []  # idempotent
 
 
-# --- the SPA's rows ----------------------------------------------------------------------------------------------------------------
 
-ROOT = Path(__file__).resolve().parent.parent
-STATIC = ROOT / "src" / "static"
+# --- a backup merge ------------------------------------------------------------------------------------------------------------------
+
+
+def _merged(tmp_path, local_host, incoming_host):
+    """The same article (same hash) on both sides of a merge; returns the local row's ``fetched_host`` after it."""
+    from src.backup.merge import merge_corpus
+
+    meta = {"artifact_kind": "oo-backup-2", "origin_fingerprint": "test", "app_version": "0.5.0", "alembic_rev": "head",
+            "manifest": None}
+    staged, working = tmp_path / "inc.db", tmp_path / "live.db"
+    for path, host in ((working, local_host), (staged, incoming_host)):
+        engine = create_engine(f"sqlite:///{path}", future=True)
+        Base.metadata.create_all(engine)
+        with sessionmaker(bind=engine, future=True)() as s:
+            s.add(Source(name="Good News", domain="good.example"))
+            s.flush()
+            s.add(Article(url=f"{G}/a", canonical_url=f"{G}/a", source_id=1, title="T", content="Same body.", hash="H1",
+                          fetched_host=host))
+            s.commit()
+        engine.dispose()
+    counts, _ = merge_corpus(staged, working, meta)
+    assert counts["articles"]["duplicate"] == 1, "the fixture must exercise the duplicate path"
+    engine = create_engine(f"sqlite:///{working}", future=True)
+    try:
+        with sessionmaker(bind=engine, future=True)() as s:
+            return s.query(Article).one().fetched_host
+    finally:
+        engine.dispose()
+
+
+def test_a_merge_adopts_the_host_onto_a_duplicate_that_never_recorded_one(tmp_path):
+    assert _merged(tmp_path, None, "other.example") == "other.example"
+
+
+def test_a_merge_never_replaces_a_host_this_install_recorded(tmp_path):
+    assert _merged(tmp_path, "good.example", "other.example") == "good.example"
+
+
+def test_the_boot_path_runs_the_self_heal():
+    """init_db and the scale bench both heal an older store (the drift test checks the heal exists, not that boot calls it)."""
+    for rel, fn in (("src/database/session.py", "def init_db"), ("src/testing/scale_bench.py", None)):
+        text_ = (ROOT / rel).read_text(encoding="utf-8")
+        body = text_.split(fn, 1)[1].split("\ndef ", 1)[0] if fn else text_
+        assert "ensure_article_fetched_host_column(engine)" in body, rel
+
+
+# --- the SPA's rows ----------------------------------------------------------------------------------------------------------------
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
@@ -352,13 +408,14 @@ def test_the_spa_note_runs_as_real_code():
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
-# Every row the SPA draws from /api/articles that credits the source. Each names the source and, in the same expression, the note.
+# Every row the SPA draws from /api/articles or /api/feed that credits the source. Each names the source and, in the same expression, the note.
 _SPA_ROWS = [
     ("app-analysis.js", r'an-card-meta">\$\{esc\(a\.source \|\| ""\)\}\$\{ooFetchedOffSiteNote\(a\)\}'),
     ("app-analysis.js", r'<td>\$\{esc\(a\.source \|\| ""\)\}\$\{ooFetchedOffSiteNote\(a\)\}</td>'),
     ("app-analysis.js", r"<td>\$\{esc\(a\.source\)\}\$\{ooFetchedOffSiteNote\(a\)\}\$\{_anToneChip\(a\)\}</td>"),
     ("app-analysis.js", r'font-size:12px">\$\{esc\(a\.source \|\| ""\)\}\$\{ooFetchedOffSiteNote\(a\)\} · '),
     ("app-home.js", r'\[esc\(a\.source \|\| ""\) \+ ooFetchedOffSiteNote\(a\), esc\(ooIsoDate'),
+    ("app-home.js", r'feed-meta muted">\$\{esc\(a\.source \|\| ""\)\}\$\{ooFetchedOffSiteNote\(a\)\}'),
 ]
 
 

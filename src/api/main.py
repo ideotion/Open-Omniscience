@@ -79,6 +79,7 @@ from src.monitoring.secret_scrub import http_detail, is_driver_text, log_failure
 # Configure logging using shared config
 from src.utils.access_log import install_access_line_filter
 from src.utils.logging_config import setup_logging, uvicorn_log_config
+from src.utils.url_utils import fetched_host_fields, off_the_source_site
 
 # Import security utilities
 
@@ -1669,13 +1670,6 @@ def _top_keyword_terms(session, articles) -> dict[int, str]:
     return out
 
 
-def _fetched_host_fields(host: str | None, source_domain: str | None) -> dict:
-    """``fetched_host`` and ``fetched_off_site`` for an article payload (queue item 61; see :func:`src.utils.url_utils.off_the_source_site`)."""
-    from src.utils.url_utils import off_the_source_site
-
-    return {"fetched_host": host, "fetched_off_site": off_the_source_site(host, source_domain)}
-
-
 def _article_row(
     a, *, keyword_count: int | None = None, top_terms: dict[int, str] | None = None
 ) -> dict:
@@ -1728,7 +1722,7 @@ def _article_row(
         # Queue item 61: where the page was fetched from, after its redirects (null when not recorded), and whether that host
         # is another site than the source's domain (null when there is nothing to compare). A feed item's link may redirect
         # to another site (R635), and this row credits the source.
-        **_fetched_host_fields(a.fetched_host, src.domain if src else None),
+        **fetched_host_fields(a.fetched_host, src.domain if src else None),
         # Q617: a quarantined item reaches a result only when the reader included them,
         # and then it says WHY it was quarantined, on its own row.
         **(
@@ -2660,8 +2654,6 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     src_name = _html.escape(a.source.name) if a.source else None
     # Queue item 61: where the page was fetched from, after its redirects, and whether that is another site than the
     # source's. Said beside the source's name, since that is the credit it qualifies, and in full with the capture facts.
-    from src.utils.url_utils import off_the_source_site
-
     _src_domain = a.source.domain if a.source else None
     _off_site = off_the_source_site(a.fetched_host, _src_domain)
     if src_name and _off_site:
