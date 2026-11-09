@@ -21,6 +21,7 @@ There is exactly one network path and no raw-requests bypass.
 
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import json
 import logging
@@ -940,6 +941,51 @@ def _close_fetcher_pools() -> int:
     return closed
 
 
+#: The live socket of every mailbox pull in progress (IMAP or POP3, R647). Weak, so a pull that is gone takes its entry with it.
+#: :func:`activate_kill_switch` shuts each one down, so a pull blocked on a stalled server ends at the Stop instead of at its timeout.
+_LIVE_MAILBOX_SOCKETS: weakref.WeakSet[socket.socket] = weakref.WeakSet()
+# Re-entrant for the reason _FETCHER_SESSIONS_LOCK is.
+_LIVE_MAILBOX_SOCKETS_LOCK = threading.RLock()
+
+
+def _shut_socket(sock: socket.socket) -> None:
+    """Shut a live mailbox socket down at the TCP level. Never raises.
+
+    The base ``socket.socket.shutdown``, not an ``SSLSocket``'s own: no TLS close record is written, and the TLS object a reading
+    thread is inside is left alone. Both directions: a ``recv`` blocked in another thread returns at once, and nothing more can be
+    written. The pull's own code then sees the closed connection and ends as the Stop it follows (R640)."""
+    try:
+        socket.socket.shutdown(sock, socket.SHUT_RDWR)
+    except Exception as exc:  # noqa: BLE001 - a socket already closed or never connected has nothing to shut
+        logging.getLogger(__name__).debug("kill switch: shutting a mailbox socket down failed (%s)", type(exc).__name__)
+
+
+def register_mailbox_socket(sock: socket.socket) -> None:
+    """Record a live mailbox socket for the Stop (R647). Called the moment the socket exists, before the greeting is read. If the switch is
+    already engaged it is shut down at once: a Stop that landed between the connect and this call is not missed."""
+    with _LIVE_MAILBOX_SOCKETS_LOCK:
+        _LIVE_MAILBOX_SOCKETS.add(sock)
+    if kill_switch_active():
+        _shut_socket(sock)
+
+
+def unregister_mailbox_socket(sock: object) -> None:
+    """Take ``sock`` off the Stop's list. ``None`` (no socket yet, or one a library already let go of) is a no-op. Never raises."""
+    if sock is None:
+        return
+    with _LIVE_MAILBOX_SOCKETS_LOCK, contextlib.suppress(TypeError):
+        _LIVE_MAILBOX_SOCKETS.discard(sock)  # type: ignore[arg-type]
+
+
+def _shut_mailbox_sockets() -> int:
+    """Shut down every live mailbox socket; how many there were. Never raises."""
+    with _LIVE_MAILBOX_SOCKETS_LOCK:
+        socks = list(_LIVE_MAILBOX_SOCKETS)
+    for sock in socks:
+        _shut_socket(sock)
+    return len(socks)
+
+
 def activate_kill_switch() -> None:
     global _KILL_EPOCH
     with _KILL_EPOCH_LOCK:
@@ -959,6 +1005,9 @@ def activate_kill_switch() -> None:
     # No keep-alive connection is left idle to be reused after the Stop (R638). After the switch is set, so a request that takes a
     # connection from a pool between the two meets the putrequest guard instead.
     _close_fetcher_pools()
+    # A mailbox pull blocked on a stalled server ends now rather than at its timeout (R647); after the switch is set, so a pull that
+    # registers its socket between the two shuts it itself.
+    _shut_mailbox_sockets()
 
 
 def clear_kill_switch() -> None:

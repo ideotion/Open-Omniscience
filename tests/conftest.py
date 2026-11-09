@@ -265,6 +265,58 @@ def _clear_network_kill_switch():
     _reset_crossed_online_for_tests()
 
 
+def _open_serving_gate(main: object) -> None:
+    """R644's serving gate answers 503 until a lifespan has run the loop check and armed airplane mode's guard, and most of this suite
+    drives the app through ``TestClient`` WITHOUT ``with``, which runs no lifespan. Since R646 no environment setting waives the gate
+    (``OO_NO_SCHEDULER=1`` used to), so the suite opens it, the way it lists ``testserver`` in ``OO_ALLOWED_HOSTS``: as the harness,
+    for every in-process client, on the stdlib loop TestClient runs on (the gate still re-checks the loop on every request).
+    ``tests/test_serving_gate_r644.py`` closes it again in its own fixture and pins the refusal."""
+    main._serving_gate_open = True  # type: ignore[attr-defined]
+
+
+class _OpenServingGateOnImport:
+    """Opens the gate the moment ``src.api.main`` is first imported, wherever that happens: at collection, in a fixture, or inside a
+    test body (a CI job that runs a few files can import it there first; ``tests/test_map_serve.py`` did, and met the 503)."""
+
+    def find_spec(self, name, path, target=None):  # type: ignore[no-untyped-def]
+        if name != "src.api.main":
+            return None
+        import importlib.machinery
+
+        spec = importlib.machinery.PathFinder.find_spec(name, path)
+        if spec is None or spec.loader is None:
+            return spec
+        real = spec.loader
+
+        class _Loader(importlib.abc.Loader):
+            def create_module(self, spec):  # type: ignore[no-untyped-def]
+                return real.create_module(spec)
+
+            def exec_module(self, module):  # type: ignore[no-untyped-def]
+                real.exec_module(module)
+                _open_serving_gate(module)
+
+        spec.loader = _Loader()
+        return spec
+
+
+if "src.api.main" in sys.modules:
+    _open_serving_gate(sys.modules["src.api.main"])
+else:
+    import importlib.abc
+
+    sys.meta_path.insert(0, _OpenServingGateOnImport())
+
+
+@pytest.fixture(autouse=True)
+def _serving_gate_open_for_in_process_clients():
+    """Opens it again for each test, in case a test closed it without putting it back (see ``_open_serving_gate``)."""
+    main = sys.modules.get("src.api.main")
+    if main is not None:
+        _open_serving_gate(main)
+    yield
+
+
 @pytest.fixture(autouse=True)
 def _write_gate_not_leaked(request):
     """Guard against the gate-leak HANG class of bug: a test must never leave the

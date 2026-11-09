@@ -115,7 +115,7 @@ convention across every group and every ooMap surface, not a map slice. Recorded
 
 ```
 OO_DATA_DIR=<tmp> OO_DB_PLAINTEXT=1 OO_NO_SCHEDULER=1 .venv/bin/python scripts/ui_clickthrough_seed.py
-OO_DATA_DIR=<tmp> OO_DB_PLAINTEXT=1 OO_NO_SCHEDULER=1 .venv/bin/uvicorn src.api.main:app --port 8011
+OO_DATA_DIR=<tmp> OO_DB_PLAINTEXT=1 OO_NO_SCHEDULER=1 .venv/bin/uvicorn src.api.main:app --loop asyncio --port 8011
 ```
 then drive the five hosts above, scoping every query to the host. No network is touched by any of
 it: `world_countries.json` and `world_disputed.json` are bundled and served from loopback.

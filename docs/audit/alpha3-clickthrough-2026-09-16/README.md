@@ -114,6 +114,6 @@ obligation this report does not discharge.
 ```
 OO_DATA_DIR=<dir> OO_DB_PLAINTEXT=1 .venv/bin/python scripts/ui_clickthrough_seed.py --mini
 OO_DATA_DIR=<dir> OO_DB_PLAINTEXT=1 OO_NO_SCHEDULER=1 \
-  .venv/bin/python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8010
+  .venv/bin/python -m uvicorn src.api.main:app --loop asyncio --host 127.0.0.1 --port 8010
 curl -s -X POST http://127.0.0.1:8010/api/law/seed
 ```

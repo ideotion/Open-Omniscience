@@ -492,23 +492,26 @@ def _run_startup_upkeep() -> None:
     # once (the one consent, POST /api/scheduler/start), after which collection
     # is continuous. Zero-network boot is preserved AND now explicit/visible: we
     # engage the offline state at boot and never auto-start scraping (the old
-    # autostart-at-boot is retired by this ruling). Gated by OO_NO_SCHEDULER so
-    # tests/headless setups, which manage the kill switch themselves, are
-    # untouched.
+    # autostart-at-boot is retired by this ruling).
+    #
+    # Socket-level backstop FIRST, then engage offline: while airplane mode is on, no
+    # non-loopback packet can leave this process by ANY path (a missed call site, a
+    # third-party lib, a DNS prefetch). The guard is transparent while online, so it
+    # costs nothing during collection. It is installed whatever OO_NO_SCHEDULER says
+    # (R646): a headless instance an operator later takes offline needs it as much as a
+    # desktop one, and OO_AIRPLANE_SOCKET_GUARD=0 is the only switch that leaves it out.
+    try:
+        from src.ingest.airplane import install_airplane_socket_guard
+
+        install_airplane_socket_guard()
+    except Exception as exc:  # noqa: BLE001 - never block startup; the serving gate then refuses every request (R644)
+        log_failure(logger, "could not install the airplane socket guard at boot", exc, level=logging.ERROR)
+    # Only the ENGAGE is gated by OO_NO_SCHEDULER, so tests/headless setups, which
+    # manage the kill switch themselves, are untouched.
     if os.getenv("OO_NO_SCHEDULER", "0") != "1":
         try:
             from src.ingest import activate_kill_switch, crossed_online_since_boot
-            from src.ingest.airplane import install_airplane_socket_guard
 
-            # Socket-level backstop FIRST, then engage offline: while airplane mode
-            # is on, no non-loopback packet can leave this process by ANY path
-            # (a missed call site, a third-party lib, a DNS prefetch). The guard is
-            # transparent while online, so it costs nothing during collection.
-            #
-            # The guard is installed UNCONDITIONALLY -- it is a no-op while online and
-            # is exactly what must already be in place if the operator goes offline
-            # later. Only the ENGAGE is conditional.
-            install_airplane_socket_guard()
             if crossed_online_since_boot():
                 # On the UNLOCK path this function runs in a background thread, and a
                 # new instance's upkeep (catalog seed, ANALYZE, counts, cache warm) is
@@ -573,6 +576,17 @@ async def lifespan(app: FastAPI):
     if not _event_loop_is_stdlib(_asyncio.get_running_loop()):
         logger.error(SERVER_EVENT_LOOP_REFUSAL)
         raise RuntimeError(SERVER_EVENT_LOOP_REFUSAL)
+    global _serving_loop_checked
+    _serving_loop_checked = True
+    # The airplane guard is armed HERE, before any request (R644): ``_serving_gate`` answers 503 until it is, and the unlock flow of a
+    # locked store is served before ``run_deferred_startup`` (which arms it again, idempotently) ever runs. Transparent while online.
+    # Whatever OO_NO_SCHEDULER says (R646): only OO_AIRPLANE_SOCKET_GUARD=0 leaves it out.
+    try:
+        from src.ingest.airplane import install_airplane_socket_guard
+
+        install_airplane_socket_guard()
+    except Exception as exc:  # noqa: BLE001 - the gate then refuses every request, which is the fail-closed answer
+        log_failure(logger, "could not install the airplane socket guard at start", exc, level=logging.ERROR)
     # The same guard ``_serve`` sets first, for a server that was not started by it (``python -m uvicorn src.api.main:app --loop asyncio``,
     # which the encrypted click-through uses): before the boot record below names the mechanism, and before any request can bring a
     # typed passphrase into this process. ``connect`` guards every place it hands a key to the engine as well.
@@ -1234,6 +1248,29 @@ async def monitor_requests(request: Request, call_next):
 # replies where gzip's own framing overhead would net negative; it still transparently
 # no-ops when the client sent no `Accept-Encoding: gzip` (curl without it, or any
 # client that doesn't want it) and for responses already declaring another encoding.
+# --- The serving gate (R644) ------------------------------------------------- #
+# The lifespan's loop check (R642) and the airplane guard it arms run only when the
+# server runs the app's lifespan. ``uvicorn --lifespan off``, or this app MOUNTED
+# inside another ASGI app (Starlette runs no lifespan for a mount), skip both and
+# would serve with no network guard at all. So every request is refused with a fixed
+# 503 until both facts hold, and once they do the gate is a single flag read.
+@app.middleware("http")
+async def _serving_gate(request: Request, call_next):
+    global _serving_gate_open, _serving_gate_logged
+    # The loop is checked on EVERY request, never latched (security read B): an open gate must not vouch for a second server started
+    # in this process on uvloop with --lifespan off. One get_running_loop() and a module-name read.
+    import asyncio as _asyncio
+
+    if not _serving_gate_open or not _event_loop_is_stdlib(_asyncio.get_running_loop()):
+        if not _serving_preconditions_hold():
+            if not _serving_gate_logged:  # once: a closed gate refuses every request, and the log should say it once, not per request
+                _serving_gate_logged = True
+                logger.error(SERVING_GATE_REFUSAL)
+            return JSONResponse(status_code=503, content={"detail": SERVING_GATE_REFUSAL})
+        _serving_gate_open = True
+    return await call_next(request)
+
+
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
@@ -3731,6 +3768,40 @@ SERVER_EVENT_LOOP_REFUSAL = (
     "Open Omniscience refuses to start on this event loop: airplane mode's network guard covers only Python's own asyncio loop. "
     "Start the app with its own launcher, or pass --loop asyncio to uvicorn."
 )
+
+
+#: Set by the lifespan once its loop check passed (R644); never by anything else.
+_serving_loop_checked = False
+
+#: Set by ``_serving_gate`` the first time both preconditions hold; from then on it reads only this flag.
+_serving_gate_open = False
+
+#: Set by ``_serving_gate`` once it has logged its refusal, so a closed gate writes one error line, not one per request.
+_serving_gate_logged = False
+
+#: The fixed words of the serving gate's 503 (R644). Two causes share them: a start that skipped the app's own startup, and a guard
+#: that startup could not install (its own ERROR line names that one).
+SERVING_GATE_REFUSAL = (
+    "Open Omniscience is not serving requests: airplane mode's network guard is not in place, because the app was started without "
+    "its own startup or the guard could not be installed (the log says which). Start the app with its own launcher."
+)
+
+
+def _serving_preconditions_hold() -> bool:
+    """R644: the lifespan's loop check ran, and airplane mode's guard is armed. The guard half is waived only by
+    ``OO_AIRPLANE_SOCKET_GUARD=0``, the operator's documented opt-out, where the boot itself never arms it; the loop half is never
+    waived. ``OO_NO_SCHEDULER=1`` waives neither (R646): the boot arms the guard under it too."""
+    # The flag says a lifespan passed the check somewhere in this process; the loop serving THIS request is checked too, so a second
+    # server started on another loop with --lifespan off after it cannot ride on the first one's check (security read A).
+    import asyncio as _asyncio
+
+    if not _serving_loop_checked or not _event_loop_is_stdlib(_asyncio.get_running_loop()):
+        return False
+    if os.getenv("OO_AIRPLANE_SOCKET_GUARD", "1") == "0":
+        return True
+    from src.ingest.airplane import is_armed
+
+    return is_armed()
 
 
 def _event_loop_is_stdlib(loop: object) -> bool:
