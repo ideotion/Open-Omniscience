@@ -53,6 +53,20 @@ def _logged(url: str) -> str:
     return failure_url(url)  # never raises; a URL it cannot read is withheld whole
 
 
+def _logged_domain(domain: object) -> str:
+    """A source's ``domain`` as a log line here writes it (R621, the independent read's S1). ``_extract_domain`` fills it with a
+    URL's netloc, userinfo included, and it has no ``//``, so :func:`_logged` would leave it as it is: everything up to and
+    including its LAST ``@`` is masked (``***@host``), and the rest is written by the fetcher's ``failure_netloc`` (whitespace
+    encoded). Imported on use, as :func:`_logged` is. Never raises."""
+    try:
+        from src.ingest.fetch_verdict import USERINFO_MASK, failure_netloc
+
+        _userinfo, at, host = str(domain).rpartition("@")
+        return f"{USERINFO_MASK}{failure_netloc(host)}" if at else failure_netloc(host)
+    except Exception:  # noqa: BLE001 - a log label; a domain that cannot be written is withheld whole
+        return "<unreadable domain>"
+
+
 class DuckDuckGoSearch:
     """
     A class for performing web searches using DuckDuckGo.
@@ -667,9 +681,9 @@ class DuckDuckGoSearch:
             results.append(updated_source)
 
             if rss_urls:
-                logger.info(f"Found RSS feed for {domain}: {_logged(rss_urls[0])}")
+                logger.info(f"Found RSS feed for {_logged_domain(domain)}: {_logged(rss_urls[0])}")
             else:
-                logger.warning(f"No RSS feed found for {domain}")
+                logger.warning(f"No RSS feed found for {_logged_domain(domain)}")
 
         return results
 
