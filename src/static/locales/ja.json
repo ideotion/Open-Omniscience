@@ -5387,6 +5387,8 @@
   "This window updates on its own. Collection runs continuously while online; airplane mode stops it.": "このウィンドウは自動的に更新されます。収集はオンラインの間ずっと継続して実行されます。機内モードにすると停止します。",
   "This word or name suddenly appears much more often in the articles you collected than it did before. A jump like that usually means a story is moving.": "この単語や名前が、収集した記事の中で以前よりも突然はるかに頻繁に現れています。このような急増は、通常、何かが動いていることを意味します。",
   "Thorough": "徹底",
+  "Thorough pauses collection for about {minutes} min: {timed} of {total} scans timed on this machine, the rest from field medians. It can take longer; Quick stops after about ten minutes.": "徹底モードは約 {minutes} 分間、収集を一時停止します。{total} 件中 {timed} 件のスキャンはこのマシンで計測、残りは現場の中央値によります。これより長くかかることもあります。クイックは約10分で止まります。",
+  "Thorough pauses collection while every scan runs, each up to five minutes; this machine could not give an expected time.": "徹底モードは各スキャン(最大5分)が実行されている間、収集を一時停止します。このマシンでは想定時間を出せませんでした。",
   "Threat model, local-first posture, and the security audit.": "脅威モデル、ローカルファーストの姿勢、そしてセキュリティ監査。",
   "Threshold for this Lead: one origin at or above 60%": "この手がかりの閾値：単一出所が60%以上",
   "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "しきい値：初期は {a} 記事未満または {d} 日未満；確立は {b} 記事以上かつ {e} 日以上；発展中はその中間。",

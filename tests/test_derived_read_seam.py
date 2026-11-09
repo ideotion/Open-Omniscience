@@ -279,7 +279,8 @@ _RAW_CEILING: dict[str, int] = {
     "src/database/session.py": 1,
     "src/monitoring/benchmark.py": 3,
     "src/monitoring/expedition.py": 1,
-    "src/monitoring/integrity.py": 4,
+    # Reads go through the view since F9 (R459); the one name left is the physical table PRAGMA foreign_key_check skips.
+    "src/monitoring/integrity.py": 1,
     # The diagnostic reads the PHYSICAL table on purpose: PRAGMA index_list and sqlite_stat1 need
     # its name and a view owns neither, and what it measures is the table's own index cost.
     "src/monitoring/keyword_write_cost.py": 1,

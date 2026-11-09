@@ -5387,6 +5387,8 @@
   "This window updates on its own. Collection runs continuously while online; airplane mode stops it.": "Это окно обновляется само. Сбор идёт непрерывно, пока вы онлайн; режим полёта его останавливает.",
   "This word or name suddenly appears much more often in the articles you collected than it did before. A jump like that usually means a story is moving.": "Это слово или имя внезапно стало встречаться в собранных вами статьях гораздо чаще, чем раньше. Такой скачок обычно означает, что история развивается.",
   "Thorough": "Подробно",
+  "Thorough pauses collection for about {minutes} min: {timed} of {total} scans timed on this machine, the rest from field medians. It can take longer; Quick stops after about ten minutes.": "Подробный режим приостанавливает сбор примерно на {minutes} мин: {timed} из {total} проверок измерены на этой машине, остальные по полевым медианам. Может занять больше; быстрый режим останавливается примерно через десять минут.",
+  "Thorough pauses collection while every scan runs, each up to five minutes; this machine could not give an expected time.": "Подробный режим приостанавливает сбор, пока идёт каждая проверка, каждая до пяти минут; эта машина не смогла назвать ожидаемое время.",
   "Threat model, local-first posture, and the security audit.": "Модель угроз, локальный подход и аудит безопасности.",
   "Threshold for this Lead: one origin at or above 60%": "Порог зацепки: одно происхождение ≥ 60%",
   "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "Пороги: молодой — менее {a} статей или {d} дней; зрелый — не менее {b} статей и {e} дней; развивающийся — между ними.",

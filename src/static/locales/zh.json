@@ -5387,6 +5387,8 @@
   "This window updates on its own. Collection runs continuously while online; airplane mode stops it.": "此窗口会自行更新。联网时采集持续进行；飞行模式会将其停止。",
   "This word or name suddenly appears much more often in the articles you collected than it did before. A jump like that usually means a story is moving.": "这个词或名字突然在您收集的文章中出现得比以前频繁得多。这样的跳升通常意味着一个故事正在发酵。",
   "Thorough": "彻底",
+  "Thorough pauses collection for about {minutes} min: {timed} of {total} scans timed on this machine, the rest from field medians. It can take longer; Quick stops after about ten minutes.": "全面模式将暂停采集约 {minutes} 分钟：{total} 项扫描中有 {timed} 项在本机计时，其余取自现场中位数。可能耗时更长；快速模式约十分钟后停止。",
+  "Thorough pauses collection while every scan runs, each up to five minutes; this machine could not give an expected time.": "全面模式会在每项扫描运行期间暂停采集，每项最多五分钟；本机无法给出预计时间。",
   "Threat model, local-first posture, and the security audit.": "威胁模型、本地优先的立场，以及安全审计。",
   "Threshold for this Lead: one origin at or above 60%": "此线索的阈值：单一来源地达到或超过 60%",
   "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "阈值：早期低于 {a} 篇文章或 {d} 天；成熟至少 {b} 篇文章且 {e} 天；发展中介于两者之间。",

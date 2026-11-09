@@ -36,6 +36,7 @@ GUARDED = [
     ("src.api.diagnostics.evals", "/api/diagnostics/search-timing-selftest"),
     ("src.api.diagnostics.bundle", "/api/diagnostics/debug-bundle"),
     ("src.api.diagnostics.bundle", "/api/diagnostics/all"),
+    ("src.api.diagnostics.scan_estimate", "/api/diagnostics/all-job/estimate"),
     ("src.api.diagnostics.corpus", "/api/diagnostics/bulletin-language-selftest"),
     ("src.api.diagnostics.corpus", "/api/diagnostics/power-profile-selftest"),
     ("src.api.diagnostics.keywords", "/api/diagnostics/keyword-selftest"),

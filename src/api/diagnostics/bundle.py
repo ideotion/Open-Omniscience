@@ -22,6 +22,7 @@ import shutil
 import tempfile
 import threading
 from collections.abc import Callable
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any
 
@@ -103,7 +104,6 @@ from .sources import (
 from .system import (
     _p0_validation_last,
     columnar_status,
-    corpus_integrity_report,
     data_dir_persistence_report,
     external_freshness,
     frontend_errors,
@@ -233,6 +233,19 @@ def _scheduler_section(slim: bool) -> dict:
     if slim and isinstance(status, dict):
         status = {**status, "storage_guard": _damage_named_not_copied(status.get("storage_guard"))}
     return {"status": status, "recent_runs": recent_runs(30)}
+
+
+#: Set only while the all-diagnostics JOB (the POST /all-job build) writes its members: the one caller allowed to save the integrity
+#: cursor, which only its corpus-integrity.json member reads. The synchronous GET /all builds the same members with it off.
+_RESUME_INTEGRITY: ContextVar[bool] = ContextVar("oo_diag_resume_integrity", default=False)
+
+
+def _resuming_integrity(build: Callable[[], Any]) -> Any:
+    token = _RESUME_INTEGRITY.set(True)
+    try:
+        return build()
+    finally:
+        _RESUME_INTEGRITY.reset(token)
 
 
 @router.get("/debug-bundle", dependencies=[Depends(refuse_cross_site_get)])
@@ -532,9 +545,9 @@ def debug_bundle(
         "schema_drift": _member(
             "schema_drift", lambda: _bounded(lambda: _schema_drift(db)), threaded=False
         ),
-        "corpus_integrity": _member(
-            "corpus_integrity", lambda: _corpus_integrity(db), threaded=False
-        ),
+        # No cursor here: a GET has no side effects, and inside the all-diagnostics archive this section is its own member
+        # (corpus-integrity.json, see _DEBUG_BUNDLE_STANDS_ALONE), which is where the job keeps the exact scans' place.
+        "corpus_integrity": _member("corpus_integrity", lambda: _corpus_integrity(db), threaded=False),
         # Session forensics (2026-07-09 field event): data-dir inventory (what IS the
         # disk usage — orphaned PLAINTEXT backup staging detected loudly), the previous
         # session's clean/unclean-end verdict (+ the collector's last RSS sample = the
@@ -1108,6 +1121,15 @@ def resolve_bundle_profile(requested: str | None) -> str:
     return v if v in _BUNDLE_PROFILES else "full"
 
 
+def _corpus_integrity_member(db: Session) -> dict:
+    """The archive's corpus-integrity member: what GET /integrity returns (sample 500, sampled drift), and -- inside the all-diagnostics
+    JOB only (_RESUME_INTEGRITY) -- with the exact scans' place kept in the app-state store, so a corpus too large for one budget is
+    finished across builds (R459). The synchronous GET /all runs it with the flag off and saves nothing."""
+    from src.monitoring.integrity import KvCursorStore, corpus_integrity
+
+    return corpus_integrity(db, sample=500, full=False, cursor=KvCursorStore() if _RESUME_INTEGRITY.get() else None)
+
+
 def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
     """The ordered (filename, generator) list for the all-diagnostics archive — the SINGLE
     source of truth shared by the synchronous ``/all`` endpoint and the background job, so the
@@ -1160,7 +1182,7 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("contention.json", lambda: _contention_member()),
         ("slow-queries.json", lambda: slow_queries(explain=1, db=db)),
         ("schema-drift.json", lambda: schema_drift_report(db=db)),
-        ("corpus-integrity.json", lambda: corpus_integrity_report(sample=500, full=0, db=db)),
+        ("corpus-integrity.json", lambda: _corpus_integrity_member(db)),
         # The Q310 duplicate-key scan (gate row K's artifact). It calls the SCAN, not
         # the endpoint: importing a diagnostics slice from here would register that
         # slice's route at THIS module's import position, and the Q1139 split guard
@@ -1742,7 +1764,7 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     "/ir-eval": "needs an operator-graded gold-set file (manifest 'excluded')",
     "/gold-builder/sample": "interactive grading sampler, not a report (manifest 'excluded')",
     "/all": "the bundle itself",
-    "/all-job/status": "job control", "/all-job/download": "job control",
+    "/all-job/status": "job control", "/all-job/estimate": "job control — the Thorough build's expected time", "/all-job/download": "job control",
     "/all-job/volumes": (
         "the bundle itself, re-packed — the SAME published archive split into "
         "attachment-sized zips, never a separate report that could disagree with it"
@@ -3561,12 +3583,13 @@ def _all_diagnostics_build(ctx, profile: str, fname: str, mode: str = "thorough"
             ctx.set_progress(done=done, total=total, detail=name)
 
         with zipfile.ZipFile(part_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-            results = _write_all_diagnostics_zip(
+            # The job is the one build that keeps the integrity scans' place between runs (R459): the flag is on for its writer only.
+            results = _resuming_integrity(lambda: _write_all_diagnostics_zip(
                 members, z, progress=_progress, should_stop=lambda: ctx.stopping,
                 journal_path=journal_path, db=db, scan_window=_bundle_exclusive_window,
                 profile=resolve_bundle_profile(profile), previous_runs=previous_runs,
                 mode=mode,
-            )
+            ))
     if ctx.stopping:
         # Cancelled between members: drop the partial, never present it as a good archive.
         with contextlib.suppress(OSError):
@@ -3575,6 +3598,9 @@ def _all_diagnostics_build(ctx, profile: str, fname: str, mode: str = "thorough"
             journal_path.unlink()
         return {"cancelled": True, "members": results}
     _os.replace(part_path, final_path)  # atomic publish
+    from .scan_estimate import _remember_scan_walls
+
+    _remember_scan_walls(results)  # after the window closed: a key-value write never rides the exclusive hold
     with contextlib.suppress(OSError):
         journal_path.unlink()  # folded into the zip as bundle-journal.jsonl already
     # Keep only the newest archive (the channel is one-shot; old ones just consume disk).

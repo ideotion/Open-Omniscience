@@ -5387,6 +5387,8 @@
   "This window updates on its own. Collection runs continuously while online; airplane mode stops it.": "এই উইন্ডোটি নিজে থেকেই হালনাগাদ হয়। অনলাইনে থাকাকালীন সংগ্রহ একটানা চলে; বিমান মোড তা থামিয়ে দেয়।",
   "This word or name suddenly appears much more often in the articles you collected than it did before. A jump like that usually means a story is moving.": "এই শব্দ বা নামটি আপনার সংগৃহীত নিবন্ধগুলিতে আগের চেয়ে হঠাৎ অনেক বেশি বার দেখা যাচ্ছে। এমন লাফ সাধারণত বোঝায় যে একটি গল্প এগোচ্ছে।",
   "Thorough": "বিস্তারিত",
+  "Thorough pauses collection for about {minutes} min: {timed} of {total} scans timed on this machine, the rest from field medians. It can take longer; Quick stops after about ten minutes.": "বিস্তারিত মোড প্রায় {minutes} মিনিট সংগ্রহ থামিয়ে রাখে: {total}টির মধ্যে {timed}টি স্ক্যান এই মেশিনে মাপা হয়েছে, বাকিগুলো ক্ষেত্র-মধ্যমা থেকে। আরও বেশি সময় লাগতে পারে; দ্রুত মোড প্রায় দশ মিনিট পরে থামে।",
+  "Thorough pauses collection while every scan runs, each up to five minutes; this machine could not give an expected time.": "বিস্তারিত মোড প্রতিটি স্ক্যান চলাকালীন সংগ্রহ থামিয়ে রাখে, প্রতিটি পাঁচ মিনিট পর্যন্ত; এই মেশিন প্রত্যাশিত সময় দিতে পারেনি।",
   "Threat model, local-first posture, and the security audit.": "হুমকি মডেল, স্থানীয়-প্রথম অবস্থান, এবং নিরাপত্তা নিরীক্ষা।",
   "Threshold for this Lead: one origin at or above 60%": "এই সূত্রের সীমা: একটি উৎস ৬০% বা তার বেশি",
   "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "সীমা: প্রাথমিক {a} নিবন্ধ বা {d} দিনের কম; প্রতিষ্ঠিত অন্তত {b} নিবন্ধ এবং {e} দিন; বিকাশমান এর মাঝামাঝি।",

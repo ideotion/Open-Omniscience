@@ -5387,6 +5387,8 @@
   "This window updates on its own. Collection runs continuously while online; airplane mode stops it.": "यह खिड़की अपने आप अद्यतन होती है। ऑनलाइन रहते हुए संग्रह लगातार चलता है; वायुयान मोड उसे रोक देता है।",
   "This word or name suddenly appears much more often in the articles you collected than it did before. A jump like that usually means a story is moving.": "यह शब्द या नाम आपके एकत्रित लेखों में पहले की तुलना में अचानक कहीं अधिक बार दिखाई दे रहा है। ऐसी उछाल का अर्थ प्रायः है कि कोई कहानी आगे बढ़ रही है।",
   "Thorough": "विस्तृत",
+  "Thorough pauses collection for about {minutes} min: {timed} of {total} scans timed on this machine, the rest from field medians. It can take longer; Quick stops after about ten minutes.": "विस्तृत मोड लगभग {minutes} मिनट संग्रह रोकता है: {total} में से {timed} जाँचें इस मशीन पर मापी गईं, बाकी क्षेत्रीय माध्यिकाओं से। इसमें अधिक समय लग सकता है; त्वरित मोड लगभग दस मिनट बाद रुकता है।",
+  "Thorough pauses collection while every scan runs, each up to five minutes; this machine could not give an expected time.": "विस्तृत मोड हर जाँच के चलने तक संग्रह रोकता है, हर जाँच पाँच मिनट तक; यह मशीन अपेक्षित समय नहीं दे सकी।",
   "Threat model, local-first posture, and the security audit.": "ख़तरा मॉडल, स्थानीय-प्रथम दृष्टिकोण, और सुरक्षा ऑडिट।",
   "Threshold for this Lead: one origin at or above 60%": "इस सुराग की सीमा: एक मूल 60% या अधिक",
   "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "सीमाएँ: प्रारंभिक {a} लेख या {d} दिन से कम; स्थापित कम से कम {b} लेख और {e} दिन; विकासशील इनके बीच।",

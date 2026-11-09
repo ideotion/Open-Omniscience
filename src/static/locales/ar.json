@@ -5387,6 +5387,8 @@
   "This window updates on its own. Collection runs continuously while online; airplane mode stops it.": "تتحدّث هذه النافذة من تلقاء نفسها. يعمل الجمع باستمرار أثناء الاتصال؛ ووضع الطيران يوقفه.",
   "This word or name suddenly appears much more often in the articles you collected than it did before. A jump like that usually means a story is moving.": "هذه الكلمة أو هذا الاسم يظهر فجأة في المقالات التي جمعتها أكثر بكثير من ذي قبل. قفزة كهذه تعني عادة أن قصةً ما تتحرك.",
   "Thorough": "شامل",
+  "Thorough pauses collection for about {minutes} min: {timed} of {total} scans timed on this machine, the rest from field medians. It can take longer; Quick stops after about ten minutes.": "الوضع الشامل يوقف الجمع مؤقتًا نحو {minutes} دقيقة: قيس {timed} من {total} فحصًا على هذا الجهاز، والباقي من وسطيات ميدانية. قد يستغرق أطول؛ الوضع السريع يتوقف بعد نحو عشر دقائق.",
+  "Thorough pauses collection while every scan runs, each up to five minutes; this machine could not give an expected time.": "الوضع الشامل يوقف الجمع مؤقتًا أثناء تشغيل كل فحص، ولكل فحص حتى خمس دقائق؛ لم يستطع هذا الجهاز تقديم وقت متوقع.",
   "Threat model, local-first posture, and the security audit.": "نموذج التهديد، والنهج المحلي أولًا، وتدقيق الأمان.",
   "Threshold for this Lead: one origin at or above 60%": "عتبة هذه الخيط: مصدر واحد عند 60% أو أكثر",
   "Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.": "العتبات: ناشئة دون {a} مقالة أو {d} يومًا؛ راسخة عند {b} مقالة على الأقل و{e} يومًا؛ قيد التطور بين الاثنين.",
