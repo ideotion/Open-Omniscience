@@ -160,7 +160,8 @@ def test_the_projection_allow_list_is_exactly_the_row_it_serves() -> None:
     assert allow, "the allow-list is gone"
     names = set(re.findall(r'"([a-z_]+)"', allow.group(1)))
     body = python_function_source(src, "list_sources")
-    emitted = set(re.findall(r'^\s+"([a-z_]+)": s\.', body, re.M)) | {"tags"}
+    # a field read straight off the row, or rss_url through shown_url (R637: its login shown as ***@); no other wrapper
+    emitted = set(re.findall(r'^\s+"([a-z_]+)": (?:shown_url\()?s\.', body, re.M)) | {"tags"}
     assert names == emitted, (
         f"the allow-list and the row have drifted: allow-list only {names - emitted}, "
         f"row only {emitted - names}"

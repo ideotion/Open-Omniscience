@@ -448,6 +448,7 @@ from .source_samples import (
     _pick,
     _plain,
     _row_dict,
+    _shown_source_columns,
     build_sample_zip,
     source_samples,
 )
@@ -491,6 +492,7 @@ __all__ = [
     "_pick",
     "_plain",
     "_row_dict",
+    "_shown_source_columns",
     "build_sample_zip",
     "source_samples",
     "_MAX_MERGE_UPLOADS",

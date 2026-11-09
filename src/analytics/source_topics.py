@@ -230,7 +230,9 @@ def _write_topics_in_bulk(session, candidates: list[dict]) -> tuple[int, int]:
 
     WHAT THE ORM PATH DID THAT A BULK UPDATE SKIPS, AND WHERE EACH IS KEPT. The Source model has ONE mapper event, ``before_update``
     (``models._derive_source_feed_key``: ``feed_key`` is re-derived from ``rss_url`` on every ORM write of the row), so the same
-    ``feed_key(rss_url)`` is written in the same UPDATE (a stale value is healed exactly as before; ``tests/test_source_topics_bulk.py``).
+    ``feed_key(rss_url)`` is written in the same UPDATE (a stale value is healed exactly as before; ``tests/test_source_topics_bulk.py``),
+    read as the event reads it (``models.source_key_to_write``, R634: a row of a feed stored twice before R628 keeps its key, and is
+    written in a second statement without the column).
     There is no ``@validates``, no ``after_update``, no ``onupdate`` column and no versioned row on Source; the three database triggers on
     ``sources`` fire on ``UPDATE OF domain, id`` (or insert / delete) and this writes neither. The session-level events are kept because the
     statement is still an ORM one (``session.execute(update(Source), rows)``, not Core): the write gate's ``do_orm_execute`` and
@@ -241,26 +243,36 @@ def _write_topics_in_bulk(session, candidates: list[dict]) -> tuple[int, int]:
     from sqlalchemy import select, update
 
     from src.database.feed_key import feed_key
-    from src.database.models import Source
+    from src.database.models import Source, source_key_to_write
 
     by_id = {c["id"]: c["topics"] for c in candidates}
     ids = list(by_id)
     updated = added = 0
     for i in range(0, len(ids), SOURCE_TOPICS_CHUNK):
         rows = session.execute(
-            select(Source.id, Source.domain, Source.tags, Source.rss_url).where(Source.id.in_(ids[i : i + SOURCE_TOPICS_CHUNK]))
+            select(Source.id, Source.domain, Source.tags, Source.rss_url, Source.feed_key).where(
+                Source.id.in_(ids[i : i + SOURCE_TOPICS_CHUNK])
+            )
         ).all()
-        writes = []
+        writes, kept = [], []
         for row in rows:
             if is_a_stand_in_source(row):
                 continue  # tags are never written onto a stand-in source
             merged = _union_topics(row.tags, by_id[row.id])
             if merged:
-                writes.append({"id": row.id, "tags": merged[0], "feed_key": feed_key(row.rss_url)})
+                # R634: the event's reading, so a row of a feed stored twice before R628 keeps its key instead of failing the
+                # whole statement on UNIQUE (domain, feed_key); such a row is written without the column, so its key, which
+                # holds a login, is never a parameter of the statement
+                key = source_key_to_write(session, row.id, row.domain, row.feed_key, row.rss_url)
+                if key == feed_key(row.rss_url):
+                    writes.append({"id": row.id, "tags": merged[0], "feed_key": key})
+                else:
+                    kept.append({"id": row.id, "tags": merged[0]})
                 updated += 1
                 added += merged[1]
-        if writes:
-            session.execute(update(Source), writes)  # ORM bulk UPDATE by primary key
+        for batch in (writes, kept):
+            if batch:
+                session.execute(update(Source), batch)  # ORM bulk UPDATE by primary key
     return updated, added
 
 
