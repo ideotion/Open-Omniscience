@@ -398,15 +398,18 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   `getaddrinfo` (S1's read: `connect(("localhost.localdomain", 80))` queried DNS in airplane mode):
   an alias is refused in fixed words, and `localhost` is swapped for the loopback literal of the
   socket's family before the real call.
-  **Stated residuals (ruled R641, to be closed in the PR after R640's):** `socket.gethostbyname` and
-  `gethostbyname_ex` are not patched, so a library calling them resolves a name through libc in
-  airplane mode; a UDP `sendto`/`sendmsg` to a remote address on an unconnected socket is not refused
-  (no connect, so no guard point), and one handed a host NAME resolves it through libc first. The
-  same is true of three more calls security read A measured querying DNS with the switch engaged:
-  `socket.bind` handed a host name, and reverse lookups (`gethostbyaddr`, `getnameinfo`, and
-  `getfqdn`, which calls `gethostbyaddr`). No in-tree code calls any of these directly; the stdlib's
-  `HTTPServer.server_bind` calls `getfqdn` on its bind host, which with the default `OO_HOST`
-  (`127.0.0.1`) is answered from `/etc/hosts`. **And the server's own event loop:** `uvicorn[standard]`
+  **The other calls that resolve in C (R641):** `socket.gethostbyname` and `gethostbyname_ex`,
+  `gethostbyaddr`, `getnameinfo` (and `getfqdn`, which calls `gethostbyaddr`, so it falls back to the
+  name itself as on any failed lookup), `socket.bind` handed a host name, and `sendto`/`sendmsg`
+  handed one meet the same rule while the switch is engaged: no name, exactly `localhost` (answered
+  from, or swapped for, its loopback literal) and a loopback literal pass; an alias is refused in the
+  same fixed words; anything else, a remote literal whose reverse lookup would ask DNS included, is
+  refused before libc. A bind to any literal address is left alone (it sends nothing). And a datagram
+  needs no connect, so `sendto`/`sendmsg` to a non-loopback destination is refused too, and so is a
+  PySocks UDP `sendto` through a proxy (its relay socket is connected to the proxy, so the real
+  destination is checked there). Still outside: a UDP socket `connect`ed before the Stop can `send`
+  on it afterwards, like a keep-alive TCP connection, but unlike one it goes through no `http.client`
+  barrier; nothing in-tree keeps such a socket. **And the server's own event loop:** `uvicorn[standard]`
   installs uvloop and `uvicorn.run` picks it, and uvloop resolves and connects in libuv's C code, so
   an `async` client on that loop (`httpx.AsyncClient`, `asyncio.open_connection`) would bypass every
   patched point (security read B reached a non-loopback listener that way with the switch engaged).

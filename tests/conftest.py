@@ -629,7 +629,21 @@ def _no_settings_write_is_entered_holding_the_single_writer_gate():
     )
 
 
-_AIRPLANE_ORIGINALS = ("_orig_getaddrinfo", "_orig_create_connection", "_orig_connect", "_orig_connect_ex", "_orig_tunnel", "_orig_putrequest")
+_AIRPLANE_ORIGINALS = (
+    "_orig_getaddrinfo",
+    "_orig_create_connection",
+    "_orig_connect",
+    "_orig_connect_ex",
+    "_orig_tunnel",
+    "_orig_putrequest",
+    "_orig_gethostbyname",
+    "_orig_gethostbyname_ex",
+    "_orig_gethostbyaddr",
+    "_orig_getnameinfo",
+    "_orig_bind",
+    "_orig_sendto",
+    "_orig_sendmsg",
+)
 
 
 def _process_wide_network_calls() -> dict[str, object]:
@@ -647,6 +661,13 @@ def _process_wide_network_calls() -> dict[str, object]:
         "socket.socket.connect_ex": socket.socket.connect_ex,
         "http.client.HTTPConnection._tunnel": http.client.HTTPConnection._tunnel,  # type: ignore[attr-defined]
         "http.client.HTTPConnection.putrequest": http.client.HTTPConnection.putrequest,
+        "socket.gethostbyname": socket.gethostbyname,
+        "socket.gethostbyname_ex": socket.gethostbyname_ex,
+        "socket.gethostbyaddr": socket.gethostbyaddr,
+        "socket.getnameinfo": socket.getnameinfo,
+        "socket.socket.bind": socket.socket.bind,
+        "socket.socket.sendto": socket.socket.sendto,
+        "socket.socket.sendmsg": getattr(socket.socket, "sendmsg", None),
     }
     # Imported here, at the first test's setup and so before any test has swapped a call: the module captures the stdlib's functions at
     # import, and the first fetch of a process used to be the one to import it, inside a test's ``monkeypatch`` window, which made the
