@@ -4679,6 +4679,7 @@
   "Still not answering.": "まだ応答がありません。",
   "Still offline — the request was accepted but airplane mode is still on. Try again.": "まだオフラインです — リクエストは受理されましたが、機内モードがまだ有効です。もう一度お試しください。",
   "Still pulling in the background — the task manager shows it.": "バックグラウンドで取得中です — タスクマネージャーに表示されます。",
+  "Stopped by airplane mode: only the messages fetched before it were imported.": "機内モードで停止しました：それ以前に取得したメッセージだけを取り込みました。",
   "Still running in the background — check the task manager for the result.": "バックグラウンドで実行中です — 結果はタスクマネージャーで確認してください。",
   "Still running in the background — see the task manager.": "バックグラウンドで実行中です — タスクマネージャーを確認してください。",
   "Still running — check the task manager.": "まだ実行中 — タスクマネージャーを確認してください。",

@@ -4679,6 +4679,7 @@
   "Still not answering.": "Weiterhin keine Antwort.",
   "Still offline — the request was accepted but airplane mode is still on. Try again.": "Weiterhin offline — die Anfrage wurde angenommen, aber der Flugmodus ist noch aktiv. Bitte erneut versuchen.",
   "Still pulling in the background — the task manager shows it.": "Läuft weiter im Hintergrund — der Task-Manager zeigt es an.",
+  "Stopped by airplane mode: only the messages fetched before it were imported.": "Durch den Flugmodus gestoppt: Nur die zuvor abgerufenen Nachrichten wurden importiert.",
   "Still running in the background — check the task manager for the result.": "Läuft noch im Hintergrund — das Ergebnis finden Sie im Task-Manager.",
   "Still running in the background — see the task manager.": "Läuft noch im Hintergrund — siehe Task-Manager.",
   "Still running — check the task manager.": "Läuft noch — siehe Task-Manager.",

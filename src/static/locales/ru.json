@@ -4679,6 +4679,7 @@
   "Still not answering.": "По-прежнему нет ответа.",
   "Still offline — the request was accepted but airplane mode is still on. Try again.": "По-прежнему офлайн — запрос принят, но режим полёта всё ещё включён. Попробуйте ещё раз.",
   "Still pulling in the background — the task manager shows it.": "Загрузка продолжается в фоне — она видна в диспетчере задач.",
+  "Stopped by airplane mode: only the messages fetched before it were imported.": "Остановлено режимом полёта: импортированы только сообщения, полученные до него.",
   "Still running in the background — check the task manager for the result.": "Всё ещё выполняется в фоне — результат смотрите в диспетчере задач.",
   "Still running in the background — see the task manager.": "Всё ещё выполняется в фоне — см. диспетчер задач.",
   "Still running — check the task manager.": "Ещё выполняется — откройте диспетчер задач.",
