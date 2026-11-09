@@ -24,6 +24,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import logging
+import math
 import os
 import socket
 import sys
@@ -36,7 +37,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlsplit
 from urllib.robotparser import RobotFileParser
 
 import requests
@@ -253,6 +254,172 @@ def _robots_persist_enabled() -> bool:
     return os.environ.get("OO_ROBOTS_CACHE_PERSIST", "1") != "0"
 
 
+# ONE ENTRY PER HOST (R621). Every per-host record -- the robots decision, its cause and failure count, the host-schedule stamp,
+# the politeness interval, the per-host lock, the Tor circuit -- and both sidecars are keyed by the host and port a request goes
+# to, never by the URL's userinfo, and never by how the host and port happen to be SPELLED. Before, they were keyed by
+# ``scheme://netloc`` and ``netloc`` as written: a credentialed and a plain URL to one host were two hosts to the politeness code
+# (two intervals, two locks, two robots reads), the user name and password were written into robots_cache.json and
+# host_schedule.json, and the robots.txt read sent them as Basic auth; and ``HOST.Example``, ``host:``, ``host:080`` and
+# ``https://host:443`` were each a host of their own (Steward 3's item 2), so a feed linking one site two ways doubled its rate.
+# The page request itself is unchanged: it still carries the URL as given.
+
+#: The default port of each scheme the fetcher speaks. A key never writes it: ``https://host:443`` is ``https://host``.
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _host_netloc(netloc: str, scheme: str = "") -> str:
+    """The host key for ``netloc``: the host and port a request goes to, in one spelling (R621).
+
+    - The userinfo is out: ``urllib.parse`` takes it as everything before the LAST ``@`` and reads the host and port from what
+      follows, and a host and port hold no ``@``.
+    - The host is the one ``urllib.parse`` reads (``.hostname``), which is the name the SSRF guard checks: lower-cased, an IPv6
+      literal in its brackets (a zone kept as written).
+    - The port is its number: leading zeros gone (``host:080``), an empty port gone (``host:``), and the ``scheme``'s default
+      port gone (80 for http, 443 for https). Without a scheme (a bare key read back from host_schedule.json, which records
+      none) every explicit port stays, since ``host:443`` is the key of ``http://host:443``.
+    - A trailing dot STAYS, deliberately (the stop clause of the fold, agreed with the coordinator): ``news.example.`` is an
+      absolute name and ``news.example`` a relative one, which the resolver may complete through resolv.conf's search list
+      (first, under ``ndots`` above one, as in a container; after an NXDOMAIN, under the default), so the two can be two hosts.
+      Both parsers keep the dot, so the guard checks the dotted name, and a key without it would send the robots read to a name
+      the guard never checked, or hand one name's robots answer and backoff to the other.
+
+    Equal keys are therefore equal ``urllib.parse`` hosts and ports, and the robots URL built from the key reaches the host the
+    guard checked; ``_refuse_parser_mismatch`` has already refused any URL that urllib3 reads as another host. Never raises: a
+    host and port ``urllib.parse`` cannot read (a port out of range, a bracket it refuses, no host) come back as written after
+    the userinfo (:func:`_readable_host_key` says ``None`` for them), and the fetcher refuses such a URL before any key is
+    taken."""
+    key = _readable_host_key(netloc, scheme)
+    return netloc.rpartition("@")[2] if key is None else key
+
+
+def _readable_host_key(netloc: str, scheme: str = "") -> str | None:
+    """:func:`_host_netloc`'s key, or ``None`` when ``urllib.parse`` cannot read a host (and port) out of ``netloc``. Never
+    raises. The activity monitor reads this one, and labels such a fetch from the masked URL instead."""
+    try:
+        parts = urlsplit("//" + netloc.rpartition("@")[2])
+        host, port = parts.hostname, parts.port
+    except ValueError:
+        return None
+    if not host:
+        return None
+    if ":" in host:
+        host = f"[{host}]"
+    if port is None or port == _DEFAULT_PORTS.get(scheme):
+        return host
+    return f"{host}:{port}"
+
+
+#: The fixed words a robots refusal (401/403) adds when the page address carried a user name or password (R621, the independent
+#: read's N2): the read is anonymous, so the refusal may be the login's, not a policy or an exit's reputation.
+_ROBOTS_READ_WITHOUT_USERINFO = "robots.txt is read without the page address's credentials"
+
+
+def _carries_userinfo(url: str) -> bool:
+    """Whether ``url``'s authority holds a userinfo (an ``@``, as ``urllib.parse`` reads it). Never raises."""
+    try:
+        return "@" in urlparse(url).netloc
+    except Exception:  # noqa: BLE001 - written from inside a refusal; an unreadable URL adds no words
+        return False
+
+
+def _robots_key_is_normal(key: str) -> bool:
+    """Whether a robots-cache key is ``scheme://`` and the host key of what follows, as :meth:`EthicalFetcher.fetch` writes it."""
+    scheme, sep, netloc = key.partition("://")
+    return bool(sep) and key == f"{scheme}://{_host_netloc(netloc, scheme)}"
+
+
+def _schedule_key_is_normal(key: str) -> bool:
+    """Whether a host-schedule key is its own host key (the scheme-free form: the file records no scheme)."""
+    return _host_netloc(key) == key
+
+
+def _drop_unkeyed_robots(raw: dict) -> dict:
+    """The robots sidecar without the entries an older build keyed otherwise than the host key: by ``scheme://user:pass@host``,
+    or by a spelling (``https://HOST.Example``, ``https://host:443``, ``http://host:080``) that the host now shares with every other
+    spelling of it (R621). DROPPED, not merged: an entry is a cache whose absence the fetcher already handles as a fresh process
+    does (the next fetch of the host reads its robots.txt again, fail-closed as ever), so a drop costs one robots.txt request; and
+    a credentialed entry's decision was read WITH the URL's credentials, which is not the anonymous read the host's one entry now
+    holds, so folding it in, or choosing between it and the host's own entry, would keep a decision no anonymous read made."""
+    return {key: entry for key, entry in raw.items() if _robots_key_is_normal(key)}
+
+
+def _stamp_of(entry) -> tuple[float, float] | None:
+    """A schedule entry's ``(not_before, delay_s)``, or ``None`` when it has no readable, FINITE ``not_before``. A NaN or an
+    infinity is absent, not a stamp: ``max`` with a NaN answers whichever came first, so a NaN host stamp made a credentialed
+    stamp's wait disappear (the independent read's edge). A delay that is not a finite number reads as none."""
+    try:
+        not_before = float(entry["not_before"])
+    except Exception:  # noqa: BLE001 - an unreadable stamp is skipped, as _load_host_schedule skips it
+        return None
+    if not math.isfinite(not_before):
+        return None
+    try:
+        delay_s = float(entry.get("delay_s") or 0.0)
+    except Exception:  # noqa: BLE001 - an unreadable delay is none, as _load_host_schedule reads it
+        delay_s = 0.0
+    return not_before, delay_s if math.isfinite(delay_s) else 0.0
+
+
+def _merge_unkeyed_stamps(raw: dict) -> dict:
+    """The schedule sidecar with each stamp an older build keyed otherwise than the host key (``user:pass@host``,
+    ``HOST.Example``, ``host:080``, ``host:``) folded into the host key's (R621). MERGED, not dropped: a stamp is the host's own
+    stated wish and lapses by time alone (there is no forget path, see below), so dropping one would let the host be fetched
+    before it asked to be. The later ``not_before`` and the larger ``delay_s`` win, whichever key held them, as the longer wait
+    wins in ``_respect_rate_limit``; an unreadable or non-finite stamp adds nothing and takes nothing away."""
+    out = {key: entry for key, entry in raw.items() if _schedule_key_is_normal(key)}
+    for key, entry in raw.items():
+        host = _host_netloc(key)
+        if host == key:
+            continue
+        stamps = [s for s in (_stamp_of(out.get(host)), _stamp_of(entry)) if s is not None]
+        if stamps:
+            out[host] = {"not_before": max(s[0] for s in stamps), "delay_s": max(s[1] for s in stamps)}
+    return out
+
+
+def _lend_default_port_stamps(stamps: dict[str, tuple[float, float]]) -> None:
+    """In memory only: a bare ``host:80`` or ``host:443`` stamp also holds for ``host`` (R621). The file records no scheme, so
+    ``host:443`` is either an older build's key for ``https://host:443`` (now keyed ``host``) or this build's for
+    ``http://host:443``; the stamp is kept under its own key AND its wait is lent to ``host``, the later ``not_before`` and the
+    larger delay winning. That never shortens a wait a host asked for; the cost, stated, is that ``host`` also waits out a
+    stamp of ``http://host:443`` or ``https://host:80``."""
+    for key, (not_before, delay_s) in list(stamps.items()):
+        lent = _stamp_of({"not_before": not_before, "delay_s": delay_s})  # a non-finite value lends nothing (see _stamp_of)
+        if lent is None:
+            continue
+        for scheme in _DEFAULT_PORTS:
+            host = _host_netloc(key, scheme)
+            if host == key:
+                continue
+            if host not in stamps:
+                stamps[host] = lent
+                continue
+            held = _stamp_of({"not_before": stamps[host][0], "delay_s": stamps[host][1]})
+            if held is not None:  # the host's own stamp, when it does not compare, is left as it was read
+                stamps[host] = (max(lent[0], held[0]), max(lent[1], held[1]))
+
+
+def _scrub_sidecar(path: Path, lock: threading.Lock, is_normal, scrub) -> None:
+    """Take the keys an older build wrote otherwise than the host key out of the FILE at load, not only out of memory (R621): a
+    user name and password it wrote are not left on disk for every later read-modify-write to carry forward. Runs whatever
+    ``OO_ROBOTS_CACHE_PERSIST`` and ``OO_HOST_SCHEDULE_PERSIST`` say (Steward 3's item 4): with persistence off nothing new is
+    written, but a file an earlier run left must not keep the credentials. Rewrites the file only when it holds such a key
+    (atomic temp+replace, under the file's own lock), with nothing in it but what was there. Never raises: a failed rewrite
+    leaves the file as it was, and the loaders and writers leave those keys out all the same."""
+    try:
+        with lock:
+            if not path.exists():
+                return
+            raw = json.loads(path.read_text("utf-8")) or {}
+            if not isinstance(raw, dict) or all(is_normal(key) for key in raw):
+                return
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(scrub(raw)), "utf-8")
+            tmp.replace(path)
+    except Exception as exc:  # noqa: BLE001 - best-effort; the loaders and writers leave the keys out regardless
+        log_failure(_LOG, f"host key scrub failed for {path.name}", exc, level=logging.DEBUG)
+
+
 def _load_persisted_robots(
     path: Path, *, now_monotonic, now_wall: float | None = None
 ) -> dict[str, tuple[RobotFileParser | None, float]]:
@@ -269,7 +436,7 @@ def _load_persisted_robots(
     except Exception:  # noqa: BLE001 - a corrupt sidecar must never break startup
         return {}
     out: dict[str, tuple[RobotFileParser | None, float]] = {}
-    for host_key, entry in (raw or {}).items():
+    for host_key, entry in _drop_unkeyed_robots(raw or {}).items():
         try:
             fetched_at = float(entry["fetched_at"])
             kind = entry["kind"]
@@ -312,7 +479,7 @@ def _persisted_robots_fails(path: Path) -> dict[str, int]:
     except Exception:  # noqa: BLE001 - a corrupt sidecar must never break startup
         return {}
     out: dict[str, int] = {}
-    for host_key, entry in raw.items():
+    for host_key, entry in _drop_unkeyed_robots(raw).items():
         try:
             fails = int(entry.get("fails") or 0)
         except (TypeError, ValueError, AttributeError):
@@ -338,7 +505,7 @@ def _persisted_robots_causes(path: Path) -> dict[str, str]:
     except Exception:  # noqa: BLE001 - a corrupt sidecar must never break startup
         return {}
     out: dict[str, str] = {}
-    for host_key, entry in raw.items():
+    for host_key, entry in _drop_unkeyed_robots(raw).items():
         try:
             cause = entry.get("cause")
         except Exception:  # noqa: BLE001 - one bad entry never breaks the load
@@ -365,6 +532,7 @@ def _persist_robots_entry(
                     raw = json.loads(path.read_text("utf-8")) or {}
                 except Exception:  # noqa: BLE001 - a corrupt sidecar starts fresh
                     raw = {}
+            raw = _drop_unkeyed_robots(raw)  # an older build's credentialed or differently spelled key is never carried forward (R621)
             raw[host_key] = {
                 "kind": kind, "body": body, "fetched_at": time.time(), "cause": cause,
                 # The backoff must SURVIVE a restart, or every cold start would hand a
@@ -381,7 +549,8 @@ def _persist_robots_entry(
             tmp.write_text(json.dumps(raw), "utf-8")
             tmp.replace(path)
     except Exception as exc:  # noqa: BLE001 - persistence is an optimisation, never required
-        # the key is "<scheme>://<netloc>", userinfo included: masked here, and taken out of the error's words too (R620, Steward 3 #2)
+        # the fetcher's key names the host only (R621: it holds no userinfo), so this writes the host; the mask and the secrets stay
+        # for any other caller's key, which could carry one (R620, Steward 3 #2)
         log_failure(
             _LOG, f"robots cache persistence failed for {failure_url(host_key)}", exc, *userinfo_secrets(host_key), level=logging.DEBUG
         )
@@ -472,7 +641,7 @@ def _load_host_schedule(
     except Exception:  # noqa: BLE001 - a corrupt sidecar must never break a pass
         return {}
     out: dict[str, tuple[float, float]] = {}
-    for netloc, entry in raw.items():
+    for netloc, entry in _merge_unkeyed_stamps(raw).items():
         try:
             not_before = float(entry["not_before"])
         except (KeyError, TypeError, ValueError):
@@ -483,6 +652,7 @@ def _load_host_schedule(
             delay_s = 0.0
         if not_before > wall_now:
             out[str(netloc)] = (not_before, delay_s)
+    _lend_default_port_stamps(out)
     return out
 
 
@@ -525,6 +695,7 @@ def _persist_host_schedule(path: Path, netloc: str, not_before: float, delay_s: 
                     raw = json.loads(path.read_text("utf-8")) or {}
                 except Exception:  # noqa: BLE001 - a corrupt sidecar starts fresh
                     raw = {}
+            raw = _merge_unkeyed_stamps(raw)  # an older build's credentialed or differently spelled key is folded in, never carried forward (R621)
             raw[netloc] = {"not_before": float(not_before), "delay_s": float(delay_s)}
             if len(raw) > _HOST_SCHEDULE_MAX:
                 # Evict the entries that lapse SOONEST: they are the ones whose loss
@@ -542,7 +713,8 @@ def _persist_host_schedule(path: Path, netloc: str, not_before: float, delay_s: 
             tmp.write_text(json.dumps(raw), "utf-8")
             tmp.replace(path)
     except Exception as exc:  # noqa: BLE001 - persistence is an optimisation, never required
-        # a netloc carries the userinfo: masked here, and taken out of the error's words too (R620, Steward 3 #2)
+        # the fetcher's netloc names the host only (R621: it holds no userinfo), so this writes the host; the mask and the secrets
+        # stay for any other caller's netloc, which could carry one (R620, Steward 3 #2)
         log_failure(
             _LOG,
             f"host schedule persistence failed for {failure_netloc(netloc)}",
@@ -1013,6 +1185,9 @@ class EthicalFetcher:
         # make_fetcher() builds a fresh instance (see the module-level note by
         # _ROBOTS_TTL). Injectable so tests never touch the real data_dir().
         self._robots_cache_path = robots_cache_path or _robots_cache_path()
+        # An older build's keys leave the file whether or not this run persists (R621, Steward 3's item 4): a credential left
+        # on disk is not this run's to keep. Nothing new is written when persistence is off.
+        _scrub_sidecar(self._robots_cache_path, _ROBOTS_PERSIST_LOCK, _robots_key_is_normal, _drop_unkeyed_robots)
         if _robots_persist_enabled():
             try:
                 self._robots.update(
@@ -1029,6 +1204,7 @@ class EthicalFetcher:
         # one too -- two independently-injected paths is how a fixture ends up
         # writing half its state into the real data_dir().
         self._host_schedule_path = self._robots_cache_path.with_name("host_schedule.json")
+        _scrub_sidecar(self._host_schedule_path, _HOST_SCHEDULE_LOCK, _schedule_key_is_normal, _merge_unkeyed_stamps)  # as above
         if _host_schedule_persist_enabled():
             try:
                 self._host_schedule.update(_load_host_schedule(self._host_schedule_path))
@@ -1090,6 +1266,7 @@ class EthicalFetcher:
             return []
         self._refuse_parser_mismatch(url)  # before the guard looks the host up (R622)
         self._guard_target(parsed.hostname)  # SSRF: never reach internal addresses
+        parsed = parsed._replace(netloc=_host_netloc(parsed.netloc, parsed.scheme))  # the host key, never the userinfo or a spelling (R621)
         host_key = f"{parsed.scheme}://{parsed.netloc}"
         with self._host_lock(parsed.netloc):
             parser = self._get_robots(host_key, parsed)
@@ -1129,8 +1306,9 @@ class EthicalFetcher:
         """
         parsed = urlparse(url_or_netloc) if "://" in url_or_netloc else None
         netloc = parsed.netloc if parsed is not None else url_or_netloc
-        keys: tuple[str, ...] = (f"{parsed.scheme}://{netloc}",) if parsed is not None else ()
-        keys += (f"https://{netloc}", f"http://{netloc}")
+        # the cache is keyed by the host key, per scheme (R621): no userinfo, one spelling, no default port
+        keys: tuple[str, ...] = (f"{parsed.scheme}://{_host_netloc(netloc, parsed.scheme)}",) if parsed is not None else ()
+        keys += (f"https://{_host_netloc(netloc, 'https')}", f"http://{_host_netloc(netloc, 'http')}")
         for k in keys:
             cached = self._robots.get(k)
             if cached is None or cached[0] is None:
@@ -1239,6 +1417,10 @@ class EthicalFetcher:
         self._refuse_parser_mismatch(url)  # before the guard looks the host up (R622)
         self._guard_target(parsed.hostname)  # SSRF: never reach internal addresses
 
+        # Every per-host record below (robots, schedule, interval, lock, circuit) is keyed by the host key, never the userinfo
+        # or the host's spelling (R621, see _host_netloc); the request itself is made with ``url`` as given. Taken AFTER
+        # _refuse_parser_mismatch (R622), which reads the URL as written.
+        parsed = parsed._replace(netloc=_host_netloc(parsed.netloc, parsed.scheme))
         host_key = f"{parsed.scheme}://{parsed.netloc}"
         # Per-host Tor circuit (computed once, from the ORIGINAL host) so the
         # robots check and every page/redirect hop for this host share it.
@@ -1624,7 +1806,8 @@ class EthicalFetcher:
             # The two preflight side doors call this without a mapping. Give them the
             # host's own, as the page and robots paths do, so no request through this
             # method is left to ``session.proxies`` (see ``_isolated_proxies``).
-            proxies = self._isolated_proxies(urlparse(url).netloc)
+            first = urlparse(url)
+            proxies = self._isolated_proxies(_host_netloc(first.netloc, first.scheme))  # the host key, as fetch() hands it (R621, Steward 3's item 3)
         # Lazily, and on EVERY request rather than behind a one-shot flag:
         # ``src.ingest.airplane`` imports this module, so the import cannot be at
         # module level, and the installer is an ``if already installed: return``
@@ -1884,10 +2067,12 @@ class EthicalFetcher:
         if not raw:
             return 0
         netloc = raw.split("://", 1)[-1].split("/", 1)[0]
-        if not netloc:
+        if not _host_netloc(netloc):
             return 0
+        # the cache is keyed by the host key, per scheme (R621): no userinfo, one spelling, no default port
+        targets = {f"{scheme}://{_host_netloc(netloc, scheme)}" for scheme in _DEFAULT_PORTS}
         dropped = 0
-        for key in [k for k in self._robots if k.split("://", 1)[-1].split("/", 1)[0] == netloc]:
+        for key in [k for k in self._robots if k in targets]:
             self._robots.pop(key, None)
             self._robots_cause.pop(key, None)
             self._robots_fails.pop(key, None)
@@ -1901,8 +2086,12 @@ class EthicalFetcher:
             # cause existed, or evicted from the map, has no cause to report, and inventing
             # one would put a confident wrong attribution into the pipeline's own data.
             cause = self._robots_cause.get(host_key, "unknown")
+            # A 401/403 for a page address that carried a user name or password is not the same news as a Tor exit's 403: the
+            # robots read went out without them (one anonymous read per host, R621), so a robots.txt behind the login answers
+            # this way. Said in fixed words AFTER the sentence every reader reads, which is otherwise unchanged (N2).
+            caveat = f" ({_ROBOTS_READ_WITHOUT_USERINFO})" if cause == "refused" and _carries_userinfo(url) else ""
             raise RobotsUnavailable(
-                f"robots.txt for {failure_url(host_key)} could not be determined ({cause}); refusing to fetch",
+                f"robots.txt for {failure_url(host_key)} could not be determined ({cause}); refusing to fetch{caveat}",
                 cause=cause,
             )
         if not parser.can_fetch(self.user_agent, url):
