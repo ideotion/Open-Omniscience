@@ -27,7 +27,6 @@ from starlette.routing import Mount
 import src.api.main as main
 import src.ingest.airplane as ap
 
-
 ROOT = Path(__file__).resolve().parent.parent
 
 _needs_uvloop = pytest.mark.skipif(
