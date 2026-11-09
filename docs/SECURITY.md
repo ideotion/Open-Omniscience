@@ -387,6 +387,9 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   (`localhost.localdomain`, `ip6-localhost`) is refused before any lookup, in fixed words, because it
   is resolved from `/etc/hosts` only where that file lists it, and elsewhere the resolver sent the
   query to DNS (the connect to whatever DNS answered was refused, but the query had already left).
+  So a local LLM address that names an alias (`OO_OLLAMA_URL` or `OO_VLLM_URL` set to
+  `http://localhost.localdomain:…`), which the LLM clients accept as loopback, works online and is
+  refused in airplane mode: name it as `127.0.0.1` (the default) or `localhost` instead.
   Any **non-loopback** target raises
   `AirplaneModeError` **before** a real socket is opened, so no missed call
   site, third-party library, or DNS prefetch can egress. Loopback (127/8, ::1, `localhost`)
