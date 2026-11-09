@@ -345,3 +345,34 @@ def test_a_preauth_greeting_on_the_tls_port_is_not_called_a_refused_login(pki, t
         assert not any(b"LOGIN" in line for line in srv.received)
     finally:
         srv.close()
+
+
+def test_a_capability_list_after_starttls_imaplib_cannot_decode_is_named_in_fixed_words(pki, trust_test_ca):
+    """Delta read 1 on R653: the main block's decode-error branch, where the capability list after the upgrade is read."""
+    seen = {"capability": 0}
+
+    def script(line: bytes) -> bytes | None:
+        tag, _, rest = line.partition(b" ")
+        if rest.split(b" ", 1)[0].upper() == b"CAPABILITY":
+            seen["capability"] += 1
+            if seen["capability"] == 2:
+                return b"* CAPABILITY IMAP4rev1 ZQXR653\xff\r\n" + tag + b" OK done\r\n"
+        return _imap(line)
+
+    srv = _Server(_IMAP_GREETING, script, starttls=pki.server)
+    try:
+        assert "before logging in; no password was sent" in _refused(fetch_imap, srv, use_ssl=False)
+        assert seen["capability"] == 2 and not any(b"LOGIN" in line for line in srv.received)
+    finally:
+        srv.close()
+
+
+def test_a_folder_name_imaplib_cannot_encode_is_not_blamed_on_the_server():
+    """Delta read 1 on R653: only the server's bytes failing to DECODE are the server's; a local encode failure is not named as one."""
+
+    class _Encoding(_ImapStoppedMidFetch):
+        def select(self, *a):  # imaplib encodes a command's arguments as ASCII on this side, before anything is sent
+            raise UnicodeEncodeError("ascii", "Boîte", 2, 3, "ordinal not in range(128)")
+
+    with pytest.raises(UnicodeEncodeError):
+        fetch_imap("mail.example", "u", _PW, folder="Boîte", conn=_Encoding())
