@@ -927,6 +927,7 @@ def delete_imported_newsletters(session: Session) -> dict:
     A removal that stops between two chunks (the process ends) has removed the earlier chunks whole and left the counters stale until
     the removal is run again, which finds the articles that are left, or the counter sweep (``reconcile_keyword_counters``) runs.
     """
+    from src.analytics.corpus_epoch import bump_corpus_epoch
     from src.database.models import Base
     from src.database.writer import connection_first, write_lock
 
@@ -954,7 +955,10 @@ def delete_imported_newsletters(session: Session) -> dict:
             for t in dep_tables:
                 session.execute(t.delete().where(t.c.article_id.in_(chunk)))
             session.execute(articles_tbl.delete().where(articles_tbl.c.id.in_(chunk)))
-            session.commit()
+            # Each chunk's deletes commit WITH an epoch bump (the bump commits them), strictly: the columnar rollup merges new
+            # rows by id and would keep counting the removed mentions, and a removal that stops between two chunks must not
+            # leave a committed chunk the epoch never saw. A failed bump rolls the chunk back and raises.
+            bump_corpus_epoch(session, reason="delete_imported_newsletters", strict=True)
 
     # The bulk delete didn't go through index_article, so the denormalised
     # Keyword.mention_count / article_count are now stale — repair them authoritatively.

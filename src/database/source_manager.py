@@ -263,9 +263,15 @@ class SourceManager:
             logger.warning(f"Source with ID {source_id} not found")
             return False
 
+        name = source.name
         self.session.delete(source)
-        self.session.commit()
-        logger.info(f"Deleted source: {source.name} (ID: {source_id})")
+        # The delete cascades to the source's articles and their keyword mentions, which the columnar rollup (merging new
+        # rows by id) would keep counting: the epoch moves IN THE SAME TRANSACTION (the bump commits the delete with it),
+        # strictly, so a failed bump rolls the delete back and raises rather than leave stale sums served (R632 delta).
+        from src.analytics.corpus_epoch import bump_corpus_epoch
+
+        bump_corpus_epoch(self.session, reason="delete_source", strict=True)
+        logger.info(f"Deleted source: {name} (ID: {source_id})")
         return True
 
     # ==================== BATCH SOURCE OPERATIONS ====================

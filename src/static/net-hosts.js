@@ -237,6 +237,16 @@
       "spawned": true
     },
     {
+      "id": "update",
+      "label": "App updates",
+      "hosts": ["api.github.com", "github.com"],
+      "trigger": "click",
+      "setting": null,
+      "fetcher": false,
+      "mixed": true,
+      "spawned": true
+    },
+    {
       "id": "mail",
       "label": "Newsletter mailbox",
       "hosts": [],

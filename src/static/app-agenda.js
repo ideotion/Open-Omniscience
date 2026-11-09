@@ -1380,6 +1380,97 @@
       }
       box.innerHTML = `<div class="ag-dgrid">${cells}</div>`;
     }
+    // ELECTIONS COVERAGE (S06-04 S1's coverage report; the tier report rides the network-free
+    // /api/diagnostics/elections-floor answer since #1829): every floor country's ONE state and
+    // best date tier. Loopback only, so no consent gate. Counts and facts, never a score. The
+    // method, both caveats and the floor list's own unverified status are VISIBLE, never behind
+    // a toggle (informed consent). Fetched once per page; a failure says so in place and the
+    // next visit to the view asks again. The state filter is a lens on the same rows: the
+    // count beside each state is always the full count, never the filtered one.
+    let _agCov = null, _agCovState = "";
+    // [state, label (an existing tier key where one exists), pill class]: the tier pills reuse
+    // _AG_TIER_META's classes so a tier reads the same here as on the calendar.
+    const _AG_COV_STATES = [
+      ["scheduled", "scheduled", "ok"],
+      ["window", "window", "tier-window"],
+      ["projected_upcoming", "projected", "warn"],
+      ["projected_passed", "projected · passed", "err"],
+      ["dateless", "dateless", ""],
+      ["missing", "missing", ""],
+    ];
+    // The view is drawn with t()/tf() at render time inside a `data-i18n-dyn` host, so the
+    // walker never repaints it: app-boot's oo:langchange listener calls this, which redraws
+    // from the payload already held and NEVER fetches (a switch costs no request).
+    function _agCovRepaint() {
+      if (!_agCov || typeof _agCov.then === "function" || _agCov.error || !_agCov.tier_report) return;   // never fetches
+      const box = $("agenda-coverage");
+      if (box && box.style.display !== "none") renderAgendaCoverage();
+    }
+    function agCovFilter(state) {
+      _agCovState = _agCovState === state ? "" : state;
+      renderAgendaCoverage();
+    }
+    function renderAgendaCoverage(justFetched) {
+      const box = $("agenda-coverage"); if (!box) return;
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
+      if (_agCov === null) {
+        box.innerHTML = `<div class="muted">${esc(T("Loading…"))}</div>`;
+        _agCov = api("/api/diagnostics/elections-floor")
+          .then(d => { _agCov = d || { error: true }; })
+          .catch(() => { _agCov = { error: true }; })
+          .then(() => { if (agView() === "coverage") renderAgendaCoverage(true); });
+        return;
+      }
+      if (typeof _agCov.then === "function") return;           // still in flight
+      if (_agCov.error || !_agCov.tier_report) {
+        if (!justFetched) {                                      // a failure from an earlier ask: ask again now
+          _agCov = null;
+          renderAgendaCoverage();
+          return;
+        }
+        box.innerHTML = `<p class="err">${esc(T("Could not load the elections coverage report."))}</p>`;
+        return;
+      }
+      const floor = _agCov, rep = floor.tier_report, counts = rep.counts || {};
+      const meta = {};
+      for (const [k, label, cls] of _AG_COV_STATES) meta[k] = { label, cls };
+      const chips = _AG_COV_STATES.map(([k, label, cls]) => {
+        const on = _agCovState === k;
+        return `<button class="secondary${on ? " active" : ""}" aria-pressed="${on}" data-on-click="agCovFilter(${esc(JSON.stringify(k))})"`
+          + `${on ? ' style="outline:2px solid var(--accent);outline-offset:1px"' : ""}>`
+          + `<span class="pill ${cls}">${esc(T(label))}</span> ${counts[k] || 0}</button>`;
+      }).join(" ");
+      const rows = (rep.countries || [])
+        .filter(r => !_agCovState || r.state === _agCovState)
+        .slice().sort((a, b) => ooCountryCompare(a.cc, b.cc));
+      const body = rows.map(r => {
+        const m = meta[r.state] || { label: r.state, cls: "" };
+        const code = ooCountryCode(r.cc), name = ooCountryName(r.cc, "");
+        const label = name && name !== code ? `${name} (${code})` : code;
+        const entries = (r.entries || []).map(e => esc(e.title)).join("<br>") || "—";
+        // Only a dateless country is asked "why no date"; a dated one may carry a second,
+        // undated entry whose missing fields would contradict its own row.
+        const needs = r.state === "dateless" || r.state === "missing"
+          ? [...new Set((r.entries || []).flatMap(e => e.missing_fields || []))] : [];
+        const why = [r.reason ? esc(T(r.reason)) : "",
+                     needs.length ? esc(TF("fields needed: {fields}", { fields: needs.join(", ") })) : ""]
+          .filter(Boolean).join("<br>");
+        return `<tr><td>${agFlag(r.cc)} ${esc(label)}</td><td><span class="pill ${m.cls}">${esc(T(m.label))}</span></td>`
+          + `<td>${entries}</td><td class="muted">${why}</td></tr>`;
+      }).join("");
+      box.innerHTML = `<h3 style="font-size:14px;margin:4px 0 6px">${esc(T("Elections coverage of the language floor"))}</h3>`
+        + `<p class="muted" style="margin:0 0 6px">${esc(TF("{n} floor countries · country list as of {date}", { n: rep.floor_countries || 0, date: floor.as_of ? ooIsoDate(floor.as_of) : "?" }))}</p>`
+        + `<p style="color:var(--caveat);margin:0 0 4px">${esc(T(floor.caveat || ""))}</p>`
+        + `<p style="color:var(--caveat);margin:0 0 6px">${esc(T(rep.caveat || ""))}</p>`
+        + `<p class="hint" style="margin:0 0 8px"><b>${esc(T("Method"))}</b> ${esc(T(rep.method || ""))}</p>`
+        + `<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">${chips}</div>`
+        + (rows.length
+          ? `<div style="overflow-x:auto;max-width:100%"><table class="data"><thead><tr><th>${esc(T("Country"))}</th><th>${esc(T("State"))}</th>`
+            + `<th>${esc(T("Calendar entries"))}</th><th>${esc(T("Why no date"))}</th></tr></thead><tbody>${body}</tbody></table></div>`
+          : `<div class="muted">${esc(T("No floor country is in this state."))}</div>`);
+    }
     function agNavToday() {
       const t = new Date(); AGV.y = t.getFullYear(); AGV.m = t.getMonth() + 1;
       AGV.day = t.getDate(); renderAgenda();
@@ -1625,6 +1716,7 @@
       if (_agViewTabs) _agViewTabs.paint(view);
       const isMonth = view === "month", isWeek = view === "week", isYear = view === "year", isList = view === "list";
       const isTri = view === "trimester", isSem = view === "semester", isDec = view === "decade";
+      const isCov = view === "coverage";
       const hasBar = isMonth || isWeek || isYear || isTri || isSem || isDec;
       $("agenda-monthbar").style.display = hasBar ? "" : "none";
       $("agenda-month").style.display = isMonth ? "" : "none";
@@ -1635,6 +1727,14 @@
       $("agenda-day").style.display = (isMonth || isWeek) ? "" : "none";
       $("agenda-list").style.display = isList ? "" : "none";
       $("agenda-group-wrap").style.display = isList ? "" : "none";
+      $("agenda-coverage").style.display = isCov ? "" : "none";
+      // The category, country, tag and subscribed filters narrow calendar events; the coverage
+      // report is per floor country and ignores them, so they step aside rather than do nothing.
+      for (const id of ["agenda-cats", "agenda-country", "agenda-tag", "agenda-subonly"]) {
+        const host = $(id) && $(id).closest(".ag-filter");
+        if (host) host.style.display = isCov ? "none" : "";
+      }
+      if (isCov) { renderAgendaCoverage(); return; }
       const rows = agFiltered();
       $("agenda-monthhint").textContent = AG.caveat || "";
       if (AGV.y == null && hasBar) { const _t = new Date(); AGV.y = _t.getFullYear(); AGV.m = _t.getMonth() + 1; }

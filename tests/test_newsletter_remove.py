@@ -153,3 +153,17 @@ def test_no_newsletter_source_is_a_noop(db):
     res = delete_imported_newsletters(db)
     assert res["removed_articles"] == 0
     assert db.query(Article).count() == 1
+
+
+def test_the_removal_moves_the_corpus_epoch(db):
+    """R632 delta: the removed mentions sit below the columnar rollup's id watermark, which an incremental merge
+    never revisits, so each committed chunk carries an epoch bump; a removal of nothing moves nothing."""
+    from src.analytics.corpus_epoch import get_corpus_epoch
+
+    _seed(db)
+    e0 = get_corpus_epoch(db)
+    assert delete_imported_newsletters(db)["removed_articles"] == 2
+    assert get_corpus_epoch(db) > e0
+    e1 = get_corpus_epoch(db)
+    assert delete_imported_newsletters(db)["removed_articles"] == 0
+    assert get_corpus_epoch(db) == e1

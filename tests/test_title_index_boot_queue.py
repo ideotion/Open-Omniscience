@@ -19,6 +19,7 @@ def calls(monkeypatch):
     monkeypatch.setattr(si, "start_build_if_incomplete", lambda: seen.append("queued") or "started")
     monkeypatch.setenv("OO_NO_SCHEDULER", "0")
     monkeypatch.delenv("OO_TITLE_INDEX_AUTOBUILD", raising=False)
+    monkeypatch.setenv("OO_DAY_COUNTS_AUTOBUILD", "0")  # the same step queues the daily keyword counts (tests/test_day_counts.py)
     return seen
 
 

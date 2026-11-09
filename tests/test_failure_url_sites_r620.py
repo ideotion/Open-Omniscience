@@ -28,6 +28,7 @@ import contextlib
 import http.server
 import logging
 import os
+import sys
 import threading
 import time
 from collections.abc import Iterator
@@ -59,6 +60,8 @@ _CRED = "alice:hunter2@"
 _PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy")
 _ROBOTS = b"User-agent: *\nDisallow: /private\n"
 _MAX = 1024
+# The two sidecar tests name a directory for the credentialed host, and a colon cannot be in a Windows file name.
+posix_names = pytest.mark.skipif(sys.platform == "win32", reason="a colon cannot be in a Windows file name")
 
 
 @pytest.fixture(autouse=True)
@@ -406,12 +409,13 @@ def test_userinfo_secrets_are_the_whole_userinfo_and_each_part():
     assert userinfo_secrets(None) == ()  # type: ignore[arg-type]  # never raises
 
 
+@posix_names
 @pytest.mark.parametrize(("key", "written"), [("https://alice:hunter2@a.example", "https://***@a.example"), ("https://a.example", "https://a.example")])
 def test_the_robots_cache_log_writes_its_key_masked(tmp_path, caplog, key, written):
     """An unwritable sidecar (its directory is a regular file named for the credentialed host, so the error's own words quote the
     credentials): the DEBUG line writes the key masked and takes the userinfo out of the error."""
     blocker = tmp_path / "alice:hunter2@a.example"
-    blocker.write_text("")
+    blocker.write_text("", encoding="utf-8")
     with caplog.at_level(logging.DEBUG, logger="src.ingest"):
         ingest._persist_robots_entry(blocker / "robots.json", key, kind="allow", body="")
     lines = [r.getMessage() for r in caplog.records if r.name == "src.ingest" and "robots cache persistence" in r.getMessage()]
@@ -419,10 +423,11 @@ def test_the_robots_cache_log_writes_its_key_masked(tmp_path, caplog, key, writt
     assert ("hunter2" not in lines[0] and "alice" not in lines[0]) if key != written else "alice:hunter2@a.example" in lines[0], lines
 
 
+@posix_names
 @pytest.mark.parametrize(("netloc", "written"), [("alice:hunter2@a.example:8443", "***@a.example:8443"), ("a.example:8443", "a.example:8443")])
 def test_the_host_schedule_log_writes_its_netloc_masked(tmp_path, caplog, netloc, written):
     blocker = tmp_path / "alice:hunter2@a.example"
-    blocker.write_text("")
+    blocker.write_text("", encoding="utf-8")
     with caplog.at_level(logging.DEBUG, logger="src.ingest"):
         ingest._persist_host_schedule(blocker / "host_schedule.json", netloc, 1.0, 2.0)
     lines = [r.getMessage() for r in caplog.records if r.name == "src.ingest" and "host schedule persistence" in r.getMessage()]

@@ -39,7 +39,7 @@
 # The text here is English only, like the rest of the Diagnostics panel; the panel's own buttons
 # and labels ship in twelve languages.
 
-version: 1
+version: 3
 
 checks:
   - id: import-memory-headroom
@@ -206,3 +206,110 @@ checks:
     retire_when: >-
       One report classes every document with residue as one cause or the other, and the fix for
       each cause has shipped.
+
+  - id: live-fetch-ghcnd
+    title: "Live fetch: NOAA GHCN-Daily, one station file (New York Central Park)"
+    kind: live_fetch
+    status: active
+    added_on: "2026-11-08"
+    added_by: "PR #1763 (GHCN-Daily station parser, merged 2026-11-08, written without a live download)"
+    why: >-
+      The GHCN-Daily parser reads NOAA's fixed-width station files, but the build sandbox cannot
+      reach www.ncei.noaa.gov, so the path and the line shape were taken from the documentation.
+      This downloads one station's whole file (a few megabytes) through the app's own fetcher and
+      parser and reports what parsed, what was refused and which elements were skipped. Nothing
+      is stored.
+    retire_when: One report shows the station parsed with no refused lines, or names what changed.
+    params:
+      source: ghcnd
+      station: USW00094728
+
+  - id: live-fetch-nsidc
+    title: "Live fetch: NSIDC Sea Ice Index daily extent (both hemispheres)"
+    kind: live_fetch
+    status: active
+    added_on: "2026-11-08"
+    added_by: "PR #1767 (NSIDC Sea Ice Index v3, merged 2026-11-08, written without a live download)"
+    why: >-
+      The sea ice parser reads the NSIDC daily extent CSVs, but the build sandbox cannot reach
+      noaadata.apps.nsidc.org, so the file names and columns were taken from the product's
+      documentation. This downloads the northern and southern files once each through the app's
+      own fetcher and parser and reports what parsed and what was refused. Nothing is stored.
+    retire_when: One report shows both hemispheres parsed with no refused rows, or names what changed.
+    params:
+      source: nsidc
+
+  - id: import-memory-refusal-early
+    title: Does a big import that cannot fit in memory now stop within minutes?
+    kind: import_journal
+    status: active
+    added_on: "2026-11-08"
+    added_by: "PR #1813 (the memory refusal moved before validation and copy); the 2026-11-08 import reports (seven refusals after 48 min to 9 h)"
+    why: >-
+      An import into an encrypted corpus now checks the memory it needs, with the backup's own row
+      counts, as soon as the backup is unpacked, instead of after hours of validation and copying.
+      Only a real import of a big backup on a small machine shows whether the refusal now comes
+      early, or whether the import that used to be refused now goes through. This reads the app's
+      own record of your last three imports: how each ended, the seconds of each stage, and how
+      long after the start a memory refusal came. The backup's file name is left out.
+    retire_when: >-
+      Reports from two low-memory machines (one a Qubes VM) show a memory refusal arriving before
+      the validation stage, or the same backups importing whole.
+    steps:
+      - Import a big backup into the encrypted corpus as you usually do, on the machine with little memory.
+      - Let it end, refused or done, then press Run here. Nothing is imported again.
+    params:
+      runs: 3
+
+  - id: terminal-panel-windows
+    title: Does the terminal panel open and work on Windows?
+    kind: operator_report
+    status: active
+    added_on: "2026-11-08"
+    added_by: "R600 to R602; PR #1817 (the terminal panel, anticipated for Windows, never run there)"
+    why: >-
+      The launcher can show a small panel (status, jobs, Open UI, Pause collection, Stop app) so
+      the app runs with the browser closed. On Windows it opens in a window of its own and only
+      when Python's curses module works there (the windows-curses package), and nobody has run it
+      on Windows yet. Pressing Record also checks, on this machine, whether the app's Python can
+      import curses and which windows-curses version is installed.
+    retire_when: Two Windows reports (Windows 10 and 11) say the panel opened, o and p worked and q left the app running.
+    platforms: [windows]
+    steps:
+      - "If the app's Python lacks curses, install it first: in the app folder run .venv\\Scripts\\pip install windows-curses, then start the app again with launch.cmd."
+      - "A second window titled \"Open Omniscience panel\" should open beside the server window (the server's log stays in that window; the panel has no log key on Windows). Try o (Open UI), then p (Pause collection, shown only while collecting or online)."
+      - Press q to close the panel (do not press s, which stops the app), check the app still answers in the browser, then pick the answer that fits.
+    answers:
+      - the panel opened and every key worked
+      - the panel opened but o, p or q did not work (say which in the note)
+      - the panel window opened and closed at once
+      - no panel window opened
+    params:
+      probe: python_curses
+
+  - id: in-app-update-end-to-end
+    title: Did the in-app update run end to end on your install?
+    kind: operator_report
+    status: active
+    added_on: "2026-11-08"
+    added_by: "PR #1810 (Settings -> Advanced -> Updates)"
+    why: >-
+      The update stops the app, swaps the checkout in a separate helper process, starts the
+      launcher again and watches it come up. No test here runs a real launcher window, a real
+      Windows console or a real install's git and Python together, so only a real update shows
+      whether the app came back by itself on the new version. Run this after an update offered
+      by Settings -> Advanced -> Updates (or after one refused), then pick what happened.
+    retire_when: >-
+      Reports from one Linux or macOS install and one Windows install say the app came back by
+      itself on the new version, and one report covers a refusal (a dependency change or a
+      local edit) that left the install as it was.
+    steps:
+      - "In Settings -> Advanced -> Updates, press Check for updates, then Update and restart if a version is offered."
+      - Wait up to a few minutes without closing anything, then reload the page.
+      - Open Settings -> Advanced -> Updates again and read the line about the last update, then pick the answer that fits.
+      - "On Windows, say in the note whether a new launcher window opened and whether the old one closed or waited for a key."
+    answers:
+      - the app came back by itself on the new version
+      - the app came back on the old version and said why
+      - the app did not come back; I started it by hand
+      - no update was offered

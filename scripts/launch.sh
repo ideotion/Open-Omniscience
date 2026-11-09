@@ -33,9 +33,20 @@ PORT="${OO_PORT:-8000}"
 BASE="http://127.0.0.1:${PORT}"
 URL="${BASE}${UI_PATH}"
 
+# The passphrases the server holds (src/monitoring/secret_scrub.py HELD_ENV_VARS, which
+# tests/test_launcher_browser_env.py holds this list to). A scripted start that sets one hands it to
+# this launcher's environment, and the server needs it; the browser does not, and a browser started
+# with it would keep it in its own environment (/proc/<pid>/environ, a crash report) for as long as it
+# runs, long after the app has stopped. `env -u` drops each name for the one command it starts, so the
+# variable is never touched in this shell (an install file that declared it readonly cannot stop the
+# browser opening), and both openers below get the same environment.
+OO_HELD_ENV_VARS="OO_DB_PASSPHRASE OO_KEY_PASSPHRASE"
+
 open_browser() {
-    if   command -v xdg-open >/dev/null 2>&1; then xdg-open "$1" >/dev/null 2>&1 || true
-    elif command -v open     >/dev/null 2>&1; then open "$1"     >/dev/null 2>&1 || true
+    local _drop=() _n
+    for _n in $OO_HELD_ENV_VARS; do _drop+=(-u "$_n"); done
+    if   command -v xdg-open >/dev/null 2>&1; then env "${_drop[@]}" xdg-open "$1" >/dev/null 2>&1 || true
+    elif command -v open     >/dev/null 2>&1; then env "${_drop[@]}" open "$1"     >/dev/null 2>&1 || true
     else echo "  Open this address in your browser: $1"
     fi
 }

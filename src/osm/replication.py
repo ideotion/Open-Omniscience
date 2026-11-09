@@ -207,10 +207,12 @@ class GuardedDiffSource:
         return guarded_session(isolation_token=url, allowed_hosts=REPLICATION_HOSTS)
 
     def _get(self, url: str):
+        from src.ingest import kill_switch_engaged_since, kill_switch_epoch
         from src.ingest.airplane import AirplaneModeError
         from src.monitoring.secret_scrub import record_text
         from src.safety.fetcher import NetworkBlocked, RedirectRefused, TransportUnavailable
 
+        epoch = kill_switch_epoch()  # the request's window (R617, R614)
         try:
             resp = self._session(url).get(url, stream=True, timeout=self._timeout)
         except (NetworkBlocked, AirplaneModeError):
@@ -223,8 +225,9 @@ class GuardedDiffSource:
             raise DiffRefused(record_text(exc)) from None
         except Exception as exc:  # noqa: BLE001 - every other failure of the request is the network's or the mirror's
             # The socket-level guard raises inside urllib3 and requests wraps it as a ConnectionError, so a switch thrown after the
-            # request's own check arrives here as a network failure: the switch is asked again before the text is chosen.
-            if _kill_switch_engaged():
+            # request's own check arrives here as a network failure: the switch is asked again before the text is chosen, and so is the
+            # epoch, for a Stop pressed and cleared again inside the request (R617, R614): a refusal, never "unavailable".
+            if _kill_switch_engaged() or kill_switch_engaged_since(epoch):
                 raise DiffRefused(KILL_SWITCH_TEXT) from None
             raise DiffUnavailable(record_text(exc)) from None
         status = getattr(resp, "status_code", 200)

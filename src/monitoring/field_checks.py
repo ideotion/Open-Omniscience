@@ -111,6 +111,9 @@ def manifest_problems(raw: Any) -> list[str]:
             out.append(f"{cid}: platforms must be a list drawn from {PLATFORMS}")
         if c.get("kind") == "operator_report" and not (isinstance(c.get("answers"), list) and c["answers"]):
             out.append(f"{cid}: an operator_report check lists its answers")
+        probe = (c.get("params") or {}).get("probe") if isinstance(c.get("params"), dict) else None
+        if probe is not None and probe not in PROBES:
+            out.append(f"{cid}: no probe named {probe!r}")
     return out
 
 
@@ -453,9 +456,45 @@ def _live_fetch(params: dict, inputs: dict, db: Any, check: dict) -> dict[str, A
                     "columns_missing": list(o.columns_missing), "refused_total": o.refused_total}
         if source == "ipcc":
             return _ipcc_all()
+        if source == "nsidc":
+            return _nsidc_both()
+        if source == "ghcnd":
+            from src.stats.fetch import fetch_ghcnd_station
+
+            station = str(params.get("station") or "")
+            d = fetch_ghcnd_station(station)
+            dated = sorted(str(f.time_period) for f in d.figures if f.time_period)
+            return {"outcome": "pass" if not d.refused_total and not d.all_gap else "partial", "station": station,
+                    "lines_read": d.lines_read, "figures": len(d.figures),
+                    "gap_figures": sum(1 for f in d.figures if f.value is None),
+                    "first_period": dated[0] if dated else None, "last_period": dated[-1] if dated else None,
+                    "refused_total": d.refused_total, "refused_first": d.refused[:3],
+                    "quality_flagged": dict(d.quality_flagged), "skipped_elements": dict(d.skipped_elements)}
     except Exception as exc:  # noqa: BLE001 - the refusal or the break is the finding
         return {"outcome": "fail", "source": source, "error": tokenise_paths(record_text(exc, limit=_ERR_MAX, typed=True))}
     raise FieldCheckError(f"unknown live_fetch source {source!r}")
+
+
+def _nsidc_both() -> dict[str, Any]:
+    """Both hemispheres' Sea Ice Index daily extent files, each through the app's own fetcher and parser; counts only (the
+    per-day coverage map is a count here, not the map). One hemisphere that fails is named and the other still runs."""
+    from src.stats.fetch import fetch_nsidc
+
+    rows = []
+    for region in ("N", "S"):
+        try:
+            p = fetch_nsidc(region)
+            dated = sorted(str(f.time_period) for f in p.figures if f.time_period)
+            rows.append({"region": region, "reached": True, "rows_read": p.rows_read, "figures": len(p.figures),
+                         "first_period": dated[0] if dated else None, "last_period": dated[-1] if dated else None,
+                         "header_lines": p.header_lines, "days_not_fully_observed": len(p.coverage_gaps),
+                         "rows_with_unknown_missing_area": p.rows_with_unknown_missing_area,
+                         "refused_total": p.refused_total, "refused_first": p.refused[:3], "all_gap": p.all_gap})
+        except Exception as exc:  # noqa: BLE001
+            rows.append({"region": region, "reached": False, "error": tokenise_paths(record_text(exc, limit=_ERR_MAX, typed=True))})
+    clean = sum(1 for r in rows if r["reached"] and not r["refused_total"] and not r["all_gap"])
+    reached = sum(1 for r in rows if r["reached"])
+    return {"outcome": "pass" if clean == len(rows) else ("partial" if reached else "fail"), "hemispheres": rows}
 
 
 def _ipcc_all() -> dict[str, Any]:
@@ -523,7 +562,85 @@ def _operator_report(params: dict, inputs: dict, db: Any, check: dict) -> dict[s
             v = client.get(k)
             if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
                 numbers[k] = v
-    return {"outcome": "answered", "answer": answer, "note": tokenise_paths(note) or None, "page_counters": numbers}
+    out: dict[str, Any] = {"outcome": "answered", "answer": answer, "note": tokenise_paths(note) or None, "page_counters": numbers}
+    probe = params.get("probe")
+    if probe is not None:
+        out["probe"] = {"name": probe, **PROBES[probe]()}
+    return out
+
+
+def _probe_python_curses() -> dict[str, Any]:
+    """Whether THIS Python (the server's, the one the launcher starts the panel with) can import curses,
+    and the windows-curses package's version if it is installed. Local and read-only: an import and a
+    metadata read, nothing written."""
+    import importlib
+    import importlib.metadata as md
+    import sys
+
+    out: dict[str, Any] = {"python": sys.version.split()[0]}
+    try:
+        importlib.import_module("curses")
+        out["curses_imports"] = True
+    except Exception as exc:  # noqa: BLE001 - the failure is the finding
+        out.update({"curses_imports": False, "error": tokenise_paths(record_text(exc, limit=_ERR_MAX, typed=True))})
+    try:
+        out["windows_curses"] = md.version("windows-curses")
+    except md.PackageNotFoundError:
+        out["windows_curses"] = None
+    return out
+
+
+#: The local probes an operator_report check may name (``params.probe``): code, never a manifest field.
+PROBES: dict[str, Callable[[], dict[str, Any]]] = {"python_curses": _probe_python_curses}
+
+#: The memory refusal's own opening words (src/backup/merge.py check_memory_for_encrypted_merge).
+_MEMORY_REFUSAL = "Not enough free memory to merge"
+
+
+def _iso_s(a: Any, b: Any) -> float | None:
+    try:
+        return round((datetime.fromisoformat(str(b)) - datetime.fromisoformat(str(a))).total_seconds(), 1)
+    except (TypeError, ValueError):
+        return None
+
+
+def _import_journal(params: dict, inputs: dict, db: Any, check: dict) -> dict[str, Any]:
+    """The app's own run journal for the last imports: how each ended, the stages it finished and their
+    seconds, and, for a memory refusal, how long after the start it came. The backup's file name is left
+    out; an error is kept as its class only, except the memory refusal, whose sentence holds numbers only."""
+    from src.backup import runlog
+
+    limit = int(params.get("runs") or 3)
+    runs = [r for r in runlog.list_runs() if r.get("kind") == "import"][:limit]
+    rows = []
+    for r in runs:
+        try:
+            s = runlog.summarise(str(r["run_id"]))
+        except Exception as exc:  # noqa: BLE001
+            rows.append({"started_at": r.get("started_at"), "error": tokenise_paths(record_text(exc, limit=_ERR_MAX, typed=True))})
+            continue
+        errs = s.get("errors") or []
+        mem = next((e for e in errs if str(e.get("msg") or "").startswith(_MEMORY_REFUSAL)), None)
+        hw_raw = s.get("hardware")
+        hw: dict[str, Any] = hw_raw if isinstance(hw_raw, dict) else {}
+        row: dict[str, Any] = {
+            "started_at": s.get("started_at"), "outcome": s.get("outcome"), "complete": s.get("complete"),
+            "wall_s": s.get("wall_s"), "stages_s": dict(s.get("stages") or {}),
+            "error_classes": [e.get("cls") for e in errs],
+            "hardware": {k: hw.get(k) for k in ("os", "ram_total_bytes", "swap_total_bytes", "cpu_logical_cores") if k in hw},
+            "memory_refused": mem is not None,
+        }
+        if mem is not None:
+            row["memory_refusal"] = scrubbed_value(str(mem.get("msg"))[:_ERR_MAX])
+            row["memory_refusal_after_s"] = _iso_s(s.get("started_at"), mem.get("t"))
+        if not s.get("complete"):
+            row["died_in_stage"] = s.get("died_in_stage") or s.get("died_after_stage")
+        rows.append(row)
+    if not rows:
+        return {"outcome": "no-import-recorded", "imports": [],
+                "method": "the app's run journal (src/backup/runlog.py) holds no import on this machine yet"}
+    return {"outcome": "read", "imports": rows,
+            "method": "the app's own run journal for its last imports, newest first; stage seconds are the journal's own"}
 
 
 def _clock_step(params: dict, inputs: dict, db: Any, check: dict) -> dict[str, Any]:
@@ -605,6 +722,7 @@ RUNNERS: dict[str, Callable[[dict, dict, Any, dict], dict[str, Any]]] = {
     "operator_report": _operator_report,
     "clock_step": _clock_step,
     "law_residue": _law_residue,
+    "import_journal": _import_journal,
 }
 #: The kinds that go online. The route refuses them without the consent the popup gives.
 ONLINE_KINDS = frozenset({"live_fetch", "host_reach"})

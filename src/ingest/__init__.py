@@ -1781,6 +1781,7 @@ class EthicalFetcher:
 
         ensure_connect_guard_installed()
         current = url
+        unreadable_from: str | None = None
         with connect_scope(
             enabled=self._real_session,
             proxies=self._request_proxy_endpoints(url, proxies),
@@ -1803,19 +1804,7 @@ class EthicalFetcher:
                     if stream and self._real_session:
                         kwargs["stream"] = True
                     self._refuse_parser_mismatch(current)
-                    try:
-                        resp = self.session.get(current, **kwargs)
-                    except requests.RequestException:
-                        raise
-                    except ValueError:
-                        # requests parses a 3xx answer's Location even when it is told not to follow it (``Session.send`` builds
-                        # ``Response.next`` through ``resolve_redirects``), and a Location urlsplit cannot read (an unclosed IPv6
-                        # bracket) raised a bare ValueError out of the request: the robots read never backed the host off, and
-                        # ``ingest_url`` did not catch it (R622 read). Raised below, outside this handler, so no UnicodeError is its
-                        # context (record_text writes any error a UnicodeError is reachable from as that error's fixed record).
-                        resp = None
-                    if resp is None:
-                        raise FetchFailed(f"redirect to a URL that cannot be read, from {failure_url(current)}")
+                    resp = self.session.get(current, **kwargs)
                     status = resp.status_code
                     location = resp.headers.get("Location") if hasattr(resp, "headers") else None
                     if 300 <= status < 400 and location:
@@ -1846,6 +1835,20 @@ class EthicalFetcher:
                     return resp, str(getattr(resp, "url", current) or current)
             except BlockedConnectTarget as exc:
                 raise BlockedTarget(record_text(exc, typed=False)) from None
+            except requests.RequestException:
+                raise
+            except ValueError:
+                # requests parses a 3xx answer's Location even when it is told not to follow it (``Session.send`` builds
+                # ``Response.next`` through ``resolve_redirects``), and a Location urlsplit cannot read (an unclosed IPv6
+                # bracket) raised a bare ValueError out of the request: the robots read never backed the host off, and
+                # ``ingest_url`` did not catch it (R622 read). Handled here, round the loop, and not round the request itself,
+                # so the request line stays as main has it (the CodeQL fingerprint lesson of 2026-10-16); the loop's own reads
+                # already turn theirs into BlockedTarget or FetchFailed, so what reaches this handler is the request's. Raised below, outside
+                # this handler, so no UnicodeError is its context (record_text writes any error a UnicodeError is reachable
+                # from as that error's fixed record).
+                unreadable_from = current
+        if unreadable_from is not None:
+            raise FetchFailed(f"redirect to a URL that cannot be read, from {failure_url(unreadable_from)}")
         raise FetchFailed(f"too many redirects for {failure_url(url)}")
 
     @staticmethod
