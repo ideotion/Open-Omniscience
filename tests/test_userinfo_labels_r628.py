@@ -526,9 +526,9 @@ def test_url_v1_canonical_gives_back_the_form_a_build_before_r628_stored(url, v1
 
 
 def _crawl_two_spellings(db, source, first, second, *, start="https://good.example/", same_domain_only=False):
-    """A start page linking to ``first`` and ``second``. Off the site's own check by default: since R624's fold a link holding
-    an ``@`` is never followed in a crawl kept to one site (``_off_site``), so the dedup of two spellings of one page is
-    reached with ``same_domain_only=False``, the crawl's other mode; the kept-to-one-site case is the credentialed start below."""
+    """A start page linking to ``first`` and ``second``, off the site's own check by default (``same_domain_only=False``). Since
+    R630 a harvested link holding a userinfo is never followed or stored whatever the scope, so the two spellings of one page
+    meet in the crawl only through the start URL (the credentialed start below)."""
     sess = _Session()
     sess.route("https://good.example/robots.txt", status_code=404, text="")
     sess.route(start, text=_page("Home", "x", links=[(first, "a"), (second, "b")]))
@@ -540,20 +540,19 @@ def _crawl_two_spellings(db, source, first, second, *, start="https://good.examp
 
 
 @pytest.mark.parametrize(
-    "first, second",
+    "first, second, fetched",
     [
-        (f"https://{_CRED}good.example/x", "https://good.example/x"),
-        ("https://good.example/x", f"https://{_CRED}good.example/x"),
-        (f"https://{_CRED}good.example/x", "https://bob:other@good.example/x"),
+        (f"https://{_CRED}good.example/x", "https://good.example/x", "https://good.example/x"),
+        ("https://good.example/x", f"https://{_CRED}good.example/x", "https://good.example/x"),
+        (f"https://{_CRED}good.example/x", "https://bob:other@good.example/x", None),
     ],
 )
-def test_the_crawl_fetches_one_page_written_with_and_without_credentials_once(db, source, first, second):
+def test_the_crawl_fetches_one_page_written_with_and_without_credentials_once(db, source, first, second, fetched):
+    """R630 with R628: the credentialed spelling is never followed, so the page is fetched at most once, as its plain link."""
     sess, report = _crawl_two_spellings(db, source, first, second)
-    assert _pages(sess) == ["https://good.example/", first]  # the first as written (R621: the request is unchanged)
-    assert report.tally["stored"] == 1
-    (article,) = db.query(Article).all()
-    assert article.canonical_url == "https://good.example/x"
-    assert article.url == first  # Article.url is data handed back: the URL as it was fetched
+    assert _pages(sess) == ["https://good.example/"] + ([fetched] if fetched else [])
+    assert report.tally["stored"] == (1 if fetched else 0)
+    assert all(a.canonical_url == "https://good.example/x" and a.url == fetched for a in db.query(Article))
 
 
 def test_a_crawl_kept_to_one_site_from_a_credentialed_start_does_not_fetch_the_start_page_again(db, source):
@@ -603,7 +602,8 @@ def test_continuity_an_article_stored_under_url_v1_is_not_fetched_again(db, sour
 def test_continuity_the_crawl_does_not_queue_a_page_stored_under_url_v1(db, source):
     _store(db, source, f"https://{_CRED}good.example/x")
     sess, report = _crawl_two_spellings(db, source, f"https://{_CRED}good.example/x", "https://good.example/y")
-    assert _pages(sess) == ["https://good.example/", "https://good.example/y"]  # same_domain_only=False: the link is reached
+    # since R630 the credentialed link is dropped before the dedup is asked; this pins the outcome, R630's tests the reason
+    assert _pages(sess) == ["https://good.example/", "https://good.example/y"]
 
 
 def test_control_ingest_fetches_a_url_nothing_stored_names(db, source):
