@@ -4698,6 +4698,7 @@
   "Stopped": "Остановлено",
   "Stopped after {files} zip files: {why}": "Остановлено после {files} zip-файлов: {why}",
   "Stopped before the end of the files owed; the next update continues from here.": "Остановлено до конца положенных файлов; следующее обновление продолжится отсюда.",
+  "Stopped by airplane mode: only the messages fetched before it were imported.": "Остановлено режимом полёта: импортированы только сообщения, полученные до него.",
   "Stopped by an error before its result could be measured": "Остановлено ошибкой до того, как результат удалось измерить",
   "Stopped itself — memory stayed exhausted": "Остановилось само — память оставалась исчерпанной",
   "Stopped qualifying": "Перестали подходить",
