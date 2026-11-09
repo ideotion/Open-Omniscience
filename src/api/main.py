@@ -565,6 +565,18 @@ async def lifespan(app: FastAPI):
     LOCKED: only the unlock flow is served; the deferred startup runs the
     moment the operator supplies THE passphrase. A plaintext store boots
     exactly as before — never a lock screen over a plaintext file."""
+    # A server started some other way than _serve (``python -m uvicorn src.api.main:app`` defaults to uvloop) runs on a loop whose
+    # network calls bypass the airplane guard (R642): said loudly at boot, since the loop cannot be changed from inside it.
+    try:
+        import asyncio as _asyncio
+
+        if _event_loop_is_uvloop(_asyncio.get_running_loop()):
+            logger.error(
+                "the server is running on uvloop: an async network call on its event loop would bypass airplane mode's socket guard. "
+                "Start the app with its own launcher, or pass --loop asyncio to uvicorn."
+            )
+    except Exception as exc:  # noqa: BLE001 - a check that cannot run never blocks startup
+        log_failure(logger, "could not read the server's event loop", exc, level=logging.DEBUG)
     # The same guard ``_serve`` sets first, for a server that was not started by it (``python -m uvicorn src.api.main:app``, which
     # the encrypted click-through uses): before the boot record below names the mechanism, and before any request can bring a
     # typed passphrase into this process. ``connect`` guards every place it hands a key to the engine as well.
@@ -3710,6 +3722,16 @@ def _run_ephemeral(argv: list[str]) -> None:
         print(f"Ephemeral data wiped: {tmp}")
 
 
+#: The event loop the server runs on (R642): the stdlib's, whose resolves and connects go through the patched ``socket`` calls the
+#: airplane guard relies on. ``"auto"`` would pick uvloop, which does neither.
+SERVER_EVENT_LOOP = "asyncio"
+
+
+def _event_loop_is_uvloop(loop: object) -> bool:
+    """True when ``loop`` is uvloop's (R642): its resolves and connects bypass the airplane socket guard."""
+    return type(loop).__module__.split(".", 1)[0] == "uvloop"
+
+
 def _serve() -> None:
     # Hold this process's core dumps to nothing BEFORE anything else (2026-10-06): the key of an unlocked store is in this
     # process's memory, and a native crash writes that memory out as a dump, to a file or a handler that keeps it. Not an
@@ -3828,7 +3850,13 @@ def _serve() -> None:
     # boot. 30 s is long enough for an ordinary request and short enough to lose the
     # race with nothing.
     try:
-        uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=30, log_config=uvicorn_log_config(), ws="none")
+        # loop="asyncio", never uvicorn's "auto" (R642): uvicorn[standard] installs uvloop and "auto" picks it, and uvloop resolves and
+        # connects in libuv's C code, past every point the airplane socket guard patches (src/ingest/airplane.py) -- an async client on
+        # this loop would egress with airplane mode engaged (security read B of R639 reached a non-loopback listener that way). The
+        # guarantee outweighs uvloop's speed.
+        uvicorn.run(
+            app, host=host, port=port, timeout_graceful_shutdown=30, log_config=uvicorn_log_config(), ws="none", loop=SERVER_EVENT_LOOP
+        )
     except (KeyboardInterrupt, SystemExit):
         raise
     except BaseException as exc:
