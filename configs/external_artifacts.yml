@@ -759,6 +759,23 @@ artifacts:
     freshness: {max_age_months: 18}
     last_verified: "2026-06-16"
 
+  - id: noaa-oni-table-shape
+    title: NOAA CPC Oceanic Nino Index (oni.ascii.txt) table shape
+    kind: dated-data
+    description: >-
+      The `SEAS YR TOTAL ANOM` table src/stats/oni.py targets (twelve overlapping three-month
+      seasons from DJF 1950; Nino 3.4 SST and its anomaly in degC; -99.9 style sentinels are gaps).
+      Documented from the published shape and NOT verified against a live download -- the build
+      sandbox has no route to the CPC (origin.cpc.ncep.noaa.gov probed 2026-09-07, CONNECT 403; www.cpc.ncep.noaa.gov unreachable 2026-11-07); the first real fetch is an operator step, and a redirect off www.cpc.ncep.noaa.gov/data/indices/ is refused, not followed.
+      The ONI is retro-revised when the 30-year base periods update, so each fetch is a new vintage.
+    upstream: "https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt"
+    check_upstream: "fetch oni.ascii.txt on a networked machine and confirm the header row, the season labels and the missing-value marker are unchanged"
+    license: "NOAA data, US public domain; operator to confirm the exact terms text"
+    pin: {file: src/stats/oni.py, const: ONI_AS_OF}
+    refresh: "verify the live shape, update the fixtures in tests/test_oni_parser.py and tests/test_oni_fetch.py, bump ONI_AS_OF"
+    freshness: {max_age_months: 18}
+    last_verified: "2026-11-07"
+
   - id: gistemp-v4-table-shape
     title: NASA GISS GISTEMP v4 table CSV shape
     kind: dated-data

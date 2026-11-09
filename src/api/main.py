@@ -79,6 +79,7 @@ from src.monitoring.secret_scrub import http_detail, is_driver_text, log_failure
 # Configure logging using shared config
 from src.utils.access_log import install_access_line_filter
 from src.utils.logging_config import setup_logging, uvicorn_log_config
+from src.utils.url_utils import fetched_host_fields, off_the_source_site
 
 # Import security utilities
 
@@ -1266,9 +1267,9 @@ class _ServingGate:
         self.inner = inner
 
     async def __call__(self, scope, receive, send):  # type: ignore[no-untyped-def]
-        global _serving_gate_logged
+        global _serving_gate_logged, _serving_check_failure_logged
         kind = scope.get("type")
-        if kind != "lifespan" and not _serving_preconditions_hold():
+        if kind != "lifespan" and not _serving_gate_open():
             if not _serving_gate_logged:  # once per closing: a closed gate refuses every request, and the log says so once, not per request
                 _serving_gate_logged = True
                 logger.error(SERVING_GATE_REFUSAL)
@@ -1281,6 +1282,7 @@ class _ServingGate:
             return  # any other scope type reaches nothing
         if _serving_gate_logged and kind != "lifespan":
             _serving_gate_logged = False  # open again: a later closing logs its own line (security read B on #1901)
+            _serving_check_failure_logged = False  # and a later failing check its own class (security read A on R653)
         await self.inner(scope, receive, send)
 
 
@@ -1372,6 +1374,10 @@ async def settings_write_refused_handler(request: Request, refused: KvWriteRefus
     return JSONResponse(status_code=503, content={"detail": http_detail(refused)}, headers=headers)
 
 
+#: The longest ``detail`` the catch-all 500 answers with (R653), the job status's own limit (``src/jobs/background.py``).
+UNHANDLED_DETAIL_LIMIT = 300
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     """Never return a bare plain-text 500. The SPA calls res.json() on EVERY
@@ -1410,6 +1416,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     except Exception:  # noqa: BLE001 - the scrub could not run: the class of the failure is all that is written
         logger.error("unhandled error (%s): its text is withheld, the scrub could not run", type(exc).__name__)
         detail = "internal error (its text is withheld: the scrub could not run)"
+    if len(detail) > UNHANDLED_DETAIL_LIMIT:
+        # R653: cut AFTER the scrub (a passphrase is taken out whole first), so no exception text, a mail server's megabyte-long
+        # greeting line included, makes an unbounded response; the job path's own errors are cut at the same length.
+        detail = detail[: UNHANDLED_DETAIL_LIMIT - 1] + "…"
     try:
         from src.monitoring.request_label import safe_method, safe_route
 
@@ -1718,6 +1728,10 @@ def _article_row(
         "hash": a.hash,
         # Q615's table column: the stored count, null when never measured.
         "word_count": a.word_count,
+        # Queue item 61: where the page was fetched from, after its redirects (null when not recorded), and whether that host
+        # is another site than the source's domain (null when there is nothing to compare). A feed item's link may redirect
+        # to another site (R635), and this row credits the source.
+        **fetched_host_fields(a.fetched_host, src.domain if src else None),
         # Q617: a quarantined item reaches a result only when the reader included them,
         # and then it says WHY it was quarantined, on its own row.
         **(
@@ -2545,6 +2559,9 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
                 "Language",
                 "Content",
                 "Hash",
+                # Queue item 61, last so every earlier column keeps its place: the host the page was fetched from, after
+                # its redirects (empty when not recorded).
+                "Fetched From Host",
             ]
         )
         for a in articles:
@@ -2559,6 +2576,7 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
                     _c(a.language or ""),
                     _c(a.content or ""),
                     _c(a.hash or ""),
+                    _c(a.fetched_host or ""),
                 ]
             )
         from src.utils.export_envelope import envelope_headers
@@ -2592,6 +2610,8 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
             "language": a.language,
             "content": a.content,
             "hash": a.hash,
+            # Queue item 61: where the page was fetched from, after its redirects (null when not recorded).
+            "fetched_host": a.fetched_host,
         }
         for a in articles
     ]
@@ -2641,6 +2661,27 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
         return f"<div class='mrow'><span>{label}</span><b>{value}</b></div>" if value else ""
 
     src_name = _html.escape(a.source.name) if a.source else None
+    # Queue item 61: where the page was fetched from, after its redirects, and whether that is another site than the
+    # source's (by registrable domain, as the quarantine host-mismatch report compares them: a source's own subdomain is its
+    # site). Said beside the source's name, since that is the credit it qualifies, and in full with the capture facts.
+    _src_domain = a.source.domain if a.source else None
+    _off_site = off_the_source_site(a.fetched_host, _src_domain)
+    # The words are their own text nodes, keyed in every locale (the page loads i18n.js, whose walker translates a text
+    # node that matches a key), and the host and the domain sit in their own <code>, so they are never part of a key.
+    if src_name and _off_site:
+        src_name += (
+            " <span class='muted'>· <span>Fetched from another site</span> "
+            f"<code>{_html.escape(a.fetched_host or '')}</code></span>"
+        )
+    if a.fetched_host:
+        _fetched_val = f"<code>{_html.escape(a.fetched_host)}</code>"
+        if _off_site:
+            _fetched_val += (
+                " <span class='muted'>· <span>Not the source's site</span> "
+                f"(<code>{_html.escape(_src_domain or '')}</code>)</span>"
+            )
+    else:
+        _fetched_val = None
     published = a.published_at.date().isoformat() if a.published_at else None
     captured = a.created_at.date().isoformat() if a.created_at else None
     hash_short = (a.hash[:12] + "…") if a.hash else None
@@ -2841,6 +2882,7 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
                 "Region (from the source's catalog entry)",
                 _html.escape(a.country or a.region or "") if (a.country or a.region) else None,
             ),
+            _row("Fetched from (app-observed, after redirects)", _fetched_val),
             _row("Server IP (app-observed)", _ip_val),
             *deduced_extra,
             _row(
@@ -3796,6 +3838,22 @@ SERVING_GATE_REFUSAL = (
     "Open Omniscience is not serving requests: airplane mode's network guard is not in place, because the app was started without "
     "its own startup or the guard could not be installed (the log says which). Start the app with its own launcher."
 )
+
+
+def _serving_gate_open() -> bool:
+    """R653: :func:`_serving_preconditions_hold`, with a check that raises read as a closed gate: the fixed 503 and no exception
+    text, never the catch-all 500 quoting it. The class alone is logged."""
+    try:
+        return _serving_preconditions_hold()
+    except Exception as exc:  # noqa: BLE001 - any failure to establish the facts is a closed gate
+        global _serving_check_failure_logged
+        if not _serving_check_failure_logged:  # once, as the gate's own refusal line
+            _serving_check_failure_logged = True
+            logger.error("the serving gate's check failed (%s): the gate stays closed", type(exc).__name__)
+        return False
+
+
+_serving_check_failure_logged = False
 
 
 def _serving_preconditions_hold() -> bool:

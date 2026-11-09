@@ -1199,6 +1199,7 @@ POPUP_LANE_LISTS = [
     ("src.osm.replication", "REPLICATION_HOSTS", ("osm",)),
     ("src.stats.fetch", "GISTEMP_HOSTS", ("climate",)),
     ("src.stats.fetch", "OWID_HOSTS", ("climate",)),
+    ("src.stats.fetch", "ONI_HOSTS", ("climate",)),
     ("src.stats.fetch", "USGS_HOSTS", ("climate",)),
     ("src.stats.fetch", "GHCND_HOSTS", ("climate",)),
     ("src.stats.fetch", "NSIDC_HOSTS", ("climate",)),

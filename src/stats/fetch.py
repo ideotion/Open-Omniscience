@@ -40,6 +40,7 @@ from src.ingest import DEFAULT_USER_AGENT, kill_switch_active
 from src.ingest.fetch_verdict import NETWORK_REFUSED
 from src.safety.fetcher import RedirectRefused, guarded_session
 from src.stats.gistemp import GistempParse
+from src.stats.oni import OniParse
 from src.stats.owid_climate import CATALOG as OWID_CLIMATE_CATALOG
 from src.stats.owid_climate import OwidParse
 from src.stats.sdmx import (
@@ -78,6 +79,15 @@ OWID_FIRST_YEAR = 1750  # the earliest year in the CO2 table
 OWID_AREAS_ALLOWANCE = 400  # countries plus aggregates, generous (about 250 today)
 OWID_ROW_CHARS_ALLOWANCE = 2000  # a wide row, generous (about 600 to 1,500 characters today)
 # The body bound is DERIVED from the table's own shape, not a fixed number (see gistemp_max_chars).
+# NOAA CPC Oceanic Nino Index (ONI): one small ASCII table, three-month seasons from DJF 1950.
+# NOT verified against a live download (the build sandbox cannot reach the host): a wrong path
+# or shape fails LOUDLY (HTTP error / no rows), never as an empty series.
+ONI_URL = "https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt"
+# The body bound is DERIVED from the table's own shape, not a fixed number (see oni_max_chars).
+ONI_FIRST_YEAR = 1950
+ONI_SEASONS_PER_YEAR = 12
+ONI_LINE_ALLOWANCE = 120  # chars per row; a real row is about 20
+ONI_HEADER_ALLOWANCE = 4096  # header and slack
 GISTEMP_FIRST_YEAR = 1880
 GISTEMP_LINE_ALLOWANCE = 200  # chars per row; a real row is about 120
 GISTEMP_HEADER_ALLOWANCE = 4096  # title, blank and header lines, with slack
@@ -207,6 +217,8 @@ NSIDC_HOSTS = ("noaadata.apps.nsidc.org",)
 NSIDC_PATHS = ("/NOAA/G02135/",)
 OWID_HOSTS = ("raw.githubusercontent.com",)
 OWID_PATHS = ("/owid/co2-data/", "/owid/energy-data/")  # raw.githubusercontent.com serves EVERY repository: the directory is the pin
+ONI_HOSTS = ("www.cpc.ncep.noaa.gov",)
+ONI_PATHS = ("/data/indices/",)
 USGS_HOSTS = ("earthquake.usgs.gov",)
 USGS_PATHS = ("/fdsnws/event/1/",)
 # The official-statistics fetchers. World Bank and Eurostat pin their documented API directories; the OWID grapher pins its chart
@@ -292,6 +304,13 @@ def _nsidc_getter(url: str) -> Any:
         user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=NSIDC_HOSTS, allowed_path_prefixes=NSIDC_PATHS
     )
     return _bounded_get(session, url, max_chars=nsidc_max_chars())
+
+
+def _oni_getter(url: str) -> Any:
+    session = guarded_session(
+        user_agent=DEFAULT_USER_AGENT, isolation_token=url, allowed_hosts=ONI_HOSTS, allowed_path_prefixes=ONI_PATHS
+    )
+    return _bounded_get(session, url, max_chars=oni_max_chars())
 
 
 def _owid_bulk_getter(url: str) -> Any:
@@ -915,4 +934,50 @@ def fetch_nsidc(
             f"NSIDC {region}: the response is not the expected table "
             f"({parsed.refused_total} lines refused, none parsed)"
         )
+    return parsed
+
+def oni_max_chars(now_year: int | None = None) -> int:
+    """The longest body that can still be the ONI table.
+
+    One row per overlapping season (twelve a year) from 1950 to the current year plus one,
+    times a generous per-row allowance, plus the header. It grows with the data each January
+    instead of being a constant someone must remember to raise.
+    """
+    year = now_year if now_year is not None else datetime.now(UTC).year
+    rows = max(year + 1 - ONI_FIRST_YEAR + 1, 1) * ONI_SEASONS_PER_YEAR
+    return rows * ONI_LINE_ALLOWANCE + ONI_HEADER_ALLOWANCE
+
+
+def fetch_oni(
+    *,
+    get: Getter | None = None,
+    extracted_at: str | None = None,
+) -> OniParse:
+    """Fetch the NOAA CPC ONI table live and parse it (kill switch refuses UP FRONT).
+
+    Returns the :class:`~src.stats.oni.OniParse` (figures AND refusals). A body that parses to
+    nothing (an HTML error page, a renamed product, an empty body) raises rather than returning
+    an empty series, because an empty list and a wrong file look the same once the refusals
+    are dropped. Every fetch is a new vintage: ``extracted_at`` is stamped, never overwritten.
+    The read stops at the bound the table's own shape allows (``BodyTooLarge``).
+    """
+    from src.stats.oni import parse_oni
+
+    if kill_switch_active():
+        raise RuntimeError(NETWORK_REFUSED)
+    extracted_at = extracted_at or _now_iso()
+    getter = get or _oni_getter
+    resp = getter(ONI_URL)
+    resp.raise_for_status()
+    bound = oni_max_chars()
+    if len(resp.text) > bound:
+        raise ValueError(f"ONI: the response is {len(resp.text)} characters, over the {bound} the table's own shape allows")
+    parsed = parse_oni(resp.text, extracted_at=extracted_at)
+    if parsed.rows_read == 0:
+        # Covers looks_unrecognised AND an empty body, which refuses nothing: neither is a series.
+        raise ValueError(f"ONI: the response is not the expected table ({len(parsed.refused)} lines refused, none parsed)")
+    if all(f.value is None for f in parsed.figures):
+        # Rows parsed but every cell is a missing-value sentinel: a success that holds no numbers is a
+        # placeholder or a drifted file, refused like fetch_owid_dataset's all_gap, never shown as a series.
+        raise ValueError(f"ONI: all {parsed.rows_read} rows parsed but every value is a missing-data sentinel")
     return parsed

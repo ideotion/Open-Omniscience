@@ -261,6 +261,7 @@ async function run() {
     const els = { "home-recent-panel": makeEl(), "home-recent": makeEl() };
     const sb = sandbox(I, els, `
       let _homeRecentLast = {rows: []};
+      ${extract("ooFetchedOffSiteNote", null, CORE)}
       ${extract("_renderHomeRecent", null, HOME)}
       this.render = _renderHomeRecent;
       this.setRows = (r) => { _homeRecentLast = r == null ? null : {rows: r}; };
@@ -298,6 +299,7 @@ async function run() {
       ${extractConst("HOME_CHANNEL_LABELS", HOME)}
       ${extract("homeChannelLabel", null, HOME)}
       ${extract("_fillLatestFacet", null, HOME)}
+      ${extract("ooFetchedOffSiteNote", null, CORE)}
       ${extract("_renderHomeLatest", null, HOME)}
       this.render = _renderHomeLatest;
     `, { payload });
@@ -361,6 +363,7 @@ async function run() {
     let _feedBusy = false, _feedDone = false, _feedHeld = null;
     let _feedRows = [], _feedLast = null, _feedErr = null;
     ${extract("_feedControls", null, HOME)}
+    ${extract("ooFetchedOffSiteNote", null, CORE)}
     ${extract("_feedCard", null, HOME)}
     ${extract("_feedNote", null, HOME)}
     ${extract("_feedMoreHtml", null, HOME)}

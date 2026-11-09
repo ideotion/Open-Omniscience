@@ -26,7 +26,9 @@ from src.database.source_lookup import source_for_domain
 from src.database.stand_in import not_a_stand_in_source
 from src.ingest import EthicalFetcher  # noqa: F401 (kept for type/back-compat)
 from src.ingest.email import (
+    MailboxServerError,
     MailboxTlsRefusal,
+    NewsletterRemovalStopped,
     count_imported_newsletters,
     delete_imported_newsletters,
     fetch_imap,
@@ -184,7 +186,9 @@ def ingest_email_endpoint(
             )
         except RuntimeError as exc:  # the airplane-mode refusal (ruling #11 kill-switch gate)
             raise HTTPException(status_code=409, detail=http_detail(exc, "", req.password, withheld=UNREADABLE_TEXT)) from None
-        except MailboxTlsRefusal as exc:  # R650/R651: no checked TLS (a bad certificate, no STARTTLS); the mail server's fault, not ours
+        except (MailboxTlsRefusal, MailboxServerError) as exc:
+            # R650/R651: no checked TLS (a bad certificate, no STARTTLS); R653: the server's own error reply, in fixed words. Either
+            # way the mail server's fault, not ours.
             raise HTTPException(status_code=502, detail=http_detail(exc, "", req.password, withheld=UNREADABLE_TEXT)) from None
     tally = ingest_emails(db, source, raws)
     return {
@@ -578,10 +582,16 @@ def remove_imported_newsletters(
     newsletter-source articles AND every dependent row, leaving the (empty) source rows
     so a future clean re-import re-attaches. Reversible ONLY via a prior backup — the UI
     nudges "back up first" and requires an explicit confirm. Local-only, no network.
+
+    A removal that fails partway answers 500 in the removal's own fixed words, naming how many articles are removed and how many
+    are left (queue item 58), never a bare 500: the chunks before the failure are removed whole, the rest untouched.
     """
     if not body.confirm:
         raise HTTPException(status_code=400, detail="confirm:true is required")
-    result = delete_imported_newsletters(db)
+    try:
+        result = delete_imported_newsletters(db)
+    except NewsletterRemovalStopped as stop:
+        raise HTTPException(status_code=500, detail=http_detail(stop)) from None
     return {"removed": True, **result}
 
 

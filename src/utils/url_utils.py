@@ -308,6 +308,56 @@ def get_domain_from_url(url: str) -> str | None:
         return None
 
 
+def fetched_host(url: str | None) -> str | None:
+    """The host a fetch that ended on ``url`` was answered by (``Article.fetched_host``, queue item 61). Never raises.
+
+    ``urllib.parse``'s ``.hostname``: lower-cased, with no login, no port, an IPv6 literal without its brackets, cut at 255
+    characters (a DNS name is at most 253). ``None`` when ``url`` names no host or cannot be read: not recorded, never a guess.
+    Read from the address the fetch ENDED on (its final URL, after the redirects the fetcher followed), not the one it was asked
+    for, since that is where the stored bytes came from.
+    """
+    if not url:
+        return None
+    try:
+        host = urlparse(url).hostname
+    except ValueError:  # an unreadable port or bracket: the fetcher would have refused it, so nothing names a host here
+        return None
+    return host[:255] if host else None
+
+
+def off_the_source_site(host: str | None, source_domain: str | None) -> bool | None:
+    """Whether ``host``, where an article was fetched from (``Article.fetched_host``), is another site than its source's
+    ``source_domain`` (queue item 61). ``None`` when nothing can be said.
+
+    Sites are compared by registrable domain, the comparison the quarantine host-mismatch report already makes
+    (:func:`src.ingest.host_mismatch.check_host`): ``en.yna.co.kr`` is Yonhap's own site beside ``yna.co.kr``, ``www.`` and
+    other subdomains are the same site, a Unicode name and its punycode agree, and ``example.co.uk`` is never ``co.uk``. Its
+    UNKNOWN is ``None`` here, never "another site": a missing or unreadable host or domain, an IP address, a top-level domain
+    the Public Suffix List has no rule for. Two sites :data:`DOMAIN_ALIASES` names as one (``bbc.co.uk`` for ``bbc.com``)
+    are one site, and a trailing dot (kept in the stored host, as the fetcher's host key keeps it) is left out of the
+    comparison. NOT the crawl's same-site rule (:func:`src.ingest.crawl._off_site`), which reads every other host as off
+    the site: right for keeping a crawl in bounds, wrong as a statement shown to the reader, since many sources publish on
+    a subdomain of the domain they are listed under. Never raises.
+    """
+    if not host or not source_domain:
+        return None  # a fast path: check_host answers "unknown" for these too
+    # Imported when first called, not at module load: check_host itself is network-free (urllib.parse and the bundled
+    # Public Suffix List), but importing it loads the src.ingest package, and this module is imported far more widely.
+    from src.ingest.host_mismatch import check_host
+
+    check = check_host(host.rstrip("."), source_domain.strip().rstrip("."))
+    if check.state == "mismatch" and is_equivalent_domain(check.article_site or "", check.source_site or ""):
+        return False
+    return True if check.state == "mismatch" else False if check.state == "same" else None
+
+
+def fetched_host_fields(host: str | None, source_domain: str | None) -> dict:
+    """``fetched_host`` and ``fetched_off_site`` for a payload that credits an article to its source (queue item 61): the host
+    as stored (null when not recorded) and :func:`off_the_source_site` against the source's domain. One place, so the article
+    rows, the Home feed's cards and the briefing's evidence audit cannot come to disagree about the same article."""
+    return {"fetched_host": host, "fetched_off_site": off_the_source_site(host, source_domain)}
+
+
 def get_base_url(url: str) -> str | None:
     """
     Get the base URL (scheme + netloc) from a URL.

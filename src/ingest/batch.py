@@ -48,6 +48,7 @@ from sqlalchemy.orm import Session
 
 from src.ingest.fetch_verdict import failure_url, userinfo_secrets
 from src.monitoring.secret_scrub import log_failure
+from src.utils.url_utils import fetched_host as _fetched_host_of
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from src.database.models import Source
@@ -143,6 +144,8 @@ class _StagedArticle:
     fetched_at: datetime | None
     staged_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     links: list[dict] = field(default_factory=list)
+    # The host the page was fetched from, after its redirects (queue item 61; src.utils.url_utils.fetched_host).
+    fetched_host: str | None = None
 
 
 class ArticleBatch:
@@ -210,6 +213,7 @@ class ArticleBatch:
             server_ip_reason=getattr(fetched, "server_ip_reason", None),
             fetched_at=fetched.fetched_at,
             links=self._extract_links(fetched.content, fetched.final_url),
+            fetched_host=_fetched_host_of(fetched.final_url),
         )
         self._pending.append(entry)
         self._pending_hashes.add(content_hash)
@@ -444,6 +448,7 @@ class ArticleBatch:
             server_ip=staged.server_ip,
             server_ip_reason=staged.server_ip_reason,
             ip_observed_at=staged.fetched_at,
+            fetched_host=staged.fetched_host,
         )
 
     def _index_one(self, article, extractor, *, content=None, deriv=None, has_stored_rows: bool = True) -> None:

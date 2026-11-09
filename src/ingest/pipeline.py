@@ -94,7 +94,12 @@ from src.ingest.fetch_verdict import (
 )
 from src.ingest.furniture import strip_furniture
 from src.ingest.non_article import classify_non_article, skip_non_articles_enabled
-from src.utils.url_utils import canonicalize_url, generate_content_hash, url_v1_canonical
+from src.utils.url_utils import (
+    canonicalize_url,
+    fetched_host,
+    generate_content_hash,
+    url_v1_canonical,
+)
 
 
 class IngestResult(str, Enum):
@@ -259,6 +264,8 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
         server_ip=getattr(fetched, "server_ip", None),
         server_ip_reason=getattr(fetched, "server_ip_reason", None),
         ip_observed_at=fetched.fetched_at,
+        # Where the page came from, after its redirects (queue item 61): a feed item's link may have led to another site.
+        fetched_host=fetched_host(fetched.final_url),
     )
     session.add(article)
     try:
