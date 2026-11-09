@@ -435,6 +435,7 @@ def init_db() -> None:
     from src.database.maintenance import (
         ensure_article_analysis_columns,
         ensure_article_detected_language_column,
+        ensure_article_fetched_host_column,
         ensure_article_identity_columns,
         ensure_article_ip_columns,
         ensure_article_keyword_indexed_column,
@@ -517,6 +518,9 @@ def init_db() -> None:
     ensure_article_newsletter_list_id_column(engine)
     _init_step("ensure_article_newsletter_attach_column")
     ensure_article_newsletter_attach_column(engine)
+    # Where a page was fetched from, after its redirects (queue item 61; self-heal, no backfill).
+    _init_step("ensure_article_fetched_host_column")
+    ensure_article_fetched_host_column(engine)
     _init_step("ensure_source_catalog_baseline_column")
     ensure_source_catalog_baseline_column(engine)
 

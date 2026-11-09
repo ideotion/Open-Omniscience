@@ -34,7 +34,9 @@ Author: Ideotion
 
 import hashlib
 import logging
-from urllib.parse import parse_qs, urlparse, urlunparse
+from urllib.parse import parse_qs, urlparse, urlsplit, urlunparse
+
+import idna  # UTS 46, as src.ingest.crawl._site_key encodes a non-ASCII host (R631)
 
 from src.monitoring.secret_scrub import log_failure
 
@@ -306,6 +308,56 @@ def get_domain_from_url(url: str) -> str | None:
 
         log_failure(logger, f"Error extracting domain from {failure_url(url)}", e)
         return None
+
+
+def fetched_host(url: str | None) -> str | None:
+    """The host a fetch that ended on ``url`` was answered by (``Article.fetched_host``, queue item 61). Never raises.
+
+    ``urllib.parse``'s ``.hostname``: lower-cased, with no login, no port, an IPv6 literal without its brackets, cut at 255
+    characters (a DNS name is at most 253). ``None`` when ``url`` names no host or cannot be read: not recorded, never a guess.
+    Read from the address the fetch ENDED on (its final URL, after the redirects the fetcher followed), not the one it was asked
+    for, since that is where the stored bytes came from.
+    """
+    if not url:
+        return None
+    try:
+        host = urlparse(url).hostname
+    except ValueError:  # an unreadable port or bracket: the fetcher would have refused it, so nothing names a host here
+        return None
+    return host[:255] if host else None
+
+
+def _same_site_key(host: str) -> str | None:
+    """``host`` (a bare host name) as the same-site test compares it: a leading ``www.`` left out, a non-ASCII name encoded with
+    UTS 46. ``None`` when it cannot be encoded. The rule of :func:`src.ingest.crawl._off_site` (R624, R627, R631), written here
+    without the fetcher, so a reader that only shows a stored host (the briefing's evidence audit) never imports it;
+    ``tests/test_fetched_host_item61.py`` holds the two to the same answers."""
+    host = host[4:] if host.startswith("www.") else host
+    if host.isascii():
+        return host
+    try:
+        return idna.encode(host, uts46=True).decode("ascii")
+    except ValueError:  # idna.IDNAError and UnicodeError both are one
+        return None
+
+
+def off_the_source_site(host: str | None, source_domain: str | None) -> bool | None:
+    """Whether ``host``, where an article was fetched from (``Article.fetched_host``), is another site than its source's
+    ``source_domain`` (queue item 61). ``None`` when either is unknown or empty, or the domain names no host: nothing is said.
+
+    The same-site test a crawl and a sitemap keep to: the port, a login and a leading ``www.`` are left out, a Unicode host and
+    its punycode are one site, and a host that cannot be encoded is another site (fail closed). Never raises.
+    """
+    if not host or not source_domain:
+        return None
+    try:
+        domain_host = urlsplit("//" + source_domain.strip()).hostname
+    except ValueError:  # a domain urllib.parse cannot read names no site to compare with
+        return None
+    if not domain_host:
+        return None
+    ours, site = _same_site_key(host.lower()), _same_site_key(domain_host)
+    return ours is None or site is None or ours != site
 
 
 def get_base_url(url: str) -> str | None:

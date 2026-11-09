@@ -878,7 +878,7 @@
       if (!panel || !box || !rows) return;
       if (!rows.length) { box.innerHTML = `<div class="muted">${esc(t("No articles for this tag yet."))}</div>`; panel.hidden = false; return; }
       box.innerHTML = rows.map(a => {
-        const meta = [esc(a.source || ""), esc(ooIsoDate(a.published_at))].filter(Boolean).join(" · ");
+        const meta = [esc(a.source || "") + ooFetchedOffSiteNote(a), esc(ooIsoDate(a.published_at))].filter(Boolean).join(" · ");
         return `<div class="home-recent-row"><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
           + (meta ? ` <span class="muted">— ${meta}</span>` : "") + `</div>`;
       }).join("");

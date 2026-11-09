@@ -1598,6 +1598,40 @@ def ensure_article_newsletter_attach_column(engine: Engine) -> list[str]:
     return added
 
 
+
+# WHERE THE PAGE WAS FETCHED FROM, on `articles` (queue item 61). Additive + NULLABLE with NO backfill: a stored article
+# keeps NULL, "not recorded", because the fetch that stored it is gone and its redirects were never kept. Only a new fetch
+# writes it (src/ingest/pipeline.py, src/ingest/batch.py).
+_ARTICLE_FETCHED_HOST_COLUMN: dict[str, str] = {
+    "fetched_host": "ALTER TABLE articles ADD COLUMN fetched_host VARCHAR(255)",
+}
+
+
+def ensure_article_fetched_host_column(engine: Engine) -> list[str]:
+    """Self-heal ``articles.fetched_host`` (idempotent, additive, no backfill; queue item 61).
+
+    Not every install runs alembic and ``create_all`` never ALTERs an existing table, so a store predating the column would
+    raise "no such column" on the first article stored after the upgrade. No-op on a fresh DB / non-sqlite / missing table.
+    """
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='articles'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
+        for name, ddl in _ARTICLE_FETCHED_HOST_COLUMN.items():
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
+    if added:
+        _LOG.info(f"added articles fetched-host column(s): {', '.join(added)}")
+    return added
+
 # Additive + NULLABLE with NO backfill, on the source_revision pattern. NULL means "the
 # catalogue baseline was never recorded for this row", which is every row predating the
 # column -- and sync_catalogue_corrections ADOPTS the current catalogue for those and changes
@@ -1688,6 +1722,7 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
         | frozenset(_ARTICLE_SOURCE_REVISION_COLUMN)
         | frozenset(_ARTICLE_NEWSLETTER_LIST_ID_COLUMN)
         | frozenset(_ARTICLE_NEWSLETTER_ATTACH_COLUMN)
+        | frozenset(_ARTICLE_FETCHED_HOST_COLUMN)
     ),
     "merged_rows": frozenset({"row_key"}),
     "keywords": frozenset(_KEYWORD_COUNTER_COLUMNS) | frozenset(_KEYWORD_EXTRACTOR_COLUMNS),

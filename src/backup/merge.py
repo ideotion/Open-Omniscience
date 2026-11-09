@@ -3757,6 +3757,11 @@ _ADOPTABLE_ARTICLE_COLUMNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("content_multihash", ("content_multihash",)),
     ("sentiment_score", ("sentiment_score", "sentiment_label")),
     ("server_ip", ("server_ip", "ip_observed_at", "server_ip_reason")),
+    # Where the page was fetched from, after its redirects (queue item 61). Adoptable on the server_ip argument: a local NULL
+    # means "not recorded on this machine" (stored before the column, or never fetched), and the incoming row's text is
+    # byte-identical (the dedup matches on HASH), so its host is a true answer for where this body was fetched from by the
+    # install that stored it, never "where THIS install fetched it". Unrecoverable like server_ip: the redirects are gone.
+    ("fetched_host", ("fetched_host",)),
     # THE VERSION ANCHOR (S4). Adoptable, and the safety argument is the dedup predicate
     # itself: a duplicate matches on HASH, so the incoming row's text is BYTE-IDENTICAL
     # to the local one, and a revision that produced this exact body is a true answer for
@@ -4021,7 +4026,10 @@ def _merge_articles(con, batch_id, results) -> None:
         # article, which is what they have always arrived with: the post-swap re-index
         # computes theirs. Here rather than in an UPDATE afterwards, so a carried
         # article row is written once and not twice (the D45 cliff).
-        " top_keyword_id, top_keyword_count, top_keyword_tied_n)"
+        " top_keyword_id, top_keyword_count, top_keyword_tied_n,"
+        # Queue item 61: where the page was fetched from, after its redirects. A socket-time fact like server_ip: no re-index
+        # rebuilds it and a re-fetch may end elsewhere, so a merge that dropped it would lose it for good.
+        " fetched_host)"
         " SELECT i.url, i.canonical_url, ms.new, i.title, i.content,"
         " i.compressed_content, i.published_at, i.language, i.hash, i.created_at,"
         " i.updated_at, i.region, i.country, i.author, i.word_count, i.reading_time,"
@@ -4030,7 +4038,8 @@ def _merge_articles(con, batch_id, results) -> None:
         " i.content_multihash, i.canon_version,"
         " i.quarantined, i.quarantine_reason, i.quarantine_criteria_version, i.quarantined_at,"
         " i.source_revision, i.newsletter_list_id, i.newsletter_attached_via,"
-        " cp.top_keyword_id, cp.top_keyword_count, cp.top_keyword_tied_n"
+        " cp.top_keyword_id, cp.top_keyword_count, cp.top_keyword_tied_n,"
+        " i.fetched_host"
         " FROM inc.articles i JOIN temp.map_sources ms ON ms.old = i.source_id"
         " LEFT JOIN temp.carry_plan cp ON cp.old = i.id"
         " WHERE NOT EXISTS (SELECT 1 FROM articles m WHERE m.hash = i.hash)"
