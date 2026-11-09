@@ -3676,8 +3676,9 @@ def all_diagnostics_job_start(
         budget_min = None  # a direct call that left the Query default in place (a truthy sentinel object) set no budget
     try:
         budget_s = _plan.operator_budget_s(budget_min)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except ValueError:
+        # Fixed words, never the exception's (the sink sweep's rule): the two refusals say the same thing to the caller.
+        raise HTTPException(status_code=400, detail="budget_min must be a finite number of minutes above zero") from None
     ignored = budget_s is not None and resolved_mode == "quick"
     if ignored:
         budget_s = None
