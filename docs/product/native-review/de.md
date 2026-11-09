@@ -250,3 +250,12 @@ Correct the text in `src/static/locales/de.json` (the key is the English text).
 | 12 | {n} of {m} pages seen | {n} von {m} Seiten gesehen |
 | 13 | {n} pages seen, total unknown | {n} Seiten gesehen, Gesamtzahl unbekannt |
 | 14 | {n} stretches the lane did not see. | {n} Abschnitte, die die Spur nicht gesehen hat. |
+
+## extra-4: Start-up step: the links' covering index (PR #1839)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Building the index that keeps the shared-origin counts fast. One time only; anything the app saves waits until it is done. | Der Index wird erstellt, der die Zählung gemeinsamer Ursprünge schnell hält. Nur einmal; alles, was die App speichert, wartet, bis er fertig ist. |
+| 2 | The index of the articles' links was not built: it needs about {needed} MB of free memory (sorting up to {rows} links, plus the memory the app always keeps free) and this computer has {free} MB. Close other programs and restart the app; until then the shared-origin counts stay slow. | Der Index der Artikel-Links wurde nicht erstellt: Er braucht etwa {needed} MB freien Arbeitsspeicher (das Sortieren von bis zu {rows} Links plus den Speicher, den die App immer frei hält), und dieser Computer hat {free} MB. Schließen Sie andere Programme und starten Sie die App neu; bis dahin bleibt die Zählung gemeinsamer Ursprünge langsam. |
+| 3 | The index of the articles' links was not built: the volume your data file is on has {free} MB free and it needs about {needed} MB (up to {rows} links). Free some space and restart the app; until then the shared-origin counts stay slow. | Der Index der Artikel-Links wurde nicht erstellt: Das Laufwerk Ihrer Datendatei hat {free} MB frei, er braucht etwa {needed} MB (bis zu {rows} Links). Schaffen Sie Platz und starten Sie die App neu; bis dahin bleibt die Zählung gemeinsamer Ursprünge langsam. |
+| 4 | The index of the articles' links was not built: two starts in a row ended while it was being built (the computer ran out of memory or power, or the app was ended abruptly), so it is not tried again until the app is updated. The shared-origin counts stay slow. | Der Index der Artikel-Links wurde nicht erstellt: Zwei Starts hintereinander endeten während seiner Erstellung (dem Computer ging der Speicher oder der Strom aus, oder die App wurde abrupt beendet), daher wird er erst nach einem Update der App erneut versucht. Die Zählung gemeinsamer Ursprünge bleibt langsam. |
