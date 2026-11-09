@@ -473,3 +473,75 @@ def test_an_af_unix_datagram_is_left_alone(reached, tmp_path):
     finally:
         s.close()
     assert reached == [("sendto", path)]
+
+
+# --- R645: S1's follow-ups -------------------------------------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not hasattr(socket, "AF_NETLINK"), reason="no AF_NETLINK")
+def test_an_af_netlink_bind_and_datagram_are_left_alone(reached):
+    """Netlink talks to this machine's own kernel: its (pid, groups) address names no host, so bind and sendto reach the real call."""
+    activate_kill_switch()
+
+    class _Sock:
+        family = socket.AF_NETLINK
+
+    ap._guarded_bind(_Sock(), (0, 0))
+    ap._guarded_sendto(_Sock(), b"x", (0, 0))
+    assert reached == [("bind", (0, 0)), ("sendto", (0, 0))]
+
+
+@pytest.mark.skipif(not hasattr(socket, "AF_PACKET"), reason="no AF_PACKET")
+def test_an_af_packet_bind_and_datagram_stay_refused(reached):
+    """AF_PACKET puts raw frames on the wire: it is not a local family, so while engaged its interface-name address is refused."""
+    activate_kill_switch()
+
+    class _Sock:
+        family = socket.AF_PACKET
+
+    with pytest.raises(AirplaneModeError):
+        ap._guarded_bind(_Sock(), ("eth0", 0))
+    with pytest.raises(AirplaneModeError):
+        ap._guarded_sendto(_Sock(), b"x", ("eth0", 0))
+    assert reached == []
+
+
+_NUMERIC = socket.NI_NUMERICHOST | socket.NI_NUMERICSERV
+
+
+@pytest.mark.parametrize("host", _REMOTE[1:] + ("127.0.0.5", "::1"))
+def test_getnameinfo_numeric_only_on_any_literal_reaches_the_real_call(reached, host):
+    """Both numeric flags on a literal make no lookup at all (R645), so it is handed on unchanged, a remote literal included."""
+    activate_kill_switch()
+    socket.getnameinfo((host, 80), _NUMERIC)
+    assert reached == [("getnameinfo", (host, 80))]
+
+
+@pytest.mark.parametrize("flags", [socket.NI_NUMERICHOST, socket.NI_NUMERICSERV, 0])
+def test_getnameinfo_on_a_remote_literal_without_both_numeric_flags_stays_refused(reached, flags):
+    activate_kill_switch()
+    with pytest.raises(AirplaneModeError):
+        socket.getnameinfo(("93.184.215.14", 80), flags)
+    assert reached == []
+
+
+def test_getnameinfo_numeric_only_on_a_name_stays_refused(reached):
+    activate_kill_switch()
+    with pytest.raises(AirplaneModeError):
+        socket.getnameinfo(("example.com", 80), _NUMERIC)
+    assert reached == []
+
+
+def test_the_real_numeric_getnameinfo_of_a_remote_literal_answers_the_number():
+    """With the REAL call, engaged: libc formats the number it was handed (no query is possible with both numeric flags)."""
+    was_installed, was_armed = ap.is_installed(), ap._airplane_armed
+    assert ap.install_airplane_socket_guard()
+    try:
+        activate_kill_switch()
+        assert socket.getnameinfo(("192.0.2.1", 80), _NUMERIC) == ("192.0.2.1", "80")
+    finally:
+        clear_kill_switch()
+        ap.uninstall_airplane_socket_guard()
+        if was_installed:
+            ap._install_patches()
+        ap._airplane_armed = was_armed

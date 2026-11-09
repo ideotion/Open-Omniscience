@@ -163,6 +163,7 @@ if _MISSING_EXTRAS:
 
 
 import pytest  # noqa: E402 - must follow the OO_DATA_DIR/plaintext env setup above
+
 # Bind the app's engine to the suite's directory NOW, before any test body can move ``OO_DATA_DIR``: ``src.database.session`` binds at its
 # first import and never again, and a full run gets this by accident (collection imports it at module level) while a selection does not.
 # After every env default the session reads, before the first fixture. ``_engine_binds_to_the_suite_directory`` below is the net.
@@ -643,6 +644,8 @@ _AIRPLANE_ORIGINALS = (
     "_orig_bind",
     "_orig_sendto",
     "_orig_sendmsg",
+    "_orig_proactor_connect",
+    "_orig_proactor_sendto",
 )
 
 
@@ -676,6 +679,11 @@ def _process_wide_network_calls() -> dict[str, object]:
 
     for attr in _AIRPLANE_ORIGINALS:
         calls["airplane." + attr] = getattr(airplane, attr)
+    # R643: Windows only, where the stdlib proactor's two entry points are patch points too.
+    proactor = getattr(sys.modules.get("asyncio.windows_events"), "IocpProactor", None)
+    if proactor is not None:
+        calls["asyncio.windows_events.IocpProactor.connect"] = proactor.connect
+        calls["asyncio.windows_events.IocpProactor.sendto"] = proactor.sendto
     return calls
 
 
@@ -694,6 +702,9 @@ def _put_network_call_back(name: str, value: object) -> None:
         "socket.socket": socket.socket,
         "http.client.HTTPConnection": http.client.HTTPConnection,
     }
+    proactor = getattr(sys.modules.get("asyncio.windows_events"), "IocpProactor", None)
+    if proactor is not None:
+        owners["asyncio.windows_events.IocpProactor"] = proactor
     owner, attr = name.rsplit(".", 1)
     if value is None:  # an optional call this platform lacks (socket.socket.sendmsg on Windows): take off what a test added
         if attr in vars(owners[owner]):
