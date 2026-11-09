@@ -47,6 +47,13 @@ def gpu8(monkeypatch, tmp_path):
     monkeypatch.setattr(V, "is_installed", lambda: True)
     monkeypatch.setattr(V, "is_running", lambda **kw: False)
     monkeypatch.setattr(V, "process_alive", lambda: False)
+    # start() asks vLLM's real port whether something holds it before it spawns. The port
+    # is not this file's subject, and a test on a parallel worker (or a developer's own
+    # server) can hold it, so the probe answers "free" here. The port refusal is
+    # tests/test_vllm_port_collision.py's subject.
+    monkeypatch.setattr(
+        V, "port_occupant", lambda **kw: {"state": "free", "port": 0, "detail": "stubbed: free"}
+    )
     import src.llm.backend as B
 
     monkeypatch.setattr(B, "detect_gpu", lambda: {"available": True, "name": "RTX", "vram_mb": 8192})
