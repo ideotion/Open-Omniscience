@@ -29,7 +29,7 @@ from typing import Any
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
-from src.ingest import kill_switch_engaged_since, kill_switch_epoch
+from src.ingest import EthicalFetcher, kill_switch_engaged_since, kill_switch_epoch
 from src.ingest.fetch_verdict import is_kill_switch_refusal
 from src.monitoring.secret_scrub import record_text
 
@@ -95,6 +95,7 @@ def _check_one(fetcher, source) -> dict:
         "checked_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     try:
+        EthicalFetcher._refuse_parser_mismatch(base)  # before the guard looks the domain up (R622)
         fetcher._guard_target(urlparse(base).hostname)
     except Exception as exc:  # noqa: BLE001 - a refused/unresolvable target must not stop the sweep
         if is_kill_switch_refusal(record_text(exc)) or kill_switch_engaged_since(epoch):  # our sentence on the WHOLE scrubbed text (R298), or a Stop in the check (R614)

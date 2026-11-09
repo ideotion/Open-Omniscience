@@ -71,8 +71,9 @@ NETWORK_REFUSED = "network refused: airplane mode is engaged"
 #      sent (percent-encoded), and the host tokens take no whitespace, quote or backslash (as in 3.);
 #   3. the same guard sentence under OUR resolver wrapper (``EthicalFetcher._resolve_cached``), when the switch is engaged between the
 #      pre-fetch check and the lookup: "cannot resolve host '<host>': airplane mode is engaged: refusing a network connection ...". The host
-#      is the only part another party shapes (a redirect's Location, a feed item's link: an IPvFuture "[v1.<anything>]" host reaches a lookup
-#      with spaces, colons and quotes in it), so the token takes NO whitespace and NO backslash: ``repr`` escapes an inner quote with a backslash,
+#      is the only part another party shapes (a redirect's Location, a feed item's link). Since R622 no host holding whitespace, a backslash or
+#      a control character reaches a lookup, and urllib3 refuses an IPvFuture "[v1.<anything>]" host in ``_refuse_parser_mismatch``; the token
+#      stays strict as the net beneath: it takes NO whitespace and NO backslash: ``repr`` escapes an inner quote with a backslash,
 #      so a host that tries to close the quote early and continue in our words is refused, and a host holding both quote kinds fails SAFE
 #      (read as ``dns``). A gaierror's own text ("[Errno -2] ...") between the two never matches;
 #   4. the guard's sentence when what it refused was the CONNECT a LOOPBACK HTTP proxy is asked to make to an https target (R620: Privoxy
