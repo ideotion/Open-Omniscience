@@ -853,6 +853,7 @@ def source(db):
 
 
 G = "https://good.example"
+OK = "https://ok.example"
 
 
 @pytest.mark.parametrize(
@@ -1066,11 +1067,11 @@ def test_a_sweep_logs_the_skipped_ping_and_keeps_the_learned_verdicts(db, tmp_pa
     s = _Session()
     s.robots(G, _DISALLOW_ALL)
     s.page(f"{G}/")
-    s.robots("https://ok.example", _ALLOW_ALL)
-    s.page("https://ok.example/")
+    s.robots(OK, _ALLOW_ALL)
+    s.page(f"{OK}/")
     summary = _bounded(lambda: preflight.preflight_sources(db, _fetcher(tmp_path, s), limit=10))
     assert summary["complete"] is True and summary["robots_denied"] == ["good.example"] and summary["ok"] == 1
-    assert f"{G}/" not in s.fetched and "https://ok.example/" in s.fetched
+    assert f"{G}/" not in s.fetched and f"{OK}/" in s.fetched
     rows = {r["domain"]: r for r in preflight.recent_results()}
     assert rows["good.example"]["homepage_skipped"] == _SKIPPED_DISALLOWED and rows["good.example"]["reachable"] is None
     assert "homepage_skipped" not in rows["ok.example"]
@@ -1090,7 +1091,7 @@ def test_a_sweep_counts_a_refused_ping_hop_as_its_verdict_and_records_the_homepa
     s.robots(G, "User-agent: *\nDisallow: /en/\n")
     s.redirect(f"{G}/", "/en/")
     s.page(f"{G}/en/")
-    s.page("https://ok.example/")
+    s.page(f"{OK}/")
     s.redirect("https://un.example/", f"{B}/")
     s.robots(B, "", status=500)
     s.page(f"{B}/")
