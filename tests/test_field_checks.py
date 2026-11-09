@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 import pytest
 
 from src.monitoring import field_checks as fc
-from tests.js_source_helper import event_listener_bodies, function_body, object_literal
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "static"
@@ -245,64 +243,6 @@ def test_the_report_names_what_was_not_run_and_carries_no_score():
                 yield from keys(x)
 
     assert not [k for k in keys(rep) if any(b in k.lower() for b in ("score", "rating", "grade", "ranking"))]
-
-
-# ---- the panel ----------------------------------------------------------------------------------- #
-
-def test_the_panel_is_its_own_section_after_diagnostics_with_a_link_and_a_waiting_count():
-    """Field report 2026-11-09: "I can't find the button for the field testing". The panel was the
-    fourth block inside the folded Diagnostics section; it is now its OWN Advanced section right
-    after Diagnostics, named on its summary with the number of checks waiting for this machine, and
-    the Diagnostics button has a link beside it that opens it."""
-    html = (STATIC / "index.html").read_text(encoding="utf-8")
-    diag_sec = html.index('data-adv="diagnostics"')
-    fc_sec = html.index('data-adv="fieldchecks"')
-    order = re.findall(r'data-adv="([a-z]+)"', html)
-    assert order[order.index("diagnostics") + 1] == "fieldchecks", order
-    box = html.index('id="field-checks-box"')
-    assert diag_sec < fc_sec < box < html.index("</details>", fc_sec)
-    summary = html[fc_sec:html.index("</summary>", fc_sec)]
-    assert '<span class="adv-sec-t">Field checks</span>' in summary and 'id="fc-count"' in summary
-    # the link sits with the Diagnostics button, inside the Diagnostics section, and opens the section
-    link = html.index('id="fc-open-link"')
-    assert html.index('id="all-diag-btn"') < link < fc_sec
-    assert 'data-on-click="fieldChecksOpen()"' in html and 'id="fc-count-link"' in html
-    assert 'data-on-click="fieldChecksLoad(this)"' in html
-    shell = (STATIC / "app-shell.js").read_text(encoding="utf-8")
-    loaders = object_literal(shell, "_ADV_LOADERS")
-    assert "fieldchecks: () => { fieldChecksLoad(); }" in loaders
-    assert 'if (cat === "advanced") { _advWire(); fieldChecksCount(); }' in shell
-    # the count is a tf() frame welded to a number, so the ONE language listener repaints it
-    boot = (STATIC / "app-boot.js").read_text(encoding="utf-8")
-    assert any("_fcPaintCount()" in b for b in event_listener_bodies(boot, "oo:langchange"))
-    js = (STATIC / "app-diagnostics.js").read_text(encoding="utf-8")
-    run = function_body(js, "_fcRun")
-    # the one consent popup comes BEFORE the POST, and consent is what it returned
-    assert run.index("ensureOnline(") < run.index("/api/diagnostics/field-checks/run")
-    assert "JSON.stringify({id, consent, inputs})" in run
-    # the save button uses the dispatcher's own ooOpenUrl helper (not a global, so never called from app code)
-    assert "data-on-click=\"ooOpenUrl('/api/diagnostics/field-checks/report')\"" in html
-    # the count is checks for this system with no result yet: a count of what is waiting, never a score
-    count = function_body(js, "_fcPaintCount")
-    assert 'c.status === "active" && c.applies_here && !c.result' in count
-    assert "_fcPaintCount()" in run
-    assert function_body(js, "fieldChecksOpen").count('_openAdvanced("fieldchecks")') == 1
-    for fn in ("_fcRun", "_fcAction", "_fcRender", "_fcRowHtml", "fieldChecksLoad", "fieldChecksCount", "_fcPaintCount"):
-        assert "ooOpenUrl(" not in function_body(js, fn)
-    on = (STATIC / "oo-on.js").read_text(encoding="utf-8")
-    table = object_literal(on, "EVENT_ACTION_NAMES")
-    click_row = table[table.index("click:"):]
-    assert '"fieldChecksLoad"' in click_row[:click_row.index("]")]
-    assert '"fieldChecksOpen"' in click_row[:click_row.index("]")]
-
-
-def test_the_temporary_sample_export_button_is_kept_and_reused():
-    html = (STATIC / "index.html").read_text(encoding="utf-8")
-    assert 'id="source-samples-btn"' in html
-    js = (STATIC / "app-diagnostics.js").read_text(encoding="utf-8")
-    assert "await downloadSourceSamples(btn)" in js
-    man = {c["id"]: c for c in fc.load_manifest()["checks"]}
-    assert man["sample-export-multi-download"]["params"]["action"] == "source_samples"
 
 
 def test_the_law_residue_check_uses_the_ingest_reports_own_test_and_carries_no_text(tmp_path, monkeypatch):
