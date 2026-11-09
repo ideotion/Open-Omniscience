@@ -36,7 +36,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlparse, urlsplit
+from urllib.parse import ParseResult, urljoin, urlparse, urlsplit
 from urllib.robotparser import RobotFileParser
 
 import requests
@@ -1371,8 +1371,15 @@ class EthicalFetcher:
         """
         if _KILL.is_set():
             raise FetchFailed(KILL_SWITCH_REFUSAL)
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        try:
+            parsed: ParseResult | None = urlparse(url)
+        except ValueError:
+            # A link urlsplit cannot read (an unclosed IPv6 bracket ``http://[::1``, a bracketed host that is no address, a netloc
+            # NFKC would change) raised a bare ValueError out of the fetch, which ended the source's whole feed pass: a feed
+            # item's link reaches here through ``ingest_url`` (R626's read). Refused below, outside this handler, as the
+            # unsupported or malformed URL it is.
+            parsed = None
+        if parsed is None or parsed.scheme not in ("http", "https") or not parsed.netloc:
             raise FetchFailed(f"unsupported or malformed URL: {failure_url(url)!r}")
 
         # Cheap length check per fetch; evicts only when a cap is exceeded (E1).

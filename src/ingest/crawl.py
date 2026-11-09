@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from typing import cast
 from urllib.parse import urldefrag, urljoin, urlparse, urlsplit
 
+import idna  # the encoder requests itself uses for a non-ASCII host (R631)
 from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
@@ -41,6 +42,7 @@ from src.ingest import (
     FetchError,
     RobotsDisallowed,
     RobotsUnavailable,
+    _carries_userinfo,
     _host_netloc,
 )
 from src.ingest.pipeline import IngestResult, _canonical_stored, store_fetched
@@ -99,6 +101,8 @@ class CrawlReport:
     pages_fetched: int = 0
     stopped_reason: str = "completed"
     tally: dict[str, int] = field(default_factory=dict)
+    # Distinct links on the fetched pages that urllib.parse could not read: skipped, never followed (R626, see _harvest_links).
+    skipped_unreadable: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -107,6 +111,7 @@ class CrawlReport:
             "pages_fetched": self.pages_fetched,
             "stopped_reason": self.stopped_reason,
             "tally": self.tally,
+            "skipped_unreadable": self.skipped_unreadable,
         }
 
 
@@ -139,23 +144,57 @@ def _off_site(netloc: str, base_host: str) -> bool:
     URL, the canonical URL and a saved sitemap address (the independent read of R624, S1). The fetcher's other lane already
     refuses any userinfo (``src/safety/fetcher.py``), and before R624 such a link read as the host ``u`` and was never followed.
     The site's own host, read from the start URL or the source's domain, still goes through :func:`_registrable_host`, so a
-    start URL the operator wrote with a login keeps its host."""
-    return "@" in netloc or _registrable_host(netloc) != base_host
+    start URL the operator wrote with a login keeps its host.
+
+    Both hosts are compared in the form the request names them (:func:`_site_key`, R631): ``bücher.example`` and
+    ``xn--bcher-kva.example`` are one site, either way round, and a host that cannot be encoded is off the site (fail closed)."""
+    if "@" in netloc:
+        return True
+    ours, site = _site_key(_registrable_host(netloc)), _site_key(base_host)
+    return ours is None or site is None or ours != site
 
 
-def _harvest_links(html: str, base_url: str) -> list[str]:
-    """Absolute, de-fragmented http(s) links from a page, in document order."""
+def _site_key(host: str) -> str | None:
+    """``host`` (a :func:`_registrable_host`) as the request names it, for the same-site comparison (R631). Never raises.
+
+    An ASCII host is compared as it is (urllib.parse has lower-cased it), punycode included. A host with any other character
+    is encoded as requests encodes it before connecting (``idna.encode(host, uts46=True)``, ``PreparedRequest
+    ._get_idna_encoded_host``), so a source written in its Unicode form matches the punycode links its pages and its sitemap
+    carry, and the other way round: before, ``bücher.example`` and ``xn--bcher-kva.example`` read as two sites, and the three
+    catalogue sources with a Unicode domain lost their punycode links and page locs. ``None`` when the host cannot be encoded
+    (an empty label, a label over 63, a name over 253, a disallowed character; idna refuses a 10 MB name at once): requests
+    refuses such a host (``InvalidURL``), and a comparison with ``None`` is off the site."""
+    if host.isascii():
+        return host
+    try:
+        return idna.encode(host, uts46=True).decode("ascii")
+    except ValueError:  # idna.IDNAError and UnicodeError both are one
+        return None
+
+
+def _harvest_links(html: str, base_url: str) -> tuple[list[str], set[str]]:
+    """Absolute, de-fragmented http(s) links from a page, in document order, and the hrefs ``urllib.parse`` could not read.
+
+    An href ``urljoin``/``urldefrag``/``urlparse`` cannot read (an unclosed IPv6 bracket ``http://[::1``, a bracketed host that
+    is no address, a netloc NFKC would change) raised a bare ``ValueError`` out of the harvest, which ended the source's whole
+    crawl: one bad link on a page ended the pass (R626). It is skipped and handed back, as written, for the crawl to count;
+    every link returned is one ``urlparse`` has read."""
     soup = BeautifulSoup(html, "html.parser")
     out: list[str] = []
     seen: set[str] = set()
+    unreadable: set[str] = set()
     for a in soup.find_all("a", href=True):
         # bs4 types every attribute as `str | AttributeValueList` because a few
         # (class, rel) are multi-valued. href is not one of them.
         href = cast(str, a["href"]).strip()
         if not href or href.startswith(("#", "mailto:", "javascript:", "tel:")):
             continue
-        absolute, _frag = urldefrag(urljoin(base_url, href))
-        parsed = urlparse(absolute)
+        try:
+            absolute, _frag = urldefrag(urljoin(base_url, href))
+            parsed = urlparse(absolute)
+        except ValueError:
+            unreadable.add(href)
+            continue
         if parsed.scheme not in ("http", "https"):
             continue
         if absolute.lower().endswith(_SKIP_SUFFIXES):
@@ -163,7 +202,7 @@ def _harvest_links(html: str, base_url: str) -> list[str]:
         if absolute not in seen:
             seen.add(absolute)
             out.append(absolute)
-    return out
+    return out, unreadable
 
 
 def crawl_source(
@@ -189,6 +228,7 @@ def crawl_source(
 
     queue: deque[tuple[str, int]] = deque([(start, 0)])
     queued: set[str] = {canonicalize_url(start)}
+    unreadable: set[str] = set()  # the hrefs _harvest_links could not read, as written: counted once per crawl (R626)
 
     # P1.8 collector write batching: buffer stores across the crawl so several
     # articles share ONE gate window/fsync; fetches stay outside any gate.
@@ -232,7 +272,13 @@ def crawl_source(
             # but never beyond the depth bound.
             if depth >= cfg.max_depth:
                 continue
-            for link in _harvest_links(fetched.content, fetched.final_url):
+            links, page_unreadable = _harvest_links(fetched.content, fetched.final_url)
+            unreadable |= page_unreadable
+            for link in links:
+                if _carries_userinfo(link):
+                    # R630: a link written with a user name or password is never followed or stored, whatever the scope:
+                    # requests would send it as a login and it would land in the stored URLs (R624's read)
+                    continue
                 if cfg.same_domain_only and _off_site(urlparse(link).netloc, base_host):
                     continue
                 canon = canonicalize_url(link)
@@ -259,4 +305,5 @@ def crawl_source(
 
     if report.stopped_reason == "completed" and report.pages_fetched >= cfg.max_pages and queue:
         report.stopped_reason = "max_pages"
+    report.skipped_unreadable = len(unreadable)
     return report

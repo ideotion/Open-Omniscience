@@ -389,3 +389,102 @@ def test_a_www_source_domain_reads_its_children_on_the_bare_host_as_its_own():
     report = discover_sitemap_urls(_fetcher(sess), "www.good.example")
     assert "https://good.example/sitemap-child.xml" in sess.fetched
     assert report.urls == [_OWN]
+
+
+# --------------------------------------------------------------------------- #
+# R630: a link or a sitemap page address carrying a userinfo is never followed or stored, whatever the crawl's scope.
+# --------------------------------------------------------------------------- #
+
+_CREDENTIALED = ["https://u:p@good.example/x", "https://u@good.example/x", "https://u:p@evil.example/x", "https://@good.example/x"]
+
+
+@pytest.mark.parametrize("link", _CREDENTIALED)
+def test_an_open_scope_crawl_never_follows_a_link_that_carries_a_userinfo(db, source, link):
+    sess = _Session()
+    sess.route("https://good.example/robots.txt", status_code=404, text="")
+    sess.route(f"https://{_EVIL}/robots.txt", status_code=404, text="")
+    sess.route("https://good.example", text=_page("Home", "x", links=[(link, "the link")]))
+    sess.route(link, text=_page("Planted", "A real article body, long enough to be stored."))
+    crawl_source(db, source, fetcher=_fetcher(sess), config=CrawlConfig(max_depth=1, max_pages=50, same_domain_only=False))
+    assert link not in sess.fetched
+    assert not [u for u in sess.fetched if "@" in u]
+    assert db.query(Article).count() == 0
+
+
+def test_control_an_open_scope_crawl_still_follows_a_plain_off_site_link(db, source):
+    link = f"https://{_EVIL}/x"
+    sess = _Session()
+    sess.route("https://good.example/robots.txt", status_code=404, text="")
+    sess.route(f"https://{_EVIL}/robots.txt", status_code=404, text="")
+    sess.route("https://good.example", text=_page("Home", "x", links=[(link, "the link")]))
+    sess.route(link, text=_page("Planted", "A real article body, long enough to be stored."))
+    crawl_source(db, source, fetcher=_fetcher(sess), config=CrawlConfig(max_depth=1, max_pages=50, same_domain_only=False))
+    assert link in sess.fetched  # an open-scope crawl's behaviour is otherwise unchanged
+
+
+_CREDENTIALED_LOCS = [
+    "https://u:p@good.example/own-article",
+    "https://u@good.example/own-article",
+    "https://@good.example/own-article",  # an empty userinfo
+    "https://good.example:x@evil.example/own-article",  # R624's own form
+    "https://u:p@evil.example/own-article",
+]
+
+
+@pytest.mark.parametrize("loc", _CREDENTIALED_LOCS)
+def test_a_sitemap_page_address_that_carries_a_userinfo_is_never_kept(loc):
+    sess = _Session()
+    sess.route("https://good.example/robots.txt", status_code=404, text="")
+    sess.route("https://good.example/sitemap.xml", text=_urlset(loc), content_type="text/xml")
+    report = discover_sitemap_urls(_fetcher(sess), "good.example")
+    assert report.urls == []
+    assert failure_url(loc) in report.skipped_off_host
+    assert "u:p" not in repr(report)
+
+
+def test_control_a_plain_sitemap_page_address_is_kept():
+    sess = _Session()
+    sess.route("https://good.example/robots.txt", status_code=404, text="")
+    sess.route("https://good.example/sitemap.xml", text=_URLSET_OWN, content_type="text/xml")
+    report = discover_sitemap_urls(_fetcher(sess), "good.example")
+    assert report.urls == [_OWN]
+
+
+@pytest.mark.parametrize("loc", _CREDENTIALED_LOCS)
+def test_a_credentialed_page_address_in_a_child_urlset_is_never_kept(loc):
+    # the same rule one level down: an index's child urlset (the independent read of R630, S3)
+    child = "https://good.example/sitemap-child.xml"
+    sess = _Session()
+    sess.route("https://good.example/robots.txt", status_code=404, text="")
+    sess.route("https://good.example/sitemap.xml", text=_index(child), content_type="text/xml")
+    sess.route(child, text=_urlset(loc), content_type="text/xml")
+    report = discover_sitemap_urls(_fetcher(sess), "good.example")
+    assert child in sess.fetched  # the child itself was read
+    assert report.urls == []
+    assert failure_url(loc) in report.skipped_off_host
+    assert not [u for u in sess.fetched if "@" in u]
+
+
+_AT_OUTSIDE_THE_AUTHORITY = ["https://good.example/@alice/post-1", "https://good.example/a?to=a@b.example", "https://good.example/a@b"]
+
+
+@pytest.mark.parametrize("same_domain_only", [True, False])
+@pytest.mark.parametrize("link", _AT_OUTSIDE_THE_AUTHORITY)
+def test_control_an_at_sign_outside_the_authority_is_followed_in_both_scopes(db, source, link, same_domain_only):
+    # R630 reads the netloc's @ only: a handle in a path or an address in a query is no userinfo
+    sess = _Session()
+    sess.route("https://good.example/robots.txt", status_code=404, text="")
+    sess.route("https://good.example", text=_page("Home", "x", links=[(link, "the link")]))
+    sess.route(link, text=_page("Own", "A real article body, long enough to be stored."))
+    crawl_source(db, source, fetcher=_fetcher(sess), config=CrawlConfig(max_depth=1, max_pages=50, same_domain_only=same_domain_only))
+    assert link in sess.fetched
+
+
+@pytest.mark.parametrize("loc", _AT_OUTSIDE_THE_AUTHORITY)
+def test_control_a_page_address_with_an_at_sign_outside_the_authority_is_kept(loc):
+    sess = _Session()
+    sess.route("https://good.example/robots.txt", status_code=404, text="")
+    sess.route("https://good.example/sitemap.xml", text=_urlset(loc), content_type="text/xml")
+    report = discover_sitemap_urls(_fetcher(sess), "good.example")
+    assert report.urls == [loc]
+    assert report.skipped_off_host == []

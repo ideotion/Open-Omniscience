@@ -29,7 +29,9 @@ fail-closed, per-host politeness, size-bounded via ``max_bytes``) -- there is no
 bypass. A sitemap-index child sitemap that points OFF the source's own registrable
 host is NEVER fetched (reported, not followed) -- the same "same-domain only"
 discipline ``src.ingest.crawl`` applies, so a compromised/malicious sitemap can
-never be used to pivot discovery onto an arbitrary host.
+never be used to pivot discovery onto an arbitrary host. A urlset's page locs are
+held to the same host by the same rule (R627; before, they were handed on unchecked),
+and a loc urllib.parse cannot read is skipped and counted (R626), never raised.
 
 Scope: plain XML only (a ``.gz``-suffixed sitemap is reported as unsupported, never
 guessed-at) -- gzip decompression is a documented, deliberate follow-up, not silently
@@ -148,6 +150,27 @@ def parse_sitemap_xml(data: bytes | str) -> SitemapParseResult:
     raise SitemapError(f"root element {root.tag!r} is neither sitemapindex nor urlset")
 
 
+def _off_host(url: str, base_host: str) -> bool | None:
+    """Whether ``url`` is off the source's host ``base_host``, by the ONE rule both checks of :func:`discover_sitemap_urls` use
+    (a child sitemap's, and since R627 a urlset page loc's); ``None`` when ``urllib.parse`` cannot read ``url`` (R626). Never
+    raises.
+
+    - Unreadable: ``urlparse`` raises a bare ``ValueError`` on a lone or unclosed IPv6 bracket (``http://[::1``,
+      ``http://good.example]/``), a bracketed host that is no address (``http://[foo]/``) and a netloc NFKC would change
+      (``http://a\uff03b/``). Raised, one such child sitemap or page loc ended the whole discovery of its source; the loops skip
+      it and count it.
+    - Otherwise the host is :func:`~src.ingest.crawl._registrable_host`'s (after the last ``@``, lower-cased, without its port
+      or a leading ``www.``), and must be ``base_host``. A loc with no host (``/relative``) is therefore off the host; a port out
+      of range is compared like any other port (not at all), and the fetcher refuses such a URL before any request.
+    - A netloc holding an ``@`` is always off the host, even when the host after it is the source's (R624's ``_off_site``):
+      a child sitemap or a page address written with a user name or password is never fetched or stored (R630)."""
+    try:
+        netloc = urlparse(url).netloc
+    except ValueError:
+        return None
+    return _off_site(netloc, base_host)
+
+
 def declared_sitemap_urls(fetcher: EthicalFetcher, host: str) -> list[str]:
     """Sitemap URLs ``host`` declares in its OWN robots.txt (the preferred,
     authoritative discovery source). ``host`` is a bare domain (e.g.
@@ -178,7 +201,11 @@ class SitemapDiscoveryReport:
     root_sitemap_url: str | None = None
     urls: list[str] = field(default_factory=list)
     child_sitemaps_fetched: int = 0
+    # Child sitemaps AND page locs off the source's host, never fetched or handed on (page locs since R627, written through
+    # failure_url so no user name or password is kept here).
     skipped_off_host: list[str] = field(default_factory=list)
+    # Distinct child sitemap and page locs urllib.parse could not read, skipped (R626).
+    skipped_unreadable: int = 0
     errors: list[str] = field(default_factory=list)
     stopped_reason: str = "completed"
 
@@ -199,6 +226,12 @@ def discover_sitemap_urls(
     host as ``host`` are ever fetched; an off-host child is recorded in
     ``skipped_off_host`` and never followed (the same "same-domain only"
     discipline ``src.ingest.crawl`` applies to on-page links).
+
+    A urlset's page locs are held to the same host by the same rule (R627, :func:`_off_host`): before, they were never
+    checked, so a sitemap could hand the caller pages on any other site to fetch and store as this source's. An off-host page
+    loc is recorded in ``skipped_off_host`` (through ``failure_url``) and never returned. A child sitemap or page loc
+    ``urllib.parse`` cannot read (``http://[::1``) is counted in ``skipped_unreadable`` and skipped (R626): its bare
+    ``ValueError`` ended the whole discovery, and a page loc handed on ended the caller's walk of the rest.
     """
     base_host = _registrable_host(host)
     report = SitemapDiscoveryReport(source_host=host)
@@ -221,7 +254,11 @@ def discover_sitemap_urls(
         visited.add(sm_url)
 
         # the host the fetch would go to (after the last ``@``), and never a child that carries a userinfo (R624)
-        if _off_site(urlparse(sm_url).netloc, base_host):
+        off = _off_host(sm_url, base_host)
+        if off is None:  # urllib.parse cannot read it (R626)
+            report.skipped_unreadable += 1
+            continue
+        if off:
             report.skipped_off_host.append(failure_url(sm_url))  # a report line: the userinfo masked (R621)
             continue
         if sm_url.lower().split("?")[0].endswith(".gz"):
@@ -255,9 +292,17 @@ def discover_sitemap_urls(
             if len(report.urls) >= max_urls:
                 report.stopped_reason = "max_urls"
                 break
-            if entry.loc not in seen_urls:
-                seen_urls.add(entry.loc)
-                report.urls.append(entry.loc)
+            if entry.loc in seen_urls:
+                continue
+            seen_urls.add(entry.loc)
+            off = _off_host(entry.loc, base_host)  # the child sitemaps' rule (R627), a userinfo always off (R630)
+            if off is None:  # urllib.parse cannot read it (R626)
+                report.skipped_unreadable += 1
+                continue
+            if off:
+                report.skipped_off_host.append(failure_url(entry.loc))
+                continue
+            report.urls.append(entry.loc)
         if len(report.urls) >= max_urls:
             break
 
