@@ -45,6 +45,7 @@ from src.ingest.batch import ArticleBatch
 from src.ingest.host_mismatch import check_host
 from src.ingest.pipeline import IngestResult, ingest_url
 from src.utils.url_utils import fetched_host, off_the_source_site
+from tests.js_source_helper import python_function_source
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "src" / "static"
@@ -449,9 +450,8 @@ def test_the_migration_goes_down_and_up_without_rebuilding_the_articles_table(tm
 
 def test_the_boot_path_runs_the_self_heal():
     """init_db and the scale bench both heal an older store (the drift test checks the heal exists, not that boot calls it)."""
-    for rel, fn in (("src/database/session.py", "def init_db"), ("src/testing/scale_bench.py", None)):
-        text_ = (ROOT / rel).read_text(encoding="utf-8")
-        body = text_.split(fn, 1)[1].split("\ndef ", 1)[0] if fn else text_
+    for rel, fn in (("src/database/session.py", "init_db"), ("src/testing/scale_bench.py", "_run_init_sequence")):
+        body = python_function_source((ROOT / rel).read_text(encoding="utf-8"), fn)
         assert "ensure_article_fetched_host_column(engine)" in body, rel
 
 
