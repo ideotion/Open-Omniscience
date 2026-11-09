@@ -299,6 +299,7 @@ async function run() {
       ${extractConst("HOME_CHANNEL_LABELS", HOME)}
       ${extract("homeChannelLabel", null, HOME)}
       ${extract("_fillLatestFacet", null, HOME)}
+      ${extract("ooFetchedOffSiteNote", null, CORE)}
       ${extract("_renderHomeLatest", null, HOME)}
       this.render = _renderHomeLatest;
     `, { payload });
