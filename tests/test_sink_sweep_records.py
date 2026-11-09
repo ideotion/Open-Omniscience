@@ -1303,7 +1303,7 @@ def test_the_fixed_unreadable_text_sentence_is_kept_at_exactly_the_sites_that_ha
             ("src/api/diagnostics/p0.py", "p0_validation_start"): 1,
             ("src/api/diagnostics/release_run.py", "release_run_resume"): 1,
             ("src/api/diagnostics/release_run.py", "release_run_start"): 1,
-            ("src/api/ingestion.py", "ingest_email_endpoint"): 1,
+            ("src/api/ingestion.py", "ingest_email_endpoint"): 2,  # the kill-switch refusal and the R650 certificate refusal
             ("src/api/safety.py", "encrypted_backup"): 1,
             ("src/api/unlock.py", "_close_after_checkpoint"): 1,
             ("src/api/unlock.py", "_file_opens_with"): 1,
