@@ -230,6 +230,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
     from src.database.maintenance import (
         ensure_article_analysis_columns,
         ensure_article_detected_language_column,
+        ensure_article_fetched_host_column,
         ensure_article_identity_columns,
         ensure_article_ip_columns,
         ensure_article_keyword_indexed_column,
@@ -275,6 +276,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
     ensure_article_source_revision_column(engine)
     ensure_article_newsletter_list_id_column(engine)
     ensure_article_newsletter_attach_column(engine)
+    ensure_article_fetched_host_column(engine)
     ensure_source_catalog_baseline_column(engine)
     ensure_article_detected_language_column(engine)
     ensure_article_top_keyword_columns(engine)

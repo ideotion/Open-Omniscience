@@ -3792,6 +3792,10 @@ _NOT_ADOPTABLE_ARTICLE_COLUMNS: dict[str, str] = {
     "url": "identity, not metadata: two articles duplicate on HASH and may legitimately "
            "carry different URLs, so copying one over the other rewrites provenance",
     "canonical_url": "NOT NULL, so never absent; and same identity argument as url",
+    # Queue item 61 (the independent read, must-fix 3): a hash twin is often the same wire copy stored by another source from
+    # another address, and adopting its host would say this article's own URL was fetched from that other site, for good.
+    "fetched_host": "where THIS row's URL was fetched from, so the url argument applies: a duplicate matches on HASH and may "
+                    "be another source's copy fetched from another site",
     "source_id": "remapped through temp.map_sources, never copied raw",
     "title": "content, and content equality is the dedup predicate itself",
     "content": "content (see title)",
@@ -4021,7 +4025,10 @@ def _merge_articles(con, batch_id, results) -> None:
         # article, which is what they have always arrived with: the post-swap re-index
         # computes theirs. Here rather than in an UPDATE afterwards, so a carried
         # article row is written once and not twice (the D45 cliff).
-        " top_keyword_id, top_keyword_count, top_keyword_tied_n)"
+        " top_keyword_id, top_keyword_count, top_keyword_tied_n,"
+        # Queue item 61: where the page was fetched from, after its redirects. A socket-time fact like server_ip: no re-index
+        # rebuilds it and a re-fetch may end elsewhere, so a merge that dropped it would lose it for good.
+        " fetched_host)"
         " SELECT i.url, i.canonical_url, ms.new, i.title, i.content,"
         " i.compressed_content, i.published_at, i.language, i.hash, i.created_at,"
         " i.updated_at, i.region, i.country, i.author, i.word_count, i.reading_time,"
@@ -4030,7 +4037,8 @@ def _merge_articles(con, batch_id, results) -> None:
         " i.content_multihash, i.canon_version,"
         " i.quarantined, i.quarantine_reason, i.quarantine_criteria_version, i.quarantined_at,"
         " i.source_revision, i.newsletter_list_id, i.newsletter_attached_via,"
-        " cp.top_keyword_id, cp.top_keyword_count, cp.top_keyword_tied_n"
+        " cp.top_keyword_id, cp.top_keyword_count, cp.top_keyword_tied_n,"
+        " i.fetched_host"
         " FROM inc.articles i JOIN temp.map_sources ms ON ms.old = i.source_id"
         " LEFT JOIN temp.carry_plan cp ON cp.old = i.id"
         " WHERE NOT EXISTS (SELECT 1 FROM articles m WHERE m.hash = i.hash)"

@@ -2344,13 +2344,13 @@
         if (_anArtView === "list") {
           return `<div class="an-card" data-aid="${a.id}"><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
             + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a>${badge}`
-            + `<div class="an-card-meta">${esc(a.source || "")} · ${_anLangCell(a)} · `
+            + `<div class="an-card-meta">${esc(a.source || "")}${ooFetchedOffSiteNote(a)} · ${_anLangCell(a)} · `
             + `${esc(ooIsoDate(a.published_at))} · ${esc(TFW("{n} words", {n: words}))}${_toneChip(a)}</div>`
             + qr + `</div>`;
         }
         return `<tr data-aid="${a.id}"><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
         + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a>${badge}${qr}</td>`
-        + `<td>${esc(a.source || "")}</td>`
+        + `<td>${esc(a.source || "")}${ooFetchedOffSiteNote(a)}</td>`
         + `<td>${_anLangCell(a)}</td>`
         + `<td class="muted">${esc((a.published_at || "").slice(0, 10))}</td>`
         // Q615: words and tone are columns of their own, each sortable. The tone keeps
@@ -2975,7 +2975,7 @@
           (data.results.length ? data.results.map(a =>
             `<tr><td><div>${esc(a.title) || '<span class="muted">(untitled)</span>'}</div>${_approxTitleHtml(a)}
                  <div class="muted" style="font-size:12px">${esc((a.content||"").slice(0,160))}…</div></td>
-             <td>${esc(a.source)}${_anToneChip(a)}</td><td class="muted">${esc((a.published_at||"").slice(0,10))}</td>
+             <td>${esc(a.source)}${ooFetchedOffSiteNote(a)}${_anToneChip(a)}</td><td class="muted">${esc((a.published_at||"").slice(0,10))}</td>
              <td>${ooLangCell(a.language)}</td>
              <td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="offline stored copy">open</a>
                  ${a.url ? `· ${extLink(a.url, "source ↗", "muted")}` : ""}
@@ -3094,7 +3094,7 @@
           <input type="checkbox" class="synth-cb" value="${a.id}" ${i < preset ? "checked" : ""} data-on-change="_synthCount()">
           <span style="flex:1">
             <span style="font-weight:600">${esc(a.title) || '<span class="muted">(untitled)</span>'}</span>
-            <span class="muted" style="display:block;font-size:12px">${esc(a.source || "")} · ${esc(ooIsoDate(a.published_at)) || t("undated")} · ${a.language ? ooLangCell(a.language) : "?"}
+            <span class="muted" style="display:block;font-size:12px">${esc(a.source || "")}${ooFetchedOffSiteNote(a)} · ${esc(ooIsoDate(a.published_at)) || t("undated")} · ${a.language ? ooLangCell(a.language) : "?"}
               · <a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">${esc(t("open"))}</a></span>
           </span>
         </label>`).join("");

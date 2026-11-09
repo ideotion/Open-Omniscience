@@ -94,6 +94,9 @@ def export_delta(session, *, started_at: datetime, export_dir: str) -> str | Non
             "published_at": a.published_at.isoformat() if a.published_at else None,
             "language": a.language,
             "hash": a.hash,
+            # Queue item 61: the host the page was fetched from, after its redirects (null when not recorded), as the
+            # article export carries it.
+            "fetched_host": a.fetched_host,
         }
         for a in rows
     ]

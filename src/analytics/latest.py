@@ -52,6 +52,7 @@ from sqlalchemy.orm import Session
 
 from src.analytics.managed import UNSEGMENTED
 from src.database.models import Article, ArticleLink, Source
+from src.utils.url_utils import fetched_host_fields
 
 _SQL_IN_CHUNK = 900  # stay under the SQLite bound-variable limit
 
@@ -166,6 +167,7 @@ def latest_articles(
     cols: list[Any] = [
         Article.id, Article.source_id, Article.title,
         Article.created_at, Article.published_at, Article.language, Article.word_count,
+        Article.fetched_host,  # queue item 61: where the page was fetched from (the last column; word_count already reads past content)
     ]
     if want_prefix:
         cols.append(func.substr(Article.content, 1, prefix_chars))
@@ -197,8 +199,8 @@ def latest_articles(
     # Apply the two transparent gates, preserving recency order.
     candidates: list[dict] = []
     for row in rows:
-        aid, sid, title, created, published, lang, wc = row[:7]
-        body_prefix = row[7] if want_prefix else None  # the folded near-dup prefix, or None
+        aid, sid, title, created, published, lang, wc, fetched = row[:8]
+        body_prefix = row[8] if want_prefix else None  # the folded near-dup prefix, or None
         base = (lang or "").split("-", 1)[0].strip().lower()
         unseg = base in UNSEGMENTED
         cited = link_count.get(aid, 0)
@@ -220,6 +222,8 @@ def latest_articles(
                 "unsegmented": unseg,
                 "word_count": wc,
                 "cited_sources": cited,
+                # Queue item 61: where the page was fetched from, and whether that is another site than the source's.
+                **fetched_host_fields(fetched, info.get("domain")),
                 "source": {
                     "name": info.get("name"),
                     "domain": info.get("domain"),
