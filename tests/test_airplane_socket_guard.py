@@ -526,3 +526,176 @@ def test_without_the_putrequest_patch_the_bytes_arrive(proxy_listener):
         assert bytes(proxy_listener.received).startswith(b"GET http://example.com/x HTTP/1.1\r\n")
     finally:
         http.client.HTTPConnection.putrequest = ap._guarded_putrequest  # type: ignore[method-assign]
+
+
+# --------------------------------------------------------------------------- #
+# R639: in airplane mode a lookup is made only for "localhost" and loopback LITERALS. A localhost alias the connect guard treats as
+# local (localhost.localdomain, ip6-localhost) is resolved from /etc/hosts only where that file lists it; elsewhere the resolver asks
+# DNS, so the query itself egressed (security read A of R638). The resolver here is the fixture's spy: no real lookup is made.
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("host", ["localhost.localdomain", "ip6-localhost", "LOCALHOST.LOCALDOMAIN", "localhost.", " localhost", "[::1]"])
+def test_a_localhost_alias_is_not_looked_up_in_airplane_mode(guard, host):
+    activate_kill_switch()
+    with pytest.raises(AirplaneModeError) as exc:
+        socket.getaddrinfo(host, 80)
+    assert guard == [], f"the resolver was reached for {host!r} in airplane mode"
+    assert "airplane mode is engaged" in str(exc.value)
+
+
+def test_an_alias_refusal_is_in_fixed_words(guard):
+    activate_kill_switch()
+    with pytest.raises(AirplaneModeError) as exc:
+        socket.getaddrinfo("ip6-localhost", 80)
+    assert str(exc.value).startswith("airplane mode is engaged: refusing a network connection to ")
+    assert ap._ALIAS_LOOKUP_TARGET in str(exc.value) and "ip6-localhost" not in str(exc.value)
+
+
+@pytest.mark.parametrize("host", ["example.com", "intranet", "a.example"])
+def test_a_plain_name_is_refused_before_any_lookup_with_the_sentence_callers_parse(guard, host):
+    """A plain name was already refused before the lookup; its sentence (which the offline readers parse) is unchanged."""
+    activate_kill_switch()
+    with pytest.raises(AirplaneModeError) as exc:
+        socket.getaddrinfo(host, 80)
+    assert guard == []
+    assert f"refusing a network connection to {host!r}" in str(exc.value)
+
+
+@pytest.mark.parametrize("host", [None, "", "localhost", "LocalHost", "127.0.0.1", "127.8.9.10", "::1", "::1%lo", b"localhost"])
+def test_localhost_and_loopback_literals_are_still_looked_up(guard, host):
+    activate_kill_switch()
+    with pytest.raises(_Reached):
+        socket.getaddrinfo(host, 80)
+    assert guard == ["getaddrinfo"]
+
+
+def test_a_localhost_alias_is_looked_up_while_online(guard):
+    with pytest.raises(_Reached):
+        socket.getaddrinfo("localhost.localdomain", 80)
+    assert guard == ["getaddrinfo"]
+
+
+def test_lookup_exemption_is_narrower_than_the_connect_classification():
+    """Every name exempt from a lookup is local, and the aliases are local to connect but NOT exempt from a lookup."""
+    for host in (None, "", "localhost", "127.0.0.1", "::1"):
+        assert ap._lookup_exempt(host) and ap._is_local_host(host)
+    for host in ("localhost.localdomain", "ip6-localhost", " localhost", "[::1]"):
+        assert ap._is_local_host(host) and not ap._lookup_exempt(host)
+
+
+def test_localhost_is_answered_from_its_literals_in_airplane_mode(guard):
+    """Exactly ``localhost`` is resolved from 127.0.0.1 / ::1, never handed to libc as a NAME, so a hosts file without an entry for the
+    family asked for cannot send the query to DNS (security read A's follow-up on R639). Online, the name is resolved as before."""
+    seen: list[object] = []
+
+    def resolver(host, *a, **k):
+        seen.append((host, a[1] if len(a) > 1 else k.get("family", 0)))
+        if host == "::1":
+            raise socket.gaierror(socket.EAI_ADDRFAMILY, "no IPv6 here")
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (host, a[0] if a else 0))]
+
+    ap._orig_getaddrinfo = resolver  # type: ignore[assignment]
+    activate_kill_switch()
+    assert socket.getaddrinfo("LOCALHOST", 80)[0][4] == ("127.0.0.1", 80)
+    socket.getaddrinfo(b"localhost", 80, socket.AF_INET)
+    with pytest.raises(socket.gaierror):
+        socket.getaddrinfo("localhost", 80, socket.AF_INET6)  # no usable ::1: the resolver's own error, no name lookup
+    assert all(host in ("127.0.0.1", "::1") for host, _family in seen), seen
+    assert seen == [("127.0.0.1", 0), ("::1", 0), ("127.0.0.1", socket.AF_INET), ("::1", socket.AF_INET6)]
+    clear_kill_switch()
+    seen.clear()
+    socket.getaddrinfo("localhost", 80)
+    assert seen == [("localhost", 0)]
+
+
+# --------------------------------------------------------------------------- #
+# R639, S1's read: connect()/connect_ex() with a host NAME resolve it in CPython's C code, straight through libc, never through the
+# patched getaddrinfo. In airplane mode connect(("localhost.localdomain", 80)) sent a DNS query (strace), and so did "localhost" on an
+# AF_INET6 socket where /etc/hosts has no ::1 line. The connect guards now apply the getaddrinfo rule before the real call.
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def connect_spy(guard):
+    """The real connect/connect_ex replaced by recorders of the address they were handed (the guard fixture's spies record no address).
+    Put back before the guard fixture restores the real calls, so nothing outlives the test."""
+    handed: list[object] = []
+    saved = ap._orig_connect, ap._orig_connect_ex
+    ap._orig_connect = lambda self, address: handed.append(address)  # type: ignore[assignment]
+    ap._orig_connect_ex = lambda self, address: handed.append(address) or 0  # type: ignore[assignment]
+    try:
+        yield handed
+    finally:
+        ap._orig_connect, ap._orig_connect_ex = saved
+
+
+@pytest.mark.parametrize("method", ["connect", "connect_ex"])
+@pytest.mark.parametrize("host", ["localhost.localdomain", "ip6-localhost", " localhost"])
+def test_connect_to_a_localhost_alias_is_refused_in_airplane_mode(connect_spy, method, host):
+    activate_kill_switch()
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        with pytest.raises(AirplaneModeError) as exc:
+            getattr(s, method)((host, 80))
+    finally:
+        s.close()
+    assert connect_spy == [], "the real connect (and so libc's resolver) was reached for a localhost alias"
+    assert ap._ALIAS_LOOKUP_TARGET in str(exc.value) and repr(host) not in str(exc.value)
+
+
+@pytest.mark.parametrize("method", ["connect", "connect_ex"])
+@pytest.mark.parametrize(("family", "literal"), [(socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")])
+def test_connect_to_localhost_is_handed_the_literal_of_the_sockets_family(connect_spy, method, family, literal):
+    activate_kill_switch()
+    try:
+        s = socket.socket(family, socket.SOCK_STREAM)
+    except OSError:
+        pytest.skip("this host cannot create a socket of that family")
+    try:
+        getattr(s, method)(("LocalHost", 8000))
+    finally:
+        s.close()
+    assert connect_spy == [(literal, 8000)]
+
+
+def test_connect_names_are_untouched_while_online(connect_spy):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.connect(("localhost", 8000))
+        s.connect(("localhost.localdomain", 8000))
+    finally:
+        s.close()
+    assert connect_spy == [("localhost", 8000), ("localhost.localdomain", 8000)]
+
+
+def test_create_connection_to_a_localhost_alias_is_refused_before_anything(guard):
+    activate_kill_switch()
+    with pytest.raises(AirplaneModeError) as exc:
+        socket.create_connection(("ip6-localhost", 80))
+    assert guard == [] and ap._ALIAS_LOOKUP_TARGET in str(exc.value)
+
+
+def test_a_real_loopback_server_is_reached_by_name_in_airplane_mode():
+    """End to end, real guard: a listener on 127.0.0.1 is reached through connect(("localhost", port)) with the switch engaged."""
+    was_installed, was_armed = ap.is_installed(), ap._airplane_armed
+    install_airplane_socket_guard()
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    try:
+        activate_kill_switch()
+        c = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            c.settimeout(2)
+            c.connect(("localhost", srv.getsockname()[1]))
+            assert c.getpeername()[0] == "127.0.0.1"
+        finally:
+            c.close()
+    finally:
+        clear_kill_switch()
+        srv.close()
+        uninstall_airplane_socket_guard()
+        if was_installed:
+            ap._install_patches()
+        ap._airplane_armed = was_armed
