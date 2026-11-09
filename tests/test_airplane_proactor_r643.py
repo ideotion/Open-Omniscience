@@ -87,6 +87,20 @@ def test_a_proactor_connect_meets_the_ssrf_connect_check(proactor, monkeypatch):
     assert proactor == [("connect", ("93.184.215.14", 443))]
 
 
+def test_a_proactor_datagram_keeps_the_callers_flags(monkeypatch):
+    """The wrapper hands WSASendTo the caller's own flags, positional or by name (security read B: passing 0 left every test green)."""
+    seen: list[tuple[object, object]] = []
+    monkeypatch.setattr(ap, "_orig_proactor_sendto", lambda self, conn, buf, flags=0, addr=None: seen.append((flags, addr)) or "fut")
+    monkeypatch.setattr(ap, "_airplane_armed", True)
+    activate_kill_switch()
+    try:
+        ap._guarded_proactor_sendto(object(), _Conn(type_=socket.SOCK_DGRAM), b"x", 5, ("127.0.0.1", 9))
+        ap._guarded_proactor_sendto(object(), _Conn(type_=socket.SOCK_DGRAM), b"x", flags=7, addr=("127.0.0.1", 9))
+    finally:
+        clear_kill_switch()
+    assert seen == [(5, ("127.0.0.1", 9)), (7, ("127.0.0.1", 9))]
+
+
 @pytest.mark.parametrize("address", _REMOTE + _ALIASES)
 def test_a_remote_or_alias_datagram_is_refused_before_wsasendto(proactor, address):
     activate_kill_switch()
