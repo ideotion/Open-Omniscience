@@ -70,7 +70,10 @@ def _build_read_engine(url: str) -> Engine:
 
         return connect(db_path, check_same_thread=False, timeout=30)
 
-    eng = create_engine(url, future=True, creator=_library_generation.guarded_creator(_creator), poolclass=NullPool)
+    eng = create_engine(
+        url, future=True, creator=_library_generation.guarded_creator(_creator), poolclass=NullPool,
+        hide_parameters=True,  # as the corpus engine (src/database/session.py): an error names the statement, never its values
+    )
     # This engine's read transaction is held across a WHOLE export, which is exactly the
     # shape that pins the WAL (a snapshot taken at the first read, kept to the last). The
     # pin report (storage guard, hygiene's checkpoint record) lists pooled checkouts, so an

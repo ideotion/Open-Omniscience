@@ -49,7 +49,12 @@ from src.database.models import (
     get_session,
     source_group_association,
 )
-from src.database.source_lookup import source_for_domain, source_for_feed, source_for_import
+from src.database.source_lookup import (
+    FEED_HELD,
+    source_for_domain,
+    source_for_feed,
+    source_for_import,
+)
 from src.database.stand_in import not_a_stand_in_source
 
 # Import logging config
@@ -194,7 +199,7 @@ class SourceManager:
         # is a new source of that outlet (row J), never "already there".
         existing = source_for_feed(self.session, domain, kwargs.get("rss_url"))
         if existing:
-            logger.warning(f"Source with domain {domain} and this feed already exists")
+            logger.warning(FEED_HELD.format(domain=domain))
             return existing
 
         source_data = {

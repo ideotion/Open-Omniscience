@@ -180,6 +180,7 @@ def _build_engine(spec: LaneSpec, path: Path) -> Engine:
     eng = create_engine(
         f"sqlite:///{path}",
         future=True,
+        hide_parameters=True,  # as the corpus engine (src/database/session.py): an error names the statement, never its values
         creator=_creator,
         pool_size=2,
         max_overflow=4,

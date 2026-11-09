@@ -2240,10 +2240,8 @@ def merge_corpus(
     try:
         con.execute("PRAGMA foreign_keys=OFF")  # order is FK-safe; checked at the end
         attach(con, staged_corpus, "inc")  # staged members are plaintext by design
-        # The ONE feed normaliser, as a SQL function: the source joins below key on (domain, feed_key).
-        from src.database.feed_key import feed_key as _feed_key
-
-        con.create_function("oo_feed_key", 1, _feed_key, deterministic=True)
+        # The source joins key on (domain, feed_key): ``_merge_sources`` registers the incoming keys as a SQL function
+        # (``oo_inc_feed_key``, derived by the ONE feed normaliser) before its first statement.
         con.execute("BEGIN IMMEDIATE")
         results: dict[str, DomainResult] = {}
 
@@ -3131,8 +3129,9 @@ def _qualification_tally(
 def _same_source(i: str = "i", m: str = "m") -> str:
     """SQL: incoming source ``i`` (from ``inc.sources``) is the local source ``m`` (row J, S05-10).
 
-    A source is identified by ``(domain, feed_key)``, and ``feed_key`` is computed here by the registered
-    ``oo_feed_key`` function -- the ONE normaliser -- from the incoming ``rss_url``, never read from the
+    A source is identified by ``(domain, feed_key)``, and the incoming row's key is the registered
+    ``oo_inc_feed_key`` function's (:func:`_incoming_feed_keys`, computed by ``_merge_sources`` before any
+    statement reads it) -- derived by the ONE normaliser from the incoming ``rss_url``, never read from the
     incoming row: an older backup carries no key of its own and a newer one must not be able to name a key
     that disagrees with its feed. FALLBACK, deliberately narrow: when the backup holds exactly ONE source of
     the domain and this store holds exactly ONE, they are the same source even if the feed differs (the
@@ -3142,7 +3141,7 @@ def _same_source(i: str = "i", m: str = "m") -> str:
     backup carrying two feeds of one domain yields two sources and a domain-keyed backup never duplicates an
     existing feed-keyed one."""
     return (
-        f"({m}.domain = {i}.domain AND ({m}.feed_key = oo_feed_key({i}.rss_url)"  # noqa: S608  # nosec B608 - only the caller's literal aliases (i, m) are interpolated
+        f"({m}.domain = {i}.domain AND ({m}.feed_key = oo_inc_feed_key({i}.id)"  # noqa: S608  # nosec B608 - only the caller's literal aliases (i, m) are interpolated
         f" OR ((SELECT COUNT(*) FROM inc.sources x WHERE x.domain = {i}.domain) = 1"
         f" AND (SELECT COUNT(*) FROM main.sources y WHERE y.domain = {i}.domain) = 1)))"
     )
@@ -3161,7 +3160,7 @@ def _refuse_feeds_a_legacy_store_cannot_hold(con) -> None:
     several = _count(
         con,
         "SELECT COUNT(*) FROM (SELECT domain FROM inc.sources GROUP BY domain"
-        " HAVING COUNT(DISTINCT oo_feed_key(rss_url)) > 1)",
+        " HAVING COUNT(DISTINCT oo_inc_feed_key(id)) > 1)",
     )
     if several:
         raise MergeError(
@@ -3223,11 +3222,22 @@ def _plan_sibling_feeds(con, same: str, r: DomainResult) -> list[int]:
         r.siblings_total += 1
         if len(r.siblings) < _SAMPLE_LIMIT:
             r.siblings.append({
-                "domain": domain, "incoming_feed": feed, "outlet": outlet, "verdict_inherited": takes, "verdict_rule": rule,
+                "domain": domain, "incoming_feed": _shown_feed(feed), "outlet": outlet, "verdict_inherited": takes,
+                "verdict_rule": rule,
                 "reason": (f"feed not present locally, added under outlet {outlet}" if feed
                            else f"entry without a feed, added beside the feeds of outlet {outlet}"),
             })
     return inherited
+
+
+def _shown_feed(feed: str | None) -> str | None:
+    """A feed URL as the restore report writes it: its userinfo masked by the fetcher's own ``failure_url`` (R621, R634: the report
+    is stored and shown, and a sibling a backup brings back can be the credentialed half of a pair). The row keeps the URL as given."""
+    if not feed:
+        return feed
+    from src.ingest.fetch_verdict import failure_url  # imported on use, as R621's readers do
+
+    return failure_url(feed)
 
 
 def _record_inherited_sibling_verdicts(con, batch_id: int, inc_ids: list[int]) -> None:
@@ -3342,7 +3352,83 @@ def _merge_host_confirmations(con, batch_id: int) -> DomainResult:
     return d
 
 
+def _incoming_feed_keys(con) -> dict[int, str]:
+    """The key each incoming source is matched and written under (R628, R634, the R628 reads): ``feed_key`` of its ``rss_url``,
+    except where a rule below applies. For a URL that carries a userinfo, first:
+
+    1. this store still holds the URL's pre-R628 key (the same feed, stored before R628: kept beside its twin, or not yet
+       rewritten): that key, so the incoming copy is that row;
+    2. a local row of the domain has exactly this ``rss_url``: that row's key (the oldest such row), so the incoming copy is that
+       row whatever it stores.
+
+    Then, for every incoming source a rule above did not place, URLs with a userinfo first, then by id:
+
+    2b. no local row of the domain stores today's key, and a local row that no incoming source took by rule 1 or 2 stores a key
+        from before R628 that reads as today's key (``read_feed_key``: an unhealed legacy row of this feed, under another login or
+        with one where the incoming URL has none): that row's key, so the copy is that row and never a sibling of it (Steward 3's
+        item 2, independent S4); the first incoming source to read so takes the row, so of a backup's pair the credentialed
+        half takes the credentialed row and the plain half lands as its own row, as R634 lands a pair beside that row;
+    3. for a URL with a userinfo, another incoming source of the domain derives the same key today (the backup holds one feed
+       twice, with and without a login or with two logins, as a build before R628 could store it): the URL's pre-R628 key, so the
+       pair lands as the two rows it was and the INSERT never meets ``UNIQUE (domain, feed_key)`` (R634);
+    4. else ``feed_key``: one feed with and without a login is one source (R628).
+
+    Cost: ONE query for the store's keys that hold an "@" (no parameter), ONE on the domain's index of ``main.sources`` for each
+    incoming URL with a userinfo, and one on ``(domain, feed_key)`` for each source rule 2b could place (its parameters the
+    domain and today's key, which holds no login); every comparison with a stored URL or key is made in Python, so a login is
+    never a parameter. Never reads an incoming row's own key (the reason in :func:`_same_source`)."""
+    from collections import Counter
+
+    from src.database.feed_key import feed_key as _feed_key
+    from src.database.feed_key import legacy_feed_key, read_feed_key
+
+    rows = [(int(sid), str(domain or ""), url) for sid, domain, url in _q(con, "SELECT id, domain, rss_url FROM inc.sources")]
+    today = {sid: _feed_key(url) for sid, _domain, url in rows}
+    derived = Counter((domain, today[sid]) for sid, domain, _url in rows)
+    # rule 2b's candidates: the store's rows whose key from before R628 reads as another key today, by (domain, that key), oldest first
+    reads: dict[tuple[str, str], list[tuple[int, str]]] = {}
+    for lid, domain, key, url in _q(
+        con, "SELECT id, domain, feed_key, rss_url FROM main.sources WHERE instr(feed_key, '@') > 0 ORDER BY id"
+    ):
+        read = read_feed_key(key, url)
+        if read != (key or ""):
+            reads.setdefault((str(domain or ""), read), []).append((int(lid), key or ""))
+    keys: dict[int, str] = {}
+    taken: set[int] = set()
+    rest: list[tuple[int, str, str]] = []
+    for sid, domain, url in rows:
+        key, old = today[sid], legacy_feed_key(url)
+        if old != key:
+            # the domain's rows, compared here: the URL's login is never a parameter of the query
+            held = _q(con, "SELECT id, feed_key, rss_url FROM main.sources WHERE domain = ? ORDER BY id", (domain,))
+            same_key = next((int(lid) for lid, k, _u in held if (k or "") == old), None)
+            same_url = [(int(lid), k or "") for lid, k, u in held if u == url]
+            if same_key is not None:
+                keys[sid] = old
+                taken.add(same_key)
+                continue
+            if same_url:
+                keys[sid] = same_url[0][1]
+                taken.add(same_url[0][0])
+                continue
+        rest.append((sid, domain, url))
+    rest.sort(key=lambda r: (legacy_feed_key(r[2]) == today[r[0]], r[0]))  # URLs with a userinfo first, then by id
+    for sid, domain, url in rest:
+        key, old = today[sid], legacy_feed_key(url)
+        free = [(lid, k) for lid, k in reads.get((domain, key), ()) if lid not in taken]
+        if free and not _q(con, "SELECT 1 FROM main.sources WHERE domain = ? AND feed_key = ? LIMIT 1", (domain, key)):
+            keys[sid] = free[0][1]
+            taken.add(free[0][0])
+            continue
+        if old != key and derived[(domain, key)] > 1:
+            key = old
+        keys[sid] = key
+    return keys
+
+
 def _merge_sources(con, batch_id, results) -> None:
+    keys = _incoming_feed_keys(con)
+    con.create_function("oo_inc_feed_key", 1, keys.get, deterministic=True)
     _refuse_feeds_a_legacy_store_cannot_hold(con)
     r = DomainResult()
     _SAME = _same_source()
@@ -3498,7 +3584,7 @@ def _merge_sources(con, batch_id, results) -> None:
         " i.update_frequency, i.cacheability, COALESCE(sv.status, i.status),"
         " CASE WHEN sv.old IS NULL THEN i.qualified_at ELSE sv.qualified_at END,"
         " CASE WHEN sv.old IS NULL THEN i.qualification_criteria_version ELSE sv.criteria END,"
-        " i.catalog_baseline, oo_feed_key(i.rss_url)"
+        " i.catalog_baseline, oo_inc_feed_key(i.id)"
         " FROM inc.sources i LEFT JOIN temp.sib_verdict sv ON sv.old = i.id"
         f" WHERE NOT EXISTS (SELECT 1 FROM sources m WHERE {_SAME})",
     )
