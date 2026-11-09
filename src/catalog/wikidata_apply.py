@@ -37,8 +37,11 @@ Getter = Callable[[str], Any]
 def _default_getter(url: str) -> Any:
     """Production getter: a guarded GET (kill switch + protected-mode proxy).
 
-    A per-URL isolation token gives each request its own Tor circuit (no-op without
-    a SOCKS proxy), so distinct lookups are unlinkable over Tor.
+    A per-URL isolation token asks Tor for a separate circuit for each request (no-op
+    without a SOCKS proxy). Separate circuits do not make the lookups unlinkable: each one
+    sends the app's bot User-Agent (``DEFAULT_USER_AGENT``), in protected mode too, and the
+    lookups of one apply run close together, so Wikidata can still tie them to one another
+    by that name and their timing (R656, queue item 68(b)).
     """
     from src.safety.fetcher import guarded_session
 
