@@ -360,8 +360,24 @@ def _queue_title_index() -> None:
         log_failure(_LOG, "boot title-index backfill not queued", exc, level=logging.INFO)
 
 
+def _queue_day_counts() -> None:
+    """Queue the build of the per-day keyword counts (src/analytics/day_counts.py, R625) when they are not
+    current, after the heavy steps. Only STARTS the visible, stoppable job (one day per transaction under the
+    writer gate); trending reads live until it finishes. ``OO_DAY_COUNTS_AUTOBUILD=0`` declines it; the idle
+    maintenance asks again between passes. Never raises."""
+    if os.getenv("OO_NO_SCHEDULER", "0") == "1" or os.getenv("OO_DAY_COUNTS_AUTOBUILD", "1").strip() == "0":
+        return
+    try:
+        from src.analytics.day_counts import start_build_if_needed
+
+        _LOG.info("boot daily keyword counts: %s", start_build_if_needed())
+    except Exception as exc:  # noqa: BLE001 - best effort, the idle maintenance is the fallback
+        log_failure(_LOG, "boot daily keyword counts not queued", exc, level=logging.INFO)
+
+
 def _start_reindex() -> None:
     _queue_title_index()
+    _queue_day_counts()
     with _LOCK:
         pending = _STATE["reindex_pending"]
     if pending is None:

@@ -2574,6 +2574,53 @@ class KeywordMention(Base):
         return f"<KeywordMention(kw={self.keyword_id} art={self.article_id} x{self.count})>"
 
 
+class KeywordDayCount(Base):
+    """``SUM(keyword_mentions.count)`` per (day, keyword): the Home trends' windows read from here instead of from every
+    mention (R623, R625; ``src/analytics/day_counts.py``). DERIVED and exact: a day is always written WHOLE from
+    ``ix_mention_date_keyword`` (never by adding deltas), so a day that changed is recomputed, not adjusted. Which days changed
+    comes from :class:`KeywordDayDirty` (the delete and update triggers) and from the mention ids above
+    :class:`KeywordDayState`'s watermark (new rows; no insert trigger, R625). Counts only, never a score."""
+
+    __tablename__ = "keyword_day_counts"
+    __table_args__ = ({"sqlite_with_rowid": False},)
+
+    observed_on: Mapped[date] = mapped_column(Date, primary_key=True)
+    keyword_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    mentions: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class KeywordDayDirty(Base):
+    """The days whose mentions were deleted or changed in place since their counts were written (R625). Written by the triggers
+    of ``day_counts.TRIGGERS`` (which also see a foreign-key cascade and a keyword fold); emptied day by day as the days are
+    recomputed. A day listed here is never served from :class:`KeywordDayCount`."""
+
+    __tablename__ = "keyword_day_dirty"
+    __table_args__ = ({"sqlite_with_rowid": False},)
+
+    observed_on: Mapped[date] = mapped_column(Date, primary_key=True)
+
+
+class KeywordDayState(Base):
+    """The one row (``id = 1``) that says how far :class:`KeywordDayCount` can be trusted (R625).
+
+    ``complete``: every day was written by a build that finished. ``built_epoch``: the corpus epoch that build started at (a
+    different epoch now means a full rebuild). ``watermark``: every mention with an id at or below it is in the counts, unless
+    its day is dirty. ``reuse_floor``: the lowest id of a mention deleted from the TOP of the table since then (SQLite gives
+    such an id out again, so a new row can land at or below the watermark; the delete trigger records it). ``cursor``: the last
+    day a build wrote, so a stopped build resumes there."""
+
+    __tablename__ = "keyword_day_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    built_epoch: Mapped[int | None] = mapped_column(Integer)
+    watermark: Mapped[int | None] = mapped_column(Integer)
+    reuse_floor: Mapped[int | None] = mapped_column(Integer)
+    cursor: Mapped[date | None] = mapped_column(Date)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    built_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
 class AiKeyword(Base):
     """AI-DERIVED keywords/entities — a labelled, UNRELIABLE lens, NEVER the trusted index.
 

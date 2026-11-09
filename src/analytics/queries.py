@@ -2692,6 +2692,17 @@ def trending(
         if _r is not None and _p is not None:
             recent, prior, _served = _r, _p, True
             recent_keywords = len(recent)
+    # R623/R625: then the per-day counts kept in the database (src/analytics/day_counts.py), exact by
+    # construction (the window's stale days are read live); also time-window only. Any miss -> live.
+    _served_days = False
+    if not country and not _served:
+        from src.analytics import day_counts
+
+        _r = day_counts.windowed_counts(session, lo=w_start, hi=w_end - timedelta(days=1))
+        _p = None if _r is None else day_counts.windowed_counts(session, lo=b_start, hi=w_start - timedelta(days=1))
+        if _r is not None and _p is not None:
+            recent, prior, _served, _served_days = _r, _p, True, True
+            recent_keywords = len(recent)
     if not _served:
         # The loop below skips a keyword under ``min_recent`` before reading anything
         # else about it, and reads a prior count only for a keyword it kept.
@@ -2789,7 +2800,11 @@ def trending(
         "keywords_with_recent_mentions": recent_keywords,
         "method": "recent volume vs prior-period rate (ratio, not a significance test)",
     }
-    if _served:  # disclose the served source + as-of (honesty by construction)
+    if _served_days:  # disclose the served source (honesty by construction)
+        from src.analytics import day_counts
+
+        res["basis"] = day_counts.basis(session)
+    elif _served:  # disclose the served source + as-of (honesty by construction)
         from src.analytics import rollup_serve
 
         res["basis"] = rollup_serve.basis(window_days)

@@ -774,6 +774,10 @@ class Salvage:
     def _finish(self, tables: list[_Table]) -> None:
         self._rebuild_search_index(tables)
         self._restore_counters()
+        # The per-day keyword counts (src/analytics/day_counts.py, R625) summed mentions this copy may have lost, and
+        # their own rows may be cut short: marked unbuilt, so the app rebuilds them from what was saved.
+        with contextlib.suppress(Exception):
+            self.dst.execute("UPDATE keyword_day_state SET complete = 0")
         with contextlib.suppress(Exception):
             version = int(self.src.con.execute("PRAGMA user_version").fetchone()[0])
             self.dst.execute(f"PRAGMA user_version = {version}")
