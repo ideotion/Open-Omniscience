@@ -50,7 +50,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import Source
 from src.ingest import EthicalFetcher, FetchError
-from src.ingest.crawl import _registrable_host
+from src.ingest.crawl import _off_site, _registrable_host
 from src.ingest.fetch_verdict import failure_url
 from src.ingest.pipeline import IngestResult, ingest_url
 from src.monitoring.secret_scrub import record_text
@@ -161,12 +161,14 @@ def _off_host(url: str, base_host: str) -> bool | None:
       it and count it.
     - Otherwise the host is :func:`~src.ingest.crawl._registrable_host`'s (after the last ``@``, lower-cased, without its port
       or a leading ``www.``), and must be ``base_host``. A loc with no host (``/relative``) is therefore off the host; a port out
-      of range is compared like any other port (not at all), and the fetcher refuses such a URL before any request."""
+      of range is compared like any other port (not at all), and the fetcher refuses such a URL before any request.
+    - A netloc holding an ``@`` is always off the host, even when the host after it is the source's (R624's ``_off_site``):
+      a child sitemap or a page address written with a user name or password is never fetched or stored (R630)."""
     try:
         netloc = urlparse(url).netloc
     except ValueError:
         return None
-    return _registrable_host(netloc) != base_host
+    return _off_site(netloc, base_host)
 
 
 def declared_sitemap_urls(fetcher: EthicalFetcher, host: str) -> list[str]:
@@ -251,28 +253,28 @@ def discover_sitemap_urls(
             continue
         visited.add(sm_url)
 
-        # the host the fetch would go to (after the last ``@``, R624), never the text a userinfo writes before it
+        # the host the fetch would go to (after the last ``@``), and never a child that carries a userinfo (R624)
         off = _off_host(sm_url, base_host)
         if off is None:  # urllib.parse cannot read it (R626)
             report.skipped_unreadable += 1
             continue
         if off:
-            report.skipped_off_host.append(sm_url)
+            report.skipped_off_host.append(failure_url(sm_url))  # a report line: the userinfo masked (R621)
             continue
         if sm_url.lower().split("?")[0].endswith(".gz"):
-            report.errors.append(f"unsupported (gzip): {sm_url}")
+            report.errors.append(f"unsupported (gzip): {failure_url(sm_url)}")
             continue
 
         tried += 1
         try:
             fetched = fetcher.fetch(sm_url, require_html=False)
         except FetchError as exc:
-            report.errors.append(f"{sm_url}: {record_text(exc, typed=False)}")
+            report.errors.append(f"{failure_url(sm_url)}: {record_text(exc, typed=False)}")
             continue
         try:
             parsed = parse_sitemap_xml(fetched.content)
         except SitemapError as exc:
-            report.errors.append(f"{sm_url}: {record_text(exc, typed=False)}")
+            report.errors.append(f"{failure_url(sm_url)}: {record_text(exc, typed=False)}")
             continue
 
         report.child_sitemaps_fetched += 1
@@ -293,7 +295,7 @@ def discover_sitemap_urls(
             if entry.loc in seen_urls:
                 continue
             seen_urls.add(entry.loc)
-            off = _off_host(entry.loc, base_host)  # the child sitemaps' rule (R627)
+            off = _off_host(entry.loc, base_host)  # the child sitemaps' rule (R627), a userinfo always off (R630)
             if off is None:  # urllib.parse cannot read it (R626)
                 report.skipped_unreadable += 1
                 continue
