@@ -400,8 +400,18 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   socket's family before the real call.
   **Stated residuals (ruled R641, to be closed in the PR after R640's):** `socket.gethostbyname` and
   `gethostbyname_ex` are not patched, so a library calling them resolves a name through libc in
-  airplane mode (no in-tree code calls them); and a UDP `sendto`/`sendmsg` to a remote address on an
-  unconnected socket is not refused (no connect, so no guard point). Any **non-loopback** target
+  airplane mode; a UDP `sendto`/`sendmsg` to a remote address on an unconnected socket is not refused
+  (no connect, so no guard point), and one handed a host NAME resolves it through libc first. The
+  same is true of three more calls security read A measured querying DNS with the switch engaged:
+  `socket.bind` handed a host name, and reverse lookups (`gethostbyaddr`, `getnameinfo`, and
+  `getfqdn`, which calls `gethostbyaddr`). No in-tree code calls any of these directly; the stdlib's
+  `HTTPServer.server_bind` calls `getfqdn` on its bind host, which with the default `OO_HOST`
+  (`127.0.0.1`) is answered from `/etc/hosts`. **And the server's own event loop:** `uvicorn[standard]`
+  installs uvloop and `uvicorn.run` picks it, and uvloop resolves and connects in libuv's C code, so
+  an `async` client on that loop (`httpx.AsyncClient`, `asyncio.open_connection`) would bypass every
+  patched point (security read B reached a non-loopback listener that way with the switch engaged).
+  No in-tree code opens an outbound connection from the event loop today; the stdlib asyncio loop
+  does go through the guard. Any **non-loopback** target
   handed to a patched point raises `AirplaneModeError` **before** a real socket is opened, so a
   missed call site, third-party library, or DNS prefetch that goes through those points cannot
   egress; what does not go through them is the residual list above and in this section. Loopback (127/8, ::1, `localhost`)
