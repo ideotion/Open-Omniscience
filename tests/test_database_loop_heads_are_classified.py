@@ -50,6 +50,8 @@ _LOOP = "event-loop"
 _CLASS_C: dict[tuple[str, str], str] = {
     ("src/database/article_indexes.py", "_refresh_stats"):
         f"{_WORKER}: the article-list index build, a BackgroundJob thread",
+    ("src/database/article_indexes.py", "build_missing"):
+        f"{_WORKER}: the article-indexes BackgroundJob thread (ARTICLE_INDEX_JOB's worker; boot only joins it)",
     ("src/database/fts_reindex.py", "SearchReindexJobManager._park"):
         f"{_WORKER}: the search-reindex-job daemon thread",
     ("src/database/fts_reindex.py", "SearchReindexJobManager._run"):
