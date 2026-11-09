@@ -1733,10 +1733,19 @@
           esc(tf("{n} imported newsletters removed. Re-import the cleaned files to replace them.", {n: "\u0001"}))
             .replace("\u0001", () => `<b>${N(d.removed_articles)}</b>`);
         toast(t("Imported newsletters removed."), "ok");
-        loadNewsletterRemoveCount();
+        // The server's own words when every article is removed but the counts after it could not be refreshed (queue item 58).
+        // A toast (it sets text, never markup), not a line in this panel: the count refresh below hides the panel once nothing
+        // is left to remove, which is exactly when the note comes.
+        if (d.note) toast(d.note, "warn");
       } catch (e) {
         $("nl-remove-result").innerHTML = `<span class="note err">${esc(ooLabelText(t("Removal failed"), e.message))}</span>`;
-      } finally { btn.disabled = false; }
+        // ... and as a toast: the count refresh below hides this panel when it cannot read the count, and a damaged file can fail
+        // the removal and that read together, so the words must not live only in the panel (the fresh read of queue item 58).
+        toast(ooLabelText(t("Removal failed"), e.message), "err");
+      } finally {
+        btn.disabled = false;
+        loadNewsletterRemoveCount();  // after a removal that stopped partway too: the count is what is left
+      }
     }
     // -- Pull from a mailbox (IMAP/POP3) — ruling #11. English-only, except the consent
     // popup's reason, which is keyed x12 like every consent string; the anonymise +

@@ -1569,6 +1569,64 @@ def count_imported_newsletters(session: Session) -> int:
 _NEWSLETTER_DELETE_CHUNK = 900
 
 
+def newsletter_removal_stopped_text(removed: int, total: int, *, counts_refreshed: bool) -> str:
+    """The fixed words a removal that failed partway answers with: how many of the articles it found are removed and how many
+    are left, and whether the counts were refreshed. Built from the counts only, never from the failure's text."""
+    if removed <= 0:
+        return (
+            f"The removal stopped before it removed any of the {total} imported newsletter articles; all of them are still in "
+            "your corpus. Run the removal again."
+        )
+    left = total - removed
+    words = (
+        f"The removal stopped after removing {removed} of the {total} imported newsletter articles; the other {left} "
+        f"{'is' if left == 1 else 'are'} still in your corpus. Run the removal again to remove "
+        f"{'it' if left == 1 else 'them'}."
+    )
+    if not counts_refreshed:
+        words += " Until then, some keyword and source counts may read high."
+    return words
+
+
+#: What the removal's answer says when every article is removed but the counters after it could not be refreshed.
+NEWSLETTER_COUNTS_NOT_REFRESHED = (
+    "The keyword and source counts could not be refreshed after the removal, so some may read high until the app "
+    "reconciles them again."
+)
+
+
+class NewsletterRemovalStopped(RuntimeError):
+    """A removal of imported newsletters that failed partway (queue item 58): ``removed`` of the ``total`` articles it found are
+    gone, in whole chunks each committed with its epoch bump, and the others are untouched, so running it again finds exactly
+    those. Its words are :func:`newsletter_removal_stopped_text`; the failure itself was logged, scrubbed, where it happened,
+    and is not chained here."""
+
+    def __init__(self, removed: int, total: int, *, counts_refreshed: bool) -> None:
+        self.removed = removed
+        self.total = total
+        self.counts_refreshed = counts_refreshed
+        super().__init__(newsletter_removal_stopped_text(removed, total, counts_refreshed=counts_refreshed))
+
+
+def _refresh_counts_after_removal(session: Session) -> bool:
+    """Repair the denormalised counters a removal left stale; False (logged) when that failed. The bulk delete did not go through
+    ``index_article``, so ``Keyword.mention_count``/``article_count`` and the per-source article counter still count the removed
+    articles until this runs."""
+    from src.analytics.store import backfill_keyword_counters, reconcile_source_counters
+
+    try:
+        backfill_keyword_counters(session)
+        # S6: the per-source article counter is stale too (a bulk delete removed articles) --
+        # reconcile it so source_io/sources reads a correct count immediately.
+        reconcile_source_counters(session)
+    except Exception as exc:  # noqa: BLE001 - the articles are already removed; the answer says the counts were not refreshed
+        with contextlib.suppress(Exception):
+            session.rollback()
+        log_failure(_LOG, "imported-newsletter removal: the keyword and source counts were not refreshed", exc, level=logging.WARNING)
+        return False
+    return True
+
+
 def delete_imported_newsletters(session: Session) -> dict:
     """Remove imported-newsletter articles from the LIVE corpus (the "replace the faulty
     ones" loop).
@@ -1587,6 +1645,10 @@ def delete_imported_newsletters(session: Session) -> dict:
 
     A removal that stops between two chunks (the process ends) has removed the earlier chunks whole and left the counters stale until
     the removal is run again, which finds the articles that are left, or the counter sweep (``reconcile_keyword_counters``) runs.
+    A chunk that FAILS (a delete, or its strict epoch bump) is rolled back, the counters are refreshed for the chunks already
+    removed, and :class:`NewsletterRemovalStopped` is raised with the counts, in fixed words (queue item 58): the route answers
+    with those words, never a bare 500. The counters failing after every chunk is removed is said in the answer
+    (``counts_refreshed``), not raised: the removal itself is done.
     """
     from src.analytics.corpus_epoch import bump_corpus_epoch
     from src.database.models import Base
@@ -1609,24 +1671,38 @@ def delete_imported_newsletters(session: Session) -> dict:
     # dependent tables each) before it could run. A chunk is a complete unit (its dependents, then its articles, in one transaction), and
     # the ids were read before the first chunk, so a pass that stops between two chunks leaves earlier chunks gone and later ones whole,
     # and running the removal again finds exactly the ones left.
-    for lo in range(0, len(art_ids), _NEWSLETTER_DELETE_CHUNK):
+    total = len(art_ids)
+    removed = 0
+    for lo in range(0, total, _NEWSLETTER_DELETE_CHUNK):
         chunk = art_ids[lo : lo + _NEWSLETTER_DELETE_CHUNK]
-        connection_first(session)  # the last chunk's commit gave the connection back: check one out BEFORE the gate
-        with write_lock():
-            for t in dep_tables:
-                session.execute(t.delete().where(t.c.article_id.in_(chunk)))
-            session.execute(articles_tbl.delete().where(articles_tbl.c.id.in_(chunk)))
-            # Each chunk's deletes commit WITH an epoch bump (the bump commits them), strictly: the columnar rollup merges new
-            # rows by id and would keep counting the removed mentions, and a removal that stops between two chunks must not
-            # leave a committed chunk the epoch never saw. A failed bump rolls the chunk back and raises.
-            bump_corpus_epoch(session, reason="delete_imported_newsletters", strict=True)
+        failed = False
+        try:
+            connection_first(session)  # the last chunk's commit gave the connection back: check one out BEFORE the gate
+            with write_lock():
+                for t in dep_tables:
+                    session.execute(t.delete().where(t.c.article_id.in_(chunk)))
+                session.execute(articles_tbl.delete().where(articles_tbl.c.id.in_(chunk)))
+                # Each chunk's deletes commit WITH an epoch bump (the bump commits them), strictly: the columnar rollup merges new
+                # rows by id and would keep counting the removed mentions, and a removal that stops between two chunks must not
+                # leave a committed chunk the epoch never saw. A failed bump rolls the chunk back and raises.
+                bump_corpus_epoch(session, reason="delete_imported_newsletters", strict=True)
+        except Exception as exc:  # noqa: BLE001 - any failure of a chunk is answered in the removal's own words below
+            with contextlib.suppress(Exception):
+                session.rollback()  # a failed delete left its statements pending; a failed bump already rolled back
+            log_failure(_LOG, f"imported-newsletter removal stopped after removing {removed} of {total} articles", exc)
+            failed = True
+        if failed:
+            # Raised outside the handler, so the failure (a driver's error, perhaps) is not chained to the words the route answers with.
+            refreshed = _refresh_counts_after_removal(session) if removed else True
+            raise NewsletterRemovalStopped(removed, total, counts_refreshed=refreshed)
+        removed += len(chunk)
 
-    # The bulk delete didn't go through index_article, so the denormalised
-    # Keyword.mention_count / article_count are now stale — repair them authoritatively.
-    from src.analytics.store import backfill_keyword_counters, reconcile_source_counters
-
-    backfill_keyword_counters(session)
-    # S6: the per-source article counter is stale too (a bulk delete removed articles) —
-    # reconcile it so source_io/sources reads a correct count immediately.
-    reconcile_source_counters(session)
-    return {"removed_articles": len(art_ids), "domains": list(NEWSLETTER_SOURCE_DOMAINS)}
+    refreshed = _refresh_counts_after_removal(session)
+    out: dict[str, Any] = {
+        "removed_articles": total,
+        "domains": list(NEWSLETTER_SOURCE_DOMAINS),
+        "counts_refreshed": refreshed,
+    }
+    if not refreshed:
+        out["note"] = NEWSLETTER_COUNTS_NOT_REFRESHED
+    return out
