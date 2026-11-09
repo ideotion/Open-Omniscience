@@ -346,6 +346,29 @@ class MailboxStarttlsError(MailboxTlsRefusal):
     """A plain-port pull whose server does not offer, or would not start, STARTTLS (R651): a password is never sent in plaintext."""
 
 
+#: imaplib's error class (``abort`` and ``readonly`` are its subclasses): the server's line is in its text (R653).
+_IMAP_ERROR = imaplib.IMAP4.error
+
+
+class MailboxServerError(Exception):
+    """A mailbox pull ended by the mail server's own error reply (R653): named in fixed words, the reply never quoted. imaplib and
+    poplib put the server's line in their exceptions, and a greeting or CAPABILITY reply on a plain port comes before STARTTLS, so
+    anyone on the path can write it; a line can be up to a megabyte long."""
+
+
+#: What the server's error ended, by the step the pull was at (R653). Each sentence says whether the password went out.
+_SERVER_ERROR_WORDS = {
+    "greeting": "sent a greeting or capability reply the pull could not use, or closed the connection, before logging in; no password "
+    "was sent",
+    "login": "refused the login, or closed the connection during it. Check the user name and password",
+    "read": "answered a mailbox command with an error after logging in",
+}
+
+
+def _server_error(host: str, port: int, step: str) -> MailboxServerError:
+    return MailboxServerError(f"the mail server {host} on port {port} {_SERVER_ERROR_WORDS[step]}; the server's own reply is not shown.")
+
+
 def _starttls_refusal(host: str, port: int, why: str) -> MailboxStarttlsError:
     return MailboxStarttlsError(
         f"refused before logging in, no password sent: the mail server {host} on port {port} {why}, and a mailbox password is never sent "
@@ -733,8 +756,6 @@ def fetch_imap(
     raws = MailboxPull()
     own_conn = conn is None
     if own_conn:
-        import imaplib
-
         try:
             # imaplib closes its own socket (shutdown, no command) when its constructor raises.
             if use_ssl:
@@ -760,12 +781,19 @@ def fetch_imap(
             if not use_ssl:
                 raise
             raise _tls_refusal(host, port or 993, record_text(exc, password, limit=300), sent="no command or password sent") from None
+        except _IMAP_ERROR:
+            # R653: the greeting or the CAPABILITY reply (imaplib's error quotes the server's line): fixed words, after the Stop.
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            raise _server_error(host, port or (993 if use_ssl else 143), "greeting") from None
         except Exception:
             # A Stop while the greeting was awaited shut the socket down (R647): that is the Stop, not a failure.
             if _stop_requested():
                 raws.stopped = True
                 return raws
             raise
+    step = "greeting"
     try:
         if own_conn:
             if not use_ssl:
@@ -773,7 +801,9 @@ def fetch_imap(
             if _stop_requested():
                 raws.stopped = True
                 return raws
+            step = "login"
             conn.login(user, password)
+        step = "read"
         if _stop_requested():
             raws.stopped = True
             return raws
@@ -804,6 +834,12 @@ def fetch_imap(
             raws.stopped = True
             return raws
         raise _certificate_refusal(host, record_text(exc, password, limit=300), sent="no password sent") from None
+    except _IMAP_ERROR:
+        # R653: the server's error reply at any step, in fixed words; a Stop still wins and keeps what was fetched.
+        if raws.stopped or _stop_requested():
+            raws.stopped = True
+            return raws
+        raise _server_error(host, port or (993 if use_ssl else 143), step) from None
     except Exception:
         # A failure that surfaces once the switch is engaged (the connection failing after the Stop) ends the pull as the Stop it
         # follows: what was fetched is kept (R640, security read B), never discarded with an error.
@@ -850,8 +886,6 @@ def fetch_pop3(
     raws = MailboxPull()
     own_conn = conn is None
     if own_conn:
-        import poplib
-
         try:
             # poplib does NOT close its socket when its constructor raises (imaplib does); after a Stop it is already shut down, and
             # it is closed when collected. A TLS socket whose handshake failed is closed by _stop_aware itself.
@@ -877,12 +911,19 @@ def fetch_pop3(
             if not use_ssl:
                 raise
             raise _tls_refusal(host, port or 995, record_text(exc, password, limit=300), sent="no command or password sent") from None
+        except poplib.error_proto:
+            # R653: poplib's error quotes the server's greeting line: fixed words, after the Stop, as in fetch_imap.
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            raise _server_error(host, port or (995 if use_ssl else 110), "greeting") from None
         except Exception:
             # As in fetch_imap: a Stop while the greeting was awaited shut the socket down (R647).
             if _stop_requested():
                 raws.stopped = True
                 return raws
             raise
+    step = "greeting"
     try:
         if own_conn:
             if not use_ssl:
@@ -890,11 +931,13 @@ def fetch_pop3(
             if _stop_requested():
                 raws.stopped = True
                 return raws
+            step = "login"
             conn.user(user)
             if _stop_requested():
                 raws.stopped = True
                 return raws
             conn.pass_(password)
+        step = "read"
         if _stop_requested():
             raws.stopped = True
             return raws
@@ -917,6 +960,12 @@ def fetch_pop3(
             raws.stopped = True
             return raws
         raise _certificate_refusal(host, record_text(exc, password, limit=300), sent="no password sent") from None
+    except poplib.error_proto:
+        # R653: as in fetch_imap, the server's error reply at any step in fixed words; a Stop still wins.
+        if raws.stopped or _stop_requested():
+            raws.stopped = True
+            return raws
+        raise _server_error(host, port or (995 if use_ssl else 110), step) from None
     except Exception:
         # As in fetch_imap: a failure once the switch is engaged keeps what was fetched (R640).
         if raws.stopped or _stop_requested():
