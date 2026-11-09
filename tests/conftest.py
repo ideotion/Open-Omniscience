@@ -266,12 +266,17 @@ def _clear_network_kill_switch():
 
 
 def _open_serving_gate(main: object) -> None:
-    """R644's serving gate answers 503 until a lifespan has run the loop check and armed airplane mode's guard, and most of this suite
-    drives the app through ``TestClient`` WITHOUT ``with``, which runs no lifespan. Since R646 no environment setting waives the gate
-    (``OO_NO_SCHEDULER=1`` used to), so the suite opens it, the way it lists ``testserver`` in ``OO_ALLOWED_HOSTS``: as the harness,
-    for every in-process client, on the stdlib loop TestClient runs on (the gate still re-checks the loop on every request).
-    ``tests/test_serving_gate_r644.py`` closes it again in its own fixture and pins the refusal."""
-    main._serving_gate_open = True  # type: ignore[attr-defined]
+    """R644's serving gate answers 503 unless a lifespan has run the loop check and airplane mode's guard is armed, and most of this
+    suite drives the app through ``TestClient`` WITHOUT ``with``, which runs no lifespan. No environment setting waives the gate (R646)
+    and it latches nothing (R649), so the suite puts both facts in place, the way it lists ``testserver`` in ``OO_ALLOWED_HOSTS``: it
+    records the loop check (TestClient runs on the stdlib loop, which the gate still checks on every request) and arms the real guard,
+    as every boot now does (R646; transparent while the kill switch is off, which the fixture above ensures).
+    ``tests/test_serving_gate_r644.py`` takes both away again in its own fixture and pins the refusal."""
+    main._serving_loop_checked = True  # type: ignore[attr-defined]
+    if os.getenv("OO_AIRPLANE_SOCKET_GUARD", "1") != "0":
+        from src.ingest.airplane import install_airplane_socket_guard
+
+        install_airplane_socket_guard()
 
 
 class _OpenServingGateOnImport:

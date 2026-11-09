@@ -41,7 +41,6 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
-from starlette.requests import HTTPConnection
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import (
@@ -59,6 +58,7 @@ from slowapi.util import get_remote_address
 # Import database models and session
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.operators import ColumnOperators
+from starlette.requests import HTTPConnection
 
 # Router wiring (every include_router call) lives in _wiring.py (audit PR H).
 from src.api._wiring import wire
@@ -578,7 +578,7 @@ async def lifespan(app: FastAPI):
         raise RuntimeError(SERVER_EVENT_LOOP_REFUSAL)
     global _serving_loop_checked
     _serving_loop_checked = True
-    # The airplane guard is armed HERE, before any request (R644): ``_serving_gate`` answers 503 until it is, and the unlock flow of a
+    # The airplane guard is armed HERE, before any request (R644): ``_ServingGate`` answers 503 until it is, and the unlock flow of a
     # locked store is served before ``run_deferred_startup`` (which arms it again, idempotently) ever runs. Transparent while online.
     # Whatever OO_NO_SCHEDULER says (R646): only OO_AIRPLANE_SOCKET_GUARD=0 leaves it out.
     try:
@@ -1248,29 +1248,43 @@ async def monitor_requests(request: Request, call_next):
 # replies where gzip's own framing overhead would net negative; it still transparently
 # no-ops when the client sent no `Accept-Encoding: gzip` (curl without it, or any
 # client that doesn't want it) and for responses already declaring another encoding.
-# --- The serving gate (R644) ------------------------------------------------- #
+# --- The serving gate (R644, R649) ------------------------------------------- #
 # The lifespan's loop check (R642) and the airplane guard it arms run only when the
 # server runs the app's lifespan. ``uvicorn --lifespan off``, or this app MOUNTED
 # inside another ASGI app (Starlette runs no lifespan for a mount), skip both and
 # would serve with no network guard at all. So every request is refused with a fixed
-# 503 until both facts hold, and once they do the gate is a single flag read.
-@app.middleware("http")
-async def _serving_gate(request: Request, call_next):
-    global _serving_gate_open, _serving_gate_logged
-    # The loop is checked on EVERY request, never latched (security read B): an open gate must not vouch for a second server started
-    # in this process on uvloop with --lifespan off. One get_running_loop() and a module-name read.
-    import asyncio as _asyncio
+# 503 until both facts hold. R649: a pure ASGI middleware, so a websocket scope meets
+# it too (``@app.middleware("http")`` sees HTTP only, and a websocket route added
+# later would have gone round it), and nothing is latched: both facts are read on
+# every request, so a guard taken out later closes the gate again, whether by its
+# uninstall or by a real socket call written back over a patched one. Only a lifespan
+# scope passes ungated: any other type, a future one included, is refused (security
+# read A on #1901). The cost is a few flag and attribute reads, one get_running_loop()
+# and a module-name read.
+class _ServingGate:
+    def __init__(self, inner):  # type: ignore[no-untyped-def]
+        self.inner = inner
 
-    if not _serving_gate_open or not _event_loop_is_stdlib(_asyncio.get_running_loop()):
-        if not _serving_preconditions_hold():
-            if not _serving_gate_logged:  # once: a closed gate refuses every request, and the log should say it once, not per request
+    async def __call__(self, scope, receive, send):  # type: ignore[no-untyped-def]
+        global _serving_gate_logged
+        kind = scope.get("type")
+        if kind != "lifespan" and not _serving_preconditions_hold():
+            if not _serving_gate_logged:  # once per closing: a closed gate refuses every request, and the log says so once, not per request
                 _serving_gate_logged = True
                 logger.error(SERVING_GATE_REFUSAL)
-            return JSONResponse(status_code=503, content={"detail": SERVING_GATE_REFUSAL})
-        _serving_gate_open = True
-    return await call_next(request)
+            if kind == "http":
+                await JSONResponse(status_code=503, content={"detail": SERVING_GATE_REFUSAL})(scope, receive, send)
+            elif kind == "websocket":
+                # Closed before it is accepted: the server answers the handshake with a refusal (403), and no frame is exchanged.
+                await receive()  # the websocket.connect event, which the protocol hands the app first
+                await send({"type": "websocket.close", "code": 1013, "reason": "airplane mode's network guard is not in place"})
+            return  # any other scope type reaches nothing
+        if _serving_gate_logged and kind != "lifespan":
+            _serving_gate_logged = False  # open again: a later closing logs its own line (security read B on #1901)
+        await self.inner(scope, receive, send)
 
 
+app.add_middleware(_ServingGate)
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
@@ -3773,10 +3787,7 @@ SERVER_EVENT_LOOP_REFUSAL = (
 #: Set by the lifespan once its loop check passed (R644); never by anything else.
 _serving_loop_checked = False
 
-#: Set by ``_serving_gate`` the first time both preconditions hold; from then on it reads only this flag.
-_serving_gate_open = False
-
-#: Set by ``_serving_gate`` once it has logged its refusal, so a closed gate writes one error line, not one per request.
+#: Set by ``_ServingGate`` once it has logged its refusal, so a closed gate writes one error line, not one per request.
 _serving_gate_logged = False
 
 #: The fixed words of the serving gate's 503 (R644). Two causes share them: a start that skipped the app's own startup, and a guard
@@ -3799,9 +3810,10 @@ def _serving_preconditions_hold() -> bool:
         return False
     if os.getenv("OO_AIRPLANE_SOCKET_GUARD", "1") == "0":
         return True
-    from src.ingest.airplane import is_armed
+    from src.ingest.airplane import is_armed, removed_while_installed
 
-    return is_armed()
+    # A real socket call written back over a patched one leaves both flags set with that call unguarded (security reads A and B on #1901).
+    return is_armed() and not removed_while_installed()
 
 
 def _event_loop_is_stdlib(loop: object) -> bool:
