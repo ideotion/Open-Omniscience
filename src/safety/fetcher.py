@@ -340,6 +340,28 @@ class GuardedSession(requests.Session):
         return super().request(method, url, *args, **kwargs)
 
 
+#: A token at most this long, made only of ``[A-Za-z0-9_.-]``, is its own SOCKS credential, as written (a host key, ``dl-1``).
+_ISOLATION_AS_WRITTEN_MAX = 32
+
+
+def _isolation_credential(token: str) -> str:
+    """The SOCKS username (and password) that names ``token``'s Tor circuit: distinct tokens, distinct credentials.
+
+    A short token made only of ``[A-Za-z0-9_.-]`` is used as written. Any other token (a URL, a segment's ``url#seg-a-b``, a host
+    key with a port or an IPv6 bracket, a Unicode name, anything longer than 32 characters) is named by ``oo.`` and the first 32
+    hex digits of the SHA-256 of the WHOLE token: 128 bits, and 35 characters, so it can never equal an as-written credential.
+
+    Until queue item 50(a) every token was stripped to those characters and cut at 32, so tokens that agreed on their first 32
+    kept characters shared one credential, and so one circuit: every Wikidata lookup (``https://www.wikidata.org/w/api.php?...``
+    keeps ``httpswww.wikidata.orgwapi.phpact`` whatever it asks), every segment of one download and the three dump kinds of one
+    wiki, against the claims of their callers that each rides its own. A name with no kept character read ``oo``, one shared
+    credential. The same token still gets the same credential, run after run.
+    """
+    if len(token) <= _ISOLATION_AS_WRITTEN_MAX and re.fullmatch(r"[A-Za-z0-9_.-]+", token):
+        return token
+    return "oo." + hashlib.sha256(token.encode("utf-8", "surrogatepass")).hexdigest()[:32]
+
+
 def _with_stream_isolation(proxy_url: str, token: str | None) -> str:
     """For a SOCKS proxy, inject a per-stream username/password so Tor's
     ``IsolateSOCKSAuth`` (on by default) builds a SEPARATE circuit per token.
@@ -347,6 +369,7 @@ def _with_stream_isolation(proxy_url: str, token: str | None) -> str:
     Parallel downloads to the SAME host (e.g. several Wikipedia dumps) would
     otherwise share one Tor circuit and gain nothing; distinct SOCKS auth gives
     each its own circuit, so aggregate throughput actually multiplies over Tor.
+    Distinct tokens get distinct credentials (:func:`_isolation_credential`).
     No-op for non-SOCKS proxies and when the caller already set credentials.
     """
     if not token or "://" not in proxy_url:
@@ -356,7 +379,7 @@ def _with_stream_isolation(proxy_url: str, token: str | None) -> str:
         return proxy_url
     if "@" in rest:  # caller already chose credentials -- respect them
         return proxy_url
-    safe = re.sub(r"[^A-Za-z0-9_.-]", "", token)[:32] or "oo"
+    safe = _isolation_credential(token)
     return f"{scheme}://{safe}:{safe}@{rest}"
 
 
