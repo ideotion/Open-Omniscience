@@ -401,6 +401,11 @@ _ARTICLE_IDENTITY_COLUMNS: dict[str, str] = {
     "canon_version": "ALTER TABLE articles ADD COLUMN canon_version VARCHAR(16)",
 }
 
+#: The ``canon_version`` the backfill writes on rows that predate the column: ``url-v1``, as the Alembic revision
+#: (d3e4f5a6b7c8) writes it. Not :data:`~src.utils.url_utils.CANON_VERSION`: a row stored before the column existed was
+#: canonicalised by url-v1's rules (or an older build's), never by a later version's (R628 bumped it to url-v2).
+_CANON_VERSION_BACKFILL = "url-v1"
+
 # Which ARTIFACT a merge batch came from, so a re-import of the same bytes can be
 # refused up front. Additive + nullable, and deliberately NOT backfilled: the
 # digest of an artifact merged before this column existed is genuinely unknown,
@@ -448,13 +453,14 @@ def ensure_article_identity_columns(engine: Engine) -> list[str]:
     Mirrors the other self-heals (the live DB never auto-runs alembic). content_multihash
     is backfilled as ``sha2-256:<hash>`` for rows whose hash is a 64-char SHA-256 digest
     (every ingest path produces one) — never a fabricated label for an odd hash; the
-    bare-hex dedup ``hash`` is untouched. canon_version is backfilled to the current
-    ``CANON_VERSION`` for existing rows (they WERE canonicalised by the current rules).
+    bare-hex dedup ``hash`` is untouched. canon_version is backfilled to ``url-v1`` for existing
+    rows, as the Alembic revision does (they were canonicalised before the column existed, so by
+    url-v1's rules at the latest; ``CANON_VERSION`` moved on to url-v2 in R628).
     Idempotent; no-op on a fresh DB / non-sqlite / missing table.
     """
     if engine.url.get_backend_name() != "sqlite":
         return []
-    from src.utils.url_utils import CANON_VERSION, CONTENT_HASH_ALGO
+    from src.utils.url_utils import CONTENT_HASH_ALGO
 
     added: list[str] = []
     with engine.begin() as conn:
@@ -482,7 +488,7 @@ def ensure_article_identity_columns(engine: Engine) -> list[str]:
             if "canon_version" in added:
                 conn.execute(
                     text("UPDATE articles SET canon_version = :v WHERE canon_version IS NULL"),
-                    {"v": CANON_VERSION},
+                    {"v": _CANON_VERSION_BACKFILL},
                 )
         _LOG.info(f"added + backfilled articles identity column(s): {', '.join(added)}")
     return added

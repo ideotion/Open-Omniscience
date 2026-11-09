@@ -315,7 +315,12 @@ def crawl_source(
                 if canon in queued:
                     continue
                 # Skip links whose canonical form is already stored — or staged
-                # in the uncommitted batch (cheap pre-filter, no double fetch).
+                # in the uncommitted batch (cheap pre-filter, no double fetch). The
+                # canonical form has no userinfo (R628), so a page linked back to a
+                # credentialed start URL is the start page, queued once. No url-v1
+                # read here (the R628 reads, nit a): a link with a userinfo never
+                # reaches this line (R630 skips it above), and only such a link
+                # could match a canonical stored before R628 with its login.
                 if batch is not None and batch.has_canonical(canon):
                     continue
                 if _exists(session, canonical_url=canon):

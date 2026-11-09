@@ -726,7 +726,7 @@ if __name__ == "__main__":
             feeds = discover_rss_feeds(results[0]["url"])
             print(f"Found {len(feeds)} RSS feeds:")
             for feed in feeds:
-                print(f"  - {feed}")
+                print(f"  - {_logged(feed)}")
 
         # Test source discovery
         print("\nDiscovering sources for 'financial news'...")
@@ -735,7 +735,7 @@ if __name__ == "__main__":
         for source in sources:
             print(f"  - {source.get('name', 'Unknown')} ({source.get('domain', 'No domain')})")
             if source.get("rss_urls"):
-                print(f"    RSS: {source['rss_urls'][0]}")
+                print(f"    RSS: {_logged(source['rss_urls'][0])}")
 
     except Exception as e:
         print(f"Error: {record_text(e)}")
