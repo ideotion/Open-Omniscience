@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import socket
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -41,7 +42,13 @@ import requests
 
 # Importing urllib3_log puts the request-path filter on urllib3's loggers (R142).
 from src.ingest import urllib3_log as _urllib3_log  # noqa: F401
-from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL, KILL_SWITCH_REFUSAL_HEAD, failure_url
+from src.ingest.fetch_verdict import (
+    KILL_SWITCH_REFUSAL,
+    KILL_SWITCH_REFUSAL_HEAD,
+    failure_netloc,
+    failure_url,
+    userinfo_secrets,
+)
 from src.ingest.ssrf_guard import (
     BlockedConnectTarget,
     connect_scope,
@@ -373,7 +380,10 @@ def _persist_robots_entry(
             tmp.write_text(json.dumps(raw), "utf-8")
             tmp.replace(path)
     except Exception as exc:  # noqa: BLE001 - persistence is an optimisation, never required
-        log_failure(_LOG, f"robots cache persistence failed for {host_key}", exc, level=logging.DEBUG)
+        # the key is "<scheme>://<netloc>", userinfo included: masked here, and taken out of the error's words too (R620, Steward 3 #2)
+        log_failure(
+            _LOG, f"robots cache persistence failed for {failure_url(host_key)}", exc, *userinfo_secrets(host_key), level=logging.DEBUG
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -531,7 +541,14 @@ def _persist_host_schedule(path: Path, netloc: str, not_before: float, delay_s: 
             tmp.write_text(json.dumps(raw), "utf-8")
             tmp.replace(path)
     except Exception as exc:  # noqa: BLE001 - persistence is an optimisation, never required
-        log_failure(_LOG, f"host schedule persistence failed for {netloc}", exc, level=logging.DEBUG)
+        # a netloc carries the userinfo: masked here, and taken out of the error's words too (R620, Steward 3 #2)
+        log_failure(
+            _LOG,
+            f"host schedule persistence failed for {failure_netloc(netloc)}",
+            exc,
+            *userinfo_secrets(f"//{netloc}"),
+            level=logging.DEBUG,
+        )
 
 
 def _env_cap(name: str, default: int, *, floor: int) -> int:
@@ -562,6 +579,61 @@ _MAX_REDIRECTS = 5
 # HTTP statuses worth retrying (transient server-side / rate-limit signals). 4xx
 # client errors are deterministic and never retried (finding BUG-02).
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+
+#: How far ``_carries_airplane_refusal`` looks. The deepest real link is three (R619's shape: requests' ProxyError -> MaxRetryError ->
+#: urllib3's ProxyError -> AirplaneModeError), so eight leaves room for a library that adds a wrapper; the node count and the seen set
+#: bound a chain that is wide or that loops (``__context__`` can point back).
+_REFUSAL_WALK_DEPTH = 8
+_REFUSAL_WALK_NODES = 64
+
+
+def _carries_airplane_refusal(exc: BaseException) -> bool:
+    """True when the socket guard's own refusal is inside ``exc``, found by TYPE and never by words (R620, Steward 3's note).
+
+    ``airplane.AirplaneModeError`` has one constructor, ``airplane._guard``, which raises only while the kill switch is engaged
+    (with the airplane half armed, the host not local and no egress window open), from the socket calls a request makes before
+    any byte reaches its destination: a name lookup, a connect, a CONNECT tunnel, and with R619 a request line that names its own
+    destination. A host's answer reaches the fetcher as bytes that the libraries turn into their own classes, never into this one,
+    so an instance found here means the switch refused this request, whatever text surrounds it and however requests and urllib3
+    wrapped it: directly (NewConnectionError's ``__cause__``, R616), at a loopback proxy's CONNECT (ProtocolError's args, R620),
+    or as a plain ``http://`` request line to a loopback proxy (urllib3's ProxyError inside MaxRetryError, R619).
+
+    The walk follows ``__cause__``, the exceptions among ``args`` and urllib3's ``MaxRetryError.reason``; every real shape is reached
+    through those (SOCKS too: urllib3.contrib.socks raises its NewConnectionError ``from`` the error). It does NOT follow
+    ``__context__`` (the independent read's S1): Python sets that link on the first exception a request raises to whatever the CALLER's
+    thread is handling at that moment, which comes from outside this request. A fetch made inside an ``except`` that holds a refusal
+    somewhere in its chain (a fallback fetch after a Stopped one, a fetch in the handler of a bare guard refusal) would otherwise read
+    its own host's failure, with the switch clear, as the switch's: never retried and reported offline. The walk is bounded by depth,
+    by node count and by a seen set, and it never turns an exception into text. The class is read from
+    ``sys.modules`` rather than imported here: if ``airplane`` was never imported, no instance can exist, and a first import from
+    inside a failure's handler would capture whatever socket calls stood at that moment. A walk that fails answers False, so the
+    failure is written as the request error it looks like (the pre-R620 reading), and the R320 switch read still applies.
+    """
+    try:
+        airplane = sys.modules.get("src.ingest.airplane")
+        if airplane is None:
+            return False
+        refusal = airplane.AirplaneModeError
+        from urllib3.exceptions import MaxRetryError
+
+        seen: set[int] = set()
+        todo: list[tuple[object, int]] = [(exc, 0)]
+        while todo and len(seen) < _REFUSAL_WALK_NODES:
+            node, depth = todo.pop()
+            if not isinstance(node, BaseException) or id(node) in seen:
+                continue
+            seen.add(id(node))
+            if isinstance(node, refusal):
+                return True
+            if depth >= _REFUSAL_WALK_DEPTH:
+                continue
+            links: list[object] = [node.__cause__, *node.args]  # never __context__: it can be the caller's exception (see above)
+            if isinstance(node, MaxRetryError):
+                links.append(node.reason)
+            todo.extend((link, depth + 1) for link in links)
+    except Exception:  # noqa: BLE001 - this runs inside a failure's handler and must never replace that failure
+        return False
+    return False
 
 # --------------------------------------------------------------------------- #
 # C8 (2026-07-24 throughput brief): skip local DNS resolution when the exit
@@ -1112,7 +1184,7 @@ class EthicalFetcher:
             raise FetchFailed(KILL_SWITCH_REFUSAL)
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
-            raise FetchFailed(f"unsupported or malformed URL: {url!r}")
+            raise FetchFailed(f"unsupported or malformed URL: {failure_url(url)!r}")
 
         # Cheap length check per fetch; evicts only when a cap is exceeded (E1).
         self._bound_host_caches()
@@ -1180,8 +1252,19 @@ class EthicalFetcher:
                         url, extra_headers=extra_headers, proxies=iso_proxies
                     )
                 except requests.RequestException as exc:
-                    # the URL through failure_url: a link holding spaces must not continue in the guard's words (R616)
-                    transient = FetchFailed(f"request error for {failure_url(url)}: {record_text(exc, typed=False)}")
+                    if _carries_airplane_refusal(exc):
+                        # The guard's own refusal, found by TYPE (R620): the switch's, whatever words came with it. Raised at once
+                        # in the switch's whole sentence: never retried (it is the person's setting, not a host's passing failure,
+                        # and the next pass asks again) and carrying no host's text. Every reader reads that sentence as the switch's.
+                        raise FetchFailed(KILL_SWITCH_REFUSAL) from None
+                    # the URL through failure_url: a link holding spaces must not continue in the guard's words (R616). Its userinfo,
+                    # masked there, is taken out of the error's words as well (Steward 3 #1): requests quotes a URL it cannot prepare
+                    # ("Failed to parse: https://u:pw@..."). The secrets are the named URL's; a redirect hop's own userinfo is not among
+                    # them, stated: a hop with no http(s) scheme, no host or an authority urllib3 cannot parse (the URLs requests quotes)
+                    # is refused before it is requested, by the hop check, _guard_target and _refuse_parser_mismatch.
+                    transient = FetchFailed(
+                        f"request error for {failure_url(url)}: {record_text(exc, *userinfo_secrets(url), typed=False)}"
+                    )
                 finally:
                     with self._host_state_guard:
                         self._last_request[parsed.netloc] = self._now()
@@ -1236,11 +1319,11 @@ class EthicalFetcher:
                 )
 
             if response.status_code != 200:
-                raise FetchFailed(f"HTTP {response.status_code} for {url}")
+                raise FetchFailed(f"HTTP {response.status_code} for {failure_url(url)}")
 
             content_type = response.headers.get("Content-Type", "")
             if require_html and "html" not in content_type.lower():
-                raise FetchFailed(f"non-HTML content ({content_type!r}) for {url}")
+                raise FetchFailed(f"non-HTML content ({content_type!r}) for {failure_url(url)}")
 
             content, raw_body = self._read_body(
                 response, url, token=fetch_token, keep_bytes=keep_bytes
@@ -1523,7 +1606,7 @@ class EthicalFetcher:
                         nxt = urljoin(current, location)
                         p = urlparse(nxt)
                         if p.scheme not in ("http", "https") or not p.netloc:
-                            raise FetchFailed(f"redirect to unsupported URL: {nxt!r}")
+                            raise FetchFailed(f"redirect to unsupported URL: {failure_url(nxt)!r}")
                         self._guard_target(p.hostname)  # re-validate the redirect target
                         if hasattr(resp, "close"):
                             resp.close()
@@ -1532,7 +1615,7 @@ class EthicalFetcher:
                     return resp, str(getattr(resp, "url", current) or current)
             except BlockedConnectTarget as exc:
                 raise BlockedTarget(record_text(exc, typed=False)) from None
-        raise FetchFailed(f"too many redirects for {url}")
+        raise FetchFailed(f"too many redirects for {failure_url(url)}")
 
     @staticmethod
     def _refuse_parser_mismatch(url: str) -> None:
@@ -1614,7 +1697,13 @@ class EthicalFetcher:
             try:
                 merged.update(requests.utils.get_environ_proxies(url, no_proxy=None))
             except Exception as exc:  # noqa: BLE001 - an unreadable environment is not a fetch error
-                log_failure(_LOG, f"could not read environment proxies for {url!r}", exc, level=logging.DEBUG)
+                log_failure(
+                    _LOG,
+                    f"could not read environment proxies for {failure_url(url)!r}",
+                    exc,
+                    *userinfo_secrets(url),
+                    level=logging.DEBUG,
+                )
         merged.update(explicit or {})
         return {k: v for k, v in merged.items() if k in _SELECTABLE_PROXY_KEYS or "://" in k}
 
@@ -1633,7 +1722,7 @@ class EthicalFetcher:
         """
         cl = response.headers.get("Content-Length") if hasattr(response, "headers") else None
         if cl and str(cl).isdigit() and int(cl) > self.max_bytes:
-            raise FetchFailed(f"declared length {cl} exceeds {self.max_bytes} bytes for {url}")
+            raise FetchFailed(f"declared length {cl} exceeds {self.max_bytes} bytes for {failure_url(url)}")
         if self._real_session and hasattr(response, "iter_content"):
             total = 0
             chunks: list[bytes] = []
@@ -1648,14 +1737,14 @@ class EthicalFetcher:
                     if hasattr(response, "close"):
                         response.close()
                     raise FetchFailed(
-                        f"body read exceeded {self.body_deadline_s:.0f}s for {url} "
+                        f"body read exceeded {self.body_deadline_s:.0f}s for {failure_url(url)} "
                         "(a slow or trickling response)"
                     )
                 total += len(chunk)
                 if total > self.max_bytes:
                     if hasattr(response, "close"):
                         response.close()
-                    raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {url}")
+                    raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {failure_url(url)}")
                 chunks.append(chunk)
             raw = b"".join(chunks)
             activity_monitor.fetch_bytes(total, token)  # real, app-attributed download size
@@ -1683,7 +1772,7 @@ class EthicalFetcher:
                 return raw.decode("utf-8", errors="replace"), kept
         # Injected (test) session: not streamed; check the already-materialised body.
         if response.content and len(response.content) > self.max_bytes:
-            raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {url}")
+            raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {failure_url(url)}")
         activity_monitor.fetch_bytes(len(response.content or b""), token)
         return response.text, (response.content if keep_bytes else None)
 
@@ -1725,11 +1814,11 @@ class EthicalFetcher:
             # one would put a confident wrong attribution into the pipeline's own data.
             cause = self._robots_cause.get(host_key, "unknown")
             raise RobotsUnavailable(
-                f"robots.txt for {host_key} could not be determined ({cause}); refusing to fetch",
+                f"robots.txt for {failure_url(host_key)} could not be determined ({cause}); refusing to fetch",
                 cause=cause,
             )
         if not parser.can_fetch(self.user_agent, url):
-            raise RobotsDisallowed(f"robots.txt disallows {url}")
+            raise RobotsDisallowed(f"robots.txt disallows {failure_url(url)}")
 
     def _get_robots(self, host_key: str, parsed) -> RobotFileParser | None:
         cached = self._robots.get(host_key)

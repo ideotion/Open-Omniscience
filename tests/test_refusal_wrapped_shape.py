@@ -27,7 +27,12 @@ import pytest
 import requests
 
 from src.ingest import FetchFailed, activate_kill_switch, clear_kill_switch, kill_switch_active
-from src.ingest.fetch_verdict import classify_fetch_failure, failure_url, is_kill_switch_refusal
+from src.ingest.fetch_verdict import (
+    KILL_SWITCH_REFUSAL,
+    classify_fetch_failure,
+    failure_url,
+    is_kill_switch_refusal,
+)
 from src.monitoring.secret_scrub import record_text
 
 _GUARD_WORDS = "Failed to establish a new connection: airplane mode is engaged: refusing a network connection"
@@ -104,7 +109,9 @@ def test_the_wrapped_refusal_survives_the_fetchers_own_report(tmp_path):
         f.fetch("https://a.example/story", require_html=False)
     assert not kill_switch_active()
     text = record_text(caught.value, typed=False)
-    assert text.startswith("request error for https://a.example/story: "), text
+    # since R620 the fetcher finds the guard's refusal by TYPE in the live exception and reports the switch's whole sentence; the
+    # wrapped text this test pinned is still read as the switch's (the tests above), but the fetcher no longer writes it
+    assert text == KILL_SWITCH_REFUSAL, text
     assert is_kill_switch_refusal(text) and classify_fetch_failure(text) == "offline", text
 
 

@@ -53,7 +53,13 @@ FEED_XML = (
 )
 #: The raw requests error of a Stop on the LAST request through an HTTP proxy: not our sentence at the start, so only the switch or the
 #: epoch can say it was a Stop.
-RAW_STOP = "('Connection aborted.', AirplaneModeError('airplane mode is engaged: refusing a network connection to a.example:443'))"
+#: (R620 reads the CONNECT shape, "('Connection aborted.', AirplaneModeError(...))", by its words, so the raw Stop here is the other
+#: proxy shape: a plain http request line refused at a loopback proxy (R619), which only the instance's type, the switch or the epoch
+#: can read; a text alone carries no instance.)
+RAW_STOP = (
+    "HTTPConnectionPool(host='127.0.0.1', port=8118): Max retries exceeded with url: http://a.example/ (Caused by "
+    "ProxyError('Unable to connect to proxy', AirplaneModeError('airplane mode is engaged: refusing a network connection to a.example:80')))"
+)
 _PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 
 
@@ -243,11 +249,26 @@ def test_a_feed_get_refused_by_name_keeps_the_backoff_history_after_a_clear(db, 
 
 def test_a_stop_cleared_inside_the_feed_get_that_a_retry_got_past_still_leaves_the_row_alone(db, tmp_path):
     """The window is the whole pass from before the feed's request, its retries included: the stated cost is one more read of the feed
-    on the next pass (the dedup step skips what was stored), never a validator stored over a pass a Stop touched."""
+    on the next pass (the dedup step skips what was stored), never a validator stored over a pass a Stop touched.
+
+    The Stop is the raw proxy shape (``raw_clear_on``): since R620 a request the socket guard itself refused (``cut_clear_on``) carries
+    the guard's error instance, which the fetcher reads by type and never retries, so only a Stop whose error carries no instance is
+    retried and got past."""
+    row = _source(db, seed=True)
+    calls: list = []
+    ingest_source(db, row, fetcher=_fetcher(tmp_path, calls, feed=True, raw_clear_on="/feed.xml"))
+    assert calls.count(FEED) == 2, f"the retry did not get past the cut attempt: {calls}"
+    st = _state(db, row.id)
+    assert st.etag == "old" and st.consecutive_unchanged == 4, "a pass whose feed GET a Stop cut was recorded"
+
+
+def test_a_stop_the_guard_refused_inside_the_feed_get_is_not_retried_and_leaves_the_row_alone(db, tmp_path):
+    """R620 with this file: the guard's own refusal is read by its type, so the cut feed GET is not retried, and the pass still
+    records nothing over the feed."""
     row = _source(db, seed=True)
     calls: list = []
     ingest_source(db, row, fetcher=_fetcher(tmp_path, calls, feed=True, cut_clear_on="/feed.xml"))
-    assert calls.count(FEED) == 2, f"the retry did not get past the cut attempt: {calls}"
+    assert calls.count(FEED) == 1, calls
     st = _state(db, row.id)
     assert st.etag == "old" and st.consecutive_unchanged == 4, "a pass whose feed GET a Stop cut was recorded"
 

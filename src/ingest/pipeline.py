@@ -576,9 +576,11 @@ def _extract_failed_detail(fetched) -> str:
 def _failure_reason(detail: str | None, *, since: int | None = None) -> str:
     """``fetch_verdict.classify_fetch_failure`` plus the switch read AFTER the failure (R320): a failure while the kill switch is engaged is
     the switch's, whatever shape the error took. A Stop that lands inside the LAST request of a fetch (the retries having run out, or none
-    left) arrives as the raw requests error (``request error for <url>: ('Connection aborted.', AirplaneModeError(...))`` through an HTTP
-    proxy, or ``HTTPSConnectionPool(...)``), which is not OUR sentence at the start, so the anchored match in ``classify_fetch_failure``
-    rightly refuses it (R298) and the failure was filed as the host's (``ff:connect``). A response that arrived (an HTTP status, a content-type
+    left) can arrive as a raw requests error that is not OUR sentence at the start (an ``HTTPSConnectionPool(...)`` whose cause is not the
+    guard's refused connect: a reset, a timeout), so the anchored match in ``classify_fetch_failure`` rightly refuses it (R298) and the
+    failure was filed as the host's (``ff:connect``). (The guard's refusal in urllib3's own words IS read from the text alone: direct, R616,
+    and through a loopback HTTP proxy, ``request error for <url>: ('Connection aborted.', AirplaneModeError(...))``, since R620; and the fetcher now finds
+    the guard's refusal by TYPE before it writes either, and raises the switch's own sentence instead, R620.) A response that arrived (an HTTP status, a content-type
     or length verdict, a slow body, a redirect or URL verdict) is kept as the host's: a Stop cuts a connection and can never produce one. The
     cost, stated: a genuine transport failure coinciding with a Stop reads offline.
 
