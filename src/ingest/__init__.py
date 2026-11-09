@@ -1566,6 +1566,9 @@ class EthicalFetcher:
                     break  # out of retries: fall through to handle the status below
 
                 attempt += 1
+                # the back-off holds only the first host's lock, as before R629: a hop host the attempt ended on is stamped and
+                # released first, so its other fetches are not held up by this one's sleep (the independent read's nit)
+                chain.move(chain.first)
                 self._sleep(self.retry_backoff_s * (2 ** (attempt - 1)))
 
             # the loop exits with either a definitive response or a raised error

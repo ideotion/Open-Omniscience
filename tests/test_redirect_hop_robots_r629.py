@@ -141,8 +141,9 @@ class _Clock:
 
 def _fetcher(tmp_path, session, *, interval=0.0, clock=None, **kw) -> EthicalFetcher:
     kw.setdefault("max_retries", 0)
+    kw.setdefault("retry_backoff_s", 0)
     f = EthicalFetcher(
-        min_interval_s=interval, session=session, robots_cache_path=tmp_path / "robots_cache.json", retry_backoff_s=0, **kw
+        min_interval_s=interval, session=session, robots_cache_path=tmp_path / "robots_cache.json", **kw
     )
     if clock is not None:
         f._now = clock.now  # type: ignore[method-assign]
@@ -1024,3 +1025,31 @@ def test_a_non_empty_path_or_an_allowed_root_is_judged_as_before(tmp_path, url, 
         with pytest.raises(RobotsDisallowed):
             _fetch(f, url)
         assert s.fetched == [f"{A}/robots.txt"]
+
+
+def test_a_retrys_back_off_holds_only_the_first_hosts_lock(tmp_path):
+    """The independent read's nit: a hop answered 503 left the retry's back-off sleeping inside b.example's lock. The back-off now
+    holds the first host's lock only, as before R629: b.example is stamped and released before the sleep."""
+    events: list = []
+    s, clock = _Session(events), _Clock(events)
+    s.redirect(f"{A}/start", f"{B}/page")
+    s.page(f"{B}/page")
+    once = {"n": 0}
+
+    def busy_once():
+        once["n"] += 1
+        if once["n"] == 1:
+            s.routes[f"{B}/page"] = (503, "busy", {"Content-Type": "text/html"})
+        else:
+            s.page(f"{B}/page")
+
+    s.on[f"{B}/page"] = busy_once
+    f = _fetcher(tmp_path, s, clock=clock, max_retries=1, retry_backoff_s=0.5)
+    held: list = []
+    clock.on_sleep = lambda: held.append(
+        (clock.slept[-1], [h for h in ("a.example", "b.example") if f._host_lock(h).locked()], f._last_request.get("b.example"))
+    )
+    assert _fetch(f, f"{A}/start").final_url == f"{B}/page"
+    assert held == [(0.5, ["a.example"], 1000.0)], held  # b.example stamped when its 503 was answered, before the back-off
+    assert s.fetched == [f"{A}/robots.txt", f"{A}/start", f"{B}/robots.txt", f"{B}/page", f"{A}/start", f"{B}/page"]
+    _no_lock_held(f, "a.example", "b.example")
