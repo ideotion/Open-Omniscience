@@ -184,7 +184,13 @@ def ingest_email_endpoint(
         except RuntimeError as exc:  # the airplane-mode refusal (ruling #11 kill-switch gate)
             raise HTTPException(status_code=409, detail=http_detail(exc, "", req.password, withheld=UNREADABLE_TEXT)) from None
     tally = ingest_emails(db, source, raws)
-    return {"source_id": source_id, "source": source.name, "fetched": len(raws), "tally": tally}
+    return {
+        "source_id": source_id,
+        "source": source.name,
+        "fetched": len(raws),
+        "stopped_by_airplane_mode": bool(getattr(raws, "stopped", False)),  # R640
+        "tally": tally,
+    }
 
 
 # A single dedicated, FILTERABLE provenance bucket for locally-imported .eml
@@ -799,10 +805,17 @@ def _mailbox_pull_worker(
             "source_id": source.id,
             "protocol": protocol,
             "fetched": len(raws),
+            # R640: airplane mode engaged during the pull. "fetched" is then what came before the Stop, never the mailbox's size.
+            "stopped_by_airplane_mode": bool(getattr(raws, "stopped", False)),
             "tally": tally,
             "disclosure": _MAILBOX_DISCLOSURE,
         }
-    ctx.set_progress(done=len(raws), total=len(raws), detail="done")
+    ctx.set_progress(
+        done=len(raws),
+        total=len(raws),
+        detail=("stopped: airplane mode was engaged during the pull; the messages fetched before it are kept"
+                if getattr(raws, "stopped", False) else "done"),
+    )
     return out
 
 

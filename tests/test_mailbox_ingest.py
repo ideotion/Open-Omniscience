@@ -304,3 +304,27 @@ def test_mailbox_endpoint_refuses_under_airplane(client):
         assert "kill switch" in detail
     finally:
         clear_kill_switch()
+
+
+def test_a_pull_cut_by_a_stop_says_so_and_keeps_what_it_fetched(client, monkeypatch):
+    """R640: the result names the Stop, so "fetched" is never read as the mailbox's size."""
+    from src.ingest.email import MailboxPull
+
+    c, Sess = client
+    clear_kill_switch()
+    import src.api.ingestion as ing
+
+    def _cut(*a, **k):
+        raws = MailboxPull([_EML])
+        raws.stopped = True
+        return raws
+
+    _run_pull(c, ing, Sess, monkeypatch, fetch=_cut)
+    st = c.get("/api/newsletters/mailbox/status").json()
+    assert st["result"]["fetched"] == 1
+    assert st["result"]["stopped_by_airplane_mode"] is True
+    with Sess() as s:
+        assert s.query(Article).count() == 1  # what came before the Stop is kept
+    clear_kill_switch()
+    _run_pull(c, ing, Sess, monkeypatch)
+    assert c.get("/api/newsletters/mailbox/status").json()["result"]["stopped_by_airplane_mode"] is False

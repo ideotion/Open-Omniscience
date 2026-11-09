@@ -17,6 +17,7 @@ touches mailboxes the operator explicitly configures; nothing leaves the machine
 
 from __future__ import annotations
 
+import contextlib
 import email
 import ipaddress
 import logging
@@ -297,6 +298,34 @@ def _refuse_if_offline() -> None:
         raise RuntimeError(NETWORK_REFUSED)
 
 
+class MailboxPull(list):  # type: ignore[type-arg]
+    """The raw messages one live pull fetched, newest last, as a ``list[bytes]``.
+
+    ``stopped`` is True when airplane mode was engaged DURING the pull (R640): the list then holds only the messages fetched before the
+    Stop, which are kept, and the connection was closed without sending another command. A caller reports that as the operator's Stop,
+    never as the size of the mailbox.
+    """
+
+    stopped: bool = False
+
+
+def _stop_requested() -> bool:
+    """The switch, read again before every mailbox command and every message (R640)."""
+    from src.ingest import kill_switch_active
+
+    return kill_switch_active()
+
+
+def _drop_connection(conn, how: str) -> None:  # type: ignore[no-untyped-def]
+    """Close a live mailbox connection WITHOUT a protocol command (``how`` is ``shutdown`` for imaplib, ``close`` for poplib).
+
+    A Stop is not the moment to send LOGOUT/QUIT: that is one more write to the provider after the operator went offline. Closing the
+    socket ends the session from our side; the server drops it on its own. Never raises.
+    """
+    with contextlib.suppress(Exception):  # the connection is being abandoned; nothing to report
+        getattr(conn, how)()
+
+
 def fetch_imap(
     host: str,
     user: str,
@@ -307,7 +336,7 @@ def fetch_imap(
     use_ssl: bool = True,
     port: int = 0,
     conn=None,
-) -> list[bytes]:
+) -> MailboxPull:
     """Fetch up to ``limit`` most recent raw messages from a folder.
 
     ``conn`` may be injected (an imaplib-like object) for testing; otherwise a real
@@ -316,35 +345,55 @@ def fetch_imap(
     ``conn`` is not touched). The session is logged out in a ``finally`` so a fetch error
     never leaks it. The recipient-safe anonymisation happens later, in ``ingest_emails``.
     ``port`` 0 = the protocol default (993 SSL / 143 plain).
+
+    A Stop DURING the pull (R640): the switch is read again before every command (login, select, search) and before every message. Once
+    it is engaged, no further command is sent, a connection this function opened is closed without LOGOUT, and the messages already
+    fetched are returned with ``stopped`` set. An injected ``conn`` belongs to its caller and is left open.
     """
     _refuse_if_offline()
+    raws = MailboxPull()
     own_conn = conn is None
-    if own_conn:  # pragma: no cover - exercised only against a live server
+    if own_conn:
         import imaplib
 
         if use_ssl:
             conn = imaplib.IMAP4_SSL(host, port or 993)
         else:
             conn = imaplib.IMAP4(host, port or 143)
-        conn.login(user, password)
     try:
+        if own_conn:
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            conn.login(user, password)
+        if _stop_requested():
+            raws.stopped = True
+            return raws
         conn.select(folder)
+        if _stop_requested():
+            raws.stopped = True
+            return raws
         typ, data = conn.search(None, "ALL")
         if typ != "OK" or not data or not data[0]:
-            return []
+            return raws
         ids = data[0].split()[-max(1, int(limit)):]
-        raws: list[bytes] = []
         for mid in ids:
+            if _stop_requested():
+                raws.stopped = True
+                return raws
             typ, msg_data = conn.fetch(mid, "(RFC822)")
             if typ == "OK" and msg_data and msg_data[0]:
                 raws.append(msg_data[0][1])
         return raws
     finally:
         if own_conn:
-            try:
-                conn.logout()
-            except Exception:  # noqa: BLE001 - logout failure must not mask the result
-                pass
+            if raws.stopped or _stop_requested():
+                _drop_connection(conn, "shutdown")
+            else:
+                try:
+                    conn.logout()
+                except Exception:  # noqa: BLE001 - logout failure must not mask the result
+                    pass
 
 
 def fetch_pop3(
@@ -356,39 +405,59 @@ def fetch_pop3(
     use_ssl: bool = True,
     port: int = 0,
     conn=None,
-) -> list[bytes]:
+) -> MailboxPull:
     """Fetch up to ``limit`` most recent raw messages from a POP3 mailbox (ruling #11).
 
     Same guardrails as :func:`fetch_imap`: AIRPLANE-gated (no socket offline), credentials
     used transiently, quit in a ``finally``. POP3 has no folders; messages are numbered
     1..N (oldest..newest), so the newest ``limit`` are the tail. ``conn`` is injectable.
     ``port`` 0 = the protocol default (995 SSL / 110 plain).
+
+    A Stop DURING the pull (R640): the switch is read again before every command (USER, PASS, LIST) and before every message, exactly
+    as in :func:`fetch_imap`; a connection this function opened is then closed without QUIT and what was fetched is returned with
+    ``stopped`` set.
     """
     _refuse_if_offline()
+    raws = MailboxPull()
     own_conn = conn is None
-    if own_conn:  # pragma: no cover - exercised only against a live server
+    if own_conn:
         import poplib
 
         conn = poplib.POP3_SSL(host, port or 995) if use_ssl else poplib.POP3(host, port or 110)
-        conn.user(user)
-        conn.pass_(password)
     try:
+        if own_conn:
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            conn.user(user)
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            conn.pass_(password)
+        if _stop_requested():
+            raws.stopped = True
+            return raws
         count = len(conn.list()[1])
         start = max(1, count - max(1, int(limit)) + 1)
-        raws: list[bytes] = []
         for i in range(start, count + 1):
+            if _stop_requested():
+                raws.stopped = True
+                return raws
             resp, lines, octets = conn.retr(i)
             raws.append(b"\r\n".join(lines))
         return raws
     finally:
         if own_conn:
-            try:
-                conn.quit()
-            except Exception:  # noqa: BLE001
-                pass
+            if raws.stopped or _stop_requested():
+                _drop_connection(conn, "close")
+            else:
+                try:
+                    conn.quit()
+                except Exception:  # noqa: BLE001
+                    pass
 
 
-def fetch_mailbox(protocol: str, host: str, user: str, password: str, **kwargs) -> list[bytes]:
+def fetch_mailbox(protocol: str, host: str, user: str, password: str, **kwargs) -> MailboxPull:
     """Dispatch to :func:`fetch_imap` / :func:`fetch_pop3` by ``protocol`` ("imap"|"pop3")."""
     proto = (protocol or "").strip().lower()
     if proto == "imap":
