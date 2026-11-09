@@ -1724,9 +1724,13 @@ Official **figures** are not here at all — they are data, so they live under
     it says which, with the numbers, and does not start. A figure it could not
     read is not checked, and it says that too.
   - **Network fetch mode** — *Transparent* (default; polite, names the tool in the
-    User-Agent) or *Protected* (generic User-Agent routed through a proxy **you** run,
-    e.g. Tor). Protected mode **cannot guarantee anonymity** — you must run and trust
-    the proxy yourself; it refuses to enable without a proxy URL.
+    User-Agent) or *Protected* (every fetch routed through a proxy **you** run, e.g. Tor,
+    with a generic User-Agent). The one exception is Wikimedia's sites (Wikipedia,
+    Wikidata, the dumps): their API policy asks each tool to name itself, so in protected
+    mode those requests still carry the tool's own User-Agent, through the same proxy.
+    Protected mode **cannot guarantee anonymity** — you must run and trust the proxy
+    yourself; it refuses to enable without a proxy URL. SOCKS proxies such as Tor need
+    nothing extra installed.
   The two **irreversible** actions live one section further down, under **Advanced →
   Uninstall & wipe**, deliberately away from everything above:
 

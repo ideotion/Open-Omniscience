@@ -53,7 +53,8 @@ a tripwire, not a proof — the real guarantee is culture and review.
   record links back to its origin.
 - **Ethical access** by default: robots.txt fail-closed, per-host rate limits, an
   identifying User-Agent, attribution and provenance stored. (A user may enable *Protected*
-  fetch — proxy + generic UA — to protect a source or themselves when investigating a
+  fetch — proxy + generic UA, except to Wikimedia's sites, whose API policy asks each tool to
+  name itself — to protect a source or themselves when investigating a
   powerful target; this is the journalistic duty of source protection, taken deliberately
   and documented, never the silent default.)
 - **Respect licences and copyright**; store provenance and the minimum needed; honour

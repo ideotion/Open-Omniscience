@@ -3592,8 +3592,9 @@
       <hr>
       <h3 style="margin-bottom:6px">Network fetch mode</h3>
       <p class="muted" style="margin-top:0" id="fetch-note">Transparent mode names this tool in the
-        User-Agent (polite, but identifiable). Protected mode sends a generic User-Agent and routes
-        every fetch through a proxy you run.</p>
+        User-Agent (polite, but identifiable). Protected mode routes every fetch through a proxy you run
+        and sends a generic User-Agent, except to Wikimedia's sites (Wikipedia, Wikidata, the dumps):
+        their API policy asks each tool to name itself, so those requests still name this one.</p>
       <div class="row">
         <div><label for="fetch-mode">Mode</label>
           <select id="fetch-mode" data-on-change="onFetchModeChange()">
@@ -3605,7 +3606,7 @@
         <div style="flex:0 0 auto;align-self:end"><button data-on-click="saveFetchMode(this)">Save fetch mode</button></div>
       </div>
       <div class="hint" style="color:var(--warn)">Protected mode cannot guarantee anonymity — you must
-        run and trust the proxy yourself. SOCKS proxies need the optional [safety] extra.</div>
+        run and trust the proxy yourself. SOCKS proxies such as Tor need nothing extra installed.</div>
 
       <hr>
       <h3 style="margin-bottom:6px">External topic discovery</h3>
