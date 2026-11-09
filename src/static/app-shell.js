@@ -536,7 +536,7 @@
       // loadLlmPrompts/loadCustomPrompts are NOT here any more: their panels moved to
       // Advanced → AI and load when that section is expanded (2026-08-09).
       if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); loadAiSetup(); loadAiHero(); loadAiStore(); loadModelCatalog(); syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle(); loadPerceptionGate(); syncAiCoordinator(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4) + the B5 progressive-sweep toggles + the B6 perception-extract toggle/gate
-      if (cat === "advanced") _advWire();             // Collection / Sources / Keywords, lazily per section
+      if (cat === "advanced") { _advWire(); fieldChecksCount(); }  // sections load lazily; the field-check count is one loopback read
       if (cat === "general") loadShortcuts();         // the shortcuts panel moved into General (2026-07-31)
       if (cat === "cards") loadCardCatalog();     // the Leads catalogue (PR-7): lazy, one loopback read
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
@@ -628,6 +628,10 @@
       // The Bulletin (§16): last section, folded, and its availability check +
       // edition list run on EXPAND like the rest. Both are loopback.
       bulletin: () => { loadBulletin(); },
+      // FIELD CHECKS (R603), its own section since 2026-11-09 (field report: "I can't find the
+      // button for the field testing"). Opening it shows the list at once: a loopback read of
+      // the manifest and this session's results. Nothing runs and nothing goes online.
+      fieldchecks: () => { fieldChecksLoad(); },
     };
     // Deep-link into one Advanced section. The old showTab("ingest") / showTab("sources")
     // redirects pointed at subtabs that no longer exist, so every palette entry and

@@ -57,6 +57,10 @@
       // The Agenda's Elections coverage view: t()/tf() frames welded to the report's
       // counts inside a data-i18n-dyn host. Redraws from the payload it holds; never fetches.
       try { if (typeof _agCovRepaint === "function") _agCovRepaint(); } catch (_e) {}
+      // The Field checks count ("14 waiting for this machine") is a tf() frame welded to a
+      // number, painted on the section's summary and on the link beside the Diagnostics
+      // button: the same frozen-locale class. Repaints from the list it holds; never fetches.
+      try { if (typeof _fcPaintCount === "function") _fcPaintCount(); } catch (_e) {}
       // The rest of the Home at-a-glance strip -- its counts and their labels, the "as
       // of" stamp and the automatic-collection line -- is built with t() inside the same
       // [data-i18n-dyn] subtree, so it is the same frozen-locale class: measured staying

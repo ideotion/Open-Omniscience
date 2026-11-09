@@ -3266,6 +3266,7 @@
       </div>
       <div class="row small" style="margin-top:2px">
         <button type="button" id="all-diag-again" class="linkish" data-on-click="downloadDiagnosticsVolumes(this)" hidden title="Saves the Diagnostics built last again, without a new build: the same one file, or the same numbered .zip files of at most 4 MB each (type a part number in the box that appears to start from it; every file opens on its own in any unzip tool). It never starts a new build.">Save the last Diagnostics again</button>
+        <button type="button" id="fc-open-link" class="linkish" data-on-click="fieldChecksOpen()" title="Opens the Field checks section of Advanced, right after this one: the checks no test machine can run, which only this computer can answer. The number counts the checks for this system that have no result yet in this session.">Field checks <span id="fc-count-link"></span></button>
         <button type="button" class="linkish" data-on-click="downloadKeywordParts(this, 'all')" title="Every keyword in the corpus (not just the top 5000 per language), as numbered .zip files of at most 4 MB each: the first files hold every language's top 5,000, so if you cannot send them all, send them in number order. No total size cap. It is written to disk a batch at a time, so the app's memory stays flat, but a big corpus makes many files (the page says how many before you save any) and takes minutes, and the export stops with a clear message if memory or disk runs short.">All keywords</button>
       </div>
       <!-- The ONE bar that saves a numbered set (keyword files or the diagnostics archive), five files
@@ -3282,21 +3283,6 @@
           <input id="parts-from" type="number" min="1" value="1">
         </label>
         <button id="parts-from-go" class="secondary" data-on-click="partsSaveFrom()" hidden>Save from this part</button>
-      </div>
-      <!-- FIELD CHECKS (R603, 2026-11-08, maintainer-asked): the checks only this machine can run, next to
-           the Diagnostics button. The list is configs/field_checks.yml (versioned; each check says why it
-           exists, who asked for it and when it retires); the runners are src/monitoring/field_checks.py.
-           Fetches nothing on open: "Show field checks" reads the list. An online check passes the ONE
-           consent popup (invariant #14). Rows are drawn by fieldChecksLoad in app-diagnostics.js. -->
-      <div id="field-checks-box" style="margin-top:10px">
-        <div class="small" style="font-weight:600">Field checks (what only this machine can tell)</div>
-        <div class="hint">Checks that no test machine can run: this computer's memory and drives, its network, its browser and its clock. Each one runs when you press it. Save the report and send it back with the Diagnostics file. The list changes with each update: a check is added when something new needs your machine, and retired once enough reports have answered it. A check that goes online asks first.</div>
-        <div class="row" style="margin-top:6px">
-          <button class="secondary" id="fc-load-btn" data-on-click="fieldChecksLoad(this)" title="Read the list of field checks for this version, with the last result of each in this session. Runs nothing and goes nowhere.">Show field checks</button>
-          <button class="secondary" id="fc-report-btn" data-on-click="ooOpenUrl('/api/diagnostics/field-checks/report')" title="Save ONE .json file with every field-check result this session holds, the list version, the app build and the system name. Passwords, passphrases and your home folder's name are removed before it is written. Results are not kept across a restart.">Save the field-check report</button>
-          <span id="fc-status" class="small" style="margin-left:6px"></span>
-        </div>
-        <div id="fc-list" class="small" style="margin-top:6px"></div>
       </div>
       <!-- Session forensics (E2, #596): the previous-session clean/unclean verdict (with the
            OOM-inference wording shown verbatim as a caveat), the last unlock's phase timings +
@@ -3518,6 +3504,25 @@
       </div>
       <div class="hint">New articles are indexed so that a search finds an Arabic word however its alef, teh marbuta or yeh is written and with or without vowel marks, and finds a Chinese or Japanese word inside a longer run of text. Articles indexed before this version keep their old entry until this job re-indexes them; until then a search still finds them the way it always did. Only articles whose entry would change are touched. Japanese is split into words only when the optional segmentation package is installed.</div>
     </section>
+    </details>
+    <details class="adv-sec" data-adv="fieldchecks">
+      <summary><span class="adv-sec-t">Field checks</span> <span class="muted">— the checks only this machine can run</span> <span id="fc-count" class="pill" hidden></span></summary>
+      <!-- FIELD CHECKS (R603, 2026-11-08, maintainer-asked): the checks only this machine can run. Its
+           OWN Advanced section right after Diagnostics since 2026-11-09 (field report: "I can't find the
+           button for the field testing"), reached also from the link beside the Diagnostics button. The list is configs/field_checks.yml (versioned; each check says why it
+           exists, who asked for it and when it retires); the runners are src/monitoring/field_checks.py.
+           Opening the section reads the list (a loopback read; nothing runs, nothing goes online), and
+           "Show field checks" reads it again. An online check passes the ONE
+           consent popup (invariant #14). Rows are drawn by fieldChecksLoad in app-diagnostics.js. -->
+      <div id="field-checks-box">
+        <div class="hint">Checks that no test machine can run: this computer's memory and drives, its network, its browser and its clock. Each one runs when you press it. Save the report and send it back with the Diagnostics file. The list changes with each update: a check is added when something new needs your machine, and retired once enough reports have answered it. A check that goes online asks first.</div>
+        <div class="row" style="margin-top:6px">
+          <button class="secondary" id="fc-load-btn" data-on-click="fieldChecksLoad(this)" title="Read the list of field checks for this version, with the last result of each in this session. Runs nothing and goes nowhere.">Show field checks</button>
+          <button class="secondary" id="fc-report-btn" data-on-click="ooOpenUrl('/api/diagnostics/field-checks/report')" title="Save ONE .json file with every field-check result this session holds, the list version, the app build and the system name. Passwords, passphrases and your home folder's name are removed before it is written. Results are not kept across a restart.">Save the field-check report</button>
+          <span id="fc-status" class="small" style="margin-left:6px"></span>
+        </div>
+        <div id="fc-list" class="small" style="margin-top:6px"></div>
+      </div>
     </details>
 
     <!-- SAFETY, folded into Advanced (rulings 26/42, field feedback 2026-08-07). It was

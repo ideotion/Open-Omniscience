@@ -3261,6 +3261,29 @@
       box.innerHTML = `<div class="hint">${esc(_fcTf("List version {v}, {n} active checks. Results are kept by the running app only: a restart empties them, so save the report before you close it.", {v: _fcView.manifest_version, n: active.length}))}</div>`
         + active.map(_fcRowHtml).join("") + ret;
     }
+    // The checks for THIS system with no result yet in this session: the number on the section's
+    // summary and on the link beside the Diagnostics button, so the section can be found (field
+    // report 2026-11-09: "I can't find the button for the field testing"). A count of what is
+    // waiting, never a score.
+    function _fcPaintCount() {
+      if (!_fcView) return;                 // never read yet: say nothing rather than "none waiting"
+      const rows = _fcView.checks || [];
+      const n = rows.filter((c) => c.status === "active" && c.applies_here && !c.result).length;
+      const label = n ? _fcTf("{n} waiting for this machine", {n}) : _fcT()("none waiting");
+      const pill = $("fc-count");
+      if (pill) { pill.textContent = label; pill.hidden = false; }
+      const link = $("fc-count-link");
+      if (link) link.textContent = "(" + label + ")";
+    }
+    async function fieldChecksCount() {
+      try {
+        _fcView = await api("/api/diagnostics/field-checks");
+        _fcPaintCount();
+      } catch (e) { /* the count is a convenience: the section still opens and says why */ }
+    }
+    function fieldChecksOpen() {
+      _openAdvanced("fieldchecks");
+    }
     async function fieldChecksLoad(btn) {
       const t = _fcT();
       const st = $("fc-status");
@@ -3268,6 +3291,7 @@
       try {
         _fcView = await api("/api/diagnostics/field-checks");
         _fcRender();
+        _fcPaintCount();
         if (st) st.textContent = "";
       } catch (e) {
         if (st) st.textContent = t("Could not read the field checks:") + " " + (_apiErrorMessage ? _apiErrorMessage(e) : String(e));
@@ -3307,6 +3331,7 @@
         c.result = r;
         const box = document.querySelector(`[data-fc-result="${CSS.escape(id)}"]`);
         if (box) box.innerHTML = _fcResultHtml(r);
+        _fcPaintCount();
         say("");
       } catch (e) {
         say(_apiErrorMessage ? _apiErrorMessage(e) : String(e));
