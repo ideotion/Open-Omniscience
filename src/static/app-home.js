@@ -373,7 +373,7 @@
       return `<article class="feed-card" data-aid="${a.id}">`
         + `<h3 class="feed-t"><a href="${esc(a.reader_url)}" target="_blank" rel="noopener">`
         + `${esc(a.title) || `<span class="muted">${esc(t("(untitled)"))}</span>`}</a></h3>`
-        + `<div class="feed-meta muted">${esc(a.source || "")}`
+        + `<div class="feed-meta muted">${esc(a.source || "")}${ooFetchedOffSiteNote(a)}`
         + (when ? ` · ${esc(when)}` : "")
         + (lang ? ` · ${ooLangCell(lang)}` : "")
         // The tone this article ALREADY carries (scored at ingest, stored on the row).
@@ -672,7 +672,7 @@
         box.innerHTML = arts.map(a => {
           const src = (a.source || {});
           const date = ooIsoDate(a.created_at);
-          const meta = [esc(src.name || src.domain || ""), esc(date)].filter(Boolean).join(" · ");
+          const meta = [esc(src.name || src.domain || "") + ooFetchedOffSiteNote(a), esc(date)].filter(Boolean).join(" · ");
           // REAL substance figures (counts, never a score): word count (flagged when the
           // language is unsegmented, where word_count is meaningless) + cited sources.
           const wc = (a.word_count != null && !a.unsegmented)
@@ -878,7 +878,7 @@
       if (!panel || !box || !rows) return;
       if (!rows.length) { box.innerHTML = `<div class="muted">${esc(t("No articles for this tag yet."))}</div>`; panel.hidden = false; return; }
       box.innerHTML = rows.map(a => {
-        const meta = [esc(a.source || ""), esc(ooIsoDate(a.published_at))].filter(Boolean).join(" · ");
+        const meta = [esc(a.source || "") + ooFetchedOffSiteNote(a), esc(ooIsoDate(a.published_at))].filter(Boolean).join(" · ");
         return `<div class="home-recent-row"><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
           + (meta ? ` <span class="muted">— ${meta}</span>` : "") + `</div>`;
       }).join("");

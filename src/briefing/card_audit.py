@@ -92,6 +92,7 @@ from typing import Any
 
 from src.monitoring.secret_scrub import log_failure
 from src.paths import diagnostics_dir as _report_dir
+from src.utils.url_utils import fetched_host_fields
 
 _LOG = logging.getLogger(__name__)
 
@@ -774,6 +775,7 @@ def _resolve_articles(session, ids: list[int], *, depth: str, excerpt_chars: int
                 Article.server_ip,
                 Article.ip_observed_at,
                 Article.server_ip_reason,
+                Article.fetched_host,
                 Article.source_id,
                 Source.name,
                 Source.domain,
@@ -822,6 +824,9 @@ def _resolve_articles(session, ids: list[int], *, depth: str, excerpt_chars: int
                 "server_ip": r.server_ip,
                 "ip_observed_at": r.ip_observed_at.isoformat() if r.ip_observed_at else None,
                 "server_ip_reason": r.server_ip_reason,
+                # Queue item 61: where the page was fetched from, after its redirects (null when not recorded), and whether
+                # that is another site than the source's (null when there is nothing to compare).
+                **fetched_host_fields(r.fetched_host, r.domain),
             }
 
     missing = [i for i in ids if i not in resolved]
