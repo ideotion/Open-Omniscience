@@ -598,15 +598,15 @@ def test_the_mutants_of_the_real_workflow_open_the_gap_the_checker_names():
     assert set(after) - set(base) == {"tests/test_zz_new_rollup.py"}
 
     # 4. C10: the `test` job is three shards. Take one leg out of its matrix (the first `shard: [1, 2, 3]` of ci.yml; Core-only has the second) and what
-    # only `test` installs for (PySocks, the segmenters, pypdf's OCR neighbours) is run by a third fewer files than the suite has: the job stops counting
+    # only `test` installs for (pyosmium from [geo], numpy and scipy from [analysis]; PySocks was one until R656 made it core) is run by a third fewer files than the suite has: the job stops counting
     # as the whole suite, so every file gated on one of its packages is open again. (`>=`: the temporary parity legs of the commit that proved the split
     # list the matrix too; `test` stays the first.)
     leg = "shard: [1, 2, 3]"
     assert text.count(leg) >= 2 and text.index(leg) < text.index("\n  core-only:"), "the mutant's anchor moved (test and core-only each list their three shards once): update this test"
     after = uncovered(read_runs(text.replace(leg, "shard: [1, 2]", 1)), core, extras, _gated_tests())
     opened = set(after) - set(base)
-    assert "tests/test_airplane_socket_guard.py" in opened, sorted(opened)
+    assert "tests/test_admin_boundaries.py" in opened, sorted(opened)
     # ... and the plan step naming another N does the same
     plan = "ci_shard.py plan --shard ${{ matrix.shard }}/3"
     assert text.count(plan) >= 2
-    assert "tests/test_airplane_socket_guard.py" in set(uncovered(read_runs(text.replace(plan, plan.replace("/3", "/4"), 1)), core, extras, _gated_tests())) - set(base)
+    assert "tests/test_admin_boundaries.py" in set(uncovered(read_runs(text.replace(plan, plan.replace("/3", "/4"), 1)), core, extras, _gated_tests())) - set(base)

@@ -107,7 +107,8 @@ NETWORK_REFUSED = "network refused: airplane mode is engaged"
 # window open), before any byte reaches the destination, and a host's bytes become the libraries' own classes. Which shape is read how:
 #   - by TYPE, in the fetcher: the socket guard's refusal anywhere inside a requests error, whether direct (R616), at a loopback proxy's
 #     CONNECT (R620) or in a request line sent to a loopback proxy (R619). Over SOCKS, urllib3.contrib.socks raises its NewConnectionError
-#     ``from`` the guard's error, so the same walk finds it there; that path is not exercised here, because PySocks is not installed;
+#     ``from`` the guard's error, so the same walk finds it there; PySocks was not installed when this was measured, and
+#     tests/test_refusal_wrapped_shape.py runs that path through the real PySocks wherever it is (a core dependency since R656);
 #   - by WORDS, here: 1. (our own sentence, wherever it is passed on), 3. (our resolver wrapper's sentence, written outside the requests
 #     handler), and 2. and 4. as the net under the typed read. No live path needs 2. or 4. now, since the typed read runs first at their
 #     one writer, and no stored record needs them, since every caller classifies the text of a live exception and none re-reads a stored
