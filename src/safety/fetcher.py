@@ -13,8 +13,10 @@ sends a generic User-Agent; the robots/rate-limit/SSRF guards are unchanged.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import os
 import re
+import secrets
 import threading
 from collections.abc import Iterable
 from typing import Any
@@ -342,24 +344,31 @@ class GuardedSession(requests.Session):
 
 #: A token at most this long, made only of ``[A-Za-z0-9_.-]``, is its own SOCKS credential, as written (a host key, ``dl-1``).
 _ISOLATION_AS_WRITTEN_MAX = 32
+#: The key that names every other token (queue item 50(a)): made once per process, held only in memory, never written, logged
+#: or derived from anything, so a credential cannot be checked against a guessed URL by whoever sees the SOCKS handshake.
+_ISOLATION_KEY = secrets.token_bytes(32)
 
 
 def _isolation_credential(token: str) -> str:
     """The SOCKS username (and password) that names ``token``'s Tor circuit: distinct tokens, distinct credentials.
 
-    A short token made only of ``[A-Za-z0-9_.-]`` is used as written. Any other token (a URL, a segment's ``url#seg-a-b``, a host
-    key with a port or an IPv6 bracket, a Unicode name, anything longer than 32 characters) is named by ``oo.`` and the first 32
-    hex digits of the SHA-256 of the WHOLE token: 128 bits, and 35 characters, so it can never equal an as-written credential.
+    A short token made only of ``[A-Za-z0-9_.-]`` is used as written, as before (a host key, which a ``socks5h`` proxy is told
+    anyway, or a fixed label such as ``dl-1``). Any other token (a URL, a segment's ``url#seg-a-b``, a host key with a port or
+    an IPv6 bracket, a Unicode name, anything longer than 32 characters) is named by ``oo.`` and the first 32 hex digits of an
+    HMAC-SHA256 of the WHOLE token under :data:`_ISOLATION_KEY`: 128 bits, and 35 characters, so it can never equal an
+    as-written credential. Keyed, because a plain digest of a URL would let whoever reads the SOCKS handshake (a pool member
+    off loopback, a Tor control-port client) confirm a guessed search term or item id by hashing the guess. So the same
+    token gets the same credential for the life of the process, and another one after a restart.
 
     Until queue item 50(a) every token was stripped to those characters and cut at 32, so tokens that agreed on their first 32
     kept characters shared one credential, and so one circuit: every Wikidata lookup (``https://www.wikidata.org/w/api.php?...``
     keeps ``httpswww.wikidata.orgwapi.phpact`` whatever it asks), every segment of one download and the three dump kinds of one
     wiki, against the claims of their callers that each rides its own. A name with no kept character read ``oo``, one shared
-    credential. The same token still gets the same credential, run after run.
+    credential.
     """
     if len(token) <= _ISOLATION_AS_WRITTEN_MAX and re.fullmatch(r"[A-Za-z0-9_.-]+", token):
         return token
-    return "oo." + hashlib.sha256(token.encode("utf-8", "surrogatepass")).hexdigest()[:32]
+    return "oo." + hmac.new(_ISOLATION_KEY, token.encode("utf-8", "surrogatepass"), hashlib.sha256).hexdigest()[:32]
 
 
 def _with_stream_isolation(proxy_url: str, token: str | None) -> str:
