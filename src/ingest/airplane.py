@@ -124,6 +124,16 @@ try:
 except ImportError:  # pragma: no cover - PySocks is an operator-installed extra
     _pysocks = None  # type: ignore[assignment]
 
+# R643: on Windows the stdlib's proactor loop (what ``loop="asyncio"`` gives there) connects through ``_overlapped.ConnectEx`` and sends
+# datagrams through ``WSASendTo``, never through ``socket.socket.connect``/``sendto``, and an IP-literal target skips ``getaddrinfo``:
+# its two entry points are patched with the same rules. The module exists only on Windows (it imports ``_overlapped``), where asyncio
+# itself imports it at start, so this import costs nothing there and is absent everywhere else.
+try:
+    from asyncio import windows_events as _windows_events  # type: ignore[attr-defined,unused-ignore]
+except ImportError:
+    _windows_events = None  # type: ignore[assignment,unused-ignore]
+_proactor_cls: Any = getattr(_windows_events, "IocpProactor", None)
+
 
 class AirplaneModeError(OSError):
     """A non-loopback connection was attempted while airplane mode is engaged.
@@ -207,6 +217,18 @@ _orig_connect_ex = socket.socket.connect_ex
 _orig_tunnel = http.client.HTTPConnection._tunnel  # type: ignore[attr-defined]
 _orig_putrequest = http.client.HTTPConnection.putrequest
 _orig_socks_connect = _pysocks.socksocket.connect if _pysocks is not None else None
+# R641: the name-taking calls that resolve in C (libc) and never reach the patched getaddrinfo, and the datagram sends that need no
+# connect. ``sendmsg`` does not exist on Windows; the PySocks one only with the extra installed.
+_orig_gethostbyname = socket.gethostbyname
+_orig_gethostbyname_ex = socket.gethostbyname_ex
+_orig_gethostbyaddr = socket.gethostbyaddr
+_orig_getnameinfo = socket.getnameinfo
+_orig_bind = socket.socket.bind
+_orig_sendto = socket.socket.sendto
+_orig_sendmsg = getattr(socket.socket, "sendmsg", None)
+_orig_socks_sendto = _pysocks.socksocket.sendto if _pysocks is not None else None
+_orig_proactor_connect: Any = _proactor_cls.connect if _proactor_cls is not None else None
+_orig_proactor_sendto: Any = _proactor_cls.sendto if _proactor_cls is not None else None
 #: The same real calls, never reassigned: a test swaps ``_orig_*`` for spies, and a call that has the stdlib's own function back in it
 #: is "the guard was removed" whether or not a spy is standing in ``_orig_*`` at that moment.
 _REAL_AT_IMPORT = (
@@ -216,8 +238,17 @@ _REAL_AT_IMPORT = (
     _orig_connect_ex,
     _orig_tunnel,
     _orig_putrequest,
-    # Last, because it is the one point that may be absent: the zip in removed_while_installed pairs these with _patch_points by position.
-    _orig_socks_connect,
+    _orig_gethostbyname,
+    _orig_gethostbyname_ex,
+    _orig_gethostbyaddr,
+    _orig_getnameinfo,
+    _orig_bind,
+    _orig_sendto,
+    # Last, because these are the points that may be absent: the zip in removed_while_installed pairs these with _patch_points by
+    # position, and both lists leave out an absent one the same way.
+    *((_orig_sendmsg,) if _orig_sendmsg is not None else ()),
+    *((_orig_socks_connect, _orig_socks_sendto) if _orig_socks_connect is not None else ()),
+    *((_orig_proactor_connect, _orig_proactor_sendto) if _orig_proactor_connect is not None else ()),
 )
 
 _installed = False
@@ -347,8 +378,8 @@ def _guarded_create_connection(address, *args, **kwargs):  # type: ignore[no-unt
 
 
 def _guarded_connect(self, address):  # type: ignore[no-untyped-def]
-    # AF_UNIX is local IPC (a filesystem path) — never network; always allow.
-    if getattr(self, "family", None) != getattr(socket, "AF_UNIX", object()):
+    # AF_UNIX is local IPC (a filesystem path) and AF_NETLINK this machine's own kernel (R645) — never network; always allow.
+    if not _is_local_family(self):
         address = _name_rule_for_connect(address, getattr(self, "family", None))
         _guard(_addr_host(address))
         check_connect_target(address)
@@ -357,12 +388,157 @@ def _guarded_connect(self, address):  # type: ignore[no-untyped-def]
 
 
 def _guarded_connect_ex(self, address):  # type: ignore[no-untyped-def]
-    if getattr(self, "family", None) != getattr(socket, "AF_UNIX", object()):
+    if not _is_local_family(self):
         address = _name_rule_for_connect(address, getattr(self, "family", None))
         _guard(_addr_host(address))
         check_connect_target(address)
     with native_call("connect"):
         return _orig_connect_ex(self, address)
+
+
+def _lookup_rule(host: object) -> None:
+    """R639's lookup rule for a call that resolves in C and never reaches the patched ``getaddrinfo`` (R641): while airplane mode is
+    engaged, only no name, exactly ``localhost`` and a loopback literal pass. A localhost alias is refused in R639's fixed words, and
+    anything else (a remote name, or a remote literal whose reverse lookup would ask DNS) meets ``_guard`` and its usual sentence. What
+    passes is safe to hand to a FORWARD lookup only: a reverse lookup of a loopback literal is still a PTR query, so the reverse wrappers
+    answer it themselves."""
+    if _is_local_host(host) and not _lookup_exempt(host):
+        _guard(_ALIAS_LOOKUP_TARGET)
+    _guard(host)
+
+
+def _engaged() -> bool:
+    return _airplane_armed and kill_switch_active()
+
+
+def _guarded_gethostbyname(hostname):  # type: ignore[no-untyped-def]
+    _lookup_rule(hostname)
+    if _engaged() and _is_localhost_name(hostname):
+        return "127.0.0.1"  # answered from the literal: libc would consult /etc/hosts, then DNS
+    with native_call("dns"):
+        return _orig_gethostbyname(hostname)
+
+
+def _guarded_gethostbyname_ex(hostname):  # type: ignore[no-untyped-def]
+    _lookup_rule(hostname)
+    if _engaged() and _is_localhost_name(hostname):
+        return ("localhost", [], ["127.0.0.1"])
+    with native_call("dns"):
+        return _orig_gethostbyname_ex(hostname)
+
+
+def _guarded_gethostbyaddr(ip_address):  # type: ignore[no-untyped-def]
+    # Also what socket.getfqdn() calls (it reads the module global), so getfqdn of a remote or unlisted name falls back to the name
+    # itself, as it does whenever the lookup fails, instead of asking DNS.
+    _lookup_rule(ip_address)
+    if _engaged():
+        if _is_localhost_name(ip_address):
+            ip_address = "127.0.0.1"
+        if _is_ip_literal(ip_address):
+            # Only loopback is left here, and a REVERSE lookup of a literal is a real PTR query (glibc reads /etc/hosts, then asks
+            # DNS: security read A measured it for 127.0.0.2 and ::1), so it is answered here without libc.
+            literal = ip_address.decode("ascii") if isinstance(ip_address, bytes) else ip_address
+            return ("localhost", [], [literal])
+    with native_call("dns"):
+        return _orig_gethostbyaddr(ip_address)
+
+
+def _guarded_getnameinfo(sockaddr, flags):  # type: ignore[no-untyped-def]
+    host = _addr_host(sockaddr)
+    numeric_only = socket.NI_NUMERICHOST | socket.NI_NUMERICSERV
+    if flags & numeric_only == numeric_only and _is_ip_literal(host):
+        # R645: both numeric flags on a literal ask libc to format the number it was handed, which makes no lookup of any kind (the
+        # forward step CPython takes is AI_NUMERICHOST), so any literal passes while engaged too.
+        with native_call("dns"):
+            return _orig_getnameinfo(sockaddr, flags)
+    _lookup_rule(host)
+    if _engaged():
+        if _is_localhost_name(host) and isinstance(sockaddr, (tuple, list)):
+            sockaddr = ("127.0.0.1", *tuple(sockaddr)[1:])
+        # Only a loopback sockaddr is left here. Its host name would be a PTR query and its service name an NSS lookup that can leave
+        # the machine, so libc is asked for the numeric forms only and the host is answered as localhost unless the caller asked for
+        # the number (security read A measured a DNS query for ("127.0.0.5", 0) and ("::1", 0, 0, 0)).
+        answer_as_localhost = not flags & socket.NI_NUMERICHOST
+        flags |= socket.NI_NUMERICHOST | socket.NI_NUMERICSERV
+        if answer_as_localhost:
+            # glibc refuses NI_NAMEREQD beside the forced NI_NUMERICHOST (EAI_NONAME); the name it requires is the "localhost" answered
+            # below. A caller who asked for the number AND a name keeps libc's own refusal.
+            flags &= ~socket.NI_NAMEREQD
+    else:
+        answer_as_localhost = False
+    with native_call("dns"):
+        name, port = _orig_getnameinfo(sockaddr, flags)
+    return ("localhost" if answer_as_localhost else name, port)
+
+
+#: The socket families whose addresses never name a host (R645): AF_UNIX is a filesystem path, AF_NETLINK talks to this machine's own
+#: kernel. AF_PACKET (raw frames onto the wire), vsock, CAN and Bluetooth stay refused while engaged.
+_LOCAL_FAMILIES = tuple(f for f in (getattr(socket, "AF_UNIX", None), getattr(socket, "AF_NETLINK", None)) if f is not None)
+
+
+def _is_local_family(sock: object) -> bool:
+    return getattr(sock, "family", None) in _LOCAL_FAMILIES
+
+
+def _is_ip_literal(host: object) -> bool:
+    if isinstance(host, bytes):
+        try:
+            host = host.decode("ascii")
+        except UnicodeDecodeError:
+            return False
+    if not isinstance(host, str):
+        return False
+    try:
+        ipaddress.ip_address(host.split("%", 1)[0] if ":" in host else host)
+    except ValueError:
+        return False
+    return True
+
+
+def _guarded_bind(self, address):  # type: ignore[no-untyped-def]
+    # A bind sends nothing, so any LITERAL address (or none) is left alone; only a host NAME, which C resolves through libc, meets the
+    # lookup rule, with exactly ``localhost`` swapped for the family's loopback literal like a connect (R641).
+    if _engaged() and not _is_local_family(self):
+        host = _addr_host(address)
+        if host not in (None, "", b"") and not _is_ip_literal(host):
+            address = _name_rule_for_connect(address, getattr(self, "family", None))
+            _lookup_rule(_addr_host(address))
+    return _orig_bind(self, address)
+
+
+def _datagram_rule(sock: object, address: object) -> object:
+    """A datagram to ``address`` needs no connect, so no other guard point sees it (R641): while airplane mode is engaged a host NAME
+    meets the connect name rule (alias refused, ``localhost`` swapped for the literal) and any non-loopback destination is refused."""
+    if not _engaged() or address is None or _is_local_family(sock):
+        return address
+    address = _name_rule_for_connect(address, getattr(sock, "family", None))
+    _guard(_addr_host(address))
+    return address
+
+
+def _guarded_sendto(self, data, *args):  # type: ignore[no-untyped-def]
+    # sendto(data, address) or sendto(data, flags, address): the address is always the last argument.
+    if args:
+        args = (*args[:-1], _datagram_rule(self, args[-1]))
+    return _orig_sendto(self, data, *args)
+
+
+def _guarded_sendmsg(self, buffers, *args):  # type: ignore[no-untyped-def]
+    # sendmsg(buffers[, ancdata[, flags[, address]]]), positional only like the C call: no address is a connected socket, which its
+    # connect already met.
+    if len(args) >= 3:
+        args = (*args[:2], _datagram_rule(self, args[2]), *args[3:])
+    return cast(Callable[..., Any], _orig_sendmsg)(self, buffers, *args)
+
+
+def _guarded_socks_sendto(self, data, *args):  # type: ignore[no-untyped-def]
+    """PySocks' UDP ``sendto`` wraps the datagram for the proxy's relay and sends it on a socket CONNECTED to that relay, so the real
+    destination, its last argument, is checked here: through a proxy any destination is the proxy's to reach (R641)."""
+    proxy = getattr(self, "proxy", None)
+    proxied = isinstance(proxy, tuple) and bool(proxy) and proxy[0] is not None
+    if proxied and args and _engaged():
+        _guard(_proxied_destination(_addr_host(args[-1])))
+    return cast(Callable[..., Any], _orig_socks_sendto)(self, data, *args)
 
 
 def _guarded_tunnel(self):  # type: ignore[no-untyped-def]
@@ -518,6 +694,23 @@ def _guarded_socks_connect(self, dest_pair, *args, **kwargs):  # type: ignore[no
     return cast(Callable[..., Any], _orig_socks_connect)(self, dest_pair, *args, **kwargs)
 
 
+def _guarded_proactor_connect(self, conn, address):  # type: ignore[no-untyped-def]
+    """R643: ``IocpProactor.connect`` (``ConnectEx`` for a stream, ``WSAConnect`` for a datagram socket) meets the same rule as
+    ``socket.socket.connect``: an alias refused, ``localhost`` swapped for the family's literal, any non-loopback target refused before
+    the overlapped call, and the SSRF connect check."""
+    if not _is_local_family(conn):
+        address = _name_rule_for_connect(address, getattr(conn, "family", None))
+        _guard(_addr_host(address))
+        check_connect_target(address)
+    return _orig_proactor_connect(self, conn, address)
+
+
+def _guarded_proactor_sendto(self, conn, buf, flags=0, addr=None):  # type: ignore[no-untyped-def]
+    """R643: ``IocpProactor.sendto`` (``WSASendTo``: ``loop.sock_sendto`` and an unconnected datagram transport) meets the datagram rule
+    of ``socket.socket.sendto``. No address is a connected socket, whose connect already met the rule."""
+    return _orig_proactor_sendto(self, conn, buf, flags, _datagram_rule(conn, addr))
+
+
 def _patch_points() -> list[tuple[Any, str, Any, Any]]:
     """Each patched call as (owner, attribute, our wrapper, the real call we saved)."""
     points: list[tuple[Any, str, Any, Any]] = [
@@ -527,9 +720,21 @@ def _patch_points() -> list[tuple[Any, str, Any, Any]]:
         (socket.socket, "connect_ex", _guarded_connect_ex, _orig_connect_ex),
         (http.client.HTTPConnection, "_tunnel", _guarded_tunnel, _orig_tunnel),
         (http.client.HTTPConnection, "putrequest", _guarded_putrequest, _orig_putrequest),
+        (socket, "gethostbyname", _guarded_gethostbyname, _orig_gethostbyname),
+        (socket, "gethostbyname_ex", _guarded_gethostbyname_ex, _orig_gethostbyname_ex),
+        (socket, "gethostbyaddr", _guarded_gethostbyaddr, _orig_gethostbyaddr),
+        (socket, "getnameinfo", _guarded_getnameinfo, _orig_getnameinfo),
+        (socket.socket, "bind", _guarded_bind, _orig_bind),
+        (socket.socket, "sendto", _guarded_sendto, _orig_sendto),
     ]
+    if _orig_sendmsg is not None:
+        points.append((socket.socket, "sendmsg", _guarded_sendmsg, _orig_sendmsg))
     if _orig_socks_connect is not None:
         points.append((_pysocks.socksocket, "connect", _guarded_socks_connect, _orig_socks_connect))
+        points.append((_pysocks.socksocket, "sendto", _guarded_socks_sendto, _orig_socks_sendto))
+    if _orig_proactor_connect is not None:
+        points.append((_proactor_cls, "connect", _guarded_proactor_connect, _orig_proactor_connect))
+        points.append((_proactor_cls, "sendto", _guarded_proactor_sendto, _orig_proactor_sendto))
     return points
 
 
@@ -543,9 +748,21 @@ def _standing_calls() -> list[Any]:
         getattr(socket.socket, "connect_ex", None),
         getattr(http.client.HTTPConnection, "_tunnel", None),
         getattr(http.client.HTTPConnection, "putrequest", None),
+        getattr(socket, "gethostbyname", None),
+        getattr(socket, "gethostbyname_ex", None),
+        getattr(socket, "gethostbyaddr", None),
+        getattr(socket, "getnameinfo", None),
+        getattr(socket.socket, "bind", None),
+        getattr(socket.socket, "sendto", None),
     ]
+    if _orig_sendmsg is not None:
+        calls.append(getattr(socket.socket, "sendmsg", None))
     if _orig_socks_connect is not None:
         calls.append(getattr(_pysocks.socksocket, "connect", None))
+        calls.append(getattr(_pysocks.socksocket, "sendto", None))
+    if _orig_proactor_connect is not None:
+        calls.append(getattr(_proactor_cls, "connect", None))
+        calls.append(getattr(_proactor_cls, "sendto", None))
     return calls
 
 
@@ -627,8 +844,20 @@ def uninstall_airplane_socket_guard() -> None:
     socket.socket.connect_ex = _orig_connect_ex  # type: ignore[assignment]
     http.client.HTTPConnection._tunnel = _orig_tunnel  # type: ignore[attr-defined]
     http.client.HTTPConnection.putrequest = _orig_putrequest  # type: ignore[method-assign]
+    socket.gethostbyname = _orig_gethostbyname
+    socket.gethostbyname_ex = _orig_gethostbyname_ex
+    socket.gethostbyaddr = _orig_gethostbyaddr
+    socket.getnameinfo = _orig_getnameinfo
+    socket.socket.bind = _orig_bind  # type: ignore[method-assign]
+    socket.socket.sendto = _orig_sendto  # type: ignore[method-assign]
+    if _orig_sendmsg is not None:
+        socket.socket.sendmsg = _orig_sendmsg  # type: ignore[method-assign]
     if _orig_socks_connect is not None:
         _pysocks.socksocket.connect = _orig_socks_connect  # type: ignore[union-attr]
+        _pysocks.socksocket.sendto = _orig_socks_sendto  # type: ignore[union-attr]
+    if _orig_proactor_connect is not None:
+        _proactor_cls.connect = _orig_proactor_connect
+        _proactor_cls.sendto = _orig_proactor_sendto
     _installed = False
 
 

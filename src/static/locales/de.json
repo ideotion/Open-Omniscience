@@ -4700,6 +4700,7 @@
   "Stopped": "Gestoppt",
   "Stopped after {files} zip files: {why}": "Abgebrochen nach {files} Zip-Dateien: {why}",
   "Stopped before the end of the files owed; the next update continues from here.": "Vor dem Ende der ausstehenden Dateien gestoppt; die nächste Aktualisierung macht hier weiter.",
+  "Stopped by airplane mode: only the messages fetched before it were imported.": "Durch den Flugmodus gestoppt: Nur die zuvor abgerufenen Nachrichten wurden importiert.",
   "Stopped by an error before its result could be measured": "Durch einen Fehler angehalten, bevor das Ergebnis gemessen werden konnte",
   "Stopped itself — memory stayed exhausted": "Selbst beendet — der Speicher blieb erschöpft",
   "Stopped qualifying": "Nicht mehr qualifiziert",

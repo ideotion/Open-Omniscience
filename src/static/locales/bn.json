@@ -4700,6 +4700,7 @@
   "Stopped": "থামানো হয়েছে",
   "Stopped after {files} zip files: {why}": "{files}টি zip ফাইলের পর থেমেছে: {why}",
   "Stopped before the end of the files owed; the next update continues from here.": "বাকি ফাইলগুলির শেষের আগেই থেমে গেছে; পরের হালনাগাদ এখান থেকে চলবে।",
+  "Stopped by airplane mode: only the messages fetched before it were imported.": "এয়ারপ্লেন মোড থামিয়েছে: শুধু তার আগে আনা বার্তাগুলো আমদানি করা হয়েছে।",
   "Stopped by an error before its result could be measured": "ফল পরিমাপ করার আগেই একটি ত্রুটিতে থেমে গেছে",
   "Stopped itself — memory stayed exhausted": "নিজে থেকে বন্ধ হয়েছে — মেমোরি শেষ ছিল",
   "Stopped qualifying": "আর যোগ্য নয়",

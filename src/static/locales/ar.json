@@ -4700,6 +4700,7 @@
   "Stopped": "متوقف",
   "Stopped after {files} zip files: {why}": "توقف بعد {files} ملف zip: {why}",
   "Stopped before the end of the files owed; the next update continues from here.": "توقّف قبل نهاية الملفات المطلوبة؛ يتابع التحديث التالي من هنا.",
+  "Stopped by airplane mode: only the messages fetched before it were imported.": "أوقفه وضع الطيران: لم تُستورد إلا الرسائل التي جُلبت قبله.",
   "Stopped by an error before its result could be measured": "أوقفه خطأ قبل أن يتسنّى قياس نتيجته",
   "Stopped itself — memory stayed exhausted": "توقف من تلقاء نفسه — بقيت الذاكرة مستنفدة",
   "Stopped qualifying": "لم تعد مؤهَّلة",

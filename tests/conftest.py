@@ -163,6 +163,7 @@ if _MISSING_EXTRAS:
 
 
 import pytest  # noqa: E402 - must follow the OO_DATA_DIR/plaintext env setup above
+
 # Bind the app's engine to the suite's directory NOW, before any test body can move ``OO_DATA_DIR``: ``src.database.session`` binds at its
 # first import and never again, and a full run gets this by accident (collection imports it at module level) while a selection does not.
 # After every env default the session reads, before the first fixture. ``_engine_binds_to_the_suite_directory`` below is the net.
@@ -629,7 +630,23 @@ def _no_settings_write_is_entered_holding_the_single_writer_gate():
     )
 
 
-_AIRPLANE_ORIGINALS = ("_orig_getaddrinfo", "_orig_create_connection", "_orig_connect", "_orig_connect_ex", "_orig_tunnel", "_orig_putrequest")
+_AIRPLANE_ORIGINALS = (
+    "_orig_getaddrinfo",
+    "_orig_create_connection",
+    "_orig_connect",
+    "_orig_connect_ex",
+    "_orig_tunnel",
+    "_orig_putrequest",
+    "_orig_gethostbyname",
+    "_orig_gethostbyname_ex",
+    "_orig_gethostbyaddr",
+    "_orig_getnameinfo",
+    "_orig_bind",
+    "_orig_sendto",
+    "_orig_sendmsg",
+    "_orig_proactor_connect",
+    "_orig_proactor_sendto",
+)
 
 
 def _process_wide_network_calls() -> dict[str, object]:
@@ -647,6 +664,13 @@ def _process_wide_network_calls() -> dict[str, object]:
         "socket.socket.connect_ex": socket.socket.connect_ex,
         "http.client.HTTPConnection._tunnel": http.client.HTTPConnection._tunnel,  # type: ignore[attr-defined]
         "http.client.HTTPConnection.putrequest": http.client.HTTPConnection.putrequest,
+        "socket.gethostbyname": socket.gethostbyname,
+        "socket.gethostbyname_ex": socket.gethostbyname_ex,
+        "socket.gethostbyaddr": socket.gethostbyaddr,
+        "socket.getnameinfo": socket.getnameinfo,
+        "socket.socket.bind": socket.socket.bind,
+        "socket.socket.sendto": socket.socket.sendto,
+        "socket.socket.sendmsg": getattr(socket.socket, "sendmsg", None),
     }
     # Imported here, at the first test's setup and so before any test has swapped a call: the module captures the stdlib's functions at
     # import, and the first fetch of a process used to be the one to import it, inside a test's ``monkeypatch`` window, which made the
@@ -655,6 +679,11 @@ def _process_wide_network_calls() -> dict[str, object]:
 
     for attr in _AIRPLANE_ORIGINALS:
         calls["airplane." + attr] = getattr(airplane, attr)
+    # R643: Windows only, where the stdlib proactor's two entry points are patch points too.
+    proactor = getattr(sys.modules.get("asyncio.windows_events"), "IocpProactor", None)
+    if proactor is not None:
+        calls["asyncio.windows_events.IocpProactor.connect"] = proactor.connect
+        calls["asyncio.windows_events.IocpProactor.sendto"] = proactor.sendto
     return calls
 
 
@@ -665,18 +694,23 @@ def _put_network_call_back(name: str, value: object) -> None:
 
     if name.startswith("airplane."):
         setattr(sys.modules["src.ingest.airplane"], name.removeprefix("airplane."), value)
-    elif name == "socket.getaddrinfo":
-        socket.getaddrinfo = value  # type: ignore[assignment]
-    elif name == "socket.create_connection":
-        socket.create_connection = value  # type: ignore[assignment]
-    elif name == "socket.socket.connect":
-        socket.socket.connect = value  # type: ignore[method-assign,assignment]
-    elif name == "socket.socket.connect_ex":
-        socket.socket.connect_ex = value  # type: ignore[method-assign,assignment]
-    elif name == "http.client.HTTPConnection.putrequest":
-        http.client.HTTPConnection.putrequest = value  # type: ignore[method-assign,assignment]
-    else:
-        http.client.HTTPConnection._tunnel = value  # type: ignore[attr-defined,method-assign,assignment]
+        return
+    # Every other name is "<owner>.<attribute>" from _process_wide_network_calls. An unknown owner is a KeyError, never a write to some
+    # other call (it used to fall through to HTTPConnection._tunnel, which a later test then found replaced by gethostbyname).
+    owners: dict[str, object] = {
+        "socket": socket,
+        "socket.socket": socket.socket,
+        "http.client.HTTPConnection": http.client.HTTPConnection,
+    }
+    proactor = getattr(sys.modules.get("asyncio.windows_events"), "IocpProactor", None)
+    if proactor is not None:
+        owners["asyncio.windows_events.IocpProactor"] = proactor
+    owner, attr = name.rsplit(".", 1)
+    if value is None:  # an optional call this platform lacks (socket.socket.sendmsg on Windows): take off what a test added
+        if attr in vars(owners[owner]):
+            delattr(owners[owner], attr)
+        return
+    setattr(owners[owner], attr, value)
 
 
 def _owner_name(owner: object) -> str:
