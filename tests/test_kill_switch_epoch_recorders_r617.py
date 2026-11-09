@@ -50,7 +50,13 @@ from src.safety.fetcher import NetworkBlocked, make_fetcher
 
 #: The raw requests error of a Stop on the LAST request through an HTTP proxy: not our sentence at the start, so only the switch or the
 #: epoch can say it was a Stop.
-RAW_STOP = "('Connection aborted.', AirplaneModeError('airplane mode is engaged: refusing a network connection to a.example:443'))"
+#: (R620 reads the CONNECT shape, "('Connection aborted.', AirplaneModeError(...))", by its words, so the raw Stop here is the other
+#: proxy shape: a plain http request line refused at a loopback proxy (R619), which only the instance's type, the switch or the epoch
+#: can read; a text alone carries no instance.)
+RAW_STOP = (
+    "HTTPConnectionPool(host='127.0.0.1', port=8118): Max retries exceeded with url: http://a.example/ (Caused by "
+    "ProxyError('Unable to connect to proxy', AirplaneModeError('airplane mode is engaged: refusing a network connection to a.example:80')))"
+)
 RESET = "('Connection aborted.', ConnectionResetError(104, 'Connection reset by peer'))"
 _PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 

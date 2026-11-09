@@ -47,7 +47,9 @@ function makePage() {
   const mk = (id, extra) => (els[id] = Object.assign({id, hidden: true, textContent: "", value: ""}, extra));
   mk("parts-bar"); mk("parts-status"); mk("parts-next"); mk("parts-rest"); mk("parts-from-wrap"); mk("parts-from-go");
   mk("parts-from", {value: "1"}); mk("all-diag-status");
-  mk("all-diag-again"); mk("diag-thorough", {checked: false});
+  // the Thorough box binds its estimate line once when the panel opens (R459): a listener is recorded, never run here
+  mk("all-diag-again"); mk("diag-thorough", {checked: false, listeners: [], addEventListener(ev, fn) { this.listeners.push(ev); }});
+  mk("diag-thorough-note");
   const clicked = [];
   const document = {
     body: {appendChild() {}},
@@ -67,7 +69,8 @@ function load(page, opts) {
     extract("_partsStatus"), extract("_partsRender"), extract("_partsOffer"), extract("_partsTyped"),
     extract("_partsSave"), extract("partsSaveNext"), extract("partsSaveRest"), extract("partsSaveFrom"),
     extract("_partsReady"), extract("_partsShow"), extract("downloadKeywordParts"), extract("downloadDiagnosticsVolumes"),
-    extract("runAllDiagnostics"), extract("_paintDiagAgain"), extract("_repaintDiagAgain"), extract("diagnosticsPanelOpened"),
+    extract("runAllDiagnostics"), extract("_paintDiagAgain"), extract("_repaintDiagAgain"),
+    "let _thoroughNoteBound = false;", extract("_thoroughNoteText"), extract("paintThoroughNote"), extract("diagnosticsPanelOpened"),
     "return {_paintDiagAgain, _repaintDiagAgain, diagnosticsPanelOpened, _partsReady, _partsFiles, _partsWindow, _partsNextLabel, _partsOffer, _partsSave, _partsShow, partsSaveNext," +
     " partsSaveRest, partsSaveFrom, downloadKeywordParts, downloadDiagnosticsVolumes, runAllDiagnostics," +
     " state: () => _partsSet};",
@@ -1183,6 +1186,8 @@ const READY_SENTENCE = "The Diagnostics file is ready. Use “Save the last Diag
     }});
     await api.diagnosticsPanelOpened();
     assert.strictEqual(page.els["diag-thorough"].checked, false, "the box is empty again");
+    assert.deepStrictEqual(page.els["diag-thorough"].listeners, ["change"], "the estimate line is bound to the box once");
+    assert.strictEqual(page.els["diag-thorough-note"].hidden, true, "an empty box shows no estimate and asks for none");
     assert.strictEqual(page.els["all-diag-again"].hidden, false);
     const pg = makePage(); pg.els["diag-thorough"].checked = true; pg.els["all-diag-again"].hidden = false;
     const a2 = load(pg, {api: async () => { throw new Error("down"); }});

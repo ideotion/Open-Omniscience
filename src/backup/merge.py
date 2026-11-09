@@ -2520,6 +2520,12 @@ _MERGE_NOT_CARRIED: dict[str, str] = {
     # keyword vocabulary by its own job; a carried copy would point at another corpus'
     # keyword ids. The next build after a restore covers the merged vocabulary.
     "spell_deletes": "the did-you-mean table, derived from the keywords and rebuilt by its job",
+    # R625: the per-day keyword counts trending reads, derived WHOLE from the mentions by their own job, and
+    # their stale-day marks and state. A carried copy would describe another corpus's mentions; the restore
+    # bumps the corpus epoch, which rebuilds them over the merged corpus.
+    "keyword_day_counts": "the per-day keyword counts, derived from the mentions and rebuilt by their job",
+    "keyword_day_dirty": "the days of the per-day keyword counts to bring up to date, per machine",
+    "keyword_day_state": "the build state of the per-day keyword counts, per machine",
     # `places` and `wikidata_items` LEFT THIS LIST on 2026-09-30 (R71 b, Q823 = a). They were
     # held back while the ODbL question was open; the maintainer answered it, and a restore
     # that dropped them would have cost a Wikidata re-read at one request per 10 seconds and

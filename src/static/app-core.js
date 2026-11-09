@@ -2428,8 +2428,8 @@
       // below apply to it.
       // The article list's index build and the repair of a damaged library file draw their detail the same way: the
       // "saving waits" caveat while they run, the numbers of the repair, and the keyed reason a refusal carries (the
-      // row's own error is English only).
-      if (j.kind === "wiki-walk" || j.kind === "article-indexes" || j.kind === "repair-database") {
+      // row's own error is English only). The daily keyword counts' build (R625) draws its "day N of M" line.
+      if (j.kind === "wiki-walk" || j.kind === "article-indexes" || j.kind === "repair-database" || j.kind === "keyword-day-counts") {
         const line = j.detail ? _framedText(j.detail, j.detail_i18n, j.detail_vars, t) : "";
         return line ? `<div class="muted" style="font-size:11px">${esc(line)}</div>` : "";
       }

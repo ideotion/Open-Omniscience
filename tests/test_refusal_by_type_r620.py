@@ -4,22 +4,26 @@ The fetcher reads the socket guard's refusal by TYPE, never by words, and report
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-``EthicalFetcher`` walks the live ``requests`` exception for an ``airplane.AirplaneModeError`` instance (``__cause__``,
-``__context__``, the exceptions among ``args``, urllib3's ``MaxRetryError.reason``; bounded, never through text) and, when it finds
-one, raises ``FetchFailed(KILL_SWITCH_REFUSAL)`` at once: no retry and no host's text. The class has one constructor,
-``airplane._guard``, which raises only while the switch is engaged, so a host cannot produce an instance; it can only write words.
+``EthicalFetcher`` walks the live ``requests`` exception for an ``airplane.AirplaneModeError`` instance (``__cause__``, the
+exceptions among ``args``, urllib3's ``MaxRetryError.reason``; bounded, never through text) and, when it finds one, raises
+``FetchFailed(KILL_SWITCH_REFUSAL)`` at once: no retry and no host's text. The class has one constructor, ``airplane._guard``, which
+raises only while the switch is engaged, so a host cannot produce an instance; it can only write words. The walk does NOT follow
+``__context__`` (the independent read's S1): that link is whatever the CALLER was handling when the request raised, so a fetch made
+inside the handler of a Stopped fetch or of a bare guard refusal, with the switch clear, stays its own host's failure.
 
 The shapes come from the REAL guard through REAL requests and urllib3 and a proxy on 127.0.0.1: directly (R616's), at a loopback
-proxy's CONNECT (R620's, in tests/test_refusal_r620.py), and a plain ``http://`` request line to a loopback proxy (R619's, PR #1855,
-whose ``putrequest`` guard is stood in for here by the real ``_guard`` handed R619's own marker; the shape was measured at #1855's head
-b4d743668). A proxy that answers in the guard's words, a class that is only named like the guard's, and an ordinary ``OSError``
-stay request errors. The credentials are fake (``alice:hunter2``); nothing leaves the machine.
+proxy's CONNECT (R620's, in tests/test_refusal_r620.py), and a plain ``http://`` request line to a loopback proxy (R619's, PR #1855:
+driven through R619's REAL ``putrequest`` guard, and skipped on a branch whose socket guard has no such patch point; the shape is
+also built from the real classes below, measured at #1855's head b4d743668). A proxy that answers in the guard's words, a class that
+is only named like the guard's, and an ordinary ``OSError`` stay request errors. The credentials are fake (``alice:hunter2``);
+nothing leaves the machine.
 """
 
 from __future__ import annotations
 
 import http.client
 import os
+import socket
 
 import pytest
 import requests
@@ -48,8 +52,6 @@ from src.ingest.pipeline import _failure_reason
 from src.monitoring.secret_scrub import record_text
 from tests.test_refusal_r620 import _GUARD_WORDS, _PROXY_VARS, _loopback_proxy
 
-#: R619's name for a destination written in the request line (src/ingest/airplane.py ``_PROXIED_TARGET`` at #1855's head b4d743668).
-_PROXIED_TARGET = "a destination named in a request line (sent through a proxy)"
 _URL = "https://alice:hunter2@a.example/story"
 
 
@@ -114,17 +116,13 @@ def _readers(text: str) -> tuple:
     return classify_fetch_failure(text), _failure_reason(text), text.startswith(KILL_SWITCH_REFUSAL_HEAD)
 
 
-def _r619_putrequest(monkeypatch) -> None:
-    """R619's ``putrequest`` guard for the target this test sends (absolute-form, through a proxy): the REAL ``_guard`` handed R619's
-    marker, before the request line is buffered. R619's own reading of which targets name a destination is its PR's to test."""
-    real = http.client.HTTPConnection.putrequest
-
-    def guarded(self, method, url, *args, **kwargs):  # type: ignore[no-untyped-def]
-        if not (isinstance(url, str) and url.startswith("/") and not url.startswith("//")):
-            airplane._guard(_PROXIED_TARGET)
-        return real(self, method, url, *args, **kwargs)
-
-    monkeypatch.setattr(http.client.HTTPConnection, "putrequest", guarded)
+def _r619_guard() -> object | None:
+    """R619's ``putrequest`` wrapper when the socket guard patches that call on this branch (PR #1855), else ``None``: read from the
+    guard's own list of patch points, so the test below drives the real one wherever it exists and never a stand-in."""
+    for owner, attr, wrapper, *_ in airplane._patch_points():
+        if owner is http.client.HTTPConnection and attr == "putrequest":
+            return wrapper
+    return None
 
 
 def _real_refusal() -> AirplaneModeError:
@@ -142,10 +140,15 @@ def _real_refusal() -> AirplaneModeError:
 # --- the real shapes, through the fetcher ------------------------------------------------------------------------------------------------
 
 
-def test_a_plain_http_request_line_refused_at_a_loopback_proxy_is_the_whole_refusal_sentence(tmp_path, monkeypatch):
-    """R619's shape. No NewConnectionError and no "Connection aborted.": urllib3 wraps the refusal as a proxy failure (it came before the
-    connection to the proxy was made) inside MaxRetryError, and requests raises its ProxyError. No reader's words read it; its type does."""
-    _r619_putrequest(monkeypatch)
+def test_a_plain_http_request_line_refused_at_a_loopback_proxy_is_the_whole_refusal_sentence(tmp_path):
+    """R619's shape, through R619's REAL ``putrequest`` guard. No NewConnectionError and no "Connection aborted.": urllib3 wraps the
+    refusal as a proxy failure (it came before the connection to the proxy was made) inside MaxRetryError, and requests raises its
+    ProxyError. No reader's words read it; its type does. Until #1855 lands the guard has no ``putrequest`` point and this skips; the
+    shape test built from the real classes (below) holds the walk to it meanwhile."""
+    wrapper = _r619_guard()
+    if wrapper is None:
+        pytest.skip("R619's putrequest guard (PR #1855) is not among airplane._patch_points() on this branch")
+    assert http.client.HTTPConnection.putrequest is wrapper, "premise: the armed guard has R619's wrapper in place"
     url = "http://alice:hunter2@a.example/story"
     with _loopback_proxy() as (proxy, seen):
         text, raised, pages, _ = _fetch(tmp_path, url, proxy=proxy)
@@ -188,6 +191,88 @@ def test_an_ordinary_connection_failure_stays_a_request_error_and_is_retried(tmp
     assert not any(ingest._carries_airplane_refusal(e) for e in raised)
     assert text.startswith(f"request error for https://{USERINFO_MASK}a.example/story: "), text
     assert "hunter2" not in text and not is_kill_switch_refusal(text) and classify_fetch_failure(text) == "connect", text
+
+
+def _closed_port() -> int:
+    """A loopback port nothing listens on: a connect to it is a real ECONNREFUSED, a host's failure and nobody's switch."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _reaches(exc: BaseException, target: BaseException) -> bool:
+    """Premise only: whether ``target`` stands anywhere in ``exc``'s chain when ``__context__`` IS followed (bounded, by identity)."""
+    todo: list[object] = [exc]
+    seen: set[int] = set()
+    while todo and len(seen) < 256:
+        node = todo.pop()
+        if not isinstance(node, BaseException) or id(node) in seen:
+            continue
+        if node is target:
+            return True
+        seen.add(id(node))
+        todo += [node.__cause__, node.__context__, *node.args, getattr(node, "reason", None)]
+    return False
+
+
+def _host_failure_inside_a_handler(tmp_path, monkeypatch, held: BaseException) -> None:
+    """Called from inside an ``except`` that holds ``held``: a fetch of a closed loopback port with the switch CLEAR, retried once. The
+    connect-time SSRF guard is stood down (``OO_SSRF_CONNECT_GUARD=0``) and the pre-fetch check stubbed in ``_fetch``, because both
+    exist to refuse 127.0.0.1, which stands in here for a host that refuses the connection."""
+    monkeypatch.setenv("OO_SSRF_CONNECT_GUARD", "0")
+    url = f"http://alice:hunter2@127.0.0.1:{_closed_port()}/story"
+    text, raised, pages, sleeps = _fetch(tmp_path, url, proxy=None, engage=0, max_retries=1)
+    assert raised and all(_reaches(e, held) for e in raised), "premise: the handled exception is in each request error's __context__"
+    assert pages == 2 and sleeps == 1, (pages, sleeps)
+    assert not any(ingest._carries_airplane_refusal(e) for e in raised)
+    assert text.startswith(f"request error for {failure_url(url)}: HTTPConnectionPool(host='127.0.0.1', "), text
+    assert "hunter2" not in text and not is_kill_switch_refusal(text) and classify_fetch_failure(text) == "connect", text
+    assert _readers(text) == ("connect", "connect", False), (text, _readers(text))
+
+
+def test_a_fetch_inside_the_handler_of_a_stopped_fetch_stays_its_hosts_failure(tmp_path, monkeypatch):
+    """S1, the probe made a test: a fallback fetch run in the ``except FetchFailed`` of a Stopped fetch. The Stop's sentence is raised
+    ``from None``, which hides the requests error from a traceback but leaves it as ``__context__``, so that error, the refusal inside
+    it, sat one ``__context__`` link behind the NEW request's own error."""
+    stopped = EthicalFetcher(min_interval_s=0, retry_backoff_s=0, max_retries=0, robots_cache_path=tmp_path / "stopped.json")
+    stopped._guard_target = lambda *_a, **_k: None  # type: ignore[method-assign]
+    real_get = stopped.session.get
+
+    def get(target, **kw):
+        if target.endswith("/robots.txt"):
+            return _Robots(target)
+        activate_kill_switch()
+        try:
+            return real_get(target, **kw)
+        finally:
+            clear_kill_switch()
+
+    stopped.session.get = get  # type: ignore[method-assign,assignment]
+    try:
+        stopped.fetch(_URL, require_html=False)
+    except FetchFailed as first:
+        assert record_text(first, typed=False) == KILL_SWITCH_REFUSAL, "premise: the first fetch was Stopped"
+        stop = first.__context__
+        assert first.__cause__ is None and first.__suppress_context__ and stop is not None and ingest._carries_airplane_refusal(stop)
+        _host_failure_inside_a_handler(tmp_path, monkeypatch, first)
+    else:
+        raise AssertionError("premise: the first fetch was Stopped")
+
+
+def test_a_fetch_inside_the_handler_of_a_bare_guard_refusal_stays_its_hosts_failure(tmp_path, monkeypatch):
+    """S1, the probe's second case: the guard refused some other call (a lookup), the switch was cleared, and a fetch runs in that
+    ``except OSError``. The refusal is the ``__context__`` of the first error the new request raises."""
+    activate_kill_switch()
+    try:
+        socket.getaddrinfo("b.example", 80)
+    except OSError as refused:
+        clear_kill_switch()
+        assert type(refused) is AirplaneModeError, "premise: the armed guard refused the lookup"
+        _host_failure_inside_a_handler(tmp_path, monkeypatch, refused)
+    else:
+        raise AssertionError("premise: the armed guard refuses a remote lookup while the switch is engaged")
+    finally:
+        clear_kill_switch()
 
 
 @pytest.mark.parametrize(
@@ -244,10 +329,20 @@ def test_r619s_shape_built_from_the_real_classes_is_found_through_args_and_reaso
     assert record_text(caught.value, typed=False) == KILL_SWITCH_REFUSAL and calls == [_URL]
 
 
-@pytest.mark.parametrize("link", ["__cause__", "__context__"])
-def test_the_refusal_is_found_through_each_chain_link_alone(link):
-    assert ingest._carries_airplane_refusal(_linked(link, _real_refusal()))
-    assert not ingest._carries_airplane_refusal(_linked(link, OSError(f"{_GUARD_WORDS} to 'x'")))
+def test_the_refusal_is_found_through_cause_alone():
+    assert ingest._carries_airplane_refusal(_linked("__cause__", _real_refusal()))
+    assert not ingest._carries_airplane_refusal(_linked("__cause__", OSError(f"{_GUARD_WORDS} to 'x'")))
+
+
+def test_the_context_link_is_not_followed():
+    """S1: ``__context__`` is the exception the caller was handling when this one was raised, which can come from outside the request,
+    so a real refusal behind it, at the top or deeper, is not this request's."""
+    assert not ingest._carries_airplane_refusal(_linked("__context__", _real_refusal()))
+    inner = OSError("[Errno 111] Connection refused")
+    inner.__context__ = _real_refusal()
+    assert not ingest._carries_airplane_refusal(requests.exceptions.ConnectionError(ProtocolError("Connection aborted.", inner)))
+    inner.__cause__ = inner.__context__
+    assert ingest._carries_airplane_refusal(requests.exceptions.ConnectionError(ProtocolError("Connection aborted.", inner)))
 
 
 def test_the_walk_stops_at_its_depth_and_ends_on_a_loop():
@@ -260,7 +355,7 @@ def test_the_walk_stops_at_its_depth_and_ends_on_a_loop():
     assert ingest._carries_airplane_refusal(nested(ingest._REFUSAL_WALK_DEPTH))
     assert not ingest._carries_airplane_refusal(nested(ingest._REFUSAL_WALK_DEPTH + 1))
     a, b = OSError("a"), OSError("b")
-    a.__context__, b.__context__ = b, a
+    a.__cause__, b.__cause__ = b, a
     assert not ingest._carries_airplane_refusal(requests.exceptions.ConnectionError(a))
 
 
