@@ -113,3 +113,29 @@ def test_env_py_fileconfig_never_disables_pre_existing_loggers(tmp_path):
         "listed -- pass disable_existing_loggers=False to fileConfig() in "
         "migrations/env.py"
     )
+
+
+def test_the_day_counts_migration_round_trips_from_a7c3e5f19b20(tmp_path):
+    """c4e8a2d6f1b9 (R625) chains on a7c3e5f19b20 and goes back down cleanly: the triggers and the
+    three tables leave with it, and a second upgrade puts them back."""
+    db = tmp_path / "open_omniscience.db"
+
+    def objects() -> set[str]:
+        eng = create_engine(f"sqlite:///{db}")
+        with eng.connect() as c:
+            rows = c.exec_driver_sql("SELECT name FROM sqlite_master WHERE type IN ('table','trigger')").fetchall()
+        eng.dispose()
+        return {r[0] for r in rows if r[0].startswith(("keyword_day_", "trg_keyword_day_", "keyword_mentions_day"))}
+
+    for step in (["upgrade", "a7c3e5f19b20"], ["upgrade", "c4e8a2d6f1b9"]):
+        res = _alembic(step, tmp_path)
+        assert res.returncode == 0, res.stdout + res.stderr
+    up = objects()
+    assert {"keyword_day_counts", "keyword_day_dirty", "keyword_day_state"} <= up
+    assert {"trg_keyword_day_dirty_ad", "trg_keyword_day_dirty_au"} <= up  # both triggers, after the upgrade
+    res = _alembic(["downgrade", "a7c3e5f19b20"], tmp_path)
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert objects() == set()
+    res = _alembic(["upgrade", "head"], tmp_path)
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert objects() == up

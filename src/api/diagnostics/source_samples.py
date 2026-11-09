@@ -11,8 +11,12 @@ function of ``(seed, source id)``, so a second walk with the same seed gives the
 
 READ-ONLY, no network. Every mapped column of the article and of its source is exported (binary
 columns are described by size + SHA-256, not inlined: the full text is already in ``content``).
-Neither table holds a credential, a token or the passphrase; the check below refuses any column
-whose name looks like one, so a future column cannot slip in unnoticed. A source with no stored
+Neither table holds a token or the passphrase; the check below refuses any column whose name looks
+like one, so a future column cannot slip in unnoticed. A source's feed address CAN hold a user name
+and password (R637), and a key stored before R628 keeps them (R634): the two columns that carry the
+address are written as the app shows it (``_SHOWN_SOURCE_COLUMNS``, the independent read's M1 on
+R637), and a test pins the source's column list, so a new column is a decision, never a default.
+The article's columns are written as stored (its ``url`` as given, R621). A source with no stored
 article is not skipped: it gets a manifest row saying so.
 """
 
@@ -24,6 +28,7 @@ import json
 import random
 import re
 import zipfile
+from collections.abc import Callable
 from datetime import date, datetime
 from typing import Any
 
@@ -56,14 +61,26 @@ def _plain(value: Any) -> Any:
     return value
 
 
-def _row_dict(obj: Any) -> dict[str, Any]:
+def _row_dict(obj: Any, shown: dict[str, Callable[[Any], Any]] | None = None) -> dict[str, Any]:
+    """Every mapped column of ``obj`` but a secret-looking one, each named in ``shown`` written through its function."""
     out: dict[str, Any] = {}
     state = inspect(obj)   # the instance state: its attrs read each loaded column without a dynamic getattr
     for prop in inspect(type(obj)).column_attrs:
         if _SECRETISH.search(prop.key):
             continue
-        out[prop.key] = _plain(state.attrs[prop.key].value)
+        value = _plain(state.attrs[prop.key].value)
+        out[prop.key] = shown[prop.key](value) if shown and prop.key in shown else value
     return out
+
+
+def _shown_source_columns() -> dict[str, Callable[[Any], Any]]:
+    """A source's columns that carry its feed address, each with what writes it as the app shows it (the independent read's M1 on
+    R637): the address with its userinfo as ``***@`` (``shown_url``, the answers' form) and a kept pre-R628 key the same way
+    (``shown_feed_key``). Imported here, on a request, as the rest of this slice's work is."""
+    from src.database.feed_key import shown_feed_key
+    from src.ingest.fetch_verdict import shown_url
+
+    return {"rss_url": shown_url, "feed_key": shown_feed_key}
 
 
 def _pick(db: Session, source_id: int, seed: int) -> tuple[Article | None, int]:
@@ -88,6 +105,7 @@ def build_sample_zip(db: Session, *, after: int, seed: int, cap: int) -> tuple[b
     buf = io.BytesIO()
     manifest: list[dict[str, Any]] = []
     last = None
+    shown = _shown_source_columns()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for sid in ids:
             src = db.get(Source, sid)
@@ -107,7 +125,7 @@ def build_sample_zip(db: Session, *, after: int, seed: int, cap: int) -> tuple[b
                     a["content"] = text[:_TEXT_MAX_CHARS]
                     a["content_truncated_from_chars"] = len(text)
                     row["text_truncated"] = True
-                doc = {"source": _row_dict(src), "article": a, "articles_in_source": n,
+                doc = {"source": _row_dict(src, shown), "article": a, "articles_in_source": n,
                        "pick": f"random.Random('{seed}:{sid}').randrange({n}) over articles ordered by id",
                        "raw_html": "not stored by this app (only extracted text is kept)"}
                 data = json.dumps(doc, ensure_ascii=False, indent=1, default=str).encode("utf-8")

@@ -233,3 +233,12 @@ def test_a_wrapped_mldsa_key_with_no_passphrase_held_raises_instead_of_signing_w
         assert "no passphrase" in str(exc) and "earlier-pass" not in str(exc)
     else:  # pragma: no cover - the defect: the wrapped blob was split into a garbage key pair
         raise AssertionError("a wrapped ML-DSA key with no passphrase held must not load")
+
+
+@pytest.mark.skipif(not signing.PQC_AVAILABLE, reason="pqcrypto/ML-DSA not installed")
+def test_the_restore_reads_a_plaintext_mldsa_key_by_the_length_the_library_writes():
+    """The restore on an install WITHOUT the library tells a plaintext ML-DSA-65 key file from a wrapped one by a
+    fixed length (src/backup/merge.py). This lane has the library, so the constant is checked against it here."""
+    from src.backup import merge
+
+    assert signing._mldsa_plain_len() == merge._MLDSA65_PLAIN_LEN

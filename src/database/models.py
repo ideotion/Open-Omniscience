@@ -543,10 +543,47 @@ def _derive_source_feed_key(mapper, connection, target: "Source") -> None:
     importers, the seeder, the catalogue corrections, the operator's edit and the collectors all assign
     ``rss_url`` and none of them may be able to forget the other half of the identity. A raw
     ``INSERT``/``UPDATE`` that bypasses the ORM must call ``src.database.feed_key.feed_key`` itself
-    (the restore-merge does, as a SQLite function)."""
+    (the restore-merge does, as a SQLite function).
+
+    R634: an UPDATE of a row that still holds its own feed's pre-R628 key keeps that key when re-deriving
+    it would meet another row's (:func:`source_key_to_write`); the column is then left as it is, so the
+    statement neither changes it nor carries it."""
+    from sqlalchemy import inspect
+
     from src.database.feed_key import feed_key
 
+    if inspect(target).has_identity and target.feed_key:  # an UPDATE of a stored row; an INSERT always derives
+        key = source_key_to_write(connection, target.id, target.domain, target.feed_key, target.rss_url)
+        if key != target.feed_key:
+            target.feed_key = key
+        return
     target.feed_key = feed_key(target.rss_url)
+
+
+def source_key_to_write(conn: Any, row_id: int, domain: str | None, stored_key: str | None, rss_url: str | None) -> str:
+    """The ``feed_key`` a STORED source row is written with (R634): ``feed_key(rss_url)``, or its stored key when that is its own
+    feed's pre-R628 key and another row of ``domain`` holds today's key or would take it (``feed_key.key_to_write``). The ONE
+    reading for every writer that re-derives a key of an existing row: the ``before_update`` event above, the source-topics bulk
+    UPDATE and the curated stamp's heal. ``conn`` is a Connection or a Session.
+
+    Cheap by construction: no query unless the stored key passes ``keeps_a_stored_key`` (it holds an ``@`` and is the pre-R628 key
+    of the row's own URL), and then ONE query on the domain's index: the domain's other rows (a twin can store today's key, or a
+    stale key under a URL that derives it), compared in Python. Its parameters are the domain and the id, never a key or a URL.
+
+    It reads the DATABASE, not the flush (the R628 reads, Steward 3's item 3 and nit b): a row the same flush inserts, or another
+    row's URL edit in the same flush, is not seen, so ONE flush that heals a row and also inserts the feed, or edits another row
+    onto it, raises UNIQUE and is rolled back, where the same writes in two flushes succeed. No current writer does that: an add
+    finds the row first (``source_for_feed``), an edit onto a held feed is refused first (``PUT /api/sources/{id}``, 409), and
+    the CSV import writes one record per savepoint."""
+    from sqlalchemy import select
+
+    from src.database.feed_key import feed_key, keeps_a_stored_key, key_to_write
+
+    if not keeps_a_stored_key(stored_key, rss_url):
+        return feed_key(rss_url)
+    t = cast(Table, Source.__table__)
+    mates = conn.execute(select(t.c.feed_key, t.c.rss_url).where(t.c.domain == domain, t.c.id != row_id)).all()
+    return key_to_write(stored_key, rss_url, [(m[0], m[1]) for m in mates])
 
 
 def _outlet_id_recompute(domain_ref: str) -> str:
@@ -1623,6 +1660,14 @@ class ArticleLink(Base):
         Index("idx_article_link_dedup", "article_id", "url", "position"),
         Index("idx_article_link_url", "url"),
         Index("idx_article_link_normalized_url", "normalized_url"),
+        # COVERING index for ``convergence._shared_origin`` (R455/R611; F2 of the 2026-11-07 field bundle): a
+        # GROUP BY normalized_url over the links of a few hundred article ids. With only
+        # idx_article_link_article_id the plan reads one whole row (two String(1000) columns, a page decrypt
+        # under SQLCipher) per link; with this one it is `SEARCH article_links USING COVERING INDEX
+        # idx_article_link_article_url (article_id=?)`. Measured on 4.16 M links, cold cache, SQLCipher with each
+        # article's links scattered (a restore merge's shape): 1,392 -> 171 ms. Mirrored in maintenance.HOT_INDEXES
+        # (DEFERRED: built by the visible start-up step in src/database/article_indexes.py) and migration a7c3e5f19b20.
+        Index("idx_article_link_article_url", "article_id", "normalized_url"),
         Index("idx_article_link_classification", "classification"),
         Index("idx_article_link_source_id", "external_source_id"),
         Index("idx_article_link_source_article_id", "source_article_id"),
@@ -2564,6 +2609,55 @@ class KeywordMention(Base):
 
     def __repr__(self) -> str:
         return f"<KeywordMention(kw={self.keyword_id} art={self.article_id} x{self.count})>"
+
+
+class KeywordDayCount(Base):
+    """``SUM(keyword_mentions.count)`` per (day, keyword): the Home trends' windows read from here instead of from every
+    mention (R623, R625; ``src/analytics/day_counts.py``). DERIVED and exact: a day is always written WHOLE from
+    ``ix_mention_date_keyword`` (never by adding deltas), so a day that changed is recomputed, not adjusted. Which days changed
+    comes from :class:`KeywordDayDirty` (the delete and update triggers) and from the mention ids above
+    :class:`KeywordDayState`'s watermark (new rows; no insert trigger, R625). Counts only, never a score."""
+
+    __tablename__ = "keyword_day_counts"
+    __table_args__ = ({"sqlite_with_rowid": False},)
+
+    observed_on: Mapped[date] = mapped_column(Date, primary_key=True)
+    keyword_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    mentions: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class KeywordDayDirty(Base):
+    """The days whose mentions were deleted or changed in place since their counts were written (R625). Written by the triggers
+    of ``day_counts.TRIGGERS`` (which also see a foreign-key cascade and a keyword fold); emptied day by day as the days are
+    recomputed. A day listed here is never served from :class:`KeywordDayCount`."""
+
+    __tablename__ = "keyword_day_dirty"
+    __table_args__ = ({"sqlite_with_rowid": False},)
+
+    observed_on: Mapped[date] = mapped_column(Date, primary_key=True)
+
+
+class KeywordDayState(Base):
+    """The one row (``id = 1``) that says how far :class:`KeywordDayCount` can be trusted (R625).
+
+    ``complete``: every day was written by a build that finished. ``built_epoch``: the corpus epoch that build started at (a
+    different epoch now means a full rebuild). ``watermark``: every mention with an id at or below it is in the counts, unless
+    its day is dirty. ``reuse_floor``: the lowest id of a mention deleted from the TOP of the table since then (SQLite gives
+    such an id out again, so a new row can land at or below the watermark; the delete trigger records it). ``floor_gen``: counts
+    those deletes, so a fold clears the floor only when none ran while it worked. ``cursor``: the last day a build wrote, so a
+    stopped build resumes there."""
+
+    __tablename__ = "keyword_day_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    built_epoch: Mapped[int | None] = mapped_column(Integer)
+    watermark: Mapped[int | None] = mapped_column(Integer)
+    reuse_floor: Mapped[int | None] = mapped_column(Integer)
+    floor_gen: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    cursor: Mapped[date | None] = mapped_column(Date)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    built_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 class AiKeyword(Base):

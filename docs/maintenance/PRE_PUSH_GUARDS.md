@@ -131,3 +131,9 @@ the first thing to look at is the package versions. Two scripts take the by-eye 
 
 Also run before a push, as CI does and this script does not: `python -m mypy src/` for the modules you changed, and
 `python scripts/planned.py --diff`. The selection is tested in `tests/test_guards_for_diff.py` against a throwaway git repository.
+
+CI runs mypy a second time, in the lock-file job, on `requirements.lock`'s own pins (R318), because the `test` job's mypy sees the
+newest release of each unbounded dependency and the typing can differ. To reproduce that run locally: a fresh venv,
+`python -m pip install --require-hashes -r requirements.lock`, `python -m pip install -e . --no-deps`, the mypy release pyproject's
+`[dev]` extra pins, the lock again with `--no-deps`, then `python -m mypy src/`. The step itself is in `ci.yml`, step "Type check
+against the lock's own pins".

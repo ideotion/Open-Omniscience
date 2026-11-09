@@ -17,10 +17,20 @@ touches mailboxes the operator explicitly configures; nothing leaves the machine
 
 from __future__ import annotations
 
+import contextlib
 import email
+import errno
+import imaplib
 import ipaddress
 import logging
+import os
+import poplib
 import re
+import selectors
+import socket
+import ssl
+import sys
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.header import decode_header
@@ -28,7 +38,7 @@ from email.message import Message
 from email.utils import getaddresses, parsedate_to_datetime
 from html import unescape
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from sqlalchemy import Table, or_
 from sqlalchemy.orm import Session
@@ -37,7 +47,7 @@ from src.database.models import Article, Source
 from src.database.stand_in import is_a_stand_in_source
 from src.database.write import is_locked_error, run_write_with_retry
 from src.ingest.newsletter_source import parse_list_id
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 from src.privacy.link_sanitizer import SanitizedLink, SanitizeStats, sanitize_text_links
 from src.utils.url_utils import generate_content_hash
 
@@ -297,6 +307,437 @@ def _refuse_if_offline() -> None:
         raise RuntimeError(NETWORK_REFUSED)
 
 
+class MailboxPull(list):  # type: ignore[type-arg]
+    """The raw messages one live pull fetched, newest last, as a ``list[bytes]``.
+
+    ``stopped`` is True when airplane mode was engaged DURING the pull (R640): the list then holds only the messages fetched before the
+    Stop, which are kept, and the connection was closed without sending another command. A caller reports that as the operator's Stop,
+    never as the size of the mailbox.
+    """
+
+    stopped: bool = False
+
+
+def _stop_requested() -> bool:
+    """The switch, read again before every mailbox command and every message (R640)."""
+    from src.ingest import kill_switch_active
+
+    return kill_switch_active()
+
+
+class _MailboxStopped(Exception):
+    """Raised from inside imaplib when it would send a command of its own after the Stop (R640): never leaves this module."""
+
+
+#: Seconds a live mailbox pull waits on any one read or write before it gives up (R647). Bounded, so a stalled server cannot hold a pull
+#: for ever; the Stop does not wait for it, because it shuts the socket down itself.
+MAILBOX_TIMEOUT_S = 60.0
+
+
+class MailboxTlsRefusal(OSError):
+    """A mailbox pull refused before LOGIN/USER because the connection could not be made private and checked (R650, R651)."""
+
+
+class MailboxCertificateError(MailboxTlsRefusal):
+    """The mail server's TLS certificate failed verification (R650): the pull is refused before LOGIN, so no credential is sent."""
+
+
+class MailboxStarttlsError(MailboxTlsRefusal):
+    """A plain-port pull whose server does not offer, or would not start, STARTTLS (R651): a password is never sent in plaintext."""
+
+
+#: imaplib's error class (``abort`` and ``readonly`` are its subclasses): the server's line is in its text (R653).
+_IMAP_ERROR = imaplib.IMAP4.error
+
+
+class MailboxServerError(Exception):
+    """A mailbox pull ended by the mail server's own error reply (R653): named in fixed words, the reply never quoted. imaplib and
+    poplib put the server's line in their exceptions, and a greeting or CAPABILITY reply on a plain port comes before STARTTLS, so
+    anyone on the path can write it; a line can be up to a megabyte long."""
+
+
+#: What the server's error ended, by the step the pull was at (R653). Each sentence says whether the password went out.
+_SERVER_ERROR_WORDS = {
+    "greeting": "sent a greeting or capability reply the pull could not use, or closed the connection, before logging in; no password "
+    "was sent",
+    "preauth": "greeted the pull as already logged in (PREAUTH), which a pull does not accept; no password was sent",
+    "login": "refused the login, or closed the connection during it. Check the user name and password",
+    "read": "answered a mailbox command with an error after logging in",
+}
+
+
+def _server_error(host: str, port: int, step: str) -> MailboxServerError:
+    return MailboxServerError(f"the mail server {host} on port {port} {_SERVER_ERROR_WORDS[step]}; the server's own reply is not shown.")
+
+
+def _starttls_refusal(host: str, port: int, why: str) -> MailboxStarttlsError:
+    return MailboxStarttlsError(
+        f"refused before logging in, no password sent: the mail server {host} on port {port} {why}, and a mailbox password is never sent "
+        "unencrypted. Use the server's TLS port (993 for IMAP, 995 for POP3) or a server that offers STARTTLS."
+    )
+
+
+def _mailbox_tls_context() -> ssl.SSLContext:
+    """The TLS context of every mailbox pull (R650): the platform's trust store, the certificate chain AND the host name checked
+    (``ssl.create_default_context``). The stdlib's own default for imaplib/poplib verifies neither, which left LOGIN/PASS open to
+    anyone able to answer for the server. There is deliberately no switch that turns the checks off. TLS 1.2 is the floor, set here
+    and not only left to the default (CodeQL on #1898: the default's floor depends on the Python and OpenSSL build)."""
+    ctx = ssl.create_default_context()
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    return ctx
+
+
+#: OpenSSL's wrapping of the reason: "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: <reason> (_ssl.c:NNNN)".
+_OPENSSL_VERIFY_REASON = re.compile(r"certificate verify failed: (?P<reason>.+?)(?: \(_ssl\.c:\d+\))?$")
+
+
+def _certificate_refusal(host: str, scrubbed: str, *, sent: str = "no command or password sent") -> MailboxCertificateError:
+    """The honest refusal (R650). ``scrubbed`` is OpenSSL's text as ``record_text`` keeps it (the mailbox password and every held
+    passphrase out of it); only its reason is quoted ("self-signed certificate", "Hostname mismatch, ..."), so the sentence fits
+    the job status's 300 characters with what matters first: refused, what was not sent, why. ``sent`` says what was not sent: on a
+    plain port the CAPABILITY/STARTTLS commands went out before the upgrade (R651), so only the password was not."""
+    found = _OPENSSL_VERIFY_REASON.search(scrubbed)
+    reason = found.group("reason") if found else scrubbed
+    return MailboxCertificateError(
+        f"refused before logging in, {sent}: the TLS certificate of the mail server {host} failed its check ({reason}). "
+        "Check the server name and port."
+    )
+
+
+#: OpenSSL's wrapping of any other TLS failure: "[SSL: WRONG_VERSION_NUMBER] wrong version number (_ssl.c:NNNN)".
+_OPENSSL_REASON = re.compile(r"^(?:\[SSL: [A-Z0-9_]+\] )?(?P<reason>.+?)(?: \(_ssl\.c:\d+\))?$")
+
+
+#: The advice after a TLS failure on a TLS port, and after one that followed an accepted STARTTLS (security reads on #1898: "143/110
+#: upgrade with STARTTLS" misled a user of the app's form, which always speaks TLS at once).
+_TLS_PORT_HINT = "Check the port: a mail server's TLS port is usually 993 for IMAP and 995 for POP3."
+_STARTTLS_HINT = "The server accepted the upgrade to TLS, but no TLS connection followed."
+
+
+def _tls_refusal(host: str, port: int, scrubbed: str, *, sent: str, hint: str = _TLS_PORT_HINT) -> MailboxTlsRefusal:
+    """A TLS connection that failed for another reason than the certificate (a plain server on a TLS port, a server that only speaks
+    TLS 1.0/1.1, a broken handshake): refused like the certificate, naming the host, the port and OpenSSL's reason (security read B
+    on #1895: these used to surface as OpenSSL's raw text, with neither the server nor what was not sent)."""
+    found = _OPENSSL_REASON.search(scrubbed)
+    reason = found.group("reason") if found else scrubbed
+    return MailboxTlsRefusal(
+        f"refused before logging in, {sent}: no TLS connection could be made with the mail server {host} on port {port} ({reason}). {hint}"
+    )
+
+
+#: How often a TCP connect in progress reads the switch again (R652). The Stop also shuts the registered socket down, which ends a
+#: connect at once where the platform aborts a connect on shutdown (Linux); this slice is the bound everywhere else.
+_CONNECT_STOP_SLICE_S = 0.1
+
+#: connect_ex's "in progress" answers: POSIX, and Windows' WSAEWOULDBLOCK.
+_CONNECT_IN_PROGRESS = {errno.EINPROGRESS, errno.EWOULDBLOCK, errno.EAGAIN, errno.EALREADY, 10035}
+
+
+def _connect_watching_stop(sock: socket.socket, address: Any, timeout: float | None) -> None:
+    """Connect ``sock`` (already registered for the Stop) to ``address``, reading the switch while the connect is in progress (R652).
+    Bounded by ``timeout`` as ``socket.create_connection`` is; raises ``_MailboxStopped`` on a Stop, an ``OSError`` otherwise."""
+    deadline = None if timeout is None else time.monotonic() + timeout
+    sock.setblocking(False)
+    if _stop_requested():
+        raise _MailboxStopped
+    rc = sock.connect_ex(address)
+    if rc != 0 and rc not in _CONNECT_IN_PROGRESS:
+        raise OSError(rc, os.strerror(rc))
+    # A selector, not select.select: that refuses a descriptor numbered 1024 or more (security read A on #1899), which a process with
+    # a raised open-file limit reaches; DefaultSelector is epoll/kqueue/poll where they exist, and on Windows watches failures too.
+    waiter = selectors.DefaultSelector()
+    waiter.register(sock, selectors.EVENT_WRITE)
+    try:
+        _wait_for_connect(sock, waiter, rc, deadline)
+    finally:
+        waiter.close()
+    if _stop_requested():
+        raise _MailboxStopped
+    sock.settimeout(timeout)
+
+
+def _wait_for_connect(sock: socket.socket, waiter: selectors.BaseSelector, rc: int, deadline: float | None) -> None:
+    """The in-progress part of :func:`_connect_watching_stop`: wait in slices, reading the switch between them."""
+    while rc != 0:
+        if _stop_requested():
+            raise _MailboxStopped
+        wait = _CONNECT_STOP_SLICE_S
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("timed out")
+            wait = min(wait, remaining)
+        if waiter.select(wait):
+            rc = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+            if rc != 0:
+                if _stop_requested():  # the Stop shut the socket down mid-connect
+                    raise _MailboxStopped
+                raise OSError(rc, os.strerror(rc))
+            break
+
+
+def _connect_registered(host: str, port: int, timeout: float | None) -> socket.socket:
+    """``socket.create_connection`` with each candidate socket registered for the Stop BEFORE its connect (R652): a Stop cuts a stalled
+    TCP connect at once instead of waiting out the timeout. The name lookup before it is not covered (the resolver cannot be
+    interrupted); it is bounded by the system resolver's own timeout. On failure the socket is closed and leaves the Stop's list."""
+    from src.ingest import register_mailbox_socket, unregister_mailbox_socket
+
+    if timeout is not None and not timeout:
+        raise ValueError("Non-blocking socket (timeout=0) is not supported")
+    candidates = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+    if not candidates:
+        raise OSError(f"getaddrinfo returned no address for {host!r}")
+
+    def discard(sock: socket.socket) -> None:
+        unregister_mailbox_socket(sock)
+        with contextlib.suppress(Exception):
+            sock.close()
+
+    for n, (family, kind, proto, _, address) in enumerate(candidates, 1):
+        if _stop_requested():
+            raise _MailboxStopped
+        sock = None
+        try:
+            sock = socket.socket(family, kind, proto)  # inside the try: a family this kernel lacks (IPv6 off) moves to the next address
+            register_mailbox_socket(sock)
+            _connect_watching_stop(sock, address, timeout)
+        except OSError:
+            if sock is not None:
+                discard(sock)
+            if n == len(candidates):
+                raise  # the last candidate's own error, as it was
+            continue  # the next address, as socket.create_connection tries them
+        except BaseException:
+            if sock is not None:
+                discard(sock)  # a Stop (or an interrupt): no further address is tried
+            raise
+        if sock is not None:
+            return sock
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+class _HandshakeFailed(ssl.SSLError):
+    """A TLS handshake that timed out or lost its connection, worded plainly (an ``SSLError`` built from one string prints its args
+    tuple, security read B on #1898)."""
+
+    def __str__(self) -> str:
+        return str(self.args[0])
+
+
+def _registered_tls(ctx: ssl.SSLContext, raw: Any, host: str) -> Any:
+    """Wrap ``raw`` (already registered for the Stop) in TLS and run the handshake here, registered too, after a second read of the
+    switch (R647): no TLS byte goes out after a Stop that landed before it, and a Stop during a stalled handshake reaches it. On any
+    failure the socket is closed and the error raised as it was; ``raw`` leaves the Stop's list either way (the wrap detached it)."""
+    from src.ingest import register_mailbox_socket, unregister_mailbox_socket
+
+    tls = None
+    try:
+        try:
+            if _stop_requested():
+                raise _MailboxStopped
+            tls = ctx.wrap_socket(raw, server_hostname=host, do_handshake_on_connect=False)  # can read already: a reset raises here
+            register_mailbox_socket(tls)
+            if _stop_requested():
+                raise _MailboxStopped
+            tls.do_handshake()
+        except ssl.SSLError:
+            raise
+        except OSError as exc:
+            # A timeout or a dropped connection during the wrap or the handshake is a TLS failure like any other (security reads on
+            # #1898: it surfaced as "_ssl.c:1018: The handshake operation timed out" or "[Errno 104]", with neither the server nor
+            # what was not sent). A Stop that shut the socket down still reads as the Stop: every caller reads the switch before
+            # mapping an SSLError.
+            timed_out = isinstance(exc, TimeoutError)
+            raise _HandshakeFailed("the TLS handshake timed out" if timed_out else "the connection closed during the TLS handshake") from None
+    except BaseException:
+        # A constructor raises before it holds the socket, and a failed STARTTLS leaves the connection's own socket detached, so
+        # nothing else would close it.
+        unregister_mailbox_socket(tls)
+        with contextlib.suppress(Exception):
+            (tls or raw).close()
+        raise
+    finally:
+        unregister_mailbox_socket(raw)  # detached by the wrap (or closed above); the TLS socket is the live one now
+    return tls
+
+
+def _upgraded(raw: Any, host: str, port: int) -> Any:
+    """The STARTTLS handshake (R651) with the pull's verifying context; a certificate failure is raised as it is (the pull maps it,
+    holding the password to scrub with), any other TLS failure is refused here as on a TLS port."""
+    try:
+        return _registered_tls(_mailbox_tls_context(), raw, host)
+    except ssl.SSLCertVerificationError:
+        raise
+    except ssl.SSLError as exc:
+        if _stop_requested():
+            raise _MailboxStopped from None
+        raise _tls_refusal(host, port, record_text(exc, limit=300), sent="no password sent", hint=_STARTTLS_HINT) from None
+
+
+def _rebind_reader(conn) -> None:  # type: ignore[no-untyped-def]
+    """Read the upgraded socket from here on, with nothing the server sent in plaintext carried past the upgrade (security read A on
+    #1898): a fresh reader (``file`` on 3.13; a read-only property over ``_file`` and a ``_readbuf`` on 3.14), an emptied read buffer,
+    and no untagged response kept (RFC 3501 6.2.1, the STARTTLS response-injection class)."""
+    fresh = conn.sock.makefile("rb")
+    if isinstance(getattr(type(conn), "file", None), property):
+        conn._file = fresh
+    else:
+        conn.file = fresh
+    if hasattr(conn, "_readbuf"):
+        conn._readbuf = []
+    if hasattr(conn, "untagged_responses"):
+        conn.untagged_responses = {}
+
+
+def _stop_aware(cls):  # type: ignore[no-untyped-def]
+    """``cls`` (an imaplib or poplib class) with its socket registered for the Stop before the TCP connect (R652), and so before any TLS
+    handshake and before the greeting is read (R647: ``activate_kill_switch`` shuts it down, so a pull blocked on a stalled server ends at once), and with the one command imaplib
+    sends on its OWN -- CAPABILITY, from the constructor when the greeting carries none and from ``login`` when its reply carries none --
+    held to the switch like every command this module sends (R640, security read B: a Stop during LOGIN let a CAPABILITY out). Anything
+    that is not a class (a test's stand-in) is returned as is."""
+    if not isinstance(cls, type):
+        return cls
+
+    class _StopAware(cls):  # type: ignore[valid-type,misc]
+        def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            # A constructor that fails after the connect (a refused greeting, a reset, a timeout) leaves the socket registered and,
+            # for poplib, open, for as long as the error's traceback lives (security read B on #1898): it is closed and forgotten here.
+            try:
+                super().__init__(*args, **kwargs)
+            except BaseException:
+                sock = getattr(self, "sock", None)
+                for reader in (getattr(self, "_file", None), self.__dict__.get("file")):
+                    with contextlib.suppress(Exception):
+                        if reader is not None:
+                            reader.close()
+                if sock is not None:
+                    _forget_socket(sock)
+                    with contextlib.suppress(Exception):
+                        sock.close()
+                raise
+
+        def _create_socket(self, timeout):  # type: ignore[no-untyped-def]
+            from src.ingest import register_mailbox_socket
+
+            # The TLS classes' own ``_create_socket`` connects AND completes the TLS handshake before returning, so registering what
+            # it returns left a Stop unable to reach a server stalled in the handshake (security read B on #1892). So the plain socket
+            # is made here, registered before its TCP connect (R652: a Stop cuts a stalled connect too), and only then wrapped, with
+            # the handshake run here after a second read of the switch: no TLS byte goes out after a Stop that landed during the connect.
+            ctx = getattr(self, "ssl_context", None) if isinstance(self, imaplib.IMAP4_SSL) else None
+            if isinstance(self, poplib.POP3_SSL):
+                ctx = getattr(self, "context", None)
+            if isinstance(self, imaplib.IMAP4):
+                sys.audit("imaplib.open", self, self.host, self.port)  # raised by the IMAP4._create_socket this replaces
+            raw = _connect_registered(self.host, self.port, timeout)
+            register_mailbox_socket(raw)
+            if ctx is None:
+                return raw
+            return _registered_tls(ctx, raw, self.host)
+
+        def _starttls(self, port: int) -> None:
+            """Upgrade a plain-port connection to TLS before any credential (R651), with the pull's verifying context and the same
+            Stop registration as a TLS port: the switch is read before each command, and a server that does not offer STARTTLS or
+            answers it with anything but OK is refused, never used in plaintext."""
+            if _stop_requested():
+                raise _MailboxStopped
+            if isinstance(self, imaplib.IMAP4):
+                if self.state != "NONAUTH":
+                    raise _starttls_refusal(self.host, port, "greeted the pull as already logged in (PREAUTH), where no upgrade is possible")
+                if "STARTTLS" not in self.capabilities:
+                    raise _starttls_refusal(self.host, port, "does not offer STARTTLS")
+                # Each refusal below is raised outside the ``except`` it was decided in (R653): raised inside, it would carry
+                # imaplib's or poplib's error, the server's line in it, as its ``__context__``, which ``http_detail`` reads.
+                why = None
+                try:
+                    typ, _ = self._simple_command("STARTTLS")
+                except _MailboxStopped:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - imaplib's own classes: abort (the connection was lost), error (a BAD answer)
+                    if _stop_requested():
+                        raise _MailboxStopped from None  # the Stop shut the socket down while the answer was awaited
+                    lost = isinstance(exc, (self.abort, OSError))
+                    why = "did not answer STARTTLS (the connection was lost or timed out)" if lost else "refused STARTTLS"
+                if why is not None:
+                    raise _starttls_refusal(self.host, port, why)
+                if typ != "OK":
+                    # Fixed words only (R652): the server's reply type is never echoed, since imaplib accepts any run of capitals there.
+                    answer = {"NO": "NO", "BAD": "BAD"}.get(typ, "an unexpected reply") if isinstance(typ, str) else "an unexpected reply"
+                    raise _starttls_refusal(self.host, port, f"answered STARTTLS with {answer}")
+                self.sock = _upgraded(self.sock, self.host, port)  # type: ignore[has-type]
+                _rebind_reader(self)
+                self._tls_established = True
+                self._get_capabilities()  # what the server offered in plaintext is not trusted past the upgrade (RFC 3501 6.2.1)
+                return
+            why = None
+            caps: dict = {}
+            try:
+                caps = self.capa()
+            except poplib.error_proto:
+                caps = {}
+            except _MailboxStopped:
+                raise
+            except Exception:  # noqa: BLE001 - a lost connection, a timeout, or a CAPA list poplib cannot parse
+                if _stop_requested():
+                    raise _MailboxStopped from None
+                why = "gave no usable answer to CAPA (the connection was lost or timed out, or the list was malformed)"
+            if why is not None:
+                raise _starttls_refusal(self.host, port, why)  # outside the except, as for IMAP (R653)
+            if "STLS" not in {name.upper() for name in caps}:  # capability names are case-insensitive (RFC 2449)
+                raise _starttls_refusal(self.host, port, "does not offer STARTTLS (STLS)")
+            if _stop_requested():
+                raise _MailboxStopped
+            try:
+                self._shortcmd("STLS")
+            except poplib.error_proto:
+                why = "refused STLS"
+            except _MailboxStopped:
+                raise
+            except Exception:  # noqa: BLE001 - a lost connection or a timeout while the answer was awaited
+                if _stop_requested():
+                    raise _MailboxStopped from None
+                why = "did not answer STLS (the connection was lost or timed out)"
+            if why is not None:
+                raise _starttls_refusal(self.host, port, why)  # outside the except (R653)
+            self.sock = _upgraded(self.sock, self.host, port)
+            _rebind_reader(self)
+            self._tls_established = True
+
+        def _get_capabilities(self):  # type: ignore[no-untyped-def]
+            if _stop_requested():
+                raise _MailboxStopped
+            return super()._get_capabilities()
+
+    return _StopAware
+
+
+def _upgrade_plain(conn, port: int) -> None:  # type: ignore[no-untyped-def]
+    """STARTTLS on a plain-port connection before any credential (R651); one name, so a test's stand-in connection can be upgraded
+    by a stand-in."""
+    conn._starttls(port)
+
+
+def _forget_socket(sock) -> None:  # type: ignore[no-untyped-def]
+    """The pull is over: its socket leaves the Stop's list (R647). ``sock`` is taken BEFORE the connection is closed, since poplib's
+    ``quit()``/``close()`` set ``conn.sock`` to None (security read A on #1892). Never raises."""
+    from src.ingest import unregister_mailbox_socket
+
+    with contextlib.suppress(Exception):
+        unregister_mailbox_socket(sock)
+
+
+def _drop_connection(conn, how: str) -> None:  # type: ignore[no-untyped-def]
+    """Close a live mailbox connection WITHOUT a protocol command (``how`` is ``shutdown`` for imaplib, ``close`` for poplib).
+
+    A Stop is not the moment to send LOGOUT/QUIT: that is one more write to the provider after the operator went offline. Closing the
+    socket ends the session from our side; the server drops it on its own. Never raises.
+    """
+    with contextlib.suppress(Exception):  # the connection is being abandoned; nothing to report
+        if how == "shutdown":
+            conn.shutdown()
+        else:
+            conn.close()
+
+
 def fetch_imap(
     host: str,
     user: str,
@@ -307,7 +748,7 @@ def fetch_imap(
     use_ssl: bool = True,
     port: int = 0,
     conn=None,
-) -> list[bytes]:
+) -> MailboxPull:
     """Fetch up to ``limit`` most recent raw messages from a folder.
 
     ``conn`` may be injected (an imaplib-like object) for testing; otherwise a real
@@ -316,35 +757,148 @@ def fetch_imap(
     ``conn`` is not touched). The session is logged out in a ``finally`` so a fetch error
     never leaks it. The recipient-safe anonymisation happens later, in ``ingest_emails``.
     ``port`` 0 = the protocol default (993 SSL / 143 plain).
+
+    A Stop DURING the pull (R640): the switch is read again before every command (login, select, search) and before every message. Once
+    it is engaged, no further command is sent, a connection this function opened is closed without LOGOUT, and the messages already
+    fetched are returned with ``stopped`` set. An injected ``conn`` belongs to its caller and is left open.
     """
     _refuse_if_offline()
+    raws = MailboxPull()
+    # R653: a server error is raised only once outside every ``except`` block, so it carries no ``__context__``: the imaplib or poplib
+    # error it replaces holds the server's line, and ``http_detail`` reads the context chain (``from None`` only hides it from a print).
+    failure: BaseException | None = None
     own_conn = conn is None
-    if own_conn:  # pragma: no cover - exercised only against a live server
-        import imaplib
-
-        if use_ssl:
-            conn = imaplib.IMAP4_SSL(host, port or 993)
-        else:
-            conn = imaplib.IMAP4(host, port or 143)
-        conn.login(user, password)
-    try:
-        conn.select(folder)
-        typ, data = conn.search(None, "ALL")
-        if typ != "OK" or not data or not data[0]:
-            return []
-        ids = data[0].split()[-max(1, int(limit)):]
-        raws: list[bytes] = []
-        for mid in ids:
-            typ, msg_data = conn.fetch(mid, "(RFC822)")
-            if typ == "OK" and msg_data and msg_data[0]:
-                raws.append(msg_data[0][1])
-        return raws
-    finally:
-        if own_conn:
-            try:
-                conn.logout()
-            except Exception:  # noqa: BLE001 - logout failure must not mask the result
-                pass
+    if own_conn:
+        try:
+            # imaplib closes its own socket (shutdown, no command) when its constructor raises.
+            if use_ssl:
+                conn = _stop_aware(imaplib.IMAP4_SSL)(
+                    host, port or 993, ssl_context=_mailbox_tls_context(), timeout=MAILBOX_TIMEOUT_S
+                )
+            else:
+                conn = _stop_aware(imaplib.IMAP4)(host, port or 143, timeout=MAILBOX_TIMEOUT_S)
+        except _MailboxStopped:
+            raws.stopped = True
+            return raws
+        except ssl.SSLCertVerificationError as exc:
+            # R650: the certificate failed its check (a Stop still wins: the refusal is not the Stop's to report).
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            raise _certificate_refusal(host, record_text(exc, password, limit=300)) from None
+        except ssl.SSLError as exc:
+            # Any other TLS failure on the TLS port (a plain server, an old protocol only): refused as honestly (read B on #1895).
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            if not use_ssl:
+                raise
+            raise _tls_refusal(host, port or 993, record_text(exc, password, limit=300), sent="no command or password sent") from None
+        except (_IMAP_ERROR, UnicodeDecodeError):
+            # R653: the greeting or the CAPABILITY reply (imaplib's error quotes the server's line; a byte past ASCII in the capability
+            # list fails imaplib's own decode): fixed words, after the Stop.
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            failure = _server_error(host, port or (993 if use_ssl else 143), "greeting")
+        except Exception:
+            # A Stop while the greeting was awaited shut the socket down (R647): that is the Stop, not a failure.
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            raise
+    if failure is not None:
+        if _stop_requested():
+            raws.stopped = True  # the Stop wins, as in every handler above
+            return raws
+        raise failure
+    step = "greeting"
+    try:  # outer: a failure re-raised below waits for the LOGOUT/QUIT in the inner finally, and a Stop that lands during it wins
+        try:
+            if own_conn:
+                if not use_ssl:
+                    _upgrade_plain(conn, port or 143)  # R651: never LOGIN in plaintext
+                if _stop_requested():
+                    raws.stopped = True
+                    return raws
+                if getattr(conn, "state", "NONAUTH") != "NONAUTH":
+                    # PREAUTH on the TLS port: imaplib would refuse LOGIN itself, and "refused the login" would blame the password
+                    # (security read B on R653). Nothing is sent; the pull is refused in its own words.
+                    raise _server_error(host, port or (993 if use_ssl else 143), "preauth")
+                step = "login"
+                conn.login(user, password)
+            step = "read"
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            conn.select(folder)
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            typ, data = conn.search(None, "ALL")
+            if typ != "OK" or not data or not data[0]:
+                return raws
+            ids = data[0].split()[-max(1, int(limit)):]
+            for mid in ids:
+                if _stop_requested():
+                    raws.stopped = True
+                    return raws
+                typ, msg_data = conn.fetch(mid, "(RFC822)")
+                if typ == "OK" and msg_data and msg_data[0]:
+                    raws.append(msg_data[0][1])
+            return raws
+        except _MailboxStopped:
+            # imaplib's own CAPABILITY, refused above: the Stop by its type, so a switch cleared again in between cannot let it out (and
+            # LOGOUT with it).
+            raws.stopped = True
+            return raws
+        except ssl.SSLCertVerificationError as exc:
+            # R651: the STARTTLS handshake's certificate failed its check (a Stop still wins), before any credential.
+            if raws.stopped or _stop_requested():
+                raws.stopped = True
+                return raws
+            failure = _certificate_refusal(host, record_text(exc, password, limit=300), sent="no password sent")
+        except (_IMAP_ERROR, UnicodeDecodeError):
+            # R653: the server's error reply at any step (or a capability list after STARTTLS that imaplib cannot decode), in fixed words;
+            # a Stop still wins and keeps what was fetched.
+            if raws.stopped or _stop_requested():
+                raws.stopped = True
+                return raws
+            failure = _server_error(host, port or (993 if use_ssl else 143), step)
+        except Exception:
+            # A failure that surfaces once the switch is engaged (the connection failing after the Stop) ends the pull as the Stop it
+            # follows: what was fetched is kept (R640, security read B), never discarded with an error.
+            if raws.stopped or _stop_requested():
+                raws.stopped = True
+                return raws
+            raise
+        finally:
+            if own_conn:
+                sock = getattr(conn, "sock", None)
+                if raws.stopped or _stop_requested():
+                    _drop_connection(conn, "shutdown")
+                else:
+                    try:
+                        conn.logout()
+                    except Exception:  # noqa: BLE001 - logout failure must not mask the result
+                        pass
+                # Only now: a Stop during the LOGOUT read must still reach the socket (security read B on #1892).
+                _forget_socket(sock)
+    except Exception:
+        # Delta re-read 6 on R653: a STARTTLS or PREAUTH refusal, or any other failure, leaves the inner block only after its
+        # LOGOUT/QUIT; a Stop engaged by then ends the pull as the Stop, as everywhere else.
+        if raws.stopped or _stop_requested():
+            raws.stopped = True
+            return raws
+        raise
+    if failure is not None:
+        if raws.stopped or _stop_requested():
+            # A Stop that landed after the handler's own check (during the LOGOUT/QUIT, say) still wins (delta re-read 4 on R653), over
+            # every held failure.
+            raws.stopped = True
+            return raws
+        raise failure  # after the LOGOUT, outside the handler (R653)
+    return raws  # not reached: every other path returned or raised inside the try
 
 
 def fetch_pop3(
@@ -356,39 +910,146 @@ def fetch_pop3(
     use_ssl: bool = True,
     port: int = 0,
     conn=None,
-) -> list[bytes]:
+) -> MailboxPull:
     """Fetch up to ``limit`` most recent raw messages from a POP3 mailbox (ruling #11).
 
     Same guardrails as :func:`fetch_imap`: AIRPLANE-gated (no socket offline), credentials
     used transiently, quit in a ``finally``. POP3 has no folders; messages are numbered
     1..N (oldest..newest), so the newest ``limit`` are the tail. ``conn`` is injectable.
     ``port`` 0 = the protocol default (995 SSL / 110 plain).
+
+    A Stop DURING the pull (R640): the switch is read again before every command (USER, PASS, LIST) and before every message, exactly
+    as in :func:`fetch_imap`; a connection this function opened is then closed without QUIT and what was fetched is returned with
+    ``stopped`` set.
     """
     _refuse_if_offline()
+    raws = MailboxPull()
+    # R653: a server error is raised only once outside every ``except`` block, so it carries no ``__context__``: the imaplib or poplib
+    # error it replaces holds the server's line, and ``http_detail`` reads the context chain (``from None`` only hides it from a print).
+    failure: BaseException | None = None
     own_conn = conn is None
-    if own_conn:  # pragma: no cover - exercised only against a live server
-        import poplib
+    if own_conn:
+        try:
+            # poplib does NOT close its socket when its constructor raises (imaplib does); after a Stop it is already shut down, and
+            # it is closed when collected. A TLS socket whose handshake failed is closed by _stop_aware itself.
+            if use_ssl:
+                conn = _stop_aware(poplib.POP3_SSL)(host, port or 995, timeout=MAILBOX_TIMEOUT_S, context=_mailbox_tls_context())
+            else:
+                conn = _stop_aware(poplib.POP3)(host, port or 110, timeout=MAILBOX_TIMEOUT_S)
+        except _MailboxStopped:
+            # The Stop by its type, as in fetch_imap (R652): a Stop read during the connect or the TLS handshake.
+            raws.stopped = True
+            return raws
+        except ssl.SSLCertVerificationError as exc:
+            # R650: the certificate failed its check (a Stop still wins: the refusal is not the Stop's to report).
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            raise _certificate_refusal(host, record_text(exc, password, limit=300)) from None
+        except ssl.SSLError as exc:
+            # As in fetch_imap: any other TLS failure on the TLS port is refused as honestly.
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            if not use_ssl:
+                raise
+            raise _tls_refusal(host, port or 995, record_text(exc, password, limit=300), sent="no command or password sent") from None
+        except poplib.error_proto:
+            # R653: poplib's error quotes the server's greeting line: fixed words, after the Stop, as in fetch_imap.
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            failure = _server_error(host, port or (995 if use_ssl else 110), "greeting")
+        except Exception:
+            # As in fetch_imap: a Stop while the greeting was awaited shut the socket down (R647).
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            raise
+    if failure is not None:
+        if _stop_requested():
+            raws.stopped = True  # the Stop wins, as in every handler above
+            return raws
+        raise failure
+    step = "greeting"
+    try:  # outer: a failure re-raised below waits for the LOGOUT/QUIT in the inner finally, and a Stop that lands during it wins
+        try:
+            if own_conn:
+                if not use_ssl:
+                    _upgrade_plain(conn, port or 110)  # R651: never USER/PASS in plaintext
+                if _stop_requested():
+                    raws.stopped = True
+                    return raws
+                step = "login"
+                conn.user(user)
+                if _stop_requested():
+                    raws.stopped = True
+                    return raws
+                conn.pass_(password)
+            step = "read"
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            count = len(conn.list()[1])
+            start = max(1, count - max(1, int(limit)) + 1)
+            for i in range(start, count + 1):
+                if _stop_requested():
+                    raws.stopped = True
+                    return raws
+                resp, lines, octets = conn.retr(i)
+                raws.append(b"\r\n".join(lines))
+            return raws
+        except _MailboxStopped:
+            # A Stop read before the STARTTLS commands (R651): the Stop by its type, as in fetch_imap.
+            raws.stopped = True
+            return raws
+        except ssl.SSLCertVerificationError as exc:
+            # R651: the STARTTLS handshake's certificate failed its check (a Stop still wins), before any credential.
+            if raws.stopped or _stop_requested():
+                raws.stopped = True
+                return raws
+            failure = _certificate_refusal(host, record_text(exc, password, limit=300), sent="no password sent")
+        except poplib.error_proto:
+            # R653: as in fetch_imap, the server's error reply at any step in fixed words; a Stop still wins.
+            if raws.stopped or _stop_requested():
+                raws.stopped = True
+                return raws
+            failure = _server_error(host, port or (995 if use_ssl else 110), step)
+        except Exception:
+            # As in fetch_imap: a failure once the switch is engaged keeps what was fetched (R640).
+            if raws.stopped or _stop_requested():
+                raws.stopped = True
+                return raws
+            raise
+        finally:
+            if own_conn:
+                sock = getattr(conn, "sock", None)
+                if raws.stopped or _stop_requested():
+                    _drop_connection(conn, "close")
+                else:
+                    try:
+                        conn.quit()
+                    except Exception:  # noqa: BLE001
+                        pass
+                _forget_socket(sock)  # after QUIT, as in fetch_imap
+    except Exception:
+        # Delta re-read 6 on R653: a STARTTLS or PREAUTH refusal, or any other failure, leaves the inner block only after its
+        # LOGOUT/QUIT; a Stop engaged by then ends the pull as the Stop, as everywhere else.
+        if raws.stopped or _stop_requested():
+            raws.stopped = True
+            return raws
+        raise
+    if failure is not None:
+        if raws.stopped or _stop_requested():
+            # A Stop that landed after the handler's own check (during the LOGOUT/QUIT, say) still wins (delta re-read 4 on R653), over
+            # every held failure.
+            raws.stopped = True
+            return raws
+        raise failure  # after the QUIT, outside the handler (R653)
+    return raws  # not reached: every other path returned or raised inside the try
 
-        conn = poplib.POP3_SSL(host, port or 995) if use_ssl else poplib.POP3(host, port or 110)
-        conn.user(user)
-        conn.pass_(password)
-    try:
-        count = len(conn.list()[1])
-        start = max(1, count - max(1, int(limit)) + 1)
-        raws: list[bytes] = []
-        for i in range(start, count + 1):
-            resp, lines, octets = conn.retr(i)
-            raws.append(b"\r\n".join(lines))
-        return raws
-    finally:
-        if own_conn:
-            try:
-                conn.quit()
-            except Exception:  # noqa: BLE001
-                pass
 
-
-def fetch_mailbox(protocol: str, host: str, user: str, password: str, **kwargs) -> list[bytes]:
+def fetch_mailbox(protocol: str, host: str, user: str, password: str, **kwargs) -> MailboxPull:
     """Dispatch to :func:`fetch_imap` / :func:`fetch_pop3` by ``protocol`` ("imap"|"pop3")."""
     proto = (protocol or "").strip().lower()
     if proto == "imap":
@@ -908,6 +1569,64 @@ def count_imported_newsletters(session: Session) -> int:
 _NEWSLETTER_DELETE_CHUNK = 900
 
 
+def newsletter_removal_stopped_text(removed: int, total: int, *, counts_refreshed: bool) -> str:
+    """The fixed words a removal that failed partway answers with: how many of the articles it found are removed and how many
+    are left, and whether the counts were refreshed. Built from the counts only, never from the failure's text."""
+    if removed <= 0:
+        return (
+            f"The removal stopped before it removed any of the {total} imported newsletter articles; all of them are still in "
+            "your corpus. Run the removal again."
+        )
+    left = total - removed
+    words = (
+        f"The removal stopped after removing {removed} of the {total} imported newsletter articles; the other {left} "
+        f"{'is' if left == 1 else 'are'} still in your corpus. Run the removal again to remove "
+        f"{'it' if left == 1 else 'them'}."
+    )
+    if not counts_refreshed:
+        words += " Until then, some keyword and source counts may read high."
+    return words
+
+
+#: What the removal's answer says when every article is removed but the counters after it could not be refreshed.
+NEWSLETTER_COUNTS_NOT_REFRESHED = (
+    "The keyword and source counts could not be refreshed after the removal, so some may read high until the app "
+    "reconciles them again."
+)
+
+
+class NewsletterRemovalStopped(RuntimeError):
+    """A removal of imported newsletters that failed partway (queue item 58): ``removed`` of the ``total`` articles it found are
+    gone, in whole chunks each committed with its epoch bump, and the others are untouched, so running it again finds exactly
+    those. Its words are :func:`newsletter_removal_stopped_text`; the failure itself was logged, scrubbed, where it happened,
+    and is not chained here."""
+
+    def __init__(self, removed: int, total: int, *, counts_refreshed: bool) -> None:
+        self.removed = removed
+        self.total = total
+        self.counts_refreshed = counts_refreshed
+        super().__init__(newsletter_removal_stopped_text(removed, total, counts_refreshed=counts_refreshed))
+
+
+def _refresh_counts_after_removal(session: Session) -> bool:
+    """Repair the denormalised counters a removal left stale; False (logged) when that failed. The bulk delete did not go through
+    ``index_article``, so ``Keyword.mention_count``/``article_count`` and the per-source article counter still count the removed
+    articles until this runs."""
+    from src.analytics.store import backfill_keyword_counters, reconcile_source_counters
+
+    try:
+        backfill_keyword_counters(session)
+        # S6: the per-source article counter is stale too (a bulk delete removed articles) --
+        # reconcile it so source_io/sources reads a correct count immediately.
+        reconcile_source_counters(session)
+    except Exception as exc:  # noqa: BLE001 - the articles are already removed; the answer says the counts were not refreshed
+        with contextlib.suppress(Exception):
+            session.rollback()
+        log_failure(_LOG, "imported-newsletter removal: the keyword and source counts were not refreshed", exc, level=logging.WARNING)
+        return False
+    return True
+
+
 def delete_imported_newsletters(session: Session) -> dict:
     """Remove imported-newsletter articles from the LIVE corpus (the "replace the faulty
     ones" loop).
@@ -926,7 +1645,12 @@ def delete_imported_newsletters(session: Session) -> dict:
 
     A removal that stops between two chunks (the process ends) has removed the earlier chunks whole and left the counters stale until
     the removal is run again, which finds the articles that are left, or the counter sweep (``reconcile_keyword_counters``) runs.
+    A chunk that FAILS (a delete, or its strict epoch bump) is rolled back, the counters are refreshed for the chunks already
+    removed, and :class:`NewsletterRemovalStopped` is raised with the counts, in fixed words (queue item 58): the route answers
+    with those words, never a bare 500. The counters failing after every chunk is removed is said in the answer
+    (``counts_refreshed``), not raised: the removal itself is done.
     """
+    from src.analytics.corpus_epoch import bump_corpus_epoch
     from src.database.models import Base
     from src.database.writer import connection_first, write_lock
 
@@ -947,21 +1671,38 @@ def delete_imported_newsletters(session: Session) -> dict:
     # dependent tables each) before it could run. A chunk is a complete unit (its dependents, then its articles, in one transaction), and
     # the ids were read before the first chunk, so a pass that stops between two chunks leaves earlier chunks gone and later ones whole,
     # and running the removal again finds exactly the ones left.
-    for lo in range(0, len(art_ids), _NEWSLETTER_DELETE_CHUNK):
+    total = len(art_ids)
+    removed = 0
+    for lo in range(0, total, _NEWSLETTER_DELETE_CHUNK):
         chunk = art_ids[lo : lo + _NEWSLETTER_DELETE_CHUNK]
-        connection_first(session)  # the last chunk's commit gave the connection back: check one out BEFORE the gate
-        with write_lock():
-            for t in dep_tables:
-                session.execute(t.delete().where(t.c.article_id.in_(chunk)))
-            session.execute(articles_tbl.delete().where(articles_tbl.c.id.in_(chunk)))
-            session.commit()
+        failed = False
+        try:
+            connection_first(session)  # the last chunk's commit gave the connection back: check one out BEFORE the gate
+            with write_lock():
+                for t in dep_tables:
+                    session.execute(t.delete().where(t.c.article_id.in_(chunk)))
+                session.execute(articles_tbl.delete().where(articles_tbl.c.id.in_(chunk)))
+                # Each chunk's deletes commit WITH an epoch bump (the bump commits them), strictly: the columnar rollup merges new
+                # rows by id and would keep counting the removed mentions, and a removal that stops between two chunks must not
+                # leave a committed chunk the epoch never saw. A failed bump rolls the chunk back and raises.
+                bump_corpus_epoch(session, reason="delete_imported_newsletters", strict=True)
+        except Exception as exc:  # noqa: BLE001 - any failure of a chunk is answered in the removal's own words below
+            with contextlib.suppress(Exception):
+                session.rollback()  # a failed delete left its statements pending; a failed bump already rolled back
+            log_failure(_LOG, f"imported-newsletter removal stopped after removing {removed} of {total} articles", exc)
+            failed = True
+        if failed:
+            # Raised outside the handler, so the failure (a driver's error, perhaps) is not chained to the words the route answers with.
+            refreshed = _refresh_counts_after_removal(session) if removed else True
+            raise NewsletterRemovalStopped(removed, total, counts_refreshed=refreshed)
+        removed += len(chunk)
 
-    # The bulk delete didn't go through index_article, so the denormalised
-    # Keyword.mention_count / article_count are now stale — repair them authoritatively.
-    from src.analytics.store import backfill_keyword_counters, reconcile_source_counters
-
-    backfill_keyword_counters(session)
-    # S6: the per-source article counter is stale too (a bulk delete removed articles) —
-    # reconcile it so source_io/sources reads a correct count immediately.
-    reconcile_source_counters(session)
-    return {"removed_articles": len(art_ids), "domains": list(NEWSLETTER_SOURCE_DOMAINS)}
+    refreshed = _refresh_counts_after_removal(session)
+    out: dict[str, Any] = {
+        "removed_articles": total,
+        "domains": list(NEWSLETTER_SOURCE_DOMAINS),
+        "counts_refreshed": refreshed,
+    }
+    if not refreshed:
+        out["note"] = NEWSLETTER_COUNTS_NOT_REFRESHED
+    return out

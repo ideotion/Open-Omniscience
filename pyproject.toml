@@ -93,6 +93,10 @@ dependencies = [
     # (docs/maintenance/EXTERNAL_DEPENDENCIES.md), never by loosening a test.
     "urllib3>=2.7.0,<2.8.1",
     "requests>=2.31",
+    # idna is imported directly by src/ingest/crawl.py (R631: the same-site check encodes a non-ASCII host with UTS 46,
+    # idna.encode(host, uts46=True)), so it is declared rather than left to arrive through requests and urllib3. The floor is 3.7, the
+    # first release without the quadratic idna.encode on crafted input (CVE-2024-3651): crawl.py hands it hosts from fetched pages.
+    "idna>=3.7,<4",
     "httpx>=0.27",
     "beautifulsoup4>=4.12",
     "lxml>=5.2",
@@ -180,6 +184,14 @@ dependencies = [
     # project tags as such -- a scanned PDF is still honestly "no usable text" on a core
     # install, and that is a different and smaller gap than the one L6 closes.
     "pypdf>=4.0",
+    # The launcher's terminal panel (R600, src/tui/panel.py) runs on the standard library's curses, which CPython does not ship on
+    # Windows; windows-curses supplies it there (R602). The marker is narrower than "Windows" on purpose, because the project
+    # publishes WHEELS ONLY (no sdist), so a platform with no wheel would fail the whole install, where a missing curses only means
+    # no panel (launch.cmd tests `import curses` and starts the app without it): there is no ARM64 wheel, and no wheel yet for a
+    # Python after 3.14 (read on PyPI 2026-11-08: 2.4.2 ships cp313/cp314 win32 and win_amd64). FLOOR 2.4.1 = the first release
+    # with cp313 wheels (2.4.0 has none). Linux and macOS never install it, and the lock (generated on Linux) never pins it:
+    # tests/test_lock_satisfies_pyproject.py reads a requirement whose marker excludes Linux as one the lock need not pin.
+    "windows-curses>=2.4.1; sys_platform == 'win32' and platform_machine != 'ARM64' and python_version < '3.15'",
 ]
 
 [project.optional-dependencies]

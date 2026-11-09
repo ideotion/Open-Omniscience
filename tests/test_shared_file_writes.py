@@ -50,7 +50,7 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/backup/folder_backup.py": (2, "WAL"),
     "src/backup/import_queue.py": (2, "WAL"),
     "src/backup/import_reports.py": (4, "WAL"),
-    "src/backup/merge.py": (14, "export"),
+    "src/backup/merge.py": (12, "export"),
     "src/backup/newsletter_export.py": (1, "export"),
     "src/backup/parity.py": (4, "export"),
     "src/backup/runlog.py": (5, "export"),
@@ -70,10 +70,10 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/database/maintenance.py": (1, "WAL"),
     "src/database/repair.py": (6, "WAL"),
     "src/entities/gazetteer_build.py": (1, "Plan J"),
-    "src/events/feeds.py": (2, "Plan J"),
+    "src/events/feeds.py": (4, "Plan J"),  # the third and fourth: R397 (b) moves a damaged store to .damaged (where a drive has no hard links) and gives back a file that replaced it
     "src/geo/osm_downloads.py": (2, "OSM"),
     "src/hazards/store.py": (1, "Plan J"),
-    "src/ingest/__init__.py": (2, "export"),
+    "src/ingest/__init__.py": (3, "export"),  # the third: R621's load-time scrub of a credentialed key, the same two files and in-process locks as the two writers, so it converts with them
     "src/ingest/archive_backfill.py": (2, "export"),
     "src/ingest/import_job.py": (1, "export"),
     "src/integrity/collapse.py": (1, "Plan J"),

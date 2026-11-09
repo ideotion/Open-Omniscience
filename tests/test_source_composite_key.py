@@ -238,7 +238,7 @@ def test_the_alembic_revision_takes_the_same_path_on_a_staged_copy(tmp_path):
         conn.exec_driver_sql("INSERT INTO alembic_version VALUES ('c3a91f5e7b24')")
     before = _counts(engine)
     engine.dispose()
-    assert upgrade_database_file(tmp_path / "legacy.db") == "b3d8f1a6c4e2"
+    assert upgrade_database_file(tmp_path / "legacy.db") == "c4e8a2d6f1b9"
     engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}", future=True)
     try:
         assert _counts(engine) == before

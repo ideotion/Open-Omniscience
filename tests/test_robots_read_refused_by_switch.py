@@ -118,7 +118,7 @@ def test_stop_pressed_while_a_fetch_waits_for_its_host_is_not_filed_as_robots_un
         return _Resp(404), url  # no robots.txt: everything allowed
 
     f._guarded_redirect_get = answers  # type: ignore[method-assign]
-    f._http_get = lambda url, extra_headers=None, proxies=None: (_PageResp(), url)  # type: ignore[method-assign]
+    f._http_get = lambda url, extra_headers=None, proxies=None, **_kw: (_PageResp(), url)  # type: ignore[method-assign]  # **_kw: the redirect chain (R629)
     f.fetch(f"{_HOST}/act1", require_html=False)
     assert f"{_HOST}/robots.txt" in asked, "robots.txt must be asked again after the refusal"
 
@@ -225,7 +225,7 @@ def test_the_law_tracker_gives_the_time_back_and_the_next_pass_asks_the_host(tmp
         return _Resp(404), url
 
     f2._guarded_redirect_get = answers  # type: ignore[method-assign]
-    f2._http_get = lambda url, extra_headers=None, proxies=None: (_PageResp(), url)  # type: ignore[method-assign]
+    f2._http_get = lambda url, extra_headers=None, proxies=None, **_kw: (_PageResp(), url)  # type: ignore[method-assign]  # **_kw: the redirect chain (R629)
     track_document(db, f2, doc)
     assert f"{_HOST}/robots.txt" in asked, "the sidecar must not carry a verdict no request produced"
 
@@ -286,8 +286,9 @@ def test_a_403_that_was_received_is_cached_as_refused_even_if_stop_is_pressed_ri
 
 
 def test_a_real_failure_under_a_clear_switch_whose_text_names_it_is_still_a_host_failure(tmp_path):
-    """The switch is CLEAR here, so even a FetchFailed whose words are the sentence is the host's problem as far as
-    this guard is concerned: it decides by the switch, never by a text."""
+    """The switch is CLEAR here, so a FetchFailed whose words merely CONTAIN the sentence is the host's problem as far
+    as this guard is concerned: it decides by the switch and the engagement epoch, and by a text only when the text
+    STARTS with the fetcher's own refusal sentence (R614; ``tests/test_kill_switch_epoch.py``)."""
     f = _fetcher(tmp_path)
 
     def says_so(url, **_kw):

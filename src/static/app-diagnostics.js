@@ -240,9 +240,67 @@
     // When the Diagnostics section opens: the Thorough box is empty (R124: never remembered, so a run
     // that was thorough once is not thorough the next time by default), and the link shows the last
     // archive. The link is a courtesy line: a status that cannot be read leaves it as it was.
+    // THE THOROUGH BOX WARNS BEFORE IT PAUSES COLLECTION (R459, F9 of the 2026-11-07 Windows run: 53 minutes on a large corpus). The line is
+    // visible while the box is ticked, never behind a hover: the expected time comes from /api/diagnostics/all-job/estimate (this machine's own
+    // scan times scaled by its mention rows, the field medians for a scan never timed here) and says how much of it is measured here.
+    function _thoroughNoteText(est, limitMin) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s2, v) => String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
+      const th = est && est.thorough;
+      // S3: an operator limit shorter than the estimate (or with no estimate) is the pause the person will see, so it is what
+      // the note states, with the few seconds a stopped scan takes to save its place.
+      const known = th && typeof th.est_s === "number" && th.scans > 0;
+      if (limitMin > 0 && Number.isFinite(limitMin * 60) && (!known || limitMin < th.est_s / 60)) {
+        return tf(
+          "With your limit, Thorough pauses collection for at most about {limit} min, plus up to 15 s while a stopped scan saves its place; scans not reached are named in the file.",
+          {limit: Math.max(1, Math.round(limitMin))}
+        );
+      }
+      if (!th || typeof th.est_s !== "number" || !(th.scans > 0)) {
+        return t("Thorough pauses collection while every scan runs, each up to five minutes; this machine could not give an expected time.");
+      }
+      return tf(
+        "Thorough pauses collection for about {minutes} min: {timed} of {total} scans timed on this machine, the rest from field medians. It can take longer; Quick stops after about ten minutes.",
+        {minutes: Math.max(1, Math.round(th.est_s / 60)), timed: th.from_this_machine || 0, total: th.scans}
+      );
+    }
+    async function paintThoroughNote() {
+      const note = $("diag-thorough-note");
+      const box = $("diag-thorough");
+      if (!note || !box) return;
+      // S3: the operator's scan budget is offered only beside a ticked Thorough box (Quick has its own budget).
+      const budgetWrap = $("diag-budget-wrap");
+      if (budgetWrap) budgetWrap.hidden = !box.checked;
+      if (!box.checked) { note.hidden = true; note.textContent = ""; return; }
+      let est = null;
+      try { est = await api("/api/diagnostics/all-job/estimate"); } catch (_e) { est = null; }
+      if (!box.checked) return;   // unticked while the estimate was coming
+      _thoroughEst = est;
+      _repaintThoroughLimit();
+    }
+    let _thoroughEst = null;
+    function _repaintThoroughLimit() {
+      const note = $("diag-thorough-note");
+      const box = $("diag-thorough");
+      if (!note || !box || !box.checked) return;
+      const budgetEl = $("diag-budget-min");
+      const raw = budgetEl ? String(budgetEl.value || "").trim() : "";
+      note.textContent = _thoroughNoteText(_thoroughEst, raw ? Number(raw) : 0);
+      note.hidden = false;
+    }
+    let _thoroughNoteBound = false;
     async function diagnosticsPanelOpened() {
       const box = $("diag-thorough");
       if (box) box.checked = false;
+      const budgetEl = $("diag-budget-min");
+      if (budgetEl) budgetEl.value = "";   // per run, never remembered (the box's own rule)
+      if (box && !_thoroughNoteBound) {
+        _thoroughNoteBound = true;
+        box.addEventListener("change", paintThoroughNote);
+        if (budgetEl) budgetEl.addEventListener("input", _repaintThoroughLimit);   // the estimate is not fetched again per key
+      }
+      paintThoroughNote();
       try {
         const s = await api("/api/diagnostics/all-job/status");
         _paintDiagAgain(s && s.last_archive);
@@ -1180,12 +1238,21 @@
         // panel opens (R124). The profile is not sent: the panel has no light bundle since R122.
         const thoroughEl = $("diag-thorough");
         const mode = (thoroughEl && thoroughEl.checked) ? "thorough" : "quick";
+        // S3: the operator's budget rides the start call too, Thorough only. An entry that is not a number of minutes above
+        // zero is said so here and the build is not started, rather than read as "no limit" (the backend refuses it with 400).
+        const budgetEl = $("diag-budget-min");
+        const budgetRaw = (mode === "thorough" && budgetEl) ? String(budgetEl.value || "").trim() : "";
+        if (budgetRaw && !(Number(budgetRaw) > 0 && Number.isFinite(Number(budgetRaw) * 60))) {
+          set(t("The scan time limit must be a number of minutes above zero, or blank for none."));
+          return;   // the finally below gives the button back
+        }
+        const budgetQs = budgetRaw ? "&budget_min=" + encodeURIComponent(budgetRaw) : "";
         // ``started: false`` is a build that was ALREADY running (another tab, the API, or this page before a reload):
         // this page follows it, and its status line says so, because the Thorough box applies to a build the person
         // starts, and a ticked box answered by a Quick build must not read as having been honoured.
         let followed = false;
         try {
-          const began = await api("/api/diagnostics/all-job?mode=" + mode, { method: "POST" });
+          const began = await api("/api/diagnostics/all-job?mode=" + mode + budgetQs, { method: "POST" });
           followed = !!began && began.started === false;
         }
         catch (e) { /* a transient start failure still lets us poll an existing job */ }
@@ -3122,8 +3189,146 @@
       } finally {
         if (btn) btn.disabled = false;
       }
+      return {files, sources, total};
     }
     document.addEventListener("click", (ev) => {
       const b = ev.target && ev.target.closest ? ev.target.closest("#source-samples-btn") : null;
       if (b) downloadSourceSamples(b);
+    });
+
+    // ---- FIELD CHECKS (R603, 2026-11-08) ---- //
+    // The checks only the operator's own machine can run, listed by configs/field_checks.yml and run
+    // by src/monitoring/field_checks.py. Nothing is fetched when the Diagnostics section opens: the
+    // list loads on "Show field checks". A check that goes online passes the ONE consent popup
+    // (ensureOnline, invariant #14) and only then sends consent:true, which the server requires.
+    // The row buttons are wired by ONE delegated listener (no inline handlers).
+    let _fcView = null;
+    function _fcT() {
+      return (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+    }
+    function _fcTf(s, v) {
+      if (window.OOI18N && OOI18N.tf) return OOI18N.tf(s, v);
+      return String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m));
+    }
+    function _fcResultHtml(r) {
+      const t = _fcT();
+      if (!r) return `<div class="muted">${esc(t("Not run yet in this session."))}</div>`;
+      const shown = Object.assign({}, r);
+      delete shown.id; delete shown.kind;
+      return `<div>${ooLabelHtml(`<b>${esc(t("Result"))}</b>`, `${esc(String(r.outcome || ""))} · ${esc(ooIsoDateTime(r.started_at))}`)}</div>`
+        + `<pre class="small" style="white-space:pre-wrap;max-height:240px;overflow:auto;margin:4px 0">${esc(JSON.stringify(shown, null, 1))}</pre>`;
+    }
+    function _fcRowHtml(c) {
+      const t = _fcT();
+      const badges = [];
+      if (c.online) badges.push(`<span class="pill" title="${esc(t("This check goes online. It asks first through the network consent popup, and it is refused under airplane mode."))}">${esc(t("goes online"))}</span>`);
+      if (c.kind === "operator_report") badges.push(`<span class="pill">${esc(t("needs you"))}</span>`);
+      const steps = (c.steps || []).length
+        ? `<ol style="margin:4px 0 4px 18px;padding:0">${c.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>` : "";
+      let inputs = "";
+      if (c.kind === "drive_throughput") {
+        inputs = `<input type="text" data-fc-path="${esc(c.id)}" style="min-width:280px" placeholder="${esc(t("a folder on the drive to measure, e.g. /media/you/usb"))}">`;
+      } else if (c.kind === "operator_report") {
+        const opts = (c.answers || []).map((a) => `<option value="${esc(a)}">${esc(a)}</option>`).join("");
+        inputs = (c.action ? `<button type="button" class="secondary" data-fc-action="${esc(c.id)}">${esc(t("Start"))}</button> ` : "")
+          + `<select data-fc-answer="${esc(c.id)}" style="width:auto"><option value="">${esc(t("pick an answer"))}</option>${opts}</select> `
+          + `<input type="text" data-fc-note="${esc(c.id)}" maxlength="500" style="min-width:220px" placeholder="${esc(t("note (optional, never a password)"))}">`;
+      }
+      const runLabel = c.kind === "operator_report" ? t("Record the answer") : t("Run");
+      const run = c.applies_here
+        ? `<button type="button" data-fc-run="${esc(c.id)}">${esc(runLabel)}</button>`
+        : `<span class="muted">${esc(t("Does not apply on this system."))}</span>`;
+      return `<div class="fc-row" data-fc-row="${esc(c.id)}" style="border-top:1px solid var(--line, #8884);padding:6px 0">`
+        + `<div><b>${esc(c.title)}</b> ${badges.join(" ")}</div>`
+        + `<div class="hint">${esc(c.why)}</div>`
+        + `<div class="hint">${ooLabelHtml(esc(t("Added")), `${esc(ooIsoDate(c.added_on))} · ${esc(c.added_by)}`)}</div>`
+        + `<div class="hint">${ooLabelHtml(esc(t("Retired when")), esc(c.retire_when))}</div>`
+        + steps
+        + `<div class="row" style="margin-top:4px">${inputs} ${run} <span class="small" data-fc-status="${esc(c.id)}"></span></div>`
+        + `<div data-fc-result="${esc(c.id)}">${_fcResultHtml(c.result)}</div>`
+        + `</div>`;
+    }
+    function _fcRender() {
+      const t = _fcT();
+      const box = $("fc-list");
+      if (!box || !_fcView) return;
+      const active = _fcView.checks.filter((c) => c.status === "active");
+      const retired = _fcView.checks.filter((c) => c.status === "retired");
+      const ret = retired.length
+        ? `<details style="margin-top:6px"><summary class="muted">${esc(_fcTf("Retired checks ({n}): asked and answered, kept as the record", {n: retired.length}))}</summary>`
+          + retired.map((c) => `<div class="hint">${esc(c.title)} · ${esc(t("retired"))} ${esc(ooIsoDate(c.retired_on))} · ${esc(c.retired_by || "")}</div>`).join("")
+          + `</details>` : "";
+      box.innerHTML = `<div class="hint">${esc(_fcTf("List version {v}, {n} active checks. Results are kept by the running app only: a restart empties them, so save the report before you close it.", {v: _fcView.manifest_version, n: active.length}))}</div>`
+        + active.map(_fcRowHtml).join("") + ret;
+    }
+    async function fieldChecksLoad(btn) {
+      const t = _fcT();
+      const st = $("fc-status");
+      if (btn) btn.disabled = true;
+      try {
+        _fcView = await api("/api/diagnostics/field-checks");
+        _fcRender();
+        if (st) st.textContent = "";
+      } catch (e) {
+        if (st) st.textContent = t("Could not read the field checks:") + " " + (_apiErrorMessage ? _apiErrorMessage(e) : String(e));
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+    const _fcClient = {};
+    async function _fcRun(id, btn) {
+      const t = _fcT();
+      const c = (_fcView && _fcView.checks || []).find((x) => x.id === id);
+      if (!c) return;
+      const st = document.querySelector(`[data-fc-status="${CSS.escape(id)}"]`);
+      const say = (m) => { if (st) st.textContent = m; };
+      const inputs = {};
+      if (c.kind === "drive_throughput") {
+        const el = document.querySelector(`[data-fc-path="${CSS.escape(id)}"]`);
+        inputs.path = el ? el.value.trim() : "";
+        if (!inputs.path) { say(t("Type the folder first.")); return; }
+      } else if (c.kind === "operator_report") {
+        const a = document.querySelector(`[data-fc-answer="${CSS.escape(id)}"]`);
+        const n = document.querySelector(`[data-fc-note="${CSS.escape(id)}"]`);
+        inputs.answer = a ? a.value : "";
+        inputs.note = n ? n.value : "";
+        inputs.client = _fcClient[id] || {};
+        if (!inputs.answer) { say(t("Pick an answer first.")); return; }
+      }
+      let consent = false;
+      if (c.online) {
+        consent = await ensureOnline(_fcTf("Run the field check “{title}”, which goes online", {title: c.title}));
+        if (!consent) { say(t("Not run: going online was declined.")); return; }
+      }
+      if (btn) btn.disabled = true;
+      say(t("Running…"));
+      try {
+        const r = await api("/api/diagnostics/field-checks/run", {method: "POST", body: JSON.stringify({id, consent, inputs})});
+        c.result = r;
+        const box = document.querySelector(`[data-fc-result="${CSS.escape(id)}"]`);
+        if (box) box.innerHTML = _fcResultHtml(r);
+        say("");
+      } catch (e) {
+        say(_apiErrorMessage ? _apiErrorMessage(e) : String(e));
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+    async function _fcAction(id, btn) {
+      const c = (_fcView && _fcView.checks || []).find((x) => x.id === id);
+      if (!c) return;
+      if (c.action === "source_samples") {
+        // The TEMPORARY export's own walk (its button and status line stay where they are).
+        const out = await downloadSourceSamples(btn);
+        if (out) _fcClient[id] = {files_saved_by_page: out.files, sources_covered: out.sources, sources_total: out.total};
+        const st = document.querySelector(`[data-fc-status="${CSS.escape(id)}"]`);
+        const s2 = $("source-samples-status");
+        if (st && s2) st.textContent = s2.textContent;
+      }
+    }
+    document.addEventListener("click", (ev) => {
+      const el = ev.target && ev.target.closest ? ev.target.closest("[data-fc-run],[data-fc-action]") : null;
+      if (!el) return;
+      if (el.hasAttribute("data-fc-run")) _fcRun(el.getAttribute("data-fc-run"), el);
+      else _fcAction(el.getAttribute("data-fc-action"), el);
     });

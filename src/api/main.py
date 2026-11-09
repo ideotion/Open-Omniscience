@@ -41,7 +41,6 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
-from starlette.requests import HTTPConnection
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import (
@@ -59,6 +58,7 @@ from slowapi.util import get_remote_address
 # Import database models and session
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.operators import ColumnOperators
+from starlette.requests import HTTPConnection
 
 # Router wiring (every include_router call) lives in _wiring.py (audit PR H).
 from src.api._wiring import wire
@@ -492,23 +492,26 @@ def _run_startup_upkeep() -> None:
     # once (the one consent, POST /api/scheduler/start), after which collection
     # is continuous. Zero-network boot is preserved AND now explicit/visible: we
     # engage the offline state at boot and never auto-start scraping (the old
-    # autostart-at-boot is retired by this ruling). Gated by OO_NO_SCHEDULER so
-    # tests/headless setups, which manage the kill switch themselves, are
-    # untouched.
+    # autostart-at-boot is retired by this ruling).
+    #
+    # Socket-level backstop FIRST, then engage offline: while airplane mode is on, no
+    # non-loopback packet can leave this process by ANY path (a missed call site, a
+    # third-party lib, a DNS prefetch). The guard is transparent while online, so it
+    # costs nothing during collection. It is installed whatever OO_NO_SCHEDULER says
+    # (R646): a headless instance an operator later takes offline needs it as much as a
+    # desktop one, and OO_AIRPLANE_SOCKET_GUARD=0 is the only switch that leaves it out.
+    try:
+        from src.ingest.airplane import install_airplane_socket_guard
+
+        install_airplane_socket_guard()
+    except Exception as exc:  # noqa: BLE001 - never block startup; the serving gate then refuses every request (R644)
+        log_failure(logger, "could not install the airplane socket guard at boot", exc, level=logging.ERROR)
+    # Only the ENGAGE is gated by OO_NO_SCHEDULER, so tests/headless setups, which
+    # manage the kill switch themselves, are untouched.
     if os.getenv("OO_NO_SCHEDULER", "0") != "1":
         try:
             from src.ingest import activate_kill_switch, crossed_online_since_boot
-            from src.ingest.airplane import install_airplane_socket_guard
 
-            # Socket-level backstop FIRST, then engage offline: while airplane mode
-            # is on, no non-loopback packet can leave this process by ANY path
-            # (a missed call site, a third-party lib, a DNS prefetch). The guard is
-            # transparent while online, so it costs nothing during collection.
-            #
-            # The guard is installed UNCONDITIONALLY -- it is a no-op while online and
-            # is exactly what must already be in place if the operator goes offline
-            # later. Only the ENGAGE is conditional.
-            install_airplane_socket_guard()
             if crossed_online_since_boot():
                 # On the UNLOCK path this function runs in a background thread, and a
                 # new instance's upkeep (catalog seed, ANALYZE, counts, cache warm) is
@@ -565,8 +568,27 @@ async def lifespan(app: FastAPI):
     LOCKED: only the unlock flow is served; the deferred startup runs the
     moment the operator supplies THE passphrase. A plaintext store boots
     exactly as before — never a lock screen over a plaintext file."""
-    # The same guard ``_serve`` sets first, for a server that was not started by it (``python -m uvicorn src.api.main:app``, which
-    # the encrypted click-through uses): before the boot record below names the mechanism, and before any request can bring a
+    # Fail closed on any loop but the stdlib's (R642): a server started some other way than _serve (``python -m uvicorn
+    # src.api.main:app`` defaults to uvloop) would run on a loop whose resolves and connects bypass the airplane socket guard, and the
+    # loop cannot be changed from inside it -- so the app refuses to start, before anything else here runs.
+    import asyncio as _asyncio
+
+    if not _event_loop_is_stdlib(_asyncio.get_running_loop()):
+        logger.error(SERVER_EVENT_LOOP_REFUSAL)
+        raise RuntimeError(SERVER_EVENT_LOOP_REFUSAL)
+    global _serving_loop_checked
+    _serving_loop_checked = True
+    # The airplane guard is armed HERE, before any request (R644): ``_ServingGate`` answers 503 until it is, and the unlock flow of a
+    # locked store is served before ``run_deferred_startup`` (which arms it again, idempotently) ever runs. Transparent while online.
+    # Whatever OO_NO_SCHEDULER says (R646): only OO_AIRPLANE_SOCKET_GUARD=0 leaves it out.
+    try:
+        from src.ingest.airplane import install_airplane_socket_guard
+
+        install_airplane_socket_guard()
+    except Exception as exc:  # noqa: BLE001 - the gate then refuses every request, which is the fail-closed answer
+        log_failure(logger, "could not install the airplane socket guard at start", exc, level=logging.ERROR)
+    # The same guard ``_serve`` sets first, for a server that was not started by it (``python -m uvicorn src.api.main:app --loop asyncio``,
+    # which the encrypted click-through uses): before the boot record below names the mechanism, and before any request can bring a
     # typed passphrase into this process. ``connect`` guards every place it hands a key to the engine as well.
     try:
         from src.monitoring.secret_scrub import guard_process
@@ -1226,6 +1248,44 @@ async def monitor_requests(request: Request, call_next):
 # replies where gzip's own framing overhead would net negative; it still transparently
 # no-ops when the client sent no `Accept-Encoding: gzip` (curl without it, or any
 # client that doesn't want it) and for responses already declaring another encoding.
+# --- The serving gate (R644, R649) ------------------------------------------- #
+# The lifespan's loop check (R642) and the airplane guard it arms run only when the
+# server runs the app's lifespan. ``uvicorn --lifespan off``, or this app MOUNTED
+# inside another ASGI app (Starlette runs no lifespan for a mount), skip both and
+# would serve with no network guard at all. So every request is refused with a fixed
+# 503 until both facts hold. R649: a pure ASGI middleware, so a websocket scope meets
+# it too (``@app.middleware("http")`` sees HTTP only, and a websocket route added
+# later would have gone round it), and nothing is latched: both facts are read on
+# every request, so a guard taken out later closes the gate again, whether by its
+# uninstall or by a real socket call written back over a patched one. Only a lifespan
+# scope passes ungated: any other type, a future one included, is refused (security
+# read A on #1901). The cost is a few flag and attribute reads, one get_running_loop()
+# and a module-name read.
+class _ServingGate:
+    def __init__(self, inner):  # type: ignore[no-untyped-def]
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):  # type: ignore[no-untyped-def]
+        global _serving_gate_logged, _serving_check_failure_logged
+        kind = scope.get("type")
+        if kind != "lifespan" and not _serving_gate_open():
+            if not _serving_gate_logged:  # once per closing: a closed gate refuses every request, and the log says so once, not per request
+                _serving_gate_logged = True
+                logger.error(SERVING_GATE_REFUSAL)
+            if kind == "http":
+                await JSONResponse(status_code=503, content={"detail": SERVING_GATE_REFUSAL})(scope, receive, send)
+            elif kind == "websocket":
+                # Closed before it is accepted: the server answers the handshake with a refusal (403), and no frame is exchanged.
+                await receive()  # the websocket.connect event, which the protocol hands the app first
+                await send({"type": "websocket.close", "code": 1013, "reason": "airplane mode's network guard is not in place"})
+            return  # any other scope type reaches nothing
+        if _serving_gate_logged and kind != "lifespan":
+            _serving_gate_logged = False  # open again: a later closing logs its own line (security read B on #1901)
+            _serving_check_failure_logged = False  # and a later failing check its own class (security read A on R653)
+        await self.inner(scope, receive, send)
+
+
+app.add_middleware(_ServingGate)
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
@@ -1313,6 +1373,10 @@ async def settings_write_refused_handler(request: Request, refused: KvWriteRefus
     return JSONResponse(status_code=503, content={"detail": http_detail(refused)}, headers=headers)
 
 
+#: The longest ``detail`` the catch-all 500 answers with (R653), the job status's own limit (``src/jobs/background.py``).
+UNHANDLED_DETAIL_LIMIT = 300
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     """Never return a bare plain-text 500. The SPA calls res.json() on EVERY
@@ -1351,6 +1415,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     except Exception:  # noqa: BLE001 - the scrub could not run: the class of the failure is all that is written
         logger.error("unhandled error (%s): its text is withheld, the scrub could not run", type(exc).__name__)
         detail = "internal error (its text is withheld: the scrub could not run)"
+    if len(detail) > UNHANDLED_DETAIL_LIMIT:
+        # R653: cut AFTER the scrub (a passphrase is taken out whole first), so no exception text, a mail server's megabyte-long
+        # greeting line included, makes an unbounded response; the job path's own errors are cut at the same length.
+        detail = detail[: UNHANDLED_DETAIL_LIMIT - 1] + "…"
     try:
         from src.monitoring.request_label import safe_method, safe_route
 
@@ -3357,12 +3425,15 @@ def list_sources(
         query = query.offset(offset)
     if limit is not None:
         query = query.limit(limit)
+    # The feed's login is shown as ***@ (R637); the stored URL is the one fetched.
+    from src.ingest.fetch_verdict import shown_url
+
     rows = [
         {
             "id": s.id,
             "name": s.name,
             "domain": s.domain,
-            "rss_url": s.rss_url,
+            "rss_url": shown_url(s.rss_url),
             "rate_limit_ms": s.rate_limit_ms,
             "enabled": s.enabled,
             "priority": s.priority,
@@ -3710,6 +3781,72 @@ def _run_ephemeral(argv: list[str]) -> None:
         print(f"Ephemeral data wiped: {tmp}")
 
 
+#: The event loop the server runs on (R642): the stdlib's, whose resolves and connects go through the patched ``socket`` calls the
+#: airplane guard relies on. ``"auto"`` would pick uvloop, which does neither.
+SERVER_EVENT_LOOP = "asyncio"
+
+
+#: The fixed words of the refusal (R642): names no loop class, path or setting beyond the two ways to start correctly.
+SERVER_EVENT_LOOP_REFUSAL = (
+    "Open Omniscience refuses to start on this event loop: airplane mode's network guard covers only Python's own asyncio loop. "
+    "Start the app with its own launcher, or pass --loop asyncio to uvicorn."
+)
+
+
+#: Set by the lifespan once its loop check passed (R644); never by anything else.
+_serving_loop_checked = False
+
+#: Set by ``_ServingGate`` once it has logged its refusal, so a closed gate writes one error line, not one per request.
+_serving_gate_logged = False
+
+#: The fixed words of the serving gate's 503 (R644). Two causes share them: a start that skipped the app's own startup, and a guard
+#: that startup could not install (its own ERROR line names that one).
+SERVING_GATE_REFUSAL = (
+    "Open Omniscience is not serving requests: airplane mode's network guard is not in place, because the app was started without "
+    "its own startup or the guard could not be installed (the log says which). Start the app with its own launcher."
+)
+
+
+def _serving_gate_open() -> bool:
+    """R653: :func:`_serving_preconditions_hold`, with a check that raises read as a closed gate: the fixed 503 and no exception
+    text, never the catch-all 500 quoting it. The class alone is logged."""
+    try:
+        return _serving_preconditions_hold()
+    except Exception as exc:  # noqa: BLE001 - any failure to establish the facts is a closed gate
+        global _serving_check_failure_logged
+        if not _serving_check_failure_logged:  # once, as the gate's own refusal line
+            _serving_check_failure_logged = True
+            logger.error("the serving gate's check failed (%s): the gate stays closed", type(exc).__name__)
+        return False
+
+
+_serving_check_failure_logged = False
+
+
+def _serving_preconditions_hold() -> bool:
+    """R644: the lifespan's loop check ran, and airplane mode's guard is armed. The guard half is waived only by
+    ``OO_AIRPLANE_SOCKET_GUARD=0``, the operator's documented opt-out, where the boot itself never arms it; the loop half is never
+    waived. ``OO_NO_SCHEDULER=1`` waives neither (R646): the boot arms the guard under it too."""
+    # The flag says a lifespan passed the check somewhere in this process; the loop serving THIS request is checked too, so a second
+    # server started on another loop with --lifespan off after it cannot ride on the first one's check (security read A).
+    import asyncio as _asyncio
+
+    if not _serving_loop_checked or not _event_loop_is_stdlib(_asyncio.get_running_loop()):
+        return False
+    if os.getenv("OO_AIRPLANE_SOCKET_GUARD", "1") == "0":
+        return True
+    from src.ingest.airplane import is_armed, removed_while_installed
+
+    # A real socket call written back over a patched one leaves both flags set with that call unguarded (security reads A and B on #1901).
+    return is_armed() and not removed_while_installed()
+
+
+def _event_loop_is_stdlib(loop: object) -> bool:
+    """True only for the stdlib's own asyncio loops (R642): selector or proactor, defined in ``asyncio``. uvloop, or any other loop,
+    is not -- its resolves and connects may bypass the airplane socket guard."""
+    return type(loop).__module__.split(".", 1)[0] == "asyncio"
+
+
 def _serve() -> None:
     # Hold this process's core dumps to nothing BEFORE anything else (2026-10-06): the key of an unlocked store is in this
     # process's memory, and a native crash writes that memory out as a dump, to a file or a handler that keeps it. Not an
@@ -3828,7 +3965,13 @@ def _serve() -> None:
     # boot. 30 s is long enough for an ordinary request and short enough to lose the
     # race with nothing.
     try:
-        uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=30, log_config=uvicorn_log_config(), ws="none")
+        # loop="asyncio", never uvicorn's "auto" (R642): uvicorn[standard] installs uvloop and "auto" picks it, and uvloop resolves and
+        # connects in libuv's C code, past every point the airplane socket guard patches (src/ingest/airplane.py) -- an async client on
+        # this loop would egress with airplane mode engaged (security read B of R639 reached a non-loopback listener that way). The
+        # guarantee outweighs uvloop's speed.
+        uvicorn.run(
+            app, host=host, port=port, timeout_graceful_shutdown=30, log_config=uvicorn_log_config(), ws="none", loop=SERVER_EVENT_LOOP
+        )
     except (KeyboardInterrupt, SystemExit):
         raise
     except BaseException as exc:

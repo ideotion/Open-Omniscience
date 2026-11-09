@@ -163,6 +163,7 @@ if _MISSING_EXTRAS:
 
 
 import pytest  # noqa: E402 - must follow the OO_DATA_DIR/plaintext env setup above
+
 # Bind the app's engine to the suite's directory NOW, before any test body can move ``OO_DATA_DIR``: ``src.database.session`` binds at its
 # first import and never again, and a full run gets this by accident (collection imports it at module level) while a selection does not.
 # After every env default the session reads, before the first fixture. ``_engine_binds_to_the_suite_directory`` below is the net.
@@ -262,6 +263,63 @@ def _clear_network_kill_switch():
     yield
     clear_kill_switch()
     _reset_crossed_online_for_tests()
+
+
+def _open_serving_gate(main: object) -> None:
+    """R644's serving gate answers 503 unless a lifespan has run the loop check and airplane mode's guard is armed, and most of this
+    suite drives the app through ``TestClient`` WITHOUT ``with``, which runs no lifespan. No environment setting waives the gate (R646)
+    and it latches nothing (R649), so the suite puts both facts in place, the way it lists ``testserver`` in ``OO_ALLOWED_HOSTS``: it
+    records the loop check (TestClient runs on the stdlib loop, which the gate still checks on every request) and arms the real guard,
+    as every boot now does (R646; transparent while the kill switch is off, which the fixture above ensures).
+    ``tests/test_serving_gate_r644.py`` takes both away again in its own fixture and pins the refusal."""
+    main._serving_loop_checked = True  # type: ignore[attr-defined]
+    if os.getenv("OO_AIRPLANE_SOCKET_GUARD", "1") != "0":
+        from src.ingest.airplane import install_airplane_socket_guard
+
+        install_airplane_socket_guard()
+
+
+class _OpenServingGateOnImport:
+    """Opens the gate the moment ``src.api.main`` is first imported, wherever that happens: at collection, in a fixture, or inside a
+    test body (a CI job that runs a few files can import it there first; ``tests/test_map_serve.py`` did, and met the 503)."""
+
+    def find_spec(self, name, path, target=None):  # type: ignore[no-untyped-def]
+        if name != "src.api.main":
+            return None
+        import importlib.machinery
+
+        spec = importlib.machinery.PathFinder.find_spec(name, path)
+        if spec is None or spec.loader is None:
+            return spec
+        real = spec.loader
+
+        class _Loader(importlib.abc.Loader):
+            def create_module(self, spec):  # type: ignore[no-untyped-def]
+                return real.create_module(spec)
+
+            def exec_module(self, module):  # type: ignore[no-untyped-def]
+                real.exec_module(module)
+                _open_serving_gate(module)
+
+        spec.loader = _Loader()
+        return spec
+
+
+if "src.api.main" in sys.modules:
+    _open_serving_gate(sys.modules["src.api.main"])
+else:
+    import importlib.abc
+
+    sys.meta_path.insert(0, _OpenServingGateOnImport())
+
+
+@pytest.fixture(autouse=True)
+def _serving_gate_open_for_in_process_clients():
+    """Opens it again for each test, in case a test closed it without putting it back (see ``_open_serving_gate``)."""
+    main = sys.modules.get("src.api.main")
+    if main is not None:
+        _open_serving_gate(main)
+    yield
 
 
 @pytest.fixture(autouse=True)
@@ -629,7 +687,23 @@ def _no_settings_write_is_entered_holding_the_single_writer_gate():
     )
 
 
-_AIRPLANE_ORIGINALS = ("_orig_getaddrinfo", "_orig_create_connection", "_orig_connect", "_orig_connect_ex", "_orig_tunnel")
+_AIRPLANE_ORIGINALS = (
+    "_orig_getaddrinfo",
+    "_orig_create_connection",
+    "_orig_connect",
+    "_orig_connect_ex",
+    "_orig_tunnel",
+    "_orig_putrequest",
+    "_orig_gethostbyname",
+    "_orig_gethostbyname_ex",
+    "_orig_gethostbyaddr",
+    "_orig_getnameinfo",
+    "_orig_bind",
+    "_orig_sendto",
+    "_orig_sendmsg",
+    "_orig_proactor_connect",
+    "_orig_proactor_sendto",
+)
 
 
 def _process_wide_network_calls() -> dict[str, object]:
@@ -646,6 +720,14 @@ def _process_wide_network_calls() -> dict[str, object]:
         "socket.socket.connect": socket.socket.connect,
         "socket.socket.connect_ex": socket.socket.connect_ex,
         "http.client.HTTPConnection._tunnel": http.client.HTTPConnection._tunnel,  # type: ignore[attr-defined]
+        "http.client.HTTPConnection.putrequest": http.client.HTTPConnection.putrequest,
+        "socket.gethostbyname": socket.gethostbyname,
+        "socket.gethostbyname_ex": socket.gethostbyname_ex,
+        "socket.gethostbyaddr": socket.gethostbyaddr,
+        "socket.getnameinfo": socket.getnameinfo,
+        "socket.socket.bind": socket.socket.bind,
+        "socket.socket.sendto": socket.socket.sendto,
+        "socket.socket.sendmsg": getattr(socket.socket, "sendmsg", None),
     }
     # Imported here, at the first test's setup and so before any test has swapped a call: the module captures the stdlib's functions at
     # import, and the first fetch of a process used to be the one to import it, inside a test's ``monkeypatch`` window, which made the
@@ -654,6 +736,11 @@ def _process_wide_network_calls() -> dict[str, object]:
 
     for attr in _AIRPLANE_ORIGINALS:
         calls["airplane." + attr] = getattr(airplane, attr)
+    # R643: Windows only, where the stdlib proactor's two entry points are patch points too.
+    proactor = getattr(sys.modules.get("asyncio.windows_events"), "IocpProactor", None)
+    if proactor is not None:
+        calls["asyncio.windows_events.IocpProactor.connect"] = proactor.connect
+        calls["asyncio.windows_events.IocpProactor.sendto"] = proactor.sendto
     return calls
 
 
@@ -664,16 +751,23 @@ def _put_network_call_back(name: str, value: object) -> None:
 
     if name.startswith("airplane."):
         setattr(sys.modules["src.ingest.airplane"], name.removeprefix("airplane."), value)
-    elif name == "socket.getaddrinfo":
-        socket.getaddrinfo = value  # type: ignore[assignment]
-    elif name == "socket.create_connection":
-        socket.create_connection = value  # type: ignore[assignment]
-    elif name == "socket.socket.connect":
-        socket.socket.connect = value  # type: ignore[method-assign,assignment]
-    elif name == "socket.socket.connect_ex":
-        socket.socket.connect_ex = value  # type: ignore[method-assign,assignment]
-    else:
-        http.client.HTTPConnection._tunnel = value  # type: ignore[attr-defined,method-assign,assignment]
+        return
+    # Every other name is "<owner>.<attribute>" from _process_wide_network_calls. An unknown owner is a KeyError, never a write to some
+    # other call (it used to fall through to HTTPConnection._tunnel, which a later test then found replaced by gethostbyname).
+    owners: dict[str, object] = {
+        "socket": socket,
+        "socket.socket": socket.socket,
+        "http.client.HTTPConnection": http.client.HTTPConnection,
+    }
+    proactor = getattr(sys.modules.get("asyncio.windows_events"), "IocpProactor", None)
+    if proactor is not None:
+        owners["asyncio.windows_events.IocpProactor"] = proactor
+    owner, attr = name.rsplit(".", 1)
+    if value is None:  # an optional call this platform lacks (socket.socket.sendmsg on Windows): take off what a test added
+        if attr in vars(owners[owner]):
+            delattr(owners[owner], attr)
+        return
+    setattr(owners[owner], attr, value)
 
 
 def _owner_name(owner: object) -> str:

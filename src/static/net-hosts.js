@@ -185,6 +185,14 @@
       "fetcher": true
     },
     {
+      "id": "field-checks",
+      "label": "Field checks",
+      "hosts": ["op.europa.eu", "vocabularies.unesco.org", "www.fao.org", "iptc.org", "www.wikidata.org"],
+      "trigger": "click",
+      "setting": null,
+      "fetcher": true
+    },
+    {
       "id": "climate",
       "label": "Climate series",
       "hosts": ["data.giss.nasa.gov", "www.cpc.ncep.noaa.gov", "earthquake.usgs.gov", "raw.githubusercontent.com", "www.ncei.noaa.gov", "noaadata.apps.nsidc.org"],
@@ -222,6 +230,16 @@
       "id": "ai",
       "label": "Local AI install & weights",
       "hosts": ["api.github.com", "github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com", "ollama.com", "huggingface.co", "pypi.org"],
+      "trigger": "click",
+      "setting": null,
+      "fetcher": false,
+      "mixed": true,
+      "spawned": true
+    },
+    {
+      "id": "update",
+      "label": "App updates",
+      "hosts": ["api.github.com", "github.com"],
       "trigger": "click",
       "setting": null,
       "fetcher": false,

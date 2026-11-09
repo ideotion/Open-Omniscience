@@ -143,6 +143,15 @@ HOT_INDEXES: dict[str, str] = {
         "CREATE INDEX IF NOT EXISTS idx_article_link_dedup "
         "ON article_links (article_id, url, position)"
     ),
+    # convergence._shared_origin's GROUP BY normalized_url over a set of article ids (R455/R611): answered
+    # from the index instead of one row read per link (1,392 -> 171 ms on 4.16 M scattered links, SQLCipher,
+    # cold). DEFERRED: a sort of every link's url, about 100 bytes of RAM per link measured, so it is built by
+    # the ``article-indexes`` start-up step (src/database/article_indexes.py) with its free-space and memory
+    # gates, never inside init_db. Mirrored on the model and in migration a7c3e5f19b20.
+    "idx_article_link_article_url": (
+        "CREATE INDEX IF NOT EXISTS idx_article_link_article_url "
+        "ON article_links (article_id, normalized_url)"
+    ),
     # Per-language corpus-growth feed (snapshots.article_counts_by_language): a
     # created_at range scan that reads `language` per row to GROUP BY it. Without
     # this, idx_article_created_at finds the rows and then fetches each full article
@@ -195,7 +204,7 @@ HOT_INDEXES: dict[str, str] = {
 # files, one at a time, with the free space measured first and its progress in the task manager. A
 # database that has no articles yet (a fresh one) gets them from create_all with the table.
 DEFERRED_INDEXES: frozenset[str] = frozenset(
-    {"idx_article_language_published", "idx_article_title_nocase"}
+    {"idx_article_language_published", "idx_article_title_nocase", "idx_article_link_article_url"}
 )
 
 # --------------------------------------------------------------------------- #
@@ -392,6 +401,11 @@ _ARTICLE_IDENTITY_COLUMNS: dict[str, str] = {
     "canon_version": "ALTER TABLE articles ADD COLUMN canon_version VARCHAR(16)",
 }
 
+#: The ``canon_version`` the backfill writes on rows that predate the column: ``url-v1``, as the Alembic revision
+#: (d3e4f5a6b7c8) writes it. Not :data:`~src.utils.url_utils.CANON_VERSION`: a row stored before the column existed was
+#: canonicalised by url-v1's rules (or an older build's), never by a later version's (R628 bumped it to url-v2).
+_CANON_VERSION_BACKFILL = "url-v1"
+
 # Which ARTIFACT a merge batch came from, so a re-import of the same bytes can be
 # refused up front. Additive + nullable, and deliberately NOT backfilled: the
 # digest of an artifact merged before this column existed is genuinely unknown,
@@ -439,13 +453,14 @@ def ensure_article_identity_columns(engine: Engine) -> list[str]:
     Mirrors the other self-heals (the live DB never auto-runs alembic). content_multihash
     is backfilled as ``sha2-256:<hash>`` for rows whose hash is a 64-char SHA-256 digest
     (every ingest path produces one) — never a fabricated label for an odd hash; the
-    bare-hex dedup ``hash`` is untouched. canon_version is backfilled to the current
-    ``CANON_VERSION`` for existing rows (they WERE canonicalised by the current rules).
+    bare-hex dedup ``hash`` is untouched. canon_version is backfilled to ``url-v1`` for existing
+    rows, as the Alembic revision does (they were canonicalised before the column existed, so by
+    url-v1's rules at the latest; ``CANON_VERSION`` moved on to url-v2 in R628).
     Idempotent; no-op on a fresh DB / non-sqlite / missing table.
     """
     if engine.url.get_backend_name() != "sqlite":
         return []
-    from src.utils.url_utils import CANON_VERSION, CONTENT_HASH_ALGO
+    from src.utils.url_utils import CONTENT_HASH_ALGO
 
     added: list[str] = []
     with engine.begin() as conn:
@@ -473,7 +488,7 @@ def ensure_article_identity_columns(engine: Engine) -> list[str]:
             if "canon_version" in added:
                 conn.execute(
                     text("UPDATE articles SET canon_version = :v WHERE canon_version IS NULL"),
-                    {"v": CANON_VERSION},
+                    {"v": _CANON_VERSION_BACKFILL},
                 )
         _LOG.info(f"added + backfilled articles identity column(s): {', '.join(added)}")
     return added

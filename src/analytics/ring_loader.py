@@ -353,7 +353,7 @@ def load_rings_from_wikidata(
     the batch. Returns counts with the method stated -- never a success rate, because the
     denominator ("concepts Wikidata should have had") is not a number anyone has.
     """
-    from src.ingest import kill_switch_active
+    from src.ingest import kill_switch_active, kill_switch_engaged_since, kill_switch_epoch
     from src.ingest.fetch_verdict import NETWORK_REFUSED
 
     # Before a session exists, so the refusal is testable with no socket anywhere near it.
@@ -374,6 +374,13 @@ def load_rings_from_wikidata(
         if should_stop is not None and should_stop():
             stopped = True
             break
+        # R618: a Stop DURING the load ends it, as the cancel above does: the rings already resolved are kept and written, and the
+        # candidates not yet asked are neither skipped nor failed. This candidate's window (R614) opens before the check that lets its
+        # requests go, so a Stop landing between the two is in it.
+        epoch = kill_switch_epoch()
+        if kill_switch_active():
+            stopped = True
+            break
         if progress is not None:
             progress(i, total, cand.term)
         try:
@@ -390,6 +397,13 @@ def load_rings_from_wikidata(
                 continue
             rings.append(ring)
         except Exception as exc:  # noqa: BLE001 - per-candidate resilience, counted and logged
+            if kill_switch_engaged_since(epoch):
+                # R618 (R614): the Stop refused or cut this candidate's request, still engaged or cleared again: not the candidate's
+                # failure, so it is not counted as an error, and the load ends here. The cost: a genuine failure sharing the window is
+                # asked again on the next load.
+                log_failure(_LOG, f"ring load: {cand.normalized} ({cand.language}) stopped by the network kill switch", exc, level=logging.INFO)
+                stopped = True
+                break
             skipped[SKIP_ERROR] = skipped.get(SKIP_ERROR, 0) + 1
             log_failure(_LOG, f"ring load: {cand.normalized} ({cand.language}) failed", exc, level=logging.INFO)
 

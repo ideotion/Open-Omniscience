@@ -297,14 +297,28 @@ def test_a_first_seed_of_more_than_999_domains_runs_on_a_sqlite_that_caps_variab
 
 
 # --- the read of the J3 delta: the report must not say something false about why a tag or an entry stayed out (F4, F5) ---
-def test_a_feedless_entry_planned_onto_a_held_back_feed_is_counted_held_back_not_merged(s, monkeypatch):
-    """A store keyed on the domain alone holds the second feed back; a feed-less entry planned onto THAT feed has no row to
-    put its tags on. It was counted as merged although its tags landed nowhere."""
+def test_a_feedless_entry_planned_onto_a_held_back_feed_goes_onto_the_outlets_existing_feed_row(s, monkeypatch):
+    """A store keyed on the domain alone holds the second feed back. A feed-less entry the plan put onto THAT feed was once
+    counted as merged although its tags landed nowhere; it now takes the outlet's feed row by the one rule both seeds use
+    (``outlet_feed_row``, OPEN_QUEUE row J (6)(b)), the row the database already holds, so it IS merged."""
     seed_sources(s, [_e("Outlet EN", "en")])
     monkeypatch.setattr("src.ingest.seed_sources.composite_key_active", lambda _c: False)
     r = seed_sources(s, [_e("Outlet AR", "ar"), _e("Outlet EN", "en"), _e("Outlet", tags=["wire"])])
     assert _accounted(r)
-    assert r["merged"] == 0 and r["held_back_legacy_key"] == 2          # the held feed and the entry planned onto it
+    assert r["merged"] == 1 and r["held_back_legacy_key"] == 1          # only the held feed itself
+    assert r["tag_merge"]["tags_merged"] == 1
+    assert "wire" in (s.query(Source).one().tags or "")
+
+
+def test_a_feedless_entry_whose_outlet_has_no_feed_row_at_all_is_held_back_not_merged(s, monkeypatch):
+    """The other side: the outlet's feeds are all held back and it holds no feed row, so the tags have nowhere to go and
+    the entry is counted held back with that feed, never as merged."""
+    s.add(Source(name="Outlet", domain="outlet.example"))
+    s.commit()
+    monkeypatch.setattr("src.ingest.seed_sources.composite_key_active", lambda _c: False)
+    r = seed_sources(s, [_e("Outlet AR", "ar"), _e("Outlet EN", "en"), _e("Outlet", tags=["wire"])])
+    assert _accounted(r)
+    assert r["merged"] == 0 and r["held_back_legacy_key"] == 3          # both held feeds and the entry planned onto one
     assert r["tag_merge"]["tags_merged"] == 0
 
 

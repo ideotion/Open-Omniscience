@@ -122,7 +122,11 @@ _CHILD = """
 import json, sys
 sys.path.insert(0, sys.argv[1])  # ``-I`` ignores PYTHONPATH, so the tree under test is put first by hand
 from fastapi.testclient import TestClient
+import src.api.main as main
 from src.api.main import app
+main._serving_loop_checked = True  # as tests/conftest.py does: no lifespan runs here, and R644's gate would answer 503 (R646, R649)
+from src.ingest.airplane import install_airplane_socket_guard
+install_airplane_socket_guard()
 c = TestClient(app, base_url="http://127.0.0.1:8000")  # no ``with``: the lifespan is not under test
 out = {}
 for p in ("/docs", "/redoc", "/openapi.json"):

@@ -365,7 +365,8 @@ def test_an_http_status_stays_the_hosts_answer_whatever_the_switch_says():
     assert _failure_reason("HTTP 403 for https://a.example/x") == "http_403"
     assert _failure_reason(f"request error for https://a.example/x: {RAW_STOP}") == "offline"
     clear_kill_switch()
-    assert _failure_reason(f"request error for https://a.example/x: {RAW_STOP}") == "connect", "with the switch off the raw shape is a connect failure"
+    assert _failure_reason(f"request error for https://a.example/x: {RAW_STOP}") == "offline", "the guard's words through a proxy are read alone (R620)"
+    assert _failure_reason(f"request error for https://a.example/x: {RAW_HOST}") == "connect", "with the switch off a host's reset is a connect failure"
 
 
 #: The sentences ``EthicalFetcher`` really raises (src/ingest/__init__.py), one per shape that the classifier files under a response answer.
@@ -383,7 +384,7 @@ _RESPONSE_SENTENCES = [
 #: What a Stop CAN produce, or what we cannot tell from it: the shapes the switch reclaims. ``other`` is any sentence the classifier does not know.
 _RECLAIMED_SENTENCES = [
     ("cannot resolve host 'a.example': [Errno -2] Name or service not known", "dns"),
-    (f"request error for https://a.example/x: {RAW_STOP}", "connect"),
+    (f"request error for https://a.example/x: {RAW_HOST}", "connect"),  # RAW_STOP is read from its text alone since R620
     ("a sentence nobody classified", "other"),
 ]
 

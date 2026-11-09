@@ -32,7 +32,7 @@ import logging
 import re
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import urljoin, urlparse, urlsplit, urlunparse
 
 from bs4 import BeautifulSoup
 
@@ -40,6 +40,32 @@ from src.monitoring.secret_scrub import log_failure
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+
+def _host_label(netloc: str) -> str:
+    """A link's ``domain`` label: the host and port of ``netloc``, lower-cased, without its userinfo (R628).
+
+    The userinfo is everything before the LAST ``@``, as ``urllib.parse`` reads it (``.hostname`` and ``.port`` read what follows),
+    and a host and port hold no ``@``. Before, the label was the whole netloc lower-cased, so a link kept its credentials in the
+    label, and the social, ad and tracking checks (a substring search over the label) could be steered by them:
+    ``https://twitter.com:x@news.example/a`` read as social. Pure string work, so it never raises."""
+    return netloc.rpartition("@")[2].lower()
+
+
+def _site(netloc: str) -> str:
+    """The site ``netloc`` names, for internal against external: the host after the LAST ``@``, as ``urllib.parse`` reads it
+    (lower-cased, an IPv6 literal without its brackets), without its port or a leading ``www.`` (R628).
+
+    The same reading as ``src.ingest.crawl._registrable_host`` (R624), written here so that this module does not load ``src.ingest``
+    (R621); a test holds the two equal. Before, two whole netlocs were compared, so a link to the page's own host written with a
+    userinfo, a port or ``www.`` read as external and was stored as an outbound link with its credentials. Never raises: a host
+    ``urllib.parse`` cannot read comes back as written after the userinfo, as the crawl's does."""
+    after = netloc.rpartition("@")[2]
+    try:
+        host = urlsplit("//" + after).hostname or ""
+    except ValueError:
+        host = after
+    return host[4:] if host.startswith("www.") else host
 
 
 class LinkExtractor:
@@ -243,7 +269,15 @@ class LinkExtractor:
             try:
                 link_url = urljoin(base_url, link_url)
             except Exception as e:
-                log_failure(logger, f"Error resolving relative URL {link_url} with base {base_url}", e, level=logging.WARNING)
+                # imported on use: this module must not load src.ingest (R621)
+                from src.ingest.fetch_verdict import failure_url
+
+                log_failure(
+                    logger,
+                    f"Error resolving relative URL {failure_url(link_url)} with base {failure_url(base_url)}",
+                    e,
+                    level=logging.WARNING,
+                )
 
         # Normalize URL
         normalized_url = self.normalize_url(link_url)
@@ -266,7 +300,7 @@ class LinkExtractor:
             "link_type": link_type,
             "html_tag": tag_name,
             "html_attributes": html_attributes,
-            "domain": parsed_url.netloc.lower() if parsed_url.netloc else "",
+            "domain": _host_label(parsed_url.netloc) if parsed_url.netloc else "",
             "path": parsed_url.path,
             "query": parsed_url.query,
             "fragment": parsed_url.fragment,
@@ -325,7 +359,10 @@ class LinkExtractor:
                         parsed_url = urlparse(url)
                         base_netloc = urlparse(base_url).netloc if base_url else ""
                     except (ValueError, TypeError) as e:
-                        log_failure(logger, f"Skipping malformed link URL {url!r}", e, level=logging.DEBUG)
+                        # imported on use: this module must not load src.ingest (R621)
+                        from src.ingest.fetch_verdict import failure_url
+
+                        log_failure(logger, f"Skipping malformed link URL {failure_url(url)!r}", e, level=logging.DEBUG)
                         continue
 
                     link_info: dict[str, Any] = {
@@ -341,7 +378,7 @@ class LinkExtractor:
                         ),
                         "html_tag": tag.split("_")[0],
                         "html_attributes": {},
-                        "domain": parsed_url.netloc.lower() if parsed_url.netloc else "",
+                        "domain": _host_label(parsed_url.netloc) if parsed_url.netloc else "",
                         "path": parsed_url.path,
                         "query": parsed_url.query,
                         "fragment": parsed_url.fragment,
@@ -426,7 +463,10 @@ class LinkExtractor:
             # A URL we cannot normalise is not a usable outbound link; drop it
             # quietly (debug, not warning — these are malformed hrefs in scraped
             # HTML, not an app fault) instead of storing the raw garbage.
-            log_failure(logger, f"Could not normalise URL {url!r}", e, level=logging.DEBUG)
+            # imported on use: this module must not load src.ingest (R621)
+            from src.ingest.fetch_verdict import failure_url
+
+            log_failure(logger, f"Could not normalise URL {failure_url(url)!r}", e, level=logging.DEBUG)
             return ""
 
     def _determine_link_type(
@@ -444,23 +484,21 @@ class LinkExtractor:
         Returns:
             Link type string
         """
-        # Check by tag first
+        # Check by tag first. A <link> is read exactly as an anchor is, by its URL below (the R628 reads, independent S1): its
+        # branch here asked the parsed URL for a "rel" it never has, so it answered "external" whatever the host, and a page's
+        # own <link href="/rss"> was stored as an outbound ArticleLink, with the page's login when the base URL carried one.
+        # A stylesheet's href still types as one by its extension, as an anchor's would.
         if tag_name == "img":
             return "image"
         elif tag_name == "script":
             return "script"
-        elif tag_name == "link":
-            rel = getattr(parsed_url, "rel", "") if hasattr(parsed_url, "rel") else ""
-            if "stylesheet" in rel.lower():
-                return "stylesheet"
-            return "external"
         elif tag_name == "iframe":
             return "iframe"
         elif tag_name in ["video", "audio", "source"]:
             return "media"
 
-        # Check by URL pattern
-        domain = parsed_url.netloc.lower() if parsed_url.netloc else ""
+        # Check by URL pattern: the host, never the userinfo (R628)
+        domain = _host_label(parsed_url.netloc) if parsed_url.netloc else ""
         path = parsed_url.path.lower()
 
         # Check for social media
@@ -503,10 +541,12 @@ class LinkExtractor:
         if scheme in ("javascript", "data", "file"):
             return "other"
 
-        # internal vs external is same-site vs cross-site (by domain). Relative
-        # links (no netloc, e.g. an unresolved anchor) are treated as internal.
+        # internal vs external is same-site vs cross-site, by the host after the last @
+        # without its port or www. (R628). Relative links (no netloc, e.g. an
+        # unresolved anchor) are treated as internal.
         if parsed_url.netloc:
-            if base_domain and parsed_url.netloc.lower() == base_domain.lower():
+            site = _site(parsed_url.netloc)
+            if base_domain and site and site == _site(base_domain):
                 return "internal"
             return "external"
         return "internal"

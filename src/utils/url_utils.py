@@ -124,7 +124,71 @@ def is_equivalent_domain(domain1: str, domain2: str) -> bool:
 # corpus spanning a canonicaliser change can tell which articles were normalised by
 # which version (and re-canonicalise only the stale ones) instead of silently mixing
 # them. Additive; never reformats the existing canonical_url.
-CANON_VERSION = "url-v1"
+#
+# url-v2 (R628): the userinfo is no longer part of a canonical URL. url-v1 kept it, so
+# https://alice:pw@a.example/x and https://a.example/x were two pages to the dedup and
+# the credentials reached the stored canonical_url. An article stamped url-v1 differs
+# from its url-v2 form only when its canonical_url holds a userinfo;
+# :func:`url_v1_canonical` gives that form back for the pre-fetch dedup.
+CANON_VERSION = "url-v2"
+
+
+def _authority_host(netloc: str) -> str:
+    """The host and port of ``netloc``: the userinfo is everything before the LAST ``@``, as ``urllib.parse`` reads it (R628)."""
+    return netloc.rpartition("@")[2]
+
+
+def _canonical_form(url: str, *, keep_userinfo: bool) -> str:
+    """:func:`canonicalize_url`'s rules, raising what ``urllib.parse`` raises; ``keep_userinfo`` is url-v1's netloc."""
+    parsed = urlparse(url)
+
+    # Normalize scheme (force https)
+    scheme = "https"
+
+    # Normalize domain (lowercase, strip www., remove default ports), its userinfo out (R628)
+    netloc = normalize_domain(parsed.netloc if keep_userinfo else _authority_host(parsed.netloc))
+
+    # Remove tracking parameters
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    tracking_params = {
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_term",
+        "utm_content",
+        "gclid",
+        "fbclid",
+        "mc_cid",
+        "mc_eid",
+        "dclid",
+        "msclkid",
+    }
+    filtered_query = {k: v for k, v in query.items() if k.lower() not in tracking_params}
+
+    # Sort remaining query parameters for consistency, preserving ALL values of
+    # multi-valued params (a=1&a=2 must not collapse to a=1 -- that changes
+    # semantics and dedup).
+    sorted_query = dict(sorted(filtered_query.items()))
+    clean_query = "&".join(f"{k}={val}" for k, vals in sorted_query.items() for val in vals)
+
+    # Normalize path
+    path = parsed.path
+    if not path:
+        path = "/"
+    elif len(path) > 1 and path.endswith("/"):
+        path = path.rstrip("/")
+
+    # Rebuild URL
+    return urlunparse(
+        (
+            scheme,
+            netloc,
+            path,
+            parsed.params,
+            clean_query,
+            "",  # Remove fragment
+        )
+    )
 
 
 def canonicalize_url(url: str) -> str:
@@ -137,6 +201,9 @@ def canonicalize_url(url: str) -> str:
     5. Normalizing the domain (strip www., remove default ports)
     6. Removing empty path (set to /)
     7. Removing trailing slash from path (except root)
+    8. Removing the userinfo (R628, url-v2): what precedes the LAST ``@`` of the
+       authority, as urllib.parse reads it. The request itself still carries the
+       URL as given; only the canonical form, the dedup key, loses it.
 
     Args:
         url: The URL to canonicalize.
@@ -148,61 +215,31 @@ def canonicalize_url(url: str) -> str:
         return url
 
     try:
-        parsed = urlparse(url)
-
-        # Normalize scheme (force https)
-        scheme = "https"
-
-        # Normalize domain (lowercase, strip www., remove default ports)
-        netloc = normalize_domain(parsed.netloc)
-
-        # Remove tracking parameters
-        query = parse_qs(parsed.query, keep_blank_values=True)
-        tracking_params = {
-            "utm_source",
-            "utm_medium",
-            "utm_campaign",
-            "utm_term",
-            "utm_content",
-            "gclid",
-            "fbclid",
-            "mc_cid",
-            "mc_eid",
-            "dclid",
-            "msclkid",
-        }
-        filtered_query = {k: v for k, v in query.items() if k.lower() not in tracking_params}
-
-        # Sort remaining query parameters for consistency, preserving ALL values of
-        # multi-valued params (a=1&a=2 must not collapse to a=1 -- that changes
-        # semantics and dedup).
-        sorted_query = dict(sorted(filtered_query.items()))
-        clean_query = "&".join(f"{k}={val}" for k, vals in sorted_query.items() for val in vals)
-
-        # Normalize path
-        path = parsed.path
-        if not path:
-            path = "/"
-        elif len(path) > 1 and path.endswith("/"):
-            path = path.rstrip("/")
-
-        # Rebuild URL
-        canonical_url = urlunparse(
-            (
-                scheme,
-                netloc,
-                path,
-                parsed.params,
-                clean_query,
-                "",  # Remove fragment
-            )
-        )
-
-        return canonical_url
+        return _canonical_form(url, keep_userinfo=False)
 
     except Exception as e:
-        log_failure(logger, f"Error canonicalizing URL {url}", e)
+        # imported on use: this module must not load src.ingest (R621)
+        from src.ingest.fetch_verdict import failure_url
+
+        log_failure(logger, f"Error canonicalizing URL {failure_url(url)}", e)
         return url
+
+
+def url_v1_canonical(url: str) -> str | None:
+    """The canonical form ``url-v1`` gave ``url``, or ``None`` when it is today's (R628).
+
+    Only a URL whose authority holds a userinfo (an ``@``, as ``urllib.parse`` reads it) has one: url-v1 kept the userinfo and
+    url-v2 drops it, and nothing else changed. An article stored before R628 from such a URL keeps that form in its
+    ``canonical_url``, so the pre-fetch dedup asks for it too and does not fetch the page again. ``None`` as well for a URL
+    :func:`canonicalize_url` cannot read (it logs that once; this adds nothing). Never raises."""
+    if not url:
+        return None
+    try:
+        if "@" not in urlparse(url).netloc:
+            return None
+        return _canonical_form(url, keep_userinfo=True)
+    except Exception:  # noqa: BLE001 - canonicalize_url already logged this URL's failure; the fallback has nothing to add
+        return None
 
 
 # NOTE (audit 0.0.9): a resolve_redirects() helper used to live here, making raw
@@ -261,10 +298,13 @@ def get_domain_from_url(url: str) -> str | None:
     try:
         parsed = urlparse(url)
         if parsed.netloc:
-            return normalize_domain(parsed.netloc)
+            return normalize_domain(_authority_host(parsed.netloc))  # the host, its userinfo out (R628)
         return None
     except Exception as e:
-        log_failure(logger, f"Error extracting domain from {url}", e)
+        # imported on use: this module must not load src.ingest (R621)
+        from src.ingest.fetch_verdict import failure_url
+
+        log_failure(logger, f"Error extracting domain from {failure_url(url)}", e)
         return None
 
 
@@ -281,8 +321,11 @@ def get_base_url(url: str) -> str | None:
     try:
         parsed = urlparse(url)
         if parsed.scheme and parsed.netloc:
-            return f"{parsed.scheme}://{normalize_domain(parsed.netloc)}"
+            return f"{parsed.scheme}://{normalize_domain(_authority_host(parsed.netloc))}"  # its userinfo out (R628)
         return None
     except Exception as e:
-        log_failure(logger, f"Error getting base URL from {url}", e)
+        # imported on use: this module must not load src.ingest (R621)
+        from src.ingest.fetch_verdict import failure_url
+
+        log_failure(logger, f"Error getting base URL from {failure_url(url)}", e)
         return None

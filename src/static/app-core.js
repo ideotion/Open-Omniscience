@@ -1397,12 +1397,16 @@
         // installer check IS a guarded fetch (docs/SECURITY.md's "Mixed." row), so
         // the plain "not through the fetcher" line would deny a path it takes (row H).
         if (!protectedMode) {
+          if (lane.mixed && lane.id === "update") return t("Mostly not through this app's fetcher or proxy — only the update check uses the fetcher.");
           return lane.mixed
             ? t("Mostly not through this app's fetcher or proxy — only the installer check uses the fetcher.")
             : t("Not through this app's fetcher or proxy.");
         }
         // With no usable proxy the installer check is refused, not proxied, so the
         // "mostly direct" line would overclaim; the plain direct line is the true one.
+        if (lane.mixed && lane.id === "update" && kind !== "refused") {
+          return t("Transport: mostly direct, even with protected mode on — only the update check goes through your proxy; the git download does not, so GitHub sees your address.");
+        }
         return (lane.mixed && kind !== "refused")
           ? t("Transport: mostly direct, even with protected mode on — only the installer check goes through your proxy, so the download hosts see your address.")
           : t("Transport: direct, even with protected mode on — this lane does not use your proxy, so these hosts see your address.");
@@ -2424,8 +2428,8 @@
       // below apply to it.
       // The article list's index build and the repair of a damaged library file draw their detail the same way: the
       // "saving waits" caveat while they run, the numbers of the repair, and the keyed reason a refusal carries (the
-      // row's own error is English only).
-      if (j.kind === "wiki-walk" || j.kind === "article-indexes" || j.kind === "repair-database") {
+      // row's own error is English only). The daily keyword counts' build (R625) draws its "day N of M" line.
+      if (j.kind === "wiki-walk" || j.kind === "article-indexes" || j.kind === "repair-database" || j.kind === "keyword-day-counts") {
         const line = j.detail ? _framedText(j.detail, j.detail_i18n, j.detail_vars, t) : "";
         return line ? `<div class="muted" style="font-size:11px">${esc(line)}</div>` : "";
       }
@@ -2517,6 +2521,9 @@
         }
         const acts = [];
         if (j.id === "collect:current") acts.push(`<button class="tiny danger" title="${esc(t("Stopping collection engages the network kill switch — the app goes offline."))}" data-on-click="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Stop"))}</button>`);
+        // A background AI run that outlives its tab offers Stop when its owner can stop between articles (jobs.py, detached_stream.py).
+        if (String(j.id).startsWith("task:") && Array.isArray(j.actions) && j.actions.includes("stop"))
+          acts.push(`<button class="tiny secondary" data-on-click="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Stop"))}</button>`);
         if (_isDownloadKind(j.kind) && j.state === "running") acts.push(`<button class="tiny secondary" data-on-click="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Pause"))}</button>`);
         if (_isDownloadKind(j.kind) && j.state === "queued") {
           const k = _dlKey(j), keys = queuedKeysByKind[j.kind] || [], idx = keys.indexOf(k);

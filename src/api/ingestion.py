@@ -26,6 +26,9 @@ from src.database.source_lookup import source_for_domain
 from src.database.stand_in import not_a_stand_in_source
 from src.ingest import EthicalFetcher  # noqa: F401 (kept for type/back-compat)
 from src.ingest.email import (
+    MailboxServerError,
+    MailboxTlsRefusal,
+    NewsletterRemovalStopped,
     count_imported_newsletters,
     delete_imported_newsletters,
     fetch_imap,
@@ -183,8 +186,18 @@ def ingest_email_endpoint(
             )
         except RuntimeError as exc:  # the airplane-mode refusal (ruling #11 kill-switch gate)
             raise HTTPException(status_code=409, detail=http_detail(exc, "", req.password, withheld=UNREADABLE_TEXT)) from None
+        except (MailboxTlsRefusal, MailboxServerError) as exc:
+            # R650/R651: no checked TLS (a bad certificate, no STARTTLS); R653: the server's own error reply, in fixed words. Either
+            # way the mail server's fault, not ours.
+            raise HTTPException(status_code=502, detail=http_detail(exc, "", req.password, withheld=UNREADABLE_TEXT)) from None
     tally = ingest_emails(db, source, raws)
-    return {"source_id": source_id, "source": source.name, "fetched": len(raws), "tally": tally}
+    return {
+        "source_id": source_id,
+        "source": source.name,
+        "fetched": len(raws),
+        "stopped_by_airplane_mode": bool(getattr(raws, "stopped", False)),  # R640
+        "tally": tally,
+    }
 
 
 # A single dedicated, FILTERABLE provenance bucket for locally-imported .eml
@@ -569,10 +582,16 @@ def remove_imported_newsletters(
     newsletter-source articles AND every dependent row, leaving the (empty) source rows
     so a future clean re-import re-attaches. Reversible ONLY via a prior backup — the UI
     nudges "back up first" and requires an explicit confirm. Local-only, no network.
+
+    A removal that fails partway answers 500 in the removal's own fixed words, naming how many articles are removed and how many
+    are left (queue item 58), never a bare 500: the chunks before the failure are removed whole, the rest untouched.
     """
     if not body.confirm:
         raise HTTPException(status_code=400, detail="confirm:true is required")
-    result = delete_imported_newsletters(db)
+    try:
+        result = delete_imported_newsletters(db)
+    except NewsletterRemovalStopped as stop:
+        raise HTTPException(status_code=500, detail=http_detail(stop)) from None
     return {"removed": True, **result}
 
 
@@ -750,7 +769,10 @@ class MailboxFetchRequest(BaseModel):
 
 
 _MAILBOX_DISCLOSURE = (
-    "Pulled live from your mailbox over TLS and anonymised at ingest: the "
+    "Pulled live from your mailbox over TLS (the server's certificate is checked; "
+    "an API call that turns TLS-at-once off gets a STARTTLS upgrade, checked the "
+    "same way, or a refusal, so your password is never sent unencrypted) and "
+    "anonymised at ingest: the "
     "recipient is never stored, no raw message is retained, tracking links are "
     "de-toxed and never followed. Your IP is visible to the mail provider (not "
     "via Tor). Stored under a disabled, filterable 'mailbox' source."
@@ -799,10 +821,17 @@ def _mailbox_pull_worker(
             "source_id": source.id,
             "protocol": protocol,
             "fetched": len(raws),
+            # R640: airplane mode engaged during the pull. "fetched" is then what came before the Stop, never the mailbox's size.
+            "stopped_by_airplane_mode": bool(getattr(raws, "stopped", False)),
             "tally": tally,
             "disclosure": _MAILBOX_DISCLOSURE,
         }
-    ctx.set_progress(done=len(raws), total=len(raws), detail="done")
+    ctx.set_progress(
+        done=len(raws),
+        total=len(raws),
+        detail=("stopped: airplane mode was engaged during the pull; the messages fetched before it are kept"
+                if getattr(raws, "stopped", False) else "done"),
+    )
     return out
 
 
@@ -812,10 +841,11 @@ def _mailbox_pull_worker(
 # see it, and the task manager's Stop could not reach it. It is a DB writer, so it
 # joins the writer-arbitration set.
 #
-# cancellable=False is the HONEST setting, not a shortcut: `fetch_mailbox` is one
-# opaque imaplib/poplib call and `ingest_emails` loops internally without a ctx, so
-# nothing here checks ctx.stopping. Advertising a Cancel button that cannot stop the
-# work is the theater this module's own docstring rules out.
+# cancellable=False is the HONEST setting, not a shortcut: nothing here checks
+# ctx.stopping (`ingest_emails` loops internally without a ctx). What does stop the
+# FETCH is airplane mode: `fetch_mailbox` reads the kill switch before every command
+# and message (R640) and ends with what it had. Advertising a per-job Cancel button
+# that cannot stop the work is the theater this module's own docstring rules out.
 _MAILBOX_JOB = register_job(
     BackgroundJob("mailbox-pull", "Pulling newsletters from your mailbox", _mailbox_pull_worker,
                   is_writer=True)

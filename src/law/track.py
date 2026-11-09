@@ -299,7 +299,12 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
     model (a law = an Article + a linked revision/audit trail). The text is then
     ingested into the corpus through the one ``index_article`` hook.
     """
-    from src.ingest import CrawlDelayDeferred, FetchError, kill_switch_active
+    from src.ingest import (
+        CrawlDelayDeferred,
+        FetchError,
+        kill_switch_engaged_since,
+        kill_switch_epoch,
+    )
     from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL_HEAD
 
     now = datetime.now(UTC)
@@ -313,6 +318,11 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
     # ``auto_track_due`` would then keep the document away for a day (R293).
     prior_checked_at = doc.last_checked_at
     doc.last_checked_at = now
+    # Before the request: a Stop pressed and cleared again inside it reads as engaged afterwards (R614), so a check the
+    # operator's Stop cut short is not stamped as the document's check. The window is the whole fetch() call, waits
+    # included (the host lock, a Crawl-delay, a retry back-off): a real failure that shares it with a Stop is asked again
+    # next pass rather than backed off, the conservative side.
+    epoch = kill_switch_epoch()
     try:
         # require_html=False so an official-gazette PDF is not rejected up front;
         # keep_bytes so the PDF extractor sees the real bytes (the text decode
@@ -331,7 +341,8 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
         return {"document_id": doc.id, "status": "deferred", "detail": record_text(exc)}
     except FetchError as exc:
         # A real failed request keeps its stamp (a back-off); a refusal by the switch made none. The switch
-        # decides (a request already in flight when Stop was pressed fails with its own wording), and so
+        # decides (a request already in flight when Stop was pressed fails with its own wording; engaged now,
+        # or engaged and cleared again since the request began, R614), and so
         # does the fetcher's own refusal sentence (the switch may have been cleared again by now). That
         # sentence is matched at the START of the text, never as a substring: a real failure's text carries
         # a URL, a redirect target or a server's status line, and a gazette whose address says "kill switch"
@@ -339,7 +350,7 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
         # (``KILL_SWITCH_REFUSAL``, raised by name at every site); a fetch error is "a refusal that made no
         # request" only when its text STARTS with the head of that sentence.
         offline = record_text(exc).startswith(KILL_SWITCH_REFUSAL_HEAD)
-        if offline or kill_switch_active():
+        if offline or kill_switch_engaged_since(epoch):
             doc.last_checked_at = prior_checked_at
         doc.last_status = f"fetch error: {record_text(exc)}"
         session.commit()
@@ -348,7 +359,8 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
             out["offline"] = True  # the kill switch refused it: not the document's failure (the tallies count it apart)
         return out
     except Exception as exc:  # noqa: BLE001 - record, never crash the batch
-        if kill_switch_active():  # the socket-level airplane guard raises an OSError, not a FetchError
+        # the socket-level airplane guard raises an OSError, not a FetchError; engaged now or since the request began (R614)
+        if kill_switch_engaged_since(epoch):
             doc.last_checked_at = prior_checked_at
         doc.last_status = f"error: {record_text(exc)}"
         session.commit()
@@ -665,7 +677,8 @@ def track_watched(session, fetcher, *, limit_documents: int = 50, extractor=None
     still count in ``documents`` and ``errors`` exactly as before (the old fields are unchanged); the extra key is what lets
     a caller say "nothing was fetched" instead of "23 errors" (invariant #14e's corollary). It counts the refusals whose text
     is the fetcher's own sentence for it; a request already in flight when Stop was pressed fails with its own wording and is
-    counted under ``errors`` (its time is still given back, because the switch is active).
+    counted under ``errors`` (its time is still given back, because the switch is active, or was engaged while the request
+    was in flight even if it has been cleared again since: R614).
 
     ``deferred`` follows the same convention (R293): present ONLY when the host's own Crawl-delay put at least one document
     off. A deferral is neither an error nor a document attempted, so it is in neither ``errors`` nor ``documents``.

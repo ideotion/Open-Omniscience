@@ -11,12 +11,14 @@ import os
 import subprocess
 import sys
 import textwrap
+import time
 from pathlib import Path
 
 import pytest
 
 from src.monitoring import errorlog
 from src.safety import file_lock
+from src.safety.file_lock import SWEEP_MIN_AGE_S
 from tests.os_scope import scope_os
 
 
@@ -66,6 +68,10 @@ def test_a_process_that_dies_at_the_swap_leaves_the_old_file_whole_and_the_next_
     left = list(journal.parent.glob("app_errors.jsonl.tmp.*"))
     assert len(left) == 1  # the dead process's temp, named for its pid
     errorlog._trim(journal)
+    assert left[0].exists(), "a fresh copy was swept: a live writer in another pid namespace would lose it (R287)"
+    old = time.time() - SWEEP_MIN_AGE_S - 5
+    os.utime(left[0], (old, old))
+    errorlog._trim(journal)
     assert not list(journal.parent.glob("app_errors.jsonl.tmp.*")), "a dead process's temp was not swept"
 
 
@@ -73,6 +79,8 @@ def test_a_live_processs_temp_is_not_swept(journal):
     _big(journal)
     live = journal.with_name(f"app_errors.jsonl.tmp.{os.getppid()}.1")  # the process that started the tests runs
     live.write_text("half", encoding="utf-8")
+    old = time.time() - SWEEP_MIN_AGE_S - 5
+    os.utime(live, (old, old))  # old enough to be swept if its owner were gone
     errorlog._trim(journal)
     assert live.exists()
 

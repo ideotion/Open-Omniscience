@@ -52,13 +52,18 @@ _OWN_SENTENCES = {
     "src/wiki/ores.py": "the ORES scorer's note: 'the network kill switch is active (airplane mode)'",
     "src/wiki/stream.py": "the dump stream's stop: 'network kill switch is active (airplane mode) -- {doing} was refused'",
 }
-# A Stop through an HTTP proxy, as OSM measured it (R320): the request error is wrapped, not our sentence.
+# A Stop through an HTTP proxy, as OSM measured it (R320): the request error is wrapped. Since R620 the reader has an alternative for this
+# shape, spelled from its first word (tests/test_refusal_r620.py takes it from the real guard through a loopback proxy).
 _PROXY_SHAPED_STOP = (
     "request error for https://h.test/a: ('Connection aborted.', AirplaneModeError(\"airplane mode is engaged: refusing a network "
     "connection to 'h.test'. No packet leaves the machine while offline\"))"
 )
 
-# What the pattern said BEFORE the head became a constant, copied here so the change is proved to be a pure refactor of the reader.
+# What the pattern said BEFORE the head became a constant, copied here so the change is proved to be a pure refactor of the reader. Its
+# second alternative has since been narrowed on purpose (OPEN_QUEUE 2026-11-08 item 42: a host's status line could carry the guard's words
+# after its ``.*``): the corpus below holds the real urllib3 shape, which both accept, and the host-written shapes on which they differ are
+# pinned in tests/test_refusal_wrapped_shape.py. R620 added one shape it never read (the Stop through a loopback HTTP proxy) and dropped the
+# inert ``re.DOTALL``: the proxy shape is the one deliberate difference below, and the flags are pinned to their new value.
 _OLD_OFFLINE_RE = re.compile(
     r"^\s*(?:[\w.]+:\s*)?(?:network kill switch is active|airplane mode is engaged: refusing a network connection)\b"
     r"|^\s*request error for \S+: .*Failed to establish a new connection: airplane mode is engaged: refusing a network connection"
@@ -223,29 +228,35 @@ def test_the_reader_is_built_from_the_head_and_accepts_exactly_what_it_accepted(
         "HTTP 503 for https://h.test/a (server said: " + KILL_SWITCH_REFUSAL + ")",
         "redirect to unsupported URL: 'ftp://h.test/" + KILL_SWITCH_REFUSAL + "'",
         "airplane mode is engaged: refusing a network connection to 'h.test'. No packet leaves the machine while offline",
-        "request error for https://h.test/a: HTTPSConnectionPool(host='h.test'): Failed to establish a new connection: "
-        "airplane mode is engaged: refusing a network connection to 'h.test'",
+        "request error for https://h.test/a: HTTPSConnectionPool(host='h.test', port=443): Max retries exceeded with url: /a "
+        "(Caused by NewConnectionError(\"HTTPSConnection(host='h.test', port=443): Failed to establish a new connection: "
+        "airplane mode is engaged: refusing a network connection to 'h.test'\"))",
         "cannot resolve host 'h.test': airplane mode is engaged: refusing a network connection to 'h.test'",
         "cannot resolve host 'a b': airplane mode is engaged: refusing a network connection to 'a b'",
         "cannot resolve host 'h.test': [Errno -2] Name or service not known",
         "HTTPSConnectionPool(host='a.example', port=443): Max retries exceeded with url: /robots.txt (Caused by NewConnectionError(...))",
-        _PROXY_SHAPED_STOP,
         "",
         "the kill switch of the CDN fired",
     ]
-    assert len(corpus) == 20
+    assert len(corpus) == 19
     for text in corpus:
         assert bool(fetch_verdict._OFFLINE_RE.match(text)) == bool(_OLD_OFFLINE_RE.match(text)), text
-    assert fetch_verdict._OFFLINE_RE.flags == _OLD_OFFLINE_RE.flags
+    # the one deliberate difference (R620): the Stop through a loopback HTTP proxy, which the old pattern did not read
+    assert fetch_verdict._OFFLINE_RE.match(_PROXY_SHAPED_STOP) and not _OLD_OFFLINE_RE.match(_PROXY_SHAPED_STOP)
+    # the flags: re.DOTALL dropped by R620 (no "." in the pattern stood outside a class or an escape, so it changed nothing)
+    assert _OLD_OFFLINE_RE.flags == re.compile("", re.IGNORECASE | re.DOTALL).flags
+    assert fetch_verdict._OFFLINE_RE.flags == re.compile("", re.IGNORECASE).flags
 
 
-def test_a_stop_through_an_http_proxy_is_not_widened_into_a_match():
-    """R320: a Stop through an HTTP proxy reaches a caller as a requests error wrapping the guard's sentence in a ``ConnectionError`` tuple.
-    That is the wrapped shape the start anchor (R298) exists to refuse, so the reader does NOT recognise it; the callers that can meet it
-    read ``kill_switch_active()`` after each check instead. Building the first alternative from a constant must not change that."""
-    assert not is_kill_switch_refusal(_PROXY_SHAPED_STOP)
-    assert classify_fetch_failure(_PROXY_SHAPED_STOP) != "offline"
-    assert not fetch_verdict._OFFLINE_RE.match(_PROXY_SHAPED_STOP)
+def test_a_stop_through_an_http_proxy_is_read_by_its_whole_construction_not_by_a_widening():
+    """R320 read a Stop through an HTTP proxy as a requests error wrapping the guard's sentence, which the start anchor (R298) refused, and the
+    callers that can meet it read ``kill_switch_active()`` after each check (they still do). R620 reads it by urllib3's whole construction
+    from the first word, the way R616 reads the pool sentence: no gap a host could write into, so it is not the widening R320 refused. The
+    first alternative, built from the constant, still does not read it (it is not our sentence at the START)."""
+    assert is_kill_switch_refusal(_PROXY_SHAPED_STOP)
+    assert classify_fetch_failure(_PROXY_SHAPED_STOP) == "offline"
+    first = re.compile(fetch_verdict._OFFLINE_RE.pattern.split("|^", 1)[0], fetch_verdict._OFFLINE_RE.flags)
+    assert not first.match(_PROXY_SHAPED_STOP)
 
 
 
@@ -263,8 +274,9 @@ def test_the_law_tracker_reads_the_head_and_not_the_wider_predicate():
     from src.law.track import track_document
 
     wrapped = (
-        "request error for https://gazette.test/act1: HTTPSConnectionPool(host='gazette.test'): Failed to establish a new connection: "
-        "airplane mode is engaged: refusing a network connection to 'gazette.test'"
+        "request error for https://gazette.test/act1: HTTPSConnectionPool(host='gazette.test', port=443): Max retries exceeded with url: "
+        "/act1 (Caused by NewConnectionError(\"HTTPSConnection(host='gazette.test', port=443): Failed to establish a new connection: "
+        "airplane mode is engaged: refusing a network connection to 'gazette.test'\"))"
     )
     assert is_kill_switch_refusal(wrapped), "premise: the predicate reads this shape as a refusal"
 

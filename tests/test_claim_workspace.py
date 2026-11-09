@@ -10,6 +10,7 @@ names: a claim with no related article (the Socratic empty state), a single-sour
 
 from __future__ import annotations
 
+import itertools
 from datetime import datetime, timedelta
 
 import pytest
@@ -181,6 +182,61 @@ def test_group_paths_three_echoes_of_one_wire_are_one_path_and_say_why():
     assert top["joins"][0]["detail"] == "Reuters"
     lone = out["paths"][1]
     assert lone["unjoined"] is True and lone["joins"] == []
+
+
+def test_one_outlets_feeds_under_different_labels_count_as_one_source():
+    # Two feeds of one domain, labelled differently (no outlet label from the caller): the
+    # same-source join makes them one path, and the count must agree with the join.
+    arts = [
+        {"id": 1, "source_id": 1, "source": "Le Monde - International", "outlet": "lemonde.fr",
+         "wire": None, "published_at": "2026-01-01"},
+        {"id": 2, "source_id": 2, "source": "Le Monde - Planete", "outlet": "lemonde.fr",
+         "wire": None, "published_at": "2026-01-02"},
+    ]
+    out = cw.group_paths(arts, {}, [])
+    assert out["n_paths"] == 1 and out["n_sources"] == 1
+    p = out["paths"][0]
+    assert p["n_sources"] == 1 and p["sources"] == ["Le Monde - International"]
+    assert [j["kind"] for j in p["joins"]] == ["same_source"]
+
+
+def test_two_outlets_sharing_a_label_count_as_two_sources():
+    # Two domains whose shown label is the same: two voices, never one.
+    arts = [
+        {"id": 1, "source_id": 1, "source": "Daily News", "outlet": "dailynews.example",
+         "outlet_label": "Daily News", "wire": "Reuters", "published_at": "2026-01-01"},
+        {"id": 2, "source_id": 2, "source": "Daily News", "outlet": "dailynews.example.org",
+         "outlet_label": "Daily News", "wire": "Reuters", "published_at": "2026-01-02"},
+    ]
+    out = cw.group_paths(arts, {}, [])
+    assert out["n_sources"] == 2
+    p = out["paths"][0]
+    assert p["n_sources"] == 2 and p["sources"] == ["Daily News", "Daily News"]
+    assert [j["kind"] for j in p["joins"]] == ["same_wire"]
+
+
+def test_without_an_outlet_the_count_falls_back_to_the_feed_id_like_the_join():
+    arts = [
+        {"id": 1, "source_id": 7, "source": "Feed A", "wire": None, "published_at": "2026-01-01"},
+        {"id": 2, "source_id": 7, "source": "Feed A (renamed)", "wire": None, "published_at": "2026-01-02"},
+        {"id": 3, "source_id": 8, "source": "Feed A", "wire": None, "published_at": "2026-01-03"},
+    ]
+    out = cw.group_paths(arts, {}, [])
+    assert out["n_sources"] == 2
+    assert out["paths"][0]["article_ids"] == [1, 2] and out["paths"][0]["n_sources"] == 1
+    assert out["paths"][0]["joins"][0]["detail"] == "Feed A"
+
+
+def test_an_empty_outlet_falls_back_to_the_feed_id_and_keyless_articles_count_by_name():
+    arts = [
+        {"id": 1, "source_id": 3, "source": "X", "outlet": "", "wire": None, "published_at": "2026-01-01"},
+        {"id": 2, "source_id": 3, "source": "X", "outlet": None, "wire": None, "published_at": "2026-01-02"},
+        {"id": 3, "source_id": None, "source": "Y", "wire": None, "published_at": "2026-01-03"},
+        {"id": 4, "source_id": None, "source": "Z", "wire": None, "published_at": "2026-01-04"},
+    ]
+    out = cw.group_paths(arts, {}, [])
+    assert out["paths"][0]["article_ids"] == [1, 2] and out["paths"][0]["n_sources"] == 1
+    assert out["n_paths"] == 3 and out["n_sources"] == 3
 
 
 # --------------------------------------------------------------------------- #
@@ -375,3 +431,42 @@ def test_every_string_the_workspace_draws_is_keyed_in_all_twelve_locales():
         loc = json.loads((_ROOT / f"src/static/locales/{code}.json").read_text(encoding="utf-8"))
         missing = sorted(x for x in lits if x not in loc)
         assert not missing, (code, missing)
+
+
+def test_the_same_source_detail_names_the_outlet_like_the_path_whatever_the_input_order():
+    a = {"id": 1, "source_id": 1, "source": "A", "outlet": "x.fr", "wire": None, "published_at": "2026-01-01"}
+    b = {"id": 2, "source_id": 2, "source": "B", "outlet": "x.fr", "wire": None, "published_at": "2026-01-02"}
+    for arts in ([b, a], [a, b]):
+        p = cw.group_paths(arts, {}, [])["paths"][0]
+        assert p["sources"] == ["A"] and p["joins"][0]["detail"] == "A"
+
+
+def test_a_feed_id_and_an_outlet_that_print_alike_stay_two_voices_like_the_join():
+    arts = [
+        {"id": 1, "source_id": 9, "source": "A", "outlet": "3", "wire": None, "published_at": "2026-01-01"},
+        {"id": 2, "source_id": 3, "source": "B", "outlet": None, "wire": None, "published_at": "2026-01-02"},
+    ]
+    out = cw.group_paths(arts, {}, [])
+    assert out["n_paths"] == 2 and out["n_sources"] == 2
+
+
+def test_a_same_source_join_with_no_name_has_no_detail():
+    # Two articles of one feed whose source row is gone: joined, counted as one, and the
+    # join carries no detail (the UI shows nothing) rather than a bare "?".
+    arts = [
+        {"id": 1, "source_id": 5, "source": None, "outlet": None, "wire": None, "published_at": "2026-01-01"},
+        {"id": 2, "source_id": 5, "source": None, "outlet": None, "wire": None, "published_at": "2026-01-02"},
+    ]
+    p = cw.group_paths(arts, {}, [])["paths"][0]
+    assert p["n_sources"] == 1 and p["joins"][0]["detail"] is None
+
+
+def test_a_voice_mixing_a_named_and_a_nameless_article_shows_the_name_in_both_places():
+    for order in itertools.permutations(range(3)):
+        pair = [
+            {"id": 1, "source_id": 5, "source": "Reuters", "wire": None, "published_at": "2026-01-01"},
+            {"id": 2, "source_id": 5, "source": None, "wire": None, "published_at": "2026-01-02"},
+            {"id": 3, "source_id": 5, "source": "", "wire": None, "published_at": "2026-01-03"},
+        ]
+        p = cw.group_paths([pair[i] for i in order], {}, [])["paths"][0]
+        assert p["sources"] == ["Reuters"] and p["joins"][0]["detail"] == "Reuters"

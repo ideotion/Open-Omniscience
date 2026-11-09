@@ -67,13 +67,24 @@ def _step_done(step: str) -> bool:
 
 
 def _run_step(step: str, fn) -> None:
+    from src.ingest import kill_switch_active, kill_switch_engaged_since, kill_switch_epoch
+
     rec: dict[str, Any] = {"step": step, "at": datetime.now(UTC).isoformat(timespec="seconds")}
+    epoch = kill_switch_epoch()  # the step's window (R617, R614): a Stop pressed, or pressed and cleared again, inside it
+    # ...or engaged when it starts: cleared during the step, that moves neither the epoch nor the switch, and the step's requests were
+    # still refused by name.
+    engaged_at_start = kill_switch_active()
     try:
         rec["result"] = fn()
         rec["ok"] = True
     except Exception as exc:  # noqa: BLE001 - the verdict IS the data we want
         rec["ok"] = False
         rec["error"] = record_text(exc, limit=300, typed=True)
+    if rec["ok"] and (engaged_at_start or kill_switch_engaged_since(epoch)):
+        # R617: a step a Stop cut is not done. ``_step_done`` reads ``ok``, and a one-time step recorded done would never run again with
+        # the feeds or pages the Stop kept from being asked. Its result is kept, verbatim, and says it was stopped; the step runs again.
+        rec["ok"] = False
+        rec["stopped"] = "the network kill switch was engaged during this step; it runs again"
     _append(rec)
     _LOG.info("field-test step %s: ok=%s", step, rec["ok"])
 

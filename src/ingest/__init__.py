@@ -21,27 +21,39 @@ There is exactly one network path and no raw-requests bypass.
 
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import json
 import logging
+import math
 import os
 import socket
+import sys
 import threading
 import time
+import weakref
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import ParseResult, urljoin, urlparse, urlsplit, urlunsplit
 from urllib.robotparser import RobotFileParser
 
 import requests
 
 # Importing urllib3_log puts the request-path filter on urllib3's loggers (R142).
 from src.ingest import urllib3_log as _urllib3_log  # noqa: F401
-from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL
+from src.ingest.fetch_verdict import (
+    KILL_SWITCH_REFUSAL,
+    KILL_SWITCH_REFUSAL_HEAD,
+    failure_netloc,
+    failure_url,
+    userinfo_secrets,
+)
 from src.ingest.ssrf_guard import (
     BlockedConnectTarget,
     connect_scope,
@@ -174,6 +186,13 @@ class BlockedTarget(FetchFailed):
     """The URL (or a redirect of it) resolves to a non-public address (SSRF guard)."""
 
 
+class RedirectOutOfScope(FetchFailed):
+    """A redirect hop out of the scope the caller kept the fetch to (R629): a crawl kept to one site
+    (``CrawlConfig.same_domain_only``) or a sitemap index, whose hop to another site is refused before anything is
+    asked of that site (no lookup, no robots.txt read, no request). Deterministic, never retried; a ``FetchFailed``,
+    so every caller that counts a page it could not have counts this one."""
+
+
 # How long a robots.txt decision is cached, in seconds.
 _ROBOTS_TTL = 3600.0
 
@@ -245,6 +264,173 @@ def _robots_persist_enabled() -> bool:
     return os.environ.get("OO_ROBOTS_CACHE_PERSIST", "1") != "0"
 
 
+# ONE ENTRY PER HOST (R621). Every per-host record -- the robots decision, its cause and failure count, the host-schedule stamp,
+# the politeness interval, the per-host lock, the Tor circuit -- and both sidecars are keyed by the host and port a request goes
+# to, never by the URL's userinfo, and never by how the host and port happen to be SPELLED. Before, they were keyed by
+# ``scheme://netloc`` and ``netloc`` as written: a credentialed and a plain URL to one host were two hosts to the politeness code
+# (two intervals, two locks, two robots reads), the user name and password were written into robots_cache.json and
+# host_schedule.json, and the robots.txt read sent them as Basic auth; and ``HOST.Example``, ``host:``, ``host:080`` and
+# ``https://host:443`` were each a host of their own (Steward 3's item 2), so a feed linking one site two ways doubled its rate.
+# The page request itself is unchanged: it still carries the URL as given.
+
+#: The default port of each scheme the fetcher speaks. A key never writes it: ``https://host:443`` is ``https://host``.
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _host_netloc(netloc: str, scheme: str = "") -> str:
+    """The host key for ``netloc``: the host and port a request goes to, in one spelling (R621).
+
+    - The userinfo is out: ``urllib.parse`` takes it as everything before the LAST ``@`` and reads the host and port from what
+      follows, and a host and port hold no ``@``.
+    - The host is the one ``urllib.parse`` reads (``.hostname``), which is the name the SSRF guard checks: lower-cased, an IPv6
+      literal in its brackets (a zone kept as written).
+    - The port is its number: leading zeros gone (``host:080``), an empty port or port 0 gone (``host:``, ``host:0``: requests
+      drops both and connects to the default), and the ``scheme``'s default
+      port gone (80 for http, 443 for https). Without a scheme (a bare key read back from host_schedule.json, which records
+      none) every explicit port stays, since ``host:443`` is the key of ``http://host:443``.
+    - A trailing dot STAYS, deliberately (the stop clause of the fold, agreed with the coordinator): ``news.example.`` is an
+      absolute name and ``news.example`` a relative one, which the resolver may complete through resolv.conf's search list
+      (first, under ``ndots`` above one, as in a container; after an NXDOMAIN, under the default), so the two can be two hosts.
+      Both parsers keep the dot, so the guard checks the dotted name, and a key without it would send the robots read to a name
+      the guard never checked, or hand one name's robots answer and backoff to the other.
+
+    Equal keys are therefore equal ``urllib.parse`` hosts and ports, and the robots URL built from the key reaches the host the
+    guard checked; ``_refuse_parser_mismatch`` has already refused any URL that urllib3 reads as another host. Never raises: a
+    host and port ``urllib.parse`` cannot read (a port out of range, a bracket it refuses, no host) come back as written after
+    the userinfo (:func:`_readable_host_key` says ``None`` for them), and the fetcher refuses such a URL before any key is
+    taken."""
+    key = _readable_host_key(netloc, scheme)
+    return netloc.rpartition("@")[2] if key is None else key
+
+
+def _readable_host_key(netloc: str, scheme: str = "") -> str | None:
+    """:func:`_host_netloc`'s key, or ``None`` when ``urllib.parse`` cannot read a host (and port) out of ``netloc``. Never
+    raises. The activity monitor reads this one, and labels such a fetch from the masked URL instead."""
+    try:
+        parts = urlsplit("//" + netloc.rpartition("@")[2])
+        host, port = parts.hostname, parts.port
+    except ValueError:
+        return None
+    if not host:
+        return None
+    if ":" in host:
+        host = f"[{host}]"
+    if not port or port == _DEFAULT_PORTS.get(scheme):  # port 0 is the default: requests drops it and connects there (R624 read)
+        return host
+    return f"{host}:{port}"
+
+
+#: The fixed words a robots refusal (401/403) adds when the page address carried a user name or password (R621, the independent
+#: read's N2): the read is anonymous, so the refusal may be the login's, not a policy or an exit's reputation.
+_ROBOTS_READ_WITHOUT_USERINFO = "robots.txt is read without the page address's credentials"
+
+
+def _carries_userinfo(url: str) -> bool:
+    """Whether ``url``'s authority holds a userinfo (an ``@``, as ``urllib.parse`` reads it). Never raises."""
+    try:
+        return "@" in urlparse(url).netloc
+    except Exception:  # noqa: BLE001 - written from inside a refusal; an unreadable URL adds no words
+        return False
+
+
+def _robots_key_is_normal(key: str) -> bool:
+    """Whether a robots-cache key is ``scheme://`` and the host key of what follows, as :meth:`EthicalFetcher.fetch` writes it."""
+    scheme, sep, netloc = key.partition("://")
+    return bool(sep) and key == f"{scheme}://{_host_netloc(netloc, scheme)}"
+
+
+def _schedule_key_is_normal(key: str) -> bool:
+    """Whether a host-schedule key is its own host key (the scheme-free form: the file records no scheme)."""
+    return _host_netloc(key) == key
+
+
+def _drop_unkeyed_robots(raw: dict) -> dict:
+    """The robots sidecar without the entries an older build keyed otherwise than the host key: by ``scheme://user:pass@host``,
+    or by a spelling (``https://HOST.Example``, ``https://host:443``, ``http://host:080``) that the host now shares with every other
+    spelling of it (R621). DROPPED, not merged: an entry is a cache whose absence the fetcher already handles as a fresh process
+    does (the next fetch of the host reads its robots.txt again, fail-closed as ever), so a drop costs one robots.txt request; and
+    a credentialed entry's decision was read WITH the URL's credentials, which is not the anonymous read the host's one entry now
+    holds, so folding it in, or choosing between it and the host's own entry, would keep a decision no anonymous read made."""
+    return {key: entry for key, entry in raw.items() if _robots_key_is_normal(key)}
+
+
+def _stamp_of(entry) -> tuple[float, float] | None:
+    """A schedule entry's ``(not_before, delay_s)``, or ``None`` when it has no readable, FINITE ``not_before``. A NaN or an
+    infinity is absent, not a stamp: ``max`` with a NaN answers whichever came first, so a NaN host stamp made a credentialed
+    stamp's wait disappear (the independent read's edge). A delay that is not a finite number reads as none."""
+    try:
+        not_before = float(entry["not_before"])
+    except Exception:  # noqa: BLE001 - an unreadable stamp is skipped, as _load_host_schedule skips it
+        return None
+    if not math.isfinite(not_before):
+        return None
+    try:
+        delay_s = float(entry.get("delay_s") or 0.0)
+    except Exception:  # noqa: BLE001 - an unreadable delay is none, as _load_host_schedule reads it
+        delay_s = 0.0
+    return not_before, delay_s if math.isfinite(delay_s) else 0.0
+
+
+def _merge_unkeyed_stamps(raw: dict) -> dict:
+    """The schedule sidecar with each stamp an older build keyed otherwise than the host key (``user:pass@host``,
+    ``HOST.Example``, ``host:080``, ``host:``) folded into the host key's (R621). MERGED, not dropped: a stamp is the host's own
+    stated wish and lapses by time alone (there is no forget path, see below), so dropping one would let the host be fetched
+    before it asked to be. The later ``not_before`` and the larger ``delay_s`` win, whichever key held them, as the longer wait
+    wins in ``_respect_rate_limit``; an unreadable or non-finite stamp adds nothing and takes nothing away."""
+    out = {key: entry for key, entry in raw.items() if _schedule_key_is_normal(key)}
+    for key, entry in raw.items():
+        host = _host_netloc(key)
+        if host == key:
+            continue
+        stamps = [s for s in (_stamp_of(out.get(host)), _stamp_of(entry)) if s is not None]
+        if stamps:
+            out[host] = {"not_before": max(s[0] for s in stamps), "delay_s": max(s[1] for s in stamps)}
+    return out
+
+
+def _lend_default_port_stamps(stamps: dict[str, tuple[float, float]]) -> None:
+    """In memory only: a bare ``host:80`` or ``host:443`` stamp also holds for ``host`` (R621). The file records no scheme, so
+    ``host:443`` is either an older build's key for ``https://host:443`` (now keyed ``host``) or this build's for
+    ``http://host:443``; the stamp is kept under its own key AND its wait is lent to ``host``, the later ``not_before`` and the
+    larger delay winning. That never shortens a wait a host asked for; the cost, stated, is that ``host`` also waits out a
+    stamp of ``http://host:443`` or ``https://host:80``."""
+    for key, (not_before, delay_s) in list(stamps.items()):
+        lent = _stamp_of({"not_before": not_before, "delay_s": delay_s})  # a non-finite value lends nothing (see _stamp_of)
+        if lent is None:
+            continue
+        for scheme in _DEFAULT_PORTS:
+            host = _host_netloc(key, scheme)
+            if host == key:
+                continue
+            if host not in stamps:
+                stamps[host] = lent
+                continue
+            held = _stamp_of({"not_before": stamps[host][0], "delay_s": stamps[host][1]})
+            if held is not None:  # the host's own stamp, when it does not compare, is left as it was read
+                stamps[host] = (max(lent[0], held[0]), max(lent[1], held[1]))
+
+
+def _scrub_sidecar(path: Path, lock: threading.Lock, is_normal, scrub) -> None:
+    """Take the keys an older build wrote otherwise than the host key out of the FILE at load, not only out of memory (R621): a
+    user name and password it wrote are not left on disk for every later read-modify-write to carry forward. Runs whatever
+    ``OO_ROBOTS_CACHE_PERSIST`` and ``OO_HOST_SCHEDULE_PERSIST`` say (Steward 3's item 4): with persistence off nothing new is
+    written, but a file an earlier run left must not keep the credentials. Rewrites the file only when it holds such a key
+    (atomic temp+replace, under the file's own lock), with nothing in it but what was there. Never raises: a failed rewrite
+    leaves the file as it was, and the loaders and writers leave those keys out all the same."""
+    try:
+        with lock:
+            if not path.exists():
+                return
+            raw = json.loads(path.read_text("utf-8")) or {}
+            if not isinstance(raw, dict) or all(is_normal(key) for key in raw):
+                return
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(scrub(raw)), "utf-8")
+            tmp.replace(path)
+    except Exception as exc:  # noqa: BLE001 - best-effort; the loaders and writers leave the keys out regardless
+        log_failure(_LOG, f"host key scrub failed for {path.name}", exc, level=logging.DEBUG)
+
+
 def _load_persisted_robots(
     path: Path, *, now_monotonic, now_wall: float | None = None
 ) -> dict[str, tuple[RobotFileParser | None, float]]:
@@ -261,7 +447,7 @@ def _load_persisted_robots(
     except Exception:  # noqa: BLE001 - a corrupt sidecar must never break startup
         return {}
     out: dict[str, tuple[RobotFileParser | None, float]] = {}
-    for host_key, entry in (raw or {}).items():
+    for host_key, entry in _drop_unkeyed_robots(raw or {}).items():
         try:
             fetched_at = float(entry["fetched_at"])
             kind = entry["kind"]
@@ -304,7 +490,7 @@ def _persisted_robots_fails(path: Path) -> dict[str, int]:
     except Exception:  # noqa: BLE001 - a corrupt sidecar must never break startup
         return {}
     out: dict[str, int] = {}
-    for host_key, entry in raw.items():
+    for host_key, entry in _drop_unkeyed_robots(raw).items():
         try:
             fails = int(entry.get("fails") or 0)
         except (TypeError, ValueError, AttributeError):
@@ -330,7 +516,7 @@ def _persisted_robots_causes(path: Path) -> dict[str, str]:
     except Exception:  # noqa: BLE001 - a corrupt sidecar must never break startup
         return {}
     out: dict[str, str] = {}
-    for host_key, entry in raw.items():
+    for host_key, entry in _drop_unkeyed_robots(raw).items():
         try:
             cause = entry.get("cause")
         except Exception:  # noqa: BLE001 - one bad entry never breaks the load
@@ -357,6 +543,7 @@ def _persist_robots_entry(
                     raw = json.loads(path.read_text("utf-8")) or {}
                 except Exception:  # noqa: BLE001 - a corrupt sidecar starts fresh
                     raw = {}
+            raw = _drop_unkeyed_robots(raw)  # an older build's credentialed or differently spelled key is never carried forward (R621)
             raw[host_key] = {
                 "kind": kind, "body": body, "fetched_at": time.time(), "cause": cause,
                 # The backoff must SURVIVE a restart, or every cold start would hand a
@@ -373,7 +560,11 @@ def _persist_robots_entry(
             tmp.write_text(json.dumps(raw), "utf-8")
             tmp.replace(path)
     except Exception as exc:  # noqa: BLE001 - persistence is an optimisation, never required
-        log_failure(_LOG, f"robots cache persistence failed for {host_key}", exc, level=logging.DEBUG)
+        # the fetcher's key names the host only (R621: it holds no userinfo), so this writes the host; the mask and the secrets stay
+        # for any other caller's key, which could carry one (R620, Steward 3 #2)
+        log_failure(
+            _LOG, f"robots cache persistence failed for {failure_url(host_key)}", exc, *userinfo_secrets(host_key), level=logging.DEBUG
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -461,7 +652,7 @@ def _load_host_schedule(
     except Exception:  # noqa: BLE001 - a corrupt sidecar must never break a pass
         return {}
     out: dict[str, tuple[float, float]] = {}
-    for netloc, entry in raw.items():
+    for netloc, entry in _merge_unkeyed_stamps(raw).items():
         try:
             not_before = float(entry["not_before"])
         except (KeyError, TypeError, ValueError):
@@ -472,6 +663,7 @@ def _load_host_schedule(
             delay_s = 0.0
         if not_before > wall_now:
             out[str(netloc)] = (not_before, delay_s)
+    _lend_default_port_stamps(out)
     return out
 
 
@@ -514,6 +706,7 @@ def _persist_host_schedule(path: Path, netloc: str, not_before: float, delay_s: 
                     raw = json.loads(path.read_text("utf-8")) or {}
                 except Exception:  # noqa: BLE001 - a corrupt sidecar starts fresh
                     raw = {}
+            raw = _merge_unkeyed_stamps(raw)  # an older build's credentialed or differently spelled key is folded in, never carried forward (R621)
             raw[netloc] = {"not_before": float(not_before), "delay_s": float(delay_s)}
             if len(raw) > _HOST_SCHEDULE_MAX:
                 # Evict the entries that lapse SOONEST: they are the ones whose loss
@@ -531,7 +724,15 @@ def _persist_host_schedule(path: Path, netloc: str, not_before: float, delay_s: 
             tmp.write_text(json.dumps(raw), "utf-8")
             tmp.replace(path)
     except Exception as exc:  # noqa: BLE001 - persistence is an optimisation, never required
-        log_failure(_LOG, f"host schedule persistence failed for {netloc}", exc, level=logging.DEBUG)
+        # the fetcher's netloc names the host only (R621: it holds no userinfo), so this writes the host; the mask and the secrets
+        # stay for any other caller's netloc, which could carry one (R620, Steward 3 #2)
+        log_failure(
+            _LOG,
+            f"host schedule persistence failed for {failure_netloc(netloc)}",
+            exc,
+            *userinfo_secrets(f"//{netloc}"),
+            level=logging.DEBUG,
+        )
 
 
 def _env_cap(name: str, default: int, *, floor: int) -> int:
@@ -562,6 +763,61 @@ _MAX_REDIRECTS = 5
 # HTTP statuses worth retrying (transient server-side / rate-limit signals). 4xx
 # client errors are deterministic and never retried (finding BUG-02).
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+
+#: How far ``_carries_airplane_refusal`` looks. The deepest real link is three (R619's shape: requests' ProxyError -> MaxRetryError ->
+#: urllib3's ProxyError -> AirplaneModeError), so eight leaves room for a library that adds a wrapper; the node count and the seen set
+#: bound a chain that is wide or that loops (``__context__`` can point back).
+_REFUSAL_WALK_DEPTH = 8
+_REFUSAL_WALK_NODES = 64
+
+
+def _carries_airplane_refusal(exc: BaseException) -> bool:
+    """True when the socket guard's own refusal is inside ``exc``, found by TYPE and never by words (R620, Steward 3's note).
+
+    ``airplane.AirplaneModeError`` has one constructor, ``airplane._guard``, which raises only while the kill switch is engaged
+    (with the airplane half armed, the host not local and no egress window open), from the socket calls a request makes before
+    any byte reaches its destination: a name lookup, a connect, a CONNECT tunnel, and with R619 a request line that names its own
+    destination. A host's answer reaches the fetcher as bytes that the libraries turn into their own classes, never into this one,
+    so an instance found here means the switch refused this request, whatever text surrounds it and however requests and urllib3
+    wrapped it: directly (NewConnectionError's ``__cause__``, R616), at a loopback proxy's CONNECT (ProtocolError's args, R620),
+    or as a plain ``http://`` request line to a loopback proxy (urllib3's ProxyError inside MaxRetryError, R619).
+
+    The walk follows ``__cause__``, the exceptions among ``args`` and urllib3's ``MaxRetryError.reason``; every real shape is reached
+    through those (SOCKS too: urllib3.contrib.socks raises its NewConnectionError ``from`` the error). It does NOT follow
+    ``__context__`` (the independent read's S1): Python sets that link on the first exception a request raises to whatever the CALLER's
+    thread is handling at that moment, which comes from outside this request. A fetch made inside an ``except`` that holds a refusal
+    somewhere in its chain (a fallback fetch after a Stopped one, a fetch in the handler of a bare guard refusal) would otherwise read
+    its own host's failure, with the switch clear, as the switch's: never retried and reported offline. The walk is bounded by depth,
+    by node count and by a seen set, and it never turns an exception into text. The class is read from
+    ``sys.modules`` rather than imported here: if ``airplane`` was never imported, no instance can exist, and a first import from
+    inside a failure's handler would capture whatever socket calls stood at that moment. A walk that fails answers False, so the
+    failure is written as the request error it looks like (the pre-R620 reading), and the R320 switch read still applies.
+    """
+    try:
+        airplane = sys.modules.get("src.ingest.airplane")
+        if airplane is None:
+            return False
+        refusal = airplane.AirplaneModeError
+        from urllib3.exceptions import MaxRetryError
+
+        seen: set[int] = set()
+        todo: list[tuple[object, int]] = [(exc, 0)]
+        while todo and len(seen) < _REFUSAL_WALK_NODES:
+            node, depth = todo.pop()
+            if not isinstance(node, BaseException) or id(node) in seen:
+                continue
+            seen.add(id(node))
+            if isinstance(node, refusal):
+                return True
+            if depth >= _REFUSAL_WALK_DEPTH:
+                continue
+            links: list[object] = [node.__cause__, *node.args]  # never __context__: it can be the caller's exception (see above)
+            if isinstance(node, MaxRetryError):
+                links.append(node.reason)
+            todo.extend((link, depth + 1) for link in links)
+    except Exception:  # noqa: BLE001 - this runs inside a failure's handler and must never replace that failure
+        return False
+    return False
 
 # --------------------------------------------------------------------------- #
 # C8 (2026-07-24 throughput brief): skip local DNS resolution when the exit
@@ -610,6 +866,15 @@ _REMOTE_RESOLVE_SOCKS_SCHEMES = frozenset({"socks5h", "socks4a"})
 #: allowlists (see ``EthicalFetcher._request_proxy_endpoints``).
 _SELECTABLE_PROXY_KEYS = frozenset({"http", "https", "all"})
 
+#: The characters Python's ``urlsplit`` deletes wherever they stand (``urllib.parse._UNSAFE_URL_BYTES_TO_REMOVE``), mapped to a space, so a
+#: redirect's Location can be read with them still visible (R622). ``urljoin`` drops them on a same-scheme hop before anything else sees them.
+_URLSPLIT_DELETES_AS_SPACE = {ord("\t"): " ", ord("\r"): " ", ord("\n"): " "}
+
+
+def _unsafe_url_text(text: str) -> bool:
+    """A backslash, any whitespace or a control character: what may not stand in a URL's authority or in a host (R622)."""
+    return any(ch == "\\" or ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in text)
+
 
 def _is_remote_resolving_proxy(proxy_url: str | None) -> bool:
     """True when ``proxy_url``'s scheme resolves DNS AT THE PROXY/EXIT
@@ -627,9 +892,105 @@ def _is_remote_resolving_proxy(proxy_url: str | None) -> bool:
 # after it stops. Cleared when the operator starts collecting again.
 _KILL = threading.Event()
 
+#: THE ENGAGEMENT EPOCH (R327, ruled R614). The switch says whether it is engaged NOW; a reader that
+#: decides after a request whether the failure was the target's (R320: read the switch after the work)
+#: cannot tell from that alone that a Stop was pressed AND cleared again inside the request's flight, and
+#: it then recorded the operator's Stop as the target's failure (robots "unreachable" cached for an hour,
+#: a law document's check stamped for a day). So every :func:`activate_kill_switch` also counts itself:
+#: a reader takes :func:`kill_switch_epoch` BEFORE its request and asks
+#: :func:`kill_switch_engaged_since` after it, which is true when the switch is engaged now OR was engaged
+#: at any moment in between. The set and the count happen together under ``_KILL_EPOCH_LOCK``, and a
+#: clear takes the same lock, so a clear can never land between them (a reader would then see the switch
+#: clear and the count unchanged); a capture before the pair sees the count change, a capture after it sees
+#: the switch set at the fetcher's own check. Only ever increases, so a changed value cannot come back to the
+#: one a reader captured. The window a reader asks about is everything between its capture and its question,
+#: waits included (a host lock, a Crawl-delay, a retry back-off), not only the bytes on the wire.
+_KILL_EPOCH = 0
+# Re-entrant, so a future signal handler that engages the switch cannot deadlock a thread holding it.
+_KILL_EPOCH_LOCK = threading.RLock()
+
+#: Every ``requests.Session`` an :class:`EthicalFetcher` fetches through, and every ``GuardedSession`` (R638). Weak, so a fetcher that is gone takes its session with
+#: it. :func:`activate_kill_switch` closes their pooled keep-alive connections: the socket guard refuses a request written to one after
+#: the Stop (``airplane._guarded_putrequest``), and closing them leaves none idle to be written to at all. A closed ``Session`` stays
+#: usable; its adapters open new pools on the next request, which then meets the connect guard.
+_FETCHER_SESSIONS: weakref.WeakSet[requests.Session] = weakref.WeakSet()
+# Re-entrant for the reason _KILL_EPOCH_LOCK is: activate_kill_switch takes it, and must not deadlock a thread already inside it.
+_FETCHER_SESSIONS_LOCK = threading.RLock()
+
+
+def _register_fetcher_session(session: requests.Session) -> None:
+    with _FETCHER_SESSIONS_LOCK:
+        _FETCHER_SESSIONS.add(session)
+
+
+def _close_fetcher_pools() -> int:
+    """Close the pooled connections of every registered fetcher session; how many sessions were closed. Never raises.
+
+    A connection a request is using at this moment is not in its pool: urllib3 closes it when the request hands it back to the closed
+    pool, and the request itself finishes or fails on its own (the single request already on the wire, as the Stop has always meant)."""
+    with _FETCHER_SESSIONS_LOCK:
+        sessions = list(_FETCHER_SESSIONS)
+    closed = 0
+    for session in sessions:
+        try:
+            session.close()
+            closed += 1
+        except Exception as exc:  # noqa: BLE001 - the Stop must complete whatever one session does
+            # The class only, never the words or a traceback: an error from a pool can carry a URL with its login (R142).
+            logging.getLogger(__name__).debug("kill switch: closing a fetcher session's pool failed (%s)", type(exc).__name__)
+    return closed
+
+
+#: The live socket of every mailbox pull in progress (IMAP or POP3, R647). Weak, so a pull that is gone takes its entry with it.
+#: :func:`activate_kill_switch` shuts each one down, so a pull blocked on a stalled server ends at the Stop instead of at its timeout.
+_LIVE_MAILBOX_SOCKETS: weakref.WeakSet[socket.socket] = weakref.WeakSet()
+# Re-entrant for the reason _FETCHER_SESSIONS_LOCK is.
+_LIVE_MAILBOX_SOCKETS_LOCK = threading.RLock()
+
+
+def _shut_socket(sock: socket.socket) -> None:
+    """Shut a live mailbox socket down at the TCP level. Never raises.
+
+    The base ``socket.socket.shutdown``, not an ``SSLSocket``'s own: no TLS close record is written, and the TLS object a reading
+    thread is inside is left alone. Both directions: a ``recv`` blocked in another thread returns at once, and nothing more can be
+    written. The pull's own code then sees the closed connection and ends as the Stop it follows (R640)."""
+    try:
+        socket.socket.shutdown(sock, socket.SHUT_RDWR)
+    except Exception as exc:  # noqa: BLE001 - a socket already closed or never connected has nothing to shut
+        logging.getLogger(__name__).debug("kill switch: shutting a mailbox socket down failed (%s)", type(exc).__name__)
+
+
+def register_mailbox_socket(sock: socket.socket) -> None:
+    """Record a live mailbox socket for the Stop (R647). Called the moment the socket exists, before the greeting is read. If the switch is
+    already engaged it is shut down at once: a Stop that landed between the connect and this call is not missed."""
+    with _LIVE_MAILBOX_SOCKETS_LOCK:
+        _LIVE_MAILBOX_SOCKETS.add(sock)
+    if kill_switch_active():
+        _shut_socket(sock)
+
+
+def unregister_mailbox_socket(sock: object) -> None:
+    """Take ``sock`` off the Stop's list. ``None`` (no socket yet, or one a library already let go of) is a no-op. Never raises."""
+    if sock is None:
+        return
+    with _LIVE_MAILBOX_SOCKETS_LOCK, contextlib.suppress(TypeError):
+        _LIVE_MAILBOX_SOCKETS.discard(sock)  # type: ignore[arg-type]
+
+
+def _shut_mailbox_sockets() -> int:
+    """Shut down every live mailbox socket; how many there were. Never raises."""
+    with _LIVE_MAILBOX_SOCKETS_LOCK:
+        socks = list(_LIVE_MAILBOX_SOCKETS)
+    for sock in socks:
+        _shut_socket(sock)
+    return len(socks)
+
 
 def activate_kill_switch() -> None:
-    _KILL.set()
+    global _KILL_EPOCH
+    with _KILL_EPOCH_LOCK:
+        _KILL.set()
+        _KILL_EPOCH += 1
     # Going offline is a HARD close: an egress window (the consented "install the
     # local AI without starting the collector" exemption) must never outlive the
     # operator's decision to go offline, or the airplane button would stop meaning
@@ -641,6 +1002,12 @@ def activate_kill_switch() -> None:
         close_window()
     except Exception:  # noqa: BLE001 - the kill switch must engage no matter what
         pass
+    # No keep-alive connection is left idle to be reused after the Stop (R638). After the switch is set, so a request that takes a
+    # connection from a pool between the two meets the putrequest guard instead.
+    _close_fetcher_pools()
+    # A mailbox pull blocked on a stalled server ends now rather than at its timeout (R647); after the switch is set, so a pull that
+    # registers its socket between the two shuts it itself.
+    _shut_mailbox_sockets()
 
 
 def clear_kill_switch() -> None:
@@ -655,11 +1022,29 @@ def clear_kill_switch() -> None:
     That is the wrong direction to be wrong in -- it weakens zero-network boot, the
     non-negotiable the flag was written to leave untouched.
     """
-    _KILL.clear()
+    with _KILL_EPOCH_LOCK:  # never between an engagement's set and its count (R614)
+        _KILL.clear()
 
 
 def kill_switch_active() -> bool:
     return _KILL.is_set()
+
+
+def kill_switch_epoch() -> int:
+    """How many times the switch has been engaged in this process: capture it before a request (R614)."""
+    return _KILL_EPOCH
+
+
+def kill_switch_engaged_since(epoch: int) -> bool:
+    """True when the switch is engaged now, or was engaged at any moment after ``epoch`` was captured.
+
+    The question a recorder asks after a request whose failure it may store as the target's: a request
+    that shared its flight with a Stop, even one cleared again before the failure reached the caller, is
+    not an answer about the target, and the recorder stores nothing for it (R614 (2)). The cost is
+    conservative: a real failure that happens to share its window with a Stop (waits included) is asked
+    again next time.
+    """
+    return kill_switch_active() or epoch != _KILL_EPOCH
 
 
 #: Has an OPERATOR crossed ONLINE in this process? Set by
@@ -718,6 +1103,58 @@ def _reset_crossed_online_for_tests() -> None:
 #: private name for the call sites and tests that already use it.
 _is_blocked_ip = is_blocked_ip
 
+#: The fixed words a robots refusal of a redirect hop ends with (R629): the address refused is the hop's, reached from the page asked for.
+_REDIRECT_HOP_NOTE = "reached by a redirect"
+
+
+class _RedirectChain:
+    """One page fetch's walk along its redirect chain (R629): the ONE per-host lock it holds, and the scope its caller kept it to.
+
+    A hop to another host takes that host's robots.txt and politeness interval under that host's lock, as a first request does.
+    The lock is HANDED OVER, never added: the host the chain leaves is stamped (its request was answered) and its lock released
+    BEFORE the next host's lock is waited for, so a thread holds at most one host lock at any moment. Two chains crossing each
+    other (A -> B on one thread while B -> A runs on another) can then never each hold the lock the other waits for, which is the
+    deadlock a second lock taken on top of the first would make. What the hand-over gives up is nothing a lock protected: the host
+    left behind has had its request answered and its response closed.
+    """
+
+    __slots__ = ("_fetcher", "_lock", "first", "netloc", "requested", "scope")
+
+    def __init__(self, fetcher: EthicalFetcher, netloc: str, scope: Callable[[str], bool] | None) -> None:
+        self._fetcher = fetcher
+        #: entered and exited as the ``with`` it replaces did, so whatever ``_host_lock`` hands back keeps working
+        self._lock: AbstractContextManager[Any] | None = None
+        self.first = netloc  #: the host key of the URL asked for: a retry starts again from it
+        self.netloc = netloc  #: the host key whose lock is held
+        self.requested = False  #: a request went to the held host since it was taken: its interval counts from the stamp
+        self.scope = scope
+        self._take(netloc)
+
+    def _take(self, netloc: str) -> None:
+        lock = self._fetcher._host_lock(netloc)
+        lock.__enter__()
+        self._lock, self.netloc, self.requested = lock, netloc, False
+
+    def stamp(self) -> None:
+        """Write the held host's last-request time, once, if a request went to it."""
+        if self.requested:
+            with self._fetcher._host_state_guard:
+                self._fetcher._last_request[self.netloc] = self._fetcher._now()
+            self.requested = False
+
+    def move(self, netloc: str) -> None:
+        """Stamp and release the held host, then wait for ``netloc``'s lock holding none (nothing to do on the held host)."""
+        if netloc == self.netloc and self._lock is not None:
+            return
+        self.stamp()
+        self.release()
+        self._take(netloc)
+
+    def release(self) -> None:
+        lock, self._lock = self._lock, None
+        if lock is not None:
+            lock.__exit__(None, None, None)
+
 
 class EthicalFetcher:
     """Stateful fetcher enforcing robots.txt (fail-closed) + per-host rate limits.
@@ -774,6 +1211,8 @@ class EthicalFetcher:
             self._proxy_pool = list(proxy_pool)
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": user_agent})
+        if isinstance(self.session, requests.Session):
+            _register_fetcher_session(self.session)  # its pool is closed on a Stop (R638)
         # Size the connection pool for parallel collection: with up to ~50
         # concurrent DISTINCT hosts (per-host concurrency stays 1 via the host
         # lock), the default urllib3 pool (10) would churn host-pools and warn.
@@ -857,6 +1296,9 @@ class EthicalFetcher:
         # make_fetcher() builds a fresh instance (see the module-level note by
         # _ROBOTS_TTL). Injectable so tests never touch the real data_dir().
         self._robots_cache_path = robots_cache_path or _robots_cache_path()
+        # An older build's keys leave the file whether or not this run persists (R621, Steward 3's item 4): a credential left
+        # on disk is not this run's to keep. Nothing new is written when persistence is off.
+        _scrub_sidecar(self._robots_cache_path, _ROBOTS_PERSIST_LOCK, _robots_key_is_normal, _drop_unkeyed_robots)
         if _robots_persist_enabled():
             try:
                 self._robots.update(
@@ -873,6 +1315,7 @@ class EthicalFetcher:
         # one too -- two independently-injected paths is how a fixture ends up
         # writing half its state into the real data_dir().
         self._host_schedule_path = self._robots_cache_path.with_name("host_schedule.json")
+        _scrub_sidecar(self._host_schedule_path, _HOST_SCHEDULE_LOCK, _schedule_key_is_normal, _merge_unkeyed_stamps)  # as above
         if _host_schedule_persist_enabled():
             try:
                 self._host_schedule.update(_load_host_schedule(self._host_schedule_path))
@@ -932,7 +1375,9 @@ class EthicalFetcher:
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             return []
+        self._refuse_parser_mismatch(url)  # before the guard looks the host up (R622)
         self._guard_target(parsed.hostname)  # SSRF: never reach internal addresses
+        parsed = parsed._replace(netloc=_host_netloc(parsed.netloc, parsed.scheme))  # the host key, never the userinfo or a spelling (R621)
         host_key = f"{parsed.scheme}://{parsed.netloc}"
         with self._host_lock(parsed.netloc):
             parser = self._get_robots(host_key, parsed)
@@ -972,8 +1417,9 @@ class EthicalFetcher:
         """
         parsed = urlparse(url_or_netloc) if "://" in url_or_netloc else None
         netloc = parsed.netloc if parsed is not None else url_or_netloc
-        keys: tuple[str, ...] = (f"{parsed.scheme}://{netloc}",) if parsed is not None else ()
-        keys += (f"https://{netloc}", f"http://{netloc}")
+        # the cache is keyed by the host key, per scheme (R621): no userinfo, one spelling, no default port
+        keys: tuple[str, ...] = (f"{parsed.scheme}://{_host_netloc(netloc, parsed.scheme)}",) if parsed is not None else ()
+        keys += (f"https://{_host_netloc(netloc, 'https')}", f"http://{_host_netloc(netloc, 'http')}")
         for k in keys:
             cached = self._robots.get(k)
             if cached is None or cached[0] is None:
@@ -1053,11 +1499,19 @@ class EthicalFetcher:
         require_html: bool = True,
         extra_headers: dict[str, str] | None = None,
         keep_bytes: bool = False,
+        redirect_scope: Callable[[str], bool] | None = None,
     ) -> FetchResult:
         """Fetch ``url`` ethically. Raises a ``FetchError`` subclass on any refusal.
 
         ``require_html`` rejects non-HTML responses (used for article pages). Set it
         False to fetch feeds (RSS/Atom XML) through the same robots/rate-limit path.
+
+        A redirect hop to ANOTHER host (another host key: a host or a port, never only the
+        scheme) is a first request to that host (R629): its robots.txt is read and its interval
+        waited, fail-closed, under its own lock, before it is requested. ``redirect_scope``, when
+        given, is asked about every hop's URL first, and a hop it answers False for (or cannot
+        answer) is refused with :class:`RedirectOutOfScope` before anything is asked of its host:
+        a crawl kept to one site hands its site here.
 
         ``extra_headers`` adds request headers (e.g. conditional-GET
         ``If-None-Match`` / ``If-Modified-Since`` for feeds). When the server
@@ -1072,15 +1526,27 @@ class EthicalFetcher:
         """
         if _KILL.is_set():
             raise FetchFailed(KILL_SWITCH_REFUSAL)
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https") or not parsed.netloc:
-            raise FetchFailed(f"unsupported or malformed URL: {url!r}")
+        try:
+            parsed: ParseResult | None = urlparse(url)
+        except ValueError:
+            # A link urlsplit cannot read (an unclosed IPv6 bracket ``http://[::1``, a bracketed host that is no address, a netloc
+            # NFKC would change) raised a bare ValueError out of the fetch, which ended the source's whole feed pass: a feed
+            # item's link reaches here through ``ingest_url`` (R626's read). Refused below, outside this handler, as the
+            # unsupported or malformed URL it is.
+            parsed = None
+        if parsed is None or parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise FetchFailed(f"unsupported or malformed URL: {failure_url(url)!r}")
 
         # Cheap length check per fetch; evicts only when a cap is exceeded (E1).
         self._bound_host_caches()
 
+        self._refuse_parser_mismatch(url)  # before the guard looks the host up (R622)
         self._guard_target(parsed.hostname)  # SSRF: never reach internal addresses
 
+        # Every per-host record below (robots, schedule, interval, lock, circuit) is keyed by the host key, never the userinfo
+        # or the host's spelling (R621, see _host_netloc); the request itself is made with ``url`` as given. Taken AFTER
+        # _refuse_parser_mismatch (R622), which reads the URL as written.
+        parsed = parsed._replace(netloc=_host_netloc(parsed.netloc, parsed.scheme))
         host_key = f"{parsed.scheme}://{parsed.netloc}"
         # Per-host Tor circuit (computed once, from the ORIGINAL host) so the
         # robots check and every page/redirect hop for this host share it.
@@ -1090,8 +1556,11 @@ class EthicalFetcher:
         # rate-limit + the (possibly retried) GET + body read. So a host is hit by
         # AT MOST ONE request at a time (politeness is never traded for speed, even
         # under parallel collection), while DIFFERENT hosts proceed in parallel —
-        # each on its own Tor circuit. The lock releases on return/raise.
-        with self._host_lock(parsed.netloc):
+        # each on its own Tor circuit. A redirect hop to another host hands the lock
+        # over to that host's (R629, see _RedirectChain): never two held at once. The
+        # lock held at the end releases on return/raise.
+        chain = _RedirectChain(self, parsed.netloc, redirect_scope)
+        try:
             return self._fetch_locked(
                 url,
                 host_key=host_key,
@@ -1100,13 +1569,16 @@ class EthicalFetcher:
                 extra_headers=extra_headers,
                 iso_proxies=iso_proxies,
                 keep_bytes=keep_bytes,
+                chain=chain,
             )
+        finally:
+            chain.release()
 
     def _fetch_locked(
         self, url, *, host_key, parsed, require_html, extra_headers, iso_proxies,
-        keep_bytes=False,
+        keep_bytes=False, chain: _RedirectChain,
     ) -> FetchResult:
-        """The per-host-serialised fetch body (caller holds the host lock)."""
+        """The per-host-serialised fetch body (``chain`` holds the host lock: the first host's, then the hop's)."""
         # robots.txt is checked once (not per retry): a disallow/unavailable is a
         # deliberate, non-transient refusal.
         if self.respect_robots:
@@ -1135,17 +1607,41 @@ class EthicalFetcher:
                     if transient is not None:
                         raise transient from None
                     break  # a retryable status: handled below, as when the retries run out
+                chain.requested = True
+                prior = (transient, response, final_url)  # this attempt's predecessor, for a hop that defers on a retry
                 transient = None
                 response = final_url = None
                 try:
                     response, final_url = self._http_get(
-                        url, extra_headers=extra_headers, proxies=iso_proxies
+                        url, extra_headers=extra_headers, proxies=iso_proxies, chain=chain
                     )
+                except CrawlDelayDeferred:
+                    # A redirect hop's own host deferred (R629), before its request: on the first attempt that is the answer, as
+                    # above; on a retry the failed request before it is (the same rule as for the first host, above).
+                    if attempt == 0:
+                        raise
+                    transient, response, final_url = prior
+                    if transient is not None:
+                        raise transient from None
+                    break  # a retryable status: handled below, as when the retries run out
                 except requests.RequestException as exc:
-                    transient = FetchFailed(f"request error for {url}: {record_text(exc, typed=False)}")
+                    if _carries_airplane_refusal(exc):
+                        # The guard's own refusal, found by TYPE (R620): the switch's, whatever words came with it. Raised at once
+                        # in the switch's whole sentence: never retried (it is the person's setting, not a host's passing failure,
+                        # and the next pass asks again) and carrying no host's text. Every reader reads that sentence as the switch's.
+                        raise FetchFailed(KILL_SWITCH_REFUSAL) from None
+                    # the URL through failure_url: a link holding spaces must not continue in the guard's words (R616). Its userinfo,
+                    # masked there, is taken out of the error's words as well (Steward 3 #1): requests quotes a URL it cannot prepare
+                    # ("Failed to parse: https://u:pw@..."). The secrets are the named URL's; a redirect hop's own userinfo is not among
+                    # them, stated: a hop with no http(s) scheme, no host or an authority urllib3 cannot parse (the URLs requests quotes)
+                    # is refused before it is requested, by the hop check, _guard_target and _refuse_parser_mismatch.
+                    transient = FetchFailed(
+                        f"request error for {failure_url(url)}: {record_text(exc, *userinfo_secrets(url), typed=False)}"
+                    )
                 finally:
-                    with self._host_state_guard:
-                        self._last_request[parsed.netloc] = self._now()
+                    # the host last requested: the first, or the host of the hop the chain ended on (the hosts it left were
+                    # stamped as it left them, R629)
+                    chain.stamp()
 
                 # transient is None <=> _http_get returned, i.e. `response` is set.
                 # Spelled out because that pairing lives in the try/except above.
@@ -1162,6 +1658,11 @@ class EthicalFetcher:
                     break  # out of retries: fall through to handle the status below
 
                 attempt += 1
+                # A retry starts again from the first host, under its lock (R629), and moves there BEFORE its back-off, so the sleep
+                # holds only that lock, as before R629: a hop host the attempt ended on is stamped and released first and its other
+                # fetches are not held up by this one's sleep (the independent read's nit). The one move: no path reaches the next
+                # attempt without passing here.
+                chain.move(chain.first)
                 self._sleep(self.retry_backoff_s * (2 ** (attempt - 1)))
 
             # the loop exits with either a definitive response or a raised error
@@ -1197,11 +1698,11 @@ class EthicalFetcher:
                 )
 
             if response.status_code != 200:
-                raise FetchFailed(f"HTTP {response.status_code} for {url}")
+                raise FetchFailed(f"HTTP {response.status_code} for {failure_url(url)}")
 
             content_type = response.headers.get("Content-Type", "")
             if require_html and "html" not in content_type.lower():
-                raise FetchFailed(f"non-HTML content ({content_type!r}) for {url}")
+                raise FetchFailed(f"non-HTML content ({content_type!r}) for {failure_url(url)}")
 
             content, raw_body = self._read_body(
                 response, url, token=fetch_token, keep_bytes=keep_bytes
@@ -1294,6 +1795,9 @@ class EthicalFetcher:
             raise FetchFailed(KILL_SWITCH_REFUSAL)
         if not host:
             raise FetchFailed("missing host")
+        if _unsafe_url_text(host):
+            # Never looked up, and never written: a name with spaces could otherwise be the opening words of a sentence (R622).
+            raise BlockedTarget("URL host contains a backslash, whitespace or control character")
         host = host.strip("[]")  # IPv6 literal brackets
         try:
             if _is_blocked_ip(ipaddress.ip_address(host)):
@@ -1307,7 +1811,7 @@ class EthicalFetcher:
         for info in infos:
             ip = ipaddress.ip_address(info[4][0])
             if _is_blocked_ip(ip):
-                raise BlockedTarget(f"{host} resolves to a non-public address ({ip})")
+                raise BlockedTarget(f"refusing to fetch {host!r}: it resolves to a non-public address ({ip})")  # fixed words first (R622)
 
     def _resolve_cached(self, host: str) -> list:
         """``socket.getaddrinfo(host, None)`` with a short-TTL cache (C8/A6) — a
@@ -1322,9 +1826,16 @@ class EthicalFetcher:
         if cached is not None and now < cached[1]:
             return cached[0]
         try:
-            infos = socket.getaddrinfo(host, None)
+            infos: list | None = socket.getaddrinfo(host, None)
         except OSError as exc:
             raise FetchFailed(f"cannot resolve host {host!r}: {record_text(exc, typed=False)}") from None
+        except UnicodeError:
+            # The name cannot be IDNA-encoded (an empty label, ``a..example``, or one over 63 characters), raised before any query. It
+            # is a ValueError, not an OSError, and escaped the fetch raw (R622 read). Raised below, outside this handler, so that the
+            # UnicodeError is not its context: record_text writes any error a UnicodeError is reachable from as that error's fixed record.
+            infos = None
+        if infos is None:
+            raise FetchFailed(f"cannot resolve host {host!r}: the name cannot be encoded for a lookup")
         if len(self._dns_cache) >= _DNS_CACHE_MAX:
             self._dns_cache.clear()
         self._dns_cache[host] = (infos, now + _DNS_CACHE_TTL_S)
@@ -1393,6 +1904,7 @@ class EthicalFetcher:
         *,
         extra_headers: dict[str, str] | None = None,
         proxies: dict[str, str] | None = None,
+        chain: _RedirectChain | None = None,
     ):
         """GET with manual, bounded redirects, re-validating every hop (SSRF).
 
@@ -1400,9 +1912,11 @@ class EthicalFetcher:
         the final resource is the one that validates them. ``proxies`` (per-host
         Tor stream isolation) overrides the session proxy for THIS fetch, keyed on
         the ORIGINAL host so every redirect hop stays on the same circuit.
+        ``chain`` (the page fetch's, from :meth:`fetch`) makes a hop to another
+        host a first request to it (R629, :meth:`_take_hop_host`).
         """
         return self._guarded_redirect_get(
-            url, extra_headers=extra_headers, proxies=proxies, stream=True
+            url, extra_headers=extra_headers, proxies=proxies, stream=True, chain=chain
         )
 
     def _guarded_redirect_get(
@@ -1412,9 +1926,23 @@ class EthicalFetcher:
         extra_headers: dict[str, str] | None = None,
         proxies: dict[str, str] | None = None,
         stream: bool = False,
+        chain: _RedirectChain | None = None,
+        hop_robots: bool = False,
     ):
         """The ONE redirect path: follow bounded redirects manually, re-running the
         SSRF guard on EVERY hop's target (CWE-918). Returns ``(response, final_url)``.
+
+        ``chain`` is given by the page fetch alone (``fetch`` -> ``_http_get``, R629): its
+        scope is asked about every hop before the guard looks the hop's host up, and a hop
+        to another host then takes that host's lock, robots.txt and interval before it is
+        requested (:meth:`_take_hop_host`); a hop on the same host is robots-checked again
+        when its robots key or path changed (R636). ``hop_robots`` is given by the source
+        preflight's homepage ping alone (R636): each hop it will request is robots-checked
+        the same way (:meth:`_recheck_hop_robots`), fail-closed, and nothing else is taken,
+        since the ping takes no lock and waits no interval. Every other caller passes
+        neither and keeps the behaviour it had: the robots reads (``_get_robots``, so
+        ``declared_sitemaps`` too, and both preflights' own reads of robots.txt), whose own
+        hops are never made to read robots.txt again, so a read can never recurse.
 
         Both the page fetch (``_http_get``, ``stream=True``) and the robots.txt
         fetch (``_get_robots``, ``stream=False``) route through here, so a 30x
@@ -1444,7 +1972,8 @@ class EthicalFetcher:
             # The two preflight side doors call this without a mapping. Give them the
             # host's own, as the page and robots paths do, so no request through this
             # method is left to ``session.proxies`` (see ``_isolated_proxies``).
-            proxies = self._isolated_proxies(urlparse(url).netloc)
+            first = urlparse(url)
+            proxies = self._isolated_proxies(_host_netloc(first.netloc, first.scheme))  # the host key, as fetch() hands it (R621, Steward 3's item 3)
         # Lazily, and on EVERY request rather than behind a one-shot flag:
         # ``src.ingest.airplane`` imports this module, so the import cannot be at
         # module level, and the installer is an ``if already installed: return``
@@ -1455,6 +1984,7 @@ class EthicalFetcher:
 
         ensure_connect_guard_installed()
         current = url
+        unreadable_from: str | None = None
         with connect_scope(
             enabled=self._real_session,
             proxies=self._request_proxy_endpoints(url, proxies),
@@ -1468,7 +1998,7 @@ class EthicalFetcher:
             # contract they already have: a connect-time refusal is a
             # BlockedTarget like a resolve-time one, deterministic, never retried.
             try:
-                for _ in range(self._max_redirects + 1):
+                for hop in range(self._max_redirects + 1):
                     kwargs: dict[str, Any] = {"timeout": self.timeout, "allow_redirects": False}
                     if extra_headers:
                         kwargs["headers"] = extra_headers
@@ -1481,19 +2011,152 @@ class EthicalFetcher:
                     status = resp.status_code
                     location = resp.headers.get("Location") if hasattr(resp, "headers") else None
                     if 300 <= status < 400 and location:
-                        nxt = urljoin(current, location)
-                        p = urlparse(nxt)
+                        try:
+                            nxt = urljoin(current, location)
+                            p = urlparse(nxt)
+                        except ValueError:
+                            # An unclosed IPv6 bracket (``http://[::1/x``) or a netloc NFKC would change: a bare ValueError escaped the
+                            # fetch, so the robots read never backed the host off and ``ingest_url`` did not catch it (R622 read).
+                            raise FetchFailed(f"redirect to a URL that cannot be read: {failure_url(location)!r}") from None
                         if p.scheme not in ("http", "https") or not p.netloc:
-                            raise FetchFailed(f"redirect to unsupported URL: {nxt!r}")
+                            raise FetchFailed(f"redirect to unsupported URL: {failure_url(nxt)!r}")
+                        # The hop is read BEFORE the guard looks its host up (R622), not on the next turn of the loop: a Location
+                        # can name a host with spaces in it, which reached the resolver and began the guard's sentence. A tab, CR
+                        # or LF is read as a space, as the first request's own check reads it, since ``urljoin`` deletes them.
+                        visible = location.translate(_URLSPLIT_DELETES_AS_SPACE)
+                        if visible != location:
+                            try:
+                                self._refuse_parser_mismatch(urljoin(current, visible))
+                            except ValueError:  # shown as a space, a bracketed host is no longer an address
+                                raise BlockedTarget("URL host cannot be read") from None
+                        self._refuse_parser_mismatch(nxt)
+                        if _carries_userinfo(location):
+                            # A Location that writes a user name or password (R633): followed, the server's choice of login went out
+                            # as an Authorization header and the address, login included, came back as the page's URL to be stored
+                            # (a review measured it). Refused before anything is asked of its host, for every caller, robots reads
+                            # included. The Location is read, not the joined URL: a relative Location writes no authority and keeps
+                            # the one of the request it answers, so an address the caller wrote with a login keeps it on that host,
+                            # as before; any Location that writes one is refused, the caller's own login included, so a login is
+                            # never handed to another host. (``urljoin`` above has already read the Location, so this reads it the
+                            # same way, and never raises.) A BlockedTarget, as R622's refusals of the address beside it: deterministic,
+                            # never retried, and the type a caller holding a fetch to one host already reads as a refused hop.
+                            raise BlockedTarget(
+                                f"redirect to an address that carries a user name or password, not followed: {failure_url(nxt)!r}"
+                            )
+                        if chain is not None:
+                            self._refuse_out_of_scope(chain, nxt)  # before the guard looks the host up: nothing is asked of it (R629)
                         self._guard_target(p.hostname)  # re-validate the redirect target
                         if hasattr(resp, "close"):
                             resp.close()
+                        if chain is not None and hop < self._max_redirects:  # never for a hop the bound will not request
+                            self._take_hop_host(chain, current, nxt, p)
+                        elif hop_robots and hop < self._max_redirects:  # the homepage ping's hop (R636)
+                            self._recheck_hop_robots(current, nxt, p)
                         current = nxt
                         continue
                     return resp, str(getattr(resp, "url", current) or current)
             except BlockedConnectTarget as exc:
                 raise BlockedTarget(record_text(exc, typed=False)) from None
-        raise FetchFailed(f"too many redirects for {url}")
+            except requests.RequestException:
+                raise
+            except ValueError:
+                # requests parses a 3xx answer's Location even when it is told not to follow it (``Session.send`` builds
+                # ``Response.next`` through ``resolve_redirects``), and a Location urlsplit cannot read (an unclosed IPv6
+                # bracket) raised a bare ValueError out of the request: the robots read never backed the host off, and
+                # ``ingest_url`` did not catch it (R622 read). Handled here, round the loop, and not round the request itself,
+                # so the request line stays as main has it (the CodeQL fingerprint lesson of 2026-10-16); the loop's own reads
+                # already turn theirs into BlockedTarget or FetchFailed, so what reaches this handler is the request's. Raised below, outside
+                # this handler, so no UnicodeError is its context (record_text writes any error a UnicodeError is reachable
+                # from as that error's fixed record).
+                unreadable_from = current
+        if unreadable_from is not None:
+            raise FetchFailed(f"redirect to a URL that cannot be read, from {failure_url(unreadable_from)}")
+        raise FetchFailed(f"too many redirects for {failure_url(url)}")
+
+    @staticmethod
+    def _refuse_out_of_scope(chain: _RedirectChain, nxt: str) -> None:
+        """Refuse a hop the page fetch's scope does not cover (R629), before anything is asked of its host. A scope that cannot
+        answer (it raises) keeps the hop out: the scope is a promise about where a fetch may go, so a doubt refuses."""
+        if chain.scope is None:
+            return
+        try:
+            inside = bool(chain.scope(nxt))
+        except Exception:  # noqa: BLE001 - fail closed; the hop is refused in fixed words below, the error is not written
+            inside = False
+        if not inside:
+            raise RedirectOutOfScope(f"redirect leaves the site the fetch is kept to, not followed: {failure_url(nxt)!r}")
+
+    def _take_hop_host(self, chain: _RedirectChain, current: str, nxt: str, p) -> None:
+        """Make a page fetch's hop to ANOTHER host a first request to it (R629), before it is requested.
+
+        Another host is another host key (``_host_netloc``: the host and the port a request goes to), the key every per-host
+        record already uses. A hop on the same key (another path, or ``http`` -> ``https`` on the same host) stays under that
+        host's lock, and the interval of the first request stands for it (the interval is per host: a second wait would charge
+        one host twice). Its robots decision is taken again, fail-closed, when its robots key or path changed
+        (:meth:`_recheck_hop_robots`, R636): from the cached robots.txt for another path or query, and from the https robots.txt,
+        read under the lock already held, for an upgrade. For another host,
+        in the order ``fetch()`` takes them for a first request, each fail-closed:
+          - the chain's lock moves to the new host (the old one stamped and released first, never two held: see _RedirectChain);
+          - its robots.txt (``_enforce_robots``: a disallow is RobotsDisallowed, an unreadable robots.txt RobotsUnavailable, the
+            same refusals as a first request's, ending with fixed words that say a redirect led there);
+          - its interval or Crawl-delay is waited, or deferred past the cap (CrawlDelayDeferred, the stamp written first, its
+            sentence naming the hop's address and ending with the same fixed words);
+          - the switch is read before and after the waits: a Stop pressed while the hop waited for a lock or an interval, or
+            while its robots.txt was read, refuses it, and so does one pressed and cleared again in that time (the epoch, R614;
+            the R636 re-read), for an injected session as for a real one (the hop's own ``_guard_target`` reads it first only for
+            a real one).
+        The robots read is ``_get_robots``, which passes no chain on: its own redirect hops keep today's behaviour and never read
+        robots.txt themselves, so a read can never recurse."""
+        key = _host_netloc(p.netloc, p.scheme)
+        if key == chain.netloc:
+            if self.respect_robots:
+                self._recheck_hop_robots(current, nxt, p)
+            return
+        epoch = kill_switch_epoch()  # before the first read: the robots read below may be a request (R614, the R636 re-read)
+        if _KILL.is_set():
+            raise FetchFailed(KILL_SWITCH_REFUSAL)
+        chain.move(key)
+        host_key = f"{p.scheme}://{key}"
+        if self.respect_robots:
+            self._enforce_robots(nxt, host_key, p._replace(netloc=key), hop=True)
+        self._respect_rate_limit(key, host_key, hop_url=nxt)
+        if kill_switch_engaged_since(epoch):  # engaged now, or engaged at any moment since the first read
+            raise FetchFailed(KILL_SWITCH_REFUSAL)
+        chain.requested = True
+
+    def _recheck_hop_robots(self, current: str, nxt: str, p) -> None:
+        """Refuse a redirect hop that robots.txt does not allow, when its robots key or path changed (R636), before it is requested.
+
+        ``current`` is the address that answered with the redirect; it was robots-checked before it was requested (the first by
+        ``fetch()``, each hop by this), so a hop to the same robots key and request target (:meth:`_robots_target`) is the same
+        decision and is not taken again. Any other hop is checked through ``_enforce_robots``, fail-closed, with the refusals and
+        the "(reached by a redirect)" words of a first request's: another path or query on the same key is answered by the cached
+        robots.txt (no new read), and another scheme or host by that key's robots.txt, read through ``_get_robots``, which passes
+        no chain and no ``hop_robots`` on, so a robots read never recurses. The query counts, since robots rules match the path
+        and the query together (``Disallow: /page?session`` refuses ``/page?session=1`` and allows ``/page?a=1``).
+
+        The switch is read after the check, which may have gone to the network (the independent read's M1): the hop's last read
+        was its guard's, before the check, and what follows is the hop's request, which on a pooled keep-alive connection opens no
+        socket for the airplane guard to see. So a Stop pressed while the robots.txt was read refuses the hop, as R629's
+        other-host branch refuses one pressed during its waits, and so does a Stop pressed and cleared again in that time (the
+        epoch, R614)."""
+        if self._robots_target(current) == self._robots_target(nxt):
+            return
+        key = _host_netloc(p.netloc, p.scheme)
+        epoch = kill_switch_epoch()  # before the check: its robots read may be a request (R614)
+        self._enforce_robots(nxt, f"{p.scheme}://{key}", p._replace(netloc=key), hop=True)
+        if kill_switch_engaged_since(epoch):  # engaged now, or engaged at any moment during the check
+            raise FetchFailed(KILL_SWITCH_REFUSAL)
+
+    @staticmethod
+    def _robots_target(url: str) -> tuple[str, str]:
+        """What one robots.txt decision about ``url`` is taken from (R636): its robots key (the scheme and the host key, which
+        name the robots.txt read) and the request target the rules are matched against (the path, its ``;params`` and the query,
+        as ``RobotFileParser.can_fetch`` matches them). The fragment is out: it is never sent. Two URLs with the same pair are one
+        decision. The callers have already parsed ``url``, so this does not raise."""
+        p = urlparse(url)
+        target = p.path + (f";{p.params}" if p.params else "") + (f"?{p.query}" if p.query else "")
+        return f"{p.scheme}://{_host_netloc(p.netloc, p.scheme)}", target
 
     @staticmethod
     def _refuse_parser_mismatch(url: str) -> None:
@@ -1513,7 +2176,7 @@ class EthicalFetcher:
         authority = rest
         for stop in ("/", "?", "#"):
             authority = authority.split(stop, 1)[0]
-        if any(ch == "\\" or ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in authority):
+        if _unsafe_url_text(authority):
             raise BlockedTarget("URL authority contains a backslash, whitespace or control character")
         from urllib3.util import parse_url
 
@@ -1575,7 +2238,13 @@ class EthicalFetcher:
             try:
                 merged.update(requests.utils.get_environ_proxies(url, no_proxy=None))
             except Exception as exc:  # noqa: BLE001 - an unreadable environment is not a fetch error
-                log_failure(_LOG, f"could not read environment proxies for {url!r}", exc, level=logging.DEBUG)
+                log_failure(
+                    _LOG,
+                    f"could not read environment proxies for {failure_url(url)!r}",
+                    exc,
+                    *userinfo_secrets(url),
+                    level=logging.DEBUG,
+                )
         merged.update(explicit or {})
         return {k: v for k, v in merged.items() if k in _SELECTABLE_PROXY_KEYS or "://" in k}
 
@@ -1594,7 +2263,7 @@ class EthicalFetcher:
         """
         cl = response.headers.get("Content-Length") if hasattr(response, "headers") else None
         if cl and str(cl).isdigit() and int(cl) > self.max_bytes:
-            raise FetchFailed(f"declared length {cl} exceeds {self.max_bytes} bytes for {url}")
+            raise FetchFailed(f"declared length {cl} exceeds {self.max_bytes} bytes for {failure_url(url)}")
         if self._real_session and hasattr(response, "iter_content"):
             total = 0
             chunks: list[bytes] = []
@@ -1609,14 +2278,14 @@ class EthicalFetcher:
                     if hasattr(response, "close"):
                         response.close()
                     raise FetchFailed(
-                        f"body read exceeded {self.body_deadline_s:.0f}s for {url} "
+                        f"body read exceeded {self.body_deadline_s:.0f}s for {failure_url(url)} "
                         "(a slow or trickling response)"
                     )
                 total += len(chunk)
                 if total > self.max_bytes:
                     if hasattr(response, "close"):
                         response.close()
-                    raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {url}")
+                    raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {failure_url(url)}")
                 chunks.append(chunk)
             raw = b"".join(chunks)
             activity_monitor.fetch_bytes(total, token)  # real, app-attributed download size
@@ -1644,7 +2313,7 @@ class EthicalFetcher:
                 return raw.decode("utf-8", errors="replace"), kept
         # Injected (test) session: not streamed; check the already-materialised body.
         if response.content and len(response.content) > self.max_bytes:
-            raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {url}")
+            raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {failure_url(url)}")
         activity_monitor.fetch_bytes(len(response.content or b""), token)
         return response.text, (response.content if keep_bytes else None)
 
@@ -1668,29 +2337,45 @@ class EthicalFetcher:
         if not raw:
             return 0
         netloc = raw.split("://", 1)[-1].split("/", 1)[0]
-        if not netloc:
+        if not _host_netloc(netloc):
             return 0
+        # the cache is keyed by the host key, per scheme (R621): no userinfo, one spelling, no default port
+        targets = {f"{scheme}://{_host_netloc(netloc, scheme)}" for scheme in _DEFAULT_PORTS}
         dropped = 0
-        for key in [k for k in self._robots if k.split("://", 1)[-1].split("/", 1)[0] == netloc]:
+        for key in [k for k in self._robots if k in targets]:
             self._robots.pop(key, None)
             self._robots_cause.pop(key, None)
             self._robots_fails.pop(key, None)
             dropped += 1
         return dropped
 
-    def _enforce_robots(self, url: str, host_key: str, parsed) -> None:
+    def _enforce_robots(self, url: str, host_key: str, parsed, *, hop: bool = False) -> None:
+        """Refuse ``url`` unless its host's robots.txt allows it. ``hop``: ``url`` is a redirect hop's (R629), and the refusal
+        ends with fixed words saying so, since the caller records it against the address it asked for."""
+        via = f" ({_REDIRECT_HOP_NOTE})" if hop else ""
         parser = self._get_robots(host_key, parsed)
         if parser is None:
             # "unknown", never a plausible default: a sidecar entry written before the
             # cause existed, or evicted from the map, has no cause to report, and inventing
             # one would put a confident wrong attribution into the pipeline's own data.
             cause = self._robots_cause.get(host_key, "unknown")
+            # A 401/403 for a page address that carried a user name or password is not the same news as a Tor exit's 403: the
+            # robots read went out without them (one anonymous read per host, R621), so a robots.txt behind the login answers
+            # this way. Said in fixed words AFTER the sentence every reader reads, which is otherwise unchanged (N2).
+            caveat = f" ({_ROBOTS_READ_WITHOUT_USERINFO})" if cause == "refused" and _carries_userinfo(url) else ""
             raise RobotsUnavailable(
-                f"robots.txt for {host_key} could not be determined ({cause}); refusing to fetch",
+                f"robots.txt for {failure_url(host_key)} could not be determined ({cause}); refusing to fetch{caveat}{via}",
                 cause=cause,
             )
-        if not parser.can_fetch(self.user_agent, url):
-            raise RobotsDisallowed(f"robots.txt disallows {url}")
+        # RobotFileParser compares the path AND what follows it, so an address with an EMPTY path and a query or a fragment
+        # (https://b.example?x, https://b.example#f) was compared as "?x" or "#f", which no "Disallow: /" covers, while requests
+        # asks for "/?x": the page was fetched against its host's robots.txt (the independent read of R629, S1; it predates R629,
+        # and direct fetches had it too). Checked as the "/" it is fetched as; the refusal still names the address as written.
+        # (``url`` was read by urlparse before this call, so urlsplit reads it too.)
+        parts = urlsplit(url)
+        checked = urlunsplit(parts._replace(path="/")) if not parts.path else url
+        if not parser.can_fetch(self.user_agent, checked):
+            raise RobotsDisallowed(f"robots.txt disallows {failure_url(url)}{via}")
 
     def _get_robots(self, host_key: str, parsed) -> RobotFileParser | None:
         cached = self._robots.get(host_key)
@@ -1708,6 +2393,7 @@ class EthicalFetcher:
         persist_kind = "disallow_all"
         persist_body: str | None = None
         cause = "unreachable"
+        epoch = kill_switch_epoch()  # before the request: a Stop pressed and cleared inside it is still a Stop (R614)
         try:
             # Follow redirects MANUALLY through the shared guarded loop so a
             # robots.txt that 30x-redirects to an internal address is refused
@@ -1740,12 +2426,18 @@ class EthicalFetcher:
                 decision = None
                 cause = "server_error"
         except (requests.RequestException, FetchError) as exc:
-            if _KILL.is_set():
+            # The switch's own refusal, by its sentence: engaged before the capture, it refused this read by
+            # name, and a clear may land before this line, so neither the switch nor the count says so now.
+            # A wider match here could only skip a cache write (the host is asked again), never cause a fetch.
+            refused_by_name = isinstance(exc, FetchError) and record_text(exc, typed=False).startswith(KILL_SWITCH_REFUSAL_HEAD)
+            if refused_by_name or kill_switch_engaged_since(epoch):
                 # A refusal BY THE SWITCH, or a request cut off by it mid-flight (the socket
                 # guard's OSError arrives here wrapped in a requests error), is not an answer
                 # about the host: cached as "unreachable" it blamed the host for an hour and
                 # the NEXT pass acted on a verdict no request ever produced (R297). Nothing is
                 # cached or persisted, so the next fetch asks again; the refusal says what it was.
+                # The same when the switch was engaged and cleared again while this request was
+                # in flight: the epoch says a Stop happened, whatever the switch reads now (R614).
                 if isinstance(exc, FetchError):
                     raise
                 raise FetchFailed(KILL_SWITCH_REFUSAL) from None
@@ -1777,7 +2469,7 @@ class EthicalFetcher:
 
     # -- rate limiting ----------------------------------------------------- #
 
-    def _respect_rate_limit(self, netloc: str, host_key: str) -> None:
+    def _respect_rate_limit(self, netloc: str, host_key: str, *, hop_url: str | None = None) -> None:
         """Wait out this host's interval, or REFUSE when the wait is too long.
 
         S04-13 S2 (Q1013 = a). Two stamps CAN decide the wait and they live in
@@ -1853,9 +2545,14 @@ class EthicalFetcher:
             # refusal, which is the "refuse and retry next pass" failure this whole
             # sidecar exists to prevent.
             resume_at = self._stamp_host_schedule(netloc, wait, declared_delay)
+            # A redirect hop's deferral (R629) is the hop host's Crawl-delay, not the page asked for's: its address and the fixed
+            # words that say a redirect led there come after the sentence every reader reads (Steward 3's item 1), so a caller
+            # filing it against the page it asked for still says whose Crawl-delay it was. Readers key on the type and on the
+            # "deferred" prefix law/track.py writes before it (src/api/law.py _verdict_of), never on these words.
+            where = f", for {failure_url(hop_url)!r} ({_REDIRECT_HOP_NOTE})" if hop_url else ""
             raise CrawlDelayDeferred(
                 f"Crawl-delay {declared_delay or interval:g} s: not before "
-                f"{datetime.fromtimestamp(resume_at, UTC).isoformat(timespec='seconds')}",
+                f"{datetime.fromtimestamp(resume_at, UTC).isoformat(timespec='seconds')}{where}",
                 netloc=netloc,
                 delay_s=declared_delay or interval,
                 not_before=resume_at,

@@ -167,8 +167,9 @@ def test_the_resolver_wrapped_refusal_is_built_by_the_real_resolve_path_and_reco
 
 def test_a_hostile_host_cannot_close_the_quote_early_and_speak_in_our_words():
     """The read of this change reproduced it end to end: ``http://[v1.a': airplane mode is engaged: refusing a network connection "]/x``
-    reaches ``_guard_target`` (a redirect's Location is looked up BEFORE the parser-mismatch check), and the REAL text it raises must stay a
-    DNS failure of the host."""
+    reached ``_guard_target`` (a redirect's Location was looked up BEFORE the parser-mismatch check), and its REAL text was a DNS failure
+    of the host. Since R622 the hop is read first and the guard itself refuses a host holding whitespace before any lookup, in fixed words
+    (tests/test_host_whitespace_r622.py); the text must still never be ours."""
     from urllib.parse import urlparse
 
     from src.ingest import EthicalFetcher
@@ -179,6 +180,6 @@ def test_a_hostile_host_cannot_close_the_quote_early_and_speak_in_our_words():
     with pytest.raises(FetchFailed) as caught:
         fetcher._guard_target(urlparse(url).hostname)
     text = str(caught.value)
-    assert text.startswith("cannot resolve host "), text
+    assert text == "URL host contains a backslash, whitespace or control character", text
     assert not is_kill_switch_refusal(text)
-    assert classify_fetch_failure(text) == "dns"
+    assert classify_fetch_failure(text) == "other"

@@ -29,13 +29,29 @@ from typing import Any
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
-from src.ingest import kill_switch_active
+from src.ingest import (
+    EthicalFetcher,
+    RobotsDisallowed,
+    RobotsUnavailable,
+    kill_switch_engaged_since,
+    kill_switch_epoch,
+)
 from src.ingest.fetch_verdict import is_kill_switch_refusal
 from src.monitoring.secret_scrub import record_text
 
 _LOG = logging.getLogger(__name__)
 
 _DEFAULT_LIMIT = 50  # bounded by design; the operator can raise per call
+
+#: The fixed words of a homepage ping that robots.txt kept from being made (R636), written as the record's ``homepage_skipped``.
+#: The ping obeys robots.txt, fail-closed: it is made only when the read of robots.txt just before it allows the homepage or finds
+#: none (404/410), and each redirect hop it would follow is robots-checked as a page fetch's is. Fixed words, never a refusal's own
+#: text: the record is handed back as it is, and its reachability is then not established (``reachable`` is None).
+_PING_SKIPPED_DISALLOWED = "homepage not requested: robots.txt disallows it"
+_PING_SKIPPED_UNREADABLE = "homepage not requested: robots.txt could not be read"
+#: ... and of a ping whose redirect was not followed: the homepage answered (a redirect, so it is reachable), its hop was refused.
+_PING_HOP_DISALLOWED = "homepage redirect not followed: robots.txt disallows the address it leads to"
+_PING_HOP_UNREADABLE = "homepage redirect not followed: the robots.txt of the address it leads to could not be read"
 
 
 def _log_path() -> Path:
@@ -86,15 +102,19 @@ def _check_one(fetcher, source) -> dict:
     does.
     """
     base = f"https://{source.domain}"
+    # The engagement epoch (R614), captured before this source's first request: a Stop pressed and cleared again anywhere in the check,
+    # waits included, makes a failure the switch's, as when the switch is still engaged.
+    epoch = kill_switch_epoch()
     rec: dict = {
         "source_id": source.id,
         "domain": source.domain,
         "checked_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     try:
+        EthicalFetcher._refuse_parser_mismatch(base)  # before the guard looks the domain up (R622)
         fetcher._guard_target(urlparse(base).hostname)
     except Exception as exc:  # noqa: BLE001 - a refused/unresolvable target must not stop the sweep
-        if is_kill_switch_refusal(record_text(exc)) or kill_switch_active():  # our sentence on the WHOLE scrubbed text (R298), or a switch engaged now
+        if is_kill_switch_refusal(record_text(exc)) or kill_switch_engaged_since(epoch):  # our sentence on the WHOLE scrubbed text (R298), or a Stop in the check (R614)
             return _skipped_offline(rec, record_text(exc, limit=200, typed=False))
         rec["robots"] = "unreachable"
         rec["robots_error"] = record_text(exc, limit=200, typed=False)
@@ -124,7 +144,7 @@ def _check_one(fetcher, source) -> dict:
         else:
             rec["robots"] = f"http_{code}"
     except Exception as exc:  # noqa: BLE001 - per-source problems must not stop the sweep
-        if is_kill_switch_refusal(record_text(exc)) or kill_switch_active():  # our sentence on the WHOLE scrubbed text (R298), or a switch engaged now
+        if is_kill_switch_refusal(record_text(exc)) or kill_switch_engaged_since(epoch):  # our sentence on the WHOLE scrubbed text (R298), or a Stop in the check (R614)
             return _skipped_offline(rec, record_text(exc, limit=200, typed=False))
         rec["robots"] = "unreachable"
         rec["robots_error"] = record_text(exc, limit=200, typed=False)
@@ -132,18 +152,33 @@ def _check_one(fetcher, source) -> dict:
     if crawl_delay:
         rec["crawl_delay_s"] = float(crawl_delay)
 
-    # homepage ping (reachability + status), through the same guarded path
-    try:
-        resp, _final = fetcher._guarded_redirect_get(base + "/")
-        rec["homepage_status"] = resp.status_code
-        rec["reachable"] = 200 <= resp.status_code < 400
-    except Exception as exc:  # noqa: BLE001
-        if is_kill_switch_refusal(record_text(exc)) or kill_switch_active():  # our sentence on the WHOLE scrubbed text (R298), or a switch engaged now
-            return _skipped_offline(rec, record_text(exc, limit=200, typed=False))
-        rec["reachable"] = False
-        rec["homepage_error"] = record_text(exc, limit=200, typed=False)
+    # homepage ping (reachability + status), through the same guarded path. It obeys robots.txt, fail-closed (R636): only a read
+    # above that allows the homepage or finds no robots.txt lets it be made, and ``hop_robots`` checks each hop it would follow.
+    hop_verdict = None
+    if rec["robots"] not in ("allowed", "missing"):
+        rec["reachable"] = None  # nobody asked: not established, never "unreachable"
+        rec["homepage_skipped"] = _PING_SKIPPED_DISALLOWED if rec["robots"] == "disallowed" else _PING_SKIPPED_UNREADABLE
+    else:
+        try:
+            resp, _final = fetcher._guarded_redirect_get(base + "/", hop_robots=True)
+            rec["homepage_status"] = resp.status_code
+            rec["reachable"] = 200 <= resp.status_code < 400
+        except Exception as exc:  # noqa: BLE001
+            if is_kill_switch_refusal(record_text(exc)) or kill_switch_engaged_since(epoch):  # our sentence on the WHOLE scrubbed text (R298), or a Stop in the check (R614)
+                return _skipped_offline(rec, record_text(exc, limit=200, typed=False))
+            if isinstance(exc, (RobotsDisallowed, RobotsUnavailable)):
+                # Only a hop is robots-checked in there, so the homepage answered with a redirect: reachable, as a 3xx is above.
+                rec["reachable"] = True
+                rec["homepage_skipped"] = _PING_HOP_DISALLOWED if isinstance(exc, RobotsDisallowed) else _PING_HOP_UNREADABLE
+                # ... and not "ok": the address the homepage sends a crawler to is off-limits by its robots.txt, or its robots.txt
+                # could not be read (steward 3's low 1). ``robots`` stays the homepage's own answer, which is what the metadata
+                # records (``robots_allowed``), since the homepage's robots.txt did allow it.
+                hop_verdict = "robots_denied" if isinstance(exc, RobotsDisallowed) else "unreachable"
+            else:
+                rec["reachable"] = False
+                rec["homepage_error"] = record_text(exc, limit=200, typed=False)
 
-    rec["verdict"] = (
+    rec["verdict"] = hop_verdict or (
         "ok" if rec.get("reachable") and rec["robots"] in ("allowed", "missing")
         else "robots_denied" if rec["robots"] in ("disallowed", "blocked")
         else "unreachable"

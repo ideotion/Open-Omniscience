@@ -40,7 +40,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 _TESTS = Path(__file__).resolve().parent
 
 #: Tools whose absence turns tests into skips, each provided by the runner image (``ci.yml`` has no setup or install step for any of them).
-_REQUIRED = ("node", "bash", "git", "unzip")
+_REQUIRED = ("node", "bash", "git", "unzip", "env")
 #: ``test_malloc_arena_default.py`` builds a stand-in library with whichever of these it finds and skips where there is none.
 _C_COMPILERS = ("cc", "gcc", "clang")
 #: Probed by tests, covered by another test that asserts them on a runner.
@@ -53,6 +53,10 @@ _EXEMPT = {
     "original-awk": (
         "the ``test`` job installs it with its own apt step, whose ``command -v original-awk`` makes a failed install a red job; ``core-only`` does not "
         "install it and the test that names it skips there by design"
+    ),
+    "unshare": (
+        "tests/test_file_lock.py runs one sweep in an unprivileged child pid namespace (R287 L1); ubuntu-24.04 runners block unprivileged user namespaces "
+        "with AppArmor, so that test skips there by design and its probe runs ``unshare ... true`` before relying on it"
     ),
     "flock": "tests/test_launcher_records_race.py asserts flock is ABSENT from a filtered PATH to test the launcher's no-flock path; it is not a skip gate",
 }

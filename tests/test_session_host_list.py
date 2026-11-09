@@ -1195,6 +1195,7 @@ POPUP_LANE_LISTS = [
     ("src.services.duckduckgo", "DuckDuckGoSearch.ALLOWED_HOSTS", ("topic-discovery",)),
     ("src.llm.installer", "GITHUB_API_HOSTS", ("ai",)),
     ("src.llm.installer", "GITHUB_ASSET_HOSTS", ("ai",)),
+    ("src.maintenance.self_update", "GITHUB_API_HOSTS", ("update",)),
     ("src.osm.replication", "REPLICATION_HOSTS", ("osm",)),
     ("src.stats.fetch", "GISTEMP_HOSTS", ("climate",)),
     ("src.stats.fetch", "OWID_HOSTS", ("climate",)),

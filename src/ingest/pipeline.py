@@ -82,12 +82,19 @@ from src.ingest import (
     RobotsDisallowed,
     RobotsUnavailable,
     kill_switch_active,
+    kill_switch_engaged_since,
+    kill_switch_epoch,
 )
 from src.ingest.extract import extract_article
-from src.ingest.fetch_verdict import classify_fetch_failure, fetch_reason_key
+from src.ingest.fetch_verdict import (
+    KILL_SWITCH_REFUSAL,
+    classify_fetch_failure,
+    failure_url,
+    fetch_reason_key,
+)
 from src.ingest.furniture import strip_furniture
 from src.ingest.non_article import classify_non_article, skip_non_articles_enabled
-from src.utils.url_utils import canonicalize_url, generate_content_hash
+from src.utils.url_utils import canonicalize_url, generate_content_hash, url_v1_canonical
 
 
 class IngestResult(str, Enum):
@@ -139,7 +146,7 @@ def ingest_url(
     """
     canonical = canonicalize_url(url)
 
-    if _exists(session, canonical_url=canonical) or (
+    if _canonical_stored(session, url, canonical) or (
         batch is not None and batch.has_canonical(canonical)
     ):
         return IngestOutcome(url, IngestResult.DUPLICATE, detail="canonical url already stored")
@@ -207,7 +214,7 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
         if verdict is not None:
             logging.getLogger(__name__).info(
                 "skipping non-article (%s) from %s: %s",
-                verdict.signal, source.domain, fetched.final_url,
+                verdict.signal, source.domain, failure_url(fetched.final_url),  # its login masked (the R628 reads, nit d)
             )
             return IngestOutcome(
                 fetched.requested_url, IngestResult.NON_ARTICLE, detail=verdict.reason
@@ -406,6 +413,7 @@ class _CustodyBatch:
         self._log: CustodyLog | None = None
         self._opened_under: tuple | None = None
         self.opened = 0  # logs this batch has opened (a reading, for the tests)
+        self.refused_offline = 0  # entries the kill switch refused (R618): owed, and logged ONCE when the block ends
 
     @staticmethod
     def _under(prefs) -> tuple:
@@ -439,6 +447,12 @@ class _CustodyBatch:
 
     def __exit__(self, *exc) -> None:
         self.drop()
+        if self.refused_offline:
+            # R618: one line for the flush, not one per article (a Stop refuses every entry after it the same way).
+            logging.getLogger(__name__).info(
+                "custody: %d ingest entr(ies) of this flush were refused by the network kill switch (OpenTimestamps); "
+                "they are owed and written later, marked late", self.refused_offline,
+            )
 
 
 def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = None) -> None:
@@ -447,6 +461,10 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
     ``batch`` is the flush's :class:`_CustodyBatch`: the entry is written through the log it holds (re-opened if the
     settings or the passphrase changed since it was opened), and a failure drops that log so the next article opens a
     fresh one. Without it the entry gets a log of its own, closed when it is written.
+
+    An entry the kill switch refused (``TimestampRefusedOffline``, R618: OpenTimestamps mode, a Stop) is told apart by its
+    type. Nothing was written (the refusal comes before the insert), so the batch keeps its log and counts the entry, and
+    the batch logs once, at INFO, when it ends; the entry is queued as owed like any other.
 
     Best-effort and fail-open: custody logging must never break ingestion, so any
     error here is swallowed (and logged). Controlled by the GUI-editable custody
@@ -495,12 +513,21 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
         else:
             batch.log(prefs).record(item_id, item_hash, CustodyAction.INGEST, actor=actor, metadata=metadata)
     except Exception as exc:  # noqa: BLE001 - custody is auxiliary; never fail ingestion
-        import logging
+        from src.custody.timestamp import TimestampRefusedOffline
 
-        if batch is not None and log_touched:
-            batch.drop()  # the next article opens a fresh log, as every article did before batches
+        if isinstance(exc, TimestampRefusedOffline):
+            # R618: the switch's refusal, raised before the insert: the connection is clean, so the batch keeps its log (a
+            # fresh one costs a key derivation) and the flush logs once; an unbatched entry logs its own line, at INFO.
+            if batch is not None:
+                batch.refused_offline += 1
+            else:
+                log_failure(logging.getLogger(__name__), "custody entry on ingest owed: refused by the network kill switch", exc,
+                            level=logging.INFO)
+        else:
+            if batch is not None and log_touched:
+                batch.drop()  # the next article opens a fresh log, as every article did before batches
 
-        log_failure(logging.getLogger(__name__), "custody logging on ingest failed", exc, level=logging.WARNING)
+            log_failure(logging.getLogger(__name__), "custody logging on ingest failed", exc, level=logging.WARNING)
         # ...but the entry is OWED, not forgotten: queued in a file (no database), and
         # written later, marked late, at the end of the next collection pass or from the
         # Chain of custody tab. NEVER repaid here: the read a repayment needs competes for
@@ -531,8 +558,9 @@ _PAGE_MARKERS = (
 
 
 def _url_without_query(url: str) -> str:
-    """``url`` cut at its first ``?`` or ``#`` (a query or fragment can carry a token); never raises."""
-    return str(url).split("?", 1)[0].split("#", 1)[0]
+    """``url`` cut at its first ``?`` or ``#`` (a query or fragment can carry a token), its login masked as ``***@`` (the R628
+    reads, nit d: ``failure_url``, as every URL the fetcher writes); never raises."""
+    return failure_url(str(url).split("?", 1)[0].split("#", 1)[0])
 
 
 def _extract_failed_detail(fetched) -> str:
@@ -551,16 +579,22 @@ def _extract_failed_detail(fetched) -> str:
         return "no article body extracted"
 
 
-def _failure_reason(detail: str | None) -> str:
+def _failure_reason(detail: str | None, *, since: int | None = None) -> str:
     """``fetch_verdict.classify_fetch_failure`` plus the switch read AFTER the failure (R320): a failure while the kill switch is engaged is
     the switch's, whatever shape the error took. A Stop that lands inside the LAST request of a fetch (the retries having run out, or none
-    left) arrives as the raw requests error (``request error for <url>: ('Connection aborted.', AirplaneModeError(...))`` through an HTTP
-    proxy, or ``HTTPSConnectionPool(...)``), which is not OUR sentence at the start, so the anchored match in ``classify_fetch_failure``
-    rightly refuses it (R298) and the failure was filed as the host's (``ff:connect``). A response that arrived (an HTTP status, a content-type
+    left) can arrive as a raw requests error that is not OUR sentence at the start (an ``HTTPSConnectionPool(...)`` whose cause is not the
+    guard's refused connect: a reset, a timeout), so the anchored match in ``classify_fetch_failure`` rightly refuses it (R298) and the
+    failure was filed as the host's (``ff:connect``). (The guard's refusal in urllib3's own words IS read from the text alone: direct, R616,
+    and through a loopback HTTP proxy, ``request error for <url>: ('Connection aborted.', AirplaneModeError(...))``, since R620; and the fetcher now finds
+    the guard's refusal by TYPE before it writes either, and raises the switch's own sentence instead, R620.) A response that arrived (an HTTP status, a content-type
     or length verdict, a slow body, a redirect or URL verdict) is kept as the host's: a Stop cuts a connection and can never produce one. The
-    cost, stated: a genuine transport failure coinciding with a Stop reads offline."""
+    cost, stated: a genuine transport failure coinciding with a Stop reads offline.
+
+    ``since`` is the engagement epoch captured before the request (R614): a Stop pressed and cleared again inside that request's flight
+    is a Stop too, as when the switch is still engaged. Without it, the switch as it is now (the R320 read)."""
     reason = classify_fetch_failure(detail)
-    if reason != "offline" and not reason.startswith("http_") and reason not in _RESPONSE_ANSWERS and kill_switch_active():
+    stopped = kill_switch_active() if since is None else kill_switch_engaged_since(since)
+    if reason != "offline" and not reason.startswith("http_") and reason not in _RESPONSE_ANSWERS and stopped:
         return "offline"
     return reason
 
@@ -595,6 +629,10 @@ def ingest_source(
     # any bookkeeping hiccup degrades to a normal fetch, never blocks collection.
     extra_headers = _feed_conditional_headers(session, source.id)
 
+    # The engagement epoch (R614), captured before the feed's request: the pass's window runs from here to the bookkeeping at the end, the
+    # host lock, Crawl-delay and retry waits included, so a Stop pressed and cleared again anywhere inside it records nothing, as when the
+    # switch is still engaged.
+    pass_epoch = kill_switch_epoch()
     try:
         feed_resp = fetcher.fetch(
             source.rss_url, require_html=False, extra_headers=extra_headers or None
@@ -606,14 +644,17 @@ def ingest_source(
         #
         # A STOP is neither: the person's own setting says nothing about the feed, so while the switch is engaged the backoff history is
         # left as it was (a refusal used to erase a quiet feed's climb, so its next checks came back at the normal cadence). The decision is
-        # the switch read after the failure, never the words of the refusal (R320).
-        if not kill_switch_active():
+        # the switch read after the failure (R320), a Stop cleared again inside the request counts (R614), and so does the fetcher's own
+        # refusal BY NAME: it is written before any request, so a switch engaged before the epoch was taken and cleared before this read
+        # is still the person's (never a host's words: the whole sentence at the start, as every writer raises it).
+        refused_by_name = record_text(exc, typed=False).startswith(KILL_SWITCH_REFUSAL)
+        if not (kill_switch_engaged_since(pass_epoch) or refused_by_name):
             _update_feed_backoff(session, source.id, reset=True)
         _commit_feed_bookkeeping(session)
         # A refusal by the kill switch is the person's own setting, not the feed's behaviour:
         # say so (invariant #14e's corollary), by the same classifier the per-article
         # ``ff:offline`` count uses. The scheduler sums this key like any other int.
-        if not isinstance(exc, RobotsDisallowed) and _failure_reason(record_text(exc, typed=False)) == "offline":  # a disallow is the host's answer
+        if not isinstance(exc, RobotsDisallowed) and _failure_reason(record_text(exc, typed=False), since=pass_epoch) == "offline":  # a disallow is the host's answer
             tally["skipped_offline"] = 1
         return tally
 
@@ -642,6 +683,7 @@ def ingest_source(
     stopped = False  # latched: the batch flush below can wait seconds on the writer gate, and a Stop cleared in that wait must not undo it
     try:
         for done, link in enumerate(links):
+            entry_epoch = kill_switch_epoch()  # this entry's own window, for the reason of a failure (R614); before the check, as below it
             if kill_switch_active():
                 stopped = True
                 # a Stop mid-feed: the rest were never asked for, so they are not walked through a refusal one by one, but they are COUNTED, so
@@ -658,7 +700,7 @@ def ingest_source(
             # so the scheduler's scalar tally-aggregation sums them for free; the
             # per-reason counts always sum to fetch_failed (unknown -> "other").
             if outcome.result is IngestResult.FETCH_FAILED:
-                rk = fetch_reason_key(_failure_reason(outcome.detail))
+                rk = fetch_reason_key(_failure_reason(outcome.detail, since=entry_epoch))
                 tally[rk] = tally.get(rk, 0) + 1
     finally:
         # ZERO LOSS: staged entries always get their write attempt, even if a
@@ -680,11 +722,12 @@ def ingest_source(
     # no autoflush, no gate — and the de-churn backoff (a 200 that stored ZERO
     # new articles delays this feed's next re-check, capped, self-resetting)
     # reads the true post-flush stored count.
-    if stopped or kill_switch_active():
+    if stopped or kill_switch_engaged_since(pass_epoch):
         # STOPPED, not finished: entries after the Stop were never asked for, so recording this pass would store the validator (the next pass
         # then gets a 304 and never asks for them) and climb the backoff. The row stays as it was; the next pass reads the feed again with
         # the OLD validator, and the dedup step skips what was already stored. The Stop seen by the loop is latched; a Stop pressed after the
-        # loop (during the flush) is read here. (A Stop cleared again within a request's flight is the window stated for the law tracker.)
+        # loop (during the flush) is read here, and so is a Stop pressed and cleared again anywhere in the pass (the epoch, R614): an entry
+        # that Stop cut was never stored, and a stored validator would hide it from the next pass.
         _commit_feed_bookkeeping(session)
         return tally
     _record_feed_state(session, source.id, feed_resp)
@@ -827,6 +870,24 @@ def feed_is_due(state: FeedFetchState | Row | None, *, now: datetime | None = No
         # Stored naive (SQLite DateTime) — interpret as UTC, the only thing we write.
         deadline = deadline.replace(tzinfo=UTC)
     return (now or datetime.now(UTC)) >= deadline
+
+
+def _canonical_stored(session: Session, url: str, canonical: str) -> bool:
+    """The pre-fetch dedup: is an article with ``canonical`` (``url``'s canonical form) already stored?
+
+    :func:`_exists` on it, then, only for a URL whose authority holds a userinfo, on the form ``url-v1`` gave it (R628): an
+    article stored before R628 from ``https://alice:pw@a.example/x`` holds that canonical_url with the userinfo, and without
+    this the page would be fetched again on every pass that lists it (the content hash then names it a duplicate, after the
+    request). That second read goes to the database directly and marks nothing in the dedup front, whose entries stay exactly
+    the canonical forms stored. Costs nothing for a URL without an ``@`` in its authority.
+
+    The url-v1 form keeps the URL's login, and it is this read's one parameter: an error on it names the statement and not its
+    values because every engine the app builds hides them (``hide_parameters=True``, the independent read's S1 on R637, which
+    replaced the hiding this function did on its own error, Steward 3's R628 read item 5)."""
+    if _exists(session, canonical_url=canonical):
+        return True
+    legacy = url_v1_canonical(url)
+    return legacy is not None and session.query(Article.id).filter_by(canonical_url=legacy).first() is not None
 
 
 def _exists(session: Session, **filters) -> bool:

@@ -4,7 +4,9 @@
 Stop that lands during the request arrives as the raw requests error instead, and through an HTTP proxy as ``request error for <url>:
 ('Connection aborted.', AirplaneModeError(...))``: not our sentence, so the failure was filed as the FEED'S (``refused``, retryable), then
 retried after a sleep, in airplane mode. The switch is now read after the failed check. These tests cut through the REAL requests/urllib3
-wrapping, not a hand-typed string, and pin both directions: the same failure with the switch clear is still that feed's failure.
+wrapping, not a hand-typed string, and pin both directions: the same failure with the switch clear is still that feed's failure. Since
+R620 the proxy shape IS read as our sentence from its text alone (``fetch_verdict``'s fourth alternative), so the switch-clear direction
+is pinned with a host's own reset in the same wrapping, and the switch read stays for every shape the text does not tell.
 """
 
 from __future__ import annotations
@@ -38,6 +40,12 @@ def _proxy_shape() -> str:
     err = requests.ConnectionError(
         ProtocolError("Connection aborted.", AirplaneModeError(_REFUSAL))
     )
+    return f"request error for {_URL}: {err}"
+
+
+def _host_shape() -> str:
+    """A host's own reset in the same wrapping: what the switch read reclaims while engaged, and leaves to the feed while clear."""
+    err = requests.ConnectionError(ProtocolError("Connection aborted.", ConnectionResetError(104, "Connection reset by peer")))
     return f"request error for {_URL}: {err}"
 
 
@@ -83,11 +91,14 @@ def _import(session, fetcher):
     return C.import_feed(session, url=_URL, symbol="WTI", fetcher=fetcher)
 
 
-def test_the_proxy_shape_is_not_our_sentence_so_the_classifier_alone_refuses_it():
-    """The premise: the anchored match (R298) must keep refusing it, or the fix below is dead code."""
+def test_the_proxy_shape_is_our_sentence_and_a_hosts_reset_is_not():
+    """R620: the guard's refusal through a loopback HTTP proxy is read from its text alone, with the switch clear; a host's reset in the
+    same wrapping is not, so the switch read below is what reclaims it (the premise that keeps that read from being dead code)."""
     text = _proxy_shape()
     assert text.startswith("request error for") and "AirplaneModeError" in text
-    assert C.classify_fetch_failure(FetchFailed(text))[0] != "offline"
+    assert not kill_switch_active()
+    assert C.classify_fetch_failure(FetchFailed(text))[0] == "offline"
+    assert C.classify_fetch_failure(FetchFailed(_host_shape()))[0] == "refused"
 
 
 def test_a_stop_inside_a_proxied_request_is_offline_and_is_not_retried(session, slept):
@@ -119,7 +130,7 @@ def test_a_stop_that_lands_during_the_request_is_offline_whatever_the_error_says
 
 def test_the_same_failure_with_the_switch_clear_is_still_that_feeds_failure(session, slept):
     assert not kill_switch_active()
-    f = _Fetcher(FetchFailed(_proxy_shape()))
+    f = _Fetcher(FetchFailed(_host_shape()))
     out = _import(session, f)
     assert out.verdict == "refused" and out.retryable is True
     assert out.attempts == 2 and f.calls == 2 and len(slept) == 1
@@ -158,7 +169,7 @@ def test_the_same_weather_failure_with_the_switch_clear_is_still_the_archives(
     monkeypatch, tmp_path
 ):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    out = _slice(_Fetcher(FetchFailed(_proxy_shape())))
+    out = _slice(_Fetcher(FetchFailed(_host_shape())))
     assert out["verdict"] == "refused" and out["retryable"] is True
 
 

@@ -37,10 +37,38 @@ def setup_module(_module):
     init_db()
 
 
+#: How long a test waits for a background build before calling it hung. It is a hang guard, not the test's timing: every wait below
+#: ends the moment the build it waits on releases its lock, so a loaded runner makes a test slower, never red.
+_BUILD_HANG_S = 120.0
+
+
+def _wait_for_build(key: str) -> None:
+    """Block until no background build of ``key`` is in flight (its per-key build lock is free)."""
+    lock = served_cache._build_lock(key)
+    assert lock.acquire(timeout=_BUILD_HANG_S), f"a background build of {key!r} is still running after {_BUILD_HANG_S:.0f} s"
+    lock.release()
+
+
+def _drain_background_builds() -> None:
+    """Let every background build a test started finish before the cache is cleared.
+
+    A build that is still running when ``invalidate()`` bumps the generation stores nothing, yet holds the key's build lock, so the
+    NEXT test's cold call finds a build "already in flight" and starts none, and that test waits for a refresh that never comes. That
+    is how test_figures_are_served_stale_rather_than_recomputed_inline missed its deadline on a loaded CI runner (2026-11-08, #1828
+    shard 3): the figures refresh test_stats_and_library_overview_share_one_cache_mechanism kicks was still counting when it ended.
+    """
+    with served_cache._BUILD_LOCKS_GUARD:
+        keys = list(served_cache._BUILD_LOCKS)
+    for key in keys:
+        _wait_for_build(key)
+
+
 @pytest.fixture(autouse=True)
 def _clean_cache():
+    _drain_background_builds()
     served_cache.invalidate()
     yield
+    _drain_background_builds()
     served_cache.invalidate()
 
 
@@ -93,15 +121,16 @@ def _age_out(key: str) -> None:
         served_cache._CACHE[key]["checked_at"] -= 10_000
 
 
-def _wait_for_refresh(key: str, predicate, timeout: float = 10.0) -> bool:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        with served_cache._LOCK:
-            entry = served_cache._CACHE.get(key)
-        if entry is not None and predicate(entry["payload"]):
-            return True
-        time.sleep(0.02)
-    return False
+def _wait_for_refresh(key: str, predicate) -> bool:
+    """Wait for the background build the caller just kicked to FINISH, then judge what it stored.
+
+    The kick takes the key's build lock on the calling thread before the poll returns, and the build stores its payload before it
+    releases that lock, so a free lock means the build is over: this is an event wait, not a deadline the runner's load can miss.
+    """
+    _wait_for_build(key)
+    with served_cache._LOCK:
+        entry = served_cache._CACHE.get(key)
+    return entry is not None and predicate(entry["payload"])
 
 
 # --------------------------------------------------------------------------- #

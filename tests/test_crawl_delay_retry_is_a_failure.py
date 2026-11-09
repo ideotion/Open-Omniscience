@@ -56,7 +56,7 @@ def _fetcher(tmp_path: Path, *, delay: int, answer):
     f._sleep = lambda s: None
     calls: list[str] = []
 
-    def http_get(url, extra_headers=None, proxies=None):
+    def http_get(url, extra_headers=None, proxies=None, **_kw):  # the page fetch also hands its redirect chain (R629)
         calls.append(url)
         return _Resp(answer()), url
 
