@@ -1431,9 +1431,16 @@ class EthicalFetcher:
         if cached is not None and now < cached[1]:
             return cached[0]
         try:
-            infos = socket.getaddrinfo(host, None)
+            infos: list | None = socket.getaddrinfo(host, None)
         except OSError as exc:
             raise FetchFailed(f"cannot resolve host {host!r}: {record_text(exc, typed=False)}") from None
+        except UnicodeError:
+            # The name cannot be IDNA-encoded (an empty label, ``a..example``, or one over 63 characters), raised before any query. It
+            # is a ValueError, not an OSError, and escaped the fetch raw (R622 read). Raised below, outside this handler, so that the
+            # UnicodeError is not its context: record_text writes any error a UnicodeError is reachable from as that error's fixed record.
+            infos = None
+        if infos is None:
+            raise FetchFailed(f"cannot resolve host {host!r}: the name cannot be encoded for a lookup")
         if len(self._dns_cache) >= _DNS_CACHE_MAX:
             self._dns_cache.clear()
         self._dns_cache[host] = (infos, now + _DNS_CACHE_TTL_S)
@@ -1586,12 +1593,29 @@ class EthicalFetcher:
                     if stream and self._real_session:
                         kwargs["stream"] = True
                     self._refuse_parser_mismatch(current)
-                    resp = self.session.get(current, **kwargs)
+                    try:
+                        resp = self.session.get(current, **kwargs)
+                    except requests.RequestException:
+                        raise
+                    except ValueError:
+                        # requests parses a 3xx answer's Location even when it is told not to follow it (``Session.send`` builds
+                        # ``Response.next`` through ``resolve_redirects``), and a Location urlsplit cannot read (an unclosed IPv6
+                        # bracket) raised a bare ValueError out of the request: the robots read never backed the host off, and
+                        # ``ingest_url`` did not catch it (R622 read). Raised below, outside this handler, so no UnicodeError is its
+                        # context (record_text writes any error a UnicodeError is reachable from as that error's fixed record).
+                        resp = None
+                    if resp is None:
+                        raise FetchFailed(f"redirect to a URL that cannot be read, from {failure_url(current)}")
                     status = resp.status_code
                     location = resp.headers.get("Location") if hasattr(resp, "headers") else None
                     if 300 <= status < 400 and location:
-                        nxt = urljoin(current, location)
-                        p = urlparse(nxt)
+                        try:
+                            nxt = urljoin(current, location)
+                            p = urlparse(nxt)
+                        except ValueError:
+                            # An unclosed IPv6 bracket (``http://[::1/x``) or a netloc NFKC would change: a bare ValueError escaped the
+                            # fetch, so the robots read never backed the host off and ``ingest_url`` did not catch it (R622 read).
+                            raise FetchFailed(f"redirect to a URL that cannot be read: {failure_url(location)!r}") from None
                         if p.scheme not in ("http", "https") or not p.netloc:
                             raise FetchFailed(f"redirect to unsupported URL: {failure_url(nxt)!r}")
                         # The hop is read BEFORE the guard looks its host up (R622), not on the next turn of the loop: a Location
