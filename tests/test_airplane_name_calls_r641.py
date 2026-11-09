@@ -491,6 +491,27 @@ def test_an_af_netlink_bind_and_datagram_are_left_alone(reached):
     assert reached == [("bind", (0, 0)), ("sendto", (0, 0))]
 
 
+@pytest.mark.skipif(not hasattr(socket, "AF_NETLINK"), reason="no AF_NETLINK")
+def test_an_af_netlink_connect_is_left_alone(reached):
+    """Exempt like AF_UNIX on every path, connect and connect_ex included (security read A on #1886: they still tested AF_UNIX alone,
+    so a real NETLINK_ROUTE connect((0, 0)) was refused as "a network connection to 0")."""
+    activate_kill_switch()
+    seen: list[tuple[str, object]] = []
+    saved = ap._orig_connect, ap._orig_connect_ex
+    ap._orig_connect = lambda self, address: seen.append(("connect", address))  # type: ignore[assignment]
+    ap._orig_connect_ex = lambda self, address: seen.append(("connect_ex", address)) or 0  # type: ignore[assignment]
+    try:
+
+        class _Sock:
+            family = socket.AF_NETLINK
+
+        ap._guarded_connect(_Sock(), (0, 0))
+        ap._guarded_connect_ex(_Sock(), (0, 0))
+    finally:
+        ap._orig_connect, ap._orig_connect_ex = saved  # type: ignore[assignment]
+    assert seen == [("connect", (0, 0)), ("connect_ex", (0, 0))]
+
+
 @pytest.mark.skipif(not hasattr(socket, "AF_PACKET"), reason="no AF_PACKET")
 def test_an_af_packet_bind_and_datagram_stay_refused(reached):
     """AF_PACKET puts raw frames on the wire: it is not a local family, so while engaged its interface-name address is refused."""

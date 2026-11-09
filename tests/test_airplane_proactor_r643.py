@@ -77,6 +77,16 @@ def test_online_a_connect_is_untouched(proactor):
     assert proactor == [("connect", ("93.184.215.14", 443))]
 
 
+def test_a_proactor_connect_meets_the_ssrf_connect_check(proactor, monkeypatch):
+    """Online, the address handed to ConnectEx still goes through the connect-time SSRF check (security read A: removing the call left
+    every test green). The check acts only inside a guarded fetch; here a recorder stands in for it."""
+    checked: list[object] = []
+    monkeypatch.setattr(ap, "check_connect_target", lambda address: checked.append(address))
+    ap._guarded_proactor_connect(object(), _Conn(), ("93.184.215.14", 443))
+    assert checked == [("93.184.215.14", 443)]
+    assert proactor == [("connect", ("93.184.215.14", 443))]
+
+
 @pytest.mark.parametrize("address", _REMOTE + _ALIASES)
 def test_a_remote_or_alias_datagram_is_refused_before_wsasendto(proactor, address):
     activate_kill_switch()
@@ -124,8 +134,10 @@ def test_the_proactor_is_a_patch_point_installed_healed_and_put_back(monkeypatch
     monkeypatch.setattr(ap, "_proactor_cls", _FakeProactor)
     monkeypatch.setattr(ap, "_orig_proactor_connect", real_connect)
     monkeypatch.setattr(ap, "_orig_proactor_sendto", real_sendto)
-    if ap._REAL_AT_IMPORT[-2:] != (real_connect, real_sendto):
-        monkeypatch.setattr(ap, "_REAL_AT_IMPORT", (*ap._REAL_AT_IMPORT, real_connect, real_sendto))
+    # On win32 the module's own tuple already ends with the real IocpProactor pair: replace it rather than append (security read A).
+    # Elsewhere the pair is absent and is added, last, where the optional points go.
+    real_at_import = ap._REAL_AT_IMPORT[:-2] if sys.platform == "win32" else ap._REAL_AT_IMPORT
+    monkeypatch.setattr(ap, "_REAL_AT_IMPORT", (*real_at_import, real_connect, real_sendto))
     try:
         assert len(ap._patch_points()) == len(ap._REAL_AT_IMPORT) == len(ap._standing_calls())
         assert ap.install_airplane_socket_guard()
@@ -148,6 +160,8 @@ def test_the_proactor_is_a_patch_point_installed_healed_and_put_back(monkeypatch
 def test_the_points_exist_exactly_where_the_class_does():
     has = sys.modules.get("asyncio.windows_events") is not None and hasattr(sys.modules["asyncio.windows_events"], "IocpProactor")
     assert (ap._orig_proactor_connect is not None) == has == (sys.platform == "win32")
+    if has:  # the real pair closes the import-time tuple, last, where the optional points go
+        assert ap._REAL_AT_IMPORT[-2:] == (ap._orig_proactor_connect, ap._orig_proactor_sendto)
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="the real proactor loop exists only on Windows")

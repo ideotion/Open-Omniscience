@@ -410,8 +410,12 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   hands libc only `NI_NUMERICHOST | NI_NUMERICSERV` and answers the host as `localhost` unless the
   caller asked for the number; with both numeric flags on any literal, `getnameinfo` makes no lookup
   of any kind and passes unchanged (R645). A bind to any literal address is left alone (it sends
-  nothing). The families whose addresses name no host pass like a loopback target: AF_UNIX (a
-  filesystem path) and AF_NETLINK (this machine's own kernel, R645). Fails closed rather than open
+  nothing). The families whose addresses name no host pass like a loopback target on every patched
+  call (connect, connect_ex, bind, sendto, sendmsg and the Windows proactor's two): AF_UNIX (a
+  filesystem path) and AF_NETLINK (this machine's own kernel, R645). Netlink is local for an
+  UNPRIVILEGED process, which the app is: with CAP_NET_ADMIN a netlink message can make the kernel
+  itself transmit (an ARP or neighbour probe, a link brought up), so never run the app with that
+  capability. Fails closed rather than open
   for the rest: a `bind` or datagram on AF_PACKET (raw frames onto the wire), vsock, CAN or
   Bluetooth is refused while the switch is engaged, and nothing in-tree uses one. And a datagram
   needs no connect, so `sendto`/`sendmsg` to a non-loopback destination is refused too, and so is a
@@ -434,11 +438,15 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   `getaddrinfo`. Its two entry points, `IocpProactor.connect` and `IocpProactor.sendto`, are patch
   points with the same rules as `connect` and `sendto` (alias refused, `localhost` swapped for the
   family's literal, any non-loopback target refused before the overlapped call, and the SSRF connect
-  check on a connect). The proactor itself is kept: no switch to a selector loop. Any **non-loopback** target
+  check on a connect, which acts only inside a guarded fetch, never on the event-loop thread today). The proactor itself is kept:
+  no switch to a selector loop. **Residual, Windows named pipes:** `loop.create_pipe_connection` with a
+  remote UNC name (`\\host\pipe\x`) goes through `IocpProactor.connect_pipe` to `CreateFile`, and
+  the Windows redirector reaches that host over SMB beside any socket, the same class as opening a
+  `\\host\share` file; nothing in-tree opens a pipe. Any **non-loopback** target
   handed to a patched point raises `AirplaneModeError` **before** a real socket is opened, so a
   missed call site, third-party library, or DNS prefetch that goes through those points cannot
   egress; what does not go through them is the residual list above and in this section. Loopback (127/8, ::1, `localhost`)
-  and AF_UNIX always pass through (the app's own server, a loopback Ollama, the file DB).
+  and AF_UNIX (and AF_NETLINK, above) always pass through (the app's own server, a loopback Ollama, the file DB).
   It is transparent while online. `OO_AIRPLANE_SOCKET_GUARD=0` disables the backstop; the
   per-call refusals remain as the friendly layer above it. App boot makes zero network calls.
 - **The same patch layer carries a second, independent gate: the connect-time SSRF check**

@@ -378,8 +378,8 @@ def _guarded_create_connection(address, *args, **kwargs):  # type: ignore[no-unt
 
 
 def _guarded_connect(self, address):  # type: ignore[no-untyped-def]
-    # AF_UNIX is local IPC (a filesystem path) — never network; always allow.
-    if getattr(self, "family", None) != getattr(socket, "AF_UNIX", object()):
+    # AF_UNIX is local IPC (a filesystem path) and AF_NETLINK this machine's own kernel (R645) — never network; always allow.
+    if not _is_local_family(self):
         address = _name_rule_for_connect(address, getattr(self, "family", None))
         _guard(_addr_host(address))
         check_connect_target(address)
@@ -388,7 +388,7 @@ def _guarded_connect(self, address):  # type: ignore[no-untyped-def]
 
 
 def _guarded_connect_ex(self, address):  # type: ignore[no-untyped-def]
-    if getattr(self, "family", None) != getattr(socket, "AF_UNIX", object()):
+    if not _is_local_family(self):
         address = _name_rule_for_connect(address, getattr(self, "family", None))
         _guard(_addr_host(address))
         check_connect_target(address)
