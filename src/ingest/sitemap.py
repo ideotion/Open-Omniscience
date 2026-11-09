@@ -219,6 +219,7 @@ def discover_sitemap_urls(
             continue
         visited.add(sm_url)
 
+        # the host the fetch would go to (after the last ``@``, R624), never the text a userinfo writes before it
         if _registrable_host(urlparse(sm_url).netloc) != base_host:
             report.skipped_off_host.append(sm_url)
             continue
