@@ -241,6 +241,8 @@ def fetch_items(
     if _kill_switch_active():
         raise AirplaneRefusal(refusal())
 
+    from src.ingest import kill_switch_engaged_since, kill_switch_epoch
+
     getter = get or _default_getter
     rg = gate or RateGate(stop=should_stop)
     todo = batches(list(qids))
@@ -252,6 +254,7 @@ def fetch_items(
         if should_stop is not None and should_stop():
             stopped = True
             break
+        epoch = kill_switch_epoch()  # this batch's window (R617, R614), opened before the check that lets it go
         if _kill_switch_active():
             # Engaged DURING the run: stop, and say which of the two stops it was.
             airplane = True
@@ -265,10 +268,11 @@ def fetch_items(
                 break
             parsed = parse_entities(getter(entities_url(batch)), batch)
         except Exception as exc:  # noqa: BLE001 - one failed batch is counted, never fatal
-            if _kill_switch_active():
+            if kill_switch_engaged_since(epoch):
                 # The failure is the SWITCH's, whatever shape the error took (a Stop inside the request arrives as the raw requests error, which
-                # no sentence match recognises, R298): not this batch's outcome. It is not counted as refused and stays pending, and the run says
-                # which stop it was. Without this, a Stop landing on the LAST batch was a plain "done" with a refused count and no note (R337).
+                # no sentence match recognises, R298), still engaged or cleared again before the error arrived (R617, R614): not this batch's
+                # outcome. It is not counted as refused and stays pending, and the run says which stop it was. Without this, a Stop landing on the
+                # LAST batch was a plain "done" with a refused count and no note (R337).
                 airplane = True
                 break
             refused += len(batch)

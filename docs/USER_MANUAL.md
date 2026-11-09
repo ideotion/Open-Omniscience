@@ -1349,6 +1349,18 @@ The panel has three parts:
 > local + OpenTimestamps over funded on-chain wallets; route via Tor (`HTTPS_PROXY`)
 > if you need anonymity; or stay local-only (the default leaks nothing).
 
+**OpenTimestamps and airplane mode.** In OpenTimestamps mode, an ingest entry whose
+submission the network kill switch refused (a Stop during collection) is not given a
+local-only proof in its place, because that proof would be permanent: the entry is owed,
+and written later, marked late, with its anchor. The owed queue has no size limit, and
+the end of each collection pass writes at most 200 of it, each entry with up to three
+calendar submissions made while the custody log is held for writing. So a large backlog
+slows the end of collection passes for a while once you are back online.
+While the switch is still engaged, writing owed entries ("Record them, marked late", or
+`POST /api/custody/reconcile`) stops at the first refusal and says the kill switch refused
+it; the entries stay owed. A gap check alone still answers, and its `drained` block
+reports `refused_offline`.
+
 Verify a bundle anywhere, without this app:
 
 ```bash
