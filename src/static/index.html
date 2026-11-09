@@ -3283,20 +3283,15 @@
         </label>
         <button id="parts-from-go" class="secondary" data-on-click="partsSaveFrom()" hidden>Save from this part</button>
       </div>
-      <!-- FIELD CHECKS (R603, 2026-11-08, maintainer-asked): the checks only this machine can run, next to
-           the Diagnostics button. The list is configs/field_checks.yml (versioned; each check says why it
-           exists, who asked for it and when it retires); the runners are src/monitoring/field_checks.py.
-           Fetches nothing on open: "Show field checks" reads the list. An online check passes the ONE
-           consent popup (invariant #14). Rows are drawn by fieldChecksLoad in app-diagnostics.js. -->
-      <div id="field-checks-box" style="margin-top:10px">
-        <div class="small" style="font-weight:600">Field checks (what only this machine can tell)</div>
-        <div class="hint">Checks that no test machine can run: this computer's memory and drives, its network, its browser and its clock. Each one runs when you press it. Save the report and send it back with the Diagnostics file. The list changes with each update: a check is added when something new needs your machine, and retired once enough reports have answered it. A check that goes online asks first.</div>
-        <div class="row" style="margin-top:6px">
-          <button class="secondary" id="fc-load-btn" data-on-click="fieldChecksLoad(this)" title="Read the list of field checks for this version, with the last result of each in this session. Runs nothing and goes nowhere.">Show field checks</button>
-          <button class="secondary" id="fc-report-btn" data-on-click="ooOpenUrl('/api/diagnostics/field-checks/report')" title="Save ONE .json file with every field-check result this session holds, the list version, the app build and the system name. Passwords, passphrases and your home folder's name are removed before it is written. Results are not kept across a restart.">Save the field-check report</button>
-          <span id="fc-status" class="small" style="margin-left:6px"></span>
-        </div>
-        <div id="fc-list" class="small" style="margin-top:6px"></div>
+      <!-- FIELD DATA (maintainer 2026-11-09: «one single button ... one or several files are downloaded
+           and I take care of sending them back to you. Remove all information around this»). It replaced
+           the Field checks panel (R603) and the two TEMP source/article exports, which it now runs:
+           the list of what it saves is FIELD_DATA_EXPORTS in app-diagnostics.js, and grows with the
+           work (sources and articles first). Read-only and loopback-only; nothing goes online. Sits
+           after the parts bar: only the buttons that fill that bar may sit above it. -->
+      <div class="row" style="margin-top:6px">
+        <button class="secondary" id="field-data-btn" data-on-click="downloadFieldData(this)" title="Saves this machine's field data as one or more files, to send back.">Field data</button>
+        <span id="field-data-status" class="small" role="status" aria-live="polite"></span>
       </div>
       <!-- Session forensics (E2, #596): the previous-session clean/unclean verdict (with the
            OOM-inference wording shown verbatim as a caveat), the last unlock's phase timings +
@@ -3424,11 +3419,6 @@
       </div>
       <div class="row" style="margin-top:6px">
         <button data-on-click="viewKeywordGrowth(this)" title="Plot cumulative distinct keywords against cumulative words added. A curve that bends over = the vocabulary is saturating (healthy); a near-straight line (Heaps β ≈ 1) = new keywords are still minted for almost every word (markup/code/unsegmented junk).">Keyword-growth curve</button>
-        <!-- TEMPORARY / REMOVABLE diagnostic: delete this button + the /source-quality endpoint once the analyst has used the export. -->
-        <button class="secondary" data-on-click="ooOpenUrl('/api/diagnostics/source-quality?download=1')" title="TEMPORARY, removable diagnostic. ONE .zip with everything an analyst needs to decide, per source, whether to EXCLUDE it / OPTIMIZE the extractor / KEEP it: per-article keyword-stat outliers, per-source top-12 keyword fingerprints + furniture share, and a text sample from three independent selectors (a fixed-seed random control + the stat outliers + furniture-flagged sources). Read-only, EXPORT-ONLY, counts-only, no score; private newsletter bodies gated (env). Whole-corpus counts; text heads for the sampled subset only.">Source &amp; article quality (.zip) · TEMP</button>
-        <!-- TEMPORARY / REMOVABLE diagnostic: delete this button + /api/diagnostics/source-samples once the analyst has seen how articles are stored. -->
-        <button class="secondary" id="source-samples-btn" title="TEMPORARY diagnostic. Saves one randomly chosen stored article per source, with every stored field of the article and its source and the full text, as several .zip files of at most 4 MB each. Sources with no stored article are listed in each zip's manifest. Read-only, no network, nothing is written on this machine.">One article per source (.zip files) · TEMP</button>
-        <span id="source-samples-status" class="small"></span>
         <button class="secondary" data-on-click="ooOpenUrl('/api/diagnostics/rollup-benchmark')" title="Builds the keyword-daily rollup in-memory over your corpus and times the windowed keyword aggregation both ways — the live mention scan (the Insights/trends freeze) vs summing the rollup — with the speedup and a parity check. Read-only; the win shows only at real corpus size. Takes a few seconds on a large corpus.">Rollup benchmark (.json)</button>
       </div>
       <!-- S5.3: IR gold-set BUILDER — grade real corpus queries 0/1/2 (keyboard 0/1/2 on a

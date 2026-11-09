@@ -93,3 +93,60 @@ def test_a_long_run_of_empty_sources_cannot_push_a_zip_past_the_cap(db):
             break
         after = nxt
     assert seen == list(range(1, 3001))
+
+
+def _newsletters(db):
+    """A mailbox source, a publisher with one auto-attached newsletter, and a web source."""
+    from src.ingest.email import NEWSLETTER_SOURCE_DOMAINS
+
+    db.add(Source(id=1, name="Mail", domain=NEWSLETTER_SOURCE_DOMAINS[0]))
+    db.add(Source(id=2, name="Pub", domain="pub.example"))
+    db.add(Source(id=3, name="Web", domain="web.example"))
+    db.flush()
+    db.add(Article(url="mail://1", canonical_url="mail://1", source_id=1, title="m",
+                   content="PRIVATE-MAILBOX-BODY", hash="1" * 64))
+    db.add(Article(url="https://pub.example/n", canonical_url="https://pub.example/n", source_id=2, title="n",
+                   content="PRIVATE-ATTACHED-BODY", hash="2" * 64, newsletter_attached_via="list-id"))
+    db.add(Article(url="https://web.example/a", canonical_url="https://web.example/a", source_id=3, title="w",
+                   content="PUBLIC-WEB-BODY", hash="3" * 64))
+    db.commit()
+
+
+def _bodies(data):
+    z = _open(data)
+    return b"".join(z.read(n) for n in z.namelist())
+
+
+def test_a_newsletter_body_stays_home_unless_the_operator_switch_is_on(db, monkeypatch):
+    """R655: the same gate as /source-quality. A mailbox source's body and an auto-attached newsletter's
+    body under a publisher's source are withheld; a public web article's body is written."""
+    import importlib
+
+    mod = importlib.import_module("src.api.diagnostics.source_samples")
+
+    _newsletters(db)
+    data = build_sample_zip(db, after=0, seed=1, cap=4_000_000)[0]
+    blob = _bodies(data)
+    assert b"PRIVATE-MAILBOX-BODY" not in blob and b"PRIVATE-ATTACHED-BODY" not in blob
+    assert b"PUBLIC-WEB-BODY" in blob
+    rows = {r["source_id"]: r for r in json.loads(_open(data).read("manifest.json"))["sources"]}
+    assert rows[1].get("body_withheld") and rows[2].get("body_withheld") and not rows[3].get("body_withheld")
+    # the operator's switch lets them out, as on /source-quality
+    blob = _bodies(build_sample_zip(db, after=0, seed=1, cap=4_000_000, include_newsletters=True)[0])
+    assert b"PRIVATE-MAILBOX-BODY" in blob and b"PRIVATE-ATTACHED-BODY" in blob
+    # the route reads the switch: off by default
+    monkeypatch.delenv("OO_QUALITY_INCLUDE_NEWSLETTER_TEXT", raising=False)
+    assert mod.include_newsletter_text() is False
+    monkeypatch.setenv("OO_QUALITY_INCLUDE_NEWSLETTER_TEXT", "1")
+    assert mod.include_newsletter_text() is True
+
+
+def test_the_route_passes_the_switch_to_the_builder():
+    import inspect as _inspect
+
+    import importlib
+
+    mod = importlib.import_module("src.api.diagnostics.source_samples")
+
+    src = _inspect.getsource(mod.source_samples)
+    assert "include_newsletters=include_newsletter_text()" in src

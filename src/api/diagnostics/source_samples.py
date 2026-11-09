@@ -18,6 +18,12 @@ address are written as the app shows it (``_SHOWN_SOURCE_COLUMNS``, the independ
 R637), and a test pins the source's column list, so a new column is a decision, never a default.
 The article's columns are written as stored (its ``url`` as given, R621). A source with no stored
 article is not skipped: it gets a manifest row saying so.
+
+NEWSLETTER BODIES STAY HOME (R655, 2026-11-09), by the same gate and the same switch as
+``/source-quality``: an article is a newsletter when its source is one of the mailbox sources
+(``NEWSLETTER_SOURCE_DOMAINS``) or it was filed under a publisher by the auto-attach
+(``newsletter_attached_via``, Q1151), and its body (``content`` and ``compressed_content``) leaves
+only when ``OO_QUALITY_INCLUDE_NEWSLETTER_TEXT`` is set. Its other columns are written, as there.
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import random
 import re
 import zipfile
@@ -96,8 +103,30 @@ def _pick(db: Session, source_id: int, seed: int) -> tuple[Article | None, int]:
     return art, n
 
 
-def build_sample_zip(db: Session, *, after: int, seed: int, cap: int) -> tuple[bytes, int | None, int, int]:
-    """Return ``(zip bytes, next cursor or None, sources covered, sources in the whole set)``."""
+#: The columns that hold a newsletter's body: withheld unless the switch is on (R655).
+_BODY_COLUMNS = ("content", "compressed_content")
+
+
+def include_newsletter_text() -> bool:
+    """The ``/source-quality`` switch, read the same way: off unless the operator set it."""
+    return os.getenv("OO_QUALITY_INCLUDE_NEWSLETTER_TEXT", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _newsletter_source_ids(db: Session) -> set[int]:
+    from src.ingest.email import NEWSLETTER_SOURCE_DOMAINS
+
+    return {int(sid) for (sid,) in db.execute(
+        select(Source.id).where(Source.domain.in_(NEWSLETTER_SOURCE_DOMAINS))
+    ).all()}
+
+
+def build_sample_zip(
+    db: Session, *, after: int, seed: int, cap: int, include_newsletters: bool = False,
+) -> tuple[bytes, int | None, int, int]:
+    """Return ``(zip bytes, next cursor or None, sources covered, sources in the whole set)``.
+
+    A newsletter's body is written only when ``include_newsletters`` is true (R655)."""
+    newsletter_sources = set() if include_newsletters else _newsletter_source_ids(db)
     total = db.execute(select(func.count()).select_from(Source)).scalar_one()
     ids = [r[0] for r in db.execute(
         select(Source.id).where(Source.id > after).order_by(Source.id).limit(5000)
@@ -120,6 +149,11 @@ def build_sample_zip(db: Session, *, after: int, seed: int, cap: int) -> tuple[b
                 data = None
             else:
                 a = _row_dict(art)
+                if not include_newsletters and (sid in newsletter_sources or art.newsletter_attached_via):
+                    for col in _BODY_COLUMNS:
+                        a[col] = None
+                    a["body_withheld"] = "a newsletter: its body stays on this machine (OO_QUALITY_INCLUDE_NEWSLETTER_TEXT)"
+                    row["body_withheld"] = True
                 text = a.get("content")
                 if isinstance(text, str) and len(text) > _TEXT_MAX_CHARS:
                     a["content"] = text[:_TEXT_MAX_CHARS]
@@ -163,7 +197,9 @@ def source_samples(
     """ONE zip (<= 4 MB) holding one randomly chosen article per source for the next run of sources
     after ``after``; ``X-Source-Samples-Next`` carries the cursor for the next call (empty = done).
     Plain ``def`` -> threadpool. Read-only."""
-    data, nxt, covered, total = build_sample_zip(db, after=after, seed=seed, cap=SAMPLE_ZIP_MAX_BYTES)
+    data, nxt, covered, total = build_sample_zip(
+        db, after=after, seed=seed, cap=SAMPLE_ZIP_MAX_BYTES, include_newsletters=include_newsletter_text(),
+    )
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
     return Response(
         content=data,
