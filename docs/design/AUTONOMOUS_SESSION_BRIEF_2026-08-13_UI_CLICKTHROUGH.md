@@ -74,7 +74,7 @@ OO_DATA_DIR=/tmp/oo-ui/state \
 OO_DB_PLAINTEXT=1 \
 OO_NO_SCHEDULER=1 \
 OO_LLM_AUTOSTART=0 \
-.venv/bin/uvicorn src.api.main:app --host 127.0.0.1 --port 8010
+.venv/bin/uvicorn src.api.main:app --loop asyncio --host 127.0.0.1 --port 8010
 ```
 
 ```python
