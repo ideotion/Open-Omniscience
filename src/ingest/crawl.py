@@ -28,10 +28,11 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import cast
 from urllib.parse import urldefrag, urljoin, urlparse, urlsplit
 
-import idna  # the encoder requests itself uses for a non-ASCII host (R631)
+import idna  # UTS 46, the encoding requests' own code names a non-ASCII host with (R631; see _site_key)
 from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
@@ -150,20 +151,35 @@ def _off_site(netloc: str, base_host: str) -> bool:
     ``xn--bcher-kva.example`` are one site, either way round, and a host that cannot be encoded is off the site (fail closed)."""
     if "@" in netloc:
         return True
-    ours, site = _site_key(_registrable_host(netloc)), _site_key(base_host)
+    ours, site = _site_key(_registrable_host(netloc)), _base_site_key(base_host)
     return ours is None or site is None or ours != site
 
 
+@lru_cache(maxsize=256)
+def _base_site_key(base_host: str) -> str | None:
+    """:func:`_site_key` of the site's own host, the same for every link of a crawl or a sitemap: encoded once, not per link (the
+    independent read of R626, a nit: 51 µs a loc for a Unicode source). Only the operator's hosts reach this cache (a start URL,
+    a source's domain), never a fetched page's."""
+    return _site_key(base_host)
+
+
 def _site_key(host: str) -> str | None:
-    """``host`` (a :func:`_registrable_host`) as the request names it, for the same-site comparison (R631). Never raises.
+    """``host`` (a :func:`_registrable_host`) in its ASCII form, for the same-site comparison (R631). Never raises.
 
     An ASCII host is compared as it is (urllib.parse has lower-cased it), punycode included. A host with any other character
-    is encoded as requests encodes it before connecting (``idna.encode(host, uts46=True)``, ``PreparedRequest
-    ._get_idna_encoded_host``), so a source written in its Unicode form matches the punycode links its pages and its sitemap
-    carry, and the other way round: before, ``bücher.example`` and ``xn--bcher-kva.example`` read as two sites, and the three
-    catalogue sources with a Unicode domain lost their punycode links and page locs. ``None`` when the host cannot be encoded
-    (an empty label, a label over 63, a name over 253, a disallowed character; idna refuses a 10 MB name at once): requests
-    refuses such a host (``InvalidURL``), and a comparison with ``None`` is off the site."""
+    is encoded with UTS 46 (``idna.encode(host, uts46=True)``, requests' own ``PreparedRequest._get_idna_encoded_host``), so a
+    source written in its Unicode form matches the punycode links its pages and its sitemap carry, and the other way round:
+    before, ``bücher.example`` and ``xn--bcher-kva.example`` read as two sites, and the three catalogue sources with a Unicode
+    domain lost their punycode links and page locs. ``None`` when the host cannot be encoded (an empty label, a label over 63, a
+    name over 253, a disallowed character; idna refuses a 10 MB name at once), and a comparison with ``None`` is off the site.
+
+    This is not the encoding the connection is named by on the urllib3 the app pins (2.x): urllib3 encodes the host first, each
+    label lower-cased and passed to ``idna.encode(label, strict=True, std3_rules=True)`` (IDNA 2008), so requests' UTS 46 path
+    is never reached for an http(s) URL (the independent read of R626, S3). The two agree on the three catalogue domains and on
+    every plain Unicode name; they differ on a capital sigma (``ΣΣ.example``), a fullwidth or other compatibility character
+    (UTS 46 maps it, urllib3 refuses it) and a few hundred more of the read's 63,787 names. The fetcher refuses every such name
+    before any request (R622's ``_refuse_parser_mismatch``: it lets a non-ASCII host through only when IDNA 2003 gives urllib3's
+    name), so this comparison never decides a fetch on a name where it and the connection disagree; a test holds that."""
     if host.isascii():
         return host
     try:

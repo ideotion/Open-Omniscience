@@ -416,16 +416,73 @@ def test_a_crawl_skips_a_link_whose_host_cannot_be_encoded_and_walks_the_rest(db
     assert bad not in sess.fetched
 
 
-def test_the_encoding_is_the_one_requests_connects_with():
-    # requests encodes a non-ASCII host with idna.encode(host, uts46=True) before it connects: UTS 46 keeps ß (xn--zca,
-    # not the IDNA 2003 "ss") and maps a fullwidth letter to its ASCII one. The fetcher's own parser check refuses both
-    # kinds of name before any request (two IDNA standards disagree on them); the scope check only has to agree with the
-    # connection.
+def test_the_key_is_uts_46():
+    # UTS 46 keeps ß (xn--zca, not the IDNA 2003 "ss") and maps a fullwidth letter to its ASCII one. This is the key's own
+    # encoding, not the connection's: see the next test.
     from src.ingest.crawl import _off_site
 
     assert _off_site("xn--zca.example", "\u00df.example") is False
     assert _off_site("ss.example", "\u00df.example") is True
     assert _off_site("\uff42\u00fccher.example", _U) is False
+
+
+# Names where UTS 46 and urllib3 (the encoding the connection is named by, IDNA 2008 label by label) part ways, or urllib3 refuses.
+_KEY_AND_CONNECTION_DIFFER = [
+    "\u03a3\u03a3.example",  # ΣΣ: urllib.parse lowers it to σσ (xn--4xaa), urllib3 each label to σς (xn--3xab)
+    "\u0391\u03a3.\u0392\u0393",  # ΑΣ.ΒΓ
+    "\uff47\uff4f\uff4f\uff44.example",  # fullwidth: UTS 46 maps it to good.example, urllib3 refuses it
+    "\uff42\u00fccher.example",
+    "\ufb01le.example",  # the fi ligature
+    "\u017ftrasse.example",  # long s
+    "a\u00ad\u00fc.example",  # a soft hyphen
+]
+
+
+def test_wherever_the_key_and_the_connection_name_a_host_differently_the_fetcher_refuses_it_before_any_request():
+    # The independent read of R626 (S3): on the urllib3 the app pins, urllib3 encodes a non-ASCII host before requests' own
+    # UTS 46 path is reached, so the key is not the connection's name for every host. It is safe because R622's parser check
+    # refuses each name where the two differ, before any request: held here over a fixed and a seeded sample of hosts.
+    import random
+
+    from urllib3.util import parse_url
+
+    from src.ingest import BlockedTarget, FetchError
+    from src.ingest.crawl import _site_key
+
+    rng = random.Random(626)
+    pool = [*"abcxz09-", "\u00e9", "\u00df", "\u1e9e", "\u03c2", "\u03c3", "\u03a3", "\u0131", "\u0130", "\u212a",
+            "\u00c5", "\u200d", "\u200c", "\u00ad", "\u034f", "\u0301", "\u0308", "\uff41", "\uff21", "\u0430",
+            "\u0435", "\u05d0", "\u0627", "\u0661", "\u0e01", "\u4e00", "\uac00", "\u2160", "\u24d0", "\u1d43",
+            "\ufb01", "\u017f", "\u0345", "\u1e9b", "\u2060"]
+    hosts = {*_KEY_AND_CONNECTION_DIFFER, _U, "\u00e5a.no", "\u0444\u0430\u00df.de", "stra\u00dfe.de"}
+    for _ in range(3000):
+        hosts.add("".join(rng.choice(pool) for _ in range(rng.randint(1, 10))) + rng.choice([".example", ".de", ".gr"]))
+    differ = refused = 0
+    for host in sorted(hosts):
+        url = f"https://{host}/x"
+        try:
+            ours = urlsplit(url).hostname
+        except ValueError:
+            continue  # unreadable: R626's own path, refused by the fetcher's first urlparse
+        if not ours or ours.isascii():
+            continue
+        try:
+            theirs: str | None = (parse_url(url).host or "").lower()
+        except Exception:  # noqa: BLE001 - urllib3 refuses the name: requests would never connect to it
+            theirs = None
+        if _site_key(ours) is not None and _site_key(ours) == theirs:
+            continue
+        differ += 1
+        with pytest.raises(BlockedTarget):
+            _fetcher(_Session())._refuse_parser_mismatch(url)
+        refused += 1
+    assert refused == differ
+    assert differ >= 500  # the sample is not vacuous (ΣΣ.example and the fullwidth names among them)
+    for host in _KEY_AND_CONNECTION_DIFFER:  # and through the fetch itself: nothing requested
+        sess = _Session()
+        with pytest.raises(FetchError):
+            _fetcher(sess).fetch(f"https://{host}/x")
+        assert sess.fetched == []
 
 
 def test_control_ascii_hosts_are_compared_as_before():
@@ -586,4 +643,133 @@ def test_control_a_readable_malformed_url_is_still_refused_the_same_way():
     with pytest.raises(FetchFailed) as caught:
         _fetcher(sess).fetch("ftp://good.example/x")
     assert str(caught.value).startswith("unsupported or malformed URL: ")
+    assert sess.fetched == []
+
+
+# --------------------------------------------------------------------------- #
+# The independent read of R626: a backfill list saved before the fix (S1), the skip lists bounded (S2), the refusal's words (S4).
+# --------------------------------------------------------------------------- #
+
+
+def test_a_backfill_list_saved_before_r627_never_fetches_its_off_host_or_unreadable_locs(db, source, tmp_path):
+    import json
+
+    from src.ingest.archive_backfill import advance_backfill, load_state
+
+    planted, credentialed = f"https://{_EVIL}/planted-bf", "https://u:p@good.example/x"
+    sp = tmp_path / "backfill.json"
+    sp.write_text(json.dumps({"active": {
+        "source_id": source.id, "urls": [_OWN_A, planted, "http://[::1", credentialed, _OWN_B],
+        "cursor": 0, "full_history": False, "tally": {},
+    }}), "utf-8")
+    sess = _Session()
+    sess.route("https://good.example/robots.txt", status_code=404, text="")
+    sess.route(f"https://{_EVIL}/robots.txt", status_code=404, text="")
+    for url in (_OWN_A, _OWN_B):
+        sess.route(url, text=_article(url))
+    sess.route(planted, text=_article("planted"))
+    sess.route(credentialed, text=_article("credentialed"))
+    out = advance_backfill(db, _fetcher(sess), per_pass=10, state_path=sp)
+    assert planted not in sess.fetched and _EVIL not in _hosts(sess)  # before: fetched and stored as good.example's
+    assert credentialed not in sess.fetched
+    assert sess.fetched.count(_OWN_A) == 1 and sess.fetched.count(_OWN_B) == 1
+    assert out["tally"] == {"stored": 2, "skipped_off_host": 2, "skipped_unreadable": 1}
+    assert out["done"] is True and out["cursor"] == 5
+    assert db.query(Article).count() == 2
+    assert "p@" not in json.dumps(load_state(sp))  # nothing new written with the login (the old list is gone with "active")
+
+
+def test_control_a_backfill_list_of_own_pages_is_walked_as_before(db, source, tmp_path):
+    import json
+
+    from src.ingest.archive_backfill import advance_backfill
+
+    own = ["https://good.example/a", "https://www.good.example/b", "https://GOOD.example:8443/c"]
+    sp = tmp_path / "backfill.json"
+    sp.write_text(json.dumps({"active": {"source_id": source.id, "urls": own, "cursor": 0, "full_history": False, "tally": {}}}),
+                  "utf-8")
+    calls: list[str] = []
+
+    def _ingest(session, src, url, *, fetcher):
+        from src.ingest.pipeline import IngestOutcome, IngestResult
+
+        calls.append(url)
+        return IngestOutcome(url=url, result=IngestResult.STORED, article_id=None, detail=None)
+
+    out = advance_backfill(db, object(), per_pass=10, state_path=sp, ingest_fn=_ingest)
+    assert calls == own
+    assert out["tally"] == {"stored": 3}
+
+
+def test_a_discovery_lists_the_first_hundred_off_host_locs_and_counts_them_all():
+    from src.ingest.sitemap import SKIPPED_OFF_HOST_KEPT
+
+    off = [f"https://{_EVIL}/p{i}?k=u:p@x" for i in range(150)]
+    child = f"https://{_EVIL}/sitemap.xml"
+    _sess, report = _discover(sitemap=_index(child, "https://good.example/own.xml"),
+                              routes=[("https://good.example/own.xml", _urlset(*off, _OWN_A))])
+    assert report.urls == [_OWN_A]
+    assert SKIPPED_OFF_HOST_KEPT == 100
+    assert report.skipped_off_host == [child, *(failure_url(u) for u in off[:99])]
+    assert report.skipped_off_host_count == 151  # the child and every page loc
+    assert report.stopped_reason == "completed"
+
+
+def test_a_discovery_stops_once_it_has_skipped_four_times_max_urls_page_locs():
+    off = [f"https://{_EVIL}/p{i}" for i in range(20)]
+    _sess, report = _discover(sitemap=_urlset(*off, _OWN_A), max_urls=5)
+    assert report.urls == []
+    assert report.skipped_off_host_count == 20
+    assert report.stopped_reason == "max_skipped"
+    # unreadable locs count toward the same bound
+    _sess, report = _discover(sitemap=_urlset(*off[:10], *(f"https://[p{i}]/x" for i in range(10)), _OWN_A), max_urls=5)
+    assert report.urls == [] and report.skipped_unreadable == 10
+    assert report.stopped_reason == "max_skipped"
+
+
+def test_control_a_discovery_under_the_skip_bound_keeps_the_page_after_its_skipped_locs():
+    off = [f"https://{_EVIL}/p{i}" for i in range(19)]
+    _sess, report = _discover(sitemap=_urlset(*off, _OWN_A), max_urls=5)
+    assert report.urls == [_OWN_A]
+    assert report.stopped_reason == "completed"
+
+
+def test_the_skip_bound_also_stops_before_the_next_child_sitemap():
+    off = [f"https://{_EVIL}/p{i}" for i in range(20)]
+    first, second = "https://good.example/one.xml", "https://good.example/two.xml"
+    sess, report = _discover(sitemap=_index(first, second), routes=[(first, _urlset(*off)), (second, _urlset(_OWN_A))],
+                             max_urls=5)
+    assert second not in sess.fetched
+    assert report.stopped_reason == "max_skipped"
+
+
+def test_only_kept_page_locs_count_toward_max_urls():
+    off = [f"https://{_EVIL}/p{i}" for i in range(3)]
+    own = ["https://good.example/a", "https://good.example/b", "https://good.example/c"]
+    _sess, report = _discover(sitemap=_urlset(*off, *own), max_urls=2)
+    assert report.urls == own[:2]
+    assert report.stopped_reason == "max_urls"
+
+
+def test_the_fetcher_refusal_of_an_unreadable_url_keeps_its_password_out_and_chains_nothing():
+    from src.ingest import FetchFailed
+
+    sess = _Session()
+    with pytest.raises(FetchFailed) as caught:
+        _fetcher(sess).fetch("https://u:hunter2@[::1/x")
+    assert "hunter2" not in str(caught.value)
+    assert str(caught.value) == f"unsupported or malformed URL: {failure_url('https://u:hunter2@[::1/x')!r}"
+    assert caught.value.__cause__ is None and caught.value.__context__ is None  # no ValueError carried along
+    assert sess.fetched == []
+
+
+def test_a_feed_item_link_that_is_unreadable_and_credentialed_stores_no_password(db, source, caplog):
+    from src.ingest.pipeline import ingest_url
+
+    caplog.set_level("DEBUG")
+    sess = _Session()
+    outcome = ingest_url(db, source, "https://u:hunter2@[::1/x", fetcher=_fetcher(sess))
+    assert outcome.result.value == "fetch_failed"
+    assert "hunter2" not in (outcome.detail or "")  # the stored failure (outcome.url is the URL as handed in, never stored)
+    assert "hunter2" not in caplog.text
     assert sess.fetched == []
