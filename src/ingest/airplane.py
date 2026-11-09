@@ -242,7 +242,7 @@ def _lookup_exempt(host: object) -> bool:
     """True for the only names a lookup may be made for while airplane mode is engaged (R639): no name at all (``None`` or empty: a
     bind, or the local service), exactly ``localhost``, or a loopback LITERAL (an IPv6 one may carry a zone id).
 
-    Narrower than :func:`_is_local_host` on purpose. ``localhost.localdomain``, ``ip6-localhost`` and ``localhost.`` are local only if
+    Narrower than :func:`_is_local_host` on purpose. ``localhost.localdomain`` and ``ip6-localhost`` are local only if
     ``/etc/hosts`` says so: where it does not (this project's CI container lists neither alias; Debian and Qubes lack
     ``localhost.localdomain``), the resolver asks DNS, so the QUERY egresses even though the connect to whatever it answers is refused.
     Nothing is stripped or normalised: a name that needs normalising is not one of these.
