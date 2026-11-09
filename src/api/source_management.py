@@ -513,7 +513,8 @@ def resolve_qid_names(
     def _fetch(url: str) -> dict:
         # The SAME guarded getter the other Wikidata caller uses (`wikidata_apply`): the
         # kill switch and the protected-mode proxy live inside it, and a per-URL isolation
-        # token gives each lookup its own Tor circuit so distinct ones are unlinkable.
+        # token asks Tor for a separate circuit for each lookup. Separate circuits, not
+        # unlinkable lookups: the User-Agent and the timing still tie them together (R656).
         from src.catalog.wikidata_apply import _default_getter
 
         return _default_getter(url).json()

@@ -33,8 +33,9 @@ the *proxy* over an already-guarded loopback socket, then negotiate the *real*
 destination at an application-protocol layer the four functions above never see
 (PySocks' own ``sendall``, or the stdlib's CONNECT verb) — live-reproduced as a
 real bypass of this guard. Two more patches close it: PySocks' ``socksocket.
-connect`` (best-effort — PySocks is an operator-installed extra, absent means
-nothing to patch since no SOCKS proxying is even possible) and the stdlib's own
+connect`` (best-effort — PySocks is a core dependency since R656, and only an
+install made without dependencies lacks it, in which case nothing can proxy over
+SOCKS and there is nothing to patch) and the stdlib's own
 ``http.client.HTTPConnection._tunnel`` (always available) are ALSO guarded on
 their own real-destination argument, before either negotiates anything.
 
@@ -123,7 +124,7 @@ from src.monitoring.native_inflight import native_call
 
 try:
     import socks as _pysocks  # type: ignore[import-untyped]
-except ImportError:  # pragma: no cover - PySocks is an operator-installed extra
+except ImportError:  # pragma: no cover - PySocks is a core dependency (R656); only an install made without dependencies lacks it
     _pysocks = None  # type: ignore[assignment]
 
 # R643: on Windows the stdlib's proactor loop (what ``loop="asyncio"`` gives there) connects through ``_overlapped.ConnectEx`` and sends
@@ -233,7 +234,7 @@ _orig_tunnel = http.client.HTTPConnection._tunnel  # type: ignore[attr-defined]
 _orig_putrequest = http.client.HTTPConnection.putrequest
 _orig_socks_connect = _pysocks.socksocket.connect if _pysocks is not None else None
 # R641: the name-taking calls that resolve in C (libc) and never reach the patched getaddrinfo, and the datagram sends that need no
-# connect. ``sendmsg`` does not exist on Windows; the PySocks one only with the extra installed.
+# connect. ``sendmsg`` does not exist on Windows; the PySocks one only where PySocks imports.
 _orig_gethostbyname = socket.gethostbyname
 _orig_gethostbyname_ex = socket.gethostbyname_ex
 _orig_gethostbyaddr = socket.gethostbyaddr

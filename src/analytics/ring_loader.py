@@ -320,8 +320,11 @@ def _default_getter(url: str) -> dict:
 
     ``guarded_session`` is the one fetch path: it refuses under the kill switch, routes
     through the operator's proxy when protected mode is on (never a silent Tor -> clearnet
-    downgrade, Q1014) and carries the honest bot UA. A per-URL isolation token gives each
-    lookup its own circuit, so two lookups are unlinkable over Tor.
+    downgrade, Q1014) and carries the honest bot UA. A per-URL isolation token asks Tor for
+    a separate circuit for each lookup (no-op without a SOCKS proxy). Separate circuits do not
+    make the lookups unlinkable: each one sends this module's own bot User-Agent (``USER_AGENT``),
+    in protected mode too, and the lookups of one load run close together, so Wikidata can still
+    tie them to one another by that name and their timing (R656, queue item 68(b)).
     """
     import json
 

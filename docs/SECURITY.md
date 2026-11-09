@@ -646,8 +646,8 @@ imply a protection we cannot deliver.
   through a proxy you run and sends a generic User-Agent that does not name the tool. **Honest
   limit:** this cannot guarantee anonymity — you must run and trust the proxy (e.g. Tor)
   yourself. Refuses to enable without a proxy URL. HTTP/HTTPS proxies work out of the box;
-  **SOCKS** proxies (e.g. `socks5://127.0.0.1:9050` for Tor) additionally need **PySocks**
-  (`pip install pysocks`) — there is no packaged extra for it.
+  **SOCKS** proxies (e.g. `socks5h://127.0.0.1:9050` for Tor) use **PySocks**, which the app
+  installs as a core dependency (R656; it was a separate `pip install pysocks` before).
 
 These are local and loopback-only; the destructive/state-changing routes are protected by the
 same cross-origin refusal middleware as the rest of the API.

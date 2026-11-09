@@ -53,9 +53,10 @@ WHAT IS AND IS NOT COVERED — stated rather than implied:
     (PySocks 1.7.1) takes its non-``rdns`` branch through
     ``socket.getaddrinfo(host, port, AF_UNSPEC, SOCK_STREAM, IPPROTO_TCP,
     AI_ADDRCONFIG)``, which is the patched function. That path is NOT exercised
-    by a test here: PySocks is an operator-installed extra, so a test gated on it
-    would skip in every lane that does not install it, which is where an
-    environment-gated guard goes to die.
+    by a test here: when this was written PySocks was an operator-installed extra,
+    and a test gated on it would have skipped in every lane that did not install
+    it, which is where an environment-gated guard goes to die. It is a core
+    dependency since R656, so such a test would now run in every lane.
   * A proxied fetch whose proxy endpoint is a HOSTNAME stands the check DOWN for
     that request. Allowlisting it would mean resolving it here, inside a socket
     hook, on every fetch; refusing to guess is better than a guard that can
