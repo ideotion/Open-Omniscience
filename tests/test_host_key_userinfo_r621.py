@@ -581,10 +581,11 @@ def test_the_four_modules_import_failure_url_on_use_only():
 
 def test_a_refused_url_with_credentials_is_still_refused(tmp_path):
     """The fetcher's refusals stand: a credentialed URL of another scheme is refused without its credentials in the sentence,
-    and a backslash before the ``@`` (``urlparse`` reads good.example, urllib3 evil.test) is still refused, the other parser's
-    host never requested. CHANGED, stated: before, the robots URL carried the same authority and was the request refused, so
-    the page failed as RobotsUnavailable (``unreachable``, cached for the hostile key); now the robots read is the host's
-    anonymous one (good.example, the host the SSRF guard checks) and the page itself is refused as a BlockedTarget."""
+    and a backslash before the ``@`` (``urlparse`` reads good.example, urllib3 evil.test) is still refused, neither parser's
+    host requested. CHANGED twice, stated: before R621 the robots URL carried the same authority and was the request refused,
+    so the page failed as RobotsUnavailable (``unreachable``, cached for the hostile key); R622 runs
+    ``_refuse_parser_mismatch`` before the SSRF guard and before R621's host key is taken, so the URL is now refused as a
+    BlockedTarget before ANY request, the robots read's included."""
     s = _Session()
     f = _stub_fetcher(tmp_path, s)
     with pytest.raises(FetchFailed) as exc:
@@ -592,4 +593,4 @@ def test_a_refused_url_with_credentials_is_still_refused(tmp_path):
     _no_secret(str(exc.value))
     with pytest.raises(ingest.BlockedTarget):
         f.fetch("https://evil.test\\@good.example/x")
-    assert [u for u, _kw in s.calls] == ["https://good.example/robots.txt"], s.calls
+    assert s.calls == [], s.calls  # refused before any robots read (R622's order kept under R621's key)

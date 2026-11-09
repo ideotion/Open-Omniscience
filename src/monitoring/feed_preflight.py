@@ -31,7 +31,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
-from src.ingest import kill_switch_active
+from src.ingest import EthicalFetcher, kill_switch_active
 from src.ingest.fetch_verdict import is_kill_switch_refusal
 from src.monitoring.secret_scrub import log_failure, record_text
 from src.paths import data_dir
@@ -84,6 +84,7 @@ def _check_host_robots(fetcher, host: str) -> dict:
         "checked_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     try:
+        EthicalFetcher._refuse_parser_mismatch(f"https://{host}")  # before the guard looks the host up (R622)
         fetcher._guard_target(urlparse(f"https://{host}").hostname)
         resp, _final = fetcher._guarded_redirect_get(f"https://{host}/robots.txt")
         code = resp.status_code
