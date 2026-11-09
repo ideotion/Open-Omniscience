@@ -413,11 +413,11 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   launcher and `--loop asyncio`), so a bare `python -m uvicorn src.api.main:app` no longer serves on
   uvloop. A server started with `--lifespan off`, or mounted inside another ASGI app, runs no
   lifespan, so neither the loop check nor the guard it arms: the **serving gate** (R644) answers
-  every request with a fixed 503 ("started without its own startup … start the app with its own
+  every HTTP request with a fixed 503 ("started without its own startup … start the app with its own
   launcher") until the lifespan's loop check has run, the loop serving the request is the stdlib's,
   AND airplane mode's guard is armed, which the
-  lifespan now does before the first request, a locked store's unlock flow included. Once both hold,
-  the gate is one flag read. Waived only where the boot itself never arms the guard: the guard half
+  lifespan now does before the first request, a locked store's unlock flow included. Once the loop check
+  has run and the guard is armed, the gate reads a flag and checks the serving loop on each request. Waived only where the boot itself never arms the guard: the guard half
   under `OO_AIRPLANE_SOCKET_GUARD=0` (the documented opt-out), both halves under
   `OO_NO_SCHEDULER=1` (a headless or test process that manages the kill switch itself: it boots
   online, and an airplane mode engaged there later rests on the per-call refusals alone, since the

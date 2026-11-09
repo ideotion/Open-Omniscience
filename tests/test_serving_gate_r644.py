@@ -101,6 +101,19 @@ def test_a_second_server_on_uvloop_cannot_ride_on_an_earlier_check(gate):
     assert main._serving_gate_open is False
 
 
+@_needs_uvloop
+def test_an_open_gate_still_refuses_a_second_server_on_uvloop(gate):
+    """Once the gate has opened for a server on the stdlib loop, a second server started on uvloop with --lifespan off in the same
+    process is still refused: the loop is checked on every request, never latched (security read B)."""
+    import uvloop  # noqa: F401 - core installs it here (uvicorn[standard])
+
+    gate.setattr(main, "_serving_loop_checked", True)
+    gate.setattr(ap, "is_armed", lambda: True)
+    assert TestClient(main.app).get("/unlock").status_code == 200
+    assert main._serving_gate_open is True
+    _assert_refused(*_serve_once("uvloop"))
+
+
 def test_a_closed_gate_logs_its_refusal_once(gate, caplog):
     client = TestClient(main.app)
     with caplog.at_level("ERROR", logger=main.logger.name):
@@ -225,8 +238,16 @@ def test_the_lifespan_records_the_loop_check_right_after_it_and_arms_the_guard()
 
 
 def test_the_gate_is_the_outermost_layer_but_compression():
-    """Registered just before GZip, so it answers before the lock gate, the rate limiter or any route runs."""
-    src = inspect.getsource(main)
-    assert src.index("async def _serving_gate(") < src.index("app.add_middleware(GZipMiddleware")
-    after = src[src.index("async def _serving_gate(") : src.index("app.add_middleware(GZipMiddleware")]
-    assert "@app.middleware" not in after and "add_middleware" not in after
+    """Registered just before GZip, so it answers before the lock gate, the rate limiter or any route runs: in the module's top-level
+    statements, nothing that adds a middleware sits between the gate's definition and the GZip registration."""
+    tree = ast.parse(Path(main.__file__).read_text(encoding="utf-8"))
+
+    def adds_middleware(node: ast.stmt) -> bool:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            return any("middleware" in ast.unparse(d) for d in node.decorator_list)
+        return isinstance(node, ast.Expr) and "add_middleware" in ast.unparse(node)
+
+    order = [n for n in tree.body if adds_middleware(n)]
+    names = [n.name if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) else ast.unparse(n) for n in order]
+    assert names[-1] == "app.add_middleware(GZipMiddleware, minimum_size=500)"
+    assert names[-2] == "_serving_gate"

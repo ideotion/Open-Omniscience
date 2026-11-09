@@ -1255,7 +1255,11 @@ async def monitor_requests(request: Request, call_next):
 @app.middleware("http")
 async def _serving_gate(request: Request, call_next):
     global _serving_gate_open, _serving_gate_logged
-    if not _serving_gate_open:
+    # The loop is checked on EVERY request, never latched (security read B): an open gate must not vouch for a second server started
+    # in this process on uvloop with --lifespan off. One get_running_loop() and a module-name read.
+    import asyncio as _asyncio
+
+    if not _serving_gate_open or not _event_loop_is_stdlib(_asyncio.get_running_loop()):
         if not _serving_preconditions_hold():
             if not _serving_gate_logged:  # once: a closed gate refuses every request, and the log should say it once, not per request
                 _serving_gate_logged = True
