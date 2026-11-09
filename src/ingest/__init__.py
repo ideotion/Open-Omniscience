@@ -1988,7 +1988,8 @@ class EthicalFetcher:
           - the chain's lock moves to the new host (the old one stamped and released first, never two held: see _RedirectChain);
           - its robots.txt (``_enforce_robots``: a disallow is RobotsDisallowed, an unreadable robots.txt RobotsUnavailable, the
             same refusals as a first request's, ending with fixed words that say a redirect led there);
-          - its interval or Crawl-delay is waited, or deferred past the cap (CrawlDelayDeferred, the stamp written first);
+          - its interval or Crawl-delay is waited, or deferred past the cap (CrawlDelayDeferred, the stamp written first, its
+            sentence naming the hop's address and ending with the same fixed words);
           - the switch is read before and after the waits: a Stop pressed while the hop waited for a lock or an interval refuses
             it, for an injected session as for a real one (the hop's own ``_guard_target`` reads it first only for a real one).
         The robots read is ``_get_robots``, which passes no chain on: its own redirect hops keep today's behaviour and never read
@@ -2002,7 +2003,7 @@ class EthicalFetcher:
         host_key = f"{p.scheme}://{key}"
         if self.respect_robots:
             self._enforce_robots(nxt, host_key, p._replace(netloc=key), hop=True)
-        self._respect_rate_limit(key, host_key)
+        self._respect_rate_limit(key, host_key, hop_url=nxt)
         if _KILL.is_set():
             raise FetchFailed(KILL_SWITCH_REFUSAL)
         chain.requested = True
@@ -2311,7 +2312,7 @@ class EthicalFetcher:
 
     # -- rate limiting ----------------------------------------------------- #
 
-    def _respect_rate_limit(self, netloc: str, host_key: str) -> None:
+    def _respect_rate_limit(self, netloc: str, host_key: str, *, hop_url: str | None = None) -> None:
         """Wait out this host's interval, or REFUSE when the wait is too long.
 
         S04-13 S2 (Q1013 = a). Two stamps CAN decide the wait and they live in
@@ -2387,9 +2388,14 @@ class EthicalFetcher:
             # refusal, which is the "refuse and retry next pass" failure this whole
             # sidecar exists to prevent.
             resume_at = self._stamp_host_schedule(netloc, wait, declared_delay)
+            # A redirect hop's deferral (R629) is the hop host's Crawl-delay, not the page asked for's: its address and the fixed
+            # words that say a redirect led there come after the sentence every reader reads (Steward 3's item 1), so a caller
+            # filing it against the page it asked for still says whose Crawl-delay it was. Readers key on the type and on the
+            # "deferred" prefix law/track.py writes before it (src/api/law.py _verdict_of), never on these words.
+            where = f", for {failure_url(hop_url)!r} ({_REDIRECT_HOP_NOTE})" if hop_url else ""
             raise CrawlDelayDeferred(
                 f"Crawl-delay {declared_delay or interval:g} s: not before "
-                f"{datetime.fromtimestamp(resume_at, UTC).isoformat(timespec='seconds')}",
+                f"{datetime.fromtimestamp(resume_at, UTC).isoformat(timespec='seconds')}{where}",
                 netloc=netloc,
                 delay_s=declared_delay or interval,
                 not_before=resume_at,

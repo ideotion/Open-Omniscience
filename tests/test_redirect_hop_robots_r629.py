@@ -933,3 +933,40 @@ def test_a_location_that_writes_a_login_is_refused_even_the_callers_own(tmp_path
     assert text.startswith("redirect to an address that carries a user name or password"), text
     assert "fake-token" not in text and "fake-2" not in text
     assert asked == [f"{A}/robots.txt", first] and _logins(sent) == [first]
+
+
+# --- folded from the two security reads of R629 ----------------------------------------------------------------------------------------
+#
+# Steward 3's read and the independent read both said GO with should-fixes; each block below names the item it answers.
+
+
+def test_a_hops_deferral_names_the_hops_address_and_says_a_redirect_led_there(db, source, tmp_path, monkeypatch):
+    """Steward 3's item 1: a hop's deferral is the hop host's Crawl-delay. Filed against the page asked for (ingest_url, and
+    law/track.py, which writes "deferred: " before it), it names the hop's address and ends with the fixed words, AFTER the sentence
+    every reader reads; the readers key on the type and on that prefix, so it still reads as a deferral. A direct deferral's words are
+    unchanged."""
+    from src.api.law import _verdict_of
+
+    monkeypatch.setenv("OO_CRAWL_DELAY_MAX_WAIT", "60")
+    s = _Session()
+    s.robots(B, "User-agent: *\nCrawl-delay: 600\n")
+    s.page(f"{B}/first")
+    s.redirect("https://good.example/a", f"{B}/page")
+    s.page(f"{B}/page")
+    f = _fetcher(tmp_path, s)
+    _fetch(f, f"{B}/first")  # the first touch is free
+    with pytest.raises(CrawlDelayDeferred) as caught:
+        _fetch(f, "https://good.example/a")
+    text = record_text(caught.value, typed=False)
+    assert text.startswith("Crawl-delay 600 s: not before "), text
+    assert text.endswith(f", for '{B}/page' {_NOTE}"), text
+    assert caught.value.netloc == "b.example"
+    assert _verdict_of(f"deferred: {record_text(caught.value)}") == "deferred"  # what law/track.py stores, read as it reads it
+    out = _bounded(lambda: ingest_url(db, source, "https://good.example/a", fetcher=f))
+    assert out.result is IngestResult.CRAWL_DELAY_DEFERRED
+    assert (out.detail or "").endswith(f", for '{B}/page' {_NOTE}"), out.detail
+    assert f"{B}/page" not in s.fetched
+    with pytest.raises(CrawlDelayDeferred) as direct:
+        _fetch(f, f"{B}/first")
+    plain = record_text(direct.value, typed=False)
+    assert plain.startswith("Crawl-delay 600 s: not before ") and ", for " not in plain and _NOTE not in plain, plain
