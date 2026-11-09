@@ -33,11 +33,11 @@ from sqlalchemy.orm import sessionmaker
 from src.database.models import Article, ArticleLink, Base, Source
 
 _DOMAIN = "news.example"
-_PASSWORD, _PASSWORD_B, _PASSWORD_C = "hunter2", "sw0rdfish", "newpass9"
+_NEEDLE, _NEEDLE_B, _NEEDLE_C = "hunter2", "sw0rdfish", "newpass9"
 _PLAIN = f"https://{_DOMAIN}/rss"
-_CRED = f"https://alice:{_PASSWORD}@{_DOMAIN}/rss"
-_OTHER = f"https://bob:{_PASSWORD_B}@{_DOMAIN}/rss"
-_THIRD = f"https://carol:{_PASSWORD_C}@{_DOMAIN}/rss"
+_CRED = f"https://alice:{_NEEDLE}@{_DOMAIN}/rss"
+_OTHER = f"https://bob:{_NEEDLE_B}@{_DOMAIN}/rss"
+_THIRD = f"https://carol:{_NEEDLE_C}@{_DOMAIN}/rss"
 _WORLD = f"https://{_DOMAIN}/world"
 _K = f"f:{_DOMAIN}/rss"
 _HELD = f"Source with domain {_DOMAIN} and this feed already exists"
@@ -48,8 +48,8 @@ def _legacy(url: str) -> str:
     return "f:" + url.split("://", 1)[1].lower()
 
 
-def _secret_free(said: str) -> None:
-    for word in (_PASSWORD, _PASSWORD_B, _PASSWORD_C):
+def _needle_free(said: str) -> None:
+    for word in (_NEEDLE, _NEEDLE_B, _NEEDLE_C):
         assert word not in said, said
 
 
@@ -124,7 +124,7 @@ def client(sess_factory):
 def test_a_link_element_is_typed_exactly_as_an_anchor(href):
     from src.services.link_analyzer import LinkExtractor
 
-    base = f"https://alice:{_PASSWORD}@{_DOMAIN}/a"
+    base = f"https://alice:{_NEEDLE}@{_DOMAIN}/a"
     # href written first: the extractor finds an element by its serialised text, which puts href before rel (seen, unchanged)
     (as_link,) = LinkExtractor().extract_links(f'<html><head><link href="{href}" rel="alternate"/></head></html>', base_url=base)
     (as_anchor,) = LinkExtractor().extract_links(f'<html><body><a href="{href}">x</a></body></html>', base_url=base)
@@ -135,7 +135,7 @@ def test_a_pages_own_feed_link_is_not_stored_with_the_pages_login():
     from src.ingest.pipeline import _maybe_index_links
 
     s = sessionmaker(bind=_engine(), future=True)()
-    base = f"https://alice:{_PASSWORD}@{_DOMAIN}/a"
+    base = f"https://alice:{_NEEDLE}@{_DOMAIN}/a"
     html = (
         '<html><head><link href="/rss" rel="alternate" type="application/rss+xml"/><link href="/s.css" rel="stylesheet"/>'
         '</head><body><p>text</p><a href="https://other.example/cited">cited</a></body></html>'
@@ -148,7 +148,7 @@ def test_a_pages_own_feed_link_is_not_stored_with_the_pages_login():
     s.commit()
     _maybe_index_links(s, page, html, base)
     stored = s.query(ArticleLink.url, ArticleLink.normalized_url).all()
-    _secret_free(repr(stored))  # before: two rows, alice:hunter2 in both columns
+    _needle_free(repr(stored))  # before: two rows, alice:hunter2 in both columns
     assert [u for u, _n in stored] == ["https://other.example/cited"]  # control: a cited page of another site is still a link
     s.close()
 
@@ -160,7 +160,7 @@ def test_a_pages_own_feed_link_is_not_stored_with_the_pages_login():
 
 def _put(client, sid: int, **body):
     r = client.put(f"/api/sources/{sid}", json=body)
-    _secret_free(r.text)
+    _needle_free(r.text)
     for driver in ("UNIQUE", "IntegrityError", "sqlite3", "feed_key"):
         assert driver not in r.text, r.text
     return r
@@ -304,7 +304,7 @@ def _restore(tmp_path, staged_rows, working_rows):
                                                               "app_version": "0.5.0", "alembic_rev": "head", "manifest": None})
     finally:
         merge._q = reader
-    _secret_free(repr(asked))  # the merge's own reads never carry a login as a parameter
+    _needle_free(repr(asked))  # the merge's own reads never carry a login as a parameter
     con = sqlite3.connect(working)
     try:
         rows = sorted(con.execute("SELECT rss_url, feed_key FROM sources").fetchall())
@@ -329,7 +329,7 @@ def test_another_login_restored_beside_an_unhealed_legacy_row_is_that_row(tmp_pa
     report, rows, filed = _restore(tmp_path, [(_OTHER, _legacy(_OTHER))], [_ALICE, _WORLD_ROW])
     assert rows == sorted([_ALICE, _WORLD_ROW])  # before: bob@ inserted beside alice@ as a third row
     assert filed == {_OTHER: _ALICE}
-    _secret_free(repr(report))
+    _needle_free(repr(report))
 
 
 def test_the_plain_feed_restored_beside_a_lone_legacy_row_is_that_row(tmp_path):
@@ -337,7 +337,7 @@ def test_the_plain_feed_restored_beside_a_lone_legacy_row_is_that_row(tmp_path):
     report, rows, filed = _restore(tmp_path, [(_PLAIN, _K)], [_ALICE, _WORLD_ROW])
     assert rows == sorted([_ALICE, _WORLD_ROW])  # before: the plain row inserted as a sibling, a pair from then on
     assert filed == {_PLAIN: _ALICE}
-    _secret_free(repr(report))
+    _needle_free(repr(report))
 
 
 def test_a_pair_restored_beside_a_lone_legacy_row_files_each_half_once(tmp_path):
@@ -389,7 +389,7 @@ def test_rule_1_the_urls_own_pre_r628_key_comes_before_rule_2_its_exact_url(tmp_
     """Two rows of the domain spell the feed differently: one holds the incoming URL's own pre-R628 key under another spelling,
     the other holds the incoming URL exactly under today's key. The key is the identity a build before R628 wrote: rule 1 wins.
     No writer makes this store today (R634 keeps both legacy keys of a pair), so it is planted: the order's pin."""
-    spelled = f"http://alice:{_PASSWORD}@NEWS.example/rss/"
+    spelled = f"http://alice:{_NEEDLE}@NEWS.example/rss/"
     working = [(spelled, _legacy(_CRED)), (_CRED, _K)]
     _report, rows, filed = _restore(tmp_path, [_ALICE], working)
     assert rows == sorted(working)
@@ -420,7 +420,7 @@ def locked_on_a_login():
     seen: list[str] = []
 
     def _lock(conn, cursor, statement, parameters, context, executemany):
-        if _PASSWORD in str(parameters):
+        if _NEEDLE in str(parameters):
             seen.append(f"{statement} {parameters}")
             raise sqlite3.OperationalError("database is locked")
 
@@ -442,11 +442,11 @@ def test_the_dedups_database_error_is_answered_and_logged_without_the_login(clie
         sid = src.id
     app.dependency_overrides[get_fetcher] = lambda: SimpleNamespace(fetch=None)  # never reached: the dedup runs first
     with caplog.at_level(logging.DEBUG):
-        r = client.post("/api/ingest", json={"source_id": sid, "url": f"https://alice:{_PASSWORD}@{_DOMAIN}/a"})
-    assert locked_on_a_login and _PASSWORD in locked_on_a_login[0]  # the statement did carry it
+        r = client.post("/api/ingest", json={"source_id": sid, "url": f"https://alice:{_NEEDLE}@{_DOMAIN}/a"})
+    assert locked_on_a_login and _NEEDLE in locked_on_a_login[0]  # the statement did carry it
     assert r.status_code == 500
-    _secret_free(r.text)
-    _secret_free(caplog.text)
+    _needle_free(r.text)
+    _needle_free(caplog.text)
     assert "OperationalError" in r.text  # the class is said
 
 
@@ -462,10 +462,10 @@ def test_the_dedups_database_error_never_quotes_the_login_to_any_reader(app_stor
     from src.ingest.pipeline import _canonical_stored
 
     with SessionLocal() as s, pytest.raises(OperationalError) as caught:
-        _canonical_stored(s, f"https://alice:{_PASSWORD}@{app_store}/a", f"https://{app_store}/a")
-    assert locked_on_a_login and _PASSWORD in locked_on_a_login[0]  # the statement did carry it
-    _secret_free(str(caught.value))  # before: "[parameters: ('https://alice:hunter2@news.example/a', 1, 0)]"
-    _secret_free("".join(traceback.format_exception(caught.value)))
+        _canonical_stored(s, f"https://alice:{_NEEDLE}@{app_store}/a", f"https://{app_store}/a")
+    assert locked_on_a_login and _NEEDLE in locked_on_a_login[0]  # the statement did carry it
+    _needle_free(str(caught.value))  # before: "[parameters: ('https://alice:hunter2@news.example/a', 1, 0)]"
+    _needle_free("".join(traceback.format_exception(caught.value)))
     assert "database is locked" in str(caught.value)  # the error is still the error
 
 
@@ -479,7 +479,7 @@ def test_the_scrape_runs_catch_reads_the_dedups_error_without_the_login(db, lock
     def _ingest(session, source, *, fetcher):
         from src.ingest.pipeline import _canonical_stored
 
-        _canonical_stored(session, f"https://alice:{_PASSWORD}@{_DOMAIN}/a", f"https://{_DOMAIN}/a")
+        _canonical_stored(session, f"https://alice:{_NEEDLE}@{_DOMAIN}/a", f"https://{_DOMAIN}/a")
 
     import src.ingest.pipeline as pipeline
 
@@ -489,7 +489,7 @@ def test_the_scrape_runs_catch_reads_the_dedups_error_without_the_login(db, lock
     assert out == ({"errors": 1}, 0, 0)
     assert locked_on_a_login
     assert "scrape run: source" in caplog.text
-    _secret_free(caplog.text)
+    _needle_free(caplog.text)
 
 
 @pytest.fixture()
@@ -518,7 +518,7 @@ def lock_when_armed():
     armed: list[bool] = []
 
     def _lock(conn, cursor, statement, parameters, context, executemany):
-        if armed and _PASSWORD in str(parameters):
+        if armed and _NEEDLE in str(parameters):
             seen.append(statement.split(None, 1)[0].upper())
             raise sqlite3.OperationalError("database is locked")
 
@@ -564,10 +564,10 @@ def test_every_engine_the_app_builds_hides_its_statements_values():
     ("stored", "method", "path", "body", "statement"),
     [
         (_CRED, "put", "/api/sources/{id}", {"rss_url": "https://***@{domain}/world"}, "UPDATE"),  # url_to_store puts the login back
-        (_PLAIN, "put", "/api/sources/{id}", {"rss_url": f"https://alice:{_PASSWORD}@{{domain}}/rss"}, "UPDATE"),
-        (None, "post", "/api/sources/", {"name": "N", "domain": "{domain}", "rss_url": f"https://alice:{_PASSWORD}@{{domain}}/rss"},
+        (_PLAIN, "put", "/api/sources/{id}", {"rss_url": f"https://alice:{_NEEDLE}@{{domain}}/rss"}, "UPDATE"),
+        (None, "post", "/api/sources/", {"name": "N", "domain": "{domain}", "rss_url": f"https://alice:{_NEEDLE}@{{domain}}/rss"},
          "INSERT"),
-        (None, "post", "/api/sources/discover/add", [{"name": "N", "domain": "{domain}", "rss_url": f"https://alice:{_PASSWORD}@{{domain}}/rss"}],
+        (None, "post", "/api/sources/discover/add", [{"name": "N", "domain": "{domain}", "rss_url": f"https://alice:{_NEEDLE}@{{domain}}/rss"}],
          "INSERT"),
     ],
     ids=["put-masked-path-edit", "put-a-login-typed", "post-a-source", "discover-add"],
@@ -594,10 +594,10 @@ def test_a_source_write_the_store_refuses_leaves_no_login_in_the_server_line(app
         getattr(c, method)(path.replace("{id}", str(sid)), json=sent)
     exc = caught.value
     assert lock_when_armed.seen[:1] == [statement]  # the write itself was refused, and it did carry the login
-    assert f"alice:{_PASSWORD}@{domain}" in repr(exc.params)  # stated: the values stay on the error object
-    assert _PASSWORD.encode() in pickle.dumps(exc)  # stated: and in a pickled error
+    assert f"alice:{_NEEDLE}@{domain}" in repr(exc.params)  # stated: the values stay on the error object
+    assert _NEEDLE.encode() in pickle.dumps(exc)  # stated: and in a pickled error
     line = traceback_text(exc)
-    _secret_free(line)
+    _needle_free(line)
     assert "database is locked" in line and "[SQL parameters hidden due to hide_parameters=True]" in line
 
 
@@ -627,10 +627,10 @@ def test_an_integrity_error_the_put_raises_on_carries_no_login_in_its_text(app_s
             s.execute(text(f"DROP TRIGGER IF EXISTS {trigger}"))
             s.commit()
     exc = caught.value
-    assert f"alice:{_PASSWORD}@{domain}/world" in repr(exc.params)  # the login did reach the statement: the check is not vacuous
+    assert f"alice:{_NEEDLE}@{domain}/world" in repr(exc.params)  # the login did reach the statement: the check is not vacuous
     line = traceback_text(exc)
     assert "refused by the test" in line  # the store's own words stay: only the values are hidden
-    _secret_free(line)
+    _needle_free(line)
     with SessionLocal() as s:
         assert s.get(Source, sid).rss_url == _CRED.replace(_DOMAIN, domain)  # nothing was written
 
@@ -666,11 +666,11 @@ def test_the_pipelines_url_log_lines_mask_the_login(db, monkeypatch, caplog, doc
     db.add(src)
     db.commit()
     with caplog.at_level(logging.INFO, logger="src.ingest.pipeline"):
-        out = pipeline.store_fetched(db, src, _fetched(f"https://alice:{_PASSWORD}@{_DOMAIN}/tag/politics"))
+        out = pipeline.store_fetched(db, src, _fetched(f"https://alice:{_NEEDLE}@{_DOMAIN}/tag/politics"))
     assert out.result in (pipeline.IngestResult.EXTRACT_FAILED, pipeline.IngestResult.NON_ARTICLE)
     assert line in caplog.text, caplog.text
     assert f"https://***@{_DOMAIN}/tag/politics" in caplog.text
-    _secret_free(caplog.text)  # before: the login in both lines
+    _needle_free(caplog.text)  # before: the login in both lines
 
 
 # --------------------------------------------------------------------------- #
@@ -710,7 +710,7 @@ def test_the_zip_writes_a_sources_address_and_its_kept_key_masked(db):
 
     from src.api.diagnostics.source_samples import build_sample_zip
 
-    fresh = Source(name="fresh", domain="other.example", rss_url=f"https://bob:{_PASSWORD_B}@other.example/rss")
+    fresh = Source(name="fresh", domain="other.example", rss_url=f"https://bob:{_NEEDLE_B}@other.example/rss")
     db.add(fresh)
     db.commit()
     plain, cred = _plant(db, [(_PLAIN, _K), _ALICE])
@@ -720,7 +720,7 @@ def test_the_zip_writes_a_sources_address_and_its_kept_key_masked(db):
     members = _zip_members(data)
     assert len(members) == 4  # three samples and the manifest
     for name, body in members.items():
-        _secret_free(body)
+        _needle_free(body)
         assert "alice:" not in body and "bob:" not in body, name
     docs = {sid: json.loads(members[f"samples/source-{sid:07d}.json"])["source"] for sid in (fresh.id, plain, cred)}
     assert (docs[cred]["rss_url"], docs[cred]["feed_key"]) == (f"https://***@{_DOMAIN}/rss", f"f:***@{_DOMAIN}/rss")
@@ -735,7 +735,7 @@ def test_the_zip_route_serves_the_masked_zip(client, sess_factory):
     r = client.get("/api/diagnostics/source-samples", headers={"Sec-Fetch-Site": "same-origin"})
     assert r.status_code == 200, r.text
     for body in _zip_members(r.content).values():
-        _secret_free(body)
+        _needle_free(body)
         assert "alice:" not in body
 
 
@@ -767,11 +767,11 @@ def test_the_zip_writes_every_other_source_column_as_stored(db):
         (_K, _K),
         (f"f:{_DOMAIN}/@me/rss", f"f:{_DOMAIN}/@me/rss"),  # an @ in the path is today's key, not a userinfo
         (f"f:{_DOMAIN}/rss?to=a@b", f"f:{_DOMAIN}/rss?to=a@b"),
-        (f"f:a@b:{_PASSWORD}@{_DOMAIN}/rss", f"f:***@{_DOMAIN}/rss"),  # everything before the LAST @
-        (f"f:https://alice:{_PASSWORD}@[::1/x", "f:https://***@[::1/x"),  # an unreadable URL's text, scheme first
-        (f"f://alice:{_PASSWORD}@[::1/x", "f://***@[::1/x"),
-        (f"f:alice:{_PASSWORD}@[::1/x", "f:***@[::1/x"),
-        (f"f:alice:{_PASSWORD}@{_DOMAIN}://x", f"f:***@{_DOMAIN}://x"),  # a "scheme" holding an @ is the authority
+        (f"f:a@b:{_NEEDLE}@{_DOMAIN}/rss", f"f:***@{_DOMAIN}/rss"),  # everything before the LAST @
+        (f"f:https://alice:{_NEEDLE}@[::1/x", "f:https://***@[::1/x"),  # an unreadable URL's text, scheme first
+        (f"f://alice:{_NEEDLE}@[::1/x", "f://***@[::1/x"),
+        (f"f:alice:{_NEEDLE}@[::1/x", "f:***@[::1/x"),
+        (f"f:alice:{_NEEDLE}@{_DOMAIN}://x", f"f:***@{_DOMAIN}://x"),  # a "scheme" holding an @ is the authority
         (f"f:{_DOMAIN}//x", f"f:{_DOMAIN}//x"),
         (("f:alice:" + "x" * 600)[:500], "f:***"),  # cut at FEED_KEY_MAX inside its authority, its @ lost: withheld whole
         (("f:alice:hun@ter2" + "z" * 600)[:500], "f:***"),  # cut inside it with an @ in the password left: still withheld whole

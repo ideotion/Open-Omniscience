@@ -29,14 +29,14 @@ from sqlalchemy.orm import sessionmaker
 from src.database.models import Article, Base, Source
 
 _DOMAIN = "news.example"
-_PASSWORD = "hunter2"
-_CRED = f"https://alice:{_PASSWORD}@{_DOMAIN}/rss"
+_NEEDLE = "hunter2"
+_CRED = f"https://alice:{_NEEDLE}@{_DOMAIN}/rss"
 _SHOWN = f"https://***@{_DOMAIN}/rss"
 _PLAIN = f"https://{_DOMAIN}/rss"
 
 
-def _secret_free(text: str) -> None:
-    assert _PASSWORD not in text, text
+def _needle_free(text: str) -> None:
+    assert _NEEDLE not in text, text
     assert "alice" not in text, text
 
 
@@ -106,7 +106,7 @@ def test_the_source_list_answers_mask_the_login(client, cred_source):
                  "/api/sources/search?query=news", f"/api/sources/{cred_source}"):
         r = client.get(path)
         assert r.status_code == 200, (path, r.text)
-        _secret_free(r.text)
+        _needle_free(r.text)
         assert _SHOWN in r.text, path  # the address is still shown, its login as ***@
 
 
@@ -115,7 +115,7 @@ def test_the_group_answer_masks_the_login(client, cred_source):
     gid = next(g["id"] for g in groups if g["name"] == "watch")
     r = client.get(f"/api/sources/groups/{gid}")
     assert r.status_code == 200, r.text
-    _secret_free(r.text)
+    _needle_free(r.text)
     assert r.json()["sources"][0]["rss_url"] == _SHOWN
 
 
@@ -132,7 +132,7 @@ def test_the_rss_discovery_answer_masks_a_listed_sources_stored_url(client, cred
     r = client.post("/api/sources/discover/rss", json=[cred_source])
     assert r.status_code == 200, r.text
     assert handed and handed[0]["url"] == _CRED  # the discovery itself is handed the stored URL
-    _secret_free(r.text)
+    _needle_free(r.text)
     assert r.json()["results"][0]["rss_url"] == _SHOWN
 
 
@@ -145,14 +145,14 @@ def test_the_topic_discovery_answer_masks_each_found_url(client, monkeypatch):
                         lambda self, topic, max_sources, region="wt-wt": [{"domain": _DOMAIN, "url": _CRED, "rss_urls": [_CRED, _PLAIN]}])
     r = client.post("/api/sources/discover/topic?topic=news")
     assert r.status_code == 200, r.text
-    _secret_free(r.text)
+    _needle_free(r.text)
     assert r.json()["sources"][0]["rss_urls"] == [_SHOWN, _PLAIN]
 
 
 def test_the_discovered_sources_answer_masks_the_login_it_stored(client, sess_factory):
     r = client.post("/api/sources/discover/add", json=[{"domain": _DOMAIN, "name": "News", "rss_url": _CRED}])
     assert r.status_code == 200, r.text
-    _secret_free(r.text)
+    _needle_free(r.text)
     assert _stored(sess_factory, r.json()["sources"][0]["id"]) == _CRED  # a login typed into a new source is stored as typed
 
 
@@ -167,7 +167,7 @@ def test_the_health_check_probes_the_stored_url_and_shows_it_masked():
 
     out = check_source(SimpleNamespace(id=1, name="News", domain=_DOMAIN, rss_url=_CRED), fetcher=_Fetcher()).to_dict()
     assert asked == [_CRED]  # the fetch keeps the login
-    _secret_free(repr(out))
+    _needle_free(repr(out))
     assert out["url"] == _SHOWN
 
 
@@ -177,7 +177,7 @@ def test_shown_url_leaves_no_feed_and_a_plain_url_as_they_are():
     assert shown_url(None) is None and shown_url("") == ""
     assert shown_url(_PLAIN) == _PLAIN
     assert shown_url(_CRED) == _SHOWN
-    assert shown_url(f"https://alice:{_PASSWORD}@{_DOMAIN}:8443/rss?x=1") == f"https://***@{_DOMAIN}:8443/rss?x=1"
+    assert shown_url(f"https://alice:{_NEEDLE}@{_DOMAIN}:8443/rss?x=1") == f"https://***@{_DOMAIN}:8443/rss?x=1"
 
 
 # --------------------------------------------------------------------------- #
@@ -190,13 +190,13 @@ def test_the_create_and_update_request_logs_mask_the_login(client, sess_factory,
     r = client.post("/api/sources/", json={"name": "News", "domain": _DOMAIN, "rss_url": _CRED})
     assert r.status_code == 200, r.text
     sid = r.json()["id"]
-    assert client.put(f"/api/sources/{sid}", json={"rss_url": f"https://alice:{_PASSWORD}@{_DOMAIN}/feed"}).status_code == 200
+    assert client.put(f"/api/sources/{sid}", json={"rss_url": f"https://alice:{_NEEDLE}@{_DOMAIN}/feed"}).status_code == 200
     said = [rec.getMessage() for rec in caplog.records if "source request" in rec.getMessage()]
     assert len(said) == 2, said
     for line in said:
-        _secret_free(line)
+        _needle_free(line)
         assert "***@" in line
-    assert _stored(sess_factory, sid) == f"https://alice:{_PASSWORD}@{_DOMAIN}/feed"
+    assert _stored(sess_factory, sid) == f"https://alice:{_NEEDLE}@{_DOMAIN}/feed"
 
 
 # --------------------------------------------------------------------------- #
@@ -211,10 +211,10 @@ def test_the_create_and_update_request_logs_mask_the_login(client, sess_factory,
         ("https://***@other.example/rss", "https://other.example/rss"),           # (b) another host: the login does not follow
         (_PLAIN, _PLAIN),                                                         # (c) the login removed: stored without one
         (f"https://bob:sw0rdfish@{_DOMAIN}/rss", f"https://bob:sw0rdfish@{_DOMAIN}/rss"),  # a new login typed: as typed
-        (f"https://***@{_DOMAIN}/world", f"https://alice:{_PASSWORD}@{_DOMAIN}/world"),    # the same host, another path: kept
+        (f"https://***@{_DOMAIN}/world", f"https://alice:{_NEEDLE}@{_DOMAIN}/world"),    # the same host, another path: kept
         (f"https://***@{_DOMAIN}:8443/rss", f"https://{_DOMAIN}:8443/rss"),       # another port: not carried
         (f"http://***@{_DOMAIN}/rss", f"http://{_DOMAIN}/rss"),                   # another scheme (to cleartext): not carried
-        (f"https://***@{_DOMAIN.upper()}:443/rss", f"https://alice:{_PASSWORD}@{_DOMAIN.upper()}:443/rss"),  # one host key
+        (f"https://***@{_DOMAIN.upper()}:443/rss", f"https://alice:{_NEEDLE}@{_DOMAIN.upper()}:443/rss"),  # one host key
     ],
     ids=["a-unchanged", "b-other-host", "c-login-removed", "new-login-typed", "same-host-other-path", "other-port",
          "other-scheme", "same-host-key"],
@@ -223,7 +223,7 @@ def test_saving_the_source_form_keeps_or_drops_the_stored_login(client, sess_fac
     r = client.put(f"/api/sources/{cred_source}", json={"name": "News", "rss_url": sent})
     assert r.status_code == 200, r.text
     assert _stored(sess_factory, cred_source) == kept
-    _secret_free(r.text)
+    _needle_free(r.text)
 
 
 def test_saving_the_form_unchanged_round_trips_what_the_form_was_shown(client, sess_factory, cred_source):
@@ -259,7 +259,7 @@ def test_a_masked_url_never_stores_the_mask_as_a_login(client, sess_factory):
         ("https://***@[::1/rss", _CRED, "https://[::1/rss"),  # a host that cannot be read carries nothing
         ("https://a%40b:pw@news.example/rss", _CRED, "https://a%40b:pw@news.example/rss"),
         # the form shows a space as %20: sent back unchanged, it is the stored URL itself, its space and its login included
-        (f"https://***@{_DOMAIN}/a%20b", f"https://alice:{_PASSWORD}@{_DOMAIN}/a b", f"https://alice:{_PASSWORD}@{_DOMAIN}/a b"),
+        (f"https://***@{_DOMAIN}/a%20b", f"https://alice:{_NEEDLE}@{_DOMAIN}/a b", f"https://alice:{_NEEDLE}@{_DOMAIN}/a b"),
         (f"https://{_DOMAIN}/a%20b", f"https://{_DOMAIN}/a b", f"https://{_DOMAIN}/a b"),
         # the independent read of R637, stated: only the mask exactly as shown is the stored login; any other userinfo is what
         # the person typed and is stored as typed; a host spelled otherwise than the fetcher keys it (a trailing dot) drops it
@@ -275,7 +275,7 @@ def test_url_to_store(sent, stored, out):
     assert url_to_store(sent, stored) == out
 
 
-@pytest.mark.parametrize("url", [f"alice:{_PASSWORD}@{_DOMAIN}/rss", f"https:alice:{_PASSWORD}@{_DOMAIN}/rss"],
+@pytest.mark.parametrize("url", [f"alice:{_NEEDLE}@{_DOMAIN}/rss", f"https:alice:{_NEEDLE}@{_DOMAIN}/rss"],
                          ids=["no-scheme", "no-authority"])
 def test_shown_url_leaves_a_form_with_no_authority_as_written_and_the_fetcher_refuses_it(tmp_path, url):
     """Stated (the independent read of R637): ``shown_url`` masks a userinfo only after a ``//`` authority, so these two forms are

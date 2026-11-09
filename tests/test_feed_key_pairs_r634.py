@@ -36,10 +36,10 @@ from src.catalog.qualification import STATUS_QUALIFIED, STATUS_UNQUALIFIED
 from src.database.models import Article, Base, Source
 
 _DOMAIN = "news.example"
-_PASSWORD, _PASSWORD_B = "hunter2", "sw0rdfish"
+_NEEDLE, _NEEDLE_B = "hunter2", "sw0rdfish"
 _PLAIN = f"https://{_DOMAIN}/rss"
-_CRED = f"https://alice:{_PASSWORD}@{_DOMAIN}/rss"
-_OTHER = f"https://bob:{_PASSWORD_B}@{_DOMAIN}/rss"
+_CRED = f"https://alice:{_NEEDLE}@{_DOMAIN}/rss"
+_OTHER = f"https://bob:{_NEEDLE_B}@{_DOMAIN}/rss"
 _K = f"f:{_DOMAIN}/rss"
 
 
@@ -55,9 +55,9 @@ _SHAPES = {
 }
 
 
-def _secret_free(value: object) -> None:
+def _needle_free(value: object) -> None:
     said = value if isinstance(value, str) else json.dumps(value, default=str)
-    assert _PASSWORD not in said and _PASSWORD_B not in said, said
+    assert _NEEDLE not in said and _NEEDLE_B not in said, said
 
 
 # --------------------------------------------------------------------------- #
@@ -131,7 +131,7 @@ def params():
 
 def _no_login_in(params) -> None:
     for statement, parameters in params:
-        assert _PASSWORD not in str(parameters) and _PASSWORD_B not in str(parameters), (statement, parameters)
+        assert _NEEDLE not in str(parameters) and _NEEDLE_B not in str(parameters), (statement, parameters)
 
 
 # --------------------------------------------------------------------------- #
@@ -202,7 +202,7 @@ def test_the_crawl_lanes_stamp_of_the_credentialed_row_is_written(db, params, ca
     assert db.get(Source, cred).last_crawled_at is not None
     assert _keys(db) == _as_planted((_PLAIN, _CRED))
     assert "crawl supplement" not in caplog.text
-    _secret_free(caplog.text)
+    _needle_free(caplog.text)
     _no_login_in(params)
 
 
@@ -347,7 +347,7 @@ def _restore(tmp_path, staged_rows, working_rows):
                                                               "app_version": "0.5.0", "alembic_rev": "head", "manifest": None})
     finally:
         merge._q = reader
-    _secret_free([str(p) for p in asked])  # the merge's own reads never carry a login as a parameter
+    _needle_free([str(p) for p in asked])  # the merge's own reads never carry a login as a parameter
     con = sqlite3.connect(working)
     try:
         rows = sorted(con.execute("SELECT rss_url, feed_key FROM sources").fetchall())
@@ -375,7 +375,7 @@ def test_restoring_a_backup_that_holds_the_pair_keeps_two_rows(tmp_path, working
     report, rows, filed = _restore(tmp_path, _PAIR, working_rows)  # before: an empty store failed at the INSERT
     assert rows == sorted(_PAIR)
     assert filed == {_PLAIN: _PLAIN, _CRED: _CRED}  # each half's articles under its own row, never both under one
-    _secret_free(report)
+    _needle_free(report)
 
 
 def test_restoring_a_backup_holding_two_logins_of_one_feed_keeps_two_rows(tmp_path):
@@ -383,7 +383,7 @@ def test_restoring_a_backup_holding_two_logins_of_one_feed_keeps_two_rows(tmp_pa
     report, rows, filed = _restore(tmp_path, pair, [])
     assert rows == sorted(pair)
     assert filed == {_CRED: _CRED, _OTHER: _OTHER}
-    _secret_free(report)
+    _needle_free(report)
 
 
 def test_restoring_the_credentialed_half_alone_files_it_under_its_own_row(tmp_path):
@@ -394,7 +394,7 @@ def test_restoring_the_credentialed_half_alone_files_it_under_its_own_row(tmp_pa
 
 def test_restoring_the_credentialed_half_spelled_otherwise_files_it_under_its_own_row(tmp_path):
     """The store's row holds the same pre-R628 key under another spelling of the URL (scheme, case, a trailing slash)."""
-    spelled = f"http://alice:{_PASSWORD}@NEWS.example/rss/"
+    spelled = f"http://alice:{_NEEDLE}@NEWS.example/rss/"
     working = [(_PLAIN, _K), (spelled, _legacy(_CRED))]
     _report, rows, filed = _restore(tmp_path, [(_CRED, _legacy(_CRED))], working)
     assert rows == sorted(working)
@@ -419,7 +419,7 @@ def test_a_credentialed_sibling_feed_is_masked_in_the_restore_report(tmp_path):
     report, _rows, _filed = _restore(tmp_path, _PAIR, [(_PLAIN, _K)])
     (sibling,) = report["sources"]["siblings"]
     assert sibling["incoming_feed"] == f"https://***@{_DOMAIN}/rss"
-    _secret_free(report)
+    _needle_free(report)
 
 
 # --------------------------------------------------------------------------- #
@@ -623,7 +623,7 @@ def test_the_csv_and_yaml_exports_carry_no_key_and_keep_the_url_as_written(db, t
 
 @pytest.mark.parametrize(
     ("url", "legacy"),
-    [(_CRED, f"f:alice:{_PASSWORD}@{_DOMAIN}/rss"), (_PLAIN, _K), ("HTTPS://Alice:PW@News.Example/rss/", "f:alice:pw@news.example/rss"),
+    [(_CRED, f"f:alice:{_NEEDLE}@{_DOMAIN}/rss"), (_PLAIN, _K), ("HTTPS://Alice:PW@News.Example/rss/", "f:alice:pw@news.example/rss"),
      ("", ""), (None, "")],
 )
 def test_legacy_feed_key_is_the_key_a_build_before_r628_derived(url, legacy):
@@ -657,7 +657,7 @@ def test_only_a_rows_own_pre_r628_key_may_be_kept(stored, url, keeps):
         ([(_K, _PLAIN)], True),                            # the plain twin holds today's key
         ([(_legacy(_OTHER), _OTHER)], True),               # another login would take it
         ([(f"f:{_DOMAIN}/world", f"https://{_DOMAIN}/world")], False),
-        ([(_legacy(_CRED).replace("rss", "x"), f"https://alice:{_PASSWORD}@{_DOMAIN}/x")], False),
+        ([(_legacy(_CRED).replace("rss", "x"), f"https://alice:{_NEEDLE}@{_DOMAIN}/x")], False),
     ],
 )
 def test_key_to_write_keeps_a_stored_key_only_against_a_twin(mates, kept):

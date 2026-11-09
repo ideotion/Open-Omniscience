@@ -40,12 +40,12 @@ from src.ingest.pipeline import IngestResult, _maybe_index_links, ingest_url
 from src.services.link_analyzer.extractor import LinkExtractor
 from src.utils import url_utils
 
-_USER, _PASSWORD = "alice", "hunter2"
-_CRED = f"{_USER}:{_PASSWORD}@"
+_USER, _NEEDLE = "alice", "hunter2"
+_CRED = f"{_USER}:{_NEEDLE}@"
 
 
 def _clean(value: object) -> None:
-    assert _PASSWORD not in str(value) and f"{_USER}:" not in str(value), value
+    assert _NEEDLE not in str(value) and f"{_USER}:" not in str(value), value
 
 
 # --------------------------------------------------------------------------- #
@@ -562,7 +562,7 @@ def test_a_crawl_kept_to_one_site_from_a_credentialed_start_does_not_fetch_the_s
     sess, report = _crawl_two_spellings(db, source, "https://good.example/x", "https://good.example/y", start=start,
                                         same_domain_only=True)
     assert _pages(sess) == [start, "https://good.example/y"]
-    assert all(_PASSWORD not in a.canonical_url for a in db.query(Article))
+    assert all(_NEEDLE not in a.canonical_url for a in db.query(Article))
 
 
 def test_control_the_crawl_fetches_two_pages_once_each(db, source):
