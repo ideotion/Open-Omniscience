@@ -755,6 +755,64 @@ def test_a_stop_pressed_while_an_upgrades_robots_is_read_refuses_the_hop_on_an_i
 
 
 @_STOPS
+def test_a_stop_pressed_while_another_hosts_robots_is_read_refuses_the_hop(tmp_path, monkeypatch, stop):
+    """The re-read of the fold: R629's other-host branch read the switch again after its robots read and its waits, but without the
+    epoch, so a Stop pressed and cleared again while b.example's robots.txt was read (it answers 200 and allows the page) let the hop
+    out. The epoch is now taken before that branch's first read (R614)."""
+    routes = {f"{A}/robots.txt": _ROBOTS_200, f"{A}/x": (302, {"Location": f"{B}/y"}, b""), f"{B}/robots.txt": _ROBOTS_200,
+              f"{B}/y": _PAGE_200}
+    asked: list[str] = []
+    f = _real_fetcher(tmp_path, monkeypatch, routes, asked, {f"{B}/robots.txt": stop})
+    with pytest.raises(FetchFailed) as caught:
+        _fetch(f, f"{A}/x")
+    assert record_text(caught.value, typed=False) == KILL_SWITCH_REFUSAL
+    assert asked == [f"{A}/robots.txt", f"{A}/x", f"{B}/robots.txt"]
+    _no_lock_held(f, "a.example")
+    _no_lock_held(f, "b.example")
+
+
+@_STOPS
+def test_a_stop_pressed_while_another_hosts_robots_is_read_refuses_the_hop_on_an_injected_session_too(tmp_path, stop):
+    s = _Session()
+    s.robots(A, _ALLOW_ALL)
+    s.robots(B, _ALLOW_ALL)
+    s.redirect(f"{A}/x", f"{B}/y")
+    s.page(f"{B}/y")
+    s.on[f"{B}/robots.txt"] = stop
+    f = _fetcher(tmp_path, s)
+    with pytest.raises(FetchFailed) as caught:
+        _fetch(f, f"{A}/x")
+    assert record_text(caught.value, typed=False) == KILL_SWITCH_REFUSAL
+    assert f"{B}/y" not in s.fetched
+
+
+@_STOPS
+def test_a_stop_pressed_while_the_hop_takes_another_hosts_lock_refuses_the_hop(tmp_path, monkeypatch, stop):
+    """The same branch: its first read comes before the lock handover, which may wait on another fetch of b.example, so the epoch is
+    taken before that read, not after the handover."""
+    import src.ingest as ingest
+
+    real_move = ingest._RedirectChain.move
+
+    def move(chain, key):
+        stop()
+        return real_move(chain, key)
+
+    monkeypatch.setattr(ingest._RedirectChain, "move", move)
+    s = _Session()
+    s.robots(A, _ALLOW_ALL)
+    s.robots(B, _ALLOW_ALL)
+    s.redirect(f"{A}/x", f"{B}/y")
+    s.page(f"{B}/y")
+    f = _fetcher(tmp_path, s)
+    with pytest.raises(FetchFailed) as caught:
+        _fetch(f, f"{A}/x")
+    assert record_text(caught.value, typed=False) == KILL_SWITCH_REFUSAL
+    assert f"{B}/y" not in s.fetched
+    _no_lock_held(f, "a.example", "b.example")
+
+
+@_STOPS
 @pytest.mark.parametrize(
     ("location", "hop", "robots", "nth"),
     [(f"{B}/", f"{B}/", f"{B}/robots.txt", 1), ("/en/", f"{A}/en/", f"{A}/robots.txt", 2)],

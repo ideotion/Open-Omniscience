@@ -2005,8 +2005,10 @@ class EthicalFetcher:
             same refusals as a first request's, ending with fixed words that say a redirect led there);
           - its interval or Crawl-delay is waited, or deferred past the cap (CrawlDelayDeferred, the stamp written first, its
             sentence naming the hop's address and ending with the same fixed words);
-          - the switch is read before and after the waits: a Stop pressed while the hop waited for a lock or an interval refuses
-            it, for an injected session as for a real one (the hop's own ``_guard_target`` reads it first only for a real one).
+          - the switch is read before and after the waits: a Stop pressed while the hop waited for a lock or an interval, or
+            while its robots.txt was read, refuses it, and so does one pressed and cleared again in that time (the epoch, R614;
+            the R636 re-read), for an injected session as for a real one (the hop's own ``_guard_target`` reads it first only for
+            a real one).
         The robots read is ``_get_robots``, which passes no chain on: its own redirect hops keep today's behaviour and never read
         robots.txt themselves, so a read can never recurse."""
         key = _host_netloc(p.netloc, p.scheme)
@@ -2014,6 +2016,7 @@ class EthicalFetcher:
             if self.respect_robots:
                 self._recheck_hop_robots(current, nxt, p)
             return
+        epoch = kill_switch_epoch()  # before the first read: the robots read below may be a request (R614, the R636 re-read)
         if _KILL.is_set():
             raise FetchFailed(KILL_SWITCH_REFUSAL)
         chain.move(key)
@@ -2021,7 +2024,7 @@ class EthicalFetcher:
         if self.respect_robots:
             self._enforce_robots(nxt, host_key, p._replace(netloc=key), hop=True)
         self._respect_rate_limit(key, host_key, hop_url=nxt)
-        if _KILL.is_set():
+        if kill_switch_engaged_since(epoch):  # engaged now, or engaged at any moment since the first read
             raise FetchFailed(KILL_SWITCH_REFUSAL)
         chain.requested = True
 
