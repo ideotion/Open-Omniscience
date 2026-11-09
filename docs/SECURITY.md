@@ -404,12 +404,23 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   handed one meet the same rule while the switch is engaged: no name, exactly `localhost` (answered
   from, or swapped for, its loopback literal) and a loopback literal pass; an alias is refused in the
   same fixed words; anything else, a remote literal whose reverse lookup would ask DNS included, is
-  refused before libc. A bind to any literal address is left alone (it sends nothing). And a datagram
+  refused before libc. A REVERSE lookup of a loopback literal is a real PTR query too (glibc reads
+  `/etc/hosts`, then asks DNS: security read A measured it for `127.0.0.2` and `::1`), so while the
+  switch is engaged `gethostbyaddr` answers it as `localhost` without calling libc, and `getnameinfo`
+  hands libc only `NI_NUMERICHOST | NI_NUMERICSERV` and answers the host as `localhost` unless the
+  caller asked for the number. A bind to any literal address is left alone (it sends nothing).
+  Fails closed rather than open: a `bind` or datagram on a non-IP family other than AF_UNIX
+  (netlink, packet, vsock, CAN, Bluetooth) is refused while the switch is engaged, and nothing
+  in-tree uses one. And a datagram
   needs no connect, so `sendto`/`sendmsg` to a non-loopback destination is refused too, and so is a
   PySocks UDP `sendto` through a proxy (its relay socket is connected to the proxy, so the real
   destination is checked there). Still outside: a UDP socket `connect`ed before the Stop can `send`
   on it afterwards, like a keep-alive TCP connection, but unlike one it goes through no `http.client`
-  barrier; nothing in-tree keeps such a socket. **And the server's own event loop:** `uvicorn[standard]`
+  barrier; nothing in-tree keeps such a socket. Code that calls the C module `_socket` directly
+  (`_socket.gethostbyname`, a `_socket.socket` and its `sendto`) skips every patched point, as it
+  does for `connect`; nothing in-tree does. And on Windows the proactor loop's `sock_sendto` and
+  datagram transports send through `_overlapped.WSASendTo`, beside the ConnectEx residual below
+  (R643). **And the server's own event loop:** `uvicorn[standard]`
   installs uvloop and `uvicorn.run` picks it, and uvloop resolves and connects in libuv's C code, so
   an `async` client on that loop (`httpx.AsyncClient`, `asyncio.open_connection`) would bypass every
   patched point (security read B reached a non-loopback listener that way with the switch engaged).

@@ -416,8 +416,14 @@ def _guarded_gethostbyaddr(ip_address):  # type: ignore[no-untyped-def]
     # Also what socket.getfqdn() calls (it reads the module global), so getfqdn of a remote or unlisted name falls back to the name
     # itself, as it does whenever the lookup fails, instead of asking DNS.
     _lookup_rule(ip_address)
-    if _engaged() and _is_localhost_name(ip_address):
-        ip_address = "127.0.0.1"
+    if _engaged():
+        if _is_localhost_name(ip_address):
+            ip_address = "127.0.0.1"
+        if _is_ip_literal(ip_address):
+            # Only loopback is left here, and a REVERSE lookup of a literal is a real PTR query (glibc reads /etc/hosts, then asks
+            # DNS: security read A measured it for 127.0.0.2 and ::1), so it is answered here without libc.
+            literal = ip_address.decode("ascii") if isinstance(ip_address, bytes) else ip_address
+            return ("localhost", [], [literal])
     with native_call("dns"):
         return _orig_gethostbyaddr(ip_address)
 
@@ -425,10 +431,19 @@ def _guarded_gethostbyaddr(ip_address):  # type: ignore[no-untyped-def]
 def _guarded_getnameinfo(sockaddr, flags):  # type: ignore[no-untyped-def]
     host = _addr_host(sockaddr)
     _lookup_rule(host)
-    if _engaged() and _is_localhost_name(host) and isinstance(sockaddr, (tuple, list)):
-        sockaddr = ("127.0.0.1", *tuple(sockaddr)[1:])
+    if _engaged():
+        if _is_localhost_name(host) and isinstance(sockaddr, (tuple, list)):
+            sockaddr = ("127.0.0.1", *tuple(sockaddr)[1:])
+        # Only a loopback sockaddr is left here. Its host name would be a PTR query and its service name an NSS lookup that can leave
+        # the machine, so libc is asked for the numeric forms only and the host is answered as localhost unless the caller asked for
+        # the number (security read A measured a DNS query for ("127.0.0.5", 0) and ("::1", 0, 0, 0)).
+        answer_as_localhost = not flags & socket.NI_NUMERICHOST
+        flags |= socket.NI_NUMERICHOST | socket.NI_NUMERICSERV
+    else:
+        answer_as_localhost = False
     with native_call("dns"):
-        return _orig_getnameinfo(sockaddr, flags)
+        name, port = _orig_getnameinfo(sockaddr, flags)
+    return ("localhost" if answer_as_localhost else name, port)
 
 
 def _is_ip_literal(host: object) -> bool:
@@ -449,7 +464,7 @@ def _is_ip_literal(host: object) -> bool:
 def _guarded_bind(self, address):  # type: ignore[no-untyped-def]
     # A bind sends nothing, so any LITERAL address (or none) is left alone; only a host NAME, which C resolves through libc, meets the
     # lookup rule, with exactly ``localhost`` swapped for the family's loopback literal like a connect (R641).
-    if getattr(self, "family", None) != getattr(socket, "AF_UNIX", object()) and _engaged():
+    if _engaged() and getattr(self, "family", None) != getattr(socket, "AF_UNIX", object()):
         host = _addr_host(address)
         if host not in (None, "", b"") and not _is_ip_literal(host):
             address = _name_rule_for_connect(address, getattr(self, "family", None))
@@ -460,7 +475,7 @@ def _guarded_bind(self, address):  # type: ignore[no-untyped-def]
 def _datagram_rule(sock: object, address: object) -> object:
     """A datagram to ``address`` needs no connect, so no other guard point sees it (R641): while airplane mode is engaged a host NAME
     meets the connect name rule (alias refused, ``localhost`` swapped for the literal) and any non-loopback destination is refused."""
-    if address is None or getattr(sock, "family", None) == getattr(socket, "AF_UNIX", object()) or not _engaged():
+    if not _engaged() or address is None or getattr(sock, "family", None) == getattr(socket, "AF_UNIX", object()):
         return address
     address = _name_rule_for_connect(address, getattr(sock, "family", None))
     _guard(_addr_host(address))

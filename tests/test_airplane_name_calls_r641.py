@@ -114,21 +114,78 @@ def test_localhost_is_answered_from_its_literal(reached):
     assert socket.gethostbyname("localhost") == "127.0.0.1"
     assert socket.gethostbyname("LocalHost") == "127.0.0.1"
     assert socket.gethostbyname_ex("localhost") == ("localhost", [], ["127.0.0.1"])
-    socket.gethostbyaddr("localhost")
-    socket.getnameinfo(("localhost", 80), 0)
-    assert reached == [("gethostbyaddr", "127.0.0.1"), ("getnameinfo", ("127.0.0.1", 80))], (
-        "localhost was handed to libc as a name"
+    assert socket.gethostbyaddr("localhost") == ("localhost", [], ["127.0.0.1"])
+    assert socket.getnameinfo(("localhost", 80), 0)[0] == "localhost"
+    assert reached == [("getnameinfo", ("127.0.0.1", 80))], (
+        "localhost was handed to libc as a name, or its reverse lookup reached libc"
     )
 
 
-@pytest.mark.parametrize(
-    "name", ["gethostbyname", "gethostbyname_ex", "gethostbyaddr", "getnameinfo"]
-)
+@pytest.mark.parametrize("name", ["gethostbyname", "gethostbyname_ex"])
 @pytest.mark.parametrize("host", ["127.0.0.1", "::1", "127.8.9.10"])
-def test_a_loopback_literal_reaches_the_real_call(reached, name, host):
+def test_a_forward_lookup_of_a_loopback_literal_reaches_the_real_call(reached, name, host):
+    """A forward lookup of a literal is parsed as a number by libc and asks nothing."""
     activate_kill_switch()
     _lookup(name, host)
     assert [n for n, _ in reached] == [name]
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "::1", "127.0.0.2", "127.8.9.10"])
+def test_a_reverse_lookup_of_a_loopback_literal_never_reaches_libc(reached, host):
+    """A reverse lookup of a literal is a PTR query (glibc reads /etc/hosts, then asks DNS; security read A measured it for 127.0.0.2
+    and ::1), so while engaged it is answered without the real call, and getfqdn of the literal gets that answer."""
+    activate_kill_switch()
+    assert socket.gethostbyaddr(host) == ("localhost", [], [host])
+    assert socket.getfqdn(host) == "localhost"
+    assert reached == []
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "::1", "127.8.9.10"])
+@pytest.mark.parametrize(
+    ("flags", "answer"),
+    [(0, "localhost"), (socket.NI_NAMEREQD, "localhost"), (socket.NI_NUMERICHOST, "x")],
+)
+def test_getnameinfo_of_a_loopback_literal_asks_libc_for_numbers_only(reached, host, flags, answer):
+    """libc is handed NI_NUMERICHOST | NI_NUMERICSERV, so it makes neither a PTR query nor a service lookup; the host is answered as
+    localhost unless the caller asked for the number."""
+    seen: list[int] = []
+
+    def _numeric_only(sockaddr, fl):
+        seen.append(fl)
+        return ("x", "80")
+
+    recorder, ap._orig_getnameinfo = ap._orig_getnameinfo, _numeric_only  # the fixture puts the real one back
+    try:
+        activate_kill_switch()
+        assert socket.getnameinfo((host, 80), flags) == (answer, "80")
+    finally:
+        ap._orig_getnameinfo = recorder
+    want = socket.NI_NUMERICHOST | socket.NI_NUMERICSERV
+    assert seen == [flags | want]
+
+
+def test_the_real_reverse_lookup_of_a_loopback_literal_makes_no_query():
+    """With the REAL calls: the libc entry points are replaced by tripwires, so a reverse lookup that reached them fails the test."""
+    was_installed, was_armed = ap.is_installed(), ap._airplane_armed
+    assert ap.install_airplane_socket_guard()
+    saved = ap._orig_gethostbyaddr
+
+    def _tripwire(*a, **k):
+        raise AssertionError("libc's gethostbyaddr was reached")
+
+    ap._orig_gethostbyaddr = _tripwire
+    try:
+        activate_kill_switch()
+        assert socket.gethostbyaddr("::1")[0] == "localhost"
+        name, port = socket.getnameinfo(("127.0.0.5", 80), 0)
+        assert (name, port) == ("localhost", "80")
+    finally:
+        ap._orig_gethostbyaddr = saved
+        clear_kill_switch()
+        ap.uninstall_airplane_socket_guard()
+        if was_installed:
+            ap._install_patches()
+        ap._airplane_armed = was_armed
 
 
 @pytest.mark.parametrize(
