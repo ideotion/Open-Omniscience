@@ -439,10 +439,14 @@ def _tree_with_panel(tmp_path: Path, panel_body: str, server_body: str = "trap '
     (root / "src" / "tui" / "panel.py").write_text("# stand-in\n", encoding="utf-8")
     py = root / ".venv" / "bin" / "python"
     py.write_text("#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" > \"$OO_TEST_PANEL_ARGS\"\n[ -t 0 ] && echo tty >> \"$OO_TEST_PANEL_ARGS\"\n"
-                  "echo \"held=${OO_DB_PASSPHRASE-}${OO_KEY_PASSPHRASE-}\" >> \"$OO_TEST_PANEL_ARGS\"\n" + panel_body,
+                  # presence only, never a value (the passphrase rule): one "held:NAME=set|unset" line per name in
+                  # OO_TEST_PRESENCE_NAMES, which the test hands over in the environment so no name is written in this file
+                  "for n in $OO_TEST_PRESENCE_NAMES; do if [ -n \"${!n+x}\" ]; then s=set; else s=unset; fi; "
+                  "echo \"held:$n=$s\" >> \"$OO_TEST_PANEL_ARGS\"; done\n" + panel_body,
                   encoding="utf-8")
     py.chmod(0o755)
-    env.update(OO_TEST_PANEL_ARGS=str(tmp_path / "panel.args"))
+    env.update(OO_TEST_PANEL_ARGS=str(tmp_path / "panel.args"),
+               OO_TEST_PRESENCE_NAMES=" ".join((*P.HELD_ENV_VARS, "OO_TEST_PANEL_ARGS")))  # the last is the control: always set
     return root, env
 
 
@@ -487,7 +491,9 @@ def test_the_launcher_starts_the_panel_with_its_server_pid_on_a_terminal(tmp_pat
         assert args[args.index("--server-pid") + 1] == server_pid
         assert args[args.index("--port") + 1] == "8000"
         assert "tty" in args, "the panel must keep the terminal as its input (<&0), not bash's /dev/null"
-        assert "held=" in args, "the panel was handed a held secret: launch.sh must start it without them"
+        assert "held:OO_TEST_PANEL_ARGS=set" in args, "the control: the stand-in sees the rest of the environment"
+        for name in P.HELD_ENV_VARS:
+            assert f"held:{name}=unset" in args, f"the panel was handed {name}: launch.sh must start it without them"
         # A TERM to the launcher still stops the server AT ONCE with the panel running (a foreground panel would hold the trap back).
         t0 = time.monotonic()
         proc.send_signal(signal.SIGTERM)
