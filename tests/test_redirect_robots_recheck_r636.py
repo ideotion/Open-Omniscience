@@ -1170,3 +1170,52 @@ def test_a_same_host_hop_to_an_empty_path_and_a_query_is_checked_as_the_root(tmp
         _fetch(f, f"{A}/x")
     assert record_text(caught.value, typed=False) == f"robots.txt disallows {A}?x {_NOTE}"
     assert s.fetched == [f"{A}/robots.txt", f"{A}/x"]
+
+
+# --- a ValueError while a hop's robots decision is taken again (Steward 3's note at the R622 rebase) --------------------------------
+
+
+def _hop_robots_raises_value_error(f):
+    real = f._enforce_robots
+
+    def check(url, host_key, parsed, *, hop=False):
+        if hop:
+            raise ValueError("planted inside the hop's robots check")
+        return real(url, host_key, parsed, hop=hop)
+
+    f._enforce_robots = check  # type: ignore[method-assign]
+
+
+def test_a_value_error_in_a_same_host_hops_robots_check_is_the_unreadable_redirect_failure(tmp_path):
+    """Since R622, ``_recheck_hop_robots`` runs inside the redirect loop's outer ``except ValueError``. A ValueError raised while a
+    same-host hop's robots decision is taken again is R622's FetchFailed, ``redirect to a URL that cannot be read, from <the URL
+    that answered the redirect>``, raised with no context, and the hop is never requested. No real input is known to raise one
+    there; this pins what the fetch says if one ever does."""
+    s = _Session()
+    s.robots(A, _ALLOW_ALL)
+    s.redirect(f"{A}/x", f"{A}/y")
+    s.page(f"{A}/y")
+    f = _fetcher(tmp_path, s)
+    _hop_robots_raises_value_error(f)
+    with pytest.raises(FetchFailed) as caught:
+        _fetch(f, f"{A}/x")
+    assert type(caught.value) is FetchFailed
+    assert str(caught.value) == f"redirect to a URL that cannot be read, from {A}/x"
+    assert caught.value.__context__ is None and caught.value.__cause__ is None
+    assert f"{A}/y" not in s.fetched
+    _no_lock_held(f, "a.example")
+
+
+def test_a_value_error_in_the_ping_hops_robots_check_is_recorded_as_the_unreadable_redirect(tmp_path):
+    """The homepage ping's hop takes the same check (``hop_robots``): a ValueError there is the same FetchFailed, which the ping
+    records as its homepage error (unreachable, the hop never asked), never a bare ValueError out of the sweep."""
+    s = _Session()
+    s.robots(A, _ALLOW_ALL)
+    s.redirect(f"{A}/", f"{A}/home")
+    s.page(f"{A}/home")
+    f = _fetcher(tmp_path, s)
+    _hop_robots_raises_value_error(f)
+    rec = _ping(f)
+    assert rec["homepage_error"] == f"redirect to a URL that cannot be read, from {A}/"
+    assert rec["reachable"] is False and rec["verdict"] == "unreachable"
+    assert f"{A}/home" not in s.fetched
