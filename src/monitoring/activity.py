@@ -73,12 +73,22 @@ class ActivityMonitor:
         The token identifies THIS fetch so its bytes (``fetch_bytes``) and its end
         (``fetch_finished``) attribute to the right host/start time even when many
         fetches overlap. Callers that ignore the token still work (legacy /
-        best-effort attribution to the most recent in-flight fetch)."""
+        best-effort attribution to the most recent in-flight fetch).
+
+        The URL and its host are kept with the userinfo masked, by the fetcher's own ``failure_url`` (R621): both are served
+        (``/api/system/vitals`` and the top bar read the URL, the task manager's per-source rates read the host), and a
+        ``user:pass@`` URL showed its password there. Imported here because ``src.ingest`` imports this module."""
+        from src.ingest.fetch_verdict import failure_url
+
+        shown = failure_url(url)
+        try:
+            host = urlparse(shown).netloc or "?"
+        except ValueError:  # the mask can leave a bracket the userinfo had matched: a label, never worth a fetch
+            host = "?"
         with self._lock:
             self._token_seq += 1
             tok = self._token_seq
-            host = urlparse(url).netloc or "?"
-            self._inflight[tok] = _Current(url=url, host=host, started_at=time.time())
+            self._inflight[tok] = _Current(url=shown, host=host, started_at=time.time())
             return tok
 
     def fetch_bytes(self, n: int, token: int | None = None) -> None:

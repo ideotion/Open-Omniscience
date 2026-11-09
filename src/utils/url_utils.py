@@ -201,7 +201,10 @@ def canonicalize_url(url: str) -> str:
         return canonical_url
 
     except Exception as e:
-        log_failure(logger, f"Error canonicalizing URL {url}", e)
+        # imported on use: this module must not load src.ingest (R621)
+        from src.ingest.fetch_verdict import failure_url
+
+        log_failure(logger, f"Error canonicalizing URL {failure_url(url)}", e)
         return url
 
 
@@ -264,7 +267,10 @@ def get_domain_from_url(url: str) -> str | None:
             return normalize_domain(parsed.netloc)
         return None
     except Exception as e:
-        log_failure(logger, f"Error extracting domain from {url}", e)
+        # imported on use: this module must not load src.ingest (R621)
+        from src.ingest.fetch_verdict import failure_url
+
+        log_failure(logger, f"Error extracting domain from {failure_url(url)}", e)
         return None
 
 
@@ -284,5 +290,8 @@ def get_base_url(url: str) -> str | None:
             return f"{parsed.scheme}://{normalize_domain(parsed.netloc)}"
         return None
     except Exception as e:
-        log_failure(logger, f"Error getting base URL from {url}", e)
+        # imported on use: this module must not load src.ingest (R621)
+        from src.ingest.fetch_verdict import failure_url
+
+        log_failure(logger, f"Error getting base URL from {failure_url(url)}", e)
         return None

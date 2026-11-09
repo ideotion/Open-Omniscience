@@ -246,6 +246,70 @@ def _robots_persist_enabled() -> bool:
     return os.environ.get("OO_ROBOTS_CACHE_PERSIST", "1") != "0"
 
 
+# ONE ENTRY PER HOST (R621). Every per-host record -- the robots decision, its cause and failure count, the host-schedule stamp,
+# the politeness interval, the per-host lock, the Tor circuit -- and both sidecars are keyed by the host and port a request goes
+# to, never by the URL's userinfo. Before, they were keyed by ``scheme://netloc`` and ``netloc`` with it: a credentialed and a
+# plain URL to one host were two hosts to the politeness code (two intervals, two locks, two robots reads), the user name and
+# password were written into robots_cache.json and host_schedule.json, and the robots.txt read sent them as Basic auth. The
+# page request itself is unchanged: it still carries the URL as given.
+def _host_netloc(netloc: str) -> str:
+    """``netloc`` without its userinfo. ``urllib.parse`` takes the userinfo as everything before the LAST ``@`` of the netloc and
+    reads ``hostname`` and ``port`` from what follows it, so this is exactly the host and port it reads. A host and port hold no
+    ``@``."""
+    return netloc.rpartition("@")[2]
+
+
+def _drop_credentialed_robots(raw: dict) -> dict:
+    """The robots sidecar without the entries an older build keyed by ``scheme://user:pass@host`` (R621); any ``@`` in a key is
+    a userinfo's. DROPPED, not merged: an entry is a cache whose absence the fetcher already handles as a fresh process does
+    (the next fetch of the host reads its robots.txt again, fail-closed as ever), so a drop costs one robots.txt request; and
+    the decision such an entry holds was read WITH the URL's credentials, which is not the anonymous read the host's one entry
+    now holds, so folding it in, or choosing between it and the host's own entry, would keep a decision no anonymous read made."""
+    return {key: entry for key, entry in raw.items() if "@" not in key}
+
+
+def _stamp_of(entry) -> tuple[float, float] | None:
+    try:
+        return float(entry["not_before"]), float(entry.get("delay_s") or 0.0)
+    except Exception:  # noqa: BLE001 - an unreadable stamp is skipped, as _load_host_schedule skips it
+        return None
+
+
+def _merge_credentialed_stamps(raw: dict) -> dict:
+    """The schedule sidecar with each stamp an older build keyed by ``user:pass@host`` folded into ``host``'s (R621). MERGED, not
+    dropped: a stamp is the host's own stated wish and lapses by time alone (there is no forget path, see below), so dropping
+    one would let the host be fetched before it asked to be. The later ``not_before`` and the larger ``delay_s`` win, as the
+    longer wait wins in ``_respect_rate_limit``; an unreadable stamp adds nothing."""
+    out = {key: entry for key, entry in raw.items() if "@" not in key}
+    for key, entry in raw.items():
+        if "@" not in key:
+            continue
+        host = _host_netloc(key)
+        stamps = [s for s in (_stamp_of(out.get(host)), _stamp_of(entry)) if s is not None]
+        if stamps:
+            out[host] = {"not_before": max(s[0] for s in stamps), "delay_s": max(s[1] for s in stamps)}
+    return out
+
+
+def _scrub_credentialed_keys(path: Path, lock: threading.Lock, scrub) -> None:
+    """Take the credentialed keys out of the FILE at load, not only out of memory (R621): a user name and password an older
+    build wrote are not left on disk for every later read-modify-write to carry forward. Rewrites the file only when it holds
+    one (atomic temp+replace, under the file's own lock). Never raises: a failed rewrite leaves the file as it was, and the
+    loaders and writers leave those keys out all the same."""
+    try:
+        with lock:
+            if not path.exists():
+                return
+            raw = json.loads(path.read_text("utf-8")) or {}
+            if not isinstance(raw, dict) or not any("@" in key for key in raw):
+                return
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(scrub(raw)), "utf-8")
+            tmp.replace(path)
+    except Exception as exc:  # noqa: BLE001 - best-effort; the loaders and writers leave the keys out regardless
+        log_failure(_LOG, f"credentialed key scrub failed for {path.name}", exc, level=logging.DEBUG)
+
+
 def _load_persisted_robots(
     path: Path, *, now_monotonic, now_wall: float | None = None
 ) -> dict[str, tuple[RobotFileParser | None, float]]:
@@ -262,7 +326,7 @@ def _load_persisted_robots(
     except Exception:  # noqa: BLE001 - a corrupt sidecar must never break startup
         return {}
     out: dict[str, tuple[RobotFileParser | None, float]] = {}
-    for host_key, entry in (raw or {}).items():
+    for host_key, entry in _drop_credentialed_robots(raw or {}).items():
         try:
             fetched_at = float(entry["fetched_at"])
             kind = entry["kind"]
@@ -305,7 +369,7 @@ def _persisted_robots_fails(path: Path) -> dict[str, int]:
     except Exception:  # noqa: BLE001 - a corrupt sidecar must never break startup
         return {}
     out: dict[str, int] = {}
-    for host_key, entry in raw.items():
+    for host_key, entry in _drop_credentialed_robots(raw).items():
         try:
             fails = int(entry.get("fails") or 0)
         except (TypeError, ValueError, AttributeError):
@@ -331,7 +395,7 @@ def _persisted_robots_causes(path: Path) -> dict[str, str]:
     except Exception:  # noqa: BLE001 - a corrupt sidecar must never break startup
         return {}
     out: dict[str, str] = {}
-    for host_key, entry in raw.items():
+    for host_key, entry in _drop_credentialed_robots(raw).items():
         try:
             cause = entry.get("cause")
         except Exception:  # noqa: BLE001 - one bad entry never breaks the load
@@ -358,6 +422,7 @@ def _persist_robots_entry(
                     raw = json.loads(path.read_text("utf-8")) or {}
                 except Exception:  # noqa: BLE001 - a corrupt sidecar starts fresh
                     raw = {}
+            raw = _drop_credentialed_robots(raw)  # an older build's credentialed key is never carried forward (R621)
             raw[host_key] = {
                 "kind": kind, "body": body, "fetched_at": time.time(), "cause": cause,
                 # The backoff must SURVIVE a restart, or every cold start would hand a
@@ -462,7 +527,7 @@ def _load_host_schedule(
     except Exception:  # noqa: BLE001 - a corrupt sidecar must never break a pass
         return {}
     out: dict[str, tuple[float, float]] = {}
-    for netloc, entry in raw.items():
+    for netloc, entry in _merge_credentialed_stamps(raw).items():
         try:
             not_before = float(entry["not_before"])
         except (KeyError, TypeError, ValueError):
@@ -515,6 +580,7 @@ def _persist_host_schedule(path: Path, netloc: str, not_before: float, delay_s: 
                     raw = json.loads(path.read_text("utf-8")) or {}
                 except Exception:  # noqa: BLE001 - a corrupt sidecar starts fresh
                     raw = {}
+            raw = _merge_credentialed_stamps(raw)  # an older build's credentialed key is folded in, never carried forward (R621)
             raw[netloc] = {"not_before": float(not_before), "delay_s": float(delay_s)}
             if len(raw) > _HOST_SCHEDULE_MAX:
                 # Evict the entries that lapse SOONEST: they are the ones whose loss
@@ -947,6 +1013,7 @@ class EthicalFetcher:
         # _ROBOTS_TTL). Injectable so tests never touch the real data_dir().
         self._robots_cache_path = robots_cache_path or _robots_cache_path()
         if _robots_persist_enabled():
+            _scrub_credentialed_keys(self._robots_cache_path, _ROBOTS_PERSIST_LOCK, _drop_credentialed_robots)
             try:
                 self._robots.update(
                     _load_persisted_robots(self._robots_cache_path, now_monotonic=self._now)
@@ -963,6 +1030,7 @@ class EthicalFetcher:
         # writing half its state into the real data_dir().
         self._host_schedule_path = self._robots_cache_path.with_name("host_schedule.json")
         if _host_schedule_persist_enabled():
+            _scrub_credentialed_keys(self._host_schedule_path, _HOST_SCHEDULE_LOCK, _merge_credentialed_stamps)
             try:
                 self._host_schedule.update(_load_host_schedule(self._host_schedule_path))
             except Exception:  # noqa: BLE001 - a bad load must never break construction
@@ -1022,6 +1090,7 @@ class EthicalFetcher:
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             return []
         self._guard_target(parsed.hostname)  # SSRF: never reach internal addresses
+        parsed = parsed._replace(netloc=_host_netloc(parsed.netloc))  # keyed by the host, never the userinfo (R621)
         host_key = f"{parsed.scheme}://{parsed.netloc}"
         with self._host_lock(parsed.netloc):
             parser = self._get_robots(host_key, parsed)
@@ -1060,7 +1129,7 @@ class EthicalFetcher:
         A bare netloc is checked under both scheme keys, like ``_declares_crawl_delay``.
         """
         parsed = urlparse(url_or_netloc) if "://" in url_or_netloc else None
-        netloc = parsed.netloc if parsed is not None else url_or_netloc
+        netloc = _host_netloc(parsed.netloc if parsed is not None else url_or_netloc)  # the cache's key holds no userinfo (R621)
         keys: tuple[str, ...] = (f"{parsed.scheme}://{netloc}",) if parsed is not None else ()
         keys += (f"https://{netloc}", f"http://{netloc}")
         for k in keys:
@@ -1170,6 +1239,9 @@ class EthicalFetcher:
 
         self._guard_target(parsed.hostname)  # SSRF: never reach internal addresses
 
+        # Every per-host record below (robots, schedule, interval, lock, circuit) is keyed by the host, never the userinfo
+        # (R621, see _host_netloc); the request itself is made with ``url`` as given.
+        parsed = parsed._replace(netloc=_host_netloc(parsed.netloc))
         host_key = f"{parsed.scheme}://{parsed.netloc}"
         # Per-host Tor circuit (computed once, from the ORIGINAL host) so the
         # robots check and every page/redirect hop for this host share it.
@@ -1762,7 +1834,7 @@ class EthicalFetcher:
         raw = (host_or_key or "").strip().lower()
         if not raw:
             return 0
-        netloc = raw.split("://", 1)[-1].split("/", 1)[0]
+        netloc = _host_netloc(raw.split("://", 1)[-1].split("/", 1)[0])  # the cache's key holds no userinfo (R621)
         if not netloc:
             return 0
         dropped = 0

@@ -44,6 +44,15 @@ from src.utils.security import safe_href
 logger = setup_logging("duckduckgo")
 
 
+def _logged(url: str) -> str:
+    """``url`` as a log line here writes it: its userinfo masked by the fetcher's own ``failure_url`` (R621), so a
+    ``user:pass@`` link is not written into audit/duckduckgo.log or the error log. Imported on use: a top-level import would load
+    ``src.ingest`` into every keyword pass, which imports this module through the services package."""
+    from src.ingest.fetch_verdict import failure_url
+
+    return failure_url(url)  # never raises; a URL it cannot read is withheld whole
+
+
 class DuckDuckGoSearch:
     """
     A class for performing web searches using DuckDuckGo.
@@ -250,7 +259,7 @@ class DuckDuckGoSearch:
         try:
             parts = urlparse(url.replace("&amp;", "&"))
         except ValueError as e:
-            log_failure(logger, f"redirect unwrap: unparseable URL {url!r}, left as-is", e, level=logging.DEBUG)
+            log_failure(logger, f"redirect unwrap: unparseable URL {_logged(url)!r}, left as-is", e, level=logging.DEBUG)
             return url
         host = (parts.hostname or "").lower()
         if parts.path not in cls._REDIRECT_PATHS:
@@ -263,10 +272,10 @@ class DuckDuckGoSearch:
                 target = unquote(val)
                 break
         if not target:
-            logger.debug(f"redirect unwrap: no {cls._REDIRECT_TARGET_PARAM} target in {url!r}")
+            logger.debug(f"redirect unwrap: no {cls._REDIRECT_TARGET_PARAM} target in {_logged(url)!r}")
             return None
         if not target.lower().startswith(("http://", "https://")):
-            logger.debug(f"redirect unwrap: target is not an absolute http(s) URL: {target!r}")
+            logger.debug(f"redirect unwrap: target is not an absolute http(s) URL: {_logged(target)!r}")
             return None
         return target
 
@@ -306,13 +315,13 @@ class DuckDuckGoSearch:
             if not parsed.scheme or not parsed.netloc:
                 return None
         except ValueError as e:  # e.g. invalid IPv6 literal in netloc
-            log_failure(logger, f"URL validation failed for {url!r}", e, level=logging.DEBUG)
+            log_failure(logger, f"URL validation failed for {_logged(url)!r}", e, level=logging.DEBUG)
             return None
         # Belt-and-braces scheme allowlist: only http(s) is a real source URL. The
         # downstream fetch re-guards (robots/SSRF/scheme), but a discovery result
         # carrying javascript:/data:/file: should never leave this function.
         if not safe_href(url):
-            logger.debug(f"URL rejected (non-http(s) scheme): {url!r}")
+            logger.debug(f"URL rejected (non-http(s) scheme): {_logged(url)!r}")
             return None
         return url
 
@@ -327,7 +336,7 @@ class DuckDuckGoSearch:
                 domain = domain[4:]
             return domain
         except ValueError as e:  # malformed URL
-            log_failure(logger, f"domain extraction failed for {url!r}", e, level=logging.DEBUG)
+            log_failure(logger, f"domain extraction failed for {_logged(url)!r}", e, level=logging.DEBUG)
             return ""
 
     @classmethod
@@ -393,7 +402,7 @@ class DuckDuckGoSearch:
             try:
                 html = fetcher.fetch(url, require_html=True).content
             except FetchError as e:
-                log_failure(logger, f"Ethical fetch refused or failed for {url}", e, level=logging.INFO)
+                log_failure(logger, f"Ethical fetch refused or failed for {_logged(url)}", e, level=logging.INFO)
                 return []
 
             # Method 1: Look for <link> tags with RSS/Atom types
@@ -451,19 +460,19 @@ class DuckDuckGoSearch:
                     except FetchError:
                         pass
 
-            logger.info(f"Discovered {len(feeds)} potential RSS feeds for {url}")
+            logger.info(f"Discovered {len(feeds)} potential RSS feeds for {_logged(url)}")
 
             # Validate feeds
             valid_feeds = []
             for feed_url in feeds:
                 if cls._validate_rss_feed(feed_url, fetcher=fetcher):
                     valid_feeds.append(feed_url)
-                    logger.info(f"Valid RSS feed found: {feed_url}")
+                    logger.info(f"Valid RSS feed found: {_logged(feed_url)}")
 
             return valid_feeds
 
         except Exception as exc:  # last resort: degrade gracefully, but never opaquely
-            log_failure(logger, f"Unexpected error discovering RSS feeds for {url}", exc)
+            log_failure(logger, f"Unexpected error discovering RSS feeds for {_logged(url)}", exc)
             return []
 
     @classmethod
@@ -483,7 +492,7 @@ class DuckDuckGoSearch:
             )
             return resolved
         except ValueError as e:  # urlparse/urljoin on malformed input
-            log_failure(logger, f"URL resolve failed for {path!r} on {base_url!r}", e, level=logging.DEBUG)
+            log_failure(logger, f"URL resolve failed for {_logged(path)!r} on {_logged(base_url)!r}", e, level=logging.DEBUG)
             return None
 
     @classmethod
@@ -521,10 +530,10 @@ class DuckDuckGoSearch:
                     return False
             return True
         except FetchError as e:
-            log_failure(logger, f"RSS feed validation refused/failed for {url}", e, level=logging.DEBUG)
+            log_failure(logger, f"RSS feed validation refused/failed for {_logged(url)}", e, level=logging.DEBUG)
             return False
         except Exception as e:
-            log_failure(logger, f"RSS feed validation error for {url}", e, level=logging.DEBUG)
+            log_failure(logger, f"RSS feed validation error for {_logged(url)}", e, level=logging.DEBUG)
             return False
 
     @classmethod
@@ -658,7 +667,7 @@ class DuckDuckGoSearch:
             results.append(updated_source)
 
             if rss_urls:
-                logger.info(f"Found RSS feed for {domain}: {rss_urls[0]}")
+                logger.info(f"Found RSS feed for {domain}: {_logged(rss_urls[0])}")
             else:
                 logger.warning(f"No RSS feed found for {domain}")
 
