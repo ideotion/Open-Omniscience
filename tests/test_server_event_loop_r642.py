@@ -21,7 +21,8 @@ from src.ingest import activate_kill_switch, clear_kill_switch
 
 _ROOT = Path(__file__).resolve().parents[1]
 #: Names a module can serve with. Only ``uvicorn.run``/``uvicorn.Config`` through the bare module name are allowed (so the check
-#: below can read their ``loop=``); every other way of reaching them is refused outright.
+#: below can read their ``loop=``); the other ways of reaching them that an AST can see are refused (a dynamic lookup it cannot see
+#: is not claimed).
 _SERVING_NAMES = {"run", "Config", "Server", "main"}
 
 
@@ -48,9 +49,14 @@ def _uvicorn_run_calls() -> list[tuple[str, ast.Call]]:
 
 def test_uvicorn_is_never_reached_around_the_checked_call():
     """An alias (``import uvicorn as uv``), a ``from uvicorn import run/Config/Server``, ``uvicorn.main`` or a ``uvicorn.Server`` would
-    serve past the ``loop=`` check below, so none may exist."""
+    serve past the ``loop=`` check below, so none of the forms an AST can see may exist: an alias, any ``import uvicorn.<sub>``, a
+    from-import of a serving name or of the ``config``/``server``/``main`` submodules, ``uvicorn.<submodule>`` or ``uvicorn.Server``, a
+    ``uvicorn.run``/``Config`` that is passed around instead of called, and ``getattr(uvicorn, ...)``."""
     problems = []
     for where, tree in _trees():
+        called = {
+            id(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call)
+        }  # same parse as the walk below
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 problems += [
@@ -59,9 +65,7 @@ def test_uvicorn_is_never_reached_around_the_checked_call():
                     if a.name.split(".")[0] == "uvicorn" and a.asname
                 ]
                 problems += [
-                    f"{where}: import {a.name}"
-                    for a in node.names
-                    if a.name in ("uvicorn.main", "uvicorn.server")
+                    f"{where}: import {a.name}" for a in node.names if a.name.startswith("uvicorn.")
                 ]
             elif (
                 isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == "uvicorn"
@@ -69,15 +73,27 @@ def test_uvicorn_is_never_reached_around_the_checked_call():
                 problems += [
                     f"{where}: from {node.module} import {a.name}"
                     for a in node.names
-                    if a.name in _SERVING_NAMES
+                    if a.name in _SERVING_NAMES | {"config", "server", "main"}
                 ]
             elif (
                 isinstance(node, ast.Attribute)
-                and node.attr in ("Server", "main")
                 and isinstance(node.value, ast.Name)
                 and node.value.id == "uvicorn"
+                and (
+                    node.attr in ("Server", "main", "config", "server")
+                    or (node.attr in ("run", "Config") and id(node) not in called)
+                )
             ):
                 problems.append(f"{where}: uvicorn.{node.attr}")
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "getattr"
+                and node.args
+                and isinstance(node.args[0], ast.Name)
+                and node.args[0].id == "uvicorn"
+            ):
+                problems.append(f"{where}: getattr(uvicorn, ...)")
     assert not problems, problems
 
 
@@ -92,8 +108,8 @@ def test_every_uvicorn_entry_point_pins_the_asyncio_loop():
         )
         loop = next((kw.value for kw in call.keywords if kw.arg == "loop"), None)
         assert loop is not None, (
-            f"{where}: uvicorn.{call.func.attr}(...) without loop= picks uvloop ('auto')"
-        )  # type: ignore[attr-defined]
+            f"{where}: {ast.unparse(call.func)}(...) without loop= picks uvloop ('auto')"
+        )
         if isinstance(loop, ast.Name):
             assert where == "src/api/main.py" and loop.id == "SERVER_EVENT_LOOP", (
                 f"{where}: loop= must be the asyncio loop"
@@ -147,13 +163,14 @@ def test_on_the_configured_loop_an_async_connect_meets_the_airplane_guard(host):
     def _tripwire(*a, **k):
         raise AssertionError("the real socket call was reached with airplane mode engaged")
 
+    # The loop is made FIRST: nothing that can raise may sit between the swap below and the try that undoes it.
+    loop = _loop_from_config(main_mod.SERVER_EVENT_LOOP)
     was_installed, was_armed = ap.is_installed(), ap._airplane_armed
     ap.install_airplane_socket_guard()
     # Saved and put back by hand BEFORE the uninstall below, which writes these names back onto ``socket`` (monkeypatch would undo
     # them only after it, leaving the tripwires installed as the "real" calls).
     real_getaddrinfo, real_connect = ap._orig_getaddrinfo, ap._orig_connect
     ap._orig_getaddrinfo, ap._orig_connect = _tripwire, _tripwire
-    loop = _loop_from_config(main_mod.SERVER_EVENT_LOOP)
     try:
         activate_kill_switch()
         with pytest.raises(ap.AirplaneModeError):
@@ -218,9 +235,10 @@ def test_the_refusal_check_runs_before_any_startup_work():
     body = inspect.getsource(main_mod.lifespan)
     tree = ast.parse(textwrap.dedent(body))
     fn = tree.body[0]
+    assert isinstance(fn, ast.AsyncFunctionDef)
     stmts = [
         s for s in fn.body if not (isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant))
-    ]  # type: ignore[attr-defined]
+    ]
     assert isinstance(stmts[0], ast.Import) and isinstance(stmts[1], ast.If), (
         "the loop check must open the lifespan"
     )
