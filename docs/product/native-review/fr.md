@@ -250,3 +250,12 @@ Correct the text in `src/static/locales/fr.json` (the key is the English text).
 | 12 | {n} of {m} pages seen | {n} pages vues sur {m} |
 | 13 | {n} pages seen, total unknown | {n} pages vues, total inconnu |
 | 14 | {n} stretches the lane did not see. | {n} périodes que la voie n'a pas vues. |
+
+## extra-4: Start-up step: the links' covering index (PR #1839)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Building the index that keeps the shared-origin counts fast. One time only; anything the app saves waits until it is done. | Construction de l’index qui garde rapides les décomptes d’origine commune. Une seule fois ; tout enregistrement de l’application attend qu’elle soit terminée. |
+| 2 | The index of the articles' links was not built: it needs about {needed} MB of free memory (sorting up to {rows} links, plus the memory the app always keeps free) and this computer has {free} MB. Close other programs and restart the app; until then the shared-origin counts stay slow. | L’index des liens des articles n’a pas été construit : il demande environ {needed} Mo de mémoire libre (le tri de jusqu’à {rows} liens, plus la mémoire que l’application garde toujours libre) et cet ordinateur en a {free} Mo. Fermez d’autres programmes et redémarrez l’application ; d’ici là, les décomptes d’origine commune restent lents. |
+| 3 | The index of the articles' links was not built: the volume your data file is on has {free} MB free and it needs about {needed} MB (up to {rows} links). Free some space and restart the app; until then the shared-origin counts stay slow. | L’index des liens des articles n’a pas été construit : le volume où se trouve votre fichier de données a {free} Mo libres et il en demande environ {needed} (jusqu’à {rows} liens). Libérez de la place et redémarrez l’application ; d’ici là, les décomptes d’origine commune restent lents. |
+| 4 | The index of the articles' links was not built: two starts in a row ended while it was being built (the computer ran out of memory or power, or the app was ended abruptly), so it is not tried again until the app is updated. The shared-origin counts stay slow. | L’index des liens des articles n’a pas été construit : deux démarrages de suite se sont arrêtés pendant sa construction (l’ordinateur a manqué de mémoire ou de courant, ou l’application a été interrompue brutalement) ; il n’est donc pas réessayé avant une mise à jour de l’application. Les décomptes d’origine commune restent lents. |

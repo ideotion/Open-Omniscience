@@ -122,7 +122,7 @@ def run_world_discovery(
     complete — the ride-along reads that stamp to know when to stop).
     """
     from src.catalog.discover import discover_sources
-    from src.ingest import kill_switch_active
+    from src.ingest import kill_switch_active, kill_switch_engaged_since, kill_switch_epoch
 
     if session_factory is None:
         from src.database.session import session_scope
@@ -157,6 +157,8 @@ def run_world_discovery(
         if ctx.stopping:
             paused_reason = "cancelled — progress is saved; start again to resume"
             break
+        # This country's window (R614), opened BEFORE the check that lets its queries go: a Stop landing between the two is in it.
+        epoch = kill_switch_epoch()
         if kill_switch_active():
             paused_reason = "airplane mode engaged — progress is saved; start again to resume"
             break
@@ -166,7 +168,8 @@ def run_world_discovery(
                     db, [cc], run_query=run_query, per_spec_limit=per_spec_limit
                 )
         except RuntimeError as exc:
-            if "airplane" in str(exc):  # the kill switch raced the loop check
+            # The kill switch raced the loop check, read by the switch and never by the words of the error (R617, R614).
+            if kill_switch_engaged_since(epoch):
                 paused_reason = "airplane mode engaged — progress is saved; start again to resume"
                 break
             errors.append(f"{cc}: {record_text(exc)}"[:200])
@@ -179,6 +182,9 @@ def run_world_discovery(
                 break
             continue
         except Exception as exc:  # noqa: BLE001 - one country must never abort the world
+            if kill_switch_engaged_since(epoch):  # a Stop in the country's window is not its failure (R617, R614)
+                paused_reason = "airplane mode engaged — progress is saved; start again to resume"
+                break
             errors.append(f"{cc}: {record_text(exc, typed=True)}"[:200])
             consecutive_failures += 1
             if consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
@@ -188,6 +194,19 @@ def run_world_discovery(
                 )
                 break
             continue
+
+        if kill_switch_engaged_since(epoch):
+            # R617 (R320, R614): ``generate_catalog`` swallows each query's failure into ``errors``, so a Stop inside the country
+            # (still engaged, or cleared again) returns here with the specs it cut filed as the country's errors. Marked done, the
+            # country would never be asked those specs again short of a restart. It is not marked done and its cut errors are not
+            # kept; the job pauses as the check above does, and the country is asked again. The sources its answered specs added
+            # are real rows, so they are counted. The cost: a genuine failure sharing its window with a Stop is asked again.
+            added = int(result.get("added") or 0)
+            added_total += added
+            added_this_run += added
+            per_country[cc] = per_country.get(cc, 0) + added  # the resumed ask adds to it (sources are deduped by domain)
+            paused_reason = "airplane mode engaged — progress is saved; start again to resume"
+            break
 
         for err in result.get("errors") or []:  # per-spec failures (stats spread top-level)
             errors.append(str(err)[:200])
@@ -208,7 +227,7 @@ def run_world_discovery(
         added_this_run += added
         done.add(cc)
         done_in_run += 1
-        per_country[cc] = added
+        per_country[cc] = per_country.get(cc, 0) + added  # plus what an ask a Stop cut had already added (R617)
         state.update(
             {
                 "done": sorted(done),

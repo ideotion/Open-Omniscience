@@ -111,6 +111,20 @@ EGRESS: tuple[Row, ...] = (
         why="the fetching function (stats/fetch.py) opens the guarded session two calls below the handler",
     ),
     Row(
+        ("system.py", "update_check"),
+        ("updCheck",),
+        "consent",
+        found="hand",
+        why="the handler imports its checker inside the function body, which the one-hop scan does not follow",
+    ),
+    Row(
+        ("system.py", "update_apply"),
+        ("updApply",),
+        "consent",
+        found="hand",
+        why="the egress is the helper process the handler starts (git fetch, pip), after this app exits; the handler refuses in airplane mode",
+    ),
+    Row(
         ("governments.py", "load_standard"),
         ("govLoadStandard",),
         "consent",
@@ -725,7 +739,10 @@ def _probe_run_rule(c):
         rid = rule.id
     r = c.post(f"/api/markets/rules/{rid}/run", headers=_H)
     j = r.json()
-    return r, r.status_code == 200 and j.get("status") == "fetch_failed" and (
+    # R617: the refusal is named, as skipped_offline. That nothing is stamped on the rule cannot be read here (the route never commits
+    # after a failed fetch, and its session closes with a rollback): it is proved on a shared session by
+    # tests/test_kill_switch_epoch_recorders_r617b.py::test_rule_a_page_a_stop_cut_is_skipped_offline_and_stamps_nothing.
+    return r, r.status_code == 200 and j.get("status") == "skipped_offline" and (
         _kill(j.get("detail")) or _kill(j.get("reason"))
     )
 

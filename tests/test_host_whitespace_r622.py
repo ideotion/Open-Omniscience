@@ -269,7 +269,8 @@ def test_the_health_count_does_not_take_a_hosts_redirect_for_the_stop(tmp_path, 
     source = SimpleNamespace(id=1, name="s", rss_url=f"http://{PUBLIC}/feed", domain=PUBLIC)
     with _proxy({f"http://{PUBLIC}/feed": (302, {"Location": f"http://{S}/feed"})}) as proxy:
         f, _guarded = _fetcher(tmp_path, proxy)
-        monkeypatch.setattr(api_monitoring, "kill_switch_active", lambda: True)  # a Stop pressed after the probe, before the count
+        # a Stop pressed after the probe, before the count (main reads the window since R617, no longer the switch as it is now)
+        monkeypatch.setattr(api_monitoring, "kill_switch_engaged_since", lambda _epoch: True)
         out = api_monitoring.sources_health(limit=1, db=_OneSource(source), fetcher=f)
     assert out["summary"] == {"down": 1}, out
     assert out["sources"][0]["detail"] == AUTHORITY and _crafted(asked) == [], (out, asked)

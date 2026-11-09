@@ -31,6 +31,9 @@ refusal; the socket guard is the net beneath it and is not installed in a test).
   body (74 on the full install on 2026-10-27); the database is the suite's shared one, whatever earlier tests left in it;
 * a file CREATED AND REMOVED inside one request is not seen: ``GET /api/database/backup`` writes ``snapshot.db`` into the data folder and
   removes it after streaming (it has its own cross-site guard, R214);
+* every request starts with the serving-window cache emptied (``_cold_start``), so a GET that asks the model ports only on a cache miss
+  is seen on every run; another process-wide cache that decides whether a GET reaches a socket would still let the answer depend on
+  what filled it before the walk (the serving window is the only one found so far);
 * effects are attributed by the request's time window, so work from a long-running background thread lands on a later route (the
   ambient tables absorb the known writers) and an effect after the last request is lost; and a LOOPBACK connect from a thread that was
   already running when a request began and whose name does not start with ``oo-`` (nor is the client's portal or worker thread) is
@@ -408,6 +411,27 @@ def _get_operations(app) -> list[tuple[str, str]]:
     return sorted(out)
 
 
+def _cold_start() -> None:
+    """Empty the process-wide cache that decides whether a GET reaches a socket, so every request is measured from the state in which it
+    does the most. That cache is the serving window (``src.ai_layer.coverage``, kept 300 s): code that sizes a model prompt asks the model
+    ports for it on a miss and asks nothing on a hit, so whether the walk saw a GET's loopback connect depended on what had filled the cache
+    before it, an earlier GET of this walk or an earlier test in the same worker. #1848's shard 3 failed that way before #1820 pinned the
+    qualification-assist self-test's window, and the failure is reproduced on that code by an entry with ten seconds left when
+    ``/api/diagnostics/all`` runs: its members use the entry and store nothing, the entry expires, and the self-test's own GET (15 s later
+    on a local run) misses and probes the ports. From cold, a GET like that fails on every run."""
+    from src.ai_layer.coverage import reset_window_cache
+
+    reset_window_cache()
+
+
+def _drive(client: TestClient, url: str, headers: dict[str, str], dirs: list[Path], watchers) -> tuple:
+    """One request of a walk, from a cold start and under a fresh monitor: ``(response, monitor)``. Both walks go through it."""
+    _cold_start()
+    with _Monitor(dirs, tuple(watchers)) as mon:
+        response = client.get(url, headers=headers)
+    return response, mon
+
+
 class _Walk:
     def __init__(self, seen: dict[str, _Monitor], statuses: dict[str, int], schema_paths: set[str], watch_note: str | None) -> None:
         self.seen = seen
@@ -461,11 +485,10 @@ def observed(tmp_path_factory):
             activate_kill_switch()
             try:
                 for path, url in ops:
-                    with _Monitor(dirs, tuple(watchers)) as mon:
-                        # the one route that wants a caller to name itself on a name that is not loopback (R445): the walk is a script
-                        headers = {"Host": "testserver", **({"X-OO-Download": "1"} if path == "/api/database/backup" else {})}
-                        statuses[path] = client.get(url, headers=headers).status_code
-                    seen[path] = mon
+                    # the one route that wants a caller to name itself on a name that is not loopback (R445): the walk is a script
+                    headers = {"Host": "testserver", **({"X-OO-Download": "1"} if path == "/api/database/backup" else {})}
+                    response, seen[path] = _drive(client, url, headers, dirs, watchers)
+                    statuses[path] = response.status_code
             finally:
                 clear_kill_switch()
         yield _Walk(seen, statuses, schema_paths, watch_note)
@@ -562,6 +585,7 @@ def test_no_get_changes_the_main_database_file(observed):
 
 # Programs a GET may start, by basename, with the reason. Measured on 2026-10-27: about 30 GETs start one of the first three; sudo shows only where the host has it and the process is not root (the Linux CI runner).
 _PROGRAMS_ALLOWED = {
+    "git": "/api/system/update/status reads this checkout's origin URL, branch and cleanliness (`git config`, `rev-parse`, `status`; src/maintenance/self_update.py install_status): local queries, no network; the update FETCH is the spawned helper's, after the app has stopped",
     "nvidia-smi": "reads the GPU's name and memory (the /api/llm/*, /api/bulletin/* and diagnostics routes); a local query, no network",
     "uname": "reads the processor name; a local query",
     "xdg-user-dir": "reads the user's folders; a local query",
@@ -706,6 +730,36 @@ def test_the_rollup_allowance_holds_only_where_duckdb_imports(monkeypatch):
     monkeypatch.setattr(me, "_columnar_installed", lambda: False)
     got = _file_and_thread_problems(seen, {})
     assert {n for _r, _k, n in got} == {"rollup_build.json", "rollup_stopped.json", "rollup-build", "map-rollup-build", "rollup-canary-peak", "rollup-canary-timer"}, got
+
+
+def test_every_request_is_measured_from_a_cold_serving_window_cache(tmp_path, monkeypatch):
+    """A GET that asks the model ports for the serving window only on a cache miss is seen even when an earlier caller filled the cache:
+    the walk's step empties it first. Without that, this GET reads the warm entry, connects to nothing, and the walk is green."""
+    from fastapi import FastAPI
+
+    from src.ai_layer import coverage
+
+    def ask_the_ports(_name):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s, contextlib.suppress(OSError):
+            s.connect(("127.0.0.1", 9))
+        return {"tokens": None, "source": "asked the ports", "backend": None}
+
+    monkeypatch.setattr(coverage, "_resolve_window", ask_the_ports)
+    mini = FastAPI()
+
+    @mini.get("/window")
+    def window() -> dict:
+        return coverage.serving_window_tokens()
+
+    coverage.reset_window_cache()
+    try:
+        coverage.serving_window_tokens()  # an earlier caller fills the cache, outside any monitor
+        with TestClient(mini) as client:
+            response, mon = _drive(client, "/window", {}, [tmp_path], ())
+        assert response.status_code == 200
+        assert mon.connects == ["127.0.0.1"], mon.connects
+    finally:
+        coverage.reset_window_cache()
 
 
 def test_the_monitors_see_every_socket_call_they_patch(tmp_path):
