@@ -450,3 +450,23 @@ def test_a_host_name_python_cannot_encode_is_not_blamed_on_the_server():
     with pytest.raises(UnicodeError) as info:
         fetch_imap("a" * 64 + ".example", "u", _PW, use_ssl=False)
     assert not isinstance(info.value, MailboxServerError)
+
+
+def test_a_stop_during_the_logout_after_a_server_error_still_wins(pki, trust_test_ca):
+    """Delta re-read 4 on R653: the error is decided, then the Stop lands during the LOGOUT; the pull ends as the Stop."""
+    from src.ingest import activate_kill_switch
+
+    def script(line: bytes) -> bytes | None:
+        tag, _, rest = line.partition(b" ")
+        cmd = rest.split(b" ", 1)[0].upper()
+        if cmd == b"SEARCH":
+            return tag + b" BAD " + _MARK + b"\r\n"
+        if cmd == b"LOGOUT":
+            activate_kill_switch()
+        return _imap(line)
+
+    srv = _Server(_IMAP_GREETING, script, starttls=pki.server)
+    try:
+        assert fetch_imap("127.0.0.1", "u", _PW, port=srv.port, use_ssl=False).stopped
+    finally:
+        srv.close()

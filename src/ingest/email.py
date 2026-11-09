@@ -808,6 +808,9 @@ def fetch_imap(
                 return raws
             raise
     if failure is not None:
+        if _stop_requested():
+            raws.stopped = True  # the Stop wins, as in every handler above
+            return raws
         raise failure
     step = "greeting"
     try:
@@ -881,6 +884,10 @@ def fetch_imap(
             # Only now: a Stop during the LOGOUT read must still reach the socket (security read B on #1892).
             _forget_socket(sock)
     if failure is not None:
+        if raws.stopped or _stop_requested():
+            # A Stop that landed after the handler's own check (during the LOGOUT/QUIT, say) still wins (delta re-read 4 on R653).
+            raws.stopped = True
+            return raws
         raise failure  # after the LOGOUT, outside the handler (R653)
     return raws  # not reached: every other path returned or raised inside the try
 
@@ -951,6 +958,9 @@ def fetch_pop3(
                 return raws
             raise
     if failure is not None:
+        if _stop_requested():
+            raws.stopped = True  # the Stop wins, as in every handler above
+            return raws
         raise failure
     step = "greeting"
     try:
@@ -1013,6 +1023,10 @@ def fetch_pop3(
                     pass
             _forget_socket(sock)  # after QUIT, as in fetch_imap
     if failure is not None:
+        if raws.stopped or _stop_requested():
+            # A Stop that landed after the handler's own check (during the LOGOUT/QUIT, say) still wins (delta re-read 4 on R653).
+            raws.stopped = True
+            return raws
         raise failure  # after the QUIT, outside the handler (R653)
     return raws  # not reached: every other path returned or raised inside the try
 
