@@ -280,7 +280,9 @@ def test_an_ssl_socket_drops_the_pysocks_attribute():
 
     raw = _Proxied()
     try:
-        wrapped = ssl.create_default_context().wrap_socket(raw, server_hostname="localhost", do_handshake_on_connect=False)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2  # no handshake is made; the floor keeps the test from modelling a weak context
+        wrapped = ctx.wrap_socket(raw, server_hostname="localhost", do_handshake_on_connect=False)
         try:
             assert not hasattr(wrapped, "proxy")
         finally:
