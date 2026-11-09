@@ -573,8 +573,8 @@ async def lifespan(app: FastAPI):
     if not _event_loop_is_stdlib(_asyncio.get_running_loop()):
         logger.error(SERVER_EVENT_LOOP_REFUSAL)
         raise RuntimeError(SERVER_EVENT_LOOP_REFUSAL)
-    # The same guard ``_serve`` sets first, for a server that was not started by it (``python -m uvicorn src.api.main:app``, which
-    # the encrypted click-through uses): before the boot record below names the mechanism, and before any request can bring a
+    # The same guard ``_serve`` sets first, for a server that was not started by it (``python -m uvicorn src.api.main:app --loop asyncio``,
+    # which the encrypted click-through uses): before the boot record below names the mechanism, and before any request can bring a
     # typed passphrase into this process. ``connect`` guards every place it hands a key to the engine as well.
     try:
         from src.monitoring.secret_scrub import guard_process

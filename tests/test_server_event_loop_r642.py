@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import sys
 import textwrap
 from pathlib import Path
 
@@ -154,7 +155,19 @@ def test_auto_would_have_picked_uvloop():
         asyncio.set_event_loop_policy(None)
 
 
-@pytest.mark.parametrize("host", ["example.com", "192.0.2.1"])
+@pytest.mark.parametrize(
+    "host",
+    [
+        "example.com",
+        pytest.param(
+            "192.0.2.1",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="the proactor loop connects an IP literal through ConnectEx, past the guard: a stated SECURITY.md residual",
+            ),
+        ),
+    ],
+)
 def test_on_the_configured_loop_an_async_connect_meets_the_airplane_guard(host):
     """End to end on the loop the server is pinned to: with airplane mode engaged an async connect is refused by the socket guard,
     a name at the patched getaddrinfo and an IP literal (which skips the lookup) at the patched connect. The real calls are replaced
@@ -166,7 +179,9 @@ def test_on_the_configured_loop_an_async_connect_meets_the_airplane_guard(host):
     # The loop is made FIRST: nothing that can raise may sit between the swap below and the try that undoes it.
     loop = _loop_from_config(main_mod.SERVER_EVENT_LOOP)
     was_installed, was_armed = ap.is_installed(), ap._airplane_armed
-    ap.install_airplane_socket_guard()
+    assert ap.install_airplane_socket_guard(), (
+        "the guard is disabled here (OO_AIRPLANE_SOCKET_GUARD=0?); this test would egress"
+    )
     # Saved and put back by hand BEFORE the uninstall below, which writes these names back onto ``socket`` (monkeypatch would undo
     # them only after it, leaving the tripwires installed as the "real" calls).
     real_getaddrinfo, real_connect = ap._orig_getaddrinfo, ap._orig_connect
@@ -226,6 +241,26 @@ def test_any_non_stdlib_loop_is_refused():
             _run_lifespan_on(loop)
     finally:
         loop.close()
+
+
+@pytest.mark.parametrize(
+    ("module", "name", "stdlib"),
+    [
+        ("asyncio.unix_events", "_UnixSelectorEventLoop", True),
+        ("asyncio.windows_events", "ProactorEventLoop", True),
+        ("uvloop", "Loop", False),
+        (
+            "notasyncio.x",
+            "SelectorEventLoop",
+            False,
+        ),  # a substring match on the module, or on "selector", would let this pass
+        ("asyncio_compat", "SelectorEventLoop", False),
+        ("someloop.asyncio", "Loop", False),
+    ],
+)
+def test_the_detector_is_an_exact_module_allowlist(module, name, stdlib):
+    fake = type(name, (), {"__module__": module})()
+    assert main_mod._event_loop_is_stdlib(fake) is stdlib
 
 
 def test_the_refusal_check_runs_before_any_startup_work():

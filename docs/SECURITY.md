@@ -406,12 +406,19 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   `socket.bind` handed a host name, and reverse lookups (`gethostbyaddr`, `getnameinfo`, and
   `getfqdn`, which calls `gethostbyaddr`). No in-tree code calls any of these directly; the stdlib's
   `HTTPServer.server_bind` calls `getfqdn` on its bind host, which with the default `OO_HOST`
-  (`127.0.0.1`) is answered from `/etc/hosts`. **And the server's own event loop:** `uvicorn[standard]`
-  installs uvloop and `uvicorn.run` picks it, and uvloop resolves and connects in libuv's C code, so
-  an `async` client on that loop (`httpx.AsyncClient`, `asyncio.open_connection`) would bypass every
-  patched point (security read B reached a non-loopback listener that way with the switch engaged).
-  No in-tree code opens an outbound connection from the event loop today; the stdlib asyncio loop
-  does go through the guard. Any **non-loopback** target
+  (`127.0.0.1`) is answered from `/etc/hosts`. **The server's own event loop (closed by R642):** `uvicorn[standard]`
+  installs uvloop and uvicorn's default `loop="auto"` picks it, and uvloop resolves and connects in
+  libuv's C code, past every patched point. `_serve` therefore pins `loop="asyncio"`, and the
+  lifespan refuses to start on any loop that is not one of asyncio's own (fixed words naming the
+  launcher and `--loop asyncio`), so a bare `python -m uvicorn src.api.main:app` no longer serves on
+  uvloop. What the refusal cannot reach: a server started with `--lifespan off` or mounted inside
+  another ASGI app runs no lifespan (deliberate developer commands no shipped launcher uses; such a
+  server never ran the deferred startup that installs the guard either). **Residual, Windows:** the
+  stdlib's proactor loop (what `loop="asyncio"` gives on win32) connects through `ConnectEx`, not
+  `socket.connect`, and an IP-literal target skips `getaddrinfo`, so an `asyncio.open_connection` to
+  a literal address on that loop would meet no guard (a host name still does). No in-tree code opens
+  an outbound connection from the event loop today; every fetch is synchronous, in a thread, where
+  the patches apply. Any **non-loopback** target
   handed to a patched point raises `AirplaneModeError` **before** a real socket is opened, so a
   missed call site, third-party library, or DNS prefetch that goes through those points cannot
   egress; what does not go through them is the residual list above and in this section. Loopback (127/8, ::1, `localhost`)

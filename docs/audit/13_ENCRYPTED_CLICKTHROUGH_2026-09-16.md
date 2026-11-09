@@ -28,7 +28,7 @@ OO_DATA_DIR=…/state-c OO_DB_PASSPHRASE='…' .venv/bin/python scripts/ui_click
 
 # boot with NEITHER set, so the app starts LOCKED and serves the unlock flow
 OO_DATA_DIR=…/state-c OO_NO_SCHEDULER=1 OO_LLM_AUTOSTART=0 OO_AIRPLANE_SOCKET_GUARD=1 \
-    .venv/bin/python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000
+    .venv/bin/python -m uvicorn src.api.main:app --loop asyncio --host 127.0.0.1 --port 8000
 
 # walk it, refusing to produce a report unless a seeded state MEASURES encrypted
 OO_UIWALK_ENCRYPTED_PASS='…' .venv/bin/python scripts/ui_clickthrough_run.py --require-encrypted
