@@ -520,3 +520,39 @@ def test_a_stop_during_the_logout_after_a_starttls_refusal_still_wins(fn, greeti
         assert fn("127.0.0.1", "u", _PW, port=srv.port, use_ssl=False).stopped
     finally:
         srv.close()
+
+
+@pytest.mark.parametrize(("fn", "greeting", "script"), [(fetch_imap, _IMAP_GREETING, _imap), (fetch_pop3, _POP_GREETING, _pop)], ids=["imap", "pop3"])
+def test_a_starttls_certificate_refusal_is_held_and_carries_no_chain(pki, fn, greeting, script):
+    """Delta re-read 7 on R653: the certificate refusal after STARTTLS is raised outside its handler, after the LOGOUT/QUIT."""
+    from src.ingest.email import MailboxCertificateError
+
+    srv = _Server(greeting, script, starttls=pki.self_signed_server)
+    try:
+        with pytest.raises(MailboxCertificateError) as info:
+            fn("127.0.0.1", "u", _PW, port=srv.port, use_ssl=False)
+        assert info.value.__context__ is None and info.value.__cause__ is None
+    finally:
+        srv.close()
+
+
+@pytest.mark.parametrize(("fn", "greeting", "script", "goodbye"), [(fetch_imap, _IMAP_GREETING, _imap, "logout"), (fetch_pop3, _POP_GREETING, _pop, "quit")], ids=["imap", "pop3"])
+def test_a_stop_during_the_goodbye_after_a_certificate_refusal_still_wins(pki, monkeypatch, fn, greeting, script, goodbye):
+    """Delta re-read 7 on R653: a Stop that lands during the LOGOUT/QUIT after a STARTTLS certificate refusal ends the pull as
+    the Stop."""
+    import imaplib
+    import poplib
+
+    from src.ingest import activate_kill_switch
+
+    owner = imaplib.IMAP4 if goodbye == "logout" else poplib.POP3
+
+    def stopping_goodbye(self):
+        activate_kill_switch()
+
+    monkeypatch.setattr(owner, goodbye, stopping_goodbye)
+    srv = _Server(greeting, script, starttls=pki.self_signed_server)
+    try:
+        assert fn("127.0.0.1", "u", _PW, port=srv.port, use_ssl=False).stopped
+    finally:
+        srv.close()
