@@ -117,7 +117,9 @@ def test_imap_stop_during_a_message_keeps_what_came_before_and_sends_nothing_mor
     conn = _Imap.last
     assert list(raws) == [b"message 1", b"message 2"]
     assert raws.stopped is True
-    assert conn.commands == ["login", "select", "search", "fetch 1", "fetch 2"], "a command was sent after the Stop"
+    assert conn.commands == ["login", "select", "search", "fetch 1", "fetch 2"], (
+        "a command was sent after the Stop"
+    )
     assert conn.shut is True and "logout" not in conn.commands
 
 
@@ -150,7 +152,12 @@ def test_pop_stop_during_a_message_keeps_what_came_before_and_sends_nothing_more
 
 @pytest.mark.parametrize(
     ("stop_on", "sent"),
-    [("connect", []), ("user", ["user"]), ("pass", ["user", "pass"]), ("list", ["user", "pass", "list"])],
+    [
+        ("connect", []),
+        ("user", ["user"]),
+        ("pass", ["user", "pass"]),
+        ("list", ["user", "pass", "list"]),
+    ],
 )
 def test_pop_stop_before_each_command(monkeypatch, stop_on, sent):
     _use(monkeypatch, _Pop, stop_on=stop_on)
@@ -242,10 +249,14 @@ def test_a_stopped_pull_never_logs_out_even_if_the_switch_is_cleared_again(monke
     """The finally reads the pull's own ``stopped`` first: a switch turned off again before the cleanup must not bring LOGOUT/QUIT back."""
     import src.ingest.email as email_mod
 
-    answers = iter([False, False, False, False, True])  # clear for the setup commands and message 1, engaged before message 2
+    answers = iter(
+        [False, False, False, False, True]
+    )  # clear for the setup commands and message 1, engaged before message 2
     monkeypatch.setattr(email_mod, "_stop_requested", lambda: next(answers, False))
     _use(monkeypatch, cls)
-    raws = fetch_imap("h", "u", "p", limit=3) if cls is _Imap else fetch_pop3("h", "u", "p", limit=3)
+    raws = (
+        fetch_imap("h", "u", "p", limit=3) if cls is _Imap else fetch_pop3("h", "u", "p", limit=3)
+    )
     assert raws.stopped is True and len(raws) == 1
     assert cls.last.commands[-1] not in ("logout", "quit")
 
@@ -281,12 +292,16 @@ class _CapImap:
         self.shut = True
 
 
+@pytest.mark.parametrize(("use_ssl", "attr"), [(True, "IMAP4_SSL"), (False, "IMAP4")])
 @pytest.mark.parametrize(("stop_on", "sent"), [("connect", []), ("login", ["capability", "login"])])
-def test_imaplibs_own_capability_command_is_held_to_the_switch(monkeypatch, stop_on, sent):
-    """Security read B: a Stop during LOGIN let imaplib send CAPABILITY from inside ``login``. It is now refused like any command."""
+def test_imaplibs_own_capability_command_is_held_to_the_switch(
+    monkeypatch, stop_on, sent, use_ssl, attr
+):
+    """Security read B: a Stop during LOGIN let imaplib send CAPABILITY from inside ``login``. It is now refused like any command, on
+    the SSL class and the plain one alike."""
     monkeypatch.setattr(_CapImap, "stop_on", stop_on)
-    monkeypatch.setattr(imaplib, "IMAP4_SSL", _CapImap)
-    raws = fetch_imap("h", "u", "p")
+    monkeypatch.setattr(imaplib, attr, _CapImap)
+    raws = fetch_imap("h", "u", "p", use_ssl=use_ssl)
     assert list(raws) == [] and raws.stopped is True
     assert _CapImap.last.commands == sent
     assert "logout" not in _CapImap.last.commands
@@ -324,3 +339,32 @@ def test_without_the_per_message_check_the_pull_runs_on(monkeypatch):
     _use(monkeypatch, _Imap, stop_on="fetch 2")
     raws = fetch_imap("h", "u", "p", limit=5)
     assert len(raws) == 5 and raws.stopped is False
+
+
+def test_a_refused_capability_stays_a_stop_even_if_the_switch_is_cleared_again(monkeypatch):
+    """Security reads A and B: the refusal raised inside imaplib counts by its type, so a switch turned off again before the handler
+    cannot let it out of the module, nor bring LOGOUT back."""
+    import src.ingest.email as email_mod
+
+    monkeypatch.setattr(_CapImap, "stop_on", None)
+    answers = iter(
+        [False, False, True]
+    )  # clear at the constructor's CAPABILITY and before LOGIN, engaged at login's CAPABILITY
+    monkeypatch.setattr(email_mod, "_stop_requested", lambda: next(answers, False))
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", _CapImap)
+    raws = fetch_imap("h", "u", "p")
+    assert raws.stopped is True and list(raws) == []
+    assert _CapImap.last.commands == ["capability", "login"] and _CapImap.last.shut is True
+
+
+def test_a_failure_after_the_stop_is_logged_by_its_class_only(monkeypatch, caplog):
+    class _Late(_Imap):
+        def fetch(self, mid, parts):
+            activate_kill_switch()
+            raise OSError("server said: p4ssw0rd rejected")
+
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", lambda host, port: _Late(host, port))
+    with caplog.at_level("INFO", logger="src.ingest.email"):
+        raws = fetch_imap("h", "u", "p4ssw0rd")
+    assert raws.stopped is True
+    assert "OSError after the airplane-mode Stop" in caplog.text and "p4ssw0rd" not in caplog.text
