@@ -217,15 +217,14 @@ def test_a_websocket_is_refused_while_the_gate_is_closed(gate):
     from starlette.websockets import WebSocketDisconnect
 
     client = TestClient(main.app)
-    with pytest.raises(WebSocketDisconnect) as refused:
-        with client.websocket_connect("/any-websocket"):
-            pass
+    with pytest.raises(WebSocketDisconnect) as refused, client.websocket_connect("/any-websocket"):
+        pass
     assert refused.value.code == 1013
     gate.setattr(main, "_serving_loop_checked", True)
     gate.setattr(ap, "is_armed", lambda: True)
-    with pytest.raises(WebSocketDisconnect) as routed:  # open: the router answers (no websocket route exists), not the gate
-        with client.websocket_connect("/any-websocket"):
-            pass
+    # Open: the router answers (no websocket route exists), not the gate.
+    with pytest.raises(WebSocketDisconnect) as routed, client.websocket_connect("/any-websocket"):
+        pass
     assert routed.value.code != 1013
 
 
