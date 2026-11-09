@@ -301,9 +301,13 @@ def test_imaplibs_own_capability_command_is_held_to_the_switch(
     the SSL class and the plain one alike."""
     monkeypatch.setattr(_CapImap, "stop_on", stop_on)
     monkeypatch.setattr(imaplib, attr, _CapImap)
+    # The plain class upgrades with STARTTLS before LOGIN (R651); the stand-in records it as a command of its own.
+    import src.ingest.email as email_mod
+
+    monkeypatch.setattr(email_mod, "_upgrade_plain", lambda conn, port: conn.commands.append("starttls"))
     raws = fetch_imap("h", "u", "p", use_ssl=use_ssl)
     assert list(raws) == [] and raws.stopped is True
-    assert _CapImap.last.commands == sent
+    assert _CapImap.last.commands == (sent if use_ssl or not sent else ["capability", "starttls", "login"])
     assert "logout" not in _CapImap.last.commands
 
 

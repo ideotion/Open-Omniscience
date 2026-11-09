@@ -328,8 +328,23 @@ class _MailboxStopped(Exception):
 MAILBOX_TIMEOUT_S = 60.0
 
 
-class MailboxCertificateError(OSError):
+class MailboxTlsRefusal(OSError):
+    """A mailbox pull refused before LOGIN/USER because the connection could not be made private and checked (R650, R651)."""
+
+
+class MailboxCertificateError(MailboxTlsRefusal):
     """The mail server's TLS certificate failed verification (R650): the pull is refused before LOGIN, so no credential is sent."""
+
+
+class MailboxStarttlsError(MailboxTlsRefusal):
+    """A plain-port pull whose server does not offer, or would not start, STARTTLS (R651): a password is never sent in plaintext."""
+
+
+def _starttls_refusal(host: str, port: int, why: str) -> MailboxStarttlsError:
+    return MailboxStarttlsError(
+        f"refused before logging in, no password sent: the mail server {host} on port {port} {why}, and a mailbox password is never sent "
+        "unencrypted. Use the server's TLS port (993 for IMAP, 995 for POP3) or a server that offers STARTTLS."
+    )
 
 
 def _mailbox_tls_context() -> ssl.SSLContext:
@@ -343,16 +358,73 @@ def _mailbox_tls_context() -> ssl.SSLContext:
 _OPENSSL_VERIFY_REASON = re.compile(r"certificate verify failed: (?P<reason>.+?)(?: \(_ssl\.c:\d+\))?$")
 
 
-def _certificate_refusal(host: str, scrubbed: str) -> MailboxCertificateError:
+def _certificate_refusal(host: str, scrubbed: str, *, sent: str = "no command or password sent") -> MailboxCertificateError:
     """The honest refusal (R650). ``scrubbed`` is OpenSSL's text as ``record_text`` keeps it (the mailbox password and every held
     passphrase out of it); only its reason is quoted ("self-signed certificate", "Hostname mismatch, ..."), so the sentence fits
-    the job status's 300 characters with what matters first: refused, no command or password sent, why."""
+    the job status's 300 characters with what matters first: refused, what was not sent, why. ``sent`` says what was not sent: on a
+    plain port the CAPABILITY/STARTTLS commands went out before the upgrade (R651), so only the password was not."""
     found = _OPENSSL_VERIFY_REASON.search(scrubbed)
     reason = found.group("reason") if found else scrubbed
     return MailboxCertificateError(
-        f"refused before logging in, no command or password sent: the TLS certificate of the mail server {host} failed its check ({reason}). "
+        f"refused before logging in, {sent}: the TLS certificate of the mail server {host} failed its check ({reason}). "
         "Check the server name and port."
     )
+
+
+#: OpenSSL's wrapping of any other TLS failure: "[SSL: WRONG_VERSION_NUMBER] wrong version number (_ssl.c:NNNN)".
+_OPENSSL_REASON = re.compile(r"^(?:\[SSL: [A-Z0-9_]+\] )?(?P<reason>.+?)(?: \(_ssl\.c:\d+\))?$")
+
+
+def _tls_refusal(host: str, port: int, scrubbed: str, *, sent: str) -> MailboxTlsRefusal:
+    """A TLS connection that failed for another reason than the certificate (a plain server on a TLS port, a server that only speaks
+    TLS 1.0/1.1, a broken handshake): refused like the certificate, naming the host, the port and OpenSSL's reason (security read B
+    on #1895: these used to surface as OpenSSL's raw text, with neither the server nor what was not sent)."""
+    found = _OPENSSL_REASON.search(scrubbed)
+    reason = found.group("reason") if found else scrubbed
+    return MailboxTlsRefusal(
+        f"refused before logging in, {sent}: no TLS connection could be made with the mail server {host} on port {port} ({reason}). "
+        "Check the port: 993/995 speak TLS at once, 143/110 upgrade with STARTTLS."
+    )
+
+
+def _registered_tls(ctx: ssl.SSLContext, raw: Any, host: str) -> Any:
+    """Wrap ``raw`` (already registered for the Stop) in TLS and run the handshake here, registered too, after a second read of the
+    switch (R647): no TLS byte goes out after a Stop that landed before it, and a Stop during a stalled handshake reaches it. On any
+    failure the socket is closed and the error raised as it was; ``raw`` leaves the Stop's list either way (the wrap detached it)."""
+    from src.ingest import register_mailbox_socket, unregister_mailbox_socket
+
+    tls = None
+    try:
+        if _stop_requested():
+            raise _MailboxStopped
+        tls = ctx.wrap_socket(raw, server_hostname=host, do_handshake_on_connect=False)
+        register_mailbox_socket(tls)
+        if _stop_requested():
+            raise _MailboxStopped
+        tls.do_handshake()
+    except BaseException:
+        # A constructor raises before it holds the socket, and a failed STARTTLS leaves the connection's own socket detached, so
+        # nothing else would close it.
+        unregister_mailbox_socket(tls)
+        with contextlib.suppress(Exception):
+            (tls or raw).close()
+        raise
+    finally:
+        unregister_mailbox_socket(raw)  # detached by the wrap (or closed above); the TLS socket is the live one now
+    return tls
+
+
+def _upgraded(raw: Any, host: str, port: int) -> Any:
+    """The STARTTLS handshake (R651) with the pull's verifying context; a certificate failure is raised as it is (the pull maps it,
+    holding the password to scrub with), any other TLS failure is refused here as on a TLS port."""
+    try:
+        return _registered_tls(_mailbox_tls_context(), raw, host)
+    except ssl.SSLCertVerificationError:
+        raise
+    except ssl.SSLError as exc:
+        if _stop_requested():
+            raise _MailboxStopped from None
+        raise _tls_refusal(host, port, record_text(exc, limit=300), sent="no password sent") from None
 
 
 def _stop_aware(cls):  # type: ignore[no-untyped-def]
@@ -366,7 +438,7 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
 
     class _StopAware(cls):  # type: ignore[valid-type,misc]
         def _create_socket(self, timeout):  # type: ignore[no-untyped-def]
-            from src.ingest import register_mailbox_socket, unregister_mailbox_socket
+            from src.ingest import register_mailbox_socket
 
             # The TLS classes' own ``_create_socket`` connects AND completes the TLS handshake before returning, so registering what
             # it returns left a Stop unable to reach a server stalled in the handshake (security read B on #1892). So the plain
@@ -380,24 +452,45 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
             register_mailbox_socket(raw)
             if ctx is None:
                 return raw
-            tls = None
+            return _registered_tls(ctx, raw, self.host)
+
+        def _starttls(self, port: int) -> None:
+            """Upgrade a plain-port connection to TLS before any credential (R651), with the pull's verifying context and the same
+            Stop registration as a TLS port: the switch is read before each command, and a server that does not offer STARTTLS or
+            answers it with anything but OK is refused, never used in plaintext."""
+            if _stop_requested():
+                raise _MailboxStopped
+            if isinstance(self, imaplib.IMAP4):
+                if "STARTTLS" not in self.capabilities:
+                    raise _starttls_refusal(self.host, port, "does not offer STARTTLS")
+                try:
+                    typ, _ = self._simple_command("STARTTLS")
+                except (_MailboxStopped, OSError):
+                    raise
+                except Exception:  # noqa: BLE001 - imaplib's own error class (a BAD answer): the server refused the upgrade
+                    raise _starttls_refusal(self.host, port, "refused STARTTLS") from None
+                if typ != "OK":
+                    raise _starttls_refusal(self.host, port, f"answered STARTTLS with {typ}")
+                self.sock = _upgraded(self.sock, self.host, port)  # type: ignore[has-type]
+                self.file = self.sock.makefile("rb")
+                self._tls_established = True
+                self._get_capabilities()  # what the server offered in plaintext is not trusted past the upgrade (RFC 3501 6.2.1)
+                return
             try:
-                if _stop_requested():
-                    raise _MailboxStopped
-                tls = ctx.wrap_socket(raw, server_hostname=self.host, do_handshake_on_connect=False)
-                register_mailbox_socket(tls)
-                if _stop_requested():
-                    raise _MailboxStopped
-                tls.do_handshake()
-            except BaseException:
-                # The constructor raises before it holds the socket, so nothing else would close it.
-                unregister_mailbox_socket(tls)
-                with contextlib.suppress(Exception):
-                    (tls or raw).close()
-                raise
-            finally:
-                unregister_mailbox_socket(raw)  # detached by the wrap (or closed above); the TLS socket is the live one now
-            return tls
+                caps = self.capa()
+            except poplib.error_proto:
+                caps = {}
+            if "STLS" not in caps:
+                raise _starttls_refusal(self.host, port, "does not offer STARTTLS (STLS)")
+            if _stop_requested():
+                raise _MailboxStopped
+            try:
+                self._shortcmd("STLS")
+            except poplib.error_proto:
+                raise _starttls_refusal(self.host, port, "refused STLS") from None
+            self.sock = _upgraded(self.sock, self.host, port)
+            self.file = self.sock.makefile("rb")
+            self._tls_established = True
 
         def _get_capabilities(self):  # type: ignore[no-untyped-def]
             if _stop_requested():
@@ -405,6 +498,12 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
             return super()._get_capabilities()
 
     return _StopAware
+
+
+def _upgrade_plain(conn, port: int) -> None:  # type: ignore[no-untyped-def]
+    """STARTTLS on a plain-port connection before any credential (R651); one name, so a test's stand-in connection can be upgraded
+    by a stand-in."""
+    conn._starttls(port)
 
 
 def _forget_socket(sock) -> None:  # type: ignore[no-untyped-def]
@@ -476,6 +575,14 @@ def fetch_imap(
                 raws.stopped = True
                 return raws
             raise _certificate_refusal(host, record_text(exc, password, limit=300)) from None
+        except ssl.SSLError as exc:
+            # Any other TLS failure on the TLS port (a plain server, an old protocol only): refused as honestly (read B on #1895).
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            if not use_ssl:
+                raise
+            raise _tls_refusal(host, port or 993, record_text(exc, password, limit=300), sent="no command or password sent") from None
         except Exception:
             # A Stop while the greeting was awaited shut the socket down (R647): that is the Stop, not a failure.
             if _stop_requested():
@@ -484,6 +591,8 @@ def fetch_imap(
             raise
     try:
         if own_conn:
+            if not use_ssl:
+                _upgrade_plain(conn, port or 143)  # R651: never LOGIN in plaintext
             if _stop_requested():
                 raws.stopped = True
                 return raws
@@ -512,6 +621,12 @@ def fetch_imap(
         # LOGOUT with it).
         raws.stopped = True
         return raws
+    except ssl.SSLCertVerificationError as exc:
+        # R651: the STARTTLS handshake's certificate failed its check (a Stop still wins), before any credential.
+        if raws.stopped or _stop_requested():
+            raws.stopped = True
+            return raws
+        raise _certificate_refusal(host, record_text(exc, password, limit=300), sent="no password sent") from None
     except Exception:
         # A failure that surfaces once the switch is engaged (the connection failing after the Stop) ends the pull as the Stop it
         # follows: what was fetched is kept (R640, security read B), never discarded with an error.
@@ -573,6 +688,14 @@ def fetch_pop3(
                 raws.stopped = True
                 return raws
             raise _certificate_refusal(host, record_text(exc, password, limit=300)) from None
+        except ssl.SSLError as exc:
+            # As in fetch_imap: any other TLS failure on the TLS port is refused as honestly.
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            if not use_ssl:
+                raise
+            raise _tls_refusal(host, port or 995, record_text(exc, password, limit=300), sent="no command or password sent") from None
         except Exception:
             # As in fetch_imap: a Stop while the greeting was awaited shut the socket down (R647).
             if _stop_requested():
@@ -581,6 +704,8 @@ def fetch_pop3(
             raise
     try:
         if own_conn:
+            if not use_ssl:
+                _upgrade_plain(conn, port or 110)  # R651: never USER/PASS in plaintext
             if _stop_requested():
                 raws.stopped = True
                 return raws
@@ -601,6 +726,16 @@ def fetch_pop3(
             resp, lines, octets = conn.retr(i)
             raws.append(b"\r\n".join(lines))
         return raws
+    except _MailboxStopped:
+        # A Stop read before the STARTTLS commands (R651): the Stop by its type, as in fetch_imap.
+        raws.stopped = True
+        return raws
+    except ssl.SSLCertVerificationError as exc:
+        # R651: the STARTTLS handshake's certificate failed its check (a Stop still wins), before any credential.
+        if raws.stopped or _stop_requested():
+            raws.stopped = True
+            return raws
+        raise _certificate_refusal(host, record_text(exc, password, limit=300), sent="no password sent") from None
     except Exception:
         # As in fetch_imap: a failure once the switch is engaged keeps what was fetched (R640).
         if raws.stopped or _stop_requested():

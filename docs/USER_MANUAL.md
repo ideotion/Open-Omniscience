@@ -1520,7 +1520,9 @@ Official **figures** are not here at all — they are data, so they live under
     disclosure at the point of use (TLS to the provider, your IP is visible, **not** over
     Tor, credentials are not stored). Over TLS the server's certificate must match its name
     and come from an authority your computer trusts; otherwise the pull is refused before
-    your password is sent, and the message says why.
+    your password is sent, and the message says why. Through the API, a pull on a plain
+    port (143/110) first upgrades with STARTTLS under the same check, and is refused if the
+    server does not offer it: your password is never sent unencrypted.
   - **Which publisher does each newsletter belong to?** — imported newsletters currently
     all sit in one bucket source. `GET /api/newsletters/publisher-preview` shows what a
     per-publisher filing WOULD look like for the newsletters you already have: each sending

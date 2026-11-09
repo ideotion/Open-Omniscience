@@ -33,7 +33,7 @@ def _net():
 class _Server:
     """One loopback connection, answered by ``script`` (the lines received so far -> the reply, or None to stall)."""
 
-    def __init__(self, greeting: bytes | None, script, tls=None, handshake: bool = True):
+    def __init__(self, greeting: bytes | None, script, tls=None, handshake: bool = True, starttls=None):
         self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.listener.bind(("127.0.0.1", 0))
         self.listener.listen(1)
@@ -42,6 +42,8 @@ class _Server:
         self.script = script
         self.tls = tls  # a server-side SSLContext, or None for plain
         self.handshake = handshake  # False: accept the TCP connection and never answer the TLS handshake
+        self.starttls = starttls  # a server-side SSLContext the connection is upgraded with after a STARTTLS/STLS reply (R651)
+        self.after_upgrade: bytes | None = None  # without ``starttls``: bytes sent a moment after the upgrade reply, where a handshake belongs
         self.received: list[bytes] = []
         self.stalled = threading.Event()
         self.eof = threading.Event()
@@ -82,6 +84,15 @@ class _Server:
                         self.stalled.set()
                     else:
                         conn.sendall(reply)
+                        if self.after_upgrade is not None and _upgrade_command(line):
+                            time.sleep(0.3)  # the client has read the reply and sent its ClientHello: this lands in the TLS layer
+                            conn.sendall(self.after_upgrade)
+                        if self.starttls is not None and _upgrade_command(line):
+                            try:
+                                conn = self.starttls.wrap_socket(conn, server_side=True)
+                            except OSError:  # the client refused the certificate (R650/R651): its connection is over
+                                break
+                            buf = b""
             self.eof.set()
 
     def close(self) -> None:
@@ -89,12 +100,17 @@ class _Server:
         self.thread.join(5)
 
 
+def _upgrade_command(line: bytes) -> bool:
+    words = line.upper().split(b" ")
+    return words[0] == b"STLS" or (len(words) > 1 and words[1] == b"STARTTLS")
+
+
 def _imap_script(line: bytes) -> bytes | None:
     tag, _, rest = line.partition(b" ")
     cmd = rest.split(b" ", 1)[0].upper()
     if cmd == b"CAPABILITY":
-        return b"* CAPABILITY IMAP4rev1\r\n" + tag + b" OK done\r\n"
-    if cmd in (b"LOGIN", b"SELECT"):
+        return b"* CAPABILITY IMAP4rev1 STARTTLS\r\n" + tag + b" OK done\r\n"
+    if cmd in (b"LOGIN", b"SELECT", b"STARTTLS"):
         return tag + b" OK done\r\n"
     if cmd == b"SEARCH":
         return b"* SEARCH 1 2 3\r\n" + tag + b" OK done\r\n"
@@ -109,7 +125,9 @@ def _imap_script(line: bytes) -> bytes | None:
 
 def _pop_script(line: bytes) -> bytes | None:
     cmd = line.split(b" ", 1)[0].upper()
-    if cmd in (b"USER", b"PASS"):
+    if cmd == b"CAPA":
+        return b"+OK\r\nSTLS\r\nUSER\r\n.\r\n"
+    if cmd in (b"USER", b"PASS", b"STLS"):
         return b"+OK\r\n"
     if cmd == b"LIST":
         return b"+OK 3 messages\r\n1 30\r\n2 30\r\n3 30\r\n.\r\n"
@@ -137,8 +155,8 @@ def _pull(fn, port: int, **kw):
     return raws, time.monotonic() - t0
 
 
-def test_a_stop_ends_an_imap_pull_blocked_on_a_stalled_fetch_and_keeps_what_came_before():
-    srv = _Server(b"* OK ready\r\n", _imap_script)
+def test_a_stop_ends_an_imap_pull_blocked_on_a_stalled_fetch_and_keeps_what_came_before(tls_server_context):
+    srv = _Server(b"* OK ready\r\n", _imap_script, starttls=tls_server_context)
     try:
         stopper = _stop_when(srv.stalled)
         raws, took = _pull(fetch_imap, srv.port)
@@ -148,14 +166,16 @@ def test_a_stop_ends_an_imap_pull_blocked_on_a_stalled_fetch_and_keeps_what_came
         assert [m.split(b"\r\n\r\n", 1)[1].strip() for m in raws] == [b"message 1"]
         assert srv.eof.wait(5)
         sent = [line.split(b" ", 2)[1].upper() for line in srv.received]
-        assert sent == [b"CAPABILITY", b"LOGIN", b"CAPABILITY", b"SELECT", b"SEARCH", b"FETCH", b"FETCH"], "a command went out after the Stop"
+        assert sent == [b"CAPABILITY", b"STARTTLS", b"CAPABILITY", b"LOGIN", b"CAPABILITY", b"SELECT", b"SEARCH", b"FETCH", b"FETCH"], (
+            "a command went out after the Stop"
+        )
         assert not ingest._LIVE_MAILBOX_SOCKETS, "the pull's socket was left registered"
     finally:
         srv.close()
 
 
-def test_a_stop_ends_a_pop3_pull_blocked_on_a_stalled_retr_and_keeps_what_came_before():
-    srv = _Server(b"+OK ready\r\n", _pop_script)
+def test_a_stop_ends_a_pop3_pull_blocked_on_a_stalled_retr_and_keeps_what_came_before(tls_server_context):
+    srv = _Server(b"+OK ready\r\n", _pop_script, starttls=tls_server_context)
     try:
         stopper = _stop_when(srv.stalled)
         raws, took = _pull(fetch_pop3, srv.port)
@@ -164,7 +184,7 @@ def test_a_stop_ends_a_pop3_pull_blocked_on_a_stalled_retr_and_keeps_what_came_b
         assert raws.stopped is True
         assert len(raws) == 1 and raws[0].endswith(b"message 1")
         assert srv.eof.wait(5)
-        assert [line.split(b" ", 1)[0].upper() for line in srv.received] == [b"USER", b"PASS", b"LIST", b"RETR", b"RETR"]
+        assert [line.split(b" ", 1)[0].upper() for line in srv.received] == [b"CAPA", b"STLS", b"USER", b"PASS", b"LIST", b"RETR", b"RETR"]
         assert not ingest._LIVE_MAILBOX_SOCKETS
     finally:
         srv.close()
@@ -341,10 +361,10 @@ def _pop_quit_stall(line: bytes) -> bytes | None:
     [(fetch_imap, b"* OK ready\r\n", _imap_logout_stall), (fetch_pop3, b"+OK ready\r\n", _pop_quit_stall)],
     ids=["imap-logout", "pop3-quit"],
 )
-def test_a_stop_during_the_logout_read_still_reaches_the_socket(fn, greeting, script):
+def test_a_stop_during_the_logout_read_still_reaches_the_socket(fn, greeting, script, tls_server_context):
     """The socket stays registered until LOGOUT/QUIT has been answered (security read B on #1892: it used to be forgotten first, so a
     server stalling on LOGOUT held the pull for the whole timeout after a Stop; the POP3 twin was unpinned until its second read)."""
-    srv = _Server(greeting, script)
+    srv = _Server(greeting, script, starttls=tls_server_context)
     try:
         stopper = _stop_when(srv.stalled)
         raws, took = _pull(fn, srv.port)
@@ -377,7 +397,7 @@ def _done_pop(line: bytes) -> bytes | None:
     [(fetch_imap, b"* OK ready\r\n", _done_imap), (fetch_pop3, b"+OK ready\r\n", _done_pop)],
     ids=["imap", "pop3"],
 )
-def test_a_finished_pull_takes_its_socket_off_the_list(fn, greeting, script, monkeypatch):
+def test_a_finished_pull_takes_its_socket_off_the_list(fn, greeting, script, monkeypatch, tls_server_context):
     """Holds every registered socket alive, so the weak list cannot empty itself by collection (security read A on #1892: poplib's
     ``quit()`` clears ``conn.sock``, so the POP3 socket used to stay listed and only garbage collection hid it)."""
     held: list[object] = []
@@ -388,7 +408,7 @@ def test_a_finished_pull_takes_its_socket_off_the_list(fn, greeting, script, mon
         real(sock)
 
     monkeypatch.setattr(ingest, "register_mailbox_socket", holding)
-    srv = _Server(greeting, script)
+    srv = _Server(greeting, script, starttls=tls_server_context)
     try:
         raws, _ = _pull(fn, srv.port)
         assert raws.stopped is False
