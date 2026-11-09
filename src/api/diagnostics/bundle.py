@@ -104,7 +104,6 @@ from .sources import (
 from .system import (
     _p0_validation_last,
     columnar_status,
-    corpus_integrity_report,
     data_dir_persistence_report,
     external_freshness,
     frontend_errors,
@@ -236,7 +235,8 @@ def _scheduler_section(slim: bool) -> dict:
     return {"status": status, "recent_runs": recent_runs(30)}
 
 
-#: Set only while the all-diagnostics build assembles its debug-bundle member: the one caller allowed to save the integrity cursor.
+#: Set only while the all-diagnostics JOB (the POST /all-job build) writes its members: the one caller allowed to save the integrity
+#: cursor, which only its corpus-integrity.json member reads. The synchronous GET /all builds the same members with it off.
 _RESUME_INTEGRITY: ContextVar[bool] = ContextVar("oo_diag_resume_integrity", default=False)
 
 
@@ -290,7 +290,6 @@ def debug_bundle(
     from src.monitoring.errorlog import summary as error_log_summary
     from src.monitoring.field_test import recent_results as _field_test_results
     from src.monitoring.forensics import session_forensics as _session_forensics
-    from src.monitoring.integrity import KvCursorStore as _KvCursorStore
     from src.monitoring.integrity import corpus_integrity as _corpus_integrity
     from src.monitoring.keyword_write_cost import keyword_write_cost as _keyword_write_cost
     from src.monitoring.latency import summary as _latency_summary
@@ -546,14 +545,9 @@ def debug_bundle(
         "schema_drift": _member(
             "schema_drift", lambda: _bounded(lambda: _schema_drift(db)), threaded=False
         ),
-        # Inside the all-diagnostics build only (_RESUME_INTEGRITY), with a cursor in the app-state store: the exact scans keep
-        # their place between builds, so a corpus too large for one 60 s budget is finished across several (the member names
-        # which checks are complete and where the rest stand). A plain GET of this route saves nothing: a GET has no side effects.
-        "corpus_integrity": _member(
-            "corpus_integrity",
-            lambda: _corpus_integrity(db, cursor=_KvCursorStore() if _RESUME_INTEGRITY.get() else None),
-            threaded=False,
-        ),
+        # No cursor here: a GET has no side effects, and inside the all-diagnostics archive this section is its own member
+        # (corpus-integrity.json, see _DEBUG_BUNDLE_STANDS_ALONE), which is where the job keeps the exact scans' place.
+        "corpus_integrity": _member("corpus_integrity", lambda: _corpus_integrity(db), threaded=False),
         # Session forensics (2026-07-09 field event): data-dir inventory (what IS the
         # disk usage — orphaned PLAINTEXT backup staging detected loudly), the previous
         # session's clean/unclean-end verdict (+ the collector's last RSS sample = the
@@ -1127,6 +1121,15 @@ def resolve_bundle_profile(requested: str | None) -> str:
     return v if v in _BUNDLE_PROFILES else "full"
 
 
+def _corpus_integrity_member(db: Session) -> dict:
+    """The archive's corpus-integrity member: what GET /integrity returns (sample 500, sampled drift), and -- inside the all-diagnostics
+    JOB only (_RESUME_INTEGRITY) -- with the exact scans' place kept in the app-state store, so a corpus too large for one budget is
+    finished across builds (R459). The synchronous GET /all runs it with the flag off and saves nothing."""
+    from src.monitoring.integrity import KvCursorStore, corpus_integrity
+
+    return corpus_integrity(db, sample=500, full=False, cursor=KvCursorStore() if _RESUME_INTEGRITY.get() else None)
+
+
 def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
     """The ordered (filename, generator) list for the all-diagnostics archive — the SINGLE
     source of truth shared by the synchronous ``/all`` endpoint and the background job, so the
@@ -1141,7 +1144,7 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
     return [
         # slim=True EXPLICITLY (a Query default is a truthy sentinel OBJECT when called directly):
         # in the archive the bundle names the eight sections that are members of their own.
-        ("debug-bundle.json", lambda: _resuming_integrity(lambda: debug_bundle(db=db, slim=True))),
+        ("debug-bundle.json", lambda: debug_bundle(db=db, slim=True)),
         ("home-cards.json", lambda: home_card_diagnostics(download=False, db=db)),
         ("keyword-engine.json", lambda: keyword_engine(download=False, db=db)),
         # THE MECHANISM SELF-TESTS, one verdict each in ONE member (R119): thirteen files that said
@@ -1179,7 +1182,7 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("contention.json", lambda: _contention_member()),
         ("slow-queries.json", lambda: slow_queries(explain=1, db=db)),
         ("schema-drift.json", lambda: schema_drift_report(db=db)),
-        ("corpus-integrity.json", lambda: corpus_integrity_report(sample=500, full=0, db=db)),
+        ("corpus-integrity.json", lambda: _corpus_integrity_member(db)),
         # The Q310 duplicate-key scan (gate row K's artifact). It calls the SCAN, not
         # the endpoint: importing a diagnostics slice from here would register that
         # slice's route at THIS module's import position, and the Q1139 split guard
@@ -3580,12 +3583,13 @@ def _all_diagnostics_build(ctx, profile: str, fname: str, mode: str = "thorough"
             ctx.set_progress(done=done, total=total, detail=name)
 
         with zipfile.ZipFile(part_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-            results = _write_all_diagnostics_zip(
+            # The job is the one build that keeps the integrity scans' place between runs (R459): the flag is on for its writer only.
+            results = _resuming_integrity(lambda: _write_all_diagnostics_zip(
                 members, z, progress=_progress, should_stop=lambda: ctx.stopping,
                 journal_path=journal_path, db=db, scan_window=_bundle_exclusive_window,
                 profile=resolve_bundle_profile(profile), previous_runs=previous_runs,
                 mode=mode,
-            )
+            ))
     if ctx.stopping:
         # Cancelled between members: drop the partial, never present it as a good archive.
         with contextlib.suppress(OSError):

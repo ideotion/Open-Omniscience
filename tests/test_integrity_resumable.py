@@ -279,18 +279,107 @@ def test_a_completed_figure_says_when_its_pass_began_as_well_as_when_it_ended(se
     assert lc["started_at"] and lc["at"] and lc["started_at"] <= lc["at"]
 
 
-def test_only_the_all_diagnostics_build_saves_the_cursor_and_a_get_saves_nothing():
-    import inspect
+def test_the_all_diagnostics_job_keeps_the_place_in_the_kv_store_through_its_real_member(monkeypatch, tmp_path):
+    """Steward 1's M1, end to end: the JOB builds the archive's real corpus-integrity.json member with the flag on, and the cursor
+    lands in the app-state store under its key. (The slim debug bundle names that section as a member of its own, so the cursor
+    wired there never ran.)"""
+    from src.api.diagnostics import bundle
+    from src.config.kv_store import kv_get_json, kv_set_json
 
+    kv_set_json(integrity._CURSOR_KEY, {})
+    real_members = bundle._all_diagnostics_members
+    monkeypatch.setattr(bundle, "_all_diagnostics_members", lambda db: [m for m in real_members(db) if m[0] == "corpus-integrity.json"])
+    monkeypatch.setattr(bundle, "_all_diagnostics_dir", lambda: tmp_path)
+
+    class _Ctx:
+        stopping = False
+
+        def set_progress(self, **_k):
+            pass
+
+    res = bundle._all_diagnostics_worker(_Ctx())
+    assert res.get("path"), res
+    kept = kv_get_json(integrity._CURSOR_KEY)
+    assert isinstance(kept, dict) and kept.get("foreign_key_violations"), "the job's member saved its place under the key"
+
+
+def test_the_same_member_saves_nothing_outside_the_job(session, monkeypatch):
+    """The synchronous GET /all and a plain GET build the member with the flag off: no store is even made."""
     from src.api.diagnostics import bundle
 
-    src = inspect.getsource(bundle)
-    assert "_KvCursorStore() if _RESUME_INTEGRITY.get() else None" in src
-    assert "_resuming_integrity(lambda: debug_bundle(db=db, slim=True))" in src
-    assert bundle._RESUME_INTEGRITY.get() is False, "a GET of /debug-bundle runs with the flag off"
-    seen = []
-    bundle._resuming_integrity(lambda: seen.append(bundle._RESUME_INTEGRITY.get()))
-    assert seen == [True] and bundle._RESUME_INTEGRITY.get() is False
+    _corpus(session)
+    made = []
+
+    class _Recording(MemStore):
+        def __init__(self):
+            super().__init__()
+            made.append(self)
+
+    monkeypatch.setattr(integrity, "KvCursorStore", _Recording)
+    member = dict(bundle._all_diagnostics_members(session))["corpus-integrity.json"]
+    out = member()
+    assert out["orphan_keywords"] == 3 and made == [], "outside the job: the real member makes no cursor store, saves nothing"
+    bundle._resuming_integrity(member)
+    assert len(made) == 1 and made[0].saves == 1, "inside the job's flag: the place is saved once"
+    assert bundle._RESUME_INTEGRITY.get() is False
+
+
+def test_budget_a_quick_check_leaves_goes_back_to_a_check_still_partial(session, tiny_ranges, monkeypatch):
+    """Steward 1's M2: one long walk and three quick checks. The long walk's first share runs out, the quick ones finish with
+    most of the budget unused, and a second round gives it back: the figure is established, as main's single COUNT gave it."""
+    _corpus(session, keywords=40, orphans=30)
+    clock = {"t": 0.0}
+    monkeypatch.setattr(integrity, "deadline_left_s", lambda _s: 100.0 - clock["t"])
+    monkeypatch.setattr(integrity, "deadline_expired", lambda _s: clock["t"] >= 100.0)
+    import types
+
+    monkeypatch.setattr(integrity, "time", types.SimpleNamespace(monotonic=lambda: clock["t"]))
+    real = integrity._scalar
+
+    def costly(session_, sql, params=None):
+        if params is not None and "lo" in params and sql.startswith("SELECT COUNT(*) FROM keywords k WHERE k.id > :lo"):
+            clock["t"] += 2.0  # the orphan walk: about 40 one-row ranges x 2 s = 80 s, far more than its first share of 25 s
+        return real(session_, sql, params)
+
+    monkeypatch.setattr(integrity, "_scalar", costly)
+    r = integrity.corpus_integrity(session, sample=100)  # no cursor store: GET /integrity
+    assert r["orphan_keywords"] == 30, r["scan_progress"]["orphan_keywords"]
+    assert r["incomplete_checks"] == [] and r["timed_out"] is False
+    assert "assembled_across_builds" not in r["scan_progress"]["orphan_keywords"], "continued in the same build, not across builds"
+
+
+def test_a_partial_foreign_key_pass_lists_no_violating_tables_beside_its_none(session, tiny_ranges, monkeypatch):
+    _corpus(session)
+    session.add(Article(title="B", content="y", url="http://s.example/b", canonical_url="http://s.example/b", source_id=4_242, hash="h2"))
+    session.commit()
+    monkeypatch.setattr(integrity, "deadline_expired", lambda _s: False)
+    real = integrity._fk_scan
+
+    def cut(session_, saved, progress, stop_at=None, gens=None, build_started=None):
+        return real(session_, saved, progress, -1.0, gens, build_started)  # a share already spent: the walk stops at once
+
+    import types
+
+    monkeypatch.setattr(integrity, "time", types.SimpleNamespace(monotonic=lambda: 0.0))
+    monkeypatch.setattr(integrity, "_fk_scan", cut)
+    r = integrity.corpus_integrity(session, sample=100, cursor=MemStore())
+    assert r["foreign_key_violations"] is None and r["foreign_key_violation_tables"] == []
+
+
+def test_a_completed_pass_takes_no_row_counts_for_its_marker(session, tiny_ranges, monkeypatch):
+    """Steward 1's S2: the marker's row counts are taken only for a pass saved unfinished, never from a budget a finished pass used."""
+    _corpus(session)
+    seen: list[str] = []
+    real = integrity._scalar
+
+    def watching(session_, sql, params=None):
+        seen.append(sql)
+        return real(session_, sql, params)
+
+    monkeypatch.setattr(integrity, "_scalar", watching)
+    r = integrity.corpus_integrity(session, sample=100, cursor=MemStore())
+    assert r["incomplete_checks"] == []
+    assert not [q for q in seen if "WHERE id <= :top" in q], "a pass that finished paid for no marker counts"
 
 
 # --------------------------------------------------------------------------- #
