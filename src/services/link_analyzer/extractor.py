@@ -484,16 +484,14 @@ class LinkExtractor:
         Returns:
             Link type string
         """
-        # Check by tag first
+        # Check by tag first. A <link> is read exactly as an anchor is, by its URL below (the R628 reads, independent S1): its
+        # branch here asked the parsed URL for a "rel" it never has, so it answered "external" whatever the host, and a page's
+        # own <link href="/rss"> was stored as an outbound ArticleLink, with the page's login when the base URL carried one.
+        # A stylesheet's href still types as one by its extension, as an anchor's would.
         if tag_name == "img":
             return "image"
         elif tag_name == "script":
             return "script"
-        elif tag_name == "link":
-            rel = getattr(parsed_url, "rel", "") if hasattr(parsed_url, "rel") else ""
-            if "stylesheet" in rel.lower():
-                return "stylesheet"
-            return "external"
         elif tag_name == "iframe":
             return "iframe"
         elif tag_name in ["video", "audio", "source"]:

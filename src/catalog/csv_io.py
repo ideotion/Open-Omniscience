@@ -21,7 +21,7 @@ from src.catalog.countries import normalize_country
 from src.catalog.languages import language_storage_code
 from src.catalog.normalize import registrable_domain
 from src.database.feed_key import feed_key, lookup_key
-from src.database.source_lookup import domain_keyed, import_rows, match_import
+from src.database.source_lookup import domain_keyed, import_reads, import_rows, match_import
 from src.monitoring.secret_scrub import record_text
 
 # The defined column set (export order). Only name + domain are required on import.
@@ -284,8 +284,10 @@ def upsert_sources(session, rows: list[dict]) -> dict:
     stored_of: dict[str, list[tuple[int, str | None, str | None]]] = {}
     for sid, d, fk, rss in session.query(Source.id, Source.domain, Source.feed_key, Source.rss_url).order_by(Source.id).all():
         stored_of.setdefault(d, []).append((sid, fk, rss))
+    reads_of: dict[str, list[tuple[int, str]]] = {}
     for d, stored in stored_of.items():
         by_domain[d] = import_rows(stored)
+        reads_of[d] = import_reads(stored)  # the add's fallback (``source_for_feed``), so both find one row (the R628 reads, S3)
 
     legacy = domain_keyed(session)
     # DISTINCT feeds per domain: one corrected row repeated twice is still one source, not a sibling. A record WITHOUT a
@@ -302,7 +304,9 @@ def upsert_sources(session, rows: list[dict]) -> dict:
     for row in rows:
         domain = row["domain"]
         held = by_domain.get(domain, [])
-        match = match_import(held, lookup_key(row.get("rss_url"), {k for _sid, k in held}), records_of[domain], legacy)
+        match = match_import(
+            held, lookup_key(row.get("rss_url"), {k for _sid, k in held}), records_of[domain], legacy, reads_of.get(domain, [])
+        )
         is_update = match is not None
         landed = None
         try:

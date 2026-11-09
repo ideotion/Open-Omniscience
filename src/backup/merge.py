@@ -3150,41 +3150,75 @@ def _merge_host_confirmations(con, batch_id: int) -> DomainResult:
 
 
 def _incoming_feed_keys(con) -> dict[int, str]:
-    """The key each incoming source is matched and written under (R628, R634): ``feed_key`` of its ``rss_url``, except for a URL
-    that carries a userinfo, read in this order:
+    """The key each incoming source is matched and written under (R628, R634, the R628 reads): ``feed_key`` of its ``rss_url``,
+    except where a rule below applies. For a URL that carries a userinfo, first:
 
     1. this store still holds the URL's pre-R628 key (the same feed, stored before R628: kept beside its twin, or not yet
        rewritten): that key, so the incoming copy is that row;
-    2. a local row of the domain has exactly this ``rss_url``: that row's key, so the incoming copy is that row whatever it stores;
-    3. another incoming source of the domain derives the same key today (the backup holds one feed twice, with and without a
-       login or with two logins, as a build before R628 could store it): the URL's pre-R628 key, so the pair lands as the two rows
-       it was and the INSERT never meets ``UNIQUE (domain, feed_key)`` (R634);
+    2. a local row of the domain has exactly this ``rss_url``: that row's key (the oldest such row), so the incoming copy is that
+       row whatever it stores.
+
+    Then, for every incoming source a rule above did not place, URLs with a userinfo first, then by id:
+
+    2b. no local row of the domain stores today's key, and a local row that no incoming source took by rule 1 or 2 stores a key
+        from before R628 that reads as today's key (``read_feed_key``: an unhealed legacy row of this feed, under another login or
+        with one where the incoming URL has none): that row's key, so the copy is that row and never a sibling of it (Steward 3's
+        item 2, independent S4); the first incoming source to read so takes the row, so of a backup's pair the credentialed
+        half takes the credentialed row and the plain half lands as its own row, as R634 lands a pair beside that row;
+    3. for a URL with a userinfo, another incoming source of the domain derives the same key today (the backup holds one feed
+       twice, with and without a login or with two logins, as a build before R628 could store it): the URL's pre-R628 key, so the
+       pair lands as the two rows it was and the INSERT never meets ``UNIQUE (domain, feed_key)`` (R634);
     4. else ``feed_key``: one feed with and without a login is one source (R628).
 
-    Only a URL with a userinfo costs anything beyond the derivation: ONE query on the domain's index of ``main.sources``, its rows
-    compared in Python so the login is never a parameter. Never reads an incoming row's own key (the reason in :func:`_same_source`)."""
+    Cost: ONE query for the store's keys that hold an "@" (no parameter), ONE on the domain's index of ``main.sources`` for each
+    incoming URL with a userinfo, and one on ``(domain, feed_key)`` for each source rule 2b could place (its parameters the
+    domain and today's key, which holds no login); every comparison with a stored URL or key is made in Python, so a login is
+    never a parameter. Never reads an incoming row's own key (the reason in :func:`_same_source`)."""
     from collections import Counter
 
     from src.database.feed_key import feed_key as _feed_key
-    from src.database.feed_key import legacy_feed_key
+    from src.database.feed_key import legacy_feed_key, read_feed_key
 
     rows = [(int(sid), str(domain or ""), url) for sid, domain, url in _q(con, "SELECT id, domain, rss_url FROM inc.sources")]
     today = {sid: _feed_key(url) for sid, _domain, url in rows}
     derived = Counter((domain, today[sid]) for sid, domain, _url in rows)
+    # rule 2b's candidates: the store's rows whose key from before R628 reads as another key today, by (domain, that key), oldest first
+    reads: dict[tuple[str, str], list[tuple[int, str]]] = {}
+    for lid, domain, key, url in _q(
+        con, "SELECT id, domain, feed_key, rss_url FROM main.sources WHERE instr(feed_key, '@') > 0 ORDER BY id"
+    ):
+        read = read_feed_key(key, url)
+        if read != (key or ""):
+            reads.setdefault((str(domain or ""), read), []).append((int(lid), key or ""))
     keys: dict[int, str] = {}
+    taken: set[int] = set()
+    rest: list[tuple[int, str, str]] = []
     for sid, domain, url in rows:
-        key = today[sid]
-        old = legacy_feed_key(url)
+        key, old = today[sid], legacy_feed_key(url)
         if old != key:
             # the domain's rows, compared here: the URL's login is never a parameter of the query
-            held = _q(con, "SELECT feed_key, rss_url FROM main.sources WHERE domain = ? ORDER BY id", (domain,))
-            same_url = [k for k, u in held if u == url]
-            if any((k or "") == old for k, _u in held):
-                key = old
-            elif same_url:
-                key = same_url[0] or ""
-            elif derived[(domain, key)] > 1:
-                key = old
+            held = _q(con, "SELECT id, feed_key, rss_url FROM main.sources WHERE domain = ? ORDER BY id", (domain,))
+            same_key = next((int(lid) for lid, k, _u in held if (k or "") == old), None)
+            same_url = [(int(lid), k or "") for lid, k, u in held if u == url]
+            if same_key is not None:
+                keys[sid] = old
+                taken.add(same_key)
+                continue
+            if same_url:
+                keys[sid] = same_url[0][1]
+                taken.add(same_url[0][0])
+                continue
+        rest.append((sid, domain, url))
+    rest.sort(key=lambda r: (legacy_feed_key(r[2]) == today[r[0]], r[0]))  # URLs with a userinfo first, then by id
+    for sid, domain, url in rest:
+        key, old = today[sid], legacy_feed_key(url)
+        free = [(lid, k) for lid, k in reads.get((domain, key), ()) if lid not in taken]
+        if free and not _q(con, "SELECT 1 FROM main.sources WHERE domain = ? AND feed_key = ? LIMIT 1", (domain, key)):
+            keys[sid] = free[0][1]
+            taken.add(free[0][0])
+            continue
+        if old != key and derived[(domain, key)] > 1:
+            key = old
         keys[sid] = key
     return keys
 

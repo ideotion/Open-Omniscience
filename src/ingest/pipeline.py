@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 
 import feedparser
 from sqlalchemy import Row
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, FeedFetchState, Source
@@ -84,7 +84,7 @@ from src.ingest import (
     kill_switch_active,
 )
 from src.ingest.extract import extract_article
-from src.ingest.fetch_verdict import classify_fetch_failure, fetch_reason_key
+from src.ingest.fetch_verdict import classify_fetch_failure, failure_url, fetch_reason_key
 from src.ingest.furniture import strip_furniture
 from src.ingest.non_article import classify_non_article, skip_non_articles_enabled
 from src.utils.url_utils import canonicalize_url, generate_content_hash, url_v1_canonical
@@ -207,7 +207,7 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
         if verdict is not None:
             logging.getLogger(__name__).info(
                 "skipping non-article (%s) from %s: %s",
-                verdict.signal, source.domain, fetched.final_url,
+                verdict.signal, source.domain, failure_url(fetched.final_url),  # its login masked (the R628 reads, nit d)
             )
             return IngestOutcome(
                 fetched.requested_url, IngestResult.NON_ARTICLE, detail=verdict.reason
@@ -531,8 +531,9 @@ _PAGE_MARKERS = (
 
 
 def _url_without_query(url: str) -> str:
-    """``url`` cut at its first ``?`` or ``#`` (a query or fragment can carry a token); never raises."""
-    return str(url).split("?", 1)[0].split("#", 1)[0]
+    """``url`` cut at its first ``?`` or ``#`` (a query or fragment can carry a token), its login masked as ``***@`` (the R628
+    reads, nit d: ``failure_url``, as every URL the fetcher writes); never raises."""
+    return failure_url(str(url).split("?", 1)[0].split("#", 1)[0])
 
 
 def _extract_failed_detail(fetched) -> str:
@@ -842,7 +843,16 @@ def _canonical_stored(session: Session, url: str, canonical: str) -> bool:
     if _exists(session, canonical_url=canonical):
         return True
     legacy = url_v1_canonical(url)
-    return legacy is not None and session.query(Article.id).filter_by(canonical_url=legacy).first() is not None
+    if legacy is None:
+        return False
+    try:
+        return session.query(Article.id).filter_by(canonical_url=legacy).first() is not None
+    except StatementError as exc:
+        # The url-v1 form keeps the URL's login, and the engine's error quotes its parameters (Steward 3's R628 read, item 5):
+        # the app reads it through record_text, but POST /api/ingest's error escapes to the server, whose own "Exception in
+        # ASGI application" line writes it as it made its message. Hidden at the source, SQLAlchemy's own way, for every reader.
+        exc.hide_parameters = True
+        raise
 
 
 def _exists(session: Session, **filters) -> bool:

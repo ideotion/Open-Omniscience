@@ -568,7 +568,13 @@ def source_key_to_write(conn: Any, row_id: int, domain: str | None, stored_key: 
 
     Cheap by construction: no query unless the stored key passes ``keeps_a_stored_key`` (it holds an ``@`` and is the pre-R628 key
     of the row's own URL), and then ONE query on the domain's index: the domain's other rows (a twin can store today's key, or a
-    stale key under a URL that derives it), compared in Python. Its parameters are the domain and the id, never a key or a URL."""
+    stale key under a URL that derives it), compared in Python. Its parameters are the domain and the id, never a key or a URL.
+
+    It reads the DATABASE, not the flush (the R628 reads, Steward 3's item 3 and nit b): a row the same flush inserts, or another
+    row's URL edit in the same flush, is not seen, so ONE flush that heals a row and also inserts the feed, or edits another row
+    onto it, raises UNIQUE and is rolled back, where the same writes in two flushes succeed. No current writer does that: an add
+    finds the row first (``source_for_feed``), an edit onto a held feed is refused first (``PUT /api/sources/{id}``, 409), and
+    the CSV import writes one record per savepoint."""
     from sqlalchemy import select
 
     from src.database.feed_key import feed_key, keeps_a_stored_key, key_to_write

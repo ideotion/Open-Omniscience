@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -105,8 +106,10 @@ def db(engine):
 
 
 @pytest.fixture()
-def params(engine):
-    """Every parameter of every statement the engine runs from the moment a test calls ``params.start()``."""
+def params():
+    """Every parameter of every statement ANY engine runs from the moment a test calls ``params.start()``: the listener sits on
+    the ``Engine`` class (the R628 reads' test note), so a path that opens its own engine is heard too, and it is removed after."""
+    from sqlalchemy.engine import Engine
 
     class _Seen(list):
         armed = False
@@ -117,12 +120,13 @@ def params(engine):
 
     seen = _Seen()
 
-    @event.listens_for(engine, "before_cursor_execute")
     def _record(conn, cursor, statement, parameters, context, executemany):
         if seen.armed:
             seen.append((statement, parameters))
 
-    return seen
+    event.listen(Engine, "before_cursor_execute", _record)
+    yield seen
+    event.remove(Engine, "before_cursor_execute", _record)
 
 
 def _no_login_in(params) -> None:
@@ -505,14 +509,66 @@ _NAMES_FEED_KEY = {
 }
 
 
+#: A read of every column of ``sources`` carries the key without naming it (the R628 reads' test note): ``SELECT *`` or ``s.*``
+#: from it, the ORM's own column list (``Source.__table__`` / ``__mapper__``, ``inspect(Source)``), a ``getattr`` over a column's
+#: name, or the table's column listing (``PRAGMA table_info``, a ``_columns`` / ``_cols`` helper) by name.
+_READS_EVERY_COLUMN = re.compile(
+    r"(?i:SELECT\s+(?:[\w\"]+\.)?\*\s+FROM\s+(?:\w+\.)?[\"']?sources\b)"
+    r"|\bSource\.__(?:table|mapper)__"
+    r"|inspect\(\s*Source\s*\)"
+    r"|getattr\(\s*\w+\s*,\s*\w+\.(?:name|key)\s*\)"
+    r"|(?i:(?:table_info|_columns|_cols)\(\s*(?:\w+\s*,\s*)?\(?[\"']?sources\b)",
+)
+
+#: The modules that read every column of ``sources`` and do not name the key, each with why that read carries no key out.
+_READS_EVERY_COLUMN_WITHOUT_NAMING_IT = {
+    "src/database/maintenance.py": "the boot migrations' PRAGMA table_info(sources): which columns exist, never a value",
+}
+
+
 def test_no_module_that_answers_reports_or_shows_names_the_feed_key():
+    """No module outside the identity's writers and matchers names the key, or reads every column of ``sources`` (which would
+    carry it without naming it). What this cannot see, stated: a table name built at run time (the merge's
+    ``PRAGMA inc.table_info("{src}")``, whose module names the key anyway), an ORM row handed whole to a serializer
+    (``jsonable_encoder``, ``vars``; no route does it today), a column read through an attribute name held in data, and a copy
+    of the database file itself (a full backup carries the kept key beside ``rss_url``, by design)."""
     root = Path(__file__).resolve().parents[1]
-    named = {
-        str(p.relative_to(root))
-        for p in (root / "src").rglob("*")
-        if p.is_file() and p.suffix in {".py", ".js", ".html", ".css", ".json"} and "feed_key" in p.read_text(errors="replace")
-    }
+    files = [p for p in (root / "src").rglob("*") if p.is_file() and p.suffix in {".py", ".js", ".html", ".css", ".json"}]
+    said = {str(p.relative_to(root)): p.read_text(encoding="utf-8", errors="replace") for p in files}
+    named = {path for path, body in said.items() if "feed_key" in body}
     assert named <= _NAMES_FEED_KEY, sorted(named - _NAMES_FEED_KEY)
+    generic = {path for path, body in said.items() if _READS_EVERY_COLUMN.search(body)}
+    allowed = _NAMES_FEED_KEY | set(_READS_EVERY_COLUMN_WITHOUT_NAMING_IT)
+    assert generic <= allowed, sorted(generic - allowed)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        'con.execute("SELECT * FROM sources")',
+        'con.execute("select s.* from main.sources s")',
+        "cols = Source.__table__.columns",
+        "for attr in sa_inspect(Source).attrs: pass",
+        "row = {c.name: getattr(src, c.name) for c in cols}",
+        'cols = _columns(conn, "sources")',
+        'conn.execute(text("PRAGMA table_info(sources)"))',
+    ],
+)
+def test_the_ratchet_sees_a_read_of_every_column(line):
+    assert _READS_EVERY_COLUMN.search(line), line
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        'con.execute("SELECT id, name FROM sources")',
+        'con.execute("SELECT * FROM source_topics")',
+        "getattr(src, 'rss_url', None)",
+        "identity = inspect(source).identity",  # an instance's state (its primary key), not the table's columns
+    ],
+)
+def test_control_the_ratchet_lets_a_named_column_read_pass(line):
+    assert not _READS_EVERY_COLUMN.search(line), line
 
 
 def test_the_csv_and_yaml_exports_carry_no_key_and_keep_the_url_as_written(db, tmp_path):

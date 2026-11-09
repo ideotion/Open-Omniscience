@@ -34,6 +34,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 # Import database models and SourceManager
@@ -1088,12 +1089,29 @@ def update_source(
         updates[field] = value
 
     with SourceManager(session=db) as manager:
-        if "rss_url" in updates:
+        current = manager.get_source_by_id(source_id) if ("rss_url" in updates or "domain" in updates) else None
+        if current is not None and "rss_url" in updates:
             # The form shows the stored URL masked (R637): sent back unchanged, it keeps the stored login, and the login never goes to another host.
-            current = manager.get_source_by_id(source_id)
-            if current is not None:
-                updates["rss_url"] = _to_store(updates["rss_url"], current.rss_url)
-        source = manager.update_source(source_id, **updates)
+            updates["rss_url"] = _to_store(updates["rss_url"], current.rss_url)
+        from src.database.source_lookup import FEED_HELD, feed_held_by_another, url_held_by_another
+
+        domain = updates.get("domain", current.domain) if current is not None else None
+        url = updates.get("rss_url", current.rss_url) if current is not None else None
+        moving = current if current is not None and (domain, url) != (current.domain, current.rss_url) else None
+        if moving is not None and url_held_by_another(db, moving, domain, url) is not None:
+            # The plain row of a pair edited to its twin's exact URL (the R628 reads, nit c): the twin keeps its own key, so the
+            # unique index cannot see it. Refused before the write, in the words an add uses.
+            raise HTTPException(status_code=409, detail=FEED_HELD.format(domain=domain))
+        try:
+            source = manager.update_source(source_id, **updates)
+        except IntegrityError:
+            # The unique (domain, feed) index refused the edit (independent S2: a new login on the kept row of a plain+login pair
+            # derives the plain row's key). Answered as the twin refusal it is, in the add's words, never the driver's text, and
+            # only when another row of the domain does store that feed, read back from the store rather than from the error.
+            db.rollback()
+            if moving is not None and feed_held_by_another(db, moving, domain, url) is not None:
+                raise HTTPException(status_code=409, detail=FEED_HELD.format(domain=domain)) from None
+            raise
         if not source:
             raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
 
