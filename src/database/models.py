@@ -543,10 +543,41 @@ def _derive_source_feed_key(mapper, connection, target: "Source") -> None:
     importers, the seeder, the catalogue corrections, the operator's edit and the collectors all assign
     ``rss_url`` and none of them may be able to forget the other half of the identity. A raw
     ``INSERT``/``UPDATE`` that bypasses the ORM must call ``src.database.feed_key.feed_key`` itself
-    (the restore-merge does, as a SQLite function)."""
+    (the restore-merge does, as a SQLite function).
+
+    R634: an UPDATE of a row that still holds its own feed's pre-R628 key keeps that key when re-deriving
+    it would meet another row's (:func:`source_key_to_write`); the column is then left as it is, so the
+    statement neither changes it nor carries it."""
+    from sqlalchemy import inspect
+
     from src.database.feed_key import feed_key
 
+    if inspect(target).has_identity and target.feed_key:  # an UPDATE of a stored row; an INSERT always derives
+        key = source_key_to_write(connection, target.id, target.domain, target.feed_key, target.rss_url)
+        if key != target.feed_key:
+            target.feed_key = key
+        return
     target.feed_key = feed_key(target.rss_url)
+
+
+def source_key_to_write(conn: Any, row_id: int, domain: str | None, stored_key: str | None, rss_url: str | None) -> str:
+    """The ``feed_key`` a STORED source row is written with (R634): ``feed_key(rss_url)``, or its stored key when that is its own
+    feed's pre-R628 key and another row of ``domain`` holds today's key or would take it (``feed_key.key_to_write``). The ONE
+    reading for every writer that re-derives a key of an existing row: the ``before_update`` event above, the source-topics bulk
+    UPDATE and the curated stamp's heal. ``conn`` is a Connection or a Session.
+
+    Cheap by construction: no query unless the stored key passes ``keeps_a_stored_key`` (it holds an ``@`` and is the pre-R628 key
+    of the row's own URL), and then ONE query on the domain's index: the domain's other rows (a twin can store today's key, or a
+    stale key under a URL that derives it), compared in Python. Its parameters are the domain and the id, never a key or a URL."""
+    from sqlalchemy import select
+
+    from src.database.feed_key import feed_key, keeps_a_stored_key, key_to_write
+
+    if not keeps_a_stored_key(stored_key, rss_url):
+        return feed_key(rss_url)
+    t = cast(Table, Source.__table__)
+    mates = conn.execute(select(t.c.feed_key, t.c.rss_url).where(t.c.domain == domain, t.c.id != row_id)).all()
+    return key_to_write(stored_key, rss_url, [(m[0], m[1]) for m in mates])
 
 
 def _outlet_id_recompute(domain_ref: str) -> str:

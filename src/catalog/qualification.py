@@ -1076,14 +1076,19 @@ def stamp_curated_catalog(session: Session, *, now: datetime | None = None) -> d
         # The key is derived from the row's CURRENT ``rss_url``, read here inside the write window the UPDATEs opened: the scan's
         # copy can be stale (another writer may commit a feed edit between the scan and the first UPDATE, and the ORM form
         # re-loaded each row, so it never derived a key from an old URL). The scan only names the candidates.
+        # R634: read as the event reads it (``source_key_to_write``), so a row of a feed stored twice before R628 keeps its key and
+        # is left out of the fixes: the executemany would otherwise fail the whole boot step on UNIQUE (domain, feed_key).
+        from src.database.models import source_key_to_write
+
         candidates = [sid for sid in stamped if sid in heal]
         fixes: list[dict] = []
         for start in range(0, len(candidates), _ID_CHUNK):
-            for sid, rss_url, stored_key in session.query(Source.id, Source.rss_url, Source.feed_key).filter(
-                Source.id.in_(candidates[start:start + _ID_CHUNK])
-            ):
-                if (stored_key or "") != _feed_key(rss_url):
-                    fixes.append({"id": int(sid), "feed_key": _feed_key(rss_url)})
+            for sid, domain_of, rss_url, stored_key in session.query(
+                Source.id, Source.domain, Source.rss_url, Source.feed_key
+            ).filter(Source.id.in_(candidates[start:start + _ID_CHUNK])):
+                key = source_key_to_write(session, int(sid), domain_of, stored_key, rss_url)
+                if (stored_key or "") != key:
+                    fixes.append({"id": int(sid), "feed_key": key})
         if fixes:
             session.execute(update(Source), fixes)
         log_curated_stamps(session, stamped, now=now)

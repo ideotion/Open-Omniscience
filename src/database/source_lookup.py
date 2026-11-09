@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from src.database.feed_key import feed_key, read_feed_key
+from src.database.feed_key import domain_keys, feed_key, legacy_feed_key, lookup_key, read_feed_key
 from src.database.models import Source
 
 
@@ -47,6 +47,16 @@ def source_for_feed(session: Session, domain: str | None, rss_url: str | None) -
     if domain_keyed(session):
         return source_for_domain(session, domain)
     fk = feed_key(rss_url)
+    old = legacy_feed_key(rss_url)
+    legacy: list[Source] | None = None
+    if old != fk:
+        # R634: a URL with a userinfo whose pre-R628 key a row still holds is THAT row (one feed stored twice before R628 keeps
+        # both rows, and the credentialed one keeps its key), not its plain twin. Read among the domain's keys that hold an "@",
+        # compared here, so the login is never a parameter of the query.
+        legacy = _keys_with_an_at(session, domain)
+        row = next((r for r in legacy if r.feed_key == old), None)
+        if row is not None:
+            return row
     row = (
         session.query(Source)
         .filter(Source.domain == domain, Source.feed_key == fk)
@@ -57,17 +67,15 @@ def source_for_feed(session: Session, domain: str | None, rss_url: str | None) -
         # A key stored before R628 kept the feed URL's userinfo and holds an "@": read as its feed's key today
         # (``read_feed_key``), so adding the same feed again is not a second row. Only on a miss, and only the domain's
         # keys that hold an "@".
-        row = next(
-            (
-                r
-                for r in session.query(Source)
-                .filter(Source.domain == domain, Source.feed_key.contains("@"))
-                .order_by(Source.id)
-                if read_feed_key(r.feed_key, r.rss_url) == fk
-            ),
-            None,
-        )
+        rows = legacy if legacy is not None else _keys_with_an_at(session, domain)
+        row = next((r for r in rows if read_feed_key(r.feed_key, r.rss_url) == fk), None)
     return row
+
+
+def _keys_with_an_at(session: Session, domain: str) -> list[Source]:
+    """The domain's sources whose stored key holds an "@" (a key stored before R628, or a feed whose path holds one), oldest first:
+    one query on the domain's index."""
+    return session.query(Source).filter(Source.domain == domain, Source.feed_key.contains("@")).order_by(Source.id).all()
 
 
 def match_import(rows: list[tuple[int, str]], fk: str, batch_records: int = 1, legacy: bool = False) -> int | None:
@@ -90,11 +98,19 @@ def match_import(rows: list[tuple[int, str]], fk: str, batch_records: int = 1, l
     return None
 
 
+def import_rows(rows: list[tuple[int, str | None, str | None]]) -> list[tuple[int, str]]:
+    """``(id, key)`` for :func:`match_import` from one domain's ``(id, feed_key, rss_url)`` rows: each stored key read as the key its
+    row would be written with today (``domain_keys``: R628's reading of a key stored before it, and R634's kept key of a feed
+    stored twice)."""
+    return list(zip((sid for sid, _k, _u in rows), domain_keys([(k, u) for _sid, k, u in rows]), strict=True))
+
+
 def source_for_import(session: Session, domain: str | None, rss_url: str | None, batch_records: int = 1) -> Source | None:
     """The source an imported record (YAML, CSV) updates, per :func:`match_import`, or ``None`` when it is a new feed."""
     rows = sources_for_domain(session, domain)
+    keyed = import_rows([(r.id, r.feed_key, r.rss_url) for r in rows])
     sid = match_import(
-        [(r.id, read_feed_key(r.feed_key, r.rss_url)) for r in rows], feed_key(rss_url), batch_records,
+        keyed, lookup_key(rss_url, {k for _sid, k in keyed}), batch_records,
         legacy=domain_keyed(session),
     )
     return next((r for r in rows if r.id == sid), None) if sid is not None else None

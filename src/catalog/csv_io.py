@@ -20,8 +20,8 @@ import io
 from src.catalog.countries import normalize_country
 from src.catalog.languages import language_storage_code
 from src.catalog.normalize import registrable_domain
-from src.database.feed_key import feed_key, read_feed_key
-from src.database.source_lookup import domain_keyed, match_import
+from src.database.feed_key import feed_key, lookup_key
+from src.database.source_lookup import domain_keyed, import_rows, match_import
 from src.monitoring.secret_scrub import record_text
 
 # The defined column set (export order). Only name + domain are required on import.
@@ -279,9 +279,13 @@ def upsert_sources(session, rows: list[dict]) -> dict:
     # feed of a registered domain is a new sibling row. Matching on the domain alone made every row of a sheet that
     # exports thirty feeds of one outlet overwrite the first.
     by_domain: dict[str, list[tuple[int, str]]] = {}
-    # each stored key read as its feed's key today (R628: one stored before it kept a feed URL's userinfo)
+    # each stored key read as the key its row would be written with today (R628: one stored before it kept a feed URL's userinfo;
+    # R634: the credentialed row of a feed stored twice keeps its own), and each record looked up the same way (``lookup_key``)
+    stored_of: dict[str, list[tuple[int, str | None, str | None]]] = {}
     for sid, d, fk, rss in session.query(Source.id, Source.domain, Source.feed_key, Source.rss_url).order_by(Source.id).all():
-        by_domain.setdefault(d, []).append((sid, read_feed_key(fk, rss)))
+        stored_of.setdefault(d, []).append((sid, fk, rss))
+    for d, stored in stored_of.items():
+        by_domain[d] = import_rows(stored)
 
     legacy = domain_keyed(session)
     # DISTINCT feeds per domain: one corrected row repeated twice is still one source, not a sibling. A record WITHOUT a
@@ -297,7 +301,8 @@ def upsert_sources(session, rows: list[dict]) -> dict:
 
     for row in rows:
         domain = row["domain"]
-        match = match_import(by_domain.get(domain, []), feed_key(row.get("rss_url")), records_of[domain], legacy)
+        held = by_domain.get(domain, [])
+        match = match_import(held, lookup_key(row.get("rss_url"), {k for _sid, k in held}), records_of[domain], legacy)
         is_update = match is not None
         landed = None
         try:
