@@ -1724,12 +1724,15 @@ Official **figures** are not here at all — they are data, so they live under
     it says which, with the numbers, and does not start. A figure it could not
     read is not checked, and it says that too.
   - **Network fetch mode** — *Transparent* (default; polite, names the tool in the
-    User-Agent) or *Protected* (every fetch routed through a proxy **you** run, e.g. Tor,
-    with a generic User-Agent). The one exception is the requests the app's Wikipedia,
-    Wikidata and dump features make to Wikimedia's servers: Wikimedia's API policy asks
-    each tool to name itself, so in protected mode those requests still carry the tool's
-    own User-Agent, through the same proxy and only over https. Anything else fetched from
-    a Wikimedia site (an article collected like any other page) gets the generic one.
+    User-Agent) or *Protected* (the app's web fetches routed through a proxy **you** run,
+    e.g. Tor, with a generic User-Agent). The one User-Agent exception is the app's API
+    and dump requests to Wikimedia's servers (its Wikipedia, Wikidata and dump features):
+    Wikimedia's API policy asks each tool to name itself, so in protected mode those
+    requests still carry the tool's own User-Agent, through the same proxy and only over
+    https. Anything else fetched from a Wikimedia site (an article collected like any other
+    page) gets the generic one. Three things connect directly even in protected mode, as
+    the network consent window's hover says for each: the newsletter mailbox pull,
+    OpenTimestamps anchoring and the local-AI downloads.
     Protected mode **cannot guarantee anonymity** — you must run and trust the proxy
     yourself; it refuses to enable without a proxy URL. SOCKS proxies such as Tor need
     nothing extra installed.
@@ -2106,10 +2109,11 @@ default sources imported over Tor in one pass):
   **Diagnostics → all diagnostics** export, so the answer is in the bundle rather than
   something to catch live.
 - **Anonymity remains yours to manage**: Protected mode cannot guarantee
-  anonymity — you run and trust the proxy; the app's part is routing every fetch
-  through it with a generic User-Agent, except in the requests its Wikipedia,
-  Wikidata and dump features make to Wikimedia's servers, which still name the
-  tool (Wikimedia's API policy asks for it).
+  anonymity — you run and trust the proxy; the app's part is routing its web
+  fetches through it with a generic User-Agent, except in its API and dump
+  requests to Wikimedia's servers, which still name the tool (Wikimedia's API
+  policy asks for it). The newsletter mailbox pull, OpenTimestamps anchoring and
+  the local-AI downloads connect directly.
 
 ---
 

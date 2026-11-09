@@ -199,9 +199,10 @@ def test_transparent_mode_names_the_app_everywhere_as_before(mode):
 
 _ROOT = __import__("pathlib").Path(__file__).resolve().parent.parent
 _NOTE = (
-    "Transparent mode names this tool in the User-Agent (polite, but identifiable). Protected mode routes every fetch through a proxy you "
-    "run and sends a generic User-Agent, except in the requests its Wikipedia, Wikidata and dump features make to Wikimedia's servers: "
-    "Wikimedia's API policy asks each tool to name itself, so those still name this one."
+    "Transparent mode names this tool in the User-Agent (polite, but identifiable). Protected mode routes the app's web fetches through a "
+    "proxy you run and sends a generic User-Agent, except in its API and dump requests to Wikimedia's servers: Wikimedia's API policy asks "
+    "each tool to name itself, so those still name this one. The newsletter mailbox pull, OpenTimestamps anchoring and the local-AI "
+    "downloads connect directly."
 )
 _HINT = "Protected mode cannot guarantee anonymity — you must run and trust the proxy yourself. SOCKS proxies such as Tor need nothing extra installed."
 _LOCALES = ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh")
@@ -227,9 +228,9 @@ def test_the_settings_note_states_the_exception_and_every_locale_carries_it():
 @pytest.mark.parametrize(
     ("path", "exception"),
     [
-        ("src/static/index.html", "except in the requests its Wikipedia, Wikidata and dump features make to Wikimedia's servers"),
-        ("src/api/safety.py", "except in the requests its Wikipedia, Wikidata and dump features make to Wikimedia's servers"),
-        ("docs/USER_MANUAL.md", "The one exception is the requests the app's Wikipedia, Wikidata and dump features make to Wikimedia's"),
+        ("src/static/index.html", "except in its API and dump requests to Wikimedia's servers"),
+        ("src/api/safety.py", "except in its API and dump requests to Wikimedia's servers"),
+        ("docs/USER_MANUAL.md", "The one User-Agent exception is the app's API and dump requests to Wikimedia's servers"),
         ("docs/SECURITY.md", "The list is `DESCRIPTIVE_AGENT_HOSTS` in `src/safety/fetcher.py`"),
     ],
 )
@@ -241,13 +242,14 @@ def test_no_text_says_protected_mode_hides_the_app_from_everyone(path, exception
         text = _flat((_ROOT / path).read_text(encoding="utf-8"))
     assert exception in text, path
     assert "[safety] extra" not in text, path
+    assert "OpenTimestamps anchoring and the local-AI downloads connect directly" in text, path
 
 
 def test_the_manuals_other_protected_mode_sentence_names_the_exception_too():
     """The manual describes protected mode twice; the second place (its anonymity note) said "a generic User-Agent" with no exception."""
     text = _flat((_ROOT / "docs" / "USER_MANUAL.md").read_text(encoding="utf-8"))
     assert "the app's part is a generic User-Agent and routing every fetch through it." not in text
-    assert "except in the requests its Wikipedia, Wikidata and dump features make to Wikimedia" in text
+    assert "except in its API and dump requests to Wikimedia's servers, which still name the tool" in text
 
 
 def _recording_fetch(monkeypatch) -> list[tuple[str, str | None, str]]:
@@ -292,7 +294,7 @@ def test_protected_mode_with_no_proxy_refuses_both_probes_by_name(mode, monkeypa
     mode("protected")
     monkeypatch.delenv("OO_HTTP_PROXY")
     seen = _recording_fetch(monkeypatch)
-    assert "error" in release_run._law_probe()
+    assert "TransportUnavailable" in release_run._law_probe()["error"]
     with pytest.raises(fetcher_mod.TransportUnavailable):
         from src.monitoring import field_checks
 
