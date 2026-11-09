@@ -1569,7 +1569,7 @@ def _after_the_swap() -> dict[str, Any]:
     (``salvage.Salvage._finish``, the statement of ``day_counts.UNBUILT_SQL``), so they are rebuilt from the rows the repair kept.
     The columnar rollup is what lags, until the next epoch bump (a re-index, a restore merge, a source delete or a newsletter
     removal, among others) makes it rebuild: it keeps counting the mentions the repair could not keep, and it misses new mentions
-    that reuse their ids (``keyword_mentions.id`` has no AUTOINCREMENT, so an id at or below the rollup's watermark can be handed
+    that reuse their ids (the mentions table's id has no AUTOINCREMENT, so an id at or below the rollup's watermark can be handed
     out again, and its incremental merge reads only ids above the watermark)."""
     out: dict[str, Any] = {}
     try:
