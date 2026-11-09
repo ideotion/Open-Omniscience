@@ -243,11 +243,20 @@
     // THE THOROUGH BOX WARNS BEFORE IT PAUSES COLLECTION (R459, F9 of the 2026-11-07 Windows run: 53 minutes on a large corpus). The line is
     // visible while the box is ticked, never behind a hover: the expected time comes from /api/diagnostics/all-job/estimate (this machine's own
     // scan times scaled by its mention rows, the field medians for a scan never timed here) and says how much of it is measured here.
-    function _thoroughNoteText(est) {
+    function _thoroughNoteText(est, limitMin) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s2, v) => String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
       const th = est && est.thorough;
+      // S3: an operator limit shorter than the estimate (or with no estimate) is the pause the person will see, so it is what
+      // the note states, with the few seconds a stopped scan takes to save its place.
+      const known = th && typeof th.est_s === "number" && th.scans > 0;
+      if (limitMin > 0 && Number.isFinite(limitMin * 60) && (!known || limitMin < th.est_s / 60)) {
+        return tf(
+          "With your limit, Thorough pauses collection for at most about {limit} min, plus up to 15 s while a stopped scan saves its place; scans not reached are named in the file.",
+          {limit: Math.max(1, Math.round(limitMin))}
+        );
+      }
       if (!th || typeof th.est_s !== "number" || !(th.scans > 0)) {
         return t("Thorough pauses collection while every scan runs, each up to five minutes; this machine could not give an expected time.");
       }
@@ -267,7 +276,17 @@
       let est = null;
       try { est = await api("/api/diagnostics/all-job/estimate"); } catch (_e) { est = null; }
       if (!box.checked) return;   // unticked while the estimate was coming
-      note.textContent = _thoroughNoteText(est);
+      _thoroughEst = est;
+      _repaintThoroughLimit();
+    }
+    let _thoroughEst = null;
+    function _repaintThoroughLimit() {
+      const note = $("diag-thorough-note");
+      const box = $("diag-thorough");
+      if (!note || !box || !box.checked) return;
+      const budgetEl = $("diag-budget-min");
+      const raw = budgetEl ? String(budgetEl.value || "").trim() : "";
+      note.textContent = _thoroughNoteText(_thoroughEst, raw ? Number(raw) : 0);
       note.hidden = false;
     }
     let _thoroughNoteBound = false;
@@ -276,7 +295,11 @@
       if (box) box.checked = false;
       const budgetEl = $("diag-budget-min");
       if (budgetEl) budgetEl.value = "";   // per run, never remembered (the box's own rule)
-      if (box && !_thoroughNoteBound) { _thoroughNoteBound = true; box.addEventListener("change", paintThoroughNote); }
+      if (box && !_thoroughNoteBound) {
+        _thoroughNoteBound = true;
+        box.addEventListener("change", paintThoroughNote);
+        if (budgetEl) budgetEl.addEventListener("input", _repaintThoroughLimit);   // the estimate is not fetched again per key
+      }
       paintThoroughNote();
       try {
         const s = await api("/api/diagnostics/all-job/status");
@@ -1219,7 +1242,7 @@
         // zero is said so here and the build is not started, rather than read as "no limit" (the backend refuses it with 400).
         const budgetEl = $("diag-budget-min");
         const budgetRaw = (mode === "thorough" && budgetEl) ? String(budgetEl.value || "").trim() : "";
-        if (budgetRaw && !(Number(budgetRaw) > 0 && Number.isFinite(Number(budgetRaw)))) {
+        if (budgetRaw && !(Number(budgetRaw) > 0 && Number.isFinite(Number(budgetRaw) * 60))) {
           set(t("The scan time limit must be a number of minutes above zero, or blank for none."));
           return;   // the finally below gives the button back
         }

@@ -579,7 +579,7 @@ def test_the_operator_budget_is_minutes_or_none(given, want):
     assert plan.operator_budget_s(given) == want
 
 
-@pytest.mark.parametrize("bad", ["0", "-3", "abc", "nan", "inf", 0, -1])
+@pytest.mark.parametrize("bad", ["0", "-3", "abc", "nan", "inf", 0, -1, "1e307", 1e307, "1.7e308"])
 def test_an_operator_budget_that_is_not_minutes_above_zero_is_refused_never_read_as_no_limit(bad):
     with pytest.raises(ValueError):
         plan.operator_budget_s(bad)
@@ -628,6 +628,12 @@ def test_the_job_route_passes_an_operator_budget_for_thorough_only_and_refuses_a
     with pytest.raises(HTTPException) as e:
         B.all_diagnostics_job_start(profile="full", mode="thorough", budget_min="-1")
     assert e.value.status_code == 400
+    # Steward 1's M1: minutes that are finite but whose seconds are not were started with collection paused, then the answer
+    # (JSON has no Infinity) failed with a 500 and the manifest carried Infinity. Refused BEFORE the job starts.
+    n = len(started)
+    with pytest.raises(HTTPException) as e:
+        B.all_diagnostics_job_start(profile="full", mode="thorough", budget_min="1e307")
+    assert e.value.status_code == 400 and len(started) == n, "nothing started"
 
 
 def test_the_panel_offers_the_budget_beside_thorough_only_and_never_remembers_it():

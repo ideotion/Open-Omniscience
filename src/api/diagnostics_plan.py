@@ -200,9 +200,13 @@ def operator_budget_s(minutes: Any) -> float | None:
         value = float(minutes)
     except (TypeError, ValueError):
         raise ValueError("budget_min must be a number of minutes") from None
-    if not math.isfinite(value) or value <= 0:
+    seconds = value * 60.0
+    # Checked AFTER the conversion: "1e307" minutes is finite and its seconds are not, and an infinite budget would start a
+    # build the start answer cannot carry (JSON has no Infinity) and write an invalid manifest. No upper bound beyond that
+    # (no fixed caps): a finite budget longer than every scan simply runs them all, exactly as no budget does.
+    if not math.isfinite(value) or value <= 0 or not math.isfinite(seconds):
         raise ValueError("budget_min must be a finite number of minutes above zero")
-    return value * 60.0
+    return seconds
 
 
 def scan_budget_for(mode: str, thorough_budget_s: float | None) -> float | None:

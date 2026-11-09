@@ -3669,7 +3669,9 @@ def all_diagnostics_job_start(
     ``budget_min`` (S3, per run, not stored, for the reason ``profile`` is not): a Thorough build's scan budget, in
     minutes, set by the operator; none by default. A scan starts only while the budget has :data:`SCAN_FLOOR_S` left and
     is asked to stop when it runs out, exactly as in Quick, and every scan it did not reach is named in the manifest's
-    ``scans.skipped``. Ignored for Quick, whose budget is the product's, and said so in the answer. A value that is not a
+    ``scans.skipped``. A scan asked to stop still saves its place first, which can take up to 15 s past the budget (the
+    corpus-integrity scan's one marker deadline); the panel's note says so. Ignored for Quick, whose budget is the product's, and
+    said so in the answer. A value that is not a
     finite number of minutes above zero is refused (400), never read as "no limit"."""
     resolved_mode = _plan.resolve_mode(mode)
     if not isinstance(budget_min, (str, int, float)):
