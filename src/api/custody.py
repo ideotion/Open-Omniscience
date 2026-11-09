@@ -25,6 +25,7 @@ from src.custody.settings import (
     save_settings,
 )
 from src.custody.signing import HybridSigner
+from src.custody.timestamp import ENTRY_REFUSED_OFFLINE, TimestampUnavailable
 from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/custody", tags=["custody"])
@@ -57,6 +58,10 @@ def log_action(req: LogRequest) -> dict:
             req.item_id, req.item_hash, action, actor=req.actor, metadata=req.metadata
         )
         return entry.to_dict()
+    except TimestampUnavailable as exc:
+        # R618: in OpenTimestamps mode a Stop refuses the entry rather than give it a permanent local-only proof. The refusal names
+        # the kill switch, so it is answered in its own words (503, as an unavailable anchor provider is), never a bare 500.
+        raise HTTPException(status_code=503, detail=http_detail(exc)) from exc
     finally:
         log.close()
 
@@ -180,17 +185,31 @@ RECONCILE_DRAIN_MAX = 1000
 @router.post("/reconcile")
 def reconcile(req: ReconcileRequest) -> dict:
     """Write the owed INGEST entries (each marked late); optionally scan for older gaps,
-    and -- only when asked -- queue what the scan found. Local, no network."""
+    and -- only when asked -- queue what the scan found. Local, no network, except that in
+    OpenTimestamps mode each entry written is anchored (calendar submissions).
+
+    A drain the kill switch stopped (R618: OpenTimestamps mode, a Stop) is answered as ``/log`` answers it, 503 in the refusal's
+    fixed words, whenever writing was what the request asked for: answered as a result, it read "Recorded 0 entries" (invariant
+    #14e's corollary). Nothing after it is done, and the entries stay owed. A scan alone answers with the scan, and its drain's
+    ``refused_offline`` says the same in the body. The 503 does not count the entries a drain wrote BEFORE the Stop (a body would be
+    needed): those are written, each marked late, so the custody status's ``recorded_late`` (the ``late`` block, read again when the
+    tab loads) includes them, while the gap button's next press counts only what that press writes."""
     from src.custody.pending import drain, gap_scan, queue_gaps
 
-    out: dict = {"drained": drain(limit=RECONCILE_DRAIN_MAX)}
+    def _drain() -> dict:
+        drained = drain(limit=RECONCILE_DRAIN_MAX)
+        if drained.get("refused_offline") and (req.record_gaps or not req.scan):
+            raise HTTPException(status_code=503, detail=ENTRY_REFUSED_OFFLINE)  # fixed words, no exception's text
+        return drained
+
+    out: dict = {"drained": _drain()}
     if req.scan:
         scan = gap_scan()
         ids = scan.pop("missing_ids", [])
         out["scan"] = scan
         if req.record_gaps and ids:
             out["queued"] = queue_gaps(ids)
-            out["drained_after_queue"] = drain(limit=RECONCILE_DRAIN_MAX)
+            out["drained_after_queue"] = _drain()
     out["late"] = _late_block()
     return out
 

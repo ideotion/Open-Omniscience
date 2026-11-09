@@ -627,6 +627,15 @@ def init_db() -> None:
     _init_step("ensure_source_outlet_id")
     ensure_source_outlet_id(engine)
 
+    # R625: the two triggers that mark a day of the per-day keyword counts stale when a mention is deleted or
+    # moved, and the counts' state row. Never builds the counts (the visible ``keyword-day-counts`` job does,
+    # after the start-up steps); a refusal leaves them incomplete and trending reads live.
+    _init_step("import:day_counts")
+    from src.analytics.day_counts import ensure_day_counts
+
+    _init_step("ensure_day_counts")
+    ensure_day_counts(engine)
+
     # R71 (b): the natural key of a restored text-keyed row (places, Wikidata items).
     _init_step("ensure_merged_rows_row_key_column")
     ensure_merged_rows_row_key_column(engine)

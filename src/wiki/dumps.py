@@ -334,21 +334,34 @@ class DumpDownloadManager:
         claims its slot (status -> "downloading") UNDER THE LOCK before launch, so
         two concurrent pumps can never exceed the capacity; the launch itself runs
         outside the lock."""
+        from src.ingest import kill_switch_active
+
         to_launch: list[DownloadEntry] = []
         with self._lock:
+            # R617: a worker that airplane mode paused frees its slot and pumps. Under airplane mode EVERY queued entry is
+            # presented PAUSED (resumable), as start() presents one, and not only as many as there are free slots: going back
+            # online starts nothing by itself, so an entry left "queued" behind them would have no worker ever to launch it.
+            offline = kill_switch_active()
+            claimed = False
             free = self.max_concurrent - self._downloading_now()
             for k in list(self._order):
-                if free <= 0:
+                if free <= 0 and not offline:
                     break
                 e = self._entries.get(k)
                 if e is None or e.status != "queued":
                     self._order.remove(k)
                     continue
                 self._order.remove(k)
-                e.status = "downloading"  # claim the slot atomically
-                to_launch.append(e)
-                free -= 1
-            if to_launch:
+                if offline:
+                    e.status = "paused"
+                    e.error = None
+                    e.paused_by = "airplane"
+                else:
+                    e.status = "downloading"  # claim the slot atomically
+                    to_launch.append(e)
+                    free -= 1
+                claimed = True
+            if claimed:
                 self._save()
         for entry in to_launch:
             try:
@@ -566,6 +579,11 @@ class DumpDownloadManager:
         self, entry: DownloadEntry, stop_event: threading.Event | None = None
     ) -> DownloadEntry:
         """Run the (resumable) download loop. Synchronous; used by start() in a thread."""
+        from src.ingest import kill_switch_engaged_since, kill_switch_epoch
+
+        # This attempt's window (R614), opened before its first request (a mirror probe, a size read, the GET); once the transfer
+        # runs, each chunk opens its own (below).
+        epoch = kill_switch_epoch()
         http_get = self._http_get or _default_get
         dest = Path(entry.dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -582,6 +600,8 @@ class DumpDownloadManager:
             except Exception:  # noqa: BLE001 - mirror selection is best-effort
                 fetch_url = entry.url
 
+        failure: Exception | None = None
+        stopped = False
         try:
             # A segmented multi-circuit fetch ONLY on a fresh start (no partial
             # file — segmented+resume semantics are out of scope) with a
@@ -615,6 +635,10 @@ class DumpDownloadManager:
 
             with open(dest, mode) as fh:
                 for chunk in resp.iter_content(_CHUNK):
+                    # The transfer's window narrows to one chunk (R617, R614): the socket guard refuses new connects and never cuts
+                    # an open stream, so a failure after the check below passed is the transfer's own unless a Stop touched the
+                    # read since. Taken BEFORE the check, so a Stop landing between the two is in it.
+                    epoch = kill_switch_epoch()
                     # Pause (resumable) on an explicit Pause OR when airplane mode
                     # engages MID-DOWNLOAD: the kill switch must halt an already-open
                     # file download, not only refuse new fetches (field test 2026-06-19
@@ -639,10 +663,31 @@ class DumpDownloadManager:
             entry.status = "done"
             self._save()
         except Exception as exc:  # noqa: BLE001 - record, never crash the worker thread
-            entry.status = "error"
-            entry.error = type(exc).__name__
-            self._save()
-            log_failure(_LOG, f"dump download failed for {entry.key}", exc, level=logging.WARNING)
+            if isinstance(exc, NetworkBlocked) or kill_switch_engaged_since(epoch):
+                # R617 (R320, R614): the Stop refused or cut this attempt, still engaged or cleared again before the failure
+                # arrived. ``NetworkBlocked`` is raised only by the switch, so it also covers a Stop that landed after start()'s
+                # check and before this worker opened its window. Stored as "error" the entry would wait for the operator; it is
+                # presented as the chunk loop presents a Stop, PAUSED by airplane mode, resumable from the partial file. The cost:
+                # a genuine failure sharing its window (the connect phase, or one chunk) with a Stop reads as paused, and Resume
+                # asks again.
+                entry.status = "paused"
+                entry.error = None
+                entry.paused_by = "airplane"
+                stopped = True
+            else:
+                entry.status = "error"
+                entry.error = type(exc).__name__
+                failure = exc
+        if failure is not None or stopped:
+            # Saved and logged AFTER the handler, as osm_downloads does: a save that fails (a full disk is the likely reason a
+            # download just failed) then raises with no exception to chain, and the thread's excepthook would otherwise print the
+            # original one, unscrubbed.
+            try:
+                self._save()
+            except Exception as save_exc:  # noqa: BLE001 - the worker thread must not die on its own bookkeeping
+                log_failure(_LOG, f"dump download state for {entry.key} could not be saved", save_exc, level=logging.WARNING)
+        if failure is not None:
+            log_failure(_LOG, f"dump download failed for {entry.key}", failure, level=logging.WARNING)
         return entry
 
     def start(

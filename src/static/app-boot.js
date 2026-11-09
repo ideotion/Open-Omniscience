@@ -54,6 +54,9 @@
       // frozen-locale class -- nothing in the walker can repaint a sentence it never
       // saw in English. Registered in THIS listener for the reason stated above.
       try { if (typeof _wizShare === "function") _wizShare(); } catch (_e) {}
+      // The Agenda's Elections coverage view: t()/tf() frames welded to the report's
+      // counts inside a data-i18n-dyn host. Redraws from the payload it holds; never fetches.
+      try { if (typeof _agCovRepaint === "function") _agCovRepaint(); } catch (_e) {}
       // The rest of the Home at-a-glance strip -- its counts and their labels, the "as
       // of" stamp and the automatic-collection line -- is built with t() inside the same
       // [data-i18n-dyn] subtree, so it is the same frozen-locale class: measured staying

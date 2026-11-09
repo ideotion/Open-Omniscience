@@ -20,6 +20,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -188,6 +189,11 @@ def test_the_next_write_removes_the_copy_a_killed_process_left_and_writes(tmp_pa
     forensics._write_state(_OLD)
     _killed_write(tmp_path, "swap")
     assert len(_parts(tmp_path)) == 1
+    forensics._write_state(_NEW)
+    assert len(_parts(tmp_path)) == 1, "a fresh copy was swept: a live writer in another pid namespace would lose it (R287)"
+    old = time.time() - file_lock.SWEEP_MIN_AGE_S - 5
+    for name in _parts(tmp_path):
+        os.utime(tmp_path / name, (old, old))
     forensics._write_state(_NEW)
     assert _parts(tmp_path) == []
     assert forensics._read_state() == _NEW

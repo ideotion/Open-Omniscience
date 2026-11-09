@@ -23,7 +23,13 @@ from urllib.parse import urlparse
 import requests
 from urllib3.util import parse_url
 
-from src.ingest import DEFAULT_USER_AGENT, BlockedTarget, EthicalFetcher, kill_switch_active
+from src.ingest import (
+    DEFAULT_USER_AGENT,
+    BlockedTarget,
+    EthicalFetcher,
+    _register_fetcher_session,
+    kill_switch_active,
+)
 from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL
 from src.monitoring.secret_scrub import record_text
 from src.safety.settings import GENERIC_USER_AGENT, SafetySettings, load_settings
@@ -257,6 +263,11 @@ class GuardedSession(requests.Session):
     #: call sites that ARE the AI install (the Ollama installer's resolve + fetch)
     #: pass one.
     egress_purpose: str | None = None
+
+    def __init__(self) -> None:
+        super().__init__()
+        # A Stop closes this session's pooled keep-alive connections, as it does an EthicalFetcher's (R638): none is left idle.
+        _register_fetcher_session(self)
 
     #: The operator's SOCKS pool, when protected mode uses one (C10). Each request's host
     #: is sharded onto ONE member at send time -- the mapping ``EthicalFetcher`` uses, so a

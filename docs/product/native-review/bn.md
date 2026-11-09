@@ -250,3 +250,12 @@ Correct the text in `src/static/locales/bn.json` (the key is the English text).
 | 12 | {n} of {m} pages seen | {m}-এর মধ্যে {n} পৃষ্ঠা দেখা হয়েছে |
 | 13 | {n} pages seen, total unknown | {n} পৃষ্ঠা দেখা হয়েছে, মোট অজানা |
 | 14 | {n} stretches the lane did not see. | {n}টি সময়কাল যা লেন দেখেনি। |
+
+## extra-4: Start-up step: the links' covering index (PR #1839)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Building the index that keeps the shared-origin counts fast. One time only; anything the app saves waits until it is done. | যে ইনডেক্সটি অভিন্ন-উৎস গণনা দ্রুত রাখে সেটি তৈরি হচ্ছে। শুধু একবার; অ্যাপ যা কিছু সংরক্ষণ করে তা শেষ না হওয়া পর্যন্ত অপেক্ষা করে। |
+| 2 | The index of the articles' links was not built: it needs about {needed} MB of free memory (sorting up to {rows} links, plus the memory the app always keeps free) and this computer has {free} MB. Close other programs and restart the app; until then the shared-origin counts stay slow. | নিবন্ধের লিংকের ইনডেক্স তৈরি হয়নি: এর প্রায় {needed} MB খালি মেমরি দরকার (সর্বোচ্চ {rows}টি লিংক সাজানো, সঙ্গে অ্যাপ সবসময় যে মেমরি খালি রাখে) এবং এই কম্পিউটারে আছে {free} MB। অন্য প্রোগ্রাম বন্ধ করে অ্যাপটি আবার চালু করুন; ততক্ষণ অভিন্ন-উৎস গণনা ধীর থাকবে। |
+| 3 | The index of the articles' links was not built: the volume your data file is on has {free} MB free and it needs about {needed} MB (up to {rows} links). Free some space and restart the app; until then the shared-origin counts stay slow. | নিবন্ধের লিংকের ইনডেক্স তৈরি হয়নি: আপনার ডেটা ফাইলটি যে ভলিউমে আছে সেখানে {free} MB খালি এবং এর প্রায় {needed} MB দরকার (সর্বোচ্চ {rows}টি লিংক)। কিছু জায়গা খালি করে অ্যাপটি আবার চালু করুন; ততক্ষণ অভিন্ন-উৎস গণনা ধীর থাকবে। |
+| 4 | The index of the articles' links was not built: two starts in a row ended while it was being built (the computer ran out of memory or power, or the app was ended abruptly), so it is not tried again until the app is updated. The shared-origin counts stay slow. | নিবন্ধের লিংকের ইনডেক্স তৈরি হয়নি: এটি তৈরির সময় পরপর দুবার চালু হওয়া মাঝপথে শেষ হয়েছে (কম্পিউটারের মেমরি বা বিদ্যুৎ ফুরিয়েছে, অথবা অ্যাপ হঠাৎ বন্ধ করা হয়েছে), তাই অ্যাপ আপডেট না হওয়া পর্যন্ত আর চেষ্টা করা হবে না। অভিন্ন-উৎস গণনা ধীর থাকবে। |
