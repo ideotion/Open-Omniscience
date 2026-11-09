@@ -392,7 +392,7 @@ def test_the_hops_robots_read_follows_its_own_hop_without_reading_robots_there(t
     assert s.fetched == [f"{A}/robots.txt", f"{A}/start", f"{B}/robots.txt", f"{C}/rules.txt", f"{B}/page"]
 
 
-# --- same-host hops are unchanged -----------------------------------------------------------------------------------------------------
+# --- same-host hops keep their host: no new lock, no second wait (their robots re-check is R636's) --------------------------------------
 
 
 def test_a_hop_on_the_same_host_reads_nothing_more_and_waits_nothing(tmp_path):
@@ -409,24 +409,27 @@ def test_a_hop_on_the_same_host_reads_nothing_more_and_waits_nothing(tmp_path):
 
 
 def test_an_http_to_https_upgrade_on_the_same_host_is_not_another_host(tmp_path):
-    """The host key is the same (scheme-free, default port dropped): no https robots.txt read, no wait."""
+    """The host key is the same (scheme-free, default port dropped): no wait. Its robots key is another one, so since R636 the https
+    robots.txt is read before the hop (tests/test_redirect_robots_recheck_r636.py), still with no wait."""
     events: list = []
     s, clock = _Session(events), _Clock(events)
     s.redirect("http://a.example/x", f"{A}/x", status=301)
     s.page(f"{A}/x")
     f = _fetcher(tmp_path, s, interval=5.0, clock=clock)
     assert _fetch(f, "http://a.example/x").final_url == f"{A}/x"
-    assert s.fetched == ["http://a.example/robots.txt", "http://a.example/x", f"{A}/x"] and clock.slept == []
+    assert s.fetched == ["http://a.example/robots.txt", "http://a.example/x", f"{A}/robots.txt", f"{A}/x"] and clock.slept == []
 
 
-def test_a_same_host_hop_to_a_path_its_robots_disallows_is_followed_as_before(tmp_path):
-    """Unchanged, stated: R629 rules on hops to ANOTHER host; the first request's robots decision stands for a same-host hop."""
+def test_a_same_host_hop_to_a_path_its_robots_disallows_is_refused_since_r636(tmp_path):
+    """Changed by R636 (R629 left it standing): a same-host hop to a new path is robots-checked, so a disallowed path is refused."""
     s = _Session()
     s.robots(A, "User-agent: *\nDisallow: /private\n")
     s.redirect(f"{A}/x", f"{A}/private")
     s.page(f"{A}/private")
     f = _fetcher(tmp_path, s)
-    assert _fetch(f, f"{A}/x").final_url == f"{A}/private"
+    with pytest.raises(RobotsDisallowed):
+        _fetch(f, f"{A}/x")
+    assert f"{A}/private" not in s.fetched
 
 
 def test_a_hop_the_redirect_bound_will_not_request_reads_no_robots(tmp_path):
@@ -800,9 +803,9 @@ def test_ingest_files_a_refused_hop_in_the_robots_buckets_with_the_hops_address(
     assert f"{B}/page" not in s.fetched
 
 
-def test_the_preflight_homepage_ping_is_unchanged(tmp_path):
-    """Stated, not changed: the first-run preflight's homepage ping reads no robots.txt for its own host either (it reports the
-    robots verdict beside it), so its hops keep today's behaviour."""
+def test_the_preflight_homepage_ping_reads_the_robots_of_the_host_it_is_redirected_to(tmp_path):
+    """Changed by R636 (R629 left the ping as it was): the ping obeys robots.txt, and its hop to another host reads that host's
+    robots.txt first, with no lock and no wait, as the ping takes none (tests/test_redirect_robots_recheck_r636.py)."""
     from src.monitoring.preflight import _check_one
 
     s = _Session()
@@ -811,7 +814,7 @@ def test_the_preflight_homepage_ping_is_unchanged(tmp_path):
     f = _fetcher(tmp_path, s)
     rec = _bounded(lambda: _check_one(f, SimpleNamespace(id=1, domain="a.example")))
     assert rec["homepage_status"] == 200 and rec["robots"] == "missing"
-    assert s.fetched == [f"{A}/robots.txt", f"{A}/", f"{B}/"]
+    assert s.fetched == [f"{A}/robots.txt", f"{A}/", f"{B}/robots.txt", f"{B}/"]
 
 
 # --- a Location that writes a user name or password is never followed (R633) -------------------------------------------------------
