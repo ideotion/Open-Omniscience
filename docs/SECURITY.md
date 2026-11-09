@@ -350,7 +350,32 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   like any other. For the same reason a CONNECT tunnel, or a SOCKS connection with a proxy set,
   to a LOOPBACK destination is refused in airplane mode too (until then it was let through). Not covered: clients that do not sit on `http.client` (httpx, used
   only by the loopback-only LLM clients), and an origin-form request whose `Host` header an
-  intercepting (transparent) proxy reads as the destination; this app never configures one. Any **non-loopback** target raises
+  intercepting (transparent) proxy reads as the destination; this app never configures one.
+  Since 2026-11-09 (R638) the same `putrequest` point also covers a **keep-alive connection opened
+  before the Stop**: such a connection met the connect guard while it was still transparent, and a
+  pooled `requests` session went on fetching from the same host after airplane mode was engaged,
+  because an origin-form request on an open connection resolves, connects and tunnels nothing. While
+  airplane mode is on, a request is now refused, in fixed words, before a byte is written, when the
+  connection's own destination is not local: its host, and any connection that tunnels through a
+  proxy or rides a SOCKS socket with a proxy set, whatever name it carries. The switch is read where
+  the request is written, so a Stop that lands after a caller's own check is met too. A Stop also
+  closes the pooled connections of every `EthicalFetcher` session, so none is left idle. A request
+  whose first line was already accepted when the Stop landed finishes, as the Stop has always meant.
+  **Residual, checked against the 16 socket-capable libraries the socket-importer ratchet
+  (`tests/test_network_consent.py`) tracks:** this point sees only what is written through
+  `http.client`. `requests`, `urllib3`, `urllib.request` (and so the OpenTimestamps calendar client,
+  which submits through it) and `src/tui/panel.py` sit on it. The ones that do not: `imaplib`/`poplib`
+  in `src/ingest/email.py`, where a mailbox pull that had already connected when the Stop landed
+  finishes its pull (at most its message limit) because its loop does not read the switch again; httpx
+  in the loopback-only LLM clients; a bare `socket` port probe (`src/llm/vllm_lifecycle.py`, connect
+  only, which the connect guard sees); and native code that opens its own sockets outside Python,
+  which no Python-level guard has ever seen. **Why the raw socket `send` is not
+  patched instead (option (b), declined):** it would run on every write in the process, the app's
+  own server answering the browser included; it cannot see an HTTPS request at all, because an
+  `ssl.SSLSocket` writes through the TLS library rather than `socket.send`; it would refuse in the
+  middle of a request instead of before its first byte, leaving a half-written request on the wire;
+  and through a proxy it sees only the proxy's loopback address, the very thing the request-line
+  check already handles. Any **non-loopback** target raises
   `AirplaneModeError` **before** a real socket is opened, so no missed call
   site, third-party library, or DNS prefetch can egress. Loopback (127/8, ::1, `localhost`)
   and AF_UNIX always pass through (the app's own server, a loopback Ollama, the file DB).

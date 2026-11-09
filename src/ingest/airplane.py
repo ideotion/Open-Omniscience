@@ -53,8 +53,22 @@ airplane mode is engaged, ANY target that names its own destination
 a loopback name there is not exempt: a forwarding proxy chained upstream
 forwards ``http://localhost/`` like any other name, and any parse that could
 answer "loopback" is one a proxy can read differently. An origin-form
-``/path`` goes to the host the connect guard already saw, so it is left alone.
-Not covered: an HTTP client that does not sit on
+``/path`` goes to the host the connect guard already saw -- when that
+connection was opened.
+
+A KEEP-ALIVE connection opened before the Stop is the fourth shape (R638, from
+an independent read of R636, 2026-11-09, probed first): the connect guard met it
+while it was still transparent, and every later request on it is an origin-form
+write with no resolve, connect or tunnel left to refuse it, so a pooled
+``requests`` session kept fetching from the same host after airplane mode was
+engaged. The same ``putrequest`` point therefore also refuses, while the switch
+is engaged, a request on a connection whose OWN destination is not local
+(``self.host``; any tunnelling or SOCKS-proxied connection counts as not local),
+and ``activate_kill_switch`` closes the pooled connections of every
+``EthicalFetcher`` session so none is left idle to be reused. Not covered: a
+library that writes to a socket without ``http.client`` (see ``docs/SECURITY.md``
+for the list checked, and for why the raw socket ``send`` is not patched).
+Also not covered: an HTTP client that does not sit on
 ``http.client`` (httpx/httpcore) -- in this tree those are the loopback-only
 LLM clients, which refuse a non-loopback base URL themselves.
 
@@ -312,13 +326,52 @@ def _names_its_own_destination(method: object, url: object) -> bool:
     return not (url == "" or url == "*" or origin_form)
 
 
+#: The one name ``_guard`` is handed for a request on a connection whose OWN destination is not local (R638). Fixed words, never
+#: ``self.host``: a caller can build an ``HTTPConnection`` from a string that still carries userinfo, and that must not reach a log (R142).
+_CONNECTION_TARGET = "a non-local host over a connection already open (opened before airplane mode was engaged)"
+
+
+def _connection_destination(conn: object) -> object:
+    """What ``_guard`` is handed for the connection a request is about to be written to (R638), or ``None`` when that is local.
+
+    A connection that TUNNELS (``_tunnel_host`` set: a CONNECT through an HTTP proxy) reaches a destination only the proxy knows, so it is
+    never local, whatever name it carries -- the same rule ``_guarded_tunnel`` applies to the handshake. A connection whose socket is a
+    PySocks socket with a proxy set is proxied for the same reason. Otherwise the destination is ``self.host``, classified exactly as the
+    connect guard classifies a connect; a host that is missing or not text is not local (an unreadable destination fails closed).
+    """
+    if getattr(conn, "_tunnel_host", None):
+        return _PROXIED_TARGET
+    sock_proxy = getattr(getattr(conn, "sock", None), "proxy", None)
+    if isinstance(sock_proxy, tuple) and sock_proxy and sock_proxy[0] is not None:
+        return _PROXIED_TARGET
+    host = getattr(conn, "host", None)
+    if isinstance(host, (str, bytes)) and host and _is_local_host(host):
+        return None
+    return _CONNECTION_TARGET
+
+
 def _guarded_putrequest(self, method, url, *args, **kwargs):  # type: ignore[no-untyped-def]
-    """Guard a destination named IN the request line (R619): a plain ``http://`` URL through an HTTP proxy is written as an
-    absolute-form ``GET http://host/...`` to an already-allowed loopback socket, with no CONNECT and so no ``_tunnel`` call. In airplane
-    mode every such target is refused, whatever host it names; an origin-form target goes to the peer the connect guard already saw.
-    This runs before ``putrequest`` buffers anything, so a refusal leaves zero request bytes on the wire."""
+    """Guard every request written over http.client while airplane mode is engaged, before ``putrequest`` buffers anything, so a
+    refusal leaves zero request bytes on the wire. Two checks:
+
+    1. A destination named IN the request line (R619): a plain ``http://`` URL through an HTTP proxy is written as an absolute-form
+       ``GET http://host/...`` to an already-allowed loopback socket, with no CONNECT and so no ``_tunnel`` call. Every such target is
+       refused, whatever host it names.
+    2. The connection's OWN destination (R638): a keep-alive connection opened BEFORE the Stop met the connect guard while it was still
+       transparent, so an origin-form ``/path`` written to it afterwards would reach a remote host with no connect, resolve or tunnel to
+       stop it (``requests``/urllib3 reuse pooled connections exactly so). While the switch is engaged, a request on a connection whose
+       destination is not local (:func:`_connection_destination`) is refused. A fresh connection is also checked here, before its lazy
+       connect, which refuses it one step earlier than the connect guard would; a local one (the app's own server, a loopback Ollama) is
+       untouched. The switch is read at the moment the request is written, so a Stop that lands after a caller's own check is still met.
+
+    The ordinary path (switch clear) costs one flag read and one ``Event.is_set``: the destination is only classified while airplane
+    mode is engaged."""
     if _names_its_own_destination(method, url):
         _guard(_PROXIED_TARGET)
+    if _airplane_armed and kill_switch_active():
+        destination = _connection_destination(self)
+        if destination is not None:
+            _guard(destination)
     return _orig_putrequest(self, method, url, *args, **kwargs)
 
 
