@@ -1266,7 +1266,7 @@ class _ServingGate:
         self.inner = inner
 
     async def __call__(self, scope, receive, send):  # type: ignore[no-untyped-def]
-        global _serving_gate_logged
+        global _serving_gate_logged, _serving_check_failure_logged
         kind = scope.get("type")
         if kind != "lifespan" and not _serving_gate_open():
             if not _serving_gate_logged:  # once per closing: a closed gate refuses every request, and the log says so once, not per request
@@ -1281,6 +1281,7 @@ class _ServingGate:
             return  # any other scope type reaches nothing
         if _serving_gate_logged and kind != "lifespan":
             _serving_gate_logged = False  # open again: a later closing logs its own line (security read B on #1901)
+            _serving_check_failure_logged = False  # and a later failing check its own class (security read A on R653)
         await self.inner(scope, receive, send)
 
 

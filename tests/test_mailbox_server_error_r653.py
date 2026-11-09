@@ -213,3 +213,88 @@ def test_a_gate_check_that_raises_is_the_fixed_503_without_its_text(gate, caplog
     lines = [rec.getMessage() for rec in caplog.records]
     assert not any("ZQXR653" in line for line in lines)
     assert sum("check failed (RuntimeError)" in line for line in lines) == 1
+
+
+def test_a_capability_list_imaplib_cannot_decode_is_named_in_fixed_words():
+    """Security read A on R653: a byte past ASCII in the capability list fails imaplib's own decode (UnicodeDecodeError, not its
+    error class), which reached the catch-all 500; it is the same fixed-words greeting failure."""
+    srv = _Server(b"* OK [CAPABILITY IMAP4rev1 STARTTLS ZQXR653\xff] hi\r\n", _imap)
+    try:
+        assert "before logging in; no password was sent" in _refused(fetch_imap, srv, use_ssl=False)
+    finally:
+        srv.close()
+
+
+class _ImapStoppedMidFetch:
+    """An injected IMAP connection: the first message comes back, then the Stop engages and the server's error follows."""
+
+    def __init__(self):
+        self.fetches = 0
+
+    def login(self, *a):
+        return "OK", [b""]
+
+    def select(self, *a):
+        return "OK", [b"2"]
+
+    def search(self, *a):
+        return "OK", [b"1 2"]
+
+    def fetch(self, mid, *a):
+        self.fetches += 1
+        if self.fetches == 1:
+            return "OK", [(b"1 (RFC822 {5}", b"first")]
+        from src.ingest import activate_kill_switch
+
+        activate_kill_switch()
+        raise email_mod.imaplib.IMAP4.abort("ZQXR653 " + _MARK.decode())
+
+
+class _PopStoppedMidRetr:
+    def list(self):
+        return b"+OK", [b"1 5", b"2 5"], 10
+
+    def retr(self, i):
+        if i == 1:
+            return b"+OK", [b"first"], 5
+        from src.ingest import activate_kill_switch
+
+        activate_kill_switch()
+        raise email_mod.poplib.error_proto(b"-ERR " + _MARK)
+
+
+def test_a_stop_still_wins_over_a_server_error_after_the_login():
+    """Security read A on R653: the Stop checks in the new post-login handlers; what was fetched is kept, no error is raised."""
+    raws = fetch_imap("mail.example", "u", _PW, conn=_ImapStoppedMidFetch())
+    assert raws.stopped and list(raws) == [b"first"]
+    clear_kill_switch()
+    raws = fetch_pop3("mail.example", "u", _PW, conn=_PopStoppedMidRetr())
+    assert raws.stopped and list(raws) == [b"first"]
+
+
+def test_a_server_error_after_the_login_without_a_stop_is_named_in_fixed_words():
+    class _Bad(_ImapStoppedMidFetch):
+        def fetch(self, mid, *a):
+            raise email_mod.imaplib.IMAP4.error("ZQXR653")
+
+    with pytest.raises(MailboxServerError, match="after logging in") as info:
+        fetch_imap("mail.example", "u", _PW, conn=_Bad())
+    assert "ZQXR653" not in str(info.value)
+
+
+def test_a_reopened_gate_logs_a_later_failing_check_again(gate, caplog):
+    from fastapi.testclient import TestClient
+
+    def boom():
+        raise RuntimeError("ZQXR653")
+
+    client = TestClient(main.app)
+    with caplog.at_level("ERROR", logger=main.logger.name):
+        gate.setattr(ap, "is_armed", boom)
+        assert client.get("/unlock").status_code == 503
+        gate.setattr(ap, "is_armed", lambda: True)
+        gate.setattr(ap, "removed_while_installed", lambda: [])
+        assert client.get("/unlock").status_code == 200
+        gate.setattr(ap, "is_armed", boom)
+        assert client.get("/unlock").status_code == 503
+    assert sum("check failed (RuntimeError)" in r.getMessage() for r in caplog.records) == 2

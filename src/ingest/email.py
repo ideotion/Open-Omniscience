@@ -781,8 +781,9 @@ def fetch_imap(
             if not use_ssl:
                 raise
             raise _tls_refusal(host, port or 993, record_text(exc, password, limit=300), sent="no command or password sent") from None
-        except _IMAP_ERROR:
-            # R653: the greeting or the CAPABILITY reply (imaplib's error quotes the server's line): fixed words, after the Stop.
+        except (_IMAP_ERROR, UnicodeDecodeError):
+            # R653: the greeting or the CAPABILITY reply (imaplib's error quotes the server's line; a byte past ASCII in the capability
+            # list fails imaplib's own decode): fixed words, after the Stop.
             if _stop_requested():
                 raws.stopped = True
                 return raws
@@ -834,8 +835,9 @@ def fetch_imap(
             raws.stopped = True
             return raws
         raise _certificate_refusal(host, record_text(exc, password, limit=300), sent="no password sent") from None
-    except _IMAP_ERROR:
-        # R653: the server's error reply at any step, in fixed words; a Stop still wins and keeps what was fetched.
+    except (_IMAP_ERROR, UnicodeDecodeError):
+        # R653: the server's error reply at any step (or a capability list after STARTTLS that imaplib cannot decode), in fixed words;
+        # a Stop still wins and keeps what was fetched.
         if raws.stopped or _stop_requested():
             raws.stopped = True
             return raws
