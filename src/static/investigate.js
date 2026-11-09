@@ -26,7 +26,7 @@ function offSiteNote(a) {
   const t = (I && I.t) ? I.t : (s => s);
   const tf = (I && I.tf) ? I.tf : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
   const why = t("This article is credited to the source, but the stored page was fetched from another site.");
-  return ` · <span class="muted" title="${esc(why)}">${esc(tf("fetched from {host}", {host: a.fetched_host}))}</span>`;
+  return ` · <span class="muted fetched-off-site" title="${esc(why)}">${esc(tf("fetched from {host}", {host: a.fetched_host}))}</span>`;
 }
 async function api(path) {
   const r = await fetch(path);

@@ -225,13 +225,22 @@ def test_fetched_host_is_cut_to_the_column(db):
         (SITE, "https://goodnews.org/", False),  # a domain written with a scheme, a port or a login
         (SITE, SITE + ":8443", False),
         (SITE, "u:p@" + SITE, False),
+        ("www.bbc.co.uk", "bbc.com", False),  # two sites url_utils.DOMAIN_ALIASES names as one
+        ("bbc.com", "bbc.co.uk", False),
+        (ELSEWHERE + ".", SITE, True),  # a trailing dot (the stored host keeps it) is left out of the comparison
+        (SITE + ".", SITE, False),
         ("192.0.2.1", SITE, None),  # an IP address: nothing is said
         ("other.example", "good.example", None),  # a top-level domain the list has no rule for: nothing is said
     ],
 )
 def test_another_site_is_another_registrable_domain(host, domain, expected):
     assert off_the_source_site(host, domain) is expected
-    assert {"mismatch": True, "same": False, "unknown": None}[check_host(host, domain).state] is expected
+
+
+@pytest.mark.parametrize(("host", "domain"), [(SUBDOMAIN, SITE), (ELSEWHERE, SITE), ("192.0.2.1", SITE), ("en.yna.co.kr", "yna.co.kr")])
+def test_the_quarantine_host_mismatch_report_gives_the_same_answer(host, domain):
+    """Outside the alias table, the two surfaces that say "another site" never contradict each other."""
+    assert {"mismatch": True, "same": False, "unknown": None}[check_host(host, domain).state] is off_the_source_site(host, domain)
 
 
 @pytest.mark.parametrize(("host", "domain"), [(None, "good.example"), ("good.example", None), ("good.example", ""), ("", "x")])
@@ -286,26 +295,26 @@ def client(tmp_path):
 
 def test_the_reader_says_beside_the_source_that_the_page_came_from_another_site(client):
     body = client.get("/api/articles/1/view").text
-    assert "Good News <span class='muted'>— this page was fetched from another site, othersite.net</span>" in body
+    assert "Good News <span class='muted'>· <span>Fetched from another site</span> <code>othersite.net</code></span>" in body
     assert "Fetched from (app-observed, after redirects)" in body
-    assert "<code>othersite.net</code> <span class='muted'>— another site than the source's (goodnews.org)</span>" in body
+    assert "<code>othersite.net</code> <span class='muted'>· <span>Not the source's site</span> (<code>goodnews.org</code>)</span>" in body
 
 
 def test_the_reader_shows_an_on_site_host_without_the_warning(client):
     body = client.get("/api/articles/2/view").text
     assert "<code>en.goodnews.org</code>" in body  # the source's own subdomain: shown, and not called another site
-    assert "fetched from another site" not in body and "another site than the source" not in body
+    assert "Fetched from another site" not in body and "Not the source's site" not in body
 
 
 def test_the_reader_shows_no_row_for_an_article_stored_before_the_column(client):
     body = client.get("/api/articles/3/view").text
-    assert "Fetched from (app-observed" not in body and "fetched from another site" not in body
+    assert "Fetched from (app-observed" not in body and "Fetched from another site" not in body
 
 
 def test_the_reader_escapes_the_host_in_both_places(client):
     body = client.get("/api/articles/4/view").text
-    assert "fetched from another site, x&lt;b&gt;&#x27;y.net</span>" in body
-    assert "<code>x&lt;b&gt;&#x27;y.net</code>" in body
+    assert "<span>Fetched from another site</span> <code>x&lt;b&gt;&#x27;y.net</code>" in body
+    assert body.count("<code>x&lt;b&gt;&#x27;y.net</code>") == 2  # beside the source, and in the capture row
     assert "<b>'y.net" not in body
 
 
@@ -347,6 +356,39 @@ def test_the_briefing_evidence_audit_carries_it_beside_the_source(tmp_path):
     assert (items[1]["fetched_host"], items[1]["fetched_off_site"]) == (ELSEWHERE, True)
     assert (items[2]["fetched_host"], items[2]["fetched_off_site"]) == (SUBDOMAIN, False)
     assert (items[3]["fetched_host"], items[3]["fetched_off_site"]) == (None, None)
+
+
+_READER_KEYS = ("Fetched from (app-observed, after redirects)", "Fetched from another site", "Not the source's site")
+
+
+@pytest.mark.parametrize("key", _READER_KEYS)
+def test_the_readers_words_are_emitted_as_their_own_text_and_keyed_in_every_locale(key):
+    """The reader loads i18n.js, whose walker translates a text node that matches a key: each phrase is its own node (the
+    host and the domain sit in their own <code>), and each is keyed and translated in all 12 locales."""
+    assert f"<span>{key}</span>" in (ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8") or key == _READER_KEYS[0]
+    for f in sorted((STATIC / "locales").glob("*.json")):
+        data = json.loads(f.read_text(encoding="utf-8"))
+        assert data.get(key), (f.name, key)
+        assert f.stem == "en" or data[key] != key, (f.name, key)
+
+
+@pytest.mark.parametrize("collapse", [True, False])
+def test_the_home_latest_panel_carries_it(tmp_path, collapse):
+    from src.analytics.latest import latest_articles
+
+    with _store(tmp_path)() as s:
+        out = latest_articles(s, collapse=collapse, facets=False)
+    got = {a["id"]: (a["fetched_host"], a["fetched_off_site"]) for a in out["articles"]}
+    assert got == {1: (ELSEWHERE, True), 2: (SUBDOMAIN, False), 3: (None, None), 4: (HOSTILE, True)}
+
+
+def test_the_collect_pass_delta_export_carries_it(tmp_path):
+    from src.scheduler.runlog import export_delta
+
+    with _store(tmp_path)() as s:
+        path = export_delta(s, started_at=datetime(2000, 1, 1), export_dir=str(tmp_path / "out"))
+    doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    assert {a["id"]: a["fetched_host"] for a in doc["data"]} == {1: ELSEWHERE, 2: SUBDOMAIN, 3: None, 4: HOSTILE}
 
 
 # --- an older store ---------------------------------------------------------------------------------------------------------------
@@ -466,7 +508,7 @@ def test_the_spa_note_runs_as_real_code():
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
-# Every row the SPA draws from /api/articles or /api/feed that credits the source. Each names the source and, in the same expression, the note.
+# Every row the SPA draws from /api/articles, /api/feed or /api/insights/latest that credits the source. Each names the source and, in the same expression, the note.
 _SPA_ROWS = [
     ("app-analysis.js", r'an-card-meta">\$\{esc\(a\.source \|\| ""\)\}\$\{ooFetchedOffSiteNote\(a\)\}'),
     ("app-analysis.js", r'<td>\$\{esc\(a\.source \|\| ""\)\}\$\{ooFetchedOffSiteNote\(a\)\}</td>'),
@@ -475,6 +517,7 @@ _SPA_ROWS = [
     ("app-home.js", r'\[esc\(a\.source \|\| ""\) \+ ooFetchedOffSiteNote\(a\), esc\(ooIsoDate'),
     ("app-home.js", r'feed-meta muted">\$\{esc\(a\.source \|\| ""\)\}\$\{ooFetchedOffSiteNote\(a\)\}'),
     ("investigate.js", r'<td>\$\{esc\(a\.source \|\| ""\)\}\$\{offSiteNote\(a\)\}</td>'),
+    ("app-home.js", r'\[esc\(src\.name \|\| src\.domain \|\| ""\) \+ ooFetchedOffSiteNote\(a\), esc\(date\)\]'),
 ]
 
 

@@ -2657,16 +2657,19 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     # site). Said beside the source's name, since that is the credit it qualifies, and in full with the capture facts.
     _src_domain = a.source.domain if a.source else None
     _off_site = off_the_source_site(a.fetched_host, _src_domain)
+    # The words are their own text nodes, keyed in every locale (the page loads i18n.js, whose walker translates a text
+    # node that matches a key), and the host and the domain sit in their own <code>, so they are never part of a key.
     if src_name and _off_site:
         src_name += (
-            f" <span class='muted'>— this page was fetched from another site, "
-            f"{_html.escape(a.fetched_host or '')}</span>"
+            " <span class='muted'>· <span>Fetched from another site</span> "
+            f"<code>{_html.escape(a.fetched_host or '')}</code></span>"
         )
     if a.fetched_host:
         _fetched_val = f"<code>{_html.escape(a.fetched_host)}</code>"
         if _off_site:
             _fetched_val += (
-                f" <span class='muted'>— another site than the source's ({_html.escape(_src_domain or '')})</span>"
+                " <span class='muted'>· <span>Not the source's site</span> "
+                f"(<code>{_html.escape(_src_domain or '')}</code>)</span>"
             )
     else:
         _fetched_val = None

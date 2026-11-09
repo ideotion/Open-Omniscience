@@ -859,7 +859,8 @@ class Article(Base):
     # urllib.parse reads it (lower-cased, no login, no port). Written by the page fetch (src.ingest.pipeline, which every
     # feed, crawl, sitemap, archive, markets and manual-URL path stores through) and the collector's batch. NULL means not
     # recorded, never a guess: an article stored before the column existed, an imported newsletter (nothing was fetched),
-    # and the paths that store without that fetch record (the Wikipedia, law, hazards, IPCC and statistics imports).
+    # and the paths that store without that fetch record (the Wikipedia, law, hazards, IPCC and statistics imports, and the
+    # local PDF import).
     fetched_host: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, onupdate=lambda: datetime.now(UTC))

@@ -672,7 +672,7 @@
         box.innerHTML = arts.map(a => {
           const src = (a.source || {});
           const date = ooIsoDate(a.created_at);
-          const meta = [esc(src.name || src.domain || ""), esc(date)].filter(Boolean).join(" · ");
+          const meta = [esc(src.name || src.domain || "") + ooFetchedOffSiteNote(a), esc(date)].filter(Boolean).join(" · ");
           // REAL substance figures (counts, never a score): word count (flagged when the
           // language is unsegmented, where word_count is meaningless) + cited sources.
           const wc = (a.word_count != null && !a.unsegmented)

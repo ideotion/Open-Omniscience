@@ -333,18 +333,22 @@ def off_the_source_site(host: str | None, source_domain: str | None) -> bool | N
     (:func:`src.ingest.host_mismatch.check_host`): ``en.yna.co.kr`` is Yonhap's own site beside ``yna.co.kr``, ``www.`` and
     other subdomains are the same site, a Unicode name and its punycode agree, and ``example.co.uk`` is never ``co.uk``. Its
     UNKNOWN is ``None`` here, never "another site": a missing or unreadable host or domain, an IP address, a top-level domain
-    the Public Suffix List has no rule for. NOT the crawl's same-site rule (:func:`src.ingest.crawl._off_site`), which reads
-    every other host as off the site: right for keeping a crawl in bounds, wrong as a statement shown to the reader, since
-    many sources publish on a subdomain of the domain they are listed under. Never raises.
+    the Public Suffix List has no rule for. Two sites :data:`DOMAIN_ALIASES` names as one (``bbc.co.uk`` for ``bbc.com``)
+    are one site, and a trailing dot (kept in the stored host, as the fetcher's host key keeps it) is left out of the
+    comparison. NOT the crawl's same-site rule (:func:`src.ingest.crawl._off_site`), which reads every other host as off
+    the site: right for keeping a crawl in bounds, wrong as a statement shown to the reader, since many sources publish on
+    a subdomain of the domain they are listed under. Never raises.
     """
     if not host or not source_domain:
-        return None
-    # Imported here: this module is imported by src.ingest's own modules, and check_host is network-free (urllib.parse and
-    # the bundled Public Suffix List), so a reader that only shows a stored host never needs the fetcher.
+        return None  # a fast path: check_host answers "unknown" for these too
+    # Imported when first called, not at module load: check_host itself is network-free (urllib.parse and the bundled
+    # Public Suffix List), but importing it loads the src.ingest package, and this module is imported far more widely.
     from src.ingest.host_mismatch import check_host
 
-    state = check_host(host, source_domain).state
-    return True if state == "mismatch" else False if state == "same" else None
+    check = check_host(host.rstrip("."), source_domain.strip().rstrip("."))
+    if check.state == "mismatch" and is_equivalent_domain(check.article_site or "", check.source_site or ""):
+        return False
+    return True if check.state == "mismatch" else False if check.state == "same" else None
 
 
 def fetched_host_fields(host: str | None, source_domain: str | None) -> dict:
