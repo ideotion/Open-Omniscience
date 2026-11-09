@@ -231,40 +231,25 @@ def test_the_stop_shuts_every_registered_socket():
 
 
 @pytest.fixture(scope="module")
-def tls_server_context(tmp_path_factory):
-    """A throwaway self-signed certificate for 127.0.0.1. (The pull's own TLS context does not verify it today; that is tracked
-    separately, and these tests are about the Stop, not about trust.)"""
-    import datetime
-    import ipaddress
-    import ssl
+def _pki(tmp_path_factory):
+    from tests._mailbox_tls_pki import build
 
-    from cryptography import x509
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import ec
-    from cryptography.x509.oid import NameOID
+    return build(tmp_path_factory.mktemp("tls"))
 
-    key = ec.generate_private_key(ec.SECP256R1())
-    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")])
-    now = datetime.datetime.now(datetime.UTC)
-    cert = (
-        x509.CertificateBuilder()
-        .subject_name(name)
-        .issuer_name(name)
-        .public_key(key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now - datetime.timedelta(minutes=5))
-        .not_valid_after(now + datetime.timedelta(days=1))
-        .add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]), critical=False)
-        .sign(key, hashes.SHA256())
-    )
-    d = tmp_path_factory.mktemp("tls")
-    (d / "c.pem").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
-    (d / "k.pem").write_bytes(
-        key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
-    )
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    ctx.load_cert_chain(d / "c.pem", d / "k.pem")
-    return ctx
+
+@pytest.fixture
+def tls_server_context(_pki, monkeypatch):
+    """A server certificate for 127.0.0.1 from a throwaway authority the pull is told to trust (R650 verifies every mailbox
+    certificate; these tests are about the Stop, not about trust, so the chain and the name both check out)."""
+    real = email_mod._mailbox_tls_context
+
+    def trusting():
+        ctx = real()
+        ctx.load_verify_locations(_pki.ca_pem)
+        return ctx
+
+    monkeypatch.setattr(email_mod, "_mailbox_tls_context", trusting)
+    return _pki.server
 
 
 def _pull_tls(fn, port: int):
@@ -429,13 +414,19 @@ def test_a_wrap_that_fails_online_raises_its_own_error_and_closes_the_socket(cls
     stop_aware = email_mod._stop_aware(getattr(lib, cls))
     kw = {"ssl_context": _Boom(ssl.PROTOCOL_TLS_CLIENT)} if cls == "IMAP4_SSL" else {"context": _Boom(ssl.PROTOCOL_TLS_CLIENT)}
     srv = _Server(None, lambda line: None)
-    closed: list[object] = []
-    real_close = socket.socket.close
-    monkeypatch.setattr(socket.socket, "close", lambda self: (closed.append(self), real_close(self))[1])
+    registered: list[socket.socket] = []  # strong references: the client's own socket, never one the server closes
+    real_register = ingest.register_mailbox_socket
+
+    def holding(sock):
+        registered.append(sock)
+        real_register(sock)
+
+    monkeypatch.setattr(ingest, "register_mailbox_socket", holding)
     try:
         with pytest.raises(ValueError, match="the wrap failed"):
             stop_aware("127.0.0.1", srv.port, timeout=5, **kw)
-        assert closed, "the plain socket was left open"
+        assert registered, "the plain socket was never registered"
+        assert all(s.fileno() == -1 for s in registered), "the plain socket was left open"
         assert not ingest._LIVE_MAILBOX_SOCKETS
         assert srv.stalled.wait(5)  # the server took the connection before its listener is closed
     finally:

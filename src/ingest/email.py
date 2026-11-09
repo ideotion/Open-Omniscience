@@ -24,6 +24,7 @@ import ipaddress
 import logging
 import poplib
 import re
+import ssl
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.header import decode_header
@@ -40,7 +41,7 @@ from src.database.models import Article, Source
 from src.database.stand_in import is_a_stand_in_source
 from src.database.write import is_locked_error, run_write_with_retry
 from src.ingest.newsletter_source import parse_list_id
-from src.monitoring.secret_scrub import log_failure
+from src.monitoring.secret_scrub import log_failure, record_text
 from src.privacy.link_sanitizer import SanitizedLink, SanitizeStats, sanitize_text_links
 from src.utils.url_utils import generate_content_hash
 
@@ -327,6 +328,33 @@ class _MailboxStopped(Exception):
 MAILBOX_TIMEOUT_S = 60.0
 
 
+class MailboxCertificateError(OSError):
+    """The mail server's TLS certificate failed verification (R650): the pull is refused before LOGIN, so no credential is sent."""
+
+
+def _mailbox_tls_context() -> ssl.SSLContext:
+    """The TLS context of every mailbox pull (R650): the platform's trust store, the certificate chain AND the host name checked
+    (``ssl.create_default_context``). The stdlib's own default for imaplib/poplib verifies neither, which left LOGIN/PASS open to
+    anyone able to answer for the server. There is deliberately no switch that turns the checks off."""
+    return ssl.create_default_context()
+
+
+#: OpenSSL's wrapping of the reason: "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: <reason> (_ssl.c:NNNN)".
+_OPENSSL_VERIFY_REASON = re.compile(r"certificate verify failed: (?P<reason>.+?)(?: \(_ssl\.c:\d+\))?$")
+
+
+def _certificate_refusal(host: str, scrubbed: str) -> MailboxCertificateError:
+    """The honest refusal (R650). ``scrubbed`` is OpenSSL's text as ``record_text`` keeps it (the mailbox password and every held
+    passphrase out of it); only its reason is quoted ("self-signed certificate", "Hostname mismatch, ..."), so the sentence fits
+    the job status's 300 characters with what matters first: refused, no command or password sent, why."""
+    found = _OPENSSL_VERIFY_REASON.search(scrubbed)
+    reason = found.group("reason") if found else scrubbed
+    return MailboxCertificateError(
+        f"refused before logging in, no command or password sent: the TLS certificate of the mail server {host} failed its check ({reason}). "
+        "Check the server name and port."
+    )
+
+
 def _stop_aware(cls):  # type: ignore[no-untyped-def]
     """``cls`` (an imaplib or poplib class) with its socket registered for the Stop the moment the TCP connect returns, before any TLS
     handshake and before the greeting is read (R647: ``activate_kill_switch`` shuts it down, so a pull blocked on a stalled server ends at once), and with the one command imaplib
@@ -434,12 +462,20 @@ def fetch_imap(
         try:
             # imaplib closes its own socket (shutdown, no command) when its constructor raises.
             if use_ssl:
-                conn = _stop_aware(imaplib.IMAP4_SSL)(host, port or 993, timeout=MAILBOX_TIMEOUT_S)
+                conn = _stop_aware(imaplib.IMAP4_SSL)(
+                    host, port or 993, ssl_context=_mailbox_tls_context(), timeout=MAILBOX_TIMEOUT_S
+                )
             else:
                 conn = _stop_aware(imaplib.IMAP4)(host, port or 143, timeout=MAILBOX_TIMEOUT_S)
         except _MailboxStopped:
             raws.stopped = True
             return raws
+        except ssl.SSLCertVerificationError as exc:
+            # R650: the certificate failed its check (a Stop still wins: the refusal is not the Stop's to report).
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            raise _certificate_refusal(host, record_text(exc, password, limit=300)) from None
         except Exception:
             # A Stop while the greeting was awaited shut the socket down (R647): that is the Stop, not a failure.
             if _stop_requested():
@@ -528,9 +564,15 @@ def fetch_pop3(
             # poplib does NOT close its socket when its constructor raises (imaplib does); after a Stop it is already shut down, and
             # it is closed when collected. A TLS socket whose handshake failed is closed by _stop_aware itself.
             if use_ssl:
-                conn = _stop_aware(poplib.POP3_SSL)(host, port or 995, timeout=MAILBOX_TIMEOUT_S)
+                conn = _stop_aware(poplib.POP3_SSL)(host, port or 995, timeout=MAILBOX_TIMEOUT_S, context=_mailbox_tls_context())
             else:
                 conn = _stop_aware(poplib.POP3)(host, port or 110, timeout=MAILBOX_TIMEOUT_S)
+        except ssl.SSLCertVerificationError as exc:
+            # R650: the certificate failed its check (a Stop still wins: the refusal is not the Stop's to report).
+            if _stop_requested():
+                raws.stopped = True
+                return raws
+            raise _certificate_refusal(host, record_text(exc, password, limit=300)) from None
         except Exception:
             # As in fetch_imap: a Stop while the greeting was awaited shut the socket down (R647).
             if _stop_requested():
