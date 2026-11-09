@@ -55,6 +55,7 @@ _S5_MODULES: set[str] = {m for m in MODULES if m.split("/")[1] not in _SWEEP_DON
 #: second one in the same file is reported.
 NOT_RECORDS: dict[str, dict[str, int]] = {
     "src/api/heavy.py": {"db.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: the enclosing statement deadline
+    "src/analytics/day_counts.py": {"session.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: one request's memo of the live per-day sums (R625)
     "src/analytics/rollup_serve.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},  # ``_library_replaced(exc)`` walks the exception's ``__cause__``/``__context__`` chain for the generation guard's class; it reads no text, stores nothing and logs nothing
     "src/ingest/__init__.py": {"the caught exception 'cause' is used outside a scrubbing call": 2},  # RobotsUnavailable's own ``cause`` word, not an exception
     "src/ingest/airplane.py": {"a ** mapping handed to a log call can carry exc_info": 1},  # the socks connect's own kwargs

@@ -55,14 +55,13 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session
 
+from src.database.writer import write_lock
 from src.jobs.background import BackgroundJob, Framed, JobContext, register_job
 from src.monitoring.secret_scrub import log_failure
 
@@ -284,16 +283,11 @@ def current(conn: Connection) -> str | None:
 # --------------------------------------------------------------------------------------------- writes
 
 
-@contextmanager
-def _writing(conn: Connection) -> Iterator[None]:
-    """One write transaction on ``conn`` under the writer gate: the read the connection opened is ended first
-    (SQLAlchemy refuses ``begin()`` inside the transaction a read began), then the gate, then the transaction."""
-    from src.database.writer import write_lock
-
+def _end_read(conn: Connection) -> None:
+    """End the read a connection opened (SQLAlchemy refuses ``begin()`` inside the transaction a read began), so
+    each write below is: the connection, then the writer gate, then one transaction."""
     if conn.in_transaction():
         conn.commit()
-    with write_lock(), conn.begin():
-        yield
 
 
 def _iso(d: Any) -> str:
@@ -305,7 +299,8 @@ def _rebuild_day(conn: Connection, day: str, *, after: str | None = None) -> Non
     clear its dirty mark and store the cursor. The days in ``(after, day)`` (every day up to ``day`` on the first
     step) are cleared too: the build's way of dropping days that no longer have a mention."""
     lo_sql, lo_args = ("observed_on > ? AND ", (after,)) if after is not None else ("", ())
-    with _writing(conn):
+    _end_read(conn)
+    with write_lock(), conn.begin():
         conn.exec_driver_sql(f"DELETE FROM {TABLE} WHERE {lo_sql}observed_on <= ?", (*lo_args, day))  # nosec B608 - constants
         conn.exec_driver_sql(f"DELETE FROM {DIRTY} WHERE {lo_sql}observed_on <= ?", (*lo_args, day))  # nosec B608 - constants
         conn.exec_driver_sql(
@@ -317,7 +312,8 @@ def _rebuild_day(conn: Connection, day: str, *, after: str | None = None) -> Non
 
 
 def _fold_day(conn: Connection, day: str) -> None:
-    with _writing(conn):
+    _end_read(conn)
+    with write_lock(), conn.begin():
         conn.exec_driver_sql(f"DELETE FROM {TABLE} WHERE observed_on = ?", (day,))  # nosec B608 - a constant
         conn.exec_driver_sql(f"DELETE FROM {DIRTY} WHERE observed_on = ?", (day,))  # nosec B608 - a constant
         conn.exec_driver_sql(
@@ -363,7 +359,8 @@ def build(engine: Engine, ctx: JobContext | None = None) -> dict[str, Any]:
             epoch = _epoch(conn)
             resume = (not st["complete"]) and st["watermark"] is not None and st["built_epoch"] == epoch
             if not resume:
-                with _writing(conn):
+                _end_read(conn)
+                with write_lock(), conn.begin():
                     m = _max_id(conn)
                     conn.exec_driver_sql(
                         f"UPDATE {STATE} SET complete = 0, built_epoch = ?, watermark = ?, reuse_floor = NULL, "  # nosec B608 - a constant
@@ -407,7 +404,8 @@ def build(engine: Engine, ctx: JobContext | None = None) -> dict[str, Any]:
                         done=at, total=max(span, at),
                         detail=Framed(FRAME_BUILDING.format(day=at, days=max(span, at)), FRAME_BUILDING, day=at, days=max(span, at)),
                     )
-            with _writing(conn):
+            _end_read(conn)
+            with write_lock(), conn.begin():
                 tail_sql, tail_args = ("observed_on > ?", (cursor,)) if cursor is not None else ("1", ())
                 conn.exec_driver_sql(f"DELETE FROM {TABLE} WHERE {tail_sql}", tail_args)  # nosec B608 - constants
                 conn.exec_driver_sql(f"DELETE FROM {DIRTY} WHERE {tail_sql}", tail_args)  # nosec B608 - constants
@@ -466,7 +464,8 @@ def fold_tail(engine: Engine, *, should_stop=None) -> dict[str, Any]:
                 folded += 1
             # The watermark moves only if no delete moved the reuse floor while this ran: a floor set meanwhile
             # names ids this fold did not read, and the next fold reads them.
-            with _writing(conn):
+            _end_read(conn)
+            with write_lock(), conn.begin():
                 conn.exec_driver_sql(
                     f"UPDATE {STATE} SET watermark = ?, reuse_floor = NULL "  # nosec B608 - a constant
                     "WHERE id = 1 AND watermark IS ? AND reuse_floor IS ?",
