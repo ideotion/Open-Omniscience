@@ -441,6 +441,10 @@ def _guarded_getnameinfo(sockaddr, flags):  # type: ignore[no-untyped-def]
         # the number (security read A measured a DNS query for ("127.0.0.5", 0) and ("::1", 0, 0, 0)).
         answer_as_localhost = not flags & socket.NI_NUMERICHOST
         flags |= socket.NI_NUMERICHOST | socket.NI_NUMERICSERV
+        if answer_as_localhost:
+            # glibc refuses NI_NAMEREQD beside the forced NI_NUMERICHOST (EAI_NONAME); the name it requires is the "localhost" answered
+            # below. A caller who asked for the number AND a name keeps libc's own refusal.
+            flags &= ~socket.NI_NAMEREQD
     else:
         answer_as_localhost = False
     with native_call("dns"):

@@ -161,7 +161,24 @@ def test_getnameinfo_of_a_loopback_literal_asks_libc_for_numbers_only(reached, h
     finally:
         ap._orig_getnameinfo = recorder
     want = socket.NI_NUMERICHOST | socket.NI_NUMERICSERV
-    assert seen == [flags | want]
+    handed = (flags | want) & ~socket.NI_NAMEREQD if answer == "localhost" else flags | want
+    assert seen == [handed]
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "127.0.0.2"])
+def test_the_real_getnameinfo_with_namereqd_answers_localhost(host):
+    """With the REAL call: glibc refuses NI_NAMEREQD beside NI_NUMERICHOST, so the wrapper clears it and answers the name itself."""
+    was_installed, was_armed = ap.is_installed(), ap._airplane_armed
+    assert ap.install_airplane_socket_guard()
+    try:
+        activate_kill_switch()
+        assert socket.getnameinfo((host, 80), socket.NI_NAMEREQD) == ("localhost", "80")
+    finally:
+        clear_kill_switch()
+        ap.uninstall_airplane_socket_guard()
+        if was_installed:
+            ap._install_patches()
+        ap._airplane_armed = was_armed
 
 
 def test_the_real_reverse_lookup_of_a_loopback_literal_makes_no_query():
@@ -443,3 +460,16 @@ def test_a_leaked_stand_in_is_put_back_on_its_own_call():
         assert http.client.HTTPConnection._tunnel is tunnel  # type: ignore[attr-defined]
     finally:
         socket.gethostbyname = saved["socket.gethostbyname"]  # type: ignore[assignment]
+
+
+@pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="no AF_UNIX")
+def test_an_af_unix_datagram_is_left_alone(reached, tmp_path):
+    """A filesystem path is local IPC: an AF_UNIX sendto in airplane mode reaches the real call untouched."""
+    activate_kill_switch()
+    path = str(tmp_path / "d")
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    try:
+        s.sendto(b"x", path)
+    finally:
+        s.close()
+    assert reached == [("sendto", path)]
