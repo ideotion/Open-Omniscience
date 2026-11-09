@@ -219,6 +219,10 @@ def advance_backfill(
         _save_state(state, state_path)
         return {"enabled": True, "source_id": sid, "skipped": "source no longer exists", "done": True}
 
+    from src.ingest.crawl import _registrable_host
+    from src.ingest.sitemap import _off_host
+
+    base_host = _registrable_host(source.domain)  # the host discover_sitemap_urls held the list to
     active_urls: list[str] = active["urls"]
     cursor = int(active["cursor"])
     tally: dict[str, int] = dict(active.get("tally", {}))
@@ -229,6 +233,15 @@ def advance_backfill(
         if kill_switch_active():
             held_back = True
             break  # airplane mid-tick -- progress already made this loop is kept
+        off = _off_host(url, base_host)
+        if off is not False:
+            # A list saved by a build before R627 (or R626) still holds the page locs its sitemap put on other hosts, or that
+            # urllib.parse cannot read: walked as they stand, they were fetched and stored as this source's (the independent read
+            # of R626, S1). Each is passed over and counted, never fetched, by the rule the enumeration now applies.
+            key = "skipped_unreadable" if off is None else "skipped_off_host"
+            tally[key] = tally.get(key, 0) + 1
+            attempted += 1
+            continue
         try:
             outcome = ingest(session, source, url, fetcher=fetcher)
             key = outcome.result.value if hasattr(outcome.result, "value") else str(outcome.result)
