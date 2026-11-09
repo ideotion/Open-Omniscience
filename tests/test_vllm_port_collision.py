@@ -30,6 +30,7 @@ import re
 import socket
 import threading
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
 
@@ -56,12 +57,32 @@ def _retire(s: http.server.HTTPServer) -> None:
     s.server_close()
 
 
+def _a_free_port() -> int:
+    """A port nothing listens on, from the kernel: bind to 0, read the number, release it."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def _point_vllm_at(monkeypatch, port: int) -> None:
+    """Make vLLM's URL a port of this test's own, never vLLM's default (8001).
+
+    CI runs the files of a shard on parallel workers, and a start() test on another worker
+    may probe the default port at any moment. A server held on 8001 here made such tests
+    fail, with production code correctly refusing a taken port (#1860's shard 2,
+    2026-11-09)."""
+    monkeypatch.setenv("OO_VLLM_URL", f"http://127.0.0.1:{port}")
+
+
 @pytest.fixture
 def server_on():
-    """A non-vLLM HTTP server, i.e. what the app looks like to the probe."""
+    """A non-vLLM HTTP server, i.e. what the app looks like to the probe.
+
+    It binds a port the kernel picks unless a test names one: read it from
+    ``server_address`` and point vLLM at it with ``_point_vllm_at``."""
     servers = []
 
-    def _start(port: int):
+    def _start(port: int = 0):
         class H(http.server.BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
                 self.send_response(404)
@@ -133,17 +154,19 @@ def test_server_argv_carries_the_derived_port_not_the_apps(monkeypatch):
 # --------------------------------------------------------------------------- #
 def test_a_free_port_reads_as_not_started_not_as_broken(monkeypatch):
     monkeypatch.delenv("OO_VLLM_URL", raising=False)
+    assert urlparse(V.base_url()).port == default_vllm_port(), "no override: the derived port"
+    port = _a_free_port()
+    _point_vllm_at(monkeypatch, port)
     occ = V.port_occupant(timeout=1.0)
     assert occ["state"] == "free"
-    assert occ["port"] == default_vllm_port()
+    assert occ["port"] == port
 
 
 def test_a_foreign_server_is_named_rather_than_reported_as_vllm_being_down(
     monkeypatch, server_on
 ):
     """The whole field defect: something answered, and we called it 'vLLM down'."""
-    monkeypatch.delenv("OO_VLLM_URL", raising=False)
-    server_on(default_vllm_port())
+    _point_vllm_at(monkeypatch, server_on().server_address[1])
     occ = V.port_occupant(timeout=1.0)
     assert occ["state"] == "foreign"
     assert "not vLLM" in occ["detail"]
@@ -154,13 +177,12 @@ def test_a_foreign_server_is_named_rather_than_reported_as_vllm_being_down(
 def test_start_refuses_a_doomed_launch_instead_of_spawning_into_a_taken_port(
     monkeypatch, server_on
 ):
-    monkeypatch.delenv("OO_VLLM_URL", raising=False)
     monkeypatch.setattr("src.llm.backend.detect_gpu", lambda: {"available": True, "vram_mb": 8188})
     # Past the is-it-installed gate: that check is CORRECTLY first (no point
     # naming a port problem on a machine with no vLLM), but the subject here is
     # the port refusal, which only the installed case reaches.
     monkeypatch.setattr(V, "is_installed", lambda: True)
-    server_on(default_vllm_port())
+    _point_vllm_at(monkeypatch, server_on().server_address[1])
 
     def must_not_spawn(*a, **k):
         raise AssertionError("start() spawned a server that could never bind")

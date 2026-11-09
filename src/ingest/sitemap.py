@@ -50,7 +50,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import Source
 from src.ingest import EthicalFetcher, FetchError
-from src.ingest.crawl import _off_site, _registrable_host
+from src.ingest.crawl import _kept_on_site, _off_site, _registrable_host
 from src.ingest.fetch_verdict import failure_url
 from src.ingest.pipeline import IngestResult, ingest_url
 from src.monitoring.secret_scrub import record_text
@@ -239,7 +239,9 @@ def discover_sitemap_urls(
     ``max_sitemaps`` total) -- but ONLY child sitemaps on the SAME registrable
     host as ``host`` are ever fetched; an off-host child is recorded in
     ``skipped_off_host`` and never followed (the same "same-domain only"
-    discipline ``src.ingest.crawl`` applies to on-page links).
+    discipline ``src.ingest.crawl`` applies to on-page links). A sitemap on the
+    host that REDIRECTS off it is refused at the hop, before the other host is
+    asked anything, and written in ``errors`` (R629).
 
     A urlset's page locs are held to the same host by the same rule (R627, :func:`_off_host`): before, they were never
     checked, so a sitemap could hand the caller pages on any other site to fetch and store as this source's. An off-host page
@@ -252,6 +254,8 @@ def discover_sitemap_urls(
     discovery stops (``stopped_reason`` ``"max_skipped"``).
     """
     base_host = _registrable_host(host)
+    # a sitemap that redirects off the host is an off-host sitemap, never followed like an off-host child (R629)
+    on_site = _kept_on_site(base_host)
     report = SitemapDiscoveryReport(source_host=host)
 
     declared = declared_sitemap_urls(fetcher, host)
@@ -287,7 +291,7 @@ def discover_sitemap_urls(
 
         tried += 1
         try:
-            fetched = fetcher.fetch(sm_url, require_html=False)
+            fetched = fetcher.fetch(sm_url, require_html=False, redirect_scope=on_site)
         except FetchError as exc:
             report.errors.append(f"{failure_url(sm_url)}: {record_text(exc, typed=False)}")
             continue

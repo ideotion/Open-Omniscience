@@ -27,6 +27,7 @@ deliberately fenced:
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import cast
@@ -188,6 +189,16 @@ def _site_key(host: str) -> str | None:
         return None
 
 
+def _kept_on_site(base_host: str) -> Callable[[str], bool]:
+    """The ``redirect_scope`` a fetch kept to the site ``base_host`` hands the fetcher (R629): a redirect hop that leaves the
+    site, by the same :func:`_off_site` test a harvested link takes, is refused before anything is asked of the other host."""
+
+    def inside(url: str) -> bool:
+        return not _off_site(urlparse(url).netloc, base_host)
+
+    return inside
+
+
 def _harvest_links(html: str, base_url: str) -> tuple[list[str], set[str]]:
     """Absolute, de-fragmented http(s) links from a page, in document order, and the hrefs ``urllib.parse`` could not read.
 
@@ -245,6 +256,9 @@ def crawl_source(
     queue: deque[tuple[str, int]] = deque([(start, 0)])
     queued: set[str] = {canonicalize_url(start)}
     unreadable: set[str] = set()  # the hrefs _harvest_links could not read, as written: counted once per crawl (R626)
+    # A crawl kept to one site follows no redirect off it either (R629): before, an on-site link that redirected to another
+    # host was followed there and its page stored as this source's article.
+    scope = _kept_on_site(base_host) if cfg.same_domain_only else None
 
     # P1.8 collector write batching: buffer stores across the crawl so several
     # articles share ONE gate window/fsync; fetches stay outside any gate.
@@ -261,7 +275,7 @@ def crawl_source(
             url, depth = queue.popleft()
 
             try:
-                fetched = fetcher.fetch(url, require_html=True)
+                fetched = fetcher.fetch(url, require_html=True, redirect_scope=scope)
             except RobotsDisallowed:
                 tally[IngestResult.BLOCKED_ROBOTS.value] += 1
                 continue

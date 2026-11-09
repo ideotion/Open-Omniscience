@@ -58,13 +58,15 @@ def auto_snapshot_due(
     original snapshot-only behaviour, unchanged, for callers/tests that don't need it.
     """
     from src.hazards.store import load_snapshot, save_snapshot
-    from src.ingest import kill_switch_active
+    from src.ingest import kill_switch_active, kill_switch_engaged_since, kill_switch_epoch
 
     snap = load_snapshot(now=now)
     age = snap.get("age_hours")
     if snap.get("available") and age is not None and age < float(refresh_interval_hours):
         return {"skipped": "fresh", "age_hours": age}
 
+    # The relay's window (R614), opened BEFORE the check that lets its requests go: a Stop landing between the two is in it.
+    epoch = kill_switch_epoch()
     if kill_switch_active():
         # Offline: do NOT attempt any fetch (no socket); keep the last-known snapshot.
         return {"skipped_offline": True}
@@ -79,6 +81,13 @@ def auto_snapshot_due(
     except Exception as exc:  # noqa: BLE001 - a bad relay must not break the collect pass
         log_failure(_LOG, "hazard snapshot fetch failed", exc, level=logging.WARNING)
         return {"error": record_text(exc, typed=True)}
+
+    if failures and kill_switch_engaged_since(epoch):
+        # R617 (R320, R614): a feed failed while a Stop was engaged, or was engaged and cleared again inside the relay. Saving would
+        # REPLACE the snapshot with only the feeds that answered and hold that partial picture for the refresh interval, the cut
+        # feed's records gone until then. The previous snapshot is kept and the next online pass asks both again. The cost: a
+        # genuine feed failure sharing its window with a Stop is not recorded, and the relay is asked again.
+        return {"skipped_offline": True}
 
     if not records:
         return {

@@ -299,6 +299,9 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
     ensure_source_last_crawled_column(engine)
     ensure_source_composite_key(engine)
     ensure_source_outlet_id(engine)
+    from src.analytics.day_counts import ensure_day_counts
+
+    ensure_day_counts(engine)
     ensure_merged_rows_row_key_column(engine)
     analyze = optimize_at_boot(engine)
     return {"hot_indexes_created": created, "analyze": analyze}

@@ -143,8 +143,10 @@ def advance_backfill(
     """
     if per_pass <= 0:
         return {"enabled": False}
-    from src.ingest import kill_switch_active
+    from src.ingest import kill_switch_active, kill_switch_engaged_since, kill_switch_epoch
 
+    # The enumeration's window (R614) opens BEFORE the check that lets it go, so a Stop landing between the check and the request is in it.
+    epoch = kill_switch_epoch()
     if kill_switch_active():
         return {"enabled": True, "skipped": "airplane mode engaged"}
 
@@ -182,12 +184,12 @@ def advance_backfill(
             state["done_sources"] = done
             _save_state(state, state_path)
             return {"enabled": True, "source_id": sid, "skipped": "its outlet's archive was already backfilled by another feed", "done": True}
-        try:
+        try:  # inside the enumeration's window (``epoch`` above, R614): a Stop pressed and cleared again inside it is a Stop
             urls = discover(fetcher, source, full_history=bool(entry.get("full_history")))
         except Exception as exc:  # noqa: BLE001 - one source's enumeration failure must not abort the queue
             log_failure(_LOG, f"archive backfill: sitemap enumeration failed for {source.domain!r}", exc, level=logging.WARNING)
             urls = []
-        if kill_switch_active():
+        if kill_switch_engaged_since(epoch):
             # A Stop inside the enumeration (up to two robots reads and up to 5 sitemaps, 50 with the full history) makes its
             # answer the person's setting, not the site's, empty or part-read: recorded as done it would end this source's
             # history for good (``enqueue_source`` refuses a done source), and a part-read list would be walked as if it were
@@ -227,6 +229,7 @@ def advance_backfill(
     attempted = 0
     held_back = False
     for url in active_urls[cursor : cursor + per_pass]:
+        url_epoch = kill_switch_epoch()  # this URL's own window (R614), opened before the check that lets it go
         if kill_switch_active():
             held_back = True
             break  # airplane mid-tick -- progress already made this loop is kept
@@ -256,10 +259,11 @@ def advance_backfill(
             # silently cascades every remaining url in the batch to "error"
             # too (transversal audit 09, 2026-07-25).
             session.rollback()
-        if kill_switch_active() and key in (IngestResult.FETCH_FAILED.value, "error"):
-            # A Stop inside this URL's flight: the failure is the person's setting, not the page's, so it is neither tallied nor
-            # passed over -- the cursor stays on it and the next tick asks again (the check at the head of the loop covers the
-            # URLs after it). A URL that finished (stored, duplicate, blocked) before the Stop keeps its place in the count.
+        if kill_switch_engaged_since(url_epoch) and key in (IngestResult.FETCH_FAILED.value, "error"):
+            # A Stop inside this URL's flight (still engaged, or cleared again before the outcome came back, R614): the failure is the
+            # person's setting, not the page's, so it is neither tallied nor passed over -- the cursor stays on it and the next tick
+            # asks again (the check at the head of the loop covers the URLs after it). A URL that finished (stored, duplicate,
+            # blocked) before the Stop keeps its place in the count.
             held_back = True
             break
         tally[key] = tally.get(key, 0) + 1

@@ -55,6 +55,7 @@ _S5_MODULES: set[str] = {m for m in MODULES if m.split("/")[1] not in _SWEEP_DON
 #: second one in the same file is reported.
 NOT_RECORDS: dict[str, dict[str, int]] = {
     "src/api/heavy.py": {"db.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: the enclosing statement deadline
+    "src/analytics/day_counts.py": {"session.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: one request's memo of the live per-day sums (R625)
     "src/analytics/rollup_serve.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},  # ``_library_replaced(exc)`` walks the exception's ``__cause__``/``__context__`` chain for the generation guard's class; it reads no text, stores nothing and logs nothing
     # RobotsUnavailable's own ``cause`` word, not an exception; and ``_carries_airplane_refusal(exc)`` (R620), which walks the exception's
     # ``__cause__``/``__context__``/``args``/``MaxRetryError.reason`` links for the guard's class: it reads no text, stores nothing and logs
@@ -93,6 +94,8 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
 #: key, and return no record text. Allowed LINE BY LINE (function plus exact line text, counted), never by function name, so a new
 #: line in one of them, or a same-named method elsewhere, is read like any other code. Each line was read in the code.
 CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
+    # R397 (b): only the errno is read, to tell damage in the file (EIO) from a passing error that must not mark a healthy store
+    "src/events/feeds.py": {("_load_json", "damaged = not isinstance(exc, OSError) or exc.errno == errno.EIO"): 1},
     "src/ingest/email.py": {("_is_integrity_error", "for e in (exc, exc.__cause__, exc.__context__):"): 3},
     "src/scheduler/plan_cache.py": {
         ('PlanPreviewCache._label', 'if err is not None:'): 1,
@@ -396,7 +399,12 @@ _MONITORING_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     'src/monitoring/integrity.py': {  # _budget_spent is a bool classifier (statement deadline expired and "interrupt" in the text); the text goes nowhere
         ('_budget_spent', 'return deadline_expired(session) and "interrupt" in str(exc).lower()'): 1,
         ('_scalar', 'if _budget_spent(session, exc):'): 1,
-        ('corpus_integrity', 'if _budget_spent(session, exc):'): 2,
+        ('corpus_integrity', 'if _budget_spent(session, exc):'): 1,
+        # the range and table scans keep the exception OBJECT only to re-raise it after saving their place (the enclosing deadline types it);
+        # no text of it is read, and _budget_spent is the same bool classifier
+        ('_range_scan', 'interrupted = exc'): 1,
+        ('_fk_scan', 'if _budget_spent(session, exc):'): 2,
+        ('_fk_scan', 'interrupted = exc'): 1,
     },
     'src/monitoring/keyword_write_cost.py': {  # engine_text is record_text (a driver by class only): _cut_reason's text is composed by it
         ('keyword_write_cost', 'cut = _cut_reason(exc)'): 1,
@@ -889,10 +897,6 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # the ValueError's detail is the HTTPException detail of the filter parser, or record_text's own output (search_filters does not use http_detail)
         ('_filters_blob', 'raise ValueError(getattr(exc, "detail", None) or record_text(exc))'): 1,
     },
-    'src/catalog/discover_job.py': {
-        # read for a keyword to CLASSIFY the failure; the text goes nowhere
-        ('run_world_discovery', 'if "airplane" in str(exc):  # the kill switch raced the loop check'): 1,
-    },
     'src/catalog/qualification_merge.py': {
         # hands the JSON error to the YAML reader, which records it through record_text(json_exc) and chains only the YAML error
         ('rows_from_export_bytes', 'return _rows_from_export_yaml(text, origin, json_exc)'): 1,
@@ -988,6 +992,10 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_get_within', 'failure = failure_words(exc)'): 1,
         ('_default_get_json', 'failure = failure_words(exc)'): 1,
     },
+    'src/maintenance/self_update.py': {
+        # the update check: failure_words returns "HTTP <status>" or the exception's class name and nothing of its text, as the installer's does
+        ('_get_json', 'failure = failure_words(exc)'): 1,
+    },
     'src/llm/ollama.py': {
         # the SERVER'S OWN words of an HTTP status error (a response body or reason phrase, never a driver's or a held key); the exception is httpx's
         ('OllamaClient.generate', 'f"Ollama error for model {model!r}: {_http_error_text(exc)}"'): 1,
@@ -1028,7 +1036,7 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # read for a keyword to CLASSIFY the failure; the text goes nowhere
         ('classify_fetch_failure', 'low = str(exc).lower()'): 1,
         # classify_fetch_failure returns a verdict and a note whose exception text is record_text (markets/csv_feeds.py)
-        ('import_feed', 'verdict, note, retryable = classify_failed_check(exc)'): 1,
+        ('import_feed', 'verdict, note, retryable = classify_failed_check(exc, since=epoch)'): 1,
         # the same call plus the kill-switch read; the note's exception text is still record_text (R320)
         ('classify_failed_check', 'verdict, note, retryable = classify_fetch_failure(exc)'): 1,
     },
@@ -1077,6 +1085,10 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     'src/weather/openmeteo.py': {
         # classify_fetch_failure returns a verdict and a note whose exception text is record_text (markets/csv_feeds.py)
         ('fetch_daily_slice', 'verdict, note, retryable = classify_failed_check(exc)'): 1,
+    },
+    'src/wiki/dumps.py': {
+        # kept to be logged after the handler through log_failure, which scrubs it (R617, as osm_downloads): not written
+        ('DumpDownloadManager._download', 'failure = exc'): 1,
     },
 }
 _S5_NOT_RECORDS: dict[str, dict[str, int]] = {

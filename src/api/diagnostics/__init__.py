@@ -194,6 +194,7 @@ from .system import (
     write_gate_report,
 )
 from .bundle import (
+    _RESUME_INTEGRITY,
     _ALL_DIAG_DEADLINE_SENTINEL,
     _ALL_DIAG_JOB,
     _ALL_DIAG_TRIM_AFTER_KB,
@@ -264,6 +265,8 @@ from .bundle import (
     _all_diagnostics_members,
     _all_diagnostics_volumes_dir,
     _all_diagnostics_build,
+    _resuming_integrity,
+    _corpus_integrity_member,
     _all_diagnostics_worker,
     _ascii_clip,
     _bundle_exclusive_window,
@@ -456,6 +459,9 @@ from .field_checks import (
     field_checks_report,
     field_checks_run,
 )
+# What a Thorough build is expected to cost (R459): the same slice position, BEFORE the release
+# run, whose eight routes test_release_run pins as the package's last.
+from .scan_estimate import _mention_rows, _remember_scan_walls, all_diagnostics_estimate
 # The 0.4 release acceptance run (2026-09-18) -- last, for the same reason the merge
 # action is second-to-last: the split guard pins every earlier route's position.
 from .release_run import (
@@ -600,6 +606,9 @@ __all__ = [
     "_all_diagnostics_members",
     "_all_diagnostics_volumes_dir",
     "_all_diagnostics_build",
+    "_RESUME_INTEGRITY",
+    "_resuming_integrity",
+    "_corpus_integrity_member",
     "_all_diagnostics_worker",
     "_ascii_clip",
     "_bundle_exclusive_window",
@@ -827,4 +836,7 @@ __all__ = [
     "release_run_resume",
     "chronology_report",
     "ResumeBody",
+    "_mention_rows",
+    "_remember_scan_walls",
+    "all_diagnostics_estimate",
 ]

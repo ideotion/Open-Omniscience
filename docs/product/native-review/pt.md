@@ -250,3 +250,12 @@ Correct the text in `src/static/locales/pt.json` (the key is the English text).
 | 12 | {n} of {m} pages seen | {n} de {m} páginas vistas |
 | 13 | {n} pages seen, total unknown | {n} páginas vistas, total desconhecido |
 | 14 | {n} stretches the lane did not see. | {n} intervalos que a faixa não viu. |
+
+## extra-4: Start-up step: the links' covering index (PR #1839)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Building the index that keeps the shared-origin counts fast. One time only; anything the app saves waits until it is done. | A construir o índice que mantém rápidas as contagens de origem comum. Apenas uma vez; tudo o que a aplicação guarda espera até terminar. |
+| 2 | The index of the articles' links was not built: it needs about {needed} MB of free memory (sorting up to {rows} links, plus the memory the app always keeps free) and this computer has {free} MB. Close other programs and restart the app; until then the shared-origin counts stay slow. | O índice das ligações dos artigos não foi construído: precisa de cerca de {needed} MB de memória livre (ordenar até {rows} ligações, mais a memória que a aplicação mantém sempre livre) e este computador tem {free} MB. Feche outros programas e reinicie a aplicação; até lá, as contagens de origem comum continuam lentas. |
+| 3 | The index of the articles' links was not built: the volume your data file is on has {free} MB free and it needs about {needed} MB (up to {rows} links). Free some space and restart the app; until then the shared-origin counts stay slow. | O índice das ligações dos artigos não foi construído: o volume onde está o seu ficheiro de dados tem {free} MB livres e ele precisa de cerca de {needed} MB (até {rows} ligações). Liberte espaço e reinicie a aplicação; até lá, as contagens de origem comum continuam lentas. |
+| 4 | The index of the articles' links was not built: two starts in a row ended while it was being built (the computer ran out of memory or power, or the app was ended abruptly), so it is not tried again until the app is updated. The shared-origin counts stay slow. | O índice das ligações dos artigos não foi construído: dois arranques seguidos terminaram durante a sua construção (o computador ficou sem memória ou sem energia, ou a aplicação foi terminada abruptamente), por isso não volta a ser tentado até a aplicação ser atualizada. As contagens de origem comum continuam lentas. |

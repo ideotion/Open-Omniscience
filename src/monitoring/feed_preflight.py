@@ -31,7 +31,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
-from src.ingest import EthicalFetcher, _host_netloc, kill_switch_active
+from src.ingest import EthicalFetcher, _host_netloc, kill_switch_engaged_since, kill_switch_epoch
 from src.ingest.fetch_verdict import is_kill_switch_refusal
 from src.monitoring.secret_scrub import log_failure, record_text
 from src.paths import data_dir
@@ -83,6 +83,7 @@ def _check_host_robots(fetcher, host: str) -> dict:
         "host": host,
         "checked_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
+    epoch = kill_switch_epoch()  # this host's window (R614): a Stop pressed and cleared again inside it is a Stop
     try:
         EthicalFetcher._refuse_parser_mismatch(f"https://{host}")  # before the guard looks the host up (R622)
         fetcher._guard_target(urlparse(f"https://{host}").hostname)
@@ -107,7 +108,7 @@ def _check_host_robots(fetcher, host: str) -> dict:
         else:
             rec["robots"] = f"http_{code}"
     except Exception as exc:  # noqa: BLE001 - one host must not stop the sweep
-        if is_kill_switch_refusal(record_text(exc)) or kill_switch_active():  # our sentence on the WHOLE scrubbed text (R298), or a switch engaged now
+        if is_kill_switch_refusal(record_text(exc)) or kill_switch_engaged_since(epoch):  # our sentence on the WHOLE scrubbed text (R298), or a Stop in the window (R614)
             # Never asked: not "unreachable". The sweep stops on it and logs nothing (run_feed_preflight).
             rec["robots"] = "skipped_offline"
             rec["skipped_offline"] = True
@@ -241,8 +242,9 @@ def run_feed_preflight(
         try:
             from src.events.feeds import verify_feed
 
+            feed_epoch = kill_switch_epoch()  # this feed's window (R614)
             verdict = verify_feed(fetcher, t["key"])
-            if verdict.get("status") == "skipped_offline" or (verdict.get("status") == "unreachable" and kill_switch_active()):
+            if verdict.get("status") == "skipped_offline" or (verdict.get("status") == "unreachable" and kill_switch_engaged_since(feed_epoch)):
                 return {
                     "hosts": len(hosts),
                     "complete": False,
@@ -265,13 +267,14 @@ def run_feed_preflight(
                 "stopped": "cancelled while sampling market feeds; nothing was logged",
             }
         rec = {**t, "checked_at": datetime.now(UTC).isoformat(timespec="seconds")}
+        feed_epoch = kill_switch_epoch()  # this feed's window (R614)
         try:
             result = fetcher.fetch(t["url"], require_html=False)
             body = result.content or ""
             rec["status"] = "ok" if body.strip() else "empty"
             rec["bytes"] = len(body.encode("utf-8", "ignore"))
         except Exception as exc:  # noqa: BLE001
-            if is_kill_switch_refusal(record_text(exc)) or kill_switch_active():  # our sentence on the WHOLE scrubbed text (R298), or a switch engaged now
+            if is_kill_switch_refusal(record_text(exc)) or kill_switch_engaged_since(feed_epoch):  # our sentence on the WHOLE scrubbed text (R298), or a Stop in the window (R614)
                 return {
                     "hosts": len(hosts),
                     "complete": False,
