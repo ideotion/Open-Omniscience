@@ -6,7 +6,8 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 Protected mode over Tor names a ``socks5h://`` proxy. requests reaches it through urllib3's ``contrib.socks``, which needs PySocks. Without
 it, requests swaps in a stand-in ``SOCKSProxyManager`` that raises ``InvalidSchema("Missing dependencies for SOCKS support.")`` at the first
 request, and the airplane guard has no PySocks ``connect`` or ``sendto`` to wrap. Until R656 the operator installed it by hand
-(docs/SECURITY.md said "no packaged extra"). Every test here fails wherever an install leaves it out. None opens a socket.
+(docs/SECURITY.md said "no packaged extra"). The first four tests fail wherever an install leaves it out; the last two read the manifest,
+the lock and the source. None opens a socket.
 """
 
 from __future__ import annotations

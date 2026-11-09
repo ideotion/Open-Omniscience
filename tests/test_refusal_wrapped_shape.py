@@ -282,8 +282,8 @@ def test_failure_url_changes_nothing_else():
 def _socks_cut(url: str) -> str:
     """The guard's refusal over a SOCKS proxy, built from the REAL objects urllib3.contrib.socks raises (its ``_new_conn`` wraps the
     OSError PySocks lets through as ``NewConnectionError(self, f"Failed to establish a new connection: {e}")``), under the class names
-    that module defines. PySocks is not in the lock, so the module itself cannot be imported here: its class names are read from its
-    source instead, a drift pin for a urllib3 that renames them."""
+    that module defines. It does not import the module, so it also runs where PySocks is absent (a core dependency since R656, so only an
+    install made without dependencies): its class names are read from its source instead, a drift pin for a urllib3 that renames them."""
     import importlib.util
     import socket
     from urllib.parse import urlsplit
@@ -328,7 +328,7 @@ def test_the_guards_refusal_over_a_socks_proxy_is_recognised(url):
 
 
 def test_the_guards_refusal_through_real_pysocks_is_recognised():
-    """The same through PySocks itself, where it is installed (protected mode needs it; the lock does not carry it)."""
+    """The same through PySocks itself, where it is installed (protected mode needs it; a core dependency since R656)."""
     pytest.importorskip("socks")
     activate_kill_switch()
     try:
