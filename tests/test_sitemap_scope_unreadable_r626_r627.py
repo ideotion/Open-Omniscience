@@ -440,3 +440,52 @@ def test_crawl_rung_walks_past_an_unreadable_loc_and_never_fetches_an_off_host_o
     assert result["sitemap_urls_ingested"] == 2
     assert planted not in sess.fetched
     assert db.query(Article).count() == 2
+
+
+# --- The fetcher itself: a feed item's unreadable link (R626, the build's read) -------------------------------------------------
+# ``ingest_source`` hands each feed entry's link to ``ingest_url``, which calls ``EthicalFetcher.fetch``; its own ``urlparse``
+# raised the bare ValueError, which ended the source's whole feed pass. It is now the fetcher's FetchFailed for an unsupported or
+# malformed URL, which ``ingest_url`` already records as that item's failure.
+
+
+def _rss(*links: str) -> str:
+    items = "".join(f"<item><title>t{i}</title><link>{link}</link></item>" for i, link in enumerate(links))
+    return f'<?xml version="1.0"?><rss version="2.0"><channel><title>Good</title>{items}</channel></rss>'
+
+
+@pytest.mark.parametrize("bad", _UNREADABLE)
+def test_the_fetcher_refuses_an_unreadable_url_as_malformed_and_requests_nothing(bad):
+    from src.ingest import FetchFailed
+
+    sess = _Session()
+    with pytest.raises(FetchFailed) as caught:
+        _fetcher(sess).fetch(bad)
+    assert str(caught.value).startswith("unsupported or malformed URL: ")
+    assert sess.fetched == []
+
+
+def test_one_unreadable_feed_item_link_no_longer_ends_the_feed_pass(db, source):
+    from src.ingest.pipeline import ingest_source
+
+    good_a, good_b = "https://good.example/a", "https://good.example/b"
+    source.rss_url = "https://good.example/feed.xml"
+    db.commit()
+    sess = _Session()
+    sess.route("https://good.example/robots.txt", status_code=404, text="")
+    sess.route(source.rss_url, text=_rss(good_a, "http://[::1", good_b), content_type="application/rss+xml")
+    sess.route(good_a, text=_article("A"))
+    sess.route(good_b, text=_article("B"))
+    tally = ingest_source(db, source, fetcher=_fetcher(sess))
+    assert tally["entries"] == 3
+    assert good_a in sess.fetched and good_b in sess.fetched  # the item after the bad one is still walked
+    assert db.query(Article).count() == 2
+
+
+def test_control_a_readable_malformed_url_is_still_refused_the_same_way():
+    from src.ingest import FetchFailed
+
+    sess = _Session()
+    with pytest.raises(FetchFailed) as caught:
+        _fetcher(sess).fetch("ftp://good.example/x")
+    assert str(caught.value).startswith("unsupported or malformed URL: ")
+    assert sess.fetched == []
