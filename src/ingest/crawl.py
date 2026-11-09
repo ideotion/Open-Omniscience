@@ -154,11 +154,6 @@ def _off_site(netloc: str, base_host: str) -> bool:
     return ours is None or site is None or ours != site
 
 
-#: The longest host name DNS can carry (RFC 1035): a longer one is no host requests could reach, and the punycode encoder is
-#: never handed it (its cost grows with the square of the length).
-_MAX_HOST_LEN = 253
-
-
 def _site_key(host: str) -> str | None:
     """``host`` (a :func:`_registrable_host`) as the request names it, for the same-site comparison (R631). Never raises.
 
@@ -167,12 +162,10 @@ def _site_key(host: str) -> str | None:
     ._get_idna_encoded_host``), so a source written in its Unicode form matches the punycode links its pages and its sitemap
     carry, and the other way round: before, ``bücher.example`` and ``xn--bcher-kva.example`` read as two sites, and the three
     catalogue sources with a Unicode domain lost their punycode links and page locs. ``None`` when the host cannot be encoded
-    (an empty label, a label over 63, a disallowed character) or is longer than any host name: requests refuses such a host
-    (``InvalidURL``), and a comparison with ``None`` is off the site."""
+    (an empty label, a label over 63, a name over 253, a disallowed character; idna refuses a 10 MB name at once): requests
+    refuses such a host (``InvalidURL``), and a comparison with ``None`` is off the site."""
     if host.isascii():
         return host
-    if len(host) > _MAX_HOST_LEN:
-        return None
     try:
         return idna.encode(host, uts46=True).decode("ascii")
     except ValueError:  # idna.IDNAError and UnicodeError both are one

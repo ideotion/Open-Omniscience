@@ -390,7 +390,8 @@ def test_a_crawl_kept_to_one_site_follows_its_own_links_in_the_other_form(idn_db
 _UNENCODABLE = [
     "a\u00e9" + "x" * 70 + ".example",  # a label over 63 once encoded
     "\u00e9..example",  # an empty label
-    "\u00e9" * 300 + ".example",  # longer than any host name: never handed to the encoder
+    "\u00e9" * 300 + ".example",  # longer than any host name
+    ("\u00e9" * 60 + ".") * 170000 + "example",  # 10 MB of short labels
 ]
 
 
@@ -413,6 +414,18 @@ def test_a_crawl_skips_a_link_whose_host_cannot_be_encoded_and_walks_the_rest(db
     crawl_source(db, source, fetcher=_fetcher(sess), config=CrawlConfig(max_depth=1, max_pages=50, same_domain_only=True))
     assert _OWN_A in sess.fetched
     assert bad not in sess.fetched
+
+
+def test_the_encoding_is_the_one_requests_connects_with():
+    # requests encodes a non-ASCII host with idna.encode(host, uts46=True) before it connects: UTS 46 keeps ß (xn--zca,
+    # not the IDNA 2003 "ss") and maps a fullwidth letter to its ASCII one. The fetcher's own parser check refuses both
+    # kinds of name before any request (two IDNA standards disagree on them); the scope check only has to agree with the
+    # connection.
+    from src.ingest.crawl import _off_site
+
+    assert _off_site("xn--zca.example", "\u00df.example") is False
+    assert _off_site("ss.example", "\u00df.example") is True
+    assert _off_site("\uff42\u00fccher.example", _U) is False
 
 
 def test_control_ascii_hosts_are_compared_as_before():
