@@ -1732,11 +1732,20 @@
         $("nl-remove-result").innerHTML =
           esc(tf("{n} imported newsletters removed. Re-import the cleaned files to replace them.", {n: "\u0001"}))
             .replace("\u0001", () => `<b>${N(d.removed_articles)}</b>`);
+        // The server's own words when every article is removed but the counts after it could not be refreshed (queue item 58).
+        if (d.note) {
+          const w = document.createElement("span");
+          w.className = "note warn";
+          w.textContent = d.note;
+          $("nl-remove-result").append(" ", w);
+        }
         toast(t("Imported newsletters removed."), "ok");
-        loadNewsletterRemoveCount();
       } catch (e) {
         $("nl-remove-result").innerHTML = `<span class="note err">${esc(ooLabelText(t("Removal failed"), e.message))}</span>`;
-      } finally { btn.disabled = false; }
+      } finally {
+        btn.disabled = false;
+        loadNewsletterRemoveCount();  // after a removal that stopped partway too: the count is what is left
+      }
     }
     // -- Pull from a mailbox (IMAP/POP3) — ruling #11. English-only, except the consent
     // popup's reason, which is keyed x12 like every consent string; the anonymise +

@@ -1561,17 +1561,28 @@ def _remove_kept_copy(rec: dict[str, Any], when: datetime) -> dict[str, Any]:
 def _after_the_swap() -> dict[str, Any]:
     """What a new file needs that the copy cannot carry: the derived stores re-read it (the corpus epoch), and a source's
     stored article count, which the lost rows made stale-high, is cleared so the read fallback counts live. Each is best
-    effort and said: the repair has happened."""
+    effort and said: the repair has happened.
+
+    The bump is STRICT (queue item 58, matching R625 and R632): a bump that fails raises here, so ``corpus_epoch`` reads None and
+    the log names what lags, instead of the swallowed failure handing back the epoch the damaged file already had, which the
+    report then showed as if bumped. The per-day keyword counts need nothing from it: the copy marked them unbuilt
+    (``salvage.Salvage._finish``, the statement of ``day_counts.UNBUILT_SQL``), so they are rebuilt from the rows the repair kept.
+    The columnar rollup is what lags: it keeps counting the rows the repair could not keep until the next epoch bump (a re-index,
+    prune, restore, source delete or newsletter removal) makes it rebuild."""
     out: dict[str, Any] = {}
     try:
         from src.analytics.corpus_epoch import bump_corpus_epoch
         from src.database.session import session_scope
 
         with session_scope() as session:
-            out["corpus_epoch"] = bump_corpus_epoch(session, reason="salvage")
+            out["corpus_epoch"] = bump_corpus_epoch(session, reason="salvage", strict=True)
     except Exception as exc:  # noqa: BLE001
         # The TYPE only (see ``run``): these two write through the keyed engine.
-        _LOG.warning("database repair: the corpus epoch was not bumped (%s)", type(exc).__name__)
+        _LOG.warning(
+            "database repair: the corpus epoch was not bumped (%s); the keyword rollup may count rows the repair could not keep "
+            "until the next epoch bump",
+            type(exc).__name__,
+        )
         out["corpus_epoch"] = None
     try:
         from sqlalchemy import update
