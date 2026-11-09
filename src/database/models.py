@@ -1623,6 +1623,14 @@ class ArticleLink(Base):
         Index("idx_article_link_dedup", "article_id", "url", "position"),
         Index("idx_article_link_url", "url"),
         Index("idx_article_link_normalized_url", "normalized_url"),
+        # COVERING index for ``convergence._shared_origin`` (R455/R611; F2 of the 2026-11-07 field bundle): a
+        # GROUP BY normalized_url over the links of a few hundred article ids. With only
+        # idx_article_link_article_id the plan reads one whole row (two String(1000) columns, a page decrypt
+        # under SQLCipher) per link; with this one it is `SEARCH article_links USING COVERING INDEX
+        # idx_article_link_article_url (article_id=?)`. Measured on 4.16 M links, cold cache, SQLCipher with each
+        # article's links scattered (a restore merge's shape): 1,392 -> 171 ms. Mirrored in maintenance.HOT_INDEXES
+        # (DEFERRED: built by the visible start-up step in src/database/article_indexes.py) and migration a7c3e5f19b20.
+        Index("idx_article_link_article_url", "article_id", "normalized_url"),
         Index("idx_article_link_classification", "classification"),
         Index("idx_article_link_source_id", "external_source_id"),
         Index("idx_article_link_source_article_id", "source_article_id"),
@@ -2564,6 +2572,55 @@ class KeywordMention(Base):
 
     def __repr__(self) -> str:
         return f"<KeywordMention(kw={self.keyword_id} art={self.article_id} x{self.count})>"
+
+
+class KeywordDayCount(Base):
+    """``SUM(keyword_mentions.count)`` per (day, keyword): the Home trends' windows read from here instead of from every
+    mention (R623, R625; ``src/analytics/day_counts.py``). DERIVED and exact: a day is always written WHOLE from
+    ``ix_mention_date_keyword`` (never by adding deltas), so a day that changed is recomputed, not adjusted. Which days changed
+    comes from :class:`KeywordDayDirty` (the delete and update triggers) and from the mention ids above
+    :class:`KeywordDayState`'s watermark (new rows; no insert trigger, R625). Counts only, never a score."""
+
+    __tablename__ = "keyword_day_counts"
+    __table_args__ = ({"sqlite_with_rowid": False},)
+
+    observed_on: Mapped[date] = mapped_column(Date, primary_key=True)
+    keyword_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    mentions: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class KeywordDayDirty(Base):
+    """The days whose mentions were deleted or changed in place since their counts were written (R625). Written by the triggers
+    of ``day_counts.TRIGGERS`` (which also see a foreign-key cascade and a keyword fold); emptied day by day as the days are
+    recomputed. A day listed here is never served from :class:`KeywordDayCount`."""
+
+    __tablename__ = "keyword_day_dirty"
+    __table_args__ = ({"sqlite_with_rowid": False},)
+
+    observed_on: Mapped[date] = mapped_column(Date, primary_key=True)
+
+
+class KeywordDayState(Base):
+    """The one row (``id = 1``) that says how far :class:`KeywordDayCount` can be trusted (R625).
+
+    ``complete``: every day was written by a build that finished. ``built_epoch``: the corpus epoch that build started at (a
+    different epoch now means a full rebuild). ``watermark``: every mention with an id at or below it is in the counts, unless
+    its day is dirty. ``reuse_floor``: the lowest id of a mention deleted from the TOP of the table since then (SQLite gives
+    such an id out again, so a new row can land at or below the watermark; the delete trigger records it). ``floor_gen``: counts
+    those deletes, so a fold clears the floor only when none ran while it worked. ``cursor``: the last day a build wrote, so a
+    stopped build resumes there."""
+
+    __tablename__ = "keyword_day_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    built_epoch: Mapped[int | None] = mapped_column(Integer)
+    watermark: Mapped[int | None] = mapped_column(Integer)
+    reuse_floor: Mapped[int | None] = mapped_column(Integer)
+    floor_gen: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    cursor: Mapped[date | None] = mapped_column(Date)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    built_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 class AiKeyword(Base):

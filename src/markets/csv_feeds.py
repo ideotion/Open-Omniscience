@@ -34,7 +34,13 @@ from sqlalchemy.orm import Session
 
 from src.database.models import CommodityPrice
 from src.database.write import run_write_with_retry
-from src.ingest import EthicalFetcher, FetchError, kill_switch_active
+from src.ingest import (
+    EthicalFetcher,
+    FetchError,
+    kill_switch_active,
+    kill_switch_engaged_since,
+    kill_switch_epoch,
+)
 from src.markets.extract import parse_number
 from src.monitoring.secret_scrub import record_text
 
@@ -247,7 +253,7 @@ def classify_fetch_failure(exc: Exception) -> tuple[str, str, bool]:
     return ("fetch-failed", msg, True)
 
 
-def classify_failed_check(exc: Exception) -> tuple[str, str, bool]:
+def classify_failed_check(exc: Exception, *, since: int | None = None) -> tuple[str, str, bool]:
     """``classify_fetch_failure`` plus the switch read AFTER the failed check (R320): a failure while the kill switch is engaged is the
     switch's, whatever shape the error took. A Stop that lands inside a request can arrive as a raw requests error that is not OUR sentence
     at the start (an ``HTTPSConnectionPool(...)`` whose cause is not the guard's refused connect: a reset, a timeout), so the anchored match in
@@ -258,9 +264,13 @@ def classify_failed_check(exc: Exception) -> tuple[str, str, bool]:
     on the next online pass. What stays is a robots disallow and an HTTP status on the page itself (a dead series, an upstream error): answers the host really gave
     before the Stop, because a Stop cuts a connection and can never produce a status line. A robots.txt that could not be read stays offline,
     whatever its cause, since that read is the one a Stop most often cuts. Used by the two
-    fetch-classifying callers of this module (the market feeds and the weather slice); the collector classifies with ``fetch_verdict``."""
+    fetch-classifying callers of this module (the market feeds and the weather slice); the collector classifies with ``fetch_verdict``.
+
+    ``since`` is the engagement epoch captured before the attempt (R614, R617): a Stop pressed and cleared again inside that attempt's
+    flight is a Stop too, as when the switch is still engaged. Without it, the switch as it is now (the R320 read)."""
     verdict, note, retryable = classify_fetch_failure(exc)
-    if verdict not in _HOST_ANSWERS and kill_switch_active():
+    stopped = kill_switch_active() if since is None else kill_switch_engaged_since(since)
+    if verdict not in _HOST_ANSWERS and stopped:
         return _OFFLINE
     return verdict, note, retryable
 
@@ -289,11 +299,13 @@ def import_feed(
     fetched = None
     while True:
         attempts += 1
+        # Each attempt's own window (R614, R617): a Stop pressed and cleared again inside it is filed offline, never as the feed's verdict.
+        epoch = kill_switch_epoch()
         try:
             fetched = fetcher.fetch(url, require_html=False)
             break
         except Exception as exc:  # noqa: BLE001 - any fetch failure is a feed problem, not a crash
-            verdict, note, retryable = classify_failed_check(exc)
+            verdict, note, retryable = classify_failed_check(exc, since=epoch)
             # ONE bounded feed-level retry for transient verdicts, on top of
             # the fetcher's own backoff (a different moment often means a
             # different Tor circuit). Policy verdicts are never retried.

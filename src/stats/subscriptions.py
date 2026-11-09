@@ -147,7 +147,7 @@ def refresh_due(
     when the kill switch is engaged (returns ``skipped_offline`` = number due). One bad
     subscription is recorded in ``last_status`` and never breaks the others.
     """
-    from src.ingest import kill_switch_active
+    from src.ingest import kill_switch_active, kill_switch_engaged_since, kill_switch_epoch
     from src.stats import fetch as statfetch
     from src.stats.store import store_figures
 
@@ -161,7 +161,13 @@ def refresh_due(
                 "skipped_offline": len(due), "errors": 0}
 
     refreshed = stored = errors = 0
-    for s in due:
+    skipped_offline = 0
+    for i, s in enumerate(due):
+        # This subscription's window (R614), opened BEFORE the check that lets its request go: a Stop landing between the two is in it.
+        epoch = kill_switch_epoch()
+        if kill_switch_active():
+            skipped_offline = len(due) - i  # a Stop mid-batch (R617): the rest were not asked, and stay exactly as due as they were
+            break
         try:
             if s.source == "worldbank":
                 figs = statfetch.fetch_worldbank(s.indicator or "", s.country or "all", get=get)
@@ -181,14 +187,21 @@ def refresh_due(
             stored += tally["stored"]  # counted only once the commit has held
             refreshed += 1
         except Exception as exc:  # noqa: BLE001 - best-effort; record + continue
-            errors += 1
             # A failed flush/commit leaves the transaction unusable AND the write gate held (it is
             # released only when the transaction ends), so end it before the next subscription's
             # request; the rollback discards only this subscription's own uncommitted rows.
             session.rollback()
+            if kill_switch_engaged_since(epoch):
+                # R617 (R320, R614): the Stop cut this subscription's request, still engaged or cleared again before the failure
+                # arrived. Nothing was asked of the host, so it is not stamped "error" for ``interval_days``: it and the ones after
+                # it stay due and are asked on the next online pass. The cost: a genuine failure sharing its window with a Stop is
+                # not recorded, and is asked again.
+                skipped_offline = len(due) - i
+                break
+            errors += 1
             s.last_fetched_at = now_dt
             s.last_status = f"error: {record_text(exc, limit=160)}"
             session.commit()
     session.flush()
     return {"checked": len(due), "refreshed": refreshed, "stored": stored,
-            "skipped_offline": 0, "errors": errors}
+            "skipped_offline": skipped_offline, "errors": errors}
