@@ -552,7 +552,6 @@ _EVERY_LEG = (
     "Install the tesseract",
     "Install two more awk",
     "Install (core + analysis",
-    "Install PySocks",
     "Plan this shard",
     "Test (pytest)",
     "Installed versions",

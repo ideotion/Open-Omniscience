@@ -93,6 +93,12 @@ dependencies = [
     # (docs/maintenance/EXTERNAL_DEPENDENCIES.md), never by loosening a test.
     "urllib3>=2.7.0,<2.8.1",
     "requests>=2.31",
+    # PySocks is the SOCKS client requests and urllib3 use. Without it, protected mode over Tor (``socks5h://127.0.0.1:9050``, the
+    # recommended proxy) cannot make a single request (requests raises InvalidSchema "Missing dependencies for SOCKS support"), and the
+    # airplane guard's two PySocks patches (socksocket.connect and sendto, src/ingest/airplane.py) have nothing to wrap. It was left to the
+    # operator ("no packaged extra", docs/SECURITY.md) until R656 (queue item 68(d)) made it core. 1.7.1 is its latest release and the one
+    # CI already ran the SOCKS guard tests on; tests/test_pysocks_dependency_item68.py checks that it imports and that requests uses it.
+    "PySocks>=1.7.1",
     # idna is imported directly by src/ingest/crawl.py (R631: the same-site check encodes a non-ASCII host with UTS 46,
     # idna.encode(host, uts46=True)), so it is declared rather than left to arrive through requests and urllib3. The floor is 3.7, the
     # first release without the quadratic idna.encode on crafted input (CVE-2024-3651): crawl.py hands it hosts from fetched pages.
