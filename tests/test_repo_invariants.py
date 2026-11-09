@@ -3211,7 +3211,10 @@ def test_diagnostics_panel_button_consolidation():
     assert "/api/diagnostics/keywords/parts/latest" in ui_js
     #   - source-quality + rollup-benchmark: explicitly named as surviving ACTIONS in
     #     the AMENDED ruling despite living in the same button row.
-    assert "ooOpenUrl('/api/diagnostics/source-quality?download=1')" in html
+    #     Since 2026-11-09 the source-quality export is reached through the ONE "Field data"
+    #     button (maintainer: «one single button»), which saves it among its files.
+    assert 'data-on-click="downloadFieldData(this)"' in html
+    assert '"/api/diagnostics/source-quality?download=1"' in ui_js
     assert "ooOpenUrl('/api/diagnostics/rollup-benchmark')" in html
     #   - the 4 statistical-signal reports: on DIFFERENT routers (signals.py/insights.py),
     #     never scanned by the diagnostics-router ratchet and not bundle members --

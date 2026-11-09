@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from src.monitoring import field_checks as fc
-from tests.js_source_helper import function_body, object_literal
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "static"
@@ -244,38 +243,6 @@ def test_the_report_names_what_was_not_run_and_carries_no_score():
                 yield from keys(x)
 
     assert not [k for k in keys(rep) if any(b in k.lower() for b in ("score", "rating", "grade", "ranking"))]
-
-
-# ---- the panel ----------------------------------------------------------------------------------- #
-
-def test_the_panel_sits_next_to_the_diagnostics_button_and_fetches_nothing_on_open():
-    html = (STATIC / "index.html").read_text(encoding="utf-8")
-    diag = html.index('id="all-diag-btn"')
-    box = html.index('id="field-checks-box"')
-    assert diag < box < html.index('id="session-forensics-box"')
-    assert 'data-on-click="fieldChecksLoad(this)"' in html
-    js = (STATIC / "app-diagnostics.js").read_text(encoding="utf-8")
-    run = function_body(js, "_fcRun")
-    # the one consent popup comes BEFORE the POST, and consent is what it returned
-    assert run.index("ensureOnline(") < run.index("/api/diagnostics/field-checks/run")
-    assert "JSON.stringify({id, consent, inputs})" in run
-    # the save button uses the dispatcher's own ooOpenUrl helper (not a global, so never called from app code)
-    assert "data-on-click=\"ooOpenUrl('/api/diagnostics/field-checks/report')\"" in html
-    for fn in ("_fcRun", "_fcAction", "_fcRender", "_fcRowHtml", "fieldChecksLoad"):
-        assert "ooOpenUrl(" not in function_body(js, fn)
-    on = (STATIC / "oo-on.js").read_text(encoding="utf-8")
-    table = object_literal(on, "EVENT_ACTION_NAMES")
-    click_row = table[table.index("click:"):]
-    assert '"fieldChecksLoad"' in click_row[:click_row.index("]")]
-
-
-def test_the_temporary_sample_export_button_is_kept_and_reused():
-    html = (STATIC / "index.html").read_text(encoding="utf-8")
-    assert 'id="source-samples-btn"' in html
-    js = (STATIC / "app-diagnostics.js").read_text(encoding="utf-8")
-    assert "await downloadSourceSamples(btn)" in js
-    man = {c["id"]: c for c in fc.load_manifest()["checks"]}
-    assert man["sample-export-multi-download"]["params"]["action"] == "source_samples"
 
 
 def test_the_law_residue_check_uses_the_ingest_reports_own_test_and_carries_no_text(tmp_path, monkeypatch):

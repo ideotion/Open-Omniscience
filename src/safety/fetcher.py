@@ -13,8 +13,10 @@ sends a generic User-Agent; the robots/rate-limit/SSRF guards are unchanged.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import os
 import re
+import secrets
 import threading
 from collections.abc import Iterable
 from typing import Any
@@ -340,6 +342,36 @@ class GuardedSession(requests.Session):
         return super().request(method, url, *args, **kwargs)
 
 
+#: A token at most this long, made only of ``[A-Za-z0-9_.-]``, is its own SOCKS credential, as written (a host key, ``dl-1``).
+_ISOLATION_AS_WRITTEN_MAX = 32
+#: The key that names every other token (queue item 50(a)): made once per process, held only in memory, never written, logged
+#: or derived from anything, so a credential cannot be checked against a guessed URL by whoever sees the SOCKS handshake.
+_ISOLATION_KEY = secrets.token_bytes(32)
+
+
+def _isolation_credential(token: str) -> str:
+    """The SOCKS username (and password) that names ``token``'s Tor circuit: distinct tokens, distinct credentials.
+
+    A short token made only of ``[A-Za-z0-9_.-]`` is used as written, as before: a host key (which a ``socks5h`` proxy is told
+    anyway; a ``socks5`` or ``socks4`` one is told the address instead, and learns the name from this credential), or a fixed
+    label such as ``dl-1``. Any other token (a URL, a segment's ``url#seg-a-b``, a host key with a port or
+    an IPv6 bracket, a Unicode name, anything longer than 32 characters) is named by ``oo.`` and the first 32 hex digits of an
+    HMAC-SHA256 of the WHOLE token under :data:`_ISOLATION_KEY`: 128 bits, and 35 characters, so it can never equal an
+    as-written credential. Keyed, because a plain digest of a URL would let whoever reads the SOCKS handshake (a pool member
+    off loopback, a Tor control-port client) confirm a guessed search term or item id by hashing the guess. So the same
+    token gets the same credential for the life of the process, and another one after a restart.
+
+    Until queue item 50(a) every token was stripped to those characters and cut at 32, so tokens that agreed on their first 32
+    kept characters shared one credential, and so one circuit: every Wikidata lookup (``https://www.wikidata.org/w/api.php?...``
+    keeps ``httpswww.wikidata.orgwapi.phpact`` whatever it asks), every segment of one download and the three dump kinds of one
+    wiki, against the claims of their callers that each rides its own. A name with no kept character read ``oo``, one shared
+    credential.
+    """
+    if len(token) <= _ISOLATION_AS_WRITTEN_MAX and re.fullmatch(r"[A-Za-z0-9_.-]+", token):
+        return token
+    return "oo." + hmac.new(_ISOLATION_KEY, token.encode("utf-8", "surrogatepass"), hashlib.sha256).hexdigest()[:32]
+
+
 def _with_stream_isolation(proxy_url: str, token: str | None) -> str:
     """For a SOCKS proxy, inject a per-stream username/password so Tor's
     ``IsolateSOCKSAuth`` (on by default) builds a SEPARATE circuit per token.
@@ -347,6 +379,7 @@ def _with_stream_isolation(proxy_url: str, token: str | None) -> str:
     Parallel downloads to the SAME host (e.g. several Wikipedia dumps) would
     otherwise share one Tor circuit and gain nothing; distinct SOCKS auth gives
     each its own circuit, so aggregate throughput actually multiplies over Tor.
+    Distinct tokens get distinct credentials (:func:`_isolation_credential`).
     No-op for non-SOCKS proxies and when the caller already set credentials.
     """
     if not token or "://" not in proxy_url:
@@ -356,7 +389,7 @@ def _with_stream_isolation(proxy_url: str, token: str | None) -> str:
         return proxy_url
     if "@" in rest:  # caller already chose credentials -- respect them
         return proxy_url
-    safe = re.sub(r"[^A-Za-z0-9_.-]", "", token)[:32] or "oo"
+    safe = _isolation_credential(token)
     return f"{scheme}://{safe}:{safe}@{rest}"
 
 
@@ -386,9 +419,11 @@ def validate_socks_pool(proxies: list[str]) -> None:
 
 def shard_host_to_proxy(host: str, proxies: list[str]) -> str:
     """Stable mapping of ``host`` to ONE pool member -- a host maps to the SAME
-    endpoint (and, via ``_with_stream_isolation`` layered on top by the caller,
-    the same dedicated circuit) for the LIFETIME of the app's configuration,
-    not just one process. Uses a cryptographic hash, never Python's built-in
+    endpoint for the LIFETIME of the app's configuration, not just one process.
+    The circuit on that endpoint is named by ``_with_stream_isolation``, layered
+    on top by the caller: by the host key itself when it is a short plain name,
+    and otherwise by a digest under a key made per process (queue item 50(a)),
+    so such a host asks for another circuit after a restart. Uses a cryptographic hash, never Python's built-in
     ``hash()`` -- CPython randomises string hashing per process
     (``PYTHONHASHSEED``) by default, which would reshuffle every host's
     endpoint on every restart, defeating the whole point of a stable mapping.
