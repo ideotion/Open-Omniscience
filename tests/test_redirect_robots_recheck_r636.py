@@ -918,3 +918,18 @@ def test_an_upgrade_waits_no_crawl_delay_that_only_its_https_robots_declares(tmp
     assert clock.slept == []
     _fetch(f, f"{A}/next")
     assert clock.slept == [30.0]
+
+
+def test_a_same_host_hop_to_an_empty_path_and_a_query_is_checked_as_the_root(tmp_path):
+    """R636's re-check goes through ``_enforce_robots``, which checks an empty path as the "/" requests asks for (R629's fold): a hop
+    from /x to https://a.example?x is judged as /?x, which "Disallow: /" covers, where ``can_fetch`` alone reads "?x" and allows it."""
+    s = _Session()
+    s.robots(A, "User-agent: *\nAllow: /x\nDisallow: /\n")
+    s.redirect(f"{A}/x", f"{A}?x")
+    s.page(f"{A}?x")
+    s.page(f"{A}/?x")
+    f = _fetcher(tmp_path, s)
+    with pytest.raises(RobotsDisallowed) as caught:
+        _fetch(f, f"{A}/x")
+    assert record_text(caught.value, typed=False) == f"robots.txt disallows {A}?x {_NOTE}"
+    assert s.fetched == [f"{A}/robots.txt", f"{A}/x"]
