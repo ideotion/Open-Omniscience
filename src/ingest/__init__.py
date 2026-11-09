@@ -38,7 +38,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlparse, urlsplit
+from urllib.parse import urljoin, urlparse, urlsplit, urlunsplit
 from urllib.robotparser import RobotFileParser
 
 import requests
@@ -2217,7 +2217,14 @@ class EthicalFetcher:
                 f"robots.txt for {failure_url(host_key)} could not be determined ({cause}); refusing to fetch{caveat}{via}",
                 cause=cause,
             )
-        if not parser.can_fetch(self.user_agent, url):
+        # RobotFileParser compares the path AND what follows it, so an address with an EMPTY path and a query or a fragment
+        # (https://b.example?x, https://b.example#f) was compared as "?x" or "#f", which no "Disallow: /" covers, while requests
+        # asks for "/?x": the page was fetched against its host's robots.txt (the independent read of R629, S1; it predates R629,
+        # and direct fetches had it too). Checked as the "/" it is fetched as; the refusal still names the address as written.
+        # (``url`` was read by urlparse before this call, so urlsplit reads it too.)
+        parts = urlsplit(url)
+        checked = urlunsplit(parts._replace(path="/")) if not parts.path else url
+        if not parser.can_fetch(self.user_agent, checked):
             raise RobotsDisallowed(f"robots.txt disallows {failure_url(url)}{via}")
 
     def _get_robots(self, host_key: str, parsed) -> RobotFileParser | None:

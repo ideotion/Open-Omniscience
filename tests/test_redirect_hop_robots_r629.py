@@ -970,3 +970,57 @@ def test_a_hops_deferral_names_the_hops_address_and_says_a_redirect_led_there(db
         _fetch(f, f"{B}/first")
     plain = record_text(direct.value, typed=False)
     assert plain.startswith("Crawl-delay 600 s: not before ") and ", for " not in plain and _NOTE not in plain, plain
+
+
+# The independent read's S1 (it predates R629, and hops inherited it): RobotFileParser compared an EMPTY path with what follows it,
+# so https://b.example?x was compared as "?x", which "Disallow: /" does not cover, while requests asks for "/?x".
+
+
+@pytest.mark.parametrize("tail", ["?x", "#f", "?x#f"])
+def test_a_hop_to_an_empty_path_is_checked_as_the_root_its_request_asks_for(tmp_path, tail):
+    s = _Session()
+    s.robots(B, _DISALLOW_ALL)
+    s.redirect(f"{A}/start", f"{B}{tail}")
+    for page in (f"{B}{tail}", f"{B}/{tail}"):  # either spelling answers, so a follow is seen
+        s.page(page)
+    f = _fetcher(tmp_path, s)
+    with pytest.raises(RobotsDisallowed) as caught:
+        _fetch(f, f"{A}/start")
+    text = record_text(caught.value, typed=False)
+    assert text == f"robots.txt disallows {B}{tail} {_NOTE}", text  # the address as written
+    assert s.asked_of("b.example") == [f"{B}/robots.txt"]
+
+
+@pytest.mark.parametrize("tail", ["?x", "#f"])
+def test_a_direct_fetch_of_an_empty_path_is_checked_as_the_root_too(tmp_path, tail):
+    s = _Session()
+    s.robots(A, _DISALLOW_ALL)
+    for page in (f"{A}{tail}", f"{A}/{tail}"):
+        s.page(page)
+    f = _fetcher(tmp_path, s)
+    with pytest.raises(RobotsDisallowed):
+        _fetch(f, f"{A}{tail}")
+    assert s.fetched == [f"{A}/robots.txt"]
+
+
+@pytest.mark.parametrize(
+    ("url", "allowed"),
+    [
+        (f"{A}?x", True),  # the root, which "Disallow: /private" does not cover: fetched, as before
+        (f"{A}/public?x", True),  # a non-empty path is compared as before
+        (f"{A}/private?x", False),
+        (f"{A}/private#f", False),
+    ],
+)
+def test_a_non_empty_path_or_an_allowed_root_is_judged_as_before(tmp_path, url, allowed):
+    s = _Session()
+    s.robots(A, "User-agent: *\nDisallow: /private\n")
+    s.page(url)
+    f = _fetcher(tmp_path, s)
+    if allowed:
+        assert _fetch(f, url).status_code == 200
+        assert s.fetched == [f"{A}/robots.txt", url]
+    else:
+        with pytest.raises(RobotsDisallowed):
+            _fetch(f, url)
+        assert s.fetched == [f"{A}/robots.txt"]
