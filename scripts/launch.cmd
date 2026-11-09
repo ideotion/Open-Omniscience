@@ -9,6 +9,11 @@ rem ---------------------------------------------------------------------------
 setlocal
 title Open Omniscience
 
+rem The in-app updater's watch flag (scripts\apply_update.py) is for THIS window only: copied to OO_WATCHED, then cleared, so nothing the
+rem server starts carries it on (the server sees OO_WATCHED, which every start of this file sets afresh).
+set "OO_WATCHED=%OO_UPDATE_WATCH%"
+set "OO_UPDATE_WATCH="
+
 cd /d "%~dp0.."
 
 set "PORT=%OO_PORT%"
@@ -77,5 +82,7 @@ if exist "%MARK%" (
 :stopped
 echo.
 echo   Open Omniscience has stopped. Press any key to close.
-pause >nul
-endlocal
+rem CHAINED, never called: control passes to launch_stopped.cmd and never comes back here. cmd.exe re-reads a batch file by byte offset
+rem after every command, so a window waiting for a key while the in-app updater rewrites THIS file would carry on at the old offset in the new
+rem text. launch_stopped.cmd holds the wait and is frozen (tests/test_self_update.py pins its content).
+"%~dp0launch_stopped.cmd"

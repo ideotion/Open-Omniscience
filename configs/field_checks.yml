@@ -39,7 +39,7 @@
 # The text here is English only, like the rest of the Diagnostics panel; the panel's own buttons
 # and labels ship in twelve languages.
 
-version: 1
+version: 2
 
 checks:
   - id: import-memory-headroom
@@ -206,3 +206,30 @@ checks:
     retire_when: >-
       One report classes every document with residue as one cause or the other, and the fix for
       each cause has shipped.
+
+  - id: in-app-update-end-to-end
+    title: Did the in-app update run end to end on your install?
+    kind: operator_report
+    status: active
+    added_on: "2026-11-08"
+    added_by: "PR #1810 (Settings -> Advanced -> Updates)"
+    why: >-
+      The update stops the app, swaps the checkout in a separate helper process, starts the
+      launcher again and watches it come up. No test here runs a real launcher window, a real
+      Windows console or a real install's git and Python together, so only a real update shows
+      whether the app came back by itself on the new version. Run this after an update offered
+      by Settings -> Advanced -> Updates (or after one refused), then pick what happened.
+    retire_when: >-
+      Reports from one Linux or macOS install and one Windows install say the app came back by
+      itself on the new version, and one report covers a refusal (a dependency change or a
+      local edit) that left the install as it was.
+    steps:
+      - "In Settings -> Advanced -> Updates, press Check for updates, then Update and restart if a version is offered."
+      - Wait up to a few minutes without closing anything, then reload the page.
+      - Open Settings -> Advanced -> Updates again and read the line about the last update, then pick the answer that fits.
+      - "On Windows, say in the note whether a new launcher window opened and whether the old one closed or waited for a key."
+    answers:
+      - the app came back by itself on the new version
+      - the app came back on the old version and said why
+      - the app did not come back; I started it by hand
+      - no update was offered
