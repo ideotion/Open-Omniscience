@@ -380,8 +380,10 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   the switch is read, then the command is written; a Stop that lands between the two lets that ONE
   command go out (no second one can: the next read of the switch comes first, and the Stop has already
   shut the socket down). The live socket is registered for the Stop before its TCP connect starts (R652;
-  the connect reads the switch while it is in progress, so a Stop cuts a server that never answers the
-  connect at once, and only the name lookup before it cannot be interrupted), and so before any TLS
+  the connect reads the switch every 0.1 s while it is in progress, and on Linux the Stop's shutdown aborts
+  it outright, so a Stop cuts a server that never answers the connect at once (within 0.1 s elsewhere); a
+  Stop landing between the last read and the connect call lets that one SYN out, which is then abandoned,
+  and only the name lookup before it cannot be interrupted), and so before any TLS
   handshake (the switch is read again before the handshake starts, so a Stop that landed during the
   connect lets no TLS byte out) and before the greeting is read, and it stays registered until
   LOGOUT/QUIT has been answered; `activate_kill_switch` shuts it down at the TCP level (no LOGOUT/QUIT, no TLS

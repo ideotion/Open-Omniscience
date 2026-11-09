@@ -101,19 +101,26 @@ def test_without_a_stop_a_stalled_connect_meets_the_bounded_timeout(fn, monkeypa
 
 
 def test_the_connect_reads_the_switch_while_it_is_in_progress(monkeypatch):
-    """Portable: with the platform never reporting the connect done (here a select that sees nothing), the Stop still ends it within
+    """Portable: with the platform never reporting the connect done (here a selector that sees nothing), the Stop still ends it within
     the slice, without relying on the shutdown aborting the connect."""
     lst = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     lst.bind(("127.0.0.1", 0))
     lst.listen(1)
     calls = {"n": 0}
 
-    def never(r, w, x, timeout):
-        calls["n"] += 1
-        time.sleep(timeout)
-        return [], [], []
+    class _Blind:
+        def register(self, *a):
+            pass
 
-    monkeypatch.setattr(email_mod.select, "select", never)
+        def select(self, timeout):
+            calls["n"] += 1
+            time.sleep(timeout)
+            return []
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(email_mod.selectors, "DefaultSelector", _Blind)
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     real_connect_ex = socket.socket.connect_ex
     monkeypatch.setattr(socket.socket, "connect_ex", lambda self, a: (real_connect_ex(self, a), errno.EINPROGRESS)[1])  # always "in progress"
@@ -128,6 +135,103 @@ def test_the_connect_reads_the_switch_while_it_is_in_progress(monkeypatch):
     finally:
         sock.close()
         lst.close()
+
+
+def _held_registrations(monkeypatch) -> list[socket.socket]:
+    """Every socket registered for the Stop, held strongly: the registry is a WeakSet, so a dropped socket would vanish from it and a
+    socket left registered could not be seen (security read A on #1899)."""
+    held: list[socket.socket] = []
+    real = ingest.register_mailbox_socket
+
+    def spy(sock):
+        held.append(sock)
+        real(sock)
+
+    monkeypatch.setattr(ingest, "register_mailbox_socket", spy)
+    return held
+
+
+def test_a_family_this_kernel_lacks_moves_on_to_the_next_address(monkeypatch):
+    """socket.create_connection creates each socket inside its try, so an IPv6 answer on a kernel with IPv6 off falls through to IPv4;
+    so does this (security read A on #1899)."""
+    good = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    good.bind(("127.0.0.1", 0))
+    good.listen(1)
+    answers = [
+        (12345, socket.SOCK_STREAM, 0, "", ("nowhere", 0)),  # a family no kernel offers: socket.socket raises
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", good.getsockname()),
+    ]
+    monkeypatch.setattr(email_mod.socket, "getaddrinfo", lambda *a, **k: answers)
+    sock = email_mod._connect_registered("mail.example", 143, 5.0)
+    try:
+        assert sock.getpeername() == good.getsockname()
+    finally:
+        ingest.unregister_mailbox_socket(sock)
+        sock.close()
+        good.close()
+
+
+def test_a_failed_candidate_is_closed_and_unregistered(monkeypatch):
+    held = _held_registrations(monkeypatch)
+    good = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    good.bind(("127.0.0.1", 0))
+    good.listen(1)
+    dead = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    dead.bind(("127.0.0.1", 0))
+    dead_port = dead.getsockname()[1]
+    dead.close()
+    answers = [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", dead_port)),
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", good.getsockname()),
+    ]
+    monkeypatch.setattr(email_mod.socket, "getaddrinfo", lambda *a, **k: answers)
+    sock = email_mod._connect_registered("mail.example", 143, 5.0)
+    try:
+        assert len(held) == 2 and held[1] is sock
+        assert held[0].fileno() == -1, "the refused candidate was not closed"
+        assert held[0] not in ingest._LIVE_MAILBOX_SOCKETS and sock in ingest._LIVE_MAILBOX_SOCKETS
+    finally:
+        ingest.unregister_mailbox_socket(sock)
+        sock.close()
+        good.close()
+
+
+def test_a_stopped_connect_closes_and_unregisters_its_socket(monkeypatch):
+    held = _held_registrations(monkeypatch)
+    monkeypatch.setattr(email_mod, "_connect_watching_stop", lambda *a: (_ for _ in ()).throw(email_mod._MailboxStopped()))
+    with pytest.raises(email_mod._MailboxStopped):
+        email_mod._connect_registered("127.0.0.1", 143, 5.0)
+    assert held and all(s.fileno() == -1 and s not in ingest._LIVE_MAILBOX_SOCKETS for s in held)
+
+
+def test_a_connect_on_a_descriptor_numbered_past_1024_works():
+    """select.select refuses a descriptor numbered 1024 or more, which a process with a raised open-file limit reaches; the connect
+    waits on a selector instead (security read A on #1899)."""
+    resource = pytest.importorskip("resource")
+
+    soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft != resource.RLIM_INFINITY and soft < 1200:
+        pytest.skip(f"the open-file limit ({soft}) is below what the test needs")
+    lst = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    lst.bind(("127.0.0.1", 0))
+    lst.listen(1)
+    fillers = []
+    try:
+        while not fillers or fillers[-1].fileno() < 1100:
+            fillers.append(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+        sock = email_mod._connect_registered("127.0.0.1", lst.getsockname()[1], 5.0)
+        assert sock.fileno() >= 1024 and sock.getpeername() == lst.getsockname()
+        ingest.unregister_mailbox_socket(sock)
+        sock.close()
+    finally:
+        for f in fillers:
+            f.close()
+        lst.close()
+
+
+def test_a_zero_timeout_is_refused_as_create_connection_refuses_it():
+    with pytest.raises(ValueError):
+        email_mod._connect_registered("127.0.0.1", 143, 0)
 
 
 @pytest.mark.parametrize("fn", _FNS, ids=_IDS)

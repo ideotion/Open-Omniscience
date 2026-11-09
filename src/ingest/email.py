@@ -26,7 +26,7 @@ import logging
 import os
 import poplib
 import re
-import select
+import selectors
 import socket
 import ssl
 import time
@@ -410,6 +410,21 @@ def _connect_watching_stop(sock: socket.socket, address: Any, timeout: float | N
     rc = sock.connect_ex(address)
     if rc != 0 and rc not in _CONNECT_IN_PROGRESS:
         raise OSError(rc, os.strerror(rc))
+    # A selector, not select.select: that refuses a descriptor numbered 1024 or more (security read A on #1899), which a process with
+    # a raised open-file limit reaches; DefaultSelector is epoll/kqueue/poll where they exist, and on Windows watches failures too.
+    waiter = selectors.DefaultSelector()
+    waiter.register(sock, selectors.EVENT_WRITE)
+    try:
+        _wait_for_connect(sock, waiter, rc, deadline)
+    finally:
+        waiter.close()
+    if _stop_requested():
+        raise _MailboxStopped
+    sock.settimeout(timeout)
+
+
+def _wait_for_connect(sock: socket.socket, waiter: selectors.BaseSelector, rc: int, deadline: float | None) -> None:
+    """The in-progress part of :func:`_connect_watching_stop`: wait in slices, reading the switch between them."""
     while rc != 0:
         if _stop_requested():
             raise _MailboxStopped
@@ -419,17 +434,13 @@ def _connect_watching_stop(sock: socket.socket, address: Any, timeout: float | N
             if remaining <= 0:
                 raise TimeoutError("timed out")
             wait = min(wait, remaining)
-        _, writable, failed = select.select([], [sock], [sock], wait)
-        if writable or failed:
+        if waiter.select(wait):
             rc = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
             if rc != 0:
                 if _stop_requested():  # the Stop shut the socket down mid-connect
                     raise _MailboxStopped
                 raise OSError(rc, os.strerror(rc))
             break
-    if _stop_requested():
-        raise _MailboxStopped
-    sock.settimeout(timeout)
 
 
 def _connect_registered(host: str, port: int, timeout: float | None) -> socket.socket:
@@ -452,19 +463,23 @@ def _connect_registered(host: str, port: int, timeout: float | None) -> socket.s
     for n, (family, kind, proto, _, address) in enumerate(candidates, 1):
         if _stop_requested():
             raise _MailboxStopped
-        sock = socket.socket(family, kind, proto)
+        sock = None
         try:
+            sock = socket.socket(family, kind, proto)  # inside the try: a family this kernel lacks (IPv6 off) moves to the next address
             register_mailbox_socket(sock)
             _connect_watching_stop(sock, address, timeout)
         except OSError:
-            discard(sock)
+            if sock is not None:
+                discard(sock)
             if n == len(candidates):
                 raise  # the last candidate's own error, as it was
             continue  # the next address, as socket.create_connection tries them
         except BaseException:
-            discard(sock)  # a Stop (or an interrupt): no further address is tried
+            if sock is not None:
+                discard(sock)  # a Stop (or an interrupt): no further address is tried
             raise
-        return sock
+        if sock is not None:
+            return sock
     raise AssertionError("unreachable")  # pragma: no cover
 
 
