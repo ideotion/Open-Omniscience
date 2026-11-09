@@ -291,3 +291,70 @@ def test_the_gate_is_the_outermost_layer_but_compression():
     names = [n.name if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) else ast.unparse(n) for n in order]
     assert names[-1] == "app.add_middleware(GZipMiddleware, minimum_size=500)"
     assert names[-2] == "app.add_middleware(_ServingGate)"
+
+
+def test_a_real_socket_call_written_back_over_the_guard_closes_the_gate(gate):
+    """Security reads A and B on #1901: both flags stay set when a real call is written back over a patched one, so the gate
+    also asks ``removed_while_installed()``."""
+    gate.setattr(main, "_serving_loop_checked", True)
+    was_installed, was_armed = ap.is_installed(), ap._airplane_armed
+    assert ap.install_airplane_socket_guard()
+    wrapper = socket.getaddrinfo
+    try:
+        client = TestClient(main.app)
+        assert client.get("/unlock").status_code == 200
+        socket.getaddrinfo = ap._orig_getaddrinfo  # the real call back over the wrapper, as a stray assignment would
+        assert ap.is_armed() and ap.removed_while_installed()
+        r = client.get("/unlock")
+        _assert_refused(r.status_code, r.json())
+    finally:
+        socket.getaddrinfo = wrapper
+        ap.uninstall_airplane_socket_guard()
+        if was_installed:
+            ap._install_patches()
+        ap._airplane_armed = was_armed
+
+
+def _drive(scope: dict) -> list[str]:
+    """Run the gate alone on one scope with an inner app that records being reached; returns the event log."""
+    import asyncio
+
+    log: list[str] = []
+
+    async def inner(scope, receive, send):
+        log.append("inner")
+
+    async def receive():
+        log.append("receive")
+        return {"type": "websocket.connect"}
+
+    async def send(message):
+        log.append(message["type"])
+
+    asyncio.run(main._ServingGate(inner)(scope, receive, send))
+    return log
+
+
+def test_an_unknown_scope_type_reaches_nothing_while_the_gate_is_closed(gate):
+    """Security read A on #1901: only a lifespan scope passes ungated, so a future scope type fails closed by construction."""
+    assert _drive({"type": "webtransport"}) == []
+    assert _drive({"type": "lifespan"}) == ["inner"]
+
+
+def test_a_refused_websocket_takes_the_connect_event_before_it_closes(gate):
+    """Security read B on #1901: the protocol hands the app its websocket.connect first; the close follows it."""
+    assert _drive({"type": "websocket", "path": "/x"}) == ["receive", "websocket.close"]
+
+
+def test_a_gate_that_closes_again_logs_again(gate, caplog):
+    """Security read B on #1901: once the gate is open the logged flag is cleared, so a later closing has its own line."""
+    client = TestClient(main.app)
+    with caplog.at_level("ERROR", logger=main.logger.name):
+        assert client.get("/unlock").status_code == 503
+        gate.setattr(main, "_serving_loop_checked", True)
+        gate.setattr(ap, "is_armed", lambda: True)
+        gate.setattr(ap, "removed_while_installed", lambda: [])
+        assert client.get("/unlock").status_code == 200
+        gate.setattr(ap, "is_armed", lambda: False)
+        assert client.get("/unlock").status_code == 503
+    assert [r.getMessage() for r in caplog.records].count(main.SERVING_GATE_REFUSAL) == 2

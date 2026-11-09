@@ -444,11 +444,11 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   uvloop. A server started with `--lifespan off`, or mounted inside another ASGI app, runs no
   lifespan, so neither the loop check nor the guard it arms: the **serving gate** (R644) answers
   every HTTP request with a fixed 503 ("started without its own startup … start the app with its own
-  launcher"), and closes every websocket handshake before accepting it (code 1013), until the lifespan's loop check has run, the loop serving the request is the stdlib's,
+  launcher"), and refuses every websocket handshake before accepting it (uvicorn answers it with 403), and any other connection type reaches nothing, until the lifespan's loop check has run, the loop serving the request is the stdlib's,
   AND airplane mode's guard is armed, which the
   lifespan now does before the first request, a locked store's unlock flow included. It is a pure ASGI
   middleware, so no route type goes round it, and it latches nothing (R649): all three facts are read
-  on every request, so a guard taken out later closes the gate again. Only the guard half is ever
+  on every request, so a guard taken out later closes the gate again, by its uninstall or by a real socket call written back over a patched one. Only the guard half is ever
   waived, under `OO_AIRPLANE_SOCKET_GUARD=0` (the documented opt-out, the one setting under which the boot never arms the
   guard); the loop half never is. `OO_NO_SCHEDULER=1` waives neither (R646): it stops the background scheduler and the boot's
   kill-switch engage (a headless or test process manages the switch itself, and boots online), but the lifespan, the deferred
