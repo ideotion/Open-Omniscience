@@ -99,6 +99,8 @@ class CrawlReport:
     pages_fetched: int = 0
     stopped_reason: str = "completed"
     tally: dict[str, int] = field(default_factory=dict)
+    # Distinct links on the fetched pages that urllib.parse could not read: skipped, never followed (R626, see _harvest_links).
+    skipped_unreadable: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -107,6 +109,7 @@ class CrawlReport:
             "pages_fetched": self.pages_fetched,
             "stopped_reason": self.stopped_reason,
             "tally": self.tally,
+            "skipped_unreadable": self.skipped_unreadable,
         }
 
 
@@ -131,19 +134,29 @@ def _registrable_host(netloc: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
-def _harvest_links(html: str, base_url: str) -> list[str]:
-    """Absolute, de-fragmented http(s) links from a page, in document order."""
+def _harvest_links(html: str, base_url: str) -> tuple[list[str], set[str]]:
+    """Absolute, de-fragmented http(s) links from a page, in document order, and the hrefs ``urllib.parse`` could not read.
+
+    An href ``urljoin``/``urldefrag``/``urlparse`` cannot read (an unclosed IPv6 bracket ``http://[::1``, a bracketed host that
+    is no address, a netloc NFKC would change) raised a bare ``ValueError`` out of the harvest, which ended the source's whole
+    crawl: one bad link on a page ended the pass (R626). It is skipped and handed back, as written, for the crawl to count;
+    every link returned is one ``urlparse`` has read."""
     soup = BeautifulSoup(html, "html.parser")
     out: list[str] = []
     seen: set[str] = set()
+    unreadable: set[str] = set()
     for a in soup.find_all("a", href=True):
         # bs4 types every attribute as `str | AttributeValueList` because a few
         # (class, rel) are multi-valued. href is not one of them.
         href = cast(str, a["href"]).strip()
         if not href or href.startswith(("#", "mailto:", "javascript:", "tel:")):
             continue
-        absolute, _frag = urldefrag(urljoin(base_url, href))
-        parsed = urlparse(absolute)
+        try:
+            absolute, _frag = urldefrag(urljoin(base_url, href))
+            parsed = urlparse(absolute)
+        except ValueError:
+            unreadable.add(href)
+            continue
         if parsed.scheme not in ("http", "https"):
             continue
         if absolute.lower().endswith(_SKIP_SUFFIXES):
@@ -151,7 +164,7 @@ def _harvest_links(html: str, base_url: str) -> list[str]:
         if absolute not in seen:
             seen.add(absolute)
             out.append(absolute)
-    return out
+    return out, unreadable
 
 
 def crawl_source(
@@ -177,6 +190,7 @@ def crawl_source(
 
     queue: deque[tuple[str, int]] = deque([(start, 0)])
     queued: set[str] = {canonicalize_url(start)}
+    unreadable: set[str] = set()  # the hrefs _harvest_links could not read, as written: counted once per crawl (R626)
 
     # P1.8 collector write batching: buffer stores across the crawl so several
     # articles share ONE gate window/fsync; fetches stay outside any gate.
@@ -220,7 +234,9 @@ def crawl_source(
             # but never beyond the depth bound.
             if depth >= cfg.max_depth:
                 continue
-            for link in _harvest_links(fetched.content, fetched.final_url):
+            links, page_unreadable = _harvest_links(fetched.content, fetched.final_url)
+            unreadable |= page_unreadable
+            for link in links:
                 if cfg.same_domain_only and _registrable_host(urlparse(link).netloc) != base_host:
                     continue
                 canon = canonicalize_url(link)
@@ -245,4 +261,5 @@ def crawl_source(
 
     if report.stopped_reason == "completed" and report.pages_fetched >= cfg.max_pages and queue:
         report.stopped_reason = "max_pages"
+    report.skipped_unreadable = len(unreadable)
     return report
