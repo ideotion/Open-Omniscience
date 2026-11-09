@@ -132,6 +132,7 @@ def test_the_day_counts_migration_round_trips_from_a7c3e5f19b20(tmp_path):
         assert res.returncode == 0, res.stdout + res.stderr
     up = objects()
     assert {"keyword_day_counts", "keyword_day_dirty", "keyword_day_state"} <= up
+    assert {"trg_keyword_day_dirty_ad", "trg_keyword_day_dirty_au"} <= up  # both triggers, after the upgrade
     res = _alembic(["downgrade", "a7c3e5f19b20"], tmp_path)
     assert res.returncode == 0, res.stdout + res.stderr
     assert objects() == set()

@@ -679,3 +679,25 @@ def test_a_prune_of_the_top_keyword_id_still_bumps_the_epoch(tmp_path):
     e0 = get_corpus_epoch(s)
     r = prune_orphan_keywords(s)
     assert r["pruned"] == 1 and r["epoch_bumped"] is True and get_corpus_epoch(s) == e0 + 1
+
+
+def test_a_prune_whose_epoch_bump_fails_rolls_its_chunk_back(tmp_path, monkeypatch):
+    """R632 delta: the prune's bump is strict, so a failed bump never lets the chunk commit without it (fail closed)."""
+    from src.analytics import corpus_epoch
+
+    eng, s, _ex = _corpus(tmp_path)
+    top = s.query(Keyword).order_by(Keyword.id.desc()).first().id
+    s.add(Keyword(id=top + 10, term="zz-orphan", normalized_term="zz-orphan"))  # the top id: the prune must bump
+    s.commit()
+
+    class _Broken:
+        @staticmethod
+        def now(_tz=None):
+            raise RuntimeError("bump failed")
+
+    monkeypatch.setattr(corpus_epoch, "datetime", _Broken)
+    e0 = get_corpus_epoch(s)
+    r = prune_orphan_keywords(s)
+    assert r["pruned"] == 0 and r["epoch_bumped"] is False
+    assert s.get(Keyword, top + 10) is not None  # the chunk was rolled back with the bump
+    assert get_corpus_epoch(s) == e0

@@ -2026,11 +2026,12 @@ def prune_orphan_keywords(session: Session, *, chunk: int = 500, budget_s: float
                         .distinct()
                     }
                     batch = [kid for kid in batch if kid not in gained]
+                    removed = 0
                     if batch:
                         session.query(KeywordTag).filter(
                             KeywordTag.keyword_id.in_(batch)
                         ).delete(synchronize_session=False)
-                        pruned += (
+                        removed = (
                             session.query(Keyword)
                             .filter(Keyword.id.in_(batch))
                             .delete(synchronize_session=False)
@@ -2040,16 +2041,22 @@ def prune_orphan_keywords(session: Session, *, chunk: int = 500, budget_s: float
 
                         counted = day_counts.drop_keywords(session, batch)  # R632: in this transaction
                         top = session.query(func.max(Keyword.id)).scalar() or 0
-                        if not epoch_bumped and (counted or max(batch) > top):
+                        # per chunk, not once per pass: a rebuild can run between two chunks at the new epoch, and a
+                        # later chunk's case would then land unseen (both cases are rare: counted should be zero, and only
+                        # the chunk holding the top ids can pass the second test)
+                        if counted or max(batch) > top:
                             from src.analytics.corpus_epoch import bump_corpus_epoch
 
-                            # commits the chunk with it, still under the gate
+                            # commits the chunk with it, still under the gate; strict, so a failed bump rolls the chunk
+                            # back and raises into the except below (fail closed), and the next chunk tries again
                             bump_corpus_epoch(
                                 session,
                                 reason="prune_orphan_keywords: " + ("counted keyword" if counted else "top keyword id"),
+                                strict=True,
                             )
                             epoch_bumped = True
                     session.commit()
+                    pruned += removed  # counted once committed: a chunk a failed bump rolled back pruned nothing
             except Exception as exc:  # noqa: BLE001 - one bad chunk must not abort the GC
                 session.rollback()
                 log_failure(_LOG, "orphan-keyword prune chunk failed", exc, level=logging.WARNING)
