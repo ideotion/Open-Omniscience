@@ -251,7 +251,10 @@ def sanitize_url(url: str) -> str:
             # If no scheme or netloc, assume it's a relative URL
             return url
     except ValueError as exc:
-        log_failure(logger, f"sanitize_url: unparseable URL {url!r} dropped", exc, level=logging.DEBUG)
+        # imported on use: this module must not load src.ingest (R621)
+        from src.ingest.fetch_verdict import failure_url
+
+        log_failure(logger, f"sanitize_url: unparseable URL {failure_url(url)!r} dropped", exc, level=logging.DEBUG)
         return ""
 
     return url
@@ -296,7 +299,10 @@ def safe_href(url: str | None) -> str:
     try:
         scheme = urlparse(cleaned).scheme.lower()
     except ValueError as exc:
-        log_failure(logger, f"safe_href: unparseable URL {url!r} dropped", exc, level=logging.DEBUG)
+        # imported on use: this module must not load src.ingest (R621)
+        from src.ingest.fetch_verdict import failure_url
+
+        log_failure(logger, f"safe_href: unparseable URL {failure_url(url)!r} dropped", exc, level=logging.DEBUG)
         return ""
     return cleaned if scheme in ("http", "https") else ""
 

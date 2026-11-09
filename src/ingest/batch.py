@@ -46,6 +46,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
+from src.ingest.fetch_verdict import failure_url, userinfo_secrets
 from src.monitoring.secret_scrub import log_failure
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -280,7 +281,15 @@ class ArticleBatch:
                     self._store_one(e)
                 except Exception as exc:  # noqa: BLE001 - zero loss outranks tidiness
                     self.tally["errors"] += 1
-                    log_failure(_LOG, f"collect redo: unexpected error storing {e.requested_url}; recounted as an error, re-fetched next pass", exc, level=logging.WARNING)
+                    # the URL masked, and its userinfo taken out of the error's words too (R621, the independent read's N1): a
+                    # database error can quote the row's parameters, the URL among them
+                    log_failure(
+                        _LOG,
+                        f"collect redo: unexpected error storing {failure_url(e.requested_url)}; recounted as an error, re-fetched next pass",
+                        exc,
+                        *userinfo_secrets(e.requested_url),
+                        level=logging.WARNING,
+                    )
 
     def _flush_batched(self, entries: list[_StagedArticle]) -> None:
         from src.database.models import Article

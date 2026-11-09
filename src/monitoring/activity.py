@@ -43,6 +43,26 @@ class _Current:
     started_at: float  # epoch seconds (time.time)
 
 
+def _host_slot(url: str, shown: str) -> str:
+    """The host a fetch is attributed to: the fetcher's own host key for ``url`` (R621, N4), so one host is one rate row. NEVER
+    raises: on any error, or for a host ``urllib.parse`` cannot read, it falls back to the netloc of ``shown`` (the URL as
+    ``failure_url`` masked it), and to ``"?"`` when that cannot be read either. Imported on use: ``src.ingest`` imports this
+    module."""
+    try:
+        from src.ingest import _readable_host_key
+
+        parsed = urlparse(url)
+        key = _readable_host_key(parsed.netloc, parsed.scheme)
+        if key:
+            return key
+    except Exception:  # noqa: BLE001 - a label, never worth a failed fetch; the masked form below is the fallback
+        pass
+    try:
+        return urlparse(shown).netloc or "?"
+    except ValueError:  # the mask can leave a bracket the userinfo had matched: a label, never worth a fetch
+        return "?"
+
+
 # Rolling per-host transfer samples (the maintainer asked for per-source rates).
 # These are the app's OWN responses — bytes ÷ time spent downloading them — so
 # attribution is exact; this is NOT an OS/per-process network counter.
@@ -73,12 +93,20 @@ class ActivityMonitor:
         The token identifies THIS fetch so its bytes (``fetch_bytes``) and its end
         (``fetch_finished``) attribute to the right host/start time even when many
         fetches overlap. Callers that ignore the token still work (legacy /
-        best-effort attribution to the most recent in-flight fetch)."""
+        best-effort attribution to the most recent in-flight fetch).
+
+        The URL is kept with the userinfo masked, by the fetcher's own ``failure_url``, and the host is the fetcher's own host
+        key (R621): both are served (``/api/system/vitals`` and the top bar read the URL, the task manager's per-source rates
+        read the host), and a ``user:pass@`` URL showed its password there. The host key carries no userinfo and one spelling,
+        so a credentialed and a plain URL to one host are one rate row, as they are one host to the fetcher (the independent
+        read's N4). Imported here because ``src.ingest`` imports this module."""
+        from src.ingest.fetch_verdict import failure_url
+
+        shown = failure_url(url)
         with self._lock:
             self._token_seq += 1
             tok = self._token_seq
-            host = urlparse(url).netloc or "?"
-            self._inflight[tok] = _Current(url=url, host=host, started_at=time.time())
+            self._inflight[tok] = _Current(url=shown, host=_host_slot(url, shown), started_at=time.time())
             return tok
 
     def fetch_bytes(self, n: int, token: int | None = None) -> None:

@@ -175,7 +175,8 @@ def _real(tmp_path, monkeypatch, case: str, *, cred: bool) -> tuple[FetchError, 
 
 
 def _expected(case: str, written: str) -> str:
-    host_key = "/".join(written.split("/")[:3])  # scheme://netloc of the written URL
+    # scheme://host of the written URL: the robots key holds no userinfo since R621, so that sentence names the host alone
+    host_key = "/".join(written.split("/")[:3]).replace(USERINFO_MASK, "")
     return _REAL[case][5].format(u=written, h=host_key)
 
 
@@ -221,7 +222,8 @@ def _raw_twin(exc: FetchError, masked_url: str, raw_url: str) -> FetchError:
 def test_every_reader_reads_the_masked_sentence_as_it_read_the_raw_one(tmp_path, monkeypatch, case):
     exc, url, written = _real(tmp_path, monkeypatch, case, cred=True)
     if case == "robots-unavailable":
-        url, written = url.rsplit("/", 1)[0], written.rsplit("/", 1)[0]
+        # the robots key holds no userinfo since R621: the sentence names the bare host, credentialed request or not
+        url = written = written.rsplit("/", 1)[0].replace(USERINFO_MASK, "")
     (tmp_path / "plain").mkdir()
     plain_exc, _, _ = _real(tmp_path / "plain", monkeypatch, case, cred=False)
     seen = _readers(exc)
