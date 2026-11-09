@@ -124,6 +124,16 @@ try:
 except ImportError:  # pragma: no cover - PySocks is an operator-installed extra
     _pysocks = None  # type: ignore[assignment]
 
+# R643: on Windows the stdlib's proactor loop (what ``loop="asyncio"`` gives there) connects through ``_overlapped.ConnectEx`` and sends
+# datagrams through ``WSASendTo``, never through ``socket.socket.connect``/``sendto``, and an IP-literal target skips ``getaddrinfo``:
+# its two entry points are patched with the same rules. The module exists only on Windows (it imports ``_overlapped``), where asyncio
+# itself imports it at start, so this import costs nothing there and is absent everywhere else.
+try:
+    from asyncio import windows_events as _windows_events  # type: ignore[attr-defined,unused-ignore]
+except ImportError:
+    _windows_events = None  # type: ignore[assignment,unused-ignore]
+_proactor_cls: Any = getattr(_windows_events, "IocpProactor", None)
+
 
 class AirplaneModeError(OSError):
     """A non-loopback connection was attempted while airplane mode is engaged.
@@ -217,6 +227,8 @@ _orig_bind = socket.socket.bind
 _orig_sendto = socket.socket.sendto
 _orig_sendmsg = getattr(socket.socket, "sendmsg", None)
 _orig_socks_sendto = _pysocks.socksocket.sendto if _pysocks is not None else None
+_orig_proactor_connect: Any = _proactor_cls.connect if _proactor_cls is not None else None
+_orig_proactor_sendto: Any = _proactor_cls.sendto if _proactor_cls is not None else None
 #: The same real calls, never reassigned: a test swaps ``_orig_*`` for spies, and a call that has the stdlib's own function back in it
 #: is "the guard was removed" whether or not a spy is standing in ``_orig_*`` at that moment.
 _REAL_AT_IMPORT = (
@@ -236,6 +248,7 @@ _REAL_AT_IMPORT = (
     # position, and both lists leave out an absent one the same way.
     *((_orig_sendmsg,) if _orig_sendmsg is not None else ()),
     *((_orig_socks_connect, _orig_socks_sendto) if _orig_socks_connect is not None else ()),
+    *((_orig_proactor_connect, _orig_proactor_sendto) if _orig_proactor_connect is not None else ()),
 )
 
 _installed = False
@@ -365,8 +378,8 @@ def _guarded_create_connection(address, *args, **kwargs):  # type: ignore[no-unt
 
 
 def _guarded_connect(self, address):  # type: ignore[no-untyped-def]
-    # AF_UNIX is local IPC (a filesystem path) — never network; always allow.
-    if getattr(self, "family", None) != getattr(socket, "AF_UNIX", object()):
+    # AF_UNIX is local IPC (a filesystem path) and AF_NETLINK this machine's own kernel (R645) — never network; always allow.
+    if not _is_local_family(self):
         address = _name_rule_for_connect(address, getattr(self, "family", None))
         _guard(_addr_host(address))
         check_connect_target(address)
@@ -375,7 +388,7 @@ def _guarded_connect(self, address):  # type: ignore[no-untyped-def]
 
 
 def _guarded_connect_ex(self, address):  # type: ignore[no-untyped-def]
-    if getattr(self, "family", None) != getattr(socket, "AF_UNIX", object()):
+    if not _is_local_family(self):
         address = _name_rule_for_connect(address, getattr(self, "family", None))
         _guard(_addr_host(address))
         check_connect_target(address)
@@ -432,6 +445,12 @@ def _guarded_gethostbyaddr(ip_address):  # type: ignore[no-untyped-def]
 
 def _guarded_getnameinfo(sockaddr, flags):  # type: ignore[no-untyped-def]
     host = _addr_host(sockaddr)
+    numeric_only = socket.NI_NUMERICHOST | socket.NI_NUMERICSERV
+    if flags & numeric_only == numeric_only and _is_ip_literal(host):
+        # R645: both numeric flags on a literal ask libc to format the number it was handed, which makes no lookup of any kind (the
+        # forward step CPython takes is AI_NUMERICHOST), so any literal passes while engaged too.
+        with native_call("dns"):
+            return _orig_getnameinfo(sockaddr, flags)
     _lookup_rule(host)
     if _engaged():
         if _is_localhost_name(host) and isinstance(sockaddr, (tuple, list)):
@@ -452,6 +471,15 @@ def _guarded_getnameinfo(sockaddr, flags):  # type: ignore[no-untyped-def]
     return ("localhost" if answer_as_localhost else name, port)
 
 
+#: The socket families whose addresses never name a host (R645): AF_UNIX is a filesystem path, AF_NETLINK talks to this machine's own
+#: kernel. AF_PACKET (raw frames onto the wire), vsock, CAN and Bluetooth stay refused while engaged.
+_LOCAL_FAMILIES = tuple(f for f in (getattr(socket, "AF_UNIX", None), getattr(socket, "AF_NETLINK", None)) if f is not None)
+
+
+def _is_local_family(sock: object) -> bool:
+    return getattr(sock, "family", None) in _LOCAL_FAMILIES
+
+
 def _is_ip_literal(host: object) -> bool:
     if isinstance(host, bytes):
         try:
@@ -470,7 +498,7 @@ def _is_ip_literal(host: object) -> bool:
 def _guarded_bind(self, address):  # type: ignore[no-untyped-def]
     # A bind sends nothing, so any LITERAL address (or none) is left alone; only a host NAME, which C resolves through libc, meets the
     # lookup rule, with exactly ``localhost`` swapped for the family's loopback literal like a connect (R641).
-    if _engaged() and getattr(self, "family", None) != getattr(socket, "AF_UNIX", object()):
+    if _engaged() and not _is_local_family(self):
         host = _addr_host(address)
         if host not in (None, "", b"") and not _is_ip_literal(host):
             address = _name_rule_for_connect(address, getattr(self, "family", None))
@@ -481,7 +509,7 @@ def _guarded_bind(self, address):  # type: ignore[no-untyped-def]
 def _datagram_rule(sock: object, address: object) -> object:
     """A datagram to ``address`` needs no connect, so no other guard point sees it (R641): while airplane mode is engaged a host NAME
     meets the connect name rule (alias refused, ``localhost`` swapped for the literal) and any non-loopback destination is refused."""
-    if not _engaged() or address is None or getattr(sock, "family", None) == getattr(socket, "AF_UNIX", object()):
+    if not _engaged() or address is None or _is_local_family(sock):
         return address
     address = _name_rule_for_connect(address, getattr(sock, "family", None))
     _guard(_addr_host(address))
@@ -666,6 +694,23 @@ def _guarded_socks_connect(self, dest_pair, *args, **kwargs):  # type: ignore[no
     return cast(Callable[..., Any], _orig_socks_connect)(self, dest_pair, *args, **kwargs)
 
 
+def _guarded_proactor_connect(self, conn, address):  # type: ignore[no-untyped-def]
+    """R643: ``IocpProactor.connect`` (``ConnectEx`` for a stream, ``WSAConnect`` for a datagram socket) meets the same rule as
+    ``socket.socket.connect``: an alias refused, ``localhost`` swapped for the family's literal, any non-loopback target refused before
+    the overlapped call, and the SSRF connect check."""
+    if not _is_local_family(conn):
+        address = _name_rule_for_connect(address, getattr(conn, "family", None))
+        _guard(_addr_host(address))
+        check_connect_target(address)
+    return _orig_proactor_connect(self, conn, address)
+
+
+def _guarded_proactor_sendto(self, conn, buf, flags=0, addr=None):  # type: ignore[no-untyped-def]
+    """R643: ``IocpProactor.sendto`` (``WSASendTo``: ``loop.sock_sendto`` and an unconnected datagram transport) meets the datagram rule
+    of ``socket.socket.sendto``. No address is a connected socket, whose connect already met the rule."""
+    return _orig_proactor_sendto(self, conn, buf, flags, _datagram_rule(conn, addr))
+
+
 def _patch_points() -> list[tuple[Any, str, Any, Any]]:
     """Each patched call as (owner, attribute, our wrapper, the real call we saved)."""
     points: list[tuple[Any, str, Any, Any]] = [
@@ -687,6 +732,9 @@ def _patch_points() -> list[tuple[Any, str, Any, Any]]:
     if _orig_socks_connect is not None:
         points.append((_pysocks.socksocket, "connect", _guarded_socks_connect, _orig_socks_connect))
         points.append((_pysocks.socksocket, "sendto", _guarded_socks_sendto, _orig_socks_sendto))
+    if _orig_proactor_connect is not None:
+        points.append((_proactor_cls, "connect", _guarded_proactor_connect, _orig_proactor_connect))
+        points.append((_proactor_cls, "sendto", _guarded_proactor_sendto, _orig_proactor_sendto))
     return points
 
 
@@ -712,6 +760,9 @@ def _standing_calls() -> list[Any]:
     if _orig_socks_connect is not None:
         calls.append(getattr(_pysocks.socksocket, "connect", None))
         calls.append(getattr(_pysocks.socksocket, "sendto", None))
+    if _orig_proactor_connect is not None:
+        calls.append(getattr(_proactor_cls, "connect", None))
+        calls.append(getattr(_proactor_cls, "sendto", None))
     return calls
 
 
@@ -804,6 +855,9 @@ def uninstall_airplane_socket_guard() -> None:
     if _orig_socks_connect is not None:
         _pysocks.socksocket.connect = _orig_socks_connect  # type: ignore[union-attr]
         _pysocks.socksocket.sendto = _orig_socks_sendto  # type: ignore[union-attr]
+    if _orig_proactor_connect is not None:
+        _proactor_cls.connect = _orig_proactor_connect
+        _proactor_cls.sendto = _orig_proactor_sendto
     _installed = False
 
 

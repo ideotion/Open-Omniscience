@@ -412,35 +412,45 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   `/etc/hosts`, then asks DNS: security read A measured it for `127.0.0.2` and `::1`), so while the
   switch is engaged `gethostbyaddr` answers it as `localhost` without calling libc, and `getnameinfo`
   hands libc only `NI_NUMERICHOST | NI_NUMERICSERV` and answers the host as `localhost` unless the
-  caller asked for the number. A bind to any literal address is left alone (it sends nothing).
-  Fails closed rather than open: a `bind` or datagram on a non-IP family other than AF_UNIX
-  (netlink, packet, vsock, CAN, Bluetooth) is refused while the switch is engaged, and nothing
-  in-tree uses one. And a datagram
+  caller asked for the number; with both numeric flags on any literal, `getnameinfo` makes no lookup
+  of any kind and passes unchanged (R645). A bind to any literal address is left alone (it sends
+  nothing). The families whose addresses name no host pass like a loopback target on every patched
+  call (connect, connect_ex, bind, sendto, sendmsg and the Windows proactor's two): AF_UNIX (a
+  filesystem path) and AF_NETLINK (this machine's own kernel, R645). Netlink is local for an
+  UNPRIVILEGED process, which the app is: with CAP_NET_ADMIN a netlink message can make the kernel
+  itself transmit (an ARP or neighbour probe, a link brought up), so never run the app with that
+  capability. Fails closed rather than open
+  for the rest: a `bind` or datagram on AF_PACKET (raw frames onto the wire), vsock, CAN or
+  Bluetooth is refused while the switch is engaged, and nothing in-tree uses one. And a datagram
   needs no connect, so `sendto`/`sendmsg` to a non-loopback destination is refused too, and so is a
   PySocks UDP `sendto` through a proxy (its relay socket is connected to the proxy, so the real
   destination is checked there). Still outside: a UDP socket `connect`ed before the Stop can `send`
   on it afterwards, like a keep-alive TCP connection, but unlike one it goes through no `http.client`
   barrier; nothing in-tree keeps such a socket. Code that calls the C module `_socket` directly
   (`_socket.gethostbyname`, a `_socket.socket` and its `sendto`) skips every patched point, as it
-  does for `connect`; nothing in-tree does. And on Windows the proactor loop's `sock_sendto` and
-  datagram transports send through `_overlapped.WSASendTo`, beside the ConnectEx residual
-  named next (R643). **The server's own event loop (closed by R642):** `uvicorn[standard]`
+  does for `connect`; nothing in-tree does. **The server's own event loop (closed by R642):** `uvicorn[standard]`
   installs uvloop and uvicorn's default `loop="auto"` picks it, and uvloop resolves and connects in
   libuv's C code, past every patched point. `_serve` therefore pins `loop="asyncio"`, and the
   lifespan refuses to start on any loop that is not one of asyncio's own (fixed words naming the
   launcher and `--loop asyncio`), so a bare `python -m uvicorn src.api.main:app` no longer serves on
   uvloop. What the refusal cannot reach: a server started with `--lifespan off` or mounted inside
   another ASGI app runs no lifespan (deliberate developer commands no shipped launcher uses; such a
-  server never ran the deferred startup that installs the guard either). **Residual, Windows:** the
-  stdlib's proactor loop (what `loop="asyncio"` gives on win32) connects through `ConnectEx`, not
-  `socket.connect`, and an IP-literal target skips `getaddrinfo`, so an `asyncio.open_connection` to
-  a literal address on that loop would meet no guard (a host name still does). No in-tree code opens
-  an outbound connection from the event loop today; every fetch is synchronous, in a thread, where
-  the patches apply. Any **non-loopback** target
+  server never ran the deferred startup that installs the guard either). **Windows' proactor loop
+  (R643):** the stdlib's proactor (what `loop="asyncio"` gives on win32) connects through
+  `_overlapped.ConnectEx` (`WSAConnect` for a datagram socket) and sends datagrams through
+  `WSASendTo`, never through `socket.connect`/`sendto`, and an IP-literal target skips
+  `getaddrinfo`. Its two entry points, `IocpProactor.connect` and `IocpProactor.sendto`, are patch
+  points with the same rules as `connect` and `sendto` (alias refused, `localhost` swapped for the
+  family's literal, any non-loopback target refused before the overlapped call, and the SSRF connect
+  check on a connect, which acts only inside a guarded fetch, never on the event-loop thread today). The proactor itself is kept:
+  no switch to a selector loop. **Residual, Windows named pipes:** `loop.create_pipe_connection` with a
+  remote UNC name (`\\host\pipe\x`) goes through `IocpProactor.connect_pipe` to `CreateFile`, and
+  the Windows redirector reaches that host over SMB beside any socket, the same class as opening a
+  `\\host\share` file; nothing in-tree opens a pipe. Any **non-loopback** target
   handed to a patched point raises `AirplaneModeError` **before** a real socket is opened, so a
   missed call site, third-party library, or DNS prefetch that goes through those points cannot
   egress; what does not go through them is the residual list above and in this section. Loopback (127/8, ::1, `localhost`)
-  and AF_UNIX always pass through (the app's own server, a loopback Ollama, the file DB).
+  and AF_UNIX (and AF_NETLINK, above) always pass through (the app's own server, a loopback Ollama, the file DB).
   It is transparent while online. `OO_AIRPLANE_SOCKET_GUARD=0` disables the backstop; the
   per-call refusals remain as the friendly layer above it. App boot makes zero network calls.
 - **The same patch layer carries a second, independent gate: the connect-time SSRF check**
