@@ -3150,185 +3150,66 @@
 
     // ---- T10 slice 1: the corpora window (keyword-click entry) ---- //
 
-    // TEMPORARY / REMOVABLE (2026-11-08): one random article per source as zips of at most 4 MB.
-    // Delete with the button (#source-samples-btn) and /api/diagnostics/source-samples. The server is
-    // stateless: each call returns one zip and a cursor header; this walks the cursor and saves each zip.
-    async function downloadSourceSamples(btn) {
+    // ---- FIELD DATA (maintainer 2026-11-09) ---- //
+    // ONE button (#field-data-btn): «one or several files are downloaded and I take care of sending
+    // them back to you». It replaced the Field checks panel (R603) and the two TEMP source/article
+    // exports. FIELD_DATA_EXPORTS is what it saves, in order; add an entry when new work needs data
+    // only the operator's machine holds, and drop one once it has answered. Every entry is a
+    // loopback read-only export whose own route already scrubs what it writes: nothing goes online.
+    const FIELD_DATA_EXPORTS = [
+      // Sources and articles: the per-source quality bundle (counts, keyword fingerprints, a bounded
+      // text sample; private newsletter bodies stay gated), then one stored article per source as
+      // zips of at most 4 MB, walked by the server's cursor header.
+      {kind: "file", url: "/api/diagnostics/source-quality?download=1", name: "oo-field-source-quality.zip"},
+      {kind: "cursor", url: "/api/diagnostics/source-samples?after=", next: "X-Source-Samples-Next", name: "oo-field-source-samples-{n}.zip"},
+    ];
+    function _fieldSave(blob, name) {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    }
+    async function downloadFieldData(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
-      const out = $("source-samples-status");
+      const out = $("field-data-status");
       const say = (m) => { if (out) out.textContent = m; };
       if (btn) btn.disabled = true;
-      let after = 0, files = 0, sources = 0, total = 0;
+      let files = 0;
+      const pause = () => new Promise((res) => setTimeout(res, 400));   // let the browser take each download
       try {
-        for (;;) {
-          say(tf("Packing the next sources… {files} zip files saved, {sources} of {total} sources.", {files, sources, total: total || "?"}));
-          const r = await fetch("/api/diagnostics/source-samples?after=" + after);
-          if (!r.ok) throw new Error("HTTP " + r.status);
-          const blob = await r.blob();
-          total = Number(r.headers.get("X-Source-Samples-Total")) || total;
-          sources += Number(r.headers.get("X-Source-Samples-Covered")) || 0;
-          files += 1;
-          const a = document.createElement("a");
-          a.href = URL.createObjectURL(blob);
-          a.download = "oo-source-samples-" + String(files).padStart(3, "0") + ".zip";
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-          const nxt = r.headers.get("X-Source-Samples-Next");
-          if (!nxt) break;
-          if (!(Number(nxt) > after)) break;   // a cursor that does not advance can never loop
-          after = Number(nxt);
-          await new Promise((res) => setTimeout(res, 400));   // let the browser take each download
+        for (const ex of FIELD_DATA_EXPORTS) {
+          if (ex.kind === "file") {
+            say(tf("Saving… {files} files so far.", {files}));
+            const r = await fetch(ex.url);
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            _fieldSave(await r.blob(), ex.name);
+            files += 1;
+            await pause();
+            continue;
+          }
+          let after = 0, part = 0;
+          for (;;) {
+            say(tf("Saving… {files} files so far.", {files}));
+            const r = await fetch(ex.url + after);
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            part += 1;
+            _fieldSave(await r.blob(), ex.name.replace("{n}", String(part).padStart(3, "0")));
+            files += 1;
+            const nxt = r.headers.get(ex.next);
+            if (!nxt || !(Number(nxt) > after)) break;   // a cursor that does not advance can never loop
+            after = Number(nxt);
+            await pause();
+          }
         }
-        say(tf("Done: {files} zip files covering {sources} sources.", {files, sources}));
+        say(tf("Done: {files} files.", {files}));
       } catch (e) {
-        say(tf("Stopped after {files} zip files: {why}", {files, why: (e && e.message) || t("unknown error")}));
-      } finally {
-        if (btn) btn.disabled = false;
-      }
-      return {files, sources, total};
-    }
-    document.addEventListener("click", (ev) => {
-      const b = ev.target && ev.target.closest ? ev.target.closest("#source-samples-btn") : null;
-      if (b) downloadSourceSamples(b);
-    });
-
-    // ---- FIELD CHECKS (R603, 2026-11-08) ---- //
-    // The checks only the operator's own machine can run, listed by configs/field_checks.yml and run
-    // by src/monitoring/field_checks.py. Nothing is fetched when the Diagnostics section opens: the
-    // list loads on "Show field checks". A check that goes online passes the ONE consent popup
-    // (ensureOnline, invariant #14) and only then sends consent:true, which the server requires.
-    // The row buttons are wired by ONE delegated listener (no inline handlers).
-    let _fcView = null;
-    function _fcT() {
-      return (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-    }
-    function _fcTf(s, v) {
-      if (window.OOI18N && OOI18N.tf) return OOI18N.tf(s, v);
-      return String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m));
-    }
-    function _fcResultHtml(r) {
-      const t = _fcT();
-      if (!r) return `<div class="muted">${esc(t("Not run yet in this session."))}</div>`;
-      const shown = Object.assign({}, r);
-      delete shown.id; delete shown.kind;
-      return `<div>${ooLabelHtml(`<b>${esc(t("Result"))}</b>`, `${esc(String(r.outcome || ""))} · ${esc(ooIsoDateTime(r.started_at))}`)}</div>`
-        + `<pre class="small" style="white-space:pre-wrap;max-height:240px;overflow:auto;margin:4px 0">${esc(JSON.stringify(shown, null, 1))}</pre>`;
-    }
-    function _fcRowHtml(c) {
-      const t = _fcT();
-      const badges = [];
-      if (c.online) badges.push(`<span class="pill" title="${esc(t("This check goes online. It asks first through the network consent popup, and it is refused under airplane mode."))}">${esc(t("goes online"))}</span>`);
-      if (c.kind === "operator_report") badges.push(`<span class="pill">${esc(t("needs you"))}</span>`);
-      const steps = (c.steps || []).length
-        ? `<ol style="margin:4px 0 4px 18px;padding:0">${c.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>` : "";
-      let inputs = "";
-      if (c.kind === "drive_throughput") {
-        inputs = `<input type="text" data-fc-path="${esc(c.id)}" style="min-width:280px" placeholder="${esc(t("a folder on the drive to measure, e.g. /media/you/usb"))}">`;
-      } else if (c.kind === "operator_report") {
-        const opts = (c.answers || []).map((a) => `<option value="${esc(a)}">${esc(a)}</option>`).join("");
-        inputs = (c.action ? `<button type="button" class="secondary" data-fc-action="${esc(c.id)}">${esc(t("Start"))}</button> ` : "")
-          + `<select data-fc-answer="${esc(c.id)}" style="width:auto"><option value="">${esc(t("pick an answer"))}</option>${opts}</select> `
-          + `<input type="text" data-fc-note="${esc(c.id)}" maxlength="500" style="min-width:220px" placeholder="${esc(t("note (optional, never a password)"))}">`;
-      }
-      const runLabel = c.kind === "operator_report" ? t("Record the answer") : t("Run");
-      const run = c.applies_here
-        ? `<button type="button" data-fc-run="${esc(c.id)}">${esc(runLabel)}</button>`
-        : `<span class="muted">${esc(t("Does not apply on this system."))}</span>`;
-      return `<div class="fc-row" data-fc-row="${esc(c.id)}" style="border-top:1px solid var(--line, #8884);padding:6px 0">`
-        + `<div><b>${esc(c.title)}</b> ${badges.join(" ")}</div>`
-        + `<div class="hint">${esc(c.why)}</div>`
-        + `<div class="hint">${ooLabelHtml(esc(t("Added")), `${esc(ooIsoDate(c.added_on))} · ${esc(c.added_by)}`)}</div>`
-        + `<div class="hint">${ooLabelHtml(esc(t("Retired when")), esc(c.retire_when))}</div>`
-        + steps
-        + `<div class="row" style="margin-top:4px">${inputs} ${run} <span class="small" data-fc-status="${esc(c.id)}"></span></div>`
-        + `<div data-fc-result="${esc(c.id)}">${_fcResultHtml(c.result)}</div>`
-        + `</div>`;
-    }
-    function _fcRender() {
-      const t = _fcT();
-      const box = $("fc-list");
-      if (!box || !_fcView) return;
-      const active = _fcView.checks.filter((c) => c.status === "active");
-      const retired = _fcView.checks.filter((c) => c.status === "retired");
-      const ret = retired.length
-        ? `<details style="margin-top:6px"><summary class="muted">${esc(_fcTf("Retired checks ({n}): asked and answered, kept as the record", {n: retired.length}))}</summary>`
-          + retired.map((c) => `<div class="hint">${esc(c.title)} · ${esc(t("retired"))} ${esc(ooIsoDate(c.retired_on))} · ${esc(c.retired_by || "")}</div>`).join("")
-          + `</details>` : "";
-      box.innerHTML = `<div class="hint">${esc(_fcTf("List version {v}, {n} active checks. Results are kept by the running app only: a restart empties them, so save the report before you close it.", {v: _fcView.manifest_version, n: active.length}))}</div>`
-        + active.map(_fcRowHtml).join("") + ret;
-    }
-    async function fieldChecksLoad(btn) {
-      const t = _fcT();
-      const st = $("fc-status");
-      if (btn) btn.disabled = true;
-      try {
-        _fcView = await api("/api/diagnostics/field-checks");
-        _fcRender();
-        if (st) st.textContent = "";
-      } catch (e) {
-        if (st) st.textContent = t("Could not read the field checks:") + " " + (_apiErrorMessage ? _apiErrorMessage(e) : String(e));
+        say(tf("Stopped after {files} files: {why}", {files, why: (e && e.message) || t("unknown error")}));
       } finally {
         if (btn) btn.disabled = false;
       }
     }
-    const _fcClient = {};
-    async function _fcRun(id, btn) {
-      const t = _fcT();
-      const c = (_fcView && _fcView.checks || []).find((x) => x.id === id);
-      if (!c) return;
-      const st = document.querySelector(`[data-fc-status="${CSS.escape(id)}"]`);
-      const say = (m) => { if (st) st.textContent = m; };
-      const inputs = {};
-      if (c.kind === "drive_throughput") {
-        const el = document.querySelector(`[data-fc-path="${CSS.escape(id)}"]`);
-        inputs.path = el ? el.value.trim() : "";
-        if (!inputs.path) { say(t("Type the folder first.")); return; }
-      } else if (c.kind === "operator_report") {
-        const a = document.querySelector(`[data-fc-answer="${CSS.escape(id)}"]`);
-        const n = document.querySelector(`[data-fc-note="${CSS.escape(id)}"]`);
-        inputs.answer = a ? a.value : "";
-        inputs.note = n ? n.value : "";
-        inputs.client = _fcClient[id] || {};
-        if (!inputs.answer) { say(t("Pick an answer first.")); return; }
-      }
-      let consent = false;
-      if (c.online) {
-        consent = await ensureOnline(_fcTf("Run the field check “{title}”, which goes online", {title: c.title}));
-        if (!consent) { say(t("Not run: going online was declined.")); return; }
-      }
-      if (btn) btn.disabled = true;
-      say(t("Running…"));
-      try {
-        const r = await api("/api/diagnostics/field-checks/run", {method: "POST", body: JSON.stringify({id, consent, inputs})});
-        c.result = r;
-        const box = document.querySelector(`[data-fc-result="${CSS.escape(id)}"]`);
-        if (box) box.innerHTML = _fcResultHtml(r);
-        say("");
-      } catch (e) {
-        say(_apiErrorMessage ? _apiErrorMessage(e) : String(e));
-      } finally {
-        if (btn) btn.disabled = false;
-      }
-    }
-    async function _fcAction(id, btn) {
-      const c = (_fcView && _fcView.checks || []).find((x) => x.id === id);
-      if (!c) return;
-      if (c.action === "source_samples") {
-        // The TEMPORARY export's own walk (its button and status line stay where they are).
-        const out = await downloadSourceSamples(btn);
-        if (out) _fcClient[id] = {files_saved_by_page: out.files, sources_covered: out.sources, sources_total: out.total};
-        const st = document.querySelector(`[data-fc-status="${CSS.escape(id)}"]`);
-        const s2 = $("source-samples-status");
-        if (st && s2) st.textContent = s2.textContent;
-      }
-    }
-    document.addEventListener("click", (ev) => {
-      const el = ev.target && ev.target.closest ? ev.target.closest("[data-fc-run],[data-fc-action]") : null;
-      if (!el) return;
-      if (el.hasAttribute("data-fc-run")) _fcRun(el.getAttribute("data-fc-run"), el);
-      else _fcAction(el.getAttribute("data-fc-action"), el);
-    });

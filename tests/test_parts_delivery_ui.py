@@ -140,7 +140,7 @@ def test_the_bar_sits_directly_under_the_buttons_that_fill_it() -> None:
         "downloadKeywordParts(this, 'all')",
     ], "only the buttons that fill the bar may sit between the first of them and the bar"
     after = html[bar:]
-    for unrelated in ("viewKeywordGrowth(this)", "discoverWorld(this)", "ooOpenUrl('/api/diagnostics/source-quality?download=1')"):
+    for unrelated in ("viewKeywordGrowth(this)", "discoverWorld(this)", "downloadFieldData(this)"):
         assert after.index(f'data-on-click="{unrelated}"') > 0, unrelated
     assert "viewKeywordGrowth" not in html[first:bar]
     # the page still brings the bar into view for a person who is looking at the button they pressed

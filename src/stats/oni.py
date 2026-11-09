@@ -11,10 +11,12 @@ episode table drafted from training knowledge and marked *"clearnet check pendin
 2026-06-12, and the CPC's own table is what settles it.
 
 Like ``usgs.py``, this is PURE: it takes an already-decoded ``str`` a caller fetched and
-never imports ``requests`` / ``httpx`` / ``socket``. The networked fetch lives behind the
-guarded factory + kill switch and is on the operator list, because this sandbox cannot
-reach ``origin.cpc.ncep.noaa.gov`` (probed 2026-09-07: CONNECT 403 via the proxy, with
-``pypi.org`` at 200 as the control). **So the file FORMAT below is documented from the
+never imports ``requests`` / ``httpx`` / ``socket``. The networked fetch is
+``src.stats.fetch.fetch_oni`` (PR #1768): kill switch first, a session held to
+``www.cpc.ncep.noaa.gov`` and ``/data/indices/``, and a read bounded by the table's shape. No
+build sandbox has reached the CPC (``origin.cpc.ncep.noaa.gov`` probed 2026-09-07: CONNECT 403
+via the proxy, with ``pypi.org`` at 200 as the control; ``www.cpc.ncep.noaa.gov`` unreachable
+2026-11-07), so the first live fetch is an operator step. **So the file FORMAT below is documented from the
 published shape and is NOT verified against a live download** — the parser therefore
 refuses anything it does not recognise rather than bending to fit, and reports what it
 refused, so a format drift surfaces as a loud gap instead of a plausible number.
