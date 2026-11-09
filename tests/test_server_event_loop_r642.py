@@ -1,9 +1,10 @@
-"""The server runs on the stdlib asyncio loop, never uvloop (R642).
+"""The app's own server start runs on the stdlib asyncio loop, never uvloop (R642).
 
 uvicorn[standard] installs uvloop and uvicorn's default ``loop="auto"`` picks it. uvloop resolves and connects in libuv's C code, past
 every ``socket`` call the airplane guard patches (src/ingest/airplane.py), so an async client on the server's loop reached a
-non-loopback listener with airplane mode engaged (security read B of R639). ``_serve`` therefore pins ``loop="asyncio"``, and a server
-started another way says so loudly at boot.
+non-loopback listener with airplane mode engaged (security read B of R639). ``_serve`` therefore pins ``loop="asyncio"``. A server started
+another way (``python -m uvicorn src.api.main:app`` without ``--loop asyncio``) still runs on uvloop; it is not refused, but it logs an
+error at boot.
 """
 
 from __future__ import annotations
@@ -18,34 +19,89 @@ import src.api.main as main_mod
 import src.ingest.airplane as ap
 from src.ingest import activate_kill_switch, clear_kill_switch
 
-_SRC = Path(__file__).resolve().parents[1] / "src"
+_ROOT = Path(__file__).resolve().parents[1]
+#: Names a module can serve with. Only ``uvicorn.run``/``uvicorn.Config`` through the bare module name are allowed (so the check
+#: below can read their ``loop=``); every other way of reaching them is refused outright.
+_SERVING_NAMES = {"run", "Config", "Server", "main"}
+
+
+def _trees():
+    for top in ("src", "scripts"):
+        for py in (_ROOT / top).rglob("*.py"):
+            yield py.relative_to(_ROOT).as_posix(), ast.parse(py.read_text(encoding="utf-8"))
 
 
 def _uvicorn_run_calls() -> list[tuple[str, ast.Call]]:
     calls = []
-    for py in _SRC.rglob("*.py"):
-        tree = ast.parse(py.read_text(encoding="utf-8"))
+    for where, tree in _trees():
         for node in ast.walk(tree):
             if (
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Attribute)
-                and node.func.attr in ("run", "Config")
+                and node.func.attr in _SERVING_NAMES
                 and isinstance(node.func.value, ast.Name)
                 and node.func.value.id == "uvicorn"
             ):
-                calls.append((py.relative_to(_SRC.parent).as_posix(), node))
+                calls.append((where, node))
     return calls
+
+
+def test_uvicorn_is_never_reached_around_the_checked_call():
+    """An alias (``import uvicorn as uv``), a ``from uvicorn import run/Config/Server``, ``uvicorn.main`` or a ``uvicorn.Server`` would
+    serve past the ``loop=`` check below, so none may exist."""
+    problems = []
+    for where, tree in _trees():
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                problems += [
+                    f"{where}: import {a.name} as {a.asname}"
+                    for a in node.names
+                    if a.name.split(".")[0] == "uvicorn" and a.asname
+                ]
+                problems += [
+                    f"{where}: import {a.name}"
+                    for a in node.names
+                    if a.name in ("uvicorn.main", "uvicorn.server")
+                ]
+            elif (
+                isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == "uvicorn"
+            ):
+                problems += [
+                    f"{where}: from {node.module} import {a.name}"
+                    for a in node.names
+                    if a.name in _SERVING_NAMES
+                ]
+            elif (
+                isinstance(node, ast.Attribute)
+                and node.attr in ("Server", "main")
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "uvicorn"
+            ):
+                problems.append(f"{where}: uvicorn.{node.attr}")
+    assert not problems, problems
 
 
 def test_every_uvicorn_entry_point_pins_the_asyncio_loop():
     calls = _uvicorn_run_calls()
-    assert calls, "no uvicorn.run(...) found: the server entry point moved and this test must follow it"
+    assert calls, (
+        "no uvicorn.run(...) found: the server entry point moved and this test must follow it"
+    )
     for where, call in calls:
+        assert not any(kw.arg is None for kw in call.keywords), (
+            f"{where}: **kwargs could carry loop='auto'"
+        )
         loop = next((kw.value for kw in call.keywords if kw.arg == "loop"), None)
-        assert loop is not None, f"{where}: uvicorn.{call.func.attr}(...) without loop= picks uvloop ('auto')"  # type: ignore[attr-defined]
-        assert (isinstance(loop, ast.Name) and loop.id == "SERVER_EVENT_LOOP") or (
-            isinstance(loop, ast.Constant) and loop.value == "asyncio"
-        ), f"{where}: loop= must be the asyncio loop"
+        assert loop is not None, (
+            f"{where}: uvicorn.{call.func.attr}(...) without loop= picks uvloop ('auto')"
+        )  # type: ignore[attr-defined]
+        if isinstance(loop, ast.Name):
+            assert where == "src/api/main.py" and loop.id == "SERVER_EVENT_LOOP", (
+                f"{where}: loop= must be the asyncio loop"
+            )
+        else:
+            assert isinstance(loop, ast.Constant) and loop.value == "asyncio", (
+                f"{where}: loop= must be the asyncio loop"
+            )
     assert main_mod.SERVER_EVENT_LOOP == "asyncio"
 
 
@@ -57,8 +113,9 @@ def _loop_from_config(loop_setting: str) -> asyncio.AbstractEventLoop:
     if factory is not None:
         made = factory()
         return made() if made is not None else asyncio.new_event_loop()
-    config.setup_event_loop()  # older uvicorn: sets the policy instead
-    return asyncio.new_event_loop()
+    raise AssertionError(
+        "this uvicorn has no Config.get_loop_factory; the loop check must follow its API"
+    )
 
 
 def test_the_configured_loop_is_not_uvloop():
@@ -81,17 +138,28 @@ def test_auto_would_have_picked_uvloop():
         asyncio.set_event_loop_policy(None)
 
 
-def test_on_the_configured_loop_an_async_connect_meets_the_airplane_guard():
-    """End to end on the loop the server is pinned to: with airplane mode engaged an async connect to a remote name is refused by the
-    socket guard (it resolves through the patched getaddrinfo, which refuses before any lookup)."""
+@pytest.mark.parametrize("host", ["example.com", "192.0.2.1"])
+def test_on_the_configured_loop_an_async_connect_meets_the_airplane_guard(host):
+    """End to end on the loop the server is pinned to: with airplane mode engaged an async connect is refused by the socket guard,
+    a name at the patched getaddrinfo and an IP literal (which skips the lookup) at the patched connect. The real calls are replaced
+    by tripwires, so a broken guard fails here instead of reaching the network."""
+
+    def _tripwire(*a, **k):
+        raise AssertionError("the real socket call was reached with airplane mode engaged")
+
     was_installed, was_armed = ap.is_installed(), ap._airplane_armed
     ap.install_airplane_socket_guard()
+    # Saved and put back by hand BEFORE the uninstall below, which writes these names back onto ``socket`` (monkeypatch would undo
+    # them only after it, leaving the tripwires installed as the "real" calls).
+    real_getaddrinfo, real_connect = ap._orig_getaddrinfo, ap._orig_connect
+    ap._orig_getaddrinfo, ap._orig_connect = _tripwire, _tripwire
     loop = _loop_from_config(main_mod.SERVER_EVENT_LOOP)
     try:
         activate_kill_switch()
         with pytest.raises(ap.AirplaneModeError):
-            loop.run_until_complete(asyncio.open_connection("example.com", 80))
+            loop.run_until_complete(asyncio.open_connection(host, 80))
     finally:
+        ap._orig_getaddrinfo, ap._orig_connect = real_getaddrinfo, real_connect
         clear_kill_switch()
         loop.close()
         asyncio.set_event_loop_policy(None)
