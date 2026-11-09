@@ -87,7 +87,7 @@ def upgrade_database_file(path: Path, target: str = "head") -> str | None:
     from alembic import command
     from sqlalchemy import create_engine
 
-    eng = create_engine(f"sqlite:///{path}", future=True)
+    eng = create_engine(f"sqlite:///{path}", future=True, hide_parameters=True)  # as the corpus engine: no values in an error
     try:
         with eng.begin() as conn:
             cfg = _alembic_config()

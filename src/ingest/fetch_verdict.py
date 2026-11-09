@@ -222,7 +222,11 @@ def failure_netloc(netloc: str) -> str:
 def shown_url(url: str | None) -> str | None:
     """A stored URL as an answer, a log line or a report shows it (R637): :func:`failure_url`'s form, its userinfo masked as
     :data:`USERINFO_MASK`. ``None`` and ``""`` stay what they are, so "no feed" still reads as no feed. Only what is SHOWN changes:
-    the stored value, the request and the exports keep the URL as written. NEVER raises."""
+    the stored value, the request and the exports keep the URL as written. Not masked, stated (the independent read of R637):
+    a form with no ``//`` authority, ``alice:pw@news.example/rss`` (no scheme) or ``https:alice:pw@news.example/rss``, is shown as
+    written, as :func:`_userinfo_span` reads it; neither can be fetched (the fetcher refuses a URL whose scheme is not http(s)
+    or that has no host before any request, and its refusal sentence writes it through :func:`failure_url` the same way, R620's
+    stated limit). NEVER raises."""
     if not url:
         return url
     return failure_url(url)
@@ -240,10 +244,14 @@ def url_to_store(sent: object, stored: str | None) -> object:
     3. ``sent`` holds the mask, ``stored`` holds a userinfo and the two URLs name the same scheme, host and port (the fetcher's
        host key): ``sent`` with the stored userinfo in place of the mask, so editing the path keeps the login;
     4. otherwise the mask is taken out and ``sent`` is stored without a login: a login is never carried to another host, port or
-       scheme, and ``***`` is never stored as a user name.
+       scheme, and the shown mask is never turned into a login.
 
-    A ``sent`` that is not a non-empty string comes back as it is (the caller's own type check answers it). Stated: a login that
-    is literally ``***`` cannot be typed through a form. NEVER raises."""
+    Exact, stated (the independent read of R637): only the mask exactly as shown is read as the stored login. A userinfo that
+    differs from it (``%2A%2A%2A@``, ``**\t*@``, ``***:x@``) is what the person typed, and rule 2 stores it as typed. The host is
+    compared as the fetcher keys it, so the safe direction is taken where the two spellings differ: ``news.example.`` (a
+    trailing dot) is not ``news.example``, and the login is dropped. A ``sent`` that is not a non-empty string comes back as it
+    is (the caller's own type check answers it). Stated: a login that is literally ``***`` cannot be typed through a form.
+    NEVER raises."""
     if not isinstance(sent, str) or not sent:
         return sent
     try:

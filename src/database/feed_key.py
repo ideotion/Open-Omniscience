@@ -24,7 +24,8 @@ A FEED STORED TWICE BEFORE R628 (R634): once with a login and once without, or w
 and R628 derives one for both. Re-deriving would break ``UNIQUE (domain, feed_key)``, so such a row keeps the
 key it has (:func:`key_to_write`, asked by every writer that re-derives a key) and the pair stays two rows; an
 add or an import of one of the two URLs finds its own row (:func:`lookup_key`). A kept key still holds the
-login: no writer puts it in a statement's parameters and nothing reports a key.
+login: no writer puts it in a statement's parameters, and the one report that writes the column (the diagnostics zip of one
+article per source) writes it through :func:`shown_feed_key`, its userinfo masked (the independent read's M1 on R637).
 """
 
 from __future__ import annotations
@@ -41,6 +42,10 @@ FEED_KEY_MAX = 500
 #: Every feed key starts with this and a feed-less source's key is ``''``, so the two namespaces cannot meet: a
 #: domain-only identity can never equal a feed identity, whatever a feed URL looks like (R145 point 1).
 FEED_PREFIX = "f:"
+
+#: What a report writes in place of a userinfo a stored key kept: the mask the answers write a URL's userinfo in
+#: (``src.ingest.fetch_verdict.USERINFO_MASK``, not imported: this module imports no src module).
+KEY_USERINFO_MASK = "***@"
 
 
 def feed_key(rss_url: str | None) -> str:
@@ -113,7 +118,7 @@ def key_to_write(
     one for both. Re-deriving the credentialed row's key would then break ``UNIQUE (domain, feed_key)`` on its next write, so that
     row keeps the key it has, and the pair stays two rows. Both rows of a pair that are both credentialed keep theirs (each would
     take the other's), so the answer never depends on which is written first. A kept key is not written out: the writers leave the
-    column untouched, and nothing reports a key."""
+    column untouched, and a report writes a key only through :func:`shown_feed_key`."""
     new = feed_key(rss_url)
     if not keeps_a_stored_key(stored_key, rss_url):
         return new
@@ -142,3 +147,37 @@ def lookup_key(rss_url: str | None, held_keys: Container[str]) -> str:
     new = feed_key(rss_url)
     old = legacy_feed_key(rss_url)
     return old if old != new and old in held_keys else new
+
+
+def shown_feed_key(stored_key: str | None) -> str | None:
+    """A stored key as a report writes it (the independent read's M1 on R637): a userinfo it holds written as
+    :data:`KEY_USERINFO_MASK`, the rest as stored; ``None``, ``''`` and a value that is not a feed key stay what they are. Only a
+    key stored before R628 holds one (kept beside its twin, R634, or not yet rewritten).
+
+    The reading is WIDE, as the URL mask's is (R620): after :data:`FEED_PREFIX` a key is the authority (host and port, a kept
+    userinfo before them) then the path and query, or, for a URL ``urllib.parse`` could not read, that URL's lower-cased text,
+    which can open with a scheme and ``//``. So the authority starts after a ``//`` that opens the text or follows a scheme, at the
+    start otherwise, and ends at the first ``/``, ``?`` or ``#``; the userinfo is everything before the LAST ``@`` in it. An ``@`` in
+    a path or a query stays (today's key of ``https://news.example/@me/rss`` is ``f:news.example/@me/rss``). A key cut at
+    :data:`FEED_KEY_MAX` inside its authority could have lost its ``@`` to the cut, so such an authority is withheld whole. Not
+    masked, stated: a "credential" holding a raw ``/``, ``?`` or ``#``, which every parser ends the authority at. NEVER raises."""
+    if not stored_key or not isinstance(stored_key, str) or not stored_key.startswith(FEED_PREFIX):
+        return stored_key
+    body = stored_key[len(FEED_PREFIX) :]
+    start = 0
+    slashes = body.find("//")
+    scheme = body[:slashes]
+    if slashes == 0 or (slashes > 1 and scheme.endswith(":") and scheme[0].isalpha()
+                        and all(ch.isalnum() or ch in "+.-" for ch in scheme[:-1])):
+        start = slashes + 2
+    end = len(body)
+    for stop in "/?#":
+        found = body.find(stop, start)
+        if 0 <= found < end:
+            end = found
+    at = body.rfind("@", start, end)
+    if at >= 0:
+        return FEED_PREFIX + body[:start] + KEY_USERINFO_MASK + body[at + 1 :]
+    if end == len(body) and len(stored_key) >= FEED_KEY_MAX:
+        return FEED_PREFIX + body[:start] + KEY_USERINFO_MASK.rstrip("@")
+    return stored_key

@@ -94,12 +94,6 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
 #: line in one of them, or a same-named method elsewhere, is read like any other code. Each line was read in the code.
 CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     "src/ingest/email.py": {("_is_integrity_error", "for e in (exc, exc.__cause__, exc.__context__):"): 3},
-    # the url-v1 dedup read (the R628 reads, Steward 3's item 5): the error is made QUIETER, SQLAlchemy's own way, so its words never
-    # quote the bound url-v1 form and its login, and it is raised again unchanged otherwise; it reads no text, stores nothing, logs nothing
-    "src/ingest/pipeline.py": {("_canonical_stored", "exc.hide_parameters = True"): 1},
-    # the PUT's refusal that is not a held feed (Steward 3's low on the R637 fold): the same, so the UPDATE's parameters, the stored
-    # address and its login among them, never reach the server's error line; raised again unchanged otherwise, nothing read or kept
-    "src/api/source_management.py": {("update_source", "exc.hide_parameters = True"): 1},
     "src/scheduler/plan_cache.py": {
         ('PlanPreviewCache._label', 'if err is not None:'): 1,
         ('PlanPreviewCache._label', 'out["refresh_error"] = err'): 1,

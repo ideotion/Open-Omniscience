@@ -140,6 +140,11 @@ def _build_engine() -> Engine:
         return create_engine(
             DATABASE_URL,
             future=True,
+            # The independent read's S1 on R637: an error's text and the engine's INFO log name the statement, never the values bound
+            # to it. Those values are a title, a page's text, a feed address with its login (url_to_store puts a kept login back into
+            # an edit), and an escaped error reaches the server's "Exception in ASGI application" line as it made its message, behind
+            # a filter that takes out passphrases only. ``exc.params`` and a pickled error still hold them; nothing in src/ reads them.
+            hide_parameters=True,
             # Opened under the library lock, stamped with the generation read under it (``database/library_generation.py``).
             creator=_library_generation.guarded_creator(_creator),
             pool_size=int(_b["db_pool_size"]),
@@ -172,6 +177,7 @@ def _build_engine() -> Engine:
     return create_engine(
         DATABASE_URL,
         future=True,
+        hide_parameters=True,  # as the SQLite engine above (the independent read's S1 on R637)
         pool_pre_ping=True,
         pool_size=int(os.getenv("DB_POOL_SIZE", "5")),
         max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),

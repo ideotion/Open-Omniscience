@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 
 import feedparser
 from sqlalchemy import Row
-from sqlalchemy.exc import IntegrityError, StatementError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, FeedFetchState, Source
@@ -839,20 +839,15 @@ def _canonical_stored(session: Session, url: str, canonical: str) -> bool:
     article stored before R628 from ``https://alice:pw@a.example/x`` holds that canonical_url with the userinfo, and without
     this the page would be fetched again on every pass that lists it (the content hash then names it a duplicate, after the
     request). That second read goes to the database directly and marks nothing in the dedup front, whose entries stay exactly
-    the canonical forms stored. Costs nothing for a URL without an ``@`` in its authority."""
+    the canonical forms stored. Costs nothing for a URL without an ``@`` in its authority.
+
+    The url-v1 form keeps the URL's login, and it is this read's one parameter: an error on it names the statement and not its
+    values because every engine the app builds hides them (``hide_parameters=True``, the independent read's S1 on R637, which
+    replaced the hiding this function did on its own error, Steward 3's R628 read item 5)."""
     if _exists(session, canonical_url=canonical):
         return True
     legacy = url_v1_canonical(url)
-    if legacy is None:
-        return False
-    try:
-        return session.query(Article.id).filter_by(canonical_url=legacy).first() is not None
-    except StatementError as exc:
-        # The url-v1 form keeps the URL's login, and the engine's error quotes its parameters (Steward 3's R628 read, item 5):
-        # the app reads it through record_text, but POST /api/ingest's error escapes to the server, whose own "Exception in
-        # ASGI application" line writes it as it made its message. Hidden at the source, SQLAlchemy's own way, for every reader.
-        exc.hide_parameters = True
-        raise
+    return legacy is not None and session.query(Article.id).filter_by(canonical_url=legacy).first() is not None
 
 
 def _exists(session: Session, **filters) -> bool:

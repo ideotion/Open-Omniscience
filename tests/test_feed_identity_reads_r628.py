@@ -243,46 +243,6 @@ def test_control_an_integrity_error_no_row_explains_is_not_named_a_held_feed(cli
     assert r.json()["detail"] == "internal error: IntegrityError (a database driver's text is withheld)"  # its class, never its words
 
 
-def test_an_integrity_error_that_goes_on_carries_no_login_in_its_text(sess_factory):
-    """Steward 3's low on the R637 fold: the refusal that is not a held feed goes on to the server's own error line ("Exception
-    in ASGI application", the whole traceback), and its text carried the UPDATE's parameters, the stored address with its login
-    among them. A real refusal by the store (a trigger), raised into the test the way the server sees it."""
-    import traceback
-
-    from sqlalchemy.exc import IntegrityError
-
-    from src.api.main import app
-    from src.database.session import get_db
-
-    with sess_factory() as s:
-        (cred,) = _plant(s, [_ALICE])
-        s.execute(text("CREATE TRIGGER refuse_any_edit BEFORE UPDATE ON sources BEGIN SELECT RAISE(ABORT, 'refused by the test'); END"))
-        s.commit()
-
-    def _db():
-        s = sess_factory()
-        try:
-            yield s
-        finally:
-            s.close()
-
-    app.dependency_overrides[get_db] = _db
-    try:
-        with TestClient(app) as c, pytest.raises(IntegrityError) as caught:
-            # the masked form with a new path: the stored login is put back in, so the UPDATE carries it (R637's rule 3)
-            c.put(f"/api/sources/{cred}", json={"rss_url": f"https://***@{_DOMAIN}/world"})
-    finally:
-        app.dependency_overrides.clear()
-    exc = caught.value
-    assert f"alice:{_PASSWORD}@{_DOMAIN}/world" in repr(exc.params)  # the login did reach the statement: the check below is not vacuous
-    for said in (str(exc), "".join(traceback.format_exception(exc))):
-        assert "refused by the test" in said  # the store's own words stay: only the parameters are hidden
-        _secret_free(said)
-    assert exc.hide_parameters is True
-    with sess_factory() as s:
-        assert _rows(s) == [_ALICE]  # nothing was written
-
-
 # --------------------------------------------------------------------------- #
 # 3. An import finds the row an add finds
 # --------------------------------------------------------------------------- #
@@ -490,17 +450,19 @@ def test_the_dedups_database_error_is_answered_and_logged_without_the_login(clie
     assert "OperationalError" in r.text  # the class is said
 
 
-def test_the_dedups_database_error_never_quotes_the_login_to_any_reader(db, locked_on_a_login):
+def test_the_dedups_database_error_never_quotes_the_login_to_any_reader(app_store, locked_on_a_login):
     """The server writes an escaped exception as it made its message (``Exception in ASGI application``, behind a filter that
-    takes out passphrases only): so the error itself must not quote the url-v1 parameter, whoever formats it."""
+    takes out passphrases only): so the error itself must not quote the url-v1 parameter, whoever formats it. Read through the
+    app's own engine, whose ``hide_parameters`` does it (S1)."""
     import traceback
 
     from sqlalchemy.exc import OperationalError
 
+    from src.database.session import SessionLocal
     from src.ingest.pipeline import _canonical_stored
 
-    with pytest.raises(OperationalError) as caught:
-        _canonical_stored(db, f"https://alice:{_PASSWORD}@{_DOMAIN}/a", f"https://{_DOMAIN}/a")
+    with SessionLocal() as s, pytest.raises(OperationalError) as caught:
+        _canonical_stored(s, f"https://alice:{_PASSWORD}@{app_store}/a", f"https://{app_store}/a")
     assert locked_on_a_login and _PASSWORD in locked_on_a_login[0]  # the statement did carry it
     _secret_free(str(caught.value))  # before: "[parameters: ('https://alice:hunter2@news.example/a', 1, 0)]"
     _secret_free("".join(traceback.format_exception(caught.value)))
@@ -528,6 +490,149 @@ def test_the_scrape_runs_catch_reads_the_dedups_error_without_the_login(db, lock
     assert locked_on_a_login
     assert "scrape run: source" in caplog.text
     _secret_free(caplog.text)
+
+
+@pytest.fixture()
+def app_store():
+    """The app's own store, through the engine every route and pass reads with (``src.database.session``), its tables made: a
+    domain no other test writes, its rows removed afterwards."""
+    import uuid
+
+    from src.database.session import SessionLocal, init_db
+
+    init_db()
+    domain = f"r637-s1-{uuid.uuid4().hex[:10]}.example"
+    yield domain
+    with SessionLocal() as s:
+        s.execute(text("DELETE FROM sources WHERE domain = :d"), {"d": domain})
+        s.commit()
+
+
+@pytest.fixture()
+def lock_when_armed():
+    """As ``locked_on_a_login``, from ``arm()`` on, so a test can store its credentialed row first; ``seen`` keeps the first word
+    of each refused statement."""
+    from sqlalchemy.engine import Engine
+
+    seen: list[str] = []
+    armed: list[bool] = []
+
+    def _lock(conn, cursor, statement, parameters, context, executemany):
+        if armed and _PASSWORD in str(parameters):
+            seen.append(statement.split(None, 1)[0].upper())
+            raise sqlite3.OperationalError("database is locked")
+
+    event.listen(Engine, "before_cursor_execute", _lock)
+    yield SimpleNamespace(seen=seen, arm=lambda: armed.append(True))
+    event.remove(Engine, "before_cursor_execute", _lock)
+
+
+def _store_in_app(domain: str, url: str) -> int:
+    from src.database.session import SessionLocal
+
+    with SessionLocal() as s:
+        row = Source(name="News", domain=domain, rss_url=url)
+        s.add(row)
+        s.commit()
+        return row.id
+
+
+def test_every_engine_the_app_builds_hides_its_statements_values():
+    """S1 (the independent read of R637): ``hide_parameters=True`` on each SQLAlchemy engine in src/, read from the source, so a
+    new engine without it fails here; the corpus engine's own flag is read too."""
+    import ast
+
+    from src.database.session import engine
+
+    assert engine.hide_parameters is True
+    root = Path(__file__).resolve().parents[1]
+    calls = []
+    for path in sorted((root / "src").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", getattr(node.func, "attr", None)) in (
+                "create_engine", "create_async_engine", "engine_from_config"
+            ):
+                hides = any(k.arg == "hide_parameters" and isinstance(k.value, ast.Constant) and k.value.value is True
+                            for k in node.keywords)
+                calls.append((str(path.relative_to(root)), node.lineno, hides))
+    assert len(calls) == 7, calls  # the corpus (SQLite and other), the read snapshot, the migration, the lanes, the two test stores
+    assert all(hides for *_, hides in calls), [c for c in calls if not c[2]]
+
+
+@pytest.mark.parametrize(
+    ("stored", "method", "path", "body", "statement"),
+    [
+        (_CRED, "put", "/api/sources/{id}", {"rss_url": "https://***@{domain}/world"}, "UPDATE"),  # url_to_store puts the login back
+        (_PLAIN, "put", "/api/sources/{id}", {"rss_url": f"https://alice:{_PASSWORD}@{{domain}}/rss"}, "UPDATE"),
+        (None, "post", "/api/sources/", {"name": "N", "domain": "{domain}", "rss_url": f"https://alice:{_PASSWORD}@{{domain}}/rss"},
+         "INSERT"),
+        (None, "post", "/api/sources/discover/add", [{"name": "N", "domain": "{domain}", "rss_url": f"https://alice:{_PASSWORD}@{{domain}}/rss"}],
+         "INSERT"),
+    ],
+    ids=["put-masked-path-edit", "put-a-login-typed", "post-a-source", "discover-add"],
+)
+def test_a_source_write_the_store_refuses_leaves_no_login_in_the_server_line(app_store, lock_when_armed, stored, method, path, body,
+                                                                               statement):
+    """S1: a source write that hits a database error (locked, here) escapes the route, and the server writes it in its own
+    "Exception in ASGI application" line through ``traceback_text`` (SecretFilter's form). Through the app's own engine and the
+    real routes. Before: ``[parameters: ('https://alice:hunter2@...', ...)]`` in that line. ``exc.params`` and a pickled error still
+    hold the values, stated: nothing in src/ reads either."""
+    import json
+    import pickle
+
+    from sqlalchemy.exc import OperationalError
+
+    from src.api.main import app
+    from src.monitoring.secret_scrub import traceback_text
+
+    domain = app_store
+    sid = _store_in_app(domain, stored.replace(_DOMAIN, domain)) if stored else None
+    sent = json.loads(json.dumps(body).replace("{domain}", domain))
+    lock_when_armed.arm()
+    with TestClient(app) as c, pytest.raises(OperationalError) as caught:
+        getattr(c, method)(path.replace("{id}", str(sid)), json=sent)
+    exc = caught.value
+    assert lock_when_armed.seen[:1] == [statement]  # the write itself was refused, and it did carry the login
+    assert f"alice:{_PASSWORD}@{domain}" in repr(exc.params)  # stated: the values stay on the error object
+    assert _PASSWORD.encode() in pickle.dumps(exc)  # stated: and in a pickled error
+    line = traceback_text(exc)
+    _secret_free(line)
+    assert "database is locked" in line and "[SQL parameters hidden due to hide_parameters=True]" in line
+
+
+def test_an_integrity_error_the_put_raises_on_carries_no_login_in_its_text(app_store):
+    """The PUT's refusal that is not a held feed is raised on to the server (Steward 3's low on the R637 fold): a store's own
+    refusal (a trigger on this test's domain), through the app's engine, quotes the UPDATE and none of its values."""
+    import uuid
+
+    from sqlalchemy.exc import IntegrityError
+
+    from src.api.main import app
+    from src.database.session import SessionLocal
+    from src.monitoring.secret_scrub import traceback_text
+
+    domain = app_store
+    sid = _store_in_app(domain, _CRED.replace(_DOMAIN, domain))
+    trigger = f"r637_refuse_{uuid.uuid4().hex[:8]}"
+    with SessionLocal() as s:
+        s.execute(text(f"CREATE TRIGGER {trigger} BEFORE UPDATE ON sources WHEN OLD.domain = '{domain}' "
+                       "BEGIN SELECT RAISE(ABORT, 'refused by the test'); END"))
+        s.commit()
+    try:
+        with TestClient(app) as c, pytest.raises(IntegrityError) as caught:
+            c.put(f"/api/sources/{sid}", json={"rss_url": f"https://***@{domain}/world"})  # the stored login put back in
+    finally:
+        with SessionLocal() as s:
+            s.execute(text(f"DROP TRIGGER IF EXISTS {trigger}"))
+            s.commit()
+    exc = caught.value
+    assert f"alice:{_PASSWORD}@{domain}/world" in repr(exc.params)  # the login did reach the statement: the check is not vacuous
+    line = traceback_text(exc)
+    assert "refused by the test" in line  # the store's own words stay: only the values are hidden
+    _secret_free(line)
+    with SessionLocal() as s:
+        assert s.get(Source, sid).rss_url == _CRED.replace(_DOMAIN, domain)  # nothing was written
 
 
 # --------------------------------------------------------------------------- #
@@ -566,3 +671,116 @@ def test_the_pipelines_url_log_lines_mask_the_login(db, monkeypatch, caplog, doc
     assert line in caplog.text, caplog.text
     assert f"https://***@{_DOMAIN}/tag/politics" in caplog.text
     _secret_free(caplog.text)  # before: the login in both lines
+
+
+# --------------------------------------------------------------------------- #
+# 7. The diagnostics zip of one article per source (the independent read's M1 on R637)
+# --------------------------------------------------------------------------- #
+
+#: Every column of a source, in the mapper's order: the zip writes each, two of them as the app shows them. A new column fails here
+#: until someone decides how the zip writes it.
+_SOURCE_COLUMNS = [
+    "id", "name", "domain", "rss_url", "feed_key", "outlet_id", "rate_limit_ms", "enabled", "priority", "tags", "reliability_score",
+    "language", "region", "country", "source_type", "update_frequency", "cacheability", "article_count", "counter_reconciled_at",
+    "status", "qualified_at", "qualification_criteria_version", "last_crawled_at", "catalog_baseline",
+]
+
+
+def _zip_members(data: bytes) -> dict[str, str]:
+    import io
+    import zipfile
+
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        return {n: z.read(n).decode("utf-8") for n in z.namelist()}
+
+
+def _with_articles(s, ids) -> None:
+    for i, sid in enumerate(ids):
+        s.add(Article(source_id=sid, url=f"https://{_DOMAIN}/a{i}", canonical_url=f"https://{_DOMAIN}/a{i}", title="t",
+                      content="c", hash=f"h{i}"))
+    s.commit()
+
+
+def test_the_zip_writes_a_sources_address_and_its_kept_key_masked(db):
+    """A credentialed source written today (its key holds no login, its URL does) and the credentialed half of an R634 pair (its
+    kept key holds it too), each with an article: no member of the real zip holds the password or the user name, and each source's
+    address and key are written as the app shows them. Before: ``"rss_url": "https://alice:hunter2@..."`` and
+    ``"feed_key": "f:alice:hunter2@..."``."""
+    import json
+
+    from src.api.diagnostics.source_samples import build_sample_zip
+
+    fresh = Source(name="fresh", domain="other.example", rss_url=f"https://bob:{_PASSWORD_B}@other.example/rss")
+    db.add(fresh)
+    db.commit()
+    plain, cred = _plant(db, [(_PLAIN, _K), _ALICE])
+    _with_articles(db, [fresh.id, plain, cred])
+    data, nxt, covered, total = build_sample_zip(db, after=0, seed=1, cap=4_000_000)
+    assert (nxt, covered, total) == (None, 3, 3)
+    members = _zip_members(data)
+    assert len(members) == 4  # three samples and the manifest
+    for name, body in members.items():
+        _secret_free(body)
+        assert "alice:" not in body and "bob:" not in body, name
+    docs = {sid: json.loads(members[f"samples/source-{sid:07d}.json"])["source"] for sid in (fresh.id, plain, cred)}
+    assert (docs[cred]["rss_url"], docs[cred]["feed_key"]) == (f"https://***@{_DOMAIN}/rss", f"f:***@{_DOMAIN}/rss")
+    assert (docs[fresh.id]["rss_url"], docs[fresh.id]["feed_key"]) == ("https://***@other.example/rss", "f:other.example/rss")
+    assert (docs[plain]["rss_url"], docs[plain]["feed_key"]) == (_PLAIN, _K)  # nothing to mask: as stored
+
+
+def test_the_zip_route_serves_the_masked_zip(client, sess_factory):
+    with sess_factory() as s:
+        (cred,) = _plant(s, [_ALICE])
+        _with_articles(s, [cred])
+    r = client.get("/api/diagnostics/source-samples", headers={"Sec-Fetch-Site": "same-origin"})
+    assert r.status_code == 200, r.text
+    for body in _zip_members(r.content).values():
+        _secret_free(body)
+        assert "alice:" not in body
+
+
+def test_the_zip_writes_every_other_source_column_as_stored(db):
+    """The two address columns are the only ones written otherwise; the column list is pinned, so a new one is a decision."""
+    import json
+
+    from sqlalchemy import inspect as sa_inspect
+
+    from src.api.diagnostics.source_samples import build_sample_zip
+
+    assert [p.key for p in sa_inspect(Source).column_attrs] == _SOURCE_COLUMNS
+    (cred,) = _plant(db, [_ALICE], tags="news,world", priority=1)
+    _with_articles(db, [cred])
+    data, *_ = build_sample_zip(db, after=0, seed=1, cap=4_000_000)
+    doc = json.loads(_zip_members(data)[f"samples/source-{cred:07d}.json"])["source"]
+    assert list(doc) == _SOURCE_COLUMNS
+    row = db.get(Source, cred)
+    for key in _SOURCE_COLUMNS:
+        if key not in ("rss_url", "feed_key"):
+            stored = getattr(row, key)
+            assert doc[key] == (stored.isoformat() if hasattr(stored, "isoformat") else stored), key
+
+
+@pytest.mark.parametrize(
+    ("stored", "shown"),
+    [
+        (_legacy(_CRED), f"f:***@{_DOMAIN}/rss"),
+        (_K, _K),
+        (f"f:{_DOMAIN}/@me/rss", f"f:{_DOMAIN}/@me/rss"),  # an @ in the path is today's key, not a userinfo
+        (f"f:{_DOMAIN}/rss?to=a@b", f"f:{_DOMAIN}/rss?to=a@b"),
+        (f"f:a@b:{_PASSWORD}@{_DOMAIN}/rss", f"f:***@{_DOMAIN}/rss"),  # everything before the LAST @
+        (f"f:https://alice:{_PASSWORD}@[::1/x", "f:https://***@[::1/x"),  # an unreadable URL's text, scheme first
+        (f"f://alice:{_PASSWORD}@[::1/x", "f://***@[::1/x"),
+        (f"f:alice:{_PASSWORD}@[::1/x", "f:***@[::1/x"),
+        (f"f:alice:{_PASSWORD}@{_DOMAIN}://x", f"f:***@{_DOMAIN}://x"),  # a "scheme" holding an @ is the authority
+        (f"f:{_DOMAIN}//x", f"f:{_DOMAIN}//x"),
+        (("f:alice:" + "x" * 600)[:500], "f:***"),  # cut at FEED_KEY_MAX inside its authority, its @ lost: withheld whole
+        (("f:" + _DOMAIN + "/" + "x" * 600)[:500], ("f:" + _DOMAIN + "/" + "x" * 600)[:500]),  # cut in its path: as stored
+        ("", ""),
+        (None, None),
+        ("not a key", "not a key"),
+    ],
+)
+def test_shown_feed_key(stored, shown):
+    from src.database.feed_key import shown_feed_key
+
+    assert shown_feed_key(stored) == shown

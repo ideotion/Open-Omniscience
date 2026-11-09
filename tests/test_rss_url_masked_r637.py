@@ -261,12 +261,31 @@ def test_a_masked_url_never_stores_the_mask_as_a_login(client, sess_factory):
         # the form shows a space as %20: sent back unchanged, it is the stored URL itself, its space and its login included
         (f"https://***@{_DOMAIN}/a%20b", f"https://alice:{_PASSWORD}@{_DOMAIN}/a b", f"https://alice:{_PASSWORD}@{_DOMAIN}/a b"),
         (f"https://{_DOMAIN}/a%20b", f"https://{_DOMAIN}/a b", f"https://{_DOMAIN}/a b"),
+        # the independent read of R637, stated: only the mask exactly as shown is the stored login; any other userinfo is what
+        # the person typed and is stored as typed; a host spelled otherwise than the fetcher keys it (a trailing dot) drops it
+        (f"https://%2A%2A%2A@{_DOMAIN}/rss", _CRED, f"https://%2A%2A%2A@{_DOMAIN}/rss"),
+        (f"https://**\t*@{_DOMAIN}/rss", _CRED, f"https://**\t*@{_DOMAIN}/rss"),
+        (f"https://***:x@{_DOMAIN}/rss", _CRED, f"https://***:x@{_DOMAIN}/rss"),
+        (f"https://***@{_DOMAIN}./rss", _CRED, f"https://{_DOMAIN}./rss"),
     ],
 )
 def test_url_to_store(sent, stored, out):
     from src.ingest.fetch_verdict import url_to_store
 
     assert url_to_store(sent, stored) == out
+
+
+@pytest.mark.parametrize("url", [f"alice:{_PASSWORD}@{_DOMAIN}/rss", f"https:alice:{_PASSWORD}@{_DOMAIN}/rss"],
+                         ids=["no-scheme", "no-authority"])
+def test_shown_url_leaves_a_form_with_no_authority_as_written_and_the_fetcher_refuses_it(tmp_path, url):
+    """Stated (the independent read of R637): ``shown_url`` masks a userinfo only after a ``//`` authority, so these two forms are
+    shown as written; neither is fetched: the fetcher refuses a URL with no http(s) scheme or no host before any request."""
+    from src.ingest import EthicalFetcher, FetchFailed
+    from src.ingest.fetch_verdict import shown_url
+
+    assert shown_url(url) == url
+    with pytest.raises(FetchFailed, match="unsupported or malformed URL"):
+        EthicalFetcher(robots_cache_path=tmp_path / "robots.json").fetch(url)
 
 
 # --------------------------------------------------------------------------- #
@@ -343,7 +362,7 @@ def test_the_export_and_backup_caveats_are_visible_and_translated():
     static = Path(__file__).resolve().parent.parent / "src" / "static"
     html = (static / "index.html").read_text(encoding="utf-8")
     shown = {}
-    for cid in ("src-export-logins", "backup-feed-logins"):
+    for cid in ("src-export-logins", "backup-feed-logins", "ux-backup-feed-logins"):
         m = re.search(rf'<p class="card-caveat" id="{cid}"[^>]*title="([^"]+)">([^<]+)</p>', html)
         assert m, cid  # a visible paragraph, never [hidden], never behind a toggle
         shown[cid] = (m.group(1), m.group(2))
@@ -358,6 +377,13 @@ def test_the_export_and_backup_caveats_are_visible_and_translated():
         assert title == backup_title
         assert "The export, like a backup made without encryption, is a plain file, so keep it private." in title
     assert shown["src-export-logins"][1].endswith("so the file imports back unchanged. Keep it private.")
+    # the independent read of R637: "Back up first" and "Download a backup first" open the export dialog without passing the
+    # panel, so the same line, the same keys, is inside the dialog where the backup is made
+    assert shown["ux-backup-feed-logins"] == shown["backup-feed-logins"]
+    dialog = html[html.index('<dialog id="ux-export"') : html.index("</dialog>", html.index('<dialog id="ux-export"'))]
+    assert 'id="ux-backup-feed-logins"' in dialog and dialog.index('id="ux-backup-feed-logins"') < dialog.index('id="ux-run"')
+    for opener in ('id="nl-backup-first-btn" data-on-click="downloadBackupFirst(this)"', 'data-on-click="openUnifiedExport()">Download a backup first'):
+        assert opener in html, opener  # the two ways in that pass no panel
     for code in ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"):
         table = json.loads((static / "locales" / f"{code}.json").read_text(encoding="utf-8"))
         for title, line in shown.values():

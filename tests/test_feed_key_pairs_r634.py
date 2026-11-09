@@ -511,11 +511,17 @@ _NAMES_FEED_KEY = {
 
 #: A read of every column of ``sources`` carries the key without naming it (the R628 reads' test note): ``SELECT *`` or ``s.*``
 #: from it, the ORM's own column list (``Source.__table__`` / ``__mapper__``, ``inspect(Source)``), a ``getattr`` over a column's
-#: name, or the table's column listing (``PRAGMA table_info``, a ``_columns`` / ``_cols`` helper) by name.
+#: name, or the table's column listing (``PRAGMA table_info``, a ``_columns`` / ``_cols`` helper) by name. And a serialiser
+#: generic over any model, which reaches a Source whenever one is handed to it (the independent read's M1 on R637: the diagnostics
+#: zip's ``inspect(type(obj)).column_attrs``): a mapper's ``column_attrs``, ``inspect(type(...))``, any model's
+#: ``__table__.columns``.
 _READS_EVERY_COLUMN = re.compile(
     r"(?i:SELECT\s+(?:[\w\"]+\.)?\*\s+FROM\s+(?:\w+\.)?[\"']?sources\b)"
     r"|\bSource\.__(?:table|mapper)__"
     r"|inspect\(\s*Source\s*\)"
+    r"|\.column_attrs\b"
+    r"|inspect\(\s*type\("
+    r"|\w\.__table__\.columns\b"
     r"|getattr\(\s*\w+\s*,\s*\w+\.(?:name|key)\s*\)"
     r"|(?i:(?:table_info|_columns|_cols)\(\s*(?:\w+\s*,\s*)?\(?[\"']?sources\b)",
 )
@@ -523,6 +529,14 @@ _READS_EVERY_COLUMN = re.compile(
 #: The modules that read every column of ``sources`` and do not name the key, each with why that read carries no key out.
 _READS_EVERY_COLUMN_WITHOUT_NAMING_IT = {
     "src/database/maintenance.py": "the boot migrations' PRAGMA table_info(sources): which columns exist, never a value",
+    "src/database/derived_views.py": "KeywordMention.__table__.columns: the derived table copies that model's columns, never a source",
+}
+
+#: The modules that write every column of a source and name the key to write it masked, each with how (the independent read's M1
+#: on R637). Named here, not in ``_NAMES_FEED_KEY``: they are a report, and a report writes the key only through ``shown_feed_key``.
+_WRITES_THE_KEY_MASKED = {
+    "src/api/diagnostics/source_samples.py": "the one-article-per-source zip: rss_url through shown_url, feed_key through "
+    "shown_feed_key (tests/test_feed_identity_reads_r628.py builds the real zip and greps every member)",
 }
 
 
@@ -530,16 +544,20 @@ def test_no_module_that_answers_reports_or_shows_names_the_feed_key():
     """No module outside the identity's writers and matchers names the key, or reads every column of ``sources`` (which would
     carry it without naming it). What this cannot see, stated: a table name built at run time (the merge's
     ``PRAGMA inc.table_info("{src}")``, whose module names the key anyway), an ORM row handed whole to a serializer
-    (``jsonable_encoder``, ``vars``; no route does it today), a column read through an attribute name held in data, and a copy
-    of the database file itself (a full backup carries the kept key beside ``rss_url``, by design)."""
+    (``jsonable_encoder``, ``vars``, ``__dict__``, a pydantic model read from attributes; no route does it today), a serialiser
+    whose column listing reaches it by another spelling (an aliased ``inspect``, iterating ``Model.__table__.c``, a ``Row``'s
+    ``_mapping`` from a select of the table), a column read through an attribute name held in data, and a copy of the database
+    file itself (a full backup carries the kept key beside ``rss_url``, by design)."""
     root = Path(__file__).resolve().parents[1]
     files = [p for p in (root / "src").rglob("*") if p.is_file() and p.suffix in {".py", ".js", ".html", ".css", ".json"}]
     said = {str(p.relative_to(root)): p.read_text(encoding="utf-8", errors="replace") for p in files}
     named = {path for path, body in said.items() if "feed_key" in body}
-    assert named <= _NAMES_FEED_KEY, sorted(named - _NAMES_FEED_KEY)
+    assert named <= _NAMES_FEED_KEY | set(_WRITES_THE_KEY_MASKED), sorted(named - _NAMES_FEED_KEY - set(_WRITES_THE_KEY_MASKED))
     generic = {path for path, body in said.items() if _READS_EVERY_COLUMN.search(body)}
-    allowed = _NAMES_FEED_KEY | set(_READS_EVERY_COLUMN_WITHOUT_NAMING_IT)
+    allowed = _NAMES_FEED_KEY | set(_READS_EVERY_COLUMN_WITHOUT_NAMING_IT) | set(_WRITES_THE_KEY_MASKED)
     assert generic <= allowed, sorted(generic - allowed)
+    for path in _WRITES_THE_KEY_MASKED:  # each still writes the key through the mask
+        assert "shown_feed_key" in said[path], path
 
 
 @pytest.mark.parametrize(
@@ -552,6 +570,10 @@ def test_no_module_that_answers_reports_or_shows_names_the_feed_key():
         "row = {c.name: getattr(src, c.name) for c in cols}",
         'cols = _columns(conn, "sources")',
         'conn.execute(text("PRAGMA table_info(sources)"))',
+        "for prop in inspect(type(obj)).column_attrs:",  # the independent read's M1 on R637, as the zip wrote it
+        "props = sa_inspect(Model).column_attrs",
+        "state = inspect( type(row) )",
+        "names = [c.name for c in Model.__table__.columns]",
     ],
 )
 def test_the_ratchet_sees_a_read_of_every_column(line):
@@ -565,6 +587,8 @@ def test_the_ratchet_sees_a_read_of_every_column(line):
         'con.execute("SELECT * FROM source_topics")',
         "getattr(src, 'rss_url', None)",
         "identity = inspect(source).identity",  # an instance's state (its primary key), not the table's columns
+        "state = inspect(obj)",  # an instance's state: the zip reads each column it lists through it, not a listing
+        "kind = type(exc).__name__",
     ],
 )
 def test_control_the_ratchet_lets_a_named_column_read_pass(line):
