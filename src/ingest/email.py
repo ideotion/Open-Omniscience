@@ -379,12 +379,13 @@ def _stop_aware(cls):  # type: ignore[no-untyped-def]
     return _StopAware
 
 
-def _forget_socket(conn) -> None:  # type: ignore[no-untyped-def]
-    """The pull is over: its socket leaves the Stop's list (R647). Never raises."""
+def _forget_socket(sock) -> None:  # type: ignore[no-untyped-def]
+    """The pull is over: its socket leaves the Stop's list (R647). ``sock`` is taken BEFORE the connection is closed, since poplib's
+    ``quit()``/``close()`` set ``conn.sock`` to None (security read A on #1892). Never raises."""
     from src.ingest import unregister_mailbox_socket
 
     with contextlib.suppress(Exception):
-        unregister_mailbox_socket(getattr(conn, "sock", None))
+        unregister_mailbox_socket(sock)
 
 
 def _drop_connection(conn, how: str) -> None:  # type: ignore[no-untyped-def]
@@ -484,6 +485,7 @@ def fetch_imap(
         raise
     finally:
         if own_conn:
+            sock = getattr(conn, "sock", None)
             if raws.stopped or _stop_requested():
                 _drop_connection(conn, "shutdown")
             else:
@@ -492,7 +494,7 @@ def fetch_imap(
                 except Exception:  # noqa: BLE001 - logout failure must not mask the result
                     pass
             # Only now: a Stop during the LOGOUT read must still reach the socket (security read B on #1892).
-            _forget_socket(conn)
+            _forget_socket(sock)
 
 
 def fetch_pop3(
@@ -565,6 +567,7 @@ def fetch_pop3(
         raise
     finally:
         if own_conn:
+            sock = getattr(conn, "sock", None)
             if raws.stopped or _stop_requested():
                 _drop_connection(conn, "close")
             else:
@@ -572,7 +575,7 @@ def fetch_pop3(
                     conn.quit()
                 except Exception:  # noqa: BLE001
                     pass
-            _forget_socket(conn)  # after QUIT, as in fetch_imap
+            _forget_socket(sock)  # after QUIT, as in fetch_imap
 
 
 def fetch_mailbox(protocol: str, host: str, user: str, password: str, **kwargs) -> MailboxPull:

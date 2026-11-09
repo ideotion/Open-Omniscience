@@ -332,25 +332,115 @@ def test_the_tls_constructors_carry_the_bounded_timeout(fn, tls_server_context, 
         srv.close()
 
 
-def test_a_stop_during_the_logout_read_still_reaches_the_socket():
-    """The socket stays registered until LOGOUT has been answered (security read B: it used to be forgotten first, so a server
-    stalling on LOGOUT held the pull for the whole timeout after a Stop)."""
+def _imap_logout_stall(line: bytes) -> bytes | None:
+    tag, _, rest = line.partition(b" ")
+    cmd = rest.split(b" ", 1)[0].upper()
+    if cmd == b"LOGOUT":
+        return None
+    if cmd == b"SEARCH":
+        return b"* SEARCH\r\n" + tag + b" OK done\r\n"
+    return _imap_script(line)
 
-    def script(line: bytes) -> bytes | None:
-        tag, _, rest = line.partition(b" ")
-        if rest.split(b" ", 1)[0].upper() == b"LOGOUT":
-            return None
-        if rest.split(b" ", 1)[0].upper() == b"SEARCH":
-            return b"* SEARCH\r\n" + tag + b" OK done\r\n"
-        return _imap_script(line)
 
-    srv = _Server(b"* OK ready\r\n", script)
+def _pop_quit_stall(line: bytes) -> bytes | None:
+    cmd = line.split(b" ", 1)[0].upper()
+    if cmd == b"QUIT":
+        return None
+    if cmd == b"LIST":
+        return b"+OK 0 messages\r\n.\r\n"
+    return _pop_script(line)
+
+
+@pytest.mark.parametrize(
+    ("fn", "greeting", "script"),
+    [(fetch_imap, b"* OK ready\r\n", _imap_logout_stall), (fetch_pop3, b"+OK ready\r\n", _pop_quit_stall)],
+    ids=["imap-logout", "pop3-quit"],
+)
+def test_a_stop_during_the_logout_read_still_reaches_the_socket(fn, greeting, script):
+    """The socket stays registered until LOGOUT/QUIT has been answered (security read B on #1892: it used to be forgotten first, so a
+    server stalling on LOGOUT held the pull for the whole timeout after a Stop; the POP3 twin was unpinned until its second read)."""
+    srv = _Server(greeting, script)
     try:
         stopper = _stop_when(srv.stalled)
-        raws, took = _pull(fetch_imap, srv.port)
+        raws, took = _pull(fn, srv.port)
         stopper.join(5)
-        assert took < _PROMPT_S, f"the Stop did not reach the LOGOUT read ({took:.1f} s)"
+        assert took < _PROMPT_S, f"the Stop did not reach the LOGOUT/QUIT read ({took:.1f} s)"
         assert list(raws) == []
         assert not ingest._LIVE_MAILBOX_SOCKETS
     finally:
         srv.close()
+
+
+def _done_imap(line: bytes) -> bytes | None:
+    tag, _, rest = line.partition(b" ")
+    cmd = rest.split(b" ", 1)[0].upper()
+    if cmd == b"SEARCH":
+        return b"* SEARCH\r\n" + tag + b" OK done\r\n"
+    if cmd == b"LOGOUT":
+        return b"* BYE\r\n" + tag + b" OK done\r\n"
+    return _imap_script(line)
+
+
+def _done_pop(line: bytes) -> bytes | None:
+    if line.split(b" ", 1)[0].upper() == b"QUIT":
+        return b"+OK bye\r\n"
+    return _pop_quit_stall(line)
+
+
+@pytest.mark.parametrize(
+    ("fn", "greeting", "script"),
+    [(fetch_imap, b"* OK ready\r\n", _done_imap), (fetch_pop3, b"+OK ready\r\n", _done_pop)],
+    ids=["imap", "pop3"],
+)
+def test_a_finished_pull_takes_its_socket_off_the_list(fn, greeting, script, monkeypatch):
+    """Holds every registered socket alive, so the weak list cannot empty itself by collection (security read A on #1892: poplib's
+    ``quit()`` clears ``conn.sock``, so the POP3 socket used to stay listed and only garbage collection hid it)."""
+    held: list[object] = []
+    real = ingest.register_mailbox_socket
+
+    def holding(sock):
+        held.append(sock)
+        real(sock)
+
+    monkeypatch.setattr(ingest, "register_mailbox_socket", holding)
+    srv = _Server(greeting, script)
+    try:
+        raws, _ = _pull(fn, srv.port)
+        assert raws.stopped is False
+        assert held, "no socket was registered"
+        assert not [s for s in held if s in ingest._LIVE_MAILBOX_SOCKETS], "a finished pull left its socket on the Stop's list"
+    finally:
+        srv.close()
+
+
+@pytest.mark.parametrize("cls", ["IMAP4_SSL", "POP3_SSL"])
+def test_a_wrap_that_fails_online_raises_its_own_error_and_closes_the_socket(cls, monkeypatch):
+    """Security read A on #1892: the cleanup used to unregister ``None`` (the wrap had not returned), which raised a TypeError over the
+    real error and skipped the close."""
+    import imaplib
+    import poplib
+    import ssl
+
+    class _Boom(ssl.SSLContext):
+        def wrap_socket(self, *a, **k):
+            raise ValueError("the wrap failed")
+
+    lib = imaplib if cls == "IMAP4_SSL" else poplib
+    stop_aware = email_mod._stop_aware(getattr(lib, cls))
+    kw = {"ssl_context": _Boom(ssl.PROTOCOL_TLS_CLIENT)} if cls == "IMAP4_SSL" else {"context": _Boom(ssl.PROTOCOL_TLS_CLIENT)}
+    srv = _Server(None, lambda line: None)
+    closed: list[object] = []
+    real_close = socket.socket.close
+    monkeypatch.setattr(socket.socket, "close", lambda self: (closed.append(self), real_close(self))[1])
+    try:
+        with pytest.raises(ValueError, match="the wrap failed"):
+            stop_aware("127.0.0.1", srv.port, timeout=5, **kw)
+        assert closed, "the plain socket was left open"
+        assert not ingest._LIVE_MAILBOX_SOCKETS
+        assert srv.stalled.wait(5)  # the server took the connection before its listener is closed
+    finally:
+        srv.close()
+
+
+def test_unregistering_none_is_a_no_op():
+    ingest.unregister_mailbox_socket(None)

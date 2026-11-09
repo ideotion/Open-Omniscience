@@ -21,6 +21,7 @@ There is exactly one network path and no raw-requests bypass.
 
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import json
 import logging
@@ -960,7 +961,10 @@ def register_mailbox_socket(sock: socket.socket) -> None:
 
 
 def unregister_mailbox_socket(sock: object) -> None:
-    with _LIVE_MAILBOX_SOCKETS_LOCK:
+    """Take ``sock`` off the Stop's list. ``None`` (no socket yet, or one a library already let go of) is a no-op. Never raises."""
+    if sock is None:
+        return
+    with _LIVE_MAILBOX_SOCKETS_LOCK, contextlib.suppress(TypeError):
         _LIVE_MAILBOX_SOCKETS.discard(sock)  # type: ignore[arg-type]
 
 
