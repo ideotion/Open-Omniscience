@@ -1254,10 +1254,12 @@ async def monitor_requests(request: Request, call_next):
 # 503 until both facts hold, and once they do the gate is a single flag read.
 @app.middleware("http")
 async def _serving_gate(request: Request, call_next):
-    global _serving_gate_open
+    global _serving_gate_open, _serving_gate_logged
     if not _serving_gate_open:
         if not _serving_preconditions_hold():
-            logger.error(SERVING_GATE_REFUSAL)
+            if not _serving_gate_logged:  # once: a closed gate refuses every request, and the log should say it once, not per request
+                _serving_gate_logged = True
+                logger.error(SERVING_GATE_REFUSAL)
             return JSONResponse(status_code=503, content={"detail": SERVING_GATE_REFUSAL})
         _serving_gate_open = True
     return await call_next(request)
@@ -3765,10 +3767,14 @@ _serving_loop_checked = False
 #: Set by ``_serving_gate`` the first time both preconditions hold; from then on it reads only this flag.
 _serving_gate_open = False
 
-#: The fixed words of the serving gate's 503 (R644).
+#: Set by ``_serving_gate`` once it has logged its refusal, so a closed gate writes one error line, not one per request.
+_serving_gate_logged = False
+
+#: The fixed words of the serving gate's 503 (R644). Two causes share them: a start that skipped the app's own startup, and a guard
+#: that startup could not install (its own ERROR line names that one).
 SERVING_GATE_REFUSAL = (
-    "Open Omniscience is not serving requests: it was started without its own startup, so airplane mode's network guard is not in "
-    "place. Start the app with its own launcher."
+    "Open Omniscience is not serving requests: airplane mode's network guard is not in place, because the app was started without "
+    "its own startup or the guard could not be installed (the log says which). Start the app with its own launcher."
 )
 
 
@@ -3779,7 +3785,11 @@ def _serving_preconditions_hold() -> bool:
     a foreign loop to bypass."""
     if os.getenv("OO_NO_SCHEDULER", "0") == "1":
         return True
-    if not _serving_loop_checked:
+    # The flag says a lifespan passed the check somewhere in this process; the loop serving THIS request is checked too, so a second
+    # server started on another loop with --lifespan off after it cannot ride on the first one's check (security read A).
+    import asyncio as _asyncio
+
+    if not _serving_loop_checked or not _event_loop_is_stdlib(_asyncio.get_running_loop()):
         return False
     if os.getenv("OO_AIRPLANE_SOCKET_GUARD", "1") == "0":
         return True
