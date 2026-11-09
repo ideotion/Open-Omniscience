@@ -360,6 +360,7 @@ class MailboxServerError(Exception):
 _SERVER_ERROR_WORDS = {
     "greeting": "sent a greeting or capability reply the pull could not use, or closed the connection, before logging in; no password "
     "was sent",
+    "preauth": "greeted the pull as already logged in (PREAUTH), which a pull does not accept; no password was sent",
     "login": "refused the login, or closed the connection during it. Check the user name and password",
     "read": "answered a mailbox command with an error after logging in",
 }
@@ -781,7 +782,7 @@ def fetch_imap(
             if not use_ssl:
                 raise
             raise _tls_refusal(host, port or 993, record_text(exc, password, limit=300), sent="no command or password sent") from None
-        except (_IMAP_ERROR, UnicodeDecodeError):
+        except (_IMAP_ERROR, UnicodeError):
             # R653: the greeting or the CAPABILITY reply (imaplib's error quotes the server's line; a byte past ASCII in the capability
             # list fails imaplib's own decode): fixed words, after the Stop.
             if _stop_requested():
@@ -802,6 +803,10 @@ def fetch_imap(
             if _stop_requested():
                 raws.stopped = True
                 return raws
+            if getattr(conn, "state", "NONAUTH") != "NONAUTH":
+                # PREAUTH on the TLS port: imaplib would refuse LOGIN itself, and "refused the login" would blame the password
+                # (security read B on R653). Nothing is sent; the pull is refused in its own words.
+                raise _server_error(host, port or (993 if use_ssl else 143), "preauth")
             step = "login"
             conn.login(user, password)
         step = "read"
@@ -835,7 +840,7 @@ def fetch_imap(
             raws.stopped = True
             return raws
         raise _certificate_refusal(host, record_text(exc, password, limit=300), sent="no password sent") from None
-    except (_IMAP_ERROR, UnicodeDecodeError):
+    except (_IMAP_ERROR, UnicodeError):
         # R653: the server's error reply at any step (or a capability list after STARTTLS that imaplib cannot decode), in fixed words;
         # a Stop still wins and keeps what was fetched.
         if raws.stopped or _stop_requested():

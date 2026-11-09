@@ -298,3 +298,50 @@ def test_a_reopened_gate_logs_a_later_failing_check_again(gate, caplog):
         gate.setattr(ap, "is_armed", boom)
         assert client.get("/unlock").status_code == 503
     assert sum("check failed (RuntimeError)" in r.getMessage() for r in caplog.records) == 2
+
+
+def test_the_server_error_carries_no_chained_exception():
+    """Security read B on R653: ``from None``, so no traceback prints imaplib's or poplib's error with the server's line."""
+
+    class _Bad(_ImapStoppedMidFetch):
+        def fetch(self, mid, *a):
+            raise email_mod.imaplib.IMAP4.error("ZQXR653")
+
+    with pytest.raises(MailboxServerError) as info:
+        fetch_imap("mail.example", "u", _PW, conn=_Bad())
+    assert info.value.__cause__ is None and info.value.__suppress_context__
+
+    class _PopBad(_PopStoppedMidRetr):
+        def retr(self, i):
+            raise email_mod.poplib.error_proto(b"-ERR ZQXR653")
+
+    with pytest.raises(MailboxServerError, match="after logging in") as info:
+        fetch_pop3("mail.example", "u", _PW, conn=_PopBad())
+    assert "ZQXR653" not in str(info.value)
+    assert info.value.__cause__ is None and info.value.__suppress_context__
+
+
+def test_a_stop_still_wins_over_a_pop3_error_greeting(monkeypatch):
+    """Security read B on R653: the Stop check in the POP3 constructor's new handler, with the Stop landing as the -ERR is read."""
+    import poplib
+
+    from src.ingest import activate_kill_switch
+
+    class _Stopping:
+        def __init__(self, *a, **k):
+            activate_kill_switch()
+            raise poplib.error_proto(b"-ERR " + _MARK)
+
+    monkeypatch.setattr(email_mod, "_stop_aware", lambda cls: _Stopping)
+    assert fetch_pop3("127.0.0.1", "u", _PW, port=1, use_ssl=False).stopped
+
+
+def test_a_preauth_greeting_on_the_tls_port_is_not_called_a_refused_login(pki, trust_test_ca):
+    """Security read B on R653: imaplib refuses LOGIN itself after PREAUTH, so "refused the login" would blame the password."""
+    srv = _Server(b"* PREAUTH [CAPABILITY IMAP4rev1] hi\r\n", _imap, tls=pki.server)
+    try:
+        text = _refused(fetch_imap, srv, use_ssl=True)
+        assert "already logged in (PREAUTH)" in text and "no password was sent" in text
+        assert not any(b"LOGIN" in line for line in srv.received)
+    finally:
+        srv.close()
