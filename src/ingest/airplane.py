@@ -386,7 +386,9 @@ def _guarded_connect_ex(self, address):  # type: ignore[no-untyped-def]
 def _lookup_rule(host: object) -> None:
     """R639's lookup rule for a call that resolves in C and never reaches the patched ``getaddrinfo`` (R641): while airplane mode is
     engaged, only no name, exactly ``localhost`` and a loopback literal pass. A localhost alias is refused in R639's fixed words, and
-    anything else (a remote name, or a remote literal whose reverse lookup would ask DNS) meets ``_guard`` and its usual sentence."""
+    anything else (a remote name, or a remote literal whose reverse lookup would ask DNS) meets ``_guard`` and its usual sentence. What
+    passes is safe to hand to a FORWARD lookup only: a reverse lookup of a loopback literal is still a PTR query, so the reverse wrappers
+    answer it themselves."""
     if _is_local_host(host) and not _lookup_exempt(host):
         _guard(_ALIAS_LOOKUP_TARGET)
     _guard(host)

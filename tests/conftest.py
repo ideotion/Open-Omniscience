@@ -686,18 +686,20 @@ def _put_network_call_back(name: str, value: object) -> None:
 
     if name.startswith("airplane."):
         setattr(sys.modules["src.ingest.airplane"], name.removeprefix("airplane."), value)
-    elif name == "socket.getaddrinfo":
-        socket.getaddrinfo = value  # type: ignore[assignment]
-    elif name == "socket.create_connection":
-        socket.create_connection = value  # type: ignore[assignment]
-    elif name == "socket.socket.connect":
-        socket.socket.connect = value  # type: ignore[method-assign,assignment]
-    elif name == "socket.socket.connect_ex":
-        socket.socket.connect_ex = value  # type: ignore[method-assign,assignment]
-    elif name == "http.client.HTTPConnection.putrequest":
-        http.client.HTTPConnection.putrequest = value  # type: ignore[method-assign,assignment]
-    else:
-        http.client.HTTPConnection._tunnel = value  # type: ignore[attr-defined,method-assign,assignment]
+        return
+    # Every other name is "<owner>.<attribute>" from _process_wide_network_calls. An unknown owner is a KeyError, never a write to some
+    # other call (it used to fall through to HTTPConnection._tunnel, which a later test then found replaced by gethostbyname).
+    owners: dict[str, object] = {
+        "socket": socket,
+        "socket.socket": socket.socket,
+        "http.client.HTTPConnection": http.client.HTTPConnection,
+    }
+    owner, attr = name.rsplit(".", 1)
+    if value is None:  # an optional call this platform lacks (socket.socket.sendmsg on Windows): take off what a test added
+        if attr in vars(owners[owner]):
+            delattr(owners[owner], attr)
+        return
+    setattr(owners[owner], attr, value)
 
 
 def _owner_name(owner: object) -> str:

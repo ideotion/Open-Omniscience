@@ -368,3 +368,78 @@ def test_every_new_point_is_patched_and_put_back():
         if was_installed:
             ap._install_patches()
         ap._airplane_armed = was_armed
+
+
+# --- read B's gaps ------------------------------------------------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="no AF_UNIX")
+def test_an_af_unix_bind_is_left_alone(reached, tmp_path):
+    """A filesystem path is local IPC, never a host name: an AF_UNIX bind in airplane mode reaches the real call untouched."""
+    activate_kill_switch()
+    path = str(tmp_path / "s")
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    try:
+        s.bind(path)
+    finally:
+        s.close()
+    assert reached == [("bind", path)]
+
+
+class _FakeSocksSocket:
+    """Stands in for a PySocks ``socksocket`` (PySocks need not be installed): ``proxy`` is its (type, host, port, ...) tuple."""
+
+    def __init__(self, proxied: bool):
+        self.proxy = (2, "127.0.0.1", 9050) if proxied else (None, None, None)
+
+
+@pytest.mark.parametrize("host", ["93.184.215.14", "example.com", "127.0.0.1", "localhost"])
+def test_a_proxied_socks_datagram_is_refused_for_any_destination(monkeypatch, host):
+    """Through a proxy every destination is the proxy's to reach, a loopback one included: the wrapper refuses before PySocks runs."""
+    sent: list[object] = []
+    monkeypatch.setattr(ap, "_orig_socks_sendto", lambda self, data, *a: sent.append(a) or 1)
+    monkeypatch.setattr(ap, "_airplane_armed", True)
+    clear_kill_switch()
+    activate_kill_switch()
+    try:
+        with pytest.raises(AirplaneModeError):
+            ap._guarded_socks_sendto(_FakeSocksSocket(proxied=True), b"x", (host, 9))
+        with pytest.raises(AirplaneModeError):
+            ap._guarded_socks_sendto(_FakeSocksSocket(proxied=True), b"x", 0, (host, 9))
+    finally:
+        clear_kill_switch()
+    assert sent == []
+
+
+def test_a_socks_datagram_is_handed_on_unproxied_or_online(monkeypatch):
+    """Unproxied, PySocks sends on the plain socket, whose patched sendto applies; online, nothing is checked."""
+    sent: list[object] = []
+    monkeypatch.setattr(ap, "_orig_socks_sendto", lambda self, data, *a: sent.append(a) or 1)
+    monkeypatch.setattr(ap, "_airplane_armed", True)
+    clear_kill_switch()
+    ap._guarded_socks_sendto(_FakeSocksSocket(proxied=True), b"x", ("93.184.215.14", 9))
+    activate_kill_switch()
+    try:
+        ap._guarded_socks_sendto(_FakeSocksSocket(proxied=False), b"x", ("93.184.215.14", 9))
+    finally:
+        clear_kill_switch()
+    assert sent == [(("93.184.215.14", 9),), (("93.184.215.14", 9),)]
+
+
+def test_a_leaked_stand_in_is_put_back_on_its_own_call():
+    """The conftest checker writes each saved call back onto ITS owner. It used to send every name it did not list to
+    ``HTTPConnection._tunnel``, so a stand-in left on ``socket.gethostbyname`` replaced the tunnel guard for the rest of the worker."""
+    import http.client
+
+    from tests.conftest import _process_wide_network_calls, _put_network_call_back
+
+    saved = _process_wide_network_calls()
+    tunnel = http.client.HTTPConnection._tunnel  # type: ignore[attr-defined]
+    socket.gethostbyname = lambda name: "stand-in"  # type: ignore[assignment]
+    try:
+        for name in ("socket.gethostbyname", "socket.socket.sendto", "socket.socket.bind", "socket.getnameinfo"):
+            _put_network_call_back(name, saved[name])
+        assert socket.gethostbyname is saved["socket.gethostbyname"]
+        assert http.client.HTTPConnection._tunnel is tunnel  # type: ignore[attr-defined]
+    finally:
+        socket.gethostbyname = saved["socket.gethostbyname"]  # type: ignore[assignment]
