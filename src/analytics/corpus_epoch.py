@@ -64,7 +64,7 @@ def get_corpus_epoch(session: Session) -> int:
         return 0
 
 
-def bump_corpus_epoch(session: Session, *, reason: str = "") -> int:
+def bump_corpus_epoch(session: Session, *, reason: str = "", strict: bool = False) -> int:
     """Increment the corpus epoch and return the NEW value (starts at 1).
 
     Called by exactly the non-append mutators (re-index / prune / restore-merge) so the
@@ -81,6 +81,10 @@ def bump_corpus_epoch(session: Session, *, reason: str = "") -> int:
     Idempotency note: this is deliberately NOT idempotent -- each call increments -- so a
     caller should invoke it ONCE per logical mutation (e.g. once per re-index batch),
     never in a per-row loop. Over-bumping is harmless but wasteful.
+
+    ``strict=True`` is for a caller that commits its own mutation THROUGH this bump and whose mutation is only safe with
+    the bump beside it (R632's prune, a source delete, the newsletter removal): the failure rolls the session back,
+    the caller's pending change with it, and is raised, so the mutation fails closed instead of landing unbumped.
     """
     from src.database.models import DerivedMeta
     from src.database.writer import connection_first, write_lock
@@ -113,5 +117,7 @@ def bump_corpus_epoch(session: Session, *, reason: str = "") -> int:
             session.rollback()
         except Exception:  # noqa: BLE001
             pass
+        if strict:
+            raise
         log_failure(_LOG, f"corpus-epoch bump failed ({reason or 'mutation'}); the rollup may lag until the next bump", exc, level=logging.WARNING)
         return get_corpus_epoch(session)
