@@ -1385,9 +1385,12 @@ def _law_probe() -> dict[str, Any]:
 def _law_live_checks() -> dict[str, Any]:
     """Fetch ONE tracked document per priority host through the ethical fetcher, and
     parse the CLML one with the adapter. URLs come from the catalogue, never from a
-    literal here, so the host enumeration guard stays the single list."""
-    from src.ingest import EthicalFetcher, FetchError
+    literal here, so the host enumeration guard stays the single list. The fetcher comes from
+    ``make_fetcher``, so the probe follows the fetch mode (protected: the operator's proxy and the
+    generic User-Agent, R657); a refusal for want of a proxy is recorded by ``_law_probe``."""
+    from src.ingest import FetchError
     from src.law.catalog import load_legal_catalog
+    from src.safety.fetcher import make_fetcher
 
     priority = ("legislation.gov.uk", "eur-lex.europa.eu", "gesetze-im-internet.de")
     catalog = load_legal_catalog()
@@ -1400,7 +1403,7 @@ def _law_live_checks() -> dict[str, Any]:
         for host in priority:
             if host in url and host not in picked:
                 picked[host] = d
-    fetcher = EthicalFetcher(timeout=45.0)
+    fetcher = make_fetcher(timeout=45.0)
     out: dict[str, Any] = {}
     for host in priority:
         d = picked.get(host)

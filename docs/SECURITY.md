@@ -642,8 +642,22 @@ imply a protection we cannot deliver.
   guarantee unrecoverability on SSD/flash or copy-on-write filesystems — only full-disk
   encryption (LUKS/Qubes/Tails) plus key destruction does. Also exposed as a `panic` CLI and
   an `--ephemeral` mode (RAM-only data dir, wiped on process exit).
-- **Protected fetch mode** (`src/safety/settings.py`, `fetcher.py`): routes every fetch
-  through a proxy you run and sends a generic User-Agent that does not name the tool. **Honest
+- **Protected fetch mode** (`src/safety/settings.py`, `fetcher.py`): routes the app's web
+  fetches through a proxy you run (the newsletter mailbox pull, OpenTimestamps anchoring and the
+  local-AI downloads connect directly, as the consent popup's transport lines above say) and sends
+  a generic User-Agent that does not name the tool, with ONE User-Agent exception (R657): an https request from a guarded session (the API clients built on
+  `guarded_session`/`following_session`) to one of the Wikimedia hosts the app's Wikipedia, Wikidata
+  and dump features call (any `*.wikipedia.org` edition, `www.wikidata.org`, `query.wikidata.org`,
+  `wikimedia.org` for pageviews, `dumps.wikimedia.org`, `stream.wikimedia.org`, `ores.wikimedia.org`)
+  keeps that client's descriptive User-Agent, because Wikimedia's API policy asks each tool to name
+  itself. The list is `DESCRIPTIVE_AGENT_HOSTS` in `src/safety/fetcher.py`, and a test holds it equal to
+  the hosts those clients are confined to; no other Wikimedia host is on it. The choice is made per
+  request, so a redirect from a listed host to any other host gets the generic agent, and so does plain
+  http and an address that either of the two URL parsers reads as a host off the list. The collector
+  (`make_fetcher`) sends the generic agent everywhere, Wikimedia included. Those Wikimedia requests
+  still go through the proxy, so they name the tool but not your address. Every in-app fetcher is built
+  by `make_fetcher` (a test fails on any other module that builds one by hand; the release run's law
+  probe did, and went out with no proxy in protected mode until R657). **Honest
   limit:** this cannot guarantee anonymity — you must run and trust the proxy (e.g. Tor)
   yourself. Refuses to enable without a proxy URL. HTTP/HTTPS proxies work out of the box;
   **SOCKS** proxies (e.g. `socks5h://127.0.0.1:9050` for Tor) use **PySocks**, which the app

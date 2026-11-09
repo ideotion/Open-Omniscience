@@ -7,7 +7,8 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 The single place that builds an :class:`~src.ingest.EthicalFetcher` from the user's safety
 settings, so every ingest path (single URL, feeds, crawl, markets, law) goes through the
 *same* protected/transparent decision. Protected mode routes through the user's proxy and
-sends a generic User-Agent; the robots/rate-limit/SSRF guards are unchanged.
+sends a generic User-Agent (a guarded session keeps the caller's own agent for Wikimedia's hosts
+only, R657: :data:`DESCRIPTIVE_AGENT_HOSTS`); the robots/rate-limit/SSRF guards are unchanged.
 """
 
 from __future__ import annotations
@@ -245,6 +246,45 @@ def refuse_unlisted_path(url: str, prefixes: tuple[str, ...]) -> None:
             raise RedirectRefused("the path is not one this client talks to")
 
 
+#: R657: in protected mode a guarded session sends :data:`GENERIC_USER_AGENT` to every host except these, which keep the caller's
+#: own descriptive agent: the Wikimedia hosts the app's Wikipedia, Wikidata and dump features call, whose User-Agent policy asks API
+#: clients to name themselves (a browser-like agent may be throttled or refused there). Entries follow :func:`_checked_hosts`: a host,
+#: or a leading-dot suffix for any host under a domain (``.wikipedia.org``: every language edition, never the bare portal). Each one is
+#: a host a client names: ``.wikipedia.org`` and the bare ``wikimedia.org`` (pageviews) and ``stream.wikimedia.org`` are
+#: ``src.wiki.client.WIKI_SESSION_HOSTS``; ``ores.wikimedia.org`` is ``src.wiki.ores.ORES_HOSTS``; ``dumps.wikimedia.org`` is the
+#: dumps' own host; ``www.wikidata.org`` and ``query.wikidata.org`` are the Wikidata API and query service. No other host under
+#: ``wikimedia.org`` or ``wikidata.org`` is on it, so a redirect to one of Wikimedia's other or third-party-hosted names gets the
+#: generic agent.
+DESCRIPTIVE_AGENT_HOSTS: tuple[str, ...] = (
+    ".wikipedia.org",
+    "www.wikidata.org",
+    "query.wikidata.org",
+    "wikimedia.org",
+    "dumps.wikimedia.org",
+    "stream.wikimedia.org",
+    "ores.wikimedia.org",
+)
+
+
+def keeps_descriptive_agent(url: str) -> bool:
+    """True when a protected-mode request to ``url`` keeps the caller's descriptive User-Agent (R657).
+
+    The URL is read both ways ``requests`` and urllib3 read it (``urlparse`` and ``parse_url``), and BOTH readings must be https to a
+    host on :data:`DESCRIPTIVE_AGENT_HOSTS`: a URL the two read differently gets the generic agent, and so does plain http, where the
+    agent would cross the proxy's exit in clear text. Never raises.
+    """
+    try:
+        by_urlparse, by_urllib3 = urlparse(url), parse_url(url)
+        readings = ((by_urlparse.scheme, by_urlparse.hostname), (by_urllib3.scheme, by_urllib3.host))
+    except Exception:  # noqa: BLE001 - an unreadable URL gets the generic agent
+        return False
+    for scheme, host in readings:
+        h = (host or "").strip().rstrip(".").lower()
+        if (scheme or "").lower() != "https" or not h or not _host_listed(h, DESCRIPTIVE_AGENT_HOSTS):
+            return False
+    return True
+
+
 class GuardedSession(requests.Session):
     """A ``requests.Session`` that consults the global kill switch on EVERY verb.
 
@@ -281,6 +321,10 @@ class GuardedSession(requests.Session):
     transport_proxy: str | None = None
     #: Set when protected mode has no usable proxy: every request is refused with it.
     transport_refusal: str | None = None
+    #: In protected mode, the caller's own descriptive User-Agent; ``None`` in transparent mode. :meth:`send` sends it only to a host
+    #: :func:`keeps_descriptive_agent` names and :data:`GENERIC_USER_AGENT` to any other, on the first request and on every redirect
+    #: hop, whatever User-Agent the request carried (R657).
+    protected_agent: str | None = None
     #: The hosts this session may talk to (:func:`_checked_hosts`), or ``None`` for no list, which is every session built without
     #: one. Checked in :meth:`send`, the method ``requests`` itself calls for the first request AND for each redirect hop
     #: (``resolve_redirects`` calls ``self.send``, not ``self.request``), so a hop to another host is refused before it is sent.
@@ -320,6 +364,10 @@ class GuardedSession(requests.Session):
             refuse_unlisted_host(request.url or "", self.allowed_hosts)
         if self.allowed_path_prefixes is not None:
             refuse_unlisted_path(request.url or "", self.allowed_path_prefixes)
+        if self.protected_agent is not None:
+            request.headers["User-Agent"] = (
+                self.protected_agent if keeps_descriptive_agent(request.url or "") else GENERIC_USER_AGENT
+            )
         return super().send(request, **kwargs)
 
     def _send(self, method, url, *args, **kwargs) -> requests.Response:
@@ -515,10 +563,12 @@ def guarded_session(
       * the global kill switch refuses new requests (airplane mode is real);
       * protected mode routes through the user's proxy (e.g. Tor) -- transport
         is NEVER silently downgraded to clearnet (a §0.5 non-negotiable);
-      * an explicit, honest User-Agent (callers pass the one their endpoint's
-        policy requires -- e.g. Wikimedia's API mandates a descriptive bot UA,
-        even over Tor, so a generic browser UA would be both dishonest and
-        against policy; the DuckDuckGo HTML endpoint wants a browser UA).
+      * an explicit User-Agent: callers pass the one their endpoint's policy
+        requires (Wikimedia's API mandates a descriptive bot UA, even over Tor;
+        the DuckDuckGo HTML endpoint wants a browser UA). In protected mode the
+        session sends it only to :data:`DESCRIPTIVE_AGENT_HOSTS` and
+        :data:`GENERIC_USER_AGENT` to every other host, so the app is not named
+        where the operator asked not to be (R657, :meth:`GuardedSession.send`).
 
     ``isolation_token`` requests a dedicated Tor circuit for this session (see
     ``_with_stream_isolation``) so parallel downloads to one host don't share a
@@ -567,6 +617,9 @@ def _session_for(
     s.headers["User-Agent"] = user_agent
     if not settings.is_protected:
         return s
+    # R657: protected mode names the app to Wikimedia's hosts only; send() picks the agent per request and per redirect hop.
+    s.protected_agent = user_agent
+    s.headers["User-Agent"] = GENERIC_USER_AGENT
     proxy, pool, refusal = _protected_transport(settings)
     if refusal is not None:
         s.transport_refusal = refusal
