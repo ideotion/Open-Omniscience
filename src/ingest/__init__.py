@@ -2034,11 +2034,20 @@ class EthicalFetcher:
         the "(reached by a redirect)" words of a first request's: another path or query on the same key is answered by the cached
         robots.txt (no new read), and another scheme or host by that key's robots.txt, read through ``_get_robots``, which passes
         no chain and no ``hop_robots`` on, so a robots read never recurses. The query counts, since robots rules match the path
-        and the query together (``Disallow: /page?session`` refuses ``/page?session=1`` and allows ``/page?a=1``)."""
+        and the query together (``Disallow: /page?session`` refuses ``/page?session=1`` and allows ``/page?a=1``).
+
+        The switch is read after the check, which may have gone to the network (the independent read's M1): the hop's last read
+        was its guard's, before the check, and what follows is the hop's request, which on a pooled keep-alive connection opens no
+        socket for the airplane guard to see. So a Stop pressed while the robots.txt was read refuses the hop, as R629's
+        other-host branch refuses one pressed during its waits, and so does a Stop pressed and cleared again in that time (the
+        epoch, R614)."""
         if self._robots_target(current) == self._robots_target(nxt):
             return
         key = _host_netloc(p.netloc, p.scheme)
+        epoch = kill_switch_epoch()  # before the check: its robots read may be a request (R614)
         self._enforce_robots(nxt, f"{p.scheme}://{key}", p._replace(netloc=key), hop=True)
+        if kill_switch_engaged_since(epoch):  # engaged now, or engaged at any moment during the check
+            raise FetchFailed(KILL_SWITCH_REFUSAL)
 
     @staticmethod
     def _robots_target(url: str) -> tuple[str, str]:

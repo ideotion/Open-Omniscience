@@ -145,6 +145,7 @@ def _check_one(fetcher, source) -> dict:
 
     # homepage ping (reachability + status), through the same guarded path. It obeys robots.txt, fail-closed (R636): only a read
     # above that allows the homepage or finds no robots.txt lets it be made, and ``hop_robots`` checks each hop it would follow.
+    hop_verdict = None
     if rec["robots"] not in ("allowed", "missing"):
         rec["reachable"] = None  # nobody asked: not established, never "unreachable"
         rec["homepage_skipped"] = _PING_SKIPPED_DISALLOWED if rec["robots"] == "disallowed" else _PING_SKIPPED_UNREADABLE
@@ -160,11 +161,15 @@ def _check_one(fetcher, source) -> dict:
                 # Only a hop is robots-checked in there, so the homepage answered with a redirect: reachable, as a 3xx is above.
                 rec["reachable"] = True
                 rec["homepage_skipped"] = _PING_HOP_DISALLOWED if isinstance(exc, RobotsDisallowed) else _PING_HOP_UNREADABLE
+                # ... and not "ok": the address the homepage sends a crawler to is off-limits by its robots.txt, or its robots.txt
+                # could not be read (steward 3's low 1). ``robots`` stays the homepage's own answer, which is what the metadata
+                # records (``robots_allowed``), since the homepage's robots.txt did allow it.
+                hop_verdict = "robots_denied" if isinstance(exc, RobotsDisallowed) else "unreachable"
             else:
                 rec["reachable"] = False
                 rec["homepage_error"] = record_text(exc, limit=200, typed=False)
 
-    rec["verdict"] = (
+    rec["verdict"] = hop_verdict or (
         "ok" if rec.get("reachable") and rec["robots"] in ("allowed", "missing")
         else "robots_denied" if rec["robots"] in ("disallowed", "blocked")
         else "unreachable"

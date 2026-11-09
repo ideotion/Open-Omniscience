@@ -17,12 +17,15 @@ Now (R636), fail-closed:
     path or query on the same key (no new read), from the https robots.txt for an upgrade. The refusal keeps R629's words, "(reached
     by a redirect)". A same-host hop keeps its lock and waits no second interval: the interval is per host and is unchanged;
   - the ping is made only when the preflight's own read allows the homepage or finds no robots.txt, and each hop it would follow is
-    checked the same way (``hop_robots``); a ping robots.txt keeps from being made is recorded in fixed words.
+    checked the same way (``hop_robots``); a ping robots.txt keeps from being made is recorded in fixed words, and a ping whose hop
+    was refused is not "ok": "robots_denied" for a disallow, "unreachable" for a robots.txt that could not be read;
+  - the switch is read again after a hop's robots check, which may have gone to the network: a Stop pressed during it (or pressed and
+    cleared again, the R614 epoch) refuses the hop, which is never requested.
 A robots read passes no chain and no ``hop_robots``, so its own hops never read robots.txt: no recursion.
 
 Driven through the real ``EthicalFetcher`` (and the real ``ingest_url``, ``crawl_source`` and the preflight's ``_check_one`` and
 ``preflight_sources``) over an injected session that answers in memory, as tests/test_redirect_hop_robots_r629.py does; the kill-switch
-control uses a real ``requests.Session`` whose transport adapter answers in memory. Every planted URL has a route, so a request to it is
+tests also run on a real ``requests.Session`` whose transport adapter answers in memory. Every planted URL has a route, so a request to it is
 SEEN, never assumed. Time is a fake clock: a wait is recorded, never slept. Every fetch runs in a bounded thread, so a design that takes
 a host lock it already holds fails here instead of hanging the suite. Nothing leaves the machine.
 """
@@ -461,6 +464,41 @@ def test_robots_target_reads_the_key_path_params_and_query_and_leaves_the_fragme
     assert t("https://a.example/p#one") == t("https://a.example/p#two")
 
 
+@pytest.mark.parametrize(
+    ("start", "location", "hop", "hosts", "keys"),
+    [
+        (f"{H}/x", "https://A.Example:443/x", "https://A.Example:443/x", {"a.example"}, {H, A}),
+        ("https://alice:hunter2@a.example/feed", "/feed/", "https://alice:hunter2@a.example/feed/", {"a.example"}, {A}),
+        (f"{A}/x", "https://B.Example:443/y", "https://B.Example:443/y", {"a.example", "b.example"}, {A, B}),
+    ],
+    ids=["mixed-case-upgrade", "login-same-host", "mixed-case-other-host"],
+)
+def test_a_hops_robots_read_is_keyed_and_circuit_named_on_the_host_key(tmp_path, start, location, hop, hosts, keys):
+    """The independent read's N2: a hop's robots.txt is read under the host key (``_host_netloc``: the host as urllib.parse reads it,
+    lower-cased, no default port, no login), and its Tor circuit is named on that key too, never on the netloc as the Location wrote
+    it. A circuit named on ``alice:hunter2@a.example`` or ``A.Example:443`` is another circuit for the same host, and a login in it goes
+    to the proxy. The login case pops the cached entry as the first request is answered, so the same-host hop reads robots.txt again."""
+    s = _Session()
+    s.redirect(start, location)
+    s.page(hop)
+    f = _fetcher(tmp_path, s)
+    if "@" in start:
+        s.on[start] = lambda: f._robots.pop(A, None)
+    names: list = []
+    real = f._isolated_proxies
+
+    def spy(netloc):
+        names.append(netloc)
+        return real(netloc)
+
+    f._isolated_proxies = spy  # type: ignore[method-assign]
+    assert _fetch(f, start).final_url == hop
+    assert set(names) == hosts, names
+    assert set(f._robots) == keys
+    assert {urlsplit(u).netloc for u in s.robots_reads()} == hosts
+    assert len(s.robots_reads()) == (2 if "@" in start else len(keys))
+
+
 # --- the interval: an allowed same-host hop is not slowed by a second one ------------------------------------------------------------
 
 
@@ -500,6 +538,23 @@ def test_a_same_host_hop_waits_no_second_crawl_delay(tmp_path):
     _fetch(f, f"{H}/0")
     assert _fetch(f, f"{H}/x").final_url == f"{A}/x"
     assert clock.slept == [7.0]
+
+
+@pytest.mark.parametrize(("start", "location"), [(f"{H}/x", f"{A}/x"), (f"{A}/x", "/y")], ids=["upgrade", "new-path"])
+def test_a_same_host_hop_on_first_contact_with_a_crawl_delay_waits_no_second_delay(tmp_path, start, location):
+    """The independent read's S1: on first contact with a host that declares a Crawl-delay, the first request's wait stamps the host's
+    schedule (host_schedule.json) before the request is made, so a second wait taken for the hop would owe the whole delay (their probe:
+    7.0 s against 0). The hop waits nothing; so does the first request, since nothing was asked of the host before it."""
+    events: list = []
+    s, clock = _Session(events), _Clock(events)
+    for origin in (H, A):
+        s.robots(origin, "User-agent: *\nCrawl-delay: 7\n")
+    s.redirect(start, location, status=301)
+    target = location if location.startswith("http") else f"{A}{location}"
+    s.page(target)
+    f = _fetcher(tmp_path, s, clock=clock)
+    assert _fetch(f, start).final_url == target
+    assert clock.slept == []
 
 
 def test_a_retry_rechecks_its_hop_from_the_cache_and_reads_robots_once(tmp_path):
@@ -621,23 +676,103 @@ class _MemoryAdapter(BaseAdapter):
         pass
 
 
-def test_a_stop_pressed_as_the_first_host_answers_refuses_an_upgrade_before_its_robots_read(tmp_path, monkeypatch):
-    """On a real session the hop's own guard reads the switch (where R629 placed the reads): no https robots.txt is asked."""
+def _real_fetcher(tmp_path, monkeypatch, routes: dict, asked: list, on: dict) -> EthicalFetcher:
+    """A fetcher on a REAL requests.Session whose transport answers in memory, every host resolving to one public address."""
     for var in {*_PROXY_VARS, *(v for v in os.environ if v.lower().endswith("_proxy"))}:
         monkeypatch.delenv(var, raising=False)
-    routes = {f"{H}/x": (301, {"Location": f"{A}/x"}, b""), f"{A}/x": (200, {}, _html().encode())}
-    asked: list[str] = []
     f = EthicalFetcher(min_interval_s=0, retry_backoff_s=0, max_retries=0, robots_cache_path=tmp_path / "robots_cache.json")
-    adapter = _MemoryAdapter(routes, asked, {f"{H}/x": activate_kill_switch})
+    adapter = _MemoryAdapter(routes, asked, on)
     f.session.mount("https://", adapter)
     f.session.mount("http://", adapter)
     f._resolve_cached = lambda host: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.215.14", 0))]  # type: ignore[method-assign]
     assert f._real_session
+    return f
+
+
+def _pressed_and_cleared():
+    activate_kill_switch()
+    clear_kill_switch()
+
+
+def _on_call(n: int, fn):
+    """A hook that runs ``fn`` on the ``n``-th request to its URL only (the fetcher's read of a robots.txt the preflight read first)."""
+    seen = [0]
+
+    def hook():
+        seen[0] += 1
+        if seen[0] == n:
+            fn()
+
+    return hook
+
+
+_ROBOTS_200 = (200, {"Content-Type": "text/plain"}, _ALLOW_ALL.encode())
+_PAGE_200 = (200, {}, _html().encode())
+_STOPS = pytest.mark.parametrize("stop", [activate_kill_switch, _pressed_and_cleared], ids=["engaged", "pressed-and-cleared"])
+
+
+def test_a_stop_pressed_as_the_first_host_answers_refuses_an_upgrade_before_its_robots_read(tmp_path, monkeypatch):
+    """On a real session the hop's own guard reads the switch (where R629 placed the reads): no https robots.txt is asked."""
+    routes = {f"{H}/x": (301, {"Location": f"{A}/x"}, b""), f"{A}/x": (200, {}, _html().encode())}
+    asked: list[str] = []
+    f = _real_fetcher(tmp_path, monkeypatch, routes, asked, {f"{H}/x": activate_kill_switch})
     with pytest.raises(FetchFailed) as caught:
         _fetch(f, f"{H}/x")
     assert record_text(caught.value, typed=False) == KILL_SWITCH_REFUSAL
     assert asked == [f"{H}/robots.txt", f"{H}/x"]
     _no_lock_held(f, "a.example")
+
+
+@_STOPS
+def test_a_stop_pressed_while_an_upgrades_robots_is_read_refuses_the_hop_when_the_read_allows_it(tmp_path, monkeypatch, stop):
+    """The independent read's M1, on the page fetch: the hop's last switch read was its guard's, before its robots read, and its
+    request may go out on a pooled keep-alive connection, which opens no socket for the airplane guard to see. A Stop pressed while the
+    https robots.txt is read (it answers 200 and allows the page) refuses the hop, and so does one pressed and cleared again (R614)."""
+    routes = {f"{H}/robots.txt": _ROBOTS_200, f"{H}/x": (301, {"Location": f"{A}/x"}, b""), f"{A}/robots.txt": _ROBOTS_200,
+              f"{A}/x": _PAGE_200}
+    asked: list[str] = []
+    f = _real_fetcher(tmp_path, monkeypatch, routes, asked, {f"{A}/robots.txt": stop})
+    with pytest.raises(FetchFailed) as caught:
+        _fetch(f, f"{H}/x")
+    assert record_text(caught.value, typed=False) == KILL_SWITCH_REFUSAL
+    assert asked == [f"{H}/robots.txt", f"{H}/x", f"{A}/robots.txt"]
+    _no_lock_held(f, "a.example")
+
+
+@_STOPS
+def test_a_stop_pressed_while_an_upgrades_robots_is_read_refuses_the_hop_on_an_injected_session_too(tmp_path, stop):
+    s = _Session()
+    s.robots(H, _ALLOW_ALL)
+    s.robots(A, _ALLOW_ALL)
+    s.redirect(f"{H}/x", f"{A}/x", status=301)
+    s.page(f"{A}/x")
+    s.on[f"{A}/robots.txt"] = stop
+    f = _fetcher(tmp_path, s)
+    with pytest.raises(FetchFailed) as caught:
+        _fetch(f, f"{H}/x")
+    assert record_text(caught.value, typed=False) == KILL_SWITCH_REFUSAL
+    assert f"{A}/x" not in s.fetched
+
+
+@_STOPS
+@pytest.mark.parametrize(
+    ("location", "hop", "robots", "nth"),
+    [(f"{B}/", f"{B}/", f"{B}/robots.txt", 1), ("/en/", f"{A}/en/", f"{A}/robots.txt", 2)],
+    ids=["other-host", "same-host-cold-cache"],
+)
+def test_a_stop_pressed_while_a_ping_hops_robots_is_read_is_skipped_offline_and_the_hop_never_asked(
+    tmp_path, monkeypatch, stop, location, hop, robots, nth
+):
+    """M1 on the homepage ping: the hop's robots.txt answers 200 and allows it, and a Stop pressed inside that read (engaged, or pressed
+    and cleared again) refuses the hop, recorded as skipped_offline. On the same host the fetcher's cache is cold, so its read is the
+    second request to a.example/robots.txt (the preflight's own read is the first)."""
+    routes = {f"{A}/robots.txt": _ROBOTS_200, f"{A}/": (302, {"Location": location}, b""), robots: _ROBOTS_200, hop: _PAGE_200}
+    asked: list[str] = []
+    f = _real_fetcher(tmp_path, monkeypatch, routes, asked, {robots: _on_call(nth, stop)})
+    rec = _ping(f)
+    assert rec["verdict"] == "skipped_offline" and rec["skipped_offline"] is True and rec["reachable"] is None
+    assert rec["refusal"] == KILL_SWITCH_REFUSAL and "homepage_skipped" not in rec
+    assert asked == [f"{A}/robots.txt", f"{A}/", robots]
 
 
 # --- what callers see -----------------------------------------------------------------------------------------------------------------
@@ -766,13 +901,27 @@ def test_the_pings_hop_to_a_disallowed_path_on_its_host_is_not_followed(tmp_path
     # the preflight's own read, the homepage, then the fetcher's read for the hop (its cache is the one a scrape uses)
     assert s.fetched == [f"{A}/robots.txt", f"{A}/", f"{A}/robots.txt"]
     assert rec["homepage_skipped"] == _HOP_DISALLOWED
-    assert rec["reachable"] is True and rec["robots"] == "allowed" and rec["verdict"] == "ok"
+    # reachable (it answered with a redirect), its own robots.txt allowed it, and the verdict is not "ok": where it sends a crawler is
+    # off-limits (steward 3's low 1)
+    assert rec["reachable"] is True and rec["robots"] == "allowed" and rec["verdict"] == "robots_denied"
     assert "homepage_status" not in rec and "homepage_error" not in rec
 
 
-@pytest.mark.parametrize(("answer", "words"), [(_DISALLOW_ALL, _HOP_DISALLOWED), (403, _HOP_UNREADABLE), (500, _HOP_UNREADABLE),
-                                               ("raise", _HOP_UNREADABLE)])
-def test_the_pings_hop_to_another_host_is_robots_checked(tmp_path, answer, words):
+@pytest.mark.parametrize(
+    ("answer", "words", "verdict"),
+    [
+        (_DISALLOW_ALL, _HOP_DISALLOWED, "robots_denied"),
+        (403, _HOP_UNREADABLE, "unreachable"),
+        (401, _HOP_UNREADABLE, "unreachable"),
+        (500, _HOP_UNREADABLE, "unreachable"),
+        ("raise", _HOP_UNREADABLE, "unreachable"),
+    ],
+    ids=["disallow", "403", "401", "500", "raise"],
+)
+def test_the_pings_hop_to_another_host_is_robots_checked(tmp_path, answer, words, verdict):
+    """A hop RobotsDisallowed refuses is "robots_denied"; one RobotsUnavailable refuses (its robots.txt answered 401/403 or 5xx, or
+    nothing) is "unreachable", as the fetcher files a 401/403 robots.txt as "refused", never as a policy (steward 3's low 1). The
+    homepage's own robots.txt (none, here) stays the record's ``robots``."""
     s = _Session()
     s.redirect(f"{A}/", f"{B}/")
     s.page(f"{B}/")
@@ -789,6 +938,7 @@ def test_the_pings_hop_to_another_host_is_robots_checked(tmp_path, answer, words
     rec = _ping(_fetcher(tmp_path, s))
     assert s.fetched == [f"{A}/robots.txt", f"{A}/", f"{B}/robots.txt"]
     assert rec["homepage_skipped"] == words and rec["reachable"] is True
+    assert rec["verdict"] == verdict and rec["robots"] == "missing"
 
 
 def test_the_pings_hop_to_the_other_scheme_reads_that_schemes_robots(tmp_path):
@@ -799,7 +949,7 @@ def test_the_pings_hop_to_the_other_scheme_reads_that_schemes_robots(tmp_path):
     s.page(f"{H}/")
     rec = _ping(_fetcher(tmp_path, s))
     assert s.fetched == [f"{A}/robots.txt", f"{A}/", f"{H}/robots.txt"]
-    assert rec["homepage_skipped"] == _HOP_DISALLOWED
+    assert rec["homepage_skipped"] == _HOP_DISALLOWED and rec["verdict"] == "robots_denied"
 
 
 def test_the_pings_allowed_hop_is_followed_and_takes_no_lock_and_no_wait(tmp_path):
@@ -868,6 +1018,35 @@ def test_a_sweep_logs_the_skipped_ping_and_keeps_the_learned_verdicts(db, tmp_pa
     assert "homepage_skipped" not in rows["ok.example"]
     good = db.query(Source).filter_by(domain="good.example").one()
     assert db.query(SourceMetadata).filter_by(source_id=good.id).one().robots_allowed is False
+
+
+def test_a_sweep_counts_a_refused_ping_hop_as_its_verdict_and_records_the_homepages_own_robots(db, tmp_path, monkeypatch):
+    """Steward 3's low 1, through the whole sweep: a ping whose hop robots.txt disallows is counted in ``robots_denied``, one whose hop
+    robots.txt cannot be read in ``unreachable``, and neither as ``ok``. ``robots_allowed`` follows the record's ``robots``, which is
+    the source's own robots.txt read for its homepage, so it is True for both: what that robots.txt allows is what was learned."""
+    monkeypatch.setattr("src.paths.data_dir", lambda: tmp_path)
+    for name in ("ok", "un"):
+        db.add(Source(name=name, domain=f"{name}.example", language="en", enabled=True))
+    db.commit()
+    s = _Session()
+    s.robots(G, "User-agent: *\nDisallow: /en/\n")
+    s.redirect(f"{G}/", "/en/")
+    s.page(f"{G}/en/")
+    s.page("https://ok.example/")
+    s.redirect("https://un.example/", f"{B}/")
+    s.robots(B, "", status=500)
+    s.page(f"{B}/")
+    summary = _bounded(lambda: preflight.preflight_sources(db, _fetcher(tmp_path, s), limit=10))
+    assert summary["complete"] is True and summary["checked"] == 3
+    assert summary["ok"] == 1 and summary["robots_denied"] == ["good.example"] and summary["unreachable"] == ["un.example"]
+    assert f"{G}/en/" not in s.fetched and f"{B}/" not in s.fetched
+    rows = {r["domain"]: r for r in preflight.recent_results()}
+    assert rows["good.example"]["homepage_skipped"] == _HOP_DISALLOWED and rows["good.example"]["robots"] == "allowed"
+    assert rows["un.example"]["homepage_skipped"] == _HOP_UNREADABLE and rows["un.example"]["robots"] == "missing"
+    assert rows["good.example"]["reachable"] is True and rows["un.example"]["reachable"] is True
+    for domain in ("good.example", "ok.example", "un.example"):
+        src = db.query(Source).filter_by(domain=domain).one()
+        assert db.query(SourceMetadata).filter_by(source_id=src.id).one().robots_allowed is True, domain
 
 
 def test_a_refusal_of_the_pings_hop_while_the_switch_is_engaged_is_skipped_offline(tmp_path):
