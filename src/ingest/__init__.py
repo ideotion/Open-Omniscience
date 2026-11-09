@@ -274,7 +274,8 @@ def _host_netloc(netloc: str, scheme: str = "") -> str:
       follows, and a host and port hold no ``@``.
     - The host is the one ``urllib.parse`` reads (``.hostname``), which is the name the SSRF guard checks: lower-cased, an IPv6
       literal in its brackets (a zone kept as written).
-    - The port is its number: leading zeros gone (``host:080``), an empty port gone (``host:``), and the ``scheme``'s default
+    - The port is its number: leading zeros gone (``host:080``), an empty port or port 0 gone (``host:``, ``host:0``: requests
+      drops both and connects to the default), and the ``scheme``'s default
       port gone (80 for http, 443 for https). Without a scheme (a bare key read back from host_schedule.json, which records
       none) every explicit port stays, since ``host:443`` is the key of ``http://host:443``.
     - A trailing dot STAYS, deliberately (the stop clause of the fold, agreed with the coordinator): ``news.example.`` is an
@@ -304,7 +305,7 @@ def _readable_host_key(netloc: str, scheme: str = "") -> str | None:
         return None
     if ":" in host:
         host = f"[{host}]"
-    if port is None or port == _DEFAULT_PORTS.get(scheme):
+    if not port or port == _DEFAULT_PORTS.get(scheme):  # port 0 is the default: requests drops it and connects there (R624 read)
         return host
     return f"{host}:{port}"
 
