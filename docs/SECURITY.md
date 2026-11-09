@@ -362,7 +362,9 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   too, because under TLS the socket no longer says so) is refused whatever name it carries. The switch is read where
   the request is written, so a Stop that lands after a caller's own check is met too. A Stop also
   closes the pooled connections of every `EthicalFetcher` session and every `GuardedSession`, so none is
-  left idle. A request
+  left idle. Only those pools are closed: any other client's pooled connection (a plain `requests`
+  session, say `src/monitoring/preflight.py`'s) stays open, and the `putrequest` refusal is the
+  barrier that keeps it from sending. A request
   whose first line was already accepted when the Stop landed finishes, as the Stop has always meant.
   **Residual, checked against the 16 socket-capable libraries the socket-importer ratchet
   (`tests/test_network_consent.py`) tracks:** this point sees only what is written through
@@ -391,9 +393,18 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   So a local LLM address that names an alias (`OO_OLLAMA_URL` or `OO_VLLM_URL` set to
   `http://localhost.localdomain:…`), which the LLM clients accept as loopback, works online where the system resolves it and is
   refused in airplane mode: name it as `127.0.0.1` (the default) or `localhost` instead.
-  Any **non-loopback** target raises
-  `AirplaneModeError` **before** a real socket is opened, so no missed call
-  site, third-party library, or DNS prefetch can egress. Loopback (127/8, ::1, `localhost`)
+  The same rule applies to `socket.connect`/`connect_ex` and `create_connection` handed a host
+  NAME, because CPython resolves that name in C, through libc and not through the patched
+  `getaddrinfo` (S1's read: `connect(("localhost.localdomain", 80))` queried DNS in airplane mode):
+  an alias is refused in fixed words, and `localhost` is swapped for the loopback literal of the
+  socket's family before the real call.
+  **Stated residuals (ruled R641, to be closed in the PR after R640's):** `socket.gethostbyname` and
+  `gethostbyname_ex` are not patched, so a library calling them resolves a name through libc in
+  airplane mode (no in-tree code calls them); and a UDP `sendto`/`sendmsg` to a remote address on an
+  unconnected socket is not refused (no connect, so no guard point). Any **non-loopback** target
+  handed to a patched point raises `AirplaneModeError` **before** a real socket is opened, so a
+  missed call site, third-party library, or DNS prefetch that goes through those points cannot
+  egress; what does not go through them is the residual list above and in this section. Loopback (127/8, ::1, `localhost`)
   and AF_UNIX always pass through (the app's own server, a loopback Ollama, the file DB).
   It is transparent while online. `OO_AIRPLANE_SOCKET_GUARD=0` disables the backstop; the
   per-call refusals remain as the friendly layer above it. App boot makes zero network calls.

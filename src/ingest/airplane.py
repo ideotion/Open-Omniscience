@@ -315,7 +315,32 @@ def _guarded_getaddrinfo(host, *args, **kwargs):  # type: ignore[no-untyped-def]
     return infos
 
 
+def _name_rule_for_connect(address: object, family: object) -> object:
+    """Apply :func:`_guarded_getaddrinfo`'s name rule to a connect target, while airplane mode is engaged (R639, S1's read).
+
+    ``socket.connect``/``connect_ex`` with a host NAME resolve it inside CPython's C code, which calls libc directly and never the
+    patched ``socket.getaddrinfo``: ``connect(("localhost.localdomain", 80))`` sent its query to DNS in airplane mode (strace), and so did
+    ``localhost`` on an ``AF_INET6`` socket where ``/etc/hosts`` has no ``::1`` line. So here, before the real call: a localhost alias
+    that is not exempt from a lookup is refused in fixed words, and exactly ``localhost`` is swapped for the loopback literal of the
+    socket's family (``::1`` for ``AF_INET6``, else ``127.0.0.1``), which libc parses without a query. Any other address is returned
+    unchanged. Online, and with the airplane half unarmed, nothing changes.
+    """
+    if not (_airplane_armed and kill_switch_active()):
+        return address
+    host = _addr_host(address)
+    if _is_local_host(host) and not _lookup_exempt(host):
+        _guard(_ALIAS_LOOKUP_TARGET)
+    if _is_localhost_name(host) and isinstance(address, (tuple, list)):
+        literal = "::1" if family == socket.AF_INET6 else "127.0.0.1"
+        return (literal, *tuple(address)[1:])
+    return address
+
+
 def _guarded_create_connection(address, *args, **kwargs):  # type: ignore[no-untyped-def]
+    # create_connection resolves through the patched getaddrinfo (which refuses an alias and answers localhost itself) and then
+    # connects to the numeric answer; the rule is applied here too, so a refusal comes before anything else in the same words. The
+    # address handed on is unchanged: getaddrinfo picks the family, so the localhost swap is its to make.
+    _name_rule_for_connect(address, None)
     _guard(_addr_host(address))
     check_connect_target(address)
     return _orig_create_connection(address, *args, **kwargs)
@@ -324,6 +349,7 @@ def _guarded_create_connection(address, *args, **kwargs):  # type: ignore[no-unt
 def _guarded_connect(self, address):  # type: ignore[no-untyped-def]
     # AF_UNIX is local IPC (a filesystem path) — never network; always allow.
     if getattr(self, "family", None) != getattr(socket, "AF_UNIX", object()):
+        address = _name_rule_for_connect(address, getattr(self, "family", None))
         _guard(_addr_host(address))
         check_connect_target(address)
     with native_call("connect"):
@@ -332,6 +358,7 @@ def _guarded_connect(self, address):  # type: ignore[no-untyped-def]
 
 def _guarded_connect_ex(self, address):  # type: ignore[no-untyped-def]
     if getattr(self, "family", None) != getattr(socket, "AF_UNIX", object()):
+        address = _name_rule_for_connect(address, getattr(self, "family", None))
         _guard(_addr_host(address))
         check_connect_target(address)
     with native_call("connect"):
