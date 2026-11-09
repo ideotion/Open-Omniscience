@@ -41,6 +41,7 @@ from src.ingest import (
     FetchError,
     RobotsDisallowed,
     RobotsUnavailable,
+    _carries_userinfo,
     _host_netloc,
 )
 from src.ingest.pipeline import IngestResult, _exists, store_fetched
@@ -233,6 +234,10 @@ def crawl_source(
             if depth >= cfg.max_depth:
                 continue
             for link in _harvest_links(fetched.content, fetched.final_url):
+                if _carries_userinfo(link):
+                    # R630: a link written with a user name or password is never followed or stored, whatever the scope:
+                    # requests would send it as a login and it would land in the stored URLs (R624's read)
+                    continue
                 if cfg.same_domain_only and _off_site(urlparse(link).netloc, base_host):
                     continue
                 canon = canonicalize_url(link)

@@ -47,7 +47,7 @@ from defusedxml.ElementTree import fromstring as _safe_fromstring
 from sqlalchemy.orm import Session
 
 from src.database.models import Source
-from src.ingest import EthicalFetcher, FetchError
+from src.ingest import EthicalFetcher, FetchError, _carries_userinfo
 from src.ingest.crawl import _off_site, _registrable_host
 from src.ingest.fetch_verdict import failure_url
 from src.ingest.pipeline import IngestResult, ingest_url
@@ -255,6 +255,10 @@ def discover_sitemap_urls(
             if len(report.urls) >= max_urls:
                 report.stopped_reason = "max_urls"
                 break
+            if _carries_userinfo(entry.loc):
+                # R630: a page address written with a user name or password is never fetched or stored, as a child sitemap
+                report.skipped_off_host.append(failure_url(entry.loc))
+                continue
             if entry.loc not in seen_urls:
                 seen_urls.add(entry.loc)
                 report.urls.append(entry.loc)
