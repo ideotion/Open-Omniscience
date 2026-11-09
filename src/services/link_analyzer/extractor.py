@@ -243,7 +243,15 @@ class LinkExtractor:
             try:
                 link_url = urljoin(base_url, link_url)
             except Exception as e:
-                log_failure(logger, f"Error resolving relative URL {link_url} with base {base_url}", e, level=logging.WARNING)
+                # imported on use: this module must not load src.ingest (R621)
+                from src.ingest.fetch_verdict import failure_url
+
+                log_failure(
+                    logger,
+                    f"Error resolving relative URL {failure_url(link_url)} with base {failure_url(base_url)}",
+                    e,
+                    level=logging.WARNING,
+                )
 
         # Normalize URL
         normalized_url = self.normalize_url(link_url)
@@ -325,7 +333,10 @@ class LinkExtractor:
                         parsed_url = urlparse(url)
                         base_netloc = urlparse(base_url).netloc if base_url else ""
                     except (ValueError, TypeError) as e:
-                        log_failure(logger, f"Skipping malformed link URL {url!r}", e, level=logging.DEBUG)
+                        # imported on use: this module must not load src.ingest (R621)
+                        from src.ingest.fetch_verdict import failure_url
+
+                        log_failure(logger, f"Skipping malformed link URL {failure_url(url)!r}", e, level=logging.DEBUG)
                         continue
 
                     link_info: dict[str, Any] = {
@@ -426,7 +437,10 @@ class LinkExtractor:
             # A URL we cannot normalise is not a usable outbound link; drop it
             # quietly (debug, not warning — these are malformed hrefs in scraped
             # HTML, not an app fault) instead of storing the raw garbage.
-            log_failure(logger, f"Could not normalise URL {url!r}", e, level=logging.DEBUG)
+            # imported on use: this module must not load src.ingest (R621)
+            from src.ingest.fetch_verdict import failure_url
+
+            log_failure(logger, f"Could not normalise URL {failure_url(url)!r}", e, level=logging.DEBUG)
             return ""
 
     def _determine_link_type(

@@ -163,7 +163,8 @@ def test_report_before_any_call_reads_previous_file(_data):
 
 def test_airplane_wraps_the_native_calls():
     src = (_ROOT / "src" / "ingest" / "airplane.py").read_text(encoding="utf-8")
-    assert src.count('native_call("dns")') == 1
+    # getaddrinfo, and since R641 the four lookups that resolve in C beside it: gethostbyname(_ex), gethostbyaddr, getnameinfo
+    assert src.count('native_call("dns")') == 5
     assert src.count('native_call("connect")') == 2
 
 
