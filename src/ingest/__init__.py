@@ -717,12 +717,13 @@ _KILL_EPOCH = 0
 # Re-entrant, so a future signal handler that engages the switch cannot deadlock a thread holding it.
 _KILL_EPOCH_LOCK = threading.RLock()
 
-#: Every ``requests.Session`` an :class:`EthicalFetcher` fetches through (R638). Weak, so a fetcher that is gone takes its session with
+#: Every ``requests.Session`` an :class:`EthicalFetcher` fetches through, and every ``GuardedSession`` (R638). Weak, so a fetcher that is gone takes its session with
 #: it. :func:`activate_kill_switch` closes their pooled keep-alive connections: the socket guard refuses a request written to one after
 #: the Stop (``airplane._guarded_putrequest``), and closing them leaves none idle to be written to at all. A closed ``Session`` stays
 #: usable; its adapters open new pools on the next request, which then meets the connect guard.
 _FETCHER_SESSIONS: weakref.WeakSet[requests.Session] = weakref.WeakSet()
-_FETCHER_SESSIONS_LOCK = threading.Lock()
+# Re-entrant for the reason _KILL_EPOCH_LOCK is: activate_kill_switch takes it, and must not deadlock a thread already inside it.
+_FETCHER_SESSIONS_LOCK = threading.RLock()
 
 
 def _register_fetcher_session(session: requests.Session) -> None:
@@ -742,8 +743,9 @@ def _close_fetcher_pools() -> int:
         try:
             session.close()
             closed += 1
-        except Exception:  # noqa: BLE001 - the Stop must complete whatever one session does
-            logging.getLogger(__name__).debug("kill switch: closing a fetcher session's pool failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - the Stop must complete whatever one session does
+            # The class only, never the words or a traceback: an error from a pool can carry a URL with its login (R142).
+            logging.getLogger(__name__).debug("kill switch: closing a fetcher session's pool failed (%s)", type(exc).__name__)
     return closed
 
 

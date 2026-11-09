@@ -63,9 +63,10 @@ write with no resolve, connect or tunnel left to refuse it, so a pooled
 ``requests`` session kept fetching from the same host after airplane mode was
 engaged. The same ``putrequest`` point therefore also refuses, while the switch
 is engaged, a request on a connection whose OWN destination is not local
-(``self.host``; any tunnelling or SOCKS-proxied connection counts as not local),
+(its socket's peer must be a loopback address and its ``self.host`` a loopback
+name; any tunnelling or SOCKS-proxied connection counts as not local),
 and ``activate_kill_switch`` closes the pooled connections of every
-``EthicalFetcher`` session so none is left idle to be reused. Not covered: a
+``EthicalFetcher`` and ``GuardedSession`` so none is left idle to be reused. Not covered: a
 library that writes to a socket without ``http.client`` (see ``docs/SECURITY.md``
 for the list checked, and for why the raw socket ``send`` is not patched).
 Also not covered: an HTTP client that does not sit on
@@ -332,22 +333,52 @@ _CONNECTION_TARGET = "a non-local host over a connection already open (opened be
 
 
 def _connection_destination(conn: object) -> object:
-    """What ``_guard`` is handed for the connection a request is about to be written to (R638), or ``None`` when that is local.
+    """What ``_guard`` is handed for the OPEN connection a request is about to be written to (R638), or ``None`` when that is local.
 
-    A connection that TUNNELS (``_tunnel_host`` set: a CONNECT through an HTTP proxy) reaches a destination only the proxy knows, so it is
-    never local, whatever name it carries -- the same rule ``_guarded_tunnel`` applies to the handshake. A connection whose socket is a
-    PySocks socket with a proxy set is proxied for the same reason. Otherwise the destination is ``self.host``, classified exactly as the
-    connect guard classifies a connect; a host that is missing or not text is not local (an unreadable destination fails closed).
+    Only a connection that already holds a socket is classified: a fresh one (``sock is None``) connects lazily inside ``send``, where the
+    connect guard reads the switch itself and refuses a remote target exactly as it always has (same words, same wrapping).
+
+    Not local, whatever name the connection carries:
+    - a connection that TUNNELS (``_tunnel_host`` set: a CONNECT through an HTTP proxy) -- the same rule ``_guarded_tunnel`` applies;
+    - a urllib3 SOCKS connection (``_socks_options`` set), or a socket carrying a PySocks ``proxy`` -- read from the CONNECTION as well as
+      the socket, because over HTTPS ``sock`` is an ``ssl.SSLSocket`` built anew from the PySocks socket and the attribute is gone
+      (both security reads of R638);
+    - a socket whose PEER is not a loopback address -- the name alone is not enough (urllib3 reports ``localhost.`` as ``localhost``, and
+      ``localhost.localdomain`` may be resolved by DNS); a peer that cannot be read fails closed;
+    - a connection whose ``host`` is missing, not text, or not a loopback name or literal.
     """
+    sock = getattr(conn, "sock", None)
+    if sock is None:
+        return None
     if getattr(conn, "_tunnel_host", None):
         return _PROXIED_TARGET
-    sock_proxy = getattr(getattr(conn, "sock", None), "proxy", None)
+    if getattr(conn, "_socks_options", None):
+        return _PROXIED_TARGET
+    sock_proxy = getattr(sock, "proxy", None)
     if isinstance(sock_proxy, tuple) and sock_proxy and sock_proxy[0] is not None:
         return _PROXIED_TARGET
+    if getattr(sock, "family", None) != getattr(socket, "AF_UNIX", object()):
+        try:
+            peer = sock.getpeername()
+        except Exception:  # noqa: BLE001 - an unreadable peer is not local
+            return _CONNECTION_TARGET
+        if not _is_loopback_peer(peer):
+            return _CONNECTION_TARGET
     host = getattr(conn, "host", None)
     if isinstance(host, (str, bytes)) and host and _is_local_host(host):
         return None
     return _CONNECTION_TARGET
+
+
+def _is_loopback_peer(peer: object) -> bool:
+    """True when a ``getpeername()`` answer is a loopback ADDRESS (never a name: a peer is always numeric)."""
+    host = _addr_host(peer)
+    if not isinstance(host, str):
+        return False
+    try:
+        return ipaddress.ip_address(host.split("%", 1)[0]).is_loopback
+    except ValueError:
+        return False
 
 
 def _guarded_putrequest(self, method, url, *args, **kwargs):  # type: ignore[no-untyped-def]
@@ -360,9 +391,8 @@ def _guarded_putrequest(self, method, url, *args, **kwargs):  # type: ignore[no-
     2. The connection's OWN destination (R638): a keep-alive connection opened BEFORE the Stop met the connect guard while it was still
        transparent, so an origin-form ``/path`` written to it afterwards would reach a remote host with no connect, resolve or tunnel to
        stop it (``requests``/urllib3 reuse pooled connections exactly so). While the switch is engaged, a request on a connection whose
-       destination is not local (:func:`_connection_destination`) is refused. A fresh connection is also checked here, before its lazy
-       connect, which refuses it one step earlier than the connect guard would; a local one (the app's own server, a loopback Ollama) is
-       untouched. The switch is read at the moment the request is written, so a Stop that lands after a caller's own check is still met.
+       destination is not local (:func:`_connection_destination`) is refused. A fresh connection is left to the connect guard, which
+       reads the switch when its lazy connect runs; a local one (the app's own server, a loopback Ollama) is untouched. The switch is read at the moment the request is written, so a Stop that lands after a caller's own check is still met.
 
     The ordinary path (switch clear) costs one flag read and one ``Event.is_set``: the destination is only classified while airplane
     mode is engaged."""

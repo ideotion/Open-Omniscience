@@ -196,30 +196,110 @@ def test_the_refusal_names_no_part_of_the_host(recorder):
     assert "airplane mode is engaged" in str(exc.value)
 
 
-def test_a_connection_with_no_readable_host_fails_closed(real_guard):
+class _FakeSock:
+    """A socket stand-in: an AF_INET socket whose peer is ``peer`` (``None``: unreadable), optionally carrying a PySocks ``proxy``."""
+
+    family = socket.AF_INET
+
+    def __init__(self, peer: tuple[str, int] | None = ("127.0.0.1", 80), proxy: tuple | None = None) -> None:
+        self._peer = peer
+        if proxy is not None:
+            self.proxy = proxy
+
+    def getpeername(self) -> tuple[str, int]:
+        if self._peer is None:
+            raise OSError("not connected")
+        return self._peer
+
+
+def test_a_connection_with_no_readable_host_fails_closed():
     """An unreadable destination is not local."""
-
-    class _Odd(http.client.HTTPConnection):
-        pass
-
-    conn = _Odd("example.com")
+    conn = http.client.HTTPConnection("example.com")
+    conn.sock = _FakeSock()  # type: ignore[assignment]
     conn.host = None  # type: ignore[assignment]
     assert ap._connection_destination(conn) == ap._CONNECTION_TARGET
     conn.host = b"localhost"  # type: ignore[assignment]
     assert ap._connection_destination(conn) is None
 
 
-def test_a_socks_proxied_socket_is_not_local():
-    """A connection whose socket is a PySocks socket with a proxy set is proxied, whatever host the connection names."""
+def test_a_fresh_connection_is_left_to_the_connect_guard():
+    """No socket yet: the lazy connect inside send meets the connect guard, which refuses a remote target in its own words."""
+    assert ap._connection_destination(http.client.HTTPConnection("example.com")) is None
 
-    class _Sock:
+
+@pytest.mark.parametrize("peer", [("93.184.216.34", 80), ("2606:2800:220:1::", 80, 0, 0), None])
+def test_a_local_name_over_a_non_loopback_or_unreadable_peer_is_not_local(peer):
+    """The name alone is not enough (security read A of R638): urllib3 reports ``localhost.`` as ``localhost``, and
+    ``localhost.localdomain`` may be answered by DNS, so a connection that SAYS localhost but whose socket's peer is a public address, or
+    cannot be read, is not local."""
+    for name in ("localhost", "127.0.0.1", "localhost.localdomain"):
+        conn = http.client.HTTPConnection(name)
+        conn.sock = _FakeSock(peer=peer)  # type: ignore[assignment]
+        assert ap._connection_destination(conn) == ap._CONNECTION_TARGET
+
+
+def test_urllib3_trailing_dot_localhost_over_a_public_peer_is_refused(recorder, monkeypatch):
+    """Security read A's repro: urllib3's ``HTTPConnection("localhost.")`` reports ``host == "localhost"``. With its socket's peer made
+    to read as public, a request after the Stop is refused and the listener sees nothing."""
+    import urllib3
+
+    conn = urllib3.connection.HTTPConnection("localhost.", 80, timeout=2)
+    assert conn.host == "localhost"
+    conn.sock = recorder.connected_socket()
+    monkeypatch.setattr(ap, "_is_loopback_peer", lambda peer: False)
+    activate_kill_switch()
+    with pytest.raises(AirplaneModeError):
+        conn.request("GET", "/after-stop")
+    clear_kill_switch()
+    conn.close()
+    recorder.close()
+    assert bytes(recorder.received) == b""
+
+
+def test_a_socks_proxied_connection_is_not_local():
+    """A PySocks socket with a proxy set is proxied, whatever host the connection names; so is a urllib3 SOCKS connection, read from the
+    CONNECTION, because over HTTPS its socket is an ``ssl.SSLSocket`` that no longer carries ``proxy`` (both security reads of R638)."""
+    conn = http.client.HTTPConnection("localhost")
+    conn.sock = _FakeSock(proxy=(2, "127.0.0.1", 9050, True, None, None))  # type: ignore[assignment]
+    assert ap._connection_destination(conn) == ap._PROXIED_TARGET
+    conn.sock = _FakeSock(proxy=(None, None, None, True, None, None))  # type: ignore[assignment]  # PySocks' "no proxy set"
+    assert ap._connection_destination(conn) is None
+
+    tls_over_socks = http.client.HTTPConnection("localhost")
+    tls_over_socks.sock = _FakeSock()  # type: ignore[assignment]  # the SSLSocket: no ``proxy`` attribute
+    tls_over_socks._socks_options = {"socks_version": 2, "proxy_host": "127.0.0.1", "proxy_port": 9050}  # type: ignore[attr-defined]
+    assert ap._connection_destination(tls_over_socks) == ap._PROXIED_TARGET
+
+
+def test_an_ssl_socket_drops_the_pysocks_attribute():
+    """The premise of the connection-level SOCKS check: wrapping a socket in TLS builds a new object and the ``proxy`` attribute is gone."""
+    import ssl
+
+    class _Proxied(socket.socket):
         proxy = (2, "127.0.0.1", 9050, True, None, None)
 
-    conn = http.client.HTTPConnection("localhost")
-    conn.sock = _Sock()  # type: ignore[assignment]
-    assert ap._connection_destination(conn) == ap._PROXIED_TARGET
-    _Sock.proxy = (None, None, None, True, None, None)  # PySocks' "no proxy set"
-    assert ap._connection_destination(conn) is None
+    raw = _Proxied()
+    try:
+        wrapped = ssl.create_default_context().wrap_socket(raw, server_hostname="localhost", do_handshake_on_connect=False)
+        try:
+            assert not hasattr(wrapped, "proxy")
+        finally:
+            wrapped.close()
+    finally:
+        raw.close()
+
+
+def test_urllib3_http2_is_not_injected():
+    """urllib3's HTTP/2 connection overrides ``putrequest`` without calling ``super()`` and writes frames to the socket itself, so it would
+    bypass this patch point (security read A of R638). It is opt-in (``urllib3.http2.inject_into_urllib3``); nothing here turns it on."""
+    import urllib3.connection
+    import urllib3.connectionpool
+
+    import src.ingest  # noqa: F401 - the fetch path is loaded
+    import src.safety.fetcher  # noqa: F401
+
+    for pool in (urllib3.connectionpool.HTTPConnectionPool, urllib3.connectionpool.HTTPSConnectionPool):
+        assert pool.ConnectionCls.putrequest is urllib3.connection.HTTPConnection.putrequest
 
 
 def test_the_check_is_transparent_while_online(recorder):
@@ -379,3 +459,18 @@ def test_closing_a_session_that_raises_does_not_stop_the_stop(monkeypatch):
         assert ingest._close_fetcher_pools() == 1
     finally:
         clear_kill_switch()
+
+
+def test_stop_closes_the_pooled_connections_of_guarded_sessions(server):
+    """The wiki, ORES, stats and Wikidata sessions (``GuardedSession``) are closed on a Stop too (security read B of R638)."""
+    from src.safety.fetcher import GuardedSession
+
+    session = GuardedSession()
+    session.trust_env = False
+    assert session in ingest._FETCHER_SESSIONS
+    assert session.get(f"http://127.0.0.1:{server}/first", timeout=5).status_code == 200
+    adapter = session.get_adapter("http://127.0.0.1/")
+    assert len(adapter.poolmanager.pools) == 1
+    activate_kill_switch()
+    assert len(adapter.poolmanager.pools) == 0
+    clear_kill_switch()

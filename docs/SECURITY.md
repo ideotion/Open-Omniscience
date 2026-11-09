@@ -355,11 +355,14 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   before the Stop**: such a connection met the connect guard while it was still transparent, and a
   pooled `requests` session went on fetching from the same host after airplane mode was engaged,
   because an origin-form request on an open connection resolves, connects and tunnels nothing. While
-  airplane mode is on, a request is now refused, in fixed words, before a byte is written, when the
-  connection's own destination is not local: its host, and any connection that tunnels through a
-  proxy or rides a SOCKS socket with a proxy set, whatever name it carries. The switch is read where
+  airplane mode is on, a request on an open connection is now refused, in fixed words, before a byte
+  is written, unless its socket's peer is a loopback address AND its host is a loopback name or
+  literal (the name alone is not trusted: `localhost.` or `localhost.localdomain` can be answered by
+  DNS); any connection that tunnels through a proxy or rides SOCKS (read from the urllib3 connection
+  too, because under TLS the socket no longer says so) is refused whatever name it carries. The switch is read where
   the request is written, so a Stop that lands after a caller's own check is met too. A Stop also
-  closes the pooled connections of every `EthicalFetcher` session, so none is left idle. A request
+  closes the pooled connections of every `EthicalFetcher` session and every `GuardedSession`, so none is
+  left idle. A request
   whose first line was already accepted when the Stop landed finishes, as the Stop has always meant.
   **Residual, checked against the 16 socket-capable libraries the socket-importer ratchet
   (`tests/test_network_consent.py`) tracks:** this point sees only what is written through
@@ -367,7 +370,8 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   which submits through it) and `src/tui/panel.py` sit on it. The ones that do not: `imaplib`/`poplib`
   in `src/ingest/email.py`, where a mailbox pull that had already connected when the Stop landed
   finishes its pull (at most its message limit) because its loop does not read the switch again; httpx
-  in the loopback-only LLM clients; a bare `socket` port probe (`src/llm/vllm_lifecycle.py`, connect
+  in the loopback-only LLM clients; urllib3's opt-in HTTP/2 connection, which writes frames itself and
+  is never turned on here (a test pins that); a bare `socket` port probe (`src/llm/vllm_lifecycle.py`, connect
   only, which the connect guard sees); and native code that opens its own sockets outside Python,
   which no Python-level guard has ever seen. **Why the raw socket `send` is not
   patched instead (option (b), declined):** it would run on every write in the process, the app's
