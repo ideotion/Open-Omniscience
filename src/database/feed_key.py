@@ -159,7 +159,8 @@ def shown_feed_key(stored_key: str | None) -> str | None:
     which can open with a scheme and ``//``. So the authority starts after a ``//`` that opens the text or follows a scheme, at the
     start otherwise, and ends at the first ``/``, ``?`` or ``#``; the userinfo is everything before the LAST ``@`` in it. An ``@`` in
     a path or a query stays (today's key of ``https://news.example/@me/rss`` is ``f:news.example/@me/rss``). A key cut at
-    :data:`FEED_KEY_MAX` inside its authority could have lost its ``@`` to the cut, so such an authority is withheld whole. Not
+    :data:`FEED_KEY_MAX` inside its authority could have lost its last ``@`` to the cut, so such an authority is withheld whole, whatever
+    ``@`` is left in it (one left can be inside the password: the re-read of the fold). Not
     masked, stated: a "credential" holding a raw ``/``, ``?`` or ``#``, which every parser ends the authority at. NEVER raises."""
     if not stored_key or not isinstance(stored_key, str) or not stored_key.startswith(FEED_PREFIX):
         return stored_key
@@ -175,9 +176,11 @@ def shown_feed_key(stored_key: str | None) -> str | None:
         found = body.find(stop, start)
         if 0 <= found < end:
             end = found
+    if end == len(body) and len(stored_key) >= FEED_KEY_MAX:
+        # Cut inside its authority: the LAST @ may have gone with the cut, so an @ left in it can be one inside the password (the
+        # re-read of the fold). Withheld whole, before any @ is looked for.
+        return FEED_PREFIX + body[:start] + KEY_USERINFO_MASK.rstrip("@")
     at = body.rfind("@", start, end)
     if at >= 0:
         return FEED_PREFIX + body[:start] + KEY_USERINFO_MASK + body[at + 1 :]
-    if end == len(body) and len(stored_key) >= FEED_KEY_MAX:
-        return FEED_PREFIX + body[:start] + KEY_USERINFO_MASK.rstrip("@")
     return stored_key

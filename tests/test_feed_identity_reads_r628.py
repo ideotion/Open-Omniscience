@@ -774,6 +774,9 @@ def test_the_zip_writes_every_other_source_column_as_stored(db):
         (f"f:alice:{_PASSWORD}@{_DOMAIN}://x", f"f:***@{_DOMAIN}://x"),  # a "scheme" holding an @ is the authority
         (f"f:{_DOMAIN}//x", f"f:{_DOMAIN}//x"),
         (("f:alice:" + "x" * 600)[:500], "f:***"),  # cut at FEED_KEY_MAX inside its authority, its @ lost: withheld whole
+        (("f:alice:hun@ter2" + "z" * 600)[:500], "f:***"),  # cut inside it with an @ in the password left: still withheld whole
+        (("f:https://alice:hun@ter2" + "z" * 600)[:500], "f:https://***"),  # the same, an unreadable URL's text, scheme first
+        (("f:alice:hun@ter2@" + _DOMAIN + "x" * 600)[:500], "f:***"),  # every @ kept but the authority cut: withheld whole
         (("f:" + _DOMAIN + "/" + "x" * 600)[:500], ("f:" + _DOMAIN + "/" + "x" * 600)[:500]),  # cut in its path: as stored
         ("", ""),
         (None, None),
