@@ -2,15 +2,15 @@
 
 uvicorn[standard] installs uvloop and uvicorn's default ``loop="auto"`` picks it. uvloop resolves and connects in libuv's C code, past
 every ``socket`` call the airplane guard patches (src/ingest/airplane.py), so an async client on the server's loop reached a
-non-loopback listener with airplane mode engaged (security read B of R639). ``_serve`` therefore pins ``loop="asyncio"``. A server started
-another way (``python -m uvicorn src.api.main:app`` without ``--loop asyncio``) still runs on uvloop; it is not refused, but it logs an
-error at boot.
+non-loopback listener with airplane mode engaged (security read B of R639). ``_serve`` therefore pins ``loop="asyncio"``, and a server started
+another way on any other loop (``python -m uvicorn src.api.main:app`` without ``--loop asyncio`` picks uvloop) refuses to start.
 """
 
 from __future__ import annotations
 
 import ast
 import asyncio
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -121,7 +121,7 @@ def _loop_from_config(loop_setting: str) -> asyncio.AbstractEventLoop:
 def test_the_configured_loop_is_not_uvloop():
     loop = _loop_from_config(main_mod.SERVER_EVENT_LOOP)
     try:
-        assert not main_mod._event_loop_is_uvloop(loop), type(loop)
+        assert main_mod._event_loop_is_stdlib(loop), type(loop)
     finally:
         loop.close()
         asyncio.set_event_loop_policy(None)
@@ -132,7 +132,7 @@ def test_auto_would_have_picked_uvloop():
     pytest.importorskip("uvloop")
     loop = _loop_from_config("auto")
     try:
-        assert main_mod._event_loop_is_uvloop(loop), type(loop)
+        assert not main_mod._event_loop_is_stdlib(loop), type(loop)
     finally:
         loop.close()
         asyncio.set_event_loop_policy(None)
@@ -167,3 +167,61 @@ def test_on_the_configured_loop_an_async_connect_meets_the_airplane_guard(host):
         if was_installed:
             ap._install_patches()
         ap._airplane_armed = was_armed
+
+
+def _run_lifespan_on(loop: asyncio.AbstractEventLoop) -> None:
+    async def enter() -> None:
+        async with main_mod.lifespan(main_mod.app):
+            pass
+
+    loop.run_until_complete(enter())
+
+
+def test_lifespan_refuses_to_start_on_uvloop(caplog):
+    """A start that ends up on uvloop (a bare ``python -m uvicorn``) fails closed before the lifespan does anything else."""
+    pytest.importorskip("uvloop")
+    loop = _loop_from_config("auto")
+    try:
+        assert not main_mod._event_loop_is_stdlib(loop)
+        with caplog.at_level("ERROR"), pytest.raises(RuntimeError) as refused:
+            _run_lifespan_on(loop)
+    finally:
+        loop.close()
+        asyncio.set_event_loop_policy(None)
+    assert str(refused.value) == main_mod.SERVER_EVENT_LOOP_REFUSAL
+    assert (
+        "--loop asyncio" in main_mod.SERVER_EVENT_LOOP_REFUSAL
+        and "launcher" in main_mod.SERVER_EVENT_LOOP_REFUSAL
+    )
+    assert main_mod.SERVER_EVENT_LOOP_REFUSAL in caplog.text
+
+
+def test_any_non_stdlib_loop_is_refused():
+    """The rule is an allowlist (the stdlib's loops), not a uvloop denylist: a loop class from anywhere else is refused too."""
+
+    class ForeignLoop(asyncio.SelectorEventLoop):
+        pass
+
+    ForeignLoop.__module__ = "someloop.impl"
+    loop = ForeignLoop()
+    try:
+        with pytest.raises(RuntimeError, match="refuses to start on this event loop"):
+            _run_lifespan_on(loop)
+    finally:
+        loop.close()
+
+
+def test_the_refusal_check_runs_before_any_startup_work():
+    """Nothing of the lifespan's own work happens on a refused loop: the check is its first statement."""
+    import inspect
+
+    body = inspect.getsource(main_mod.lifespan)
+    tree = ast.parse(textwrap.dedent(body))
+    fn = tree.body[0]
+    stmts = [
+        s for s in fn.body if not (isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant))
+    ]  # type: ignore[attr-defined]
+    assert isinstance(stmts[0], ast.Import) and isinstance(stmts[1], ast.If), (
+        "the loop check must open the lifespan"
+    )
+    assert "_event_loop_is_stdlib" in ast.unparse(stmts[1].test)

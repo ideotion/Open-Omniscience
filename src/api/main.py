@@ -565,18 +565,14 @@ async def lifespan(app: FastAPI):
     LOCKED: only the unlock flow is served; the deferred startup runs the
     moment the operator supplies THE passphrase. A plaintext store boots
     exactly as before — never a lock screen over a plaintext file."""
-    # A server started some other way than _serve (``python -m uvicorn src.api.main:app`` defaults to uvloop) runs on a loop whose
-    # network calls bypass the airplane guard (R642): said loudly at boot, since the loop cannot be changed from inside it.
-    try:
-        import asyncio as _asyncio
+    # Fail closed on any loop but the stdlib's (R642): a server started some other way than _serve (``python -m uvicorn
+    # src.api.main:app`` defaults to uvloop) would run on a loop whose resolves and connects bypass the airplane socket guard, and the
+    # loop cannot be changed from inside it -- so the app refuses to start, before anything else here runs.
+    import asyncio as _asyncio
 
-        if _event_loop_is_uvloop(_asyncio.get_running_loop()):
-            logger.error(
-                "the server is running on uvloop: an async network call on its event loop would bypass airplane mode's socket guard. "
-                "Start the app with its own launcher, or pass --loop asyncio to uvicorn."
-            )
-    except Exception as exc:  # noqa: BLE001 - a check that cannot run never blocks startup
-        log_failure(logger, "could not read the server's event loop", exc, level=logging.DEBUG)
+    if not _event_loop_is_stdlib(_asyncio.get_running_loop()):
+        logger.error(SERVER_EVENT_LOOP_REFUSAL)
+        raise RuntimeError(SERVER_EVENT_LOOP_REFUSAL)
     # The same guard ``_serve`` sets first, for a server that was not started by it (``python -m uvicorn src.api.main:app``, which
     # the encrypted click-through uses): before the boot record below names the mechanism, and before any request can bring a
     # typed passphrase into this process. ``connect`` guards every place it hands a key to the engine as well.
@@ -3727,9 +3723,17 @@ def _run_ephemeral(argv: list[str]) -> None:
 SERVER_EVENT_LOOP = "asyncio"
 
 
-def _event_loop_is_uvloop(loop: object) -> bool:
-    """True when ``loop`` is uvloop's (R642): its resolves and connects bypass the airplane socket guard."""
-    return type(loop).__module__.split(".", 1)[0] == "uvloop"
+#: The fixed words of the refusal (R642): names no loop class, path or setting beyond the two ways to start correctly.
+SERVER_EVENT_LOOP_REFUSAL = (
+    "Open Omniscience refuses to start on this event loop: airplane mode's network guard covers only Python's own asyncio loop. "
+    "Start the app with its own launcher, or pass --loop asyncio to uvicorn."
+)
+
+
+def _event_loop_is_stdlib(loop: object) -> bool:
+    """True only for the stdlib's own asyncio loops (R642): selector or proactor, defined in ``asyncio``. uvloop, or any other loop,
+    is not -- its resolves and connects may bypass the airplane socket guard."""
+    return type(loop).__module__.split(".", 1)[0] == "asyncio"
 
 
 def _serve() -> None:
