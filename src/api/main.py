@@ -1267,9 +1267,9 @@ class _ServingGate:
         self.inner = inner
 
     async def __call__(self, scope, receive, send):  # type: ignore[no-untyped-def]
-        global _serving_gate_logged
+        global _serving_gate_logged, _serving_check_failure_logged
         kind = scope.get("type")
-        if kind != "lifespan" and not _serving_preconditions_hold():
+        if kind != "lifespan" and not _serving_gate_open():
             if not _serving_gate_logged:  # once per closing: a closed gate refuses every request, and the log says so once, not per request
                 _serving_gate_logged = True
                 logger.error(SERVING_GATE_REFUSAL)
@@ -1282,6 +1282,7 @@ class _ServingGate:
             return  # any other scope type reaches nothing
         if _serving_gate_logged and kind != "lifespan":
             _serving_gate_logged = False  # open again: a later closing logs its own line (security read B on #1901)
+            _serving_check_failure_logged = False  # and a later failing check its own class (security read A on R653)
         await self.inner(scope, receive, send)
 
 
@@ -1373,6 +1374,10 @@ async def settings_write_refused_handler(request: Request, refused: KvWriteRefus
     return JSONResponse(status_code=503, content={"detail": http_detail(refused)}, headers=headers)
 
 
+#: The longest ``detail`` the catch-all 500 answers with (R653), the job status's own limit (``src/jobs/background.py``).
+UNHANDLED_DETAIL_LIMIT = 300
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     """Never return a bare plain-text 500. The SPA calls res.json() on EVERY
@@ -1411,6 +1416,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     except Exception:  # noqa: BLE001 - the scrub could not run: the class of the failure is all that is written
         logger.error("unhandled error (%s): its text is withheld, the scrub could not run", type(exc).__name__)
         detail = "internal error (its text is withheld: the scrub could not run)"
+    if len(detail) > UNHANDLED_DETAIL_LIMIT:
+        # R653: cut AFTER the scrub (a passphrase is taken out whole first), so no exception text, a mail server's megabyte-long
+        # greeting line included, makes an unbounded response; the job path's own errors are cut at the same length.
+        detail = detail[: UNHANDLED_DETAIL_LIMIT - 1] + "…"
     try:
         from src.monitoring.request_label import safe_method, safe_route
 
@@ -3829,6 +3838,22 @@ SERVING_GATE_REFUSAL = (
     "Open Omniscience is not serving requests: airplane mode's network guard is not in place, because the app was started without "
     "its own startup or the guard could not be installed (the log says which). Start the app with its own launcher."
 )
+
+
+def _serving_gate_open() -> bool:
+    """R653: :func:`_serving_preconditions_hold`, with a check that raises read as a closed gate: the fixed 503 and no exception
+    text, never the catch-all 500 quoting it. The class alone is logged."""
+    try:
+        return _serving_preconditions_hold()
+    except Exception as exc:  # noqa: BLE001 - any failure to establish the facts is a closed gate
+        global _serving_check_failure_logged
+        if not _serving_check_failure_logged:  # once, as the gate's own refusal line
+            _serving_check_failure_logged = True
+            logger.error("the serving gate's check failed (%s): the gate stays closed", type(exc).__name__)
+        return False
+
+
+_serving_check_failure_logged = False
 
 
 def _serving_preconditions_hold() -> bool:
