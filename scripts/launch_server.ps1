@@ -44,26 +44,35 @@ function Add-Row([string]$Path, $Row) {
         return $true
     } catch { return $false }
 }
+# A row that cannot be appended at once (the file held open by a scanner or another program for a moment) is tried again, five tries over 0.5 s, before
+# it is given up (item 66). It helps a refusal at open, before any byte is written; an append cut short part way (a full disk) still leaves a torn line.
 function Add-RowText([string]$Path, [string]$Text) {
-    try {
-        [System.IO.File]::AppendAllText($Path, $Text, $Utf8)
-        return $true
-    } catch { return $false }
+    for ($try = 1; $try -le 5; $try++) {
+        try {
+            [System.IO.File]::AppendAllText($Path, $Text, $Utf8)
+            return $true
+        } catch { if ($try -lt 5) { Start-Sleep -Milliseconds (50 * $try) } }
+    }
+    return $false
 }
 
 # THE EVIDENCE FILES AND THE LAUNCHERS THAT SHARE THEM (R173). Every append and every trim of one file happens under ONE named mutex for that file
 # (the scripts/launch.sh counterpart), and a trim writes a temp file of its own and replaces the file with it. Before, the trim read the whole file
 # and wrote it back in place: a row appended in between was lost, an append during the rewrite failed on the file lock and was swallowed, and a
 # half-written line was left in the file (measured with 8 launchers at once: 4 of 48 exit rows lost, 2 torn lines).
-# NO ROW IS EVER WRITTEN WITHOUT THE MUTEX (R174). The launcher waits for it only $RecLockWaitMs, so it never blocks its own start or stop; when that runs
-# out it hands the row to a detached child process and carries on at once. The child waits for the same mutex with no time bound, then does the locked
+# A ROW IS WRITTEN UNDER THE MUTEX (R174) whenever the mutex can be made and waited on; where it cannot, the row is appended without it rather than lost
+# (item 66), and only such a row can still be lost, to another launcher's trim. The launcher waits for it only $RecLockWaitMs; when that runs
+# out it hands the row to a detached child process and carries on at once. ONLY WHEN NO CHILD CAN BE STARTED does the launcher wait itself (item 66):
+# with no bound for the rows it writes after the server ended, and $RecFallbackWaitMs for a stderr row while the server runs, since a launcher blocked
+# there stops draining the server's stderr; after that bound the row is appended without the mutex. The child waits for the same mutex with no time bound, then does the locked
 # append and the trim if due; a holder that dies abandons the mutex, so the child ends once the holder does. THE ONE WAY A ROW CAN STILL BE LATE: a holder
 # that is alive and stuck for ever; the child waits with it. Late is not lost while the machine runs; a machine that goes down before the child writes
-# loses the row. A deferred row can land after later rows: the readers order by the row's own time. The child leaves no file behind (the row travels in its
-# command line). WHAT THE WAIT PROTECTS: the time the launcher itself is willing to wait before it defers. $RecLockWaitMs is the longest append-plus-trim hold
+# loses the row. A deferred row can land after later rows: the readers order by the row's own time. The child leaves no file behind (the row travels through its
+# standard input). WHAT THE WAIT PROTECTS: the time the launcher itself is willing to wait before it defers. $RecLockWaitMs is the longest append-plus-trim hold
 # measured under the heaviest load tried (8 launchers at once beside 8 busy loops on 4 CPUs: 515.0 ms, cold PowerShell 7, 17 Oct), rounded up to 520
 # (tests/test_launcher_records_race.py pins that the constant is not below that measurement).
 $RecLockWaitMs = 520
+$RecFallbackWaitMs = 10000
 function Get-RecMutex([string]$Path) {
     try {
         $sha = [System.Security.Cryptography.SHA1]::Create()
@@ -72,14 +81,21 @@ function Get-RecMutex([string]$Path) {
     } catch { return $null }
 }
 # Append $Row to $Path and, when the file then has more than $Max lines, keep its newest $Keep lines. Returns whether the row was appended or handed on.
-function Add-RowTrimmed([string]$Path, $Row, [int]$Max, [int]$Keep) {
+# $FallbackWaitMs: how long this launcher waits itself when no deferred child can be started (-1: no bound).
+function Add-RowTrimmed([string]$Path, $Row, [int]$Max, [int]$Keep, [int]$FallbackWaitMs = -1) {
     $text = ($Row | ConvertTo-Json -Compress) + "`n"
     $mutex = Get-RecMutex $Path
     if (-not $mutex) { return (Add-RowText $Path $text) }   # no mutex can be made at all: as before
     $held = $false
     try {
         try { $held = $mutex.WaitOne($RecLockWaitMs) } catch [System.Threading.AbandonedMutexException] { $held = $true } catch { return (Add-RowText $Path $text) }
-        if (-not $held) { return (Start-DeferredRow $Path $text $Max $Keep) }
+        if (-not $held) {
+            if (Start-DeferredRow $Path $text $Max $Keep) { return $true }
+            # no child could be started or handed the row (item 66: that row was dropped): this launcher waits for the mutex itself, so the row is late
+            # and the launcher ends late, never the row lost; past a bounded wait the row is appended without the mutex
+            try { $held = $mutex.WaitOne($FallbackWaitMs) } catch [System.Threading.AbandonedMutexException] { $held = $true } catch { return (Add-RowText $Path $text) }
+            if (-not $held) { return (Add-RowText $Path $text) }
+        }
         $ok = Add-RowText $Path $text
         if ($ok -and $Max -gt 0) { Limit-Rows $Path $Max $Keep }
         return $ok
@@ -91,18 +107,23 @@ function Add-RowTrimmed([string]$Path, $Row, [int]$Max, [int]$Keep) {
 # The row of a launcher that could not get the mutex in time: a detached child process waits for it with no bound, then appends and trims. THE ROW IS NOT
 # IN THE CHILD'S COMMAND LINE (R174): a command line is visible to every local user in a process listing, and under script block logging the decoded command
 # reaches the event log, and a stderr row carries whatever the server printed. The child's command line is one fixed script; the path, the limits and the row
-# go to it through its standard input. Returns $true when the child was started and given the row, $false when not (the row is then not written: it is never
-# written without the mutex).
+# go to it through its standard input. Returns $true when the child was started and given the row, $false when not (the caller then waits for the mutex
+# itself, item 66). THE CHILD DROPS NOTHING SILENTLY (item 66): a mutex it cannot make or wait on gets the row appended without it, exactly as the launcher
+# does in that case; a row it still cannot write, or an input cut short, is said on its standard error in fixed words that carry none of the row.
 function Start-DeferredRow([string]$Path, [string]$Text, [int]$Max, [int]$Keep) {
     try {
         $fns = (@("Add-RowText", "Get-RecMutex", "Limit-Rows") | ForEach-Object { "function $_ {" + (Get-Command $_ -CommandType Function).ScriptBlock.ToString() + "}" }) -join "`n"
         $child = "`$Utf8 = New-Object System.Text.UTF8Encoding(`$false)`n" + $fns + "`n" +
             "`$ms = New-Object System.IO.MemoryStream; [Console]::OpenStandardInput().CopyTo(`$ms)`n" +
             "`$in = `$Utf8.GetString(`$ms.ToArray()); `$parts = `$in.Split([char]10, 4)`n" +
+            "if (`$parts.Length -lt 4 -or `$parts[3].Length -eq 0 -or `$parts[3][-1] -ne [char]10) { [Console]::Error.WriteLine('launcher record: a deferred row arrived cut short and was not written'); exit 1 }`n" +
             "`$path = `$parts[0]; `$max = [int]`$parts[1]; `$keep = [int]`$parts[2]; `$text = `$parts[3]`n" +
-            "`$m = Get-RecMutex `$path`n" +
-            "if (`$m) { `$held = `$false; try { `$m.WaitOne() | Out-Null; `$held = `$true } catch [System.Threading.AbandonedMutexException] { `$held = `$true } catch { }`n" +
-            "  if (`$held) { try { [void](Add-RowText `$path `$text); if (`$max -gt 0) { Limit-Rows `$path `$max `$keep } } finally { try { `$m.ReleaseMutex() } catch { } } } }"
+            "`$m = Get-RecMutex `$path; `$held = `$false`n" +
+            "if (`$m) { try { `$m.WaitOne() | Out-Null; `$held = `$true } catch [System.Threading.AbandonedMutexException] { `$held = `$true } catch { } }`n" +
+            "try { `$ok = Add-RowText `$path `$text`n" +
+            "  if (`$ok -and `$held -and `$max -gt 0) { Limit-Rows `$path `$max `$keep }`n" +
+            "  if (-not `$ok) { [Console]::Error.WriteLine('launcher record: a deferred row could not be appended'); exit 1 }`n" +
+            "} finally { if (`$held) { try { `$m.ReleaseMutex() } catch { } } }"
         $enc = [System.Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($child))
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = (Get-Process -Id $PID).Path
@@ -114,9 +135,9 @@ function Start-DeferredRow([string]$Path, [string]$Text, [int]$Max, [int]$Keep) 
         $bytes = $Utf8.GetBytes("$Path`n$Max`n$Keep`n$Text")
         $cp.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
         $cp.StandardInput.BaseStream.Flush()
-        $cp.StandardInput.Close()
-        return $true
-    } catch { return $false }
+    } catch { return $false }   # a row cut short is refused by the child (above), so the caller writing it cannot write it twice
+    try { $cp.StandardInput.Close() } catch { }   # the whole row is in the pipe: the child has it, whatever Close says
+    return $true
 }
 function Limit-Rows([string]$Path, [int]$Max, [int]$Keep) {
     $tmp = "$Path.tmp.$PID"
@@ -191,7 +212,7 @@ while ($true) {
         if ($kept -lt $Keep) {
             if ($writable) {
                 # each row makes its own attempt: one that fails (another launcher held the file) does not switch the later rows off (R173)
-                [void](Add-RowTrimmed $stderrRecord ([ordered]@{ schema = "oo-launcher-stderr-1"; at = (Get-Stamp); pid = $p.Id; boot_id = $null; line = $line }) 0 0)
+                [void](Add-RowTrimmed $stderrRecord ([ordered]@{ schema = "oo-launcher-stderr-1"; at = (Get-Stamp); pid = $p.Id; boot_id = $null; line = $line }) 0 0 $RecFallbackWaitMs)
             }
             $kept++
         } else { $over++ }
