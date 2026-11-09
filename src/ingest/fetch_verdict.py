@@ -93,12 +93,15 @@ NETWORK_REFUSED = "network refused: airplane mode is engaged"
 #      from its first word with no gap, and its URL token is whole for the reason 2. gives.
 # READ BY TYPE FIRST (R620, after Steward 3's note: "classified by type and never by words"). The one writer of "request error for" is
 # ``EthicalFetcher._fetch_locked`` (src/ingest/__init__.py), and before it writes that sentence it walks the live requests exception for an
-# ``AirplaneModeError`` INSTANCE (``_carries_airplane_refusal``: ``__cause__``, ``__context__``, the exceptions in ``args``, urllib3's
-# ``MaxRetryError.reason``; bounded, never through text). When it finds one it raises ``KILL_SWITCH_REFUSAL``, read by 1., at once: no retry
-# and no host's text. That covers 2. and 4. as they happen, and one shape no alternative here reads: a plain ``http://`` request line
-# refused at a loopback proxy by R619's ``putrequest`` guard (PR #1855), which urllib3 writes as "(Caused by ProxyError('Unable to connect
-# to proxy', AirplaneModeError(...)))" inside its pool sentence, with no NewConnectionError and no "Connection aborted.". That shape is
-# read by type ONLY (measured at #1855's head; tests/test_refusal_by_type_r620.py). A host cannot produce the type: the class has one
+# ``AirplaneModeError`` INSTANCE (``_carries_airplane_refusal``: ``__cause__``, the exceptions in ``args``, urllib3's ``MaxRetryError.reason``;
+# bounded, never through text). NOT ``__context__``: Python sets it on the first exception the request raises to whatever the caller's thread
+# is handling at that moment, so a fetch made inside an ``except`` that holds a refusal (a fallback fetch after a Stopped one) would read its
+# own host's failure as the switch's (the independent read's S1); every real shape is reached without it. When it finds one it raises
+# ``KILL_SWITCH_REFUSAL``, read by 1., at once: no retry and no host's text. That covers 2. and 4. as they happen, and one shape no
+# alternative here reads: a plain ``http://`` request line refused at a loopback proxy by R619's ``putrequest`` guard (PR #1855), which
+# urllib3 writes as "(Caused by ProxyError('Unable to connect to proxy', AirplaneModeError(...)))" inside its pool sentence, with no
+# NewConnectionError and no "Connection aborted.". That shape is read by type ONLY (measured at #1855's head;
+# tests/test_refusal_by_type_r620.py). A host cannot produce the type: the class has one
 # constructor, ``airplane._guard``, which raises only while the switch is engaged (the airplane half armed, the host not local, no egress
 # window open), before any byte reaches the destination, and a host's bytes become the libraries' own classes. Which shape is read how:
 #   - by TYPE, in the fetcher: the socket guard's refusal anywhere inside a requests error, whether direct (R616), at a loopback proxy's
@@ -109,6 +112,9 @@ NETWORK_REFUSED = "network refused: airplane mode is engaged"
 #     one writer, and no stored record needs them, since every caller classifies the text of a live exception and none re-reads a stored
 #     one. They stay for two reasons: R616 and R620(a) rule them, and if the bounded walk ever missed a link, the text would still carry
 #     the real instance's repr, which a host cannot write (the argument under 4.).
+#   The preflights (``src/monitoring/preflight.py``, ``feed_preflight.py``) call ``_guarded_redirect_get`` directly and so get no typed
+#   read: the safe direction (at worst a refusal reads there as the host's failure, never a host's failure as the switch's), and they
+#   read ``kill_switch_active()`` beside 1.
 # No ``re.DOTALL`` (R620): no ``.`` in the pattern stands outside a class or an escape, so the flag changed nothing, and a ``.`` added
 # later must not span lines because of a flag nobody needed.
 _OFFLINE_RE = re.compile(
@@ -150,7 +156,14 @@ def _userinfo_span(url: str) -> tuple[int, int] | None:
     longer), and it leaves an ``@`` in a path, a query or a fragment where it is. Not masked, stated: a string with no ``//`` authority
     (``mailto:a@b``, a path, a scheme-less ``user@host`` that urllib3 alone would read with one; requests refuses to send a URL with no
     scheme, and the fetcher refuses one before any request), and a "credential" holding a raw ``/``, ``?`` or ``#``, which every parser
-    ends the authority at, so it is not a credential of that URL."""
+    ends the authority at, so it is not a credential of that URL.
+
+    Wider also means it can take more than the userinfo, stated (R620, the independent read's N1): with a backslash in the authority,
+    ``https://u:p@evil.example\\@good.example/x`` is masked to ``https://***@good.example/x``, which removes the host urllib3 reads
+    (``evil.example``, whose authority ends at the backslash). That is the safe choice for the secret: ``urlsplit`` reads ``u:p@evil.example\\``
+    as the userinfo, so a narrower mask would leave a credential in the sentence for one parser or the other. No request is made for such
+    a URL: ``EthicalFetcher._refuse_parser_mismatch`` refuses an authority holding a backslash (as it refuses one the two parsers read as
+    different hosts) before any request, the robots read's included."""
     kept = [i for i, ch in enumerate(url) if ch not in _URLSPLIT_DROPS]
     seen = "".join(url[i] for i in kept)
     lead = 0
@@ -192,6 +205,39 @@ def failure_url(url: str) -> str:
         return _WHITESPACE_RE.sub(lambda m: "".join(f"%{b:02X}" for b in m.group().encode("utf-8", "surrogatepass")), url)
     except Exception:  # noqa: BLE001 - a failure sentence is written from inside a failure; a URL it cannot read is withheld whole
         return UNREADABLE_URL
+
+
+def failure_netloc(netloc: str) -> str:
+    """A bare authority (``user:pw@host:port``, a ``urlparse`` netloc) written as :func:`failure_url` writes a URL: its userinfo masked,
+    its whitespace percent-encoded. It is read as the authority it is (:func:`_userinfo_span` finds one only after a ``//``), and
+    :data:`UNREADABLE_URL` stands in for one that cannot be read. NEVER raises."""
+    try:
+        out = failure_url("//" + netloc)
+        return out[2:] if out.startswith("//") else out
+    except Exception:  # noqa: BLE001 - written from inside a failure; an authority it cannot read is withheld whole
+        return UNREADABLE_URL
+
+
+def userinfo_secrets(url: str) -> tuple[str, ...]:
+    """The credentials ``url`` carries, as the secrets a scrub takes out of an exception's text written AFTER the URL (R620, Steward 3
+    #1): the whole userinfo, then the user and the password apart (split at the first ``:``), each also with the characters
+    ``urllib.parse`` drops taken out, all read from :func:`_userinfo_span`'s span. :func:`failure_url` masks the URL token, but an
+    exception's text is not that token: requests writes ``Failed to parse: https://u:pw@...``, so the sentence hands these to
+    ``record_text`` or ``log_failure`` beside the exception. A part under the scrub's floor (``MIN_SECRET_CHARS``, four characters) is
+    not taken out of free text; a text that holds one is WITHHELD whole instead (``secret_scrub``'s rule, not this one's). Empty when the
+    URL has no userinfo or cannot be read. NEVER raises."""
+    try:
+        span = _userinfo_span(url)
+        if span is None:
+            return ()
+        raw = url[span[0] : span[1] - 1]
+        out: list[str] = []
+        for userinfo in (raw, "".join(ch for ch in raw if ch not in _URLSPLIT_DROPS)):
+            user, _, password = userinfo.partition(":")
+            out += (userinfo, user, password)
+        return tuple(dict.fromkeys(part for part in out if part))
+    except Exception:  # noqa: BLE001 - written from inside a failure; no secret is better than a raise that replaces it
+        return ()
 
 
 def is_kill_switch_refusal(text: str | None) -> bool:

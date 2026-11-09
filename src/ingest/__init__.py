@@ -42,7 +42,13 @@ import requests
 
 # Importing urllib3_log puts the request-path filter on urllib3's loggers (R142).
 from src.ingest import urllib3_log as _urllib3_log  # noqa: F401
-from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL, KILL_SWITCH_REFUSAL_HEAD, failure_url
+from src.ingest.fetch_verdict import (
+    KILL_SWITCH_REFUSAL,
+    KILL_SWITCH_REFUSAL_HEAD,
+    failure_netloc,
+    failure_url,
+    userinfo_secrets,
+)
 from src.ingest.ssrf_guard import (
     BlockedConnectTarget,
     connect_scope,
@@ -374,7 +380,10 @@ def _persist_robots_entry(
             tmp.write_text(json.dumps(raw), "utf-8")
             tmp.replace(path)
     except Exception as exc:  # noqa: BLE001 - persistence is an optimisation, never required
-        log_failure(_LOG, f"robots cache persistence failed for {host_key}", exc, level=logging.DEBUG)
+        # the key is "<scheme>://<netloc>", userinfo included: masked here, and taken out of the error's words too (R620, Steward 3 #2)
+        log_failure(
+            _LOG, f"robots cache persistence failed for {failure_url(host_key)}", exc, *userinfo_secrets(host_key), level=logging.DEBUG
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -532,7 +541,14 @@ def _persist_host_schedule(path: Path, netloc: str, not_before: float, delay_s: 
             tmp.write_text(json.dumps(raw), "utf-8")
             tmp.replace(path)
     except Exception as exc:  # noqa: BLE001 - persistence is an optimisation, never required
-        log_failure(_LOG, f"host schedule persistence failed for {netloc}", exc, level=logging.DEBUG)
+        # a netloc carries the userinfo: masked here, and taken out of the error's words too (R620, Steward 3 #2)
+        log_failure(
+            _LOG,
+            f"host schedule persistence failed for {failure_netloc(netloc)}",
+            exc,
+            *userinfo_secrets(f"//{netloc}"),
+            level=logging.DEBUG,
+        )
 
 
 def _env_cap(name: str, default: int, *, floor: int) -> int:
@@ -582,8 +598,13 @@ def _carries_airplane_refusal(exc: BaseException) -> bool:
     wrapped it: directly (NewConnectionError's ``__cause__``, R616), at a loopback proxy's CONNECT (ProtocolError's args, R620),
     or as a plain ``http://`` request line to a loopback proxy (urllib3's ProxyError inside MaxRetryError, R619).
 
-    The walk follows ``__cause__``, ``__context__``, the exceptions among ``args`` and urllib3's ``MaxRetryError.reason``. It is
-    bounded by depth, by node count and by a seen set, and it never turns an exception into text. The class is read from
+    The walk follows ``__cause__``, the exceptions among ``args`` and urllib3's ``MaxRetryError.reason``; every real shape is reached
+    through those (SOCKS too: urllib3.contrib.socks raises its NewConnectionError ``from`` the error). It does NOT follow
+    ``__context__`` (the independent read's S1): Python sets that link on the first exception a request raises to whatever the CALLER's
+    thread is handling at that moment, which comes from outside this request. A fetch made inside an ``except`` that holds a refusal
+    somewhere in its chain (a fallback fetch after a Stopped one, a fetch in the handler of a bare guard refusal) would otherwise read
+    its own host's failure, with the switch clear, as the switch's: never retried and reported offline. The walk is bounded by depth,
+    by node count and by a seen set, and it never turns an exception into text. The class is read from
     ``sys.modules`` rather than imported here: if ``airplane`` was never imported, no instance can exist, and a first import from
     inside a failure's handler would capture whatever socket calls stood at that moment. A walk that fails answers False, so the
     failure is written as the request error it looks like (the pre-R620 reading), and the R320 switch read still applies.
@@ -606,7 +627,7 @@ def _carries_airplane_refusal(exc: BaseException) -> bool:
                 return True
             if depth >= _REFUSAL_WALK_DEPTH:
                 continue
-            links: list[object] = [node.__cause__, node.__context__, *node.args]
+            links: list[object] = [node.__cause__, *node.args]  # never __context__: it can be the caller's exception (see above)
             if isinstance(node, MaxRetryError):
                 links.append(node.reason)
             todo.extend((link, depth + 1) for link in links)
@@ -1236,8 +1257,14 @@ class EthicalFetcher:
                         # in the switch's whole sentence: never retried (it is the person's setting, not a host's passing failure,
                         # and the next pass asks again) and carrying no host's text. Every reader reads that sentence as the switch's.
                         raise FetchFailed(KILL_SWITCH_REFUSAL) from None
-                    # the URL through failure_url: a link holding spaces must not continue in the guard's words (R616)
-                    transient = FetchFailed(f"request error for {failure_url(url)}: {record_text(exc, typed=False)}")
+                    # the URL through failure_url: a link holding spaces must not continue in the guard's words (R616). Its userinfo,
+                    # masked there, is taken out of the error's words as well (Steward 3 #1): requests quotes a URL it cannot prepare
+                    # ("Failed to parse: https://u:pw@..."). The secrets are the named URL's; a redirect hop's own userinfo is not among
+                    # them, stated: a hop with no http(s) scheme, no host or an authority urllib3 cannot parse (the URLs requests quotes)
+                    # is refused before it is requested, by the hop check, _guard_target and _refuse_parser_mismatch.
+                    transient = FetchFailed(
+                        f"request error for {failure_url(url)}: {record_text(exc, *userinfo_secrets(url), typed=False)}"
+                    )
                 finally:
                     with self._host_state_guard:
                         self._last_request[parsed.netloc] = self._now()
@@ -1670,7 +1697,13 @@ class EthicalFetcher:
             try:
                 merged.update(requests.utils.get_environ_proxies(url, no_proxy=None))
             except Exception as exc:  # noqa: BLE001 - an unreadable environment is not a fetch error
-                log_failure(_LOG, f"could not read environment proxies for {failure_url(url)!r}", exc, level=logging.DEBUG)
+                log_failure(
+                    _LOG,
+                    f"could not read environment proxies for {failure_url(url)!r}",
+                    exc,
+                    *userinfo_secrets(url),
+                    level=logging.DEBUG,
+                )
         merged.update(explicit or {})
         return {k: v for k, v in merged.items() if k in _SELECTABLE_PROXY_KEYS or "://" in k}
 

@@ -12,6 +12,9 @@ and an unreadable robots.txt), and through a seam where it cannot (the size chec
 the archive backfill's log line, the fetcher's log line about the proxies the environment names). For each one: a ``user:pass@``
 URL comes out masked, an ordinary URL comes out exactly as before, and the readers of the sentence (``classify_fetch_failure``,
 the pipeline's ``_failure_reason``, the markets classifier and the law verdict) read the masked sentence as they read the old one.
+Where an exception's own words follow the URL and quote it (requests writes "Failed to parse: https://u:pw@..."), the URL's userinfo
+is taken out of those words too (``userinfo_secrets``, Steward 3 #1), and the two DEBUG lines about the robots cache and the host
+schedule write their key masked (Steward 3 #2).
 
 The credentials are fake (``alice:hunter2``). Nothing leaves the machine: the server is loopback, and ``files.example`` only ever
 appears in a redirect the fetcher refuses before it connects. Two guards are stood down for the loopback server, and only in
@@ -33,6 +36,7 @@ from typing import Any
 import pytest
 import requests
 
+import src.ingest as ingest
 from src.ingest import (
     EthicalFetcher,
     FetchError,
@@ -44,10 +48,12 @@ from src.ingest import (
 from src.ingest.fetch_verdict import (
     USERINFO_MASK,
     classify_fetch_failure,
+    failure_netloc,
     failure_url,
     is_kill_switch_refusal,
+    userinfo_secrets,
 )
-from src.monitoring.secret_scrub import record_text
+from src.monitoring.secret_scrub import REDACTED, record_text
 
 _CRED = "alice:hunter2@"
 _PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy")
@@ -301,7 +307,7 @@ def test_the_archive_backfill_logs_a_failed_url_masked_inside_its_repr(tmp_path,
             return [url]
 
         def ingest(session, src, u, *, fetcher):
-            raise RuntimeError("store failed")
+            raise RuntimeError(f"store failed for {u}")  # an error that quotes the URL it was handed
 
         advance_backfill(db, fetcher=object(), per_pass=1, state_path=state, ingest_fn=ingest, discover_fn=discover)  # enumerates
         with caplog.at_level(logging.WARNING, logger="src.ingest.archive_backfill"):
@@ -311,13 +317,15 @@ def test_the_archive_backfill_logs_a_failed_url_masked_inside_its_repr(tmp_path,
     assert out["tally"] == {"error": 1}
     lines = [r.getMessage() for r in caplog.records if r.name == "src.ingest.archive_backfill"]
     assert len(lines) == 1 and lines[0].startswith(f"archive backfill: fetching {written!r} failed: "), lines
-    assert "hunter2" not in lines[0]
+    assert "hunter2" not in lines[0] and "alice" not in lines[0]
+    quoted = url.replace("alice:hunter2", REDACTED)
+    assert f"RuntimeError: store failed for {quoted}" in lines[0], lines[0]
 
 
 @pytest.mark.parametrize(("url", "written"), [("https://alice:hunter2@a.example/x", "https://***@a.example/x"), ("https://a.example/x", "https://a.example/x")])
 def test_the_fetchers_log_of_an_unreadable_proxy_environment_is_masked_inside_its_repr(tmp_path, monkeypatch, caplog, url, written):
-    def unreadable(*_a: object, **_k: object) -> dict:
-        raise RuntimeError("environment unreadable")
+    def unreadable(u: str, *_a: object, **_k: object) -> dict:
+        raise RuntimeError(f"environment unreadable for {u}")  # an error that quotes the URL it was handed
 
     monkeypatch.setattr(requests.utils, "get_environ_proxies", unreadable)
     f = EthicalFetcher(min_interval_s=0, robots_cache_path=tmp_path / "robots.json")
@@ -325,7 +333,100 @@ def test_the_fetchers_log_of_an_unreadable_proxy_environment_is_masked_inside_it
         assert f._request_proxy_endpoints(url, None) == {}
     lines = [r.getMessage() for r in caplog.records if r.name == "src.ingest" and "environment proxies" in r.getMessage()]
     assert len(lines) == 1 and lines[0].startswith(f"could not read environment proxies for {written!r}: "), lines
-    assert "hunter2" not in lines[0]
+    assert "hunter2" not in lines[0] and "alice" not in lines[0]
+    assert f"RuntimeError: environment unreadable for {url.replace('alice:hunter2', REDACTED)}" in lines[0], lines[0]
+
+
+class _RobotsOk:
+    status_code, text, headers = 200, "User-agent: *\nAllow: /\n", {"Content-Type": "text/plain"}
+
+    def __init__(self, url: str) -> None:
+        self.url = url
+
+    def close(self) -> None:
+        pass
+
+
+def _unpreparable(tmp_path, url: str) -> tuple[FetchFailed, list[BaseException]]:
+    """The fetcher's failure for a URL requests cannot prepare, and the live requests exceptions behind it."""
+    f = _fetcher(tmp_path)
+    f._refuse_parser_mismatch = lambda *_a, **_k: None  # type: ignore[method-assign]
+    real_get = f.session.get
+    raised: list[BaseException] = []
+
+    def get(target, **kw):
+        if target.endswith("/robots.txt"):
+            return _RobotsOk(target)
+        try:
+            return real_get(target, **kw)
+        except requests.RequestException as exc:
+            raised.append(exc)
+            raise
+
+    f.session.get = get  # type: ignore[method-assign,assignment]
+    with pytest.raises(FetchFailed) as caught:
+        f.fetch(url, require_html=False)
+    return caught.value, raised
+
+
+@pytest.mark.parametrize(
+    ("url", "tail"),
+    [
+        ("https://alice:hunter2@a.example:99999/story", f"Failed to parse: https://{REDACTED}@a.example:99999/story"),
+        ("https://a.example:99999/story", "Failed to parse: https://a.example:99999/story"),
+    ],
+    ids=["credentialed", "ordinary"],
+)
+def test_requests_quoting_a_url_it_cannot_prepare_has_the_userinfo_taken_out(tmp_path, url, tail):
+    """The REAL ``InvalidURL`` requests raises for a port out of range, whose words quote the whole URL it was given. The live fetcher
+    refuses this URL before any request (``_refuse_parser_mismatch``: urllib3 cannot parse it), so that refusal is stubbed here to let
+    requests write its own words, the case the secrets exist for; no connection is attempted (requests fails while preparing)."""
+    caught, raised = _unpreparable(tmp_path, url)
+    assert [type(e) for e in raised] == [requests.exceptions.InvalidURL], f"premise: requests' own InvalidURL: {raised}"
+    assert record_text(caught, typed=False) == f"request error for {failure_url(url)}: {tail}"
+
+
+def test_a_user_under_the_scrubs_floor_withholds_the_errors_words(tmp_path):
+    """A user name of three characters cannot be taken out of free text (``MIN_SECRET_CHARS``), so the scrub withholds the whole
+    of an error's words that hold it, as it does for any short secret: the URL token is still masked and the sentence still reads."""
+    caught, raised = _unpreparable(tmp_path, "https://bob:hunter2@a.example:99999/story")
+    assert [type(e) for e in raised] == [requests.exceptions.InvalidURL], f"premise: requests' own InvalidURL: {raised}"
+    text = record_text(caught, typed=False)
+    assert text.startswith("request error for https://***@a.example:99999/story: "), text
+    assert "bob" not in text and "hunter2" not in text and "Failed to parse" not in text, text
+
+
+def test_userinfo_secrets_are_the_whole_userinfo_and_each_part():
+    assert userinfo_secrets("https://alice:hunter2@a.example/x") == ("alice:hunter2", "alice", "hunter2")
+    assert userinfo_secrets("https://tok3n123@a.example/x") == ("tok3n123",)
+    assert userinfo_secrets("https://al\tice:hunter2@a.example/x") == ("al\tice:hunter2", "al\tice", "hunter2", "alice:hunter2", "alice")
+    assert userinfo_secrets("https://a.example/x") == () and userinfo_secrets("mailto:a@b") == ()
+    assert userinfo_secrets(None) == ()  # type: ignore[arg-type]  # never raises
+
+
+@pytest.mark.parametrize(("key", "written"), [("https://alice:hunter2@a.example", "https://***@a.example"), ("https://a.example", "https://a.example")])
+def test_the_robots_cache_log_writes_its_key_masked(tmp_path, caplog, key, written):
+    """An unwritable sidecar (its directory is a regular file named for the credentialed host, so the error's own words quote the
+    credentials): the DEBUG line writes the key masked and takes the userinfo out of the error."""
+    blocker = tmp_path / "alice:hunter2@a.example"
+    blocker.write_text("")
+    with caplog.at_level(logging.DEBUG, logger="src.ingest"):
+        ingest._persist_robots_entry(blocker / "robots.json", key, kind="allow", body="")
+    lines = [r.getMessage() for r in caplog.records if r.name == "src.ingest" and "robots cache persistence" in r.getMessage()]
+    assert len(lines) == 1 and lines[0].startswith(f"robots cache persistence failed for {written}: NotADirectoryError: "), lines
+    assert ("hunter2" not in lines[0] and "alice" not in lines[0]) if key != written else "alice:hunter2@a.example" in lines[0], lines
+
+
+@pytest.mark.parametrize(("netloc", "written"), [("alice:hunter2@a.example:8443", "***@a.example:8443"), ("a.example:8443", "a.example:8443")])
+def test_the_host_schedule_log_writes_its_netloc_masked(tmp_path, caplog, netloc, written):
+    blocker = tmp_path / "alice:hunter2@a.example"
+    blocker.write_text("")
+    with caplog.at_level(logging.DEBUG, logger="src.ingest"):
+        ingest._persist_host_schedule(blocker / "host_schedule.json", netloc, 1.0, 2.0)
+    lines = [r.getMessage() for r in caplog.records if r.name == "src.ingest" and "host schedule persistence" in r.getMessage()]
+    assert len(lines) == 1 and lines[0].startswith(f"host schedule persistence failed for {written}: NotADirectoryError: "), lines
+    assert ("hunter2" not in lines[0] and "alice" not in lines[0]) if netloc != written else "alice:hunter2@a.example" in lines[0], lines
+    assert failure_netloc(netloc) == written
 
 
 def test_each_masked_url_is_failure_urls_own_answer():
