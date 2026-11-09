@@ -250,3 +250,12 @@ Correct the text in `src/static/locales/ja.json` (the key is the English text).
 | 12 | {n} of {m} pages seen | {m} ページ中 {n} ページを確認 |
 | 13 | {n} pages seen, total unknown | {n} ページを確認、総数は不明 |
 | 14 | {n} stretches the lane did not see. | この経路が見ていない {n} 区間。 |
+
+## extra-4: Start-up step: the links' covering index (PR #1839)
+
+| # | English source | Current text in this language |
+|---|---|---|
+| 1 | Building the index that keeps the shared-origin counts fast. One time only; anything the app saves waits until it is done. | 共通の出典の集計を速く保つインデックスを作成しています。一度だけです。アプリが保存する内容は完了まで待機します。 |
+| 2 | The index of the articles' links was not built: it needs about {needed} MB of free memory (sorting up to {rows} links, plus the memory the app always keeps free) and this computer has {free} MB. Close other programs and restart the app; until then the shared-origin counts stay slow. | 記事のリンクのインデックスは作成されませんでした：約 {needed} MB の空きメモリが必要です（最大 {rows} 件のリンクの並べ替えと、アプリが常に空けておくメモリ）が、このコンピューターには {free} MB しかありません。他のプログラムを閉じてアプリを再起動してください。それまで共通の出典の集計は遅いままです。 |
+| 3 | The index of the articles' links was not built: the volume your data file is on has {free} MB free and it needs about {needed} MB (up to {rows} links). Free some space and restart the app; until then the shared-origin counts stay slow. | 記事のリンクのインデックスは作成されませんでした：データファイルのあるボリュームの空きは {free} MB で、約 {needed} MB 必要です（最大 {rows} 件のリンク）。空き容量を作ってアプリを再起動してください。それまで共通の出典の集計は遅いままです。 |
+| 4 | The index of the articles' links was not built: two starts in a row ended while it was being built (the computer ran out of memory or power, or the app was ended abruptly), so it is not tried again until the app is updated. The shared-origin counts stay slow. | 記事のリンクのインデックスは作成されませんでした：作成中に2回続けて起動が終了しました（メモリや電源が不足したか、アプリが強制終了されました）。そのため、アプリが更新されるまで再試行しません。共通の出典の集計は遅いままです。 |

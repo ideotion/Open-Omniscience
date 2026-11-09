@@ -56,6 +56,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from src.ingest import kill_switch_engaged_since, kill_switch_epoch
 from src.monitoring.secret_scrub import log_failure
 from src.safety.fetcher import NetworkBlocked, RedirectRefused, TransportUnavailable
 from src.wiki import history
@@ -147,8 +148,14 @@ def _is_json_error(exc: BaseException) -> bool:
     return isinstance(exc, json.JSONDecodeError) or (hasattr(exc, "doc") and hasattr(exc, "pos"))
 
 
-def refusal_token(exc: BaseException) -> str:
+def refusal_token(exc: BaseException, *, since: int | None = None) -> str:
     """The named reason for an exception a walk request raised. Order matters.
+
+    ``since`` is the engagement epoch taken before the request (R617, the R614 epoch): a dropped connection whose flight a Stop shared,
+    still engaged or cleared again before this read, is the operator's switch (``PAUSED_NETWORK_OFF``, which records nothing against the
+    edition), not the edition's ``WAIT_CONNECTION``: the socket guard refuses a connect a Stop lands on, and requests wraps that refusal in a
+    ``ConnectionError``, so the type alone reads it as the line's. Only the connection: an HTTP status, a redirect refused and an unreadable
+    body are answers the host gave, and a Stop cannot produce one. Without ``since``, by type only, as before.
 
     ``TransportUnavailable`` IS a ``requests.ConnectionError`` (so every older caller treats
     it as "the proxy did not answer"), and it has to be recognised FIRST: it means protected
@@ -179,6 +186,8 @@ def refusal_token(exc: BaseException) -> str:
         # dependency) is the transport's, and falls through to the connection below.
         return WAIT_MALFORMED
     if isinstance(exc, OSError):
+        if since is not None and kill_switch_engaged_since(since):
+            return PAUSED_NETWORK_OFF  # R617: the Stop's, not the edition's; the cost is a genuine drop sharing the window, asked again
         return WAIT_CONNECTION
     raise exc
 
@@ -419,10 +428,11 @@ class WikiWalker:
     def _read_count(self, edition: str, state: dict) -> dict:
         from src.wiki.lane_models import WikiWalkCursor
 
+        epoch = kill_switch_epoch()  # this request's window (R617, R614): a Stop pressed and cleared again inside it is a Stop
         try:
             stats = self._client.fetch_edition_statistics(edition)
         except Exception as exc:  # noqa: BLE001 - classified, never swallowed
-            return self._refused(edition, state, refusal_token(exc), refusal_detail(exc))
+            return self._refused(edition, state, refusal_token(exc, since=epoch), refusal_detail(exc))
         self._note_request()
         with self._lane_session() as lane:
             row = lane.get(WikiWalkCursor, edition) or self._cursor_row(lane, edition)
@@ -438,13 +448,14 @@ class WikiWalker:
 
     def _read_batch(self, edition: str, state: dict) -> dict:
         started = self._monotonic()
+        epoch = kill_switch_epoch()  # this request's window (R617, R614)
         try:
             result = self._client.fetch_walk_batch(
                 edition, continue_params=state["continue"], limit=self._batch
             )
         except Exception as exc:  # noqa: BLE001 - classified, never swallowed
             return self._refused(
-                edition, state, refusal_token(exc), refusal_detail(exc),
+                edition, state, refusal_token(exc, since=epoch), refusal_detail(exc),
                 busy_ms=max(0, int((self._monotonic() - started) * 1000)),
                 retry_after_s=retry_after_of(exc),
             )

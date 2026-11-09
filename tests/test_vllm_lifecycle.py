@@ -46,6 +46,13 @@ def _isolate_venv(tmp_path, monkeypatch):
     # them. Isolating only the venv would leave every start test writing into the
     # session-wide data dir and polluting whatever ran next.
     monkeypatch.setattr(V, "data_dir", lambda: tmp_path / "data")
+    # start() asks vLLM's real port whether something holds it before it spawns. The port
+    # is not this file's subject, and a test on a parallel worker (or a developer's own
+    # server) can hold it, so the probe answers "free" here. The port refusal is
+    # tests/test_vllm_port_collision.py's subject.
+    monkeypatch.setattr(
+        V, "port_occupant", lambda **kw: {"state": "free", "port": 0, "detail": "stubbed: free"}
+    )
     V._proc = None
     # V3: the journal's disable flag is a MODULE GLOBAL -- reset it, or the
     # write-failure test silently disables recording for every later test.
