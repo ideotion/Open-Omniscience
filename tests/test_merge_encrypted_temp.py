@@ -243,25 +243,32 @@ def test_the_gate_reads_the_live_guards_floor(monkeypatch) -> None:
     check_memory_for_encrypted_merge(available_mb=need_mb + 1000)
 
 
-def test_incoming_rows_raise_the_need_by_the_largest_grouping_step_not_their_sum() -> None:
+def test_incoming_rows_choose_where_the_groupings_run_and_only_the_maps_can_refuse() -> None:
+    """The largest grouping (never their sum: the steps run one after another) decides between
+    RAM and the encrypted scratch database; what is refused is only what even the scratch path
+    needs -- the windowed steps, the id maps and the scratch's bounded page cache."""
     base = merge_mod._ENCRYPTED_TEMP_NEED_BYTES
     rows = {"keywords": 6_900_000, "article_links": 4_200_000, "article_source_relationships": 0}
     per = merge_mod._ENCRYPTED_REP_BYTES_PER_ROW
     largest = max(rows["keywords"] * per["keywords"], rows["article_links"] * per["article_links"])
-    expect = base + largest + 16 * sum(rows.values())
-    expect_mb = expect / _MB
-    check_memory_for_encrypted_merge(available_mb=expect_mb, floor_mb=0.0, incoming_rows=rows)
-    with pytest.raises(MergeError):
-        check_memory_for_encrypted_merge(available_mb=expect_mb - 1, floor_mb=0.0, incoming_rows=rows)
-    # the steps run one after another: the SUM would have asked for more than this machine has
-    summed = base + sum(rows[t] * per[t] for t in rows) + 16 * sum(rows.values())
-    assert summed > expect
-    # and the figure shown to the operator is the one the gate used
+    maps = 16 * sum(rows.values())
+    in_ram = base + maps + merge_mod._INRAM_GROUPING_HEADROOM * largest
+    scratch = base + maps + merge_mod._SCRATCH_CACHE_KIB * 1024
+    assert scratch < in_ram
+    assert check_memory_for_encrypted_merge(
+        available_mb=in_ram / _MB, floor_mb=0.0, incoming_rows=rows) == "memory"
+    assert check_memory_for_encrypted_merge(
+        available_mb=in_ram / _MB - 1, floor_mb=0.0, incoming_rows=rows) == "scratch"
+    assert check_memory_for_encrypted_merge(
+        available_mb=scratch / _MB, floor_mb=0.0, incoming_rows=rows) == "scratch"
     with pytest.raises(MergeError) as err:
-        check_memory_for_encrypted_merge(available_mb=1.0, floor_mb=0.0, incoming_rows=rows)
+        check_memory_for_encrypted_merge(available_mb=scratch / _MB - 1, floor_mb=0.0, incoming_rows=rows)
+    # the figure shown to the operator is the one the gate used
     from src.backup.folder_backup import human_bytes
 
-    assert human_bytes(expect) in str(err.value)
+    assert human_bytes(scratch) in str(err.value)
+    # the old gate refused everything below base + largest + maps: this machine is now served
+    assert scratch < base + largest + maps
 
 
 def test_a_table_with_no_incoming_rows_adds_nothing() -> None:
@@ -680,15 +687,14 @@ def _staged_with_links(path: Path, links: int) -> None:
 def test_the_once_staged_check_refuses_with_the_backups_own_counts(
     tmp_path, encrypted_working_copy, monkeypatch
 ) -> None:
-    """Refused by the incoming rows alone: enough for the fixed part, not for 1,000 keywords at
-    an inflated per-row cost. The fixed part passes on its own, so the refusal is the counts'."""
+    """Refused by the incoming rows alone: enough for the fixed part, not for what 1,000 keywords
+    then call for. The fixed part passes on its own, so the refusal is the counts'."""
     _live_is(monkeypatch, encrypted_working_copy)
-    monkeypatch.setattr(merge_mod, "_ENCRYPTED_REP_BYTES_PER_ROW",
-                        {"keywords": 1024 * 1024, "article_links": 150, "article_source_relationships": 80})
     fixed_mb = merge_mod._ENCRYPTED_TEMP_NEED_BYTES / _MB
+    # room for the fixed part, not for it plus the scratch cache the incoming rows call for
     monkeypatch.setattr(merge_mod, "check_memory_for_encrypted_merge",
                         lambda **kw: check_memory_for_encrypted_merge(
-                            available_mb=fixed_mb + 100.0, floor_mb=0.0, **kw))
+                            available_mb=fixed_mb + 10.0, floor_mb=0.0, **kw))
     staged = tmp_path / "staged.db"
     _staged_with_links(staged, 1_000)
     merge_mod.check_memory_before_staging()  # the fixed part alone fits

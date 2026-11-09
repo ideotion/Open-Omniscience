@@ -272,6 +272,8 @@ _NOT_SCANNED = {"i18n.js", "sw.js", "oo-on.js"}
 _REQUEST_EXEMPT = {
     "_dismissCardNow": "files a dismissed card with its reason; the briefing's Restore puts it back (/api/briefing/restore)",
     "_leadDismissWith": "records the reason a lead was dismissed; additive, nothing is removed",
+    "_stopServerRun": "the bulk/extractor Cancel's helper: the task manager's own Stop of a detached AI run (job control; finished "
+    "articles stay stored, the run is started again from the same panel)",
     "_pruneCore": "garbage-collects keywords with ZERO mentions: derived rows nothing references, rebuilt by the next index",
     "dismissRetiredMode": "clears one informational 'retired mode' notice flag in the scheduler config",
     "overlayMerge": "posts the picked export files and reads back a merged REPORT; it writes no corpus row",

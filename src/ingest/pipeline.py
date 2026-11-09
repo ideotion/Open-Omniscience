@@ -82,9 +82,11 @@ from src.ingest import (
     RobotsDisallowed,
     RobotsUnavailable,
     kill_switch_active,
+    kill_switch_engaged_since,
+    kill_switch_epoch,
 )
 from src.ingest.extract import extract_article
-from src.ingest.fetch_verdict import classify_fetch_failure, fetch_reason_key
+from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL, classify_fetch_failure, fetch_reason_key
 from src.ingest.furniture import strip_furniture
 from src.ingest.non_article import classify_non_article, skip_non_articles_enabled
 from src.utils.url_utils import canonicalize_url, generate_content_hash
@@ -571,16 +573,20 @@ def _extract_failed_detail(fetched) -> str:
         return "no article body extracted"
 
 
-def _failure_reason(detail: str | None) -> str:
+def _failure_reason(detail: str | None, *, since: int | None = None) -> str:
     """``fetch_verdict.classify_fetch_failure`` plus the switch read AFTER the failure (R320): a failure while the kill switch is engaged is
     the switch's, whatever shape the error took. A Stop that lands inside the LAST request of a fetch (the retries having run out, or none
     left) arrives as the raw requests error (``request error for <url>: ('Connection aborted.', AirplaneModeError(...))`` through an HTTP
     proxy, or ``HTTPSConnectionPool(...)``), which is not OUR sentence at the start, so the anchored match in ``classify_fetch_failure``
     rightly refuses it (R298) and the failure was filed as the host's (``ff:connect``). A response that arrived (an HTTP status, a content-type
     or length verdict, a slow body, a redirect or URL verdict) is kept as the host's: a Stop cuts a connection and can never produce one. The
-    cost, stated: a genuine transport failure coinciding with a Stop reads offline."""
+    cost, stated: a genuine transport failure coinciding with a Stop reads offline.
+
+    ``since`` is the engagement epoch captured before the request (R614): a Stop pressed and cleared again inside that request's flight
+    is a Stop too, as when the switch is still engaged. Without it, the switch as it is now (the R320 read)."""
     reason = classify_fetch_failure(detail)
-    if reason != "offline" and not reason.startswith("http_") and reason not in _RESPONSE_ANSWERS and kill_switch_active():
+    stopped = kill_switch_active() if since is None else kill_switch_engaged_since(since)
+    if reason != "offline" and not reason.startswith("http_") and reason not in _RESPONSE_ANSWERS and stopped:
         return "offline"
     return reason
 
@@ -615,6 +621,10 @@ def ingest_source(
     # any bookkeeping hiccup degrades to a normal fetch, never blocks collection.
     extra_headers = _feed_conditional_headers(session, source.id)
 
+    # The engagement epoch (R614), captured before the feed's request: the pass's window runs from here to the bookkeeping at the end, the
+    # host lock, Crawl-delay and retry waits included, so a Stop pressed and cleared again anywhere inside it records nothing, as when the
+    # switch is still engaged.
+    pass_epoch = kill_switch_epoch()
     try:
         feed_resp = fetcher.fetch(
             source.rss_url, require_html=False, extra_headers=extra_headers or None
@@ -626,14 +636,17 @@ def ingest_source(
         #
         # A STOP is neither: the person's own setting says nothing about the feed, so while the switch is engaged the backoff history is
         # left as it was (a refusal used to erase a quiet feed's climb, so its next checks came back at the normal cadence). The decision is
-        # the switch read after the failure, never the words of the refusal (R320).
-        if not kill_switch_active():
+        # the switch read after the failure (R320), a Stop cleared again inside the request counts (R614), and so does the fetcher's own
+        # refusal BY NAME: it is written before any request, so a switch engaged before the epoch was taken and cleared before this read
+        # is still the person's (never a host's words: the whole sentence at the start, as every writer raises it).
+        refused_by_name = record_text(exc, typed=False).startswith(KILL_SWITCH_REFUSAL)
+        if not (kill_switch_engaged_since(pass_epoch) or refused_by_name):
             _update_feed_backoff(session, source.id, reset=True)
         _commit_feed_bookkeeping(session)
         # A refusal by the kill switch is the person's own setting, not the feed's behaviour:
         # say so (invariant #14e's corollary), by the same classifier the per-article
         # ``ff:offline`` count uses. The scheduler sums this key like any other int.
-        if not isinstance(exc, RobotsDisallowed) and _failure_reason(record_text(exc, typed=False)) == "offline":  # a disallow is the host's answer
+        if not isinstance(exc, RobotsDisallowed) and _failure_reason(record_text(exc, typed=False), since=pass_epoch) == "offline":  # a disallow is the host's answer
             tally["skipped_offline"] = 1
         return tally
 
@@ -662,6 +675,7 @@ def ingest_source(
     stopped = False  # latched: the batch flush below can wait seconds on the writer gate, and a Stop cleared in that wait must not undo it
     try:
         for done, link in enumerate(links):
+            entry_epoch = kill_switch_epoch()  # this entry's own window, for the reason of a failure (R614); before the check, as below it
             if kill_switch_active():
                 stopped = True
                 # a Stop mid-feed: the rest were never asked for, so they are not walked through a refusal one by one, but they are COUNTED, so
@@ -678,7 +692,7 @@ def ingest_source(
             # so the scheduler's scalar tally-aggregation sums them for free; the
             # per-reason counts always sum to fetch_failed (unknown -> "other").
             if outcome.result is IngestResult.FETCH_FAILED:
-                rk = fetch_reason_key(_failure_reason(outcome.detail))
+                rk = fetch_reason_key(_failure_reason(outcome.detail, since=entry_epoch))
                 tally[rk] = tally.get(rk, 0) + 1
     finally:
         # ZERO LOSS: staged entries always get their write attempt, even if a
@@ -700,11 +714,12 @@ def ingest_source(
     # no autoflush, no gate — and the de-churn backoff (a 200 that stored ZERO
     # new articles delays this feed's next re-check, capped, self-resetting)
     # reads the true post-flush stored count.
-    if stopped or kill_switch_active():
+    if stopped or kill_switch_engaged_since(pass_epoch):
         # STOPPED, not finished: entries after the Stop were never asked for, so recording this pass would store the validator (the next pass
         # then gets a 304 and never asks for them) and climb the backoff. The row stays as it was; the next pass reads the feed again with
         # the OLD validator, and the dedup step skips what was already stored. The Stop seen by the loop is latched; a Stop pressed after the
-        # loop (during the flush) is read here. (A Stop cleared again within a request's flight is the window stated for the law tracker.)
+        # loop (during the flush) is read here, and so is a Stop pressed and cleared again anywhere in the pass (the epoch, R614): an entry
+        # that Stop cut was never stored, and a stored validator would hide it from the next pass.
         _commit_feed_bookkeeping(session)
         return tally
     _record_feed_state(session, source.id, feed_resp)

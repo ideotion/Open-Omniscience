@@ -118,9 +118,14 @@ const KINDS = ["direct", "proxy", "pool", "refused", "unknown"];
 // --- the one MIXED lane: the installer check proxied, the downloads not ------------ //
 {
   const mixed = OO_NET_LANES.filter((l) => l.mixed);
-  assert.deepStrictEqual(mixed.map((l) => l.id), ["ai"],
+  assert.deepStrictEqual(mixed.map((l) => l.id), ["ai", "update"],
     "the mixed lanes changed -- update docs/SECURITY.md's 'Mixed.' rows in the same diff");
-  const ai = mixed[0];
+  const ai = mixed.find((l) => l.id === "ai");
+  // The update lane: its check is the guarded fetch, the git download is the spawned helper's; its own words name the update check.
+  const upd = mixed.find((l) => l.id === "update");
+  assert.ok(/only the update check uses the fetcher/.test(F._laneTransport(upd, "direct")));
+  assert.ok(/only the update check goes through your proxy/.test(F._laneTransport(upd, "proxy")));
+  assert.ok(!/through your proxy/.test(F._laneTransport(upd, "refused")));
   assert.strictEqual(ai.fetcher, false, "a mixed lane is a fetcher:false lane with one proxied host");
   for (const k of ["proxy", "pool"]) {
     const s = F._laneTransport(ai, k);

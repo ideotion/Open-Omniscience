@@ -883,10 +883,6 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # the ValueError's detail is the HTTPException detail of the filter parser, or record_text's own output (search_filters does not use http_detail)
         ('_filters_blob', 'raise ValueError(getattr(exc, "detail", None) or record_text(exc))'): 1,
     },
-    'src/catalog/discover_job.py': {
-        # read for a keyword to CLASSIFY the failure; the text goes nowhere
-        ('run_world_discovery', 'if "airplane" in str(exc):  # the kill switch raced the loop check'): 1,
-    },
     'src/catalog/qualification_merge.py': {
         # hands the JSON error to the YAML reader, which records it through record_text(json_exc) and chains only the YAML error
         ('rows_from_export_bytes', 'return _rows_from_export_yaml(text, origin, json_exc)'): 1,
@@ -982,6 +978,10 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_get_within', 'failure = failure_words(exc)'): 1,
         ('_default_get_json', 'failure = failure_words(exc)'): 1,
     },
+    'src/maintenance/self_update.py': {
+        # the update check: failure_words returns "HTTP <status>" or the exception's class name and nothing of its text, as the installer's does
+        ('_get_json', 'failure = failure_words(exc)'): 1,
+    },
     'src/llm/ollama.py': {
         # the SERVER'S OWN words of an HTTP status error (a response body or reason phrase, never a driver's or a held key); the exception is httpx's
         ('OllamaClient.generate', 'f"Ollama error for model {model!r}: {_http_error_text(exc)}"'): 1,
@@ -1022,7 +1022,7 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # read for a keyword to CLASSIFY the failure; the text goes nowhere
         ('classify_fetch_failure', 'low = str(exc).lower()'): 1,
         # classify_fetch_failure returns a verdict and a note whose exception text is record_text (markets/csv_feeds.py)
-        ('import_feed', 'verdict, note, retryable = classify_failed_check(exc)'): 1,
+        ('import_feed', 'verdict, note, retryable = classify_failed_check(exc, since=epoch)'): 1,
         # the same call plus the kill-switch read; the note's exception text is still record_text (R320)
         ('classify_failed_check', 'verdict, note, retryable = classify_fetch_failure(exc)'): 1,
     },
@@ -1071,6 +1071,10 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     'src/weather/openmeteo.py': {
         # classify_fetch_failure returns a verdict and a note whose exception text is record_text (markets/csv_feeds.py)
         ('fetch_daily_slice', 'verdict, note, retryable = classify_failed_check(exc)'): 1,
+    },
+    'src/wiki/dumps.py': {
+        # kept to be logged after the handler through log_failure, which scrubs it (R617, as osm_downloads): not written
+        ('DumpDownloadManager._download', 'failure = exc'): 1,
     },
 }
 _S5_NOT_RECORDS: dict[str, dict[str, int]] = {

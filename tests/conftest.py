@@ -629,7 +629,7 @@ def _no_settings_write_is_entered_holding_the_single_writer_gate():
     )
 
 
-_AIRPLANE_ORIGINALS = ("_orig_getaddrinfo", "_orig_create_connection", "_orig_connect", "_orig_connect_ex", "_orig_tunnel")
+_AIRPLANE_ORIGINALS = ("_orig_getaddrinfo", "_orig_create_connection", "_orig_connect", "_orig_connect_ex", "_orig_tunnel", "_orig_putrequest")
 
 
 def _process_wide_network_calls() -> dict[str, object]:
@@ -646,6 +646,7 @@ def _process_wide_network_calls() -> dict[str, object]:
         "socket.socket.connect": socket.socket.connect,
         "socket.socket.connect_ex": socket.socket.connect_ex,
         "http.client.HTTPConnection._tunnel": http.client.HTTPConnection._tunnel,  # type: ignore[attr-defined]
+        "http.client.HTTPConnection.putrequest": http.client.HTTPConnection.putrequest,
     }
     # Imported here, at the first test's setup and so before any test has swapped a call: the module captures the stdlib's functions at
     # import, and the first fetch of a process used to be the one to import it, inside a test's ``monkeypatch`` window, which made the
@@ -672,6 +673,8 @@ def _put_network_call_back(name: str, value: object) -> None:
         socket.socket.connect = value  # type: ignore[method-assign,assignment]
     elif name == "socket.socket.connect_ex":
         socket.socket.connect_ex = value  # type: ignore[method-assign,assignment]
+    elif name == "http.client.HTTPConnection.putrequest":
+        http.client.HTTPConnection.putrequest = value  # type: ignore[method-assign,assignment]
     else:
         http.client.HTTPConnection._tunnel = value  # type: ignore[attr-defined,method-assign,assignment]
 

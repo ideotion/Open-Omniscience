@@ -322,8 +322,9 @@ def test_the_routes_export_verify_and_refuse(client, data_dir, no_network, monke
     v = c.post("/api/claims/trail-bundle/verify", content=data,
                headers={"content-type": "application/zip"})
     assert v.status_code == 200 and v.json()["verified"] is True
-    assert c.post("/api/claims/trail-bundle/verify", content=b"not a zip").json()["verified"] is False
-    assert c.post("/api/claims/trail-bundle/verify", content=b"").status_code == 400
+    zip_ct = {"content-type": "application/zip"}
+    assert c.post("/api/claims/trail-bundle/verify", content=b"not a zip", headers=zip_ct).json()["verified"] is False
+    assert c.post("/api/claims/trail-bundle/verify", content=b"", headers=zip_ct).status_code == 400
     assert c.post("/api/claims/trail-bundle", json={"claim": "zzqx wyvern flumph"}).status_code == 400
 
     real = cw.corroboration_offers
@@ -349,3 +350,30 @@ def test_the_custody_identity_signs_by_default(corpus, data_dir, no_network):
     custody = HybridSigner(use_pqc=False).public_identity()
     assert report["identity"]["ed25519_pub"] == custody.ed25519_pub
     assert isinstance(PublicIdentity(**report["identity"]), PublicIdentity)
+
+
+@pytest.mark.parametrize("content_type", [
+    None,  # no Content-Type at all
+    "text/plain",
+    "text/plain;charset=UTF-8",
+    "application/x-www-form-urlencoded",
+    "multipart/form-data; boundary=x",
+    "application/json",
+])
+def test_verify_refuses_every_body_type_but_a_zip_with_415(client, data_dir, no_network, content_type):
+    """R315 option 1: the three browser simple-request types (and anything else that is not a ZIP
+    upload) answer 415 before the body is read, so they never reach the parser; before this they
+    answered 200 ``not_zip``."""
+    c, _ids = client
+    headers = {} if content_type is None else {"content-type": content_type}
+    r = c.post("/api/claims/trail-bundle/verify", content=b"x=1", headers=headers)
+    assert r.status_code == 415, (content_type, r.status_code, r.text)
+    assert "application/zip" in r.json()["detail"]
+
+
+@pytest.mark.parametrize("content_type", ["application/zip", "application/octet-stream", "Application/ZIP; foo=bar"])
+def test_verify_reads_a_zip_or_octet_stream_body(client, data_dir, no_network, content_type):
+    c, _ids = client
+    r = c.post("/api/claims/trail-bundle/verify", content=b"x=1", headers={"content-type": content_type})
+    assert r.status_code == 200, r.text
+    assert r.json()["verified"] is False  # reached the parser: not a ZIP
