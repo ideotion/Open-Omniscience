@@ -41,6 +41,7 @@ import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -49,13 +50,13 @@ from src.ingest import EthicalFetcher, FetchFailed, clear_kill_switch
 from src.ingest.fetch_verdict import USERINFO_MASK
 from src.monitoring.activity import ActivityMonitor
 
-_USER, _PASSWORD = "alice", "hunter2"
-_CRED = f"{_USER}:{_PASSWORD}@"
+_USER, _NEEDLE = "alice", "hunter2"
+_USERINFO = f"{_USER}:{_NEEDLE}@"
 _PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy")
 
 
-def _no_secret(text: str) -> None:
-    assert _PASSWORD not in text and f"{_USER}:" not in text and _CRED not in text, text
+def _no_needle(text: str) -> None:
+    assert _NEEDLE not in text and f"{_USER}:" not in text and _USERINFO not in text, text
 
 
 @pytest.fixture(autouse=True)
@@ -154,15 +155,15 @@ def _stub_fetcher(tmp_path: Path, session: _Session | None = None, **kw) -> Ethi
 def test_a_credentialed_and_a_plain_url_to_one_host_share_one_robots_entry_and_one_schedule_stamp(tmp_path, monkeypatch):
     with _server() as (port, seen):
         f = _loopback_fetcher(tmp_path, monkeypatch)
-        f.fetch(f"http://{_CRED}127.0.0.1:{port}/a")
+        f.fetch(f"http://{_USERINFO}127.0.0.1:{port}/a")
         f.fetch(f"http://127.0.0.1:{port}/b")
     host = f"127.0.0.1:{port}"
     robots = (tmp_path / "robots.json").read_text("utf-8")
     schedule = (tmp_path / "host_schedule.json").read_text("utf-8")
     assert list(json.loads(robots)) == [f"http://{host}"]
     assert list(json.loads(schedule)) == [host]
-    _no_secret(robots)
-    _no_secret(schedule)
+    _no_needle(robots)
+    _no_needle(schedule)
     assert list(f._robots) == [f"http://{host}"]
     assert list(f._host_schedule) == [host]
     assert list(f._last_request) == [host]
@@ -173,7 +174,7 @@ def test_a_credentialed_and_a_plain_url_to_one_host_share_one_robots_entry_and_o
 def test_the_robots_read_goes_to_the_page_urls_scheme_host_and_port_without_its_credentials(tmp_path, monkeypatch):
     with _server() as (port, seen):
         f = _loopback_fetcher(tmp_path, monkeypatch)
-        f.fetch(f"http://{_CRED}127.0.0.1:{port}/a")
+        f.fetch(f"http://{_USERINFO}127.0.0.1:{port}/a")
     robots = [(h, a) for p, h, a in seen if p == "/robots.txt"]
     page = [(h, a) for p, h, a in seen if p == "/a"]
     assert robots == [(f"127.0.0.1:{port}", None)], seen  # same host and port, no Authorization header
@@ -181,7 +182,7 @@ def test_the_robots_read_goes_to_the_page_urls_scheme_host_and_port_without_its_
     assert page and page[0][0] == f"127.0.0.1:{port}" and page[0][1] and page[0][1].startswith("Basic ")
 
 
-@pytest.mark.parametrize("url", [f"https://{_CRED}example.org:8443/x", f"http://{_CRED}example.org/x", f"https://{_USER}@example.org/x"])
+@pytest.mark.parametrize("url", [f"https://{_USERINFO}example.org:8443/x", f"http://{_USERINFO}example.org/x", f"https://{_USER}@example.org/x"])
 def test_the_robots_url_keeps_the_scheme_host_and_port_of_the_page_url(tmp_path, url):
     from urllib.parse import urlparse
 
@@ -198,7 +199,7 @@ def test_the_robots_url_keeps_the_scheme_host_and_port_of_the_page_url(tmp_path,
 def test_declared_sitemaps_reads_the_hosts_one_entry_without_the_credentials(tmp_path, monkeypatch):
     with _server() as (port, seen):
         f = _loopback_fetcher(tmp_path, monkeypatch)
-        assert f.declared_sitemaps(f"http://{_CRED}127.0.0.1:{port}/") == ["http://example.org/sitemap.xml"]
+        assert f.declared_sitemaps(f"http://{_USERINFO}127.0.0.1:{port}/") == ["http://example.org/sitemap.xml"]
         f.fetch(f"http://127.0.0.1:{port}/b")
     assert [(p, a) for p, _h, a in seen] == [("/robots.txt", None), ("/b", None)]
     assert list(json.loads((tmp_path / "robots.json").read_text("utf-8"))) == [f"http://127.0.0.1:{port}"]
@@ -210,7 +211,7 @@ def test_a_credentialed_and_a_plain_url_wait_out_one_politeness_interval(tmp_pat
     f = _stub_fetcher(tmp_path, min_interval_s=5.0)
     f._now = lambda: clock[0]  # type: ignore[method-assign]
     f._sleep = slept.append  # type: ignore[method-assign]
-    f.fetch(f"https://{_CRED}example.org/a")
+    f.fetch(f"https://{_USERINFO}example.org/a")
     clock[0] = 101.0
     f.fetch("https://example.org/b")
     assert slept == [pytest.approx(4.0)]  # one host, one interval: the second fetch waits the rest of it
@@ -219,21 +220,21 @@ def test_a_credentialed_and_a_plain_url_wait_out_one_politeness_interval(tmp_pat
 def test_a_credentialed_url_rides_the_hosts_own_circuit_and_names_no_credential_to_the_proxy(tmp_path):
     s = _Session()
     f = _stub_fetcher(tmp_path, s, proxy="socks5h://127.0.0.1:9050")
-    f.fetch(f"https://{_CRED}example.org/a")
+    f.fetch(f"https://{_USERINFO}example.org/a")
     f.fetch("https://example.org/b")
     proxies = [kw.get("proxies") for _u, kw in s.calls]
     assert len(proxies) == 3 and all(p == proxies[0] for p in proxies), proxies  # robots, /a, /b: one circuit
-    assert proxies[0] and "example.org" in proxies[0]["https"]
-    _no_secret(json.dumps(proxies))
+    assert proxies[0] and urlsplit(proxies[0]["https"]).username == "example.org"  # the circuit is named on the host alone
+    _no_needle(json.dumps(proxies))
     assert "alicehunter2" not in json.dumps(proxies)
 
 
 def test_crawl_delay_for_and_forget_robots_find_the_hosts_one_entry_from_a_credentialed_url(tmp_path):
     f = _stub_fetcher(tmp_path, _Session(robots=b"User-agent: *\nCrawl-delay: 7\n"))
     f.fetch("https://example.org/a")
-    assert f.crawl_delay_for(f"https://{_CRED}example.org/x") == 7.0
-    assert f.crawl_delay_for(f"{_CRED}example.org") == 7.0
-    assert f.forget_robots(f"https://{_CRED}example.org") == 1
+    assert f.crawl_delay_for(f"https://{_USERINFO}example.org/x") == 7.0
+    assert f.crawl_delay_for(f"{_USERINFO}example.org") == 7.0
+    assert f.forget_robots(f"https://{_USERINFO}example.org") == 1
     assert f._robots == {}
 
 
@@ -242,11 +243,11 @@ def test_the_persistence_failure_lines_name_the_host_and_not_its_credentials(tmp
                        robots_cache_path=tmp_path / "missing" / "robots.json")  # the directory does not exist: both writes fail
     f._sleep = lambda _s: None  # type: ignore[method-assign]
     caplog.set_level(logging.DEBUG, logger="src.ingest")
-    f.fetch(f"https://{_CRED}example.org/a")
+    f.fetch(f"https://{_USERINFO}example.org/a")
     lines = [r.getMessage() for r in caplog.records]
     assert any(m.startswith("robots cache persistence failed for https://example.org:") for m in lines), lines
     assert any(m.startswith("host schedule persistence failed for example.org:") for m in lines), lines
-    _no_secret(caplog.text)
+    _no_needle(caplog.text)
 
 
 def test_the_clock_corrected_stamp_line_names_the_host_and_not_its_credentials(tmp_path, caplog):
@@ -256,10 +257,10 @@ def test_the_clock_corrected_stamp_line_names_the_host_and_not_its_credentials(t
     f = _stub_fetcher(tmp_path, min_interval_s=1.0)
     f._sleep = slept.append  # type: ignore[method-assign]
     caplog.set_level(logging.INFO, logger="src.ingest")
-    f.fetch(f"https://{_CRED}example.org/a")
+    f.fetch(f"https://{_USERINFO}example.org/a")
     assert any(r.getMessage().startswith("politeness stamp for example.org lay ") for r in caplog.records), caplog.text
     assert slept == [pytest.approx(1.0)]  # the host's own stamp was found for the credentialed URL, clamped to its delay
-    _no_secret(caplog.text)
+    _no_needle(caplog.text)
 
 
 def test_control_an_ordinary_url_keeps_its_keys(tmp_path):
@@ -282,7 +283,7 @@ def _robots_entry(body: str = "User-agent: *\nDisallow: /p\n", **kw) -> dict:
 
 def _old_robots(tmp_path: Path) -> tuple[Path, dict]:
     raw = {
-        f"https://{_CRED}example.org": _robots_entry("User-agent: *\nDisallow: /\n"),
+        f"https://{_USERINFO}example.org": _robots_entry("User-agent: *\nDisallow: /\n"),
         "https://example.org": _robots_entry(),
         "https://other.example": {"kind": "disallow_all", "body": None, "fetched_at": time.time(), "cause": "refused", "fails": 2, "ttl": 7200.0},
         f"http://{_USER}@solo.example:8080": {"kind": "disallow_all", "body": None, "fetched_at": time.time(), "cause": "unreachable", "fails": 3, "ttl": 9000.0},
@@ -295,7 +296,7 @@ def _old_robots(tmp_path: Path) -> tuple[Path, dict]:
 def _old_schedule(tmp_path: Path) -> tuple[Path, float]:
     now = time.time()
     raw = {
-        f"{_CRED}example.org": {"not_before": now + 500, "delay_s": 30.0},
+        f"{_USERINFO}example.org": {"not_before": now + 500, "delay_s": 30.0},
         "example.org": {"not_before": now + 100, "delay_s": 60.0},
         f"{_USER}@solo.example:8080": {"not_before": now + 300, "delay_s": 20.0},
         "other.example": {"not_before": now + 200, "delay_s": 10.0},
@@ -310,7 +311,7 @@ def test_an_older_builds_credentialed_robots_keys_leave_the_file_and_memory_on_l
     f = _stub_fetcher(tmp_path)
     on_disk = json.loads(path.read_text("utf-8"))
     assert on_disk == {k: raw[k] for k in ("https://example.org", "https://other.example")}  # the clean entries stay, unchanged
-    _no_secret(path.read_text("utf-8"))
+    _no_needle(path.read_text("utf-8"))
     assert "solo.example" not in path.read_text("utf-8")  # DROPPED, not folded into a host key
     assert sorted(f._robots) == ["https://example.org", "https://other.example"]
     assert f._robots_cause == {"https://other.example": "refused"}
@@ -323,7 +324,7 @@ def test_an_older_builds_credentialed_schedule_keys_are_merged_into_the_hosts_on
     path, now = _old_schedule(tmp_path)
     f = _stub_fetcher(tmp_path)
     on_disk = json.loads(path.read_text("utf-8"))
-    _no_secret(path.read_text("utf-8"))
+    _no_needle(path.read_text("utf-8"))
     assert sorted(on_disk) == ["example.org", "other.example", "solo.example:8080"]
     assert on_disk["example.org"] == {"not_before": now + 500, "delay_s": 60.0}  # the later stamp and the larger delay win
     assert on_disk["solo.example:8080"] == {"not_before": now + 300, "delay_s": 20.0}  # a credentialed-only host keeps its stamp
@@ -342,7 +343,7 @@ def test_the_loaders_leave_credentialed_keys_out_even_when_the_file_was_not_rewr
     loaded = ingest._load_host_schedule(spath)
     assert sorted(loaded) == ["example.org", "other.example", "solo.example:8080"]
     assert loaded["example.org"] == (now + 500, 60.0)
-    _no_secret(json.dumps(loaded))
+    _no_needle(json.dumps(loaded))
 
 
 def test_a_write_never_carries_an_older_builds_credentialed_key_forward(tmp_path):
@@ -375,20 +376,20 @@ def test_control_a_file_without_a_credentialed_key_is_not_rewritten(tmp_path):
 
 def test_fetch_started_keeps_the_url_and_the_host_masked():
     m = ActivityMonitor()
-    tok = m.fetch_started(f"https://{_CRED}example.org/feed")
+    tok = m.fetch_started(f"https://{_USERINFO}example.org/feed")
     m.fetch_bytes(100, tok)
     snap = m.snapshot()
     assert snap["current_fetch"]["url"] == f"https://{USERINFO_MASK}example.org/feed"  # the top bar reads this through _shortUrl
     assert [r["host"] for r in m.per_host_rates()] == ["example.org"]  # the task manager's per-source rates: the fetcher's host key (N4)
     m.fetch_finished(tok)
     assert m.snapshot()["last_url"] == f"https://{USERINFO_MASK}example.org/feed"
-    _no_secret(json.dumps([snap, m.snapshot(), m.per_host_rates()]))
+    _no_needle(json.dumps([snap, m.snapshot(), m.per_host_rates()]))
 
 
 def test_the_fetcher_hands_the_monitor_nothing_it_shows_raw(tmp_path, monkeypatch):
     m = ActivityMonitor()
     monkeypatch.setattr(ingest, "activity_monitor", m)
-    _stub_fetcher(tmp_path).fetch(f"https://{_CRED}example.org/a")
+    _stub_fetcher(tmp_path).fetch(f"https://{_USERINFO}example.org/a")
     assert m.snapshot()["last_url"] == f"https://{USERINFO_MASK}example.org/a"
     assert [r["host"] for r in m.per_host_rates()] == ["example.org"]  # the fetcher's own host key (N4)
 
@@ -418,7 +419,7 @@ _BAD = "http://{c}[::1/x"  # urlparse raises "Invalid IPv6 URL" for it, which re
 
 
 def _bad(cred: bool) -> str:
-    return _BAD.format(c=_CRED if cred else "")
+    return _BAD.format(c=_USERINFO if cred else "")
 
 
 def _messages(caplog) -> list[str]:
@@ -459,15 +460,15 @@ def test_duckduckgo_url_parsing_lines(caplog, cred):
     d = _ddg()  # first: its import sets the logger's level (setup_logging), which would undo the one set here
     caplog.set_level(logging.DEBUG, logger="duckduckgo")
     bad = _bad(cred)
-    shown = bad.replace(_CRED, USERINFO_MASK)
+    shown = bad.replace(_USERINFO, USERINFO_MASK)
     assert d._clean_url(bad) is None  # the redirect unwrap (unparseable) and the validation line
     assert d._extract_domain(bad) == ""
-    assert d._clean_url(f"ftp://{_CRED if cred else ''}files.example/x") is None  # the non-http(s) line
-    assert d._unwrap_search_redirect(f"https://{_CRED if cred else ''}duckduckgo.com/l/?x=1") is None  # no target
-    target = f"ftp://{_CRED if cred else ''}files.example/y"
+    assert d._clean_url(f"ftp://{_USERINFO if cred else ''}files.example/x") is None  # the non-http(s) line
+    assert d._unwrap_search_redirect(f"https://{_USERINFO if cred else ''}duckduckgo.com/l/?x=1") is None  # no target
+    target = f"ftp://{_USERINFO if cred else ''}files.example/y"
     assert d._unwrap_search_redirect(f"https://duckduckgo.com/l/?uddg={target}") is None  # a target that is not http(s)
     assert d._resolve_url("/rss", bad) is None
-    assert d._resolve_url(f"//{_CRED if cred else ''}cdn.example/rss", bad) is None  # a protocol-relative path carries its own
+    assert d._resolve_url(f"//{_USERINFO if cred else ''}cdn.example/rss", bad) is None  # a protocol-relative path carries its own
     msgs = _messages(caplog)
     m = USERINFO_MASK if cred else ""
     for head in (
@@ -482,7 +483,7 @@ def test_duckduckgo_url_parsing_lines(caplog, cred):
     ):
         assert any(x.startswith(head) for x in msgs), (head, msgs)
     if cred:
-        _no_secret(caplog.text)
+        _no_needle(caplog.text)
 
 
 @pytest.mark.parametrize("cred", [True, False], ids=["credentialed", "control"])
@@ -491,7 +492,7 @@ def test_duckduckgo_discovery_lines(caplog, cred):
 
     d = _ddg()  # first, for the same reason
     caplog.set_level(logging.DEBUG, logger="duckduckgo")
-    url = f"https://{_CRED if cred else ''}news.example/"
+    url = f"https://{_USERINFO if cred else ''}news.example/"
     shown = f"https://{USERINFO_MASK if cred else ''}news.example/"
     assert d.discover_rss_feeds(url, fetcher=_DiscoveryFetcher()) == [url + "feed.xml"]  # the returned feed is data, as it was
     assert d.discover_rss_feeds(url, fetcher=_DiscoveryFetcher(fail=FetchError("robots.txt disallows it"))) == []
@@ -512,7 +513,7 @@ def test_duckduckgo_discovery_lines(caplog, cred):
     ):
         assert any(x.startswith(head) for x in msgs), (head, msgs)
     if cred:
-        _no_secret(caplog.text)
+        _no_needle(caplog.text)
 
 
 @pytest.mark.parametrize("cred", [True, False], ids=["credentialed", "control"])
@@ -521,7 +522,7 @@ def test_url_utils_lines(caplog, cred):
 
     caplog.set_level(logging.DEBUG, logger="src.utils.url_utils")
     bad = _bad(cred)
-    shown = bad.replace(_CRED, USERINFO_MASK)
+    shown = bad.replace(_USERINFO, USERINFO_MASK)
     assert url_utils.canonicalize_url(bad) == bad  # the caller's value is returned as it came, as before
     assert url_utils.get_domain_from_url(bad) is None
     assert url_utils.get_base_url(bad) is None
@@ -529,7 +530,7 @@ def test_url_utils_lines(caplog, cred):
     for head in (f"Error canonicalizing URL {shown}: ", f"Error extracting domain from {shown}: ", f"Error getting base URL from {shown}: "):
         assert any(x.startswith(head) for x in msgs), (head, msgs)
     if cred:
-        _no_secret(caplog.text)
+        _no_needle(caplog.text)
 
 
 @pytest.mark.parametrize("cred", [True, False], ids=["credentialed", "control"])
@@ -538,14 +539,14 @@ def test_security_lines(caplog, cred):
 
     caplog.set_level(logging.DEBUG, logger="src.utils.security")
     bad = _bad(cred)
-    shown = bad.replace(_CRED, USERINFO_MASK)
+    shown = bad.replace(_USERINFO, USERINFO_MASK)
     assert sanitize_url(bad) == ""
     assert safe_href(bad) == ""
     msgs = _messages(caplog)
     for head in (f"sanitize_url: unparseable URL {shown!r} dropped: ", f"safe_href: unparseable URL {shown!r} dropped: "):
         assert any(x.startswith(head) for x in msgs), (head, msgs)
     if cred:
-        _no_secret(caplog.text)
+        _no_needle(caplog.text)
 
 
 @pytest.mark.parametrize("cred", [True, False], ids=["credentialed", "control"])
@@ -554,10 +555,10 @@ def test_link_analyzer_lines(caplog, cred):
 
     caplog.set_level(logging.DEBUG, logger="src.services.link_analyzer.extractor")
     bad = _bad(cred)
-    shown = bad.replace(_CRED, USERINFO_MASK)
+    shown = bad.replace(_USERINFO, USERINFO_MASK)
     x = LinkExtractor()
     assert x.normalize_url(bad) == ""
-    rel = f"//{_CRED if cred else ''}cdn.example/x"  # a protocol-relative link carries its own
+    rel = f"//{_USERINFO if cred else ''}cdn.example/x"  # a protocol-relative link carries its own
     assert x.extract_links(f'<a href="rel">t</a><a href="{rel}">u</a>', base_url=bad + "/") == []  # urljoin raises on the base
     assert x._extract_links_with_regex(f"<a href='{bad}'>t</a>", None, None) == []  # the malformed link is skipped
     msgs = _messages(caplog)
@@ -569,7 +570,7 @@ def test_link_analyzer_lines(caplog, cred):
     ):
         assert any(x.startswith(head) for x in msgs), (head, msgs)
     if cred:
-        _no_secret(caplog.text)
+        _no_needle(caplog.text)
 
 
 def test_the_four_modules_import_failure_url_on_use_only():
@@ -597,8 +598,8 @@ def test_a_refused_url_with_credentials_is_still_refused(tmp_path):
     s = _Session()
     f = _stub_fetcher(tmp_path, s)
     with pytest.raises(FetchFailed) as exc:
-        f.fetch(f"ftp://{_CRED}example.org/x")
-    _no_secret(str(exc.value))
+        f.fetch(f"ftp://{_USERINFO}example.org/x")
+    _no_needle(str(exc.value))
     with pytest.raises(ingest.BlockedTarget):
         f.fetch("https://evil.test\\@good.example/x")
     assert s.calls == [], s.calls  # refused before any robots read (R622's order kept under R621's key)
@@ -689,7 +690,7 @@ def test_the_host_key(netloc, scheme, key):
 def test_crawl_delay_for_and_forget_robots_find_the_one_entry_from_any_spelling(tmp_path):
     f = _stub_fetcher(tmp_path, _Session(robots=b"User-agent: *\nCrawl-delay: 7\n"))
     f.fetch("https://example.org/a")
-    for asked in ("https://EXAMPLE.org:443/x", "Example.ORG:443", "example.org:0443", f"{_CRED}Example.org"):
+    for asked in ("https://EXAMPLE.org:443/x", "Example.ORG:443", "example.org:0443", f"{_USERINFO}Example.org"):
         assert f.crawl_delay_for(asked) == 7.0, asked
     assert f.forget_robots("https://Example.org:0443") == 1
     assert f._robots == {}
@@ -782,22 +783,22 @@ def test_a_bare_default_port_stamp_also_holds_for_the_portless_host_key(tmp_path
 def test_a_merge_where_the_plain_stamp_is_the_later_one_keeps_it(tmp_path):
     """Steward 3's item 8: the merge is the max of each field, not "the credentialed key wins"."""
     now = time.time()
-    raw = {f"{_CRED}example.org": {"not_before": now + 100, "delay_s": 90.0}, "example.org": {"not_before": now + 500, "delay_s": 10.0}}
+    raw = {f"{_USERINFO}example.org": {"not_before": now + 100, "delay_s": 90.0}, "example.org": {"not_before": now + 500, "delay_s": 10.0}}
     assert ingest._merge_unkeyed_stamps(raw) == {"example.org": {"not_before": now + 500, "delay_s": 90.0}}
-    raw = {"example.org": {"not_before": now + 500, "delay_s": 10.0}, f"{_CRED}example.org": {"not_before": now + 100, "delay_s": 90.0}}
+    raw = {"example.org": {"not_before": now + 500, "delay_s": 10.0}, f"{_USERINFO}example.org": {"not_before": now + 100, "delay_s": 90.0}}
     assert ingest._merge_unkeyed_stamps(raw) == {"example.org": {"not_before": now + 500, "delay_s": 90.0}}  # whatever the order
 
 
 @pytest.mark.parametrize("clean", [float("nan"), float("inf"), "soon", None])
 def test_a_clean_stamp_that_is_not_a_finite_number_never_makes_the_credentialed_wait_disappear(clean):
     now = time.time()
-    raw = {"example.org": {"not_before": clean, "delay_s": 10.0}, f"{_CRED}example.org": {"not_before": now + 500, "delay_s": 30.0}}
+    raw = {"example.org": {"not_before": clean, "delay_s": 10.0}, f"{_USERINFO}example.org": {"not_before": now + 500, "delay_s": 30.0}}
     assert ingest._merge_unkeyed_stamps(raw) == {"example.org": {"not_before": now + 500, "delay_s": 30.0}}
 
 
 def test_a_delay_that_is_not_a_finite_number_reads_as_none_in_the_merge():
     now = time.time()
-    raw = {"example.org": {"not_before": now + 100, "delay_s": float("nan")}, f"{_CRED}example.org": {"not_before": now + 50, "delay_s": 30.0}}
+    raw = {"example.org": {"not_before": now + 100, "delay_s": float("nan")}, f"{_USERINFO}example.org": {"not_before": now + 50, "delay_s": 30.0}}
     assert ingest._merge_unkeyed_stamps(raw) == {"example.org": {"not_before": now + 100, "delay_s": 30.0}}
 
 
@@ -805,11 +806,11 @@ def test_the_fallback_mapping_rides_the_host_keys_circuit(tmp_path):
     """Steward 3's item 3: ``_guarded_redirect_get`` called without a mapping (the preflights) builds it from the host key."""
     s = _Session()
     f = _stub_fetcher(tmp_path, s, proxy="socks5h://127.0.0.1:9050")
-    f._guarded_redirect_get(f"https://{_CRED}Example.org:443/robots.txt")
+    f._guarded_redirect_get(f"https://{_USERINFO}Example.org:443/robots.txt")
     f.fetch("https://example.org/a")
     proxies = [kw.get("proxies") for _u, kw in s.calls]
     assert all(p == proxies[0] for p in proxies), proxies  # the fallback's circuit is the host's own
-    _no_secret(json.dumps(proxies))
+    _no_needle(json.dumps(proxies))
     assert "alicehunter2" not in json.dumps(proxies)
 
 
@@ -820,8 +821,8 @@ def test_the_files_are_scrubbed_with_persistence_off_and_nothing_new_is_written(
     rpath, _raw = _old_robots(tmp_path)
     spath, _now = _old_schedule(tmp_path)
     f = _stub_fetcher(tmp_path)
-    _no_secret(rpath.read_text("utf-8"))
-    _no_secret(spath.read_text("utf-8"))
+    _no_needle(rpath.read_text("utf-8"))
+    _no_needle(spath.read_text("utf-8"))
     before = (rpath.read_text("utf-8"), spath.read_text("utf-8"))
     persisted = rpath if off == "OO_ROBOTS_CACHE_PERSIST" else spath
     f.fetch("https://fresh.example/a")
@@ -874,7 +875,7 @@ def _refused_by_robots(tmp_path: Path, monkeypatch, *, cred: bool) -> tuple[inge
     with _server_401() as (port, seen):
         f = _loopback_fetcher(tmp_path, monkeypatch)
         with pytest.raises(ingest.RobotsUnavailable) as caught:
-            f.fetch(f"http://{_CRED if cred else ''}127.0.0.1:{port}/a")
+            f.fetch(f"http://{_USERINFO if cred else ''}127.0.0.1:{port}/a")
     return caught.value, seen
 
 
@@ -900,7 +901,7 @@ def test_the_refusal_says_the_robots_read_carried_no_credentials_and_reads_as_be
     assert text == sentence.format(h=seen[0][1]) + " (robots.txt is read without the page address's credentials)", text
     assert _readers(exc) == _readers(plain)
     assert exc.cause == plain.cause == "refused"
-    _no_secret(text)
+    _no_needle(text)
 
 
 def test_control_no_caveat_for_another_cause(tmp_path, monkeypatch):
@@ -908,14 +909,14 @@ def test_control_no_caveat_for_another_cause(tmp_path, monkeypatch):
     s.get = lambda url, **kw: (s.calls.append((url, kw)), _Resp(url, 503, b"", "text/plain"))[1]  # type: ignore[method-assign]
     f = _stub_fetcher(tmp_path, s)
     with pytest.raises(ingest.RobotsUnavailable) as caught:
-        f.fetch(f"https://{_CRED}example.org/a")
+        f.fetch(f"https://{_USERINFO}example.org/a")
     assert str(caught.value) == "robots.txt for https://example.org could not be determined (server_error); refusing to fetch"
 
 
 def test_one_host_is_one_rate_row_in_the_task_manager():
     """The independent read's N4: the host slot is the fetcher's host key."""
     m = ActivityMonitor()
-    for url in (f"https://{_CRED}example.org/a", "https://example.org/b", "https://EXAMPLE.org:443/c"):
+    for url in (f"https://{_USERINFO}example.org/a", "https://example.org/b", "https://EXAMPLE.org:443/c"):
         tok = m.fetch_started(url)
         m.fetch_bytes(10, tok)
         m.fetch_finished(tok)
@@ -929,7 +930,7 @@ def test_the_host_slot_falls_back_to_the_masked_form_and_never_raises(monkeypatc
 
     monkeypatch.setattr(ingest, "_readable_host_key", broken)
     m = ActivityMonitor()
-    tok = m.fetch_started(f"https://{_CRED}example.org/a")
+    tok = m.fetch_started(f"https://{_USERINFO}example.org/a")
     m.fetch_bytes(10, tok)
     assert [r["host"] for r in m.per_host_rates()] == [f"{USERINFO_MASK}example.org"]
 
@@ -939,18 +940,18 @@ def test_duckduckgo_writes_a_sources_domain_masked(caplog):
     included) as it was. Masked up to and including its LAST ``@``."""
     d = _ddg()
     caplog.set_level(logging.DEBUG, logger="duckduckgo")
-    url = f"https://{_CRED}news.example/"
-    d.find_missing_rss_feeds([{"domain": f"{_CRED}news.example", "url": url}], fetcher=_DiscoveryFetcher())
+    url = f"https://{_USERINFO}news.example/"
+    d.find_missing_rss_feeds([{"domain": f"{_USERINFO}news.example", "url": url}], fetcher=_DiscoveryFetcher())
     from src.ingest import FetchError
 
     none = _DiscoveryFetcher(fail=FetchError("HTTP 404"))
-    d.find_missing_rss_feeds([{"domain": f"x@{_CRED}quiet.example", "url": url}], fetcher=none)
+    d.find_missing_rss_feeds([{"domain": f"x@{_USERINFO}quiet.example", "url": url}], fetcher=none)
     d.find_missing_rss_feeds([{"domain": "plain.example", "url": "https://plain.example/"}], fetcher=none)
     msgs = _messages(caplog)
     assert f"Found RSS feed for {USERINFO_MASK}news.example: https://{USERINFO_MASK}news.example/feed.xml" in msgs, msgs
     assert f"No RSS feed found for {USERINFO_MASK}quiet.example" in msgs, msgs
     assert "No RSS feed found for plain.example" in msgs, msgs  # control: a plain domain as it was
-    _no_secret(caplog.text)
+    _no_needle(caplog.text)
     assert "x@" not in caplog.text
 
 
@@ -962,7 +963,7 @@ def test_duckduckgos_domain_label_never_raises_and_encodes_whitespace():
             raise RuntimeError("boom")
 
     assert _logged_domain(_Unprintable()) == "<unreadable domain>"
-    assert _logged_domain(f"{_CRED}news example") == f"{USERINFO_MASK}news%20example"
+    assert _logged_domain(f"{_USERINFO}news example") == f"{USERINFO_MASK}news%20example"
 
 
 def test_the_batch_redo_warning_writes_the_url_masked(caplog, monkeypatch):
@@ -972,7 +973,7 @@ def test_the_batch_redo_warning_writes_the_url_masked(caplog, monkeypatch):
 
     from src.ingest.batch import ArticleBatch
 
-    url = f"https://{_CRED}news.example/story"
+    url = f"https://{_USERINFO}news.example/story"
     batch = ArticleBatch.__new__(ArticleBatch)
     batch._session = SimpleNamespace(rollback=lambda: None)
     batch._pending = [SimpleNamespace(requested_url=url)]
@@ -991,7 +992,7 @@ def test_the_batch_redo_warning_writes_the_url_masked(caplog, monkeypatch):
     lines = [m for m in _messages(caplog) if m.startswith("collect redo:")]
     assert len(lines) == 1 and lines[0].startswith(f"collect redo: unexpected error storing https://{USERINFO_MASK}news.example/story;"), lines
     assert batch.tally["errors"] == 1
-    _no_secret(caplog.text)
+    _no_needle(caplog.text)
 
 
 def test_crawl_delay_for_reads_the_urls_own_scheme_first_from_any_spelling(tmp_path):
