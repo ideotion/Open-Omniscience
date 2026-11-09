@@ -104,7 +104,7 @@ class _Pop:
 
 
 def _use(monkeypatch, cls, **kw):
-    factory = lambda host, port, timeout=None: cls(host, port, **kw)  # noqa: E731
+    factory = lambda host, port, timeout=None, **_tls: cls(host, port, **kw)  # noqa: E731
     if cls is _Imap:
         monkeypatch.setattr(imaplib, "IMAP4_SSL", factory)
     else:
@@ -184,7 +184,7 @@ def test_an_error_while_the_switch_is_engaged_ends_the_pull_as_the_stop(monkeypa
             activate_kill_switch()
             raise OSError("connection reset")
 
-    monkeypatch.setattr(imaplib, "IMAP4_SSL", lambda host, port, timeout=None: _Failing(host, port))
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", lambda host, port, timeout=None, **_tls: _Failing(host, port))
     raws = fetch_imap("h", "u", "p")
     assert list(raws) == [] and raws.stopped is True
     assert _Failing.last.shut is True and "logout" not in _Failing.last.commands
@@ -202,7 +202,7 @@ def test_an_error_after_the_stop_keeps_what_was_fetched(monkeypatch, cls):
                     raise OSError("connection reset")
                 return super().fetch(mid, parts)
 
-        monkeypatch.setattr(imaplib, "IMAP4_SSL", lambda host, port, timeout=None: _Late(host, port))
+        monkeypatch.setattr(imaplib, "IMAP4_SSL", lambda host, port, timeout=None, **_tls: _Late(host, port))
         raws = fetch_imap("h", "u", "p", limit=5)
         assert _Late.last.shut is True and "logout" not in _Late.last.commands
     else:
@@ -214,7 +214,7 @@ def test_an_error_after_the_stop_keeps_what_was_fetched(monkeypatch, cls):
                     raise OSError("connection reset")
                 return super().retr(i)
 
-        monkeypatch.setattr(poplib, "POP3_SSL", lambda host, port, timeout=None: _LatePop(host, port))
+        monkeypatch.setattr(poplib, "POP3_SSL", lambda host, port, timeout=None, **_tls: _LatePop(host, port))
         raws = fetch_pop3("h", "u", "p", limit=5)
         assert _LatePop.last.closed is True and "quit" not in _LatePop.last.commands
     assert list(raws) == [b"message 1"] and raws.stopped is True
@@ -228,7 +228,7 @@ def test_an_error_while_online_is_still_an_error_and_logs_out(monkeypatch, cls):
             def select(self, folder):
                 raise OSError("connection reset")
 
-        monkeypatch.setattr(imaplib, "IMAP4_SSL", lambda host, port, timeout=None: _Broken(host, port))
+        monkeypatch.setattr(imaplib, "IMAP4_SSL", lambda host, port, timeout=None, **_tls: _Broken(host, port))
         with pytest.raises(OSError):
             fetch_imap("h", "u", "p")
         assert _Broken.last.commands[-1] == "logout"
@@ -238,7 +238,7 @@ def test_an_error_while_online_is_still_an_error_and_logs_out(monkeypatch, cls):
             def list(self):
                 raise OSError("connection reset")
 
-        monkeypatch.setattr(poplib, "POP3_SSL", lambda host, port, timeout=None: _BrokenPop(host, port))
+        monkeypatch.setattr(poplib, "POP3_SSL", lambda host, port, timeout=None, **_tls: _BrokenPop(host, port))
         with pytest.raises(OSError):
             fetch_pop3("h", "u", "p")
         assert _BrokenPop.last.commands[-1] == "quit"
@@ -268,7 +268,7 @@ class _CapImap:
     last: _CapImap
     stop_on: str | None = None
 
-    def __init__(self, host, port, timeout=None):
+    def __init__(self, host, port, timeout=None, **_tls):
         self.commands: list[str] = []
         self.shut = False
         _CapImap.last = self  # on this class: the module wraps it in a subclass of its own
