@@ -538,8 +538,11 @@ def test_a_powershell_row_whose_deferred_writer_cannot_start_is_written_late_by_
     _seed(f, 5)
     name = "OOLauncherRecords-" + hashlib.sha1(str(f).lower().encode("utf-8")).hexdigest().upper()
     holder = tmp_path / "hold.ps1"
-    holder.write_text(f'$m = New-Object System.Threading.Mutex($false, "{name}"); [void]$m.WaitOne(); Set-Content "{tmp_path}/held" 1; Start-Sleep 4; '
-                      f'Set-Content "{tmp_path}/released" 1; $m.ReleaseMutex()', encoding="utf-8")
+    # the holder lets go only once the launcher has started its server (its marker is written before any row) and 2 s more: a fixed sleep could end
+    # before a cold launcher reached its rows, and the test would then pass on the old code without ever reaching the path it is about
+    holder.write_text(f'$m = New-Object System.Threading.Mutex($false, "{name}"); [void]$m.WaitOne(); Set-Content "{tmp_path}/held" 1; '
+                      f'$end = (Get-Date).AddSeconds(90); while (-not (Test-Path "{tmp_path}/m") -and (Get-Date) -lt $end) {{ Start-Sleep -Milliseconds 50 }}; '
+                      f'Start-Sleep 2; Set-Content "{tmp_path}/released" 1; $m.ReleaseMutex()', encoding="utf-8")
     text = LAUNCH_PS1.read_text(encoding="utf-8").replace("$RecLockWaitMs = 520", "$RecLockWaitMs = 100")
     assert text.count("$psi.FileName = (Get-Process -Id $PID).Path") == 1
     copy = tmp_path / "w.ps1"
@@ -558,6 +561,7 @@ def test_a_powershell_row_whose_deferred_writer_cannot_start_is_written_late_by_
     finally:
         h.kill()
         h.wait()
+    assert marker.exists(), "the launcher never started its server"
     pid = int(marker.read_text(encoding="utf-8"))
     assert sum(1 for r in _rows(f)[0] if r.get("pid") == pid) == 1, "the row is written once, by the launcher itself"
 
