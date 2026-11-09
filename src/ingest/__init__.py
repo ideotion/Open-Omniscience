@@ -30,6 +30,8 @@ import socket
 import sys
 import threading
 import time
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError
@@ -180,6 +182,13 @@ class FetchFailed(FetchError):
 
 class BlockedTarget(FetchFailed):
     """The URL (or a redirect of it) resolves to a non-public address (SSRF guard)."""
+
+
+class RedirectOutOfScope(FetchFailed):
+    """A redirect hop out of the scope the caller kept the fetch to (R629): a crawl kept to one site
+    (``CrawlConfig.same_domain_only``) or a sitemap index, whose hop to another site is refused before anything is
+    asked of that site (no lookup, no robots.txt read, no request). Deterministic, never retried; a ``FetchFailed``,
+    so every caller that counts a page it could not have counts this one."""
 
 
 # How long a robots.txt decision is cached, in seconds.
@@ -1010,6 +1019,58 @@ def _reset_crossed_online_for_tests() -> None:
 #: private name for the call sites and tests that already use it.
 _is_blocked_ip = is_blocked_ip
 
+#: The fixed words a robots refusal of a redirect hop ends with (R629): the address refused is the hop's, reached from the page asked for.
+_REDIRECT_HOP_NOTE = "reached by a redirect"
+
+
+class _RedirectChain:
+    """One page fetch's walk along its redirect chain (R629): the ONE per-host lock it holds, and the scope its caller kept it to.
+
+    A hop to another host takes that host's robots.txt and politeness interval under that host's lock, as a first request does.
+    The lock is HANDED OVER, never added: the host the chain leaves is stamped (its request was answered) and its lock released
+    BEFORE the next host's lock is waited for, so a thread holds at most one host lock at any moment. Two chains crossing each
+    other (A -> B on one thread while B -> A runs on another) can then never each hold the lock the other waits for, which is the
+    deadlock a second lock taken on top of the first would make. What the hand-over gives up is nothing a lock protected: the host
+    left behind has had its request answered and its response closed.
+    """
+
+    __slots__ = ("_fetcher", "_lock", "first", "netloc", "requested", "scope")
+
+    def __init__(self, fetcher: EthicalFetcher, netloc: str, scope: Callable[[str], bool] | None) -> None:
+        self._fetcher = fetcher
+        #: entered and exited as the ``with`` it replaces did, so whatever ``_host_lock`` hands back keeps working
+        self._lock: AbstractContextManager[Any] | None = None
+        self.first = netloc  #: the host key of the URL asked for: a retry starts again from it
+        self.netloc = netloc  #: the host key whose lock is held
+        self.requested = False  #: a request went to the held host since it was taken: its interval counts from the stamp
+        self.scope = scope
+        self._take(netloc)
+
+    def _take(self, netloc: str) -> None:
+        lock = self._fetcher._host_lock(netloc)
+        lock.__enter__()
+        self._lock, self.netloc, self.requested = lock, netloc, False
+
+    def stamp(self) -> None:
+        """Write the held host's last-request time, once, if a request went to it."""
+        if self.requested:
+            with self._fetcher._host_state_guard:
+                self._fetcher._last_request[self.netloc] = self._fetcher._now()
+            self.requested = False
+
+    def move(self, netloc: str) -> None:
+        """Stamp and release the held host, then wait for ``netloc``'s lock holding none (nothing to do on the held host)."""
+        if netloc == self.netloc and self._lock is not None:
+            return
+        self.stamp()
+        self.release()
+        self._take(netloc)
+
+    def release(self) -> None:
+        lock, self._lock = self._lock, None
+        if lock is not None:
+            lock.__exit__(None, None, None)
+
 
 class EthicalFetcher:
     """Stateful fetcher enforcing robots.txt (fail-closed) + per-host rate limits.
@@ -1352,11 +1413,19 @@ class EthicalFetcher:
         require_html: bool = True,
         extra_headers: dict[str, str] | None = None,
         keep_bytes: bool = False,
+        redirect_scope: Callable[[str], bool] | None = None,
     ) -> FetchResult:
         """Fetch ``url`` ethically. Raises a ``FetchError`` subclass on any refusal.
 
         ``require_html`` rejects non-HTML responses (used for article pages). Set it
         False to fetch feeds (RSS/Atom XML) through the same robots/rate-limit path.
+
+        A redirect hop to ANOTHER host (another host key: a host or a port, never only the
+        scheme) is a first request to that host (R629): its robots.txt is read and its interval
+        waited, fail-closed, under its own lock, before it is requested. ``redirect_scope``, when
+        given, is asked about every hop's URL first, and a hop it answers False for (or cannot
+        answer) is refused with :class:`RedirectOutOfScope` before anything is asked of its host:
+        a crawl kept to one site hands its site here.
 
         ``extra_headers`` adds request headers (e.g. conditional-GET
         ``If-None-Match`` / ``If-Modified-Since`` for feeds). When the server
@@ -1394,8 +1463,11 @@ class EthicalFetcher:
         # rate-limit + the (possibly retried) GET + body read. So a host is hit by
         # AT MOST ONE request at a time (politeness is never traded for speed, even
         # under parallel collection), while DIFFERENT hosts proceed in parallel —
-        # each on its own Tor circuit. The lock releases on return/raise.
-        with self._host_lock(parsed.netloc):
+        # each on its own Tor circuit. A redirect hop to another host hands the lock
+        # over to that host's (R629, see _RedirectChain): never two held at once. The
+        # lock held at the end releases on return/raise.
+        chain = _RedirectChain(self, parsed.netloc, redirect_scope)
+        try:
             return self._fetch_locked(
                 url,
                 host_key=host_key,
@@ -1404,13 +1476,16 @@ class EthicalFetcher:
                 extra_headers=extra_headers,
                 iso_proxies=iso_proxies,
                 keep_bytes=keep_bytes,
+                chain=chain,
             )
+        finally:
+            chain.release()
 
     def _fetch_locked(
         self, url, *, host_key, parsed, require_html, extra_headers, iso_proxies,
-        keep_bytes=False,
+        keep_bytes=False, chain: _RedirectChain,
     ) -> FetchResult:
-        """The per-host-serialised fetch body (caller holds the host lock)."""
+        """The per-host-serialised fetch body (``chain`` holds the host lock: the first host's, then the hop's)."""
         # robots.txt is checked once (not per retry): a disallow/unavailable is a
         # deliberate, non-transient refusal.
         if self.respect_robots:
@@ -1426,6 +1501,7 @@ class EthicalFetcher:
             transient: Exception | None = None
             response = final_url = None
             while True:
+                chain.move(chain.first)  # a retry starts again from the first host, under its lock (R629); nothing to do on the first try
                 try:
                     self._respect_rate_limit(parsed.netloc, host_key)
                 except CrawlDelayDeferred:
@@ -1439,12 +1515,23 @@ class EthicalFetcher:
                     if transient is not None:
                         raise transient from None
                     break  # a retryable status: handled below, as when the retries run out
+                chain.requested = True
+                prior = (transient, response, final_url)  # this attempt's predecessor, for a hop that defers on a retry
                 transient = None
                 response = final_url = None
                 try:
                     response, final_url = self._http_get(
-                        url, extra_headers=extra_headers, proxies=iso_proxies
+                        url, extra_headers=extra_headers, proxies=iso_proxies, chain=chain
                     )
+                except CrawlDelayDeferred:
+                    # A redirect hop's own host deferred (R629), before its request: on the first attempt that is the answer, as
+                    # above; on a retry the failed request before it is (the same rule as for the first host, above).
+                    if attempt == 0:
+                        raise
+                    transient, response, final_url = prior
+                    if transient is not None:
+                        raise transient from None
+                    break  # a retryable status: handled below, as when the retries run out
                 except requests.RequestException as exc:
                     if _carries_airplane_refusal(exc):
                         # The guard's own refusal, found by TYPE (R620): the switch's, whatever words came with it. Raised at once
@@ -1460,8 +1547,9 @@ class EthicalFetcher:
                         f"request error for {failure_url(url)}: {record_text(exc, *userinfo_secrets(url), typed=False)}"
                     )
                 finally:
-                    with self._host_state_guard:
-                        self._last_request[parsed.netloc] = self._now()
+                    # the host last requested: the first, or the host of the hop the chain ended on (the hosts it left were
+                    # stamped as it left them, R629)
+                    chain.stamp()
 
                 # transient is None <=> _http_get returned, i.e. `response` is set.
                 # Spelled out because that pairing lives in the try/except above.
@@ -1719,6 +1807,7 @@ class EthicalFetcher:
         *,
         extra_headers: dict[str, str] | None = None,
         proxies: dict[str, str] | None = None,
+        chain: _RedirectChain | None = None,
     ):
         """GET with manual, bounded redirects, re-validating every hop (SSRF).
 
@@ -1726,9 +1815,11 @@ class EthicalFetcher:
         the final resource is the one that validates them. ``proxies`` (per-host
         Tor stream isolation) overrides the session proxy for THIS fetch, keyed on
         the ORIGINAL host so every redirect hop stays on the same circuit.
+        ``chain`` (the page fetch's, from :meth:`fetch`) makes a hop to another
+        host a first request to it (R629, :meth:`_take_hop_host`).
         """
         return self._guarded_redirect_get(
-            url, extra_headers=extra_headers, proxies=proxies, stream=True
+            url, extra_headers=extra_headers, proxies=proxies, stream=True, chain=chain
         )
 
     def _guarded_redirect_get(
@@ -1738,9 +1829,17 @@ class EthicalFetcher:
         extra_headers: dict[str, str] | None = None,
         proxies: dict[str, str] | None = None,
         stream: bool = False,
+        chain: _RedirectChain | None = None,
     ):
         """The ONE redirect path: follow bounded redirects manually, re-running the
         SSRF guard on EVERY hop's target (CWE-918). Returns ``(response, final_url)``.
+
+        ``chain`` is given by the page fetch alone (``fetch`` -> ``_http_get``, R629): its
+        scope is asked about every hop before the guard looks the hop's host up, and a hop
+        to another host then takes that host's lock, robots.txt and interval before it is
+        requested (:meth:`_take_hop_host`). Every other caller passes none and keeps the
+        behaviour it had: the robots read (``_get_robots``, so ``declared_sitemaps`` too),
+        whose own hops are never made to read robots.txt again, and the two preflights.
 
         Both the page fetch (``_http_get``, ``stream=True``) and the robots.txt
         fetch (``_get_robots``, ``stream=False``) route through here, so a 30x
@@ -1795,7 +1894,7 @@ class EthicalFetcher:
             # contract they already have: a connect-time refusal is a
             # BlockedTarget like a resolve-time one, deterministic, never retried.
             try:
-                for _ in range(self._max_redirects + 1):
+                for hop in range(self._max_redirects + 1):
                     kwargs: dict[str, Any] = {"timeout": self.timeout, "allow_redirects": False}
                     if extra_headers:
                         kwargs["headers"] = extra_headers
@@ -1839,15 +1938,61 @@ class EthicalFetcher:
                             except ValueError:  # shown as a space, a bracketed host is no longer an address
                                 raise BlockedTarget("URL host cannot be read") from None
                         self._refuse_parser_mismatch(nxt)
+                        if chain is not None:
+                            self._refuse_out_of_scope(chain, nxt)  # before the guard looks the host up: nothing is asked of it (R629)
                         self._guard_target(p.hostname)  # re-validate the redirect target
                         if hasattr(resp, "close"):
                             resp.close()
+                        if chain is not None and hop < self._max_redirects:  # never for a hop the bound will not request
+                            self._take_hop_host(chain, nxt, p)
                         current = nxt
                         continue
                     return resp, str(getattr(resp, "url", current) or current)
             except BlockedConnectTarget as exc:
                 raise BlockedTarget(record_text(exc, typed=False)) from None
         raise FetchFailed(f"too many redirects for {failure_url(url)}")
+
+    @staticmethod
+    def _refuse_out_of_scope(chain: _RedirectChain, nxt: str) -> None:
+        """Refuse a hop the page fetch's scope does not cover (R629), before anything is asked of its host. A scope that cannot
+        answer (it raises) keeps the hop out: the scope is a promise about where a fetch may go, so a doubt refuses."""
+        if chain.scope is None:
+            return
+        try:
+            inside = bool(chain.scope(nxt))
+        except Exception:  # noqa: BLE001 - fail closed; the hop is refused in fixed words below, the error is not written
+            inside = False
+        if not inside:
+            raise RedirectOutOfScope(f"redirect leaves the site the fetch is kept to, not followed: {failure_url(nxt)!r}")
+
+    def _take_hop_host(self, chain: _RedirectChain, nxt: str, p) -> None:
+        """Make a page fetch's hop to ANOTHER host a first request to it (R629), before it is requested.
+
+        Another host is another host key (``_host_netloc``: the host and the port a request goes to), the key every per-host
+        record already uses. A hop on the same key (another path, or ``http`` -> ``https`` on the same host) is unchanged: it is
+        under that host's lock, and the robots decision and the interval of the first request stand for it. For another host,
+        in the order ``fetch()`` takes them for a first request, each fail-closed:
+          - the chain's lock moves to the new host (the old one stamped and released first, never two held: see _RedirectChain);
+          - its robots.txt (``_enforce_robots``: a disallow is RobotsDisallowed, an unreadable robots.txt RobotsUnavailable, the
+            same refusals as a first request's, ending with fixed words that say a redirect led there);
+          - its interval or Crawl-delay is waited, or deferred past the cap (CrawlDelayDeferred, the stamp written first);
+          - the switch is read before and after the waits: a Stop pressed while the hop waited for a lock or an interval refuses
+            it, for an injected session as for a real one (the hop's own ``_guard_target`` reads it first only for a real one).
+        The robots read is ``_get_robots``, which passes no chain on: its own redirect hops keep today's behaviour and never read
+        robots.txt themselves, so a read can never recurse."""
+        key = _host_netloc(p.netloc, p.scheme)
+        if key == chain.netloc:
+            return
+        if _KILL.is_set():
+            raise FetchFailed(KILL_SWITCH_REFUSAL)
+        chain.move(key)
+        host_key = f"{p.scheme}://{key}"
+        if self.respect_robots:
+            self._enforce_robots(nxt, host_key, p._replace(netloc=key), hop=True)
+        self._respect_rate_limit(key, host_key)
+        if _KILL.is_set():
+            raise FetchFailed(KILL_SWITCH_REFUSAL)
+        chain.requested = True
 
     @staticmethod
     def _refuse_parser_mismatch(url: str) -> None:
@@ -2040,7 +2185,10 @@ class EthicalFetcher:
             dropped += 1
         return dropped
 
-    def _enforce_robots(self, url: str, host_key: str, parsed) -> None:
+    def _enforce_robots(self, url: str, host_key: str, parsed, *, hop: bool = False) -> None:
+        """Refuse ``url`` unless its host's robots.txt allows it. ``hop``: ``url`` is a redirect hop's (R629), and the refusal
+        ends with fixed words saying so, since the caller records it against the address it asked for."""
+        via = f" ({_REDIRECT_HOP_NOTE})" if hop else ""
         parser = self._get_robots(host_key, parsed)
         if parser is None:
             # "unknown", never a plausible default: a sidecar entry written before the
@@ -2052,11 +2200,11 @@ class EthicalFetcher:
             # this way. Said in fixed words AFTER the sentence every reader reads, which is otherwise unchanged (N2).
             caveat = f" ({_ROBOTS_READ_WITHOUT_USERINFO})" if cause == "refused" and _carries_userinfo(url) else ""
             raise RobotsUnavailable(
-                f"robots.txt for {failure_url(host_key)} could not be determined ({cause}); refusing to fetch{caveat}",
+                f"robots.txt for {failure_url(host_key)} could not be determined ({cause}); refusing to fetch{caveat}{via}",
                 cause=cause,
             )
         if not parser.can_fetch(self.user_agent, url):
-            raise RobotsDisallowed(f"robots.txt disallows {failure_url(url)}")
+            raise RobotsDisallowed(f"robots.txt disallows {failure_url(url)}{via}")
 
     def _get_robots(self, host_key: str, parsed) -> RobotFileParser | None:
         cached = self._robots.get(host_key)
