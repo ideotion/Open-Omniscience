@@ -3413,7 +3413,9 @@ without it you get an honest "not reachable" message.
 
 - Machine-readable exports now carry a stable contract (`oo-export-1`): JSON exports are
   self-describing envelopes (schema, app version, generated-at, the exact query, count);
-  CSV columns are unchanged, with the same provenance as `X-OO-*` HTTP headers.
+  CSV columns keep their order, with the same provenance as `X-OO-*` HTTP headers. The last
+  column, **Fetched From Host** (`fetched_host` in JSON), is the host the page was actually
+  fetched from after its redirects; it is empty for an article stored before it was recorded.
 - The **citation graph** — which external domains your stored articles cite, counts only,
   no inferred credibility — exports as GraphML (`/api/links/export.graphml`) for
   Gephi/yEd/NetworkX, or JSON.

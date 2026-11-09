@@ -58,6 +58,7 @@ from sqlalchemy import and_, func, literal, literal_column, select, text, tuple_
 from sqlalchemy.orm import Session
 
 from src.database.session import get_db
+from src.utils.url_utils import fetched_host_fields
 
 router = APIRouter(prefix="/api/feed", tags=["feed"])
 
@@ -191,6 +192,9 @@ def _card(a: Any, keywords: list[dict]) -> dict:
         "title": a.title,
         "url": a.url,
         "source": a.source.name if a.source else None,
+        # Queue item 61: where the page was fetched from, after its redirects, and whether that is another site than the
+        # source's, so the card can say so beside the source it credits (both null when not recorded or nothing to compare).
+        **fetched_host_fields(a.fetched_host, a.source.domain if a.source else None),
         "published_at": a.published_at.isoformat() if a.published_at else None,
         "language": a.language,
         "detected_language": a.detected_language,
