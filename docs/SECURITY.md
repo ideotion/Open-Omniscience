@@ -458,7 +458,9 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   points with the same rules as `connect` and `sendto` (alias refused, `localhost` swapped for the
   family's literal, any non-loopback target refused before the overlapped call, and the SSRF connect
   check on a connect, which acts only inside a guarded fetch, never on the event-loop thread today). The proactor itself is kept:
-  no switch to a selector loop. **Residual, Windows named pipes:** `loop.create_pipe_connection` with a
+  no switch to a selector loop. If that class cannot be resolved on Windows (renamed, a method gone, or
+  `asyncio.windows_events` failing to import), the guard refuses to arm and says so in an error-level log
+  line, and the serving gate (R644) then refuses every request, rather than arming with that hole (R648). **Residual, Windows named pipes:** `loop.create_pipe_connection` with a
   remote UNC name (`\\host\pipe\x`) goes through `IocpProactor.connect_pipe` to `CreateFile`, and
   the Windows redirector reaches that host over SMB beside any socket, the same class as opening a
   `\\host\share` file; nothing in-tree opens a pipe. Any **non-loopback** target

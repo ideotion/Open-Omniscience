@@ -104,9 +104,11 @@ from __future__ import annotations
 
 import http.client
 import ipaddress
+import logging
 import os
 import re
 import socket
+import sys
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -128,11 +130,24 @@ except ImportError:  # pragma: no cover - PySocks is an operator-installed extra
 # datagrams through ``WSASendTo``, never through ``socket.socket.connect``/``sendto``, and an IP-literal target skips ``getaddrinfo``:
 # its two entry points are patched with the same rules. The module exists only on Windows (it imports ``_overlapped``), where asyncio
 # itself imports it at start, so this import costs nothing there and is absent everywhere else.
+#
+# R648: on Windows a proactor that cannot be resolved (the class renamed, a method gone, or the module failing to import with any
+# error) is not skipped in silence: ``install_airplane_socket_guard`` then refuses to arm, so the serving gate (R644) answers 503.
 try:
     from asyncio import windows_events as _windows_events  # type: ignore[attr-defined,unused-ignore]
-except ImportError:
+except Exception:  # noqa: BLE001 - any failure leaves the class unresolved, which R648 turns into a refusal on win32
     _windows_events = None  # type: ignore[assignment,unused-ignore]
-_proactor_cls: Any = getattr(_windows_events, "IocpProactor", None)
+
+
+def _resolve_proactor(module: object) -> Any:
+    """The module's ``IocpProactor`` when it has both entry points this guard patches, else None (R648)."""
+    cls = getattr(module, "IocpProactor", None)
+    if callable(getattr(cls, "connect", None)) and callable(getattr(cls, "sendto", None)):
+        return cls
+    return None
+
+
+_proactor_cls: Any = _resolve_proactor(_windows_events)
 
 
 class AirplaneModeError(OSError):
@@ -797,14 +812,31 @@ def _install_patches() -> None:
     _installed = True
 
 
+#: The fixed words of R648's refusal: the guard is not armed, so the serving gate (R644) answers every request with its 503.
+PROACTOR_UNRESOLVED_REFUSAL = (
+    "airplane mode's network guard was NOT armed: on Windows it must also guard asyncio's proactor loop "
+    "(asyncio.windows_events.IocpProactor.connect and .sendto), and that class could not be found in this Python. "
+    "The app will refuse to serve until it runs on a Python where it can be."
+)
+
+
+def _proactor_unresolved() -> bool:
+    """R648: on Windows the proactor's two entry points must be patch points; a class that could not be resolved is a refusal."""
+    return sys.platform == "win32" and _orig_proactor_connect is None
+
+
 def install_airplane_socket_guard() -> bool:
     """Install the process-wide backstop. Idempotent; honoured by all later sockets.
 
-    Returns True if installed (or already installed), False if disabled by env.
-    Safe to call at every boot — transparent while online.
+    Returns True if installed (or already installed), False if disabled by env, or if on Windows the proactor's entry points could
+    not be resolved (R648): the guard then refuses to ARM, logs why at error level, and the serving gate (R644) answers 503, rather
+    than arming a guard with a known hole in it. Safe to call at every boot — transparent while online.
     """
     global _airplane_armed
     if os.getenv("OO_AIRPLANE_SOCKET_GUARD", "1") == "0":
+        return False
+    if _proactor_unresolved():
+        logging.getLogger(__name__).error(PROACTOR_UNRESOLVED_REFUSAL)
         return False
     _install_patches()
     _airplane_armed = True
