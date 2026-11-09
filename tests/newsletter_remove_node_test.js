@@ -43,14 +43,18 @@ function el() {
 }
 
 // One run of the handler against a server whose answers the test writes: `counts` is what
-// /api/newsletters/imported-count answers on each call, `post` what the removal answers
-// (an object) or throws (an Error).
+// /api/newsletters/imported-count answers on each call (or throws, an Error), `post` what the
+// removal answers (an object) or throws (an Error).
 async function run({counts, post}) {
   const nodes = {"nl-remove-panel": el(), "nl-remove-count": el(), "nl-remove-result": el()};
   const calls = {posts: 0, toasts: []};
   let countCall = 0;
   const api = async (url, opts) => {
-    if (url === "/api/newsletters/imported-count") return {count: counts[Math.min(countCall++, counts.length - 1)]};
+    if (url === "/api/newsletters/imported-count") {
+      const c = counts[Math.min(countCall++, counts.length - 1)];
+      if (c instanceof Error) throw c;
+      return {count: c};
+    }
     if (url === "/api/newsletters/remove-imported") {
       assert.strictEqual(opts.method, "POST");
       calls.posts += 1;
@@ -108,6 +112,17 @@ async function run({counts, post}) {
     assert.ok(nodes["nl-remove-result"].innerHTML.includes(words), "the stopped removal's words are shown");
     assert.ok(nodes["nl-remove-result"].innerHTML.startsWith('<span class="note err">Removal failed: '));
     assert.ok(!calls.toasts.some((x) => x[1] === "ok"), "no success is announced");
+    assert.deepStrictEqual(calls.toasts, [["Removal failed: " + words, "err"]], "and the words are toasted, as text");
+  }
+
+  // 3b. A stopped removal whose count read then fails too (a damaged file can fail both): the count refresh hides the
+  //     panel and its words with it, so the words must still reach the user, in the error toast.
+  {
+    const words = "The removal stopped after removing 900 of the 1000 imported newsletter articles; the other 100 are still in your corpus. Run the removal again to remove them.";
+    const {nodes, calls} = await run({counts: [1000, new Error("count read failed")], post: new Error(words)});
+    assert.strictEqual(calls.posts, 1, "a failed removal is never re-sent");
+    assert.strictEqual(nodes["nl-remove-panel"].style.display, "none", "the panel hides when the count cannot be read");
+    assert.deepStrictEqual(calls.toasts, [["Removal failed: " + words, "err"]], "the words reach the user anyway");
   }
 
   // 4. The note is never parsed as markup.

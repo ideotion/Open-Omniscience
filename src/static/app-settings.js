@@ -1739,6 +1739,9 @@
         if (d.note) toast(d.note, "warn");
       } catch (e) {
         $("nl-remove-result").innerHTML = `<span class="note err">${esc(ooLabelText(t("Removal failed"), e.message))}</span>`;
+        // ... and as a toast: the count refresh below hides this panel when it cannot read the count, and a damaged file can fail
+        // the removal and that read together, so the words must not live only in the panel (the fresh read of queue item 58).
+        toast(ooLabelText(t("Removal failed"), e.message), "err");
       } finally {
         btn.disabled = false;
         loadNewsletterRemoveCount();  // after a removal that stopped partway too: the count is what is left
