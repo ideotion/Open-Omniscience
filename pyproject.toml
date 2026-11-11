@@ -80,8 +80,9 @@ dependencies = [
     # contained wheels on Linux/Windows/macOS (verified: gate zero + the 3-OS
     # CI smoke job). Plaintext stores still open via stdlib sqlite3 -- the
     # driver engages only for encrypted files (src/database/connect.py).
-    # CEILING <0.6.5 = the first release NOT qualified. 0.6.4 (SQLCipher 4.19.0; 0.6.2 and 0.6.3 are 4.12.0)
-    # reports page damage differently from 4.12 and was QUALIFIED 2026-10-13: tests/test_poisoned_connection.py and
+    # CEILING <0.6.6 = the first release NOT qualified. 0.6.4 (SQLCipher 4.19.0; 0.6.2 and 0.6.3 are 4.12.0)
+    # reports page damage differently from 4.12 and was QUALIFIED 2026-10-13; 0.6.5 (SQLCipher 4.20.0, SQLite 3.54.1)
+    # reports it as 4.19 does and was QUALIFIED 2026-11-11 (the bump PR #1873 had lifted the ceiling alone): tests/test_poisoned_connection.py and
     # tests/test_database_verify_pages.py pin both engines' answers, and the `sqlcipher-engines` CI lane runs
     # them on the floor and on the newest release. Lift the ceiling only by that qualification
     # (docs/maintenance/EXTERNAL_DEPENDENCIES.md), never by loosening a test.

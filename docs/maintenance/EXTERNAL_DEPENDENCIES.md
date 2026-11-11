@@ -109,7 +109,8 @@ the encrypted round trip — that in-lane checksum is **never** written back int
 - **sqlcipher3** (`sqlcipher3-driver`) — the at-rest encryption driver; the damage lane
   (`src/database/damage.py`, the page pass) is built on how the bundled SQLCipher reports page
   damage. 4.12 (`sqlcipher3` 0.6.2 and 0.6.3) and 4.19 (0.6.4) report it differently and both are
-  qualified; `pyproject.toml` carries a ceiling (`<0.6.5`, the first release not qualified). The
+  qualified; 4.20 (0.6.5) reports it as 4.19 does and is qualified too (2026-11-11). `pyproject.toml`
+  carries a ceiling (`<0.6.6`, the first release not qualified). The
   `sqlcipher-engines` CI job runs `tests/test_poisoned_connection.py` and
   `tests/test_database_verify_pages.py` on the floor (blocking) and on the newest release
   (observation), so a new release is one red leg there. To lift the ceiling: qualify the new

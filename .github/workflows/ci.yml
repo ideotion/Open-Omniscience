@@ -304,6 +304,8 @@ jobs:
         # at the old ceiling, said the ceiling can be lowered to 412). pyproject.toml now pins ruff
         # to that one release (ruff==0.17.3, as mypy is pinned), so the number is true by
         # construction and a new release arrives as its own Dependabot PR, whose run re-measures it.
+        # 2026-11-11: ruff 0.17.4 (Dependabot #1874, merged with this lane red) reads 415 on the same
+        # tree: four new SIM102 findings. They were fixed and the ceiling lowered to the 411 left.
         # There is no spare slot now:
         # CI measures the merge of the PR into the base tip as it stands when the run starts, so a
         # finding another PR lands first reddens the next run of whichever PR merges second (and
@@ -311,7 +313,7 @@ jobs:
         # ruff CI installs, before merging, never from this comment. (This comment must not spell
         # out the script's command line: guards_for_diff.py refuses a ci.yml with a second such
         # line, and test_ruff_ratchet.py reads the number from the first one.)
-        run: python scripts/ruff_ratchet.py --max 412
+        run: python scripts/ruff_ratchet.py --max 411
 
       # THE PLANNED-WORK REVERSE INDEX (maintainer-asked 2026-09-22): "find a way so that
       # future bug discovery would not contradict what has been planned ... to help future
@@ -886,7 +888,7 @@ jobs:
         shell: python
         run: |
           import subprocess, sys
-          subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "sqlcipher3==0.6.4"])
+          subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "sqlcipher3==0.6.5"])
           import os, sqlite3, tempfile
           from sqlcipher3 import dbapi2 as sqc
           path = os.path.join(tempfile.mkdtemp(), "enc.db")

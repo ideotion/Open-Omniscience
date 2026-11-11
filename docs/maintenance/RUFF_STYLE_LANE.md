@@ -103,7 +103,8 @@ A count-over-a-tool ratchet is only meaningful while the tool's rule set is fixe
 an unpinned floor "let a newer mypy report one extra error … and redden every PR with no code
 change". `ruff` was `>=0.4.0` (unbounded), then `>=0.16.6,<0.18`, and since 2026-11-05 is
 `ruff==0.17.3`, exact like mypy (R412): the same tree reads 414 on ruff 0.16.9 and 412 on
-0.17.3, so a range let CI and a developer's machine measure two different numbers, and the
+0.17.3 (on 2026-11-11 ruff 0.17.4, the pin since, read 415 on the tree 0.17.3 read as 411: four new SIM102
+findings, fixed, and the ceiling moved to 411), so a range let CI and a developer's machine measure two different numbers, and the
 ceiling in `ci.yml` was true only on the day it was measured. With one release it is true by
 construction, and a new release arrives as a Dependabot PR whose own CI run is the
 re-measurement: bump the pin, the ceiling (if the new release reads differently) and this
