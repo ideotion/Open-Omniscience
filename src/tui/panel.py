@@ -66,7 +66,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.monitoring.secret_scrub import HELD_ENV_VARS
-from src.utils.interrupts import kept
 
 try:  # absent on Windows without windows-curses; main() says so and ends
     import curses
@@ -84,6 +83,7 @@ REFRESH_IDLE_S = 8.0
 REPAINT_S = 1.0
 #: A second press of Stop within this many seconds confirms it; anything else cancels.
 STOP_CONFIRM_S = 10.0
+STOP_MIN_GAP_S = 0.8  # a confirming press sooner than this after the question is ignored
 #: ONLY when the server's identity cannot be pinned (a pid given but psutil missing or refused): a pid can be REUSED by another process
 #: once the server has ended, so a long silence still ends the panel there. With the identity pinned, silence never ends it (R658).
 GONE_WITH_PID_S = 300.0
@@ -329,6 +329,7 @@ class Watcher:
         self.silent_since: float | None = None  # monotonic
         self.said_silent = False
         self.milestones: dict[str, int] = {}
+        self.last_jobs: list[Job] | None = None  # the last read that listed the jobs: one failed read does not replay them all
 
     def silent_for(self, now: float) -> float | None:
         return None if self.silent_since is None else now - self.silent_since
@@ -365,7 +366,8 @@ class Watcher:
         elif snap.collecting and snap.collect_phase != prev.collect_phase and phase:
             out.append((f"Collection: {phase}.", "normal"))
         if snap.jobs_known:
-            out.extend(self._jobs(prev.jobs if prev and prev.jobs_known else None, snap.jobs, snap.collecting))
+            out.extend(self._jobs(self.last_jobs, snap.jobs, snap.collecting))
+            self.last_jobs = snap.jobs
         self.prev = snap
         return out
 
@@ -425,6 +427,7 @@ class PanelState:
     notice: str = ""
     notice_until: float = 0.0
     scroll: int = 0  # lines back from the newest; 0 follows the log as it grows
+    stop_armed_at: float = 0.0
 
 
 def buttons_for(snap: Snapshot, *, windows: bool = IS_WINDOWS) -> list[Button]:
@@ -597,6 +600,8 @@ def do_action(action: str, state: PanelState, snap: Snapshot, port: int, url: st
         else:
             say("Pause did not go through. Try again, or use the UI.", "warn")
     elif action == "stop":
+        if state.stop_confirm_until > now and now - state.stop_armed_at < STOP_MIN_GAP_S:
+            return None  # a second press too soon to have read the question (a held key, two queued presses): it stays a question
         if state.stop_confirm_until > now:
             state.stop_confirm_until = 0.0
             r = fetch(port, "POST", "/api/system/shutdown", {"confirm": True})
@@ -606,6 +611,7 @@ def do_action(action: str, state: PanelState, snap: Snapshot, port: int, url: st
                 say("The stop did not go through. Close this window or press Ctrl-C to stop the app.", "warn")
         else:
             state.stop_confirm_until = now + STOP_CONFIRM_S
+            state.stop_armed_at = now
     elif action == "log":
         return "log"
     return None
@@ -875,6 +881,9 @@ def run(scr: Any, session: Session) -> int:
         full = False
         if now >= next_fetch:
             refresh(session, now)
+            if time.monotonic() - now > 1.0:  # a slow read: keys typed into a frozen screen were not answering anything it showed
+                with contextlib.suppress(CursesError):
+                    curses.flushinp()
             snap = session.snap
             if not snap.reachable and not session.server.pinned and server_silent_too_long(
                     session.server.pid, ever=session.watcher.ever, now=now, last_ok=session.last_ok, started=session.started):
@@ -911,6 +920,9 @@ def run(scr: Any, session: Session) -> int:
                 continue
             click = (x, y)
         elif ch == curses.KEY_RESIZE:
+            if IS_WINDOWS:  # PDCurses reports the new size only after resize_term; ncurses does it on its own
+                with contextlib.suppress(CursesError, AttributeError):
+                    curses.resize_term(0, 0)
             next_repaint = 0.0
             continue
         else:
@@ -933,6 +945,13 @@ def run(scr: Any, session: Session) -> int:
                 return 0
             next_repaint = 0.0
     return 0
+
+
+def _recent(times: list[float], now: float) -> list[float]:
+    """The failure times inside the restart window. A frame of its own: a filtered comprehension inside main()'s try would leave its
+    back-edge outside the cleanup (src/utils/interrupts.py; tests/test_loop_heads_reach.py). Not imported from there, so the panel
+    keeps importing nothing of the app but HELD_ENV_VARS."""
+    return [f for f in times if now - f < RESTART_WINDOW_S]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -982,7 +1001,7 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"The terminal panel could not start ({type(exc).__name__}). The app keeps running.", file=sys.stderr)
                     return 3
                 t = time.monotonic()
-                failures = [*kept(failures, lambda f, now=t: now - f < RESTART_WINDOW_S), t]  # a frame of its own (src/utils/interrupts.py)
+                failures = [*_recent(failures, t), t]
                 if len(failures) > RESTARTS_MAX or session.stopping[0]:
                     print(f"\nThe terminal panel stopped after repeated errors ({type(exc).__name__}). The app keeps running: "
                           f"open {url} in the browser.\n", file=sys.stderr, flush=True)

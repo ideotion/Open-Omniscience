@@ -9,6 +9,7 @@ running (a TERM to the launcher still stops the server at once; the server's exi
 from __future__ import annotations
 
 import contextlib
+import inspect
 import json
 import os
 import re
@@ -177,6 +178,20 @@ def test_stop_needs_a_second_press_and_any_other_key_cancels():
     P.do_action("open", st3, snap, 8000, "u", 1.0, fetch=f3, opener=lambda u: True)
     P.do_action("stop", st3, snap, 8000, "u", 2.0, fetch=f3)
     assert f3.calls == []
+
+
+def test_a_second_stop_press_too_soon_to_have_read_the_question_is_ignored():
+    """A held key, or two presses queued while a slow read froze the screen, must not stop the app before the question is seen."""
+    f, st = _Fetch(), P.PanelState()
+    snap = _snap()
+    P.do_action("stop", st, snap, 8000, "u", 100.0, fetch=f)
+    P.do_action("stop", st, snap, 8000, "u", 100.0 + P.STOP_MIN_GAP_S / 2, fetch=f)
+    assert f.calls == [] and st.stop_confirm_until > 100.0, "still a question"
+    P.do_action("stop", st, snap, 8000, "u", 100.0 + P.STOP_MIN_GAP_S + 0.01, fetch=f)
+    assert f.calls == [("POST", "/api/system/shutdown", {"confirm": True})]
+    src = inspect.getsource(P.run)
+    assert "curses.flushinp()" in src, "keys typed into a screen frozen by a slow read are dropped"
+    assert "curses.resize_term(0, 0)" in src, "PDCurses applies a resize only through resize_term"
 
 
 def test_pause_posts_the_scheduler_stop_and_says_how_to_resume():
@@ -674,6 +689,14 @@ def test_the_watcher_writes_one_line_per_change_and_nothing_when_nothing_changed
     assert "frwiki: no longer listed (finished or removed)." in lines
     assert "Belgium: FAILED  2 %" in lines
     assert "Network: offline (airplane mode)." in lines and "Collection stopped." in lines
+
+
+def test_one_failed_jobs_read_does_not_replay_every_job():
+    w = P.Watcher()
+    job = P.Job("osm", "Belgium", "running", percent=5.0, id="osm:be")
+    assert any(t.startswith("Under way: Belgium") for t, _ in w.observe(_snap(jobs=[job]), 0.0))
+    w.observe(_snap(jobs_known=False, jobs=[]), 3.0)
+    assert w.observe(_snap(jobs=[job]), 6.0) == [], "the read after a failed one compares with the last one that listed the jobs"
 
 
 def test_silence_is_written_once_and_the_return_says_how_long():
