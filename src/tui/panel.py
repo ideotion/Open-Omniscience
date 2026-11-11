@@ -600,8 +600,11 @@ def do_action(action: str, state: PanelState, snap: Snapshot, port: int, url: st
         else:
             say("Pause did not go through. Try again, or use the UI.", "warn")
     elif action == "stop":
-        if state.stop_confirm_until > now and now - state.stop_armed_at < STOP_MIN_GAP_S:
-            return None  # a second press too soon to have read the question (a held key, two queued presses): it stays a question
+        if state.stop_confirm_until > now and now - state.stop_armed_at < STOP_MIN_GAP_S:  # a negative gap (the clock moved back) too
+            # A press too soon after the last one (a held key repeats every few ms, two presses queued behind a frozen screen): it stays a
+            # question, and the gap restarts, so only a press after a real pause answers it.
+            state.stop_armed_at = now
+            return None
         if state.stop_confirm_until > now:
             state.stop_confirm_until = 0.0
             r = fetch(port, "POST", "/api/system/shutdown", {"confirm": True})
@@ -881,7 +884,9 @@ def run(scr: Any, session: Session) -> int:
         full = False
         if now >= next_fetch:
             refresh(session, now)
-            if time.monotonic() - now > 1.0:  # a slow read: keys typed into a frozen screen were not answering anything it showed
+            if time.monotonic() - now > 1.0 and state.stop_confirm_until <= time.time():
+                # A slow read: keys typed into a frozen screen were not answering anything it showed. Not while the Stop question is up:
+                # a press then is the answer (or the cancel), and the gap above already guards against repeats.
                 with contextlib.suppress(CursesError):
                     curses.flushinp()
             snap = session.snap

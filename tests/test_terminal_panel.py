@@ -187,10 +187,16 @@ def test_a_second_stop_press_too_soon_to_have_read_the_question_is_ignored():
     P.do_action("stop", st, snap, 8000, "u", 100.0, fetch=f)
     P.do_action("stop", st, snap, 8000, "u", 100.0 + P.STOP_MIN_GAP_S / 2, fetch=f)
     assert f.calls == [] and st.stop_confirm_until > 100.0, "still a question"
-    P.do_action("stop", st, snap, 8000, "u", 100.0 + P.STOP_MIN_GAP_S + 0.01, fetch=f)
-    assert f.calls == [("POST", "/api/system/shutdown", {"confirm": True})]
+    held = 100.0 + P.STOP_MIN_GAP_S / 2
+    for _ in range(60):  # a held key: repeats every 30 ms for well past the gap never answer, each one restarts it
+        held += 0.03
+        P.do_action("stop", st, snap, 8000, "u", held, fetch=f)
+    assert f.calls == [] and st.stop_confirm_until > held
+    P.do_action("stop", st, snap, 8000, "u", held + P.STOP_MIN_GAP_S + 0.01, fetch=f)
+    assert f.calls == [("POST", "/api/system/shutdown", {"confirm": True})], "a press after a real pause answers"
     src = inspect.getsource(P.run)
     assert "curses.flushinp()" in src, "keys typed into a screen frozen by a slow read are dropped"
+    assert "state.stop_confirm_until <= time.time()" in src, "but not while the Stop question is up: a press then is its answer"
     assert "curses.resize_term(0, 0)" in src, "PDCurses applies a resize only through resize_term"
 
 
