@@ -403,7 +403,7 @@ dev = [
     # was measured. With one pinned release the ceiling is true by construction, and Dependabot opens one PR per release, whose own CI
     # run is the re-measurement. Bump deliberately, in one commit: this line, docs/maintenance/RUFF_STYLE_LANE.md's reading, and the
     # ceiling in ci.yml if the new release reads differently.
-    "ruff==0.17.3",
+    "ruff==0.17.4",
     # Pinned: the type-check ratchet count must be deterministic. An unpinned
     # floor let a newer mypy report one extra error (129 > 128) and redden every
     # PR with no code change. Bump deliberately, re-measuring the baseline.
