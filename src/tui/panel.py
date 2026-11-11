@@ -66,6 +66,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.monitoring.secret_scrub import HELD_ENV_VARS
+from src.utils.interrupts import kept
 
 try:  # absent on Windows without windows-curses; main() says so and ends
     import curses
@@ -981,7 +982,7 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"The terminal panel could not start ({type(exc).__name__}). The app keeps running.", file=sys.stderr)
                     return 3
                 t = time.monotonic()
-                failures = [f for f in failures if t - f < RESTART_WINDOW_S] + [t]
+                failures = [*kept(failures, lambda f, now=t: now - f < RESTART_WINDOW_S), t]  # a frame of its own (src/utils/interrupts.py)
                 if len(failures) > RESTARTS_MAX or session.stopping[0]:
                     print(f"\nThe terminal panel stopped after repeated errors ({type(exc).__name__}). The app keeps running: "
                           f"open {url} in the browser.\n", file=sys.stderr, flush=True)
