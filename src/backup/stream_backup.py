@@ -367,10 +367,9 @@ def sweep_stale_backup_temps(root: Path | str, *, max_age_hours: float = 24.0) -
                 if newest < cutoff:
                     shutil.rmtree(p, ignore_errors=True)
                     removed += 0 if p.exists() else 1
-            elif p.is_file() and p.name.endswith(_TEMP_FILE_SUFFIXES):
-                if p.stat().st_mtime < cutoff:
-                    p.unlink(missing_ok=True)
-                    removed += 1
+            elif p.is_file() and p.name.endswith(_TEMP_FILE_SUFFIXES) and p.stat().st_mtime < cutoff:
+                p.unlink(missing_ok=True)
+                removed += 1
         except OSError:  # pragma: no cover - fs race; janitor is best-effort
             continue
     return removed

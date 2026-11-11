@@ -858,9 +858,10 @@ def _handlers_a_module_builds(tree: ast.AST) -> list[str]:
             name = node.func.id if isinstance(node.func, ast.Name) else node.func.attr if isinstance(node.func, ast.Attribute) else ""
             if name in _BUILDERS:
                 found.append(f"{name}(), line {node.lineno}")
-        elif isinstance(node, ast.ClassDef):
-            if any(ast.unparse(b).startswith("logging.") and ast.unparse(b).endswith("Handler") or ast.unparse(b) == "Handler" for b in node.bases):
-                found.append(f"class {node.name}, line {node.lineno}")
+        elif isinstance(node, ast.ClassDef) and any(
+            ast.unparse(b).startswith("logging.") and ast.unparse(b).endswith("Handler") or ast.unparse(b) == "Handler" for b in node.bases
+        ):
+            found.append(f"class {node.name}, line {node.lineno}")
     return found
 
 

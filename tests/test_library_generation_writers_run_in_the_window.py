@@ -206,10 +206,12 @@ def _violations(source_text: str, *, is_the_module: bool = False, package: tuple
             if not (isinstance(fn, ast.FunctionDef) and fn in tree.body and fn.name in _MAY_ASSIGN):
                 where = getattr(fn, "name", "the module")
                 bad.append(f"line {node.lineno}: {where} assigns {sorted(_FIELDS.intersection(node.names))} but is not one of the writers")
-        elif is_the_module and swap is not None and isinstance(node, ast.Name) and node.id in _FIELDS and isinstance(node.ctx, (ast.Store, ast.Del)):
+        elif (
+            is_the_module and swap is not None and isinstance(node, ast.Name) and node.id in _FIELDS and isinstance(node.ctx, (ast.Store, ast.Del))
             # ``swap_window`` resets the flag: that is a write, and it must be made while the window is held
-            if enclosing_function(node) is swap and id(node) not in (held or set()):
-                bad.append(f"line {node.lineno}: swap_window stores {node.id} before it holds the window (or after it let go)")
+            and enclosing_function(node) is swap and id(node) not in (held or set())
+        ):
+            bad.append(f"line {node.lineno}: swap_window stores {node.id} before it holds the window (or after it let go)")
     return bad, called
 
 

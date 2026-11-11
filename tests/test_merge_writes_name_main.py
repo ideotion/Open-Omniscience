@@ -457,11 +457,10 @@ class _Scan:
                         self._report(node, "getattr with a name the scan cannot read")
                     elif literal in _FILE_METHODS:
                         self._report(node, f"{literal} reached by getattr")
-                elif isinstance(f, ast.Attribute):
-                    if f.attr in _EXEC_METHODS:  # `sqlite3.Connection.execute(con, sql)`: the statement is not the first argument
-                        owner = f.value.id if isinstance(f.value, ast.Name) else f.value.attr if isinstance(f.value, ast.Attribute) else ""
-                        if owner[:1].isupper():
-                            self._report(node, f"{f.attr} called on the class {owner}")
+                elif isinstance(f, ast.Attribute) and f.attr in _EXEC_METHODS:  # `sqlite3.Connection.execute(con, sql)`: the statement is not the first argument
+                    owner = f.value.id if isinstance(f.value, ast.Name) else f.value.attr if isinstance(f.value, ast.Attribute) else ""
+                    if owner[:1].isupper():
+                        self._report(node, f"{f.attr} called on the class {owner}")
             elif isinstance(node, (ast.ImportFrom, ast.Import)):
                 modules = [node.module or ""] if isinstance(node, ast.ImportFrom) else [a.name for a in node.names]
                 names = {a.name for a in node.names} if isinstance(node, ast.ImportFrom) else set()
