@@ -781,13 +781,14 @@ def _show_log(scr: Any, server: ServerProcess, stopping: list[bool] | None = Non
     import select
     import termios
     import tty
+    from termios import error as TermiosError
 
     curses.endwin()
     sys.stdout.write("\n--- The server's own messages appear below as it prints them. Press any key to return to the panel. ---\n\n")
     sys.stdout.flush()
     fd = sys.stdin.fileno()
     saved = None
-    with contextlib.suppress(termios.error, OSError):
+    with contextlib.suppress(TermiosError, OSError):
         saved = termios.tcgetattr(fd)
         tty.setcbreak(fd)  # one key, no Enter; ISIG stays, so Ctrl-C is still the terminal's stop
     # Every way out goes back through curses first: curses.wrapper calls endwin() again when the panel ends, and a second endwin()
@@ -805,7 +806,7 @@ def _show_log(scr: Any, server: ServerProcess, stopping: list[bool] | None = Non
                 break
     finally:
         if saved is not None:
-            with contextlib.suppress(termios.error, OSError):
+            with contextlib.suppress(TermiosError, OSError):
                 termios.tcsetattr(fd, termios.TCSADRAIN, saved)
         with contextlib.suppress(CursesError):
             scr.clear()
@@ -834,7 +835,7 @@ class Session:
     url: str
     server: ServerProcess
     stopping: list[bool] = field(default_factory=lambda: [False])
-    log: ActivityLog = field(default_factory=ActivityLog)
+    activity: ActivityLog = field(default_factory=ActivityLog)
     watcher: Watcher = field(default_factory=Watcher)
     state: PanelState = field(default_factory=PanelState)
     snap: Snapshot = field(default_factory=Snapshot)
@@ -848,11 +849,11 @@ def refresh(session: Session, now_mono: float, fetch: Fetch = api) -> None:
     session.snap = take_snapshot(session.port, fetch)
     if session.snap.reachable:
         session.last_ok = now_mono
-    before = session.log.total
+    before = session.activity.total
     for text, style in session.watcher.observe(session.snap, now_mono):
-        session.log.add(text, style)
+        session.activity.add(text, style)
     if session.state.scroll:
-        session.state.scroll += session.log.total - before
+        session.state.scroll += session.activity.total - before
 
 
 def run(scr: Any, session: Session) -> int:
@@ -897,7 +898,7 @@ def run(scr: Any, session: Session) -> int:
         if now >= next_repaint:
             full, next_repaint = True, now + REPAINT_S
         h, w = scr.getmaxyx()
-        lines, buttons = build_screen(session.snap, w, state, session.url, time.time(), log=session.log,
+        lines, buttons = build_screen(session.snap, w, state, session.url, time.time(), log=session.activity,
                                       starting=not session.watcher.ever, height=h, silent_for=session.watcher.silent_for(now),
                                       watched=bool(session.server.pid))
         area = max(h - 10, 1)
@@ -941,7 +942,7 @@ def run(scr: Any, session: Session) -> int:
         if action == "other":
             state.stop_confirm_until = 0.0
             continue
-        result = do_action(action, state, session.snap, session.port, session.url, time.time(), log=session.log)
+        result = do_action(action, state, session.snap, session.port, session.url, time.time(), log=session.activity)
         if action == "stop" and state.stop_confirm_until:
             state.scroll = 0  # the question is at the bottom, beside the newest lines
         next_fetch = time.monotonic() + 0.5 if action in ("pause", "stop") else next_fetch
@@ -980,7 +981,7 @@ def main(argv: list[str] | None = None) -> int:
     enc = (getattr(sys.stdout, "encoding", "") or "").lower().replace("-", "")
     RULE = "─" if enc.startswith("utf") else "-"
     session = Session(port=args.port, url=url, server=ServerProcess(args.server_pid))
-    session.log.add("Panel started. It stays here while the app runs; the lines below are what happened, newest last.", "dim")
+    session.activity.add("Panel started. It stays here while the app runs; the lines below are what happened, newest last.", "dim")
 
     def _end(_sig: int, _frame: Any) -> None:
         # The panel only restores the terminal and ends. A Ctrl-C reaches the server and the launcher on its own (one SIGINT to the
@@ -1012,7 +1013,7 @@ def main(argv: list[str] | None = None) -> int:
                           f"open {url} in the browser.\n", file=sys.stderr, flush=True)
                     return PANEL_FAILED
                 # The class only, never the message: an exception's text can carry what the panel read.
-                session.log.add(f"The panel hit an error ({type(exc).__name__}) and redrew itself.", "warn")
+                session.activity.add(f"The panel hit an error ({type(exc).__name__}) and redrew itself.", "warn")
                 time.sleep(0.5)
                 continue
             break

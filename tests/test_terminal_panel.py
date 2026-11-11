@@ -723,11 +723,11 @@ def test_the_log_stays_where_the_reader_scrolled_while_lines_arrive():
     answers = {"/api/health": {"version": "1"}, "/api/jobs": {"jobs": []}}
     s.state.scroll = 5
     P.refresh(s, 0.0, fetch=_Fetch(answers))
-    assert s.state.scroll == 5 + s.log.total, "every new line pushes the view back by one, so what was read stays put"
+    assert s.state.scroll == 5 + s.activity.total, "every new line pushes the view back by one, so what was read stays put"
     s.state.scroll = 0
-    n = s.log.total
+    n = s.activity.total
     P.refresh(s, 3.0, fetch=_Fetch({**answers, "/api/scheduler/status": {"online": False}}))
-    assert s.log.total == n + 1 and s.state.scroll == 0, "following the log: it stays at the newest line"
+    assert s.activity.total == n + 1 and s.state.scroll == 0, "following the log: it stays at the newest line"
 
 
 def test_actions_are_written_in_the_log_too():
@@ -796,7 +796,7 @@ def test_an_error_inside_the_panel_redraws_it_with_its_log(monkeypatch):
 
     assert _main_with_wrapper(monkeypatch, wrapper) == 0
     assert len(calls) == 2 and calls[0] is calls[1], "the same session, so the log survives"
-    texts = [ln.text for ln in calls[1].log.lines]
+    texts = [ln.text for ln in calls[1].activity.lines]
     assert "The panel hit an error (ValueError) and redrew itself." in texts
     assert not any("secret-looking" in t for t in texts)
 

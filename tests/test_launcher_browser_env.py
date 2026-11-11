@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 
 from src.monitoring.secret_scrub import HELD_ENV_VARS
+from tests.js_source_helper import ps_function_body
 
 REPO = Path(__file__).resolve().parents[1]
 LAUNCH_SH = REPO / "scripts" / "launch.sh"
@@ -302,8 +303,7 @@ def test_launch_server_starts_the_panel_and_its_curses_check_without_the_held_na
     m = re.search(r'^\$HeldEnvVars = @\(([^)]*)\)', ps1, re.M)
     assert m, "launch_server.ps1 names the held variables in one place"
     assert tuple(re.findall(r'"(\w+)"', m.group(1))) == HELD_ENV_VARS
-    body = ps1[ps1.index("function New-PanelStartInfo"):]
-    body = body[: body.index("\n}") + 2]
+    body = ps_function_body(ps1, "New-PanelStartInfo")
     assert "foreach ($n in $HeldEnvVars) { if ($si.EnvironmentVariables.ContainsKey($n)) { $si.EnvironmentVariables.Remove($n) } }" in body
     # both starts go through that function, and nothing else in the wrapper starts the panel's python
     assert ps1.count("New-PanelStartInfo ") == 2  # the two calls (the definition is "New-PanelStartInfo(")
