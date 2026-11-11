@@ -85,7 +85,7 @@ dependencies = [
     # tests/test_database_verify_pages.py pin both engines' answers, and the `sqlcipher-engines` CI lane runs
     # them on the floor and on the newest release. Lift the ceiling only by that qualification
     # (docs/maintenance/EXTERNAL_DEPENDENCIES.md), never by loosening a test.
-    "sqlcipher3>=0.6.2,<0.6.5",
+    "sqlcipher3>=0.6.2,<0.6.6",
     # Ingestion
     # urllib3 is a direct requirement because src/ingest/urllib3_log.py is built on what it LOGS (the signed storage address of a download rides
     # its own log lines): the table of log calls there was read from 2.7.0 and 2.8.0, and tests/test_urllib3_log_withholds_the_path.py compares
