@@ -70,29 +70,25 @@ set "OO_KEY_PASSPHRASE="
 start "" /min powershell -NoProfile -ExecutionPolicy Bypass -Command "$u='%URL%'; for ($i=0; $i -lt 240; $i++) { try { $null = Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 2; Start-Process $u; break } catch { Start-Sleep -Milliseconds 500 } }"
 endlocal
 
-rem THE TERMINAL PANEL (R600, anticipated for Windows; not run on Windows yet). src\tui\panel.py shows the app's status and jobs with
-rem Open UI / Pause collection / Stop app. Python's curses exists on Windows only with the windows-curses package (a pyproject dependency
-rem on Intel/AMD Windows since R602; no ARM64 build exists), so the panel starts only
-rem when "import curses" works there, and never with OO_PANEL=0. It opens in a window of its own, because this one holds the server's
-rem output: closing the panel window does NOT stop the app (the panel says so); closing THIS window still does.
-rem The panel never needs the passphrases, so neither it nor the curses check gets them: both names are cleared in a nested setlocal
-rem that endlocal undoes before the server starts below. The clears come BEFORE the check, because clearing a name that is not set
-rem sets ERRORLEVEL, and the check's own exit code is what "if not errorlevel 1" reads.
-if not "%OO_PANEL%"=="0" if exist ".venv\Scripts\python.exe" (
-  setlocal
-  set "OO_DB_PASSPHRASE="
-  set "OO_KEY_PASSPHRASE="
-  ".venv\Scripts\python.exe" -c "import curses" >nul 2>&1
-  if not errorlevel 1 start "Open Omniscience panel" ".venv\Scripts\python.exe" -m src.tui.panel --port %PORT% --url "%URL%/"
-  endlocal
-)
+rem THE TERMINAL PANEL (R600; R658 made it ONE window). src\tui\panel.py shows the app's status and an activity log with Open UI /
+rem Pause collection / Stop app. It runs IN THIS WINDOW: launch_server.ps1 starts it beside the server with the server's pid, so it stays
+rem for exactly as long as the server runs and closing this window stops both (it used to open a second window of its own, which closed
+rem whenever the server was quiet for 20 s). Python's curses exists on Windows only with the windows-curses package (a pyproject
+rem dependency on Intel/AMD Windows since R602; no ARM64 build exists): launch_server.ps1 checks "import curses" first and starts the
+rem panel only when it works, both without the passphrases. Never with OO_PANEL=0.
+set "PANELPY="
+if not "%OO_PANEL%"=="0" if exist ".venv\Scripts\python.exe" set "PANELPY=.venv\Scripts\python.exe"
+rem Only a non-empty -PanelPython is passed: Windows PowerShell 5.1 can refuse an empty quoted argument to -File, and the wrapper would
+rem then not run at all (no marker: the plain start, without the records).
+set "PANELARG="
+if defined PANELPY set PANELARG=-PanelPython "%PANELPY%"
 rem Run the server through scripts\launch_server.ps1 when it is there: the window still shows every line the server prints, and the wrapper
 rem records the server's fatal-error headers and how it ended for the app's next boot to read. It leaves a marker file once it has STARTED
 rem the server; no marker means the wrapper itself could not run (PowerShell missing or blocked), and the server is then started plainly,
 rem exactly as before.
 set "MARK=%TEMP%\oo-launch-%RANDOM%-%RANDOM%.started"
 if not exist "%~dp0launch_server.ps1" goto plain
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0launch_server.ps1" -App "%APP%" -Marker "%MARK%"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0launch_server.ps1" -App "%APP%" -Marker "%MARK%" %PANELARG% -Port "%PORT%" -Url "%URL%/"
 if exist "%MARK%" (
   del "%MARK%" >nul 2>&1
   goto stopped

@@ -248,22 +248,31 @@ downloads, language detection, the AI checks) and the diagnostics archive all ke
 running. This is the way to leave a machine collecting for days while saving the memory a
 browser takes (often 0.5 to 1 GB, which matters on a small VM).
 
-While the app runs, the launcher window shows a small **panel**: whether the app is locked,
-the network and collection state, the server's memory and CPU, and every running job with
-its progress. Click its buttons, or press the key shown on each:
+While the app runs, the launcher window shows a **panel**, and it stays there for as long as
+the app runs: there is one window, on Linux, macOS and Windows alike. At the top it shows
+whether the app is locked, the network and collection state, the server's memory and CPU,
+and what is running now. Below that is an **activity log**: one timed line for each thing
+that happens (collection starts or stops, a download reaches 40 %, a backup finishes, the
+network goes offline, the app stops answering and answers again), added one after the other
+for as long as the app runs, newest at the bottom. Scroll back with the arrow keys, PgUp and
+PgDn or the mouse wheel; End goes back to the newest line. Click the buttons, or press the
+key shown on each:
 
 - **Open UI (o)** opens the app in your browser again.
 - **Pause collection (p)** stops collecting and puts the app in airplane mode. To resume,
   open the UI: going online always passes through its consent window, never the terminal.
-- **Show log (l)** shows the server's own messages; press Enter to come back.
+- **Server messages (l)** shows the server's own messages (not on Windows); press any key
+  to come back.
 - **Stop app (s)** stops the app, after a second press. It names the jobs that would end.
-- **Close panel (q)** leaves the app running and the window showing the server's messages.
 
+The panel does not close on its own while the app runs, even when the app is busy or the
+computer was asleep and the app takes a while to answer: it says how long the app has been
+quiet and keeps trying. It ends when the app ends.
 The panel never asks for your passphrase: if the app is locked, it says so, and you unlock
 it in the browser. Closing the launcher window or pressing Ctrl-C still stops the app, as
 before. Set `OO_PANEL=0` to start without the panel. The AI tools that answer in the page
 (bulk summarize or translate, AI keyword extraction, prompt runs) keep going too once the
-tab is closed, and show in the panel's job list. To stop one, open the UI and press **Stop**
+tab is closed, and show in the panel. To stop one, open the UI and press **Stop**
 on its row in the task manager, or **Cancel** in the page (the panel's own Stop app stops
 the whole app): it stops after the article in flight, and the articles already done stay
 stored. The keyword index of articles Insights has not indexed yet also catches up on

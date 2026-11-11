@@ -20,7 +20,13 @@
 param(
     [Parameter(Mandatory = $true)][string]$App,
     [string]$Marker = "",
-    [string]$DataDir = ""
+    [string]$DataDir = "",
+    # THE TERMINAL PANEL IN THIS WINDOW (R658). launch.cmd passes the venv's python here when "import curses" works there; the panel
+    # (src\tui\panel.py) is then started in THIS console beside the server, with the server's pid, so the launcher is ONE window whose
+    # panel stays for as long as the server runs. Empty: no panel, exactly as before.
+    [string]$PanelPython = "",
+    [string]$Port = "8000",
+    [string]$Url = ""
 )
 
 $ErrorActionPreference = "Continue"
@@ -201,6 +207,40 @@ try {
 }
 if ($Marker) { try { [System.IO.File]::WriteAllText($Marker, [string]$p.Id, $Utf8) } catch { } }
 
+# The panel (R658). It inherits this console, so it draws in the launcher's own window; it watches the server by pid (and start time),
+# so it ends when the server ends, never on a quiet server. Neither it nor the curses check below gets the passphrases the server holds
+# (the names are src\monitoring\secret_scrub.py HELD_ENV_VARS, which tests\test_launcher_browser_env.py holds this list to): they are
+# removed from each one's environment here, and the panel drops them from its own as it starts. The port and the address are checked to
+# be what launch.cmd builds (a number; http to 127.0.0.1), so nothing else reaches its command line. Python's curses exists on Windows
+# only with windows-curses (no ARM64 build), so the panel starts only when "import curses" works. A panel that cannot start changes
+# nothing for the server.
+$HeldEnvVars = @("OO_DB_PASSPHRASE", "OO_KEY_PASSPHRASE")
+function New-PanelStartInfo([string]$Arguments) {
+    $si = New-Object System.Diagnostics.ProcessStartInfo
+    $si.FileName = $PanelPython
+    $si.Arguments = $Arguments
+    $si.UseShellExecute = $false
+    foreach ($n in $HeldEnvVars) { if ($si.EnvironmentVariables.ContainsKey($n)) { $si.EnvironmentVariables.Remove($n) } }
+    return $si
+}
+$panel = $null
+if ($PanelPython -and ($Port -match '^[0-9]{1,5}$')) {
+    try {
+        $check = New-PanelStartInfo '-c "import curses"'
+        $check.RedirectStandardOutput = $true
+        $check.RedirectStandardError = $true
+        $cp = [System.Diagnostics.Process]::Start($check)
+        $cp.StandardOutput.ReadToEnd() | Out-Null
+        $cp.StandardError.ReadToEnd() | Out-Null
+        $cp.WaitForExit()
+        if ($cp.ExitCode -eq 0) {
+            $panelArgs = "-m src.tui.panel --port $Port --server-pid $($p.Id)"
+            if ($Url -match '^http://127\.0\.0\.1:[0-9]{1,5}/$') { $panelArgs += " --url $Url" }
+            $panel = [System.Diagnostics.Process]::Start((New-PanelStartInfo $panelArgs))
+        }
+    } catch { $panel = $null }
+}
+
 $kept = 0; $dropped = 0; $over = 0
 $writable = [bool]$stderrRecord
 $stderr = [Console]::Error
@@ -220,6 +260,11 @@ while ($true) {
 }
 $p.WaitForExit()
 $code = $p.ExitCode
+# The panel ends on its own within a second of the server (it watches the pid); it is waited for so the console is the launcher's again
+# before "Open Omniscience has stopped" is printed, and ended only if it has not gone after 15 s.
+if ($panel) {
+    try { if (-not $panel.WaitForExit(15000)) { $panel.Kill() } } catch { }
+}
 
 if ($stderrRecord -and $writable) {
     [void](Add-RowTrimmed $stderrRecord ([ordered]@{ schema = "oo-launcher-stderr-1"; at = (Get-Stamp); pid = $p.Id; boot_id = $null; summary = $true; kept_lines = $kept; dropped_lines = $dropped; over_cap_lines = $over }) 100 100)
