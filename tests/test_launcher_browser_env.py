@@ -117,15 +117,8 @@ def test_launch_cmd_clears_the_held_names_right_before_every_start():
         low = ln.lower()
         if low.startswith("rem") or i in starts:
             continue
-        # the terminal panel's start (#1817, R600) is checked by
-        # test_launch_cmd_starts_the_panel_without_the_held_names below; it is matched here by its
-        # exact program and a tail with no command separator, so nothing can be chained after it
-        if re.fullmatch(
-            r'if not errorlevel 1 start "open omniscience panel" "\.venv\\scripts\\python\.exe"'
-            r" -m src\.tui\.panel [^&|^]*",
-            low,
-        ):
-            continue
+        # the terminal panel is no longer started here (R658): launch_server.ps1 starts it in this
+        # window, without the held names (test_launch_server_starts_the_panel_..._held_names below)
         # the whole line, a PowerShell -Command script included
         assert not re.search(
             r"\b(start|explorer|rundll32|start-process|startfile|shellexecute)\b", low
@@ -158,7 +151,7 @@ def test_launch_cmd_gives_the_names_back_to_the_server():
     ]
     assert server and all(i > closed for i in server)
     # and nothing between the endlocal and the server clears a name again, except inside a nested
-    # setlocal that its own endlocal closes before the server (the panel's)
+    # setlocal that its own endlocal closes before the server
     depth = 0
     for ln in lines[closed + 1 : max(server)]:
         depth += {"setlocal": 1, "endlocal": -1}.get(ln.lower(), 0)
@@ -301,20 +294,17 @@ def test_the_already_running_branch_opens_the_browser_without_the_passphrase(tmp
     assert all(browser[n] == "unset" for n in HELD_ENV_VARS)
 
 
-def test_launch_cmd_starts_the_panel_without_the_held_names():
-    """The panel never needs the passphrases (it drops them itself too, tests/test_terminal_panel.py),
-    so launch.cmd clears both in a nested setlocal before the curses check and the panel start, and
-    the matching endlocal gives them back before the server starts. The clears come before the check
-    because clearing an unset name sets ERRORLEVEL, which the start's `if not errorlevel 1` reads."""
-    lines = _cmd_lines()
-    low = [ln.lower() for ln in lines]
-    panel = next(i for i, ln in enumerate(low) if "-m src.tui.panel" in ln)
-    check = next(i for i in range(panel, -1, -1) if '-c "import curses"' in low[i])
-    opened = next(i for i in range(check, -1, -1) if low[i] == "setlocal")
-    assert lines[opened + 1 : check] == [f'set "{n}="' for n in HELD_ENV_VARS], (
-        "the held names are cleared right before the curses check"
-    )
-    assert check == panel - 1, "nothing between the check and the start resets ERRORLEVEL"
-    assert low[panel + 1] == "endlocal", "the clear ends with the panel start"
-    server = next(i for i, ln in enumerate(lines) if 'launch_server.ps1" -App' in ln)
-    assert panel + 1 < server, "the server starts after the endlocal, with both names"
+def test_launch_server_starts_the_panel_and_its_curses_check_without_the_held_names():
+    """R658: the panel now runs in the launcher's own window, started by launch_server.ps1 beside the server. It never needs the
+    passphrases (it drops them itself too, tests/test_terminal_panel.py), so the wrapper removes exactly the server's held names from
+    the environment of both processes it starts for it: the curses check and the panel."""
+    ps1 = (REPO / "scripts" / "launch_server.ps1").read_text(encoding="utf-8")
+    m = re.search(r'^\$HeldEnvVars = @\(([^)]*)\)', ps1, re.M)
+    assert m, "launch_server.ps1 names the held variables in one place"
+    assert tuple(re.findall(r'"(\w+)"', m.group(1))) == HELD_ENV_VARS
+    body = ps1[ps1.index("function New-PanelStartInfo"):]
+    body = body[: body.index("\n}") + 2]
+    assert "foreach ($n in $HeldEnvVars) { if ($si.EnvironmentVariables.ContainsKey($n)) { $si.EnvironmentVariables.Remove($n) } }" in body
+    # both starts go through that function, and nothing else in the wrapper starts the panel's python
+    assert ps1.count("New-PanelStartInfo ") == 2  # the two calls (the definition is "New-PanelStartInfo(")
+    assert ps1.count("$PanelPython") == 3  # the parameter, the guard, the FileName in the function

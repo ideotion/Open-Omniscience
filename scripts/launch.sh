@@ -535,8 +535,8 @@ done
 
 open_browser "$URL"
 
-# THE TERMINAL PANEL (R600, 8 Nov): while the server runs, this window shows src/tui/panel.py -- status, the running jobs, and Open UI /
-# Pause collection / Stop app, clickable where the terminal sends mouse clicks -- so the browser can be closed on an instance left running
+# THE TERMINAL PANEL (R600, 8 Nov; R658, 11 Nov): while the server runs, this window shows src/tui/panel.py -- status, an activity log
+# that grows for as long as the app runs, and Open UI / Pause collection / Stop app, clickable where the terminal sends mouse clicks -- so the browser can be closed on an instance left running
 # and reopened from here. It starts only in a real terminal (stdin AND stdout), only when this install has it and its own Python, and
 # never when OO_PANEL=0; anything else keeps the window exactly as before. It is an ordinary child of this launcher and changes no stop path:
 #   * it runs in cbreak mode, so a Ctrl-C is still ONE terminal SIGINT to the whole group (the server takes its graceful path, the INT trap
@@ -544,7 +544,8 @@ open_browser "$URL"
 #   * TERM or HUP to this launcher still runs the traps above at once: `wait` on the panel is interrupted by a trapped signal, which a
 #     FOREGROUND panel would not allow (bash runs a trap only after the foreground command ends);
 #   * its "Stop app" is the app's own power button over loopback, the same 143 the exit check below already reads as a requested stop;
-#   * the panel ends by itself when the server ends, and the launcher waits for it BEFORE reading the server's status, so the crash
+#   * the panel ends by itself when the server ends (by the server's identity, never because it was quiet: R658), and it has no close
+#     button, so it stays for the life of the app; the launcher waits for it BEFORE reading the server's status, so the crash
 #     message below is never drawn under a curses screen.
 # `<&0` keeps the terminal as its input: without an explicit redirection bash gives a background command /dev/null.
 # It never sees the passphrase: unlocking stays in the browser (R601 keeps going online there too).
