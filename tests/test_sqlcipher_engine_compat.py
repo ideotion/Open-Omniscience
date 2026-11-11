@@ -3,12 +3,12 @@
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-``sqlcipher3`` is a wheel that bundles its own engine: 0.6.2 and 0.6.3 carry SQLCipher 4.12, 0.6.4 carries 4.19
-(``configs/external_artifacts.yml``, ``sqlcipher3-driver``). Only one engine is installed in a process, so the two files in
+``sqlcipher3`` is a wheel that bundles its own engine: 0.6.2 and 0.6.3 carry SQLCipher 4.12, 0.6.4 carries 4.19,
+0.6.5 carries 4.20 (``configs/external_artifacts.yml``, ``sqlcipher3-driver``). Only one engine is installed in a process, so the two files in
 ``tests/fixtures/sqlcipher/`` are stores written ONCE by each engine through ``src.database.connect.connect`` (300 rows of
 ``notes``, an index, passphrase below); each CI run opens both under whichever engine it has, and the ``sqlcipher-engines`` job
 runs this file on the floor and on the newest release (the other jobs run it on the engine they resolve). Measured when the ceiling was lifted (2026-10-13): both directions read every
-row, ``quick_check`` is ``ok`` and ``cipher_integrity_check`` is empty.
+row, ``quick_check`` is ``ok`` and ``cipher_integrity_check`` is empty. 0.6.5 (4.20) opens both stores too (2026-11-11).
 """
 
 from __future__ import annotations
