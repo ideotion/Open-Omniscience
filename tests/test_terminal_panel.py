@@ -574,7 +574,8 @@ def test_launch_cmd_asks_for_the_panel_and_launch_server_runs_it_in_the_same_win
     cmd = (REPO / "scripts" / "launch.cmd").read_text(encoding="utf-8")
     assert "-m src.tui.panel" not in cmd and 'start "Open Omniscience panel"' not in cmd
     assert 'if not "%OO_PANEL%"=="0" if exist ".venv\\Scripts\\python.exe" set "PANELPY=.venv\\Scripts\\python.exe"' in cmd
-    assert '-PanelPython "%PANELPY%" -Port "%PORT%" -Url "%URL%/"' in cmd
+    assert 'if defined PANELPY set PANELARG=-PanelPython "%PANELPY%"' in cmd
+    assert '-Marker "%MARK%" %PANELARG% -Port "%PORT%" -Url "%URL%/"' in cmd, "no empty -PanelPython reaches PowerShell 5.1"
     ps1 = (REPO / "scripts" / "launch_server.ps1").read_text(encoding="utf-8")
     start = ps1.index("$panel = [System.Diagnostics.Process]::Start((New-PanelStartInfo $panelArgs))")
     assert ps1.index("[void]$p.Start()") < start, "the panel starts after the server, whose pid it is handed"
@@ -861,3 +862,19 @@ def test_the_server_messages_view_returns_on_any_key(server):
         with contextlib.suppress(OSError):
             proc.kill()
         os.close(master)
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="/proc")
+def test_without_psutil_an_unreaped_server_still_reads_as_gone():
+    child = subprocess.Popen([sys.executable, "-c", "pass"])
+    deadline = time.monotonic() + 10
+    while P.pid_alive(child.pid) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not P.pid_alive(child.pid), "a zombie answers os.kill(pid, 0); /proc says Z"
+    child.wait()
+
+
+def test_a_second_signal_does_not_cut_the_restore_short_and_ctrl_c_on_windows_is_sent_as_a_break():
+    assert "if session.stopping[0]:\n            return" in SRC
+    assert "except _Stop:\n                raise" in SRC, "a signal inside psutil is never swallowed"
+    assert "IS_WINDOWS and ch == 3" in SRC and "GenerateConsoleCtrlEvent(0, 0)" in SRC

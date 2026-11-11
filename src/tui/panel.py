@@ -655,6 +655,11 @@ def pid_alive(pid: int | None) -> bool:
         return False
     except PermissionError:
         return True
+    # A zombie (ended, not reaped yet: launch.sh reaps its server only after the panel ends) still answers os.kill; on Linux its
+    # state letter in /proc says so.
+    with contextlib.suppress(OSError, IndexError), open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as f:
+        if f.read().rsplit(")", 1)[1].split()[0] == "Z":
+            return False
     return True
 
 
@@ -690,11 +695,23 @@ class ServerProcess:
                 import psutil
 
                 return bool(self._proc.is_running() and self._proc.status() != psutil.STATUS_ZOMBIE)
+            except _Stop:
+                raise
             except Exception as exc:  # noqa: BLE001
                 if type(exc).__name__ in ("NoSuchProcess", "ZombieProcess"):
                     return False
                 return pid_alive(self.pid)  # AccessDenied or anything else: the plain test
         return pid_alive(self.pid)
+
+
+def _console_ctrl_c() -> None:
+    """Windows: with the mouse on, the console may deliver Ctrl-C to curses as key 3 instead of a break (the console's input mode is
+    shared with the server, which runs in the same window since R658). Send the break to every process of this console, the server
+    and the panel included, so Ctrl-C still stops the app as the footer says."""
+    with contextlib.suppress(Exception):
+        import ctypes
+
+        ctypes.windll.kernel32.GenerateConsoleCtrlEvent(0, 0)  # type: ignore[attr-defined]  # CTRL_C_EVENT to the whole console
 
 
 class _Stop(Exception):
@@ -745,7 +762,7 @@ def _draw(scr: Any, lines: list[Line], buttons: list[Button], attrs: dict[str, i
     scr.refresh()
 
 
-def _show_log(scr: Any, server: ServerProcess) -> bool:
+def _show_log(scr: Any, server: ServerProcess, stopping: list[bool] | None = None) -> bool:
     """Step out of the panel: the terminal shows the server's own output again until ANY key (it was Enter, which a click never sends,
     so a click on "Show log" read as the panel vanishing). POSIX only (on Windows the panel runs in the server's window). Returns False
     when the server ended meanwhile, so the panel ends instead of waiting on a key nobody presses: the launcher waits for this process
@@ -768,7 +785,7 @@ def _show_log(scr: Any, server: ServerProcess) -> bool:
     back = True
     try:
         while True:
-            if not server.alive():
+            if not server.alive() or (stopping is not None and stopping[0]):
                 back = False
                 break
             ready, _, _ = select.select([fd], [], [], 0.5)
@@ -874,6 +891,9 @@ def run(scr: Any, session: Session) -> int:
         ch = scr.getch()
         if ch == -1:
             continue
+        if IS_WINDOWS and ch == 3:
+            _console_ctrl_c()
+            continue
         click = None
         if ch == curses.KEY_MOUSE:
             try:
@@ -908,7 +928,7 @@ def run(scr: Any, session: Session) -> int:
             state.scroll = 0  # the question is at the bottom, beside the newest lines
         next_fetch = time.monotonic() + 0.5 if action in ("pause", "stop") else next_fetch
         if result == "log":
-            if not _show_log(scr, session.server):
+            if not _show_log(scr, session.server, session.stopping):
                 return 0
             next_repaint = 0.0
     return 0
@@ -940,6 +960,8 @@ def main(argv: list[str] | None = None) -> int:
     def _end(_sig: int, _frame: Any) -> None:
         # The panel only restores the terminal and ends. A Ctrl-C reaches the server and the launcher on its own (one SIGINT to the
         # whole foreground group), so nothing is forwarded from here: a second signal is what once made uvicorn skip its teardown.
+        if session.stopping[0]:
+            return  # a second signal (TERM after Ctrl-C, HUP as the window closes) must not cut the terminal's restore short
         session.stopping[0] = True
         raise _Stop
 

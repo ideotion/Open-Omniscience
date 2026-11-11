@@ -78,13 +78,17 @@ rem dependency on Intel/AMD Windows since R602; no ARM64 build exists): launch_s
 rem panel only when it works, both without the passphrases. Never with OO_PANEL=0.
 set "PANELPY="
 if not "%OO_PANEL%"=="0" if exist ".venv\Scripts\python.exe" set "PANELPY=.venv\Scripts\python.exe"
+rem Only a non-empty -PanelPython is passed: Windows PowerShell 5.1 can refuse an empty quoted argument to -File, and the wrapper would
+rem then not run at all (no marker: the plain start, without the records).
+set "PANELARG="
+if defined PANELPY set PANELARG=-PanelPython "%PANELPY%"
 rem Run the server through scripts\launch_server.ps1 when it is there: the window still shows every line the server prints, and the wrapper
 rem records the server's fatal-error headers and how it ended for the app's next boot to read. It leaves a marker file once it has STARTED
 rem the server; no marker means the wrapper itself could not run (PowerShell missing or blocked), and the server is then started plainly,
 rem exactly as before.
 set "MARK=%TEMP%\oo-launch-%RANDOM%-%RANDOM%.started"
 if not exist "%~dp0launch_server.ps1" goto plain
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0launch_server.ps1" -App "%APP%" -Marker "%MARK%" -PanelPython "%PANELPY%" -Port "%PORT%" -Url "%URL%/"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0launch_server.ps1" -App "%APP%" -Marker "%MARK%" %PANELARG% -Port "%PORT%" -Url "%URL%/"
 if exist "%MARK%" (
   del "%MARK%" >nul 2>&1
   goto stopped
