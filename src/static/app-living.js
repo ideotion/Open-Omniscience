@@ -727,6 +727,7 @@
       loadLivingLawDocs();
       loadLawFloor();
       loadLawAmendMap();
+      loadLawVelocity();
     }
     async function loadLivingLaw() {
       const t = _livingT();
@@ -1062,6 +1063,38 @@
       });
       host.insertAdjacentHTML("beforeend", `<p class="hint">${esc(t(d.method))}</p>`);
     }
+    // Analytic 2 (Q914): captured versions per jurisdiction per month. Folded; the short caveat is the first line
+    // inside the fold, next to the counts; method and the long caveat one more click away. Counts only: no rate, no
+    // ranking, every jurisdiction and every month listed (never truncated).
+    let _lawVelocityLast = null;
+    function lawVelocityHtml(d, t, tf) {
+      if (!d) return "";
+      const series = Array.isArray(d.series) ? d.series : [];
+      const rows = series.map((s) => `<div class="living-row">${ooCountryCell(s.jurisdiction)} `
+        + `<span>${esc(tf("{n} versions captured · {docs} documents tracked", { n: _livingCount((s.points || []).reduce((a, p) => a + (Number(p.count) || 0), 0)), docs: _livingCount(s.tracked_documents || 0) }))}</span>`
+        + `<div class="hint">${(s.points || []).map((p) => `${esc(String(p.period))}: <b>${esc(_livingCount(p.count))}</b>`).join(" · ")}</div></div>`).join("");
+      const total = series.reduce((a, s) => a + (s.points || []).reduce((b, p) => b + (Number(p.count) || 0), 0), 0);
+      return `<details class="living-row"><summary>${esc(t("Captured versions per month, by jurisdiction"))} · <b>${esc(_livingCount(total))}</b></summary>`
+        + `<p class="card-caveat">${esc(t(d.caveat_short || ""))}</p>`
+        + (rows || `<div class="muted">${esc(t("No version has been captured after a first capture yet."))}</div>`)
+        + (d.excluded_baseline_captures ? `<p class="hint">${esc(tf("First captures left out: {n}", { n: _livingCount(d.excluded_baseline_captures) }))}</p>` : "")
+        + `<details><summary class="hint">${esc(t("Method"))}</summary><p class="hint">${esc(t(d.method || ""))}</p><p class="hint">${esc(t(d.caveat || ""))}</p></details>`
+        + `</details>`;
+    }
+    function renderLawVelocity() {
+      const host = $("law-velocity");
+      if (!host || !_lawVelocityLast) return;
+      const open = !!host.querySelector("details[open]");
+      host.innerHTML = lawVelocityHtml(_lawVelocityLast, _livingT(), _livingTf());
+      if (open) { const det = host.querySelector("details"); if (det) det.open = true; }
+    }
+    async function loadLawVelocity() {
+      const host = $("law-velocity");
+      if (!host) return;
+      try { _lawVelocityLast = await api("/api/law/amendment-velocity?period=month"); renderLawVelocity(); }
+      catch (e) { _lawVelocityLast = null; host.innerHTML = _livingFailHtml(e.message, _livingT()); }
+    }
+
     async function loadLawAmendMap() {
       const host = $("law-amend-map");
       if (!host) return;
@@ -1070,7 +1103,7 @@
     }
 
     function repaintLawEvolutionFromCache() {
-      renderLawWeek(); renderLivingLawDocs(); renderLawFloor(); renderLawPit(); renderLawTopic();
+      renderLawWeek(); renderLivingLawDocs(); renderLawFloor(); renderLawPit(); renderLawTopic(); renderLawVelocity();
       const tc = $("law-tc-title");
       if (tc && _lawTc && !_lawTc.title) tc.textContent = "";
       void renderLawAmendMap();

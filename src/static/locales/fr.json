@@ -7685,5 +7685,20 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lieux",
-  "🛒 Draft (": "🛒 Brouillon ("
+  "🛒 Draft (": "🛒 Brouillon (",
+  "Provisions that changed": "Dispositions modifiées",
+  "Versions captured on this machine, not the legislature's own amendments.": "Versions captées sur cette machine, pas les modifications du législateur lui-même.",
+  "No provision changed between the stored versions.": "Aucune disposition n'a changé entre les versions enregistrées.",
+  "Versions that could not be placed in order": "Versions impossibles à placer dans l'ordre",
+  "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare": "ce document n'a pas encore de ligne dans le modèle juridique ; elle est créée au prochain passage de suivi, et d'ici là il n'y a pas de dispositions à comparer",
+  "the law lane could not be read on this install": "la voie des lois n'a pas pu être lue sur cette installation",
+  "Captured versions per month, by jurisdiction": "Versions captées par mois, par juridiction",
+  "What this install polls and how often, not how fast a legislature amends.": "Ce que cette installation interroge et à quelle fréquence, pas la vitesse à laquelle un législateur modifie.",
+  "{n} versions captured · {docs} documents tracked": "{n} versions captées · {docs} documents suivis",
+  "No version has been captured after a first capture yet.": "Aucune version n'a encore été captée après une première capture.",
+  "First captures left out: {n}": "Premières captures écartées : {n}",
+  "Each stored version is compared with the one before it, provision by provision: a provision whose text differs is 'changed', a new one is 'added', a missing one is 'removed'. The versions are put in the order this machine captured them.": "Chaque version enregistrée est comparée à la précédente, disposition par disposition : une disposition dont le texte diffère est « modifiée », une nouvelle est « ajoutée », une disparue est « supprimée ». Les versions sont rangées dans l'ordre où cette machine les a captées.",
+  "This counts the versions this machine captured, not the amendments the legislature made: two amendments between one check and the next arrive as one change. Provision names follow each language, so a translation's do not line up with the original's.": "Ceci compte les versions captées par cette machine, pas les modifications faites par le législateur : deux modifications entre deux vérifications arrivent comme un seul changement. Les noms des dispositions suivent chaque langue, donc ceux d'une traduction ne correspondent pas à ceux de l'original.",
+  "One count per stored version per period, by the date this machine captured it. A document's first capture is left out, because it is a first sighting, not a change, and how many were left out is shown.": "Un décompte par version enregistrée et par période, selon la date à laquelle cette machine l'a captée. La première capture d'un document est écartée, car c'est une première observation et non un changement, et le nombre d'écartées est indiqué.",
+  "This depends on which documents this install tracks and how often it checks them, not on a legislature. Two amendments between two checks arrive as one version. The number of tracked documents is shown beside each count; no rate is computed, because dividing would read as a legislature's pace.": "Cela dépend des documents que suit cette installation et de la fréquence à laquelle elle les vérifie, pas d'un législateur. Deux modifications entre deux vérifications arrivent comme une seule version. Le nombre de documents suivis est affiché à côté de chaque décompte ; aucun taux n'est calculé, car une division se lirait comme le rythme d'un législateur."
 }

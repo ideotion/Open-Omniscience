@@ -7685,5 +7685,20 @@
   "＋ zoom": "＋ تكبير",
   "－ zoom": "－ تصغير",
   "📍 places": "📍 أماكن",
-  "🛒 Draft (": "🛒 المسودة ("
+  "🛒 Draft (": "🛒 المسودة (",
+  "Provisions that changed": "الأحكام التي تغيّرت",
+  "Versions captured on this machine, not the legislature's own amendments.": "نسخ التُقطت على هذا الجهاز، لا تعديلات الهيئة التشريعية نفسها.",
+  "No provision changed between the stored versions.": "لم يتغيّر أي حكم بين النسخ المخزّنة.",
+  "Versions that could not be placed in order": "نسخ تعذّر وضعها في ترتيبها",
+  "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare": "لا يملك هذا المستند سجلًا في نموذج القانون بعد؛ يُسجَّل في جولة التتبّع التالية، وحتى ذلك الحين لا توجد أحكام للمقارنة",
+  "the law lane could not be read on this install": "تعذّرت قراءة مسار القوانين على هذا التثبيت",
+  "Captured versions per month, by jurisdiction": "النسخ الملتقطة شهريًا، حسب الولاية القضائية",
+  "What this install polls and how often, not how fast a legislature amends.": "ما يتحقّق منه هذا التثبيت وكم مرة، لا سرعة تعديل الهيئة التشريعية.",
+  "{n} versions captured · {docs} documents tracked": "{n} نسخة ملتقطة · {docs} مستند متتبَّع",
+  "No version has been captured after a first capture yet.": "لم تُلتقط بعد أي نسخة بعد الالتقاط الأول.",
+  "First captures left out: {n}": "الالتقاطات الأولى المستبعدة: {n}",
+  "Each stored version is compared with the one before it, provision by provision: a provision whose text differs is 'changed', a new one is 'added', a missing one is 'removed'. The versions are put in the order this machine captured them.": "تُقارَن كل نسخة مخزّنة بالنسخة السابقة لها حكمًا بحكم: الحكم الذي اختلف نصّه «تغيّر»، والجديد «أُضيف»، والغائب «حُذف». تُرتَّب النسخ بحسب ترتيب التقاطها على هذا الجهاز.",
+  "This counts the versions this machine captured, not the amendments the legislature made: two amendments between one check and the next arrive as one change. Provision names follow each language, so a translation's do not line up with the original's.": "هذا يعدّ النسخ التي التقطها هذا الجهاز، لا التعديلات التي أجرتها الهيئة التشريعية: تعديلان بين فحص وآخر يصلان كتغيير واحد. أسماء الأحكام تتبع كل لغة، فلا تتطابق أحكام الترجمة مع أحكام الأصل.",
+  "One count per stored version per period, by the date this machine captured it. A document's first capture is left out, because it is a first sighting, not a change, and how many were left out is shown.": "عدّ واحد لكل نسخة مخزّنة في كل فترة، بحسب تاريخ التقاطها على هذا الجهاز. يُستبعد الالتقاط الأول لكل مستند لأنه رؤية أولى لا تغيير، ويُعرض عدد ما استُبعد.",
+  "This depends on which documents this install tracks and how often it checks them, not on a legislature. Two amendments between two checks arrive as one version. The number of tracked documents is shown beside each count; no rate is computed, because dividing would read as a legislature's pace.": "يعتمد هذا على المستندات التي يتتبّعها هذا التثبيت وعدد مرات فحصها، لا على هيئة تشريعية. تعديلان بين فحصين يصلان كنسخة واحدة. يُعرض عدد المستندات المتتبَّعة بجانب كل عدد؛ لا يُحسب أي معدّل، لأن القسمة ستُقرأ كوتيرة تشريعية."
 }

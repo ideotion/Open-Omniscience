@@ -7685,5 +7685,20 @@
   "＋ zoom": "＋ 放大",
   "－ zoom": "－ 缩小",
   "📍 places": "📍 地点",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "Provisions that changed": "有变化的条款",
+  "Versions captured on this machine, not the legislature's own amendments.": "本机抓取到的版本,而非立法机关本身的修订。",
+  "No provision changed between the stored versions.": "已存版本之间没有条款发生变化。",
+  "Versions that could not be placed in order": "无法排定顺序的版本",
+  "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare": "该文件尚无法律模型记录;下一轮跟踪时会记录,在此之前没有可比较的条款",
+  "the law lane could not be read on this install": "无法在此安装上读取法律数据通道",
+  "Captured versions per month, by jurisdiction": "按司法管辖区统计的每月抓取版本",
+  "What this install polls and how often, not how fast a legislature amends.": "反映本安装检查了什么、多久检查一次,而非立法机关修法的快慢。",
+  "{n} versions captured · {docs} documents tracked": "已抓取 {n} 个版本 · 跟踪 {docs} 份文件",
+  "No version has been captured after a first capture yet.": "首次抓取之后尚未抓取到任何版本。",
+  "First captures left out: {n}": "未计入的首次抓取:{n}",
+  "Each stored version is compared with the one before it, provision by provision: a provision whose text differs is 'changed', a new one is 'added', a missing one is 'removed'. The versions are put in the order this machine captured them.": "每个已存版本逐条与前一版本比较:文本不同的条款为“已更改”,新出现的为“已添加”,消失的为“已删除”。版本按本机抓取的先后排列。",
+  "This counts the versions this machine captured, not the amendments the legislature made: two amendments between one check and the next arrive as one change. Provision names follow each language, so a translation's do not line up with the original's.": "这里统计的是本机抓取的版本,而非立法机关作出的修订:两次检查之间的两次修订会作为一次变化出现。条款名称随语言而定,因此译本的条款与原文无法对应。",
+  "One count per stored version per period, by the date this machine captured it. A document's first capture is left out, because it is a first sighting, not a change, and how many were left out is shown.": "每个已存版本在每个时段计一次,按本机抓取的日期归入。文件的首次抓取不计入,因为那是首次见到而非变化;并显示未计入的数量。",
+  "This depends on which documents this install tracks and how often it checks them, not on a legislature. Two amendments between two checks arrive as one version. The number of tracked documents is shown beside each count; no rate is computed, because dividing would read as a legislature's pace.": "这取决于本安装跟踪哪些文件、多久检查一次,而不取决于立法机关。两次检查之间的两次修订会作为一个版本出现。每个计数旁显示所跟踪的文件数;不计算任何比率,因为相除会被误读为立法速度。"
 }

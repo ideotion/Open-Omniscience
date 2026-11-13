@@ -7685,5 +7685,20 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 places",
-  "🛒 Draft (": "🛒 Draft ("
+  "🛒 Draft (": "🛒 Draft (",
+  "Provisions that changed": "Provisions that changed",
+  "Versions captured on this machine, not the legislature's own amendments.": "Versions captured on this machine, not the legislature's own amendments.",
+  "No provision changed between the stored versions.": "No provision changed between the stored versions.",
+  "Versions that could not be placed in order": "Versions that could not be placed in order",
+  "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare": "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare",
+  "the law lane could not be read on this install": "the law lane could not be read on this install",
+  "Captured versions per month, by jurisdiction": "Captured versions per month, by jurisdiction",
+  "What this install polls and how often, not how fast a legislature amends.": "What this install polls and how often, not how fast a legislature amends.",
+  "{n} versions captured · {docs} documents tracked": "{n} versions captured · {docs} documents tracked",
+  "No version has been captured after a first capture yet.": "No version has been captured after a first capture yet.",
+  "First captures left out: {n}": "First captures left out: {n}",
+  "Each stored version is compared with the one before it, provision by provision: a provision whose text differs is 'changed', a new one is 'added', a missing one is 'removed'. The versions are put in the order this machine captured them.": "Each stored version is compared with the one before it, provision by provision: a provision whose text differs is 'changed', a new one is 'added', a missing one is 'removed'. The versions are put in the order this machine captured them.",
+  "This counts the versions this machine captured, not the amendments the legislature made: two amendments between one check and the next arrive as one change. Provision names follow each language, so a translation's do not line up with the original's.": "This counts the versions this machine captured, not the amendments the legislature made: two amendments between one check and the next arrive as one change. Provision names follow each language, so a translation's do not line up with the original's.",
+  "One count per stored version per period, by the date this machine captured it. A document's first capture is left out, because it is a first sighting, not a change, and how many were left out is shown.": "One count per stored version per period, by the date this machine captured it. A document's first capture is left out, because it is a first sighting, not a change, and how many were left out is shown.",
+  "This depends on which documents this install tracks and how often it checks them, not on a legislature. Two amendments between two checks arrive as one version. The number of tracked documents is shown beside each count; no rate is computed, because dividing would read as a legislature's pace.": "This depends on which documents this install tracks and how often it checks them, not on a legislature. Two amendments between two checks arrive as one version. The number of tracked documents is shown beside each count; no rate is computed, because dividing would read as a legislature's pace."
 }

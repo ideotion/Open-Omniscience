@@ -7685,5 +7685,20 @@
   "＋ zoom": "＋ 拡大",
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "Provisions that changed": "変更された条項",
+  "Versions captured on this machine, not the legislature's own amendments.": "この端末で取得した版であり、立法機関自身の改正そのものではありません。",
+  "No provision changed between the stored versions.": "保存された版の間で変更された条項はありません。",
+  "Versions that could not be placed in order": "順序に並べられなかった版",
+  "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare": "この文書にはまだ法令モデルの行がありません。次の追跡処理で記録され、それまでは比較できる条項がありません",
+  "the law lane could not be read on this install": "このインストールでは法令レーンを読み取れませんでした",
+  "Captured versions per month, by jurisdiction": "月ごとに取得した版(法域別)",
+  "What this install polls and how often, not how fast a legislature amends.": "このインストールが何をどれだけの頻度で確認しているかであり、立法機関の改正の速さではありません。",
+  "{n} versions captured · {docs} documents tracked": "取得した版 {n} · 追跡中の文書 {docs}",
+  "No version has been captured after a first capture yet.": "初回取得の後に取得された版はまだありません。",
+  "First captures left out: {n}": "除外した初回取得: {n}",
+  "Each stored version is compared with the one before it, provision by provision: a provision whose text differs is 'changed', a new one is 'added', a missing one is 'removed'. The versions are put in the order this machine captured them.": "保存された各版を直前の版と条項ごとに比較します。本文が異なる条項は「変更」、新しい条項は「追加」、なくなった条項は「削除」です。版はこの端末が取得した順に並べています。",
+  "This counts the versions this machine captured, not the amendments the legislature made: two amendments between one check and the next arrive as one change. Provision names follow each language, so a translation's do not line up with the original's.": "これはこの端末が取得した版を数えたもので、立法機関が行った改正ではありません。2回の確認の間の2つの改正は1つの変更として届きます。条項名は言語ごとなので、翻訳の条項は原文と対応しません。",
+  "One count per stored version per period, by the date this machine captured it. A document's first capture is left out, because it is a first sighting, not a change, and how many were left out is shown.": "保存された版ごとに、この端末が取得した日付で期間ごとに1件と数えます。文書の初回取得は変更ではなく初めての確認なので除外し、除外した件数を示します。",
+  "This depends on which documents this install tracks and how often it checks them, not on a legislature. Two amendments between two checks arrive as one version. The number of tracked documents is shown beside each count; no rate is computed, because dividing would read as a legislature's pace.": "これはこのインストールがどの文書を追跡し、どれだけの頻度で確認しているかによるもので、立法機関によるものではありません。2回の確認の間の2つの改正は1つの版として届きます。各件数の横に追跡中の文書数を示しますが、割り算は立法の速さと読まれてしまうため、率は計算しません。"
 }

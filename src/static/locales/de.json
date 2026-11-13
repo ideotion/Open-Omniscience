@@ -7685,5 +7685,20 @@
   "＋ zoom": "＋ Zoom",
   "－ zoom": "－ Zoom",
   "📍 places": "📍 Orte",
-  "🛒 Draft (": "🛒 Entwurf ("
+  "🛒 Draft (": "🛒 Entwurf (",
+  "Provisions that changed": "Geänderte Bestimmungen",
+  "Versions captured on this machine, not the legislature's own amendments.": "Auf diesem Rechner erfasste Fassungen, nicht die Änderungen des Gesetzgebers selbst.",
+  "No provision changed between the stored versions.": "Zwischen den gespeicherten Fassungen hat sich keine Bestimmung geändert.",
+  "Versions that could not be placed in order": "Fassungen, die sich nicht einordnen ließen",
+  "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare": "Für dieses Dokument gibt es noch keinen Eintrag im Rechtsmodell; er entsteht beim nächsten Verfolgungsdurchlauf, bis dahin gibt es keine Bestimmungen zu vergleichen",
+  "the law lane could not be read on this install": "Die Gesetzesspur konnte auf dieser Installation nicht gelesen werden",
+  "Captured versions per month, by jurisdiction": "Erfasste Fassungen pro Monat, nach Rechtsraum",
+  "What this install polls and how often, not how fast a legislature amends.": "Was diese Installation abfragt und wie oft, nicht wie schnell ein Gesetzgeber ändert.",
+  "{n} versions captured · {docs} documents tracked": "{n} Fassungen erfasst · {docs} Dokumente verfolgt",
+  "No version has been captured after a first capture yet.": "Nach einer Ersterfassung wurde noch keine Fassung erfasst.",
+  "First captures left out: {n}": "Ausgelassene Ersterfassungen: {n}",
+  "Each stored version is compared with the one before it, provision by provision: a provision whose text differs is 'changed', a new one is 'added', a missing one is 'removed'. The versions are put in the order this machine captured them.": "Jede gespeicherte Fassung wird Bestimmung für Bestimmung mit der vorherigen verglichen: eine Bestimmung mit anderem Text ist „geändert“, eine neue „hinzugefügt“, eine fehlende „entfernt“. Die Fassungen stehen in der Reihenfolge, in der dieser Rechner sie erfasst hat.",
+  "This counts the versions this machine captured, not the amendments the legislature made: two amendments between one check and the next arrive as one change. Provision names follow each language, so a translation's do not line up with the original's.": "Gezählt werden die Fassungen, die dieser Rechner erfasst hat, nicht die Änderungen des Gesetzgebers: zwei Änderungen zwischen zwei Prüfungen kommen als eine an. Die Namen der Bestimmungen folgen jeder Sprache, daher decken sich die einer Übersetzung nicht mit denen des Originals.",
+  "One count per stored version per period, by the date this machine captured it. A document's first capture is left out, because it is a first sighting, not a change, and how many were left out is shown.": "Eine Zählung pro gespeicherter Fassung und Zeitraum, nach dem Datum, an dem dieser Rechner sie erfasst hat. Die Ersterfassung eines Dokuments wird ausgelassen, weil sie eine erste Sichtung und keine Änderung ist; wie viele ausgelassen wurden, wird angezeigt.",
+  "This depends on which documents this install tracks and how often it checks them, not on a legislature. Two amendments between two checks arrive as one version. The number of tracked documents is shown beside each count; no rate is computed, because dividing would read as a legislature's pace.": "Das hängt davon ab, welche Dokumente diese Installation verfolgt und wie oft sie sie prüft, nicht von einem Gesetzgeber. Zwei Änderungen zwischen zwei Prüfungen kommen als eine Fassung an. Neben jeder Zahl steht die Zahl der verfolgten Dokumente; eine Rate wird nicht berechnet, weil eine Division wie das Tempo eines Gesetzgebers gelesen würde."
 }

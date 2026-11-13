@@ -7685,5 +7685,20 @@
   "＋ zoom": "＋ увеличить",
   "－ zoom": "－ уменьшить",
   "📍 places": "📍 места",
-  "🛒 Draft (": "🛒 Черновик ("
+  "🛒 Draft (": "🛒 Черновик (",
+  "Provisions that changed": "Изменённые положения",
+  "Versions captured on this machine, not the legislature's own amendments.": "Версии, сохранённые на этом компьютере, а не сами поправки законодателя.",
+  "No provision changed between the stored versions.": "Между сохранёнными версиями ни одно положение не изменилось.",
+  "Versions that could not be placed in order": "Версии, которые не удалось расположить по порядку",
+  "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare": "у этого документа ещё нет строки в модели законов; она появится при следующем проходе отслеживания, а до тех пор сравнивать нечего",
+  "the law lane could not be read on this install": "не удалось прочитать хранилище законов в этой установке",
+  "Captured versions per month, by jurisdiction": "Сохранённые версии по месяцам, по юрисдикциям",
+  "What this install polls and how often, not how fast a legislature amends.": "Что и как часто проверяет эта установка, а не то, как быстро законодатель вносит поправки.",
+  "{n} versions captured · {docs} documents tracked": "сохранено версий: {n} · отслеживается документов: {docs}",
+  "No version has been captured after a first capture yet.": "После первого сохранения новых версий пока нет.",
+  "First captures left out: {n}": "Первые сохранения не учтены: {n}",
+  "Each stored version is compared with the one before it, provision by provision: a provision whose text differs is 'changed', a new one is 'added', a missing one is 'removed'. The versions are put in the order this machine captured them.": "Каждая сохранённая версия сравнивается с предыдущей по положениям: положение с другим текстом «изменено», новое — «добавлено», пропавшее — «удалено». Версии идут в том порядке, в каком их сохранил этот компьютер.",
+  "This counts the versions this machine captured, not the amendments the legislature made: two amendments between one check and the next arrive as one change. Provision names follow each language, so a translation's do not line up with the original's.": "Здесь считаются версии, сохранённые этим компьютером, а не поправки законодателя: две поправки между двумя проверками приходят как одно изменение. Названия положений следуют каждому языку, поэтому у перевода они не совпадают с оригиналом.",
+  "One count per stored version per period, by the date this machine captured it. A document's first capture is left out, because it is a first sighting, not a change, and how many were left out is shown.": "Один счёт на каждую сохранённую версию за период, по дате её сохранения этим компьютером. Первое сохранение документа не учитывается — это первая встреча, а не изменение, — и показывается, сколько таких пропущено.",
+  "This depends on which documents this install tracks and how often it checks them, not on a legislature. Two amendments between two checks arrive as one version. The number of tracked documents is shown beside each count; no rate is computed, because dividing would read as a legislature's pace.": "Это зависит от того, какие документы отслеживает эта установка и как часто их проверяет, а не от законодателя. Две поправки между двумя проверками приходят как одна версия. Рядом с каждым счётом указано число отслеживаемых документов; темп не вычисляется, потому что деление читалось бы как скорость законодателя."
 }

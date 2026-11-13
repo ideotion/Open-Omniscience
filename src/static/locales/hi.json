@@ -7685,5 +7685,20 @@
   "＋ zoom": "＋ ज़ूम",
   "－ zoom": "－ ज़ूम",
   "📍 places": "📍 स्थान",
-  "🛒 Draft (": "🛒 ड्राफ़्ट ("
+  "🛒 Draft (": "🛒 ड्राफ़्ट (",
+  "Provisions that changed": "बदले हुए प्रावधान",
+  "Versions captured on this machine, not the legislature's own amendments.": "इस मशीन पर दर्ज संस्करण, विधायिका के अपने संशोधन नहीं।",
+  "No provision changed between the stored versions.": "संग्रहीत संस्करणों के बीच कोई प्रावधान नहीं बदला।",
+  "Versions that could not be placed in order": "वे संस्करण जिन्हें क्रम में नहीं रखा जा सका",
+  "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare": "इस दस्तावेज़ की अभी कानून-मॉडल में कोई पंक्ति नहीं है; यह अगले ट्रैकिंग पास में दर्ज होगी, तब तक तुलना के लिए कोई प्रावधान नहीं हैं",
+  "the law lane could not be read on this install": "इस इंस्टॉल पर कानून लेन पढ़ी नहीं जा सकी",
+  "Captured versions per month, by jurisdiction": "हर महीने दर्ज संस्करण, क्षेत्राधिकार के अनुसार",
+  "What this install polls and how often, not how fast a legislature amends.": "यह इंस्टॉल क्या और कितनी बार जाँचता है, न कि विधायिका कितनी तेज़ी से संशोधन करती है।",
+  "{n} versions captured · {docs} documents tracked": "{n} संस्करण दर्ज · {docs} दस्तावेज़ ट्रैक किए गए",
+  "No version has been captured after a first capture yet.": "पहली बार दर्ज करने के बाद अभी तक कोई संस्करण दर्ज नहीं हुआ।",
+  "First captures left out: {n}": "छोड़ी गई पहली प्रविष्टियाँ: {n}",
+  "Each stored version is compared with the one before it, provision by provision: a provision whose text differs is 'changed', a new one is 'added', a missing one is 'removed'. The versions are put in the order this machine captured them.": "हर संग्रहीत संस्करण की तुलना पिछले से, प्रावधान दर प्रावधान की जाती है: जिस प्रावधान का पाठ अलग है वह 'बदला', नया 'जोड़ा गया', गायब 'हटाया गया' है। संस्करण उसी क्रम में रखे गए हैं जिसमें इस मशीन ने उन्हें दर्ज किया।",
+  "This counts the versions this machine captured, not the amendments the legislature made: two amendments between one check and the next arrive as one change. Provision names follow each language, so a translation's do not line up with the original's.": "यह इस मशीन द्वारा दर्ज संस्करण गिनता है, विधायिका के किए संशोधन नहीं: दो जाँचों के बीच के दो संशोधन एक बदलाव के रूप में आते हैं। प्रावधानों के नाम हर भाषा के अनुसार होते हैं, इसलिए अनुवाद के प्रावधान मूल से मेल नहीं खाते।",
+  "One count per stored version per period, by the date this machine captured it. A document's first capture is left out, because it is a first sighting, not a change, and how many were left out is shown.": "हर अवधि में हर संग्रहीत संस्करण की एक गिनती, उस तारीख़ के अनुसार जब इस मशीन ने उसे दर्ज किया। दस्तावेज़ की पहली प्रविष्टि छोड़ दी जाती है, क्योंकि वह पहली बार देखना है, बदलाव नहीं; कितनी छोड़ी गईं, यह दिखाया जाता है।",
+  "This depends on which documents this install tracks and how often it checks them, not on a legislature. Two amendments between two checks arrive as one version. The number of tracked documents is shown beside each count; no rate is computed, because dividing would read as a legislature's pace.": "यह इस पर निर्भर है कि यह इंस्टॉल कौन से दस्तावेज़ ट्रैक करता है और कितनी बार जाँचता है, किसी विधायिका पर नहीं। दो जाँचों के बीच के दो संशोधन एक संस्करण के रूप में आते हैं। हर गिनती के पास ट्रैक किए गए दस्तावेज़ों की संख्या दिखाई जाती है; कोई दर नहीं निकाली जाती, क्योंकि भाग देने पर वह विधायिका की गति जैसी पढ़ी जाएगी।"
 }

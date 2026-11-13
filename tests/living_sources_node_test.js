@@ -59,13 +59,14 @@ const LIVING = [
   "livingMapGroups", "livingDailyGroup", "livingGroupsFor",
   "livingDiffHtml", "livingStreamRowsHtml", "livingLawRowsHtml", "livingMapRowsHtml",
   "lawFloorStateWords", "lawFloorStateWhy", "lawFloorBasisWords", "lawFloorStatesIn", "lawFloorCountsHtml", "livingLawFloorHtml",
+  "lawVelocityHtml",
 ];
 // `window` is defined so `window.OOI18N && ...` resolves to the fallbacks: a sandbox
 // without it raises ReferenceError on the bare global read (the recorded node trap).
 const src =
   "function ooLtrIsolate(s){return String(s==null?'':s);} function ooLtrPct(s){return String(s==null?'':s);}" + "\n" +
   "function ooIsoDate(s){return String(s==null?'':s).slice(0,10);}" + "\n" +
-    extractConst("esc") + "\n" +
+      extractConst("esc") + "\n" +
   extractConst("_LTR_ISOLATE") + "\n" +
   extract("_ltrIsolate") + "\n" +
   extractConst("_isDownloadKind") + "\n" +
@@ -787,6 +788,33 @@ const WIKI = {
   assert.ok(visible(never).includes("Not run yet") && !/\d/.test(visible(never).replace("Edition coverage", "")), visible(never));
   const none = group(R.livingWikiGroups(WIKI, t, tf), "Edition coverage");
   assert.ok(visible(none).includes("Could not be read"), "a payload without a coverage block threw or drew figures");
+}
+
+// Amendment velocity: the short caveat sits inside the fold BEFORE the counts, every
+// period is listed, nothing is divided, and every word goes through the translator.
+{
+  const V = {
+    method: "M-long", caveat: "C-long", caveat_short: "C-short", excluded_baseline_captures: 3, n: 2,
+    series: [{ jurisdiction: "zzz", tracked_documents: 4, n: 2, sparse: true,
+      points: [{ period: "2026-01", count: 2 }, { period: "2026-03", count: 1 }] }],
+  };
+  const marked = (s) => "T[" + s + "]";
+  const mtf = (s, v) => "T[" + tf(s, v) + "]";
+  const html = R.lawVelocityHtml(V, marked, mtf);
+  noJunk(html, "the velocity fold");
+  assert.ok(html.startsWith("<details"), "the block is a fold");
+  const cav = html.indexOf('<p class="card-caveat">T[C-short]</p>');
+  assert.ok(cav > 0 && cav < html.indexOf("CC(zzz)"), "the short caveat comes before the counts: " + html);
+  assert.ok(html.indexOf("T[M-long]") > html.indexOf("CC(zzz)") && /<details><summary[^>]*>T\[Method\]/.test(html), "method one click further");
+  assert.ok(html.includes("2026-01: <b>2</b>") && html.includes("2026-03: <b>1</b>"), html);
+  assert.ok(html.includes("<b>3</b></summary>"), "the total is the sum of counts, in the summary");
+  assert.ok(html.includes("T[First captures left out: 3]"));
+  assert.ok(html.includes("T[3 versions captured · 4 documents tracked]"), "the per-jurisdiction line sums its own points: " + html);
+  assert.ok(!/%|rate|per document/i.test(visible(html).replace("C-long", "")), "nothing divided: " + visible(html));
+  const empty = R.lawVelocityHtml({ ...V, series: [], excluded_baseline_captures: 0 }, marked, mtf);
+  assert.ok(empty.includes("T[No version has been captured after a first capture yet.]") && empty.includes("T[C-short]"), empty);
+  assert.ok(!/First captures/.test(empty));
+  assert.strictEqual(R.lawVelocityHtml(null, marked, mtf), "");
 }
 
 console.log("living_sources_node_test: all checks passed");

@@ -7685,5 +7685,20 @@
   "＋ zoom": "＋ জুম",
   "－ zoom": "－ জুম",
   "📍 places": "📍 স্থান",
-  "🛒 Draft (": "🛒 খসড়া ("
+  "🛒 Draft (": "🛒 খসড়া (",
+  "Provisions that changed": "যে বিধানগুলো বদলেছে",
+  "Versions captured on this machine, not the legislature's own amendments.": "এই যন্ত্রে ধরা সংস্করণ, আইনসভার নিজের সংশোধন নয়।",
+  "No provision changed between the stored versions.": "সংরক্ষিত সংস্করণগুলোর মধ্যে কোনো বিধান বদলায়নি।",
+  "Versions that could not be placed in order": "যে সংস্করণগুলো ক্রমে বসানো যায়নি",
+  "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare": "এই নথির এখনো আইন-মডেলে কোনো সারি নেই; পরের ট্র্যাকিং পাসে এটি লেখা হবে, ততক্ষণ তুলনা করার মতো বিধান নেই",
+  "the law lane could not be read on this install": "এই ইনস্টলে আইনের লেন পড়া যায়নি",
+  "Captured versions per month, by jurisdiction": "প্রতি মাসে ধরা সংস্করণ, এখতিয়ার অনুযায়ী",
+  "What this install polls and how often, not how fast a legislature amends.": "এই ইনস্টল কী এবং কত ঘন ঘন যাচাই করে, আইনসভা কত দ্রুত সংশোধন করে তা নয়।",
+  "{n} versions captured · {docs} documents tracked": "{n}টি সংস্করণ ধরা হয়েছে · {docs}টি নথি ট্র্যাক করা হচ্ছে",
+  "No version has been captured after a first capture yet.": "প্রথম ধরার পর এখনো কোনো সংস্করণ ধরা হয়নি।",
+  "First captures left out: {n}": "বাদ দেওয়া প্রথম ধরা: {n}",
+  "Each stored version is compared with the one before it, provision by provision: a provision whose text differs is 'changed', a new one is 'added', a missing one is 'removed'. The versions are put in the order this machine captured them.": "প্রতিটি সংরক্ষিত সংস্করণকে আগেরটির সঙ্গে বিধান ধরে ধরে তুলনা করা হয়: যে বিধানের লেখা আলাদা তা 'বদলেছে', নতুনটি 'যোগ হয়েছে', হারানোটি 'বাদ গেছে'। এই যন্ত্রে যে ক্রমে ধরা হয়েছে, সংস্করণগুলো সেই ক্রমে সাজানো।",
+  "This counts the versions this machine captured, not the amendments the legislature made: two amendments between one check and the next arrive as one change. Provision names follow each language, so a translation's do not line up with the original's.": "এটি এই যন্ত্রে ধরা সংস্করণ গোনে, আইনসভার করা সংশোধন নয়: দুই যাচাইয়ের মাঝে দুটি সংশোধন একটি পরিবর্তন হিসেবে আসে। বিধানের নাম প্রতিটি ভাষা অনুযায়ী, তাই অনুবাদের বিধান মূলের সঙ্গে মেলে না।",
+  "One count per stored version per period, by the date this machine captured it. A document's first capture is left out, because it is a first sighting, not a change, and how many were left out is shown.": "প্রতি সময়কালে প্রতিটি সংরক্ষিত সংস্করণের জন্য একটি গণনা, এই যন্ত্রে ধরার তারিখ অনুযায়ী। নথির প্রথম ধরা বাদ দেওয়া হয়, কারণ তা প্রথম দেখা, পরিবর্তন নয়; কতগুলো বাদ গেল তা দেখানো হয়।",
+  "This depends on which documents this install tracks and how often it checks them, not on a legislature. Two amendments between two checks arrive as one version. The number of tracked documents is shown beside each count; no rate is computed, because dividing would read as a legislature's pace.": "এটি নির্ভর করে এই ইনস্টল কোন নথি ট্র্যাক করে এবং কত ঘন ঘন যাচাই করে তার ওপর, কোনো আইনসভার ওপর নয়। দুই যাচাইয়ের মাঝে দুটি সংশোধন একটি সংস্করণ হিসেবে আসে। প্রতিটি গণনার পাশে ট্র্যাক করা নথির সংখ্যা দেখানো হয়; কোনো হার গণনা করা হয় না, কারণ ভাগ করলে তা আইনসভার গতি বলে মনে হবে।"
 }

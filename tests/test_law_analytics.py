@@ -12,6 +12,7 @@ carefully as they check the counts.
 
 from __future__ import annotations
 
+import html
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -158,7 +159,7 @@ def test_the_timeline_carries_its_method_its_caveat_and_its_n(corpus, lane):
         timeline = provision_timeline(ls, key, revision_order=[])
     assert timeline["method"].strip() and timeline["caveat"].strip()
     assert "not the amendments the legislature made" in timeline["caveat"]
-    assert "per LANGUAGE" in timeline["caveat"], (
+    assert "Provision names follow each language" in timeline["caveat"], (
         "a translation's provisions carry its own container names, so cross-language "
         "addresses do not line up — a reader comparing them would be comparing nothing"
     )
@@ -199,7 +200,7 @@ def test_velocity_gives_the_DENOMINATOR_and_refuses_to_divide_by_it(corpus, lane
     assert "tracked_documents" in zzz
     for forbidden in ("rate", "per_document", "velocity_per", "normalised", "normalized"):
         assert forbidden not in zzz, f"no divided figure: {forbidden}"
-    assert "NOT of a legislature" in payload["caveat"]
+    assert "not on a legislature" in payload["caveat"] and payload["caveat_short"]
 
 
 def test_a_sparse_series_is_marked_for_BARS_at_the_shared_threshold(corpus, lane):
@@ -314,3 +315,61 @@ def test_the_timeline_endpoint_returns_the_events_for_a_tracked_document(corpus,
 
 
 _T0 = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+# ---------------------------------------------------------------------------
+# The reader: where the timeline is reachable from a button-free route
+# ---------------------------------------------------------------------------
+
+
+def test_the_reader_carries_the_provision_fold_with_its_short_caveat_in_the_summary(corpus, lane):
+    """The finding and the short caveat sit in the closed fold's summary; the per-version
+    list links each date to that stored version; method and caveat are inside the fold."""
+    from fastapi.testclient import TestClient
+
+    from src.law.analytics import CAVEAT_SHORT_TIMELINE
+
+    with corpus() as session:
+        doc = _doc(session)
+        track_document(session, _ScriptedFetcher(["act.v1"]), doc)
+        track_document(session, _ScriptedFetcher(["act.v2"]), doc)
+        doc_id = doc.id
+
+    app = _client(corpus)
+    try:
+        with TestClient(app) as c:
+            page = c.get(f"/api/law/documents/{doc_id}/view").text
+            payload = c.get(f"/api/law/documents/{doc_id}/provision-timeline").json()
+    finally:
+        app.dependency_overrides.clear()
+    start = page.index("<details class='versions provisions'>")
+    fold = page[start : page.index("</details>", start)]
+    summary = fold[: fold.index("</summary>")]
+    assert "Provisions that changed" in summary and "<span class='count'>2</span>" in summary
+    assert html.escape(CAVEAT_SHORT_TIMELINE) in summary, "the short caveat is visible with the fold closed"
+    assert "<code>Part 1 Preliminary/2</code> <span>changed</span>" in fold
+    assert "<code>Part 2 Duties/4</code> <span>added</span>" in fold
+    assert "?version=" in fold
+    assert "not the amendments the legislature made" in fold.split("</summary>", 1)[1]
+    # The payload names every version it placed, oldest first, with its own revision id.
+    stamps = [v["observed_at"] for v in payload["versions"]]
+    assert len(payload["versions"]) == 2 and stamps == sorted(stamps)
+    assert all(isinstance(v["revision_id"], int) for v in payload["versions"])
+
+
+def test_the_reader_fold_says_why_it_is_empty_for_an_untracked_document(corpus, lane):
+    from fastapi.testclient import TestClient
+
+    with corpus() as session:
+        doc_id = _doc(session).id
+
+    app = _client(corpus)
+    try:
+        with TestClient(app) as c:
+            page = c.get(f"/api/law/documents/{doc_id}/view").text
+    finally:
+        app.dependency_overrides.clear()
+    start = page.index("<details class='versions provisions'>")
+    fold = page[start : page.index("</details>", start)]
+    assert "<span class='count'>—</span>" in fold, "no fabricated zero"
+    assert "no law-model row" in fold

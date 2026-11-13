@@ -7685,5 +7685,20 @@
   "＋ zoom": "＋ perbesar",
   "－ zoom": "－ perkecil",
   "📍 places": "📍 tempat",
-  "🛒 Draft (": "🛒 Draf ("
+  "🛒 Draft (": "🛒 Draf (",
+  "Provisions that changed": "Ketentuan yang berubah",
+  "Versions captured on this machine, not the legislature's own amendments.": "Versi yang ditangkap di mesin ini, bukan amandemen dari pembuat undang-undang sendiri.",
+  "No provision changed between the stored versions.": "Tidak ada ketentuan yang berubah di antara versi yang tersimpan.",
+  "Versions that could not be placed in order": "Versi yang tidak dapat diurutkan",
+  "this document has no law-model row yet; it is recorded on the next tracking pass, and until then there are no provisions to compare": "dokumen ini belum memiliki baris model hukum; baris itu dicatat pada putaran pelacakan berikutnya, dan sampai saat itu tidak ada ketentuan untuk dibandingkan",
+  "the law lane could not be read on this install": "jalur hukum tidak dapat dibaca di instalasi ini",
+  "Captured versions per month, by jurisdiction": "Versi yang ditangkap per bulan, menurut yurisdiksi",
+  "What this install polls and how often, not how fast a legislature amends.": "Apa yang diperiksa instalasi ini dan seberapa sering, bukan seberapa cepat pembuat undang-undang mengubah.",
+  "{n} versions captured · {docs} documents tracked": "{n} versi ditangkap · {docs} dokumen dilacak",
+  "No version has been captured after a first capture yet.": "Belum ada versi yang ditangkap setelah tangkapan pertama.",
+  "First captures left out: {n}": "Tangkapan pertama yang tidak dihitung: {n}",
+  "Each stored version is compared with the one before it, provision by provision: a provision whose text differs is 'changed', a new one is 'added', a missing one is 'removed'. The versions are put in the order this machine captured them.": "Setiap versi tersimpan dibandingkan dengan versi sebelumnya, ketentuan demi ketentuan: ketentuan yang teksnya berbeda 'berubah', yang baru 'ditambahkan', yang hilang 'dihapus'. Versi diurutkan menurut urutan mesin ini menangkapnya.",
+  "This counts the versions this machine captured, not the amendments the legislature made: two amendments between one check and the next arrive as one change. Provision names follow each language, so a translation's do not line up with the original's.": "Ini menghitung versi yang ditangkap mesin ini, bukan amandemen yang dibuat pembuat undang-undang: dua amandemen di antara dua pemeriksaan tiba sebagai satu perubahan. Nama ketentuan mengikuti setiap bahasa, jadi milik terjemahan tidak sejajar dengan milik naskah asli.",
+  "One count per stored version per period, by the date this machine captured it. A document's first capture is left out, because it is a first sighting, not a change, and how many were left out is shown.": "Satu hitungan per versi tersimpan per periode, menurut tanggal mesin ini menangkapnya. Tangkapan pertama sebuah dokumen tidak dihitung karena itu penampakan pertama, bukan perubahan, dan jumlah yang tidak dihitung ditampilkan.",
+  "This depends on which documents this install tracks and how often it checks them, not on a legislature. Two amendments between two checks arrive as one version. The number of tracked documents is shown beside each count; no rate is computed, because dividing would read as a legislature's pace.": "Ini bergantung pada dokumen mana yang dilacak instalasi ini dan seberapa sering diperiksa, bukan pada pembuat undang-undang. Dua amandemen di antara dua pemeriksaan tiba sebagai satu versi. Jumlah dokumen yang dilacak ditampilkan di samping setiap hitungan; tidak ada laju yang dihitung, karena pembagian akan terbaca sebagai kecepatan pembuat undang-undang."
 }
