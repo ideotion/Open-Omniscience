@@ -137,11 +137,20 @@ def test_an_area_the_source_dropped_entirely_is_counted_as_withdrawn(db):
     assert climate.store_new_or_revised(db, again, all_areas=False)["withdrawn"] == 0
 
 
-def test_only_a_station_fetch_compares_its_own_area_only():
+def test_only_an_owid_column_counts_a_dropped_area_and_a_regional_file_never_accuses_another_region(db):
+    """GISTEMP and NSIDC share one series id across regions, one file per region: fetching NH after GLB
+    must not call GLB's rows withdrawn (second security read, 2026-11-13)."""
     import inspect
 
-    src = inspect.getsource(climate.fetch_and_store)
-    assert 'all_areas=dataset != "ghcnd"' in src
+    from src.stats.sdmx import StatFigure
+
+    def g(area, period, stamp):
+        return StatFigure(agency="gistemp", series_id="gistemp.monthly", ref_area=area, time_period=period, value=0.5,
+                          unit="degC", methodology_ref=None, adjustment=None, base_year=None, extracted_at=stamp)
+
+    climate.store_new_or_revised(db, [g("GLB", "2020-01", "s1"), g("GLB", "2020-02", "s1")])
+    assert climate.store_new_or_revised(db, [g("NH", "2020-01", "s2")])["withdrawn"] == 0
+    assert 'all_areas=dataset == "owid"' in inspect.getsource(climate.fetch_and_store)
 
 
 def test_a_period_repeated_inside_one_file_is_counted_and_never_breaks_the_fetch(db):

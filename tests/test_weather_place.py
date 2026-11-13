@@ -235,7 +235,7 @@ def test_the_view_asks_consent_names_the_rounded_place_and_reads_held_first():
     # The shared helper (app-home.js, R683) names the rounded place and asks for every request.
     ask = function_body((_ROOT / "src" / "static" / "app-home.js").read_text(encoding="utf-8"), "ooAskToSendPlace")
     assert "rounded to 0.1 degree" in ask and "ooRoundPlace(" in ask
-    assert "window.confirm(" in ask and "await ensureOnline(ask" in ask, \
+    assert "confirmIfOnline:" in ask and "await ensureOnline(ask" in ask, \
         "asked for every request: a confirmation when already online, the consent popup otherwise"
     assert "climatePlaceRound(q.lat)" in body, "the browser rounds too, so the popup names what is sent"
     save = function_body(js, "_climatePlaceSave")
@@ -284,5 +284,5 @@ def test_the_question_says_the_browser_keeps_the_place_and_fails_closed():
     assert 'This browser also keeps the rounded place, unencrypted, to fill it in next time.' in body
     assert "!await ooAskToSendPlace(lat, lon, {shadow: " in body
     ask = function_body((_ROOT / "src" / "static" / "app-home.js").read_text(encoding="utf-8"), "ooAskToSendPlace")
-    assert "window.confirm(opts.shadow ? ask + " in ask
-    assert 'typeof ensureOnline === "function" && !!(await ensureOnline(ask, opts))' in ask, "no consent popup, nothing sent"
+    assert 'confirmIfOnline: shadow ? ask + "\\n\\n" + shadow : ask' in ask
+    assert 'if (typeof ensureOnline !== "function") return false;' in ask, "no consent popup, nothing sent"

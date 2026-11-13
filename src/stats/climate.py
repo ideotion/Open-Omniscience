@@ -399,9 +399,11 @@ def fetch_and_store(
     figures, diagnostics, urls = run_fetch(dataset, p, fetchers=fetchers)
     if progress:
         progress("storing")
-    # Every dataset but a GHCN station is one whole file per series, so an area it no longer carries
-    # was withdrawn by the source (R662); a station fetch covers that station's own area only.
-    tally = store_new_or_revised(session, figures, all_areas=dataset != "ghcnd")
+    # Only an OWID column is one file holding every area of its series, so only there is an area the file
+    # no longer carries withdrawn by the source (R662). GISTEMP and NSIDC fetch one region per file under a
+    # shared series id, and a GHCN fetch is one station: each compares the areas it carries (ONI and USGS
+    # have a single area either way).
+    tally = store_new_or_revised(session, figures, all_areas=dataset == "owid")
     stamps = sorted({f.extracted_at for f in figures})
     record = {
         "dataset": dataset,

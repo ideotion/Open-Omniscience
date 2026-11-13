@@ -2204,10 +2204,11 @@
       const r1 = (x) => fmtNum(ooRoundPlace(x), 1);
       const ask = tf("Send the place {lat}, {lon} (rounded to 0.1 degree) and the dates to {host}",
         {lat: r1(lat), lon: r1(lon), host: OO_WEATHER_HOST});
-      let online = false;
-      try { const nm = await api("/api/system/network"); online = !!(nm && nm.online); } catch (_e) { online = false; }
-      if (online) return window.confirm(opts.shadow ? ask + "\n\n" + opts.shadow : ask);
-      return typeof ensureOnline === "function" && !!(await ensureOnline(ask, opts));
+      if (typeof ensureOnline !== "function") return false;  // fails closed: no popup, nothing sent
+      // Only these two options reach the popup (never skipDialog). ensureOnline asks the confirmation itself
+      // when it finds the app already online, on the one read that decided there was no popup.
+      const shadow = opts.shadow ? String(opts.shadow) : "";
+      return !!(await ensureOnline(ask, {shadow: shadow, confirmIfOnline: shadow ? ask + "\n\n" + shadow : ask}));
     }
 
     async function cardWeatherFetch(id) {
@@ -2221,11 +2222,22 @@
         variables: String(sig.variables || "").split(",").filter(Boolean),
         label: sig.rule_label || c.title
       };
-      // The place and the host are named before anything is sent (R683). A slice already held
-      // is answered from this machine by the route, with nothing sent.
-      if (!await ooAskToSendPlace(sig.lat, sig.lon)) return;
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? v[k] : m)));
       box.textContent = t("Loading…");
       try {
+        // A slice already held is read from this machine first: nothing is sent and nothing is asked,
+        // in airplane mode too (R683). Only a slice not held leads to the question.
+        const q = new URLSearchParams({lat: String(sig.lat), lon: String(sig.lon), start_date: body.start_date,
+          end_date: body.end_date, variables: body.variables.join(","), label: body.label || ""});
+        if (!body.variables.length) { q.delete("variables"); delete body.variables; }  // the route's default set, as before
+        const held = await api("/api/weather/context/held?" + q.toString());
+        if (held && held.held) { renderWeatherContext(box, held, sig); return; }
+        box.textContent = "";
+        // The place, the dates and the host are named before anything is sent.
+        if (!await ooAskToSendPlace(sig.lat, sig.lon,
+          {shadow: tf("Dates sent: {start} to {end}.", {start: body.start_date, end: body.end_date})})) return;
+        box.textContent = t("Loading…");
         const d = await api("/api/weather/context", {method: "POST", body: JSON.stringify(Object.assign({}, body, {consent: true}))});
         renderWeatherContext(box, d, sig);
       } catch (e) {

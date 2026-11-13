@@ -1565,7 +1565,10 @@
       try {
         const nm = await api("/api/system/network");
         _paintNetwork(nm.online);
-        if (nm.online) return true;
+        // Already online: no popup to show. A caller whose request names something personal (a place,
+        // R683) passes confirmIfOnline, and that plain confirmation is asked here, on the SAME read that
+        // decided there was no popup, so no state change between two reads can skip both.
+        if (nm.online) return opts.confirmIfOnline ? window.confirm(opts.confirmIfOnline) : true;
       } catch (_e) { /* fall through to consent — flipping online still asks */ }
       if (opts.skipDialog) return _postGoOnline();
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

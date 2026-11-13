@@ -399,15 +399,28 @@
       const op = (((_claimLast || {}).corroboration || {}).offers || [])[i];
       const box = $("claim-wx-" + i);
       if (!op || !box) return;
-      // Not held: the place and the host are named before anything is sent (R683).
-      if (!op.cached && !await ooAskToSendPlace(op.lat, op.lon, {shadow: claimShadowText(op, tf)})) return;
+      const req = {lat: op.lat, lon: op.lon, start_date: op.window_start, end_date: op.window_end,
+                   variables: op.variables, label: op.rule_label};
       box.textContent = t("Loading…");
       try {
-        const d = await api("/api/weather/context", {method: "POST", body: JSON.stringify({
-          lat: op.lat, lon: op.lon, start_date: op.window_start, end_date: op.window_end,
-          variables: op.variables, label: op.rule_label, consent: !op.cached,
-        })});
-        if (d && d.ok) { _claimWx[i] = d; op.cached = true; }
+        let d = null;
+        if (op.cached) {
+          // Held, by the offer's own read: read from this machine, nothing sent, nothing asked. If it is no
+          // longer held, the question below is asked after all.
+          const q = new URLSearchParams({lat: String(op.lat), lon: String(op.lon), start_date: op.window_start,
+            end_date: op.window_end, variables: (op.variables || []).join(","), label: op.rule_label || ""});
+          const held = await api("/api/weather/context/held?" + q.toString());
+          if (held && held.held) d = held; else op.cached = false;
+        }
+        if (d === null) {
+          box.textContent = "";
+          // Not held: the place and the host are named before anything is sent (R683).
+          if (!await ooAskToSendPlace(op.lat, op.lon, {shadow: claimShadowText(op, tf)})) return;
+          box.textContent = t("Loading…");
+          d = await api("/api/weather/context", {method: "POST", body: JSON.stringify(Object.assign({}, req, {consent: true}))});
+        }
+        // Held from now on only when the server says it kept it.
+        if (d && d.ok) { _claimWx[i] = d; op.cached = d.cached === true || d.kept !== false; }
         renderWeatherContext(box, d, _claimWxSig(op));
       } catch (e) {
         box.innerHTML = `<div class="note err">${esc((e && e.message) || String(e))}</div>`;

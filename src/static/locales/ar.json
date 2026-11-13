@@ -1403,6 +1403,7 @@
   "Dated by when this machine found the gap, newest first.": "مؤرَّخة بلحظة اكتشاف هذا الجهاز للثغرة، الأحدث أولًا.",
   "Dates mentioned in this text": "التواريخ المذكورة في هذا النص",
   "Dates mentioned in your articles' text (extracted, unconfirmed)": "التواريخ المذكورة في نص مقالاتك (مُستخرجة، غير مؤكَّدة)",
+  "Dates sent: {start} to {end}.": "التواريخ المرسَلة: من {start} إلى {end}.",
   "Day": "اليوم",
   "Days": "أيام",
   "Days away": "الأيام المتبقية",

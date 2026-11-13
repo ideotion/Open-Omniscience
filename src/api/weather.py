@@ -55,7 +55,7 @@ class WeatherContextRequest(BaseModel):
         bad = sorted(set(v) - ALLOWED_DAILY)
         if bad:
             raise ValueError(f"unknown daily variables {bad}; allowed: {sorted(ALLOWED_DAILY)}")
-        return v
+        return list(dict.fromkeys(v))
 
     @model_validator(mode="after")
     def _window_bounds(self) -> WeatherContextRequest:
@@ -93,6 +93,32 @@ def weather_context(req: WeatherContextRequest) -> dict:
         req.lat, req.lon, req.start_date, req.end_date, req.variables,
         label=req.label, force=True,
     )
+
+
+@router.get("/context/held")
+def weather_context_held(
+    lat: float = Query(ge=-90, le=90),
+    lon: float = Query(ge=-180, le=180),
+    start_date: date = Query(),
+    end_date: date = Query(),
+    variables: str = Query(default="precipitation_sum,temperature_2m_max,temperature_2m_min", max_length=400),
+    label: str | None = Query(default=None, max_length=200),
+) -> dict:
+    """The slice already held on this machine for this (rounded) place and window, or ``held: false``.
+    Never fetches, needs no consent and works in airplane mode: the page reads it before it asks (R683)."""
+    from pydantic import ValidationError
+
+    try:
+        req = WeatherContextRequest(lat=lat, lon=lon, start_date=start_date, end_date=end_date,
+                                    variables=[v for v in variables.split(",") if v], label=label)
+    except ValidationError as exc:
+        from src.monitoring.secret_scrub import http_detail
+
+        raise HTTPException(status_code=422, detail=http_detail(exc)) from None
+    held = read_cached_slice(build_archive_url(req.lat, req.lon, req.start_date, req.end_date, req.variables))
+    if held is None:
+        return {"ok": True, "held": False}
+    return {**held, "cached": True, "held": True, "label": req.label}
 
 
 class WeatherAnomalyRequest(WeatherContextRequest):

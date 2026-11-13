@@ -46,7 +46,6 @@ from src.weather.openmeteo import (
     PLACE_DECIMALS,
     build_archive_url,
     fetch_daily_slice,
-    held_store,
     round_place,
 )
 
@@ -246,6 +245,15 @@ def _all_vars() -> list[str]:
     return sorted(SUPPORTED)
 
 
+def _place_store(store):
+    # The person's own place, kept apart from corroboration slices (src/weather/held.py PLACE_KEY_PREFIX).
+    if store is not None:
+        return store
+    from src.weather.held import PLACE_KEY_PREFIX, HeldSlices
+
+    return HeldSlices(PLACE_KEY_PREFIX)
+
+
 def _place_block(lat: float, lon: float) -> dict:
     return {"lat": lat, "lon": lon, "decimals": PLACE_DECIMALS, "note": PLACE_NOTE}
 
@@ -255,7 +263,7 @@ def held_anomalies(lat: float, lon: float, start: date, end: date,
     """The anomalies from slices ALREADY held on this machine. Never fetches: a slice not held is
     named in ``missing`` and no number is computed (R675's re-view, readable in airplane mode)."""
     lat, lon = place(lat, lon)
-    st = held_store(store)
+    st = _place_store(store)
     base = st.get(build_archive_url(lat, lon, BASELINE_START, BASELINE_END, _all_vars()))
     win = st.get(build_archive_url(lat, lon, start, end, _all_vars()))
     missing = [name for name, p in (("baseline", base), ("window", win)) if p is None]
@@ -284,7 +292,7 @@ def fetch_anomalies(lat: float, lon: float, start: date, end: date,
     if unknown:
         raise ValueError(f"no anomaly definition for {unknown}; supported: {sorted(SUPPORTED)}")
     lat, lon = place(lat, lon)
-    st = held_store(store)
+    st = _place_store(store)
     got: dict[str, dict] = {}
     held: dict[str, bool] = {}
     kept = True

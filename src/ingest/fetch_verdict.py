@@ -195,7 +195,8 @@ def _userinfo_span(url: str) -> tuple[int, int] | None:
 #: and path and withholds the query, written as ``?…``.
 PRIVATE_QUERY_HOSTS = frozenset({"archive-api.open-meteo.com"})
 #: The query of a request to one of :data:`PRIVATE_QUERY_HOSTS`, wherever a library quoted it (``url: /v1/archive?latitude=...``).
-_PRIVATE_QUERY_RE = re.compile(r"\?[^\s'\"<>]*(?:latitude|longitude)(?:=|%3[Dd])[^\s'\"<>]*")
+#: Case-insensitive, and the key may be percent-encoded (``%6Catitude``) or follow ``;`` as well as ``?``.
+_PRIVATE_QUERY_RE = re.compile(r"[?;][^\s'\"<>]*(?:latitude|longitude|%6catitude|%6congitude)(?:=|%3d)[^\s'\"<>]*", re.I)
 
 
 def without_private_query(text: str) -> str:
@@ -232,12 +233,12 @@ def _private_query_withheld(url: str) -> str:
 
     try:
         parts = urlsplit(url)
-        host = (parts.hostname or "").lower()
+        host = (parts.hostname or "").lower().rstrip(".")
     except ValueError:  # an unparseable URL is written as the rest of this function writes it; no private host parses that way
         return url
-    if host in PRIVATE_QUERY_HOSTS and parts.query:
-        return url.split("?", 1)[0] + "?…"
-    return url
+    if host in PRIVATE_QUERY_HOSTS and (parts.query or ";" in parts.path):
+        return url.split("?", 1)[0].split(";", 1)[0] + "?…"
+    return without_private_query(url)  # a redirect hop elsewhere can still carry the coordinates in its own query
 
 
 def failure_netloc(netloc: str) -> str:

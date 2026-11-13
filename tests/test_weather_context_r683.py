@@ -153,8 +153,6 @@ def test_the_plaintext_folder_is_deleted_once_and_then_nothing_happens(data_dir)
 
 
 def test_startup_upkeep_runs_the_purge():
-    from tests.js_source_helper import function_body  # noqa: F401  (import check only; the read below is plain text)
-
     src = (_ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
     start = src.index("def _run_startup_upkeep(")
     end = src.index("\ndef ", start + 1)
@@ -239,10 +237,100 @@ def test_every_weather_button_asks_through_the_one_helper_naming_place_and_host(
     assert '"Send the place {lat}, {lon} (rounded to 0.1 degree) and the dates to {host}"' in ask
     assert "ooRoundPlace(" in ask and "host: OO_WEATHER_HOST" in ask
     assert 'const OO_WEATHER_HOST = "archive-api.open-meteo.com";' in home
-    assert "window.confirm(" in ask and "await ensureOnline(ask" in ask
+    assert "await ensureOnline(ask, {shadow: shadow, confirmIfOnline:" in ask
+    assert "ensureOnline(ask, opts" not in ask, "only shadow and the confirmation reach the popup, never the caller's options"
+    assert 'if (typeof ensureOnline !== "function") return false;' in ask
     card = function_body(home, "cardWeatherFetch")
-    assert card.index("!await ooAskToSendPlace(") < card.index('"/api/weather/context"')
-    assert "consent: true" in card
+    assert card.index('"/api/weather/context/held?"') < card.index("!await ooAskToSendPlace(") < card.index('"/api/weather/context"')
+    assert "consent: true" in card and "Dates sent: {start} to {end}." in card
     claim = function_body((_ROOT / "src" / "static" / "app-claim.js").read_text(encoding="utf-8"), "claimWeather")
-    assert claim.index("!await ooAskToSendPlace(") < claim.index('"/api/weather/context"')
-    assert "consent: !op.cached" in claim
+    assert claim.index('"/api/weather/context/held?"') < claim.index("!await ooAskToSendPlace(") < claim.index('"/api/weather/context"')
+    assert "consent: true" in claim and "consent: false" not in claim
+    assert "d.kept !== false" in claim, "held from then on only when the server kept it"
+
+
+def test_ensure_online_asks_the_confirmation_on_the_read_that_found_it_online():
+    """First security read: two separate network reads let a state change skip both questions."""
+    from tests.js_source_helper import function_body
+
+    body = function_body((_ROOT / "src" / "static" / "app-core.js").read_text(encoding="utf-8"), "ensureOnline")
+    assert "if (nm.online) return opts.confirmIfOnline ? window.confirm(opts.confirmIfOnline) : true;" in body
+
+
+def test_a_panic_wipe_clears_the_place_this_browser_kept():
+    from tests.js_source_helper import function_body
+
+    body = function_body((_ROOT / "src" / "static" / "app-backup.js").read_text(encoding="utf-8"), "panicWipe")
+    assert body.index('"/api/safety/panic"') < body.index('localStorage.removeItem("oo.climate.place")')
+    climate = (_ROOT / "src" / "static" / "app-climate.js").read_text(encoding="utf-8")
+    assert 'const _PLACE_KEY = "oo.climate.place";' in climate
+
+
+def test_the_place_is_kept_in_the_browser_only_after_the_question_or_a_held_read():
+    from tests.js_source_helper import function_body
+
+    body = function_body((_ROOT / "src" / "static" / "app-climate.js").read_text(encoding="utf-8"), "climatePlaceShow")
+    first_save = body.index("_climatePlaceSave(q)")
+    assert first_save > body.index('"/api/weather/anomaly/held?"')
+    assert body.rindex("_climatePlaceSave(q)") > body.index("!await ooAskToSendPlace(")
+    assert body.rindex("_climatePlaceSave(q)") < body.index('"/api/weather/anomaly", {method: "POST"')
+
+
+def test_the_held_read_route_never_fetches_and_needs_no_consent(client, monkeypatch):
+    import src.safety.fetcher as sf
+    from src.ingest import activate_kill_switch, clear_kill_switch
+
+    q = {"lat": 48.85661, "lon": 2.35222, "start_date": "2023-05-01", "end_date": "2023-05-01",
+         "variables": "precipitation_sum", "label": "Paris"}
+    monkeypatch.setattr(sf, "make_fetcher", lambda **kw: pytest.fail("a held read builds no fetcher"))
+    assert client.get("/api/weather/context/held", params=q).json() == {"ok": True, "held": False}
+    f = _Fetcher()
+    monkeypatch.setattr(sf, "make_fetcher", lambda **kw: f)
+    client.post("/api/weather/context", json={**_REQ, "consent": True})
+    monkeypatch.setattr(sf, "make_fetcher", lambda **kw: pytest.fail("a held read builds no fetcher"))
+    activate_kill_switch()
+    try:
+        got = client.get("/api/weather/context/held", params=q).json()
+    finally:
+        clear_kill_switch()
+    assert got["held"] is True and got["cached"] is True and got["label"] == "Paris"
+    assert client.get("/api/weather/context/held", params={**q, "variables": "evil"}).status_code == 422
+
+
+def test_a_place_looked_up_for_oneself_is_never_found_by_a_corroboration_read(monkeypatch):
+    """First security read: the Your place slices live under their own prefix, so a claim offer that rounds to the
+    same point and window never shows them as held or carries them in a bundle."""
+    from src.weather import anomaly, held, openmeteo
+
+    box: dict = {}
+    monkeypatch.setattr("src.config.kv_store.kv_get_json", lambda k: box.get(k))
+    monkeypatch.setattr("src.config.kv_store.kv_set_json", lambda k, v: box.__setitem__(k, v))
+    w = (date(2023, 5, 1), date(2023, 5, 1))
+    monkeypatch.setattr(anomaly, "fetch_daily_slice", lambda lat, lon, s, e, vs, **kw: {
+        "ok": True, "daily": {"time": [s.isoformat()], **{v: [1.0] for v in vs}},
+        "units": {v: anomaly.SUPPORTED[v][1] for v in vs},
+        "provenance": {"requested_url": openmeteo.build_archive_url(lat, lon, s, e, vs)}})
+    anomaly.fetch_anomalies(48.85661, 2.35222, *w)
+    assert box and all(k.startswith(held.PLACE_KEY_PREFIX) for k in box)
+    url = openmeteo.build_archive_url(48.85661, 2.35222, *w, sorted(anomaly.SUPPORTED))
+    assert openmeteo.read_cached_slice(url) is None
+    assert anomaly.held_anomalies(48.85661, 2.35222, *w)["held"] is True
+
+
+def test_a_symlinked_legacy_folder_is_unlinked_and_its_target_left_alone(data_dir, tmp_path_factory):
+    from src.weather.openmeteo import LEGACY_CACHE_DIR, purge_plaintext_cache
+
+    elsewhere = tmp_path_factory.mktemp("elsewhere")
+    (elsewhere / "x.json").write_text("{}")
+    (data_dir / LEGACY_CACHE_DIR).symlink_to(elsewhere, target_is_directory=True)
+    assert purge_plaintext_cache() == 0
+    assert not (data_dir / LEGACY_CACHE_DIR).exists() and (elsewhere / "x.json").exists()
+
+
+def test_the_claim_workspace_reads_held_state_for_the_shown_offers_only():
+    import inspect
+
+    from src.analytics import claim_workspace
+
+    src = inspect.getsource(claim_workspace)
+    assert "for offer in shown:" in src and '"cached": read_cached_slice' not in src

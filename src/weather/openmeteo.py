@@ -103,13 +103,16 @@ def purge_plaintext_cache() -> int:
     import shutil
 
     folder = data_dir() / LEGACY_CACHE_DIR
+    if folder.is_symlink():
+        folder.unlink()  # the link only, never what it points at; no file of ours is counted
+        return 0
     if not folder.exists():
         return 0
-    n = sum(1 for p in folder.rglob("*") if p.is_file()) if folder.is_dir() else 1
-    if folder.is_dir() and not folder.is_symlink():
-        shutil.rmtree(folder)
-    else:
+    if not folder.is_dir():
         folder.unlink()
+        return 1
+    n = sum(1 for p in folder.rglob("*") if p.is_file())
+    shutil.rmtree(folder)
     return n
 
 

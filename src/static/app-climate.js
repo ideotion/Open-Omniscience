@@ -465,13 +465,12 @@
       const q = {lat: val("climate-place-lat"), lon: val("climate-place-lon"), start: val("climate-place-start"), end: val("climate-place-end")};
       const bad = climatePlaceProblem(q, new Date(), t);
       if (bad) { if (!quiet) say(bad); return; }
-      _climatePlaceSave(q);
       const lat = climatePlaceRound(q.lat), lon = climatePlaceRound(q.lon);
       const params = new URLSearchParams({lat: String(lat), lon: String(lon), start_date: q.start, end_date: q.end});
       try {
         if (!again) {
           const held = await api("/api/weather/anomaly/held?" + params.toString());
-          if (held && held.held) { if (out) out.innerHTML = climatePlaceResultHtml(held, t, tf); say(t("Read from this machine; nothing was sent.")); return; }
+          if (held && held.held) { _climatePlaceSave(q); if (out) out.innerHTML = climatePlaceResultHtml(held, t, tf); say(t("Read from this machine; nothing was sent.")); return; }
           if (quiet) { if (out) out.innerHTML = `<div class="muted">${esc(t("Not fetched on this machine yet for this place and window."))}</div>`; return; }
         }
         // The ONE consent (invariant #14); it names what leaves the machine. A place is personal,
@@ -479,6 +478,8 @@
         // popup would not open, and a plain confirmation naming the place stands in for it.
         // What stays on this machine is said in the same question: the browser keeps the rounded place.
         if (!await ooAskToSendPlace(lat, lon, {shadow: t("This browser also keeps the rounded place, unencrypted, to fill it in next time.")})) return;
+        // Kept only once the person agreed (or the place was already held above), never before the question.
+        _climatePlaceSave(q);
         say(t("Fetching…"));
         const d = await api("/api/weather/anomaly", {method: "POST", body: JSON.stringify({
           lat: lat, lon: lon, start_date: q.start, end_date: q.end, force: !!again, consent: true,

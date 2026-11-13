@@ -1403,6 +1403,7 @@
   "Dated by when this machine found the gap, newest first.": "उस क्षण के अनुसार दिनांकित जब इस मशीन ने कमी पाई, सबसे नई पहले।",
   "Dates mentioned in this text": "इस पाठ में उल्लिखित तिथियाँ",
   "Dates mentioned in your articles' text (extracted, unconfirmed)": "आपके लेखों के पाठ में उल्लिखित तिथियाँ (निकाली गईं, अपुष्ट)",
+  "Dates sent: {start} to {end}.": "भेजी जाने वाली तिथियाँ: {start} से {end} तक।",
   "Day": "दिन",
   "Days": "दिन",
   "Days away": "कितने दिन दूर",
