@@ -264,6 +264,18 @@ def test_a_job_the_operator_cancelled_is_never_started_again_by_a_restore(regist
         job.join(5)
 
 
+def test_a_cancel_pressed_after_the_job_yielded_is_not_overridden_either(registry):
+    from src.backup import merge
+
+    job = bg.register_job(bg.BackgroundJob("y", "Yielded", lambda ctx: None, is_writer=True, cancellable=True, stops_for_restore=True))
+    job.start()
+    assert job.join(5)
+    assert job.status()["state"] == "done"
+    job.cancel()  # on a job that is no longer running: the state stays 'done'
+    merge._remember_stopped(["y"])
+    assert merge.start_jobs_stopped_for_restore() == []
+
+
 def test_run_restore_asks_before_preparing_and_again_at_the_working_copy():
     """A job started while the backup was being prepared is caught by the second ask, at the working copy (read from source: driving a
     real restore to that point needs a staged corpus)."""

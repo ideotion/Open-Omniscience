@@ -485,7 +485,7 @@ def _start_again(kind: str) -> bool:
         if job is None or not job.stops_for_restore:
             return False
         with job._lock:
-            cancelled = job._state == "cancelled"
+            cancelled = job._state == "cancelled" or job._stop.is_set()  # a Cancel pressed after the yield ended leaves the state 'done'
         if cancelled:  # the operator's own Cancel since the restore stopped it: never overridden
             return False
         job.start()
