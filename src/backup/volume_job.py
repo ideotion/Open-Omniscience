@@ -740,8 +740,10 @@ class VolumeBackupManager:
             )
 
             was_paused = False
+            # R383: the claim this restore takes on the scheduler's hold, so its resume releases exactly that one (the hold is counted)
+            hold_claim: list[bool] = []
             try:
-                was_paused = pause_for_exclusive_operation()
+                was_paused = pause_for_exclusive_operation(claim=hold_claim)
             except Exception as exc:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
                 log_failure(
                     _LOG,
@@ -1004,7 +1006,7 @@ class VolumeBackupManager:
                     cleanup_staging(staged)
             finally:
                 try:
-                    resume_after_exclusive_operation(was_paused)
+                    resume_after_exclusive_operation(was_paused, claim=hold_claim)
                 except Exception as exc:  # noqa: BLE001 - the resume is a courtesy, never load-bearing
                     log_failure(
                         _LOG,

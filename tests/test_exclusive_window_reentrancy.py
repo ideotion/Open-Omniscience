@@ -256,4 +256,5 @@ def test_the_window_that_resumes_passes_its_retry_budget_on(sched, monkeypatch):
         pass
     with R.exclusive_window():
         pass
-    assert seen == [{"was": True, "retries": 0}, {"was": True, "retries": 19}]
+    assert [{k: v for k, v in s.items() if k != "claim"} for s in seen] == [{"was": True, "retries": 0}, {"was": True, "retries": 19}]
+    assert all(s["claim"] == [] for s in seen), "each window releases its claim (R383): the list is emptied by the resume"

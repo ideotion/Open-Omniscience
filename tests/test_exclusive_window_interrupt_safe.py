@@ -68,8 +68,8 @@ def sched(monkeypatch):
 
 
 def test_an_interrupt_inside_the_pause_does_not_leave_the_scheduler_held(sched, monkeypatch):
-    def pause_then_interrupt(timeout: float = 10.0) -> bool:
-        sched.hold_exclusive()
+    def pause_then_interrupt(timeout: float = 10.0, *, claim: list[bool] | None = None) -> bool:
+        R._hold(sched, claim)  # the claim is recorded where it is taken, as the real pause does (R383)
         sched.stop()
         raise KeyboardInterrupt  # the pause stopped the loop and never reported it
 

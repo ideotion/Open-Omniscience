@@ -53,6 +53,15 @@ def sch(monkeypatch) -> BackgroundScheduler:
     s.stop(timeout=HANG_GUARD_S)
 
 
+def _restore_pause(claim: list[bool]) -> bool:
+    """A standalone restore's pause, as ``src/backup/volume_job.py`` takes it: the bare pause, its claim kept by the caller."""
+    return runner_mod.pause_for_exclusive_operation(timeout=HANG_GUARD_S, claim=claim)
+
+
+def _restore_resume(was_paused: bool, claim: list[bool]) -> None:
+    runner_mod.resume_after_exclusive_operation(was_paused, claim=claim, retries=0, retry_delay=0.0)
+
+
 def _bundle_inside(sch: BackgroundScheduler) -> None:
     """A diagnostics bundle's window, opened and closed while the restore runs (request-handler shape: no retry loop)."""
     assert runner_mod.exclusive_window_open() is False, "the restore's bare pause must not be visible as a window (the premise of the trace)"
@@ -62,53 +71,150 @@ def _bundle_inside(sch: BackgroundScheduler) -> None:
 
 
 def test_a_window_that_ends_inside_a_standalone_restore_leaves_the_restore_holding_the_machine(sch):
-    was_paused = runner_mod.pause_for_exclusive_operation(timeout=HANG_GUARD_S)  # the restore, loop stopped (airplane mode at boot)
-    assert was_paused is False
+    claim: list[bool] = []
+    was_paused = _restore_pause(claim)  # loop stopped (airplane mode at boot)
+    assert was_paused is False and claim == [True]
     _bundle_inside(sch)
     assert sch.holds_exclusive() is True, "the bundle's resume released the restore's hold"
-    assert sch.status()["exclusive_hold"] is True
     assert sch.status()["exclusive_holds"] == 1
     assert sch.run_now() is False, "Run now was accepted in the middle of the restore"
     assert sch.start() is False, "a Start put the loop back in the middle of the restore"
     assert sch.is_running() is False
-    runner_mod.resume_after_exclusive_operation(was_paused, retries=0, retry_delay=0.0)  # the restore ends
-    assert sch.holds_exclusive() is False
+    _restore_resume(was_paused, claim)  # the restore ends
+    assert sch.holds_exclusive() is False and claim == []
     assert sch.status()["exclusive_holds"] == 0
 
 
 def test_a_start_refused_during_the_restore_waits_for_the_restore_not_the_bundle(sch):
-    was_paused = runner_mod.pause_for_exclusive_operation(timeout=HANG_GUARD_S)
+    claim: list[bool] = []
+    was_paused = _restore_pause(claim)
     assert sch.start() is False  # the operator presses Start mid-restore: deferred
     _bundle_inside(sch)
     assert sch.is_running() is False, "the bundle's resume consumed the restore's deferred start and started the loop mid-restore"
     assert sch.status()["start_deferred"] is True, "the deferred start was lost at the bundle's end"
-    runner_mod.resume_after_exclusive_operation(was_paused, retries=0, retry_delay=0.0)
+    _restore_resume(was_paused, claim)
     assert sch.is_running() is True, "the Start pressed during the restore was never honoured"
     assert sch.holds_exclusive() is False
 
 
 def test_a_start_refused_during_the_bundle_is_handed_to_the_restore(sch):
-    was_paused = runner_mod.pause_for_exclusive_operation(timeout=HANG_GUARD_S)
-    assert runner_mod.exclusive_window_open() is False
+    claim: list[bool] = []
+    was_paused = _restore_pause(claim)
     with runner_mod.exclusive_window(timeout=HANG_GUARD_S, resume_retries=0):
         assert sch.start() is False  # pressed during the bundle, which runs inside the restore
     assert sch.is_running() is False
     assert sch.status()["start_deferred"] is True
-    runner_mod.resume_after_exclusive_operation(was_paused, retries=0, retry_delay=0.0)
+    _restore_resume(was_paused, claim)
     assert sch.is_running() is True
 
 
-def test_an_unmatched_release_is_harmless_and_the_count_never_goes_negative(sch):
-    sch.release_exclusive()
+def test_a_restore_that_ends_while_a_window_is_open_releases_its_own_claim(sch):
+    """The reverse order (the read of 2f3fbef1, blocker 1): the bundle outlives the restore. The restore's claim must still be released by
+    the restore, or the count stays at 1 for the life of the process and every Start is refused."""
+    claim: list[bool] = []
+    was_paused = _restore_pause(claim)
+    with runner_mod.exclusive_window(timeout=HANG_GUARD_S, resume_retries=0):
+        assert sch.status()["exclusive_holds"] == 2
+        _restore_resume(was_paused, claim)  # the restore ends first
+        assert sch.status()["exclusive_holds"] == 1, "the restore did not release its claim inside the window"
+        assert sch.start() is False, "the bundle still holds the machine"
+    assert sch.status()["exclusive_holds"] == 0, "a claim leaked: Start stays refused until the process restarts"
+    assert sch.holds_exclusive() is False
+    assert sch.is_running() is True, "the Start refused inside the bundle was never honoured"
+    sch.stop(timeout=HANG_GUARD_S)
+    assert sch.start() is True, "a Start pressed after both operations did nothing"
+
+
+def test_a_loop_the_restore_stopped_is_started_by_the_bundle_that_outlives_it(sch):
+    assert sch.start() is True  # collecting when the restore begins
+    claim: list[bool] = []
+    was_paused = _restore_pause(claim)
+    assert was_paused is True
+    with runner_mod.exclusive_window(timeout=HANG_GUARD_S, resume_retries=0):
+        _restore_resume(was_paused, claim)
+        assert sch.is_running() is False, "collection came back while the bundle still owned the machine"
+    assert sch.is_running() is True, "the collector the restore stopped was never put back"
     assert sch.status()["exclusive_holds"] == 0
+
+
+def test_two_operations_that_end_together_never_strand_a_start(sch):
+    """The read's should-fix 2: R1 stopped the loop, R2 found it stopped; their resumes interleave. Whatever the order of the releases, the
+    LAST one out starts the loop R1 stopped, and nothing is left deferred at a count of zero."""
+    for first_out in ("R1", "R2"):
+        assert sch.start() is True
+        c1: list[bool] = []
+        c2: list[bool] = []
+        w1 = _restore_pause(c1)
+        w2 = _restore_pause(c2)
+        assert (w1, w2) == (True, False)
+        order = [(w1, c1), (w2, c2)] if first_out == "R1" else [(w2, c2), (w1, c1)]
+        _restore_resume(*order[0])
+        assert sch.is_running() is False and sch.holds_exclusive() is True
+        _restore_resume(*order[1])
+        assert sch.status()["exclusive_holds"] == 0
+        assert sch.is_running() is True, f"the loop R1 stopped stayed stopped ({first_out} out first)"
+        assert sch.status()["start_deferred"] is False, "a deferred start was stranded at a count of zero"
+        sch.stop(timeout=HANG_GUARD_S)
+
+
+def test_the_release_and_the_deferred_start_are_one_step(sch):
+    """``release_exclusive`` answers (hold_ended, start_wanted) itself, so no caller reads the deferral apart from the release."""
     sch.hold_exclusive()
-    assert sch.holds_exclusive() is True, "an earlier unmatched release must not swallow a later claim"
+    sch.hold_exclusive()
+    assert sch.start() is False  # deferred
+    assert sch.release_exclusive() == (False, False)  # another claim stands: nothing to start, the deferral stays
+    assert sch.status()["start_deferred"] is True
+    assert sch.release_exclusive() == (True, True)  # the last claim: the deferral is taken with it
+    assert sch.status()["start_deferred"] is False
+    sch.hold_exclusive()
+    assert sch.release_exclusive(hand_over_start=True) == (True, False)  # the last claim: a hand-over has no one to go to
+    sch.hold_exclusive()
+    sch.hold_exclusive()
+    assert sch.release_exclusive(hand_over_start=True) == (False, False)
+    assert sch.status()["start_deferred"] is True, "the loop this operation stopped was not queued behind the other holder"
     sch.release_exclusive()
+
+
+def test_a_pause_inside_a_window_takes_no_claim_and_its_resume_releases_none(sch):
+    """The read's note 3: a resume releases only what its own pause took. A standalone pause started inside a window takes no claim (the
+    window owns the machine), so after the window closes, its resume must not end a third operation's claim."""
+    inner: list[bool] = []
+    with runner_mod.exclusive_window(timeout=HANG_GUARD_S, resume_retries=0):
+        inner_paused = _restore_pause(inner)
+        assert inner == [], "a pause inside a window must not take a claim"
+    other: list[bool] = []
+    _restore_pause(other)  # a third operation holds the machine now
+    _restore_resume(inner_paused, inner)  # the inner operation ends after the window closed
+    assert sch.holds_exclusive() is True, "a resume released a claim it never took"
+    assert sch.run_now() is False
+    _restore_resume(False, other)
     assert sch.holds_exclusive() is False
 
 
-def test_a_resume_without_a_deferral_hook_on_the_scheduler_behaves_as_before(monkeypatch):
-    """A scheduler with no ``defer_start`` (a test double, an older object) is never treated as held by another operation."""
+def test_an_unmatched_release_never_goes_below_zero_and_a_later_claim_still_holds(sch):
+    sch.release_exclusive()
+    sch.hold_exclusive()
+    assert sch.holds_exclusive() is True, "an earlier unmatched release must not swallow a later claim"
+    assert sch.run_now() is False and sch.start() is False
+    sch.release_exclusive()
+    assert sch.holds_exclusive() is False
+    assert sch.start() is True
+
+
+def test_a_second_resume_with_the_same_claim_releases_nothing(sch):
+    claim: list[bool] = []
+    was_paused = _restore_pause(claim)
+    other: list[bool] = []
+    _restore_pause(other)
+    _restore_resume(was_paused, claim)
+    _restore_resume(was_paused, claim)  # a caller that resumes twice owns nothing the second time
+    assert sch.holds_exclusive() is True, "a repeated resume ended another operation's claim"
+    _restore_resume(False, other)
+    assert sch.holds_exclusive() is False
+
+
+def test_a_resume_on_a_scheduler_double_without_the_counted_api_behaves_as_before(monkeypatch):
+    """A stand-in with the pre-R383 shape (``release_exclusive()`` answers nothing) is read the old way: deferral, then release, then start."""
 
     class _Bare:
         def __init__(self):
