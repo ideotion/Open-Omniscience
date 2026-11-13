@@ -72,6 +72,12 @@ acquisitions (G2's elections session, §5 step 1). The empty-until-it-runs claus
 not weakened here. No new board row; the placement is what was assumed. Reversed by writing a letter at
 `ANSWER RC08.4`.
 
+**Progress 2026-11-13 (PR #1935, R661 + R662): the climate half has its surface; the row stays OPEN.** The six keyless
+series now have one Climate main tab, a subtab each, fetched only through the consent gate and read back offline, with
+source, licence, last fetch, gaps and parse diagnostics shown per series. A re-fetch keeps every vintage (R662). Still
+owed for this half: a run against the REAL hosts (the sandbox's egress refuses most of them, so it is the maintainer's
+run), and the AR6 and Open-Meteo lanes. The elections calendar and the statistics directory are untouched.
+
 ### Row B — OSM change tracking and the trend surfaces · ruled (Q106, Q812 🔒, Q813, Q815, Q816, Q824) · OPEN
 
 **What it must demonstrate.** Geofabrik daily diffs per selected extract applied to the ingested classes; if

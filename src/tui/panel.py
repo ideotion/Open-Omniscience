@@ -24,7 +24,8 @@ WHAT IT MAY DO, AND WHAT IT NEVER DOES.
   * It talks to ONE host, the literal loopback address below, on the launcher's port. It is not configurable: an address taken from the
     environment or the command line could point this at another machine, and nothing here should ever leave the computer.
   * It reads only what the browser's own task manager reads (``/api/health``, ``/api/system/lock-state``, ``/api/system/vitals``,
-    ``/api/scheduler/status``, ``/api/jobs``), and only while it is on screen.
+    ``/api/scheduler/status``, ``/api/jobs``), plus the interface language the browser reported (``/api/ai/interface-language``, a
+    read-only GET, once a minute), and only while it is on screen.
   * It POSTs exactly two things: ``/api/scheduler/stop`` (pause collection, which engages airplane mode, a move TOWARD offline) and
     ``/api/system/shutdown`` (the app's own power button, after a second press). It NEVER resumes collection or brings the app online
     (R601): every offline-to-online move passes the browser's one consent popup (invariant #14), which lists the local interfaces and
@@ -38,6 +39,12 @@ THE STOP PATHS ARE THE LAUNCHER'S, UNCHANGED. The panel runs in cbreak mode, nev
 as a terminal SIGINT (the server takes its graceful path, the launcher records the stop) and the panel itself just restores the terminal and
 ends. Closing the window still sends the hangup that stops the app. "Stop app" is the in-app power button over loopback, so the launcher
 sees the same exit (143) it already reads as a stop somebody asked for.
+
+IN THE PERSON'S LANGUAGE (R665, OPEN_QUEUE item 39). The words come from the browser's own locale files through ``src/tui/locale.py``:
+the language the browser last reported to the app, else the terminal's locale, else English (``OO_PANEL_LANG`` overrides), English for
+any missing string. Arabic stays in English with one line saying why: curses cannot shape it or lay it right to left. Lines already in
+the log keep the language they were written in (the log is append-only), and widths are measured in terminal cells, so CJK labels and
+buttons line up. The keys o, p, l, s never change with the language.
 
 WINDOWS (anticipated; not run on Windows). Python's curses is absent there unless the ``windows-curses`` package is installed (a marker
 dependency since R602, on the platforms it publishes wheels for), so without it :func:`main` says so and ends, and ``launch.cmd`` only
@@ -66,6 +73,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.monitoring.secret_scrub import HELD_ENV_VARS
+from src.tui import locale as L
 
 try:  # absent on Windows without windows-curses; main() says so and ends
     import curses
@@ -106,6 +114,24 @@ MILESTONE_PCT = 10
 LOG_SKIP_KINDS = ("collect", "fetch")
 
 IS_WINDOWS = os.name == "nt"
+#: How often the language the browser reported is read again (R665): a switch in the UI reaches the panel within this.
+LANG_RECHECK_S = 60.0
+
+#: The panel's words (R665). English until main() reads the person's choice; tests set it with :func:`set_language`.
+_TR = L.Translator()
+
+
+def set_language(tr: L.Translator) -> None:
+    global _TR
+    _TR = tr
+
+
+def _t(text: str) -> str:
+    return _TR.t(text)
+
+
+def _tf(text: str, **values: object) -> str:
+    return _TR.tf(text, **values)
 
 Fetch = Callable[..., Any]
 
@@ -245,12 +271,12 @@ def fmt_duration(s: float | None) -> str:
     h, s = divmod(s, 3600)
     m, s = divmod(s, 60)
     if d:
-        return f"{d}d {h}h"
+        return _tf("{d}d {h}h", d=d, h=h)
     if h:
-        return f"{h}h {m:02d}m"
+        return _tf("{h}h {m}m", h=h, m=f"{m:02d}")
     if m:
-        return f"{m}m {s:02d}s"
-    return f"{s}s"
+        return _tf("{m}m {s}s", m=m, s=f"{s:02d}")
+    return _tf("{s}s", s=s)
 
 
 def _bar(pct: float, width: int = 16) -> str:
@@ -272,6 +298,9 @@ class LogLine:
     style: str = "normal"
 
 
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
 class ActivityLog:
     """The lines the panel shows, appended one after the other. The newest ``keep`` are held; ``dropped`` counts the ones let go."""
 
@@ -286,10 +315,12 @@ class ActivityLog:
 
     def add(self, text: str, style: str = "normal", at: float | None = None) -> None:
         at = time.time() if at is None else at
-        day = time.strftime("%A %d %B %Y", time.localtime(at))
+        lt = time.localtime(at)
+        day = time.strftime("%Y-%m-%d", lt)
         if day != self._day:  # the panel runs for days: a line at each change of date keeps the times readable
             if self._day:
-                self._append(LogLine(at, f"{day}", "date"))
+                # The weekday in the panel's language, the date in ISO order (the same in every language, never a month name to translate).
+                self._append(LogLine(at, f"{_t(_WEEKDAYS[lt.tm_wday])} {day}", "date"))
             self._day = day
         self._append(LogLine(at, text, style))
 
@@ -298,13 +329,23 @@ class ActivityLog:
         self.total += 1
 
 
-def _lock_text(snap: Snapshot) -> tuple[str, str] | None:
+def _lock_key(snap: Snapshot) -> str:
+    """The lock state as a word of its own, so a change of LANGUAGE is never read as a change of state (it compares keys, not text)."""
     if snap.locked:
-        return "Locked: open the UI to unlock. Collection and jobs start after you unlock.", "warn"
+        return "locked"
     if snap.lock_state == "unlocked-plaintext":
-        return "Unlocked (the database is not encrypted).", "ok"
-    if snap.lock_state:
-        return "Unlocked (encrypted).", "ok"
+        return "plain"
+    return "encrypted" if snap.lock_state else ""
+
+
+def _lock_text(snap: Snapshot) -> tuple[str, str] | None:
+    key = _lock_key(snap)
+    if key == "locked":
+        return _t("Locked: open the UI to unlock. Collection and jobs start after you unlock."), "warn"
+    if key == "plain":
+        return _t("Unlocked (the database is not encrypted)."), "ok"
+    if key == "encrypted":
+        return _t("Unlocked (encrypted)."), "ok"
     return None
 
 
@@ -316,8 +357,13 @@ def _job_detail(j: Job) -> str:
     return ""
 
 
+#: A job's state as the log says it. A state not listed here is shown as the server sent it, never mapped onto the nearest word.
 _STATE_WORDS = {"running": "started", "queued": "queued", "paused": "paused", "failed": "FAILED", "done": "finished",
                 "scheduled": "scheduled"}
+
+
+def _state_word(state: str) -> str:
+    return _t(_STATE_WORDS[state]) if state in _STATE_WORDS else (state or _t("changed"))
 
 
 class Watcher:
@@ -340,31 +386,33 @@ class Watcher:
             if self.silent_since is None:
                 self.silent_since = now
             if self.ever and not self.said_silent:
-                out.append(("The app stopped answering. It may be busy, stopping, or the computer slept; the panel keeps trying.", "warn"))
+                out.append((_t("The app stopped answering. It may be busy, stopping, or the computer slept; the panel keeps trying."), "warn"))
                 self.said_silent = True
             return out
         if not self.ever:
-            out.append((f"The app answers{f' (version {snap.version})' if snap.version else ''}.", "ok"))
+            out.append((_tf("The app answers (version {version}).", version=snap.version) if snap.version else _t("The app answers."), "ok"))
         elif self.said_silent and self.silent_since is not None:
-            out.append((f"The app answers again, after {fmt_duration(now - self.silent_since)} without an answer.", "ok"))
+            out.append((_tf("The app answers again, after {duration} without an answer.", duration=fmt_duration(now - self.silent_since)),
+                        "ok"))
         self.silent_since, self.said_silent = None, False
         prev = self.prev
         self.ever = True
-        lock, plock = _lock_text(snap), (_lock_text(prev) if prev else None)
-        if lock and lock != plock:
+        lock = _lock_text(snap)
+        if lock and _lock_key(snap) != (_lock_key(prev) if prev else None):
             out.append(lock)
         if snap.online is not None and (prev is None or prev.online != snap.online):
-            out.append(("Network: online." if snap.online else "Network: offline (airplane mode).", "normal"))
+            out.append((_t("Network: online.") if snap.online else _t("Network: offline (airplane mode)."), "normal"))
+        # The phase is the scheduler's own word (an identifier, not a sentence): shown as sent, inside a translated sentence.
         phase = snap.collect_phase.replace("-", " ").replace("_", " ")
         if prev is None:
             if snap.collecting:
-                out.append((f"Collection is running{f' ({phase})' if phase else ''}.", "ok"))
+                out.append((_tf("Collection is running ({phase}).", phase=phase) if phase else _t("Collection is running."), "ok"))
         elif snap.collecting and not prev.collecting:
-            out.append((f"Collection started{f' ({phase})' if phase else ''}.", "ok"))
+            out.append((_tf("Collection started ({phase}).", phase=phase) if phase else _t("Collection started."), "ok"))
         elif prev.collecting and not snap.collecting:
-            out.append(("Collection stopped.", "normal"))
+            out.append((_t("Collection stopped."), "normal"))
         elif snap.collecting and snap.collect_phase != prev.collect_phase and phase:
-            out.append((f"Collection: {phase}.", "normal"))
+            out.append((_tf("Collection: {phase}.", phase=phase), "normal"))
         if snap.jobs_known:
             out.extend(self._jobs(self.last_jobs, snap.jobs, snap.collecting))
             self.last_jobs = snap.jobs
@@ -378,21 +426,22 @@ class Watcher:
             under_way = [j for j in cur.values() if j.state in ("running", "queued", "paused")]
             for j in under_way:
                 d = _job_detail(j)
-                out.append((f"Under way: {j.label} [{j.state}]{f'  {d}' if d else ''}", "ok" if j.state == "running" else "dim"))
+                head = _tf("Under way: {job} [{state}]", job=j.label, state=_t(j.state))
+                out.append((f"{head}{f'  {d}' if d else ''}", "ok" if j.state == "running" else "dim"))
             if not under_way:
-                out.append(("No other job is running." if collecting else "No job is running.", "dim"))
+                out.append((_t("No other job is running.") if collecting else _t("No job is running."), "dim"))
         else:
             old = {j.key: j for j in before if j.kind not in LOG_SKIP_KINDS}
             for k, j in cur.items():
                 was = old.get(k)
                 if was is None or was.state != j.state:
-                    word = _STATE_WORDS.get(j.state, j.state or "changed")
+                    word = _state_word(j.state)
                     style = "warn" if j.state == "failed" else "ok" if j.state in ("running", "done") else "normal"
                     d = _job_detail(j) if j.state in ("running", "paused", "failed") else ""
                     out.append((f"{j.label}: {word}{f'  {d}' if d else ''}", style))
             for k, j in old.items():
                 if k not in cur:
-                    out.append((f"{j.label}: no longer listed (finished or removed).", "dim"))
+                    out.append((_tf("{job}: no longer listed (finished or removed).", job=j.label), "dim"))
                     self.milestones.pop(k, None)
         for k, j in cur.items():
             if j.state == "running" and j.percent is not None:
@@ -415,7 +464,7 @@ class Button:
 
     @property
     def width(self) -> int:
-        return len(self.label) + 4  # "[ " + label + " ]"
+        return L.cols(self.label) + 4  # "[ " + label + " ]", in terminal cells (a CJK character takes two)
 
     def hit(self, x: int, y: int) -> bool:
         return y == self.row and self.col <= x < self.col + self.width
@@ -431,12 +480,13 @@ class PanelState:
 
 
 def buttons_for(snap: Snapshot, *, windows: bool = IS_WINDOWS) -> list[Button]:
-    out = [Button("open", "Open UI (o)")]
+    # The keys stay o, p, l, s in every language (the letter in brackets says which), so a key never moves with the language.
+    out = [Button("open", _t("Open UI (o)"))]
     if snap.reachable and (snap.collecting or snap.online):
-        out.append(Button("pause", "Pause collection (p)"))
+        out.append(Button("pause", _t("Pause collection (p)")))
     if not windows:  # on Windows the server's lines are not kept behind the panel
-        out.append(Button("log", "Server messages (l)"))
-    out.append(Button("stop", "Stop app (s)"))
+        out.append(Button("log", _t("Server messages (l)")))
+    out.append(Button("stop", _t("Stop app (s)")))
     return out
 
 
@@ -448,15 +498,17 @@ def _rule(title: str, width: int, right: str = "") -> str:
     w = max(width - 1, 0)
     left = f"{RULE * 2} {title} " if title else ""
     tail = f" {right} {RULE * 2}" if right else ""
-    return (left + RULE * max(w - len(left) - len(tail), 0) + tail)[:w]
+    return L.clip(left + RULE * max(w - L.cols(left) - L.cols(tail), 0) + tail, w)
 
 
 def _status_line(snap: Snapshot) -> str:
-    lock = "Locked: open the UI to unlock" if snap.locked else "not encrypted" if snap.lock_state == "unlocked-plaintext" else "encrypted" if snap.lock_state else "?"
-    net = {True: "online", False: "offline", None: "?"}[snap.online]
-    coll = "collecting" if snap.collecting else "collection stopped"
+    key = _lock_key(snap)
+    lock = {"locked": _t("Locked: open the UI to unlock"), "plain": _t("not encrypted"), "encrypted": _t("encrypted")}.get(key, "?")
+    net = {True: _t("online"), False: _t("offline"), None: "?"}[snap.online]
+    coll = _t("collecting") if snap.collecting else _t("collection stopped")
     cpu = f"{snap.cpu_percent:.0f} %" if snap.cpu_percent is not None else "?"
-    return (f"{lock}  ·  {net}  ·  {coll}  ·  CPU {cpu}  ·  memory {fmt_bytes(snap.rss_bytes)}  ·  up {fmt_duration(snap.uptime_s)}")
+    return "  ·  ".join([lock, net, coll, _tf("CPU {cpu}", cpu=cpu), _tf("memory {size}", size=fmt_bytes(snap.rss_bytes)),
+                         _tf("up {duration}", duration=fmt_duration(snap.uptime_s))])
 
 
 def build_screen(snap: Snapshot, width: int, state: PanelState, url: str, now: float, *, log: ActivityLog | None = None,
@@ -470,10 +522,11 @@ def build_screen(snap: Snapshot, width: int, state: PanelState, url: str, now: f
     head.append((f" {title}  ·  {url}", "title"))
     if not snap.reachable:
         if starting:
-            head.append(("Starting... the panel fills in as soon as the app answers.", "warn"))
+            head.append((_t("Starting... the panel fills in as soon as the app answers."), "warn"))
         else:
-            quiet = f" for {fmt_duration(silent_for)}" if silent_for is not None else ""
-            head.append((f"The app is not answering{quiet}. It may be busy, stopping, or the computer slept; the panel keeps trying.",
+            head.append(((_tf("The app is not answering for {duration}. It may be busy, stopping, or the computer slept; the panel keeps "
+                              "trying.", duration=fmt_duration(silent_for)) if silent_for is not None else
+                          _t("The app is not answering. It may be busy, stopping, or the computer slept; the panel keeps trying.")),
                          "warn"))
         head.append(("", "normal"))
     else:
@@ -481,28 +534,29 @@ def build_screen(snap: Snapshot, width: int, state: PanelState, url: str, now: f
         running = [j for j in snap.running if j.kind not in ("fetch",)]
         queued = [j for j in snap.jobs if j.state == "queued"]
         if not snap.jobs_known:
-            now_line = "Jobs: not readable right now."
+            now_line = _t("Jobs: not readable right now.")
         elif not running and not queued:
-            now_line = "Now: nothing running, the app is idle."
+            now_line = _t("Now: nothing running, the app is idle.")
         else:
             listed = ", ".join(f"{j.label}{f' {_job_detail(j)}' if _job_detail(j) else ''}" for j in running[:3])
-            now_line = f"Now: {len(running)} running, {len(queued)} queued" + (f"  ·  {listed}" if listed else "")
+            now_line = _tf("Now: {running} running, {queued} queued", running=len(running), queued=len(queued)) + (
+                f"  ·  {listed}" if listed else "")
             if len(running) > 3:
-                now_line += f" and {len(running) - 3} more"
+                now_line += " " + _tf("and {n} more", n=len(running) - 3)
         if snap.fetching:
-            now_line += f"  ·  fetching {snap.fetching}"
+            now_line += "  ·  " + _tf("fetching {host}", host=snap.fetching)
         head.append((now_line, "ok" if running else "dim"))
 
     # The bottom block: a rule, the notice, the buttons (wrapped to the width), the footer.
     if state.stop_confirm_until > now:
         names = [j.label for j in snap.running if j.kind != "fetch"]
-        what = ", ".join(names[:3]) + (f" and {len(names) - 3} more" if len(names) > 3 else "")
-        notice: Line = ("Stop the app? " + (f"These jobs end: {what}. " if names else "No job is running. ")
-                        + "Press s again (or click Stop again) to confirm. Any other key cancels.", "warn")
+        what = ", ".join(names[:3]) + (" " + _tf("and {n} more", n=len(names) - 3) if len(names) > 3 else "")
+        notice: Line = (" ".join([_t("Stop the app?"), _tf("These jobs end: {jobs}.", jobs=what) if names else _t("No job is running."),
+                                  _t("Press s again (or click Stop again) to confirm. Any other key cancels.")]), "warn")
     elif state.notice and state.notice_until > now:
         notice = (state.notice, "warn")
     else:
-        notice = ("You can close the browser: jobs keep running here. Reopen it with Open UI.", "dim")
+        notice = (_t("You can close the browser: jobs keep running here. Reopen it with Open UI."), "dim")
     btns = buttons_for(snap, windows=windows)
     brow, col = 0, 0
     for b in btns:
@@ -512,9 +566,9 @@ def build_screen(snap: Snapshot, width: int, state: PanelState, url: str, now: f
         col += b.width + 2
     button_rows = brow + 1
     if watched:
-        footer = "Closing this window stops the app (Ctrl-C too).  ↑↓ PgUp PgDn or the wheel scroll the log; End follows it."
+        footer = _t("Closing this window stops the app (Ctrl-C too).  ↑↓ PgUp PgDn or the wheel scroll the log; End follows it.")
     else:
-        footer = "This panel only watches the app: Ctrl-C closes the panel and the app keeps running."
+        footer = _t("This panel only watches the app: Ctrl-C closes the panel and the app keeps running.")
     bottom_n = 2 + button_rows + 1  # rule + notice + buttons + footer
 
     # The log fills what is left, newest at the bottom.
@@ -525,10 +579,11 @@ def build_screen(snap: Snapshot, width: int, state: PanelState, url: str, now: f
     start = max(0, end - area)
     right = ""
     if state.scroll:
-        right = f"scrolled back: {state.scroll} newer line{'s' if state.scroll != 1 else ''} below, End follows"
+        right = (_t("scrolled back: 1 newer line below, End follows") if state.scroll == 1
+                 else _tf("scrolled back: {n} newer lines below, End follows", n=state.scroll))
     elif log.dropped:
-        right = f"{log.dropped} older lines not kept"
-    lines: list[Line] = [*head, (_rule("Activity", width, right), "dim")]
+        right = _tf("{n} older lines not kept", n=log.dropped)
+    lines: list[Line] = [*head, (_rule(_t("Activity"), width, right), "dim")]
     shown = list(log.lines)[start:end]
     for ln in shown:
         if ln.style == "date":
@@ -543,7 +598,7 @@ def build_screen(snap: Snapshot, width: int, state: PanelState, url: str, now: f
         b.row += first_button_row
     lines.extend([("", "button")] * button_rows)
     lines.append((footer, "dim"))
-    return [(t[: max(width - 1, 0)], s) for t, s in lines], btns
+    return [(L.clip(t, max(width - 1, 0)), s) for t, s in lines], btns
 
 
 def loopback_url(url: str, port: int) -> str:
@@ -592,13 +647,14 @@ def do_action(action: str, state: PanelState, snap: Snapshot, port: int, url: st
     if action != "stop":
         state.stop_confirm_until = 0.0
     if action == "open":
-        say("Opening the UI in your browser..." if opener(url) else f"Could not open a browser. Open this address yourself: {url}")
+        say(_t("Opening the UI in your browser...") if opener(url) else _tf("Could not open a browser. Open this address yourself: {url}",
+                                                                              url=url))
     elif action == "pause":
         r = fetch(port, "POST", "/api/scheduler/stop", {})
         if isinstance(r, dict) and "_error" not in r:
-            say("Collection paused and the app is offline. To resume, open the UI (it asks before going online).")
+            say(_t("Collection paused and the app is offline. To resume, open the UI (it asks before going online)."))
         else:
-            say("Pause did not go through. Try again, or use the UI.", "warn")
+            say(_t("Pause did not go through. Try again, or use the UI."), "warn")
     elif action == "stop":
         if state.stop_confirm_until > now and now - state.stop_armed_at < STOP_MIN_GAP_S:  # a negative gap (the clock moved back) too
             # A press too soon after the last one (a held key repeats every few ms, two presses queued behind a frozen screen): it stays a
@@ -609,9 +665,9 @@ def do_action(action: str, state: PanelState, snap: Snapshot, port: int, url: st
             state.stop_confirm_until = 0.0
             r = fetch(port, "POST", "/api/system/shutdown", {"confirm": True})
             if isinstance(r, dict) and "_error" not in r:
-                say("Stopping the app... running jobs end now.", "warn")
+                say(_t("Stopping the app... running jobs end now."), "warn")
             else:
-                say("The stop did not go through. Close this window or press Ctrl-C to stop the app.", "warn")
+                say(_t("The stop did not go through. Close this window or press Ctrl-C to stop the app."), "warn")
         else:
             state.stop_confirm_until = now + STOP_CONFIRM_S
             state.stop_armed_at = now
@@ -761,10 +817,13 @@ def _draw(scr: Any, lines: list[Line], buttons: list[Button], attrs: dict[str, i
         scr.erase()
     for y, (text, style) in enumerate(lines[: h]):
         with contextlib.suppress(CursesError):
+            # Clipped in terminal CELLS (L.clip/L.pad); addnstr's count is in characters, so it is given the clipped text's length.
             if style == "title":  # the title bar spans the width
-                scr.addnstr(y, 0, text.ljust(max(w - 1, 0)), max(w - 1, 0), attrs["title"])
+                bar = L.pad(text, max(w - 1, 0))
+                scr.addnstr(y, 0, bar, len(bar), attrs["title"])
             else:
-                scr.addnstr(y, 0, text, max(w - 1, 0), attrs.get(style, 0))
+                text = L.clip(text, max(w - 1, 0))
+                scr.addnstr(y, 0, text, len(text), attrs.get(style, 0))
     for b in buttons:
         if b.row < h and b.col + b.width < w:
             with contextlib.suppress(CursesError):
@@ -784,10 +843,10 @@ def _show_log(scr: Any, server: ServerProcess, stopping: list[bool] | None = Non
     from termios import error as TermiosError
 
     curses.endwin()
-    sys.stdout.write("\n--- The server's own messages appear below as it prints them. Press any key to return to the panel. ---\n\n")
-    sys.stdout.flush()
     fd = sys.stdin.fileno()
     saved = None
+    # cbreak BEFORE the prompt: endwin() leaves the terminal in line mode, and a key pressed as soon as the prompt shows used to land
+    # there (echoed, waiting for Enter) or be discarded by setcbreak's flush, so the view did not return on it (a CI flake, 2026-11-13).
     with contextlib.suppress(TermiosError, OSError):
         saved = termios.tcgetattr(fd)
         tty.setcbreak(fd)  # one key, no Enter; ISIG stays, so Ctrl-C is still the terminal's stop
@@ -795,6 +854,10 @@ def _show_log(scr: Any, server: ServerProcess, stopping: list[bool] | None = Non
     # without a refresh between them fails, which read as "the panel could not start" right above the launcher's own message.
     back = True
     try:
+        # Inside the try: a write that fails (the terminal hung up) still restores the terminal's own mode below.
+        sys.stdout.write("\n--- " + _t("The server's own messages appear below as it prints them. Press any key to return to the panel.")
+                         + " ---\n\n")
+        sys.stdout.flush()
         while True:
             if not server.alive() or (stopping is not None and stopping[0]):
                 back = False
@@ -824,8 +887,8 @@ def server_silent_too_long(server_pid: int | None, *, ever: bool, now: float, la
 
 def silent_message(url: str) -> str:
     """What the panel says as it ends because the app stopped answering (it cannot tell a hung app from one that is gone)."""
-    return (f"\nThe app has not answered for a while, so the panel closed. If Open Omniscience is still running, open {url} "
-            "in the browser.\n")
+    return "\n" + _tf("The app has not answered for a while, so the panel closed. If Open Omniscience is still running, open {url} "
+                      "in the browser.", url=url) + "\n"
 
 
 @dataclass
@@ -842,6 +905,38 @@ class Session:
     started: float = field(default_factory=time.monotonic)
     last_ok: float = 0.0
     drawn: bool = False
+    #: The language (R665): the code the browser last reported (None: none, or not readable), when it is read next, and the code of
+    #: the right-to-left notice already written, so it is said once per switch and not at every read.
+    lang_reported: str | None = None
+    lang_next: float = 0.0
+    lang_code: str = L.DEFAULT
+    rtl_noted: str = ""
+
+
+def apply_language(session: Session, reported: str | None, env: dict[str, str] | None = None) -> None:
+    """Choose the panel's language from what the browser reported (R665) and say once when a right-to-left one stays in English.
+    Lines already in the log keep the language they were written in: the log is append-only (R658)."""
+    session.lang_reported = reported
+    tr, note = L.choose(reported, env)
+    set_language(tr)
+    session.lang_code = tr.code
+    if note and session.rtl_noted != note:
+        session.activity.add(note, "dim")
+        session.rtl_noted = note
+    elif not note:
+        session.rtl_noted = ""
+
+
+def read_reported_language(port: int, fetch: Fetch = api) -> tuple[bool, str | None]:
+    """``(answered, code)``: whether the app answered the question, and the interface language the browser last reported (None when
+    none was). A failed read (locked, timed out, an error) is ``(False, None)``, so the caller keeps the language it has rather than
+    flipping to the fallback on a transient fault. A read only: the route is read-only and the lock gate answers for a locked app, so
+    nothing is unlocked or woken to answer it (R665)."""
+    r = fetch(port, "GET", "/api/ai/interface-language")
+    if not isinstance(r, dict) or "_error" in r:
+        return False, None
+    lang = r.get("lang")
+    return True, (lang or None) if isinstance(lang, str) else None
 
 
 def refresh(session: Session, now_mono: float, fetch: Fetch = api) -> None:
@@ -849,6 +944,11 @@ def refresh(session: Session, now_mono: float, fetch: Fetch = api) -> None:
     session.snap = take_snapshot(session.port, fetch)
     if session.snap.reachable:
         session.last_ok = now_mono
+        if now_mono >= session.lang_next:
+            session.lang_next = now_mono + LANG_RECHECK_S
+            answered, reported = read_reported_language(session.port, fetch)
+            if answered and reported != session.lang_reported:
+                apply_language(session, reported)
     before = session.activity.total
     for text, style in session.watcher.observe(session.snap, now_mono):
         session.activity.add(text, style)
@@ -981,7 +1081,8 @@ def main(argv: list[str] | None = None) -> int:
     enc = (getattr(sys.stdout, "encoding", "") or "").lower().replace("-", "")
     RULE = "─" if enc.startswith("utf") else "-"
     session = Session(port=args.port, url=url, server=ServerProcess(args.server_pid))
-    session.activity.add("Panel started. It stays here while the app runs; the lines below are what happened, newest last.", "dim")
+    apply_language(session, None)  # the terminal's own language until the app says which one the person chose (R665)
+    session.activity.add(_t("Panel started. It stays here while the app runs; the lines below are what happened, newest last."), "dim")
 
     def _end(_sig: int, _frame: Any) -> None:
         # The panel only restores the terminal and ends. A Ctrl-C reaches the server and the launcher on its own (one SIGINT to the
@@ -1004,16 +1105,17 @@ def main(argv: list[str] | None = None) -> int:
                 raise
             except Exception as exc:  # noqa: BLE001 - the panel redraws itself rather than leave the window to the server's output
                 if not session.drawn and isinstance(exc, CursesError):
-                    print(f"The terminal panel could not start ({type(exc).__name__}). The app keeps running.", file=sys.stderr)
+                    print(_tf("The terminal panel could not start ({error}). The app keeps running.", error=type(exc).__name__),
+                          file=sys.stderr)
                     return 3
                 t = time.monotonic()
                 failures = [*_recent(failures, t), t]
                 if len(failures) > RESTARTS_MAX or session.stopping[0]:
-                    print(f"\nThe terminal panel stopped after repeated errors ({type(exc).__name__}). The app keeps running: "
-                          f"open {url} in the browser.\n", file=sys.stderr, flush=True)
+                    print("\n" + _tf("The terminal panel stopped after repeated errors ({error}). The app keeps running: open {url} "
+                                      "in the browser.", error=type(exc).__name__, url=url) + "\n", file=sys.stderr, flush=True)
                     return PANEL_FAILED
                 # The class only, never the message: an exception's text can carry what the panel read.
-                session.activity.add(f"The panel hit an error ({type(exc).__name__}) and redrew itself.", "warn")
+                session.activity.add(_tf("The panel hit an error ({error}) and redrew itself.", error=type(exc).__name__), "warn")
                 time.sleep(0.5)
                 continue
             break

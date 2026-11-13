@@ -28,9 +28,9 @@ from ._base import router
 
 
 # --------------------------------------------------------------------------- #
-# TEMPORARY / REMOVABLE diagnostic — Source & article quality triage bundle.
-# THROWAWAY: delete this endpoint + its Settings→Diagnostics button once the
-# external analyst has used the export to decide, per source, exclude/optimise/keep.
+# Source & article quality triage bundle, saved by the Field data button (R654, R664):
+# FIELD_DATA_EXPORTS in src/static/app-diagnostics.js lists this route, so delete it
+# only together with that entry.
 # --------------------------------------------------------------------------- #
 @router.get("/source-quality")
 def source_quality(
@@ -38,7 +38,7 @@ def source_quality(
     seed: int = Query(20260713),
     db: Session = Depends(get_db),
 ) -> Response:
-    """TEMPORARY diagnostic: ONE ZIP with everything an analyst needs to decide, per source,
+    """Field data export: ONE ZIP with everything an analyst needs to decide, per source,
     whether to EXCLUDE it (bad source) / OPTIMIZE the extractor (a mangled real article) / KEEP it
     (a genuine edge). Detects non-articles THREE independent ways (per-article keyword-stat
     outliers · a text sample from three selectors · per-source keyword fingerprints).

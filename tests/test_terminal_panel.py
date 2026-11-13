@@ -330,6 +330,7 @@ def test_pid_alive_on_posix():
 
 class _H(BaseHTTPRequestHandler):
     seen: list[dict] = []
+    lang: str | None = None  # what /api/ai/interface-language answers (R665)
 
     def log_message(self, *a):
         pass
@@ -350,6 +351,7 @@ class _H(BaseHTTPRequestHandler):
             "/api/system/vitals": {"uptime_s": 4000, "process": {"rss_bytes": 812_000_000, "cpu_percent": 3.5}},
             "/api/scheduler/status": {"online": True, "running": True, "active": True, "phase": "collecting"},
             "/api/jobs": {"jobs": [{"kind": "collect", "label": "collection pass", "state": "running", "progress": None}]},
+            "/api/ai/interface-language": {"lang": _H.lang},
         }
         if self.path in answers:
             self._reply(200, answers[self.path])
@@ -365,6 +367,7 @@ class _H(BaseHTTPRequestHandler):
 @pytest.fixture
 def server():
     _H.seen = []
+    _H.lang = None
     srv = ThreadingHTTPServer(("127.0.0.1", 0), _H)
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
@@ -423,7 +426,7 @@ def test_the_real_panel_draws_its_log_and_no_key_closes_it(server):
     import pty
 
     master, slave = pty.openpty()
-    env = dict(os.environ, TERM="xterm-256color", PYTHONPATH=str(REPO))
+    env = dict(os.environ, TERM="xterm-256color", PYTHONPATH=str(REPO), OO_PANEL_LANG="en")
     proc = subprocess.Popen([sys.executable, "-m", "src.tui.panel", "--port", str(server), "--server-pid", str(os.getpid())],
                             cwd=str(REPO), env=env, stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
     os.close(slave)
@@ -452,7 +455,7 @@ def test_the_real_panel_ends_on_sigint_and_when_its_server_ends(server):
     sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
     for how in ("sigint", "server-gone"):
         master, slave = pty.openpty()
-        env = dict(os.environ, TERM="xterm-256color", PYTHONPATH=str(REPO))
+        env = dict(os.environ, TERM="xterm-256color", PYTHONPATH=str(REPO), OO_PANEL_LANG="en")
         pid = sleeper.pid if how == "server-gone" else os.getpid()
         proc = subprocess.Popen([sys.executable, "-m", "src.tui.panel", "--port", str(server), "--server-pid", str(pid)],
                                 cwd=str(REPO), env=env, stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
@@ -656,7 +659,7 @@ def test_a_server_ending_while_the_log_is_shown_ends_the_panel_cleanly(server):
 
     sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
     master, slave = pty.openpty()
-    env = dict(os.environ, TERM="xterm-256color", PYTHONPATH=str(REPO))
+    env = dict(os.environ, TERM="xterm-256color", PYTHONPATH=str(REPO), OO_PANEL_LANG="en")
     proc = subprocess.Popen([sys.executable, "-m", "src.tui.panel", "--port", str(server), "--server-pid", str(sleeper.pid)],
                             cwd=str(REPO), env=env, stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
     os.close(slave)
@@ -843,7 +846,7 @@ def test_a_quiet_server_keeps_its_panel_and_it_says_so(monkeypatch):
     srv = ThreadingHTTPServer(("127.0.0.1", 0), _Quiet)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     master, slave = pty.openpty()
-    env = dict(os.environ, TERM="xterm-256color", PYTHONPATH=str(REPO))
+    env = dict(os.environ, TERM="xterm-256color", PYTHONPATH=str(REPO), OO_PANEL_LANG="en")
     proc = subprocess.Popen([sys.executable, "-m", "src.tui.panel", "--port", str(srv.server_address[1]), "--server-pid", str(os.getpid())],
                             cwd=str(REPO), env=env, stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
     os.close(slave)
@@ -867,6 +870,13 @@ def test_a_quiet_server_keeps_its_panel_and_it_says_so(monkeypatch):
         srv.server_close()
 
 
+def test_the_log_view_is_in_cbreak_before_it_asks_for_a_key():
+    """The prompt is written only once the terminal reads single keys: a key pressed the moment the prompt shows must answer it
+    (written before setcbreak, it landed in line mode or was flushed away, and the view never returned; CI flake 2026-11-13)."""
+    body = inspect.getsource(P._show_log)
+    assert body.index("tty.setcbreak(fd)") < body.index("Press any key to return"), "cbreak first, then the prompt"
+
+
 @posix_only
 @pytest.mark.skipif(P.curses is None, reason="no curses")
 def test_the_server_messages_view_returns_on_any_key(server):
@@ -874,7 +884,7 @@ def test_the_server_messages_view_returns_on_any_key(server):
     import pty
 
     master, slave = pty.openpty()
-    env = dict(os.environ, TERM="xterm-256color", PYTHONPATH=str(REPO))
+    env = dict(os.environ, TERM="xterm-256color", PYTHONPATH=str(REPO), OO_PANEL_LANG="en")
     proc = subprocess.Popen([sys.executable, "-m", "src.tui.panel", "--port", str(server), "--server-pid", str(os.getpid())],
                             cwd=str(REPO), env=env, stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
     os.close(slave)
@@ -907,3 +917,190 @@ def test_a_second_signal_does_not_cut_the_restore_short_and_ctrl_c_on_windows_is
     assert "if session.stopping[0]:\n            return" in SRC
     assert "except _Stop:\n                raise" in SRC, "a signal inside psutil is never swallowed"
     assert "IS_WINDOWS and ch == 3" in SRC and "GenerateConsoleCtrlEvent(0, 0)" in SRC
+
+
+# --------------------------------------------------------------------------- the panel's language (OPEN_QUEUE item 39, R665)
+
+from src.tui import locale as L  # noqa: E402
+
+LOCALES = REPO / "src" / "static" / "locales"
+CODES = sorted(p.stem for p in LOCALES.glob("*.json"))
+
+
+@pytest.fixture(autouse=True)
+def _english_after_each_test():
+    yield
+    P.set_language(L.Translator())
+
+
+def _panel_keys() -> set[str]:
+    """Every string the panel translates: the first argument of each _t()/_tf() call, plus the state words and weekday names it looks up
+    through a table (read from the module, so a word added there is checked too)."""
+    import ast
+
+    keys = set()
+    for n in ast.walk(ast.parse(SRC)):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in ("_t", "_tf"):
+            arg = n.args[0]
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                keys.add(arg.value)
+                continue
+            # The only lookups through a variable, each over a closed set this test adds below; anything else must be a literal.
+            assert ast.unparse(arg) in ("_STATE_WORDS[state]", "j.state", "_WEEKDAYS[lt.tm_wday]"), (
+                f"line {n.lineno}: the panel translates literal strings, so this test can see every key")
+    return keys | set(P._STATE_WORDS.values()) | set(P._WEEKDAYS) | {"changed"} | {"running", "queued", "paused"}
+
+
+def test_every_panel_string_is_a_key_in_all_twelve_locales_with_its_placeholders():
+    keys = _panel_keys()
+    assert len(keys) > 60, "the AST walk found the panel's strings"
+    assert len(CODES) == 12
+    for code in CODES:
+        table = json.loads((LOCALES / f"{code}.json").read_text(encoding="utf-8"))
+        missing = sorted(k for k in keys if k not in table)
+        assert not missing, (code, missing[:5])
+        for k in keys:
+            assert sorted(re.findall(r"\{(\w+)\}", table[k])) == sorted(re.findall(r"\{(\w+)\}", k)), (code, k, table[k])
+
+
+def test_the_locale_reader_falls_back_to_english_for_a_missing_key_or_language():
+    tr, note = L.load("fr")
+    assert tr.code == "fr" and note is None
+    assert tr.t("Collection stopped.") == "Collecte arrêtée."
+    assert tr.t("a sentence no locale carries") == "a sentence no locale carries"
+    assert tr.tf("Collection: {phase}.", phase="x") == "Collecte : x."
+    for code in ("xx", "", None, "C", "POSIX", "../en", "en/../../etc"):
+        tr, note = L.load(code)
+        assert tr.code == "en" and note is None, code
+        assert tr.t("Collection stopped.") == "Collection stopped."
+
+
+def test_tf_never_raises_on_braces_in_a_value_or_a_missing_value():
+    tr = L.Translator()
+    assert tr.tf("fetching {host}", host="{evil} {0}") == "fetching {evil} {0}"
+    assert tr.tf("fetching {host}") == "fetching {host}"
+    bad = L.Translator("xx", {"fetching {host}": "{host} {0} {"})
+    assert bad.tf("fetching {host}", host="h") == "h {0} {"
+
+
+def test_arabic_stays_english_and_says_so_once_r665():
+    tr, note = L.load("ar")
+    assert tr.code == "en" and tr.t("Collection stopped.") == "Collection stopped."
+    assert note and "Arabic" in note and "English" in note
+    assert not any("؀" <= ch <= "ۿ" for ch in note), "no unshaped Arabic is ever printed"
+    session = P.Session(port=1, url="u", server=P.ServerProcess(None))
+    P.apply_language(session, "ar", env={})
+    P.apply_language(session, "ar", env={})
+    assert [ln.text for ln in session.activity.lines] == [note], "said once, not at every read"
+    P.apply_language(session, "fr", env={})
+    assert session.lang_code == "fr" and P._t("Collection stopped.") == "Collecte arrêtée."
+
+
+def test_the_language_is_chosen_in_order_override_reported_terminal_english():
+    assert L.choose(None, {}).__getitem__(0).code == "en"
+    assert L.choose(None, {"LANG": "de_DE.UTF-8"})[0].code == "de"
+    assert L.choose(None, {"LANG": "de_DE.UTF-8", "LC_ALL": "ja_JP.UTF-8"})[0].code == "ja"
+    assert L.choose(None, {"LANG": "C.UTF-8"})[0].code == "en"
+    assert L.choose("fr", {"LANG": "de_DE.UTF-8"})[0].code == "fr", "the browser's choice beats the terminal's locale"
+    assert L.choose("fr", {"LANG": "de_DE.UTF-8", "OO_PANEL_LANG": "es"})[0].code == "es"
+    assert L.choose("tlh", {"LANG": "de_DE.UTF-8"})[0].code == "de", "a language with no locale file is passed over"
+    assert L.choose("pt-BR", {})[0].code == "pt"
+
+
+def test_widths_are_terminal_cells_so_cjk_buttons_and_lines_fit():
+    assert L.cols("abc") == 3 and L.cols("収集") == 4 and L.cols("é") == 1
+    assert L.clip("収集中です", 5) == "収集" and L.cols(L.pad("収集", 7)) == 7
+    for code in ("ja", "zh", "hi", "bn", "ru"):
+        P.set_language(L.load(code)[0])
+        snap = _snap()
+        for width in (40, 80, 120):
+            lines, btns = P.build_screen(snap, width, P.PanelState(), "http://127.0.0.1:8000/", time.time(), windows=False, height=30)
+            assert all(L.cols(t) <= width - 1 for t, _ in lines), (code, width)
+            for b in btns:
+                assert b.width == L.cols(b.label) + 4 and b.col + b.width <= max(width - 1, b.width), (code, width, b)
+    P.set_language(L.load("ja")[0])
+    lines, _ = P.build_screen(_snap(), 120, P.PanelState(), "u", time.time(), windows=False, height=30)
+    assert any("収集中" in t for t, _ in lines), "the status line is in Japanese"
+
+
+def test_a_change_of_language_is_not_read_as_a_change_of_lock_state():
+    w = P.Watcher()
+    s1 = _snap()
+    s1.lock_state = "unlocked-encrypted"
+    first = w.observe(s1, 0.0)
+    assert any(t == "Unlocked (encrypted)." for t, _ in first)
+    P.set_language(L.load("fr")[0])
+    s2 = _snap()
+    s2.lock_state = "unlocked-encrypted"
+    assert not [t for t, _ in w.observe(s2, 1.0) if "verrouill" in t.lower()], "same state, new language: no new lock line"
+
+
+def test_the_reported_language_is_read_from_the_app_and_never_unlocks_anything():
+    calls = []
+
+    def fetch(port, method, path, body=None, timeout=3.0):
+        calls.append((method, path))
+        return {"/api/ai/interface-language": {"lang": "de"}}.get(path, {"_error": 404} if path != "/api/health" else {"version": "1"})
+
+    session = P.Session(port=1, url="u", server=P.ServerProcess(None))
+    P.refresh(session, 100.0, fetch)
+    assert session.lang_code == "de" and session.lang_reported == "de"
+    assert ("GET", "/api/ai/interface-language") in calls
+    assert all(m == "GET" for m, _ in calls)
+    n = len(calls)
+    P.refresh(session, 110.0, fetch)
+    assert ("GET", "/api/ai/interface-language") not in calls[n:], "read again only after LANG_RECHECK_S"
+    assert P.read_reported_language(1, lambda *a, **k: {"_error": 503}) == (False, None), "a locked app answers locked: no answer"
+    assert P.read_reported_language(1, lambda *a, **k: None) == (False, None)
+    assert P.read_reported_language(1, lambda *a, **k: {"lang": 7}) == (True, None)
+    assert P.read_reported_language(1, lambda *a, **k: {"lang": None}) == (True, None)
+
+
+def test_a_failed_language_read_keeps_the_language_and_says_nothing_again():
+    """One timed-out or locked read must not flip a French panel to English for a minute, nor repeat the Arabic notice (Opus read)."""
+    answers = iter([{"lang": "ar"}, {"_error": 503}, None, {"lang": "ar"}, {"lang": "fr"}, {"_error": 503}])
+
+    def fetch(port, method, path, body=None, timeout=3.0):
+        if path == "/api/ai/interface-language":
+            return next(answers)
+        return {"version": "1"} if path == "/api/health" else {"_error": 404}
+
+    session = P.Session(port=1, url="u", server=P.ServerProcess(None))
+    for i in range(4):
+        P.refresh(session, 100.0 + i * (P.LANG_RECHECK_S + 1), fetch)
+    notes = [ln.text for ln in session.activity.lines if "right-to-left" in ln.text]
+    assert len(notes) == 1, notes
+    P.refresh(session, 100.0 + 4 * (P.LANG_RECHECK_S + 1), fetch)
+    assert session.lang_code == "fr"
+    P.refresh(session, 100.0 + 5 * (P.LANG_RECHECK_S + 1), fetch)
+    assert session.lang_code == "fr", "a locked read keeps French"
+
+
+def test_the_interface_language_route_is_a_read_only_get():
+    src = (REPO / "src" / "api" / "ai.py").read_text(encoding="utf-8")
+    at = src.index('@router.get("/interface-language")')
+    body = src[at: src.index("\n\n\n", at)]
+    assert "interface_lang()" in body and "record_interface_lang" not in body and "kv_set" not in body
+
+
+@posix_only
+@pytest.mark.skipif(P.curses is None, reason="no curses")
+def test_the_real_panel_speaks_the_language_the_browser_reported(server):
+    import pty
+
+    _H.lang = "fr"
+    master, slave = pty.openpty()
+    env = {k: v for k, v in os.environ.items() if k not in ("OO_PANEL_LANG", "LC_ALL", "LC_MESSAGES")}
+    env.update(TERM="xterm-256color", PYTHONPATH=str(REPO), LANG="C.UTF-8")
+    proc = subprocess.Popen([sys.executable, "-m", "src.tui.panel", "--port", str(server), "--server-pid", str(os.getpid())],
+                            cwd=str(REPO), env=env, stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
+    os.close(slave)
+    try:
+        out = _read_until(master, b"La collecte tourne", 20)
+        assert b"La collecte tourne" in out, out[-2000:]
+        proc.send_signal(signal.SIGINT)
+        assert proc.wait(timeout=15) == 0
+    finally:
+        with contextlib.suppress(OSError):
+            proc.kill()
+        os.close(master)

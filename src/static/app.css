@@ -2269,6 +2269,14 @@
 .living-pages { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .living-tc { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 10px; }
 
+/* The Climate tab (R661): provenance facts in a wrapping grid, the parse diagnostics as a list. */
+.climate-params { margin: 8px 0; max-width: 560px; }
+.seg-toggle.wrap.climate-params button { white-space: normal; flex: 1 1 auto; }
+.climate-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 16px; margin: 8px 0; font-size: 13px; }
+.climate-fact { min-width: 0; overflow-wrap: anywhere; }
+.climate-diag { margin: 4px 0 0; padding-inline-start: 18px; }
+#climate-station { font-family: var(--mono); text-transform: uppercase; }
+
 /* The Claim Workspace (S05-11 S1): steps in order, each with its method sentence visible. */
 #tab-claim textarea, #tab-claim input[type="text"] { width: 100%; box-sizing: border-box; }
 .claim-label { display: block; font-weight: 600; margin: 10px 0 4px; }
