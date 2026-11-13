@@ -227,3 +227,14 @@ def test_only_named_deep_links_open_the_full_view():
     for fn in ("enterSimple", "backToSimple"):
         body = code.split("function " + fn + "(", 1)[1].split("\n  }\n", 1)[0]
         assert "clearDeepLink()" in body, fn
+
+
+def test_the_hidden_ai_pill_is_not_a_consent_surface():
+    # Simple mode hides #llm. That is safe only while the pill is a local status label and AI
+    # egress keeps its own dialog, which simple mode never hides.
+    html = _read(_STATIC / "index.html")
+    pill = re.search(r'<span id="llm"[^>]*>[^<]*</span>', html)
+    assert pill, "#llm changed shape: re-check whether simple mode may still hide it"
+    assert "consent" not in pill.group(0).lower() and "egress" not in pill.group(0).lower()
+    assert 'id="ai-egress-consent"' in html
+    assert "#ai-egress-consent" not in " ".join(_hidden_selectors(_css("simple.css")))

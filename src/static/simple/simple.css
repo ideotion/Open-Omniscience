@@ -34,6 +34,9 @@ html[data-mode="simple"] #subtab-strip { display:none !important; }
    activity chip, language, help and shut down stay (R682: network state is never hidden). */
 html[data-mode="simple"] #rate-toggle,
 html[data-mode="simple"] #tm-open,
+/* #llm is the local-model status pill (Ollama on loopback), not a consent surface: AI egress has
+   its own #ai-egress-consent dialog, which is never hidden. If #llm ever carries an egress state,
+   it must leave this rule (tests/test_simple_mode.py pins both facts). */
 html[data-mode="simple"] #llm { display:none !important; }
 /* The health pill steps aside only while it says "healthy"; any other state shows. */
 html[data-mode="simple"] #health:has(.dot.ok) { visibility:hidden; }  /* keeps its slot (invariant #3) */
