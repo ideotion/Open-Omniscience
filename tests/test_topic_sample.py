@@ -192,3 +192,48 @@ def test_a_bug_on_valid_data_surfaces_as_a_bug_never_as_not_measured(tmp_path, m
     monkeypatch.setattr(tt, "measure", broken)
     with pytest.raises(TypeError):
         tsm.run(path, SAMPLE)
+
+
+# --- R690: combining marks belong to their word -------------------------------------------------------------------------
+
+
+def test_a_hindi_vowel_sign_or_virama_never_splits_a_word():
+    """मनुष्य ("human") once folded to मन + ुष + ्य, so the label मन ("mind") matched inside it as EXACT."""
+    assert tt.fold("मनुष्य अधिकार") == ("मनुष्य", "अधिकार")
+    idx = tt.Index([_art(mind=({"hi": "मन"}, {}))])
+    assert tt.tag_text("मनुष्य अधिकार अधिनियम", "hi", idx) == []
+    assert [(t.concept, t.tier) for t in tt.tag_text("मन की शांति", "hi", idx)] == [("mind", "exact")]
+
+
+def test_a_bengali_vowel_sign_never_splits_a_word():
+    assert tt.fold("মনোবিজ্ঞান আইন") == ("মনোবিজ্ঞান", "আইন")
+    idx = tt.Index([_art(mind=({"bn": "মন"}, {}))])
+    assert tt.tag_text("মনোবিজ্ঞান আইন", "bn", idx) == []
+    assert [t.concept for t in tt.tag_text("মন ও শরীর", "bn", idx)] == ["mind"]
+
+
+def test_arabic_vowelling_neither_splits_a_word_nor_hides_it():
+    """A haraka once split قَانُون into ق + ان + ون, and the label ان ("that") matched a fragment."""
+    assert tt.fold("قَانُون") == tt.fold("قانون") == ("قانون",)
+    idx = tt.Index([_art(that=({"ar": "ان"}, {}), law=({"ar": "قانون"}, {}))])
+    assert [t.concept for t in tt.tag_text("قَانُون العَمَل", "ar", idx)] == ["law"]
+
+
+def test_thai_marks_stay_in_the_run_and_one_letter_with_marks_is_still_one_character(zh_index):
+    env = tt.Index([_art(env=({"th": "สิ่งแวดล้อม"}, {}), that=({"th": "ที่"}, {}))])
+    tags = tt.tag_text("การคุ้มครองสิ่งแวดล้อมที่ดี", "th", env)
+    assert [(t.concept, t.tier) for t in tags] == [("env", "approx")], "a marked label is found, and only as ≈"
+    assert env.short_labels == {"th": 1}, "ที่ is one letter and two marks: never matched (R680)"
+
+
+def test_khmer_lao_and_burmese_are_unsupported_until_a_test_shows_they_work():
+    idx = tt.Index([_art(law=({"km": "ច្បាប់", "lo": "ກົດໝາຍ", "my": "ဥပဒေ", "en": "law"}, {}))])
+    sample = [
+        {"id": "k", "lang": "km", "text": "ច្បាប់ស្តីពីការងារ", "expected": ["law"]},
+        {"id": "l", "lang": "lo", "text": "ກົດໝາຍແຮງງານ", "expected": ["law"]},
+        {"id": "m", "lang": "my", "text": "အလုပ်သမားဥပဒေ", "expected": ["law"]},
+    ]
+    m = tt.measure(sample, idx)
+    assert m["unsupported_languages"] == {"km": 1, "lo": 1, "my": 1} and m["n_items"] == 0
+    assert m["precision"]["value"] is None, "no precision figure for a language whose matching is unverified"
+    assert m["unverified_languages"]["labels_set_aside"] == {"km": 1, "lo": 1, "my": 1}

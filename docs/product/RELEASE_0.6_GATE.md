@@ -133,6 +133,9 @@ steps.** Of the three closing conditions:
   sandbox's egress refuses those hosts; the script prints `not-measured` and exits 3 until then. Expected with EuroVoc alone:
   en/fr/de/es/pt are scored, the other seven are set aside as `unsupported_languages` until P5437 is confirmed. R680 (OPEN_QUEUE
   38(d)): zh and ja are now matched as substrings, every such hit ≈, one-character labels never matched.
+  R690 (PR #1959): combining marks and joiners now stay in their word (a Hindi or Bengali vowel sign or virama, a Thai
+  mark, an Arabic haraka never splits one; Arabic vowelling is ignored), tested per script; "one character" counts letters,
+  not marks; Khmer, Lao and Burmese are unsupported until a test shows their matching works, so no figure is given for them.
 
 ### Row D — Wikipedia coverage and located data · ruled (Q108, Q723, Q819) · OPEN
 
