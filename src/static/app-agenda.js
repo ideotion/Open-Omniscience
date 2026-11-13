@@ -1736,7 +1736,13 @@
       }
       if (isCov) { renderAgendaCoverage(); return; }
       const rows = agFiltered();
-      $("agenda-monthhint").textContent = AG.caveat || "";
+      // The caveat already stands, whole and visible, in the tab's intro right above
+      // (same sentences, keyed one by one there). Printing it again beside the month
+      // name said it twice on one screen (the 2026-09-30 journalist walk, item 7), so
+      // this slot stays for a caveat that says something the intro does not.
+      const _agIntro = "A forward-looking agenda of major recurring events.";
+      $("agenda-monthhint").textContent =
+        (AG.caveat && String(AG.caveat).indexOf(_agIntro) !== 0) ? AG.caveat : "";
       if (AGV.y == null && hasBar) { const _t = new Date(); AGV.y = _t.getFullYear(); AGV.m = _t.getMonth() + 1; }
       if (isMonth) {
         _ensureAstro(AGV.y).then(() => renderAgendaMonth(rows));

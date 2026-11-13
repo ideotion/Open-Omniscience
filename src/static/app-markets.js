@@ -47,7 +47,10 @@
       el.innerHTML = '<div class="muted">Loading…</div>';
       try {
         const b = await api("/api/markets/board?category=index");
-        $("idx-note").textContent = b.note || "";
+        // The board's note (b.note) repeats the tab intro above it sentence for sentence
+        // (end-of-day, official sources, as-of date and source per card, not real-time),
+        // so it is not printed a second time, and #idx-note keeps the failure list that
+        // loadIndicesData writes there just before it reloads this board.
         _idxCards = b.cards || [];
         renderIndicesBoard();
       } catch (e) { el.innerHTML = `<div class="muted">Could not load indices: ${esc(e.message)}</div>`; }

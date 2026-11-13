@@ -720,7 +720,7 @@
       // reporting. dashChartSvg's shared-time mode then breaks the line at real
       // gaps and says so ("a gap is not a zero").
       const spark = (g.series && g.series.length)
-        ? `<div style="margin-top:6px">${dashChartSvg(
+        ? `<div class="sg-spark" style="margin-top:6px">${dashChartSvg(
             g.series.map(p => ({observed_on: p.date, price: p.count})), "",
             g.series_window ? {t0: g.series_window.start, t1: g.series_window.end} : {})}</div>`
         : "";
