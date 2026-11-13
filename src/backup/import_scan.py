@@ -176,7 +176,14 @@ def scan_import_folder(
 
     if corpus_dirs:
         found["corpus"] = [
-            {"path": str(d), "manifest": _VOL_MANIFEST, "volumes": _volume_count(d)}
+            {
+                "path": str(d),
+                "manifest": _VOL_MANIFEST,
+                "volumes": _volume_count(d),
+                # Unencrypted volume copies an interrupted import left here before R686: named, never removed
+                # unless the operator asks (POST /api/backup/import-scan/remove-leftover-plaintext).
+                "leftover_plaintext": leftover_plaintext(d),
+            }
             for d in corpus_dirs
         ]
 
@@ -236,6 +243,36 @@ def _read_folder_manifest(p: Path) -> dict[str, tuple[int, int]]:
         nbytes = sum(int(it.get("size", 0)) for it in items if isinstance(it, dict))
         out[catdir] = (len(items), nbytes)
     return out
+
+
+#: The suffix the old reassembly gave a decrypted volume it wrote INTO the backup folder (before R686).
+LEFTOVER_PLAIN_SUFFIX = ".plain"
+
+
+def leftover_plaintext(d: str | os.PathLike[str]) -> list[str]:
+    """Decrypted volume copies an interrupted restore left in this backup folder (R686), by file name.
+
+    Before R686 the reassembly decrypted each volume to ``<volume>.plain`` beside it and removed it after; a
+    crash or a kill in between left that PLAINTEXT on the backup drive. Only names this folder's own manifest
+    explains are reported, so a file of the user's that merely ends in ``.plain`` is never named. Read-only and
+    crypto-free (it reads the manifest's names, nothing else); never raises."""
+    try:
+        import json
+
+        folder = Path(d)
+        m = json.loads((folder / _VOL_MANIFEST).read_text(encoding="utf-8"))
+        names = [str((v or {}).get("name") or "") for v in m.get("volumes") or []]
+        return sorted(
+            n + LEFTOVER_PLAIN_SUFFIX
+            for n in names
+            if n
+            and "/" not in n
+            and "\\" not in n
+            and n not in (".", "..")
+            and (folder / (n + LEFTOVER_PLAIN_SUFFIX)).is_file()
+        )
+    except Exception:  # noqa: BLE001 - a scan must not fail on an unreadable folder
+        return []
 
 
 def _volume_count(d: Path) -> int:

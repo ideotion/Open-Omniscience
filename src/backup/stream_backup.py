@@ -2155,6 +2155,7 @@ def read_stream_backup(
     if m.get("kind") != STREAM_KIND:
         raise VolumeError(f"not an {STREAM_KIND} set (kind={m.get('kind')!r})")
     _require_safe_manifest_names(m)
+    _require_each_volume_read_once(m)
     sig_state = _manifest_signature_state(m)
     if sig_state == "bad-signature":
         raise VolumeError(
@@ -2197,6 +2198,9 @@ def read_stream_backup(
                 out_path = staging / mm["name"]
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 h = hashlib.sha256()
+                # What a member may write is the plaintext size its manifest declares, the size the staging preflight
+                # counted: a member whose volumes decrypt to more is refused at that size, never let fill the disk (R686).
+                budget = [int(mm.get("plaintext_bytes") or 0)]
                 with open(out_path, "wb") as fout:
                     for vname in mm.get("volumes") or []:
                         if vname not in vol_by_name:
@@ -2204,7 +2208,12 @@ def read_stream_backup(
                                 f"member {mm['name']} references an unknown volume {vname}"
                             )
 
-                        def _sink(b: bytes, _f: Any = fout, _h: Any = h) -> None:
+                        def _sink(b: bytes, _f: Any = fout, _h: Any = h, _left: list[int] = budget, _n: str = mm["name"]) -> None:
+                            _left[0] -= len(b)
+                            if _left[0] < 0:
+                                raise VolumeError(
+                                    f"member {_n} holds more data than the backup's manifest declares; refusing to go on"
+                                )
                             _f.write(b)
                             _h.update(b)
 
@@ -2241,6 +2250,16 @@ def read_stream_backup(
         except Exception:
             shutil.rmtree(staging, ignore_errors=True)
             raise
+
+
+def _require_each_volume_read_once(m: dict[str, Any]) -> None:
+    """A volume belongs to one member and is read once (R686): a manifest that lists a volume twice in its
+    registry, or in one or more members' lists, would have it decrypted and written again past every declared
+    size. Refused before anything is read."""
+    from src.backup.volumes import require_unique_volumes
+
+    require_unique_volumes(v.get("name") for v in m.get("volumes") or [])
+    require_unique_volumes(vname for mm in m.get("members") or [] for vname in mm.get("volumes") or [])
 
 
 def _preflight_staging(

@@ -28,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import secrets
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -208,6 +209,37 @@ def verify_volume_set(
     }
 
 
+def require_unique_volumes(names: Any) -> None:
+    """Refuse a manifest that names one volume twice (R686): read twice, it is written twice, and no
+    size the manifest declares bounds that."""
+    seen: set[str] = set()
+    for name in names:
+        n = str(name or "")
+        if n in seen:
+            raise VolumeError(f"the volume manifest lists the volume {n} more than once; refusing to restore from it")
+        seen.add(n)
+
+
+def remove_leftover_plaintext(out_dir: str | os.PathLike[str], names: list[str]) -> list[str]:
+    """Remove the named leftover plaintext copies, and only those the folder's manifest explains (R686).
+
+    Called only when the operator asked for it: nothing of ours deletes from a backup drive on its own. A name
+    that is not a current leftover is ignored. Returns the names removed."""
+    from src.backup.import_scan import leftover_plaintext
+
+    allowed = set(leftover_plaintext(out_dir))
+    removed: list[str] = []
+    for name in names:
+        if name not in allowed:
+            continue
+        try:
+            (Path(out_dir) / name).unlink()
+            removed.append(name)
+        except FileNotFoundError:
+            continue
+    return removed
+
+
 def read_volume_set(
     out_dir: str | os.PathLike[str],
     passphrase: str,
@@ -259,14 +291,29 @@ def read_volume_set(
                 + ", ".join(sorted(unrepaired))
             )
 
+    require_unique_volumes(v["name"] for v in m["volumes"])
+    declared = int(m.get("plaintext_bytes") or 0)
+    if declared <= 0:
+        raise VolumeError("the volume manifest declares no plaintext size; refusing to reassemble an unbounded archive")
+    # Free space for what is really written: the archive itself plus ONE decrypted volume at a time,
+    # which a volume's ciphertext size bounds from above (R686).
+    from src.backup.artifact import preflight_free_space
+
+    largest = max((((out / v["name"]).stat().st_size) for v in m["volumes"]), default=0)
+    preflight_free_space(Path(dest).parent, declared + largest, what="restore staging")
+
     whole = hashlib.sha256()
+    written = 0
     tmp = Path(dest).with_name(Path(dest).name + ".reassembling")
     try:
         with open(tmp, "wb") as outf:
             for v in m["volumes"]:
                 if should_stop is not None and should_stop():
                     raise VolumeStopped("stopped while reassembling the backup")
-                vtmp = out / (v["name"] + ".plain")
+                # The decrypted working copy goes beside ``dest`` (the restore's own staging, on the app's data volume,
+                # removed with it), NEVER into the backup's folder: a crash there left plaintext on the user's backup
+                # drive, where nothing of ours would ever clean it up (R686).
+                vtmp = Path(dest).with_name(f".{v['name']}.{secrets.token_hex(4)}.plain")
                 try:
                     decrypt_file(out / v["name"], vtmp, passphrase)
                     with open(vtmp, "rb") as vf:
@@ -274,6 +321,11 @@ def read_volume_set(
                             blk = vf.read(_COPY_BUF)
                             if not blk:
                                 break
+                            written += len(blk)
+                            if written > declared:
+                                raise VolumeError(
+                                    "the backup's volumes hold more data than its manifest declares; refusing to go on"
+                                )
                             outf.write(blk)
                             whole.update(blk)
                 finally:
