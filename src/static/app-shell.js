@@ -157,6 +157,8 @@
       // strip is restored at boot; the active tab's data loads lazily here), or shows
       // the launcher empty state when there are no tabs.
       if (name === "explore") _advInit();   // the advanced-search builder, wired once (S05-01)
+      // The server's bulk summary & translation queue (R600's second PR): what runs or waits with or without this tab.
+      if (name === "explore" && typeof _bulkRefresh === "function") _bulkRefresh();
       if (name === "explore" && !_anHydrated) {
         _anHydrated = true;
         _anFillLangSelect();   // populate the Advanced language <select> (flags + names)

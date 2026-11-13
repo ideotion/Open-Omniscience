@@ -52,14 +52,47 @@
       return Object.prototype.hasOwnProperty.call(known, state) ? known[state] : String(state);
     }
 
-    // A "method" sentence the server wrote. It arrives in English whatever the page's language, so it
-    // is shown as sent, in its own left-to-right span, behind a small visible label saying so. The
-    // real fix, the API returning a method key the client translates, is a proposal (R289).
+    // A sentence the server wrote. It arrives in English whatever the page's language, so it is
+    // shown as sent, in its own left-to-right span, behind a small visible label saying so (R289).
     function _maintServerTextHtml(text, t) {
       return ooLabelHtml(esc(t("Server text, in English")), `<span lang="en" dir="ltr">${esc(text)}</span>`);
     }
-    function _maintMethodHtml(text, t) {
-      return `<div class="hint">${_maintServerTextHtml(text, t)}</div>`;
+
+    // The server names WHAT its method and note sentences mean with a stable key beside the English
+    // (R289's proposal, built under R665): the page says that meaning in the reader's language, in
+    // plain words. A key is bumped (.v2) only when the meaning changes, so a key this page does not
+    // know (a newer server) falls back to the English as sent, labelled. Never a match on the English
+    // text itself: that would break silently the day the server's wording moves.
+    function _maintKeyedText(key, d, t, tf) {
+      switch (key) {
+        case "maintenance.samples.v1":
+          return t("These are a few of the articles the rules picked in the last run, always the same ones for the same corpus. They let you check what the rules catch; they do not say how often the rules are wrong, and they judge no article. Only titles and addresses are shown.");
+        case "maintenance.raw_ids.v1":
+          return t("A source is listed when its whole name is a Wikidata code (such as Q11858063). This only reads what is on your computer: nothing is downloaded, renamed or marked. The lowest source numbers come first (not the largest sources), and each article count includes quarantined articles.");
+        case "maintenance.furniture.v1":
+          if (typeof (d && d.sampled) !== "number" || typeof (d && d.min_share) !== "number") return null;
+          return tf(t("Read from the {n} newest articles of this source, not a random choice, so a recent change of page layout weighs more than an old one. A line is listed when it has 12 words or fewer and appears in at least {percent}% of the non-empty articles read, and in 3 of them or more. Lines marked “already stripped by the rules” are taken out of the articles already. This only reads what is on your computer: nothing is marked or removed."),
+            { n: fmtNum(d.sampled), percent: fmtNum(Math.round(d.min_share * 1000) / 10) });  // one decimal: 0.335 reads 33.5, never rounded up to 34
+        case "maintenance.host_not_measured.v1":
+          return t("This run did not compare sites (tick “Also compare each article's site with its source's site” before you start it). These counts were not measured, which is not the same as zero.");
+        case "maintenance.host_fact.v1":
+          return t("An article stored on another site than its source's own is a fact about where it lives, not a judgement: it may be a shared story, a redirect or a news-agency feed. Nothing is marked for it, even with writing on. Articles whose site could not be read are counted apart, never as a different site.");
+        default:
+          return null;
+      }
+    }
+    // The method line under a report: the keyed sentence when this page knows the key, else the
+    // server's English, labelled. Nothing when the server sent neither.
+    function _maintMethodHtml(d, t, tf) {
+      const said = _maintKeyedText(d && d.method_key, d, t, tf);
+      if (said) return `<div class="hint">${esc(said)}</div>`;
+      return (d && d.method) ? `<div class="hint">${_maintServerTextHtml(String(d.method), t)}</div>` : "";
+    }
+    // A signal's note, the same way (it used to print the English unlabelled).
+    function _maintNoteHtml(s, t, tf) {
+      const said = _maintKeyedText(s && s.note_key, s, t, tf);
+      if (said) return `<div class="hint">${esc(said)}</div>`;
+      return (s && s.note) ? `<div class="hint">${_maintServerTextHtml(String(s.note), t)}</div>` : "";
     }
 
     function maintRunHtml(st, t, tf) {
@@ -118,11 +151,11 @@
         const head = (s.candidates == null)
           ? esc(t("not measured in this run"))
           : esc(tf(t("{shown} shown of {n} candidates"), { shown: fmtNum(s.shown || 0), n: fmtNum(s.candidates) }));
-        const note = s.note ? `<div class="hint">${esc(s.note)}</div>` : "";
+        const note = _maintNoteHtml(s, t, tf);
         const rows = (s.rows || []).map((r) => maintSampleRowHtml(r, t, tf)).join("");
         return `<h4 class="lib-sub"><span dir="ltr">${esc(sig)}</span> — ${head}</h4>${note}<ul class="maint-sample">${rows}</ul>`;
       });
-      return parts.join("") + (data.method ? _maintMethodHtml(data.method, t) : "");
+      return parts.join("") + _maintMethodHtml(data, t, tf);
     }
 
     function maintRawIdsHtml(d, t, tf) {
@@ -133,7 +166,7 @@
         + `<td class="num">${esc(String(r.source_id))}</td></tr>`).join("");
       return `<div>${esc(tf(t("{n} sources, {m} articles in the ones shown"), { n: fmtNum(d.raw_id_sources), m: fmtNum(d.articles_in_shown || 0) }))}</div>`
         + `<table class="maint-tally"><thead><tr><th>${esc(t("Name"))}</th><th>${esc(t("Domain"))}</th><th>${esc(t("Articles"))}</th><th>${esc(t("Source number"))}</th></tr></thead>`
-        + `<tbody>${rows}</tbody></table>` + (d.method ? _maintMethodHtml(d.method, t) : "");
+        + `<tbody>${rows}</tbody></table>` + _maintMethodHtml(d, t, tf);
     }
 
     function maintFurnitureHtml(d, t, tf) {
@@ -146,7 +179,7 @@
         `<tr><td dir="auto">${esc(r.line)}</td><td class="num">${esc(fmtNum(r.articles))}</td>`
         + `<td>${r.known ? esc(t("already stripped by the rules")) : ""}</td></tr>`).join("");
       return head + `<table class="maint-tally"><thead><tr><th>${esc(t("Line"))}</th><th>${esc(t("Articles"))}</th><th></th></tr></thead>`
-        + `<tbody>${rows}</tbody></table>` + (d.method ? _maintMethodHtml(d.method, t) : "");
+        + `<tbody>${rows}</tbody></table>` + _maintMethodHtml(d, t, tf);
     }
 
     // ---- DOM + network (loopback) -------------------------------------------------
