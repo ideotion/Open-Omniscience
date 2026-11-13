@@ -91,6 +91,10 @@ def client(tmp_path, monkeypatch):
     fetcher = EthicalFetcher(min_interval_s=0.0, session=_NetSession(routes))
 
     def _llm_handler(request):
+        if request.url.path == "/api/tags":  # R671: the daemon lists the model as local before it runs
+            from src.llm.ollama import DEFAULT_MODEL
+
+            return httpx.Response(200, json={"models": [{"name": DEFAULT_MODEL}]})
         return httpx.Response(
             200, json={"response": "Neodymium prices surged after export limits."}
         )

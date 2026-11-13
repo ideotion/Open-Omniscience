@@ -23,8 +23,9 @@ HOW A FILE GETS ITS SHARD (and why it is not a plain round robin, a hash, or a h
 * A file the table does not name (a new test file) goes to shard ``crc32(path) % N + 1``: stable, needs no edit in the PR that adds the file
   (a hand-kept list would conflict between open PRs after every merge, the shared-tail problem the ledger rules already fought), and spreads
   new files evenly in the long run. ``plan`` prints how many files were not in the table, so a table that has fallen behind is read, not guessed.
-* Shard 1 also runs the static steps of the ``test`` job (lint, planned-work index, i18n gates, migration drift, mypy, bandit, pip-audit), so
-  the table carries ``overhead_seconds`` for it, measured on the same CI run.
+* ``overhead_seconds`` is a head start per shard for work a leg does besides its tests. Shard 1 ran the static steps of the ``test`` job until
+  R668 (2026-11-13) moved them to the ``static`` job; the table still carries 80 so that the deal does not move until the two order-dependent
+  tests a re-deal exposed are fixed (docs/maintenance/CI_SHARDS.md).
 
 HOW A SHARD IS RUN (and why it is not "pytest FILE FILE ..."). A shard ignores the other shards' files and lets pytest collect ``tests`` itself, so
 everything the one-process run relied on at collection still applies: ``collect_ignore`` in tests/conftest.py (which keeps the analysis tests out of a
