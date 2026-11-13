@@ -102,7 +102,7 @@ class ActivityMonitor:
         read's N4). Imported here because ``src.ingest`` imports this module."""
         from src.ingest.fetch_verdict import failure_url
 
-        shown = failure_url(url)
+        shown = _without_private_query(failure_url(url))
         with self._lock:
             self._token_seq += 1
             tok = self._token_seq
@@ -227,6 +227,24 @@ class ActivityMonitor:
                 "fetches_total": self._fetches_total,
                 "at": time.time(),
             }
+
+
+#: Hosts whose query string IS personal data, shown here without it (R675): an Open-Meteo archive
+#: request carries the coordinates of a place the person typed, probably where they live. The
+#: top bar, the vitals and anything that copies them see the host and path only.
+_PRIVATE_QUERY_HOSTS = frozenset({"archive-api.open-meteo.com"})
+
+
+def _without_private_query(shown: str) -> str:
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit(shown)
+    except ValueError:
+        return shown
+    if (parts.hostname or "").lower() in _PRIVATE_QUERY_HOSTS and parts.query:
+        return shown.split("?", 1)[0] + "?…"
+    return shown
 
 
 # Process-global singleton. Imported by the ethical fetcher and the /api/system

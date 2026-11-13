@@ -111,6 +111,10 @@ def elections_coverage_floor() -> dict:
     today = date.today()  # one clock for both halves, so a request that spans midnight cannot split them
     out = floor_coverage(today)
     out["tier_report"] = country_tier_report(load_events(), set(load_floor()["countries"]), today)
+    from src.civic.calendar_report import with_snapshot
+    from src.events.catalog import load_curated_events
+
+    out["snapshot"] = with_snapshot(load_curated_events(), today)[1]
     return out
 
 

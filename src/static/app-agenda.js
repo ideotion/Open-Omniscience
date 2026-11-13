@@ -1039,6 +1039,9 @@
     // same fabrication risk one layer up.
     function agElectionTier(e) {
       if (e.date_confidence == null) return null;
+      // A STATED date that has gone by (a 2026 election read in 2027): kept as the source gave
+      // it, marked passed, never moved forward to a later year.
+      if (e.passed === true) return "gone";
       if (e.date_confidence === "projected" && e.projection && e.projection.status === "passed")
         return "passed";
       return e.date_confidence;                      // "scheduled" | "window" | "projected"
@@ -1052,6 +1055,7 @@
       window:    { pillCls: "tier-window",  chipCls: "tier-window", label: "window" },
       projected: { pillCls: "warn",         chipCls: "approx",    label: "projected" },
       passed:    { pillCls: "err",          chipCls: "leadpassed", label: "projected · passed" },
+      gone:      { pillCls: "",             chipCls: "",          label: "passed" },
     };
     // The confidence pill for one full row (agRow / the day-detail lists): tier-aware
     // for elections, byte-identical to the pre-existing markup for everything else.
@@ -1394,6 +1398,7 @@
       ["scheduled", "scheduled", "ok"],
       ["window", "window", "tier-window"],
       ["projected_upcoming", "projected", "warn"],
+      ["passed", "passed", "err"],
       ["projected_passed", "projected · passed", "err"],
       ["dateless", "dateless", ""],
       ["missing", "missing", ""],
@@ -1465,11 +1470,24 @@
         + `<p style="color:var(--caveat);margin:0 0 4px">${esc(T(floor.caveat || ""))}</p>`
         + `<p style="color:var(--caveat);margin:0 0 6px">${esc(T(rep.caveat || ""))}</p>`
         + `<p class="hint" style="margin:0 0 8px"><b>${esc(T("Method"))}</b> ${esc(T(rep.method || ""))}</p>`
+        + `<p class="hint" style="margin:0 0 8px">${esc(agSnapshotLine(floor.snapshot, T, TF))}</p>`
         + `<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">${chips}</div>`
         + (rows.length
           ? `<div style="overflow-x:auto;max-width:100%"><table class="data"><thead><tr><th>${esc(T("Country"))}</th><th>${esc(T("State"))}</th>`
             + `<th>${esc(T("Calendar entries"))}</th><th>${esc(T("Why no date"))}</th></tr></thead><tbody>${body}</tbody></table></div>`
           : `<div class="muted">${esc(T("No floor country is in this state."))}</div>`);
+    }
+    // Where the election dates come from: the hand-curated list, and the Wikidata snapshot only
+    // when the operator's networked run has written one. An absent snapshot is said, never read
+    // as "no elections"; counts only.
+    function agSnapshotLine(sn, T, TF) {
+      const st = sn && sn.state;
+      if (st === "present") {
+        return TF("Wikidata election snapshot as of {date}: {added} entries added, {shadowed} already in the hand-curated list, {refused} refused.",
+          {date: ooIsoDate(sn.as_of), added: sn.added || 0, shadowed: sn.shadowed || 0, refused: (sn.refused || 0) + (sn.generator_refused || 0)});
+      }
+      if (st === "unreadable") return T("The Wikidata election snapshot on this install could not be read; only the hand-curated list is shown.");
+      return T("No Wikidata election snapshot on this install yet: these dates come from the hand-curated list only.");
     }
     function agNavToday() {
       const t = new Date(); AGV.y = t.getFullYear(); AGV.m = t.getMonth() + 1;

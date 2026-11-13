@@ -23,8 +23,10 @@ shadowed snapshot row is returned with its reason rather than dropped silently.
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 from src.catalog.countries import config_country
@@ -34,6 +36,7 @@ from src.civic.elections import (
     WINDOW,
     _iso_date,
     date_confidence,
+    has_passed,
     is_election,
     missing_projection_fields,
     projection,
@@ -44,12 +47,14 @@ STATE_SCHEDULED = "scheduled"
 STATE_WINDOW = "window"
 STATE_PROJECTED = "projected_upcoming"
 STATE_PROJECTED_PASSED = "projected_passed"
+STATE_PASSED = "passed"
 STATE_DATELESS = "dateless"
 STATE_MISSING = "missing"
 STATES: tuple[str, ...] = (
     STATE_SCHEDULED,
     STATE_WINDOW,
     STATE_PROJECTED,
+    STATE_PASSED,
     STATE_PROJECTED_PASSED,
     STATE_DATELESS,
     STATE_MISSING,
@@ -276,6 +281,68 @@ def layer(
     return list(curated) + kept, shadowed
 
 
+#: Where the networked run of ``scripts/generate_wikidata_elections.py`` writes its snapshot for
+#: the app to read (``-o configs/elections_snapshot.json``). ABSENT until the operator runs it, and
+#: the app says so rather than reading the absence as "no elections".
+SNAPSHOT_PATH = Path(__file__).resolve().parents[2] / "configs" / "elections_snapshot.json"
+
+_CATALOG_DEFAULTS: dict[str, Any] = {
+    "region": None, "cadence": "once", "weekday": None, "week": None, "end_month": None, "end_day": None,
+}
+
+
+def load_snapshot(path: Path | None = None) -> tuple[dict[str, Any] | None, str]:
+    """``(snapshot, state)``: state is ``absent``, ``unreadable`` (with nothing read) or ``present``.
+
+    Local only. A file that is not the generator's shape (an object with a ``rows`` list and an
+    ``as_of`` date) is ``unreadable``: never half-read, never guessed at."""
+    p = path or SNAPSHOT_PATH
+    if not p.is_file():
+        return None, "absent"
+    try:
+        snap = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, "unreadable"
+    if (not isinstance(snap, dict) or not isinstance(snap.get("rows"), list)
+            or _iso_date(str(snap.get("as_of") or "")) is None):
+        return None, "unreadable"
+    return snap, "present"
+
+
+def _catalog_shape(ev: dict[str, Any]) -> dict[str, Any]:
+    """A snapshot event in the curated catalogue's shape, so the agenda reads both alike.
+
+    A snapshot election is ONE election, never an annual recurrence: a stated year bounds it
+    (``origin_year`` = ``until_year``). The date's basis, or the reason it has none, is its note."""
+    out = {**_CATALOG_DEFAULTS, **ev}
+    out["country"] = config_country(ev.get("country"), upper=True) or str(ev.get("country") or "").upper()
+    year = ev.get("window_year")
+    out["origin_year"] = out["until_year"] = year if isinstance(year, int) else None
+    out["note"] = ev.get("date_basis") or ev.get("date_reason")
+    return out
+
+
+def with_snapshot(
+    curated: list[dict[str, Any]], today: date | None = None, path: Path | None = None
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """The curated entries LAYERED with the Wikidata snapshot when one is present.
+
+    Returns ``(events, info)``. ``info`` states the snapshot's state and, when present, its
+    ``as_of`` and the counts of rows added, shadowed by a curated entry and refused, so a reader
+    can tell "no snapshot yet" from "the snapshot found nothing"."""
+    snap, state = load_snapshot(path)
+    if snap is None:
+        return list(curated), {"state": state}
+    evs, refused = snapshot_to_events(snap["rows"], today)
+    merged, shadowed = layer(curated, [_catalog_shape(e) for e in evs], today)
+    added = len(merged) - len(curated)
+    return merged, {
+        "state": state, "as_of": str(snap.get("as_of")), "rows": len(snap["rows"]),
+        "added": added, "shadowed": len(shadowed), "refused": len(refused),
+        "generator_refused": len(snap.get("refused") or []),
+    }
+
+
 def country_tier_report(
     events: list[dict[str, Any]], floor: set[str], today: date | None = None
 ) -> dict[str, Any]:
@@ -296,13 +363,15 @@ def country_tier_report(
                 {
                     "title": str(ev.get("title") or ""),
                     "tier": tier,
+                    "passed": tier in (SCHEDULED, WINDOW) and has_passed(ev, today),
                     "projection_status": proj["status"] if proj else None,
                     "inferred": bool(ev.get("inferred")),
                     "reason": ev.get("date_reason") or ev.get("inferred_reason"),
                     "missing_fields": missing_projection_fields(ev) if tier is None else [],
                 }
             )
-        tiers = {e["tier"] for e in entries}
+        tiers = {e["tier"] for e in entries if not e["passed"]}
+        stated_passed = any(e["passed"] for e in entries)
         live_proj = any(
             e["tier"] == PROJECTED and e["projection_status"] != "passed" for e in entries
         )
@@ -312,6 +381,8 @@ def country_tier_report(
             state, reason = STATE_WINDOW, None
         elif live_proj:
             state, reason = STATE_PROJECTED, None
+        elif stated_passed:
+            state, reason = STATE_PASSED, "every listed election has passed; the next one is not listed"
         elif PROJECTED in tiers:
             state, reason = STATE_PROJECTED_PASSED, "every projection has passed; status unknown"
         elif entries:
@@ -336,11 +407,13 @@ def country_tier_report(
             "Each floor country takes ONE state from its election entries in the shipped catalogue, "
             "first match wins: scheduled (an entry states an official date), window (a stated month "
             "or year), projected (a sourced recurrence rule projects a year not yet passed), "
+            "passed (every stated date has gone by and the next election is not listed), "
             "projected · passed (every projection has passed), dateless (an entry with no date and "
             "no rule) or missing (no entry). The counts are plain tallies of these states."
         ),
         "caveat": (
             "States describe calendar ENTRIES, never a claim that an election will be held. "
-            "A projected date is a prompt to check the official source, not a date."
+            "A projected date is a prompt to check the official source, not a date. "
+            "A stated date that has gone by stays as the source gave it and is never moved to a later year."
         ),
     }

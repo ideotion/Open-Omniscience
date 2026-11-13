@@ -64,6 +64,14 @@ def _coerce_year(v: object) -> int | None:
 
 @lru_cache(maxsize=1)
 def load_events() -> list[dict]:
+    """The curated catalogue, LAYERED with the Wikidata election snapshot when the operator's
+    networked run has written one (S06-04 S1); with no snapshot it is the curated list unchanged."""
+    from src.civic.calendar_report import with_snapshot
+
+    return with_snapshot(load_curated_events())[0]
+
+
+def load_curated_events() -> list[dict]:
     """Read and validate event definitions from the YAML catalog.
 
     Beyond the simple fixed-date (month/day) annual entry, two ADDITIVE recurrence

@@ -78,6 +78,18 @@ source, licence, last fetch, gaps and parse diagnostics shown per series. A re-f
 owed for this half: a run against the REAL hosts (the sandbox's egress refuses most of them, so it is the maintainer's
 run), and the AR6 and Open-Meteo lanes. The elections calendar and the statistics directory are untouched.
 
+**Progress 2026-11-13, second PR (R675): the rest of the row that needs no live fetch; the row stays OPEN.**
+Open-Meteo: Climate → Your place compares a window with the 1991–2020 baseline for a typed place, which is rounded to
+0.1 degree before it is sent, asked for through the ONE consent and kept only in the encrypted store (R675; the
+`SECURITY.md` Weather row). AR6 was already shipped. Elections: the app now reads the Wikidata snapshot when the
+operator's run has written one and says so when it has not; a stated election that has gone by reads as **passed** and
+is never rolled forward a year (the US 2026 midterm had been shown as scheduled for 2027-11-03); and the coverage
+report artifact is `docs/product/elections_coverage_2026-11-13.md` (`scripts/elections_coverage_report.py`): 140
+floor countries, 7 window, 3 passed, 8 dateless, 122 missing, curated list only. Statistics directory: `GET
+/api/stats/agencies` now states `directory_progress` — 29 listed, 0 news pages confirmed, about 152 planned — with
+nothing added from memory. Still owed: the Wikidata networked run, the networked directory build and the real-host
+climate run, all the operator's.
+
 ### Row B — OSM change tracking and the trend surfaces · ruled (Q106, Q812 🔒, Q813, Q815, Q816, Q824) · OPEN
 
 **What it must demonstrate.** Geofabrik daily diffs per selected extract applied to the ingested classes; if

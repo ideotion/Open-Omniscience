@@ -101,13 +101,17 @@ def fetch_daily_slice(
     label: str | None = None,
     force: bool = False,
     fetcher=None,
+    use_file_cache: bool = True,
 ) -> dict:
     """Fetch (or serve from cache) one bounded daily slice. Never raises for
     transport problems — failures come back as honest transport verdicts
-    (the T4 taxonomy), exactly like the markets feeds."""
+    (the T4 taxonomy), exactly like the markets feeds.
+
+    ``use_file_cache=False`` neither reads nor writes the loose JSON cache: the caller keeps the
+    slice itself (the anomaly view keeps it in the encrypted store, R675)."""
     url = build_archive_url(lat, lon, start, end, variables)
-    cpath = cache_path(url)
-    if not force and cpath.exists():
+    cpath = cache_file(url) if not use_file_cache else cache_path(url)
+    if use_file_cache and not force and cpath.exists():
         try:
             payload = json.loads(cpath.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -163,6 +167,8 @@ def fetch_daily_slice(
             ),
         },
     }
+    if not use_file_cache:
+        return payload
     try:
         cpath.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
     except OSError as exc:
