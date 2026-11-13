@@ -298,8 +298,8 @@ def test_a_keyword_part_download_records_its_sending(monkeypatch, tmp_path):
 _UNRECORDED_ZIP_SITES = {
     "bundle.py": 1,    # the synchronous GET /all: it builds in the request and answers with the bytes
     "keywords.py": 1,  # the keyword log's scratch zip, deleted once sent
-    "sources.py": 1,   # the temporary source-quality zip, answered with the bytes
-    "source_samples.py": 1,   # the temporary one-article-per-source zips, answered with the bytes
+    "sources.py": 1,   # the Field data source-quality zip, answered with the bytes
+    "source_samples.py": 1,   # the Field data one-article-per-source zips, answered with the bytes
 }
 
 
