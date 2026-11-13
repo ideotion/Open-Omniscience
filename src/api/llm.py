@@ -2160,7 +2160,7 @@ def translate_article(
 
     _t = (article.title or "article")[:48]
     try:
-        with track("llm", f"Translating → {req.target_language}: “{_t}”", detail=f"model {model}",
+        with track("llm", f"Translating → {_label_target(req.target_language)}: “{_t}”", detail=f"model {model}",
                    detail_i18n="model {model}", detail_vars={"model": model},
                    **_translate_label_frame(req.target_language, "Translating → {language}: “{title}”",
                                             title=_t)):
@@ -2460,6 +2460,14 @@ def _translate_label_frame(target_name: str, frame: str, **values) -> dict:
     return {"label_i18n": frame, "label_vars": {"language": code, **values}}
 
 
+def _label_target(target_name: str) -> str:
+    """The target a task LABEL may show (R672): a language this table knows, by its English name, else a fixed word. The
+    target is free text, and a task label is shown by /api/jobs and the terminal panel, so only a closed set goes in it."""
+    tgt = (target_name or "").strip().lower()
+    code = next((c for c, name in _LANG_EN.items() if name.lower() == tgt or c == tgt), None)
+    return _LANG_EN[code] if code else "another language"
+
+
 def _is_target_language(article_lang: str | None, target_name: str) -> bool:
     """True when an article is ALREADY in the translation target (so it is skipped).
     Unknown language -> False (never skip on a guess)."""
@@ -2699,7 +2707,7 @@ def prepare_bulk_run(
     # work, never a fabricated %). Always finished, even on an early abort.
     from src.monitoring import tasks as _bgtasks
 
-    _verb = "Summarizing" if op == "summarize" else f"Translating → {target}"
+    _verb = "Summarizing" if op == "summarize" else f"Translating → {_label_target(target)}"
     _frame = (
         {"label_i18n": "Summarizing {n} article(s)", "label_vars": {"n": total}}
         if op == "summarize"

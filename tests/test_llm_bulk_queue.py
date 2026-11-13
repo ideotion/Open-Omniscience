@@ -603,3 +603,12 @@ def test_the_backlog_drain_does_not_take_its_own_yield_signal_for_a_rival(monkey
         assert maintenance._page_draining(), "an idle slice under way was not told to yield"
     finally:
         ib._reset_for_tests()
+
+
+def test_a_task_label_never_carries_a_free_text_target_language():
+    """R672: /api/jobs and the terminal panel show task labels, so a typed target goes in only when it is a known language."""
+    from src.api.llm import _label_target, _translate_label_frame
+
+    assert _label_target("French") == "French" and _label_target("fr") == "French"
+    assert _label_target("my private codeword") == "another language"
+    assert _translate_label_frame("my private codeword", "Translating → {language} {n} article(s)", n=1) == {}
