@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-13,diagnostics,"Field data exports: kept, stale temporary wording removed (R664)",shipped,PR #1930,src/api/diagnostics/source_samples.py src/api/diagnostics/sources.py src/api/diagnostics/bundle.py,"Queue item 37 (R587) closes as superseded by R654: the one-article-per-source and source-quality routes are walked by the Field data button, so they stay; their comments and the all-diagnostics manifest reasons now say so instead of naming a deleted Diagnostics button."
