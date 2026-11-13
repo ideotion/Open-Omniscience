@@ -641,7 +641,7 @@ finding things, or it finds so much that every answer is the same answer).
    A re-fetch stores only new or revised values (R662). Enforced in test_ui_invariants (#33) +
    tests/test_climate_api.py + tests/climate_node_test.js.
 35. **EVERY SERVER FEATURE HAS A BUTTON OR A LISTED REASON (R684, Lane M, PR #1954):** a route no UI file calls is
-   listed in `configs/routes_without_ui.tsv` as `internal`, `superseded` or `feature`, with a reason
+   listed in `configs/routes_without_ui.tsv` as `internal`, `superseded`, `feature` or `unseen`, with a reason
    (`scripts/route_callers.py` finds them from source). The `feature` count has a zero-slack ceiling that only goes
    down; a superseded route is removed only in a separate PR after its owning lane confirms. Enforced by
    tests/test_routes_have_a_caller.py + test_ui_invariants (#35).

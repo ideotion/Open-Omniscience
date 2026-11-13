@@ -165,7 +165,7 @@ def _js_literals(text: str) -> list[str]:
     A naive quote regex desynchronises on the first apostrophe inside a comment
     ("don't") and silently loses every literal after it; this small scanner does
     not. A template's ``${...}`` becomes ``_HOLE`` (nested templates inside a hole
-    are skipped with it). A ``/`` where an expression may start opens a regex
+    are skipped with it, so a URL built ONLY inside one reads as uncalled). A ``/`` where an expression may start opens a regex
     literal, which is skipped (one with a quote in it would desynchronise too).
     """
     out: list[str] = []
@@ -298,9 +298,16 @@ def collect_literals(kind: str = "ui") -> list[_FileLits]:
     return out
 
 
-def _seg_rx(seg: str, tokens: set[str]) -> str:
+def _seg_rx(seg: str, tokens: set[str], fixed: frozenset[str] = frozenset()) -> str:
     if seg.startswith("{") and seg.endswith("}"):
-        return ".+" if ":path" in seg else "[^/?#]+"
+        if ":path" in seg:
+            return ".+"
+        # a parameter never stands for a word a SIBLING route spells at this position:
+        # "/api/entities/items/pending" calls that route, not /api/entities/items/{qid}
+        if fixed:
+            words = "|".join(re.escape(w) for w in sorted(fixed))
+            return "(?!(?:" + words + r")(?:[/?#'\"\s]|$|" + _HOLE + "))[^/?#]+"
+        return "[^/?#]+"
     # a ${...} hole stands for a literal segment only when that segment is spelled
     # as a whole string elsewhere in the same file (a job-name table, a ternary)
     if seg in tokens:
@@ -308,22 +315,50 @@ def _seg_rx(seg: str, tokens: set[str]) -> str:
     return re.escape(seg)
 
 
+def _param_key(segs: list[str]) -> tuple[str, ...]:
+    return tuple("{}" if x.startswith("{") else x for x in segs)
+
+
+def sibling_words(routes: list[Route]) -> dict[tuple[str, ...], frozenset[str]]:
+    """For each path prefix (parameters folded), the fixed words routes spell next."""
+    out: dict[tuple[str, ...], set[str]] = {}
+    for r in routes:
+        segs = r.path.strip("/").split("/")
+        for k, seg in enumerate(segs):
+            if not seg.startswith("{"):
+                out.setdefault(_param_key(segs[:k]), set()).add(seg)
+    return {k: frozenset(v) for k, v in out.items()}
+
+
 @functools.cache
-def _route_rx_cached(path: str, tokens: frozenset[str]) -> re.Pattern[str]:
-    segs = [_seg_rx(s, set(tokens)) for s in path.strip("/").split("/")]
+def _route_rx_cached(
+    path: str, tokens: frozenset[str], fixed: tuple[frozenset[str], ...]
+) -> re.Pattern[str]:
+    raw = path.strip("/").split("/")
+    segs = [_seg_rx(s, set(tokens), fixed[k]) for k, s in enumerate(raw)]
     return re.compile(
         r"(?:^|[^A-Za-z0-9_/.-])/" + "/".join(segs) + r"(?:$|[?#'\"\s]|/?$|" + _HOLE + ")"
     )
 
 
-def _route_rx(path: str, tokens: set[str]) -> re.Pattern[str]:
-    return _route_rx_cached(path, frozenset(s for s in path.strip("/").split("/") if s in tokens))
+def _route_rx(
+    path: str, tokens: set[str], siblings: dict[tuple[str, ...], frozenset[str]] | None = None
+) -> re.Pattern[str]:
+    raw = path.strip("/").split("/")
+    sib = siblings or {}
+    fixed = tuple(
+        sib.get(_param_key(raw[:k]), frozenset()) if s.startswith("{") else frozenset()
+        for k, s in enumerate(raw)
+    )
+    return _route_rx_cached(path, frozenset(s for s in raw if s in tokens), fixed)
 
 
-def _calls(path: str, fl: _FileLits) -> bool:
+def _calls(
+    path: str, fl: _FileLits, siblings: dict[tuple[str, ...], frozenset[str]] | None = None
+) -> bool:
     if not path.strip("/"):
         return False
-    rx = _route_rx(path, fl.tokens)
+    rx = _route_rx(path, fl.tokens, siblings)
     for lit in fl.lits:
         if rx.search(" " + lit):
             return True
@@ -336,9 +371,9 @@ def _calls(path: str, fl: _FileLits) -> bool:
         tail = "/".join(segs[cut:])
         if "{" in tail:
             continue
-        if any(lit.endswith(head) for lit in fl.lits) and (
-            tail in fl.tokens or "/" + tail in fl.tokens
-        ):
+        # (a "/tail" token after a head ending in "/" always has something spliced
+        # between them, so only the bare word counts here)
+        if any(lit.endswith(head) for lit in fl.lits) and tail in fl.tokens:
             return True
     # a trailing parameter appended by concatenation: "/api/events/feeds/user/" + key
     if segs[-1].startswith("{") and len(segs) > 1:
@@ -411,11 +446,16 @@ def _composed(path: str, files: list[_FileLits]) -> list[str]:
 
 
 def match_callers(routes: list[Route], files: list[_FileLits], kind: str = "ui") -> None:
+    siblings = sibling_words(routes)
     for r in routes:
         # PUT/PATCH/DELETE share paths with a GET; the file must at least spell the verb
         need = r.method if r.method in ("PUT", "PATCH", "DELETE") else None
         hits = sorted(
-            {fl.path for fl in files if (need is None or need in fl.tokens) and _calls(r.path, fl)}
+            {
+                fl.path
+                for fl in files
+                if (need is None or need in fl.tokens) and _calls(r.path, fl, siblings)
+            }
         )
         if not hits and kind == "ui":
             hits = [f + " (composed)" for f in _composed(r.path, files)]

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import csv
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -36,9 +37,9 @@ TSV = ROOT / "configs" / "routes_without_ui.tsv"
 
 # Wire a feature, delete its row and lower this by one. Raising it means a new
 # server feature shipped without a button: say why in the PR.
-FEATURE_CEILING = 73
+FEATURE_CEILING = 72
 
-CLASSES = {"internal", "superseded", "feature"}
+CLASSES = {"internal", "superseded", "feature", "unseen"}
 
 
 def _load_tool():
@@ -104,6 +105,11 @@ def test_rows_are_well_formed_and_unique(rows):
         seen.add(key)
         assert row["class"] in CLASSES, f"{key}: class {row['class']!r} not in {sorted(CLASSES)}"
         assert row["reason"].strip(), f"{key}: a row needs its reason"
+        if row["class"] == "unseen":
+            # the caller the reader misses is named, so the claim can be checked by hand
+            assert re.search(r"\b[\w-]+\.js\b", row["reason"]), (
+                f"{key}: an unseen row names the file that calls it"
+            )
         if row["class"] == "feature":
             assert row["value"] in {"1", "2", "3"}, (
                 f"{key}: a feature carries its value to a reader (1-3)"
@@ -144,6 +150,9 @@ def test_static_route_set_covers_the_live_app():
         if isinstance(r, APIRoute)
         for m in r.methods - {"HEAD", "OPTIONS"}
     }
+    # a FastAPI upgrade that renames the private include fields would flatten to nothing
+    # and let this test pass while checking nothing
+    assert len(live) > 500, f"only {len(live)} live routes flattened: the walk above broke"
     unseen = sorted(live - static)
     assert not unseen, (
         f"routes the source reader cannot see (register them with @router.<verb>): {unseen}"
@@ -159,6 +168,26 @@ def _calls(path: str, js: str) -> bool:
     )
     fl.tokens |= {w for x in rc._js_literals(js) for w in rc._NESTED_WORD.findall(x)}
     return rc._calls(path, fl)
+
+
+def test_a_parameter_never_stands_for_a_siblings_fixed_word():
+    sib = rc.sibling_words(
+        [
+            rc.Route("GET", "/api/x/items/{qid}", "m", 1),
+            rc.Route("GET", "/api/x/items/pending", "m", 1),
+        ]
+    )
+    js = 'api("/api/x/items/pending");'
+    fl = rc._FileLits("x.js", ["/api/x/items/pending"], {"/api/x/items/pending"})
+    assert not rc._calls("/api/x/items/{qid}", fl, sib)
+    assert rc._calls("/api/x/items/pending", fl, sib)
+    assert _calls("/api/x/items/{qid}", "api(`/api/x/items/${q}`);" + js)
+
+
+def test_a_head_and_a_slash_tail_have_something_between_them():
+    js = 'api("/api/custody/" + encodeURIComponent(id) + "/verify");'
+    assert _calls("/api/custody/{item_id}/verify", js)
+    assert not _calls("/api/custody/verify", js)
 
 
 def test_an_apostrophe_in_a_comment_does_not_hide_later_calls():

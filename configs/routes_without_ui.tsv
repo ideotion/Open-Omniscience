@@ -1,5 +1,5 @@
 # Routes no part of the shipped UI calls (scripts/route_callers.py), each with a reason.
-# class: internal (no button on purpose) | superseded (propose removal) | feature (a reader feature with no button: wire it).
+# class: internal (no button on purpose) | superseded (propose removal) | feature (a reader feature with no button: wire it) | unseen (a UI caller the source reader cannot see, named in the reason).
 # value (features only): 1 high, 2 medium, 3 low, for an ordinary reader. surface: where the button belongs (owning lane).
 # tests/test_routes_have_a_caller.py keeps this file exact and lets the feature count only go down.
 method	path	class	value	surface	reason
@@ -111,6 +111,7 @@ GET	/api/diagnostics/wiki-lane-history	internal		diagnostics	maintainer diagnost
 GET	/api/diagnostics/windows-locks	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/diagnostics/write-gate	internal		diagnostics	maintainer diagnostics read (the maintainer-developer channel: curl or the diagnostics bundle), not a reader feature
 GET	/api/documents/pdf/imported-count	feature	3	Settings > Import (N)	PDF import shows no count of imported PDFs (newsletters do)
+GET	/api/entities/items/{qid}	internal		api	one cached Wikidata item for programmatic callers; no reader surface yet
 GET	/api/entities/places/by-wiki	internal		api	entity ladder step used server-side; no reader surface yet
 GET	/api/entities/places/search	internal		api	entity ladder lookup; the Map's place search uses its own route
 GET	/api/entities/resolve	internal		api	entity ladder lookup for programmatic callers
@@ -123,6 +124,7 @@ GET	/api/insights/copypasta	feature	1	Insights (O)	the full list behind the 'cop
 GET	/api/insights/flooded-topics	feature	1	Insights (O)	the full list behind the 'flooded topic' card
 GET	/api/insights/headline-body-mismatch	feature	1	Insights (O)	headlines the body does not support
 POST	/api/insights/include	feature	1	Insights (O)	an excluded keyword can never be re-included: no undo
+POST	/api/insights/keyword-fold-job/{action}	superseded			the task manager pauses, resumes and cancels the fold through /api/jobs/{job_id}/... (job 'keyword-fold')
 GET	/api/insights/leads-view	feature	2	Home (N)	the Leads with evidence chips (n, independent sources, freshness); browser-gated design, never wired
 GET	/api/insights/manufactured-emergence	feature	1	Insights (O)	terms that appeared wide and sudden with no datable anchor
 GET	/api/insights/reading-diet-by-type	feature	2	Insights (O)	share of the corpus per content channel (news, wiki, law...)
@@ -130,6 +132,7 @@ POST	/api/insights/reconcile-article-language	internal		maintenance	backfill job
 POST	/api/insights/reconcile-keyword-language	internal		maintenance	backfill job; belongs with the maintenance actions if ever surfaced
 GET	/api/insights/recycled-claims	feature	1	Insights (O)	old claims resurfacing after dormancy
 POST	/api/insights/reindex	superseded			the browser-driven Insights drain; R600 PR2 (#1938) moved it to a server job the UI starts through /api/insights/backlog
+POST	/api/insights/reindex-job/{action}	superseded			the task manager pauses and resumes the re-index through /api/jobs/{job_id}/... (job 'reindex')
 GET	/api/insights/ring-stats	feature	3	Insights (O)	statistics for one cross-language group
 GET	/api/insights/source-laundering	feature	1	Insights (O)	origins cited by many sources that are not independent
 GET	/api/insights/supergroups/redundant-members	feature	3	Insights (O)	clean-up proposals for group members
@@ -165,7 +168,7 @@ PUT	/api/markets/rules/{rule_id}	feature	3	Markets (O)	edit an alert rule (creat
 GET	/api/monitoring/anomalies	feature	3	Insights (O)	days whose article volume deviates from the mean
 GET	/api/monitoring/health	superseded			live reachability check; the source preflight and field data cover it
 GET	/api/newsletters/publisher-preview	feature	2	Settings > Import (N)	which publisher each newsletter would be filed under; the 2026-06-15 ruling pairs auto-attach with an import UI that announces it
-GET	/api/osm/objects/{osm_type}/{osm_id}	feature	2	Map (L)	one map object with every tag
+GET	/api/osm/objects/{osm_type}/{osm_id}	unseen			called by openOsmObjectCard (app-analysis.js) as "/api/osm/objects/" + a joined ref; two parameters joined at run time are past the source reader
 GET	/api/osm/search	feature	2	Map (L)	'Places' facet (Q817): named places in the countries read
 GET	/api/personality/all	feature	3	Help or About (J)	credits view of the bundled catalogue
 DELETE	/api/quarantine/host-pairs	feature	2	Quarantine (O)	withdraw a confirmed host pair
@@ -174,6 +177,7 @@ POST	/api/quarantine/host-pairs	feature	2	Quarantine (O)	'this source really pub
 POST	/api/safety/backup/encrypted	superseded			encrypted snapshot download; the Backup tab exports through /api/backup/v2
 POST	/api/scheduler/memory-guard/resume	feature	1	Task manager (O)	collection paused for low memory has no 'resume now' button
 GET	/api/scheduler/runs	feature	3	Task manager (O)	recent scheduler run reports
+POST	/api/search/index-job/{action}	superseded			the task manager pauses, resumes and cancels it through /api/jobs/{job_id}/... (job 'search-reindex')
 GET	/api/search/instant/status	internal		diagnostics	title-index coverage counts for a status line
 GET	/api/search/spell-index	feature	3	Settings > Maintenance (N)	state of the 'did you mean' index
 POST	/api/search/spell-index/build	feature	3	Settings > Maintenance (N)	rebuild it

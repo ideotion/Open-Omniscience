@@ -36,6 +36,7 @@ def test_the_checks_call_their_routes_and_stay_on_this_machine():
     js = (_STATIC / "app-evidence.js").read_text(encoding="utf-8")
     body = js.split("async function custodyCheckFile(", 1)[1].split("\n    }\n", 1)[0]
     assert '"/api/verify/image-metadata"' in body and '"/api/reports/evidence/verify"' in body
+    assert '"/api/custody/verify"' in body and "require_signer: true" in body
     assert "trusted_public_key" in body
     assert "http://" not in body and "https://" not in body
     src = (_ROOT / "src" / "api" / "verification.py").read_text(encoding="utf-8")
