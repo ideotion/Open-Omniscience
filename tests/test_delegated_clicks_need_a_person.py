@@ -90,3 +90,19 @@ def test_a_scripted_click_cancels_no_job_and_a_real_one_does():
     )
     got = json.loads(out.stdout)
     assert got == {"untrusted": 0, "trusted": [["cancel", "job-7"]]}, got
+
+
+def test_enter_on_the_unlock_page_still_submits_without_a_scripted_click():
+    """Enter in the passphrase fields used to call ``$("btn-unlock").click()``: an untrusted click the guard now drops, so
+    Enter would have done nothing on the app's front door. It calls the shared action itself, on a trusted keydown, and
+    still does nothing while a submission runs (the button is disabled)."""
+    js = (_STATIC / "unlock.js").read_text(encoding="utf-8")
+    assert '$("btn-unlock").click()' not in js and '$("btn-create").click()' not in js
+    start = js.index('document.addEventListener("keydown"')
+    body = js[start : js.index("});", start)]
+    assert 'ev.isTrusted !== true' in body
+    assert "doUnlock(unlockBtn)" in body and "doCreate(createBtn)" in body
+    assert "!unlockBtn.disabled" in body and "!createBtn.disabled" in body
+    # the click listener uses the same two actions, so the two ways in cannot drift apart
+    click = next(b for p, b in _listeners(js) if "btn-unlock" in b)
+    assert "doUnlock(ev.target)" in click and "doCreate(ev.target)" in click

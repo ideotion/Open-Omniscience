@@ -444,14 +444,17 @@
       }
     }
 
+    // The two submit actions, shared by the buttons' click and Enter in the fields: Enter used to
+    // call btn.click(), which makes an UNTRUSTED click the guard below now drops (R673).
+    const doUnlock = (btn) => go(btn, () => post("/api/system/unlock", { passphrase: $("pw").value }));
+    const doCreate = (btn) => go(btn, () => post("/api/system/create-db",
+      { passphrase: $("pw1").value, confirm: $("pw2").value }));
+
     document.addEventListener("click", (ev) => {
       if (ev.isTrusted !== true) return;  // R673: a script's el.click() or dispatchEvent takes no step, as in oo-on (R443)
       const id = ev.target.id;
-      if (id === "btn-unlock")
-        go(ev.target, () => post("/api/system/unlock", { passphrase: $("pw").value }));
-      if (id === "btn-create")
-        go(ev.target, () => post("/api/system/create-db",
-          { passphrase: $("pw1").value, confirm: $("pw2").value }));
+      if (id === "btn-unlock") doUnlock(ev.target);
+      if (id === "btn-create") doCreate(ev.target);
       // --- data-location step ---
       if (id === "dl-default" || id === "dl-custom")
         $("dl-custom-box").classList.toggle("hidden", !$("dl-custom").checked);
@@ -490,9 +493,11 @@
         $("lg-decline-confirm").disabled = ev.target.value.trim() !== _legalWord;
     });
     document.addEventListener("keydown", (ev) => {
-      if (ev.key !== "Enter") return;
-      if (!$("view-unlock").classList.contains("hidden")) $("btn-unlock").click();
-      else if (!$("view-create").classList.contains("hidden")) $("btn-create").click();
+      if (ev.key !== "Enter" || ev.isTrusted !== true) return;
+      // a disabled button means a submission is already running: Enter does nothing, as the old .click() did
+      const unlockBtn = $("btn-unlock"), createBtn = $("btn-create");
+      if (!$("view-unlock").classList.contains("hidden")) { if (!unlockBtn.disabled) doUnlock(unlockBtn); }
+      else if (!$("view-create").classList.contains("hidden")) { if (!createBtn.disabled) doCreate(createBtn); }
     });
 
     boot();
