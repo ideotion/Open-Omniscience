@@ -127,9 +127,15 @@
     catch (e) { return false; }
   }
 
+  // Going (back) to simple mode drops the full view's query string, so a reload stays simple.
+  function clearDeepLink() {
+    if (!location.search) return;
+    try { history.replaceState(history.state, "", location.pathname + location.hash); } catch (e) { /* ignore */ }
+  }
   function enterSimple() {
     lsSet(K_SIMPLE, "1");
     ssSet(K_PEEK, null);
+    clearDeepLink();
     if (hasSkin()) { location.reload(); return; }   // a gallery skin re-initialises on load
     ROOT.setAttribute("data-mode", "simple");
     ROOT.removeAttribute("data-ui");
@@ -160,6 +166,7 @@
   }
   function backToSimple() {
     ssSet(K_PEEK, null);
+    clearDeepLink();
     ROOT.setAttribute("data-mode", "simple");
     ROOT.removeAttribute("data-ui");
     mount();

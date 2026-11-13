@@ -15,9 +15,13 @@
   var simple = false, peek = false;
   try { simple = localStorage.getItem("oo.ui.simple") === "1"; } catch (e) { /* storage blocked: full mode */ }
   try { peek = sessionStorage.getItem("oo.ui.peek") === "1"; } catch (e) { /* storage blocked */ }
-  // A deep link into a full-view tool (?corpus=, ?analyze=, ... opened in a new browser tab) is a
-  // request for that tool: it opens in full view with the "Back to simple view" bar.
-  if (simple && !peek && location.search && location.search.length > 1) {
+  // A deep link into a full-view tool (opened in a new browser tab) is a request for that tool: it
+  // opens in full view with the "Back to simple view" bar. Only these keys count; the full app's
+  // own view parameters (?expand=, ?cap=, ...) never override the reader's choice.
+  var DEEP = ["corpus", "analyze", "resume", "wikitc", "wikiwizard"];
+  var deep = false;
+  try { var sp = new URLSearchParams(location.search); deep = DEEP.some(function (k) { return sp.has(k); }); } catch (e) { /* old browser */ }
+  if (simple && !peek && deep) {
     peek = true;
     try { sessionStorage.setItem("oo.ui.peek", "1"); } catch (e) { /* storage blocked */ }
   }

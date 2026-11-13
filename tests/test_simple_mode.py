@@ -216,3 +216,14 @@ def test_going_online_reads_the_live_state_first():
     code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
     fn = code.split("function goOnline(", 1)[1].split("\n  }\n", 1)[0]
     assert fn.index('"/api/system/network"') < fn.index("window.toggleNetwork()")
+
+
+def test_only_named_deep_links_open_the_full_view():
+    boot = _strip_js_comments(_read(_SIMPLE / "boot.js"))
+    # The full app writes its own view parameters into the URL; only a real deep link peeks.
+    assert re.search(r'DEEP = \["corpus", "analyze", "resume", "wikitc", "wikiwizard"\]', boot)
+    assert "location.search.length" not in boot
+    code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
+    for fn in ("enterSimple", "backToSimple"):
+        body = code.split("function " + fn + "(", 1)[1].split("\n  }\n", 1)[0]
+        assert "clearDeepLink()" in body, fn
