@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from src.api.cross_site import refuse_cross_site_get
 from src.custody.anchor import AnchorError, AnchorUnavailable, available_providers, get_provider
-from src.custody.log import CustodyAction, CustodyLog, verify_export
+from src.custody.log import CustodyAction, CustodyLog, describe_export
 from src.custody.settings import (
     VALID_ANCHORING,
     CustodySettingsError,
@@ -244,11 +244,25 @@ class VerifyBundleRequest(BaseModel):
     require_signer: bool = False
 
 
+def _local_identity():
+    """This installation's custody signing identity, or ``None`` when it has none yet or it cannot
+    be read (sealed keys with no passphrase). Never creates a key: a verify is a read."""
+    from src.custody.signing import _keys_dir
+
+    try:
+        if not (_keys_dir() / "custody_ed25519.pem").exists():
+            return None
+        return HybridSigner(use_pqc=load_settings().pqc_enabled).public_identity()
+    except Exception:  # noqa: BLE001 - unreadable keys: the verdict says so instead of guessing
+        return None
+
+
 @router.post("/verify")
 def verify_bundle(req: VerifyBundleRequest) -> dict:
-    """Verify a posted custody bundle offline (no DB needed)."""
-    ok, issues = verify_export(req.bundle, require_signer=req.require_signer)
-    return {"verified": ok, "issues": issues}
+    """Verify a posted custody bundle offline (no DB needed), and say by whom it is signed (R681):
+    ``verified`` never travels without ``signed_by`` and a ``verdict`` that tells "verified against
+    your keys" from "signatures valid, signer not yours"."""
+    return describe_export(req.bundle, local=_local_identity(), require_signer=req.require_signer)
 
 
 class AnchorRequest(BaseModel):

@@ -471,3 +471,77 @@ def verify_export(bundle: dict, *, require_signer: bool = False) -> tuple[bool, 
             ml_dsa_pub=s.get("ml_dsa_pub"),
         )
     return verify_entries(entries, pinned=pinned)
+
+
+#: R681: the verdicts a posted bundle can get, each naming whose keys it is checked against.
+VERDICT_YOURS = "verified-against-your-keys"
+VERDICT_NOT_YOURS = "signatures-valid-signer-not-yours"
+VERDICT_UNKNOWN = "signatures-valid-your-keys-unreadable"
+VERDICT_INVALID = "not-verified"
+
+_VERDICT_TEXT = {
+    VERDICT_YOURS: "Verified against this installation's own signing keys: every entry was signed by them.",
+    VERDICT_NOT_YOURS: (
+        "Every signature is valid, but not every entry was signed by this installation's keys: the signers are listed. A valid"
+        " signature proves the entries were not altered after signing, not who the signer is; compare the listed keys with"
+        " ones you know."
+    ),
+    VERDICT_UNKNOWN: (
+        "Every signature is valid, but this installation's own keys could not be read, so whose keys they are is not known:"
+        " the signers are listed. Compare them with keys you know."
+    ),
+    VERDICT_INVALID: "Not verified: see the issues.",
+}
+
+
+def _signer_of(entry: CustodyEntry) -> tuple[str, str | None]:
+    sig = entry.signature or {}
+    ed = (sig.get("ed25519") or {}).get("pub") or ""
+    ml = (sig.get("ml_dsa") or {}).get("pub") if sig.get("algorithm") == "hybrid" else None
+    return ed, ml
+
+
+def _is_yours(signer: tuple[str, str | None], local: PublicIdentity) -> bool:
+    ed, ml = signer
+    if not ed or ed != local.ed25519_pub:
+        return False
+    return ml is None or local.ml_dsa_pub is None or ml == local.ml_dsa_pub
+
+
+def describe_export(bundle: dict, *, local: PublicIdentity | None, require_signer: bool = False) -> dict:
+    """Verify a posted custody bundle and say BY WHOM it is signed (R681).
+
+    ``verified`` keeps its meaning (the chain is intact and every signature is valid against the key
+    it carries, or against the bundle's own signer when ``require_signer`` is set). It never travels
+    alone: ``signed_by`` lists every distinct signer with its entry count, and ``verdict`` separates
+    "verified against your keys" from "signatures valid, signer not yours" -- a bundle anyone signed
+    with keys of their own verifies, so the first answer is only given when the keys are this
+    installation's (``local``; ``None`` when they cannot be read)."""
+    ok, issues = verify_export(bundle, require_signer=require_signer)
+    counts: dict[tuple[str, str | None], int] = {}
+    for d in bundle.get("entries", []):
+        try:
+            key = _signer_of(CustodyEntry.from_dict(d))
+        except Exception:  # noqa: BLE001 - a malformed entry is already an issue from verify_export
+            continue
+        counts[key] = counts.get(key, 0) + 1
+    signed_by = [
+        {"ed25519_pub": ed, "ml_dsa_pub": ml, "entries": n, "yours": None if local is None else _is_yours((ed, ml), local)}
+        for (ed, ml), n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0][0]))
+    ]
+    if not ok:
+        verdict = VERDICT_INVALID
+    elif local is None:
+        verdict = VERDICT_UNKNOWN
+    elif signed_by and all(s["yours"] for s in signed_by):
+        verdict = VERDICT_YOURS
+    else:
+        verdict = VERDICT_NOT_YOURS
+    return {
+        "verified": ok,
+        "issues": issues,
+        "verdict": verdict,
+        "verdict_text": _VERDICT_TEXT[verdict],
+        "signed_by": signed_by,
+        "signer_is_yours": None if local is None else verdict == VERDICT_YOURS,
+    }

@@ -1,0 +1,175 @@
+"""Audit recheck items for the backup and custody code (lane B, 2026-11-13): P3, P5, P11 (R681), P16.
+
+Each test fails on the code before the fix: the restore preflight read only the archive's size, the folder
+manifest was written in place, a bundle signed by someone else's keys answered a bare ``verified: true``, and
+restore state files shared one fixed ``<name>.tmp``."""
+
+from __future__ import annotations
+
+import io
+import zipfile
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from src.api.main import app
+from src.backup import artifact, folder_backup, merge
+from src.custody.log import CustodyAction, CustodyLog
+from src.custody.signing import HybridSigner
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+# --------------------------------------------------------------------------- P3
+def _bomb(size: int) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("manifest.json", "{}")
+        zf.writestr("corpus.db", b"\0" * size, compress_type=zipfile.ZIP_DEFLATED)
+    return buf.getvalue()
+
+
+def test_the_restore_preflight_counts_what_the_members_inflate_to_not_the_archive(tmp_path, monkeypatch):
+    blob = _bomb(8 * 1024 * 1024)
+    assert len(blob) < 64 * 1024, "the archive is small; what it inflates to is not"
+    free = 1024 * 1024  # room for the archive, not for what is inside it
+    monkeypatch.setattr(folder_backup, "free_bytes", lambda _p: free)
+    with pytest.raises(artifact.BackupSpaceError):
+        artifact.read_artifact(blob, staging_root=tmp_path)
+    assert not list(tmp_path.glob(".restore-*/corpus.db")), "nothing was inflated before the refusal"
+    assert not list(tmp_path.glob(".restore-*")), "the staging dir is removed"
+
+
+class _Lying:
+    """A zip member that yields more bytes than it declares."""
+
+    def __init__(self, declared: int, actual: int):
+        self.info = zipfile.ZipInfo("corpus.db")
+        self.info.file_size = declared
+        self._data = io.BytesIO(b"x" * actual)
+
+    def infolist(self):
+        return [self.info]
+
+    def open(self, _info):
+        return self._data
+
+
+def test_a_member_that_yields_more_than_it_declares_is_refused_at_its_declared_size(tmp_path):
+    z = _Lying(declared=10, actual=5000)
+    with pytest.raises(artifact.ArtifactError, match="larger than the size it declares"):
+        artifact._safe_extract(z, tmp_path)  # type: ignore[arg-type]
+    assert (tmp_path / "corpus.db").stat().st_size <= 10
+
+
+def test_an_honest_archive_still_extracts_whole(tmp_path):
+    blob = _bomb(300_000)
+    with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+        artifact._safe_extract(zf, tmp_path)
+    assert (tmp_path / "corpus.db").stat().st_size == 300_000
+    assert (tmp_path / "manifest.json").read_text() == "{}"
+
+
+# --------------------------------------------------------------------------- P5
+def test_the_folder_manifest_is_written_through_a_temp_file_and_a_rename(tmp_path, monkeypatch):
+    target = tmp_path / folder_backup.MANIFEST_NAME
+    target.write_text("previous", encoding="utf-8")
+
+    def boom(_src, _dst):
+        raise OSError("disk went away")
+
+    monkeypatch.setattr(folder_backup.os, "replace", boom)
+    with pytest.raises(OSError):
+        folder_backup._write_manifest_atomically(target, '{"new": true}')
+    assert target.read_text(encoding="utf-8") == "previous", "a failed write leaves the previous manifest whole"
+    assert [p.name for p in tmp_path.iterdir()] == [folder_backup.MANIFEST_NAME], "and no temp file behind"
+
+
+def test_the_backup_pass_writes_its_manifest_through_the_atomic_helper():
+    src = (ROOT / "src/backup/folder_backup.py").read_text("utf-8")
+    assert "(root / MANIFEST_NAME).write_text(" not in src
+    assert "_write_manifest_atomically(root / MANIFEST_NAME," in src
+
+
+# --------------------------------------------------------------------------- P11 / R681
+@pytest.fixture()
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    with TestClient(app) as c:
+        yield c
+
+
+def _foreign_bundle(tmp_path: Path) -> dict:
+    other = tmp_path / "someone-else"
+    other.mkdir()
+    signer = HybridSigner(other / "ed.pem", other / "ml.key", use_pqc=False)
+    log = CustodyLog(db_path=str(other / "custody.db"), signer=signer, anchoring_mode="local")
+    try:
+        log.record("article:9", "d" * 64, CustodyAction.INGEST)
+        return log.export()
+    finally:
+        log.close()
+
+
+def test_a_bundle_signed_by_your_keys_says_so(client):
+    client.post("/api/custody/log", json={"item_id": "article:7", "item_hash": "c" * 64, "action": "ingest"})
+    bundle = client.get("/api/custody/export").json()
+    v = client.post("/api/custody/verify", json={"bundle": bundle}).json()
+    assert v["verified"] is True
+    assert v["verdict"] == "verified-against-your-keys"
+    assert v["signer_is_yours"] is True
+    assert [s["entries"] for s in v["signed_by"]] == [1]
+    assert v["signed_by"][0]["ed25519_pub"] == bundle["signer"]["ed25519_pub"]
+
+
+def test_a_bundle_signed_by_other_keys_is_never_called_verified_without_saying_by_whom(client, tmp_path):
+    client.post("/api/custody/log", json={"item_id": "article:7", "item_hash": "c" * 64, "action": "ingest"})
+    bundle = _foreign_bundle(tmp_path)
+    v = client.post("/api/custody/verify", json={"bundle": bundle}).json()
+    assert v["verified"] is True, "the signatures are valid: that stays true"
+    assert v["verdict"] == "signatures-valid-signer-not-yours"
+    assert v["signer_is_yours"] is False
+    assert v["signed_by"] == [{"ed25519_pub": bundle["signer"]["ed25519_pub"], "ml_dsa_pub": None, "entries": 1, "yours": False}]
+    assert "not who the signer is" in v["verdict_text"]
+
+
+def test_a_bundle_mixing_signers_lists_each_of_them(client, tmp_path):
+    client.post("/api/custody/log", json={"item_id": "article:7", "item_hash": "c" * 64, "action": "ingest"})
+    mine = client.get("/api/custody/export").json()
+    theirs = _foreign_bundle(tmp_path)
+    # Their entry re-chained after mine would break the chain; listing signers needs no valid chain.
+    mixed = {**mine, "entries": mine["entries"] + theirs["entries"]}
+    v = client.post("/api/custody/verify", json={"bundle": mixed}).json()
+    assert v["verified"] is False and v["verdict"] == "not-verified"
+    assert sorted(s["yours"] for s in v["signed_by"]) == [False, True]
+
+
+def test_a_verify_never_creates_signing_keys(client, tmp_path):
+    bundle = _foreign_bundle(tmp_path)
+    v = client.post("/api/custody/verify", json={"bundle": bundle}).json()
+    assert v["verdict"] == "signatures-valid-your-keys-unreadable"
+    assert v["signer_is_yours"] is None
+    assert not list(tmp_path.rglob("custody_ed25519.pem")), "a verify is a read"
+
+
+# --------------------------------------------------------------------------- P16
+def test_restore_state_files_are_replaced_through_a_unique_temp_that_never_outlives_a_failure(tmp_path, monkeypatch):
+    target = tmp_path / "state.json"
+    merge._replace_file_bytes(target, b"one")
+    assert target.read_bytes() == b"one"
+
+    def boom(_src, _dst):
+        raise OSError("no")
+
+    monkeypatch.setattr(merge.os, "replace", boom)
+    with pytest.raises(OSError):
+        merge._replace_file_bytes(target, b"two")
+    assert target.read_bytes() == b"one"
+    assert [p.name for p in tmp_path.iterdir()] == ["state.json"]
+
+
+def test_merge_has_no_fixed_tmp_name_left():
+    src = (ROOT / "src/backup/merge.py").read_text("utf-8")
+    assert 'name + ".tmp")' not in src
+    assert 'with_suffix(".tmp")' not in src
