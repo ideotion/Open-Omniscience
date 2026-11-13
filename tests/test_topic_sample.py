@@ -51,6 +51,10 @@ def test_a_one_character_label_is_never_matched_and_is_counted_not_dropped(zh_in
     assert zh_index.short_labels == {"zh": 1}
     m = tt.measure([{"id": "x", "lang": "zh", "text": "国旗法", "expected": []}], zh_index)
     assert m["one_character_labels_skipped"] == {"zh": 1} and m["n_items"] == 1
+    # a language whose ONLY labels are one character long cannot be tagged at all: set aside, never scored as zero
+    only_short = tt.Index([_art(law=({"zh": "法"}, {}))])
+    m = tt.measure([{"id": "x", "lang": "zh", "text": "国旗法", "expected": ["law"]}], only_short)
+    assert m["n_items"] == 0 and m["unsupported_languages"] == {"zh": 1}
 
 
 def test_the_longest_label_wins_and_a_match_never_crosses_punctuation_or_space(zh_index):
@@ -89,6 +93,7 @@ def test_a_label_is_resolved_only_to_one_concept_and_otherwise_listed_unresolved
     res = tt.resolve_sample(sample, art)
     assert res["sample"] == [{"id": "1", "lang": "en", "text": "t", "expected": ["a"]}] and res["resolved"] == 1
     assert res["unresolved"] == [{"id": "1", "label": "copyright"}, {"id": "1", "label": "climate change"}]
+    assert res["other_schemes"] == {"agrovoc": 1}, "a label for another thesaurus is counted, never silently dropped"
 
 
 # --- the sample itself -------------------------------------------------------------------------------------------------
@@ -143,3 +148,22 @@ def test_with_a_built_thesaurus_the_script_measures_and_states_the_approximate_s
     assert m["approx_share"]["n"] > 0 and m["approx_share"]["value"] is not None
     assert {"zh", "ja", "hi", "bn", "id", "ar", "ru"} <= set(m["unsupported_languages"]), "no label: set aside, not zero"
     assert any(u["label"] == "environmental protection" for u in out["unresolved"])
+
+
+@pytest.mark.parametrize("body", ['{"scheme": "eurovoc", "concepts": []}', '{"scheme": "eurovoc", "concepts": {"u": {"pref": ["x"]}}}'])
+def test_an_artifact_malformed_inside_is_not_measured_never_a_traceback(tmp_path, monkeypatch, body):
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    import topic_sample_measure as tsm
+
+    path = tmp_path / "eurovoc.json"
+    path.write_text(body, "utf-8")
+    code, out = tsm.run(path, SAMPLE)
+    assert code == 3 and out["status"] == "not-measured" and "malformed" in out["reason"]
+
+
+def test_a_missing_sample_is_not_measured_never_a_traceback(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    import topic_sample_measure as tsm
+
+    code, out = tsm.run(tmp_path / "eurovoc.json", tmp_path / "nope.json")
+    assert code == 3 and "sample could not be read" in out["reason"]

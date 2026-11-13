@@ -37,7 +37,12 @@ NOT_MEASURED = 3
 
 
 def run(artifact_path: Path, sample_path: Path) -> tuple[int, dict[str, Any]]:
-    doc = json.loads(sample_path.read_text(encoding="utf-8"))
+    try:
+        doc = json.loads(sample_path.read_text(encoding="utf-8"))
+        if not isinstance(doc, dict) or not isinstance(doc.get("items"), list):
+            raise ValueError("no 'items' list")
+    except (OSError, ValueError) as exc:
+        return NOT_MEASURED, {"status": "not-measured", "reason": f"the labelled sample could not be read: {exc}"}
     head = {"sample": str(sample_path.relative_to(ROOT)) if sample_path.is_relative_to(ROOT) else str(sample_path),
             "sample_as_of": doc.get("as_of"), "labelled_by": doc.get("labelled_by"), "n_sample": len(doc["items"])}
     if not artifact_path.exists():
@@ -48,10 +53,15 @@ def run(artifact_path: Path, sample_path: Path) -> tuple[int, dict[str, Any]]:
         art = skos.load_artifact(artifact_path)
     except (OSError, ValueError) as exc:  # SkosError is a ValueError; a JSON error is one too
         return NOT_MEASURED, {**head, "status": "not-measured", "reason": f"the artifact could not be read: {exc}"}
-    res = tt.resolve_sample(doc["items"], art)
-    m = tt.measure(res["sample"], tt.Index([art]))
+    try:
+        res = tt.resolve_sample(doc["items"], art)
+        m = tt.measure(res["sample"], tt.Index([art]))
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:  # a file shaped like an artifact on top only
+        return NOT_MEASURED, {**head, "status": "not-measured",
+                              "reason": f"the artifact or the sample is malformed inside ({type(exc).__name__}: {exc})"}
     return 0, {**head, "status": "measured", "scheme": art.get("scheme"), "vintage": art.get("vintage"),
                "license": art.get("license"), "resolved_labels": res["resolved"], "unresolved": res["unresolved"],
+               "labels_for_other_schemes": res["other_schemes"],
                "measurement": m}
 
 

@@ -10,8 +10,9 @@ sequence in a title or provision and returns what matched and HOW, so nothing is
 * ``approx`` -- marked ``≈``: the label is an ``altLabel``, or it names MORE than one concept in
   the SAME scheme (both concepts are returned, neither is picked). Perception, not judgment.
 
-* ``approx`` with reason ``unsegmented_substring`` (R680, OPEN_QUEUE 38(d)): in a language
-  written without spaces between words (zh, ja, ...) a word boundary cannot be checked, so a
+* ``approx`` with reason ``unsegmented_substring`` (R680, OPEN_QUEUE 38(d)): in a language of
+  ``UNSEGMENTED_LANGUAGES`` (zh, ja, th, my, km, lo; and ko, which does space its words but is
+  kept in the set conservatively) a word boundary cannot be checked, so a
   label is matched as a SUBSTRING of a run of text, and EVERY such hit is ≈, whatever the
   label. A one-character label is never matched there: it would hit inside unrelated words.
 
@@ -91,14 +92,15 @@ class Index:
         toks = fold(label)
         if not toks:
             return
-        self.languages.add(lang)
         if lang in UNSEGMENTED_LANGUAGES:
             key = "".join(toks)
-            if len(key) < 2:
+            if len(key) < 2:  # never matched, so it does not make the language taggable either
                 self.short_labels[lang] = self.short_labels.get(lang, 0) + 1
                 return
+            self.languages.add(lang)
             self.substrings.setdefault((lang, key), []).append((scheme, uri, label, is_pref))
             return
+        self.languages.add(lang)
         self.entries.setdefault((lang, toks), []).append((scheme, uri, label, is_pref))
 
 
@@ -228,7 +230,9 @@ def resolve_sample(sample: list[dict[str, Any]], artifact: dict[str, Any], *, la
     own preferred label in ``label_lang`` (``expected_labels``), because the concept ids are the thesaurus's and are not
     in the tree until the operator builds it. A label the artifact does not carry is NEVER matched loosely: it is listed in
     ``unresolved`` and left out of the item's expected set, so a guess cannot pass for a label. Returns
-    ``{"sample": [...as measure() takes it], "unresolved": [{"id", "label"}], "resolved": n}``.
+    ``{"sample": [...as measure() takes it], "unresolved": [{"id", "label"}], "resolved": n, "other_schemes": {scheme: n}}``;
+    ``other_schemes`` counts the expected labels written for another thesaurus, so a scheme-name mismatch is visible
+    rather than silently resolving nothing.
     """
     scheme = artifact.get("scheme")
     by_label: dict[str, list[str]] = {}
@@ -239,10 +243,13 @@ def resolve_sample(sample: list[dict[str, Any]], artifact: dict[str, Any], *, la
     out: list[dict[str, Any]] = []
     unresolved: list[dict[str, str]] = []
     resolved = 0
+    other: dict[str, int] = {}
     for item in sample:
         expected: list[str] = []
         for want in item.get("expected_labels") or []:
             if want.get("scheme") != scheme:
+                key = str(want.get("scheme"))
+                other[key] = other.get(key, 0) + 1
                 continue
             uris = by_label.get(" ".join(fold(want.get("label", ""))), [])
             if len(uris) == 1:
@@ -251,7 +258,7 @@ def resolve_sample(sample: list[dict[str, Any]], artifact: dict[str, Any], *, la
             else:  # absent, or a preferred label two concepts share: either way not one concept
                 unresolved.append({"id": item["id"], "label": want.get("label", "")})
         out.append({"id": item["id"], "lang": item["lang"], "text": item["text"], "expected": expected})
-    return {"sample": out, "unresolved": unresolved, "resolved": resolved}
+    return {"sample": out, "unresolved": unresolved, "resolved": resolved, "other_schemes": other}
 
 
 def asdicts(tags: list[Tag]) -> list[dict[str, Any]]:
