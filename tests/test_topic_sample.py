@@ -161,7 +161,11 @@ def test_an_artifact_malformed_inside_is_not_measured_never_a_traceback(tmp_path
     assert code == 3 and out["status"] == "not-measured" and "malformed" in out["reason"]
 
 
-@pytest.mark.parametrize("body", [None, "[]", '{"items": {}}', '{"items": [{"id": "x", "lang": "en"}]}'])
+@pytest.mark.parametrize("body", [
+    None, "[]", '{"items": {}}', '{"items": [{"id": "x", "lang": "en"}]}',
+    '{"items": [{"id": "x", "lang": "en", "text": "t", "expected_labels": [{"scheme": "eurovoc", "label": 5}]}]}',
+    '{"items": [{"id": "x", "lang": "en", "text": "t", "expected_labels": [{"scheme": "eurovoc", "label": null}]}]}',
+])
 def test_a_missing_or_malformed_sample_is_not_measured_and_named(tmp_path, monkeypatch, body):
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
     import topic_sample_measure as tsm
@@ -169,7 +173,9 @@ def test_a_missing_or_malformed_sample_is_not_measured_and_named(tmp_path, monke
     sample = tmp_path / "sample.json"
     if body is not None:
         sample.write_text(body, "utf-8")
-    code, out = tsm.run(tmp_path / "eurovoc.json", sample)
+    art = tmp_path / "eurovoc.json"
+    art.write_text(json.dumps(_art(dp=({"en": "data protection"}, {}))), "utf-8")
+    code, out = tsm.run(art, sample)
     assert code == 3 and "sample could not be read" in out["reason"] and out["sample"] == str(sample)
 
 

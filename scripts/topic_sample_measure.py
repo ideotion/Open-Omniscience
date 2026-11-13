@@ -36,6 +36,11 @@ DEFAULT_ARTIFACT = ROOT / "src" / "catalog" / "data" / "skos" / "eurovoc.json"
 NOT_MEASURED = 3
 
 
+def _shown(path: Path) -> str:
+    """One spelling of a path in every output: relative to the repository when it is inside it."""
+    return str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path)
+
+
 def _sample_problem(doc: Any) -> str | None:
     """Why the sample cannot be measured, or None. Shape only: what resolve_sample and measure read."""
     if not isinstance(doc, dict) or not isinstance(doc.get("items"), list):
@@ -43,9 +48,11 @@ def _sample_problem(doc: Any) -> str | None:
     for n, item in enumerate(doc["items"]):
         if not isinstance(item, dict) or not all(isinstance(item.get(k), str) for k in ("id", "lang", "text")):
             return f"item {n} lacks a string id, lang or text"
-        labels = item.get("expected_labels", [])
-        if not isinstance(labels, list) or not all(isinstance(e, dict) for e in labels):
-            return f"item {n}: expected_labels is not a list of objects"
+        labels = item.get("expected_labels") or []
+        if not isinstance(labels, list) or not all(
+            isinstance(e, dict) and isinstance(e.get("label", ""), str) for e in labels
+        ):
+            return f"item {n}: expected_labels is not a list of {{scheme, label}} objects with a string label"
     return None
 
 
@@ -77,9 +84,9 @@ def run(artifact_path: Path, sample_path: Path) -> tuple[int, dict[str, Any]]:
     except (OSError, ValueError) as exc:
         problem = str(exc)
     if problem:
-        return NOT_MEASURED, {"sample": str(sample_path), "status": "not-measured",
+        return NOT_MEASURED, {"sample": _shown(sample_path), "status": "not-measured",
                               "reason": f"the labelled sample could not be read: {problem}"}
-    head = {"sample": str(sample_path.relative_to(ROOT)) if sample_path.is_relative_to(ROOT) else str(sample_path),
+    head = {"sample": _shown(sample_path),
             "sample_as_of": doc.get("as_of"), "labelled_by": doc.get("labelled_by"), "n_sample": len(doc["items"])}
     if not artifact_path.exists():
         return NOT_MEASURED, {**head, "status": "not-measured",
