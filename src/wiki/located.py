@@ -5,11 +5,13 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 WHAT IS READ. The wikitext this machine already STORED -- a followed (HOT) page's newest revision and a WARM page's latest text -- never the
 reader's stripped text (``src/api/wiki.py`` peels the infoboxes away) and never a new request. In it, the first infobox whose TYPE is on the
-edition's closed list of organisation, building and place infoboxes, and in that infobox only the fields whose KEY names an address.
+edition's closed list of organisation, institution, public-building and public-place infoboxes (R691: never a generic building,
+monument, castle or heritage-register type, which describe private houses as often as public places), and in that infobox only the fields whose KEY names an address.
 
 WHAT IS NEVER READ (R678), DECIDED FOR THE WHOLE PAGE AND FAILING CLOSED. A page is skipped, and counted with its reason, when any
 template or category on it marks a person (an infobox about a person, de ``Personendaten``, "Living people", births and deaths), when any
-of its infoboxes is not on the list, or when the place infobox names a home (a house, a residence). A type or a marker nobody wrote down
+of its infoboxes is not on the list, or, as an extra check on top (R691), when its title, categories or infobox name a home in any of
+the twelve languages (a house, a farm, an estate, 邸, हवेली). A family counts as people. A type or a marker nobody wrote down
 costs a located address, never a person's privacy: the map can never become a way to find where someone lives.
 Addresses in article BODIES (wiki and press) are not read either: without an infobox key, a body-text grammar would place strings that only
 look like addresses. That is a recorded gap, stated in the counters' ``gaps`` rather than shown as zero.
@@ -102,51 +104,54 @@ def _names(*items: str) -> frozenset[str]:
     return frozenset(_norm(i) for i in items)
 
 
-# The infobox types read, per edition: organisations, buildings and places. CLOSED and failing closed (R678). The template names are the
-# editions' own as written from knowledge, fixture-tested; a name missing here costs a located address, never a person's privacy.
+# The infobox types read, per edition (R678, R691): ORGANISATIONS, INSTITUTIONS, PUBLIC BUILDINGS and PUBLIC PLACES only, a CLOSED list
+# that fails closed. Generic building, monument, castle, landmark and heritage-register types (en "infobox building", "infobox nrhp",
+# fr "infobox monument", de "infobox bauwerk", ja "infobox 建築物" ...) are deliberately ABSENT: they describe private houses, farms and
+# estates as often as public places, and a word list cannot tell them apart in twelve languages (R691). So is anything about a person or a
+# family. The template names are the editions' own as written from knowledge, fixture-tested; a name missing here costs a located address,
+# never a person's privacy.
 _EN_TYPES = (
-    "infobox building", "infobox historic building", "infobox skyscraper", "infobox museum", "infobox company", "infobox organization",
-    "infobox organisation", "infobox government agency", "infobox hospital", "infobox school", "infobox university", "infobox library",
-    "infobox hotel", "infobox restaurant", "infobox shopping mall", "infobox venue", "infobox stadium", "infobox theatre", "infobox church",
-    "infobox religious building", "infobox mosque", "infobox temple", "infobox hindu temple", "infobox synagogue", "infobox embassy",
-    "infobox station", "infobox nrhp", "infobox airport", "infobox park", "infobox landmark", "infobox castle", "infobox zoo",
+    "infobox museum", "infobox company", "infobox organization", "infobox organisation", "infobox government agency", "infobox hospital",
+    "infobox school", "infobox university", "infobox library", "infobox hotel", "infobox restaurant", "infobox shopping mall",
+    "infobox venue", "infobox stadium", "infobox theatre", "infobox church", "infobox religious building", "infobox mosque",
+    "infobox temple", "infobox hindu temple", "infobox synagogue", "infobox embassy", "infobox station", "infobox airport", "infobox park",
+    "infobox zoo",
 )
 PLACE_TYPES: dict[str, frozenset[str]] = {
     "en": _names(*_EN_TYPES),
     "fr": _names(
-        "infobox bâtiment", "infobox monument", "infobox musée", "infobox entreprise", "infobox organisation", "infobox université",
-        "infobox école", "infobox établissement scolaire", "infobox hôpital", "infobox hôtel", "infobox gare", "infobox stade",
-        "infobox salle de spectacle", "infobox édifice religieux", "infobox château", "infobox bibliothèque", "infobox administration",
-        "infobox ambassade", "infobox gratte-ciel", "infobox parc",
+        "infobox musée", "infobox entreprise", "infobox organisation", "infobox université", "infobox école",
+        "infobox établissement scolaire", "infobox hôpital", "infobox hôtel", "infobox gare", "infobox stade", "infobox salle de spectacle",
+        "infobox édifice religieux", "infobox bibliothèque", "infobox administration", "infobox ambassade", "infobox parc",
     ),
     "de": _names(
-        "infobox unternehmen", "infobox hochschule", "infobox museum", "infobox bauwerk", "infobox hochhaus", "infobox bahnhof",
-        "infobox stadion", "infobox krankenhaus", "infobox schule", "infobox bibliothek", "infobox behörde", "infobox kirchengebäude",
-        "infobox hotel", "infobox theater", "infobox organisation", "infobox burg",
+        "infobox unternehmen", "infobox hochschule", "infobox museum", "infobox bahnhof", "infobox stadion", "infobox krankenhaus",
+        "infobox schule", "infobox bibliothek", "infobox behörde", "infobox kirchengebäude", "infobox hotel", "infobox theater",
+        "infobox organisation",
     ),
     "es": _names(
-        "ficha de edificio", "ficha de museo", "ficha de empresa", "ficha de organización", "ficha de universidad", "ficha de hospital",
-        "ficha de estación", "ficha de estadio", "ficha de edificio religioso", "ficha de recinto", "ficha de institución educativa",
-        "ficha de biblioteca", "ficha de hotel", "ficha de castillo", "ficha de monumento", "ficha de rascacielos",
+        "ficha de museo", "ficha de empresa", "ficha de organización", "ficha de universidad", "ficha de hospital", "ficha de estación",
+        "ficha de estadio", "ficha de edificio religioso", "ficha de recinto", "ficha de institución educativa", "ficha de biblioteca",
+        "ficha de hotel",
     ),
     "pt": _names(
-        "info/edifício", "info/empresa", "info/museu", "info/organização", "info/universidade", "info/hospital", "info/estação",
-        "info/estádio", "info/igreja", "info/escola", "info/biblioteca", "info/hotel", "info/castelo", "info/monumento", "info/arranha-céu",
+        "info/empresa", "info/museu", "info/organização", "info/universidade", "info/hospital", "info/estação", "info/estádio",
+        "info/igreja", "info/escola", "info/biblioteca", "info/hotel",
     ),
     "ru": _names(
-        "карточка здания", "здание", "компания", "музей", "организация", "университет", "больница", "станция метро",
-        "железнодорожная станция", "стадион", "храм", "школа", "библиотека", "гостиница", "театр",
+        "компания", "музей", "организация", "университет", "больница", "станция метро", "железнодорожная станция", "стадион", "храм",
+        "школа", "библиотека", "гостиница", "театр",
     ),
-    "zh": _names(*_EN_TYPES, "infobox 建筑物", "infobox 公司", "infobox 博物馆", "infobox 大学"),
-    "ja": _names(*_EN_TYPES, "infobox 建築物", "基礎情報 会社", "infobox 博物館", "日本の大学", "駅情報", "infobox 病院", "infobox 学校"),
+    "zh": _names(*_EN_TYPES, "infobox 公司", "infobox 博物馆", "infobox 大学"),
+    "ja": _names(*_EN_TYPES, "基礎情報 会社", "infobox 博物館", "日本の大学", "駅情報", "infobox 病院", "infobox 学校"),
     "ar": _names(
-        "صندوق معلومات مبنى", "صندوق معلومات شركة", "صندوق معلومات متحف", "صندوق معلومات جامعة", "صندوق معلومات منظمة",
-        "صندوق معلومات مستشفى", "صندوق معلومات محطة", "صندوق معلومات ملعب", "صندوق معلومات مسجد", "صندوق معلومات مدرسة",
-        "صندوق معلومات مكتبة", "صندوق معلومات فندق", "صندوق معلومات كنيسة",
+        "صندوق معلومات شركة", "صندوق معلومات متحف", "صندوق معلومات جامعة", "صندوق معلومات منظمة", "صندوق معلومات مستشفى",
+        "صندوق معلومات محطة", "صندوق معلومات ملعب", "صندوق معلومات مسجد", "صندوق معلومات مدرسة", "صندوق معلومات مكتبة",
+        "صندوق معلومات فندق", "صندوق معلومات كنيسة",
     ),
-    "id": _names(*_EN_TYPES, "infobox perusahaan", "infobox universitas", "infobox masjid", "infobox gedung", "infobox stasiun"),
-    "hi": _names(*_EN_TYPES, "ज्ञानसन्दूक भवन", "ज्ञानसन्दूक कंपनी", "ज्ञानसन्दूक संग्रहालय", "ज्ञानसन्दूक विश्वविद्यालय"),
-    "bn": _names(*_EN_TYPES, "তথ্যছক ভবন", "তথ্যছক কোম্পানি", "তথ্যছক জাদুঘর", "তথ্যছক বিশ্ববিদ্যালয়", "তথ্যছক সংস্থা"),
+    "id": _names(*_EN_TYPES, "infobox perusahaan", "infobox universitas", "infobox masjid", "infobox stasiun"),
+    "hi": _names(*_EN_TYPES, "ज्ञानसन्दूक कंपनी", "ज्ञानसन्दूक संग्रहालय", "ज्ञानसन्दूक विश्वविद्यालय"),
+    "bn": _names(*_EN_TYPES, "তথ্যছক কোম্পানি", "তথ্যছক জাদুঘর", "তথ্যছক বিশ্ববিদ্যালয়", "তথ্যছক সংস্থা"),
 }
 
 # Infobox types about a PERSON. Only for the count of "skipped: about a person": the closed list above already keeps them out, and an
@@ -158,6 +163,9 @@ _PERSON_WORDS = (
     "persönlichkeit", "biografía", "ficha de persona", "ficha de político", "ficha de deportista", "ficha de artista",
     "info/biografia", "info/político", "info/ator", "персона", "государственный деятель", "учёный", "писатель", "футболист",
     "музыкант", "人物", "政治家", "شخص", "سيرة", "tokoh", "biografi", "व्यक्ति", "ব্যক্তি",
+    # A family or a dynasty is people too (R691).
+    "family", "dynasty", "famille", "dynastie", "familie", "geschlecht", "familia", "dinastía", "família", "dinastia", "семья", "род",
+    "家族", "一族", "王朝", "عائلة", "أسرة", "keluarga", "dinasti", "परिवार", "राजवंश", "পরিবার", "রাজবংশ",
 )
 #: Person templates some editions name without an infobox prefix, or that mark a biography with no infobox at all (de Personendaten).
 _PERSON_UNPREFIXED = _names(
@@ -168,22 +176,50 @@ _PERSON_UNPREFIXED = _names(
 _PERSON_CATEGORY = re.compile(
     r"living people|\b\d{3,4} births|\b\d{3,4} deaths|naissance en|décès en|^geboren |^gestorben |^mann$|^frau$|nacidos en|fallecidos en|"
     r"nascidos em|mortos em|pessoas vivas|родившиеся|умершие|персоналии|在世人物|出生|逝世|存命人物|年生|年没|أشخاص على قيد الحياة|مواليد|وفيات|"
-    r"tokoh yang masih hidup|kelahiran|kematian|जीवित लोग|जन्म|निधन|জীবিত ব্যক্তি|জন্ম|মৃত্যু",
+    r"tokoh yang masih hidup|kelahiran|kematian|जीवित लोग|जन्म|निधन|জীবিত ব্যক্তি|জন্ম|মৃত্যু|"
+    r"famil(?:y|ies)|familles?|familien?|familias?|famílias?|семь[яи]|家族|一族|عائلات?|أسرة|keluarga|परिवार|পরিবার",
     re.I,
 )
 _CATEGORY_LINK = re.compile(
     r"\[\[\s*(?:category|catégorie|kategorie|categoría|categoria|категория|分类|分類|カテゴリ|تصنيف|kategori|श्रेणी|বিষয়শ্রেণী)\s*:\s*([^\]|]+)",
     re.I,
 )
+#: Unprefixed building templates an edition uses (ru): recognised as infoboxes so they count as off the list, never as "no infobox".
+_KNOWN_UNLISTED = _names("здание", "усадьба", "жилой дом", "памятник архитектуры", "особняк")
 #: Infoboxes that may share a page with a place infobox without saying anything about who lives there.
 _HARMLESS = _names("infobox mapframe", "infobox map")
-#: A place infobox whose type or use field names one of these is a home: skipped (R678 extends to where a household lives).
-_HOME_FIELDS = _names("building type", "nrhp type", "type", "current use", "current_use", "use", "usage", "nutzung", "uso", "тип")
+#: An EXTRA check on top of the closed list (R691: never the safeguard itself). A page whose title, categories, infobox name, type or use
+#: field names a home is skipped. Words in scripts that separate words with spaces are matched as whole words by letter lookarounds,
+#: never ``\b`` (which splits Devanagari and Bengali at their vowel signs); words in scripts that do not (Chinese, Japanese) and short
+#: Arabic, Devanagari and Bengali stems are matched anywhere, failing towards a skip.
+_HOME_FIELDS = _names(
+    "name", "building type", "nrhp type", "type", "current use", "current_use", "use", "usage", "nutzung", "uso", "tipo", "тип", "用途",
+    "種類", "类型", "النوع", "प्रकार", "ধরন",
+)
+_HOME_SPACED = (
+    "house", "houses", "residence", "residences", "residential", "home", "homes", "homestead", "dwelling", "villa", "cottage", "farm",
+    "farms", "farmhouse", "ranch", "estate", "manor", "mansion", "bungalow", "townhouse", "rowhouse", "apartment", "apartments", "flat",
+    "plantation", "chalet", "maison", "habitation", "ferme", "manoir", "domaine", "demeure", "hôtel particulier", "wohnhaus",
+    "wohngebäude", "bauernhof", "landhaus", "herrenhaus", "gutshaus", "gutshof", "residencia", "vivienda", "casa", "hacienda", "finca",
+    "cortijo", "quinta", "residência", "moradia", "fazenda", "chácara", "sítio", "жилой", "дом", "особняк", "усадьба", "дача", "ферма",
+    "rumah", "kediaman", "vila", "perkebunan", "peternakan",
+)
+_HOME_ANYWHERE = (
+    "住宅", "邸", "宅", "公馆", "公館", "故居", "旧居", "舊居", "別荘", "别墅", "別墅", "農場", "农场", "牧場", "牧场", "山荘", "荘園", "庄园",
+    "莊園", "民家", "家屋", "مسكن", "منزل", "سكني", "بيت", "فيلا", "مزرعة", "आवास", "निवास", "हवेली", "कोठी", "बंगला", "फार्म", "घर",
+    "বাসভবন", "বাসা", "বাড়ি", "খামার", "বাংলো",
+)
+_LETTER = r"[^\W\d_]"
 _HOME_WORDS = re.compile(
-    r"\b(house|residence|residential|home|dwelling|villa|cottage|farmhouse|apartment|maison|habitation|wohnhaus|wohngebäude|"
-    r"residencia|vivienda|residência|moradia|жилой|дом|住宅|منزل|سكني|rumah|आवास|বাসভবন)\b",
+    "|".join([rf"(?<!{_LETTER}){re.escape(w)}(?!{_LETTER})" for w in _HOME_SPACED] + [re.escape(w) for w in _HOME_ANYWHERE]),
     re.I,
 )
+
+
+def names_a_home(text: str | None) -> bool:
+    """True when ``text`` names a dwelling in any of the twelve editions' languages. An extra check, never the safeguard (R691)."""
+    return bool(text) and _HOME_WORDS.search(" ".join(str(text).replace("_", " ").split())) is not None
+
 
 # The infobox keys that name an address, per edition. ``address`` is read in every edition: many localised templates keep the English
 # parameter name.
@@ -225,7 +261,11 @@ def _is_person_type(name: str) -> bool:
 def _looks_like_infobox(name: str) -> bool:
     """An infobox of any kind: a known prefix, a listed type, a person template, or ``infobox`` anywhere (``#invoke:Infobox``)."""
     return (
-        name.startswith(_INFOBOX_PREFIXES) or "infobox" in name or name in _ALL_PLACE_TYPES or name in _PERSON_UNPREFIXED
+        name.startswith(_INFOBOX_PREFIXES)
+        or "infobox" in name
+        or name in _ALL_PLACE_TYPES
+        or name in _PERSON_UNPREFIXED
+        or name in _KNOWN_UNLISTED
     )
 
 
@@ -249,9 +289,10 @@ def classify_page(edition: str, wikitext: str) -> tuple[str | None, str | None, 
     ``(None, None, None)`` is a page with no infobox at all.
     """
     text = wikitext or ""
-    for cat in _CATEGORY_LINK.findall(text):
-        if _PERSON_CATEGORY.search(" ".join(cat.replace("_", " ").split())):
-            return "about_a_person", None, None
+    cats = [" ".join(c.replace("_", " ").split()) for c in _CATEGORY_LINK.findall(text)]
+    if any(_PERSON_CATEGORY.search(c) for c in cats):
+        return "about_a_person", None, None
+    home_category = any(names_a_home(c) for c in cats)
     allowed = PLACE_TYPES.get(edition, frozenset())
     first: tuple[str, int] | None = None
     unlisted = False
@@ -274,9 +315,8 @@ def classify_page(edition: str, wikitext: str) -> tuple[str | None, str | None, 
     fields = _fields(text, first[1])
     if fields is None:
         return "type_not_on_the_list", None, None
-    for key in _HOME_FIELDS:
-        if key in fields and _HOME_WORDS.search(clean_value(fields[key]) or ""):
-            return "a_home", None, None
+    if home_category or names_a_home(first[0]) or any(names_a_home(clean_value(fields[key])) for key in _HOME_FIELDS if key in fields):
+        return "a_home", None, None
     return None, first[0], fields
 
 
@@ -423,7 +463,7 @@ def page_addresses(edition: str, wikitext: str, title: str | None = None) -> dic
     skip, kind, fields = classify_page(edition, wikitext)
     if skip is not None:
         return {"skip": skip}
-    if kind is not None and title and _HOME_WORDS.search(title):
+    if kind is not None and names_a_home(title):
         return {"skip": "a_home"}  # "John Smith House": the title names a home when no field does
     if kind is None or fields is None:
         return {"none": True}
@@ -690,8 +730,8 @@ def _report(state: _State, held: dict[str, tuple[str, str, str]], boxes: list, g
         "skips": list(SKIPS),
         "gaps": list(GAPS),
         "method": (
-            "A stored page is read only when every infobox on it is on the edition's closed list of organisation, building and place "
-            "infoboxes, nothing on it marks a person and the infobox does not name a home; in it, the fields named as an address. Each is "
+            "A stored page is read only when every infobox on it is on the edition's closed list of organisation, institution, public "
+            "building and public place infoboxes, nothing on it marks a person or a family and nothing on it names a home; in it, the fields named as an address. Each is "
             "looked up in the local OpenStreetMap address index of the countries you ingested: located when one to "
             f"{MAX_ANSWERS} objects carry every word and lie within {int(SAME_PLACE_METRES)} m of each other, and within "
             f"{int(COORD_AGREEMENT_METRES / 1000)} km of the page's own coordinate when it has one. Nothing is looked up anywhere else."

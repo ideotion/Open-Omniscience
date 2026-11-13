@@ -25,7 +25,7 @@ osm_lane_dir = _osm_lane_helpers.osm_lane_dir
 
 T0 = datetime(2026, 3, 11, 12, 0, tzinfo=UTC)
 
-HALL = """{{Infobox building
+HALL = """{{Infobox museum
 | name = Fixture Hall
 | address = 2 Fixture Road<ref>{{cite web|url=https://example.org}}</ref>, [[Fixtureville|Fixtureville]], {{nowrap|Fixtureland}}
 | coordinates = {{coord|48|51|29|N|2|17|40|E}}
@@ -38,7 +38,7 @@ PERSON = """{{Infobox person
 }}"""
 
 PERSON_THEN_BUILDING = """{{Infobox person|name=A. Person}}
-{{Infobox building|address=9 Private Lane}}"""
+{{Infobox museum|address=9 Private Lane}}"""
 
 
 # --------------------------------------------------------------------------- #
@@ -46,13 +46,13 @@ PERSON_THEN_BUILDING = """{{Infobox person|name=A. Person}}
 # --------------------------------------------------------------------------- #
 def test_a_place_infobox_offers_its_address_cleaned_and_its_coordinate():
     offer = L.page_addresses("en", HALL)
-    assert offer["type"] == "infobox building"
+    assert offer["type"] == "infobox museum"
     assert offer["candidates"] == [("address", "2 Fixture Road, Fixtureville, Fixtureland")]
     lat, lon = offer["coord"]
     assert round(lat, 3) == 48.858 and round(lon, 3) == 2.294
 
 
-@pytest.mark.parametrize("text", [PERSON, PERSON_THEN_BUILDING, "{{Infobox building|address=9 Private Lane}}\n{{Infobox person|name=A}}", "{{Infobox officeholder|address=1 Main St}}", "{{Персона|адрес=ул. Ленина, 5}}"])
+@pytest.mark.parametrize("text", [PERSON, PERSON_THEN_BUILDING, "{{Infobox museum|address=9 Private Lane}}\n{{Infobox person|name=A}}", "{{Infobox officeholder|address=1 Main St}}", "{{Персона|адрес=ул. Ленина, 5}}"])
 def test_a_page_with_a_person_infobox_is_never_read(text):
     edition = "ru" if "Персона" in text else "en"
     assert L.page_addresses(edition, text) == {"skip": "about_a_person"}
@@ -61,7 +61,7 @@ def test_a_page_with_a_person_infobox_is_never_read(text):
 def test_an_unlisted_infobox_type_fails_closed():
     assert L.page_addresses("en", "{{Infobox settlement|address=1 Main St}}") == {"skip": "type_not_on_the_list"}
     # A type listed for ANOTHER edition is not listed for this one.
-    assert L.page_addresses("fr", "{{Infobox building|address=1 Main St}}") == {"skip": "type_not_on_the_list"}
+    assert L.page_addresses("fr", "{{Infobox museum|address=1 Main St}}") == {"skip": "type_not_on_the_list"}
 
 
 def test_no_listed_type_is_a_person_type():
@@ -72,11 +72,11 @@ def test_no_listed_type_is_a_person_type():
 @pytest.mark.parametrize(
     "edition,text,want",
     [
-        ("fr", "{{Infobox Bâtiment|adresse=3 rue Fixture}}", [("adresse", "3 rue Fixture")]),
+        ("fr", "{{Infobox Musée|adresse=3 rue Fixture}}", [("adresse", "3 rue Fixture")]),
         ("de", "{{Infobox Unternehmen|Anschrift=Fixturestraße 4<br />Berlin}}", [("anschrift", "Fixturestraße 4, Berlin")]),
-        ("es", "{{Ficha de edificio|dirección=Calle Mayor 3}}", [("dirección", "Calle Mayor 3")]),
+        ("es", "{{Ficha de museo|dirección=Calle Mayor 3}}", [("dirección", "Calle Mayor 3")]),
         ("pt", "{{Info/Empresa|endereço=Rua Fixture, 10}}", [("endereço", "Rua Fixture, 10")]),
-        ("ru", "{{Здание|адрес=ул. Ленина, 5}}", [("адрес", "ул. Ленина, 5")]),
+        ("ru", "{{Музей|адрес=ул. Ленина, 5}}", [("адрес", "ул. Ленина, 5")]),
         ("id", "{{Infobox perusahaan|alamat=Jalan Fixture 7}}", [("alamat", "Jalan Fixture 7")]),
     ],
 )
@@ -85,7 +85,7 @@ def test_the_editions_own_type_and_key_names(edition, text, want):
 
 
 def test_an_infobox_with_no_address_field_offers_nothing():
-    assert L.page_addresses("en", "{{Infobox building|name=Hall|location=Fixtureville}}") == {"none": True}
+    assert L.page_addresses("en", "{{Infobox museum|name=Hall|location=Fixtureville}}") == {"none": True}
     assert L.page_addresses("en", "No infobox at all, though 2 Fixture Road is mentioned.") == {"none": True}
 
 
@@ -196,10 +196,10 @@ def scope(monkeypatch):
 def test_the_report_places_only_what_it_located_and_counts_everything_else(lane, scope):
     _page(lane, "en", "Fixture Hall", HALL, 1)
     _page(lane, "en", "A. Person", PERSON, 2)
-    _page(lane, "en", "Far Hall", "{{Infobox building|address=7 Far Street}} {{coord|-33.9|151.2}}", 3)
-    _page(lane, "en", "Twin Hall", "{{Infobox building|address=5 Twin Road}}", 4)
-    _page(lane, "en", "Vague Hall", "{{Infobox building|address=Somewhere, Fixtureville}}", 5)
-    lane.add(WikiWarmPage(edition="fr", page_id=9, title="Salle", latest_revid=9, latest_text="{{Infobox Bâtiment|adresse=3 rue Fixture}}"))
+    _page(lane, "en", "Far Hall", "{{Infobox museum|address=7 Far Street}} {{coord|-33.9|151.2}}", 3)
+    _page(lane, "en", "Twin Hall", "{{Infobox museum|address=5 Twin Road}}", 4)
+    _page(lane, "en", "Vague Hall", "{{Infobox museum|address=Somewhere, Fixtureville}}", 5)
+    lane.add(WikiWarmPage(edition="fr", page_id=9, title="Salle", latest_revid=9, latest_text="{{Infobox Musée|adresse=3 rue Fixture}}"))
     lane.commit()
     scope('[["FXL", "2026-10-01"]]', [(41.0, -5.0, 51.0, 10.0)], _geo({
         "2 Fixture Road, Fixtureville": [_hit(48.85, 2.35)],
@@ -216,7 +216,7 @@ def test_the_report_places_only_what_it_located_and_counts_everything_else(lane,
     titles = {p["title"] for p in rep["points"]}
     assert titles == {"Fixture Hall", "Salle"}, "only located addresses become points; the person's never does"
     hall = next(p for p in rep["points"] if p["title"] == "Fixture Hall")
-    assert hall["field"] == "address" and hall["infobox"] == "infobox building" and hall["osm_object"] == "way/1"
+    assert hall["field"] == "address" and hall["infobox"] == "infobox museum" and hall["osm_object"] == "way/1"
     assert hall["tier"] == "hot" and hall["revision"] and hall["edition"] == "en"
     assert all("Private" not in str(p) for p in rep["points"])
     assert rep["scope"] == "Addresses outside your OpenStreetMap countries are not located."
@@ -289,8 +289,8 @@ def test_a_fixture_infobox_address_is_located_through_the_real_local_index(osm_l
     create_lane("wiki")
     try:
         with lane_session("wiki") as s:
-            _page(s, "en", "Fixture Building", "{{Infobox building|address=1 Fixture Road, Fixtureville, Fixture Land}}", 1)
-            _page(s, "en", "Elsewhere Hall", "{{Infobox building|address=4 Nowhere Road}} {{coord|-33.9|151.2}}", 2)
+            _page(s, "en", "Fixture Building", "{{Infobox museum|address=1 Fixture Road, Fixtureville, Fixture Land}}", 1)
+            _page(s, "en", "Elsewhere Hall", "{{Infobox museum|address=4 Nowhere Road}} {{coord|-33.9|151.2}}", 2)
             _page(s, "en", "Somebody", "{{Infobox person|address=1 Fixture Road, Fixtureville}}", 3)
             s.commit()
             rep = L.located_report(s, budget=5.0)
@@ -306,7 +306,7 @@ def test_a_fixture_infobox_address_is_located_through_the_real_local_index(osm_l
 # --------------------------------------------------------------------------- #
 # The review's probes (PR #1948): the person rule fails closed at PAGE level, and the scan follows the lane as it changes.
 # --------------------------------------------------------------------------- #
-_BUILDING = "{{Infobox building|address=10 Fixture Street}}\n"
+_BUILDING = "{{Infobox museum|address=10 Fixture Street}}\n"
 
 
 @pytest.mark.parametrize(
@@ -326,8 +326,8 @@ _BUILDING = "{{Infobox building|address=10 Fixture Street}}\n"
     ],
 )
 def test_any_person_signal_anywhere_on_the_page_keeps_it_unread(edition, extra):
-    building = {"en": _BUILDING, "de": "{{Infobox Bauwerk|Adresse=Fixturestraße 4}}\n", "ru": "{{Здание|адрес=ул. Ленина, 5}}\n",
-                "ja": "{{Infobox 建築物|所在地=東京都 1-2-3}}\n", "fr": "{{Infobox Bâtiment|adresse=3 rue Fixture}}\n"}[edition]
+    building = {"en": _BUILDING, "de": "{{Infobox Museum|Adresse=Fixturestraße 4}}\n", "ru": "{{Музей|адрес=ул. Ленина, 5}}\n",
+                "ja": "{{Infobox 博物館|所在地=東京都 1-2-3}}\n", "fr": "{{Infobox Musée|adresse=3 rue Fixture}}\n"}[edition]
     assert L.page_addresses(edition, building + extra) == {"skip": "about_a_person"}
 
 
@@ -342,7 +342,7 @@ def test_a_harmless_mapframe_beside_the_place_infobox_is_fine():
 
 @pytest.mark.parametrize("field", ["building_type = Private house", "nrhp_type = Residence", "type = [[Villa]]"])
 def test_a_home_is_never_read(field):
-    assert L.page_addresses("en", "{{Infobox building|" + field + "|address=123 Elm Street}}") == {"skip": "a_home"}
+    assert L.page_addresses("en", "{{Infobox museum|" + field + "|address=123 Elm Street}}") == {"skip": "a_home"}
 
 
 def test_a_ref_whose_name_carries_a_slash_does_not_swallow_the_address():
@@ -354,7 +354,7 @@ def test_a_number_alone_is_never_looked_up():
 
 
 def test_a_located_answer_far_from_the_pages_own_coord_is_not_placed(lane, scope):
-    _page(lane, "en", "Namesake Hall", "{{Infobox building|address=2 Fixture Road, Elsewhere}} {{coord|-33.9|151.2}}", 1)
+    _page(lane, "en", "Namesake Hall", "{{Infobox museum|address=2 Fixture Road, Elsewhere}} {{coord|-33.9|151.2}}", 1)
     lane.commit()
     scope('[["FXL", "2026-10-01"]]', [], _geo({"2 Fixture Road": [_hit(48.85, 2.35)]}))
     rep = L.located_report(lane, budget=5.0)
@@ -379,7 +379,7 @@ def test_a_failed_lookup_and_an_unreadable_osm_lane_are_named_never_raised(lane,
 
 def test_a_page_that_changes_is_read_again_and_a_page_that_goes_is_forgotten(lane, scope):
     _page(lane, "en", "Fixture Hall", HALL, 1)
-    lane.add(WikiWarmPage(edition="fr", page_id=9, title="Salle", latest_revid=9, latest_text="{{Infobox Bâtiment|adresse=3 rue Fixture}}"))
+    lane.add(WikiWarmPage(edition="fr", page_id=9, title="Salle", latest_revid=9, latest_text="{{Infobox Musée|adresse=3 rue Fixture}}"))
     lane.commit()
     scope('[["FXL", "2026-10-01"]]', [], _geo({"2 Fixture Road, Fixtureville": [_hit(48.85, 2.35)], "3 rue Fixture": [_hit(48.86, 2.36)]}))
     assert len(L.located_report(lane, budget=5.0)["points"]) == 2
@@ -417,11 +417,11 @@ def test_addresses_left_unresolved_at_the_deadline_are_pending_not_zero(lane, sc
 
 def test_round_two_review_probes():
     # A category written with underscores is still a person.
-    assert L.classify_page("en", "{{Infobox building|address=1 Main Street}}[[Category:Living_people]]")[0] == "about_a_person"
+    assert L.classify_page("en", "{{Infobox museum|address=1 Main Street}}[[Category:Living_people]]")[0] == "about_a_person"
     # A house named in the title is a home even when the infobox says nothing about use.
-    assert L.page_addresses("en", "{{Infobox building|address=1 Main Street, Springfield}}", "John Smith House") == {"skip": "a_home"}
+    assert L.page_addresses("en", "{{Infobox museum|address=1 Main Street, Springfield}}", "John Smith House") == {"skip": "a_home"}
     # Persondata alone marks a person.
-    assert L.classify_page("en", "{{Infobox building|address=1 Main Street}}{{Persondata|NAME=A}}")[0] == "about_a_person"
+    assert L.classify_page("en", "{{Infobox museum|address=1 Main Street}}{{Persondata|NAME=A}}")[0] == "about_a_person"
 
 
 def test_a_partial_answer_is_ambiguous_never_a_pick():
@@ -450,3 +450,104 @@ def test_held_reads_no_warm_text_column():
     warm = src[src.index("select(WikiWarmPage.id"):]
     warm = warm[: warm.index(".where(")]
     assert "latest_text" not in warm and "deleted_at" not in warm
+
+
+# --------------------------------------------------------------------------- #
+# R691: the closed allowlist is the safeguard; generic building types are never on it, and the home words are an extra, script-aware check.
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    "edition,text",
+    [
+        ("en", "{{Infobox building|address=12 Elm Street, Springfield}}"),
+        ("en", "{{Infobox historic building|address=12 Elm Street}}"),
+        ("en", "{{Infobox NRHP|address=12 Elm Street}}"),
+        ("en", "{{Infobox landmark|address=12 Elm Street}}"),
+        ("en", "{{Infobox castle|address=12 Elm Street}}"),
+        ("en", "{{Infobox house|address=12 Elm Street}}"),
+        ("en", "{{Infobox farm|address=12 Elm Street}}"),
+        ("fr", "{{Infobox Bâtiment|adresse=3 rue Fixture}}"),
+        ("fr", "{{Infobox Monument|adresse=3 rue Fixture}}"),
+        ("de", "{{Infobox Bauwerk|Adresse=Fixturestraße 4}}"),
+        ("es", "{{Ficha de edificio|dirección=Calle Mayor 3}}"),
+        ("ru", "{{Здание|адрес=ул. Ленина, 5}}"),
+        ("ja", "{{Infobox 建築物|所在地=東京都港区1-2-3}}"),
+        ("zh", "{{Infobox 建筑物|地址=北京市1号}}"),
+        ("ar", "{{صندوق معلومات مبنى|العنوان=شارع 1}}"),
+        ("hi", "{{ज्ञानसन्दूक भवन|पता=1 मार्ग, दिल्ली}}"),
+        ("bn", "{{তথ্যছক ভবন|ঠিকানা=১ রোড, ঢাকা}}"),
+        ("id", "{{Infobox gedung|alamat=Jalan Fixture 7}}"),
+    ],
+)
+def test_a_generic_building_type_is_never_read_whatever_it_says(edition, text):
+    # A building, monument, castle or heritage-register infobox describes private houses as often as public places: off the list.
+    assert L.page_addresses(edition, text) == {"skip": "type_not_on_the_list"}
+
+
+@pytest.mark.parametrize(
+    "edition,text",
+    [
+        ("en", "{{Infobox family|address=12 Elm Street}}"),
+        ("de", "{{Infobox Familie|Adresse=Fixturestraße 4}}"),
+        ("ja", "{{Infobox 家族|所在地=東京都港区1-2-3}}"),
+        ("en", "{{Infobox museum|address=12 Elm Street}}[[Category:Smith family]]"),
+        ("en", "{{Infobox museum|address=12 Elm Street}}[[Category:American families]]"),
+    ],
+)
+def test_a_family_is_people_too(edition, text):
+    assert L.page_addresses(edition, text) == {"skip": "about_a_person"}
+
+
+# A private residence in five scripts (and the rest), each on an ALLOWLISTED type so only the extra check stands between it and the map.
+RESIDENCES = [
+    ("en", "Smith Farm", "{{Infobox hotel|address=12 Elm Street, Springfield}}"),
+    ("en", "Elm Lodge", "{{Infobox company|name=Elm House|address=12 Elm Street, Springfield}}"),
+    ("en", "Elm Lodge", "{{Infobox company|address=12 Elm Street, Springfield}}[[Category:Houses in Springfield]]"),
+    ("en", "Elm Lodge", "{{Infobox venue|type=Private residence|address=12 Elm Street, Springfield}}"),
+    ("ja", "高級住宅", "{{Infobox 博物館|所在地=東京都港区1-2-3}}"),
+    ("ja", "山田邸", "{{Infobox 博物館|所在地=東京都港区1-2-3}}"),
+    ("ja", "山田宅", "{{Infobox 博物館|所在地=東京都港区1-2-3}}"),
+    ("ja", "記念館", "{{Infobox 博物館|所在地=東京都港区1-2-3}}[[Category:日本の住宅]]"),
+    ("zh", "王公馆", "{{Infobox 博物馆|地址=上海市1号}}"),
+    ("zh", "某别墅", "{{Infobox 公司|地址=上海市1号}}"),
+    ("zh", "纪念馆", "{{Infobox 博物馆|地址=上海市1号|类型=私人住宅}}"),
+    ("ar", "منزل العائلة", "{{صندوق معلومات متحف|العنوان=شارع 1، القاهرة}}"),
+    ("ar", "فيلا النخيل", "{{صندوق معلومات شركة|العنوان=شارع 1، القاهرة}}"),
+    ("ar", "مبنى", "{{صندوق معلومات فندق|العنوان=شارع 1، القاهرة|النوع=مسكن خاص}}"),
+    ("hi", "शर्मा हवेली", "{{ज्ञानसन्दूक संग्रहालय|पता=1 मार्ग, दिल्ली}}"),
+    ("hi", "शर्मा निवास", "{{ज्ञानसन्दूक कंपनी|पता=1 मार्ग, दिल्ली}}"),
+    ("hi", "कोठी", "{{ज्ञानसन्दूक संग्रहालय|पता=1 मार्ग, दिल्ली|प्रकार=निजी आवास}}"),
+    ("bn", "রায় বাড়ি", "{{তথ্যছক জাদুঘর|ঠিকানা=১ রোড, ঢাকা}}"),
+    ("fr", "Maison Dupont", "{{Infobox Musée|adresse=3 rue Fixture}}"),
+    ("de", "Gutshof Müller", "{{Infobox Museum|Adresse=Fixturestraße 4}}"),
+    ("ru", "Усадьба Иванова", "{{Музей|адрес=ул. Ленина, 5}}"),
+    ("es", "Hacienda López", "{{Ficha de museo|dirección=Calle Mayor 3}}"),
+    ("pt", "Fazenda Silva", "{{Info/Museu|endereço=Rua Fixture, 10}}"),
+    ("id", "Rumah Budi", "{{Infobox perusahaan|alamat=Jalan Fixture 7}}"),
+]
+
+
+@pytest.mark.parametrize("edition,title,text", RESIDENCES)
+def test_a_private_residence_is_never_read_in_any_script(edition, title, text):
+    assert L.page_addresses(edition, text, title) == {"skip": "a_home"}
+
+
+def test_the_home_words_are_whole_words_where_words_are_spaced_and_never_split_by_vowel_signs():
+    assert not L.names_a_home("Housekeeping Museum")  # a letter after "house": not the word
+    assert not L.names_a_home("Farmington Library")
+    assert L.names_a_home("Old Farm")  # at the end of the text
+    assert L.names_a_home("Elm_House")  # underscores as spaces
+    # \b would split Devanagari at the vowel sign of हवेली and miss it; substring matching does not.
+    assert L.names_a_home("हवेली") and L.names_a_home("पुरानी हवेली संग्रहालय")
+    assert L.names_a_home("高級住宅街") and L.names_a_home("বাড়ি")
+
+
+def test_residences_in_every_script_produce_no_point_even_when_the_index_answers(lane, scope):
+    for n, (edition, title, text) in enumerate(RESIDENCES, start=1):
+        _page(lane, edition, title, text, n)
+    lane.commit()
+    scope('[["FXL", "2026-10-01"]]', [], lambda q, limit=5: {"status": "located", "total": 1, "results": [_hit(48.85, 2.35)]})
+    rep = L.located_report(lane, budget=5.0)
+    assert rep["points"] == []
+    skipped = sum(row.get("skipped_a_home", 0) for row in rep["per_edition"].values())
+    assert skipped == len(RESIDENCES)
+    assert all(set(row) == {"skipped_a_home"} for row in rep["per_edition"].values())
