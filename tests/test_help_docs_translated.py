@@ -13,8 +13,9 @@ refuses a draft that is only a fragment. Three states, decided by the files them
 
 ``PARTIAL`` is exact, not a floor: a draft that becomes complete, or a new partial, must change this file in the same commit, so the listing
 cannot go stale in either direction. The ratchet (``FLOOR``) is per tranche and may only rise; the tranche membership is the PROPOSED
-staging of the gate's row E (Q1122 = b), not a ruling. Drafting is local-model-only (loopback is the rule); no draft here was
-hand-written to move a number.
+staging of the gate's row E (Q1122 = b), not a ruling. Drafts are AI-drafted in a build session and flagged for native review
+(R677, 2026-11-13: the loopback rule governs the app at run time, not how its public documentation is written); no draft here
+was cut short to move a number.
 """
 from __future__ import annotations
 
