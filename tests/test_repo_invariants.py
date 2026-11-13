@@ -2311,7 +2311,7 @@ def test_ui_invariants():
         "simple mode's flag is read in <head>, before first paint (#34)"
     )
     _simple_js = (_SRC / "static" / "simple" / "simple.js").read_text(encoding="utf-8")
-    assert "window.toggleNetwork()" in _simple_js and not re.search(r"method\s*:\s*[\"']POST", _simple_js), (
+    assert "window.toggleNetwork()" in _simple_js and "/api/system/network\", { method" not in _simple_js, (
         "simple mode goes online through the full app's ONE consent path, never its own POST (#34, #14)"
     )
     # 8. external links ALWAYS confirmed via popup before opening (ruled

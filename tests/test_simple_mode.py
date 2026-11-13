@@ -143,9 +143,11 @@ def test_never_hidden_surfaces_stay_visible_in_simple_mode():
 def test_going_online_uses_the_one_consent_path():
     code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
     assert "window.toggleNetwork()" in code
-    assert not re.search(r"method\s*:\s*[\"']POST", code), (
-        "simple mode never writes the network state itself (#14)"
-    )
+    # Simple mode never writes the network state itself (#14). Its one write is adding a source,
+    # a local row: nothing is fetched until the reader is online.
+    writes = re.findall(r"""apiCall\(\s*["'`]([^"'`]+)["'`]\s*,\s*\{\s*method\s*:\s*["'](POST|PUT|PATCH|DELETE)""", code)
+    assert writes == [("/api/sources/", "POST")], writes
+    assert len(re.findall(r"method\s*:\s*[\"'][A-Z]", code)) == 1, "every write must be the one listed above"
     # Outbound originals open the local preview first (invariant #6), never the site.
     assert "openLinkPreview" in code
     assert not re.search(r"href=\$\{a\.url\}", code), "an article's original URL is never a bare link"
@@ -227,3 +229,18 @@ def test_only_named_deep_links_open_the_full_view():
     for fn in ("enterSimple", "backToSimple"):
         body = code.split("function " + fn + "(", 1)[1].split("\n  }\n", 1)[0]
         assert "clearDeepLink()" in body, fn
+
+
+def test_world_and_numbers_read_local_aggregates_only():
+    code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
+    world = code.split("function World(", 1)[1].split("\n  }\n", 1)[0]
+    assert '"/api/insights/map-coverage"' in world and "countries: [c.country]" in world
+    # Q302: the code is what shows; the country's name rides in the hover and for screen readers.
+    assert "title=${c.name" in world and '<b class="s-code">${c.country}</b>' in world
+    # A country scope reaches both the list and the summary.
+    assert 'p.set("countries"' in code and 'g.set("countries"' in code
+    nums = code.split("function Markets(", 1)[1].split("function Numbers(", 1)[0]
+    # Fetching a climate record or a price is an egress: Numbers only reads, and sends the
+    # reader to the full view, where the consent gate lives (#14, #33).
+    assert "fetch(" not in nums and "/fetch" not in nums and "ensureOnline" not in nums
+    assert 'peekFull("climate")' in nums and 'peekFull("markets")' in nums
