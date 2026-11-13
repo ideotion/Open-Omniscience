@@ -127,11 +127,10 @@ def test_a_corrupt_segmented_download_is_recorded_as_a_genuine_error(tmp_path):
     assert res.error and "checksum" in res.error.lower()
 
 
-def test_the_segmented_write_lands_beside_the_final_name_and_is_renamed_over_it(tmp_path, monkeypatch):
-    """Audit P15: a crash mid-write must leave nothing at the final name, which a later start would resume from as a valid prefix."""
-    import os as _os
 
-    import src.geo.osm_downloads as od
+def test_the_segmented_write_goes_through_the_atomic_replace_and_a_failed_write_leaves_nothing(tmp_path, monkeypatch):
+    """Audit P15: the extract reaches its final name only whole (src.safety.file_lock.atomic_replace), and a failed write leaves no file there."""
+    import src.safety.file_lock as fl
 
     m = OsmDownloadManager(
         base_dir=tmp_path,
@@ -141,15 +140,30 @@ def test_the_segmented_write_lands_beside_the_final_name_and_is_renamed_over_it(
     )
     entry = m._entry_for("liechtenstein", expected_sha256=PAYLOAD_SHA256)
     seen: list = []
-    real_replace = _os.replace   # the module's ``os`` IS the process's: keep the real one before patching it
+    real = fl.atomic_replace
 
-    def _replace(src, dst):
-        seen.append((Path(src).name, Path(dst).name, Path(dst).exists()))
-        real_replace(src, dst)
+    def _spy(path, data, **kw):
+        seen.append((Path(path).name, len(data)))
+        return real(path, data, **kw)
 
-    monkeypatch.setattr(od.os, "replace", _replace)
+    monkeypatch.setattr(fl, "atomic_replace", _spy)
     assert m._download(entry).status == "done"
     final = Path(entry.dest)
-    mine = [r for r in seen if r[1] == final.name]   # the state file has its own atomic rename; only the extract's is asked about
-    assert mine == [(final.name + ".segmented-part", final.name, False)], "the extract was written straight to its final name"
-    assert final.read_bytes() == PAYLOAD and not (final.parent / (final.name + ".segmented-part")).exists()
+    assert seen == [(final.name, len(PAYLOAD))] and final.read_bytes() == PAYLOAD
+    assert sorted(p.name for p in final.parent.iterdir() if p.name.startswith(final.name)) == [final.name], "a temp was left beside the extract"
+
+    final.unlink()
+    m2 = OsmDownloadManager(
+        base_dir=tmp_path / "b",
+        http_head=lambda url: _HeadResp(len(PAYLOAD)),
+        fetch_segment=_fetch_segment(PAYLOAD),
+        segment_min_bytes=100,
+    )
+    e2 = m2._entry_for("liechtenstein", expected_sha256=PAYLOAD_SHA256)
+
+    def _boom(path, data, **kw):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(fl, "atomic_replace", _boom)
+    m2._download(e2)
+    assert not Path(e2.dest).exists(), "a failed segmented write left a file at the extract's name"
