@@ -325,7 +325,7 @@ def _serve_fallbacks() -> dict:
 #: The fields of a decline that go into another report's row (the boot step's): codes and numbers a reader compares
 #: against the budget. Free text of the engine is never among them.
 _DETAIL_FIELDS = ("reason", "source", "kind", "stage", "at", "rows_done", "duckdb_limit_mb", "grew_mb",
-                  "needs_available_mb", "available_mb", "guard_reason", "restored", "repeats", "shards", "shard", "split",
+                  "needs_available_mb", "available_mb", "available_from", "guard_reason", "restored", "repeats", "shards", "shard", "split",
                   "duckdb_threads", "budget_total_mb", "budget_read_at", "query", "peak_mib", "resident_mib", "engine_error_class",
                   "consecutive_failures", "stage_why")
 
@@ -664,14 +664,24 @@ _LIMIT_OVERSHOOT = 1.5
 
 
 def _readings() -> dict:
-    """This process's resident size and the machine's available memory, in MB (None where unread)."""
-    out: dict = {"rss_mb": None, "avail_mb": None}
+    """This process's resident size and the memory available to it, in MB (None where unread).
+
+    ``avail_mb`` is the SMALLER of the machine's available memory (psutil) and what a cgroup memory limit leaves this process
+    (R302): psutil reads the host's figure, so under a container or service limit a verdict taken from it alone could never
+    decline. ``avail_from`` names which figure it is (``"cgroup limit"`` or ``"machine"``)."""
+    out: dict = {"rss_mb": None, "avail_mb": None, "avail_from": "machine"}
     try:
         import psutil
 
         out["avail_mb"] = round(psutil.virtual_memory().available / (1024 * 1024), 1)
         out["rss_mb"] = round(psutil.Process().memory_info().rss / (1024 * 1024), 1)
     except Exception:  # noqa: BLE001 - a missing reading is "no information", never a verdict
+        pass
+    try:
+        from src.config.cgroup_memory import smaller_available_mb
+
+        out["avail_mb"], out["avail_from"] = smaller_available_mb(out["avail_mb"])
+    except Exception:  # noqa: BLE001 - an unreadable cgroup leaves the machine's figure, never a verdict of its own
         pass
     return out
 
@@ -702,7 +712,8 @@ def _affordability_verdict() -> dict | None:
     try:
         if _persisted_serve_active():
             return None  # the persisted refresh is incremental and does not hold a corpus in memory
-        avail = _readings()["avail_mb"]
+        reading = _readings()
+        avail = reading["avail_mb"]
         if avail is None:
             return None
         limit = _duckdb_limit_mb()
@@ -716,6 +727,7 @@ def _affordability_verdict() -> dict | None:
             "at": time.time(),
             "needs_available_mb": round(need, 1),
             "available_mb": avail,
+            "available_from": reading.get("avail_from", "machine"),
             "duckdb_limit_mb": limit,
             "limit_overshoot": _LIMIT_OVERSHOOT,
             "batch_mb": round(chunk, 1),
@@ -1016,7 +1028,8 @@ def _stopped_build_verdict() -> dict | None:
         if now_epoch is not None and st.get("epoch") is not None and now_epoch != st["epoch"]:
             _release_stopped()
             return None
-        avail = _readings()["avail_mb"]
+        reading = _readings()
+        avail = reading["avail_mb"]
         if avail is None:
             return None
         need = float(st.get("grew_mb") or 0.0) + _guard_floor_mb()
@@ -1024,7 +1037,7 @@ def _stopped_build_verdict() -> dict | None:
             return None
         return {"reason": "mem-low", "at": time.time(), "stopped_at": st.get("at"),
                 "needs_available_mb": round(need, 1), "available_mb": avail,
-                "grew_mb": st.get("grew_mb"), "stage": st.get("stage")}
+                "available_from": reading.get("avail_from", "machine"), "grew_mb": st.get("grew_mb"), "stage": st.get("stage")}
     except Exception:  # noqa: BLE001 - an unreadable budget must not block the build
         return None
 
