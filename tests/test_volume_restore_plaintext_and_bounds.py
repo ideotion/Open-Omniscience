@@ -83,7 +83,9 @@ read_volume_backup(Path({str(out)!r}), {PW!r}, Path({str(data)!r}))
     assert _plaintext_files(out) == [], "nothing decrypted is left on the backup drive"
     assert not list(out.glob("*.plain"))
     left = list(data.glob(".restore-*"))
-    assert len(left) == 1 and _plaintext_files(left[0]), "the working copy was in the restore's own staging"
+    assert len(left) == 1 and _plaintext_files(left[0]), (
+        "the working copy was in the restore's own staging"
+    )
     # The next start: the staging's owner is dead, so the janitor removes it at once, whatever its age.
     assert sweep_stale_backup_temps(data) == 1
     assert _plaintext_files(data) == [] and not list(data.glob(".restore-*"))
@@ -293,17 +295,26 @@ def test_the_legacy_reader_refuses_a_repeat_before_it_repairs_anything(tmp_path)
     called = []
     (tmp_path / "st").mkdir()
     with pytest.raises(VolumeError, match="more than once"):
-        read_volume_set(out, PW, tmp_path / "st" / "_reassembled.zip", recover=lambda m, bad: called.append(bad) or [])
+        read_volume_set(
+            out,
+            PW,
+            tmp_path / "st" / "_reassembled.zip",
+            recover=lambda m, bad: called.append(bad) or [],
+        )
     assert called == []
 
 
 @pytest.mark.parametrize(
     "edit",
     [
-        lambda m: m.__setitem__("kind", "something-else"),  # only oo-volumes-1 ever wrote a .plain copy
+        lambda m: m.__setitem__(
+            "kind", "something-else"
+        ),  # only oo-volumes-1 ever wrote a .plain copy
         lambda m: m["volumes"].append({"name": "my-notes"}),  # a name the writer never gives
         lambda m: m["volumes"].append({"name": "C:my-notes"}),  # a Windows drive-relative name
-        lambda m: m["volumes"].append({"name": m["volumes"][0]["name"] + ".plain"}),  # a listed volume
+        lambda m: m["volumes"].append(
+            {"name": m["volumes"][0]["name"] + ".plain"}
+        ),  # a listed volume
     ],
 )
 def test_a_crafted_manifest_cannot_get_another_file_offered_for_removal(tmp_path, edit):
@@ -332,7 +343,10 @@ def test_only_an_oo_volumes_1_manifest_explains_a_leftover(tmp_path):
 
 def test_a_copy_that_cannot_be_removed_is_named_and_the_rest_still_go(tmp_path, monkeypatch):
     out = _legacy_set(tmp_path)
-    names = [v["name"] for v in json.loads((out / MANIFEST_NAME).read_text(encoding="utf-8"))["volumes"][:2]]
+    names = [
+        v["name"]
+        for v in json.loads((out / MANIFEST_NAME).read_text(encoding="utf-8"))["volumes"][:2]
+    ]
     for n in names:
         (out / (n + ".plain")).write_bytes(b"x")
     real = os.unlink
@@ -358,3 +372,15 @@ def test_the_scan_keeps_the_writers_volume_names_in_sync():
     assert import_scan._V1_VOLUME_NAME.match("vol-00001.ooenc")
     assert import_scan._V1_KIND == volumes.VOLUME_KIND
     assert re.compile(import_scan._V1_VOLUME_NAME.pattern).match("vol-12345.ooenc")
+
+
+def test_a_backup_folder_reached_through_a_link_can_still_be_cleaned(tmp_path):
+    out = _with_leftovers(tmp_path)
+    first = json.loads((out / MANIFEST_NAME).read_text(encoding="utf-8"))["volumes"][0]["name"]
+    link = tmp_path / "shortcut"
+    link.symlink_to(out, target_is_directory=True)
+    assert remove_leftover_plaintext(link, [first + ".plain"]) == {
+        "removed": [first + ".plain"],
+        "failed": [],
+    }
+    assert (out / "my-notes.plain").exists()

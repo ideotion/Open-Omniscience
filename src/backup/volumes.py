@@ -240,7 +240,9 @@ def remove_leftover_plaintext(out_dir: str | os.PathLike[str], names: list[str])
     dir_fd: int | None = None
     if os.unlink in os.supports_dir_fd and hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW"):
         try:
-            dir_fd = os.open(out_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            # Resolved first: a backup folder reached through a link (the operator's own shortcut) is still the folder the
+            # scan looked at; the handle then pins it, so a swap after this point cannot redirect a removal.
+            dir_fd = os.open(Path(out_dir).resolve(), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         except OSError:
             return {"removed": [], "failed": wanted}
     try:
