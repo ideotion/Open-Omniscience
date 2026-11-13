@@ -238,7 +238,13 @@ def _inflate(blob: bytes) -> bytes:
     if raw is not None:
         return raw
     if zdata is not None:
-        out = zlib.decompress(zdata)
+        # Inflated under a bound (audit P7): the format caps a blob's raw size at 32 MiB too, so a few compressed bytes that would
+        # inflate to gigabytes stop at the cap plus one byte and are refused, never held whole in memory.
+        limit = _MAX_BLOB if raw_size is None else min(raw_size, _MAX_BLOB)
+        inflater = zlib.decompressobj()
+        out = inflater.decompress(zdata, limit + 1)
+        if len(out) > limit or inflater.unconsumed_tail:
+            raise PbfError(f"a zlib blob inflates past {limit} bytes, more than it declared or the format's 32 MiB cap")
         if raw_size is not None and len(out) != raw_size:
             raise PbfError("a zlib blob inflated to a size other than the one it declared")
         return out

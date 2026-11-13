@@ -125,3 +125,31 @@ def test_a_corrupt_segmented_download_is_recorded_as_a_genuine_error(tmp_path):
     res = m._download(entry)
     assert res.status == "error"
     assert res.error and "checksum" in res.error.lower()
+
+
+def test_the_segmented_write_lands_beside_the_final_name_and_is_renamed_over_it(tmp_path, monkeypatch):
+    """Audit P15: a crash mid-write must leave nothing at the final name, which a later start would resume from as a valid prefix."""
+    import os as _os
+
+    import src.geo.osm_downloads as od
+
+    m = OsmDownloadManager(
+        base_dir=tmp_path,
+        http_head=lambda url: _HeadResp(len(PAYLOAD)),
+        fetch_segment=_fetch_segment(PAYLOAD),
+        segment_min_bytes=100,
+    )
+    entry = m._entry_for("liechtenstein", expected_sha256=PAYLOAD_SHA256)
+    seen: list = []
+    real_replace = _os.replace   # the module's ``os`` IS the process's: keep the real one before patching it
+
+    def _replace(src, dst):
+        seen.append((Path(src).name, Path(dst).name, Path(dst).exists()))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(od.os, "replace", _replace)
+    assert m._download(entry).status == "done"
+    final = Path(entry.dest)
+    mine = [r for r in seen if r[1] == final.name]   # the state file has its own atomic rename; only the extract's is asked about
+    assert mine == [(final.name + ".segmented-part", final.name, False)], "the extract was written straight to its final name"
+    assert final.read_bytes() == PAYLOAD and not (final.parent / (final.name + ".segmented-part")).exists()

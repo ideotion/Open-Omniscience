@@ -1262,6 +1262,7 @@
   "Counted by when this machine stored them, not by the edit's own date.": "Dihitung menurut waktu mesin ini menyimpannya, bukan menurut tanggal suntingan itu sendiri.",
   "Counted from the extract of {extract}, with change files applied through {through}.": "Dihitung dari ekstrak {extract}, dengan berkas perubahan diterapkan hingga {through}.",
   "Counted from the extract of {extract}; no change file has been applied since.": "Dihitung dari ekstrak {extract}; sejak itu belum ada berkas perubahan yang diterapkan.",
+  "Changes observed here since {since}.": "Perubahan diamati di sini sejak {since}.",
   "Counted now": "Dihitung sekarang",
   "Counted only: its text was not stored.": "Hanya dihitung: teksnya tidak disimpan.",
   "Counted over the articles this view was computed on. Countries are the countries of the articles' sources, as the source catalogue records them; languages are each article's language tag, else the detected language; the date span runs from the earliest to the latest publication date. Articles missing any of these are counted apart, never dropped.": "Dihitung atas artikel yang menjadi dasar tampilan ini. Negara adalah negara sumber artikel, sebagaimana tercatat di katalog sumber; bahasa adalah tag bahasa tiap artikel, atau bahasa yang terdeteksi; rentang tanggal berjalan dari tanggal terbit paling awal hingga paling akhir. Artikel yang tidak memiliki salah satunya dihitung terpisah, tidak pernah dibuang.",

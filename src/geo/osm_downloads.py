@@ -546,7 +546,11 @@ class OsmDownloadManager:
         if data is None:
             return False
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(data)
+        # Atomic (audit P15): written beside the final name and renamed over it, so a crash mid-write leaves no file at the name a
+        # later start would read as a valid prefix to resume, and a reader never sees half an extract under its real name.
+        part = dest.with_name(dest.name + ".segmented-part")
+        part.write_bytes(data)
+        os.replace(part, dest)
         entry.total_bytes = len(data)
         entry.downloaded_bytes = len(data)
         entry.status = "done"

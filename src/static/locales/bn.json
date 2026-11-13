@@ -1262,6 +1262,7 @@
   "Counted by when this machine stored them, not by the edit's own date.": "এই মেশিন কখন সেগুলো সংরক্ষণ করেছে সেই অনুযায়ী গোনা, সম্পাদনার নিজস্ব তারিখ অনুযায়ী নয়।",
   "Counted from the extract of {extract}, with change files applied through {through}.": "{extract}-এর এক্সট্র্যাক্ট থেকে গণনা, {through} পর্যন্ত পরিবর্তন ফাইল প্রয়োগ করে।",
   "Counted from the extract of {extract}; no change file has been applied since.": "{extract}-এর এক্সট্র্যাক্ট থেকে গণনা; তারপর কোনো পরিবর্তন ফাইল প্রয়োগ করা হয়নি।",
+  "Changes observed here since {since}.": "{since} থেকে এখানে পরিবর্তন পর্যবেক্ষিত।",
   "Counted now": "এখনকার গণনা",
   "Counted only: its text was not stored.": "শুধু গোনা হয়েছে: এর পাঠ্য সংরক্ষণ করা হয়নি।",
   "Counted over the articles this view was computed on. Countries are the countries of the articles' sources, as the source catalogue records them; languages are each article's language tag, else the detected language; the date span runs from the earliest to the latest publication date. Articles missing any of these are counted apart, never dropped.": "এই ভিউ যে নিবন্ধগুলোর ওপর গণনা করা হয়েছে সেগুলোর ওপর গোনা। দেশগুলো হলো নিবন্ধের উৎসের দেশ, উৎস ক্যাটালগে যেমন লেখা; ভাষাগুলো হলো প্রতিটি নিবন্ধের ভাষা-ট্যাগ, না থাকলে শনাক্ত করা ভাষা; তারিখের পরিসর প্রথম থেকে শেষ প্রকাশের তারিখ পর্যন্ত। যেসব নিবন্ধে এগুলোর কোনোটি নেই সেগুলো আলাদাভাবে গোনা হয়, কখনও বাদ দেওয়া হয় না।",

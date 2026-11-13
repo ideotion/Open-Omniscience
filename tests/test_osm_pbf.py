@@ -126,3 +126,15 @@ def test_a_garbage_file_is_refused_as_not_a_pbf(tmp_path):
     p.write_bytes(b"\x7f\xff\xff\xff" + b"x" * 64)
     with pytest.raises(pbf.PbfError):
         list(pbf.iter_elements(p))
+
+
+def test_a_zlib_blob_that_inflates_past_the_formats_cap_is_refused_without_being_held_whole():
+    """Audit P7: a few compressed bytes may not inflate to gigabytes in memory. The format caps a raw blob at 32 MiB."""
+    bomb = zlib.compress(b"\0" * (pbf._MAX_BLOB + 1024))   # about 33 KB that inflate past 32 MiB
+    with pytest.raises(pbf.PbfError, match="inflates past"):
+        pbf._inflate(_len(3, bomb))                          # no raw_size declared: the format's cap applies
+    with pytest.raises(pbf.PbfError, match="inflates past 100 bytes"):
+        pbf._inflate(_varint(2 << 3) + _varint(100) + _len(3, bomb))   # a declared size bounds it tighter
+    small = b"x" * 100
+    assert pbf._inflate(_varint(2 << 3) + _varint(100) + _len(3, zlib.compress(small))) == small
+    assert pbf._inflate(_varint(2 << 3) + _varint(99) + _len(3, zlib.compress(small[:99]))) == small[:99]

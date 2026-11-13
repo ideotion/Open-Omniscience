@@ -1262,6 +1262,7 @@
   "Counted by when this machine stored them, not by the edit's own date.": "按本机存储的时间计数，而非按编辑本身的日期。",
   "Counted from the extract of {extract}, with change files applied through {through}.": "依据 {extract} 的提取文件统计，已应用至 {through} 的变更文件。",
   "Counted from the extract of {extract}; no change file has been applied since.": "依据 {extract} 的提取文件统计；此后尚未应用任何变更文件。",
+  "Changes observed here since {since}.": "自 {since} 起在此观测到的变更。",
   "Counted now": "当前统计",
   "Counted only: its text was not stored.": "仅计数：其文本未存储。",
   "Counted over the articles this view was computed on. Countries are the countries of the articles' sources, as the source catalogue records them; languages are each article's language tag, else the detected language; the date span runs from the earliest to the latest publication date. Articles missing any of these are counted apart, never dropped.": "按此视图所依据的文章计数。国家是文章来源的国家，以来源目录的记录为准；语言是每篇文章的语言标签，若无则为检测到的语言；日期范围从最早到最晚的发布日期。缺少其中任何一项的文章单独计数，绝不丢弃。",

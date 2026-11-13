@@ -57,11 +57,11 @@ function extract(name, decl) {
 const sandbox = {};
 new Function(
   extract("_allInteger") + "\n" + extract("honestTicks") + "\n" +
-  extract("_timeLabelFmt") + "\n" + extract("_msLabel") + "\n" +
+  extract("_timeLabelFmt") + "\n" + extract("_msLabel") + "\n" + extract("_msRowLabel") + "\n" +
   "this._allInteger = _allInteger; this.honestTicks = honestTicks;" +
-  "this._timeLabelFmt = _timeLabelFmt; this._msLabel = _msLabel;"
+  "this._timeLabelFmt = _timeLabelFmt; this._msLabel = _msLabel; this._msRowLabel = _msRowLabel;"
 ).call(sandbox);
-const {_allInteger, honestTicks, _timeLabelFmt, _msLabel} = sandbox;
+const {_allInteger, honestTicks, _timeLabelFmt, _msLabel, _msRowLabel} = sandbox;
 
 // --------------------------------------------------------------------------- //
 // The reported defect, both directions.
@@ -232,6 +232,29 @@ test("the library count tiles pass zeroBase, a neutral colour, a unit and an n-u
   assert(body.includes("neutral: true"), "a neutral metric must not use market up=green/down=red");
   assert(body.includes("LIB_METRIC_UNIT_KEYS"), "the axis unit must be stated");
   assert(body.includes("nUnit"), "n= must carry what it counts");
+});
+
+test("a data-table ROW is labelled as finely as the points are spaced, never by the axis span (2026-11-13 OSM walk)", () => {
+  const d = (iso) => Date.parse(iso + "T00:00:00Z");
+  const days = [d("2025-01-11"), d("2025-01-12"), d("2025-07-30")];
+  const span = days[2] - days[0], gap = days[1] - days[0];
+  // the axis label of the two January days is the same month, which is right for a tick and wrong for a row
+  assert(_msLabel(days[0], span) === _msLabel(days[1], span), "precondition: the span label collapses the two days");
+  const rows = days.map((t) => _msRowLabel(t, gap, span));
+  assert(JSON.stringify(rows) === JSON.stringify(["2025-01-11", "2025-01-12", "2025-07-30"]), "rows: " + JSON.stringify(rows));
+  assert(new Set(rows).size === rows.length, "two points share a row label");
+  const hourly = [Date.parse("2025-01-11T01:00:00Z"), Date.parse("2025-01-11T02:00:00Z")];
+  assert(_msRowLabel(hourly[0], 36e5, 36e5) === "2025-01-11 01:00", "an hourly row keeps its date and hour");
+  // monthly points keep the span's own label
+  assert(_msRowLabel(d("2025-01-01"), 31 * 864e5, 365 * 864e5) === "2025-01", "a monthly row is a month");
+});
+
+test("ooChart's sparse bars of a flat zero-anchored series rise from its value, never from the half-unit padding below it", () => {
+  const body = bodyOf("function ooChart(");
+  assert(body.includes("const zeroAnchored = stacked || (opts.zeroBase && !logOk);"), "the zero-anchored test is gone");
+  assert(body.includes("const baseY = Yof(flatY && zeroAnchored ? dataLo : yMin);"),
+    "an all-zero count draws bars from the padding again (half a plot of bar for a 0)");
+  assert(body.includes("_msRowLabel(p.t, gap,"), "the data table rows are labelled by the axis span again");
 });
 
 console.log("\n" + passed + " axis-honesty checks passed");
