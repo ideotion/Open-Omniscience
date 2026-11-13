@@ -41,6 +41,7 @@ is built from them.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
@@ -269,8 +270,8 @@ _FLOOR_METHOD = (
     "case-law site is not a law authority. A source filed under eu or int serves many countries and is credited to none "
     "(many_country_sources); a document that states no country is credited to none (unplaced_documents), and a country is "
     "never inferred from a jurisdiction code. A country under two languages is in both rows and once in by_state. "
-    "Countries are listed by code: the ruled order (many-country sources first, then by population reached) waits for a "
-    "dated population table this tree does not hold. Hong Kong and Macau are named by the Chinese seed row, are not on "
+    "Within a state, countries go by population reached (R679, the operator's dated table, see order); those it lacks, "
+    "or all of them without one, go by code. Hong Kong and Macau are named by the Chinese seed row, are not on "
     "the floor (it excludes territories) and are reported beside zh."
 )
 _FLOOR_CAVEAT = (
@@ -287,11 +288,37 @@ def _floor_unchecked(reason: str | None, docs: list) -> dict:
     return floor_report(docs, None, reason=reason)
 
 
-def floor_report(docs: list, catalog: dict | None, floor: dict | None = None, *, reason: str | None = None) -> dict:
+def floor_order(population: dict | None) -> tuple[dict, Callable[[str], tuple[int, float, str]]]:
+    """The order of countries within a state (R679): population reached, from the operator's DATED table.
+
+    Returns ``(order block, sort key)``. The table is an operator drop-in (``src.stats.population``), absent by default:
+    with no usable table every country is listed by code and the block says why, so "listed by code" is never mistaken for
+    a ranking. With one, countries go by population, largest first, and a country the table lacks follows by code and is
+    named in ``missing`` (filled by the caller), never given an invented figure. The populations themselves are not
+    copied into the report: the order and the table's source and date are what it states.
+    """
+    if population is None:
+        from src.stats.population import load_population_table
+
+        population = load_population_table()
+    if population.get("status") != "ok":
+        reason = population.get("reason") or "no usable population table"
+        return {"by": "code", "source": None, "as_of": None, "reason": reason, "missing": []}, (lambda cc: (0, 0.0, cc))
+    weights: dict = population.get("weights") or {}
+    block: dict = {"by": "population", "source": population.get("source"), "as_of": population.get("as_of"), "reason": None,
+             "missing": []}
+    return block, (lambda cc: (0, -float(weights[cc]), cc) if cc in weights else (1, 0.0, cc))
+
+
+def floor_report(
+    docs: list, catalog: dict | None, floor: dict | None = None, *, reason: str | None = None, population: dict | None = None
+) -> dict:
     """Pure: where each country on the language coverage floor stands, per language and per state.
 
     ``docs`` are the tracked :class:`LawDocument` rows, ``catalog`` the parsed law catalogue (``None`` = it could not be read,
-    ``reason`` says why), ``floor`` the parsed floor (default: the one loader). Counts and lists only; no fraction, no score.
+    ``reason`` says why), ``floor`` the parsed floor (default: the one loader), ``population`` the operator's population table
+    as :func:`src.stats.population.load_population_table` returns it (default: that loader), which orders the countries
+    within each state (:func:`floor_order`). Counts and lists only; no fraction, no score.
     """
     from src.law.catalog import source_is_law_authority, source_is_verified
 
@@ -317,7 +344,7 @@ def floor_report(docs: list, catalog: dict | None, floor: dict | None = None, *,
             "state": "unchecked",
             "reason": "the floor file (configs/language_countries.yml) is absent, unreadable or lists no country",
             **dict.fromkeys(
-                ("languages", "by_state", "zh_beyond_floor", "many_country_sources", "unplaced_documents", "non_law_documents", "invalid_rows")
+                ("languages", "by_state", "order", "zh_beyond_floor", "many_country_sources", "unplaced_documents", "non_law_documents", "invalid_rows")
             ),
         }
 
@@ -364,8 +391,11 @@ def floor_report(docs: list, catalog: dict | None, floor: dict | None = None, *,
 
     states = [*FLOOR_STATES, *([FLOOR_UNCHECKED] if catalog is None else [])]
     by_state: dict[str, list[str]] = {st: [] for st in states}
-    for cc in countries:
+    order, order_key = floor_order(population)
+    for cc in sorted(countries, key=order_key):
         by_state[state_of(cc)].append(cc)
+    if order["by"] == "population":
+        order["missing"] = sorted(cc for cc in countries if order_key(cc)[0])
 
     rows = []
     for code, block in languages.items():
@@ -390,6 +420,7 @@ def floor_report(docs: list, catalog: dict | None, floor: dict | None = None, *,
     # territories its seed row names are here, beside it, with the state they would have if they were on the floor.
     out["languages"] = rows
     out["by_state"] = by_state
+    out["order"] = order
     out["zh_beyond_floor"] = {cc: state_of(cc) for cc in ZH_NAMED_BEYOND_FLOOR}
     out["many_country_sources"] = many if catalog is not None else None
     out["unplaced_documents"] = unplaced
