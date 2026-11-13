@@ -747,7 +747,7 @@ An adopted verdict is recorded as **inherited**, not as something this machine m
 and it keeps the date it was originally reached — so nothing ever reads as though your
 install measured it. What starts fresh is your machine's own re-check clock: it runs from
 the day you adopted the verdict, not the day someone else earned it. A first download is
-therefore quiet, which is the point — a shipped catalog is always older than the six-month
+therefore quiet, which is the point — a shipped catalog is always older than the three-month
 interval by the time it reaches you, so clocking on the original date would have every
 fresh install re-qualify the whole catalog on day one, which is exactly the work the
 shipped file exists to save.
