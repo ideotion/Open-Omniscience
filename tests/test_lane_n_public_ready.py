@@ -52,6 +52,11 @@ def test_the_map_has_a_scale_bar_that_follows_zoom_and_resize():
     assert "_ooMapScaleBar(host, svg, vb);" in function_body(js, "_wireOoMap"), (
         "re-measured on every view change"
     )
+    bar = function_body(js, "_ooMapScaleBar")
+    assert "getScreenCTM()" in bar and "barPx < 8" in bar and "Math.max(8" not in bar
+    css = read_static("app.css")
+    rule = re.search(r"\.oomap-scale \{([^}]*)\}", css).group(1)
+    assert "right:8px" in rule, "bottom left is the Country/layers group above 600 px"
     watch = function_body(js, "_ooMapScaleWatch")
     assert "ResizeObserver" in watch and "disconnect()" in watch
 
@@ -107,11 +112,12 @@ def test_the_first_run_says_what_the_app_does_before_asking_anything():
     core = app_js()
     assert 'const _GW_STEPS = ["depth", "sources", "finish"];' in core, "no new step (Q1121)"
     src = function_body(core, "_gwRenderSources")
-    assert 'x.indexOf("via:") !== 0' in src, "provenance tags are not themes"
-    assert "on.concat(_gwSrc.keep || [])" in function_body(core, "_gwApplySourcePrefs"), (
-        "a kept via: pick survives"
+    assert '(x.indexOf("via:") !== 0 || curTags.indexOf(x) >= 0)' in src, (
+        "provenance tags are not themes, unless the config already filters on one: then it is SHOWN"
     )
-    assert '$("gw-next")' in function_body(core, "openGuide")
+    assert "_gwSrc.keep" not in core, "no filter member kept out of the reader's sight"
+    assert 'dlg.querySelector(".gw-intro")' in function_body(core, "openGuide")
+    assert '<ul class="gw-intro" tabindex="-1"' in html
 
 
 def test_home_trending_lists_only_rising_terms():
@@ -120,6 +126,10 @@ def test_home_trending_lists_only_rising_terms():
     assert js.count("trendRateText(x, {short: true})") == 2
     load = function_body(js, "loadHomeTrends")
     assert "growthIsRatio(x) === true && !(Number(x.growth) > 1)" in load
+    empty = load.split("if (!terms.length) {", 1)[1].split("return;", 1)[0]
+    assert "_homeTrendTerms = [];" in empty and "_renderOverviewTrends();" in empty, (
+        "the Overview row must not keep the last poll's chips once every term is filtered out"
+    )
 
 
 def test_home_most_recent_defaults_to_a_subject_tag():

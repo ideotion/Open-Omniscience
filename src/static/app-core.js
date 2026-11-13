@@ -877,7 +877,7 @@
     // everything (the cover-everything ruling); a partial pick sets select_tags (a filter —
     // the user's explicit, reversible focus). Language emphasis -> language_equilibrium (a
     // cadence lever that ORDERS, never excludes).
-    const _gwSrc = { picked: null, emph: {}, keep: [] };
+    const _gwSrc = { picked: null, emph: {} };
     async function _gwRenderSources() {
       const box = $("gw-themes"); if (!box) return;
       let cov = null, cfg = null;
@@ -890,10 +890,11 @@
       // A `via:<origin>` tag records WHICH LIST a source came from (src/catalog/
       // provenance_scope.py), not what it writes about, so it is no theme: "via:curated" was
       // the first "theme" a new reader was offered. The seed plan drops them from its theme
-      // view for the same reason (src/ingest/seed_plan.py). A via: tag an earlier config
-      // already selected is kept as it was (see _gwApplySourcePrefs), never silently dropped.
-      let tags = covTags.map((x) => x.tag).filter((x) => x && x !== "(untagged)" && x.indexOf("via:") !== 0);
-      _gwSrc.keep = curTags.filter((x) => tags.indexOf(x) < 0 && String(x).indexOf("via:") === 0);
+      // view for the same reason (src/ingest/seed_plan.py). One exception: a via: tag an
+      // earlier config ALREADY filters on is shown, checked, like any other pick, so the
+      // filter stays visible and the reader can untick it; it is never kept out of sight.
+      let tags = covTags.map((x) => x.tag).filter((x) => x && x !== "(untagged)"
+        && (x.indexOf("via:") !== 0 || curTags.indexOf(x) >= 0));
       tags.sort((a, b) => (byTotal[b] || 0) - (byTotal[a] || 0));   // top themes by source count
       tags = tags.slice(0, 16);
       if (!tags.length) {
@@ -953,7 +954,7 @@
     async function _gwApplySourcePrefs() {
       if (!_gwSrc.picked) return;   // the step was never opened -> change nothing
       const all = Object.keys(_gwSrc.picked), on = all.filter((k) => _gwSrc.picked[k]);
-      const select_tags = (on.length === 0 || on.length === all.length) ? [] : on.concat(_gwSrc.keep || []);
+      const select_tags = (on.length === 0 || on.length === all.length) ? [] : on;
       const language_equilibrium = {};
       for (const k in _gwSrc.emph) if (_gwSrc.emph[k]) language_equilibrium[k] = 1;
       try {
@@ -992,8 +993,9 @@
       if (window.OOI18N && OOI18N.apply) OOI18N.apply(dlg);  // translate freshly-shown chrome
       // A modal focuses its first focusable control, which here is the ✕: its "Close" bubble
       // then opened over the guide's first line on every first run (lane N walk, 2026-11-13).
-      // Next is the action a first-time reader is looking for, and Enter on it moves on.
-      { const nx = $("gw-next"); if (nx && typeof nx.focus === "function") nx.focus(); }
+      // Focus goes to the "what this app does" lines instead (tabindex -1), so a screen reader
+      // starts there and Tab then reaches the depth choice before Next.
+      { const intro = dlg.querySelector(".gw-intro"); if (intro && typeof intro.focus === "function") intro.focus(); }
       // Product feedback 2026-07-17: the network-status poll that decides whether to
       // show the airplane-mode coachmark runs independently of (and typically resolves
       // before) this wizard opening, so the coach could already be showing when the

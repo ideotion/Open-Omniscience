@@ -1553,14 +1553,20 @@
     function _ooMapScaleBar(host, svg, vb) {
       const box = host && host.querySelector("[data-oomap-scale]"); if (!box || !svg) return;
       if (!vb) { const b = svg.viewBox && svg.viewBox.baseVal; if (!b) return; vb = { x: b.x, y: b.y, w: b.width, h: b.height }; }
-      const w = svg.getBoundingClientRect().width;
+      // Screen pixels per map unit from the SVG's own transform, not from its box: the box
+      // includes the border and would be wrong the day CSS letterboxes the map.
+      const ctm = typeof svg.getScreenCTM === "function" ? svg.getScreenCTM() : null;
+      const pxPerUnit = ctm ? Math.hypot(ctm.a, ctm.b) : 0;
+      const w = pxPerUnit * vb.w;
       const kmPerUnit = _ooMapKmPerUnit(vb.x + vb.w / 2, vb.y + vb.h / 2);
-      if (!(w > 0) || !(kmPerUnit > 0)) { box.hidden = true; return; }
-      const kmPerPx = kmPerUnit * vb.w / w;
+      if (!(pxPerUnit > 0) || !(kmPerUnit > 0)) { box.hidden = true; return; }
+      const kmPerPx = kmPerUnit / pxPerUnit;
       const km = _ooMapNiceLen(Math.min(110, w * 0.3) * kmPerPx);
-      if (!(km > 0)) { box.hidden = true; return; }
+      const barPx = km / kmPerPx;
+      // Too narrow to draw a bar that matches its own label: no bar, never a padded one.
+      if (!(km > 0) || barPx < 8) { box.hidden = true; return; }
       const bar = box.querySelector(".oomap-scale-bar"), lab = box.querySelector(".oomap-scale-l");
-      if (bar) bar.style.width = `${Math.max(8, Math.round(km / kmPerPx))}px`;
+      if (bar) bar.style.width = `${Math.round(barPx)}px`;
       const fmt = (v) => (typeof fmtNum === "function") ? fmtNum(v, 0) : String(v);
       if (lab) lab.textContent = km >= 1 ? `${fmt(km)} km` : `${fmt(km * 1000)} m`;
       box.hidden = false;

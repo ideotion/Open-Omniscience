@@ -201,9 +201,10 @@
     /* The world map (journalist walk 2026-09-30, findings 1b/1c). A country under the pointer
        is outlined, so the hover bubble and the shape it describes are visibly the same thing;
        the stroke is in screen pixels whatever the zoom. The scale bar sits inside the map,
-       bottom left, on the panel colour so it reads over land and sea alike. */
+       bottom RIGHT (bottom left is the Country/layers group above 600 px, which covered it),
+       on the panel colour so it reads over land and sea alike. */
     #oo-choro [data-iso]:hover { stroke:var(--fg); stroke-width:1.5px; vector-effect:non-scaling-stroke; }
-    .oomap-scale { position:absolute; left:8px; bottom:8px; z-index:4; display:flex; align-items:center; gap:6px;
+    .oomap-scale { position:absolute; right:8px; left:auto; bottom:8px; z-index:6; display:flex; align-items:center; gap:6px;
       padding:2px 6px; font-size:11px; line-height:1.2; color:var(--fg); border-radius:4px;
       background:color-mix(in srgb, var(--panel) 82%, transparent); pointer-events:auto; }
     .oomap-scale[hidden] { display:none; }
@@ -2126,9 +2127,9 @@
     #guide-wizard .gw-dot.on { background: var(--accent); }
     #guide-wizard .gw-dot.cur { transform: scale(1.35); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent); }
     #guide-wizard .gw-step { animation: gwFade .18s ease; }
-    #guide-wizard .gw-intro { margin:0 0 14px; padding:10px 12px 10px 28px; border-radius:10px;
+    #guide-wizard .gw-intro { margin:0 0 14px; padding-block:10px; padding-inline:28px 12px; border-radius:10px;
       background:var(--panel2); border:1px solid var(--border); display:flex; flex-direction:column; gap:4px; }
-    [dir="rtl"] #guide-wizard .gw-intro { padding:10px 28px 10px 12px; }
+    #guide-wizard .gw-intro:focus { outline:none; }
     @keyframes gwFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
     #guide-wizard .gw-langs { display: grid; grid-template-columns: repeat(2, 1fr);
       gap: 8px; margin-top: 10px; }
