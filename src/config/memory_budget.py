@@ -132,6 +132,15 @@ def total_ram_mb() -> float | None:
         return None
 
 
+def budget_ram_mb() -> tuple[float | None, str]:
+    """The RAM a budget is sized for, and which figure it is: the machine's total, or the tightest cgroup memory limit when that is
+    smaller (R302). A process in a 2 GB container on a 16 GB host sized as a 16 GB machine would be killed by the container's limit
+    before any of its own guards could act. The name is ``src.config.cgroup_memory.smaller_total_mb``'s."""
+    from src.config.cgroup_memory import smaller_total_mb
+
+    return smaller_total_mb(total_ram_mb())
+
+
 def nominal_ram_mb(total_mb: float | None) -> float | None:
     """The PROVISIONED size a measured reading implies, in MiB.
 
@@ -198,8 +207,13 @@ def _env_int(name: str) -> int | None:
 
 
 def resolve() -> dict[str, Any]:
-    """The resident budget for THIS machine (measures RAM, then delegates)."""
-    return resolve_for(total_ram_mb())
+    """The resident budget for THIS machine (measures RAM bounded by any cgroup limit, then delegates)."""
+    total, total_from = budget_ram_mb()
+    out = resolve_for(total)
+    out["total_ram_from"] = total_from
+    if total_from == "cgroup limit" and "reason" in out:
+        out["reason"] += " The figure is the cgroup memory limit this process runs under, smaller than the machine's RAM."
+    return out
 
 
 def resolve_for(total_mb: float | None) -> dict[str, Any]:
@@ -377,6 +391,7 @@ def resolved_reading() -> dict[str, Any]:
     return {
         "tier": b.get("tier"),
         "total_ram_mb": b.get("total_ram_mb"),
+        "total_ram_from": b.get("total_ram_from"),
         "nominal_ram_mb": b.get("nominal_ram_mb"),
         "cores": moment.get("cores"),
         "columnar_serve_default": b.get("columnar_serve_default"),
@@ -398,7 +413,7 @@ def reading_vs_now() -> dict[str, Any]:
     says only that the two tiers are not the same name; it passes no verdict on which
     reading is the machine's real size."""
     resolved = resolved_reading()
-    now_total = total_ram_mb()
+    now_total, now_from = budget_ram_mb()
     now_tier = _tier(now_total)
     differs = now_tier != resolved["tier"]
     caveat = (
@@ -417,6 +432,7 @@ def reading_vs_now() -> dict[str, Any]:
         "now": {
             "at": _now_iso(),
             "total_ram_mb": round(now_total, 1) if now_total is not None else None,
+            "total_ram_from": now_from,
             # Beside the rounded total, because the tier is decided on the nominal size of the
             # UNROUNDED reading: two totals that print alike (3,973.1 and 3,973.1) can be two
             # tiers, and this is what tells them apart.
@@ -425,7 +441,8 @@ def reading_vs_now() -> dict[str, Any]:
         },
         "tier_differs": differs,
         "method": (
-            "resolved: the RAM total psutil reported when this process first asked for its "
+            "resolved: the RAM total psutil reported, or the cgroup memory limit when that is smaller "
+            "(total_ram_from says which), when this process first asked for its "
             "budget (decided from it, once: the connection pool and the SQLite page cache, "
             "unless the operator set them, DuckDB's memory limit, and whether the in-memory "
             "rollup runs by default); now: the same reader, the same tier boundaries, read "

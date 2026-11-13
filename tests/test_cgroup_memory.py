@@ -45,7 +45,7 @@ def test_v2_limit_less_usage_plus_reclaimable_cache(tmp_path):
     root, proc = _v2(tmp_path, levels={"/app": {
         "memory.max": str(2048 * MB), "memory.current": str(1000 * MB), "memory.stat": f"anon 1\ninactive_file {200 * MB}\n"}})
     got = cgroup_memory.cgroup_available_mb(root, proc)
-    assert got == {"available_mb": 1248.0, "limit_mb": 2048.0, "source": "cgroup_v2", "unreadable": False}
+    assert got == {"available_mb": 1248.0, "limit_mb": 2048.0, "min_limit_mb": 2048.0, "source": "cgroup_v2", "unreadable": False}
 
 
 def test_v2_nested_limit_the_tightest_ancestor_wins(tmp_path):

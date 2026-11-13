@@ -298,6 +298,25 @@ def _proc_handle():
     return _PROC
 
 
+def _bound_by_cgroup(out: dict) -> None:
+    """Bound the machine's memory figures in ``out`` by the cgroup limit this process runs under (R302), in place.
+
+    These readings feed the memory guard during a pass: inside a container the kernel kills at the cgroup limit while psutil still
+    reports the host, so a guard fed the host's figures would never trip there. Which figure each one is goes in ``mem_from``. An
+    unreadable cgroup leaves the machine's figures (never a verdict of its own)."""
+    try:
+        from src.config.cgroup_memory import effective_memory
+
+        mem = effective_memory(out.get("mem_total_mb"), out.get("mem_avail_mb"), read_machine=False)
+    except Exception:  # noqa: BLE001 - vitals are best-effort
+        return
+    if mem["available_mb"] is not None:
+        out["mem_avail_mb"] = round(mem["available_mb"], 1)
+    if mem["total_mb"] is not None:
+        out["mem_total_mb"] = round(mem["total_mb"], 1)
+    out["mem_from"] = {"total": mem["total_from"], "available": mem["available_from"]}
+
+
 def _vitals() -> dict:
     """Process + system CPU% and memory, via psutil. All fields None on any error
     (psutil missing / sandbox) so the governor simply skips that back-off — never a
@@ -316,6 +335,7 @@ def _vitals() -> dict:
         vm = psutil.virtual_memory()
         out["mem_avail_mb"] = round(vm.available / (1024 * 1024), 1)
         out["mem_total_mb"] = round(vm.total / (1024 * 1024), 1)
+        _bound_by_cgroup(out)
         proc = _proc_handle()
         out["cpu_proc_pct"] = proc.cpu_percent(interval=None)
         out["rss_mb"] = round(proc.memory_info().rss / (1024 * 1024), 1)
