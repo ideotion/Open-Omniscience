@@ -157,12 +157,16 @@ def quarantine_samples(
             }
             if host_signal and not measured:
                 out[sig]["unknown"] = None
+                # ``note_key`` names the MEANING of the English note for a client that translates it (R289 proposal, R665); it moves
+                # to .v2 only when that meaning changes, and the English stays for curl and older clients.
+                out[sig]["note_key"] = "maintenance.host_not_measured.v1"
                 out[sig]["note"] = (
                     "this run did not ask for host-mismatch (start it with include_host_mismatch=true): "
                     "the counts are not measured, which is not the same as zero."
                 )
             elif host_signal:
                 out[sig]["unknown"] = int(tally.get("host:unknown", 0))
+                out[sig]["note_key"] = "maintenance.host_fact.v1"
                 out[sig]["note"] = (
                     "a page on another site than its source's own is a fact about where it lives, not "
                     "a verdict: it may be a syndicated item, a redirect or a wire feed. Nothing is marked "
@@ -179,6 +183,7 @@ def quarantine_samples(
         ),
         "limit": n,
         "clamped": limit > SAMPLE_PER_SIGNAL,
+        "method_key": "maintenance.samples.v1",
         "method": (
             "the candidates with the smallest hash of (signal, id) in the last run: a spot-check of "
             "what the rules pick, not an error rate and not a verdict; titles and URLs only"
@@ -219,6 +224,7 @@ def quarantine_raw_id_sources(limit: int = Query(50, ge=1, le=200)) -> dict:
                 for i, n, d, e in shown
             ],
             "articles_in_shown": sum(int(counts.get(r[0], 0)) for r in shown),
+            "method_key": "maintenance.raw_ids.v1",
             "method": (
                 "a source whose whole name is a Wikidata Q-id (the same test the label resolver uses); "
                 "local read, nothing fetched, renamed or marked; rows are the lowest source ids first "
@@ -258,6 +264,8 @@ def quarantine_source_furniture(
             "sampled": len(texts),
             **learned,
             "min_share": min_share,
+            # The key's sentence takes the number of articles read from ``sampled`` and the share from ``min_share``.
+            "method_key": "maintenance.furniture.v1",
             "method": (
                 f"the {len(texts)} newest articles of this source (not a random sample, so a recent template "
                 "change shows more than an old one); a line is listed when it is at most "

@@ -333,6 +333,16 @@ def report_interface_language(req: InterfaceLangIn) -> dict:
     return {"lang": stored}
 
 
+@router.get("/interface-language")
+def read_interface_language() -> dict:
+    """The interface language a browser last reported, or ``null`` (R665). Read by the terminal panel, which runs with the browser
+    closed and speaks the language the person chose. READ-ONLY: one key of the store, nothing written, measured or fetched; behind the
+    same Origin and lock gates as every API route, so a locked app answers locked and the panel stays in its fallback language."""
+    from src.ai_layer.translation_sweep import interface_lang
+
+    return {"lang": interface_lang()}
+
+
 @router.get("/translation-sweep")
 def translation_sweep_status() -> dict:
     """Both translation sweeps' persisted state and the keyword head's last recorded
