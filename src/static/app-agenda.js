@@ -1176,7 +1176,8 @@
         span = ` <span class="pill${e.span.active ? " ok" : ""}" title="${catalogNote}">${esc(text)}</span>`;
       }
       const years = [
-        e.origin_year != null ? tfa("since {year}", {year: e.origin_year}) : null,
+        // A one-off entry (origin = until: one election) has no "since"; its until note says it all.
+        e.origin_year != null && e.origin_year !== e.until_year ? tfa("since {year}", {year: e.origin_year}) : null,
         e.until_year != null ? tfa("nothing listed after {year}", {year: e.until_year}) : null,
       ].filter(Boolean).join(" · ");
       const yearNote = years
@@ -1320,7 +1321,9 @@
     // or ONE election, whose range is its own year) is placed only inside that range, so a
     // one-off election never reappears on the same day of every other year's grid.
     function agInYear(e, y) {
-      if (e.origin_year != null && y < e.origin_year) return false;
+      // An election entry bounded by until_year IS that one election, so it starts that year too.
+      const from = e.origin_year != null ? e.origin_year : (e.calendar === "elections" ? e.until_year : null);
+      if (from != null && y < from) return false;
       if (e.until_year != null && y > e.until_year) return false;
       return true;
     }
@@ -1722,7 +1725,8 @@
         return `<div class="ag-cell${isToday ? " today" : ""}${evs.length ? " has" : ""}${isSel ? " sel" : ""}" data-on-click="agPickDate(${d.getFullYear()},${d.getMonth() + 1},${d.getDate()})">
           <div class="ag-wd">${esc(wd)} <span class="ag-wd-d">${esc(dn)}</span>${moonHtml}</div>${chips}${more}</div>`;
       }).join("") + `</div>`;
-      const monthOnly = rows.filter(e => e.month && !e.day && !e.next_occurrence && monthsInWeek.has(e.month));
+      const monthOnly = rows.filter(e => e.month && !e.day && !e.next_occurrence && monthsInWeek.has(e.month)
+        && days.some(d => d.getMonth() + 1 === e.month && agInYear(e, d.getFullYear())));
       if (monthOnly.length)
         html += `<div class="hint" style="margin-top:8px"><span>${esc(t9("This week — no fixed day:"))}</span> ` +
           monthOnly.map(e => `<span class="ag-tag" title="${esc(e.title)}">${esc(e.title)}</span>`).join(" ") + `</div>`;

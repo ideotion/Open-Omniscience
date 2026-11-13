@@ -198,7 +198,8 @@ def test_the_report_lists_every_floor_country_and_states_the_missing(tmp_path):
 # --- review follow-ups ------------------------------------------------------------------ #
 def test_a_passed_curated_entry_never_hides_a_later_snapshot_election(tmp_path):
     """A curated Brazil 2026 (October) must not shadow a snapshot Brazil 2030 (October): the
-    report would then say "the next one is not listed" while the snapshot listed it."""
+    report would then say "the next one is not listed" while the snapshot listed it. The years
+    differ, so the until_year bound keeps them apart."""
     rows = [{"country": "BR", "office": "General", "qid": "Q30", "point_in_time": "2030-10-06",
              "precision": "day", "official_url": "https://example.org/"}]
     p = _write(tmp_path, {"as_of": "2026-11-01", "rows": rows})
@@ -271,9 +272,27 @@ def test_every_agenda_grid_places_a_bounded_entry_only_inside_its_years():
     js = (Path(__file__).resolve().parents[1] / "src" / "static" / "app-agenda.js").read_text(encoding="utf-8")
     for name in ("renderAgendaYear", "agEventsInMonth", "renderAgendaDecade", "renderAgendaMonth", "agEventsOn"):
         assert "agInYear(e, y)" in function_body(js, name), name
+    assert "agInYear(e, d.getFullYear())" in function_body(js, "renderAgendaWeek")
     probe = function_source(js, "agInYear") + """
 const e = {origin_year: 2026, until_year: 2026};
 if (!agInYear(e, 2026) || agInYear(e, 2027) || agInYear(e, 2025)) process.exit(1);
 if (!agInYear({}, 1999) || !agInYear({origin_year: 1950, until_year: null}, 2030)) process.exit(2);
+// A curated election bounded only by until_year starts that year too.
+const us = {calendar: "elections", until_year: 2026};
+if (agInYear(us, 2025) || !agInYear(us, 2026) || agInYear(us, 2027)) process.exit(3);
+if (!agInYear({calendar: "observances", until_year: 2026}, 2020)) process.exit(4);
 """
     assert subprocess.run(["node", "-e", probe], timeout=30).returncode == 0
+
+
+def test_the_same_passed_election_from_the_snapshot_stays_shadowed(tmp_path):
+    """The snapshot's year-precision copy of the passed Brazil 2026 election must not come back as
+    a live window that counts as coverage."""
+    rows = [{"country": "BR", "office": "General", "qid": "Q26", "point_in_time": "2026-01-01",
+             "precision": "year"}]
+    p = _write(tmp_path, {"as_of": "2026-11-01", "rows": rows})
+    curated = [{"calendar": "elections", "title": "Brazil — General election 2026", "country": "BR",
+                "month": 10, "until_year": 2026}]
+    events, info = with_snapshot(curated, TODAY, p)
+    assert info["shadowed"] == 1 and info["added"] == 0
+    assert country_tier_report(events, {"br"}, TODAY)["countries"][0]["state"] == "passed"

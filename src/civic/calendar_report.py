@@ -227,10 +227,6 @@ def _same_election(curated: dict[str, Any], ev: dict[str, Any], today: date) -> 
     """
     if date_confidence(curated) is None:
         return None
-    # A curated election that has gone by never hides one that has not: that would read as
-    # "the next one is not listed" while the snapshot listed it.
-    if has_passed(curated, today) and not has_passed(ev, today):
-        return None
     office = str(curated.get("office") or "").strip()
     if office and office.casefold() != str(ev.get("office") or "").strip().casefold():
         return None
