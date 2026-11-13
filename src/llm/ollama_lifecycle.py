@@ -47,7 +47,7 @@ import shutil
 import subprocess
 import time
 
-from src.monitoring.secret_scrub import log_failure, record_text
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger("llm.ollama_lifecycle")
 
@@ -182,7 +182,9 @@ def start(*, wait: bool = True, timeout: float = _READY_TIMEOUT_S) -> dict:
             popen_kwargs["start_new_session"] = True
         _proc = subprocess.Popen([path, "serve"], **popen_kwargs)  # noqa: S603  # nosec B603 - fixed argv, absolute path from shutil.which, no shell
     except OSError as exc:
-        raise OllamaLifecycleError(f"could not launch 'ollama serve': {record_text(exc)}") from exc
+        log_failure(_LOG, "could not launch 'ollama serve'", exc, level=logging.WARNING)
+        # A fixed phrase, not the exception's words: it reaches the HTTP 409 detail; the log keeps the detail.
+        raise OllamaLifecycleError("could not launch 'ollama serve' (see the log)") from None
 
     if not wait:
         return {"started": True, "ready": False, "path": path, "note": "not waited for"}

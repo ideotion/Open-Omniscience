@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 from src.ai_layer import store as ai_store
 from src.ai_layer.jobs import ArticleWork, extract_for_articles
 from src.api.detached_stream import detached
-from src.api.llm import active_model, get_llm_client
+from src.api.llm import _label_model, active_model, get_llm_client
 from src.database.models import AiCustomPrompt, Article
 from src.database.session import get_db
 from src.database.stand_in import (
@@ -164,9 +164,9 @@ def extract_keywords(
 
     _tok = _bgtasks.register(
         "analytics", f"Extracting AI keywords · {len(work)} article(s)",
-        detail=f"model {model}", total=len(work),
+        detail=f"model {_label_model(model)}", total=len(work),
         label_i18n="Extracting AI keywords · {n} article(s)", label_vars={"n": len(work)},
-        detail_i18n="model {model}", detail_vars={"model": model}, cancellable=True,
+        detail_i18n="model {model}", detail_vars={"model": _label_model(model)}, cancellable=True,
     )
 
     def _stream():
@@ -488,9 +488,9 @@ def run_custom_prompt(
 
     _tok = _bgtasks.register(
         "analytics", f"AI: {label} · {len(work)} article(s)",
-        detail=f"model {model}", total=len(work),
+        detail=f"model {_label_model(model)}", total=len(work),
         label_i18n="AI: {label} · {n} article(s)", label_vars={"label": label, "n": len(work)},
-        detail_i18n="model {model}", detail_vars={"model": model}, cancellable=True,
+        detail_i18n="model {model}", detail_vars={"model": _label_model(model)}, cancellable=True,
     )
 
     def _stream():

@@ -14,6 +14,9 @@ from __future__ import annotations
 import threading
 import time
 
+import pytest
+
+from src.api import llm as llm_api
 from src.jobs import background as bg
 from src.jobs import llm_bulk_queue as lbq
 from tests import test_llm_bulk_queue as _bq
@@ -23,25 +26,26 @@ store = _bq.store
 queue = _bq.queue
 
 
-class _SlowFirstLlm(_FakeLlm):
-    """The first generation hangs until ``hold`` is set (a CPU model on a long article); later ones answer at once."""
+class _SlowLlm(_FakeLlm):
+    """Generation number ``hang_on`` hangs until ``hold`` is set (a CPU model on a long article); the others answer at once."""
 
-    def __init__(self):
+    def __init__(self, hang_on: int = 1):
         super().__init__()
         self.hold = threading.Event()
         self.started = threading.Event()
-        self._first = True
+        self._n = 0
+        self._hang_on = hang_on
 
     def generate(self, prompt, **kw):
-        if self._first:
-            self._first = False
+        self._n += 1
+        if self._n == self._hang_on:
             self.started.set()
             self.hold.wait(30)
         return super().generate(prompt, **kw)
 
 
 def test_a_stop_during_a_long_generation_pauses_the_run_within_the_deadline_and_resume_stores_each_once(queue, monkeypatch):
-    fake = _SlowFirstLlm()
+    fake = _SlowLlm(hang_on=2)  # the first article is stored before the stop, so the resume must skip it
     _use(monkeypatch, fake)
     ids = _seed(3)
     eid = queue.enqueue({"op": "summarize", "model": "m", "article_ids": ids, "skip_existing": False})["entry"]["id"]
@@ -54,18 +58,19 @@ def test_a_stop_during_a_long_generation_pauses_the_run_within_the_deadline_and_
         assert took < 2.0, f"the stop waited for the generation ({took:.1f} s)"
         entry = {e["id"]: e for e in queue.snapshot()["entries"]}[eid]
         assert entry["state"] == "paused", entry
-        assert [_summaries(a) for a in ids] == [0, 0, 0], "an article was stored from a generation the stop abandoned"
+        assert [_summaries(a) for a in ids] == [1, 0, 0], "an article was stored from a generation the stop abandoned"
+        assert llm_api.abandoned_generations() == 1
     finally:
         fake.hold.set()  # the abandoned generation ends in its own thread; its result is dropped
-    time.sleep(0.3)
-    assert [_summaries(a) for a in ids] == [0, 0, 0], "the abandoned generation stored its result after the stop"
+    assert llm_api.wait_abandoned_generations(lambda: False)
+    assert [_summaries(a) for a in ids] == [1, 0, 0], "the abandoned generation stored its result after the stop"
     assert queue.resume() and lbq._JOB.join(15)
     assert {e["id"]: e["state"] for e in queue.snapshot()["entries"]}[eid] == "done"
     assert [_summaries(a) for a in ids] == [1, 1, 1], "the resume stored an article twice or skipped one"
 
 
 def test_a_task_manager_stop_during_a_generation_cancels_the_run_and_stores_nothing_of_it(queue, monkeypatch):
-    fake = _SlowFirstLlm()
+    fake = _SlowLlm()
     _use(monkeypatch, fake)
     ids = _seed(2)
     eid = queue.enqueue({"op": "summarize", "model": "m", "article_ids": ids})["entry"]["id"]
@@ -76,7 +81,46 @@ def test_a_task_manager_stop_during_a_generation_cancels_the_run_and_stores_noth
         assert {e["id"]: e["state"] for e in queue.snapshot()["entries"]}[eid] == "cancelled"
     finally:
         fake.hold.set()
+    assert llm_api.wait_abandoned_generations(lambda: False)
     assert [_summaries(a) for a in ids] == [0, 0]
+
+
+def test_freeing_the_model_waits_for_the_generation_a_stop_abandoned(queue, monkeypatch):
+    """R669 kept: the release happens once the run paused AND its abandoned model call returned, never under it."""
+    fake = _SlowLlm()
+    _use(monkeypatch, fake)
+    ids = _seed(2)
+    queue.enqueue({"op": "summarize", "model": "m", "article_ids": ids})
+    freed = threading.Event()
+    try:
+        assert fake.started.wait(10)
+        out = llm_api._after_runs_pause(lambda: freed.set() or {"released": []}, "release-test")
+        assert out.get("deferred") is True, out
+        assert lbq._JOB.join(3), "the pause waited for the generation"
+        time.sleep(0.5)
+        assert not freed.is_set(), "the model was freed while the abandoned generation still ran"
+    finally:
+        fake.hold.set()
+    assert freed.wait(5), "the release never happened after the generation returned"
+    assert [_summaries(a) for a in ids] == [0, 0]
+
+
+def test_an_abandoned_batch_makes_no_further_model_call():
+    """A long article split in parts stops after the part in flight: the client of an abandoned batch refuses every next call."""
+    abandoned = threading.Event()
+    calls: list[str] = []
+
+    class _C:
+        def generate(self, prompt, **_kw):
+            calls.append(prompt)
+            return "ok"
+
+    c = llm_api._StopAwareClient(_C(), abandoned)
+    assert c.generate("one") == "ok"
+    abandoned.set()
+    with pytest.raises(llm_api._GenerationAbandoned):
+        c.generate("two")
+    assert calls == ["one"]
 
 
 def test_the_insights_backlog_stops_between_articles_not_between_batches(monkeypatch):

@@ -44,7 +44,8 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-from src.jobs.background import BackgroundJob, Framed, JobContext, register_job
+from src.jobs.background import BackgroundJob, Framed, JobContext, register_job, stop_all_count
+from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger("jobs.llm_bulk_queue")
 
@@ -384,16 +385,21 @@ class LlmBulkQueue:
             pass
         # The previous drain found the queue empty and is returning. Wait for its thread OFF the request (Lane F row 13: three
         # joins of 5 s held an add or a Resume for up to 15 s), then start again.
-        threading.Thread(target=self._start_after_previous, name="oo-llmbulk-kick", daemon=True).start()
+        threading.Thread(target=self._start_after_previous, args=(stop_all_count(),), name="oo-llmbulk-kick", daemon=True).start()
 
-    def _start_after_previous(self) -> None:
+    def _start_after_previous(self, stops_seen: int) -> None:
         for _ in range(3):
             _JOB.join(5)
+            if stop_all_count() != stops_seen:
+                break  # the app is shutting down: never start a writer the shutdown's stop has not seen
             try:
                 _JOB.start()
                 return
             except RuntimeError:
                 continue
+            except Exception as exc:  # noqa: BLE001 - a failed start must not leave the queue marked draining for good
+                log_failure(_LOG, "bulk queue: the drain could not be started", exc, level=logging.WARNING)
+                break
         with self._lock:
             self._draining = False
         _LOG.warning("bulk queue: the drain could not be started; the next add or Resume tries again")

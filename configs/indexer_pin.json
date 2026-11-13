@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "0aa7b0ee9969bd6309e8c95dd8acd4576dfc50ef0c6fbacd2039163cf658a71e",
+  "digest": "0d5117e42ab1fb50fc7d92d8b12de37c13b41ef55a87fa7059fa1160224f8aeb",
   "log": [
     {
       "version": 1,
@@ -31,6 +31,12 @@
       "digest": "0aa7b0ee9969bd6309e8c95dd8acd4576dfc50ef0c6fbacd2039163cf658a71e",
       "kind": "same",
       "note": "R689: backfill_corpus only looks at a stop before each article; index_article and the rows it writes are unchanged"
+    },
+    {
+      "version": 1,
+      "digest": "0d5117e42ab1fb50fc7d92d8b12de37c13b41ef55a87fa7059fa1160224f8aeb",
+      "kind": "same",
+      "note": "R689: backfill_corpus only looks at a stop before each article and before its closing counts; index_article and the rows it writes are unchanged"
     }
   ]
 }

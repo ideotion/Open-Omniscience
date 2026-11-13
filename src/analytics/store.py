@@ -1129,6 +1129,10 @@ def backfill_corpus(session: Session, *, extractor, limit: int | None = 200, sho
             failed += 1
             log_failure(_LOG, f"indexing article {art_id} failed", exc, level=logging.WARNING)
             _mark_index_attempt(session, art_id)
+    if should_stop is not None and should_stop():
+        # A stop during the last article: the two corpus-wide counts below are skipped too (R689).
+        return {"indexed": attempted, "newly_indexed": newly_indexed, "no_terms": no_terms, "failed": failed,
+                "remaining": None, "never_attempted": None, "stopped": True}
     unindexed = _unindexed_query(session)
     remaining = unindexed.count()
     never_attempted = unindexed.filter(Article.keyword_indexed_at.is_(None)).count()

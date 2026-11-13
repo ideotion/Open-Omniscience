@@ -168,7 +168,7 @@ def test_the_three_streamed_runs_are_detached_and_stoppable():
     """Source-level: each of the three streamed AI runs registers cancellable and returns through detached()."""
     ai = (REPO / "src" / "api" / "ai.py").read_text(encoding="utf-8")
     llm = (REPO / "src" / "api" / "llm.py").read_text(encoding="utf-8")
-    assert ai.count("detail_vars={\"model\": model}, cancellable=True") == 2 and ai.count("detached(_stream(), _tok") == 2
+    assert ai.count("detail_vars={\"model\": _label_model(model)}, cancellable=True") == 2 and ai.count("detached(_stream(), _tok") == 2
     # The bulk run is built by prepare_bulk_run (shared with the server-side queue, R600's second PR) and the streamed route
     # wraps its generator in detached() with the token it returns.
     assert llm.count("detail_vars={\"model\": _label_model(model)}, cancellable=True") == 1 and llm.count("detached(gen, tok") == 1

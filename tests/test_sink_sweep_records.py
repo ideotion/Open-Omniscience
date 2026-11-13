@@ -659,7 +659,6 @@ _S5_CHAINED_RAISES: dict[str, int] = {
     "src/custody/anchor.py": 2,
     "src/law/adapters/clml.py": 3,
     "src/llm/ollama.py": 11,  # +1 R671: _require_local_model wraps an unreadable /api/tags exactly as list_installed does (record_text)
-    "src/llm/ollama_lifecycle.py": 1,
     "src/llm/vllm_client.py": 5,
     "src/llm/vllm_lifecycle.py": 1,
     "src/safety/crypto.py": 4,
