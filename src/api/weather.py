@@ -126,5 +126,7 @@ def weather_anomaly_held(
     try:
         WeatherAnomalyRequest(lat=lat, lon=lon, start_date=start_date, end_date=end_date)
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=[e.get("msg") for e in exc.errors()]) from None
+        from src.monitoring.secret_scrub import http_detail
+
+        raise HTTPException(status_code=422, detail=http_detail(exc)) from None
     return held_anomalies(lat, lon, start_date, end_date)

@@ -48,7 +48,7 @@ const CLIMATE = [
 ];
 const src =
   extractConst("esc") + "\n" + extractConst("_LTR_ISOLATE") + "\n" + extract("_ltrIsolate") + "\n" +
-  extract("fmtNum") + "\n" + extract("ooIsoDateTime") + "\n" + extract("ooLabelText") + "\n" +
+  extract("fmtNum") + "\n" + extract("ooIsoDateTime") + "\n" + extract("ooLabelText") + "\n" + extract("ooLtrIsolate") + "\n" +
   "var window = {};\nvar document = { documentElement: { dir: \"ltr\" } };\n" +
   CLIMATE.map(extract).join("\n") + "\n" +
   "module.exports = {" + CLIMATE.join(", ") + "};";

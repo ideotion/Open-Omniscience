@@ -411,7 +411,7 @@
     // The result table: every number with its unit, a missing one with its reason, never a verdict.
     function climatePlaceResultHtml(d, t, tf) {
       if (!d || !Array.isArray(d.results)) return "";
-      const sign = (x) => (x > 0 ? "+" : "") + fmtNum(x, 1);
+      const sign = (x) => (x > 0 ? ooLtrIsolate("+" + fmtNum(x, 1)) : ooLtrIsolate(fmtNum(x, 1)));   // a signed number reads left to right in RTL too
       const rows = d.results.map((r) => {
         const name = esc(climatePlaceVarLabel(r.variable, t));
         if (r.value == null) {
