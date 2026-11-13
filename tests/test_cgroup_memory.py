@@ -19,14 +19,14 @@ MB = 1024 * 1024
 def _v2(tmp_path: Path, *, own: str = "/app", levels: dict[str, dict[str, str]]) -> tuple[str, str]:
     root = tmp_path / "cg"
     (root).mkdir()
-    (root / "cgroup.controllers").write_text("memory\n")
+    (root / "cgroup.controllers").write_text("memory\n", encoding="utf-8")
     for rel, files in levels.items():
         d = root / rel.strip("/") if rel.strip("/") else root
         d.mkdir(parents=True, exist_ok=True)
         for name, body in files.items():
-            (d / name).write_text(body)
+            (d / name).write_text(body, encoding="utf-8")
     proc = tmp_path / "proc_cgroup"
-    proc.write_text(f"0::{own}\n")
+    proc.write_text(f"0::{own}\n", encoding="utf-8")
     return str(root), str(proc)
 
 
@@ -35,9 +35,9 @@ def _v1(tmp_path: Path, *, own: str = "/oo", files: dict[str, str]) -> tuple[str
     d = root / "memory" / own.strip("/")
     d.mkdir(parents=True)
     for name, body in files.items():
-        (d / name).write_text(body)
+        (d / name).write_text(body, encoding="utf-8")
     proc = tmp_path / "proc_cgroup"
-    proc.write_text(f"4:memory:{own}\n")
+    proc.write_text(f"4:memory:{own}\n", encoding="utf-8")
     return str(root), str(proc)
 
 
@@ -69,7 +69,7 @@ def test_v1_limit_and_two_to_the_63_is_no_limit(tmp_path):
         "memory.stat": f"cache 9\ntotal_inactive_file {2 * MB}\ninactive_file {1 * MB}\n"})
     got = cgroup_memory.cgroup_available_mb(root, proc)
     assert got["available_mb"] == 2044.0 and got["source"] == "cgroup_v1"  # total_inactive_file preferred
-    (Path(root) / "memory" / "oo" / "memory.limit_in_bytes").write_text("9223372036854771712")
+    (Path(root) / "memory" / "oo" / "memory.limit_in_bytes").write_text("9223372036854771712", encoding="utf-8")
     assert cgroup_memory.cgroup_available_mb(root, proc)["available_mb"] is None
 
 
