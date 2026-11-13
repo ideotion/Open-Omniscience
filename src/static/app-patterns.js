@@ -460,6 +460,9 @@
     // One delegated listener for every "See the full list" / "Open the list" button, wherever the
     // markup was built (a Lead's back is a string; the overview is repainted).
     document.addEventListener("click", (ev) => {
+      // R673: a document-level listener that acts answers a person's click only, never a script's
+      // el.click() — opening a list starts a whole-corpus scan.
+      if (ev.isTrusted !== true) return;
       const b = ev.target && ev.target.closest ? ev.target.closest("[data-pattern-list]") : null;
       if (!b) return;
       openPatternList(b.getAttribute("data-pattern-list"));

@@ -116,6 +116,22 @@ def test_the_undo_posts_answer_a_persons_click_only():
     assert 'undo.type = "button"' in undo and "undo.focus()" in undo
 
 
+def test_opening_a_list_answers_a_persons_click_only():
+    # R673 (Lane F's review): opening a list starts a whole-corpus scan, so a script's el.click()
+    # must not start one. The guard is the first line of the delegated listener.
+    i = _JS.index('closest("[data-pattern-list]")')
+    head = _JS[_JS.rindex('document.addEventListener("click"', 0, i):i]
+    assert "if (ev.isTrusted !== true) return;" in head
+
+
+def test_the_dismissed_count_counts_only_cards_the_feed_holds(tmp_path, monkeypatch):
+    from src.briefing import service
+    monkeypatch.setattr(service, "dismissed_ids", lambda: {"here", "gone-for-good"})
+    view = service._present({"cards": [{"id": "here", "bucket": service.BUCKETS[0]},
+                                       {"id": "other", "bucket": service.BUCKETS[0]}]}, include_dismissed=False)
+    assert view["dismissed_count"] == 1, "a stale id is not a card the button could bring back"
+
+
 def test_no_new_name_joins_the_declarative_allow_list():
     # The lists wire their own listeners, so oo-on.js's OO_ACTIONS is untouched by this work.
     assert not re.search(r'data-on-\w+=', _JS)
