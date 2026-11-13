@@ -73,7 +73,7 @@ def test_page_loads_simple_mode_from_this_origin_only():
         "/static/simple/vendor/preact.min.umd.js", "/static/simple/vendor/hooks.umd.js", "/static/simple/vendor/htm.umd.js",
     ]), simple
     # The renderer loads before the mode, and the mode after app-boot.js (it wraps showTab).
-    order = [s for s in re.findall(r'<script src="([^"]+)"', html)]
+    order = re.findall(r'<script src="([^"]+)"', html)
     assert order.index("/static/app-boot.js") < order.index("/static/simple/vendor/preact.min.umd.js")
     assert order.index("/static/simple/vendor/htm.umd.js") < order.index("/static/simple/simple.js")
 
