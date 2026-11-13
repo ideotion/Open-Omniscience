@@ -17,7 +17,9 @@ Which stop paths wait for the jobs, stated here and pinned below where a test ca
       stop-all and no disposal, so the ordering holds only because nothing is disposed; work in progress ends mid-unit, rolled back;
     - a SECOND Ctrl-C during uvicorn's connection drain, which makes it skip the lifespan shutdown: the exit hook then closes the
       database to jobs and disposes (``arm_exit_disposal``), without waiting;
-    - Windows ending a console session, which ends the process after about 5 s, before the stop-all deadline.
+    - Windows ending a console session, which ends the process after about 5 s, before the stop-all deadline;
+    - the data-volume guard's exits while it waits at boot for the drive (``os._exit`` and ``execve``), before the app has an engine
+      or a job.
 """
 
 from __future__ import annotations
@@ -426,3 +428,69 @@ def test_the_exit_hook_disposes_only_when_the_lifespan_did_not(monkeypatch):
     monkeypatch.setattr(after_shutdown, "_LIFESPAN_DISPOSED", False)
     after_shutdown._dispose_at_exit()
     assert disposed == [1] and after_shutdown.is_closed()
+
+
+def test_a_write_queued_for_the_gate_is_refused_once_granted(registry, monkeypatch):
+    """The gate is checked on entry AND once granted: a job queued behind another writer when the database closed takes nothing."""
+    from src.database.writer import write_gate, write_lock
+
+    monkeypatch.setattr(after_shutdown._LOG, "warning", lambda *a: None)
+    go, results = threading.Event(), []
+
+    def worker(ctx):
+        go.wait(10)
+        try:
+            with write_lock():
+                results.append("wrote")
+        except Exception as exc:  # noqa: BLE001 - the test records what happened
+            results.append(type(exc).__name__)
+
+    assert write_gate.acquire()
+    try:
+        job = bg.register_job(bg.BackgroundJob("queued-writer", "queued", worker, is_writer=True))
+        registry.append(job)
+        job.start()
+        go.set()
+        deadline = time.monotonic() + 10
+        while not write_gate._queue and time.monotonic() < deadline:
+            time.sleep(0.005)
+        assert write_gate._queue, "the job never queued"
+        after_shutdown.close_for_jobs(bg.running_job_threads())
+    finally:
+        write_gate.release()
+    assert job.join(10)
+    assert results == ["WriteAfterShutdownRefused"], results
+    assert write_gate._owner is None
+
+
+def test_a_rollback_statement_is_let_through_on_a_refused_thread(monkeypatch):
+    monkeypatch.setattr(after_shutdown._LOG, "warning", lambda *a: None)
+    seen: dict = {}
+    go = threading.Event()
+
+    def refused():
+        go.wait(10)
+        seen["rollback"] = after_shutdown._on_statement(None, None, "  rollback to savepoint sa_savepoint_1", None, None, False)
+        try:
+            after_shutdown._on_statement(None, None, "RELEASE SAVEPOINT sa_savepoint_1", None, None, False)
+            seen["release"] = "ok"
+        except after_shutdown.WriteAfterShutdownRefused:
+            seen["release"] = "refused"
+
+    t = threading.Thread(target=refused, name="bgjob-unwinding")
+    t.start()
+    after_shutdown.close_for_jobs([])
+    go.set()
+    t.join(10)
+    assert seen == {"rollback": None, "release": "refused"}
+
+
+def test_the_repair_stops_before_its_swap_once_the_database_closed():
+    """Its copy and swap are raw work no event sees; the check comes before it disposes or switches anything."""
+    import ast
+    import inspect
+
+    from src.database import repair
+
+    body = ast.unparse(ast.parse(inspect.getsource(repair._swap)))
+    assert body.index("after_shutdown.check(") < body.index("dispose_engine()") < body.index("swap_in_corpus(")

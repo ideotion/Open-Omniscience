@@ -318,6 +318,7 @@ def _write_slot() -> Iterator[int]:
                     _wait_hold(left)
             if not passthrough:
                 _inflight.add(token)  # the one statement that counts this write
+        after_shutdown.check("a settings write")  # again after any wait for a restore's hold: the database may have closed meanwhile
         with _lock:
             epoch = _epoch
         yield epoch

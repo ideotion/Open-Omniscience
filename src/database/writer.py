@@ -302,6 +302,13 @@ class WriterGate:
                     # We may have BEEN the head; whoever is now must be woken, or
                     # nothing ever will (a lost wakeup this branch owns).
                     self._wake_head()
+        if granted:
+            # Checked AGAIN once granted: the database may have closed to jobs while this thread queued (R689).
+            try:
+                after_shutdown.check("the write gate")
+            except BaseException:
+                self.release()
+                raise
         return granted
 
     def release(self) -> None:

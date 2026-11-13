@@ -20,13 +20,15 @@ settings write raises :class:`WriteAfterShutdownRefused` on:
   (:func:`inherit` again).
 
 A refused commit never reaches the driver, and every statement is refused too (a savepoint's ``RELEASE``, which pysqlite turns
-into the real COMMIT, included), so nothing the job had not committed lands; its rollback is not refused. The refusal is logged once per job, by its kind (never its arguments, which can carry a
+into the real COMMIT, included), so nothing the job had not committed lands. Its rollback is not refused (the DBAPI rollback runs
+no event, and a ``ROLLBACK`` statement is let through). A write queued for the write gate, or waiting on a restore's settings
+hold, is checked again once it gets through, and the repair job checks before its file swap. The refusal is logged once per job, by its kind (never its arguments, which can carry a
 passphrase). The shutdown's own steps (the write-back, the disposal, the flushes) run on another thread and
 are not touched, nor is any other thread. :func:`clear` (the app's start) reopens it.
 
 Stated limits: a raw DBAPI cursor (``engine.raw_connection()``; the incremental vacuum, the hygiene pass)
 runs no SQLAlchemy event, and a settings write already past the write gate when the database closed can
-still commit; neither is a job's corpus write today. The columnar store (DuckDB) is a separate file and is
+still commit (a write that WAITED is checked again); the repair job's copy is raw too, and it is stopped before its swap. The columnar store (DuckDB) is a separate file and is
 not covered. Threads that are not registry jobs keep their own stops: the import queue, the re-index managers, the
 backup threads, the rollup and keyword-fold builders, the request-bound AI streams, and the scheduler's own threads
 (``oo-scheduler``, whose stop gives up after a 10 s join, with its ``oo-collect`` pool; ``oo-briefing-bg``;
@@ -171,7 +173,8 @@ def check(what: str) -> None:
 def _on_statement(
     conn: Any, cursor: Any, statement: Any, parameters: Any, context: Any, executemany: Any
 ) -> None:  # pragma: no cover
-    if _CLOSED or _REFUSED:
+    # A ROLLBACK (to a savepoint, or a SQL-level one) only undoes: it is let through, so a refused job can still unwind cleanly.
+    if (_CLOSED or _REFUSED) and not str(statement).lstrip()[:8].upper().startswith("ROLLBACK"):
         check("a statement")
 
 
