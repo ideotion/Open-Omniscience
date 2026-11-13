@@ -114,3 +114,17 @@ def test_no_raw_job_state_word_is_printed():
         loc = json.loads(locale_file.read_text(encoding="utf-8"))
         for key in ("running", "paused", "done", "error", "cancelled", "Server text, in English"):
             assert loc.get(key), (lang, key)
+
+
+def test_every_meaning_key_the_server_sends_has_a_sentence_in_the_page_r665():
+    """The quarantine routes name the meaning of each English method/note sentence with a stable key (R289 proposal, built under
+    R665). A key the server sends that the page has no sentence for would fall back to the labelled English: correct, but a
+    regression for every non-English reader. So every key in the routes is a ``case`` in the page, and the reverse."""
+    import re
+
+    api = (_ROOT / "src" / "api" / "quarantine.py").read_text(encoding="utf-8")
+    page = (_ROOT / "src" / "static" / "app-maintenance.js").read_text(encoding="utf-8")
+    sent = set(re.findall(r'"(?:method|note)_key"\]?\s*[:=]\s*"(maintenance\.[a-z_]+\.v\d+)"', api))
+    known = set(re.findall(r'case "(maintenance\.[a-z_]+\.v\d+)":', page))
+    assert len(sent) == 5, sent
+    assert sent == known, (sent - known, known - sent)

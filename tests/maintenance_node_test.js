@@ -36,7 +36,7 @@ function extractConst(name) {
   return APP.slice(at, APP.indexOf(";\n", at) + 1);
 }
 
-const NAMES = ["ooLabelHtml", "_maintStateLabel", "_maintServerTextHtml", "_maintMethodHtml", "_maintTallyLabel", "maintRunHtml", "maintTallyHtml", "maintSampleRowHtml", "maintSamplesHtml",
+const NAMES = ["ooLabelHtml", "_maintStateLabel", "_maintServerTextHtml", "_maintKeyedText", "_maintMethodHtml", "_maintNoteHtml", "_maintTallyLabel", "maintRunHtml", "maintTallyHtml", "maintSampleRowHtml", "maintSamplesHtml",
   "maintRawIdsHtml", "maintFurnitureHtml", "maintStartUrl"];
 const src = "const window = {};\n" + extractConst("esc") + "\n" +
   "function fmtNum(v) { return String(v); }\n" +
@@ -115,6 +115,36 @@ for (const h of [
   assert.ok(visible(h).includes(METHOD));
 }
 assert.ok(!R.maintSamplesHtml({ signals: { s: { candidates: 1, shown: 0, rows: [] } } }, tr, tf).includes("Server text"), "no method, no label");
+
+// -- a method KEY the page knows is said in the reader's language, in plain words (R289 proposal, R665) ----
+const KEYED = [
+  ["samples", R.maintSamplesHtml({ signals: { s: { candidates: 1, shown: 0, rows: [] } }, method: METHOD, method_key: "maintenance.samples.v1" }, tr, tf)],
+  ["raw ids", R.maintRawIdsHtml({ raw_id_sources: 1, articles_in_shown: 1, rows: [], method: METHOD, method_key: "maintenance.raw_ids.v1" }, tr, tf)],
+  ["furniture", R.maintFurnitureHtml({ source: { id: 1, name: "n" }, sampled: 40, min_share: 0.3, articles_in_source: 90,
+    candidates: [{ line: "a line", articles: 2, known: false }], method: METHOD, method_key: "maintenance.furniture.v1" }, tr, tf)],
+];
+for (const [what, h] of KEYED) {
+  assert.ok(/T\[/.test(visible(h).slice(visible(h).lastIndexOf("T["))), what + ": the keyed sentence goes through t(): " + h);
+  assert.ok(!visible(h).includes(METHOD), what + ": the English is not shown beside the translation: " + h);
+  assert.ok(!h.includes("Server text"), what + ": no English label when the page knows the key: " + h);
+  assert.ok(!VERDICT.test(visible(h)), what + ": no verdict wording: " + h);
+  noJunk(h, what);
+}
+assert.ok(visible(KEYED[2][1]).includes("40") && visible(KEYED[2][1]).includes("30%"), "the furniture sentence carries the real count and share: " + KEYED[2][1]);
+// a key from a newer server falls back to the English, labelled; so does a furniture payload missing its numbers
+for (const h of [
+  R.maintSamplesHtml({ signals: { s: { candidates: 1, shown: 0, rows: [] } }, method: METHOD, method_key: "maintenance.samples.v2" }, tr, tf),
+  R.maintFurnitureHtml({ source: { id: 1, name: "n" }, articles_in_source: 1, candidates: [{ line: "x", articles: 3, known: false }], method: METHOD, method_key: "maintenance.furniture.v1" }, tr, tf),
+  R.maintRawIdsHtml({ raw_id_sources: 1, articles_in_shown: 1, rows: [], method: METHOD, method_key: "toString" }, tr, tf),
+]) {
+  assert.ok(visible(h).includes(METHOD) && visible(h).includes("T[Server text, in English]"), "unknown key: English as sent, labelled: " + h);
+}
+// a signal's note: keyed -> translated; unkeyed -> labelled English (it used to print the English unlabelled)
+const nk = R.maintSamplesHtml({ signals: { host_mismatch: { candidates: 0, shown: 0, rows: [], note: "ENGLISH NOTE", note_key: "maintenance.host_fact.v1" },
+  host_confirmed: { candidates: null, shown: 0, rows: [], note: "ENGLISH NOTE 2", note_key: "maintenance.host_not_measured.v1" } } }, tr, tf);
+assert.ok(!visible(nk).includes("ENGLISH NOTE") && !nk.includes("Server text"), "known note keys are translated: " + nk);
+const nu = R.maintSamplesHtml({ signals: { s: { candidates: 0, shown: 0, rows: [], note: "ENGLISH NOTE" } } }, tr, tf);
+assert.ok(visible(nu).includes("ENGLISH NOTE") && visible(nu).includes("T[Server text, in English]"), "an unkeyed note is labelled: " + nu);
 
 // -- samples ---------------------------------------------------------------------
 const sample = { signals: {

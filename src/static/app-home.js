@@ -1184,7 +1184,8 @@
     // generated_at untouched, and a guard on that alone would never repaint the new line.
     function _briefStamp(data) {
       return String(data.generated_at || "") + "|" + uiLangCode()
-        + "|" + (data.kept_reason || "") + "|" + (data.incomplete_reason || "");
+        + "|" + (data.kept_reason || "") + "|" + (data.incomplete_reason || "")
+        + (Array.isArray(data.stopped_producers) && data.stopped_producers.length ? "|" + data.stopped_producers.join(",") : "");
     }
 
     async function loadBriefing(force) {
@@ -1288,14 +1289,24 @@
       // The last refresh stopped early (diagnostics rank 4): say whether cards are missing
       // from this feed or whether this is the previous feed, and why -- a short or old feed
       // must not read as a complete, current one. Absent when the last refresh finished.
-      const stopWhy = (r) => (r === "memory_short" ? t("the machine was short of memory") : t("it ran out of time"));
+      const stopWhy = (r) => (r === "memory_short" ? t("the machine was short of memory")
+        : r === "wal_pinned" ? t("the database's log file had grown too large") : t("it ran out of time"));
       const stopNote = data.kept_reason
         ? tf("This is the previous feed: the last refresh stopped early because {why}.", {why: stopWhy(data.kept_reason)})
         : data.incomplete_reason
         ? tf("Some cards may be missing: the last refresh stopped early because {why}.", {why: stopWhy(data.incomplete_reason)})
         : "";
+      // R666: card builders stopped at their time bound. Their cards are missing from THIS feed for as long as it is shown
+      // (the list rides the cache), so the line stays until a refresh in which they finish. The names go in the hover.
+      const stoppedKinds = Array.isArray(data.stopped_producers) ? data.stopped_producers.filter((x) => typeof x === "string") : [];
+      const stoppedNote = stoppedKinds.length
+        ? tf("Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.",
+            {n: stoppedKinds.length, minutes: Number(data.producer_deadline_min) || 10})
+        : "";
+      const stoppedTitle = stoppedKinds.length ? tf("Stopped card builders: {names}", {names: stoppedKinds.join(", ")}) : "";
       const banner = (refreshing ? briefProgressHtml(data, t) : "")
-        + (stopNote ? `<p class="card-caveat" id="brief-stopped">${esc(stopNote)}</p>` : "");
+        + (stopNote ? `<p class="card-caveat" id="brief-stopped">${esc(stopNote)}</p>` : "")
+        + (stoppedNote ? `<p class="card-caveat" id="brief-stopped-builders" title="${esc(stoppedTitle)}">${esc(stoppedNote)}</p>` : "");
       if (!data.buckets || !data.buckets.length) {
         if (refreshing) { feed.innerHTML = banner; return; }
         // The stop line stays above the empty-state frame: an empty feed from a refresh that
