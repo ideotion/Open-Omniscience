@@ -73,11 +73,11 @@ def test_no_listed_type_is_a_person_type():
     "edition,text,want",
     [
         ("fr", "{{Infobox Musée|adresse=3 rue Fixture}}", [("adresse", "3 rue Fixture")]),
-        ("de", "{{Infobox Unternehmen|Anschrift=Fixturestraße 4<br />Berlin}}", [("anschrift", "Fixturestraße 4, Berlin")]),
+        ("de", "{{Infobox Unternehmen|Anschrift=Fixturestraße 4<br />Berlin}} {{coord|52.5|13.4}}", [("anschrift", "Fixturestraße 4, Berlin")]),
         ("es", "{{Ficha de museo|dirección=Calle Mayor 3}}", [("dirección", "Calle Mayor 3")]),
-        ("pt", "{{Info/Empresa|endereço=Rua Fixture, 10}}", [("endereço", "Rua Fixture, 10")]),
+        ("pt", "{{Info/Empresa|endereço=Rua Fixture, 10}} {{coord|-23.5|-46.6}}", [("endereço", "Rua Fixture, 10")]),
         ("ru", "{{Музей|адрес=ул. Ленина, 5}}", [("адрес", "ул. Ленина, 5")]),
-        ("id", "{{Infobox perusahaan|alamat=Jalan Fixture 7}}", [("alamat", "Jalan Fixture 7")]),
+        ("id", "{{Infobox perusahaan|alamat=Jalan Fixture 7}} {{coord|-6.2|106.8}}", [("alamat", "Jalan Fixture 7")]),
     ],
 )
 def test_the_editions_own_type_and_key_names(edition, text, want):
@@ -137,16 +137,16 @@ def test_located_after_dropping_the_country_with_its_provenance():
 
 def test_a_building_and_its_entrance_are_one_place_but_two_far_apart_are_ambiguous():
     near = _geo({"2 Fixture Road": [_hit(48.85, 2.35, "way/1"), _hit(48.8505, 2.3502, "node/2")]})
-    assert L.resolve("2 Fixture Road", near)["status"] == "located"
+    assert L.resolve("2 Fixture Road", near, guarded=True)["status"] == "located"
     far = _geo({"2 Fixture Road": [_hit(48.85, 2.35), _hit(43.3, 5.4)]})
-    assert L.resolve("2 Fixture Road", far) == {"status": "ambiguous", "answers": 2}
+    assert L.resolve("2 Fixture Road", far, guarded=True) == {"status": "ambiguous", "answers": 2}
     many = _geo({"2 Fixture Road": [_hit(48.85, 2.35)] * 6})
-    assert L.resolve("2 Fixture Road", many)["status"] == "ambiguous"
+    assert L.resolve("2 Fixture Road", many, guarded=True)["status"] == "ambiguous"
 
 
 def test_not_found_and_no_country_are_different_answers():
-    assert L.resolve("2 Fixture Road", _geo({})) == {"status": "not_located"}
-    assert L.resolve("2 Fixture Road", _geo("no-country")) == {"status": "no_osm_country"}
+    assert L.resolve("2 Fixture Road", _geo({}), guarded=True) == {"status": "not_located"}
+    assert L.resolve("2 Fixture Road", _geo("no-country"), guarded=True) == {"status": "no_osm_country"}
     assert L.resolve("Fixture Road", _geo({})) == {"status": "no_house_number"}
 
 
@@ -197,14 +197,14 @@ def test_the_report_places_only_what_it_located_and_counts_everything_else(lane,
     _page(lane, "en", "Fixture Hall", HALL, 1)
     _page(lane, "en", "A. Person", PERSON, 2)
     _page(lane, "en", "Far Hall", "{{Infobox museum|address=7 Far Street}} {{coord|-33.9|151.2}}", 3)
-    _page(lane, "en", "Twin Hall", "{{Infobox museum|address=5 Twin Road}}", 4)
+    _page(lane, "en", "Twin Hall", "{{Infobox museum|address=5 Twin Road, Fixtureville}}", 4)
     _page(lane, "en", "Vague Hall", "{{Infobox museum|address=Somewhere, Fixtureville}}", 5)
-    lane.add(WikiWarmPage(edition="fr", page_id=9, title="Salle", latest_revid=9, latest_text="{{Infobox Musée|adresse=3 rue Fixture}}"))
+    lane.add(WikiWarmPage(edition="fr", page_id=9, title="Salle", latest_revid=9, latest_text="{{Infobox Musée|adresse=3 rue Fixture, Fixtureville}}"))
     lane.commit()
     scope('[["FXL", "2026-10-01"]]', [(41.0, -5.0, 51.0, 10.0)], _geo({
         "2 Fixture Road, Fixtureville": [_hit(48.85, 2.35)],
-        "5 Twin Road": [_hit(48.85, 2.35), _hit(45.0, 1.0)],
-        "3 rue Fixture": [_hit(48.86, 2.36, "node/3")],
+        "5 Twin Road, Fixtureville": [_hit(48.85, 2.35), _hit(45.0, 1.0)],
+        "3 rue Fixture, Fixtureville": [_hit(48.86, 2.36, "node/3")],
     }))
     rep = L.located_report(lane, budget=5.0)
     assert rep["measured"] is True and rep["complete"] is True
@@ -300,7 +300,7 @@ def test_a_fixture_infobox_address_is_located_through_the_real_local_index(osm_l
     [pt] = rep["points"]
     assert pt["title"] == "Fixture Building" and pt["osm_object"] == "way/13" and pt["osm_country"] == "ZZZ"
     assert pt["query"] == "1 Fixture Road, Fixtureville", "the country part was dropped, the street part kept"
-    assert pt["osm_address"] == "1 Fixture Road 00000 Fixtureville"
+    assert "osm_address" not in pt, "the matched object's own address is never served (security read, R691)"
 
 
 # --------------------------------------------------------------------------- #
@@ -356,7 +356,7 @@ def test_a_number_alone_is_never_looked_up():
 def test_a_located_answer_far_from_the_pages_own_coord_is_not_placed(lane, scope):
     _page(lane, "en", "Namesake Hall", "{{Infobox museum|address=2 Fixture Road, Elsewhere}} {{coord|-33.9|151.2}}", 1)
     lane.commit()
-    scope('[["FXL", "2026-10-01"]]', [], _geo({"2 Fixture Road": [_hit(48.85, 2.35)]}))
+    scope('[["FXL", "2026-10-01"]]', [], _geo({"2 Fixture Road, Elsewhere": [_hit(48.85, 2.35)]}))
     rep = L.located_report(lane, budget=5.0)
     assert rep["per_edition"]["en"] == {"ambiguous": 1, "found": 1} and rep["points"] == []
 
@@ -379,9 +379,9 @@ def test_a_failed_lookup_and_an_unreadable_osm_lane_are_named_never_raised(lane,
 
 def test_a_page_that_changes_is_read_again_and_a_page_that_goes_is_forgotten(lane, scope):
     _page(lane, "en", "Fixture Hall", HALL, 1)
-    lane.add(WikiWarmPage(edition="fr", page_id=9, title="Salle", latest_revid=9, latest_text="{{Infobox Musée|adresse=3 rue Fixture}}"))
+    lane.add(WikiWarmPage(edition="fr", page_id=9, title="Salle", latest_revid=9, latest_text="{{Infobox Musée|adresse=3 rue Fixture, Fixtureville}}"))
     lane.commit()
-    scope('[["FXL", "2026-10-01"]]', [], _geo({"2 Fixture Road, Fixtureville": [_hit(48.85, 2.35)], "3 rue Fixture": [_hit(48.86, 2.36)]}))
+    scope('[["FXL", "2026-10-01"]]', [], _geo({"2 Fixture Road, Fixtureville": [_hit(48.85, 2.35)], "3 rue Fixture, Fixtureville": [_hit(48.86, 2.36)]}))
     assert len(L.located_report(lane, budget=5.0)["points"]) == 2
     # The HOT page gains a person infobox in a new revision; the WARM text is replaced in place by one without an infobox.
     entity = lane.query(VersionedEntity).filter_by(external_id="en:#1").one()
@@ -440,7 +440,12 @@ def test_without_a_page_coordinate_a_shortened_address_keeps_its_locality():
     assert asked and all("," in q for q in asked)
     asked.clear()
     L.resolve("1 avenue de la Gare, 1700 Fribourg", geo, guarded=True)
-    assert "1 avenue de la Gare" in asked
+    assert asked and "1 avenue de la Gare" not in asked, "even beside a coordinate, the street alone is somebody's house elsewhere"
+    asked.clear()
+    L.resolve("1 avenue de la Gare", geo)
+    assert asked == [], "an address with no locality is tried only beside the page's own coordinate"
+    L.resolve("1 avenue de la Gare", geo, guarded=True)
+    assert asked == ["1 avenue de la Gare"]
 
 
 def test_held_reads_no_warm_text_column():
@@ -551,3 +556,96 @@ def test_residences_in_every_script_produce_no_point_even_when_the_index_answers
     skipped = sum(row.get("skipped_a_home", 0) for row in rep["per_edition"].values())
     assert skipped == len(RESIDENCES)
     assert all(set(row) == {"skipped_a_home"} for row in rep["per_edition"].values())
+
+
+# --------------------------------------------------------------------------- #
+# The two security reads of R691, each finding pinned.
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    "edition,title,text",
+    [
+        ("en", "St Mary's Rectory", "{{Infobox religious building|building_type=Rectory|address=12 Church Lane, Ambridge}}"),
+        ("en", "Old Vicarage, Grantchester", "{{Infobox church|address=4 Mill Way, Grantchester}}"),
+        ("de", "Pfarrhaus St. Peter", "{{Infobox Kirchengebäude|Adresse=Kirchweg 3, Dorf}}"),
+        ("fr", "Presbytère de Fixture", "{{Infobox Édifice religieux|adresse=3 rue Fixture, Fixtureville}}"),
+        ("ru", "Резиденция посла", "{{Гостиница|адрес=ул. Ленина, 5, Москва}} {{coord|55.7|37.6}}"),
+        ("en", "Elm Garden", "{{Infobox park|type=Private garden|address=7 Elm Road, Ambridge}}"),
+        ("en", "Elm Inn", "{{Infobox hotel|type=" + "Private residence " * 20 + "|address=7 Elm Road, Ambridge}} {{coord|52|-1}}"),
+        ("en", "Elm Inn", "{{Infobox hotel|type=[[Detached house|Single-family]]|address=7 Elm Road, Ambridge}} {{coord|52|-1}}"),
+    ],
+)
+def test_a_house_that_goes_with_an_office_or_a_private_place_is_never_read(edition, title, text):
+    assert L.page_addresses(edition, text, title) == {"skip": "a_home"}
+
+
+@pytest.mark.parametrize(
+    "title,text",
+    [
+        ("John Smith (chef)", "{{Infobox restaurant|address=7 Elm Road, Ambridge}} {{coord|52|-1}}"),
+        ("Elm Kitchen", "{{Lifetime|1950|LIVING|Smith, John}}{{Infobox restaurant|address=7 Elm Road, Ambridge}} {{coord|52|-1}}"),
+        ("Elm Kitchen", "{{Infobox restaurant|address=7 Elm Road, Ambridge}} {{coord|52|-1}}{{DEFAULTSORT:Smith, John}}"),
+        ("Elm Kitchen", "{{Infobox museum|address=7 Elm Road, Ambridge}}[[Category:Living&#32;people]]"),
+    ],
+)
+def test_a_biography_without_a_person_infobox_is_still_a_person(title, text):
+    assert L.page_addresses("en", text, title) == {"skip": "about_a_person"}
+
+
+def test_an_embassy_is_off_the_list_and_a_firm_needs_its_own_coordinate():
+    assert L.page_addresses("en", "{{Infobox embassy|address=1 Embassy Row, Capital}}") == {"skip": "type_not_on_the_list"}
+    firm = "{{Infobox company|name=Acme Ltd|address=7 Elm Road, Ambridge}}"
+    assert L.page_addresses("en", firm, "Acme Ltd") == {"skip": "type_not_on_the_list"}
+    assert L.page_addresses("en", firm + " {{coord|52|-1}}", "Acme Ltd")["candidates"] == [("address", "7 Elm Road, Ambridge")]
+
+
+def test_a_template_built_name_fails_closed():
+    text = "{{Infobox museum|address=7 Elm Road, Ambridge}}{{Infobox {{#if:1|person}}|name=A}}"
+    assert L.page_addresses("en", text) == {"skip": "type_not_on_the_list"}
+    assert L.page_addresses("en", "{{Infobox museum|address=7 Elm Road, Ambridge|note=a{{!}}b}}")["candidates"]
+
+
+def test_the_street_alone_is_never_asked_and_a_postcode_is_not_a_house_number():
+    asked = []
+
+    def geo(q, limit=5):
+        asked.append(q)
+        if q == "5 Mill Lane":
+            return {"status": "located", "total": 1, "results": [_hit(51.27, 0.42)]}
+        return {"status": "empty", "total": 0, "results": []}
+
+    assert L.resolve("5 Mill Lane, Townville, Kent", geo, guarded=True)["status"] == "not_located"
+    assert "5 Mill Lane" not in asked
+    assert L.variants("Mill Lane, ME1 2AB") == []
+    assert L.variants("ул. Ленина, 5, Москва") == ["ул. Ленина, 5, Москва", "ул. Ленина, 5"]
+    assert L.variants("5, rue Fixture, Fixtureville") == ["5, rue Fixture, Fixtureville", "5, rue Fixture"]
+    # The located answer agrees with the page within a few kilometres, not fifty.
+    assert L.COORD_AGREEMENT_METRES <= 5_000
+
+
+def test_a_busy_scan_serves_counts_never_old_points():
+    L._last = {"measured": True, "complete": True, "points": [{"title": "Old Museum"}], "per_edition": {"en": {"located": 1}}}
+    assert L._lock.acquire(blocking=False)
+    try:
+        rep = L.located_report(None)
+    finally:
+        L._lock.release()
+        L.reset()
+    assert rep["points"] == [] and rep["complete"] is False and rep["from_previous_read"] is True
+    assert rep["per_edition"] == {"en": {"located": 1}}
+
+
+def test_a_renamed_page_is_read_again(lane, scope):
+    _page(lane, "en", "Elm Museum", "{{Infobox museum|address=2 Fixture Road, Fixtureville}}", 1)
+    lane.commit()
+    scope('[["FXL", "2026-10-01"]]', [], _geo({"2 Fixture Road, Fixtureville": [_hit(48.85, 2.35)]}))
+    assert len(L.located_report(lane, budget=5.0)["points"]) == 1
+    entity = lane.query(VersionedEntity).filter_by(external_id="en:#1").one()
+    entity.title = "Elm House"
+    lane.commit()
+    rep = L.located_report(lane, budget=5.0)
+    assert rep["points"] == [] and rep["per_edition"]["en"] == {"skipped_a_home": 1}
+
+
+def test_the_words_the_security_read_found_missing():
+    for word in ("मकान", "ঘর", "屋敷", "住居", "寓所", "домик", "منـزل", "مَنْزِل"):
+        assert L.names_a_home(word), word

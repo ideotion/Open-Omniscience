@@ -11,7 +11,9 @@ monument, castle or heritage-register type, which describe private houses as oft
 WHAT IS NEVER READ (R678), DECIDED FOR THE WHOLE PAGE AND FAILING CLOSED. A page is skipped, and counted with its reason, when any
 template or category on it marks a person (an infobox about a person, de ``Personendaten``, "Living people", births and deaths), when any
 of its infoboxes is not on the list, or, as an extra check on top (R691), when its title, categories or infobox name a home in any of
-the twelve languages (a house, a farm, an estate, 邸, हवेली). A family counts as people. A type or a marker nobody wrote down
+the twelve languages (a house, a farm, an estate, 邸, हवेली). A family counts as people. A firm, an agency, a restaurant or a hotel
+is read only beside the page's own ``{{coord}}``, since one may be run from someone's home; and an address is never shortened to its
+street alone, since "5 Mill Lane" answers from whichever village has one. A type or a marker nobody wrote down
 costs a located address, never a person's privacy: the map can never become a way to find where someone lives.
 Addresses in article BODIES (wiki and press) are not read either: without an infobox key, a body-text grammar would place strings that only
 look like addresses. That is a recorded gap, stated in the counters' ``gaps`` rather than shown as zero.
@@ -76,7 +78,7 @@ STATUSES: tuple[str, ...] = (
 #: Why a page was not read, counted per edition. Every one fails closed: a page is read only when nothing on it says otherwise.
 SKIPS: tuple[str, ...] = ("about_a_person", "a_home", "type_not_on_the_list")
 #: A located answer further than this from the page's own ``{{coord}}`` is not trusted: it is counted as ambiguous, never placed.
-COORD_AGREEMENT_METRES: float = 50_000.0
+COORD_AGREEMENT_METRES: float = 5_000.0
 
 GAPS: tuple[str, ...] = (
     "Addresses in article bodies (Wikipedia and press) are not read: only an infobox field named as an address is.",
@@ -114,7 +116,7 @@ _EN_TYPES = (
     "infobox museum", "infobox company", "infobox organization", "infobox organisation", "infobox government agency", "infobox hospital",
     "infobox school", "infobox university", "infobox library", "infobox hotel", "infobox restaurant", "infobox shopping mall",
     "infobox venue", "infobox stadium", "infobox theatre", "infobox church", "infobox religious building", "infobox mosque",
-    "infobox temple", "infobox hindu temple", "infobox synagogue", "infobox embassy", "infobox station", "infobox airport", "infobox park",
+    "infobox temple", "infobox hindu temple", "infobox synagogue", "infobox station", "infobox airport", "infobox park",
     "infobox zoo",
 )
 PLACE_TYPES: dict[str, frozenset[str]] = {
@@ -122,7 +124,7 @@ PLACE_TYPES: dict[str, frozenset[str]] = {
     "fr": _names(
         "infobox musée", "infobox entreprise", "infobox organisation", "infobox université", "infobox école",
         "infobox établissement scolaire", "infobox hôpital", "infobox hôtel", "infobox gare", "infobox stade", "infobox salle de spectacle",
-        "infobox édifice religieux", "infobox bibliothèque", "infobox administration", "infobox ambassade", "infobox parc",
+        "infobox édifice religieux", "infobox bibliothèque", "infobox administration", "infobox parc",
     ),
     "de": _names(
         "infobox unternehmen", "infobox hochschule", "infobox museum", "infobox bahnhof", "infobox stadion", "infobox krankenhaus",
@@ -186,6 +188,31 @@ _CATEGORY_LINK = re.compile(
 )
 #: Unprefixed building templates an edition uses (ru): recognised as infoboxes so they count as off the list, never as "no infobox".
 _KNOWN_UNLISTED = _names("здание", "усадьба", "жилой дом", "памятник архитектуры", "особняк")
+#: Templates that mark a biography with no infobox, and the sort-key magic words whose "Surname, Given" value says the same.
+_PERSON_MARKERS = _names("lifetime", "bd", "bio", "bda", "birth date and age", "death date and age")
+_SORT_KEYS = ("defaultsort:", "sortierung:", "ordenar:", "clé de tri:", "сортировка:", "デフォルトソート:", "ترتيب افتراضي:")
+#: A template name that is itself a template: unreadable, so the page fails closed.
+_UNREADABLE_TEMPLATE = re.compile(r"\{\{\s*[^\n|{}]*\{\{(?!\s*!\s*\}\})")
+#: Disambiguators that say a title names a person ("John Smith (chef)").
+_PERSON_DISAMBIGUATOR = re.compile(
+    r"\((?:[^()]*\b)?(?:chef|restaurateur|business(?:man|woman|person)|entrepreneur|architect|artist|singer|actor|actress|writer|author|"
+    r"politician|painter|musician|footballer|cricketer|journalist|born \d+|\d{3,4}[-–]\d{0,4}|cuisinier|homme d'affaires|"
+    r"unternehmer|empresario|empresária|empresário|предприниматель|повар|料理人|实业家|企業家|رجل أعمال|उद्यमी|ব্যবসায়ী)\)\s*$",
+    re.I,
+)
+#: Organisation-kind types: a firm or a hotel may be run from someone's home, so these are read only when the page carries its own
+#: ``{{coord}}`` (a public, mapped place) and the located answer agrees with it.
+_ORG_WORDS = (
+    "company", "organization", "organisation", "agency", "restaurant", "hotel", "entreprise", "administration", "hôtel", "unternehmen",
+    "behörde", "empresa", "organización", "organização", "компания", "организация", "гостиница", "公司", "会社", "شركة", "منظمة", "فندق",
+    "perusahaan", "कंपनी", "কোম্পানি", "সংস্থা",
+)
+
+
+def _needs_coord(kind: str) -> bool:
+    return any(word in kind for word in _ORG_WORDS)
+
+
 #: Infoboxes that may share a page with a place infobox without saying anything about who lives there.
 _HARMLESS = _names("infobox mapframe", "infobox map")
 #: An EXTRA check on top of the closed list (R691: never the safeguard itself). A page whose title, categories, infobox name, type or use
@@ -203,22 +230,42 @@ _HOME_SPACED = (
     "wohngebäude", "bauernhof", "landhaus", "herrenhaus", "gutshaus", "gutshof", "residencia", "vivienda", "casa", "hacienda", "finca",
     "cortijo", "quinta", "residência", "moradia", "fazenda", "chácara", "sítio", "жилой", "дом", "особняк", "усадьба", "дача", "ферма",
     "rumah", "kediaman", "vila", "perkebunan", "peternakan",
+    # Houses that go with an office: a clergy, envoy, warden or guest house is someone's home (security read, R691).
+    "rectory", "vicarage", "parsonage", "manse", "presbytery", "deanery", "official residence", "guesthouse", "guest house", "lodge",
+    "résidence", "presbytère", "cure", "gîte", "residenz", "pfarrhaus", "forsthaus", "gästehaus", "pension", "rectoría", "casona",
+    "presbitério", "residências", "резиденция", "причта", "домик", "pastoran", "wisma",
 )
+#: Words that, in a TYPE or USE field only, say the place is not public.
+_PRIVATE_SPACED = ("private", "privé", "privée", "privat", "privado", "privada", "частный", "частная", "pribadi")
+_PRIVATE_ANYWHERE = ("私人", "私有", "私邸", "個人", "خاص", "निजी", "ব্যক্তিগত")
 _HOME_ANYWHERE = (
     "住宅", "邸", "宅", "公馆", "公館", "故居", "旧居", "舊居", "別荘", "别墅", "別墅", "農場", "农场", "牧場", "牧场", "山荘", "荘園", "庄园",
     "莊園", "民家", "家屋", "مسكن", "منزل", "سكني", "بيت", "فيلا", "مزرعة", "आवास", "निवास", "हवेली", "कोठी", "बंगला", "फार्म", "घर",
     "বাসভবন", "বাসা", "বাড়ি", "খামার", "বাংলো",
+    "屋敷", "住居", "寓所", "官舎", "宿舎", "مقر إقامة", "إقامة", "मकान", "ঘর",
 )
 _LETTER = r"[^\W\d_]"
-_HOME_WORDS = re.compile(
-    "|".join([rf"(?<!{_LETTER}){re.escape(w)}(?!{_LETTER})" for w in _HOME_SPACED] + [re.escape(w) for w in _HOME_ANYWHERE]),
-    re.I,
-)
+
+
+def _words(spaced: tuple[str, ...], anywhere: tuple[str, ...]) -> re.Pattern[str]:
+    return re.compile(
+        "|".join([rf"(?<!{_LETTER}){re.escape(w)}(?!{_LETTER})" for w in spaced] + [re.escape(w) for w in anywhere]), re.I
+    )
+
+
+_HOME_WORDS = _words(_HOME_SPACED, _HOME_ANYWHERE)
+_PRIVATE_WORDS = _words(_PRIVATE_SPACED, _PRIVATE_ANYWHERE)
+#: Arabic tatweel and short-vowel marks, removed before matching so a stretched or vowelled word still matches.
+_ARABIC_MARKS = re.compile("[\u0640\u064b-\u0652\u0670]")
+
+
+def _plain(text: str) -> str:
+    return " ".join(_ARABIC_MARKS.sub("", html.unescape(str(text))).replace("_", " ").split())
 
 
 def names_a_home(text: str | None) -> bool:
     """True when ``text`` names a dwelling in any of the twelve editions' languages. An extra check, never the safeguard (R691)."""
-    return bool(text) and _HOME_WORDS.search(" ".join(str(text).replace("_", " ").split())) is not None
+    return bool(text) and _HOME_WORDS.search(_plain(str(text))) is not None
 
 
 # The infobox keys that name an address, per edition. ``address`` is read in every edition: many localised templates keep the English
@@ -289,16 +336,21 @@ def classify_page(edition: str, wikitext: str) -> tuple[str | None, str | None, 
     ``(None, None, None)`` is a page with no infobox at all.
     """
     text = wikitext or ""
-    cats = [" ".join(c.replace("_", " ").split()) for c in _CATEGORY_LINK.findall(text)]
+    cats = [_plain(c) for c in _CATEGORY_LINK.findall(text)]
     if any(_PERSON_CATEGORY.search(c) for c in cats):
         return "about_a_person", None, None
     home_category = any(names_a_home(c) for c in cats)
+    if _UNREADABLE_TEMPLATE.search(text):
+        # A template whose name is itself built by a template ({{Infobox {{#if:...}}}}) cannot be told apart: fail closed.
+        return "type_not_on_the_list", None, None
     allowed = PLACE_TYPES.get(edition, frozenset())
     first: tuple[str, int] | None = None
     unlisted = False
     seen = False
     for match in _TEMPLATE_OPEN.finditer(text):
         name = _norm(match.group(1))
+        if name in _PERSON_MARKERS or (name.startswith(_SORT_KEYS) and "," in name):
+            return "about_a_person", None, None  # {{Lifetime}}, {{BD}}, a "Surname, Given" sort key: a biography without an infobox
         if _is_person_type(name) and (_looks_like_infobox(name) or name in _PERSON_UNPREFIXED):
             return "about_a_person", None, None
         if not _looks_like_infobox(name) or name in _HARMLESS:
@@ -315,8 +367,13 @@ def classify_page(edition: str, wikitext: str) -> tuple[str | None, str | None, 
     fields = _fields(text, first[1])
     if fields is None:
         return "type_not_on_the_list", None, None
-    if home_category or names_a_home(first[0]) or any(names_a_home(clean_value(fields[key])) for key in _HOME_FIELDS if key in fields):
+    # The extra check (R691), on the raw value as well as the cleaned one: a link target ([[Detached house|Single-family]]) or a value too
+    # long to clean still counts.
+    named = [(key, fields[key]) for key in _HOME_FIELDS if key in fields]
+    if home_category or names_a_home(first[0]) or any(names_a_home(raw) or names_a_home(clean_value(raw)) for _, raw in named):
         return "a_home", None, None
+    if any(key != "name" and _PRIVATE_WORDS.search(_plain(raw)) for key, raw in named):
+        return "a_home", None, None  # type = Private garden
     return None, first[0], fields
 
 
@@ -358,15 +415,28 @@ def has_house_number(text: str) -> bool:
     return any(ch.isdigit() for ch in text)
 
 
+_HOUSE_NUMBER_PART = re.compile(r"^(?:д\.?|дом|n[º°o.]?|no\.?|nr\.?|número|numéro)?\s*\d+\s*[a-zа-я]?(?:\s*[/-]\s*\d+[a-zа-я]?)?\.?$", re.I)
+
+
+def _core(parts: list[str]) -> int:
+    """How many leading parts name the house: 1 for "5 Mill Lane", 2 for "ул. Ленина, 5" or "Rua Fixture, 10"; 0 when no part carries
+    the number where a house number goes ("Mill Lane, ME1 2AB" names a street and a postcode, not a house)."""
+    if len(parts) > 1 and _HOUSE_NUMBER_PART.match(parts[0]):
+        return 2  # "5, rue Fixture"
+    if parts and has_house_number(parts[0]):
+        return 1
+    if len(parts) > 1 and _HOUSE_NUMBER_PART.match(parts[1]):
+        return 2
+    return 0
+
+
 def variants(text: str) -> list[str]:
-    """The address as written, then with trailing comma parts dropped one at a time. The leading part is never dropped."""
+    """The address as written, then with trailing comma parts dropped one at a time, never into the part that carries the number."""
     parts = [p.strip() for p in text.split(",") if p.strip()]
-    out = []
-    for n in range(len(parts), 0, -1):
-        candidate = ", ".join(parts[:n])
-        if has_house_number(candidate) and any(ch.isalpha() for ch in candidate):
-            out.append(candidate)
-    return out
+    core = _core(parts)
+    if not core or not any(ch.isalpha() for ch in "".join(parts[:core])):
+        return []
+    return [", ".join(parts[:n]) for n in range(len(parts), core - 1, -1)]
 
 
 def page_coordinate(wikitext: str) -> tuple[float, float] | None:
@@ -413,11 +483,12 @@ def resolve(text: str, geocoder: Any = None, *, guarded: bool = False) -> dict[s
     tries = variants(text)
     if not tries:
         return {"status": "no_house_number"}
-    whole = len([p for p in text.split(",") if p.strip()])
-    if not guarded and whole > 1:
-        # Without the page's own coordinate to check against, a shortened address keeps its locality: "1 avenue de la Gare" alone would
-        # answer from whichever ingested country has one, which is a namesake, not this place.
-        tries = [q for q in tries if len(q.split(",")) >= 2]
+    parts = [p for p in text.split(",") if p.strip()]
+    whole, core = len(parts), _core([p.strip() for p in parts])
+    # A shortened address always keeps its locality: "5 Mill Lane" alone answers from whichever village has one, and that is somebody's
+    # house, not this place (security read, R691). An address with no locality after its house is tried only when the page has its own coordinate
+    # (``guarded``) for the answer to agree with.
+    tries = [q for q in tries if len(q.split(",")) > core] if whole > core else (tries if guarded else [])
     for query in tries:
         answer = geocoder(query, limit=MAX_ANSWERS + 1)
         status = answer.get("status")
@@ -442,7 +513,6 @@ def resolve(text: str, geocoder: Any = None, *, guarded: bool = False) -> dict[s
             "lat": points[0][0],
             "lon": points[0][1],
             "osm_object": first.get("object"),
-            "osm_address": first.get("address"),
             "osm_country": first.get("country"),
             "osm_vintage": countries.get(first.get("country")),
             "answers": total,
@@ -463,6 +533,8 @@ def page_addresses(edition: str, wikitext: str, title: str | None = None) -> dic
     skip, kind, fields = classify_page(edition, wikitext)
     if skip is not None:
         return {"skip": skip}
+    if kind is not None and title and _PERSON_DISAMBIGUATOR.search(_plain(title)):
+        return {"skip": "about_a_person"}  # "John Smith (chef)": a biography with a restaurant's infobox
     if kind is not None and names_a_home(title):
         return {"skip": "a_home"}  # "John Smith House": the title names a home when no field does
     if kind is None or fields is None:
@@ -476,7 +548,10 @@ def page_addresses(edition: str, wikitext: str, title: str | None = None) -> dic
                 candidates.append((key, cleaned))
     if not candidates:
         return {"none": True}
-    return {"type": kind, "candidates": candidates, "coord": page_coordinate(wikitext)}
+    coord = page_coordinate(wikitext)
+    if coord is None and _needs_coord(kind):
+        return {"skip": "type_not_on_the_list"}  # a firm, an agency or a hotel without its own coordinate may be someone's home
+    return {"type": kind, "candidates": candidates, "coord": coord}
 
 
 # --------------------------------------------------------------------------- #
@@ -565,22 +640,25 @@ def _held(lane: Any) -> dict[str, tuple[str, str, str]]:
     out: dict[str, tuple[str, str, str]] = {}
     # SQLite's bare-column rule: content_hash is the one of the row max() picked, so a recreated lane whose row ids restart cannot pass
     # for the old one.
-    for eid, language, rid, chash in lane.execute(
-        select(VersionedEntity.id, VersionedEntity.language, func.max(VersionedRevision.id), VersionedRevision.content_hash)
+    # The title is part of the version: a page renamed to "X House" with no new text is read again (security read, R691).
+    for eid, language, title, rid, chash in lane.execute(
+        select(
+            VersionedEntity.id, VersionedEntity.language, VersionedEntity.title, func.max(VersionedRevision.id), VersionedRevision.content_hash
+        )
         .join(VersionedRevision, VersionedRevision.entity_id == VersionedEntity.id)
         .where(VersionedRevision.content.is_not(None), VersionedEntity.language.in_(editions))
-        .group_by(VersionedEntity.id, VersionedEntity.language)
+        .group_by(VersionedEntity.id, VersionedEntity.language, VersionedEntity.title)
     ):
-        out[f"hot:{eid}"] = ("hot", str(language), f"{rid}:{chash}")
+        out[f"hot:{eid}"] = ("hot", str(language), f"{rid}:{chash}:{title}")
     # ONLY columns stored before the texts: a column after ``latest_text`` makes SQLite walk (and SQLCipher decrypt) every row's text
     # overflow pages, which on a large lane spends the whole budget before one text is read. WARM replaces ``latest_text`` only with a
     # newer revid, so the revid alone versions it. A deleted page keeps its last text (Q713) and is read like any other.
-    for wid, edition, revid in lane.execute(
-        select(WikiWarmPage.id, WikiWarmPage.edition, WikiWarmPage.latest_revid).where(
+    for wid, edition, title, revid in lane.execute(
+        select(WikiWarmPage.id, WikiWarmPage.edition, WikiWarmPage.title, WikiWarmPage.latest_revid).where(
             WikiWarmPage.latest_text.is_not(None), WikiWarmPage.edition.in_(editions)
         )
     ):
-        out[f"warm:{wid}"] = ("warm", str(edition), str(revid))
+        out[f"warm:{wid}"] = ("warm", str(edition), f"{revid}:{title}")
     return out
 
 
@@ -628,7 +706,10 @@ def located_report(lane: Any, *, budget: float = SCAN_BUDGET_SECONDS, geocoder: 
     global _state, _last
     if not _lock.acquire(blocking=False):
         # Another call is reading: the last answer, marked as such, rather than a wait (a poll never waits on a read).
-        return {**_last, "from_previous_read": True} if _last else {"measured": False, "reason": "busy", "scope": SCOPE}
+        # Counts only: a point read before a page changed (into a home, a person) is never served again from a snapshot.
+        if _last:
+            return {**_last, "points": [], "complete": False, "from_previous_read": True}
+        return {"measured": False, "reason": "busy", "scope": SCOPE}
     try:
         deadline = time.monotonic() + budget
         marker = _lane_marker()
@@ -713,7 +794,7 @@ def _report(state: _State, held: dict[str, tuple[str, str, str]], boxes: list, g
                         "infobox": offer["type"],
                         "field": key,
                         "address": text,
-                        **{k: answer[k] for k in ("query", "lat", "lon", "osm_object", "osm_address", "osm_country", "osm_vintage", "answers")},
+                        **{k: answer[k] for k in ("query", "lat", "lon", "osm_object", "osm_country", "osm_vintage", "answers")},
                     }
                 )
     read = {"hot": sum(1 for r in state.pages if r.startswith("hot:")), "warm": sum(1 for r in state.pages if r.startswith("warm:"))}

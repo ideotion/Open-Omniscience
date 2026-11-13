@@ -1063,9 +1063,8 @@
             const a = await api("/api/wiki/lane/located-addresses?limit=20000");
             if (a && a.measured === true && Array.isArray(a.points)) {
               _wikiLayerCache.addresses = a.points;
-              // Partial is said, never drawn as the whole: the scan is incremental and the answer bounded. A partial layer is asked
-              // again on the next switch-on rather than kept for the page's lifetime.
-              _wikiLayerCache.addressesPartial = a.complete !== true || a.truncated === true;
+              // Partial is said, never drawn as the whole: the scan is incremental and the answer bounded.
+              _wikiLayerCache.addressesPartial = a.complete !== true || a.truncated === true || a.from_previous_read === true;
               _wikiLayerCache.addressesRead = a.texts_read || {};
               _wikiLayerCache.addressesHeld = a.texts_held || {};
             }
@@ -2239,7 +2238,8 @@
         wikiOn: _ooMapWikiOn, wikiPlaces: _ooMapWikiOn ? _ooMapWikiPlaces : null,
         onWiki: async () => {
           _ooMapWikiOn = !_ooMapWikiOn;
-          if (_ooMapWikiOn && (_ooMapWikiPlaces === null || (_ooMapWikiPlaces && _ooMapWikiPlaces.addressesPartial))) {
+          // Asked again on every switch-on: a page that became a home or a person since the last read drops its square (R691).
+          if (_ooMapWikiOn) {
             _ooMapWikiPlaces = await ooWikiPlaces(_ooMapWikiPlaces !== null);
           }
           _renderOoMapDim();
