@@ -184,26 +184,29 @@ def _flush_directory(path: Path) -> None:
     flush_folder(path.parent)
 
 
-def flush_folder(folder: Path) -> None:
-    """Flush ``folder`` itself, so a rename, link or unlink done in it survives a power cut. The rules of :func:`_flush_directory`, which calls
-    this: POSIX only, a platform or filesystem that cannot is named once and passes, any other failure is raised. Also used for the private key files
-    (``src/custody/keyfile.py``), whose names change by ``os.replace``, ``os.link`` and ``os.unlink`` and never through :func:`atomic_replace`."""
+def flush_folder(folder: Path) -> bool:
+    """Flush ``folder`` itself, so a rename, link or unlink done in it survives a power cut; ``True`` only when the folder WAS flushed. The rules
+    of :func:`_flush_directory`, which calls this: POSIX only, a platform or filesystem that cannot is named once and passes (``False``), any other
+    failure is raised. Also used for the private key files (``src/custody/keyfile.py``), whose names change by ``os.replace``, ``os.link`` and
+    ``os.unlink`` and never through :func:`atomic_replace`, and which must know whether the rename is on disk before they overwrite what it freed."""
     if sys.platform == "win32":
         _skip_directory_flush("this build does not flush a folder on windows")
-        return
+        return False
     fd: int | None = None
     try:
         try:
             fd = os.open(folder, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
         except OSError as fault:
             _skip_directory_flush(f"the folder could not be opened: {type(fault).__name__}")
-            return
+            return False
         try:
             os.fsync(fd)
         except OSError as fault:
             if not _fsync_unsupported(fault):
                 raise
             _skip_directory_flush(f"the filesystem cannot flush a folder: {errno.errorcode.get(fault.errno or 0, 'unknown')}")
+            return False
+        return True
     finally:
         if fd is not None:
             os.close(fd)

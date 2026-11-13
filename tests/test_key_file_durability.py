@@ -206,3 +206,37 @@ def test_the_bytes_a_wrap_in_place_frees_are_overwritten(tmp_path):
     finally:
         os.close(fd)
     assert key.read_bytes() == b"SEALED"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the overwrite is skipped on Windows")
+def test_the_freed_bytes_are_left_alone_when_the_rename_is_not_known_to_be_on_disk(tmp_path, monkeypatch):
+    """Zeros under a name a power cut could still hand back would lose the key altogether: no flush, no overwrite (delta read, should-fix 1)."""
+    key = tmp_path / "keys" / "k.pem"
+    key.parent.mkdir()
+    key.write_bytes(b"OLD-FORM-BYTES")
+    monkeypatch.setattr(file_lock, "flush_folder", lambda folder: False)  # a filesystem that cannot flush a folder
+    fd = os.open(key, os.O_RDONLY)
+    try:
+        assert keyfile.replace_in_place(key, lambda: b"SEALED", lambda b: None, None, "test key") is True
+        os.lseek(fd, 0, os.SEEK_SET)
+        assert os.read(fd, 64) == b"OLD-FORM-BYTES"
+    finally:
+        os.close(fd)
+
+
+def test_a_reader_never_returns_the_bytes_of_a_file_no_name_holds(tmp_path, monkeypatch):
+    key = tmp_path / "k.pem"
+    key.write_bytes(b"CURRENT")
+    real_fstat = os.fstat
+    calls = {"n": 0}
+
+    def fstat(fd):
+        st = real_fstat(fd)
+        calls["n"] += 1
+        if calls["n"] == 1:  # the first open met a file that was replaced while it was read
+            return os.stat_result((st.st_mode, st.st_ino, st.st_dev, 0, *tuple(st)[4:10]))
+        return st
+
+    scope_os(monkeypatch, keyfile, fstat=fstat)
+    raw, st = keyfile.read_once(key)
+    assert raw == b"CURRENT" and calls["n"] == 2 and st.st_nlink != 0

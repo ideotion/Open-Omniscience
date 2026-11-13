@@ -57,25 +57,27 @@ log = logging.getLogger(__name__)
 KEY_FILES_LOCK = threading.RLock()
 
 
-def flush_key_folder(folder: Path, what: str) -> None:
+def flush_key_folder(folder: Path, what: str) -> bool:
     """Flush ``folder`` so the rename, link or unlink just done in it survives a power cut.
 
     Until the folder is flushed, a power cut can bring back what the name held before: after a
     plaintext key was wrapped in place, that is the PLAINTEXT key, on a machine that is off, which
-    is exactly the case the at-rest encryption is for (OPEN_QUEUE item 41(c)). Never raises: the new
-    name is already in place, and a failure here only means it may not survive a power cut, which
-    the log says (the exception CLASS only).
+    is exactly the case the at-rest encryption is for (OPEN_QUEUE item 41(c)). ``True`` only when the
+    folder was flushed (a platform or filesystem that cannot is named once by ``file_lock``). Never
+    raises: the new name is already in place, and a failure here only means it may not survive a power
+    cut, which the log says (the exception CLASS only).
     """
     try:
         from src.safety.file_lock import flush_folder
 
-        flush_folder(folder)
+        return flush_folder(folder)
     except Exception as exc:  # noqa: BLE001 - the change is made; only its durability is unknown
         log.warning(
             "%s: the keys folder could not be flushed to disk (%s); a power cut now could bring the old file back",
             what,
             type(exc).__name__,
         )
+        return False
 
 
 def write_new(path: Path, data: bytes) -> None:
@@ -312,9 +314,13 @@ def replace_in_place(
                 drop_aliases(path, old)
                 # Both folders of the rename (the private copy left ``keys/.pending``, where the removed aliases were
                 # too), so a power cut cannot bring back the name of what was replaced, which here was the plaintext key.
-                flush_key_folder(path.parent, what)
-                flush_key_folder(path.parent / PENDING, what)
-                _scrub_replaced(replaced, old, what)
+                durable = flush_key_folder(path.parent, what)
+                durable = flush_key_folder(path.parent / PENDING, what) and durable
+                # Only once the rename is KNOWN to be on disk: zeros under a name a power cut could still hand back
+                # would lose the key altogether (neither the old form nor the new one), where an unflushed rename
+                # only risks the old form coming back, which the next load wraps again.
+                if durable:
+                    _scrub_replaced(replaced, old, what)
             finally:
                 if replaced is not None:
                     with contextlib.suppress(OSError):
@@ -371,9 +377,17 @@ def create_new(path: Path, data: bytes) -> None:
 
 
 def read_once(path: Path) -> tuple[bytes, os.stat_result]:
-    """The bytes of the file and its state (``fstat`` of the same open file), read together."""
-    with path.open("rb") as fh:
-        return fh.read(), os.fstat(fh.fileno())
+    """The bytes of the file and its state (``fstat`` of the same open file), read together.
+
+    A file that no name holds any more when it has been read (``st_nlink`` 0) was replaced while it was
+    open, and a wrap in place may have overwritten its bytes with zeros: the name is opened again, so a
+    reader never parses the scrubbed bytes of a file the key has left."""
+    for _ in range(3):
+        with path.open("rb") as fh:
+            raw, st = fh.read(), os.fstat(fh.fileno())
+        if st.st_nlink != 0:
+            break
+    return raw, st
 
 
 def read_settled(path: Path) -> tuple[bytes, os.stat_result]:

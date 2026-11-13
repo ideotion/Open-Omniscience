@@ -117,6 +117,29 @@ def _key_files_lock() -> contextlib.AbstractContextManager:
     return KEY_FILES_LOCK
 
 
+def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str]) -> tuple[int, int]:
+    """Step 2 and 2b of the quick erase, ``(seen, wiped)``: the named key files, then everything else in the keys folder
+    (the evidence key, a private copy in ``keys/.pending``), then the folder itself, so nothing can be added to it
+    before the caller lets the key-file lock go. A function of its own with no handler, called inside the caller's
+    ``with``: CPython 3.13 leaves a loop's back-edge outside the exception table of the block around it, so the loops
+    live here (R163; tests/test_loop_heads_reach.py)."""
+    seen = wiped = 0
+    for name in _KEY_FILES:
+        s, overwritten, w = track(keys_dir / name)
+        seen += s
+        wiped += w
+        if s and overwritten:
+            keys_destroyed.append(name)
+    if keys_dir.is_dir():
+        for root, _dirs, names in os.walk(keys_dir):
+            for name in names:
+                s, _overwritten, w = track(Path(root) / name)
+                seen += s
+                wiped += w
+        shutil.rmtree(keys_dir, ignore_errors=True)
+    return seen, wiped
+
+
 def _shred(path: Path, *, head_bytes: int | None = None) -> tuple[bool, bool, bool]:
     """Overwrite then unlink ``path``. Returns ``(seen, overwritten, unlinked)``:
     ``seen`` is whether the file existed, ``overwritten`` whether the destructive
@@ -281,22 +304,9 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
     # rest of step 6, which rewrites everything left (a wiki dump can take hours) while a signing request waits.
     keys_dir: Path = paths["keys_dir"]
     with _key_files_lock():
-        for name in _KEY_FILES:
-            s, overwritten, w = _track(keys_dir / name)
-            seen += s
-            wiped += w
-            if s and overwritten:
-                keys_destroyed.append(name)
-        # 2b) Everything else in the keys folder (the evidence key, a private copy in keys/.pending), then the
-        #     folder itself, before the lock goes: nothing can be added to it in between.
-        if keys_dir.is_dir():
-            for root, _dirs, names in os.walk(keys_dir):
-                for name in names:
-                    _s, _overwritten, _w = _track(Path(root) / name)
-                    seen += _s
-                    wiped += _w
-            with contextlib.suppress(OSError):
-                shutil.rmtree(keys_dir, ignore_errors=True)
+        _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed)
+    seen += _s
+    wiped += _w
 
     # 3) DuckDB cache header and its key-derivation sidecar (the cache's key is stretched from the passphrase and the
     #    salt in that sidecar, so with the sidecar destroyed the key is underivable even from the right passphrase;
