@@ -111,7 +111,8 @@ def test_the_undo_posts_answer_a_persons_click_only():
     # The single-card Undo is a real button left where the card was (keyboard and screen readers reach it,
     # a toast they could not), and it too answers a person's click only.
     undo = function_source(_JS, "ooCardDismissedUndo")
-    assert 'undo.addEventListener("click", (ev) => { if (!ev.isTrusted) return;' in undo and "ooRestoreCard(id)" in undo
+    assert 'undo.addEventListener("click", async (ev) => {\n        if (!ev.isTrusted) return;' in undo and "ooRestoreCard(id)" in undo
+    assert "undo.disabled = false" in undo, "a failed restore leaves the Undo usable"
     assert 'undo.type = "button"' in undo and "undo.focus()" in undo
 
 

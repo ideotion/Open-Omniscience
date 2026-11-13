@@ -392,7 +392,8 @@
         await api("/api/briefing/restore", {method: "POST", body: JSON.stringify({id: id})});
         if (typeof loadBriefing === "function") loadBriefing();
         toast(_patT()("The card is back."));
-      } catch (e) { toast(_failMsg("Could not bring the card back: {error}", e), "err"); }
+        return true;
+      } catch (e) { toast(_failMsg("Could not bring the card back: {error}", e), "err"); return false; }
     }
     function ooCardDismissedUndo(el, id) {
       if (!el || !el.replaceChildren) { if (el) el.remove(); return; }
@@ -402,10 +403,13 @@
       const undo = document.createElement("button");
       undo.type = "button"; undo.className = "ghost tiny card-undo"; undo.textContent = t("Undo");
       undo.title = t("Cards you dismissed stay hidden until you bring them back");
-      undo.addEventListener("click", (ev) => { if (!ev.isTrusted) return; undo.disabled = true; ooRestoreCard(id); });
+      undo.addEventListener("click", async (ev) => {
+        if (!ev.isTrusted) return;
+        undo.disabled = true;
+        if (!(await ooRestoreCard(id))) undo.disabled = false;   // a failed restore can be tried again
+      });
       el.className = "card-dismissed row";
       el.removeAttribute("aria-label");
-      el.setAttribute("role", "status");
       el.style.cssText = "gap:8px;align-items:center;padding:6px 0";
       el.replaceChildren(note, undo);
       undo.focus();
