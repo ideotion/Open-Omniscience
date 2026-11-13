@@ -27,9 +27,15 @@ _CURATION = (
     "nothing the person authored is lost"
 )
 
+_FINISHED_LIST = (
+    "clears the server's list of FINISHED bulk runs (R600's second PR): every result they stored stays stored, and only the "
+    "list's line about each run goes"
+)
+
 _GROUPS: dict[str, tuple[str, ...]] = {
+    _FINISHED_LIST: ("bulkJobClearDone",),
     _JOB: (
-        "_uxPauseResume", "cancelP0Validation", "cancelPull", "dumpFtsCancel", "jobCancel", "maintAction", "mbRun",
+        "_uxPauseResume", "bulkJobCancel", "cancelP0Validation", "cancelPull", "dumpFtsCancel", "jobCancel", "maintAction", "mbRun",
         "pauseDump", "pauseOsm", "qualifyBulkCancel", "releaseRunCancel", "runAiCheck", "schedulerStop", "stopVllm",
         "toggleAiCoordinator", "unattendedStop",
     ),
