@@ -5,6 +5,7 @@ Each test is red on main ca1ab824 and green after the fix.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -68,6 +69,13 @@ def test_ordinary_links_stay_links(url: str) -> None:
     lines = _article_lines({"title": "Headline", "url": url}, Translator("en"))
     assert f"[Headline]({url})" in lines[0]
     assert f'href="{url}"' in _inline(lines[0])
+
+
+@pytest.mark.parametrize("url", [None, "https://a.example/"])
+def test_a_link_hidden_in_a_title_is_not_a_link(url) -> None:
+    """Found by a security read of PR #1949: the title is source text and reaches the same link builder."""
+    lines = _article_lines({"title": "[click](javascript:location=name)", "url": url}, Translator("en"))
+    assert not [h for h in re.findall(r'href="([^"]*)"', _inline(lines[0])) if "javascript" in h]
 
 
 # --- P10: a removed author stays removed ---------------------------------------------------------

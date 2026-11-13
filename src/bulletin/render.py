@@ -1648,6 +1648,18 @@ _MD_BOLD = re.compile(r"\*\*([^*]+)\*\*")
 _MD_CODE = re.compile(r"`([^`\s<>]+)`")
 
 
+def _html_link(m: re.Match[str]) -> str:
+    """One Markdown link as HTML, only when its target passes ``_LINK_SCHEMES``; otherwise its label alone.
+
+    Checked HERE, at the one place an ``href`` is written, and not only where article URLs enter: a title is
+    source text too, and ``[click](javascript:...)`` inside a title became a live link (a security read of
+    PR #1949). The target is already HTML-escaped, which leaves the scheme and its colon as they were."""
+    target = _link_target(m.group(2))
+    if target is None:
+        return m.group(1)
+    return f'<a href="{target}" rel="noopener nofollow">{m.group(1)}</a>'
+
+
 def _inline(s: str) -> str:
     """Escape, then re-admit the three inline forms the block builders emit.
 
@@ -1659,7 +1671,7 @@ def _inline(s: str) -> str:
     """
     out = _e(s)
     out = _MD_CODE.sub(r"<code>\1</code>", out)
-    out = _MD_LINK.sub(r'<a href="\2" rel="noopener nofollow">\1</a>', out)
+    out = _MD_LINK.sub(_html_link, out)
     return _MD_BOLD.sub(r"<strong>\1</strong>", out)
 
 
