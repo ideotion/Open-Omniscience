@@ -58,9 +58,18 @@ class ImageMetadata:
         }
 
 
+# A camera's MakerNote is kilobytes of vendor binary: decoded, it is a wall of replacement
+# characters in the tag table. Past this length a bytes value is named, not printed.
+_MAX_BYTES_SHOWN = 256
+# tags that only point at another block of tags; never listed as tags themselves
+_POINTERS = {"ExifOffset", "ExifInteroperabilityOffset", "GPSInfo"}
+
+
 def _jsonable(value):
     """Coerce EXIF values (bytes, IFDRational, tuples) into JSON-safe forms."""
     if isinstance(value, bytes):
+        if len(value) > _MAX_BYTES_SHOWN:
+            return f"({len(value)} bytes of binary data, not shown)"
         return value.decode("utf-8", errors="replace")
     if isinstance(value, tuple):
         return [_jsonable(v) for v in value]
@@ -107,16 +116,17 @@ def extract_image_metadata(data: bytes) -> ImageMetadata:
                     gps = _parse_gps(exif_raw.get_ifd(tag_id))
                 except Exception:
                     gps = {}
-            elif name == "ExifOffset":
-                # the pointer to the Exif sub-block, where the CAPTURE date
-                # (DateTimeOriginal), exposure and lens live: read it, never list the pointer
-                try:
-                    for sub_id, sub_val in exif_raw.get_ifd(tag_id).items():
-                        exif[TAGS.get(sub_id, str(sub_id))] = _jsonable(sub_val)
-                except Exception:
-                    pass
-            else:
+            elif name not in _POINTERS:
                 exif[name] = _jsonable(value)
+        # Then the Exif sub-block, where the CAPTURE date (DateTimeOriginal), exposure and
+        # lens live; the main block's own tag wins a clash (Software, DateTime).
+        try:
+            for sub_id, sub_val in exif_raw.get_ifd(0x8769).items():
+                sub = TAGS.get(sub_id, str(sub_id))
+                if sub not in _POINTERS:
+                    exif.setdefault(sub, _jsonable(sub_val))
+        except Exception:  # an unreadable sub-block leaves the main tags as they are
+            exif.setdefault("ExifSubBlock", "present but unreadable")
 
     observations: list[str] = []
     if not exif:

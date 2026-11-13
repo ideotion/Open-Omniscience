@@ -123,3 +123,17 @@ def test_a_json_of_another_shape_is_not_a_bundle_and_not_a_500():
         "verified": False,
         "reason": "malformed bundle: not the shape this app exports",
     }
+
+
+def test_pointers_are_not_tags_binary_is_named_and_the_main_block_wins():
+    exif = Image.Exif()
+    exif[0x0131] = "MainSoft"  # Software, main block
+    sub = exif.get_ifd(0x8769)
+    sub[0x0131] = "SubSoft"
+    sub[0x927C] = b"\x00\xff" * 5000  # MakerNote
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8)).save(buf, "JPEG", exif=exif.tobytes())
+    meta = extract_image_metadata(buf.getvalue())
+    assert meta.exif["Software"] == "MainSoft"
+    assert meta.exif["MakerNote"] == "(10000 bytes of binary data, not shown)"
+    assert not {"ExifOffset", "ExifInteroperabilityOffset"} & set(meta.exif)
