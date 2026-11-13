@@ -8,7 +8,7 @@ WHY (R349, R364, R380). Two runs of the same code once disagreed (green, then re
 CI installs ``pytest>=8.2`` unpinned. Finding that took a comparison of the installed versions of a green job and a red one, and the install step prints
 them at the HEAD of a log several thousand lines long, which the only available reader (``get_job_logs``, the last N lines) never reaches. The ``Installed
 versions`` step (``.github/workflows/ci.yml``, in ``test`` and ``core-only``) therefore prints the list again straight after the test run, on red as well
-as green (the last lines of a red job; 3,500 lines from the end of a green ``test`` job, which runs mypy, bandit and pip-audit after it); this script is the
+as green (the last lines of a red job; 3,500 lines from the end of a green ``test`` job before R668 moved mypy, bandit and pip-audit to the ``static`` job); this script is the
 other half: the comparison, done the same way every time, so "diff the package versions first" (R349) is one command and not a by-eye pass over a hundred
 lines.
 

@@ -7,9 +7,10 @@ slower of the two. Each is now **three jobs** that each run a third of the test 
 
 | check (as branch protection names it) | job id | what it is |
 |---|---|---|
-| `test` | `test-all` | an aggregator: green only if all three `Test (shard N of 3)` legs are |
+| `test` | `test-all` | an aggregator: green only if all three `Test (shard N of 3)` legs and the `static` job are |
 | `Core-only install (no [analysis] extra)` | `core-only-all` | an aggregator: green only if all three `Core-only install, shard N of 3 (no [analysis] extra)` legs are |
-| `Test (shard N of 3)` | `test` (matrix) | install, plan, pytest on a third of the files; leg 1 also runs the static steps (ruff, style ratchet, planned-work index, i18n gates, migration drift, mypy, bandit, pip-audit) |
+| `Test (shard N of 3)` | `test` (matrix) | install, plan, pytest on a third of the files, nothing else |
+| `Static checks (...)` | `static` | since R668 (2026-11-13), the static steps that leg 1 used to run (ruff, style ratchet, planned-work index, i18n gates, migration drift, mypy, bandit, pip-audit), beside the legs on a runner of its own; required through `test` |
 | `Core-only install, shard N of 3 (no [analysis] extra)` | `core-only` (matrix) | the same thirds without the `[analysis]` extra, no static steps |
 
 The required checks keep the names they had before the split, so nothing in branch protection changed. **Never name a matrix leg `test` or the Core-only
@@ -20,7 +21,7 @@ name**, and never make an aggregator skippable: a job whose `needs` failed is sk
 
 `scripts/ci_shard.py`, from the cost table `configs/ci_shard_costs.json` (`path -> seconds`):
 
-* files the table names are dealt out longest first, each to the shard with the least work so far (shard 1 starts with `overhead_seconds`, the static steps);
+* files the table names are dealt out longest first, each to the shard with the least work so far (shard 1 starts with `overhead_seconds`; the static steps left leg 1 for the `static` job in R668, but the 80 stays so the deal does not move: a re-deal to 0 exposed two order-dependent tests on its first run, and is a separate change that fixes them first);
   the result depends on the table alone, so adding or deleting a test file moves none of the files the table names;
 * a file the table does not name (a new test file) goes to `crc32(path) % N + 1`: the same in every process, no edit needed in the PR that adds it, spread
   evenly in the long run. The plan step prints how many files the table does not name.

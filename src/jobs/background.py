@@ -368,6 +368,44 @@ def all_job_statuses() -> list[dict]:
     return [j.status() for j in jobs]
 
 
+def stop_all_jobs(timeout: float) -> list[str]:
+    """Ask every registered job that is running to stop, and wait for them all against ONE deadline (audit A-029).
+
+    For the app's shutdown, which disposes the database engine next: a job still writing then holds a connection the disposal cannot
+    close, so the log is not written back, and the process exit ends its unit (rolled back, never torn: every worker commits per unit).
+    A cancellable job is asked to stop at its next safe point; a job that cannot be interrupted (``cancellable=False``) is NOT asked,
+    since the flag would only make a late finish read as 'cancelled' (``_run`` keeps it 'done' anyway), and it is waited for within the
+    same deadline. ``timeout`` is the whole wait, shared by every job, never ``timeout`` per job.
+
+    Returns the KINDS still running when the deadline passed (empty when every job ended), in registry order. Kinds only: a job's
+    kwargs can carry a passphrase. Never raises: a shutdown step must not stop the steps after it."""
+    try:
+        with _REG_LOCK:
+            jobs = list(_REGISTRY.values())
+        running = []
+        for job in jobs:
+            try:
+                if job._alive():
+                    running.append(job)
+                    if job.cancellable:
+                        job.cancel()
+            except Exception:  # noqa: BLE001 - one job's state never hides the others
+                running.append(job)
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        left: list[str] = []
+        for job in running:
+            try:
+                if not job.join(max(0.0, deadline - time.monotonic())):
+                    left.append(job.kind)
+            except Exception:  # noqa: BLE001 - a job that cannot be joined is reported as still running
+                left.append(job.kind)
+        return left
+    except Exception:  # noqa: BLE001 - never raises; an unreadable registry stops nothing and says so in the log
+        with contextlib.suppress(Exception):
+            _LOG.warning("background jobs: could not ask the running jobs to stop")
+        return []
+
+
 def _reset_registry_for_tests() -> None:
     with _REG_LOCK:
         _REGISTRY.clear()

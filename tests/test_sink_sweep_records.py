@@ -580,10 +580,10 @@ _API_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_deadlined', 'return on_busy(exc)'): 1,
     },
     'src/api/llm.py': {
-        ('bulk_llm._stream', 'if isinstance(res.error, LLMUnavailable):'): 1,
-        ('bulk_llm._stream', 'assert res.error is not None  # a not-ok result always carries its error'): 1,
-        ('bulk_llm._stream', '"error": http_detail(res.error, limit=200)})'): 1,
-        ('bulk_llm._stream', '"aborted": True, "reason": http_detail(res.error, limit=200)})'): 1,
+        ('prepare_bulk_run._stream', 'if isinstance(res.error, LLMUnavailable):'): 1,
+        ('prepare_bulk_run._stream', 'assert res.error is not None  # a not-ok result always carries its error'): 1,
+        ('prepare_bulk_run._stream', '"error": http_detail(res.error, limit=200)})'): 1,
+        ('prepare_bulk_run._stream', '"aborted": True, "reason": http_detail(res.error, limit=200)})'): 1,
     },
     'src/api/main.py': {
         # the 422 handler reads a validation error's type, loc and msg (the msg through ``scrubbed``) and drops ``input``/``ctx``, the
@@ -965,6 +965,10 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     'src/jobs/background.py': {
         # kept to be re-raised on the caller's side: not written
         ('BackgroundJob._run', 'failure = exc'): 1,
+    },
+    'src/jobs/llm_bulk_queue.py': {
+        # the status code chooses between a fixed phrase and the scrubbed detail (http_detail): the selection's words are never kept
+        ('LlmBulkQueue._run', 'refusal = _start_refusal(exc.status_code, http_detail(exc, limit=200))'): 1,
     },
     'src/law/corpus.py': {
         # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
