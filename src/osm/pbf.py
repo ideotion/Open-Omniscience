@@ -245,6 +245,8 @@ def _inflate(blob: bytes) -> bytes:
         out = inflater.decompress(zdata, limit + 1)
         if len(out) > limit or inflater.unconsumed_tail:
             raise PbfError(f"a zlib blob inflates past {limit} bytes, more than it declared or the format's 32 MiB cap")
+        if not inflater.eof:   # zlib.decompress refused a cut stream; the bounded inflater returns what it has, so say it here
+            raise PbfError("a zlib blob ends before its stream does (truncated)")
         if raw_size is not None and len(out) != raw_size:
             raise PbfError("a zlib blob inflated to a size other than the one it declared")
         return out

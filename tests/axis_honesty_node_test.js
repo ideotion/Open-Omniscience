@@ -246,7 +246,10 @@ test("a data-table ROW is labelled as finely as the points are spaced, never by 
   const hourly = [Date.parse("2025-01-11T01:00:00Z"), Date.parse("2025-01-11T02:00:00Z")];
   assert(_msRowLabel(hourly[0], 36e5, 36e5) === "2025-01-11 01:00", "an hourly row keeps its date and hour");
   // monthly points keep the span's own label
-  assert(_msRowLabel(d("2025-01-01"), 31 * 864e5, 365 * 864e5) === "2025-01", "a monthly row is a month");
+  // two points 29 days apart can sit in one month (2025-01-01, 2025-01-30): still a day each
+  assert(_msRowLabel(d("2025-01-30"), 29 * 864e5, 180 * 864e5) === "2025-01-30", "a sub-month gap collapsed to its month");
+  // points two months apart keep the span's own label
+  assert(_msRowLabel(d("2025-01-01"), 59 * 864e5, 365 * 864e5) === "2025-01", "a bimonthly row is a month");
 });
 
 test("ooChart's sparse bars of a flat zero-anchored series rise from its value, never from the half-unit padding below it", () => {

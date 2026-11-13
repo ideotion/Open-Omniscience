@@ -549,8 +549,12 @@ class OsmDownloadManager:
         # Atomic (audit P15): written beside the final name and renamed over it, so a crash mid-write leaves no file at the name a
         # later start would read as a valid prefix to resume, and a reader never sees half an extract under its real name.
         part = dest.with_name(dest.name + ".segmented-part")
-        part.write_bytes(data)
-        os.replace(part, dest)
+        try:
+            part.write_bytes(data)
+            os.replace(part, dest)
+        except BaseException:
+            part.unlink(missing_ok=True)   # a failed write (a full disk) leaves no orphan the size of an extract
+            raise
         entry.total_bytes = len(data)
         entry.downloaded_bytes = len(data)
         entry.status = "done"
@@ -755,6 +759,7 @@ class OsmDownloadManager:
         self._rates.forget(key)
         with contextlib.suppress(OSError):
             Path(entry.dest).unlink(missing_ok=True)
+            Path(entry.dest + ".segmented-part").unlink(missing_ok=True)   # a segmented write a crash cut short (audit P15)
         self._save()
         return True
 

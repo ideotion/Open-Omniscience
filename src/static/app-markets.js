@@ -971,7 +971,7 @@
     function _msRowLabel(ms, gapMs, spanMs) {
       const iso = new Date(ms).toISOString();
       if (isFinite(gapMs) && gapMs < 864e5) return iso.slice(0, 16).replace("T", " ");   // YYYY-MM-DD HH:MM
-      if (isFinite(gapMs) && gapMs < 28 * 864e5) return iso.slice(0, 10);                 // YYYY-MM-DD
+      if (isFinite(gapMs) && gapMs < 32 * 864e5) return iso.slice(0, 10);                 // YYYY-MM-DD: two points under a month apart can share one
       return _msLabel(ms, spanMs);
     }
     function _msLabel(ms, spanMs) {

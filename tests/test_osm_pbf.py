@@ -138,3 +138,5 @@ def test_a_zlib_blob_that_inflates_past_the_formats_cap_is_refused_without_being
     small = b"x" * 100
     assert pbf._inflate(_varint(2 << 3) + _varint(100) + _len(3, zlib.compress(small))) == small
     assert pbf._inflate(_varint(2 << 3) + _varint(99) + _len(3, zlib.compress(small[:99]))) == small[:99]
+    with pytest.raises(pbf.PbfError, match="truncated"):
+        pbf._inflate(_len(3, zlib.compress(b"y" * 1000)[:-5]))   # a cut stream with no declared size
