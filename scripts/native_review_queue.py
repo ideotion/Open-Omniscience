@@ -152,8 +152,9 @@ def help_drafts() -> list[str]:
         text = path.read_text(encoding="utf-8")
         m = re.match(r"\s*<!--(.*?)-->", text, re.S)
         banner = " ".join(m.group(1).split()) if m else ""
-        cov = re.search(r"Coverage: ([^.]*)\.", banner)
-        reviewed = "not yet reviewed" not in banner
+        cov = re.search(r"Coverage: (.*?)\.(?:\s|$)", banner)
+        # no banner means not known to be reviewed
+        reviewed = bool(m) and "not yet reviewed" not in banner
         rows.append(
             f"| {path.parent.name} | `docs/i18n/{path.parent.name}/{path.name}` | "
             f"{cell(cov.group(1)) if cov else 'not stated'} | {'yes' if reviewed else 'no'} |"
