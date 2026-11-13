@@ -37,6 +37,7 @@ def wire(app) -> None:
     from src.api.briefing import router as briefing_router
     from src.api.bulletin import router as bulletin_router
     from src.api.claims import router as claims_router
+    from src.api.climate import router as climate_router
     from src.api.custody import router as custody_router
     from src.api.database import router as database_router
     from src.api.diagnostics import router as diagnostics_router
@@ -138,6 +139,7 @@ def wire(app) -> None:
         living_router,
         entities_router,
         ipcc_router,
+        climate_router,
         claims_router,
         osm_lane_router,
     )

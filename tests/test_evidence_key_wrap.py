@@ -656,7 +656,9 @@ def test_two_callers_wrapping_at_once_never_rename_the_others_unfinished_file(
     tmp_path, monkeypatch
 ):
     """The interleaving that lost a key: A has written and checked its wrapped copy and is about to rename
-    it; B starts, makes its own file (created, still empty) and A's rename must not move B's file."""
+    it; B starts, makes its own file (created, still empty) and A's rename must not move B's file. Since
+    item 41(c) the private copy is written under KEY_FILES_LOCK, so B cannot even create its file until A's
+    rename is done: the interleaving is impossible by construction, and this pins that it stays so."""
     legacy = Ed25519PrivateKey.generate()
     p = tmp_path / "k.pem"
     p.write_bytes(_plain_pem(legacy))
@@ -680,7 +682,7 @@ def test_two_callers_wrapping_at_once_never_rename_the_others_unfinished_file(
             t = threading.Thread(target=lambda: ev._wrap_in_place(p, legacy, PASS.encode()))
             state["b"] = t
             t.start()
-            assert b_created.wait(10)
+            assert not b_created.wait(0.3), "B made its private file while A held the key-file lock"
         real_replace(src, dst)
 
     monkeypatch.setattr(kf, "write_new", write)

@@ -28,6 +28,7 @@
       {id:"wiki",     label:"Wikipedia",          grp:"Investigate"},
       {id:"law",      label:"Governments",        grp:"Investigate"},
       {id:"agenda",   label:"Agenda",             grp:"Investigate"},
+      {id:"climate",  label:"Climate",            grp:"Investigate"},   // six published climate and Earth records (R661)
       {id:"indices",  label:"Indices",            grp:"Investigate"},
       {id:"markets",  label:"Commodities",        grp:"Investigate"},
       {id:"ingest",   label:"Collect",            grp:"Collect"},
@@ -63,6 +64,7 @@
       home: () => loadHome(),
       feed: () => { _wireFeed(); },   // rulings 13/40: the corpus as a reading surface
       explore: () => buildSearchTimeScope(),   // mount the search's ooTimeScope date-range control once
+      climate: () => loadClimate(),   // the Climate tab (R661; 0.6 gate row A)
       indices: () => loadIndices(),
       markets: () => loadMarkets(),
       insights: () => loadInsights(),
@@ -90,6 +92,7 @@
       law: "gov-subtabs",   // Governments: Countries · Map · Law
       timemap: "oomap-lenses",   // World map: Coverage · Stories · Places · Server IPs (field-test Item 6)
       living: "living-subtabs",  // Living sources: Wikipedia · Law · Maps
+      climate: "climate-subtabs",  // Climate: one subtab per dataset (R661)
       library: "library-views",  // Library: Overview · Activity · Tracked · Database & storage · World coverage
     };
     function _relocateSubtabs(name) {

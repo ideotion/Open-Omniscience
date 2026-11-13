@@ -58,7 +58,7 @@ const visible = (html) => decode(String(html).replace(/<[^>]*>/g, " ")).replace(
 
 // The sidebar as index.html has it (the python test pins this list against the page).
 const IDS = ["home", "feed", "explore", "insights", "observatory", "timemap", "law", "agenda",
-  "indices", "markets", "living", "library"];
+  "climate", "indices", "markets", "living", "library"];
 const LABEL = (id) => id.charAt(0).toUpperCase() + id.slice(1);
 const tabs = (depth) => IDS.map((id) => ({
   id, label: LABEL(id), pinned: depth !== "essentials" || id === "home" || id === "feed",
@@ -77,7 +77,7 @@ assert.strictEqual(R.tourBlurb("a-tab-added-later", t), "", "an unknown tab gets
 const ess = R.tourSteps(tabs("essentials"), "essentials", t, tf);
 assert.deepStrictEqual(ess.map((s) => s.kind), ["chrome", "tab", "tab", "more", "depth"]);
 const more = ess.find((s) => s.kind === "more");
-assert.strictEqual(more.title, "10 more tabs");
+assert.strictEqual(more.title, "11 more tabs");
 assert.deepStrictEqual(more.list, IDS.slice(2).map(LABEL), "every unpinned tab is named, in sidebar order");
 const named = new Set(ess.filter((s) => s.kind === "tab").map((s) => s.tab).concat(IDS.filter((i) => more.list.includes(LABEL(i)))));
 assert.deepStrictEqual([...named].sort(), [...IDS].sort(), "every tab is a step or in the list");
@@ -85,7 +85,7 @@ assert.ok(more.body.includes("Show more") && more.body.includes("command palette
 assert.ok(more.body.includes("the tab you have open always stays listed"), "the open tab is named as listed, not as hidden: " + more.body);
 // digit grouping goes through the app formatter when there is one, like the sidebar's "Show more (N)"
 const G = (() => { const m = { exports: {} }; new Function("fmtNum", "module", "exports", src)((n) => "#" + n, m, m.exports); return m.exports; })();
-assert.strictEqual(G.tourSteps(tabs("essentials"), "essentials", t, tf).find((s) => s.kind === "more").title, "#10 more tabs");
+assert.strictEqual(G.tourSteps(tabs("essentials"), "essentials", t, tf).find((s) => s.kind === "more").title, "#11 more tabs");
 assert.ok(visible(G.tourStepHtml(ess[0], 0, ess.length, t, tf)).includes("Step #1 of #5"));
 assert.ok(ess[ess.length - 1].body.includes("Essentials now"), ess[ess.length - 1].body);
 
@@ -121,7 +121,7 @@ ess.forEach((s, i) => {
 });
 // the "more" step lists the labels
 const moreHtml = R.tourStepHtml(more, 3, ess.length, t, tf);
-assert.strictEqual((moreHtml.match(/<li /g) || []).length, 10);
+assert.strictEqual((moreHtml.match(/<li /g) || []).length, 11);
 assert.ok(moreHtml.includes("dir=\"auto\""), "labels take their own direction");
 
 // A label from the DOM is text, never markup.
