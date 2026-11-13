@@ -891,6 +891,46 @@ def jobs_ledger(limit: int = 200) -> dict:
 _OWN_ROW_KINDS = frozenset({"llm-bulk-queue"})
 
 
+#: The import re-index backlog read is linear in the pending articles (~100 ms at a million, backup_v2's measurement): the task
+#: manager polls every few seconds, so the count is read at most this often.
+_BACKLOG_TTL_S = 30.0
+_backlog_cache: dict = {"at": 0.0, "value": None}
+
+
+def _reindex_backlog_rows() -> list[dict]:
+    """Imported articles merged without keywords while nothing is finishing them: ONE waiting row with Resume, which starts
+    the same ``reindex-resume`` job as Settings > Backup. While that job runs it is its own row (with Cancel). Counts only."""
+    import time
+
+    from src.jobs.background import get_job as _get_bg_job
+
+    job = _get_bg_job("reindex-resume")
+    if job is None or job.status().get("state") in ("running", "error"):
+        return []
+    now = time.monotonic()
+    if _backlog_cache["value"] is None or now - _backlog_cache["at"] > _BACKLOG_TTL_S:
+        try:
+            from src.backup.merge import reindex_backlog
+
+            _backlog_cache["value"] = reindex_backlog()
+        except Exception:  # noqa: BLE001 - the task manager never fails for a row; an unread backlog draws none
+            _backlog_cache["value"] = {"available": False}
+        _backlog_cache["at"] = now
+    bk = _backlog_cache["value"] or {}
+    n = int(bk.get("articles_pending") or 0) if bk.get("available") else 0
+    if n <= 0:
+        return []
+    return [{
+        "id": "reindex-backlog",
+        "kind": "reindex-backlog",
+        **_label_frame("Imported articles waiting for keywords ({n})", n=n),
+        "label": f"Imported articles waiting for keywords ({n})",
+        "state": "paused",
+        "progress": None,
+        "actions": ["resume"],
+    }]
+
+
 def _llm_queue_jobs() -> list[dict]:
     """The server-side bulk summarize/translate queue (R600's second PR): each run waiting its turn (Cancel), or the queue a
     restart paused (Resume / Cancel). The running run is the ``llm`` task row. Local work: a resume opens no connection."""
@@ -979,6 +1019,7 @@ def list_jobs() -> dict:
     jobs.extend(_background_jobs())
     jobs.extend(_task_jobs())
     jobs.extend(_llm_queue_jobs())
+    jobs.extend(_reindex_backlog_rows())
     f = _live_fetch()
     if f:
         jobs.append(f)
@@ -1189,6 +1230,18 @@ def resume_job(job_id: str) -> dict:
         if not get_queue().resume():
             raise HTTPException(status_code=404, detail="Nothing paused to resume.")
         return {"resumed": job_id, "detail": "Summary & translation queue resumed."}
+    if job_id == "reindex-backlog":
+        # Local work, no network. Refused while a restore or import holds the machine: what it wrote into the file about to
+        # be swapped would be discarded (the restore restarts the job itself when it ends).
+        from src.scheduler.runner import get_scheduler
+
+        if get_scheduler().holds_exclusive():
+            raise HTTPException(status_code=409, detail="An import or restore is using the machine; it finishes the re-index itself.")
+        from src.api.backup_v2 import reindex_backlog_resume
+
+        reindex_backlog_resume()
+        _backlog_cache["value"] = None
+        return {"resumed": job_id, "detail": "Re-indexing the imported articles."}
     if job_id.startswith("dump:"):
         from src.wiki.dumps import get_manager
 

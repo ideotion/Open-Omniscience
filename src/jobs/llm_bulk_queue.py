@@ -633,6 +633,20 @@ def get_queue() -> LlmBulkQueue:
     return _QUEUE
 
 
+def pause_for_backend() -> bool:
+    """Before the model backend is released or stopped: the run in flight pauses after the article it is on, and the queue
+    behind it waits paused for a Resume (R669: paused, never lost, nothing stored twice). True when a run was going."""
+    if not _JOB.status().get("running"):
+        return False
+    _JOB.cancel()  # the job's own stop: ``_run`` ends the run "paused" and ``_drain`` pauses the queue
+    return True
+
+
+def wait_paused(timeout: float) -> bool:
+    """Wait for the drain :func:`pause_for_backend` stopped to end. True when it has."""
+    return _JOB.join(timeout)
+
+
 def queue_rows() -> list[dict[str, Any]]:
     """The task manager's rows for what the queue holds besides the running run (which shows as its own ``llm`` row with a Stop):
     the paused queue after a restart (Resume / Cancel), or each run waiting its turn (Cancel)."""

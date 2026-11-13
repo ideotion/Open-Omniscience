@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -1684,9 +1685,11 @@ def ollama_stop() -> dict:
     Always 200: "not ours to stop" is an ANSWER, and an error status would push callers
     into treating a correct refusal as a fault.
     """
-    from src.llm.ollama_lifecycle import stop
+    from src.llm.ollama_lifecycle import owns_daemon, stop
 
-    return stop()
+    if not owns_daemon():
+        return stop()  # the refusal by name: nothing to pause for a daemon this app will not stop
+    return _after_runs_pause(stop, "stop")
 
 
 @router.post("/ollama/release")
@@ -1695,11 +1698,41 @@ def ollama_release() -> dict:
 
     This is the universal answer to "stop holding the GPU" — it works on a daemon this
     app does not own, costs at worst one model reload, and is how the card is handed to
-    vLLM on a single-GPU machine.
+    vLLM on a single-GPU machine. A queued summary or translation run in flight is paused first (below).
     """
     from src.llm.ollama_lifecycle import release_vram
 
-    return release_vram()
+    return _after_runs_pause(release_vram, "release")
+
+
+#: How long a deferred release or stop waits for the run in flight to finish its article (a CPU model can take minutes).
+_PAUSE_WAIT_S = 900.0
+
+
+def _after_runs_pause(action, what: str) -> dict:
+    """Free the model without losing a run's work (R669): a queued summary or translation run in flight pauses after the
+    article it is on, and the release or stop happens once it has. With nothing running the action happens now. A run left
+    paused waits for the operator's Resume, which skips every article it already stored."""
+    from src.jobs.llm_bulk_queue import pause_for_backend, wait_paused
+
+    if not pause_for_backend():
+        return action()
+
+    def _later() -> None:
+        if not wait_paused(_PAUSE_WAIT_S):
+            _LOG.warning("ollama %s: the run in flight did not pause in time; the model was left as it is", what)
+            return
+        try:
+            action()
+        except Exception as exc:  # noqa: BLE001 - a deferred release must never take the thread down unseen
+            log_failure(_LOG, f"ollama {what} after the pause failed", exc, level=logging.WARNING)
+
+    threading.Thread(target=_later, name=f"oo-ollama-{what}-after-pause", daemon=True).start()
+    return {
+        "deferred": True,
+        "paused_runs": True,
+        "reason": "the running summary or translation run pauses after its current article; the model is freed then",
+    }
 
 
 @router.get("/model-store")
