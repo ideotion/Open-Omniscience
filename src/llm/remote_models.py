@@ -23,7 +23,14 @@ HOW THE DAEMON DECIDES (read in Ollama's source, github.com/ollama/ollama at 563
 
 THE RULE, FAIL CLOSED: before any request that names a model, the name must not carry a cloud suffix, and it must be listed by the
 daemon's own ``/api/tags`` WITHOUT a remote field. A name the list does not show is refused as not installed; a list that cannot be read
-is refused as unreachable. Nothing is guessed in the model's favour.
+is refused as unreachable. Nothing is guessed in the model's favour: a remote field that is present at all (any value but null or
+an empty string) marks the entry remote, a field of an odd type is read as text, and when two listed entries answer to one name, one
+remote entry is enough to refuse it.
+
+WHAT IT CANNOT SEE. Any local process can talk to the daemon (it has no authentication), so between this check's ``/api/tags`` read
+and the request that follows, a local ``ollama create`` could re-point the name; ``OLLAMA_NO_CLOUD=1`` closes that only for a daemon
+the app starts. And telling a local alias of a cloud model apart relies on ``/api/tags`` carrying ``remote_host``/``remote_model``
+(both ``omitempty`` there); a daemon that one day marks remote models some other way would read here as local.
 """
 
 from __future__ import annotations
@@ -40,7 +47,7 @@ _REMOTE_FIELDS = ("remote_host", "remote_model")
 
 def is_cloud_name(name: str | None) -> bool:
     """True when Ollama would route ``name`` to its cloud by the name alone (``:cloud`` or a ``-cloud`` tag), as ``parseSourceSuffix``."""
-    raw = (name or "").strip()
+    raw = str(name or "").strip()
     idx = raw.rfind(":")
     if idx < 0:
         return False
@@ -56,7 +63,7 @@ def is_cloud_name(name: str | None) -> bool:
 
 def _key(name: str) -> str:
     """The name as ``/api/tags`` spells it: the default registry and namespace dropped, ``:latest`` when no tag, lower-cased."""
-    n = (name or "").strip()
+    n = str(name or "").strip()
     if n.lower().endswith(":local"):
         n = n[: -len(":local")]
     for prefix in ("registry.ollama.ai/library/", "registry.ollama.ai/", "library/"):
@@ -71,7 +78,7 @@ def _key(name: str) -> str:
 
 def is_remote_entry(entry: dict) -> bool:
     """True when an ``/api/tags`` entry is a model the daemon forwards elsewhere (a remote field set, or a cloud-suffixed name)."""
-    if any(entry.get(f) for f in _REMOTE_FIELDS):
+    if any(entry.get(f) not in (None, "") for f in _REMOTE_FIELDS):
         return True
     return is_cloud_name(entry.get("name")) or is_cloud_name(entry.get("model"))
 
@@ -85,10 +92,13 @@ def local_entry(name: str, models: list[dict]) -> tuple[str, dict | None]:
     if is_cloud_name(name):
         return "cloud", None
     want = _key(name)
+    found: dict | None = None
     for entry in models:
         if not isinstance(entry, dict):
             continue
         names = {_key(str(entry[k])) for k in ("name", "model") if entry.get(k)}
         if want in names:
-            return ("cloud", entry) if is_remote_entry(entry) else ("local", entry)
-    return "missing", None
+            if is_remote_entry(entry):
+                return "cloud", entry
+            found = found or entry
+    return ("local", found) if found is not None else ("missing", None)

@@ -334,6 +334,13 @@ class VllmClient:
         so it is still accepted for signature parity and ignored.
         """
         self._check_kill_switch()
+        from src.llm.remote_models import REFUSAL, is_cloud_name
+
+        if is_cloud_name(model):
+            # R671: a loopback URL can be Ollama's own OpenAI-compatible endpoint, which forwards such a name to its cloud
+            from src.llm.ollama import RemoteModelRefused
+
+            raise RemoteModelRefused(f"{REFUSAL} ({model!r})")
         messages = []
         if system:
             messages.append({"role": "system", "content": system})

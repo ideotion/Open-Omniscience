@@ -200,3 +200,75 @@ def test_the_refusal_is_keyed_in_every_locale_and_the_ui_mirrors_the_rule():
     js = (_ROOT / "src/static/app-settings.js").read_text(encoding="utf-8")
     assert "function _ooIsCloudModel(" in js
     assert js.index("_ooIsCloudModel(tag)") < js.index('ensureAiEgress(t("Download a model you named')
+
+
+# -- hardening from the two security reads -------------------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("models", [
+    [{"name": "x:1b"}, {"name": "x:1b", "remote_host": "https://ollama.com:443"}],   # one remote entry is enough, whatever the order
+    [{"name": "x:1b", "remote_host": 0}],                                              # present and not empty reads as remote
+    [{"name": "x:1b", "remote_model": []}],
+])
+def test_a_remote_mark_of_any_kind_refuses(models):
+    assert local_entry("x:1b", models)[0] == "cloud"
+
+
+def test_fields_of_odd_types_are_read_as_text_not_raised():
+    assert local_entry("5", [{"name": 5}])[0] == "local"
+    assert local_entry("llama3.2:3b", [{"name": "llama3.2:3b", "model": 7}])[0] == "local"
+    assert not is_cloud_name(5)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("body", [b"[1, 2]", b'"text"', b'{"models": {"llama3.2:3b": {}}}', b"not json"])
+def test_an_odd_model_list_body_fails_closed_as_unavailable(body):
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        return httpx.Response(200, content=body) if request.url.path == "/api/tags" else httpx.Response(200, json={"response": "x"})
+
+    base = "http://127.0.0.1:11434"
+    client = OllamaClient(client=httpx.Client(transport=httpx.MockTransport(handler), base_url=base), base_url=base)
+    with pytest.raises(LLMUnavailable):
+        client.generate("corpus text", model="llama3.2:3b")
+    assert seen == ["/api/tags"]
+
+
+def test_unload_never_sends_a_remote_alias_or_an_unlisted_name():
+    seen: list[str] = []
+    client = _daemon([{"name": "alias:latest", "remote_model": "glm-4.6", "remote_host": "https://ollama.com:443"},
+                      {"name": "llama3.2:3b"}], seen)
+    assert client.unload("alias") is False and seen == ["/api/tags"]
+    assert client.unload("nope:1b") is False and seen == ["/api/tags"] * 2
+    assert client.unload("llama3.2:3b") is True and seen[-1] == "/api/generate"
+
+
+def test_pull_names_the_cloud_refusal_even_in_airplane_mode():
+    from src.ingest import activate_kill_switch, clear_kill_switch
+
+    seen: list[str] = []
+    activate_kill_switch()
+    try:
+        with pytest.raises(RemoteModelRefused):
+            list(_daemon([], seen).pull("glm-4.6:cloud"))
+    finally:
+        clear_kill_switch()
+    assert seen == []
+
+
+def test_the_vllm_client_refuses_a_cloud_name_with_no_request():
+    """A loopback vLLM URL can point at Ollama's own OpenAI-compatible endpoint, which forwards a cloud name too."""
+    from src.llm.vllm_client import VllmClient
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "x"}}]})
+
+    base = "http://127.0.0.1:11434"
+    client = VllmClient(client=httpx.Client(transport=httpx.MockTransport(handler), base_url=base), base_url=base)
+    with pytest.raises(RemoteModelRefused):
+        client.generate("corpus text", model="gpt-oss:120b-cloud")
+    assert seen == []

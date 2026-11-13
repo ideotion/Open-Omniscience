@@ -776,13 +776,15 @@ class OllamaClient:
 
         Returns whether Ollama accepted the request. A model that was not resident is
         not an error: the post-condition asked for is "not holding the card", and that
-        already held. A cloud-suffixed name is never sent (R671: the daemon would forward even an
-        empty request), and is not resident here anyway, so the answer is False with no request.
+        already held. A model that is not plainly local is never sent (R671: the daemon would forward
+        even an empty request): a cloud-suffixed name with no request at all, and a name ``/api/tags``
+        lists as remote, or does not list, after that one read. Neither is resident here, so the answer
+        is False.
         """
-        from src.llm.remote_models import is_cloud_name
-
         self._check_kill_switch()
-        if is_cloud_name(model):
+        try:
+            self._require_local_model(model)
+        except LLMUnavailable:
             return False
         try:
             resp = self._client.post(
@@ -806,9 +808,10 @@ class OllamaClient:
         A cloud model is refused before the request (R671): it is a stub whose only use is to forward prompts off this computer."""
         from src.llm.remote_models import REFUSAL, is_cloud_name
 
-        self._check_kill_switch(clearnet=True)
+        # the refusal comes first: in airplane mode "network off" would suggest going online helps, and it does not
         if is_cloud_name(model):
             raise RemoteModelRefused(f"{REFUSAL} ({model!r})")
+        self._check_kill_switch(clearnet=True)
         import json as _json
 
         try:
