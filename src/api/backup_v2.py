@@ -1463,6 +1463,9 @@ _REINDEX_RESUME_JOB = register_job(
         _reindex_resume_worker,
         is_writer=True,
         cancellable=True,
+        # It stops inside its article loop once an import holds the exclusive window (``_yield_to_import`` below), and the queue
+        # starts it after every item, so a queued restore must not refuse because of it (R659).
+        yields_to_exclusive=True,
     )
 )
 

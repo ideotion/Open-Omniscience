@@ -937,6 +937,13 @@ _DB_WRITER_KINDS = ("collect", "import", "reindex", "quarantine") + (
 )
 
 
+def _registry_writer_kinds() -> set[str]:
+    """Every registered background job kind flagged ``is_writer`` (R659: the arbitration list is derived, never only kept by hand)."""
+    from src.jobs.background import all_job_statuses
+
+    return {str(s["kind"]) for s in all_job_statuses() if s.get("is_writer")}
+
+
 @router.get("")
 def list_jobs() -> dict:
     """Every visible job, aggregated LIVE from the owning systems (no shadow
@@ -973,7 +980,10 @@ def list_jobs() -> dict:
     # writer lock nor (usually) hosts. The arbitration ASK therefore fires
     # only for DB-WRITER collisions (collect/import kinds); bulk downloads
     # keep their own single-download, reorderable queue among themselves.
-    db_writers = [j for j in running if j["kind"] in _DB_WRITER_KINDS]
+    # ONE LIST (R659): the hand-kept kinds above (the owners that are not registry jobs) plus every registered job flagged
+    # ``is_writer``, read from the registry itself, so the ask and the restore's refusal name the same writers.
+    writer_kinds = set(_DB_WRITER_KINDS) | _registry_writer_kinds()
+    db_writers = [j for j in running if j["kind"] in writer_kinds]
     return {
         "jobs": jobs,
         "running": len(running),

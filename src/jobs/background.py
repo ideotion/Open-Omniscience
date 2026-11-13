@@ -140,11 +140,16 @@ class BackgroundJob:
         *,
         is_writer: bool = False,
         cancellable: bool = False,
+        yields_to_exclusive: bool = False,
     ) -> None:
         self.kind = kind
         self.label = label
         self._worker = worker
         self.is_writer = is_writer
+        # ``yields_to_exclusive`` (R659): the worker itself stops committing once an exclusive window is open (it reads
+        # ``exclusive_window_open`` inside its unit loop), so a restore that owns the machine need not refuse because of it.
+        # Set it ONLY on a worker that does that: a wrong True is a writer the restore no longer names.
+        self.yields_to_exclusive = yields_to_exclusive
         # HONESTY (no theater): only advertise a Cancel affordance when the worker actually
         # checks ctx.stopping and stops early. A worker that wraps an OPAQUE library call
         # (apply_source_types / backfill_baseline_tags loop internally, take no ctx) cannot
@@ -404,6 +409,30 @@ def stop_all_jobs(timeout: float) -> list[str]:
         with contextlib.suppress(Exception):
             _LOG.warning("background jobs: could not ask the running jobs to stop")
         return []
+
+
+def running_writer_jobs(*, window_open: bool = False) -> list[tuple[str, str]]:
+    """The registered jobs that commit to the corpus (``is_writer``) and are running now, as ``(kind, label)`` in registry order (R659).
+
+    THE ONE LIST: derived from the registry's own flags, never kept by hand, so a new writer kind is named the moment it registers.
+    With ``window_open`` (the caller holds the exclusive window), a job that stops itself inside that window
+    (``yields_to_exclusive``) is left out: it commits nothing during the window. Kinds and labels only (a job's kwargs can hold
+    a passphrase). Never raises: a job whose state cannot be read is named, since naming a job that was idle costs a retry and
+    leaving out one that writes costs its rows."""
+    with _REG_LOCK:
+        jobs = list(_REGISTRY.values())
+    return [pair for pair in (_writer_pair(job, window_open) for job in jobs) if pair is not None]
+
+
+def _writer_pair(job: BackgroundJob, window_open: bool) -> tuple[str, str] | None:
+    try:
+        if not job.is_writer or not job._alive():
+            return None
+        if window_open and job.yields_to_exclusive:
+            return None
+    except Exception:  # noqa: BLE001 - unreadable state: named, see running_writer_jobs
+        pass
+    return (str(job.kind), str(job.label))
 
 
 def _reset_registry_for_tests() -> None:
