@@ -43,7 +43,7 @@ function extract(name) {
 // Refusals first: an unknown server reason is shown, never dropped; a bundle checked without
 // the signer's key never reads as "signed by the key you gave"; GPS that cannot be read is
 // said, never invented; no EXIF is never called tampering; the caveat is on every image result.
-const FNS = ["bundleCheckHtml", "custodyLogCheckHtml", "gpsDecimal", "imageCheckHtml"];
+const FNS = ["bundleCheckHtml", "gpsDecimal", "imageCheckHtml"];
 const src =
   "function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;'); }\n" +
   FNS.map(extract).join("\n") + "\n" +
@@ -77,19 +77,6 @@ for (const [reason, want] of Object.entries(cases)) {
 }
 const odd = visible(R.bundleCheckHtml({ verified: false, reason: "something new <b>" }, t, tf));
 assert.ok(odd.includes("something new <b>"), "an unknown reason is shown as sent, escaped: " + odd);
-
-// custody log exports (src/custody/log.py export / verify_export)
-const LOG = { signer: { ed25519_pub: "AB".repeat(32) }, entries: [{}, {}, {}] };
-const okLog = visible(R.custodyLogCheckHtml({ verified: true, issues: [] }, LOG, "", t, tf));
-assert.ok(okLog.includes("Custody log verified") && okLog.includes("3 entries") && okLog.includes("paste the signer's key"), okLog);
-const mine = visible(R.custodyLogCheckHtml({ verified: true, issues: [] }, LOG, " " + "ab".repeat(32) + " ", t, tf));
-assert.ok(mine.includes("signed by the key you gave"), "a pasted key matching the file's signer: " + mine);
-const other = visible(R.custodyLogCheckHtml({ verified: true, issues: [] }, LOG, "cd".repeat(32), t, tf));
-assert.ok(other.startsWith("Verification failed") && other.includes("different key") && !other.includes("Custody log verified"), other);
-const broken = visible(R.custodyLogCheckHtml({ verified: false, issues: ["a", "b", "c", "d <i>"] }, LOG, "", t, tf));
-assert.ok(broken.startsWith("Verification failed") && broken.includes("a · b · c …") && !broken.includes("d <i>"), broken);
-const html = R.custodyLogCheckHtml({ verified: false, issues: ["<img src=x>"] }, LOG, "", t, tf);
-assert.ok(!html.includes("<img"), html);
 
 // GPS
 assert.strictEqual(R.gpsDecimal([48, 51, 29.5], "N").toFixed(5), "48.85819");

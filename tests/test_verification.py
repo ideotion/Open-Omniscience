@@ -83,3 +83,19 @@ def test_api_rejects_non_image():
         files={"file": ("x.txt", b"hello", "text/plain")},
     )
     assert r.status_code == 400
+
+
+@pytest.mark.parametrize("side", [8000, 13000])
+def test_a_small_file_declaring_huge_dimensions_is_refused_before_decoding(side):
+    """A ~20 KB PNG can declare 169 million pixels and decode to ~670 MB (security read,
+    Lane M): the header's size is checked first, both under Pillow's own bomb limit
+    (8000 x 8000 = 64 MP) and over it, and the refusal is a 400 with a reason, not a 500."""
+    buf = io.BytesIO()
+    Image.new("1", (side, side)).save(buf, "PNG")
+    assert len(buf.getvalue()) < 100_000
+    with pytest.raises(ImageError, match="too large"):
+        extract_image_metadata(buf.getvalue())
+    r = TestClient(app).post(
+        "/api/verify/image-metadata", files={"file": ("big.png", buf.getvalue(), "image/png")}
+    )
+    assert r.status_code == 400 and "too large" in r.json()["detail"]

@@ -632,7 +632,7 @@
       return `<div style="margin-top:8px">`
         + ooLabelHtml(`<strong title="${esc(String(d.method || ""))}">${esc(tf("Server IPs ({n})", {n: ips.length}))}</strong>`,
           (shown || `<span class="muted">—</span>`) + (gaps.length ? ` <span class="muted">· ${esc(gaps.join(" · "))}</span>` : ""))
-        + `</div><div class="card-caveat" style="font-size:.82em">${esc(t("Seen from here at fetch time: often a CDN edge, not where the publisher is. Several IPs over time is normal."))}`
+        + `</div><div class="card-caveat" style="font-size:.82em">${esc(t("The server that answered (or, for a newsletter, the sending server in its mail headers): often a CDN or mail service, not where the publisher is. Several IPs over time is normal."))}`
         // CC BY 4.0 asks for the credit wherever a looked-up country is shown
         + (ips.some((x) => x.country) && d.attribution ? ` <span class="muted">${esc(String(d.attribution))}</span>` : "")
         + `</div>`;

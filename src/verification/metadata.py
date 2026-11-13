@@ -15,6 +15,7 @@ score" -- metadata is evidence to weigh, not a verdict.
 from __future__ import annotations
 
 import io
+import warnings
 from dataclasses import dataclass, field
 
 from PIL import Image, UnidentifiedImageError
@@ -25,6 +26,12 @@ from src.monitoring.secret_scrub import record_text
 
 class ImageError(ValueError):
     """The bytes could not be read as an image."""
+
+
+# A few hundred KB of PNG can declare 13000 x 13000 pixels and decode to ~670 MB. The
+# header gives the size before any pixel is decoded, so refuse past this many pixels
+# (about 200 MB at four bytes a pixel; above any ordinary camera's 50 MP).
+MAX_DECODE_PIXELS = 50_000_000
 
 
 @dataclass
@@ -76,8 +83,17 @@ def _parse_gps(gps_ifd: dict) -> dict:
 def extract_image_metadata(data: bytes) -> ImageMetadata:
     """Extract format, dimensions, EXIF and GPS from image bytes."""
     try:
-        img = Image.open(io.BytesIO(data))
-        img.load()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            img = Image.open(io.BytesIO(data))
+            if img.width * img.height > MAX_DECODE_PIXELS:
+                raise ImageError(
+                    f"image too large to read here: {img.width} x {img.height} pixels "
+                    f"(limit {MAX_DECODE_PIXELS:,})"
+                )
+            img.load()
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+        raise ImageError(f"image too large to read here: {record_text(exc)}") from exc
     except (UnidentifiedImageError, OSError) as exc:
         raise ImageError(f"not a readable image: {record_text(exc)}") from exc
 

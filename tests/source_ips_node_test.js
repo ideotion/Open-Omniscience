@@ -55,14 +55,14 @@ assert.ok(v.includes("203.0.113.7 FR ×12") && v.includes("198.51.100.2 ×3"), v
 assert.ok(v.includes("4 via Tor or a proxy (no IP by design)") && v.includes("9 not captured"), v);
 assert.ok(html.includes('title="first seen 2026-10-01, last seen 2026-11-12"'), html);
 assert.ok(html.includes('title="first seen ?, last seen ?"'), "a missing date reads as unknown, never 'null'");
-assert.ok(/class="card-caveat"[^>]*>Seen from here at fetch time/.test(html), "the caveat is visible text");
+assert.ok(/class="card-caveat"[^>]*>The server that answered/.test(html), "the caveat is visible text");
 assert.ok(v.includes(CREDIT), "a shown country carries its licence credit");
 assert.ok(!v.includes("null") && !v.includes("undefined"), v);
 
 // no country shown: no credit; no IPs at all: a dash, still the caveat
 const bare = visible(srcIpsHtml({ ips: [], unavailable: {}, attribution: CREDIT }, t, tf));
 assert.ok(bare.includes("Server IPs (0)") && bare.includes("—") && !bare.includes("DB-IP"), bare);
-assert.ok(bare.includes("Seen from here at fetch time"), bare);
+assert.ok(bare.includes("The server that answered"), bare);
 assert.ok(!visible(srcIpsHtml({ ips: [{ ip: "192.0.2.1", articles: 1 }], unavailable: {}, attribution: CREDIT }, t, tf)).includes("DB-IP"));
 
 // hostile values are text

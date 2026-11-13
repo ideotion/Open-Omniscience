@@ -180,27 +180,6 @@
       return `<p><b>${esc(t("Verification failed"))}</b> · ${esc(hit ? hit[1] : reason)}</p>`;
     }
 
-    // A custody log export (Evidence & custody > Export): every entry's signature and the
-    // hash chain, checked by POST /api/custody/verify against the signer named in the file.
-    // A pasted key is compared with that signer here, so "the key you gave" is never claimed
-    // for a file that names another.
-    function custodyLogCheckHtml(res, bundle, key, t, tf) {
-      const signer = String((bundle && bundle.signer && bundle.signer.ed25519_pub) || "").toLowerCase();
-      const given = String(key || "").trim().toLowerCase();
-      const issues = (res && Array.isArray(res.issues)) ? res.issues.map(String) : [];
-      if (!(res && res.verified)) {
-        const shown = issues.slice(0, 3).join(" · ") + (issues.length > 3 ? " …" : "");
-        return `<p><b>${esc(t("Verification failed"))}</b>${shown ? " · " + esc(shown) : ""}</p>`;
-      }
-      if (given && given !== signer) {
-        return `<p><b>${esc(t("Verification failed"))}</b> · ${esc(t("Signed by a different key than the one you gave."))}</p>`;
-      }
-      const n = Array.isArray(bundle && bundle.entries) ? bundle.entries.length : 0;
-      return `<p><b>${esc(t("Custody log verified"))}</b> · ${esc(tf("{n} entries", {n}))} · ${esc(given
-        ? t("signature valid, signed by the key you gave")
-        : t("signature valid; paste the signer's key to prove who signed it"))}</p>`;
-    }
-
     // [deg, min, sec] + "N"/"S"/"E"/"W" -> signed decimal degrees, or null when unreadable
     function gpsDecimal(dms, ref) {
       if (!Array.isArray(dms) || dms.length !== 3 || dms.some((x) => typeof x !== "number" || !isFinite(x))) return null;
@@ -246,7 +225,10 @@
           fd.append("file", file, file.name);
           const r = await fetch("/api/verify/image-metadata", {method: "POST", body: fd});
           const d = await r.json().catch(() => ({}));
-          if (!r.ok) throw new Error((d && d.detail) || r.statusText);
+          if (!r.ok) {
+            const det = d && d.detail;
+            throw new Error(Array.isArray(det) ? det.map((x) => (x && x.msg) || String(x)).join("; ") : (det || r.statusText));
+          }
           out.innerHTML = imageCheckHtml(d, t, tf);
           return;
         }
@@ -254,12 +236,8 @@
         try { bundle = JSON.parse(await file.text()); } catch (e) { bundle = null; }
         if (!bundle || typeof bundle !== "object") { out.textContent = t("Choose an evidence bundle (.json) or an image."); return; }
         const keyEl = $("cust-check-key");
-        const key = keyEl ? keyEl.value.trim() : "";
-        if (!bundle.manifest && Array.isArray(bundle.entries)) {
-          const log = await api("/api/custody/verify", {method: "POST", body: JSON.stringify({bundle, require_signer: true})});
-          out.innerHTML = custodyLogCheckHtml(log, bundle, key, t, tf);
-          return;
-        }
+        // the bundle's key is lowercase hex; a key pasted in capitals is the same key
+        const key = keyEl ? keyEl.value.trim().toLowerCase() : "";
         const res = await api("/api/reports/evidence/verify", {method: "POST", body: JSON.stringify({bundle, trusted_public_key: key || null})});
         out.innerHTML = bundleCheckHtml(res, t, tf);
       } catch (e) {
