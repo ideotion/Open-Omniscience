@@ -7479,5 +7479,8 @@
   "＋ zoom": "＋ 放大",
   "－ zoom": "－ 缩小",
   "📍 places": "📍 地点",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "the database's log file had grown too large": "数据库的日志文件变得过大",
+  "Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.": "部分类型的卡片缺失：为防止数据库日志文件占满磁盘，{n} 个卡片生成器在 {minutes} 分钟后被停止。",
+  "Stopped card builders: {names}": "已停止的卡片生成器：{names}"
 }

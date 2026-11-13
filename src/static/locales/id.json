@@ -7479,5 +7479,8 @@
   "＋ zoom": "＋ perbesar",
   "－ zoom": "－ perkecil",
   "📍 places": "📍 tempat",
-  "🛒 Draft (": "🛒 Draf ("
+  "🛒 Draft (": "🛒 Draf (",
+  "the database's log file had grown too large": "berkas log basis data sudah terlalu besar",
+  "Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.": "Beberapa jenis kartu tidak ada: {n} pembuat kartu dihentikan setelah {minutes} menit agar berkas log basis data tidak memenuhi disk.",
+  "Stopped card builders: {names}": "Pembuat kartu yang dihentikan: {names}"
 }

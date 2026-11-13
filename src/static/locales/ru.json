@@ -7479,5 +7479,8 @@
   "＋ zoom": "＋ увеличить",
   "－ zoom": "－ уменьшить",
   "📍 places": "📍 места",
-  "🛒 Draft (": "🛒 Черновик ("
+  "🛒 Draft (": "🛒 Черновик (",
+  "the database's log file had grown too large": "файл журнала базы данных стал слишком большим",
+  "Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.": "Некоторых видов карточек нет: {n} генераторов карточек остановлено через {minutes} мин., чтобы файл журнала базы данных не заполнил диск.",
+  "Stopped card builders: {names}": "Остановленные генераторы карточек: {names}"
 }

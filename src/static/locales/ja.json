@@ -7479,5 +7479,8 @@
   "＋ zoom": "＋ 拡大",
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "the database's log file had grown too large": "データベースのログファイルが大きくなりすぎた",
+  "Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.": "一部の種類のカードがありません：データベースのログファイルがディスクを埋め尽くさないよう、{n} 個のカード生成処理を {minutes} 分後に停止しました。",
+  "Stopped card builders: {names}": "停止したカード生成処理：{names}"
 }

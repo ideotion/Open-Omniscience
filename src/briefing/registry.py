@@ -62,6 +62,56 @@ def _memory_short() -> tuple[float, float] | None:
     return float(avail), float(floor)
 
 
+
+def _log_pin_in_force() -> bool:
+    """Whether the write-ahead log is pinned and the guard that ends the pin is running (``storage_guard.log_pause_in_force``,
+    the question every pause asks). Same local-import guard and honest default as :func:`_memory_short`: a guard that cannot be
+    read reads as NOT pinned, so an unreadable guard never stops Home's refresh on its own."""
+    try:
+        from src.scheduler.storage_guard import log_pause_in_force
+
+        return bool(log_pause_in_force())
+    except Exception:  # noqa: BLE001 - no scheduler layer, or no reading
+        return False
+
+
+@contextmanager
+def _producer_deadline(session, seconds: float | None):
+    """Run ONE producer under ``statement_deadline(session, seconds)``, or under nothing when ``seconds`` is None.
+
+    Not armed when an ENCLOSING deadline is already in force (a diagnostics member, the card audit): that one bounds the whole
+    loop, the loop stops on its expiry (S2.2), and a producer stopped by it would be misreported here as stopped by its own
+    bound. The import is local for the reason :func:`_deadline_expired` gives."""
+    if seconds is None:
+        yield
+        return
+    try:
+        from src.database.maintenance import deadline_left_s, statement_deadline
+    except Exception:  # noqa: BLE001 - no DB layer: nothing to bound
+        yield
+        return
+    if deadline_left_s(session) is not None:
+        yield
+        return
+    with statement_deadline(session, seconds=seconds):
+        yield
+
+
+def _is_memory_short(exc: BaseException) -> bool:
+    try:
+        from src.database.maintenance import MemoryShort
+    except Exception:  # noqa: BLE001 - no DB layer
+        return False
+    return isinstance(exc, MemoryShort)
+
+
+def _is_statement_timeout(exc: BaseException) -> bool:
+    try:
+        from src.database.maintenance import StatementTimeout
+    except Exception:  # noqa: BLE001 - no DB layer
+        return False
+    return isinstance(exc, StatementTimeout)
+
 _LOG = logging.getLogger(__name__)
 
 # _WalGuardResult: the minimum real-clock gap between two WAL-releasing closes of
@@ -96,6 +146,16 @@ _WAL_GUARD_MIN_RELEASE_INTERVAL_S = 30.0
 #: stood in the way of at least one checkpoint attempt, a shorter one cannot have blocked more than one. A reading, never a limit:
 #: nothing is stopped or skipped at this number.
 _SLOW_PRODUCER_S = 300.0
+
+#: How many checkpoint cycles ONE producer may run on Home's refresh before it is stopped (R666, OPEN_QUEUE item 32, option B).
+#: WHAT IT PROTECTS: the user's disk. A producer's reads hold the write-ahead log's read mark, so while one runs the log cannot be
+#: checkpointed and grows with every write the app makes meanwhile; an RC2 bundle (28 Oct 2026) showed the briefing thread as the
+#: oldest reader for 5,720 s while the log grew to 80.8 GB, and a field zip of 8 Nov showed it 23,650 s old. Two cycles (600 s) is
+#: 2.7 times the slowest producer measured in a field bundle (``space_time_convergence``, 225.6 s, 7 Nov 2026), so a healthy
+#: producer is not stopped, and a pin is bounded to two missed checkpoint attempts. A producer stopped here leaves its cards out
+#: of that refresh and Home SAYS so (``stopped_producers``); nothing else in the pass is affected.
+PRODUCER_DEADLINE_CYCLES = 2
+PRODUCER_DEADLINE_S = PRODUCER_DEADLINE_CYCLES * _SLOW_PRODUCER_S
 
 # A producer: given a DB session, return the cards it can honestly produce now.
 Producer = Callable[..., list[Card]]
@@ -542,6 +602,9 @@ def run_all_bounded(
     as_of: "date | None" = None,
     lanes: bool = False,
     memory_stop: bool = False,
+    producer_deadline_s: float | None = None,
+    log_pin_stop: bool = False,
+    run_last: frozenset[str] | set[str] | None = None,
 ) -> tuple[list[Card], dict]:
     """Run every registered producer, isolating failures. Returns ``(cards, stats)``
     where ``stats`` is ``{"producers_run", "producers_total", "truncated"}`` plus, when
@@ -570,6 +633,22 @@ def run_all_bounded(
     default, and only Home's own refresh turns it on: the other callers (a bulletin edition,
     the leads-quality export, the card audit) print their own words for a short run and know
     only a spent time budget, so a memory stop there would be reported as the wrong cause.
+
+    ``producer_deadline_s`` runs EACH producer under its own ``statement_deadline`` of that many seconds (Home's refresh passes
+    :data:`PRODUCER_DEADLINE_S`; None, the default, is unbounded as before). A producer stopped by it, or one that ran at least
+    that long anyway (a statement the deadline cannot interrupt, or a producer that caught the timeout itself), is listed in
+    ``stats["stopped_producers"]`` as ``{"name", "seconds"}``: ABSENT, not empty, on a pass with none. Its cards are left out
+    and the loop goes on with the next producer. A read the deadline stopped because memory ran short (``MemoryShort``) is not
+    a time stop: with ``memory_stop`` on, the loop stops there with ``truncated_reason == "memory_short"``.
+
+    ``run_last`` names producers to run AFTER the others (Home passes the ones its previous refresh stopped at the bound, R666),
+    so a producer that keeps hitting its bound cannot also starve the producers registered after it of a memory or log stop's
+    remaining room. Only the ORDER changes: the cards are assembled in registration order, so the dedup belt below keeps the
+    same card it kept before.
+
+    ``log_pin_stop`` makes the loop stop BETWEEN producers while the write-ahead log is pinned and the storage guard is
+    working to end the pin (``truncated_reason == "wal_pinned"``): every further producer would add its own reads to the pin.
+    Home's refresh asks this once when its thread starts; a pin that begins during the pass was not asked about again.
 
     ``stats["slow_producers"]`` (present only when there is one) lists the producers that ran for at least
     :data:`_SLOW_PRODUCER_S` as ``{"name", "seconds", "started_at"}``, each also logged as a WARNING when it ends. It is
@@ -606,12 +685,19 @@ def run_all_bounded(
     anchored_names: list[str] = []
     unanchored_names: list[str] = []
     slow: list[dict] = []
+    stopped: list[dict] = []
     # End whatever the caller's own reads opened before the first producer starts. Without this the first producer shared one
     # snapshot with everything the caller did before the loop (Home's watch pass ends with a flush, its read of the cache, ...),
     # since the only commit was after the producer. The same commit the loop issues between producers, so it changes nothing a
     # producer could see that the boundary after it did not already change.
     _release_transaction(session)
-    for i, (name, producer) in enumerate(registry):
+    per_index: dict[int, list[Card]] = {}
+    last = run_last or frozenset()
+    order = [i for i, (n, _p) in enumerate(registry) if n not in last] + [
+        i for i, (n, _p) in enumerate(registry) if n in last
+    ]
+    for step, i in enumerate(order):
+        name, producer = registry[i]
         if deadline is not None and time.monotonic() >= deadline:
             truncated = True
             truncated_reason = "budget"
@@ -642,6 +728,16 @@ def run_all_bounded(
         # the part this loop owns; a single producer's own allocation is bounded by the
         # deadlined read it runs under, not here. The producers not run say so in
         # ``stats`` -- the caller keeps what it already had for them.
+        # Item 32 option C, folded into B: a pinned log is not made better by another producer's reads. Asked at each boundary,
+        # because the refresh's own start-of-thread check is hours old by the time a long pass reaches its later producers.
+        if log_pin_stop and _log_pin_in_force():
+            truncated = True
+            truncated_reason = "wal_pinned"
+            _LOG.warning(
+                "run_all: the write-ahead log is pinned and the storage guard is draining it; stopping after %d/%d producers, "
+                "before %r", ran, total, name,
+            )
+            break
         short = _memory_short() if memory_stop else None
         if short is not None:
             truncated = True
@@ -680,7 +776,9 @@ def run_all_bounded(
             # is deliberate: entering is what drains the PREVIOUS producer's
             # leftovers, and skipping it would let a dangling scan outlive a
             # disabled neighbour for the rest of the pass.
-            with _wal_guard(session):
+            # Item 32: the per-producer bound sits INSIDE the WAL guard, so the guard's entry drain (the previous producer's
+            # leftovers) happens before this producer's clock starts. A disabled producer is not bounded: it runs nothing.
+            with _wal_guard(session), _producer_deadline(session, None if name in disabled else producer_deadline_s):
                 if name in disabled:
                     produced = []
                 elif as_of is not None and anchorable.get(name):
@@ -688,9 +786,26 @@ def run_all_bounded(
                 else:
                     produced = producer(session) or []
         except Exception as exc:  # noqa: BLE001 - one bad producer must not abort the feed
-            log_failure(_LOG, f"briefing producer {name!r} failed", exc, level=logging.WARNING)
             produced = []
+            if producer_deadline_s is not None and _is_memory_short(exc):
+                log_failure(_LOG, f"briefing producer {name!r} stopped: memory short", exc, level=logging.WARNING)
+                stopped_by_memory = True
+            else:
+                log_failure(_LOG, f"briefing producer {name!r} failed", exc, level=logging.WARNING)
+                stopped_by_memory = False
+            timed_out = _is_statement_timeout(exc) and not stopped_by_memory
+        else:
+            stopped_by_memory = timed_out = False
         took = time.monotonic() - began_mono
+        if producer_deadline_s is not None and not stopped_by_memory and (timed_out or took >= producer_deadline_s):
+            # Its cards are left out even when it finished: a producer that ran past the bound held the log's read mark past it,
+            # and keeping cards that only a disk-filling run can make would hide the cost the bound exists to stop.
+            produced = []
+            stopped.append({"name": name, "seconds": round(took, 1)})
+            _LOG.warning(
+                "briefing producer %r stopped after %.0f s (bound %.0f s, %d checkpoint cycles); its cards are left out of this "
+                "refresh", name, took, producer_deadline_s, PRODUCER_DEADLINE_CYCLES,
+            )
         if took >= _SLOW_PRODUCER_S:
             when = began_wall.isoformat(timespec="seconds")
             slow.append({"name": name, "seconds": round(took, 1), "started_at": when})
@@ -709,13 +824,21 @@ def run_all_bounded(
                 # a mixed section can only carry one verdict for all of them.
                 if not card.produced_by:
                     card.produced_by = name
-                cards.append(card)
+                per_index.setdefault(i, []).append(card)
         if on_progress is not None:
             try:
-                on_progress(i + 1, total, name)
+                on_progress(step + 1, total, name)
             except Exception:  # noqa: BLE001 - progress is cosmetic, never fatal
                 pass
         _release_transaction(session)  # PR-D / W1: commit between producers
+        if stopped_by_memory and memory_stop:
+            truncated = True
+            truncated_reason = "memory_short"
+            _LOG.warning(
+                "run_all: a read stopped because the machine was nearly out of memory; stopping after %d/%d producers",
+                ran, total,
+            )
+            break
     # PR-D / W1 fix-forward: close whatever the LAST producer left open. There is
     # no FURTHER `_wal_guard(session)` call within THIS invocation to do it
     # otherwise (that only happens on ENTRY to the *next* `_wal_guard` call, i.e.
@@ -724,6 +847,8 @@ def run_all_bounded(
     # returns until some possibly-much-later call. Reached by the deadline `break`
     # too, which is why it sits after the loop rather than in its last iteration.
     _drain_pending(session)
+    for i in sorted(per_index):
+        cards.extend(per_index[i])
 
     # S5.1 (Leads-calibration, cross-card dedup belt): each producer already keys its
     # own cards for de-duplication (e.g. laundering's registrable-origin domain,
@@ -753,6 +878,8 @@ def run_all_bounded(
         stats["truncated_reason"] = truncated_reason
     if slow:
         stats["slow_producers"] = slow
+    if stopped:
+        stats["stopped_producers"] = stopped
     if as_of is not None:
         # Both lists, always, and BY NAME. A count alone would say how many were
         # anchored and not which — and "which" is the only form a document can use

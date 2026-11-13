@@ -7479,5 +7479,8 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lugares",
-  "🛒 Draft (": "🛒 Borrador ("
+  "🛒 Draft (": "🛒 Borrador (",
+  "the database's log file had grown too large": "el archivo de registro de la base de datos había crecido demasiado",
+  "Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.": "Faltan algunos tipos de tarjeta: {n} generadores de tarjetas se detuvieron tras {minutes} minutos para que el archivo de registro de la base de datos no llene el disco.",
+  "Stopped card builders: {names}": "Generadores de tarjetas detenidos: {names}"
 }

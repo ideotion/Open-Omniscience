@@ -7479,5 +7479,8 @@
   "＋ zoom": "＋ জুম",
   "－ zoom": "－ জুম",
   "📍 places": "📍 স্থান",
-  "🛒 Draft (": "🛒 খসড়া ("
+  "🛒 Draft (": "🛒 খসড়া (",
+  "the database's log file had grown too large": "ডেটাবেসের লগ ফাইল খুব বড় হয়ে গিয়েছিল",
+  "Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.": "কিছু ধরনের কার্ড নেই: ডেটাবেসের লগ ফাইল যাতে ডিস্ক ভরে না ফেলে, তাই {n}টি কার্ড-নির্মাতা {minutes} মিনিট পরে থামানো হয়েছে।",
+  "Stopped card builders: {names}": "থামানো কার্ড-নির্মাতা: {names}"
 }

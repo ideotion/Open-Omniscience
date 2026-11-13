@@ -7479,5 +7479,8 @@
   "＋ zoom": "＋ ज़ूम",
   "－ zoom": "－ ज़ूम",
   "📍 places": "📍 स्थान",
-  "🛒 Draft (": "🛒 ड्राफ़्ट ("
+  "🛒 Draft (": "🛒 ड्राफ़्ट (",
+  "the database's log file had grown too large": "डेटाबेस की लॉग फ़ाइल बहुत बड़ी हो गई थी",
+  "Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.": "कुछ प्रकार के कार्ड गायब हैं: {n} कार्ड बनाने वाले {minutes} मिनट बाद रोक दिए गए ताकि डेटाबेस की लॉग फ़ाइल डिस्क न भर दे।",
+  "Stopped card builders: {names}": "रोके गए कार्ड बनाने वाले: {names}"
 }
