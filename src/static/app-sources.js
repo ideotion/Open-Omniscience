@@ -544,9 +544,12 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       cell.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
-        const [prov, tally] = await Promise.all([
+        const [prov, tally, ips] = await Promise.all([
           api(`/api/sources/${id}/provenance`),
           api(`/api/sources/${id}/citation-tally`),
+          // the server IPs this source answered from (Lane M, R684); optional: a failure
+          // leaves the line out rather than failing the panel
+          api(`/api/sources/${id}/observed-ips`).catch(() => null),
         ]);
         // Every class -- including never_registered/filtered -- keeps its own dict
         // shape from the API (domain + sample_article_ids, +source_id/name when
@@ -555,7 +558,8 @@
           qualified: tally.qualified || [], disqualified: tally.disqualified || [],
           pending: tally.pending || [], never_registered: tally.never_registered || [],
         };
-        cell.innerHTML = _srcTrailHtml(id, prov, tally);
+        const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => String(x).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? v[k] : m)));
+        cell.innerHTML = _srcTrailHtml(id, prov, tally) + (ips ? srcIpsHtml(ips, t, tf) : "");
       } catch (e) { cell.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
     function _srcTrailHtml(id, prov, tally) {
@@ -610,6 +614,28 @@
         + `commerce ${c.filtered_commerce || 0} · social ${c.filtered_social || 0} · infrastructure ${c.filtered_infrastructure || 0}</div>`;
       html += `<div class="muted" style="font-size:.82em;margin-top:2px">${esc(tally.caveat || "")}</div>`;
       return html;
+    }
+    // One compact line: each distinct server IP with its country and article count, first and
+    // last capture on hover; the articles with no IP are counted, never guessed. The caveat is
+    // the short visible half; the server's method is the hover (invariant #17).
+    function srcIpsHtml(d, t, tf) {
+      const ips = (d && d.ips) || [];
+      const un = (d && d.unavailable) || {};
+      const shown = ips.map((x) => {
+        const when = tf("first seen {a}, last seen {b}", {a: String(x.first_seen || "?").slice(0, 10), b: String(x.last_seen || "?").slice(0, 10)});
+        const where = x.country ? " " + x.country : "";
+        return `<span title="${esc(when)}"><code>${esc(x.ip)}</code>${esc(where)} ×${esc(String(x.articles))}</span>`;
+      }).join(" · ");
+      const gaps = [];
+      if (un.tor_or_proxy) gaps.push(tf("{n} via Tor or a proxy (no IP by design)", {n: un.tor_or_proxy}));
+      if (un.not_captured) gaps.push(tf("{n} not captured", {n: un.not_captured}));
+      return `<div style="margin-top:8px">`
+        + ooLabelHtml(`<strong title="${esc(String(d.method || ""))}">${esc(tf("Server IPs ({n})", {n: ips.length}))}</strong>`,
+          (shown || `<span class="muted">—</span>`) + (gaps.length ? ` <span class="muted">· ${esc(gaps.join(" · "))}</span>` : ""))
+        + `</div><div class="card-caveat" style="font-size:.82em">${esc(t("Seen from here at fetch time: often a CDN edge, not where the publisher is. Several IPs over time is normal."))}`
+        // CC BY 4.0 asks for the credit wherever a looked-up country is shown
+        + (ips.some((x) => x.country) && d.attribution ? ` <span class="muted">${esc(String(d.attribution))}</span>` : "")
+        + `</div>`;
     }
     function _srcTrailToggleClass(id, cls) {
       const host = $("src-trail-cls-" + id); if (!host) return;

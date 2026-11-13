@@ -171,7 +171,6 @@ GET	/api/personality/all	feature	3	Help or About (J)	credits view of the bundled
 DELETE	/api/quarantine/host-pairs	feature	2	Quarantine (O)	withdraw a confirmed host pair
 GET	/api/quarantine/host-pairs	feature	2	Quarantine (O)	list confirmed host pairs
 POST	/api/quarantine/host-pairs	feature	2	Quarantine (O)	'this source really publishes on that host': releases false quarantines
-POST	/api/reports/evidence/verify	feature	2	Evidence (M)	verify an exported evidence bundle (integrity, and provenance with the signer key)
 POST	/api/safety/backup/encrypted	superseded			encrypted snapshot download; the Backup tab exports through /api/backup/v2
 POST	/api/scheduler/memory-guard/resume	feature	1	Task manager (O)	collection paused for low memory has no 'resume now' button
 GET	/api/scheduler/runs	feature	3	Task manager (O)	recent scheduler run reports
@@ -224,11 +223,9 @@ DELETE	/api/sources/{source_id}/metadata	superseded			source-group/metadata API 
 GET	/api/sources/{source_id}/metadata	superseded			source-group/metadata API of the pre-catalogue era; the Sources tab manages tags and enablement through /api/catalog and /api/sources/{id}
 POST	/api/sources/{source_id}/metadata	superseded			source-group/metadata API of the pre-catalogue era; the Sources tab manages tags and enablement through /api/catalog and /api/sources/{id}
 PUT	/api/sources/{source_id}/metadata	superseded			source-group/metadata API of the pre-catalogue era; the Sources tab manages tags and enablement through /api/catalog and /api/sources/{id}
-GET	/api/sources/{source_id}/observed-ips	feature	3	Sources (M)	which server IPs a source answered from, with countries
 GET	/api/stats/figures/vintages	feature	2	Statistics (O)	every revision of one published figure
 GET	/api/stats/sources	feature	3	Statistics (O)	directory of registered statistics sources
 GET	/api/timemap/range	superseded			the timemap derives its range from its own payload
-POST	/api/verify/image-metadata	feature	2	Evidence (M)	EXIF, dimensions and GPS of an image you upload: a basic verification tool
 GET	/api/watches/{watch_id}/history	feature	2	Insights > Watches (O)	a watch's past evaluations
 POST	/api/weather/anomaly	feature	2	Climate 'Your place' (H)	Open-Meteo anomaly vs 1991-2020; already Lane H's
 POST	/api/wiki/corpus/sync	feature	3	Living sources (I)	backfill watched pages into the corpus (local only)

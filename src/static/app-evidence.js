@@ -147,3 +147,109 @@
       const d = $("evidence-review");
       if (d && !d.open) d.showModal();
     }
+
+/* --- Check a file (Lane M, R684): two server checks that had no button.
+
+   Evidence & custody tab, one file picker: an evidence bundle (.json) goes to
+   POST /api/reports/evidence/verify (Merkle root + Ed25519 signature, and the signer's key
+   when the reader pastes it); an image goes to POST /api/verify/image-metadata (format, size,
+   EXIF, GPS). Both are loopback: the file is read on this machine, nothing is stored and
+   nothing leaves it, so no consent gate applies (#14 gates egress). GPS is shown to the
+   reader only.
+
+   The renderers are pure (payload, t, tf) -> HTML; tests/file_check_node_test.js drives them.
+*/
+    // The server's reasons are English sentences; each known one maps to a translated line.
+    // An unknown reason is shown as sent, never dropped.
+    function bundleCheckHtml(res, t, tf) {
+      const reason = String((res && res.reason) || "");
+      if (res && res.verified) {
+        const pinned = /pinned trusted key/.test(reason);
+        return `<p><b>${esc(t("Bundle verified"))}</b> · ${esc(pinned
+          ? t("signature valid, signed by the key you gave")
+          : t("signature valid; paste the signer's key to prove who signed it"))}</p>`;
+      }
+      const known = [
+        [/^no manifest/, t("This file is not an evidence bundle (no manifest).")],
+        [/untrusted key/, t("Signed by a different key than the one you gave.")],
+        [/merkle root mismatch/, t("Changed since signing: an entry was altered, added or removed.")],
+        [/malformed/, t("The signature or the key in the file is damaged.")],
+        [/signature does not match/, t("The signature does not match: the file was changed, or signed with another key.")],
+      ];
+      const hit = known.find(([rx]) => rx.test(reason));
+      return `<p><b>${esc(t("Not verified"))}</b> · ${esc(hit ? hit[1] : reason)}</p>`;
+    }
+
+    // [deg, min, sec] + "N"/"S"/"E"/"W" -> signed decimal degrees, or null when unreadable
+    function gpsDecimal(dms, ref) {
+      if (!Array.isArray(dms) || dms.length !== 3 || dms.some((x) => typeof x !== "number" || !isFinite(x))) return null;
+      const v = dms[0] + dms[1] / 60 + dms[2] / 3600;
+      return (ref === "S" || ref === "W") ? -v : v;
+    }
+
+    function imageCheckHtml(meta, t, tf) {
+      const exif = (meta && meta.exif) || {}, gps = (meta && meta.gps) || {};
+      const lines = [];
+      lines.push(`<b>${esc(String(meta.format || "?"))}</b> · ${esc(tf("{w} × {h} px", {w: meta.width, h: meta.height}))}`);
+      const taken = exif.DateTimeOriginal || exif.DateTimeDigitized || exif.DateTime;
+      lines.push(esc(taken ? tf("Date in the file: {d}", {d: String(taken)}) : t("No date in the file.")));
+      const cam = [exif.Make, exif.Model].filter(Boolean).map(String).join(" ").trim();
+      if (cam) lines.push(esc(tf("Camera: {c}", {c: cam})));
+      if (exif.Software) lines.push(esc(tf("Software: {s}", {s: String(exif.Software)})));
+      const lat = gpsDecimal(gps.GPSLatitude, gps.GPSLatitudeRef), lon = gpsDecimal(gps.GPSLongitude, gps.GPSLongitudeRef);
+      if (lat != null && lon != null) {
+        lines.push(esc(tf("Location in the file: {lat}, {lon}", {lat: lat.toFixed(5), lon: lon.toFixed(5)})));
+      } else if (Object.keys(gps).length) {
+        lines.push(esc(t("Location tags present but unreadable.")));
+      }
+      if (!meta.has_exif) lines.push(esc(t("No EXIF metadata: platforms often strip it, so this alone proves nothing.")));
+      const keys = Object.keys(exif).sort();
+      const all = keys.length
+        ? `<details><summary>${esc(tf("All tags ({n})", {n: keys.length}))}</summary><table class="mini">`
+          + keys.map((k) => `<tr><td><code>${esc(k)}</code></td><td>${esc(typeof exif[k] === "object" ? JSON.stringify(exif[k]) : String(exif[k]))}</td></tr>`).join("")
+          + `</table></details>`
+        : "";
+      return `<p>${lines.join("<br>")}</p>`
+        + `<p class="card-caveat">${esc(t("Metadata can be edited: weigh it, it is not proof. Read here only, nothing stored."))}</p>` + all;
+    }
+
+    async function custodyCheckFile(file) {
+      const t = _evT(), tf = _evTf();
+      const out = $("cust-check-result");
+      if (!out || !file) return;
+      out.textContent = t("Checking…");
+      try {
+        const isImage = /^image\//.test(file.type || "");
+        if (isImage) {
+          const fd = new FormData();
+          fd.append("file", file, file.name);
+          const r = await fetch("/api/verify/image-metadata", {method: "POST", body: fd});
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error((d && d.detail) || r.statusText);
+          out.innerHTML = imageCheckHtml(d, t, tf);
+          return;
+        }
+        let bundle;
+        try { bundle = JSON.parse(await file.text()); } catch (e) { bundle = null; }
+        if (!bundle || typeof bundle !== "object") { out.textContent = t("Choose an evidence bundle (.json) or an image."); return; }
+        const keyEl = $("cust-check-key");
+        const key = keyEl ? keyEl.value.trim() : "";
+        const res = await api("/api/reports/evidence/verify", {method: "POST", body: JSON.stringify({bundle, trusted_public_key: key || null})});
+        out.innerHTML = bundleCheckHtml(res, t, tf);
+      } catch (e) {
+        out.textContent = t("The file could not be checked:") + " " + ((e && e.message) || String(e));
+      }
+    }
+
+    (function _custodyCheckWire() {
+      if (typeof document === "undefined") return;
+      const wire = () => {
+        const inp = $("cust-check-file");
+        if (!inp || inp.dataset.wired) return;
+        inp.dataset.wired = "1";
+        const btn = $("cust-check-btn");
+        if (btn) btn.addEventListener("click", () => inp.click());
+        inp.addEventListener("change", () => { const f = inp.files && inp.files[0]; if (f) custodyCheckFile(f); inp.value = ""; });
+      };
+      if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wire); else wire();
+    })();

@@ -909,6 +909,16 @@
       </div>
       <div id="cust-result" class="hint" style="margin-top:8px"></div>
       <div style="overflow:auto; margin-top:8px;"><table id="cust-entries"></table></div>
+
+      <hr>
+      <!-- Lane M (R684): check a file on this machine. A bundle (.json) is verified; an image's
+           metadata is read. Loopback only, nothing stored (app-evidence.js custodyCheckFile). -->
+      <div class="row" style="align-items:center">
+        <button type="button" class="secondary" id="cust-check-btn" title="An evidence bundle (.json) is checked against its signature; an image shows its metadata. The file stays on this machine and nothing is stored.">Check a file…</button>
+        <input type="file" id="cust-check-file" accept=".json,application/json,image/*" hidden aria-label="Choose an evidence bundle or an image to check">
+        <input id="cust-check-key" style="flex:1;min-width:12em" placeholder="Signer's public key (optional)" title="Paste the key the sender gave you to prove who signed a bundle. Without it, a valid signature proves only that the file was not changed.">
+      </div>
+      <div id="cust-check-result" class="hint" role="status" style="margin-top:6px"></div>
     </section>
     </div>
 
