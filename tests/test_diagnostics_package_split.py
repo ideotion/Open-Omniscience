@@ -61,7 +61,7 @@ _ADDED_AFTER_THE_SPLIT: tuple[str, ...] = (
     "diagnostics_runs_report",
     # 2026-10-15, row B1: the store's country form and the migration journal, before the release run.
     "country_form_status",
-    # 2026-11-08, TEMPORARY: one random article per source in zips of at most 4 MB.
+    # 2026-11-08: one random article per source in zips of at most 4 MB (kept for the Field data button, R664).
     "source_samples",
     # 2026-11-08, R459: what a Thorough build is expected to cost, before the release run.
     "all_diagnostics_estimate",
