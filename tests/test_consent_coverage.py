@@ -60,7 +60,9 @@ _API = _SRC / "api"
 _STATIC = _ROOT / "src" / "static"
 
 #: The two consent functions. Both are named so a ratchet that knows only one does not mislabel the other's callers.
-_CONSENT = ("ensureOnline", "ensureAiEgress")
+#: ``ooAskToSendPlace`` (app-home.js, R683) asks for EVERY weather request, through ensureOnline when offline and a
+#: confirmation naming the place when online; tests/test_weather_context_r683.py pins that its body does both.
+_CONSENT = ("ensureOnline", "ensureAiEgress", "ooAskToSendPlace")
 #: Names that make a route handler a fetching handler. A DIRECT reference in the body is the whole detector (see LIMITS).
 _FETCH_REFS = {
     "get_fetcher",

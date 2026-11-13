@@ -48,7 +48,7 @@ const CLIMATE = [
 ];
 const src =
   extractConst("esc") + "\n" + extractConst("_LTR_ISOLATE") + "\n" + extract("_ltrIsolate") + "\n" +
-  extract("fmtNum") + "\n" + extract("ooIsoDateTime") + "\n" + extract("ooLabelText") + "\n" + extract("ooLtrIsolate") + "\n" +
+  extract("fmtNum") + "\n" + extract("ooRoundPlace") + "\n" + extract("ooIsoDateTime") + "\n" + extract("ooLabelText") + "\n" + extract("ooLtrIsolate") + "\n" +
   "var window = {};\nvar document = { documentElement: { dir: \"ltr\" } };\n" +
   CLIMATE.map(extract).join("\n") + "\n" +
   "module.exports = {" + CLIMATE.join(", ") + "};";
@@ -172,6 +172,10 @@ assert.strictEqual(R.climateParamLabel("nsidc", "S", t), "Antarctic");
 assert.strictEqual(R.climatePlaceRound("48.85661"), 48.9);
 assert.strictEqual(R.climatePlaceRound(2.35222), 2.4);
 assert.ok(Object.is(R.climatePlaceRound(-0.04), 0), "no -0 in the popup");
+// A tie goes UP, as the server's round_place does (tests/test_weather_context_r683.py pins the same values).
+assert.strictEqual(R.climatePlaceRound(0.25), 0.3);
+assert.strictEqual(R.climatePlaceRound(-0.25), -0.2);
+assert.strictEqual(R.climatePlaceRound(7.75), 7.8);
 // The window ends a week ago and spans 30 days, from today's UTC date.
 assert.deepStrictEqual(R.climatePlaceDefaults(new Date(Date.UTC(2026, 10, 13, 23, 0))), {start: "2026-10-08", end: "2026-11-06"});
 // Every query the server would refuse is refused here in words, before any popup.

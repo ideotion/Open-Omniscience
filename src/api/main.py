@@ -333,6 +333,16 @@ def _run_startup_upkeep() -> None:
             logger.info(f"removed {_n} stale restore staging dir(s)")
     except Exception as exc:  # noqa: BLE001 - the janitor must never block startup
         log_failure(logger, "stale-staging cleanup failed", exc, level=logging.WARNING)
+    # R683: weather slices now live in the encrypted store; delete the plaintext folder older
+    # versions wrote (its file names hashed unrounded places). A no-op once it is gone.
+    try:
+        from src.weather.openmeteo import purge_plaintext_cache
+
+        _n = purge_plaintext_cache()
+        if _n:
+            logger.info(f"deleted {_n} plaintext weather file(s) left by an older version")
+    except Exception as exc:  # noqa: BLE001 - the janitor must never block startup
+        log_failure(logger, "plaintext weather cache purge failed", exc, level=logging.WARNING)
     # W5 (2026-07-26 hardware diagnostics): the recurring off-peak sweep
     # (src.scheduler.maintenance.run_idle_maintenance) is the primary backstop
     # for aged pre-restore-*.db safety-net snapshots, but an instance that

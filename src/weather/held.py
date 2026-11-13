@@ -1,14 +1,15 @@
 """
-Reanalysis slices held for the Climate tab's "Your place" view, in the encrypted store (R675).
+Reanalysis slices held on this machine, in the encrypted store (R675, R683).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-A slice names a place, and a place a person types is probably where they live. So the slices
-behind the anomaly view are NOT the loose JSON files ``openmeteo.fetch_daily_slice`` writes for
-its other callers: they live in the ``app_state`` table of the (encrypted) corpus database, keyed
-by a hash of the exact request URL, which carries only the ROUNDED place
-(:func:`src.weather.anomaly.place`). Nothing here logs a URL or a coordinate. Local only: this
+A slice names a place, and a place a person types is probably where they live. So every slice
+(the Climate tab's "Your place" view and the Home card's weather context alike) lives in the
+``app_state`` table of the (encrypted) corpus database, never in a loose file, keyed by a hash of
+the exact request URL, which carries only the ROUNDED place
+(:func:`src.weather.openmeteo.round_place`). The plaintext folder older versions wrote is deleted
+at startup (:func:`src.weather.openmeteo.purge_plaintext_cache`). Nothing here logs a URL or a coordinate. Local only: this
 module never fetches.
 """
 
