@@ -867,6 +867,13 @@ def test_a_quiet_server_keeps_its_panel_and_it_says_so(monkeypatch):
         srv.server_close()
 
 
+def test_the_log_view_is_in_cbreak_before_it_asks_for_a_key():
+    """The prompt is written only once the terminal reads single keys: a key pressed the moment the prompt shows must answer it
+    (written before setcbreak, it landed in line mode or was flushed away, and the view never returned; CI flake 2026-11-13)."""
+    body = inspect.getsource(P._show_log)
+    assert body.index("tty.setcbreak(fd)") < body.index("Press any key to return"), "cbreak first, then the prompt"
+
+
 @posix_only
 @pytest.mark.skipif(P.curses is None, reason="no curses")
 def test_the_server_messages_view_returns_on_any_key(server):
