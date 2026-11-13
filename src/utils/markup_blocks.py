@@ -348,10 +348,6 @@ _HTML_STYLE_SCRIPT_BLOCK = re.compile(r"<(style|script)\b[^>]*>.*?</\1\s*>", re.
 #: body and never at the word, which is what makes the strong resync rule sound).
 _HTML_STYLE_SCRIPT_ANCHOR = re.compile(r"<(style|script)\b", re.IGNORECASE)
 _GT_RESYNC = stop_char_resync(">")
-_HTML_COMMENT_OPEN = re.compile(r"<!--")
-_HTML_COMMENT_CLOSE = re.compile(r"-->")
-#: ``<[^>]+>``, the bare tag strip the newsletter path and the keyword cleaner use.
-HTML_ANY_TAG = re.compile(r"<[^>]+>", re.DOTALL)
 
 
 def find_style_script_opener(text: str, pos: int = 0) -> re.Match[str] | None:
@@ -429,8 +425,27 @@ def strip_style_script(text: str, repl: str = " ") -> str:
 
 
 def strip_html_comments(text: str, repl: str = " ") -> str:
-    """``re.sub(r"<!--.*?-->", repl, text, flags=S)``, byte-identical, linear."""
-    return strip_one_block(text, _HTML_COMMENT_OPEN, _HTML_COMMENT_CLOSE, repl)
+    """``re.sub(r"<!--.*?-->", repl, text, flags=S)``, byte-identical, linear, in literal scans.
+
+    One family: the first ``<!--`` with no ``-->`` after it ends the walk, since no later one can close.
+    Not an HTML sanitiser (CodeQL's "--!>" rule): the output is plain text that is stored and shown
+    escaped, and it must stay what the regex gave (a browser also ends a comment at ``--!>``)."""
+    out: list[str] = []
+    copied = 0
+    while True:
+        start = text.find("<!--", copied)
+        if start < 0:
+            break
+        end = text.find("-->", start + 4)
+        if end < 0:
+            break
+        out.append(text[copied:start])
+        out.append(repl)
+        copied = end + 3
+    if not out:
+        return text
+    out.append(text[copied:])
+    return "".join(out)
 
 
 def has_html_comment(text: str) -> bool:
@@ -441,5 +456,28 @@ def has_html_comment(text: str) -> bool:
 
 
 def strip_html_tags(text: str, repl: str = " ") -> str:
-    """``HTML_ANY_TAG.sub(repl, text)``, byte-identical, linear (the wiki strip's own rule)."""
-    return sub_anchored(text, HTML_ANY_TAG, repl, anchor="<", resync=_GT_RESYNC)
+    """``re.sub(r"<[^>]+>", repl, text)``, byte-identical, linear, in literal scans.
+
+    A ``<`` opens a tag when the next character exists and is not ``>``; the tag ends at the first ``>``
+    after it. ``<>`` fails at its ``<`` and the walk resumes at its ``>``; no ``>`` left means nothing more
+    can match. No regex, so no engine retry loop to reason about."""
+    out: list[str] = []
+    copied = pos = 0
+    n = len(text)
+    while True:
+        start = text.find("<", pos)
+        if start < 0 or start + 1 >= n:
+            break
+        if text[start + 1] == ">":
+            pos = start + 1
+            continue
+        end = text.find(">", start + 1)
+        if end < 0:
+            break
+        out.append(text[copied:start])
+        out.append(repl)
+        copied = pos = end + 1
+    if not out:
+        return text
+    out.append(text[copied:])
+    return "".join(out)
