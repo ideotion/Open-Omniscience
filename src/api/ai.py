@@ -689,7 +689,7 @@ def _langdetect_worker(
     from src.jobs.background import Framed
 
     # The English line, plus its keyed frame for the task managers (click-through B19, Q5).
-    ctx.set_progress(done=0, total=estimate_total, detail=Framed(f"model {mdl}", "model {model}", model=mdl))
+    ctx.set_progress(done=0, total=estimate_total, detail=Framed(f"model {_label_model(mdl)}", "model {model}", model=_label_model(mdl)))
 
     while True:
         if ctx.stopping:

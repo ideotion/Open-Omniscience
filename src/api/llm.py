@@ -2739,8 +2739,10 @@ def _await_unless_stopped(work, stopped):
                 if abandoned.is_set():
                     _ABANDONED -= 1
             if abandoned.is_set() and "error" in box:
-                _LOG.debug("an abandoned generation ended on %s; its result was dropped", type(box["error"]).__name__)
+                _LOG.info("an abandoned generation ended on %s; its result was dropped", type(box["error"]).__name__)
 
+    if stopped():
+        return None  # the stop came before the batch: no model call is made at all
     threading.Thread(target=_run, name="oo-llmbulk-gen", daemon=True).start()
     while not done.wait(_STOP_POLL_S):
         if stopped():
@@ -2867,14 +2869,16 @@ def prepare_bulk_run(
                 ArticleAnalysis.kind == kind,
                 ArticleAnalysis.created_at >= resume_since,
             ).all()
-            # A translation counts as done only in this run's target (its prompt version carries it, plus the "+<mode>-<parts>"
-            # a chunked run appends, _version_with_method). A summary counts whatever its prompt version: the version follows the
-            # Settings prompt and the app version, either of which can change between the pause and the Resume, and matching it
-            # exactly would store this run's own summaries a second time (Lane F row 11 asked for the exact match; the double
-            # store is the worse outcome, so a summary another run wrote meanwhile is skipped too).
+            # A translation counts as done only in this run's TARGET (the last ":" part of its prompt version, before the
+            # "+<mode>-<parts>" a chunked run appends, _version_with_method). The rest of the version follows the Settings prompt
+            # and the prompt constants, either of which can change between the pause and the Resume, and matching it exactly
+            # would store this run's own results a second time; for the same reason a summary counts whatever its version (Lane
+            # F row 11 asked for the exact match; the double store is the worse outcome, so a result another run wrote meanwhile
+            # is skipped too).
+            target_tail = ":" + prompt_version.rsplit(":", 1)[-1]
             resumed.update(
                 aid for aid, pv in rows
-                if op != "translate" or pv == prompt_version or (pv or "").startswith(prompt_version + "+")
+                if op != "translate" or (pv or "").split("+", 1)[0].endswith(target_tail)
             )
 
     # A translate run NEVER translates an article already in the target language

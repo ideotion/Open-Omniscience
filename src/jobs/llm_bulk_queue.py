@@ -391,15 +391,23 @@ class LlmBulkQueue:
         for _ in range(3):
             _JOB.join(5)
             if stop_all_count() != stops_seen:
-                break  # the app is shutting down: never start a writer the shutdown's stop has not seen
+                # The app is shutting down: do not start a writer the shutdown's stop has not seen.
+                with self._lock:
+                    self._draining = False
+                return
             try:
                 _JOB.start()
-                return
             except RuntimeError:
                 continue
             except Exception as exc:  # noqa: BLE001 - a failed start must not leave the queue marked draining for good
                 log_failure(_LOG, "bulk queue: the drain could not be started", exc, level=logging.WARNING)
                 break
+            if stop_all_count() != stops_seen:
+                # The shutdown began between the check and the start (stop_all_jobs counts before it looks at the jobs): stop
+                # the drain it may not have seen. A start racing it closer still is refused at its first statement by
+                # src/database/after_shutdown.py (R689 (2)).
+                _JOB.cancel()
+            return
         with self._lock:
             self._draining = False
         _LOG.warning("bulk queue: the drain could not be started; the next add or Resume tries again")
