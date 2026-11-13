@@ -329,8 +329,9 @@ The sidebar is a **flat list** of the data tools (top to bottom):
   There is no "Collect" tab: collection lives in Settings.
 - **Explore** is one page: the search box on top, and the analysis of the matching
   articles under the results as soon as a search returns (see [3.1](#31-search) and
-  [3.1a](#31a-analysis--the-corpora-window)). A keyword or a Home Lead clicked anywhere
-  also opens its analysis on this page.
+  [3.1a](#31a-analysis--the-corpora-window)). A keyword
+  clicked anywhere opens its analysis on this page; a Home Lead's **Open corpus ↗** and
+  Enter in the omnibar open it on Explore in a **new browser tab**.
 - **Interface depth** (Settings → General) changes what the sidebar *pins*, never what
   you can reach. At **Essentials** only Home and Feed are pinned and the other tabs sit
   behind a labelled **Show more** row; **Standard** and **Full** list every tab. The
@@ -506,10 +507,10 @@ object you can read from every angle. A keyword is a corpus; a single article is
 of one. The analysis lives on the **Explore** page, under the search results. It
 appears when you:
 
-- run a search in Explore (or press **Enter** in the omnibar, or choose *"Run the full
-  Boolean search"*),
+- run a search in Explore (or choose *"Run the full Boolean search"* in the omnibar),
+- press **Enter** in the omnibar (this opens Explore in a new browser tab),
 - click a **keyword** anywhere (Insights, a Lead's back, a reader),
-- click a **Home Lead** (its "Open corpus ↗" opens the *exact* article set), or
+- click a **Home Lead** (its "Open corpus ↗" opens the *exact* article set, in a new browser tab), or
 - click a commodity chart title / **Analyse ↗**.
 
 When an analysis is opened from somewhere else (a keyword, a Lead, a commodity), the
@@ -612,7 +613,7 @@ robots, etc. Fetching is always ethical (robots fail-closed, rate-limited).
 ### 3.3 Sources *(in Settings → Advanced → Sources)*
 
 > **Where it lives now.** Like Collect, the source catalog moved into **Settings →
-> Sources** (content-first). The controls are unchanged.
+> Advanced → Sources** (content-first). The controls are unchanged.
 
 **What it's for:** registering and curating the outlets you gather from.
 
@@ -669,9 +670,10 @@ yet), then the sources whose re-check is due. A new source is always more urgent
 re-check (ruling R94). The panel also says how many qualified sources are waiting and when
 the next one joins the queue.
 
-**How many sources a pass judges** grows with the machine (ruling R95): the two numbers in
-Settings → Advanced → Collection (*qualification per pass*, *qualification re-checks per pass*) are a
-minimum, and while *qualification budget auto* is on (the default) each pass judges as many
+**How many sources a pass judges** grows with the machine (ruling R95): the number in
+Settings → Advanced → Quality gates (*Sources to judge each collection pass*) and the scheduler's
+*qualification re-checks per pass* (set through the scheduler configuration, `PUT /api/scheduler/config`;
+there is no Settings control for it) are a minimum, and while *qualification budget auto* is on (the default) each pass judges as many
 new sources and re-checks as the machine's memory and cores carry, with no fixed ceiling. A
 setting below the defaults, or 0, is kept as given; switching auto off pins the numbers
 exactly. Each candidate is judged on its newest articles, as many as the memory available can
@@ -701,7 +703,7 @@ read as if the app were already gathering from all of them.
 #### Re-verification — a stamp does not last forever
 
 A verdict is a measurement, and a measurement ages. **A qualified stamp is re-checked
-about every three months** (ruling R94, 2026-09-29) (Settings → Advanced → Collection, *qualification re-checks per pass*; 0
+about every three months** (ruling R94, 2026-09-29) (the scheduler's `qualification_recheck_per_pass` setting, API only; 0
 turns re-verification off). The re-check is a flat interval, not the disqualified
 ladder's doubling — doubling encodes diminishing hope after repeated failure and means
 nothing after a success.
@@ -1092,7 +1094,8 @@ each exactly as its publisher released it. The tab has one subtab per dataset:
 
 **How it fetches.** Nothing is downloaded until you ask. Each subtab has its own
 **Fetch from the publisher** button (it reads **Update from the publisher** once something
-is stored), which names the server it contacts. It passes the same consent popup as every
+is stored; on **Weather station** you type a station id and press **Fetch station**, then
+**Update this station**), which names the server it contacts. It passes the same consent popup as every
 other network action and is refused while airplane mode is on. The fetch runs in the
 background; the task manager shows it. Reading what is already stored makes no network
 call.
