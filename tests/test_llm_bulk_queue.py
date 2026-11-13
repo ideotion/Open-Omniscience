@@ -163,10 +163,12 @@ def test_a_queued_run_runs_and_stores_with_nobody_reading_and_runs_go_one_at_a_t
         r2 = client.post("/api/llm/bulk/queue", json={"op": "summarize", "model": "m", "article_ids": b})
         assert r1.status_code == 200 and r2.status_code == 200, (r1.text, r2.text)
         assert r2.json()["ahead"] == 1
-    for _ in range(5):
-        gate.release()
-    # The client is gone: the page never reads, and the server finishes both runs.
-    assert lbq._JOB.join(15)
+        for _ in range(5):
+            gate.release()
+        # Nobody reads again: the page is gone, and the server finishes both runs. Joined INSIDE the app's lifetime: leaving
+        # the block is the app's shutdown, whose stop-all (R670) rightly leaves a run in flight PAUSED (R669) -- the
+        # shutdown test below pins that half.
+        assert lbq._JOB.join(15)
     snap = queue.snapshot()
     assert [e["state"] for e in snap["entries"]] == ["done", "done"], snap
     assert [e["stored"] for e in snap["entries"]] == [3, 2]
