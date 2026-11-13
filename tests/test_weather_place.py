@@ -232,7 +232,7 @@ def test_the_view_asks_consent_names_the_rounded_place_and_reads_held_first():
     held_at, gate_at, post_at = (body.find(s) for s in ('"/api/weather/anomaly/held?', "ensureOnline(", '"/api/weather/anomaly", {method: "POST"'))
     assert -1 < held_at < gate_at < post_at, "held read first, then the ONE consent, then the request"
     assert "consent: true" in body and "rounded to 0.1 degree" in body
-    assert "window.confirm(ask)" in body and "ensureOnline(ask)" in body, \
+    assert "window.confirm(ask" in body and "ensureOnline(ask" in body, \
         "asked for every request: a confirmation when already online, the consent popup otherwise"
     assert "climatePlaceRound(q.lat)" in body, "the browser rounds too, so the popup names what is sent"
     save = function_body(js, "_climatePlaceSave")
@@ -243,3 +243,41 @@ def test_the_view_asks_consent_names_the_rounded_place_and_reads_held_first():
 def test_the_node_renderer_checks_pass():
     proc = subprocess.run(["node", str(_ROOT / "tests" / "climate_node_test.js")], capture_output=True, text=True, timeout=60)
     assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+# --- Lane F review row 22: no failure sentence names the place ------------------------------ #
+def test_a_failure_sentence_withholds_the_query_of_a_weather_request():
+    from src.ingest.fetch_verdict import failure_url, without_private_query
+
+    url = build_archive_url(48.85661, 2.35222, *W, ["precipitation_sum"])
+    shown = failure_url(url)
+    assert shown == "https://archive-api.open-meteo.com/v1/archive?…"
+    # another host keeps its query: it is the feed's address, not a person's place
+    assert failure_url("https://example.org/feed?page=2") == "https://example.org/feed?page=2"
+    # a library quoting the path it failed on, plain or percent-encoded
+    said = ("HTTPSConnectionPool(host='archive-api.open-meteo.com', port=443): Max retries exceeded with url: "
+            "/v1/archive?latitude=48.9000&longitude=2.4000&daily=a%2Cb (Caused by ...)")
+    assert "48.9" not in without_private_query(said) and "url: /v1/archive?… (Caused" in without_private_query(said)
+    assert "48.9" not in without_private_query("/v1/archive?latitude%3D48.9000")
+
+
+def test_a_failed_weather_fetch_names_no_place_in_its_note():
+    from src.weather import openmeteo
+
+    class Boom:
+        def fetch(self, url, require_html=False):
+            raise RuntimeError("request error for " + url + ": url: /v1/archive?" + url.split("?", 1)[1])
+
+    out = openmeteo.fetch_daily_slice(48.85661, 2.35222, *W, ["precipitation_sum"], fetcher=Boom(), use_file_cache=False)
+    assert out["ok"] is False
+    assert "48.9" not in out["verdict_note"] and "latitude" not in out["verdict_note"], out["verdict_note"]
+
+
+def test_the_question_says_the_browser_keeps_the_place_and_fails_closed():
+    js = (_ROOT / "src" / "static" / "app-climate.js").read_text(encoding="utf-8")
+    from tests.js_source_helper import function_body
+
+    body = function_body(js, "climatePlaceShow")
+    assert 'This browser also keeps the rounded place, unencrypted, to fill it in next time.' in body
+    assert "window.confirm(ask + " in body and "{shadow: kept}" in body
+    assert 'typeof ensureOnline !== "function" || !await ensureOnline(' in body, "no consent popup, nothing sent"
