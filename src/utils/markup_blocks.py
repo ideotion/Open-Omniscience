@@ -338,7 +338,12 @@ def search_anchored(
 
 #: The <style>/<script> opener and its per-tag closers (``</\1\s*>`` as two patterns).
 HTML_STYLE_SCRIPT_OPEN = re.compile(r"<(style|script)\b[^>]*>", re.IGNORECASE | re.DOTALL)
-_HTML_STYLE_SCRIPT_CLOSE = {tag: re.compile(r"</%s\s*>" % tag, re.IGNORECASE) for tag in ("style", "script")}
+#: The whole block, exactly the regex this replaces. It is MATCHED (anchored at an opener the walk found),
+#: never searched, so its backreference keeps the regex's own case rules and only the K*N retry loop goes.
+#: A cheap superset of every closer either tag's spellings accept (``re.I`` lets ``s`` match ``ſ`` and ``i``
+#: match ``ı``/``İ``): none after an opener means no spelling of that tag can close any more.
+_HTML_TAG_CLOSE_ANY = {5: re.compile(r"</style", re.IGNORECASE), 6: re.compile(r"</script", re.IGNORECASE)}
+_HTML_STYLE_SCRIPT_BLOCK = re.compile(r"<(style|script)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
 #: The opener's own fixed prefix (``\b`` included, so a failed attempt fails at the ``[^>]*>``
 #: body and never at the word, which is what makes the strong resync rule sound).
 _HTML_STYLE_SCRIPT_ANCHOR = re.compile(r"<(style|script)\b", re.IGNORECASE)
@@ -352,6 +357,16 @@ HTML_ANY_TAG = re.compile(r"<[^>]+>", re.DOTALL)
 def find_style_script_opener(text: str, pos: int = 0) -> re.Match[str] | None:
     """``HTML_STYLE_SCRIPT_OPEN.search(text, pos)``, identical, in one walk."""
     return search_anchored(text, HTML_STYLE_SCRIPT_OPEN, pos, anchor=_HTML_STYLE_SCRIPT_ANCHOR, resync=_GT_RESYNC)
+
+
+def _backref_key(word: str) -> tuple[str, ...]:
+    """The closers ``</\\1\\s*>`` accepts depend only on this: the regex engine compares a backreference
+    under IGNORECASE character by character through the SIMPLE lowercase mapping. ``str.lower`` is the FULL
+    mapping, which differs here for one letter the opener can match (``İ`` folds to ``i`` simply, to ``i̇``
+    in full); ``ſ`` and ``ı`` keep their own class (an Opus read of PR #1949 measured all three, and the first
+    draft's dict lookup raised KeyError on ``<scrıpt>``). At most a few hundred keys exist, so a dead key per
+    spelling keeps the walk linear."""
+    return tuple("i" if c == "\u0130" else c.lower() for c in word)
 
 
 def strip_style_script(text: str, repl: str = " ") -> str:
@@ -371,31 +386,42 @@ def strip_style_script(text: str, repl: str = " ") -> str:
     * no closer for a family after one of its openers means none after any later one: the family is
       dead, and its later anchors are stepped over.
 
-    Every live search either removes a block (the scan jumps past its ``>``) or kills a family, so
-    the walk is linear in ``text``.
+    Every live search either removes a block (the scan jumps past its closer) or kills a family, so
+    the walk is linear in ``text``. A "family" is one SPELLING's backreference class (:func:`_backref_key`),
+    because ``</\1`` accepts different closers for ``style`` and ``ſtyle``; a tag-wide superset search kills
+    every spelling of a tag at once in the ordinary case. HONEST WORST CASE: a document that spells the
+    opener every possible way, each followed by a closer that only a superset accepts, pays one full
+    failed match per spelling (at most 48 for style and 192 for script); measured 0.31 s per failed match
+    at the 36 MiB newsletter cap, so about 75 s there, against hours for the K*N regex.
     """
     out: list[str] = []
     copied = pos = 0
-    dead: set[str] = set()
+    dead: set[tuple[str, ...]] = set()
+    dead_tags: set[int] = set()
     while True:
         a = _HTML_STYLE_SCRIPT_ANCHOR.search(text, pos)
         if a is None:
             break
-        family = a.group(1).lower()
-        if family in dead:
+        family = _backref_key(a.group(1))
+        tag = len(family)  # 5 is style, 6 is script, whatever the spelling
+        if family in dead or tag in dead_tags:
             pos = a.end()
             continue
         gt = text.find(">", a.end())
         if gt < 0:
             break
-        close = _HTML_STYLE_SCRIPT_CLOSE[family].search(text, gt + 1)
-        if close is None:
+        if _HTML_TAG_CLOSE_ANY[tag].search(text, gt + 1) is None:
+            dead_tags.add(tag)
+            pos = a.end()
+            continue
+        block = _HTML_STYLE_SCRIPT_BLOCK.match(text, a.start())
+        if block is None:
             dead.add(family)
             pos = a.end()
             continue
         out.append(text[copied : a.start()])
         out.append(repl)
-        copied = pos = close.end()
+        copied = pos = block.end()
     if not out:
         return text
     out.append(text[copied:])

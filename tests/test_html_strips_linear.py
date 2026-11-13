@@ -106,6 +106,14 @@ _SHAPES = [
     "</style>orphan <script>x",
     "<scriptx>not a script</scriptx>",
     "&amp; &nbsp; &copy;",
+    # Letters re.I folds, which a backreference compares by SIMPLE lowercase (an Opus read of PR #1949: the
+    # first draft raised KeyError on the second one and removed the fourth's block, which the regex keeps).
+    "<\u017ftyle>x</style>y",
+    "<scr\u0131pt>",
+    "<scr\u0130pt>x</script>y",
+    "<STYLE>x</\u017ftyle>y",
+    "<\u017ftyle>x</\u017ftyle>y",
+    "<scr\u0131pt>a</script>b</scr\u0131pt>c",
 ]
 
 
@@ -113,6 +121,8 @@ def _random_doc(rnd: random.Random) -> str:
     atoms = [
         "<style>", "</style>", "<script>", "</script >", "<style ", "<!--", "-->", "<!-->", "<", ">",
         "<div class='a'>", "</p>", "@", "a@b", " ", "\n", "word", "&amp;", "<b>", "x", "<!---->",
+        "<\u017ftyle>", "</\u017ftyle >", "<scr\u0131pt>", "<SCR\u0130PT x>", "</scr\u0131pt>", "</SCRIPT>",
+        "\u00a0", "\u2028", "\u3000",
     ]
     return "".join(rnd.choice(atoms) for _ in range(rnd.randint(1, 30)))
 
