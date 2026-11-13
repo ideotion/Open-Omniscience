@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -1684,9 +1685,11 @@ def ollama_stop() -> dict:
     Always 200: "not ours to stop" is an ANSWER, and an error status would push callers
     into treating a correct refusal as a fault.
     """
-    from src.llm.ollama_lifecycle import stop
+    from src.llm.ollama_lifecycle import owns_daemon, stop
 
-    return stop()
+    if not owns_daemon():
+        return stop()  # the refusal by name: nothing to pause for a daemon this app will not stop
+    return _after_runs_pause(stop, "stop")
 
 
 @router.post("/ollama/release")
@@ -1695,11 +1698,63 @@ def ollama_release() -> dict:
 
     This is the universal answer to "stop holding the GPU" — it works on a daemon this
     app does not own, costs at worst one model reload, and is how the card is handed to
-    vLLM on a single-GPU machine.
+    vLLM on a single-GPU machine. A queued summary or translation run in flight is paused first (below).
     """
     from src.llm.ollama_lifecycle import release_vram
 
-    return release_vram()
+    return _after_runs_pause(release_vram, "release")
+
+
+#: How often a deferred release or stop says, in the log, that it is still waiting for the run in flight (a CPU model can
+#: take minutes over one article). It never gives up: the run's stop is already committed, so it WILL pause, and the
+#: operator was told the model is freed then.
+_PAUSE_WAIT_S = 900.0
+#: The deferred actions waiting for a pause, by name: a second click while the first waits adds nothing.
+_DEFERRED: set[str] = set()
+_DEFERRED_LOCK = threading.Lock()
+
+
+def _after_runs_pause(action, what: str) -> dict:
+    """Free the model without losing a run's work (R669): a queued summary or translation run in flight pauses after the
+    article it is on, and the release or stop happens once it has. With nothing running the action happens now. A run left
+    paused waits for the operator's Resume, which skips every article it already stored."""
+    from src.jobs.llm_bulk_queue import pause_for_backend, wait_paused
+
+    deferred = {
+        "deferred": True,
+        "paused_runs": True,
+        "reason": "the running summary or translation run pauses after its current article; the model is freed then",
+    }
+    with _DEFERRED_LOCK:
+        if what in _DEFERRED:
+            return deferred
+    if not pause_for_backend():
+        return action()
+
+    def _later() -> None:
+        try:
+            while not wait_paused(_PAUSE_WAIT_S):
+                _LOG.warning("ollama %s: still waiting for the run in flight to finish its article", what)
+            try:
+                action()
+            except Exception as exc:  # noqa: BLE001 - a deferred release must never take the thread down unseen
+                log_failure(_LOG, f"ollama {what} after the pause failed", exc, level=logging.WARNING)
+        finally:
+            with _DEFERRED_LOCK:
+                _DEFERRED.discard(what)
+
+    with _DEFERRED_LOCK:
+        if what in _DEFERRED:
+            return deferred
+        _DEFERRED.add(what)
+    try:
+        threading.Thread(target=_later, name=f"oo-ollama-{what}-after-pause", daemon=True).start()
+    except RuntimeError as exc:  # no thread to wait in: the run is pausing, so wait here rather than free it under a generation
+        with _DEFERRED_LOCK:
+            _DEFERRED.discard(what)
+        log_failure(_LOG, f"ollama {what}: could not wait in the background", exc, level=logging.WARNING)
+        raise HTTPException(status_code=409, detail="The run is pausing; try again once it shows paused in the task manager.") from None
+    return deferred
 
 
 @router.get("/model-store")
