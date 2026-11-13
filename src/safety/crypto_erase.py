@@ -273,78 +273,88 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
             if s and overwritten and suffix == "":
                 headers.append(db.name)
 
-    # From here to the folder's removal no key file of THIS process changes name (src/custody/keyfile.py
-    # KEY_FILES_LOCK): a wrap in place that had checked the file before step 2 would otherwise put the
-    # key back after it was destroyed, and a creation after step 5 would write a fresh key the walk of
-    # step 6 may already have passed. They wait: the wrap then finds its file gone and stands down, and a
-    # creation makes a NEW key, never the destroyed one (OPEN_QUEUE item 41(c)).
+    # 2) Destroy on-disk key material (the scrypt wrap-salt lives inside these files).
+    # Under the lock every key-file change of THIS process takes (src/custody/keyfile.py KEY_FILES_LOCK), held
+    # until the keys folder is gone: a wrap in place that waited finds its file gone and writes nothing, and a
+    # creation that waited finds no folder (OPEN_QUEUE item 41(c)). Before it, a wrap that had checked the file
+    # put the destroyed key back under its name after this step. Held for the keys folder only, never for the
+    # rest of step 6, which rewrites everything left (a wiki dump can take hours) while a signing request waits.
+    keys_dir: Path = paths["keys_dir"]
     with _key_files_lock():
-        # 2) Destroy on-disk key material (the scrypt wrap-salt lives inside these files).
-        keys_dir: Path = paths["keys_dir"]
         for name in _KEY_FILES:
             s, overwritten, w = _track(keys_dir / name)
             seen += s
             wiped += w
             if s and overwritten:
                 keys_destroyed.append(name)
-
-        # 3) DuckDB cache header and its key-derivation sidecar (the cache's key is stretched from the passphrase and the
-        #    salt in that sidecar, so with the sidecar destroyed the key is underivable even from the right passphrase;
-        #    the cache is a derived copy, so this is defence-in-depth beside step 1 and the passphrase clearing in
-        #    step 5 + the free-space scrub).
-        store_dir: Path = paths["store_dir"]
-        for name in _DUCK_FILES:
-            _s, _overwritten, _w = _track(store_dir / name, head_bytes=_SQLCIPHER_PAGE1)
-            seen += _s
-            wiped += _w
-
-        # 4) anchors.db now inherits the corpus's own encryption state (audit finding
-        #    L1, 2026-07-17 -- it used to be always-plaintext regardless of the corpus).
-        #    A full overwrite destroys it either way (it is small, so this is cheap
-        #    even though a head-only pass would already crypto-erase it if encrypted).
-        anchors_seen, _anchors_overwritten, anchors_wiped = _track(paths["anchors_db"])
-        seen += anchors_seen
-        wiped += anchors_wiped
-
-        # 5) Clear the in-memory passphrase (never persisted) so the app holds no key. Only
-        #    for the real default store — an explicit override dir must not mutate process
-        #    state that belongs to a different (the live) corpus.
-        passphrase_cleared = False
-        if data_dir is None:
-            from src.database.connect import set_passphrase
-
-            try:
-                set_passphrase(None)
-            finally:
-                # the store is gone by design, not vanished; this must never skip the overwrite below
-                try:
-                    from src.config.kv_store import forget_stores
-
-                    forget_stores()
-                except Exception:  # noqa: BLE001 - bookkeeping only; the wipe goes on
-                    pass
-            passphrase_cleared = True
-
-        # 6) Overwrite + unlink everything else still under the data dir, then rmtree. The
-        #    encrypted DBs/keys/anchors are already gone; remaining files are small side
-        #    files, so a full overwrite here is cheap and complete (no 4 MiB cap — OO-02).
-        # A folder the first-launch step marked on a drive (R86): forget its id first, or the
-        # next start would wait for a drive that was erased on purpose, and the watchdog would
-        # read the folder vanishing below as a disconnection.
-        with contextlib.suppress(Exception):
-            from src.safety.data_volume import configured_folder, forget_volume_id
-
-            chosen = configured_folder()
-            if chosen is not None and chosen.resolve() == base.resolve():
-                forget_volume_id()
-        if base.exists():
-            for root, _dirs, names in os.walk(base):
+        # 2b) Everything else in the keys folder (the evidence key, a private copy in keys/.pending), then the
+        #     folder itself, before the lock goes: nothing can be added to it in between.
+        if keys_dir.is_dir():
+            for root, _dirs, names in os.walk(keys_dir):
                 for name in names:
                     _s, _overwritten, _w = _track(Path(root) / name)
                     seen += _s
                     wiped += _w
-        with contextlib.suppress(OSError):
-            shutil.rmtree(base, ignore_errors=True)
+            with contextlib.suppress(OSError):
+                shutil.rmtree(keys_dir, ignore_errors=True)
+
+    # 3) DuckDB cache header and its key-derivation sidecar (the cache's key is stretched from the passphrase and the
+    #    salt in that sidecar, so with the sidecar destroyed the key is underivable even from the right passphrase;
+    #    the cache is a derived copy, so this is defence-in-depth beside step 1 and the passphrase clearing in
+    #    step 5 + the free-space scrub).
+    store_dir: Path = paths["store_dir"]
+    for name in _DUCK_FILES:
+        _s, _overwritten, _w = _track(store_dir / name, head_bytes=_SQLCIPHER_PAGE1)
+        seen += _s
+        wiped += _w
+
+    # 4) anchors.db now inherits the corpus's own encryption state (audit finding
+    #    L1, 2026-07-17 -- it used to be always-plaintext regardless of the corpus).
+    #    A full overwrite destroys it either way (it is small, so this is cheap
+    #    even though a head-only pass would already crypto-erase it if encrypted).
+    anchors_seen, _anchors_overwritten, anchors_wiped = _track(paths["anchors_db"])
+    seen += anchors_seen
+    wiped += anchors_wiped
+
+    # 5) Clear the in-memory passphrase (never persisted) so the app holds no key. Only
+    #    for the real default store — an explicit override dir must not mutate process
+    #    state that belongs to a different (the live) corpus.
+    passphrase_cleared = False
+    if data_dir is None:
+        from src.database.connect import set_passphrase
+
+        try:
+            set_passphrase(None)
+        finally:
+            # the store is gone by design, not vanished; this must never skip the overwrite below
+            try:
+                from src.config.kv_store import forget_stores
+
+                forget_stores()
+            except Exception:  # noqa: BLE001 - bookkeeping only; the wipe goes on
+                pass
+        passphrase_cleared = True
+
+    # 6) Overwrite + unlink everything else still under the data dir, then rmtree. The
+    #    encrypted DBs/keys/anchors are already gone; remaining files are small side
+    #    files, so a full overwrite here is cheap and complete (no 4 MiB cap — OO-02).
+    # A folder the first-launch step marked on a drive (R86): forget its id first, or the
+    # next start would wait for a drive that was erased on purpose, and the watchdog would
+    # read the folder vanishing below as a disconnection.
+    with contextlib.suppress(Exception):
+        from src.safety.data_volume import configured_folder, forget_volume_id
+
+        chosen = configured_folder()
+        if chosen is not None and chosen.resolve() == base.resolve():
+            forget_volume_id()
+    if base.exists():
+        for root, _dirs, names in os.walk(base):
+            for name in names:
+                _s, _overwritten, _w = _track(Path(root) / name)
+                seen += _s
+                wiped += _w
+    with contextlib.suppress(OSError):
+        shutil.rmtree(base, ignore_errors=True)
 
     if overwrite_failures:
         _LOG.error(

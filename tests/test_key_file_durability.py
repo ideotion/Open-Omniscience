@@ -60,14 +60,23 @@ def test_replace_in_place_flushes_the_pending_folder_when_it_removed_a_plaintext
     key.write_bytes(b"PLAINTEXT")
     alias = keys / keyfile.PENDING / "k.pem.1.2.abc.new"
     os.link(key, alias)  # a creation that died between its link and the removal of its private name
-    flushed: list[str] = []
-    real = keyfile._flush_folder
-    monkeypatch.setattr(keyfile, "_flush_folder", lambda folder, what: (flushed.append(Path(folder).name), real(folder, what)))
+    seen: list[tuple[str, bool]] = []
+    real = os.fsync
+
+    def spy(fd: int) -> None:
+        st = os.fstat(fd)
+        if stat.S_ISDIR(st.st_mode):
+            pending = keys / keyfile.PENDING
+            seen.append(("pending" if pending.exists() and st.st_ino == pending.stat().st_ino else "other", alias.exists()))
+        real(fd)
+
+    scope_os(monkeypatch, file_lock, fsync=spy)
 
     assert keyfile.replace_in_place(key, lambda: b"SEALED", lambda b: None, None, "test key") is True
 
     assert not alias.exists()
-    assert flushed == ["keys", keyfile.PENDING]
+    # the alias's folder was flushed AFTER the alias was gone: a power cut cannot bring the plaintext name back
+    assert ("pending", False) in seen, seen
 
 
 @pytest.mark.skipif(os.name == "nt", reason="a folder is not flushed on Windows (stated, named once)")
@@ -132,25 +141,68 @@ def test_the_quick_erase_holds_the_key_file_lock_while_it_destroys_the_keys(tmp_
     keys = tmp_path / "keys"
     keys.mkdir()
     (keys / "custody_ed25519.pem").write_bytes(b"x" * 64)
+    (keys / "evidence_ed25519.pem").write_bytes(b"y" * 64)
     held_at_key_shred: list[bool] = []
     real_shred = crypto_erase._shred
 
     def shred(path: Path, **kw):
-        if path.parent == keys:
+        if keys in path.parents:
             # another thread cannot take the lock while the erase holds it
             got: list[bool] = []
-            t = threading.Thread(target=lambda: got.append(keyfile.KEY_FILES_LOCK.acquire(timeout=0.05)))
+
+            def probe() -> None:
+                ok = keyfile.KEY_FILES_LOCK.acquire(timeout=0.05)
+                got.append(ok)
+                if ok:  # released by the thread that took it: an RLock belongs to its owner
+                    keyfile.KEY_FILES_LOCK.release()
+
+            t = threading.Thread(target=probe)
             t.start()
             t.join()
-            if got and got[0]:
-                keyfile.KEY_FILES_LOCK.release()
             held_at_key_shred.append(not got[0])
         return real_shred(path, **kw)
 
     monkeypatch.setattr(crypto_erase, "_shred", shred)
     crypto_erase.quick_crypto_erase(confirm=True, data_dir=tmp_path)
 
-    assert held_at_key_shred and all(held_at_key_shred), held_at_key_shred
+    # both the custody key (step 2) and the evidence key (the keys-folder sweep) went under the lock
+    assert len(held_at_key_shred) >= 2 and all(held_at_key_shred), held_at_key_shred
+    assert not keys.exists()
     # released at the end: a later key-file change is not blocked for good
     assert keyfile.KEY_FILES_LOCK.acquire(timeout=1)
     keyfile.KEY_FILES_LOCK.release()
+
+
+def test_a_wrap_whose_key_derivation_overlapped_an_erase_writes_nothing_at_all(tmp_path):
+    """The private copy is written under the lock too: an erase that ran while ``make`` derived the key leaves no wrapped
+    copy of the destroyed key in ``keys/.pending`` (security read A, S1 of the first head)."""
+    keys = tmp_path / "keys"
+    keys.mkdir()
+    key = keys / "k.pem"
+    key.write_bytes(b"PLAINTEXT")
+
+    def make() -> bytes:
+        # the erase runs to completion while the slow derivation does
+        with keyfile.KEY_FILES_LOCK:
+            key.unlink()
+        return b"SEALED"
+
+    assert keyfile.replace_in_place(key, make, lambda b: None, None, "test key") is False
+    assert not key.exists()
+    pending = keys / keyfile.PENDING
+    assert not pending.exists() or list(pending.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a file open here cannot be replaced on Windows; the overwrite is skipped there")
+def test_the_bytes_a_wrap_in_place_frees_are_overwritten(tmp_path):
+    key = tmp_path / "keys" / "k.pem"
+    key.parent.mkdir()
+    key.write_bytes(b"PLAINTEXT-KEY-BYTES")
+    fd = os.open(key, os.O_RDONLY)  # a reader of the OLD file, as the blocks would be read back
+    try:
+        assert keyfile.replace_in_place(key, lambda: b"SEALED", lambda b: None, None, "test key") is True
+        os.lseek(fd, 0, os.SEEK_SET)
+        assert os.read(fd, 64) == b"\0" * len(b"PLAINTEXT-KEY-BYTES")
+    finally:
+        os.close(fd)
+    assert key.read_bytes() == b"SEALED"

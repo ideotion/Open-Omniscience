@@ -20,9 +20,12 @@ only guarantees how those bytes arrive:
 * a file is replaced in place only by ``os.replace`` of a finished private copy, only after the
   caller's own check passed on the copy, and only if the file is still exactly the one that was
   read (device, inode, size, modification time).
-* every change to a key file's name (a link, a replace, the alias removal after it) is flushed to
-  the folder, so a power cut cannot bring back the file it replaced, and is made under
-  :data:`KEY_FILES_LOCK`, which the erase holds too.
+* the key file's own name changes (the link of a creation, a replace and the alias removal after
+  it, the restore taking back a key it placed) are flushed to their folder, so a power cut cannot
+  bring back the NAME of what was replaced, and are made under :data:`KEY_FILES_LOCK`, which the
+  erase holds too; the bytes a replace frees are overwritten where that can be done (not a promise
+  on an SSD or a copy-on-write filesystem). Not flushed and not under the lock: the creation and
+  removal of the empty ``keys/.pending`` folder, and the restore's creation of ``keys/`` itself.
 
 Nothing here reads or logs a passphrase or key bytes.
 """
@@ -34,6 +37,7 @@ import logging
 import os
 import secrets
 import stat
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -41,17 +45,19 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-#: Held by every change to a key file's NAME in this process (the link of :func:`create_new`, the
-#: check-then-replace of :func:`replace_in_place`) and by the erase's key steps
-#: (``src/safety/crypto_erase.py``). Without it the check that the file is still the one that was read
-#: and the ``os.replace`` that acts on it were two steps an erase could fall between: the erase
-#: destroyed the key, and the replacement then put that same key (wrapped) back under its name, after
-#: the erase had reported it destroyed (OPEN_QUEUE item 41(c)). A process-level lock, so another
-#: process on the same data folder is not covered; that is a stated limit, as the identity check is.
+#: Held by every change to a key file's name in this process, from the private copy to the folder flush
+#: (:func:`create_new`, :func:`replace_in_place`, the restore's take-back in ``src/backup/merge.py``), and by
+#: the erase from its key step until the keys folder is gone (``src/safety/crypto_erase.py``). Without it the
+#: check that the file is still the one that was read and the ``os.replace`` that acts on it were two steps an
+#: erase could fall between: the erase destroyed the key, and the replacement then put that same key (wrapped)
+#: back under its name, after the erase had reported it destroyed (OPEN_QUEUE item 41(c)). Stated limits: a
+#: process-level lock, so another process on the same data folder is not covered (as for the identity check);
+#: and a restore running during an erase can create ``keys/`` again once the erase removed it and place the
+#: backup's keys there, which may be this install's own (serialising a restore against an erase is not done here).
 KEY_FILES_LOCK = threading.RLock()
 
 
-def _flush_folder(folder: Path, what: str) -> None:
+def flush_key_folder(folder: Path, what: str) -> None:
     """Flush ``folder`` so the rename, link or unlink just done in it survives a power cut.
 
     Until the folder is flushed, a power cut can bring back what the name held before: after a
@@ -60,9 +66,9 @@ def _flush_folder(folder: Path, what: str) -> None:
     name is already in place, and a failure here only means it may not survive a power cut, which
     the log says (the exception CLASS only).
     """
-    from src.safety.file_lock import flush_folder
-
     try:
+        from src.safety.file_lock import flush_folder
+
         flush_folder(folder)
     except Exception as exc:  # noqa: BLE001 - the change is made; only its durability is unknown
         log.warning(
@@ -188,6 +194,46 @@ def identity(st: os.stat_result) -> tuple[int, int, int, int]:
     return (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
 
 
+def _open_replaced(path: Path, old: os.stat_result) -> int | None:
+    """A handle on the file ``path`` holds now (``old`` is its ``lstat``), so its bytes can be overwritten once a
+    replacement has taken its name; ``None`` where that cannot be done safely (Windows, where a file open here
+    cannot be replaced; a file that is not the one checked; any error)."""
+    if sys.platform == "win32":
+        return None
+    try:
+        fd = os.open(path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        return None
+    try:
+        st = os.fstat(fd)
+        if (st.st_dev, st.st_ino) == (old.st_dev, old.st_ino):
+            return fd
+    except OSError:
+        pass
+    os.close(fd)
+    return None
+
+
+def _scrub_replaced(fd: int | None, old: os.stat_result, what: str) -> None:
+    """Overwrite the bytes of the file a replacement has just taken the name of, once nothing names it any more.
+
+    ``os.replace`` and the alias removal UNLINK the old file; its blocks keep the old bytes, which for a key
+    wrapped in place were the key in the clear, readable from a switched-off machine. Zeros, flushed, through the
+    handle taken before the replace, and only when its link count is 0 (no other name kept it). Best effort, and
+    no promise on an SSD or a copy-on-write filesystem, which can keep the old blocks anyway (the erase's stated
+    limit, ``src/safety/crypto_erase.py``). A failure is logged by class and never undoes the replace."""
+    if fd is None:
+        return
+    try:
+        if os.fstat(fd).st_nlink != 0:
+            return
+        os.lseek(fd, 0, os.SEEK_SET)
+        os.write(fd, b"\0" * old.st_size)
+        os.fsync(fd)
+    except OSError as exc:
+        log.warning("%s: the replaced key file's bytes could not be overwritten (%s)", what, type(exc).__name__)
+
+
 class ReplaceRefused(Exception):  # noqa: N818 - a refusal to replace, not an error condition
     """The key file changed while the replacement was made, so the replacement is not used.
 
@@ -244,11 +290,11 @@ def replace_in_place(
         # A link is refused before the copy is paid for (``make`` derives a key from the passphrase), and
         # again below, since the name can change while the copy is made.
         _refuse_a_linked_name(path, os.lstat(path))
-        tmp = write_private(path, "rewrap", make())
-        check(tmp.read_bytes())
-        # The check and the replace are ONE step for every key-file change in this process, the erase's
-        # among them (KEY_FILES_LOCK): an erase that destroyed the file after this check would otherwise
-        # see the key put back under its name by the replace that follows it.
+        sealed = make()  # the slow part (a key derivation), and the only part outside the lock
+        # From the private copy to the folder flush, ONE step for every key-file change in this process, the
+        # erase's among them (KEY_FILES_LOCK). An erase that ran while ``make`` did has removed the file, so the
+        # ``lstat`` below fails and nothing is written at all: not the replacement, and not a private copy of the
+        # key the erase destroyed, which it would otherwise leave behind in ``keys/.pending`` after its walk.
         with KEY_FILES_LOCK:
             # the NAME's own state: a symbolic link answers for itself, not for its target
             old = os.lstat(path)
@@ -257,15 +303,22 @@ def replace_in_place(
             if identity(old) != identity(seen):
                 raise ReplaceRefused("the key file changed while the replacement was made")
             _refuse_a_linked_name(path, old)
-            os.replace(tmp, path)
-            tmp = None  # it IS the key file now: never removed below
-            aliases = pending_aliases(path, old)
-            drop_aliases(path, old)
-        # The rename first, then the removed aliases: until both folders are flushed a power cut can bring
-        # the old bytes back, which here were the plaintext key.
-        _flush_folder(path.parent, what)
-        if aliases:
-            _flush_folder(path.parent / PENDING, what)
+            tmp = write_private(path, "rewrap", sealed)
+            check(tmp.read_bytes())
+            replaced = _open_replaced(path, old)
+            try:
+                os.replace(tmp, path)
+                tmp = None  # it IS the key file now: never removed below
+                drop_aliases(path, old)
+                # Both folders of the rename (the private copy left ``keys/.pending``, where the removed aliases were
+                # too), so a power cut cannot bring back the name of what was replaced, which here was the plaintext key.
+                flush_key_folder(path.parent, what)
+                flush_key_folder(path.parent / PENDING, what)
+                _scrub_replaced(replaced, old, what)
+            finally:
+                if replaced is not None:
+                    with contextlib.suppress(OSError):
+                        os.close(replaced)
         return True
     except Exception as exc:  # noqa: BLE001 - best effort by design; the original file is untouched
         if isinstance(exc, ReplaceRefused):
@@ -292,28 +345,29 @@ def create_new(path: Path, data: bytes) -> None:
     to an exclusive create in place; there a reader can meet the file between its create and its
     write, which :func:`read_settled` waits out.
     """
-    try:
-        tmp = write_private(path, "new", data)
-    except OSError:
-        with KEY_FILES_LOCK:
+    # Under the lock from the private copy on, so an erase never runs between this caller's copy and its link
+    # (and a creation that waited on an erase finds ``keys/`` gone and writes nothing: FileNotFoundError).
+    with KEY_FILES_LOCK:
+        try:
+            tmp = write_private(path, "new", data)
+        except OSError:
             write_new(path, data)
-        _flush_folder(path.parent, path.name)
-        return
-    try:
-        with KEY_FILES_LOCK:
+            flush_key_folder(path.parent, path.name)
+            return
+        try:
             try:
                 os.link(tmp, path)
             except FileExistsError:
                 raise
             except OSError:
                 write_new(path, data)
-        # the new name is what a power cut would lose: flushed before the private name goes, so the key
-        # is never left with no name on disk at all
-        _flush_folder(path.parent, path.name)
-    finally:
-        with contextlib.suppress(OSError):
-            tmp.unlink(missing_ok=True)
-        drop_pending(path)
+            # the new name is what a power cut would lose: flushed before the private name goes, so the key
+            # is never left with no name on disk at all
+            flush_key_folder(path.parent, path.name)
+        finally:
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
+            drop_pending(path)
 
 
 def read_once(path: Path) -> tuple[bytes, os.stat_result]:
