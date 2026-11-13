@@ -189,3 +189,23 @@ console.log(oldMdToHtmlHeading("1. Install & first run"));
     # and the FIXED extraction, on the same heading, DOES carry the id:
     result = _run(_USER_MANUAL)
     assert "1-install--first-run" in result["ids"]
+
+
+def test_a_drafts_leading_banner_comment_is_not_drawn(tmp_path):
+    """A translated draft must open with an HTML comment (test_help_docs_translated.py); the reader draws its
+    own banner, so the comment is dropped before rendering instead of showing as a raw "<!-- ... -->" paragraph
+    above the title (R677). Only the LEADING comment goes: the body below renders as before."""
+    doc = tmp_path / "draft.md"
+    doc.write_text("<!-- xx: AI-drafted translation, two\nlines -->\n\n# Titre\n\nTexte.\n", encoding="utf-8")
+    harness = f"""
+{_extract_esc()}
+{_extract_settings_slice()}
+const html = mdToHtml(require('fs').readFileSync({json.dumps(str(doc))}, 'utf8'));
+console.log(JSON.stringify(html));
+"""
+    r = subprocess.run(["node", "-e", harness], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, f"node failed:\n{r.stdout}\n{r.stderr}"
+    html = json.loads(r.stdout.strip().splitlines()[-1])
+    assert "&lt;!--" not in html and "AI-drafted" not in html, html
+    assert html.startswith('<h1 id="titre">Titre</h1>'), html
+    assert "<p>Texte.</p>" in html, html
