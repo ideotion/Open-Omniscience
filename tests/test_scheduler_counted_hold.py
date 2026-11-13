@@ -216,6 +216,34 @@ def test_a_window_that_read_another_as_open_still_claims_and_makes_the_start_at_
     assert sch.is_running() is True, "the start the restore left was dropped at the window's exit"
 
 
+def test_a_window_that_ends_between_a_pause_and_its_window_read_never_leaves_the_loop_running_under_the_pause(sch, monkeypatch):
+    """Security read of B3 delta 3, S1 (reproduced on 5c7d518d): the pause read the window as open, then the last window ended, released its
+    claim, found the hold free and started collection; only then did the pause take its claim, return False and run its whole operation
+    with the continuous loop running. The window now ends AT the pause's read, the latest point it can: the claim is already taken, so the
+    window's start is deferred behind it and made by the pause's own release."""
+    assert sch.start() is True
+    window = runner_mod.exclusive_window(timeout=HANG_GUARD_S, resume_retries=0)
+    window.__enter__()
+    assert sch.is_running() is False
+    real_open = runner_mod.exclusive_window_open
+
+    def the_window_ends_now() -> bool:
+        seen = real_open()
+        monkeypatch.setattr(runner_mod, "exclusive_window_open", real_open)
+        window.__exit__(None, None, None)  # the last window out, between the read and whatever the pause does next
+        return seen
+
+    monkeypatch.setattr(runner_mod, "exclusive_window_open", the_window_ends_now)
+    restore: list[bool] = []
+    was_paused = _restore_pause(restore)
+    assert restore == [True]
+    assert sch.is_running() is False, "collection was started under the pause: the window ended between its read and its claim"
+    assert sch.holds_exclusive() is True and sch.run_now() is False
+    _restore_resume(was_paused, restore)
+    assert sch.holds_exclusive() is False
+    assert sch.is_running() is True, "the start the window deferred behind the pause was never made"
+
+
 def test_a_pause_and_resume_that_keep_no_list_inside_a_window_leave_no_claim(sch):
     """The delta read's should-fix: a caller from before R383 (no claim list) pausing and resuming inside a window must not leave the hold
     standing for the life of the process."""
@@ -270,3 +298,24 @@ def test_a_resume_on_a_scheduler_double_without_the_counted_api_behaves_as_befor
     monkeypatch.setattr(runner_mod, "get_scheduler", lambda: bare)
     runner_mod.resume_after_exclusive_operation(True, retries=0, retry_delay=0.0)
     assert (bare.released, bare.started) == (1, 1)
+
+
+def test_the_volume_restore_takes_its_claim_right_before_the_try_that_gives_it_back():
+    """Security read of B3 delta 3, S2: the volume restore took its claim, then computed its stage plan, then entered the ``try`` whose
+    ``finally`` resumes. A raise in between stranded the claim, and a counted hold keeps it for the life of the process. Read from source:
+    after the pause, the next statement is that ``try``."""
+    import ast
+    from pathlib import Path
+
+    src = Path(runner_mod.__file__).resolve().parents[1] / "backup" / "volume_job.py"
+    tree = ast.parse(src.read_text("utf-8"))
+    found = []
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if not isinstance(body, list):
+            continue
+        for i, stmt in enumerate(body):
+            if isinstance(stmt, ast.Try) and not stmt.finalbody and "claim=hold_claim" in ast.unparse(stmt.body[0]):
+                after = body[i + 1]
+                found.append(isinstance(after, ast.Try) and "resume_after_exclusive_operation" in ast.unparse(after.finalbody))
+    assert found == [True], found

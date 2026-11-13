@@ -3177,12 +3177,15 @@ def pause_for_exclusive_operation(timeout: float = 10.0, *, claim: list[bool] | 
     in a fetch may still be finishing when this returns.
     """
     sch = get_scheduler()
-    if exclusive_window_open():
-        # The window already stopped the loop; this operation still claims the machine for ITSELF (R383, the security reads of B3): a window
-        # that ends first must not start collection under it (a volume restore begun during an export or a bundle).
-        _hold(sch, claim)
-        return False
+    # The claim FIRST, the window read after it (R383, the security reads of B3). Read the other way round, the last open window could end
+    # between the read and the claim, find the hold free and start collection, and this operation would then take its claim over a running
+    # loop and return False without stopping it. Claimed first, a window that ends now finds this claim standing and leaves its start
+    # deferred behind it; this operation's own release makes that start.
     _hold(sch, claim)
+    if exclusive_window_open():
+        # The window already stopped the loop; this operation's claim keeps a window that ends first from starting collection under it (a
+        # volume restore begun during an export or a bundle).
+        return False
     return sch.stop(timeout=timeout)
 
 
