@@ -1522,6 +1522,7 @@ def _build_and_swap() -> str:
         return outcome
     finally:
         _LAST_OUTCOME["value"] = outcome
+        _DECLINED_AT["t"] = time.monotonic() if outcome == "declined" and _declined_for_memory() else None
         if ran or outcome == "failed":  # a request the hold refuses ran no build: the field says how the last build that ENDED ended
             with _LOCK:
                 _STATE["last_outcome"] = outcome
@@ -1529,6 +1530,33 @@ def _build_and_swap() -> str:
         with _GEN_LOCK:
             _BUILD_GEN["n"] += 1
             _BUILD_LOCK.release()
+
+
+#: A-026 (audit P12): while the rollup is declined for MEMORY (the memory guard or the affordability verdict), the serve paths do not re-ask the verdict chain on every read. Without this gap EVERY
+#: Home/Insights read that found no rollup started a build thread that ran the start-time verdicts, declined again and logged an INFO line,
+#: for as long as the decline lasted (one at a time under ``_BUILD_LOCK``, but without end). Thirty seconds keeps a recovered machine's
+#: build no more than half a minute late; the post-pass refresh, the boot step and the change gate are not throttled by it.
+_DECLINE_GAP_S = 30.0
+_DECLINED_AT: dict[str, float | None] = {"t": None}
+
+
+def _declined_for_memory() -> bool:
+    """Whether the recorded decline is one of the two MEMORY verdicts (A-026's case). Only those wait out the gap: a hold or a
+    last-build verdict changes on an event (a released hold, a raised limit) and the next read must see that at once."""
+    with _LOCK:
+        skip = _STATE.get("last_skip")
+    return isinstance(skip, dict) and skip.get("source") in ("memory", "affordability")
+
+
+def _trigger_build_from_serve() -> None:
+    """The serve paths' kick when no rollup is built: as :func:`_trigger_build_async`, except within ``_DECLINE_GAP_S`` of a build the
+    verdicts declined, when it does nothing (the read falls back to the live query exactly as before)."""
+    declined_at = _DECLINED_AT["t"]
+    with _LOCK:
+        skip_on_record = _STATE.get("last_skip") is not None  # the decline the gap stands for is still the recorded one
+    if skip_on_record and declined_at is not None and time.monotonic() - declined_at < _DECLINE_GAP_S:
+        return
+    _trigger_build_async()
 
 
 def _trigger_build_async() -> None:
@@ -1688,7 +1716,7 @@ def windowed_rows(
         have = _STATE["con"] is not None
         built_bind = _STATE["bind"]
     if not have:
-        _trigger_build_async()  # background; returns immediately
+        _trigger_build_from_serve()  # background; returns immediately
         return None  # nothing built yet -> live fallback (a build is now underway)
     if not _same_bind(_session, built_bind):
         return None  # rollup reflects a DIFFERENT database than this caller -> live fallback
@@ -1722,7 +1750,7 @@ def windowed_counts(_session: Session, *, lo, hi) -> dict[int, int] | None:
         have = _STATE["con"] is not None
         built_bind = _STATE["bind"]
     if not have:
-        _trigger_build_async()
+        _trigger_build_from_serve()
         return None
     if not _same_bind(_session, built_bind):
         return None  # rollup reflects a DIFFERENT database than this caller -> live fallback
