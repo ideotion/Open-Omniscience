@@ -63,7 +63,7 @@ def cgroup_available_mb(root: str | None = None, proc_cgroup: str | None = None)
         l_limit, l_used = lvl["limit_bytes"], lvl["used_bytes"]
         inactive = _inactive_file_bytes(root or reader.CGROUP_ROOT, lvl["source"], lvl["path"])
         reclaim = min(inactive, l_used) if inactive is not None else 0
-        room = max(0, l_limit - l_used) + reclaim
+        room = max(0, l_limit - l_used + reclaim)  # usage can sit above the limit (v1, or briefly v2): never overstate
         if avail is None or room < avail:
             avail, limit = room, l_limit
     out["available_mb"] = round((avail if avail is not None else head) / (1024 * 1024), 1)
