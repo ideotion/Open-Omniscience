@@ -121,6 +121,13 @@ def _year(value: object) -> int | None:
     return value if 1 <= value <= 9999 else None
 
 
+#: The caveat a stated date carries once it has gone by.
+PASSED_CAVEAT = (
+    "This date has passed, as the source stated it. The next election is not in this calendar "
+    "unless it is listed separately."
+)
+
+
 def has_passed(event: dict[str, Any], today: date) -> bool:
     """Has the election this entry STATES already gone by on ``today``?
 
@@ -290,4 +297,6 @@ def annotate(event: dict[str, Any], today: date | None = None) -> dict[str, Any]
     if tier in (SCHEDULED, WINDOW):
         # A stated date that has gone by is still the entry the source gave, never moved forward.
         out["passed"] = has_passed(event, today or date.today())
+        if out["passed"]:
+            out["date_caveat"] = PASSED_CAVEAT
     return out

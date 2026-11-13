@@ -392,7 +392,11 @@
       try { const v = JSON.parse(localStorage.getItem(_PLACE_KEY) || "null"); return v && typeof v === "object" ? v : null; } catch (_e) { return null; }
     }
     function _climatePlaceSave(q) {
-      try { localStorage.setItem(_PLACE_KEY, JSON.stringify(q)); } catch (_e) { /* a convenience only */ }
+      // Browser storage is not encrypted, so only the ROUNDED place is remembered (the precision
+      // that is sent anyway), never the coordinates as typed (R675).
+      const keep = {lat: q.lat === "" ? "" : climatePlaceRound(q.lat), lon: q.lon === "" ? "" : climatePlaceRound(q.lon),
+                    start: q.start, end: q.end};
+      try { localStorage.setItem(_PLACE_KEY, JSON.stringify(keep)); } catch (_e) { /* a convenience only */ }
     }
 
     function climatePlaceVarLabel(v, t) {
@@ -448,7 +452,7 @@
           <label class="muted" for="climate-place-start">${esc(t("First day"))}</label><input id="climate-place-start" type="date" min="1940-01-01" value="${esc(q.start)}">
           <label class="muted" for="climate-place-end">${esc(t("Last day"))}</label><input id="climate-place-end" type="date" min="1940-01-01" value="${esc(q.end)}">
         </div>
-        <div class="hint">${esc(tf("What leaves this machine: the place, rounded to 0.1 degree (about 11 km), and the dates, sent to {host}. The first time for a place, it also downloads the 1991-2020 daily values for that place, about 11,000 days; they are kept in your encrypted database, so other windows for the same place need one small request.", {host: _PLACE_HOST}))}</div>
+        <div class="hint">${esc(tf("What leaves this machine: the place, rounded to 0.1 degree (about 11 km), and the dates, sent to {host}. The first time for a place, it also downloads the 1991-2020 daily values for that place, about 11,000 days; they are kept in this app's database (encrypted unless you chose to keep it unencrypted), so other windows for the same place need one small request. This browser remembers the rounded place for next time.", {host: _PLACE_HOST}))}</div>
         <div class="row" style="gap:8px;margin:8px 0"><button type="button" data-climate-place="show">${esc(t("Show"))}</button>
           <button type="button" class="secondary" data-climate-place="again" title="${esc(t("Downloads both again, for example once the latest days have been finalised."))}">${esc(t("Fetch again"))}</button></div>
         <div id="climate-place-out"></div>`;
@@ -472,9 +476,14 @@
           if (held && held.held) { if (out) out.innerHTML = climatePlaceResultHtml(held, t, tf); say(t("Read from this machine; nothing was sent.")); return; }
           if (quiet) { if (out) out.innerHTML = `<div class="muted">${esc(t("Not fetched on this machine yet for this place and window."))}</div>`; return; }
         }
-        // The ONE consent (invariant #14); it names what leaves the machine.
-        if (typeof ensureOnline === "function"
-            && !await ensureOnline(tf("Send the place {lat}, {lon} (rounded to 0.1 degree) and the dates to {host}", {lat: fmtNum(lat, 1), lon: fmtNum(lon, 1), host: _PLACE_HOST}))) return;
+        // The ONE consent (invariant #14); it names what leaves the machine. A place is personal,
+        // so it is asked for EVERY request (R675): when the app is already online the consent
+        // popup would not open, and a plain confirmation naming the place stands in for it.
+        const ask = tf("Send the place {lat}, {lon} (rounded to 0.1 degree) and the dates to {host}", {lat: fmtNum(lat, 1), lon: fmtNum(lon, 1), host: _PLACE_HOST});
+        let online = false;
+        try { const nm = await api("/api/system/network"); online = !!(nm && nm.online); } catch (_e) { online = false; }
+        if (online) { if (!window.confirm(ask)) return; }
+        else if (typeof ensureOnline === "function" && !await ensureOnline(ask)) return;
         say(t("Fetching…"));
         const d = await api("/api/weather/anomaly", {method: "POST", body: JSON.stringify({
           lat: lat, lon: lon, start_date: q.start, end_date: q.end, force: !!again, consent: true,

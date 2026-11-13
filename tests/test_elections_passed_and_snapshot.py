@@ -193,3 +193,87 @@ def test_the_report_lists_every_floor_country_and_states_the_missing(tmp_path):
     assert "| US | passed" in text, "the 2026 midterm reads as passed on 2026-11-13"
     header = next(ln for ln in text.splitlines() if ln.startswith("| Country"))
     assert not any(b in header.lower() for b in ("score", "rating", "rank")), "counts and reasons only"
+
+
+# --- review follow-ups ------------------------------------------------------------------ #
+def test_a_passed_curated_entry_never_hides_a_later_snapshot_election(tmp_path):
+    """A curated Brazil 2026 (October) must not shadow a snapshot Brazil 2030 (October): the
+    report would then say "the next one is not listed" while the snapshot listed it."""
+    rows = [{"country": "BR", "office": "General", "qid": "Q30", "point_in_time": "2030-10-06",
+             "precision": "day", "official_url": "https://example.org/"}]
+    p = _write(tmp_path, {"as_of": "2026-11-01", "rows": rows})
+    curated = [{"calendar": "elections", "title": "Brazil — General election 2026", "country": "BR",
+                "month": 10, "until_year": 2026}]
+    events, info = with_snapshot(curated, TODAY, p)
+    assert info["added"] == 1 and info["shadowed"] == 0
+    rep = country_tier_report(events, {"br"}, TODAY)
+    assert rep["countries"][0]["state"] == "scheduled"
+
+
+def test_until_year_is_the_curated_year_for_matching():
+    """A one-cycle curated entry still shadows the SAME election from the snapshot."""
+    rows = [{"country": "CA", "office": "Federal", "qid": "Q29", "point_in_time": "2029-10-01",
+             "precision": "month"}]
+    curated = [{"calendar": "elections", "title": "Canada — Federal election 2029", "country": "CA",
+                "month": 10, "until_year": 2029}]
+    from src.civic.calendar_report import layer, snapshot_to_events
+
+    evs, _ = snapshot_to_events(rows, TODAY)
+    _, shadowed = layer(curated, evs, TODAY)
+    assert len(shadowed) == 1 and "year 2029" in shadowed[0]["reason"]
+
+
+def test_the_passed_reason_names_a_dateless_entry_when_there_is_one():
+    rep = country_tier_report([_ev(until_year=2026, month=10), _ev(title="Brazil — next")], {"br"}, TODAY)
+    row = rep["countries"][0]
+    assert row["state"] == "passed" and "states no date" in row["reason"]
+
+
+def test_a_passed_entry_carries_the_passed_caveat():
+    from src.civic.elections import PASSED_CAVEAT
+
+    out = annotate(_ev(until_year=2026, month=10), TODAY)
+    assert out["passed"] is True and out["date_caveat"] == PASSED_CAVEAT
+
+
+def test_a_snapshot_written_while_running_is_read_without_a_restart(tmp_path, monkeypatch):
+    from src.civic import calendar_report
+    from src.events import catalog
+
+    path = tmp_path / "elections_snapshot.json"
+    monkeypatch.setattr(calendar_report, "SNAPSHOT_PATH", path)
+    catalog.load_events.cache_clear()
+    try:
+        assert catalog.layered_events(TODAY)[1] == {"state": "absent"}
+        path.write_text(json.dumps({"as_of": "2026-11-01", "rows": []}), encoding="utf-8")
+        assert catalog.layered_events(TODAY)[1]["state"] == "present"
+    finally:
+        catalog.load_events.cache_clear()
+
+
+def test_the_floor_endpoint_builds_every_half_from_one_read():
+    from pathlib import Path
+
+    from tests.js_source_helper import python_function_source
+
+    src = (Path(__file__).resolve().parents[1] / "src" / "api" / "diagnostics" / "system.py").read_text("utf-8")
+    fn = python_function_source(src, "elections_coverage_floor")
+    assert "layered_events(today)" in fn and "events=events" in fn and "with_snapshot" not in fn
+
+
+def test_every_agenda_grid_places_a_bounded_entry_only_inside_its_years():
+    """A one-off election (origin_year = until_year) never reappears in other years' grids."""
+    import subprocess
+    from pathlib import Path
+
+    from tests.js_source_helper import function_body, function_source
+
+    js = (Path(__file__).resolve().parents[1] / "src" / "static" / "app-agenda.js").read_text(encoding="utf-8")
+    for name in ("renderAgendaYear", "agEventsInMonth", "renderAgendaDecade", "renderAgendaMonth", "agEventsOn"):
+        assert "agInYear(e, y)" in function_body(js, name), name
+    probe = function_source(js, "agInYear") + """
+const e = {origin_year: 2026, until_year: 2026};
+if (!agInYear(e, 2026) || agInYear(e, 2027) || agInYear(e, 2025)) process.exit(1);
+if (!agInYear({}, 1999) || !agInYear({origin_year: 1950, until_year: null}, 2030)) process.exit(2);
+"""
+    assert subprocess.run(["node", "-e", probe], timeout=30).returncode == 0

@@ -206,9 +206,11 @@ def snapshot_to_events(
 def _curated_year(entry: dict[str, Any], today: date) -> int | None:
     """The year a curated entry STATES (``window_year``) or projects from a sourced rule; never a
     year read off its title (``elections.py`` refuses that: "due by 2029" is not "in 2029")."""
-    stated = entry.get("window_year")
-    if isinstance(stated, int) and not isinstance(stated, bool):
-        return stated
+    for key in ("window_year", "until_year"):
+        # ``until_year`` bounds a one-cycle entry to its own year (the entry is that election).
+        stated = entry.get(key)
+        if isinstance(stated, int) and not isinstance(stated, bool):
+            return stated
     if date_confidence(entry) == PROJECTED:
         proj = projection(entry, today)
         return proj["year"] if proj else None
@@ -224,6 +226,10 @@ def _same_election(curated: dict[str, Any], ev: dict[str, Any], today: date) -> 
     the same stated month. Anything less keeps both entries visible rather than hiding one.
     """
     if date_confidence(curated) is None:
+        return None
+    # A curated election that has gone by never hides one that has not: that would read as
+    # "the next one is not listed" while the snapshot listed it.
+    if has_passed(curated, today) and not has_passed(ev, today):
         return None
     office = str(curated.get("office") or "").strip()
     if office and office.casefold() != str(ev.get("office") or "").strip().casefold():
@@ -382,7 +388,10 @@ def country_tier_report(
         elif live_proj:
             state, reason = STATE_PROJECTED, None
         elif stated_passed:
-            state, reason = STATE_PASSED, "every listed election has passed; the next one is not listed"
+            state = STATE_PASSED
+            reason = ("every dated election listed has passed; the other entry states no date"
+                      if any(e["tier"] is None for e in entries)
+                      else "every listed election has passed; the next one is not listed")
         elif PROJECTED in tiers:
             state, reason = STATE_PROJECTED_PASSED, "every projection has passed; status unknown"
         elif entries:

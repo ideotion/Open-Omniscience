@@ -232,7 +232,12 @@ def test_the_view_asks_consent_names_the_rounded_place_and_reads_held_first():
     held_at, gate_at, post_at = (body.find(s) for s in ('"/api/weather/anomaly/held?', "ensureOnline(", '"/api/weather/anomaly", {method: "POST"'))
     assert -1 < held_at < gate_at < post_at, "held read first, then the ONE consent, then the request"
     assert "consent: true" in body and "rounded to 0.1 degree" in body
+    assert "window.confirm(ask)" in body and "ensureOnline(ask)" in body, \
+        "asked for every request: a confirmation when already online, the consent popup otherwise"
     assert "climatePlaceRound(q.lat)" in body, "the browser rounds too, so the popup names what is sent"
+    save = function_body(js, "_climatePlaceSave")
+    assert "climatePlaceRound(q.lat)" in save and "climatePlaceRound(q.lon)" in save, \
+        "browser storage keeps only the rounded place, never the coordinates as typed"
 
 
 def test_the_node_renderer_checks_pass():

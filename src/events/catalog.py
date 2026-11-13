@@ -62,13 +62,38 @@ def _coerce_year(v: object) -> int | None:
     return y if 1 <= y <= 9999 else None
 
 
-@lru_cache(maxsize=1)
+def _snapshot_stamp() -> tuple[int, int] | None:
+    """The snapshot file's (mtime, size), or None when there is none: a snapshot the operator
+    writes while the app runs is read on the next call, not at the next restart."""
+    from src.civic.calendar_report import SNAPSHOT_PATH
+
+    try:
+        st = SNAPSHOT_PATH.stat()
+    except OSError:
+        return None
+    return st.st_mtime_ns, st.st_size
+
+
+@lru_cache(maxsize=4)
+def _layered(stamp: tuple[int, int] | None, today: date) -> tuple[list[dict], dict]:
+    from src.civic.calendar_report import with_snapshot
+
+    del stamp  # the cache key only
+    return with_snapshot(load_curated_events(), today)
+
+
+def layered_events(today: date | None = None) -> tuple[list[dict], dict]:
+    """``(events, snapshot_info)`` from ONE read, so a surface that shows both cannot disagree."""
+    return _layered(_snapshot_stamp(), today or date.today())
+
+
 def load_events() -> list[dict]:
     """The curated catalogue, LAYERED with the Wikidata election snapshot when the operator's
     networked run has written one (S06-04 S1); with no snapshot it is the curated list unchanged."""
-    from src.civic.calendar_report import with_snapshot
+    return layered_events()[0]
 
-    return with_snapshot(load_curated_events())[0]
+
+load_events.cache_clear = _layered.cache_clear  # type: ignore[attr-defined]
 
 
 def load_curated_events() -> list[dict]:

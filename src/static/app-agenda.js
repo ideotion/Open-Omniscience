@@ -1298,6 +1298,7 @@
       const box = $("agenda-year"), loc = agLocale(), y = AGV.y;
       const byMonth = {}; for (let m = 1; m <= 12; m++) byMonth[m] = [];
       for (const e of rows) {
+        if (!agInYear(e, y)) continue;
         if (e.month) byMonth[e.month].push(e);
         else if (e.next_occurrence && +e.next_occurrence.slice(0, 4) === y) byMonth[+e.next_occurrence.slice(5, 7)].push(e);
       }
@@ -1315,6 +1316,14 @@
       }
       box.innerHTML = `<div class="ag-ygrid">${cards}</div>`;
     }
+    // An entry bounded to a range of years (origin_year..until_year: an observance "since 1950",
+    // or ONE election, whose range is its own year) is placed only inside that range, so a
+    // one-off election never reappears on the same day of every other year's grid.
+    function agInYear(e, y) {
+      if (e.origin_year != null && y < e.origin_year) return false;
+      if (e.until_year != null && y > e.until_year) return false;
+      return true;
+    }
     function agOpenMonth(m) { AGV.m = m; AGV.day = null; agendaSetView("month"); }
     function agOpenMonthYear(y, m) { AGV.y = y; AGV.m = m; AGV.day = null; agendaSetView("month"); }
     function agOpenYear(y) { AGV.y = y; AGV.day = null; agendaSetView("year"); }
@@ -1324,6 +1333,7 @@
     function agEventsInMonth(rows, y, m) {
       const ym = `${y}-${String(m).padStart(2, "0")}`, out = [];
       for (const e of rows) {
+        if (!agInYear(e, y)) continue;
         if (e.month === m) out.push(e);
         else if (e.next_occurrence && e.next_occurrence.slice(0, 7) === ym && !out.includes(e)) out.push(e);
       }
@@ -1371,6 +1381,7 @@
       const yearCount = (y) => {
         let n = 0;
         for (const e of rows) {
+          if (!agInYear(e, y)) continue;
           if (e.month) n++;
           else if (e.next_occurrence && +e.next_occurrence.slice(0, 4) === y) n++;
         }
@@ -1604,6 +1615,7 @@
       const ym = `${y}-${String(m).padStart(2, "0")}`;
       const byDay = {}, monthOnly = [];
       for (const e of rows) {
+        if (!agInYear(e, y)) continue;
         if (e.month === m && e.day) (byDay[e.day] = byDay[e.day] || []).push(e);
         // FLOATING rule (e.g. 3rd Tuesday of March): compute the day for THIS browsed
         // year so it places correctly every year, not only the one next_occurrence holds.
@@ -1669,6 +1681,7 @@
       const iso = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
       const out = [];
       for (const e of rows) {
+        if (!agInYear(e, y)) continue;
         if (e.month === m && e.day === d) out.push(e);
         else if (e.next_occurrence === iso && !out.includes(e)) out.push(e);
       }

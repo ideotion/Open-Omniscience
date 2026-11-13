@@ -42,13 +42,13 @@ def _cell(text: Any) -> str:
 
 
 def build_report(today: date) -> str:
-    from src.civic.calendar_report import country_tier_report, with_snapshot
+    from src.civic.calendar_report import country_tier_report
     from src.civic.coverage_floor import floor_coverage, load_floor
-    from src.events.catalog import load_curated_events
+    from src.events.catalog import layered_events
 
-    events, snap = with_snapshot(load_curated_events(), today)
+    events, snap = layered_events(today)  # one read and one date for every table below
     floor = load_floor()
-    cov = floor_coverage(today)
+    cov = floor_coverage(today, events=events)
     rep = country_tier_report(events, set(floor["countries"]), today)
 
     out = [f"# Elections coverage of the language floor, {today.isoformat()}", ""]

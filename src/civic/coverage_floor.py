@@ -141,7 +141,7 @@ def floor_countries() -> set[str]:
     return set(load_floor()["countries"])
 
 
-def floor_coverage(today: date | None = None) -> dict[str, Any]:
+def floor_coverage(today: date | None = None, events: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """What the shipped elections calendar covers of the ruled floor.
 
     Network-free and cheap (one config read, one catalog read), so it rides the
@@ -162,7 +162,7 @@ def floor_coverage(today: date | None = None) -> dict[str, Any]:
     with_date: set[str] = set()
     live: set[str] = set()
     dateless: dict[str, list[str]] = {}
-    for ev in load_events():
+    for ev in (load_events() if events is None else events):
         if str(ev.get("calendar") or "") != ELECTIONS_CALENDAR:
             continue
         cc = str(ev.get("country") or "").strip().lower()
@@ -218,6 +218,8 @@ def floor_coverage(today: date | None = None) -> dict[str, Any]:
         "covered_n": len(covered),
         # Floor countries whose ONLY election entry is a projection whose date has
         # already passed -- an investigative lead, not coverage.
+        # Kept under its historical name: it now holds every country whose only dated entries
+        # have gone by, a stated date or a projection alike (the method sentence says so).
         "only_passed_projection": only_passed,
         "only_passed_projection_n": len(only_passed),
         "present_but_dateless": [{"cc": cc, "missing_fields": dateless[cc]} for cc in present_dateless],
