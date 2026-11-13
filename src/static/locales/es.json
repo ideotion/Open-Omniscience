@@ -1952,6 +1952,7 @@
   "Fetches this country's daily change files from download.geofabrik.de, one at a time, and applies each to this country's places only. Asks to go online first. The task manager shows the run.": "Obtiene los archivos de cambios diarios de este país desde download.geofabrik.de, uno a uno, y aplica cada uno solo a los lugares de este país. Pide conectarse primero. El administrador de tareas muestra la ejecución.",
   "Fetching": "Obteniendo",
   "Fetching Wikidata items for the places and people in your corpus": "Obteniendo los elementos de Wikidata de los lugares y las personas de tu corpus",
+  "Fetching a climate dataset": "Descargando un conjunto de datos climáticos",
   "Fetching an IPCC report": "Obteniendo un informe del IPCC",
   "Fetching and applying rule…": "Obteniendo y aplicando la regla…",
   "Fetching feed… (rate-limited, may take a moment)": "Obteniendo canal… (con límite de velocidad, puede tardar un momento)",

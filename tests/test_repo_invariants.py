@@ -2294,8 +2294,9 @@ def test_ui_invariants():
         "the Climate caveat renders visibly, never behind a toggle (#33, informed consent)"
     )
     _climate_js = (_SRC / "static" / "app-climate.js").read_text(encoding="utf-8")
-    _fetch_body = _climate_js[_climate_js.index("async function climateFetch("):]
-    assert _fetch_body.index("ensureOnline(") < _fetch_body.index('api("/api/climate/fetch"'), (
+    _fetch_body = _js_function_body(_climate_js, "climateFetch")
+    _gate, _post = re.search(r"ensureOnline\(", _fetch_body), re.search(r'api\("/api/climate/fetch"', _fetch_body)
+    assert _gate and _post and _gate.start() < _post.start(), (
         "the climate fetch passes the ONE consent popup before it asks the server (#33, #14)"
     )
     assert "consent: true" in _fetch_body, "the climate fetch says consent:true, the endpoint refuses without it (#14f)"

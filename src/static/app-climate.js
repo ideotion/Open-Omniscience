@@ -129,7 +129,7 @@
 
     function _climateWhen(iso, t) {
       if (!iso) return t("never");
-      return _ltrIsolate(String(iso).slice(0, 16).replace("T", " ")) + " UTC";
+      return ooIsoDateTime(iso) + " UTC";
     }
 
     function _climateFact(label, valueHtml, hover) {

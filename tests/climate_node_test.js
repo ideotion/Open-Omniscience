@@ -47,7 +47,8 @@ const CLIMATE = [
 ];
 const src =
   extractConst("esc") + "\n" + extractConst("_LTR_ISOLATE") + "\n" + extract("_ltrIsolate") + "\n" +
-  extract("fmtNum") + "\n" + "var window = {};\n" +
+  extract("fmtNum") + "\n" + extract("ooIsoDateTime") + "\n" +
+  "var window = {};\nvar document = { documentElement: { dir: \"ltr\" } };\n" +
   CLIMATE.map(extract).join("\n") + "\n" +
   "module.exports = {" + CLIMATE.join(", ") + "};";
 const R = (() => {

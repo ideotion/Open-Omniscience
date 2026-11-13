@@ -336,7 +336,7 @@ def test_the_tab_uses_the_one_subtab_component_and_no_inline_handlers():
     assert "ooSubtabs(nav, showClimateView" in js, "invariant #18: one subtab component"
     assert "onclick" not in js.lower().replace("_climateclick", ""), "no inline handlers"
     html = (_STATIC / "index.html").read_text(encoding="utf-8")
-    page = html[html.index('id="tab-climate"'):html.index('id="tab-indices"')]
+    page = html.split('id="tab-climate"', 1)[1].split('id="tab-indices"', 1)[0]
     assert "onclick" not in page.lower()
     assert html.index('src="/static/app-climate.js"') > html.index('src="/static/app-markets.js"'), "ooSubtabs loads first"
 

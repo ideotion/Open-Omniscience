@@ -1952,6 +1952,7 @@
   "Fetches this country's daily change files from download.geofabrik.de, one at a time, and applies each to this country's places only. Asks to go online first. The task manager shows the run.": "download.geofabrik.de से इस देश की दैनिक परिवर्तन फ़ाइलें एक-एक करके लाता है और हर एक को केवल इस देश के स्थानों पर लागू करता है। पहले ऑनलाइन जाने की अनुमति माँगता है। कार्य प्रबंधक इस चलन को दिखाता है।",
   "Fetching": "लाया जा रहा है",
   "Fetching Wikidata items for the places and people in your corpus": "आपके संग्रह के स्थानों और लोगों के लिए Wikidata आइटम लाए जा रहे हैं",
+  "Fetching a climate dataset": "एक जलवायु डेटासेट लाया जा रहा है",
   "Fetching an IPCC report": "IPCC रिपोर्ट लाई जा रही है",
   "Fetching and applying rule…": "नियम लाया और लागू किया जा रहा है…",
   "Fetching feed… (rate-limited, may take a moment)": "फ़ीड प्राप्त की जा रही है… (दर-सीमित, कुछ क्षण लग सकते हैं)",

@@ -1952,6 +1952,7 @@
   "Fetches this country's daily change files from download.geofabrik.de, one at a time, and applies each to this country's places only. Asks to go online first. The task manager shows the run.": "Fetches this country's daily change files from download.geofabrik.de, one at a time, and applies each to this country's places only. Asks to go online first. The task manager shows the run.",
   "Fetching": "Fetching",
   "Fetching Wikidata items for the places and people in your corpus": "Fetching Wikidata items for the places and people in your corpus",
+  "Fetching a climate dataset": "Fetching a climate dataset",
   "Fetching an IPCC report": "Fetching an IPCC report",
   "Fetching and applying rule…": "Fetching and applying rule…",
   "Fetching feed… (rate-limited, may take a moment)": "Fetching feed… (rate-limited, may take a moment)",

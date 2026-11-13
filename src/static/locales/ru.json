@@ -1952,6 +1952,7 @@
   "Fetches this country's daily change files from download.geofabrik.de, one at a time, and applies each to this country's places only. Asks to go online first. The task manager shows the run.": "Получает ежедневные файлы изменений этой страны с download.geofabrik.de по одному и применяет каждый только к местам этой страны. Сначала запрашивает выход в сеть. Диспетчер задач показывает ход работы.",
   "Fetching": "Загрузка",
   "Fetching Wikidata items for the places and people in your corpus": "Загрузка элементов Викиданных для мест и людей вашего корпуса",
+  "Fetching a climate dataset": "Загрузка климатического набора данных",
   "Fetching an IPCC report": "Загрузка доклада МГЭИК",
   "Fetching and applying rule…": "Получение и применение правила…",
   "Fetching feed… (rate-limited, may take a moment)": "Получение ленты… (с ограничением скорости, может занять некоторое время)",

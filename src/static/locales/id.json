@@ -1952,6 +1952,7 @@
   "Fetches this country's daily change files from download.geofabrik.de, one at a time, and applies each to this country's places only. Asks to go online first. The task manager shows the run.": "Mengambil file perubahan harian negara ini dari download.geofabrik.de, satu per satu, dan menerapkan masing-masing hanya pada tempat di negara ini. Meminta untuk online terlebih dahulu. Pengelola tugas menampilkan prosesnya.",
   "Fetching": "Mengambil",
   "Fetching Wikidata items for the places and people in your corpus": "Mengambil item Wikidata untuk tempat dan orang di korpus Anda",
+  "Fetching a climate dataset": "Mengambil satu set data iklim",
   "Fetching an IPCC report": "Mengambil laporan IPCC",
   "Fetching and applying rule…": "Mengambil dan menerapkan aturan…",
   "Fetching feed… (rate-limited, may take a moment)": "Mengambil umpan… (dibatasi laju, mungkin perlu waktu sejenak)",

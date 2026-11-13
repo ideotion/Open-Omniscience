@@ -1952,6 +1952,7 @@
   "Fetches this country's daily change files from download.geofabrik.de, one at a time, and applies each to this country's places only. Asks to go online first. The task manager shows the run.": "この国の日次変更ファイルを download.geofabrik.de から1つずつ取得し、それぞれをこの国の場所にだけ適用します。先にオンラインにするか確認します。実行状況はタスクマネージャーに表示されます。",
   "Fetching": "取得中",
   "Fetching Wikidata items for the places and people in your corpus": "コーパス内の場所と人物の Wikidata 項目を取得中",
+  "Fetching a climate dataset": "気候データセットを取得中",
   "Fetching an IPCC report": "IPCC 報告書を取得中",
   "Fetching and applying rule…": "ルールを取得して適用しています…",
   "Fetching feed… (rate-limited, may take a moment)": "フィードを取得中…（レート制限あり、少し時間がかかる場合があります）",
