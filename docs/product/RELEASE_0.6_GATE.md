@@ -116,6 +116,24 @@ the `INT` lane ingests one treaty in six languages aligned by identity (Q908), a
 measured on a labelled sample with the ≈ share stated. **Operator:** the live verification of each seed row
 (the allowlist of 0.4 row V or the maintainer's machine). Brief `S06-02`.
 
+**Progress 2026-11-13 (Lane K, PR pending; R679, R680): what the session can build is built; the row stays OPEN on operator
+steps.** Of the three closing conditions:
+- *The coverage report* ships (PR #1710): `/api/diagnostics/law-coverage` → `floor` and the Living sources law entry place all
+  140 floor countries in one of four states, with the twelve-language tally and zh on its own line. New here (R679): within a
+  state, countries go by population reached, read from the operator's dated table (`configs/population_table.json`,
+  `src.stats.population`, the same drop-in the UN WPP upload fills), its source and date stated in `floor.order`; a country the
+  table lacks follows by code and is named. Until the table is placed the order is by code and the panel says so.
+- *The `INT` lane, one treaty in six languages aligned by identity* ships on SYNTHETIC fixtures (PR #1717: six versions,
+  ar en es fr ru zh, one declared identity, `.test` hosts). Owed: six operator-verified UN Treaty Collection URLs with their
+  robots and licence look; WIPO Lex stays undecided (R420).
+- *The topic assignment measured on a labelled sample*: the sample exists (`src/catalog/data/topic_sample_law_titles.json`,
+  58 hand-labelled law titles across all twelve languages, a no-topic item in each) and
+  `scripts/topic_sample_measure.py` measures it, with the ≈ share and `n` on every figure. **NOT MEASURED YET:** no thesaurus
+  is built, because the licence fetch for EuroVoc (and the UNESCO Thesaurus, AGROVOC, IPTC) is an operator step and the
+  sandbox's egress refuses those hosts; the script prints `not-measured` and exits 3 until then. Expected with EuroVoc alone:
+  en/fr/de/es/pt are scored, the other seven are set aside as `unsupported_languages` until P5437 is confirmed. R680 (OPEN_QUEUE
+  38(d)): zh and ja are now matched as substrings, every such hit ≈, one-character labels never matched.
+
 ### Row D — Wikipedia coverage and located data · ruled (Q108, Q723, Q819) · OPEN
 
 **What it must demonstrate.** Per edition: pages seen / edition total (from `siteinfo` statistics), full-text
