@@ -15,7 +15,8 @@ sequence in a title or provision and returns what matched and HOW, so nothing is
   kept in the set conservatively) a word boundary cannot be checked, so a
   label is matched as a SUBSTRING of a run of text, and EVERY such hit is ≈, whatever the
   label. A one-character label is never matched there: it would hit inside unrelated words.
-  "One character" counts letters, not combining marks.
+  "One character" counts letters, not combining marks. A label with inner punctuation or a space
+  (情報・通信) is never matched either, since a match never crosses one, and is counted the same way.
 
 * R690: combining marks and joiners belong to their word in every script (a vowel sign or a virama
   never splits a Hindi or Bengali word, a haraka never splits an Arabic one). Languages in
@@ -43,11 +44,18 @@ UNSEGMENTED_LANGUAGES = frozenset({"zh", "ja", "ko", "th", "my", "km", "lo"})
 #: Leaves this set only with a test that matches real words of the script (as Thai, Hindi and Bengali have).
 UNVERIFIED_LANGUAGES = frozenset({"km", "lo", "my"})
 
-# Zero-width joiner / non-joiner: inside a word in Indic, Arabic and Persian writing, never a boundary.
-_JOINERS = frozenset({"\u200c", "\u200d"})
-# Arabic harakat, tanwin, shadda, sukun, superscript alef and tatweel: optional in ordinary writing, so a
-# vowelled text and an unvowelled label are the same word. Dropped before tokenizing, never a boundary.
-_ARABIC_OPTIONAL = frozenset(chr(c) for c in (*range(0x064B, 0x0653), 0x0670, 0x0640))
+# Optional in ordinary writing, so dropped before tokenizing (never a boundary): a text that carries them
+# and a label that does not are the same word. Arabic harakat, tanwin, shadda, sukun, superscript alef and
+# tatweel; Hebrew points and cantillation (U+0591-U+05C7 minus the maqaf and the punctuation in that block);
+# the zero-width joiner and non-joiner, which Persian and Indic text uses or omits for the same word.
+_OPTIONAL = frozenset(
+    chr(c)
+    for c in (
+        *range(0x064B, 0x0653), 0x0670, 0x0640,
+        *(c for c in range(0x0591, 0x05C8) if c not in (0x05BE, 0x05C0, 0x05C3, 0x05C6)),
+        0x200C, 0x200D,
+    )
+)
 
 CAVEAT = (
     "Topics are assigned by label rules over titles and provisions: a lens, never a verdict. "
@@ -57,13 +65,13 @@ CAVEAT = (
 
 
 def _in_word(ch: str) -> bool:
-    """A letter or digit, a combining mark (Mn, Mc, Me) or a joiner: all belong to the word (R690(1)).
+    """A letter or digit, or a combining mark (Mn, Mc, Me): both belong to the word (R690(1)).
 
     ``[^\\W_]+`` alone split a word at every vowel sign and virama (Devanagari, Bengali, Thai) and at every
     Arabic haraka, because marks are not alphanumeric: मनुष्य ("human") folded to मन + ुष + ्य, so the label
     मन ("mind") matched inside it as an EXACT whole word.
     """
-    return ch.isalnum() or unicodedata.category(ch)[0] == "M" or ch in _JOINERS
+    return ch.isalnum() or unicodedata.category(ch)[0] == "M"
 
 
 def fold(text: str) -> tuple[str, ...]:
@@ -71,17 +79,17 @@ def fold(text: str) -> tuple[str, ...]:
     words: list[str] = []
     cur: list[str] = []
     for ch in unicodedata.normalize("NFKC", text).casefold():
-        if ch in _ARABIC_OPTIONAL:  # optional vowelling: a label is written without it, a text may carry it
+        if ch in _OPTIONAL:
             continue
         if _in_word(ch):
-            cur.append(ch)
+            if cur or ch.isalnum():  # a stray mark with no letter before it starts no word
+                cur.append(ch)
         elif cur:
             words.append("".join(cur))
             cur = []
     if cur:
         words.append("".join(cur))
-    # A token of marks or joiners alone (no letter or digit) carries no word.
-    return tuple(w for w in words if any(c.isalnum() for c in w))
+    return tuple(words)
 
 
 def _base_letters(s: str) -> int:
@@ -114,6 +122,8 @@ class Index:
         self.languages: set[str] = set()
         #: per unsegmented language, the one-character labels never matched (R680), counted so they do not vanish
         self.short_labels: dict[str, int] = {}
+        #: per unsegmented language, the labels with inner punctuation or a space, never matched, counted
+        self.split_labels: dict[str, int] = {}
         #: per language of UNVERIFIED_LANGUAGES, the labels set aside (R690(3)), counted so they do not vanish
         self.unverified_labels: dict[str, int] = {}
         self.schemes: list[str] = []
@@ -140,7 +150,10 @@ class Index:
             self.unverified_labels[lang] = self.unverified_labels.get(lang, 0) + 1
             return
         if lang in UNSEGMENTED_LANGUAGES:
-            key = "".join(toks)
+            if len(toks) > 1:  # 情報・通信: a match never crosses punctuation or space, so it could never match
+                self.split_labels[lang] = self.split_labels.get(lang, 0) + 1
+                return
+            key = toks[0]
             if _base_letters(key) < 2:  # never matched, so it does not make the language taggable either
                 self.short_labels[lang] = self.short_labels.get(lang, 0) + 1
                 return
@@ -262,6 +275,7 @@ def measure(sample: list[dict[str, Any]], index: Index) -> dict[str, Any]:
         "schemes": index.schemes,
         "schemes_without_concepts": index.empty,
         "one_character_labels_skipped": dict(index.short_labels),
+        "labels_with_inner_punctuation_skipped": dict(index.split_labels),
         "unverified_languages": {
             "labels_set_aside": dict(index.unverified_labels),
             "reason": "no test yet shows this script's words are matched correctly, so no figure is given (R690)",

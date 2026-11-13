@@ -237,3 +237,17 @@ def test_khmer_lao_and_burmese_are_unsupported_until_a_test_shows_they_work():
     assert m["unsupported_languages"] == {"km": 1, "lo": 1, "my": 1} and m["n_items"] == 0
     assert m["precision"]["value"] is None, "no precision figure for a language whose matching is unverified"
     assert m["unverified_languages"]["labels_set_aside"] == {"km": 1, "lo": 1, "my": 1}
+
+
+def test_optional_points_and_joiners_and_stray_marks_never_hide_a_word():
+    assert tt.fold("می\u200cخواهم") == tt.fold("میخواهم"), "a ZWNJ is written or omitted for the same word"
+    assert tt.fold("शिक्\u200dषा") == tt.fold("शिक्षा")
+    assert tt.fold("שָׁלוֹם") == tt.fold("שלום") == ("שלום",), "Hebrew points are optional"
+    assert tt.fold("\u0301abc") == ("abc",), "a mark with no letter before it starts no word"
+
+
+def test_an_unsegmented_label_with_inner_punctuation_is_counted_as_skipped_not_lost():
+    idx = tt.Index([_art(ict=({"ja": "情報・通信"}, {}), env=({"ja": "環境"}, {}))])
+    assert idx.split_labels == {"ja": 1}
+    m = tt.measure([{"id": "x", "lang": "ja", "text": "情報・通信法", "expected": ["ict"]}], idx)
+    assert m["labels_with_inner_punctuation_skipped"] == {"ja": 1}
