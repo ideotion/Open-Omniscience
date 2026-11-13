@@ -81,20 +81,25 @@ def _producer_deadline(session, seconds: float | None):
 
     Not armed when an ENCLOSING deadline is already in force (a diagnostics member, the card audit): that one bounds the whole
     loop, the loop stops on its expiry (S2.2), and a producer stopped by it would be misreported here as stopped by its own
-    bound. The import is local for the reason :func:`_deadline_expired` gives."""
+    bound. Yields whether the bound was armed, so a timeout from an enclosing deadline is never reported as this one's.
+
+    WHAT IT DOES NOT STOP (``statement_deadline``'s own limits): statements that each end under 20,000 VM opcodes, a one-opcode
+    statement, and Python between statements. Such a producer is still named and its cards dropped once it has run past the bound
+    (the caller's elapsed-time check), but the bound does not end its read; the WAL guard's periodic release still does.
+    The import is local for the reason :func:`_deadline_expired` gives."""
     if seconds is None:
-        yield
+        yield False
         return
     try:
         from src.database.maintenance import deadline_left_s, statement_deadline
     except Exception:  # noqa: BLE001 - no DB layer: nothing to bound
-        yield
+        yield False
         return
     if deadline_left_s(session) is not None:
-        yield
+        yield False
         return
     with statement_deadline(session, seconds=seconds):
-        yield
+        yield True
 
 
 def _is_memory_short(exc: BaseException) -> bool:
@@ -648,7 +653,7 @@ def run_all_bounded(
 
     ``log_pin_stop`` makes the loop stop BETWEEN producers while the write-ahead log is pinned and the storage guard is
     working to end the pin (``truncated_reason == "wal_pinned"``): every further producer would add its own reads to the pin.
-    Home's refresh asks this once when its thread starts; a pin that begins during the pass was not asked about again.
+    It is asked at EVERY producer boundary, so a pin that begins during a long pass stops it at the next one.
 
     ``stats["slow_producers"]`` (present only when there is one) lists the producers that ran for at least
     :data:`_SLOW_PRODUCER_S` as ``{"name", "seconds", "started_at"}``, each also logged as a WARNING when it ends. It is
@@ -778,7 +783,10 @@ def run_all_bounded(
             # disabled neighbour for the rest of the pass.
             # Item 32: the per-producer bound sits INSIDE the WAL guard, so the guard's entry drain (the previous producer's
             # leftovers) happens before this producer's clock starts. A disabled producer is not bounded: it runs nothing.
-            with _wal_guard(session), _producer_deadline(session, None if name in disabled else producer_deadline_s):
+            armed = False
+            with _wal_guard(session), _producer_deadline(session, None if name in disabled else producer_deadline_s) as bound:
+                armed = bool(bound)
+                began_mono = time.monotonic()  # after the guard's entry drain, so the elapsed check measures the producer
                 if name in disabled:
                     produced = []
                 elif as_of is not None and anchorable.get(name):
@@ -793,11 +801,11 @@ def run_all_bounded(
             else:
                 log_failure(_LOG, f"briefing producer {name!r} failed", exc, level=logging.WARNING)
                 stopped_by_memory = False
-            timed_out = _is_statement_timeout(exc) and not stopped_by_memory
+            timed_out = armed and _is_statement_timeout(exc) and not stopped_by_memory
         else:
             stopped_by_memory = timed_out = False
         took = time.monotonic() - began_mono
-        if producer_deadline_s is not None and not stopped_by_memory and (timed_out or took >= producer_deadline_s):
+        if producer_deadline_s is not None and armed and not stopped_by_memory and (timed_out or took >= producer_deadline_s):
             # Its cards are left out even when it finished: a producer that ran past the bound held the log's read mark past it,
             # and keeping cards that only a disk-filling run can make would hide the cost the bound exists to stop.
             produced = []

@@ -301,3 +301,17 @@ def test_a_log_stop_with_no_previous_feed_writes_what_it_has_and_says_why(monkey
     view = service.get_briefing(object())
     assert view["incomplete_reason"] == "wal_pinned"
     assert warmed == [], "no cache warm-up while the log is pinned: it reads more of the corpus"
+
+
+def test_a_timeout_from_an_enclosing_deadline_is_not_reported_as_the_producers_own(monkeypatch):
+    """Review finding on #1931: under an enclosing deadline the per-producer bound is not armed, so a StatementTimeout there is
+    the enclosing one's and must not list the producer as stopped at its ten-minute bound."""
+    def _timed_out(_s):
+        raise M.StatementTimeout("statement exceeded the 300s deadline and was aborted")
+
+    class _S:
+        info = {M._DEADLINE_KEY: time.monotonic() + 300}
+
+    _set_registry(monkeypatch, [("x", _timed_out)])
+    _cards, stats = registry.run_all_bounded(_S(), producer_deadline_s=600.0)
+    assert "stopped_producers" not in stats
