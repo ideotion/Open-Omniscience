@@ -32,7 +32,7 @@ search term is ever recorded:
 WHAT IT COVERS: the files served through the background build's download, the numbered volumes of
 a split archive and the numbered keyword files. It does not cover the synchronous ``GET /all``
 route (a legacy path that builds in the request and answers with the bytes), the keyword log's
-scratch zip or the temporary source-quality zip: nothing here is claimed about those.
+scratch zip or the Field data source-quality zip: nothing here is claimed about those.
 
 WHAT IT CANNOT KNOW, said in the member: the browser saving a file is not observable. ``complete``
 means the server handed the last byte over while the page was connected, not that the person has
@@ -799,7 +799,7 @@ def diagnostics_member(max_bytes: int = MEMBER_MAX_BYTES) -> dict[str, Any]:
             "data/diagnostics/runs.jsonl; the last ten runs and the files served since the oldest. "
             "Covered: the background build's download, the numbered volumes of a split archive and "
             "the numbered keyword files; not covered: the synchronous /all route, the keyword log's "
-            "scratch zip, the temporary source-quality zip and the temporary source-samples zips. The zip being built is the newest "
+            "scratch zip, and the Field data button's source-quality zip and source-samples zips. The zip being built is the newest "
             "run here and has no end yet: it appears finished in the next zip."
         ),
         "caveat": (
