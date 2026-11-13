@@ -351,6 +351,22 @@ def test_the_integrity_report_names_an_empty_index():
     assert fts["error"] == "EmptyIndex"
 
 
+def test_a_no_drift_verdict_over_an_empty_index_says_the_index_is_outside_it():
+    """Item 7 (recommendation A): the drift verdict covers counters, mentions and foreign keys. Over an emptied index the same
+    report reads ``verdict: "no drift"`` beside ``fts.healthy: false``, so the method must say the index is not in the verdict and
+    point at the ``fts`` block, or a reader takes "no drift" to cover the search index too."""
+    from src.monitoring.integrity import _VERDICT_CHECKS, corpus_integrity
+
+    s = _corpus()
+    _empty_the_index(s)
+    report = corpus_integrity(s, sample=50)
+    assert report["fts"]["healthy"] is False
+    assert report["verdict"] == "no drift" and report["drift"] is False  # the six checks are unchanged (no fts check: options B/C declined)
+    assert not any("fts" in name or "index" in name for name, _ in _VERDICT_CHECKS)
+    method = report["method"]
+    assert "Drift covers counters, mentions and foreign keys, NOT the full-text index (read fts)" in method
+
+
 def test_a_slow_population_count_is_a_status_and_leaves_the_rest_of_the_answer_alone():
     s = _corpus()
     orig = s.execute

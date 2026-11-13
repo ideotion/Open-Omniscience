@@ -759,17 +759,16 @@ def corpus_integrity(
     if assembled:
         report["verdict"] += "; assembled across builds: " + ", ".join(assembled) + " (each holds for the rows at or below its through_id)"
     report["method"] = (
-        "Read-only, deadline-guarded SQLite sweep. Orphan/dangling tallies are counted in id "
-        "ranges (index-backed) and the foreign-key check a table at a time; a pass the budget "
+        "Read-only, deadline-guarded sweep. Orphan/dangling tallies are counted in id "
+        "ranges (index-backed) and foreign keys a table at a time; a pass the budget "
         "cuts resumes next build only while the corpus epoch and the article and keyword rows "
         "below its place are unchanged, and for orphan keywords the largest mention id too (else "
         "it starts over), and a figure finished that way says assembled_across_builds. The "
         "foreign-key pass watches articles and keywords only: a change confined to another table "
-        "between builds is not seen by a resumed pass. Counter drift is sampled over the top-mention keywords unless "
-        "full=1. Reports drift, never fixes it (the reconcile/prune passes own that). "
-        "Counts/names only, no score. The verdict is read from COMPLETED checks only: "
-        "drift=true if any found drift, false only if all completed clean, null when a "
-        "check did not complete (incomplete_checks names them; timed_out says whether "
-        "the budget ran out)."
+        "between builds is not seen by a resumed pass. Counter drift samples the top-mention keywords unless "
+        "full=1. Drift covers counters, mentions and foreign keys, NOT the full-text index (read fts); "
+        "reported, never fixed (reconcile/prune own that). Counts only, no score. The verdict "
+        "reads COMPLETED checks only: drift=true if any found drift, false only if all completed "
+        "clean, null if one did not (incomplete_checks names it; timed_out: budget ran out)."
     )
     return report
