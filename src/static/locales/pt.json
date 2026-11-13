@@ -4536,6 +4536,7 @@
   "Some articles arrive with no language tag, and the fast offline detector cannot always classify them (short text, low confidence, or a language it does not cover). This OPT-IN pass asks the local model to identify the language of those still-unknown articles. It is AI-derived and unreliable — a THIRD, clearly-labelled provenance class shown inline in the article view. It NEVER overwrites the source-asserted or offline-deduced language, and a garbage or unclear answer stores nothing. It runs as a cancellable background job (watch it in the task manager), never during scraping, and only on this machine's local model.": "Alguns artigos chegam sem etiqueta de idioma, e o detector offline rápido nem sempre consegue classificá-los (texto curto, baixa confiança, ou um idioma que ele não cobre). Esta passagem OPCIONAL pede ao modelo local que identifique o idioma desses artigos ainda desconhecidos. É derivada de IA e não confiável — uma TERCEIRA classe de proveniência, claramente rotulada, mostrada dentro da visualização do artigo. NUNCA sobrescreve o idioma declarado pela fonte nem o deduzido offline, e uma resposta inútil ou pouco clara não armazena nada. Executa como uma tarefa em segundo plano cancelável (acompanhe-a no gerenciador de tarefas), nunca durante a raspagem, e apenas no modelo local desta máquina.",
   "Some cards may be missing: the last refresh stopped early because {why}.": "Podem faltar cartões: a última atualização parou mais cedo porque {why}.",
   "Some downloads cannot be measured yet, so this figure is a lower bound.": "Algumas transferências ainda não podem ser medidas, por isso este número é um limite inferior.",
+  "Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.": "Faltam alguns tipos de cartão: {n} geradores de cartões foram parados após {minutes} minutos para que o arquivo de registro do banco de dados não encha o disco.",
   "Some of the price feeds you rely on have stopped delivering fresh numbers, or reported an error on their last run. The figures they show may be out of date until they run again.": "Alguns dos feeds de preços em que confia deixaram de entregar números frescos, ou reportaram um erro na última execução. Os valores que mostram podem estar desatualizados até voltarem a correr.",
   "Some recent articles use the language of corporate deals — acquired, merged, divested. This flags the wording for you to verify against the primary filing; it never asserts a deal actually happened.": "Alguns artigos recentes usam a linguagem de negócios empresariais — adquirida, fundida, alienada. Isto assinala a redação para que a verifique no registo oficial; nunca afirma que um negócio aconteceu de facto.",
   "Some values were adjusted to stay in their safe range:": "Alguns valores foram ajustados para permanecer dentro do intervalo seguro:",
@@ -4694,6 +4695,7 @@
   "Stopped before the end of the files owed; the next update continues from here.": "Parou antes do fim dos arquivos pendentes; a próxima atualização continua daqui.",
   "Stopped by airplane mode: only the messages fetched before it were imported.": "Interrompido pelo modo avião: apenas as mensagens obtidas antes dele foram importadas.",
   "Stopped by an error before its result could be measured": "Parado por um erro antes de o seu resultado poder ser medido",
+  "Stopped card builders: {names}": "Geradores de cartões parados: {names}",
   "Stopped itself — memory stayed exhausted": "Parou por conta própria — a memória continuou esgotada",
   "Stopped qualifying": "Deixaram de se qualificar",
   "Stopped:": "Parado:",
@@ -6860,6 +6862,7 @@
   "the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them": "a versão do pacote, quando foi criado, o nome do caso (sua consulta de pesquisa ou o rótulo da análise), quantos artigos tem e a raiz de Merkle que os cobre",
   "the concept “{concept}”": "o conceito «{concept}»",
   "the concurrency limits could not be read": "não foi possível ler os limites de concorrência",
+  "the database's log file had grown too large": "o arquivo de registro do banco de dados tinha crescido demais",
   "the dump host did not answer": "o servidor de despejos não respondeu",
   "the edit's own timestamp, as the source records it": "o carimbo temporal da própria edição, tal como a fonte o regista",
   "the file states no date": "o arquivo não informa data",
@@ -7479,8 +7482,5 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 locais",
-  "🛒 Draft (": "🛒 Rascunho (",
-  "the database's log file had grown too large": "o arquivo de registro do banco de dados tinha crescido demais",
-  "Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.": "Faltam alguns tipos de cartão: {n} geradores de cartões foram parados após {minutes} minutos para que o arquivo de registro do banco de dados não encha o disco.",
-  "Stopped card builders: {names}": "Geradores de cartões parados: {names}"
+  "🛒 Draft (": "🛒 Rascunho ("
 }

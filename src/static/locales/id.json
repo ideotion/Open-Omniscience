@@ -4536,6 +4536,7 @@
   "Some articles arrive with no language tag, and the fast offline detector cannot always classify them (short text, low confidence, or a language it does not cover). This OPT-IN pass asks the local model to identify the language of those still-unknown articles. It is AI-derived and unreliable — a THIRD, clearly-labelled provenance class shown inline in the article view. It NEVER overwrites the source-asserted or offline-deduced language, and a garbage or unclear answer stores nothing. It runs as a cancellable background job (watch it in the task manager), never during scraping, and only on this machine's local model.": "Sebagian artikel datang tanpa tanda bahasa, dan detektor offline yang cepat tidak selalu dapat mengklasifikasikannya (teks pendek, keyakinan rendah, atau bahasa yang tidak dicakupnya). Pass OPT-IN ini meminta model lokal mengidentifikasi bahasa artikel-artikel yang masih tidak diketahui itu. Hasilnya berasal dari AI dan tidak dapat diandalkan — sebuah kelas provenans KETIGA yang diberi label jelas dan ditampilkan langsung di tampilan artikel. Ini TIDAK PERNAH menimpa bahasa yang dinyatakan sumber maupun yang disimpulkan secara offline, dan jawaban yang kacau atau tidak jelas tidak menyimpan apa pun. Ini berjalan sebagai pekerjaan latar belakang yang dapat dibatalkan (pantau di pengelola tugas), tidak pernah selama scraping, dan hanya pada model lokal mesin ini.",
   "Some cards may be missing: the last refresh stopped early because {why}.": "Beberapa kartu mungkin hilang: penyegaran terakhir berhenti lebih awal karena {why}.",
   "Some downloads cannot be measured yet, so this figure is a lower bound.": "Beberapa unduhan belum bisa diukur, jadi angka ini adalah batas bawah.",
+  "Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.": "Beberapa jenis kartu tidak ada: {n} pembuat kartu dihentikan setelah {minutes} menit agar berkas log basis data tidak memenuhi disk.",
   "Some of the price feeds you rely on have stopped delivering fresh numbers, or reported an error on their last run. The figures they show may be out of date until they run again.": "Beberapa umpan harga yang Anda andalkan berhenti mengirim angka baru, atau melaporkan kesalahan pada eksekusi terakhirnya. Angka yang ditampilkan mungkin kedaluwarsa sampai umpan itu berjalan lagi.",
   "Some recent articles use the language of corporate deals — acquired, merged, divested. This flags the wording for you to verify against the primary filing; it never asserts a deal actually happened.": "Beberapa artikel terbaru memakai bahasa transaksi korporasi — diakuisisi, merger, divestasi. Ini menandai pemilihan kata agar Anda memverifikasinya dengan dokumen resmi; ini tidak pernah menyatakan bahwa transaksi benar-benar terjadi.",
   "Some values were adjusted to stay in their safe range:": "Beberapa nilai disesuaikan agar tetap berada dalam rentang amannya:",
@@ -4694,6 +4695,7 @@
   "Stopped before the end of the files owed; the next update continues from here.": "Berhenti sebelum akhir file yang tertunda; pembaruan berikutnya melanjutkan dari sini.",
   "Stopped by airplane mode: only the messages fetched before it were imported.": "Dihentikan oleh mode pesawat: hanya pesan yang diambil sebelumnya yang diimpor.",
   "Stopped by an error before its result could be measured": "Dihentikan oleh galat sebelum hasilnya dapat diukur",
+  "Stopped card builders: {names}": "Pembuat kartu yang dihentikan: {names}",
   "Stopped itself — memory stayed exhausted": "Berhenti sendiri — memori tetap habis",
   "Stopped qualifying": "Tidak lagi memenuhi syarat",
   "Stopped:": "Dihentikan:",
@@ -6860,6 +6862,7 @@
   "the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them": "versi paket, kapan dibuat, nama kasus (kueri pencarian Anda atau label analisis), berapa banyak artikel, dan akar Merkle yang mencakupnya",
   "the concept “{concept}”": "konsep “{concept}”",
   "the concurrency limits could not be read": "batas konkurensi tidak dapat dibaca",
+  "the database's log file had grown too large": "berkas log basis data sudah terlalu besar",
   "the dump host did not answer": "host dump tidak menjawab",
   "the edit's own timestamp, as the source records it": "stempel waktu suntingan itu sendiri, sebagaimana dicatat oleh sumbernya",
   "the file states no date": "berkas tidak menyebut tanggal",
@@ -7479,8 +7482,5 @@
   "＋ zoom": "＋ perbesar",
   "－ zoom": "－ perkecil",
   "📍 places": "📍 tempat",
-  "🛒 Draft (": "🛒 Draf (",
-  "the database's log file had grown too large": "berkas log basis data sudah terlalu besar",
-  "Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.": "Beberapa jenis kartu tidak ada: {n} pembuat kartu dihentikan setelah {minutes} menit agar berkas log basis data tidak memenuhi disk.",
-  "Stopped card builders: {names}": "Pembuat kartu yang dihentikan: {names}"
+  "🛒 Draft (": "🛒 Draf ("
 }

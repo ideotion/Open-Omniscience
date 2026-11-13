@@ -4536,6 +4536,7 @@
   "Some articles arrive with no language tag, and the fast offline detector cannot always classify them (short text, low confidence, or a language it does not cover). This OPT-IN pass asks the local model to identify the language of those still-unknown articles. It is AI-derived and unreliable — a THIRD, clearly-labelled provenance class shown inline in the article view. It NEVER overwrites the source-asserted or offline-deduced language, and a garbage or unclear answer stores nothing. It runs as a cancellable background job (watch it in the task manager), never during scraping, and only on this machine's local model.": "一部の記事は言語タグを持たずに届き、高速なオフライン検出器が常に分類できるとは限りません（本文が短い、確信度が低い、または対象外の言語）。このオプトインのパスは、そうした言語が不明なままの記事について、ローカルモデルに言語の判定を求めます。これは AI 由来で信頼できないものであり — 記事表示内にインラインで示される、明確にラベル付けされた第三の来歴クラスです。ソースが宣言した言語やオフラインで推定された言語を上書きすることは決してなく、無意味または不明瞭な回答は何も保存しません。取り消し可能なバックグラウンドジョブとして実行され（タスクマネージャーで確認できます）、スクレイピング中に実行されることは決してなく、このマシンのローカルモデルのみを使用します。",
   "Some cards may be missing: the last refresh stopped early because {why}.": "一部のカードが欠けている可能性があります。直前の更新は{why}ため、途中で停止しました。",
   "Some downloads cannot be measured yet, so this figure is a lower bound.": "一部のダウンロードはまだ計測できないため、この数値は下限です。",
+  "Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.": "一部の種類のカードがありません：データベースのログファイルがディスクを埋め尽くさないよう、{n} 個のカード生成処理を {minutes} 分後に停止しました。",
   "Some of the price feeds you rely on have stopped delivering fresh numbers, or reported an error on their last run. The figures they show may be out of date until they run again.": "利用している価格フィードの一部が新しい数値の配信を停止したか、前回の実行でエラーを報告しました。再実行されるまで、表示される数値は古い可能性があります。",
   "Some recent articles use the language of corporate deals — acquired, merged, divested. This flags the wording for you to verify against the primary filing; it never asserts a deal actually happened.": "最近の記事の一部が、買収・合併・売却といった企業取引の言葉を使っています。これは一次資料と照らして確認できるよう言葉遣いを示すもので、取引が実際に行われたと断定するものでは決してありません。",
   "Some values were adjusted to stay in their safe range:": "一部の値は安全な範囲に収まるよう調整されました:",
@@ -4694,6 +4695,7 @@
   "Stopped before the end of the files owed; the next update continues from here.": "未適用のファイルの終わりより前に停止しました。次の更新はここから続きます。",
   "Stopped by airplane mode: only the messages fetched before it were imported.": "機内モードで停止しました：それ以前に取得したメッセージだけを取り込みました。",
   "Stopped by an error before its result could be measured": "結果を測定する前にエラーで停止",
+  "Stopped card builders: {names}": "停止したカード生成処理：{names}",
   "Stopped itself — memory stayed exhausted": "自ら停止 — メモリが枯渇したまま",
   "Stopped qualifying": "条件を満たさなくなった",
   "Stopped:": "停止しました：",
@@ -6860,6 +6862,7 @@
   "the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them": "パッケージのバージョン、作成日時、ケース名（検索クエリまたは分析のラベル）、記事の件数、それらをまとめるマークルルート",
   "the concept “{concept}”": "概念「{concept}」",
   "the concurrency limits could not be read": "並列数の上限を読み取れませんでした",
+  "the database's log file had grown too large": "データベースのログファイルが大きくなりすぎた",
   "the dump host did not answer": "ダンプホストが応答しませんでした",
   "the edit's own timestamp, as the source records it": "その編集自体のタイムスタンプ（ソースの記録どおり）",
   "the file states no date": "ファイルに日付の記載なし",
@@ -7479,8 +7482,5 @@
   "＋ zoom": "＋ 拡大",
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
-  "🛒 Draft (": "🛒 草稿 (",
-  "the database's log file had grown too large": "データベースのログファイルが大きくなりすぎた",
-  "Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.": "一部の種類のカードがありません：データベースのログファイルがディスクを埋め尽くさないよう、{n} 個のカード生成処理を {minutes} 分後に停止しました。",
-  "Stopped card builders: {names}": "停止したカード生成処理：{names}"
+  "🛒 Draft (": "🛒 草稿 ("
 }

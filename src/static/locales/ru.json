@@ -4536,6 +4536,7 @@
   "Some articles arrive with no language tag, and the fast offline detector cannot always classify them (short text, low confidence, or a language it does not cover). This OPT-IN pass asks the local model to identify the language of those still-unknown articles. It is AI-derived and unreliable — a THIRD, clearly-labelled provenance class shown inline in the article view. It NEVER overwrites the source-asserted or offline-deduced language, and a garbage or unclear answer stores nothing. It runs as a cancellable background job (watch it in the task manager), never during scraping, and only on this machine's local model.": "Некоторые статьи поступают без указания языка, а быстрый офлайн-определитель не всегда может их классифицировать (короткий текст, низкая уверенность или язык, который он не покрывает). Этот проход, включаемый ПО ВАШЕМУ ВЫБОРУ, просит локальную модель определить язык таких всё ещё неизвестных статей. Результат получен ИИ и ненадёжен — это ТРЕТИЙ, явно помеченный класс происхождения, показываемый прямо в виде статьи. Он НИКОГДА не перезаписывает язык, заявленный источником или выведенный офлайн-определителем, а мусорный или невнятный ответ не сохраняется вовсе. Он выполняется как отменяемая фоновая задача (следите за ней в диспетчере задач), никогда во время скрапинга и только на локальной модели этой машины.",
   "Some cards may be missing: the last refresh stopped early because {why}.": "Некоторых карточек может не хватать: последнее обновление остановилось досрочно, потому что {why}.",
   "Some downloads cannot be measured yet, so this figure is a lower bound.": "Некоторые загрузки пока нельзя измерить, поэтому эта цифра — нижняя граница.",
+  "Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.": "Некоторых видов карточек нет: {n} генераторов карточек остановлено через {minutes} мин., чтобы файл журнала базы данных не заполнил диск.",
   "Some of the price feeds you rely on have stopped delivering fresh numbers, or reported an error on their last run. The figures they show may be out of date until they run again.": "Некоторые из ценовых каналов, на которые вы полагаетесь, перестали выдавать свежие цифры или сообщили об ошибке при последнем запуске. Их показатели могут быть устаревшими до следующего запуска.",
   "Some recent articles use the language of corporate deals — acquired, merged, divested. This flags the wording for you to verify against the primary filing; it never asserts a deal actually happened.": "Некоторые недавние статьи используют язык корпоративных сделок — приобрела, слилась, продала актив. Это отмечает формулировку, чтобы вы сверили её с первичным документом; это никогда не утверждает, что сделка действительно состоялась.",
   "Some values were adjusted to stay in their safe range:": "Некоторые значения были скорректированы, чтобы остаться в безопасном диапазоне:",
@@ -4694,6 +4695,7 @@
   "Stopped before the end of the files owed; the next update continues from here.": "Остановлено до конца положенных файлов; следующее обновление продолжится отсюда.",
   "Stopped by airplane mode: only the messages fetched before it were imported.": "Остановлено режимом полёта: импортированы только сообщения, полученные до него.",
   "Stopped by an error before its result could be measured": "Остановлено ошибкой до того, как результат удалось измерить",
+  "Stopped card builders: {names}": "Остановленные генераторы карточек: {names}",
   "Stopped itself — memory stayed exhausted": "Остановилось само — память оставалась исчерпанной",
   "Stopped qualifying": "Перестали подходить",
   "Stopped:": "Остановлено:",
@@ -6860,6 +6862,7 @@
   "the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them": "версия пакета, время создания, название дела (ваш поисковый запрос или метка анализа), число статей и корень Меркла, охватывающий их",
   "the concept “{concept}”": "понятие «{concept}»",
   "the concurrency limits could not be read": "не удалось прочитать пределы параллелизма",
+  "the database's log file had grown too large": "файл журнала базы данных стал слишком большим",
   "the dump host did not answer": "сервер дампов не ответил",
   "the edit's own timestamp, as the source records it": "собственная отметка времени правки, как её записывает источник",
   "the file states no date": "в файле не указана дата",
@@ -7479,8 +7482,5 @@
   "＋ zoom": "＋ увеличить",
   "－ zoom": "－ уменьшить",
   "📍 places": "📍 места",
-  "🛒 Draft (": "🛒 Черновик (",
-  "the database's log file had grown too large": "файл журнала базы данных стал слишком большим",
-  "Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.": "Некоторых видов карточек нет: {n} генераторов карточек остановлено через {minutes} мин., чтобы файл журнала базы данных не заполнил диск.",
-  "Stopped card builders: {names}": "Остановленные генераторы карточек: {names}"
+  "🛒 Draft (": "🛒 Черновик ("
 }
