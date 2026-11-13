@@ -665,7 +665,7 @@ _S5_CHAINED_RAISES: dict[str, int] = {
     "src/stats/fdr.py": 1,
     "src/stats/fetch.py": 1,
     "src/utils/compression.py": 2,
-    "src/verification/metadata.py": 1,
+    "src/verification/metadata.py": 2,  # + DecompressionBombError: Pillow names pixel counts only
     "src/versioned/budget.py": 2,
 }
 

@@ -13,6 +13,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from tests.js_source_helper import function_body
+
 _ROOT = Path(__file__).resolve().parent.parent
 _STATIC = _ROOT / "src" / "static"
 
@@ -34,7 +36,7 @@ def test_the_custody_tab_carries_one_compact_file_check():
 
 def test_the_checks_call_their_routes_and_stay_on_this_machine():
     js = (_STATIC / "app-evidence.js").read_text(encoding="utf-8")
-    body = js.split("async function custodyCheckFile(", 1)[1].split("\n    }\n", 1)[0]
+    body = function_body(js, "custodyCheckFile")
     assert '"/api/verify/image-metadata"' in body and '"/api/reports/evidence/verify"' in body
     assert '"/api/custody/verify"' not in body, (
         "a custody log needs its own verifier first (see the TSV row)"
@@ -62,7 +64,7 @@ def test_the_source_trail_shows_observed_server_ips():
     source trail panel now shows the IPs a source answered from, with the CDN caveat visible.
     A failure of that one call leaves the line out rather than failing the panel."""
     js = (_STATIC / "app-sources.js").read_text(encoding="utf-8")
-    body = js.split("async function toggleSourceTrail(", 1)[1].split("\n    }\n", 1)[0]
+    body = function_body(js, "toggleSourceTrail")
     assert "/observed-ips`).catch(() => null)" in body
     assert "srcIpsHtml(ips, t, tf)" in body
     proc = subprocess.run(
