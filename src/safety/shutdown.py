@@ -24,17 +24,6 @@ from src.monitoring.secret_scrub import log_failure
 _LOG = logging.getLogger("safety.shutdown")
 
 
-def _close_db_quietly() -> None:
-    """Dispose the DB engine before SIGTERM so the encrypted SQLCipher store does not
-    emit codec-teardown noise on interpreter exit (same care as the uninstall path)."""
-    try:
-        from src.database.session import dispose_engine
-
-        dispose_engine()
-    except Exception as exc:  # noqa: BLE001 - best-effort; never block the shutdown
-        log_failure(_LOG, "shutdown: engine dispose failed", exc, level=logging.DEBUG)
-
-
 def _reap_worker_processes() -> None:
     """Kill any precompute worker PROCESSES before this process dies.
 
@@ -82,7 +71,10 @@ def _default_arm(delay: float) -> None:
         time.sleep(delay)
         # Children first: once we SIGTERM ourselves there is nobody left to do it.
         _reap_worker_processes()
-        _close_db_quietly()
+        # The engine is NOT disposed here (R689): the signal below runs the lifespan shutdown, which stops the scheduler, asks every
+        # background job to stop and waits for them, writes the log back and only then disposes. Disposing first, as this did, closed the
+        # pool while jobs and the collector were still writing, so they reopened it, the stop-all came too late, and the lifespan's own
+        # disposal read EARLIER_DISPOSAL. The codec-teardown quiet this was for comes from the lifespan's disposal just the same.
         _LOG.warning("shutdown: stopping the server (graceful signal to self)")
         stop_self()
 

@@ -406,6 +406,24 @@ def stop_all_jobs(timeout: float) -> list[str]:
         return []
 
 
+def running_job_threads() -> list[tuple[threading.Thread, str]]:
+    """The threads of the registered jobs still running, each with its kind (never its kwargs: they can carry a passphrase).
+
+    For the shutdown: the jobs :func:`stop_all_jobs` gave up on are named to the database's refusal
+    (:mod:`src.database.after_shutdown`, R689), so they cannot write after the engine is disposed. Never raises."""
+    out: list[tuple[threading.Thread, str]] = []
+    try:
+        with _REG_LOCK:
+            jobs = list(_REGISTRY.values())
+        for job in jobs:
+            t = job._thread
+            if t is not None and t.is_alive():
+                out.append((t, job.kind))
+    except Exception:  # noqa: BLE001 - a shutdown step never raises
+        return out
+    return out
+
+
 def _reset_registry_for_tests() -> None:
     with _REG_LOCK:
         _REGISTRY.clear()
