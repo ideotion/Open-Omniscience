@@ -174,7 +174,7 @@ const ok = (cond, msg) => { checks++; assert.ok(cond, msg); };
 // ---- 8. every locale: the line is built from keys that exist, with no placeholder left and no English leak
 for (const code of LOCALES) {
   const { api, elements } = makeRenderer(code);
-  for (const [kind, reason] of [["kept_reason", "memory_short"], ["kept_reason", "deadline"], ["incomplete_reason", "memory_short"], ["incomplete_reason", "deadline"]]) {
+  for (const [kind, reason] of [["kept_reason", "memory_short"], ["kept_reason", "deadline"], ["incomplete_reason", "memory_short"], ["incomplete_reason", "deadline"], ["kept_reason", "wal_pinned"], ["incomplete_reason", "wal_pinned"]]) {
     api.renderBriefing({ ...BASE, buckets: CARD_BUCKETS, cards: [{ id: "c1" }], [kind]: reason });
     const m = elements["briefing-feed"].innerHTML.match(/<p class="card-caveat" id="brief-stopped">(.*?)<\/p>/);
     ok(m, `${code}/${kind}/${reason}: stop line present`);
@@ -182,8 +182,32 @@ for (const code of LOCALES) {
     ok(!/\{\w+\}/.test(line), `${code}/${kind}/${reason}: no placeholder left: ${line}`);
     ok(!line.includes("&amp;#"), `${code}: no double escaping`);
     if (code !== "en") {
-      ok(!/the last refresh stopped early|the machine was short of memory|it ran out of time/.test(line), `${code}/${kind}/${reason}: English leaked into the line: ${line}`);
+      ok(!/the last refresh stopped early|the machine was short of memory|it ran out of time|log file had grown/.test(line), `${code}/${kind}/${reason}: English leaked into the line: ${line}`);
     }
   }
+  // R666: the stopped-builders line, in every locale, with its hover naming the builders.
+  api.renderBriefing({ ...BASE, buckets: CARD_BUCKETS, cards: [{ id: "c1" }], stopped_producers: ["Converging on one place"], producer_deadline_min: 10 });
+  const s = elements["briefing-feed"].innerHTML.match(/<p class="card-caveat" id="brief-stopped-builders" title="(.*?)">(.*?)<\/p>/);
+  ok(s, `${code}: stopped-builders line present`);
+  ok(!/\{\w+\}/.test(s[1] + s[2]), `${code}: no placeholder left in the stopped-builders line: ${s[2]}`);
+  ok(s[2].includes("10") && s[2].includes("1"), `${code}: the count and the minutes are in the line: ${s[2]}`);
+  ok(s[1].includes("Converging on one place"), `${code}: the hover names the stopped builder`);
+  if (code !== "en") ok(!/card builders were stopped|Stopped card builders/.test(s[1] + s[2]), `${code}: English leaked: ${s[2]}`);
+}
+// ---- 9. R666: the stopped-builders line is escaped, sits with the other stop line, and is in the repaint key
+{
+  const { api, elements } = makeRenderer("en");
+  const A = { ...BASE, buckets: CARD_BUCKETS, cards: [{ id: "c1" }] };
+  const S = { ...A, stopped_producers: ["<img src=x onerror=alert(1)>"], producer_deadline_min: 10 };
+  api.renderBriefing(S);
+  const h = elements["briefing-feed"].innerHTML;
+  ok(!h.includes("<img"), "a stopped name is never reflected unescaped");
+  ok(h.includes("Some kinds of card are missing: 1 card builders were stopped after 10 minutes"), "English line: " + h.slice(0, 200));
+  ok(h.indexOf("brief-stopped-builders") < h.indexOf('<nav class="tabs home-fam"'), "line before the nav");
+  ok(api._briefStamp(S) !== api._briefStamp(A), "the stopped list is in the repaint key");
+  ok(api._briefStamp(A) === api._briefStamp({ ...A, stopped_producers: [] }), "an empty list keeps the old key");
+  api.renderBriefing({ ...A, buckets: [], cards: [], stopped_producers: ["X"] });
+  const e = elements["briefing-feed"].innerHTML;
+  ok(e.indexOf("brief-stopped-builders") < e.indexOf("No Leads yet"), "on an empty feed the line is above the empty state");
 }
 console.log(`home_stop_line_node_test.js: ${checks} assertions passed (12 locales x 4 lines checked for placeholder/English leaks)`);
