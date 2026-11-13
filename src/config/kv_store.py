@@ -278,6 +278,10 @@ def _write_slot() -> Iterator[int]:
     NO LOCK IS HELD WHILE WAITING FOR THE GATE: the count is all a restore looks at, so a write queued behind a long writer
     blocks nobody else and nobody blocks it; the gate stays free for the threads that hold a connection to the old file and
     must take it to be refused and let go (a restore that held the gate itself would wait for exactly those handles)."""
+    # A background job the shutdown stopped waiting for writes nothing more here (R689), whether or not the write gate is on.
+    from src.database import after_shutdown
+
+    after_shutdown.check("a settings write")
     me = threading.get_ident()
     if os.environ.get(_STRICT_GATE_ENV) == "1":
         from src.database.writer import write_gate

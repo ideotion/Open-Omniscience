@@ -579,6 +579,11 @@ async def lifespan(app: FastAPI):
         raise RuntimeError(SERVER_EVENT_LOOP_REFUSAL)
     global _serving_loop_checked
     _serving_loop_checked = True
+    # A start forgets the job threads an earlier shutdown in this process refused (R689): they ended with it, and a test's next client
+    # is a new app, not the one that stopped.
+    from src.database.after_shutdown import clear as _clear_after_shutdown
+
+    _clear_after_shutdown()
     # The airplane guard is armed HERE, before any request (R644): ``_ServingGate`` answers 503 until it is, and the unlock flow of a
     # locked store is served before ``run_deferred_startup`` (which arms it again, idempotently) ever runs. Transparent while online.
     # Whatever OO_NO_SCHEDULER says (R646): only OO_AIRPLANE_SOCKET_GUARD=0 leaves it out.
@@ -743,11 +748,19 @@ async def lifespan(app: FastAPI):
     # unit, so a cancellable one ends at its next unit, and 5 s is half the scheduler stop's own 10 s join above, so a shutdown a service
     # manager times at about 90 s is not spent here. A job still running after it is named in the log, by its kind only (its arguments can
     # hold a passphrase). NOT covered: the backup import queue, the .eml import manager, the re-index managers and the backup threads, which
-    # are not registry jobs and keep their own stops. Not in the forensics record: its ``dispose`` member has no byte room left (R201, tests/test_session_forensics_budget.py).
+    # are not registry jobs and keep their own stops; nor the request-bound AI streams (the streamed POST /api/llm/bulk, ai.py's extract and
+    # prompt runs), which stop at their next line once the server drops the connection and may still commit the article they are on. Not in the forensics record: its ``dispose`` member has no byte room left (R201, tests/test_session_forensics_budget.py).
     try:
         from src.jobs.background import stop_all_jobs
 
         jobs_left = stop_all_jobs(5.0)
+        if jobs_left:
+            # A job past the deadline keeps its thread, and the disposal below would not stop it writing: the pool opens a fresh
+            # connection on its next checkout. From here on the database refuses those threads, by name (R689).
+            from src.database.after_shutdown import refuse_threads
+            from src.jobs.background import running_job_threads
+
+            refuse_threads(running_job_threads())
         if jobs_left:
             logger.warning("background jobs still running at the shutdown disposal: %s", ", ".join(jobs_left))
     except Exception as exc:  # noqa: BLE001 - best-effort shutdown

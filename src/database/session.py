@@ -354,6 +354,10 @@ if _IS_SQLITE:
 
     register_write_gate(SessionLocal)
 
+from src.database import after_shutdown as _after_shutdown  # noqa: E402
+
+_after_shutdown.install()  # every engine refuses a job the shutdown stopped waiting for (R689); idle cost: one dict read
+
 # S2.6 (b): record which thread holds each POOLED CONNECTION. Not a duplicate of
 # the write gate -- a long-lived READ transaction pins the WAL with the gate free
 # the whole time, and that is the thread the gate can never name. Backend-neutral

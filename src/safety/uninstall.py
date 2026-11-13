@@ -39,7 +39,6 @@ import threading
 import time
 from pathlib import Path
 
-from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
 
@@ -272,24 +271,12 @@ def _default_spawn(plan: dict, server_pid: int) -> None:
     )
 
 
-def _close_db_quietly() -> None:
-    """Dispose the DB engine before we SIGTERM ourselves (item #1).
-
-    The encrypted SQLCipher store otherwise emits codec-teardown noise to stderr when
-    the connection is torn down during interpreter exit. Disposing while the interpreter
-    is still healthy keeps a normal uninstall shutdown quiet. Best-effort by design."""
-    try:
-        from src.database.session import dispose_engine
-        dispose_engine()
-    except Exception as exc:  # noqa: BLE001 - best-effort; never block the shutdown
-        log_failure(_LOG, "uninstall: engine dispose before shutdown failed", exc, level=logging.DEBUG)
-
-
 def _default_arm_shutdown(delay: float = 2.0) -> None:
     """Ask the server to exit gracefully so the watcher can proceed (DB closed first)."""
     def _stop() -> None:
         time.sleep(delay)
-        _close_db_quietly()
+        # No disposal here (R689): the signal runs the lifespan shutdown, which stops the jobs and the collector first and disposes
+        # after them, the one order every graceful stop takes (src/safety/shutdown.py).
         _LOG.warning("uninstall: stopping the server (graceful signal to self)")
         from src.safety.shutdown import stop_self
 
