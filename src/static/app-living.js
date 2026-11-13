@@ -1084,9 +1084,10 @@
     function renderLawVelocity() {
       const host = $("law-velocity");
       if (!host || !_lawVelocityLast) return;
-      const open = !!host.querySelector("details[open]");
+      // The outer fold and its nested Method fold keep their own open state across a repaint.
+      const was = Array.from(host.querySelectorAll("details")).map((d) => d.open);
       host.innerHTML = lawVelocityHtml(_lawVelocityLast, _livingT(), _livingTf());
-      if (open) { const det = host.querySelector("details"); if (det) det.open = true; }
+      host.querySelectorAll("details").forEach((d, i) => { if (was[i]) d.open = true; });
     }
     async function loadLawVelocity() {
       const host = $("law-velocity");

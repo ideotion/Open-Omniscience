@@ -743,7 +743,7 @@ _TIMELINE_LANE_UNREADABLE = "the law lane could not be read on this install"
 def _provision_timeline_payload(db: Session, doc: LawDocument) -> dict:
     """Analytic 1's payload for one document, shared by the JSON route and the reader page.
 
-    ``versions`` (oldest first) dates each compared version from ``law_revisions`` -- the capture
+    ``versions`` (oldest first) dates every stored version that has a law-model row (whether or not it held provisions to compare) from ``law_revisions`` -- the capture
     time this instance recorded, which is when the version was SEEN here, not when it was enacted
     -- and names the stored revision it is, so every event can link to the version's own text.
     """
@@ -782,13 +782,16 @@ def _provision_timeline_html(payload: dict, esc) -> str:
     from src.law.analytics import CAVEAT_SHORT_TIMELINE
 
     # The short caveat sits IN the summary, beside the count, so it is visible with the fold closed.
-    head = (
-        "<summary><span>Provisions that changed</span> <span class='count'>{}</span> "
-        f"<span class='caveat'>{esc(CAVEAT_SHORT_TIMELINE)}</span></summary>"
-    )
+    # The count is DISTINCT provisions (one changed in five versions counts once), matching the label.
+    def head(count: str) -> str:
+        return (
+            f"<summary><span>Provisions that changed</span> <span class='count'>{count}</span> "
+            f"<span class='caveat'>{esc(CAVEAT_SHORT_TIMELINE)}</span></summary>"
+        )
+
     if not payload.get("available"):
         return (
-            "<details class='versions provisions'>" + head.format("—")
+            "<details class='versions provisions'>" + head("—")
             + f"<p class='muted'>{esc(payload.get('reason') or '')}</p></details>"
         )
     dated = {v["version"]: v for v in payload.get("versions") or []}
@@ -817,7 +820,7 @@ def _provision_timeline_html(payload: dict, esc) -> str:
         else ""
     )
     return (
-        "<details class='versions provisions'>" + head.format(int(payload.get("n") or 0))
+        "<details class='versions provisions'>" + head(str(len(payload.get("changes_per_provision") or {})))
         + body + extra
         + f"<p class='muted'>{esc(payload.get('method') or '')}</p>"
         + f"<p class='muted'>{esc(payload.get('caveat') or '')}</p></details>"

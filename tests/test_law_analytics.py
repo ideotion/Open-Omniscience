@@ -353,7 +353,8 @@ def test_the_reader_carries_the_provision_fold_with_its_short_caveat_in_the_summ
     assert "not the amendments the legislature made" in fold.split("</summary>", 1)[1]
     # The payload names every version it placed, oldest first, with its own revision id.
     stamps = [v["observed_at"] for v in payload["versions"]]
-    assert len(payload["versions"]) == 2 and stamps == sorted(stamps)
+    assert len(stamps) == 2 and all(isinstance(s, str) for s in stamps), stamps
+    assert stamps == sorted(stamps)
     assert all(isinstance(v["revision_id"], int) for v in payload["versions"])
 
 
@@ -373,3 +374,30 @@ def test_the_reader_fold_says_why_it_is_empty_for_an_untracked_document(corpus, 
     fold = page[start : page.index("</details>", start)]
     assert "<span class='count'>—</span>" in fold, "no fabricated zero"
     assert "no law-model row" in fold
+
+
+def test_the_reader_count_is_DISTINCT_provisions_not_change_events(corpus, lane):
+    """v1 -> v2 -> v3 changes section 2 twice and adds section 4 once: three events over
+    two provisions. The label says provisions, so the count is 2."""
+    from fastapi.testclient import TestClient
+
+    with corpus() as session:
+        doc = _doc(session)
+        track_document(session, _ScriptedFetcher(["act.v1"]), doc)
+        track_document(session, _ScriptedFetcher(["act.v2"]), doc)
+        # A third version rewords section 2 again; nothing else moves.
+        v3 = _ScriptedFetcher(["act.v2"])
+        v3._bodies = [v3._bodies[0].replace(b"a published standard", b"a published national standard")]
+        track_document(session, v3, doc)
+        doc_id = doc.id
+
+    app = _client(corpus)
+    try:
+        with TestClient(app) as c:
+            page = c.get(f"/api/law/documents/{doc_id}/view").text
+            payload = c.get(f"/api/law/documents/{doc_id}/provision-timeline").json()
+    finally:
+        app.dependency_overrides.clear()
+    assert payload["n"] == 3 and len(payload["changes_per_provision"]) == 2, payload
+    start = page.index("<details class='versions provisions'>")
+    assert "<span class='count'>2</span>" in page[start : page.index("</summary>", start)]
