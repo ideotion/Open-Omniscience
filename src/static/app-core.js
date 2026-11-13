@@ -2582,6 +2582,16 @@
           if (a.includes("cancel") && !a.includes("pause") && j.kind === "keyword-fold")
             acts.push(`<button class="tiny secondary" data-on-click="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Cancel"))}</button>`);
         }
+        // Local work the server lists actions for, drawn as listed (R600's second PR): the bulk
+        // summary & translation queue (a waiting run's Cancel; the paused queue's Resume / Cancel)
+        // and the Insights backlog drain (Cancel). Local model and DB work: a resume asks nothing.
+        if (j.kind === "llm-bulk-queue" || j.kind === "insights-backlog") {
+          const a = Array.isArray(j.actions) ? j.actions : [];
+          if (a.includes("resume"))
+            acts.push(`<button class="tiny secondary" data-on-click="jobResume(${esc(JSON.stringify(j.id))}, true)">${esc(t("Resume"))}</button>`);
+          if (a.includes("cancel"))
+            acts.push(`<button class="tiny secondary" data-on-click="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Cancel"))}</button>`);
+        }
         const qpos = j.queue_position ? ` <span class="muted">#${j.queue_position} ${esc(t("in queue"))}</span>` : "";
         // A fixed job label is keyed ×12; one carrying a value arrives as a frame (_jobLabel).
         return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;flex-wrap:wrap">` +

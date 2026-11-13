@@ -300,6 +300,15 @@
     }
     if (isDl(j.kind) && (j.state === "paused" || j.state === "failed"))
       acts.push('<button class="tbtn" data-tm="resume" data-id="' + esc(j.id) + '">' + esc(t("Resume")) + "</button>");
+    // The bulk summary & translation queue and the Insights backlog drain (R600's second PR):
+    // the actions the server lists, drawn as listed; local work, so a resume asks nothing.
+    if (j.kind === "llm-bulk-queue" || j.kind === "insights-backlog") {
+      var sa = Array.isArray(j.actions) ? j.actions : [];
+      if (sa.indexOf("resume") >= 0)
+        acts.push('<button class="tbtn" data-tm="resume" data-local="1" data-id="' + esc(j.id) + '">' + esc(t("Resume")) + "</button>");
+      if (sa.indexOf("cancel") >= 0)
+        acts.push('<button class="tbtn" data-tm="cancel" data-id="' + esc(j.id) + '">' + esc(t("Cancel")) + "</button>");
+    }
     // The local DB-writer jobs (re-index, keyword fold, search re-index) draw the controls
     // the server lists in `actions` for their state, as the in-app window's _jobRow does.
     // "cancel" on a RUNNING job is the same pause and is not drawn twice; on a stopped

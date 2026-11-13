@@ -886,6 +886,19 @@ def jobs_ledger(limit: int = 200) -> dict:
     }
 
 
+#: Registered jobs whose rows their owner draws: the bulk queue's running run is already its ``llm`` task row (with its Stop), and
+#: a second row for the drain around it would show one run twice.
+_OWN_ROW_KINDS = frozenset({"llm-bulk-queue"})
+
+
+def _llm_queue_jobs() -> list[dict]:
+    """The server-side bulk summarize/translate queue (R600's second PR): each run waiting its turn (Cancel), or the queue a
+    restart paused (Resume / Cancel). The running run is the ``llm`` task row. Local work: a resume opens no connection."""
+    from src.jobs.llm_bulk_queue import queue_rows
+
+    return queue_rows()
+
+
 def _background_jobs() -> list[dict]:
     """The generic background jobs (field test 2026-07-08, Item 8 P1): the heavy button
     actions that used to run synchronously — governments load-standard, enrich-source-types,
@@ -898,6 +911,8 @@ def _background_jobs() -> list[dict]:
     for s in all_job_statuses():
         if s["state"] not in ("running", "error"):
             continue  # idle/done/cancelled are not shown (mirrors the reindex/import helpers)
+        if s["kind"] in _OWN_ROW_KINDS and s["state"] == "running":
+            continue  # the owner draws its own rows (_llm_queue_jobs)
         state = "failed" if s["state"] == "error" else "running"
         # HONEST cancel affordance: only a cooperatively-cancellable worker (governments)
         # advertises Cancel — the opaque ones (enrich/backfill) can't be interrupted mid-pass,
@@ -963,6 +978,7 @@ def list_jobs() -> dict:
     jobs.extend(_model_pull_jobs())
     jobs.extend(_background_jobs())
     jobs.extend(_task_jobs())
+    jobs.extend(_llm_queue_jobs())
     f = _live_fetch()
     if f:
         jobs.append(f)
@@ -1030,6 +1046,21 @@ def cancel_job(job_id: str) -> dict:
         if not ok:
             raise HTTPException(status_code=404, detail=f"unknown OSM download {key!r}")
         return {"cancelled": job_id, "detail": "download paused (resumable; delete it in Settings → OpenStreetMap)"}
+    if job_id.startswith("llm-bulk:") or job_id == "llm-bulk-queue":
+        # The server-side bulk queue: a waiting run is dropped before it starts; the paused queue's Cancel drops every run a
+        # restart left waiting (the articles they already stored stay stored).
+        from src.jobs.llm_bulk_queue import get_queue
+
+        if job_id == "llm-bulk-queue":
+            get_queue().cancel_pending()
+            return {"cancelled": job_id, "detail": "Waiting runs cancelled; finished articles stay stored."}
+        try:
+            entry_id = int(job_id.split(":", 1)[1])
+        except ValueError:
+            raise HTTPException(status_code=404, detail=f"unknown run {job_id!r}") from None
+        if not get_queue().cancel(entry_id):
+            raise HTTPException(status_code=404, detail=f"run {job_id!r} is not waiting or running")
+        return {"cancelled": job_id, "detail": "Cancelled."}
     if job_id.startswith("task:"):
         # A background AI run that no longer ends with its tab (src/api/detached_stream.py): it stops after the articles in
         # flight (a generation computed but not yet stored is dropped); every article it finished stays stored.
@@ -1150,6 +1181,14 @@ def resume_job(job_id: str) -> dict:
     the partial file from where it stopped). The frontend gates this through the
     ONE network-consent popup first (invariant #14) — a resume re-opens a fetch;
     the download path itself still refuses while the kill switch is engaged."""
+    if job_id == "llm-bulk-queue":
+        # Local model work on loopback: no network, no consent popup. The run a restart stopped goes first and skips what it
+        # had already stored.
+        from src.jobs.llm_bulk_queue import get_queue
+
+        if not get_queue().resume():
+            raise HTTPException(status_code=404, detail="Nothing paused to resume.")
+        return {"resumed": job_id, "detail": "Summary & translation queue resumed."}
     if job_id.startswith("dump:"):
         from src.wiki.dumps import get_manager
 

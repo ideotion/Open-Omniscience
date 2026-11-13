@@ -23,43 +23,21 @@
       // The status poll (every 6 s) calls this whenever there's a backlog; without
       // a cooldown it re-kicks a fresh drain on every tick — the field-test storm
       // (P0-5: /api/insights/reindex called 1,326×/369 s, each batch a heavy write
-      // contending with the live scrape). Run ONE bounded pass, then cool down.
+      // contending with the live scrape). Ask ONCE, then cool down.
       if (Date.now() < _autoIndexCooldownUntil) return;
       _indexing = true;
       try {
-        // THE BACKLOG IS `never_attempted`, NOT `remaining` (PRH-01). `remaining` counts
-        // articles with no keyword mentions, and an article can legitimately have none
-        // (an empty body, all-stopword text, a body killed by self-name suppression) —
-        // so on any corpus holding one, `remaining` has a permanent floor above zero and
-        // can never be a backlog. `never_attempted` is the subset the indexer has never
-        // looked at, which is the number that does reach zero and the only one worth
-        // draining. `??` and not `||`: zero is the answer we are waiting for, so it must
-        // not fall through to the other field.
-        let guard = 0, lastBacklog = -1, backlog = 0;
-        for (;;) {
-          const r = await api("/api/insights/reindex?limit=300", {method: "POST"});
-          backlog = r.never_attempted ?? r.remaining;
-          const rem = $("ins-remaining");
-          // The same keyed "{n} to index" the Insights header draws (W17), not English.
-          if (rem) rem.innerHTML = _insRemainingHtml(r);
-          // Bound each pass to 40 batches (~12k articles): plenty to drain a normal
-          // corpus in one go, but never the old 500-batch (150k) blast.
-          // A backlog that did not shrink means the queue is not rotating — the wedge
-          // this loop used to sit in — so stop rather than spend 40 batches on it.
-          // `r.indexed === 0` is deliberately NOT the break: it counts ATTEMPTS, so it
-          // stayed at the batch size through every wedged pass and could never fire.
-          if (backlog === 0 || backlog === lastBacklog || ++guard >= 40) break;
-          lastBacklog = backlog;
-        }
-        if (backlog > 0 && backlog === _autoIndexLastRemaining) {
-          // Still stuck across two whole drains ⇒ something is refusing to rotate.
-          // Stop re-attempting this session rather than hammer forever.
-          _autoIndexCooldownUntil = Infinity;
-        } else {
-          // Cool down so the 6 s poll can't re-kick; the next pass continues the drain.
-          _autoIndexCooldownUntil = backlog > 0 ? Date.now() + 60000 : Infinity;
-        }
-        _autoIndexLastRemaining = backlog;
+        // THE DRAIN RUNS ON THE SERVER (R600's second PR, src/jobs/insights_backlog.py): this
+        // used to be a loop in the tab POSTing /api/insights/reindex batch after batch, so
+        // closing the browser stopped it. Now one POST starts the server job, which drains the
+        // never-attempted backlog (PRH-01: `never_attempted`, not `remaining`) to the end with
+        // the tab closed, ends by itself when the backlog stops shrinking, and shows in the task
+        // manager with a Cancel. The "{n} to index" ticker follows from the status poll.
+        const r = await api("/api/insights/backlog", {method: "POST"});
+        // A backlog that stayed stuck across two whole server drains: the server refuses to
+        // restart it for the life of the process, so stop asking for this session.
+        if (r && r.reason === "stuck") _autoIndexCooldownUntil = Infinity;
+        else _autoIndexCooldownUntil = Date.now() + 60000;
       } catch (_e) { _autoIndexCooldownUntil = Date.now() + 60000; }  /* best-effort */
       finally { _indexing = false; }
     }
