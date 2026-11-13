@@ -102,20 +102,22 @@ def _producer_deadline(session, seconds: float | None):
         yield True
 
 
-def _is_memory_short(exc: BaseException) -> bool:
+def _is_memory_short(kind: type[BaseException]) -> bool:
+    """Whether an exception CLASS is the deadline's memory stop (the class only: a caught exception's words never leave its handler)."""
     try:
         from src.database.maintenance import MemoryShort
     except Exception:  # noqa: BLE001 - no DB layer
         return False
-    return isinstance(exc, MemoryShort)
+    return issubclass(kind, MemoryShort)
 
 
-def _is_statement_timeout(exc: BaseException) -> bool:
+def _is_statement_timeout(kind: type[BaseException]) -> bool:
+    """Whether an exception CLASS is a statement deadline's timeout (class only, as :func:`_is_memory_short`)."""
     try:
         from src.database.maintenance import StatementTimeout
     except Exception:  # noqa: BLE001 - no DB layer
         return False
-    return isinstance(exc, StatementTimeout)
+    return issubclass(kind, StatementTimeout)
 
 _LOG = logging.getLogger(__name__)
 
@@ -795,13 +797,13 @@ def run_all_bounded(
                     produced = producer(session) or []
         except Exception as exc:  # noqa: BLE001 - one bad producer must not abort the feed
             produced = []
-            if producer_deadline_s is not None and _is_memory_short(exc):
+            if producer_deadline_s is not None and _is_memory_short(type(exc)):
                 log_failure(_LOG, f"briefing producer {name!r} stopped: memory short", exc, level=logging.WARNING)
                 stopped_by_memory = True
             else:
                 log_failure(_LOG, f"briefing producer {name!r} failed", exc, level=logging.WARNING)
                 stopped_by_memory = False
-            timed_out = armed and _is_statement_timeout(exc) and not stopped_by_memory
+            timed_out = armed and _is_statement_timeout(type(exc)) and not stopped_by_memory
         else:
             stopped_by_memory = timed_out = False
         took = time.monotonic() - began_mono
