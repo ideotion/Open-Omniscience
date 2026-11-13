@@ -896,7 +896,9 @@
       let tags = covTags.map((x) => x.tag).filter((x) => x && x !== "(untagged)"
         && (x.indexOf("via:") !== 0 || curTags.indexOf(x) >= 0));
       tags.sort((a, b) => (byTotal[b] || 0) - (byTotal[a] || 0));   // top themes by source count
-      tags = tags.slice(0, 16);
+      // The top 16, plus every tag the config already filters on even if it ranks lower: a
+      // chosen tag that is not drawn is missing from the picks and would be dropped on save.
+      tags = tags.slice(0, 16).concat(tags.slice(16).filter((x) => curTags.indexOf(x) >= 0));
       if (!tags.length) {
         box.innerHTML = `<div class="muted">${esc(_gwT("Themes will appear once your sources are set up. Your app collects from every source by default."))}</div>`;
       } else {

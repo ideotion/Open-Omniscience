@@ -208,6 +208,9 @@
       padding:2px 6px; font-size:11px; line-height:1.2; color:var(--fg); border-radius:4px;
       background:color-mix(in srgb, var(--panel) 82%, transparent); pointer-events:auto; }
     .oomap-scale[hidden] { display:none; }
+    /* Above 600 px the Country/layers group shares the bottom edge: it wraps before the bar's
+       corner, so neither covers the other in any language. */
+    @media (min-width: 601px) { .oomap-wrap .oomap-gran { max-width:calc(100% - 210px); } }
     .oomap-scale-bar { display:inline-block; height:6px; border:1.5px solid var(--fg); border-top:none; }
     /* The language menu's row hover (was an inline onmouseover/onmouseout pair; Q1127). */
     #lang-menu [role="menuitem"]:hover, #lang-menu [role="menuitem"]:focus-visible { background:var(--line); }

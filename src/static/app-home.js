@@ -946,6 +946,7 @@
             if (panel) panel.hidden = false;
             box.innerHTML = `<div class="hint muted" role="status" style="font-size:12px">${esc(t(d.caveat))}</div>`;
           } else { _homeTrendTerms = []; _homeTrendCaveat = ""; if (panel) panel.hidden = true; box.innerHTML = ""; }
+          _homeTrendLang = lang;
           // The compact Overview row reads the same stash: without this it kept the previous
           // poll's chips once every term was filtered out (now common, as falling ones are).
           _renderOverviewTrends(); _syncHomeSubtabs();
