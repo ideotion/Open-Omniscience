@@ -4924,6 +4924,7 @@
   "That is not a Wikidata item. Write Q followed by a number, for example Q42.": "هذا ليس عنصرًا في ويكي بيانات. اكتب Q متبوعة برقم، مثل Q42.",
   "That is not the same as an empty corpus — this is a read failure, not a sign your library is empty.": "هذا ليس مثل المدوّنة الفارغة — إنه فشل في القراءة، وليس دليلاً على أن مكتبتك فارغة.",
   "That is the end of this pass.": "هذا هو نهاية هذه الجولة.",
+  "That model runs on Ollama's cloud, not on this computer, so it is refused: the text you give it would leave the machine. Choose a local model.": "يعمل هذا النموذج على سحابة Ollama وليس على هذا الحاسوب، لذا يُرفض: فالنص الذي تعطيه إياه سيغادر الجهاز. اختر نموذجًا محليًا.",
   "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15). A source that passes qualification is now enabled for collection automatically, so there is nothing left for the setting to relax. Every automatic admission is listed in Settings > Advanced > Quality gates > Admission audit, where it can be undone.": "أُلغي إعداد «اجمع أيضًا المصادر غير المُقيّمة» (قرار Q1101، 2026-09-15). المصدر الذي يجتاز التقييم يُفعّل الآن للجمع تلقائيًا، فلم يعد هناك ما يُخفّف. وكل قبول تلقائي مدرج في الإعدادات > متقدم > بوابات الجودة > سجل القبول، حيث يمكن التراجع عنه.",
   "The AI install is allowed online.": "مسموح لتثبيت الذكاء الاصطناعي بالاتصال بالإنترنت.",
   "The AI install window closed — the network is refused again.": "أُغلقت نافذة تثبيت الذكاء الاصطناعي — يُرفض الوصول إلى الشبكة من جديد.",

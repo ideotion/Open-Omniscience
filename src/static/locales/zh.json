@@ -4924,6 +4924,7 @@
   "That is not a Wikidata item. Write Q followed by a number, for example Q42.": "这不是 Wikidata 条目。请写 Q 加一个数字，例如 Q42。",
   "That is not the same as an empty corpus — this is a read failure, not a sign your library is empty.": "这与语料库为空不同——这是读取失败，而不是您的资料库为空的迹象。",
   "That is the end of this pass.": "本轮到此结束。",
+  "That model runs on Ollama's cloud, not on this computer, so it is refused: the text you give it would leave the machine. Choose a local model.": "该模型运行在 Ollama 的云端，而不是这台计算机上，因此被拒绝：你提供给它的文本会离开本机。请选择本地模型。",
   "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15). A source that passes qualification is now enabled for collection automatically, so there is nothing left for the setting to relax. Every automatic admission is listed in Settings > Advanced > Quality gates > Admission audit, where it can be undone.": "“也采集未审核来源”设置已废除（裁定 Q1101，2026-09-15）。通过审核的来源现在会自动启用以供采集，因此该设置已无可放宽之处。每一次自动准入都列在“设置 > 高级 > 质量关卡 > 准入审计”中，可在那里撤销。",
   "The AI install is allowed online.": "AI 安装已获准联网。",
   "The AI install window closed — the network is refused again.": "AI 安装窗口已关闭——网络重新被拒绝。",
