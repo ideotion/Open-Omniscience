@@ -57,8 +57,10 @@ function build() {
     + extract("_ooWikiLayer") + "\n"
     + extract("_ooWikiAddrMarker") + "\n"
     + "return { project, layer: _ooWikiLayer };";
-  const fn = new Function("esc", body);
-  return fn(sandbox.esc);
+  // The shipped ooIsoDate (app-core.js), extracted too, with a left-to-right page.
+  const isoDate = new Function("document", extract("ooIsoDate") + "\nreturn ooIsoDate;")({ documentElement: { dir: "ltr" } });
+  const fn = new Function("esc", "ooIsoDate", body);
+  return fn(sandbox.esc, isoDate);
 }
 
 const { project, layer } = build();

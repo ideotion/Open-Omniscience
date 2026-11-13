@@ -1107,7 +1107,7 @@
       const tfx = (typeof window !== "undefined" && window.OOI18N && window.OOI18N.tf) ? window.OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const vals = { address: pt.address || "", field: pt.field || "", page: pt.title || pt.external_id || "", edition: pt.edition || "",
-        object: pt.osm_object || "", vintage: pt.osm_vintage ? String(pt.osm_vintage).slice(0, 10) : "" };
+        object: pt.osm_object || "", vintage: pt.osm_vintage ? ooIsoDate(pt.osm_vintage) : "" };
       const hover = vals.vintage
         ? tfx("{address}, from the {field} field of {page} ({edition}). Located at OpenStreetMap {object}, extract of {vintage}.", vals)
         : tfx("{address}, from the {field} field of {page} ({edition}). Located at OpenStreetMap {object}; the extract states no date.", vals);
