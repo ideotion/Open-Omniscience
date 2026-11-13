@@ -274,7 +274,8 @@ def test_nothing_a_refused_job_flushed_lands_and_the_gate_is_left_free(registry,
     def only_the_commit(what: str) -> None:
         # Let every statement through but the one after the job's INSERT: with a savepoint, the session's commit sends
         # SAVEPOINT, INSERT, then RELEASE (traced), and that RELEASE is what has to be refused.
-        if what == "a commit" or (what == "a statement" and job_sql[-1:] == ["INSERT"]):
+        on_job = threading.current_thread().name.startswith("bgjob-")
+        if on_job and (what == "a commit" or (what == "a statement" and job_sql[-1:] == ["INSERT"])):
             refused.append(what)
             real_check(what)
 
@@ -340,15 +341,22 @@ def test_a_reused_pool_thread_carries_no_refusal_into_later_work(monkeypatch):
     with ThreadPoolExecutor(max_workers=1) as pool:
         holder: dict = {}
 
+        def linked():
+            gate.wait(10)
+            r: list = []
+            _try_db(r)
+            return r
+
         def parent():
-            holder["run"] = after_shutdown.inherit(lambda: gate.wait(10))
-            pool.submit(holder["run"]).result()
+            holder["run"] = after_shutdown.inherit(linked)
+            holder["while_linked"] = pool.submit(holder["run"]).result()
 
         p = threading.Thread(target=parent, name="parent-under-test")
         p.start()
         after_shutdown.refuse_threads([(p, "parent-under-test")])
         gate.set()
         p.join(10)
+        assert holder["while_linked"] == ["orm:WriteAfterShutdownRefused", "gate:WriteAfterShutdownRefused"]
 
         def later():
             r: list = []
@@ -485,12 +493,30 @@ def test_a_rollback_statement_is_let_through_on_a_refused_thread(monkeypatch):
     assert seen == {"rollback": None, "release": "refused"}
 
 
-def test_the_repair_stops_before_its_swap_once_the_database_closed():
-    """Its copy and swap are raw work no event sees; the check comes before it disposes or switches anything."""
-    import ast
-    import inspect
+def test_the_repair_stops_before_its_swap_once_the_database_closed(monkeypatch, tmp_path):
+    """Its copy and swap are raw work no event sees: on a job thread once the database closed, ``_swap`` stops as a stop of the app
+    (``SalvageStopped``, recorded as stopped), before it disposes or switches anything."""
+    from src.database import repair, salvage
 
-    from src.database import repair
+    disposed: list = []
+    monkeypatch.setattr("src.database.session.dispose_engine", lambda: disposed.append(1))
+    monkeypatch.setattr(repair, "_quiet", lambda *_a: disposed.append("quiet"))
+    monkeypatch.setattr(after_shutdown._LOG, "warning", lambda *a: None)
+    seen: dict = {}
+    go = threading.Event()
 
-    body = ast.unparse(ast.parse(inspect.getsource(repair._swap)))
-    assert body.index("after_shutdown.check(") < body.index("dispose_engine()") < body.index("swap_in_corpus(")
+    def job():
+        go.wait(10)
+        try:
+            repair._swap(tmp_path / "copy.partial", tmp_path / "live.db", "stamp", {})
+        except salvage.SalvageStopped:
+            seen["outcome"] = "stopped"
+        except Exception as exc:  # noqa: BLE001 - the test records what happened
+            seen["outcome"] = type(exc).__name__
+
+    t = threading.Thread(target=job, name="bgjob-database-repair")
+    t.start()
+    after_shutdown.close_for_jobs([])
+    go.set()
+    t.join(10)
+    assert seen == {"outcome": "stopped"} and disposed == [], (seen, disposed)

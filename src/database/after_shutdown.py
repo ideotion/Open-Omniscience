@@ -22,7 +22,8 @@ settings write raises :class:`WriteAfterShutdownRefused` on:
 A refused commit never reaches the driver, and every statement is refused too (a savepoint's ``RELEASE``, which pysqlite turns
 into the real COMMIT, included), so nothing the job had not committed lands. Its rollback is not refused (the DBAPI rollback runs
 no event, and a ``ROLLBACK`` statement is let through). A write queued for the write gate, or waiting on a restore's settings
-hold, is checked again once it gets through, and the repair job checks before its file swap. The refusal is logged once per job, by its kind (never its arguments, which can carry a
+hold, is checked again once it gets through, and the repair job stops before its file swap (a fresh copy is discarded, a
+resumed one kept). The refusal is logged once per job, by its kind (never its arguments, which can carry a
 passphrase). The shutdown's own steps (the write-back, the disposal, the flushes) run on another thread and
 are not touched, nor is any other thread. :func:`clear` (the app's start) reopens it.
 
@@ -32,7 +33,9 @@ still commit (a write that WAITED is checked again); the repair job's copy is ra
 not covered. Threads that are not registry jobs keep their own stops: the import queue, the re-index managers, the
 backup threads, the rollup and keyword-fold builders, the request-bound AI streams, and the scheduler's own threads
 (``oo-scheduler``, whose stop gives up after a 10 s join, with its ``oo-collect`` pool; ``oo-briefing-bg``;
-``oo-housekeeping-lane``). A statement that passed its check an instant before the database closed can still finish.
+``oo-housekeeping-lane``). A statement that passed its check an instant before the database closed can still finish (for the repair,
+that window is its whole fold and swap once it is past its check). The ROLLBACK pass-through relies on SQLite's driver running
+one statement per call; a server backend that runs a multi-statement string would need it narrowed.
 """
 
 from __future__ import annotations
