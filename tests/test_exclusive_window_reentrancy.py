@@ -111,8 +111,9 @@ def test_an_operation_inside_the_window_does_NOT_resume_collection(sched):
             assert inner is False, "nothing was paused by the inner call"
             R.resume_after_exclusive_operation(inner)
         assert sched.starts == 0, "collection must stay down for the WHOLE run"
-        assert sched.releases == 0, "and the manual Run-now hold must stay claimed"
-    assert (sched.starts, sched.releases) == (1, 1), "released once, at the end"
+        # each inner operation takes and gives back its OWN claim (R383); the window's claim stands until the end
+        assert sched.holds - sched.releases == 1, "and the manual Run-now hold must stay claimed"
+    assert sched.starts == 1 and sched.holds == sched.releases == 6, "the window's claim released once, at the end"
 
 
 def test_the_window_survives_an_exception_inside_it(sched):
@@ -189,7 +190,8 @@ def test_a_window_that_began_inside_another_and_ends_after_it_keeps_the_machine_
     encryption.__exit__(None, None, None)
     assert R.exclusive_window_open() is False, "the flag does not stay raised for the rest of the process"
     assert R.owns_the_machine() is False
-    assert (sched.starts, sched.releases) == (1, 1), "the last window out resumes what the first one paused, once"
+    # each window holds its own claim (R383), both released by the last one out; the loop is started once
+    assert (sched.starts, sched.releases) == (1, 2), "the last window out resumes what the first one paused, once"
     assert (R._EXCL_DEPTH, R._EXCL_PAUSED) == (0, False)
 
 

@@ -3101,8 +3101,10 @@ def exclusive_window(timeout: float = 10.0, *, resume_retries: int = 19) -> Iter
     counted = False
     claim: list[bool] = []  # this window's claim on the scheduler's hold, if its pause took one (R383)
     try:
-        if not already:
-            was_paused = pause_for_exclusive_operation(timeout=timeout, claim=claim)
+        # EVERY window pauses, a nested one included (R383, security read of B3 delta 2): inside an open window the pause takes this window's
+        # own claim and stops nothing; a window that read ``already`` while another was closing finds none open and pauses for real, so no
+        # window ever runs without a claim (Start and Run now refused) and with the loop still running.
+        was_paused = pause_for_exclusive_operation(timeout=timeout, claim=claim)
         with _EXCL_LOCK:
             if was_paused:
                 _EXCL_PAUSED = True  # before the count: a window that is interrupted next still resumes what it stopped
@@ -3229,6 +3231,19 @@ def _start_or_stand_down(retries: int, retry_delay: float) -> bool:
     return False
 
 
+def _defer_start_behind_holder(sch: Any) -> None:
+    """Leave a start for the operation that still holds the machine: ``start()`` refuses while a claim stands and REMEMBERS the start, so that
+    operation's resume makes it. Never under the kill switch, checked first like every start the resume makes, and never raises (a courtesy)."""
+    from src.ingest import kill_switch_active
+
+    try:
+        if kill_switch_active():
+            return
+        sch.start()
+    except Exception as exc:  # noqa: BLE001 - a courtesy call never raises into the operation's own finally
+        _LOG.warning("could not leave a collection start for the operation holding the machine (%s)", type(exc).__name__)
+
+
 def _hand_start_to_window() -> bool:
     """A standalone operation ended inside an open window, which owns the machine: its start is the window's to make (R383).
 
@@ -3313,14 +3328,14 @@ def resume_after_exclusive_operation(
     COUNTED CLAIMS (R383). The hold is a count, so a claim is released by the operation that took it and by nobody else. ``claim`` is the
     list the caller handed to :func:`pause_for_exclusive_operation`: one ``True`` per claim that pause took (it takes one also inside an
     open window, so a window that ends first does not start collection under it). Every claim in it is released here, ALWAYS, also when a window is open now, and the list
-    is emptied, so a second call with it does nothing. ``claim=None`` is the call that recorded nothing (a caller from before R383): a
-    claim is then assumed exactly when no window is open, as before. The release and the deferred start are read in ONE locked step
+    is emptied, so a second call with it does nothing. ``claim=None`` is the call that recorded nothing (a caller from before R383): one
+    claim is then assumed, since every pause takes one, inside a window too. The release and the deferred start are read in ONE locked step
     (:meth:`BackgroundScheduler.release_exclusive`), so two operations that end together never strand a start between them. When this was
     not the last claim (another operation still holds the machine) nothing is started: a loop this operation stopped is queued behind the
     holder, whose own resume starts it. When a window is open, the start is handed to the window, whose last exit resumes it.
     """
     window = exclusive_window_open()
-    claims = (0 if window else 1) if claim is None else len(claim)
+    claims = 1 if claim is None else len(claim)  # a pause takes a claim inside a window too, so a caller that kept no list holds one
     if claims == 0:
         # Nothing of this caller's to release. A window that holds no claim (it opened while another window was closing) can still have
         # been handed a start (:func:`_hand_start_to_window`): its last exit must make it, or collection stays off with nothing pending.
@@ -3329,7 +3344,7 @@ def resume_after_exclusive_operation(
         sch = get_scheduler()
         held = getattr(sch, "holds_exclusive", None)
         if callable(held) and held():
-            sch.start()  # refused while another operation holds the machine, and so REMEMBERED: that operation's resume makes it
+            _defer_start_behind_holder(sch)
             return
     else:
         # The releases come FIRST and outside any ``try``: nothing before them can fail, and ``start()`` refuses while a claim stands (R367, F5).
