@@ -346,8 +346,8 @@ def terminate_live_pools() -> int:
 
     WHY THIS IS NOT ALREADY COVERED. ``_abandon_pool`` terminates workers, but only
     from inside this module's own except/finally paths -- i.e. only when the PARENT
-    notices something and unwinds. The app's shutdown does none of that: it sends
-    SIGTERM to ITSELF (``safety.shutdown``), and the lifespan then stops the jobs and disposes the engine. Pool workers are
+    notices something and unwinds. The app's shutdown does none of that: it disposes
+    the engine and sends SIGTERM to ITSELF (``safety.shutdown``). Pool workers are
     separate OS processes, not threads, so nothing in that path reaps them. A worker
     still running when the parent dies is reparented to init and keeps burning CPU
     with no UI left to stop it.
