@@ -1424,14 +1424,16 @@
         p.className = "card-caveat";
         p.style.margin = "6px 0 0";
         const msg = document.createElement("span");
-        msg.textContent = tfs(t("An earlier import that was interrupted left {n} unencrypted copies of backup volumes in this folder. Anyone with this drive can read them."), { n: fmtNum(names.length, 0) }) + " ";
+        msg.textContent = (names.length === 1
+          ? t("An earlier import that was interrupted left 1 unencrypted copy of a backup volume in this folder. Anyone with this drive can read it.")
+          : tfs("An earlier import that was interrupted left {n} unencrypted copies of backup volumes in this folder. Anyone with this drive can read them.", { n: fmtNum(names.length, 0) })) + " ";
         msg.title = names.join(", ");
         const b = document.createElement("button");
         b.type = "button";
         b.className = "btn";
         b.textContent = t("Remove the unencrypted copies");
         b.addEventListener("click", async () => {
-          if (!confirm(t("Remove these unencrypted copies from the backup folder? The backup's encrypted volumes are not touched."))) return;
+          if (!confirm(t("Remove these unencrypted copies from the backup folder? The backup's encrypted volumes are not touched.") + "\n\n" + names.join("\n"))) return;
           b.disabled = true;
           try {
             const r = await api("/api/backup/import-scan/remove-leftover-plaintext", {
@@ -1440,8 +1442,14 @@
               body: JSON.stringify({ path: set.path, names }),
             });
             const n = (r && Array.isArray(r.removed)) ? r.removed.length : 0;
-            msg.textContent = tfs(t("Removed {n} unencrypted copies."), { n: fmtNum(n, 0) });
-            b.remove();
+            const failed = (r && Array.isArray(r.failed)) ? r.failed : [];
+            msg.textContent = n === 1 ? t("Removed 1 unencrypted copy.") : tfs("Removed {n} unencrypted copies.", { n: fmtNum(n, 0) });
+            if (failed.length) {
+              msg.textContent += " " + t("Could not remove these copies, which may be open in another program:") + " " + failed.join(", ") + " ";
+              b.disabled = false;
+            } else {
+              b.remove();
+            }
           } catch (e) {
             msg.textContent = t("Could not remove the unencrypted copies:") + " " + (e.message || e) + " ";
             b.disabled = false;

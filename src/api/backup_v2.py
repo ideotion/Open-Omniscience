@@ -146,6 +146,7 @@ def import_scan_endpoint(path: str) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
 
+
 class RemoveLeftoverPlaintextRequest(BaseModel):
     path: str
     names: list[str]
@@ -155,14 +156,14 @@ class RemoveLeftoverPlaintextRequest(BaseModel):
 def remove_leftover_plaintext_endpoint(req: RemoveLeftoverPlaintextRequest) -> dict:
     """Remove the unencrypted volume copies an interrupted import left in a backup folder, ONLY when the operator
     asks (R686): nothing of ours deletes from a backup drive on its own. Only names the folder's own manifest
-    explains as such a copy are removed; any other name is ignored. Answers the names removed."""
+    explains as such a copy are removed; any other name is ignored. Answers ``{"removed", "failed"}`` by file name."""
     from pathlib import Path
 
     from src.backup.volumes import remove_leftover_plaintext
 
     if not Path(req.path).is_dir():
         raise HTTPException(status_code=400, detail="not a folder")
-    return {"removed": remove_leftover_plaintext(req.path, list(req.names))}
+    return remove_leftover_plaintext(req.path, list(req.names))
 
 
 def _stage_upload(data: bytes, passphrase: str | None) -> StagedArtifact:

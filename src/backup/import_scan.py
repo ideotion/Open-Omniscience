@@ -21,6 +21,7 @@ fully unit-testable with a temp directory.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 # Volume-set manifest filename mirrored from src.backup.volumes.MANIFEST_NAME --
@@ -249,28 +250,45 @@ def _read_folder_manifest(p: Path) -> dict[str, tuple[int, int]]:
 LEFTOVER_PLAIN_SUFFIX = ".plain"
 
 
+#: The only volume names the oo-volumes-1 writer ever made (``vol-00001.ooenc`` ...), mirrored from src.backup.volumes so this
+#: module stays crypto-free. A leftover is only ever ``<one of these>.plain``.
+_V1_VOLUME_NAME = re.compile(r"^vol-[0-9]{5,}\.ooenc$")
+_V1_KIND = "oo-volumes-1"
+
+
 def leftover_plaintext(d: str | os.PathLike[str]) -> list[str]:
     """Decrypted volume copies an interrupted restore left in this backup folder (R686), by file name.
 
-    Before R686 the reassembly decrypted each volume to ``<volume>.plain`` beside it and removed it after; a
-    crash or a kill in between left that PLAINTEXT on the backup drive. Only names this folder's own manifest
-    explains are reported, so a file of the user's that merely ends in ``.plain`` is never named. Read-only and
+    Before R686 the oo-volumes-1 reassembly decrypted each volume to ``<volume>.plain`` beside it and removed it
+    after; a crash or a kill in between left that PLAINTEXT on the backup drive. A name is reported only when this
+    folder's own manifest is an oo-volumes-1 manifest (the only format that ever wrote such a copy), lists the
+    volume under a name that writer gives (``vol-NNNNN.ooenc``, so never a path, a drive letter, a stream name or
+    a file of the user's), the copy is not itself a listed volume, and it sits in this folder. Read-only and
     crypto-free (it reads the manifest's names, nothing else); never raises."""
     try:
         import json
 
         folder = Path(d)
         m = json.loads((folder / _VOL_MANIFEST).read_text(encoding="utf-8"))
-        names = [str((v or {}).get("name") or "") for v in m.get("volumes") or []]
-        return sorted(
-            n + LEFTOVER_PLAIN_SUFFIX
-            for n in names
-            if n
-            and "/" not in n
-            and "\\" not in n
-            and n not in (".", "..")
-            and (folder / (n + LEFTOVER_PLAIN_SUFFIX)).is_file()
+        if not isinstance(m, dict) or m.get("kind") != _V1_KIND:
+            return []
+        vols = m.get("volumes")
+        names = (
+            [str(v.get("name") or "") for v in vols if isinstance(v, dict)]
+            if isinstance(vols, list)
+            else []
         )
+        listed = set(names)
+        root = folder.resolve()
+        out: set[str] = set()
+        for n in names:
+            cand = n + LEFTOVER_PLAIN_SUFFIX
+            if not _V1_VOLUME_NAME.match(n) or cand in listed:
+                continue
+            p = folder / cand
+            if p.is_file() and p.parent.resolve() == root:
+                out.add(cand)
+        return sorted(out)
     except Exception:  # noqa: BLE001 - a scan must not fail on an unreadable folder
         return []
 

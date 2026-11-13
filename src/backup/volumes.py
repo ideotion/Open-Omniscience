@@ -215,29 +215,50 @@ def require_unique_volumes(names: Any) -> None:
     seen: set[str] = set()
     for name in names:
         n = str(name or "")
-        if n in seen:
+        # FAT, exFAT, NTFS and APFS treat names that differ only by case or by a trailing dot or space as one file.
+        key = n.casefold().rstrip(". ")
+        if key in seen:
             raise VolumeError(f"the volume manifest lists the volume {n} more than once; refusing to restore from it")
-        seen.add(n)
+        seen.add(key)
 
 
-def remove_leftover_plaintext(out_dir: str | os.PathLike[str], names: list[str]) -> list[str]:
+def remove_leftover_plaintext(out_dir: str | os.PathLike[str], names: list[str]) -> dict[str, list[str]]:
     """Remove the named leftover plaintext copies, and only those the folder's manifest explains (R686).
 
     Called only when the operator asked for it: nothing of ours deletes from a backup drive on its own. A name
-    that is not a current leftover is ignored. Returns the names removed."""
+    that is not a current leftover is ignored. Answers ``{"removed": [...], "failed": [...]}`` by file name, so a
+    copy the system would not let go of (a file open elsewhere on Windows) is named and the rest still go.
+
+    Where the platform allows it the folder is opened once without following a link and each copy is removed
+    relative to that handle, so a folder swapped for a link between the check and the removal cannot redirect it."""
     from src.backup.import_scan import leftover_plaintext
 
     allowed = set(leftover_plaintext(out_dir))
+    wanted = [n for n in dict.fromkeys(names) if n in allowed]
     removed: list[str] = []
-    for name in names:
-        if name not in allowed:
-            continue
+    failed: list[str] = []
+    dir_fd: int | None = None
+    if os.unlink in os.supports_dir_fd and hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW"):
         try:
-            (Path(out_dir) / name).unlink()
-            removed.append(name)
-        except FileNotFoundError:
-            continue
-    return removed
+            dir_fd = os.open(out_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        except OSError:
+            return {"removed": [], "failed": wanted}
+    try:
+        for name in wanted:
+            try:
+                if dir_fd is not None:
+                    os.unlink(name, dir_fd=dir_fd)
+                else:
+                    (Path(out_dir) / name).unlink()
+                removed.append(name)
+            except FileNotFoundError:
+                continue
+            except OSError:
+                failed.append(name)
+    finally:
+        if dir_fd is not None:
+            os.close(dir_fd)
+    return {"removed": removed, "failed": failed}
 
 
 def read_volume_set(
@@ -273,6 +294,16 @@ def read_volume_set(
             "dispatches automatically)"
         )
     out = Path(out_dir)
+    # Before anything is read or repaired (R686): plain volume names, each volume once (by name the way the disk
+    # compares names, never through a link, never two names for one file), and a real declared size to bound by.
+    from src.backup.stream_backup import _require_each_volume_read_once, _require_safe_volume_name
+
+    for v in m.get("volumes") or []:
+        _require_safe_volume_name(str((v or {}).get("name") or ""))
+    _require_each_volume_read_once(m, out)
+    declared = m.get("plaintext_bytes")
+    if isinstance(declared, bool) or not isinstance(declared, int) or declared <= 0:
+        raise VolumeError("the volume manifest declares no plaintext size; refusing to reassemble an unbounded archive")
     status = verify_volume_set(out_dir)
     if status["bad"]:
         if recover is not None:
@@ -291,10 +322,6 @@ def read_volume_set(
                 + ", ".join(sorted(unrepaired))
             )
 
-    require_unique_volumes(v["name"] for v in m["volumes"])
-    declared = int(m.get("plaintext_bytes") or 0)
-    if declared <= 0:
-        raise VolumeError("the volume manifest declares no plaintext size; refusing to reassemble an unbounded archive")
     # Free space for what is really written: the archive itself plus ONE decrypted volume at a time,
     # which a volume's ciphertext size bounds from above (R686).
     from src.backup.artifact import preflight_free_space
