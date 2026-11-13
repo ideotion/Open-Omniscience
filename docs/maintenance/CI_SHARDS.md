@@ -21,7 +21,7 @@ name**, and never make an aggregator skippable: a job whose `needs` failed is sk
 
 `scripts/ci_shard.py`, from the cost table `configs/ci_shard_costs.json` (`path -> seconds`):
 
-* files the table names are dealt out longest first, each to the shard with the least work so far (shard 1 starts with `overhead_seconds`, which is 0 since the static steps left leg 1 for the `static` job, R668);
+* files the table names are dealt out longest first, each to the shard with the least work so far (shard 1 starts with `overhead_seconds`; the static steps left leg 1 for the `static` job in R668, but the 80 stays so the deal does not move: a re-deal to 0 exposed two order-dependent tests on its first run, and is a separate change that fixes them first);
   the result depends on the table alone, so adding or deleting a test file moves none of the files the table names;
 * a file the table does not name (a new test file) goes to `crc32(path) % N + 1`: the same in every process, no edit needed in the PR that adds it, spread
   evenly in the long run. The plan step prints how many files the table does not name.
