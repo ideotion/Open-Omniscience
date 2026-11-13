@@ -4966,6 +4966,7 @@
   "That is not a Wikidata item. Write Q followed by a number, for example Q42.": "Wikidata項目ではありません。Qに続けて数字を入力してください（例：Q42）。",
   "That is not the same as an empty corpus — this is a read failure, not a sign your library is empty.": "これはコーパスが空であることとは異なります。読み取りの失敗であり、ライブラリが空であることを示すものではありません。",
   "That is the end of this pass.": "この周回はここで終わりです。",
+  "That model runs on Ollama's cloud, not on this computer, so it is refused: the text you give it would leave the machine. Choose a local model.": "このモデルはこのコンピューターではなく Ollama のクラウドで動作するため、拒否されます。渡したテキストがマシンの外に出てしまいます。ローカルモデルを選んでください。",
   "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, 2026-09-15). A source that passes qualification is now enabled for collection automatically, so there is nothing left for the setting to relax. Every automatic admission is listed in Settings > Advanced > Quality gates > Admission audit, where it can be undone.": "「未審査の情報源も収集する」設定は廃止されました（裁定 Q1101、2026-09-15）。審査を通過した情報源は自動的に収集対象として有効化されるため、緩和すべきものは残っていません。自動許可はすべて「設定 > 詳細 > 品質ゲート > 許可履歴」に一覧され、そこで取り消せます。",
   "The AI install is allowed online.": "AI のインストールはオンラインを許可されています。",
   "The AI install window closed — the network is refused again.": "AI インストールの許可枠が閉じました — ネットワークは再び拒否されます。",
