@@ -4888,7 +4888,7 @@
   "Summarizing “{title}”": "Résumé de « {title} »",
   "Summary": "Résumé",
   "Summary & translation queue": "File de résumé et de traduction",
-  "Summary & translation queue paused by a restart ({n} run(s) waiting)": "File de résumé et de traduction en pause depuis un redémarrage ({n} traitement(s) en attente)",
+  "Summary & translation queue paused ({n} run(s) waiting)": "File de résumé et de traduction en pause ({n} traitement(s) en attente)",
   "Summary & translation queue resumed.": "File de résumé et de traduction reprise.",
   "Summary prompt": "Invite de résumé",
   "Summary run waiting its turn": "Résumé en attente de son tour",

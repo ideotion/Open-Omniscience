@@ -4888,7 +4888,7 @@
   "Summarizing “{title}”": "Meringkas “{title}”",
   "Summary": "Ringkasan",
   "Summary & translation queue": "Antrean ringkasan & terjemahan",
-  "Summary & translation queue paused by a restart ({n} run(s) waiting)": "Antrean ringkasan & terjemahan dijeda karena mulai ulang ({n} proses menunggu)",
+  "Summary & translation queue paused ({n} run(s) waiting)": "Antrean ringkasan & terjemahan dijeda ({n} proses menunggu)",
   "Summary & translation queue resumed.": "Antrean ringkasan & terjemahan dilanjutkan.",
   "Summary prompt": "Prompt ringkasan",
   "Summary run waiting its turn": "Proses ringkasan menunggu giliran",

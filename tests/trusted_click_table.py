@@ -34,7 +34,7 @@ _FINISHED_LIST = (
 
 _MODEL_STOP = (
     "stops the Ollama this app started (never one it did not start): it is started again by Launch Ollama, and a summary or "
-    "translation run in flight pauses after its article first, so no stored work is lost"
+    "translation run in flight pauses after its article first; any other request in flight to it fails and stores nothing"
 )
 
 _GROUPS: dict[str, tuple[str, ...]] = {

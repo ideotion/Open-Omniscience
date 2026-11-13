@@ -905,8 +905,8 @@ def _reindex_backlog_rows() -> list[dict]:
     from src.jobs.background import get_job as _get_bg_job
 
     job = _get_bg_job("reindex-resume")
-    if job is None or job.status().get("state") in ("running", "error"):
-        return []
+    if job is None or job.status().get("state") == "running":
+        return []  # a failed run keeps this row too: its Resume is the retry while articles are still owed
     now = time.monotonic()
     if _backlog_cache["value"] is None or now - _backlog_cache["at"] > _BACKLOG_TTL_S:
         try:

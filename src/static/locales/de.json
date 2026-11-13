@@ -4888,7 +4888,7 @@
   "Summarizing “{title}”": "„{title}“ wird zusammengefasst",
   "Summary": "Zusammenfassung",
   "Summary & translation queue": "Zusammenfassungs- & Übersetzungs-Warteschlange",
-  "Summary & translation queue paused by a restart ({n} run(s) waiting)": "Zusammenfassungs- & Übersetzungs-Warteschlange durch einen Neustart pausiert ({n} Lauf/Läufe wartend)",
+  "Summary & translation queue paused ({n} run(s) waiting)": "Zusammenfassungs- & Übersetzungs-Warteschlange pausiert ({n} Lauf/Läufe wartend)",
   "Summary & translation queue resumed.": "Zusammenfassungs- & Übersetzungs-Warteschlange fortgesetzt.",
   "Summary prompt": "Zusammenfassungs-Prompt",
   "Summary run waiting its turn": "Zusammenfassungslauf wartet, bis er an der Reihe ist",

@@ -4888,7 +4888,7 @@
   "Summarizing “{title}”": "“{title}”-এর সারাংশ তৈরি হচ্ছে",
   "Summary": "সারসংক্ষেপ",
   "Summary & translation queue": "সারসংক্ষেপ ও অনুবাদ সারি",
-  "Summary & translation queue paused by a restart ({n} run(s) waiting)": "সারসংক্ষেপ ও অনুবাদ সারি পুনরায় চালুর কারণে বিরতিতে ({n}টি রান অপেক্ষমাণ)",
+  "Summary & translation queue paused ({n} run(s) waiting)": "সারাংশ ও অনুবাদ সারি বিরতিতে ({n}টি রান অপেক্ষায়)",
   "Summary & translation queue resumed.": "সারসংক্ষেপ ও অনুবাদ সারি আবার শুরু হয়েছে।",
   "Summary prompt": "সারসংক্ষেপ প্রম্পট",
   "Summary run waiting its turn": "সারসংক্ষেপ রান নিজের পালার অপেক্ষায়",

@@ -4888,7 +4888,7 @@
   "Summarizing “{title}”": "Summarizing “{title}”",
   "Summary": "Summary",
   "Summary & translation queue": "Summary & translation queue",
-  "Summary & translation queue paused by a restart ({n} run(s) waiting)": "Summary & translation queue paused by a restart ({n} run(s) waiting)",
+  "Summary & translation queue paused ({n} run(s) waiting)": "Summary & translation queue paused ({n} run(s) waiting)",
   "Summary & translation queue resumed.": "Summary & translation queue resumed.",
   "Summary prompt": "Summary prompt",
   "Summary run waiting its turn": "Summary run waiting its turn",

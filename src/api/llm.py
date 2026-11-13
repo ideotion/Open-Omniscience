@@ -1705,8 +1705,13 @@ def ollama_release() -> dict:
     return _after_runs_pause(release_vram, "release")
 
 
-#: How long a deferred release or stop waits for the run in flight to finish its article (a CPU model can take minutes).
+#: How often a deferred release or stop says, in the log, that it is still waiting for the run in flight (a CPU model can
+#: take minutes over one article). It never gives up: the run's stop is already committed, so it WILL pause, and the
+#: operator was told the model is freed then.
 _PAUSE_WAIT_S = 900.0
+#: The deferred actions waiting for a pause, by name: a second click while the first waits adds nothing.
+_DEFERRED: set[str] = set()
+_DEFERRED_LOCK = threading.Lock()
 
 
 def _after_runs_pause(action, what: str) -> dict:
@@ -1715,24 +1720,41 @@ def _after_runs_pause(action, what: str) -> dict:
     paused waits for the operator's Resume, which skips every article it already stored."""
     from src.jobs.llm_bulk_queue import pause_for_backend, wait_paused
 
-    if not pause_for_backend():
-        return action()
-
-    def _later() -> None:
-        if not wait_paused(_PAUSE_WAIT_S):
-            _LOG.warning("ollama %s: the run in flight did not pause in time; the model was left as it is", what)
-            return
-        try:
-            action()
-        except Exception as exc:  # noqa: BLE001 - a deferred release must never take the thread down unseen
-            log_failure(_LOG, f"ollama {what} after the pause failed", exc, level=logging.WARNING)
-
-    threading.Thread(target=_later, name=f"oo-ollama-{what}-after-pause", daemon=True).start()
-    return {
+    deferred = {
         "deferred": True,
         "paused_runs": True,
         "reason": "the running summary or translation run pauses after its current article; the model is freed then",
     }
+    with _DEFERRED_LOCK:
+        if what in _DEFERRED:
+            return deferred
+    if not pause_for_backend():
+        return action()
+
+    def _later() -> None:
+        try:
+            while not wait_paused(_PAUSE_WAIT_S):
+                _LOG.warning("ollama %s: still waiting for the run in flight to finish its article", what)
+            try:
+                action()
+            except Exception as exc:  # noqa: BLE001 - a deferred release must never take the thread down unseen
+                log_failure(_LOG, f"ollama {what} after the pause failed", exc, level=logging.WARNING)
+        finally:
+            with _DEFERRED_LOCK:
+                _DEFERRED.discard(what)
+
+    with _DEFERRED_LOCK:
+        if what in _DEFERRED:
+            return deferred
+        _DEFERRED.add(what)
+    try:
+        threading.Thread(target=_later, name=f"oo-ollama-{what}-after-pause", daemon=True).start()
+    except RuntimeError as exc:  # no thread to wait in: the run is pausing, so wait here rather than free it under a generation
+        with _DEFERRED_LOCK:
+            _DEFERRED.discard(what)
+        log_failure(_LOG, f"ollama {what}: could not wait in the background", exc, level=logging.WARNING)
+        raise HTTPException(status_code=409, detail="The run is pausing; try again once it shows paused in the task manager.") from None
+    return deferred
 
 
 @router.get("/model-store")

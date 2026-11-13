@@ -4888,7 +4888,7 @@
   "Summarizing “{title}”": "「{title}」を要約中",
   "Summary": "要約",
   "Summary & translation queue": "要約・翻訳キュー",
-  "Summary & translation queue paused by a restart ({n} run(s) waiting)": "要約・翻訳キューは再起動により一時停止中（待機中の実行 {n} 件）",
+  "Summary & translation queue paused ({n} run(s) waiting)": "要約・翻訳キューは一時停止中（待機中の実行 {n} 件）",
   "Summary & translation queue resumed.": "要約・翻訳キューを再開しました。",
   "Summary prompt": "要約プロンプト",
   "Summary run waiting its turn": "要約の実行が順番待ち中",

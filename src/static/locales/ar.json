@@ -4888,7 +4888,7 @@
   "Summarizing “{title}”": "جارٍ تلخيص «{title}»",
   "Summary": "ملخص",
   "Summary & translation queue": "قائمة انتظار التلخيص والترجمة",
-  "Summary & translation queue paused by a restart ({n} run(s) waiting)": "قائمة انتظار التلخيص والترجمة متوقفة مؤقتًا بسبب إعادة تشغيل ({n} تشغيل في الانتظار)",
+  "Summary & translation queue paused ({n} run(s) waiting)": "قائمة انتظار التلخيص والترجمة متوقفة مؤقتًا ({n} تشغيل في الانتظار)",
   "Summary & translation queue resumed.": "استؤنفت قائمة انتظار التلخيص والترجمة.",
   "Summary prompt": "مطالبة التلخيص",
   "Summary run waiting its turn": "تشغيل تلخيص ينتظر دوره",

@@ -4888,7 +4888,7 @@
   "Summarizing “{title}”": "“{title}” का सारांश बन रहा है",
   "Summary": "सारांश",
   "Summary & translation queue": "सारांश और अनुवाद कतार",
-  "Summary & translation queue paused by a restart ({n} run(s) waiting)": "सारांश और अनुवाद कतार पुनरारंभ के कारण रुकी हुई ({n} रन प्रतीक्षा में)",
+  "Summary & translation queue paused ({n} run(s) waiting)": "सारांश और अनुवाद कतार रुकी हुई है ({n} रन प्रतीक्षा में)",
   "Summary & translation queue resumed.": "सारांश और अनुवाद कतार फिर से शुरू हुई।",
   "Summary prompt": "सारांश प्रॉम्प्ट",
   "Summary run waiting its turn": "सारांश रन अपनी बारी की प्रतीक्षा में",

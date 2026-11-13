@@ -95,6 +95,61 @@ def test_a_daemon_this_app_does_not_own_is_refused_by_name_and_pauses_nothing(mo
     assert paused == [], "a stop the app refuses paused a run for nothing"
 
 
+class _DownLlm(_FakeLlm):
+    """The model backend stopped under the queue: every generation is refused as unavailable until ``up`` is set."""
+
+    def __init__(self):
+        super().__init__()
+        self.up = False
+
+    def generate(self, prompt, **kw):
+        from src.llm.ollama import LLMUnavailable
+
+        if not self.up:
+            raise LLMUnavailable("not reachable")
+        return super().generate(prompt, **kw)
+
+
+def test_a_run_that_finds_the_backend_stopped_waits_paused_and_keeps_its_list(queue, monkeypatch):
+    fake = _DownLlm()
+    _use(monkeypatch, fake)
+    ids, behind = _seed(3), _seed(1)
+    eid = queue.enqueue({"op": "summarize", "model": "m", "article_ids": ids, "skip_existing": False})["entry"]["id"]
+    bid = queue.enqueue({"op": "summarize", "model": "m", "article_ids": behind})["entry"]["id"]
+    assert lbq._JOB.join(15)
+    snap = queue.snapshot()
+    entries = {e["id"]: e for e in snap["entries"]}
+    assert entries[eid]["state"] == "paused" and entries[bid]["state"] == "queued", entries
+    assert snap["paused"] is True, "the runs behind went on against a backend that is not there"
+    assert [(r["id"], r["label"]) for r in lbq.queue_rows()] == [
+        ("llm-bulk-queue", "Summary & translation queue paused (2 run(s) waiting)")], "the row blamed a restart"
+    # A Resume before the backend is back pauses it again and loses nothing.
+    assert queue.resume() and lbq._JOB.join(15)
+    assert {e["id"]: e["state"] for e in queue.snapshot()["entries"]}[eid] == "paused"
+    fake.up = True
+    assert queue.resume() and lbq._JOB.join(15)
+    final = {e["id"]: e for e in queue.snapshot()["entries"]}
+    assert final[eid]["state"] == "done" and final[bid]["state"] == "done", final
+    assert [_summaries(a) for a in ids + behind] == [1, 1, 1, 1]
+
+
+def test_a_second_click_while_a_release_waits_adds_nothing(monkeypatch):
+    import src.jobs.llm_bulk_queue as q
+    import src.llm.ollama_lifecycle as life
+    from src.api import llm as llm_api
+
+    go = threading.Event()
+    calls: list[int] = []
+    monkeypatch.setattr(q, "pause_for_backend", lambda: True)
+    monkeypatch.setattr(q, "wait_paused", lambda timeout: go.wait(5))
+    monkeypatch.setattr(life, "release_vram", lambda: calls.append(1) or {"released": []})
+    assert llm_api.ollama_release()["deferred"] is True
+    assert llm_api.ollama_release()["deferred"] is True
+    go.set()
+    assert _wait(lambda: not llm_api._DEFERRED)
+    assert calls == [1], "two clicks freed the model twice from two waiting threads"
+
+
 # ------------------------------------------------------------------ the re-index backlog row
 
 
@@ -143,6 +198,8 @@ def test_no_row_for_an_empty_or_unreadable_backlog_or_while_its_job_runs(backlog
     jobs_api._backlog_cache["value"] = None
     box["available"], box["job"] = True, _Job("running")  # the running job is its own row, with Cancel
     assert jobs_api._reindex_backlog_rows() == []
+    box["job"] = _Job("error")  # a failed run: its Resume is the retry while articles are still owed
+    assert [r["actions"] for r in jobs_api._reindex_backlog_rows()] == [["resume"]]
 
 
 def test_the_backlog_resume_is_refused_under_an_exclusive_hold_and_starts_the_job_otherwise(backlog, monkeypatch):

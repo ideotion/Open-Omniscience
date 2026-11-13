@@ -4888,7 +4888,7 @@
   "Summarizing “{title}”": "Resumiendo «{title}»",
   "Summary": "Resumen",
   "Summary & translation queue": "Cola de resumen y traducción",
-  "Summary & translation queue paused by a restart ({n} run(s) waiting)": "Cola de resumen y traducción en pausa por un reinicio ({n} ejecución(es) en espera)",
+  "Summary & translation queue paused ({n} run(s) waiting)": "Cola de resúmenes y traducciones en pausa ({n} ejecución(es) en espera)",
   "Summary & translation queue resumed.": "Cola de resumen y traducción reanudada.",
   "Summary prompt": "Prompt de resumen",
   "Summary run waiting its turn": "Resumen esperando su turno",

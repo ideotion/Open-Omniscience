@@ -555,7 +555,10 @@ class LlmBulkQueue:
                             entry[status] = int(entry.get(status) or 0) + 1
                     elif ev == "done":
                         if o.get("aborted"):
-                            outcome = ("error", str(o.get("reason") or "aborted"))
+                            # The only abort is the model backend being unreachable (stopped, model gone, airplane mode):
+                            # the run waits PAUSED with its frozen list, never an error that forgets it (R669). The queue
+                            # pauses behind it, so a Resume before the backend is back pauses it again and loses nothing.
+                            outcome = ("paused", str(o.get("reason") or "the model backend is not reachable"))
                         else:
                             outcome = ("done", None)
                     done_now = entry["done"]
@@ -590,6 +593,9 @@ class LlmBulkQueue:
         finally:
             with contextlib.suppress(Exception):
                 gen.close()  # the runner's own finally: the task row's finish and the model hold's release
+        if outcome and outcome[0] == "paused" and not self._stale(gen0):
+            with self._lock:
+                self._paused = True  # _next stops the drain here; the runs behind wait for the same Resume
         self._finish(entry, outcome[0] if outcome else "error", outcome[1] if outcome else "the run ended unexpectedly", gen=gen0)
 
 
@@ -638,7 +644,7 @@ def pause_for_backend() -> bool:
     behind it waits paused for a Resume (R669: paused, never lost, nothing stored twice). True when a run was going."""
     if not _JOB.status().get("running"):
         return False
-    _JOB.cancel()  # the job's own stop: ``_run`` ends the run "paused" and ``_drain`` pauses the queue
+    _JOB.cancel()  # the job's own stop: ``_run`` ends the run "paused" and the queue pauses behind it
     return True
 
 
@@ -663,8 +669,8 @@ def queue_rows() -> list[dict[str, Any]]:
         return [{
             "id": KIND,
             "kind": KIND,
-            "label": f"Summary & translation queue paused by a restart ({n} run(s) waiting)",
-            "label_i18n": "Summary & translation queue paused by a restart ({n} run(s) waiting)",
+            "label": f"Summary & translation queue paused ({n} run(s) waiting)",
+            "label_i18n": "Summary & translation queue paused ({n} run(s) waiting)",
             "label_vars": {"n": n},
             "state": "paused",
             "progress": None,

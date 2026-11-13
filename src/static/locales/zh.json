@@ -4888,7 +4888,7 @@
   "Summarizing “{title}”": "正在摘要“{title}”",
   "Summary": "摘要",
   "Summary & translation queue": "摘要与翻译队列",
-  "Summary & translation queue paused by a restart ({n} run(s) waiting)": "摘要与翻译队列因重启而暂停（{n} 次运行等待中）",
+  "Summary & translation queue paused ({n} run(s) waiting)": "摘要与翻译队列已暂停（{n} 个任务等待中）",
   "Summary & translation queue resumed.": "摘要与翻译队列已继续。",
   "Summary prompt": "摘要提示词",
   "Summary run waiting its turn": "摘要运行正在排队等候",

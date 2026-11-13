@@ -4888,7 +4888,7 @@
   "Summarizing “{title}”": "Краткое изложение «{title}»",
   "Summary": "Сводка",
   "Summary & translation queue": "Очередь сводки и перевода",
-  "Summary & translation queue paused by a restart ({n} run(s) waiting)": "Очередь сводки и перевода приостановлена перезапуском (ожидает запусков: {n})",
+  "Summary & translation queue paused ({n} run(s) waiting)": "Очередь резюме и переводов на паузе (ожидает запусков: {n})",
   "Summary & translation queue resumed.": "Очередь сводки и перевода возобновлена.",
   "Summary prompt": "Промпт сводки",
   "Summary run waiting its turn": "Запуск сводки ждёт своей очереди",
