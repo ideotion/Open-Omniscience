@@ -40,9 +40,11 @@ from src.backup.merge import (
     MergeError,
     RestoreAborted,
     RestoreRefused,
+    WriterJobsRefused,
     check_memory_before_staging,
     refuse_while_writer_jobs_run,
     run_restore,
+    start_jobs_stopped_for_restore,
 )
 from src.jobs.background import BackgroundJob, Framed, register_job
 from src.monitoring import storage_events
@@ -248,6 +250,10 @@ def restore_legacy_path(
             raise HTTPException(status_code=400, detail=f"could not read {p}: {http_detail(exc, "", passphrase)}") from None
         if size > _MAX_RESTORE_BYTES:
             raise HTTPException(status_code=413, detail="the file exceeds the 2 GiB legacy restore cap; restore it as a volume set")
+        try:
+            data = p.read_bytes()
+        except OSError as exc:
+            raise HTTPException(status_code=400, detail=f"could not read {p}: {http_detail(exc, "", passphrase)}") from None
         # Before a byte is decrypted (R659): a restore that would refuse at its working copy because a corpus writer runs says so now.
         try:
             refuse_while_writer_jobs_run()
@@ -255,11 +261,11 @@ def restore_legacy_path(
             storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="writer-jobs")
             raise HTTPException(status_code=400, detail=http_detail(exc, "", passphrase)) from None
         try:
-            data = p.read_bytes()
-        except OSError as exc:
-            raise HTTPException(status_code=400, detail=f"could not read {p}: {http_detail(exc, "", passphrase)}") from None
-        staged = _stage_upload(data, passphrase or None)
-        _apply_restore_selection(staged, include_newsletters=include_newsletters)
+            staged = _stage_upload(data, passphrase or None)
+            _apply_restore_selection(staged, include_newsletters=include_newsletters)
+        except BaseException:
+            start_jobs_stopped_for_restore()  # a file that cannot be staged ends the restore: the jobs it stopped (R659) go again
+            raise
         from src.backup import runlog
         from src.backup.volume_job import defer_reindex, hand_off_reindex
 
@@ -295,6 +301,10 @@ def restore_legacy_path(
                     note, "ok", articles_merged=report.get("articles_merged"), reindexed=report.get("reindexed")
                 )
                 return report
+        except WriterJobsRefused as exc:
+            # R659's refusal, raised inside run_restore (a writer started while the backup was being staged): its own journal reason.
+            storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="writer-jobs")
+            raise HTTPException(status_code=400, detail=http_detail(exc, "", passphrase)) from None
         except (MergeError, RestoreRefused) as exc:
             # See restore_commit above: a refusal keeps its own message.
             storage_events.run_ended(note, "refused", failure=type(exc).__name__)
@@ -317,6 +327,7 @@ def restore_legacy_path(
             raise _restore_error("restore", exc, passphrase) from None
         finally:
             cleanup_staging(staged)
+            start_jobs_stopped_for_restore()  # the jobs this restore stopped (R659), whatever its outcome; never raises
 
 
 @router.get("/v2/batches")
@@ -1119,7 +1130,9 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
     # the per-article watermark resumes exactly where it left off, and the import queue
     # restarts the drain at the end of every run, so the work is deferred, never lost.
     def _yield_to_import() -> bool:
-        return exclusive_window_open()
+        # A committing restore outside a window asks the same thing (R659). Read through getattr: a
+        # context without the flag (an older caller, a test double) simply never yields for it.
+        return exclusive_window_open() or bool(getattr(ctx, "yielding", False))
 
     # STAND ASIDE WHILE THE STORAGE GUARD IS ENGAGED (R398, B1; diagnostics 2026-10-31). The guard pauses collection, the housekeeping
     # lane and the heavy reads while its log or drive latch holds, and this drain never asked: with a reader pinning the write-ahead
@@ -1470,8 +1483,9 @@ _REINDEX_RESUME_JOB = register_job(
         _reindex_resume_worker,
         is_writer=True,
         cancellable=True,
-        # Stopping it loses nothing: the per-article watermark resumes where it stopped, and every import starts it again when it
-        # ends (hand_off_reindex). So a committing restore stops it rather than refusing because of it (R659).
+        # Stopping it loses nothing: the per-article watermark resumes where it stopped. So a committing restore stops it rather than
+        # refusing because of it (R659); the import starts it again when it ends (hand_off_reindex, or the queue at the end of its run,
+        # when the re-index is deferred, the default), and a restore that refuses after stopping it starts it again at once.
         stops_for_restore=True,
     )
 )

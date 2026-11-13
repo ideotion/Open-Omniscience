@@ -46,7 +46,7 @@ def _running(kind: str, label: str, *, is_writer: bool = True, stops: bool = Fal
     def worker(ctx):
         started.set()
         while not release.wait(0.01):
-            if stops and ctx.stopping:
+            if stops and (ctx.stopping or ctx.yielding):
                 return
 
     job = bg.register_job(bg.BackgroundJob(kind, label, worker, is_writer=is_writer, cancellable=stops, stops_for_restore=stops))
@@ -130,11 +130,42 @@ def test_a_job_the_restore_may_stop_is_stopped_and_the_restore_goes_ahead(regist
     try:
         text = _refused(monkeypatch, commit=True)
         assert text is not None and "(Loading government data)" in text and "re-index" not in text, text
+        # a writer it may not stop runs: the restore refuses BEFORE it stops anything (the delta reads of a18a7d01)
+        assert drain2._alive(), "a restore that was going to refuse anyway stopped the re-index"
     finally:
         for ev in (r2, r3):
             ev.set()
         for job in (drain2, writer):
             job.join(5)
+
+
+def test_a_job_the_restore_stopped_yields_rather_than_cancels_and_is_started_again_when_the_restore_ends(registry, monkeypatch):
+    """The restore asks the drain to step aside (``ctx.yielding``), never the operator's cancel: the task manager must not show a stop nobody
+    asked for. Whatever the restore's outcome, its end starts the drain again (``start_jobs_stopped_for_restore``, called in the volume and
+    single-file restores' ``finally``); a successful deferred import has started it already, so that start finds it running."""
+    from src.backup import merge
+
+    drain, release = _running("reindex-resume", "finishing the re-index of imported articles", stops=True)
+    try:
+        monkeypatch.setattr(merge, "_STOP_FOR_RESTORE_S", 5.0)
+        merge.refuse_while_writer_jobs_run()  # nothing blocks: the drain is stopped and the restore goes ahead
+        assert drain.join(1) and drain.status()["state"] == "done", drain.status()["state"]
+        assert merge.start_jobs_stopped_for_restore() == ["reindex-resume"], "the restore ended and nothing started the drain again"
+        assert drain._alive()
+        assert merge.start_jobs_stopped_for_restore() == [], "started once"
+    finally:
+        release.set()
+        drain.join(5)
+
+
+def test_the_restores_start_the_stopped_jobs_again_in_their_finally():
+    vj = (ROOT / "src/backup/volume_job.py").read_text("utf-8")
+    fin = vj[vj.index("refuse_while_writer_jobs_run()") :]
+    assert "start_jobs_stopped_for_restore()" in fin[: fin.index("resume_after_exclusive_operation(was_paused")], "volume restore's finally"
+    legacy = (ROOT / "src/api/backup_v2.py").read_text("utf-8")
+    body = legacy[legacy.index("def restore_legacy_path(") :]
+    body = body[: body.index("\n@router.")]
+    assert body.count("start_jobs_stopped_for_restore()") == 2, "the staging failure and the finally"
 
 
 def test_a_stoppable_job_that_does_not_stop_in_time_is_named(registry, monkeypatch):
@@ -173,12 +204,12 @@ def test_run_restore_asks_before_preparing_and_again_at_the_working_copy():
 
 
 def test_the_staging_paths_ask_before_a_byte_is_decrypted():
-    """The volume restore asks before ``read_volume_backup`` and the single-file restore before ``read_bytes``: a refusal costs no
-    decryption and no staging."""
+    """The volume restore asks before ``read_volume_backup`` and the single-file restore before ``_stage_upload`` (after the file is read,
+    before it is decrypted): a refusal costs no decryption and no staging."""
     vj = (ROOT / "src/backup/volume_job.py").read_text("utf-8")
     assert vj.index("refuse_while_writer_jobs_run()") < vj.index("staged = read_volume_backup(")
     legacy = (ROOT / "src/api/backup_v2.py").read_text("utf-8")
-    assert legacy.index("refuse_while_writer_jobs_run()") < legacy.index("data = p.read_bytes()")
+    assert legacy.index("data = p.read_bytes()") < legacy.index("refuse_while_writer_jobs_run()") < legacy.index("staged = _stage_upload(")
     assert 'reason="writer-jobs"' in legacy
 
 
@@ -187,7 +218,7 @@ def test_the_journal_names_the_writer_jobs_refusal():
 
     assert "writer-jobs" in se.RUN_REFUSALS and "barrier" in se.RUN_REFUSALS
     vj = (ROOT / "src/backup/volume_job.py").read_text("utf-8")
-    branch = vj[vj.index("if isinstance(exc, WriterJobsRefused):") :][:300]
+    branch = vj[vj.index("if issubclass(type(exc), WriterJobsRefused):") :][:300]
     assert 'reason="writer-jobs"' in branch and 'reason="barrier"' in branch
 
 

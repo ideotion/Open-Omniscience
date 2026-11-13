@@ -71,6 +71,12 @@ class JobContext:
         self._job = job
 
     @property
+    def yielding(self) -> bool:
+        """True once a committing restore asked this job to step aside (R659): the worker stops at its next safe point and reports a yield,
+        not a cancel. Only a ``stops_for_restore`` job is ever asked."""
+        return self._job._yield.is_set()
+
+    @property
     def stopping(self) -> bool:
         """True once cancel() was called — the worker should stop at the next safe point."""
         return self._job._stop.is_set()
@@ -146,9 +152,10 @@ class BackgroundJob:
         self.label = label
         self._worker = worker
         self.is_writer = is_writer
-        # ``stops_for_restore`` (R659): stopping this job loses nothing (it resumes from a durable mark, and the restore path starts it
-        # again afterwards), so a committing restore STOPS it (``stop_jobs_for_restore``) instead of refusing; one still running when the
-        # bounded wait ends is named like any other writer. Requires ``cancellable=True``.
+        # ``stops_for_restore`` (R659): stopping this job loses nothing (it resumes from a durable mark), so a committing restore STOPS it
+        # (``stop_jobs_for_restore``) instead of refusing; one still running when the bounded wait ends is named like any other writer. A
+        # restore that then refuses starts it again at once (``start_jobs_after_refusal``), and one that goes ahead leaves it to the import's
+        # own hand-off. Requires ``cancellable=True``, and a job that starts with no arguments (it is started again with none).
         self.stops_for_restore = stops_for_restore and cancellable
         # HONESTY (no theater): only advertise a Cancel affordance when the worker actually
         # checks ctx.stopping and stops early. A worker that wraps an OPAQUE library call
@@ -158,6 +165,10 @@ class BackgroundJob:
         self.cancellable = cancellable
         self._lock = threading.RLock()
         self._stop = threading.Event()
+        # Set by a committing restore (``stop_jobs_for_restore``, R659) on a ``stops_for_restore`` job: a request to step aside for the
+        # import, NOT the operator's cancel, so the run ends as a yield ('done', the worker says it paused for the import), never as
+        # 'cancelled'. Read by the worker through ``ctx.yielding``.
+        self._yield = threading.Event()
         self._thread: threading.Thread | None = None
         self._state = "idle"  # idle | running | done | cancelled | error
         self._error: str | None = None
@@ -197,6 +208,7 @@ class BackgroundJob:
             if self._alive():
                 raise RuntimeError(f"a {self.kind} job is already running")
             self._stop.clear()
+            self._yield.clear()
             self._state = "running"
             self._error = None
             self._result = None
@@ -448,10 +460,33 @@ def stop_jobs_for_restore(timeout: float) -> list[str]:
         return []
 
 
+def start_jobs_after_refusal(kinds: list[str]) -> list[str]:
+    """Start again the jobs a restore stopped (``stop_jobs_for_restore``) when that restore then refused (R659): nothing else would, and the
+    task manager would show a stop the operator never asked for. With no arguments, as a ``stops_for_restore`` job is started. Returns the
+    kinds started; never raises (one that cannot start stays stopped, its durable mark intact, and its own Resume still works)."""
+    started: list[str] = []
+    for kind in kinds:
+        if _start_again(kind):
+            started.append(kind)
+    return started
+
+
+def _start_again(kind: str) -> bool:
+    try:
+        with _REG_LOCK:
+            job = _REGISTRY.get(kind)
+        if job is None or not job.stops_for_restore:
+            return False
+        job.start()
+        return True
+    except Exception:  # noqa: BLE001 - already running again, or the thread could not be made: logged by start(), never raised
+        return False
+
+
 def _ask_to_stop(job: BackgroundJob) -> bool:
     try:
         if job._alive():
-            job.cancel()
+            job._yield.set()  # a yield for the import, never the operator's cancel (the task manager would show a stop nobody asked for)
             return True
     except Exception:  # noqa: BLE001 - not asked: named by the refusal if it runs
         pass

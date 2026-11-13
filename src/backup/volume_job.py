@@ -1006,6 +1006,9 @@ class VolumeBackupManager:
                 finally:
                     cleanup_staging(staged)
             finally:
+                from src.backup.merge import start_jobs_stopped_for_restore
+
+                start_jobs_stopped_for_restore()  # the jobs this restore stopped (R659), whatever its outcome; never raises
                 try:
                     resume_after_exclusive_operation(was_paused)
                 except Exception as exc:  # noqa: BLE001 - the resume is a courtesy, never load-bearing
@@ -1036,7 +1039,7 @@ class VolumeBackupManager:
             runlog.end("refused", detail=said)  # already cut to FAILURE_MSG_KEEP above: one bound, not two
             # Two refusals reach here: the swap barrier's (another job still held the corpus) and R659's (a registered job is writing to
             # it, raised before anything was staged). The journal names which, so a reader of the record is not sent after a lease holder.
-            if isinstance(exc, WriterJobsRefused):
+            if issubclass(type(exc), WriterJobsRefused):
                 storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="writer-jobs")
             else:
                 storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="barrier")
@@ -1254,4 +1257,3 @@ def get_volume_manager() -> VolumeBackupManager:
         if _MANAGER is None:
             _MANAGER = VolumeBackupManager()
         return _MANAGER
-

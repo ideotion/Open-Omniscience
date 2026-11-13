@@ -1476,8 +1476,11 @@
       // point of asking here: the honest answer is "yes, and nothing is lost".
       // ASK THE SERVER FIRST WHETHER IT WOULD REFUSE (R659): while a background job writes to the corpus a committing import refuses, so
       // offering "Start anyway?" for it would be a choice the server then takes back. The refusal is the server's own sentence.
+      // Only an import that switches the corpus is refused: large data and newsletters alone never are.
       let _refusal = null;
-      try { _refusal = (await api("/api/jobs")).import_refused || null; } catch { _refusal = null; }
+      if (items.some((it) => it.kind === "corpus" || it.kind === "legacy")) {
+        try { _refusal = (await api("/api/jobs")).import_refused || null; } catch { _refusal = null; }
+      }
       if (_refusal) {
         btn.disabled = false;
         if (progEl) progEl.innerHTML = `<span style="color:var(--err)">${esc(ooServerText(_refusal))}</span>`;

@@ -8658,22 +8658,59 @@ def refuse_while_writer_jobs_run() -> None:
 
     Everything such a job commits between the working copy and the swap is discarded by the swap, so the restore refuses rather than lose it.
     The list is the registry's own ``is_writer`` flags (:func:`src.jobs.background.running_writer_jobs`), never a second hand-kept list. A
-    job flagged ``stops_for_restore`` (the re-index drain: it resumes from its watermark, and the import, or the import queue once its run has
-ended, starts it again) is stopped first,
-    with one bounded wait, and named only if it is still running after it. Called before the backup is staged (the volume restore, the
+    job flagged ``stops_for_restore`` (the re-index drain: it resumes from its watermark, and the import, or the import queue once its run
+    has ended, starts it again) is stopped first, with one bounded wait, and named only if it is still running after it; when the restore
+    refuses anyway (another writer runs), the jobs it stopped are started again before it raises. Called before the backup is staged (the volume restore, the
     single-file restore), before ``run_restore`` prepares anything, and again at the working copy.
 
     STATED LIMITS: a job started AFTER the working copy is not caught (the swap's own barrier waits only for a lease holder); writers that are
     not registry jobs (the collection pass, the housekeeping lane, the Wikipedia drain, API write routes) are outside this list, as are
-    writers left unflagged on purpose (``tests/test_job_writer_flags.py``). A job that cannot be cancelled can only be let finish, so the
-    indexes a fresh launch builds (``title-index``, ``keyword-day-counts``) refuse an import until they are done or stopped. In a checkpoint group a
+    writers left unflagged on purpose (``tests/test_job_writer_flags.py``). A writer the restore does not stop for itself refuses an import
+    until it ends or the operator stops it (where it can be stopped), so the indexes a fresh launch builds (``title-index``,
+    ``keyword-day-counts``) refuse one until they are done or stopped. In a checkpoint group a
     refusal at a later item discards the merges the group was still holding, as any refusal there does: the operator imports again."""
     from src.jobs.background import running_writer_jobs, stop_jobs_for_restore
 
-    stop_jobs_for_restore(_STOP_FOR_RESTORE_S)
+    # The writers it may not stop FIRST: a restore that will refuse anyway stops nothing (security and correctness reads of a18a7d01).
+    blocking = running_writer_jobs(include_stoppable=False)
+    if blocking:
+        raise WriterJobsRefused(_WRITER_JOBS_REFUSAL.format(jobs="; ".join(label for _kind, label in blocking)))
+    _remember_stopped(stop_jobs_for_restore(_STOP_FOR_RESTORE_S))
     running = running_writer_jobs()
     if running:
+        start_jobs_stopped_for_restore()  # nothing is imported, so nothing else would start them again
         raise WriterJobsRefused(_WRITER_JOBS_REFUSAL.format(jobs="; ".join(label for _kind, label in running)))
+
+
+#: The kinds a committing restore stopped (``stops_for_restore``) and has not yet started again (R659).
+_STOPPED_FOR_RESTORE: set[str] = set()
+_STOPPED_LOCK = threading.Lock()
+
+
+def _remember_stopped(kinds: list[str]) -> None:
+    with _STOPPED_LOCK:
+        _STOPPED_FOR_RESTORE.update(kinds)
+
+
+def start_jobs_stopped_for_restore() -> list[str]:
+    """Start again the jobs a committing restore stopped, whatever its outcome (R659): called where a restore ends (the volume restore's
+    and the single-file restore's ``finally``) and by a refusal. A successful import with its re-index deferred has already started the
+    drain (``hand_off_reindex``; this start then finds it running and does nothing); a refused, failed or stopped restore, or one that
+    re-indexed inline, has not, and nothing else would. Inside an import run's window it starts nothing: the run starts the drain once,
+    when it ends. Never raises; returns the kinds started."""
+    try:
+        from src.scheduler.runner import exclusive_window_open
+
+        if exclusive_window_open():
+            return []
+        with _STOPPED_LOCK:
+            kinds = sorted(_STOPPED_FOR_RESTORE)
+            _STOPPED_FOR_RESTORE.clear()
+        from src.jobs.background import start_jobs_after_refusal
+
+        return start_jobs_after_refusal(kinds)
+    except Exception:  # noqa: BLE001 - a job left stopped keeps its durable mark and its own Resume
+        return []
 
 
 def run_restore(
