@@ -2301,6 +2301,15 @@ def test_ui_invariants():
         "the climate fetch passes the ONE consent popup before it asks the server (#33, #14)"
     )
     assert "consent: true" in _fetch_body, "the climate fetch says consent:true, the endpoint refuses without it (#14f)"
+    # 35. R684: every route no UI calls is listed with a reason, and the count of reader features
+    #     without a button only goes down. Behaviour: tests/test_routes_have_a_caller.py.
+    _ratchet = _ROOT / "tests" / "test_routes_have_a_caller.py"
+    assert _ratchet.exists() and "FEATURE_CEILING" in _ratchet.read_text(encoding="utf-8"), (
+        "the route-caller ratchet exists and holds a feature ceiling (CLAUDE.md #35, R684)"
+    )
+    assert (_ROOT / "configs" / "routes_without_ui.tsv").exists(), (
+        "routes no UI calls are listed with their reason (CLAUDE.md #35, R684)"
+    )
     # 8. external links ALWAYS confirmed via popup before opening (ruled
     #    2026-06-10) — delegated capture-phase guard in the UI.
     assert "_externalLinkGuard" in html, (
@@ -8333,7 +8342,7 @@ def test_docs_index_covers_live_docs():
 #: amendment is the growth the clause above calls normal.
 #: RAISED 2026-10-06: 792 -> 796, four lines amending protocol rule (5a)(b): a lesson and a shipped-log
 #: entry are each a NEW FILE (docs/ledger/lessons.d/, shipped_log.d/), never an append to the archives.
-_CLAUDE_MD_LINE_CEILING = 802
+_CLAUDE_MD_LINE_CEILING = 807
 
 
 def _claude_md_lines() -> int:

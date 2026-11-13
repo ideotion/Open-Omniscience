@@ -640,6 +640,11 @@ finding things, or it finds so much that every answer is the same answer).
    `consent: true` (#14/#14f). Each subtab names its source, licence and last fetch; the caveat is visible; no score.
    A re-fetch stores only new or revised values (R662). Enforced in test_ui_invariants (#33) +
    tests/test_climate_api.py + tests/climate_node_test.js.
+35. **EVERY SERVER FEATURE HAS A BUTTON OR A LISTED REASON (R684, Lane M, PR #1954):** a route no UI file calls is
+   listed in `configs/routes_without_ui.tsv` as `internal`, `superseded` or `feature`, with a reason
+   (`scripts/route_callers.py` finds them from source). The `feature` count has a zero-slack ceiling that only goes
+   down; a superseded route is removed only in a separate PR after its owning lane confirms. Enforced by
+   tests/test_routes_have_a_caller.py + test_ui_invariants (#35).
 8. **The UI shows DATA, never plumbing (ruled 2026-06-11, stated GENERALLY):**
    data tabs present the aggregated data itself — "that's the added value of
    this app"; acquisition/configuration surfaces live in Settings. First
