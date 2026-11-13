@@ -1904,7 +1904,10 @@ class BackgroundScheduler:
         # This flag is INDEPENDENT of the loop thread's own running state (it must hold
         # even when the loop was already stopped before the restore began, e.g. under
         # airplane mode) -- see hold_exclusive/release_exclusive below.
-        self._exclusive_hold = False
+        # R383: COUNTED, not one boolean. Two operations that overlap (a diagnostics bundle's window inside a standalone restore) each
+        # hold one claim, and the first to finish takes off only its own: with one boolean it lowered the restore's hold too, and "Run now"
+        # or a Start then put collection back on the machine in the middle of the restore. Read through ``_exclusive_hold`` (count > 0).
+        self._exclusive_holds = 0
         # R367 (F2 of the read of #1607): the stop signal of a pass that no loop owns. ``_stop`` belongs to the loop thread and ``stop()`` used to
         # return before setting it when that thread was not running, so a "Run now" pass (the shape on a machine that booted in airplane mode) was
         # never asked to wind down and an exclusive operation's wait spent its whole bound on it. Set by ``stop()`` only while a pass is in
@@ -2029,16 +2032,17 @@ class BackgroundScheduler:
         operation began, since a manual "Run now" would otherwise still compete
         for CPU/the single-writer gate with it regardless of the loop's state."""
         with self._state_lock:
-            if not self._exclusive_hold:
+            if self._exclusive_holds == 0:
                 self._start_deferred = False  # a FRESH claim: only a start refused during this hold is the operation's to honour
-            self._exclusive_hold = True  # one boolean, so an operation that claims it inside another's hold must not erase the other's deferral
+            self._exclusive_holds += 1  # counted (R383): a claim made inside another's hold neither erases its deferral nor ends its hold
 
     def release_exclusive(self) -> None:
         """The other half of :meth:`hold_exclusive` -- always call this in a
         ``finally``, unconditionally, once the exclusive operation is done
         (regardless of whether the continuous loop itself resumed)."""
         with self._state_lock:
-            self._exclusive_hold = False
+            # One claim off, floored at zero so an unmatched release stays harmless. The hold ends only when the LAST claim is released.
+            self._exclusive_holds = max(0, self._exclusive_holds - 1)
 
     def _pass_should_stop(self) -> bool:
         """What the pass asks before each source: the loop's stop, or the stop aimed at a pass no loop owns."""
@@ -2048,6 +2052,22 @@ class BackgroundScheduler:
         """Is the machine currently claimed for an exclusive operation?"""
         with self._state_lock:
             return bool(self._exclusive_hold)
+
+    @property
+    def _exclusive_hold(self) -> bool:
+        """Any claim outstanding (R383: the hold is a count; this is the old boolean's reading of it). Callers hold ``_state_lock``."""
+        return self._exclusive_holds > 0
+
+    def defer_start(self) -> bool:
+        """Queue a start behind the hold, as a Start refused during it is (R383); True when a hold stood to queue it behind.
+
+        Used by an operation that ends INSIDE another's hold: its resume must not start collection under the other operation, and must not
+        drop the start either, so the other operation's resume takes it."""
+        with self._state_lock:
+            if self._exclusive_holds > 0:
+                self._start_deferred = True
+                return True
+            return False
 
     # -- internals --------------------------------------------------------- #
 
@@ -2832,6 +2852,8 @@ class BackgroundScheduler:
                 "running": self.is_running(),
                 "active": self._active,
                 "exclusive_hold": bool(self._exclusive_hold),  # why a start is refused: an import or restore owns the machine
+                # how many operations hold it (R383): a count that stays above zero with nothing running is a claim that was never released
+                "exclusive_holds": int(self._exclusive_holds),
                 "start_deferred": bool(self._start_deferred),  # a refused start is queued behind the hold and starts when it ends
                 "started_at": self._started_at.isoformat() if self._started_at else None,
                 "last_run": self._last_run.isoformat() if self._last_run else None,
@@ -3163,6 +3185,19 @@ def _start_or_stand_down(retries: int, retry_delay: float) -> bool:
     return False
 
 
+def _defer_to_another_holder() -> bool:
+    """After this operation's own release: when another exclusive operation still holds the machine, queue the start behind it and say
+    True (R383). A scheduler without :meth:`BackgroundScheduler.defer_start` (a test double) or one that cannot be read answers False, and
+    the resume goes on as before: an unreadable hold is never a reason to strand collection."""
+    defer = getattr(get_scheduler(), "defer_start", None)
+    if not callable(defer):
+        return False
+    try:
+        return defer() is True  # only a real answer: a mock or a truthy object is not a hold
+    except Exception:  # noqa: BLE001 - see above
+        return False
+
+
 def resume_after_exclusive_operation(
     was_paused: bool, *, retries: int = 19, retry_delay: float = 30.0
 ) -> None:
@@ -3228,6 +3263,10 @@ def resume_after_exclusive_operation(
         # The hold ends BEFORE the start attempts: ``start()`` refuses while it stands (R367, F5), and the operation is done.
         get_scheduler().release_exclusive()
         released = True
+        if _defer_to_another_holder():
+            # R383: another operation still holds the machine (this one ran inside it). Starting here would only be refused; the start is
+            # queued behind that operation, whose own resume honours it when it ends.
+            return
         start_error: str | None = None
         try:
             started = _start_or_stand_down(retries, retry_delay)

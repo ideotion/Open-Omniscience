@@ -227,7 +227,7 @@ def test_a_start_refused_during_the_hold_is_honoured_when_the_operation_ends(mon
 
 
 def test_a_second_claim_inside_a_hold_does_not_erase_the_first_ones_deferral():
-    """The hold is one boolean, so a diagnostics bundle (or any window) that claims it while a standalone restore holds it must not erase the
+    """A diagnostics bundle (or any window) that claims the hold while a standalone restore holds it must not erase the
     Start that was refused during the restore: only a FRESH claim starts with nothing deferred."""
     sch = _scheduler(run_once_fn=lambda: {"stored": 0})
     sch.hold_exclusive()
