@@ -7077,10 +7077,13 @@ def _take_back_key_files(made: list[tuple[Path, tuple[int, int, int, int]]]) -> 
     leaves with."""
     from src.custody import keyfile
 
+    # Under the key-file lock, like every other change to a key file's name, and the removal flushed to its folder:
+    # a power cut could otherwise bring back half a pair, which the next signer would complete with a key of its own.
     for path, ident in made:
-        with suppress(OSError):
+        with suppress(OSError), keyfile.KEY_FILES_LOCK:
             if keyfile.identity(os.lstat(path)) == ident:
                 path.unlink()
+                keyfile.flush_key_folder(path.parent, path.name)
 
 
 def _place_key_file(local: Path, data: bytes) -> bool:

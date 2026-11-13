@@ -2659,12 +2659,12 @@ def _all_diagnostics_manifest(
             {
                 "endpoint": "/api/diagnostics/source-quality",
                 "reason": "a whole-corpus decrypt pass producing a bulky per-source "
-                "text-sample ZIP — run it from its own Diagnostics button",
+                "text-sample ZIP — saved by the Field data button",
             },
             {
                 "endpoint": "/api/diagnostics/source-samples",
-                "reason": "TEMPORARY: one random stored article per source (full text) as "
-                "zips of at most 4 MB, walked by a cursor — run it from its own Diagnostics button",
+                "reason": "one random stored article per source (full text) as zips of at most "
+                "4 MB, walked by a cursor — saved by the Field data button",
             },
             {
                 "endpoint": "/api/diagnostics/card-audit/preflight",
