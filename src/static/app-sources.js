@@ -622,7 +622,7 @@
       const ips = (d && d.ips) || [];
       const un = (d && d.unavailable) || {};
       const shown = ips.map((x) => {
-        const when = tf("first seen {a}, last seen {b}", {a: String(x.first_seen || "?").slice(0, 10), b: String(x.last_seen || "?").slice(0, 10)});
+        const when = tf("first seen {a}, last seen {b}", {a: ooIsoDate(x.first_seen || "?"), b: ooIsoDate(x.last_seen || "?")});
         const where = x.country ? " " + x.country : "";
         return `<span title="${esc(when)}"><code>${esc(x.ip)}</code>${esc(where)} ×${esc(String(x.articles))}</span>`;
       }).join(" · ");

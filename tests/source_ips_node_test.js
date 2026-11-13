@@ -29,7 +29,7 @@ function extract(text, name) {
 
 const src =
   "function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;'); }\n" +
-  "var window = {};\n" + extract(CORE, "ooLabelHtml") + "\n" + extract(SRC, "srcIpsHtml") +
+  "var window = {}; var document = { documentElement: { dir: \"ltr\" } };\n" + extract(CORE, "ooIsoDate") + "\n" + extract(CORE, "ooLabelHtml") + "\n" + extract(SRC, "srcIpsHtml") +
   "\nmodule.exports = { srcIpsHtml };";
 const m = { exports: {} };
 new Function("module", "exports", src)(m, m.exports);
