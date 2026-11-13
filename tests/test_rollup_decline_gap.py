@@ -28,6 +28,8 @@ def declining(monkeypatch):
     monkeypatch.setattr(rs, "serve_enabled", lambda: True)
     monkeypatch.setitem(rs._STATE, "con", None)
     monkeypatch.setitem(rs._DECLINED_AT, "t", None)
+    monkeypatch.setitem(rs._STATE, "last_skip", None)
+    monkeypatch.setitem(rs._STATE, "last_decline", None)
     clock = {"now": 1000.0}
     monkeypatch.setattr(rs.time, "monotonic", lambda: clock["now"])
     # Run the build inline so the count is deterministic (the thread would do exactly this).
@@ -61,9 +63,9 @@ def test_a_build_that_was_not_declined_clears_the_gap(declining, monkeypatch):
     assert rs._DECLINED_AT["t"] is not None
     monkeypatch.setattr(rs, "first_start_decline", lambda: (None, None))
     monkeypatch.setattr(rs, "_persisted_serve_active", lambda: (_ for _ in ()).throw(RuntimeError("stop here")))
-    rs._DECLINED_AT["t"] = None
-    rs.windowed_rows(object(), days=7)  # runs past the verdicts and fails: outcome "failed", not "declined"
-    assert rs._DECLINED_AT["t"] is None
+    assert rs._BUILD_LOCK.acquire(blocking=False)
+    rs._build_and_swap()  # a direct build (as the boot step or post-pass would) runs past the verdicts and fails: "failed", not "declined"
+    assert rs._DECLINED_AT["t"] is None, "a build that was not declined must clear the gap"
 
 
 def test_the_gap_is_short():
