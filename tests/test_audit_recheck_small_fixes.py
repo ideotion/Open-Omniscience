@@ -14,6 +14,7 @@ import src.safety.data_location as dl
 import src.safety.data_volume as dv
 from src.bulletin.i18n import Translator
 from src.bulletin.render import _article_lines, _inline
+from tests.os_scope import scope_os
 
 
 # --- P4: oo.env is never left cut short ----------------------------------------------------------
@@ -47,7 +48,7 @@ def test_a_failed_replace_keeps_the_old_oo_env_and_no_temp(tmp_path, monkeypatch
     def no_replace(*_a, **_k):
         raise OSError(5, "I/O error")
 
-    monkeypatch.setattr(dl.os, "replace", no_replace)
+    scope_os(monkeypatch, dl, replace=no_replace)
     dv.forget_volume_id()  # logs, never raises
     assert env.read_text(encoding="utf-8") == before
     assert sorted(p.name for p in tmp_path.iterdir()) == ["oo.env"]
