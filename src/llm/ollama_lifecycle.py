@@ -164,6 +164,10 @@ def start(*, wait: bool = True, timeout: float = _READY_TIMEOUT_S) -> dict:
 
     global _proc
     env = launch_env()
+    # R671: a daemon this app starts refuses Ollama's cloud models itself (remote inference and web search), whatever the
+    # operator's environment says, so a cloud model name cannot forward a prompt off this computer through it. A daemon the
+    # operator runs keeps its own setting; OllamaClient refuses those models before any request either way.
+    env["OLLAMA_NO_CLOUD"] = "1"
     try:
         popen_kwargs: dict = {
             "stdin": subprocess.DEVNULL,

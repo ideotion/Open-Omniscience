@@ -1,0 +1,585 @@
+{
+ "about": "A labelled sample of law titles in the twelve UI languages, for measuring the rule topic tagger (v0.6.0 row C, Q913). The titles are hand-written in the style of national statutes; some read like real titles, and none is offered as a citation. Each item's expected topics were labelled by hand by the session that wrote them, not by a legal expert, and name the thesaurus's ENGLISH preferred label, written from memory: scripts/topic_sample_measure.py resolves each one against the operator-built thesaurus and lists every label it cannot find as unresolved, never matched loosely. Items with no expected topic test that nothing is assigned. The sample's size and choice bound what any figure measured on it means.",
+ "as_of": "2026-11-13",
+ "labelled_by": "hand-labelled by the authoring session (not a legal expert)",
+ "items": [
+  {
+   "id": "en-1",
+   "lang": "en",
+   "text": "Data Protection Act",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "data protection"
+    }
+   ]
+  },
+  {
+   "id": "en-2",
+   "lang": "en",
+   "text": "Environmental Protection Act",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "environmental protection"
+    }
+   ]
+  },
+  {
+   "id": "en-3",
+   "lang": "en",
+   "text": "Income Tax Act",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "income tax"
+    }
+   ]
+  },
+  {
+   "id": "en-4",
+   "lang": "en",
+   "text": "Act on the National Flag and Anthem",
+   "expected_labels": []
+  },
+  {
+   "id": "en-5",
+   "lang": "en",
+   "text": "Copyright and Related Rights Act",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "copyright"
+    }
+   ]
+  },
+  {
+   "id": "en-6",
+   "lang": "en",
+   "text": "Public Health Act",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "public health"
+    }
+   ]
+  },
+  {
+   "id": "fr-1",
+   "lang": "fr",
+   "text": "Loi relative à la protection des données personnelles",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "data protection"
+    }
+   ]
+  },
+  {
+   "id": "fr-2",
+   "lang": "fr",
+   "text": "Loi sur la protection de l'environnement",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "environmental protection"
+    }
+   ]
+  },
+  {
+   "id": "fr-3",
+   "lang": "fr",
+   "text": "Code de l'impôt sur le revenu",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "income tax"
+    }
+   ]
+  },
+  {
+   "id": "fr-4",
+   "lang": "fr",
+   "text": "Loi relative au drapeau et à l'hymne nationaux",
+   "expected_labels": []
+  },
+  {
+   "id": "fr-5",
+   "lang": "fr",
+   "text": "Loi relative au droit d'asile",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "right of asylum"
+    }
+   ]
+  },
+  {
+   "id": "fr-6",
+   "lang": "fr",
+   "text": "Code du travail",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "labour law"
+    }
+   ]
+  },
+  {
+   "id": "de-1",
+   "lang": "de",
+   "text": "Gesetz zum Schutz personenbezogener Daten",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "data protection"
+    }
+   ]
+  },
+  {
+   "id": "de-2",
+   "lang": "de",
+   "text": "Umweltschutzgesetz",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "environmental protection"
+    }
+   ]
+  },
+  {
+   "id": "de-3",
+   "lang": "de",
+   "text": "Einkommensteuergesetz",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "income tax"
+    }
+   ]
+  },
+  {
+   "id": "de-4",
+   "lang": "de",
+   "text": "Gesetz über die Nationalflagge",
+   "expected_labels": []
+  },
+  {
+   "id": "de-5",
+   "lang": "de",
+   "text": "Gesetz über den Datenschutz im öffentlichen Dienst",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "data protection"
+    }
+   ]
+  },
+  {
+   "id": "de-6",
+   "lang": "de",
+   "text": "Urheberrechtsgesetz",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "copyright"
+    }
+   ]
+  },
+  {
+   "id": "es-1",
+   "lang": "es",
+   "text": "Ley de protección de datos personales",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "data protection"
+    }
+   ]
+  },
+  {
+   "id": "es-2",
+   "lang": "es",
+   "text": "Ley general de protección del medio ambiente",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "environmental protection"
+    }
+   ]
+  },
+  {
+   "id": "es-3",
+   "lang": "es",
+   "text": "Ley del impuesto sobre la renta",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "income tax"
+    }
+   ]
+  },
+  {
+   "id": "es-4",
+   "lang": "es",
+   "text": "Ley sobre la bandera nacional",
+   "expected_labels": []
+  },
+  {
+   "id": "es-5",
+   "lang": "es",
+   "text": "Ley reguladora del derecho de asilo",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "right of asylum"
+    }
+   ]
+  },
+  {
+   "id": "es-6",
+   "lang": "es",
+   "text": "Ley de propiedad intelectual",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "copyright"
+    }
+   ]
+  },
+  {
+   "id": "pt-1",
+   "lang": "pt",
+   "text": "Lei de proteção de dados pessoais",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "data protection"
+    }
+   ]
+  },
+  {
+   "id": "pt-2",
+   "lang": "pt",
+   "text": "Lei de bases do ambiente",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "environmental protection"
+    }
+   ]
+  },
+  {
+   "id": "pt-3",
+   "lang": "pt",
+   "text": "Código do imposto sobre o rendimento",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "income tax"
+    }
+   ]
+  },
+  {
+   "id": "pt-4",
+   "lang": "pt",
+   "text": "Lei sobre a bandeira nacional",
+   "expected_labels": []
+  },
+  {
+   "id": "pt-5",
+   "lang": "pt",
+   "text": "Lei de saúde pública",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "public health"
+    }
+   ]
+  },
+  {
+   "id": "pt-6",
+   "lang": "pt",
+   "text": "Código do trabalho",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "labour law"
+    }
+   ]
+  },
+  {
+   "id": "ar-1",
+   "lang": "ar",
+   "text": "قانون حماية البيانات الشخصية",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "data protection"
+    }
+   ]
+  },
+  {
+   "id": "ar-2",
+   "lang": "ar",
+   "text": "قانون حماية البيئة",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "environmental protection"
+    }
+   ]
+  },
+  {
+   "id": "ar-3",
+   "lang": "ar",
+   "text": "قانون ضريبة الدخل",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "income tax"
+    }
+   ]
+  },
+  {
+   "id": "ar-4",
+   "lang": "ar",
+   "text": "قانون العلم الوطني",
+   "expected_labels": []
+  },
+  {
+   "id": "ru-1",
+   "lang": "ru",
+   "text": "Федеральный закон о персональных данных",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "data protection"
+    }
+   ]
+  },
+  {
+   "id": "ru-2",
+   "lang": "ru",
+   "text": "Федеральный закон об охране окружающей среды",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "environmental protection"
+    }
+   ]
+  },
+  {
+   "id": "ru-3",
+   "lang": "ru",
+   "text": "Налоговый кодекс: налог на доходы физических лиц",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "income tax"
+    }
+   ]
+  },
+  {
+   "id": "ru-4",
+   "lang": "ru",
+   "text": "Федеральный конституционный закон о Государственном флаге",
+   "expected_labels": []
+  },
+  {
+   "id": "zh-1",
+   "lang": "zh",
+   "text": "个人信息保护法",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "data protection"
+    }
+   ]
+  },
+  {
+   "id": "zh-2",
+   "lang": "zh",
+   "text": "环境保护法",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "environmental protection"
+    }
+   ]
+  },
+  {
+   "id": "zh-3",
+   "lang": "zh",
+   "text": "个人所得税法",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "income tax"
+    }
+   ]
+  },
+  {
+   "id": "zh-4",
+   "lang": "zh",
+   "text": "国旗法",
+   "expected_labels": []
+  },
+  {
+   "id": "ja-1",
+   "lang": "ja",
+   "text": "個人情報の保護に関する法律",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "data protection"
+    }
+   ]
+  },
+  {
+   "id": "ja-2",
+   "lang": "ja",
+   "text": "環境基本法",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "environmental protection"
+    }
+   ]
+  },
+  {
+   "id": "ja-3",
+   "lang": "ja",
+   "text": "所得税法",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "income tax"
+    }
+   ]
+  },
+  {
+   "id": "ja-4",
+   "lang": "ja",
+   "text": "国旗及び国歌に関する法律",
+   "expected_labels": []
+  },
+  {
+   "id": "hi-1",
+   "lang": "hi",
+   "text": "डिजिटल व्यक्तिगत डेटा संरक्षण अधिनियम",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "data protection"
+    }
+   ]
+  },
+  {
+   "id": "hi-2",
+   "lang": "hi",
+   "text": "पर्यावरण संरक्षण अधिनियम",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "environmental protection"
+    }
+   ]
+  },
+  {
+   "id": "hi-3",
+   "lang": "hi",
+   "text": "आयकर अधिनियम",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "income tax"
+    }
+   ]
+  },
+  {
+   "id": "hi-4",
+   "lang": "hi",
+   "text": "राष्ट्रीय ध्वज संहिता",
+   "expected_labels": []
+  },
+  {
+   "id": "bn-1",
+   "lang": "bn",
+   "text": "ব্যক্তিগত উপাত্ত সুরক্ষা আইন",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "data protection"
+    }
+   ]
+  },
+  {
+   "id": "bn-2",
+   "lang": "bn",
+   "text": "পরিবেশ সংরক্ষণ আইন",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "environmental protection"
+    }
+   ]
+  },
+  {
+   "id": "bn-3",
+   "lang": "bn",
+   "text": "আয়কর আইন",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "income tax"
+    }
+   ]
+  },
+  {
+   "id": "bn-4",
+   "lang": "bn",
+   "text": "জাতীয় পতাকা আইন",
+   "expected_labels": []
+  },
+  {
+   "id": "id-1",
+   "lang": "id",
+   "text": "Undang-Undang tentang Pelindungan Data Pribadi",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "data protection"
+    }
+   ]
+  },
+  {
+   "id": "id-2",
+   "lang": "id",
+   "text": "Undang-Undang tentang Perlindungan dan Pengelolaan Lingkungan Hidup",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "environmental protection"
+    }
+   ]
+  },
+  {
+   "id": "id-3",
+   "lang": "id",
+   "text": "Undang-Undang tentang Pajak Penghasilan",
+   "expected_labels": [
+    {
+     "scheme": "eurovoc",
+     "label": "income tax"
+    }
+   ]
+  },
+  {
+   "id": "id-4",
+   "lang": "id",
+   "text": "Undang-Undang tentang Bendera, Bahasa, dan Lambang Negara serta Lagu Kebangsaan",
+   "expected_labels": []
+  }
+ ]
+}
