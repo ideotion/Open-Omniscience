@@ -45,6 +45,7 @@
         case "timemap": return t("Your corpus by place: where the articles you hold come from and which places they mention, on a map.");
         case "law": return t("Countries, their governments and their laws: compare countries, group them, and read the statistics and law documents you hold.");
         case "agenda": return t("A calendar of major world events, plus dates deduced from your articles. A deduced date is labelled as such and never confirmed.");
+        case "climate": return t("Published climate and Earth records, from temperature to sea ice and earthquakes, each with its source and when it was last fetched. Fetched only when you ask.");
         case "indices": return t("World stock indices from official free sources: end-of-day values, each labelled with its date and source. Not real time.");
         case "markets": return t("Commodity, energy, metal and currency series from official feeds. Every point comes straight from the downloaded file.");
         case "living": return t("Wikipedia, law and maps: when each was last checked and what changed, shown as dates and counts, never judged.");

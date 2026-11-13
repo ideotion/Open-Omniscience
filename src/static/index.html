@@ -75,6 +75,9 @@
         <button class="nav-item" data-tab="timemap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/><circle cx="16" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg><span>World map</span></button>
         <button class="nav-item" data-tab="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V9l7-5 7 5v12"/><path d="M9 21v-6h6v6"/><path d="M9 11h.01M15 11h.01"/></svg><span>Governments</span></button>
         <button class="nav-item" data-tab="agenda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span>Agenda</span></button>
+        <!-- CLIMATE (R661; 0.6 gate row A): six published climate and Earth records, read from
+             this machine, fetched only by the Fetch button behind the ONE consent (#14). -->
+        <button class="nav-item" data-tab="climate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14.5V5a2 2 0 1 1 4 0v9.5a4 4 0 1 1-4 0z"/><path d="M12 10v6"/><path d="M18 5h3M18 9h2"/></svg><span>Climate</span></button>
         <button class="nav-item" data-tab="indices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V11M10 20V4M16 20V14M22 20V8"/></svg><span>Indices</span></button>
         <!-- a11y fix (2026-09-09): a literal space text node between the two spans so the
              accname computation (Chromium joins descendant text verbatim, adding no space
@@ -1254,6 +1257,23 @@
     </div>
 
     <!-- ============================ INDICES ========================== -->
+    <div class="tab-page" id="tab-climate">
+    <section class="panel">
+      <h2>Climate <span class="muted" style="font-weight:400">&mdash; published climate and Earth records, fetched only when you ask</span></h2>
+      <nav class="tabs" id="climate-subtabs" aria-label="Climate dataset">
+        <button type="button" data-tab="gistemp">Temperature</button>
+        <button type="button" data-tab="nsidc">Sea ice</button>
+        <button type="button" data-tab="oni">El Niño</button>
+        <button type="button" data-tab="usgs">Earthquakes</button>
+        <button type="button" data-tab="owid">Emissions &amp; energy</button>
+        <button type="button" data-tab="ghcnd">Weather station</button>
+      </nav>
+      <div class="card-caveat" id="climate-caveat">Each series is its publisher's own figures, shown with its source, its method and when this machine last fetched it. Nothing here is a forecast, a score or a risk rating. A new fetch stores only values that are new or that the publisher revised: earlier values stay readable, and periods the publisher stopped serving are counted, never deleted.</div>
+      <div id="climate-status" class="hint" role="status" aria-live="polite"></div>
+      <div id="climate-body"><div class="muted">Loading…</div></div>
+    </section>
+    </div>
+
     <div class="tab-page" id="tab-indices">
     <section class="panel">
       <h2>World stock indices</h2>
@@ -4331,6 +4351,7 @@
   <script src="/static/app-ipcc.js"></script>
   <script src="/static/app-observatory.js"></script>
   <script src="/static/app-living.js"></script>
+  <script src="/static/app-climate.js"></script>
   <script src="/static/app-maintenance.js"></script>
   <script src="/static/app-diagnostics.js"></script>
   <script src="/static/app-corpus.js"></script>
