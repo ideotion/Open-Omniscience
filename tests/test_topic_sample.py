@@ -246,8 +246,11 @@ def test_optional_points_and_joiners_and_stray_marks_never_hide_a_word():
     assert tt.fold("\u0301abc") == ("abc",), "a mark with no letter before it starts no word"
 
 
-def test_an_unsegmented_label_with_inner_punctuation_is_counted_as_skipped_not_lost():
-    idx = tt.Index([_art(ict=({"ja": "情報・通信"}, {}), env=({"ja": "環境"}, {}))])
-    assert idx.split_labels == {"ja": 1}
+def test_an_unsegmented_label_with_inner_punctuation_matches_written_joined_and_is_counted():
+    idx = tt.Index([_art(ict=({"ja": "情報・通信"}, {}), ir=({"ko": "국제 관계"}, {}))])
+    assert idx.split_labels == {"ja": 1, "ko": 1}
+    assert [t.concept for t in tt.tag_text("情報通信法", "ja", idx)] == ["ict"]
+    assert [t.concept for t in tt.tag_text("국제관계법", "ko", idx)] == ["ir"]
+    assert tt.tag_text("情報・通信法", "ja", idx) == [], "a match never crosses punctuation"
     m = tt.measure([{"id": "x", "lang": "ja", "text": "情報・通信法", "expected": ["ict"]}], idx)
-    assert m["labels_with_inner_punctuation_skipped"] == {"ja": 1}
+    assert m["labels_matched_only_when_written_joined"] == {"ja": 1, "ko": 1}

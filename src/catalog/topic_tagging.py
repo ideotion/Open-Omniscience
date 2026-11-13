@@ -16,7 +16,8 @@ sequence in a title or provision and returns what matched and HOW, so nothing is
   label is matched as a SUBSTRING of a run of text, and EVERY such hit is ≈, whatever the
   label. A one-character label is never matched there: it would hit inside unrelated words.
   "One character" counts letters, not combining marks. A label with inner punctuation or a space
-  (情報・通信) is never matched either, since a match never crosses one, and is counted the same way.
+  (情報・通信) is found only where the text writes it joined (情報通信), since a match never crosses
+  one; such labels are counted so the narrower reach is visible.
 
 * R690: combining marks and joiners belong to their word in every script (a vowel sign or a virama
   never splits a Hindi or Bengali word, a haraka never splits an Arabic one). Languages in
@@ -122,7 +123,7 @@ class Index:
         self.languages: set[str] = set()
         #: per unsegmented language, the one-character labels never matched (R680), counted so they do not vanish
         self.short_labels: dict[str, int] = {}
-        #: per unsegmented language, the labels with inner punctuation or a space, never matched, counted
+        #: per unsegmented language, the labels with inner punctuation or a space, matched only written joined
         self.split_labels: dict[str, int] = {}
         #: per language of UNVERIFIED_LANGUAGES, the labels set aside (R690(3)), counted so they do not vanish
         self.unverified_labels: dict[str, int] = {}
@@ -150,10 +151,11 @@ class Index:
             self.unverified_labels[lang] = self.unverified_labels.get(lang, 0) + 1
             return
         if lang in UNSEGMENTED_LANGUAGES:
-            if len(toks) > 1:  # 情報・通信: a match never crosses punctuation or space, so it could never match
+            key = "".join(toks)
+            if len(toks) > 1:
+                # 情報・通信, 국제 관계: a match never crosses punctuation or space, so the label is found only
+                # where the text writes it joined (情報通信, 국제관계). Counted, so the narrower reach is visible.
                 self.split_labels[lang] = self.split_labels.get(lang, 0) + 1
-                return
-            key = toks[0]
             if _base_letters(key) < 2:  # never matched, so it does not make the language taggable either
                 self.short_labels[lang] = self.short_labels.get(lang, 0) + 1
                 return
@@ -275,7 +277,7 @@ def measure(sample: list[dict[str, Any]], index: Index) -> dict[str, Any]:
         "schemes": index.schemes,
         "schemes_without_concepts": index.empty,
         "one_character_labels_skipped": dict(index.short_labels),
-        "labels_with_inner_punctuation_skipped": dict(index.split_labels),
+        "labels_matched_only_when_written_joined": dict(index.split_labels),
         "unverified_languages": {
             "labels_set_aside": dict(index.unverified_labels),
             "reason": "no test yet shows this script's words are matched correctly, so no figure is given (R690)",
