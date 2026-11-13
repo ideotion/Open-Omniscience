@@ -111,11 +111,12 @@ def test_coord_reads_decimal_and_dms_and_refuses_nonsense():
 def _geo(table):
     calls = []
 
-    def geocode(q, limit=5):
+    def geocode(q, limit=5, facts=False):
         calls.append(q)
         if table == "no-country":
             return {"status": "no-country", "results": [], "total": 0, "countries": []}
-        res = table.get(q, [])
+        # Unless a test says otherwise, each answer is what OSM would call a public place at the house number asked for.
+        res = [{**h, "facts": h.get("facts", {"addr:housenumber": L.house_number(q), "amenity": "arts_centre"})} for h in table.get(q, [])]
         return {"status": "located" if res else "not-located", "results": res, "total": len(res),
                 "countries": [{"alpha3": "FXL", "vintage": "2026-10-01T00:00:00+00:00"}]}
 
@@ -226,7 +227,7 @@ def test_without_an_osm_country_nothing_is_looked_up_and_it_is_counted_so(lane, 
     _page(lane, "en", "Fixture Hall", HALL, 1)
     lane.commit()
     calls = []
-    scope("[]", [], lambda q, limit=5: calls.append(q) or {})
+    scope("[]", [], lambda q, limit=5, **_: calls.append(q) or {})
     rep = L.located_report(lane, budget=5.0)
     assert rep["per_edition"]["en"] == {"found": 1, "no_osm_country": 1} and rep["points"] == []
     assert calls == [], "no country ingested: nothing to ask the index"
@@ -236,7 +237,7 @@ def test_the_scan_is_incremental_and_says_how_far_it_got(lane, scope):
     for n in range(5):
         _page(lane, "en", f"Hall {n}", HALL, n)
     lane.commit()
-    scope("[]", [], lambda q, limit=5: {})
+    scope("[]", [], lambda q, limit=5, **_: {})
     rep = L.located_report(lane, budget=0.0)
     assert rep["complete"] is False and rep["texts_read"]["hot"] < 5 and rep["texts_held"]["hot"] == 5
     rep = L.located_report(lane, budget=5.0)
@@ -244,7 +245,7 @@ def test_the_scan_is_incremental_and_says_how_far_it_got(lane, scope):
 
 
 def test_a_busy_scan_answers_with_the_last_report_instead_of_waiting(lane, scope):
-    scope("[]", [], lambda q, limit=5: {})
+    scope("[]", [], lambda q, limit=5, **_: {})
     first = L.located_report(lane, budget=1.0)
     with L._lock:
         again = L.located_report(lane, budget=1.0)
@@ -293,9 +294,26 @@ def test_a_fixture_infobox_address_is_located_through_the_real_local_index(osm_l
             _page(s, "en", "Elsewhere Hall", "{{Infobox museum|address=4 Nowhere Road}} {{coord|-33.9|151.2}}", 2)
             _page(s, "en", "Somebody", "{{Infobox person|address=1 Fixture Road, Fixtureville}}", 3)
             s.commit()
-            rep = L.located_report(s, budget=5.0)
+            # The real index says what way/13 is: house number 1, building=yes and nothing public. So it is NOT placed (R691).
+            from src.osm.places import geocode
+
+            facts = geocode("1 Fixture Road, Fixtureville", limit=6, facts=True)["results"][0]["facts"]
+            assert facts == {"addr:housenumber": "1", "building": "yes"}
+            assert "facts" not in geocode("1 Fixture Road, Fixtureville")["results"][0], "the default answer is unchanged"
+            plain = L.located_report(s, budget=5.0)
+            L.reset()
+
+            # The same object as OSM would tag a museum: the whole real path places it.
+            def public(q, limit=5, facts=False):
+                out = geocode(q, limit=limit, facts=facts)
+                for r in out["results"]:
+                    r["facts"] = {**r.get("facts", {}), "tourism": "museum"}
+                return out
+
+            rep = L.located_report(s, budget=5.0, geocoder=public)
     finally:
         L.reset()
+    assert plain["points"] == [] and plain["per_edition"]["en"]["ambiguous"] == 1
     assert rep["per_edition"]["en"] == {"found": 2, "located": 1, "outside_your_osm_countries": 1, "skipped_about_a_person": 1}
     [pt] = rep["points"]
     assert pt["title"] == "Fixture Building" and pt["osm_object"] == "way/13" and pt["osm_country"] == "ZZZ"
@@ -365,7 +383,7 @@ def test_a_failed_lookup_and_an_unreadable_osm_lane_are_named_never_raised(lane,
     _page(lane, "en", "Fixture Hall", HALL, 1)
     lane.commit()
 
-    def boom(q, limit=5):
+    def boom(q, limit=5, **_):
         raise RuntimeError("osm lane locked")
 
     scope('[["FXL", "2026-10-01"]]', [], boom)
@@ -400,7 +418,7 @@ def test_a_page_that_changes_is_read_again_and_a_page_that_goes_is_forgotten(lan
 def test_an_edition_outside_the_twelve_does_not_hold_complete_false(lane, scope):
     _page(lane, "nl", "Gebouw", "{{Infobox gebouw|adres=Straat 1}}", 1)
     lane.commit()
-    scope("[]", [], lambda q, limit=5: {})
+    scope("[]", [], lambda q, limit=5, **_: {})
     rep = L.located_report(lane, budget=5.0)
     assert rep["complete"] is True and rep["texts_held"] == {"hot": 0, "warm": 0}
 
@@ -425,14 +443,14 @@ def test_round_two_review_probes():
 
 
 def test_a_partial_answer_is_ambiguous_never_a_pick():
-    geo = lambda q, limit=5: {"status": "located", "total": 3, "results": [_hit(1.0, 1.0)]}  # noqa: E731
+    geo = lambda q, limit=5, **_: {"status": "located", "total": 3, "results": [_hit(1.0, 1.0)]}  # noqa: E731
     assert L.resolve("1 Main Street, Springfield", geo)["status"] == "ambiguous"
 
 
 def test_without_a_page_coordinate_a_shortened_address_keeps_its_locality():
     asked = []
 
-    def geo(q, limit=5):
+    def geo(q, limit=5, **_):
         asked.append(q)
         return {"status": "empty", "total": 0, "results": []}
 
@@ -537,7 +555,7 @@ def test_a_private_residence_is_never_read_in_any_script(edition, title, text):
 
 
 def test_the_home_words_are_whole_words_where_words_are_spaced_and_never_split_by_vowel_signs():
-    assert not L.names_a_home("Housekeeping Museum")  # a letter after "house": not the word
+    assert L.names_a_home("Housekeeping Museum")  # "house" and "home" are prefixes too: "homeschool", "householder"
     assert not L.names_a_home("Farmington Library")
     assert L.names_a_home("Old Farm")  # at the end of the text
     assert L.names_a_home("Elm_House")  # underscores as spaces
@@ -550,7 +568,7 @@ def test_residences_in_every_script_produce_no_point_even_when_the_index_answers
     for n, (edition, title, text) in enumerate(RESIDENCES, start=1):
         _page(lane, edition, title, text, n)
     lane.commit()
-    scope('[["FXL", "2026-10-01"]]', [], lambda q, limit=5: {"status": "located", "total": 1, "results": [_hit(48.85, 2.35)]})
+    scope('[["FXL", "2026-10-01"]]', [], lambda q, limit=5, **_: {"status": "located", "total": 1, "results": [_hit(48.85, 2.35)]})
     rep = L.located_report(lane, budget=5.0)
     assert rep["points"] == []
     skipped = sum(row.get("skipped_a_home", 0) for row in rep["per_edition"].values())
@@ -607,7 +625,7 @@ def test_a_template_built_name_fails_closed():
 def test_the_street_alone_is_never_asked_and_a_postcode_is_not_a_house_number():
     asked = []
 
-    def geo(q, limit=5):
+    def geo(q, limit=5, **_):
         asked.append(q)
         if q == "5 Mill Lane":
             return {"status": "located", "total": 1, "results": [_hit(51.27, 0.42)]}
@@ -649,3 +667,74 @@ def test_a_renamed_page_is_read_again(lane, scope):
 def test_the_words_the_security_read_found_missing():
     for word in ("मकान", "ঘর", "屋敷", "住居", "寓所", "домик", "منـزل", "مَنْزِل"):
         assert L.names_a_home(word), word
+
+
+# --------------------------------------------------------------------------- #
+# Second round of the R691 security reads. The structural check: what OSM itself says the object is, in no language.
+# --------------------------------------------------------------------------- #
+def _one(facts):
+    return lambda q, limit=5, **_: {"status": "located", "total": 1, "results": [{**_hit(48.85, 2.35), "facts": facts}],
+                                    "countries": [{"alpha3": "FXL", "vintage": "2026-10-01"}]}
+
+
+@pytest.mark.parametrize(
+    "facts",
+    [
+        None,  # a geocoder that does not say what the object is: never placed
+        {"addr:housenumber": "5", "building": "house", "amenity": "cafe"},
+        {"addr:housenumber": "5", "building": "detached"},
+        {"addr:housenumber": "5", "building": "yes", "building:use": "residential", "office": "company"},
+        {"addr:housenumber": "5", "building": "yes", "access": "private", "leisure": "garden"},
+        {"addr:housenumber": "5", "tourism": "guest_house"},
+        {"addr:housenumber": "5", "building": "yes"},  # nothing public about it
+        {"addr:housenumber": "7", "amenity": "museum"},  # another house
+        {"amenity": "museum"},  # no house number at all
+    ],
+)
+def test_an_answer_osm_does_not_call_a_public_place_at_that_number_is_never_placed(facts):
+    assert L.resolve("5 Mill Lane, Townville", _one(facts))["status"] == "ambiguous"
+
+
+def test_an_answer_osm_calls_public_at_that_number_is_placed():
+    assert L.resolve("5 Mill Lane, Townville", _one({"addr:housenumber": "5", "amenity": "library"}))["status"] == "located"
+    assert L.resolve("5 Mill Lane, Townville", _one({"addr:housenumber": "3;5", "wikidata": "Q1"}))["status"] == "located"
+    assert L.resolve("ул. Ленина, 5, Москва", _one({"addr:housenumber": "5", "tourism": "museum"}))["status"] == "located"
+
+
+def test_a_postcode_or_a_road_number_is_never_a_house_number():
+    assert L.house_number("Mill Lane, 12345, Townville") is None and L.variants("Mill Lane, 12345, Townville") == []
+    assert L.house_number("A40, Oxford") is None
+    # "Route 66" reads 66, and the houses on Route 66 carry their own numbers, so none of them agrees.
+    assert L.resolve("Route 66, Townville", _one({"addr:housenumber": "12", "amenity": "cafe"}))["status"] == "ambiguous"
+
+
+@pytest.mark.parametrize(
+    "title,text",
+    [
+        ("Old Chapel, Ambridge", "{{Infobox church|status=Converted to a private house|address=12 Church Lane, Ambridge}}"),
+        ("Old Chapel, Ambridge", "{{Infobox church|functional_status=Now a family home|address=12 Church Lane, Ambridge}}"),
+        ("Old Chapel, Ambridge", "{{Infobox religious building|current_use=Converted into flats|address=12 Church Lane, Ambridge}}"),
+        ("Elm Gardens", "{{Infobox park|type=Privately owned garden|address=7 Elm Road, Ambridge}}"),
+        ("Elm Gardens", "{{Infobox park|type=Garden|owner=The Smith family|address=7 Elm Road, Ambridge}}"),
+        ("Elm Gardens", "{{Infobox park|type=Garden|status=Not open to the public|address=7 Elm Road, Ambridge}}"),
+        ("Elm School", "{{Infobox school|type=Homeschool co-op|address=7 Elm Road, Ambridge}}"),
+        ("Elm Gallery", "{{Infobox museum|type=Art gallery in the artist's living quarters|address=7 Elm Road, Ambridge}}"),
+    ],
+)
+def test_what_a_place_is_now_and_who_holds_it_count(title, text):
+    assert L.page_addresses("en", text, title) == {"skip": "a_home"}
+
+
+@pytest.mark.parametrize(
+    "edition,title,text",
+    [
+        ("en", "Jane Doe", "{{Infobox hotel|address=7 Elm Road, Ambridge}}{{coord|52|-1}}[[Category:English hoteliers]]"),
+        ("en", "Jane Doe", "{{Infobox museum|address=7 Elm Road, Ambridge}}[[Category:People from Ambridge]]"),
+        ("en", "Jane Doe", "{{Infobox museum|address=7 Elm Road, Ambridge}}[[Category:English sculptors]]"),
+        ("en", "Jane Doe", "{{Infobox museum|address=7 Elm Road, Ambridge}}[[Category:Year of birth missing]]"),
+        ("en", "Jane Doe (hotelier)", "{{Infobox hotel|address=7 Elm Road, Ambridge}}{{coord|52|-1}}"),
+        ("de", "Hans Müller (Koch)", "{{Infobox Hotel|Adresse=Kirchweg 3, Dorf}}{{coord|52|13}}"),
+    ],
+)
+def test_a_biography_known_only_by_its_categories_or_its_title(edition, title, text):
+    assert L.page_addresses(edition, text, title) == {"skip": "about_a_person"}

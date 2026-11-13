@@ -13,7 +13,13 @@ template or category on it marks a person (an infobox about a person, de ``Perso
 of its infoboxes is not on the list, or, as an extra check on top (R691), when its title, categories or infobox name a home in any of
 the twelve languages (a house, a farm, an estate, 邸, हवेली). A family counts as people. A firm, an agency, a restaurant or a hotel
 is read only beside the page's own ``{{coord}}``, since one may be run from someone's home; and an address is never shortened to its
-street alone, since "5 Mill Lane" answers from whichever village has one. A type or a marker nobody wrote down
+street alone, since "5 Mill Lane" answers from whichever village has one.
+
+WHAT OSM ITSELF SAYS DECIDES (R691, structural and in no language). A located answer is placed only when every object the index answered
+with carries the house number the address names, and the placed one is something OSM calls public: a public-facing key (amenity, shop,
+tourism, leisure, office, healthcare, public transport, aeroway, emergency, religion) or a Wikidata/Wikipedia link, and is not tagged as a
+dwelling (building=house, residential, detached, apartments, farm ...), as residential use, as private access or as a guest house. Anything
+else is counted as ambiguous, never placed. A type or a marker nobody wrote down
 costs a located address, never a person's privacy: the map can never become a way to find where someone lives.
 Addresses in article BODIES (wiki and press) are not read either: without an infobox key, a body-text grammar would place strings that only
 look like addresses. That is a recorded gap, stated in the counters' ``gaps`` rather than shown as zero.
@@ -179,7 +185,11 @@ _PERSON_CATEGORY = re.compile(
     r"living people|\b\d{3,4} births|\b\d{3,4} deaths|naissance en|décès en|^geboren |^gestorben |^mann$|^frau$|nacidos en|fallecidos en|"
     r"nascidos em|mortos em|pessoas vivas|родившиеся|умершие|персоналии|在世人物|出生|逝世|存命人物|年生|年没|أشخاص على قيد الحياة|مواليد|وفيات|"
     r"tokoh yang masih hidup|kelahiran|kematian|जीवित लोग|जन्म|निधन|জীবিত ব্যক্তি|জন্ম|মৃত্যু|"
-    r"famil(?:y|ies)|familles?|familien?|familias?|famílias?|семь[яи]|家族|一族|عائلات?|أسرة|keluarga|परिवार|পরিবার",
+    r"famil(?:y|ies)|familles?|familien?|familias?|famílias?|семь[яи]|家族|一族|عائلات?|أسرة|keluarga|परिवार|পরিবার|"
+    r"^people |people from|year of birth|year of death|personnalité|^personnes |^personen |^personas |^pessoas |^люди |уроженцы|"
+    r"人物$|出身の人物|أشخاص من|^tokoh |लोग$|ব্যক্তিত্ব|"
+    r"(?:hoteliers|innkeepers|chefs|restaurateurs|businesspeople|businessmen|businesswomen|sculptors|painters|artists|writers|"
+    r"architects|farmers|bakers)$",
     re.I,
 )
 _CATEGORY_LINK = re.compile(
@@ -196,7 +206,8 @@ _UNREADABLE_TEMPLATE = re.compile(r"\{\{\s*[^\n|{}]*\{\{(?!\s*!\s*\}\})")
 #: Disambiguators that say a title names a person ("John Smith (chef)").
 _PERSON_DISAMBIGUATOR = re.compile(
     r"\((?:[^()]*\b)?(?:chef|restaurateur|business(?:man|woman|person)|entrepreneur|architect|artist|singer|actor|actress|writer|author|"
-    r"politician|painter|musician|footballer|cricketer|journalist|born \d+|\d{3,4}[-–]\d{0,4}|cuisinier|homme d'affaires|"
+    r"politician|painter|musician|footballer|cricketer|journalist|hotelier|innkeeper|baker|farmer|born \d+|\d{3,4}[-–]\d{0,4}|"
+    r"cuisinier|fermier|boulanger|homme d'affaires|koch|bäcker|landwirt|bauer|hotelier|cocinero|agricultor|cozinheiro|"
     r"unternehmer|empresario|empresária|empresário|предприниматель|повар|料理人|实业家|企業家|رجل أعمال|उद्यमी|ব্যবসায়ী)\)\s*$",
     re.I,
 )
@@ -222,6 +233,10 @@ _HARMLESS = _names("infobox mapframe", "infobox map")
 _HOME_FIELDS = _names(
     "name", "building type", "nrhp type", "type", "current use", "current_use", "use", "usage", "nutzung", "uso", "tipo", "тип", "用途",
     "種類", "类型", "النوع", "प्रकार", "ধরন",
+    # What the place is NOW and who holds it: a chapel converted into a house says so here (security read 2, R691).
+    "status", "functional status", "functional_status", "condition", "owner", "ownership", "public access", "statut", "propriétaire",
+    "eigentümer", "zustand", "estado", "propietario", "proprietário", "статус", "владелец", "状態", "所有者", "现状", "الحالة", "المالك",
+    "स्थिति", "स्वामी", "অবস্থা", "মালিক", "pemilik",
 )
 _HOME_SPACED = (
     "house", "houses", "residence", "residences", "residential", "home", "homes", "homestead", "dwelling", "villa", "cottage", "farm",
@@ -234,9 +249,13 @@ _HOME_SPACED = (
     "rectory", "vicarage", "parsonage", "manse", "presbytery", "deanery", "official residence", "guesthouse", "guest house", "lodge",
     "résidence", "presbytère", "cure", "gîte", "residenz", "pfarrhaus", "forsthaus", "gästehaus", "pension", "rectoría", "casona",
     "presbitério", "residências", "резиденция", "причта", "домик", "pastoran", "wisma",
+    "flats", "family", "families", "living quarters", "basement", "household",
 )
+#: Prefixes in spaced scripts: "homeschool", "householder", "privately", "Privatbesitz".
+_HOME_PREFIXES = ("home", "house")
 #: Words that, in a TYPE or USE field only, say the place is not public.
-_PRIVATE_SPACED = ("private", "privé", "privée", "privat", "privado", "privada", "частный", "частная", "pribadi")
+_PRIVATE_SPACED = ("privé", "privée", "privado", "privada", "частный", "частная", "частное", "pribadi", "not open to the public")
+_PRIVATE_PREFIXES = ("privat",)
 _PRIVATE_ANYWHERE = ("私人", "私有", "私邸", "個人", "خاص", "निजी", "ব্যক্তিগত")
 _HOME_ANYWHERE = (
     "住宅", "邸", "宅", "公馆", "公館", "故居", "旧居", "舊居", "別荘", "别墅", "別墅", "農場", "农场", "牧場", "牧场", "山荘", "荘園", "庄园",
@@ -247,14 +266,19 @@ _HOME_ANYWHERE = (
 _LETTER = r"[^\W\d_]"
 
 
-def _words(spaced: tuple[str, ...], anywhere: tuple[str, ...]) -> re.Pattern[str]:
+def _words(spaced: tuple[str, ...], anywhere: tuple[str, ...], prefixes: tuple[str, ...] = ()) -> re.Pattern[str]:
     return re.compile(
-        "|".join([rf"(?<!{_LETTER}){re.escape(w)}(?!{_LETTER})" for w in spaced] + [re.escape(w) for w in anywhere]), re.I
+        "|".join(
+            [rf"(?<!{_LETTER}){re.escape(w)}(?!{_LETTER})" for w in spaced]
+            + [rf"(?<!{_LETTER}){re.escape(w)}" for w in prefixes]
+            + [re.escape(w) for w in anywhere]
+        ),
+        re.I,
     )
 
 
-_HOME_WORDS = _words(_HOME_SPACED, _HOME_ANYWHERE)
-_PRIVATE_WORDS = _words(_PRIVATE_SPACED, _PRIVATE_ANYWHERE)
+_HOME_WORDS = _words(_HOME_SPACED, _HOME_ANYWHERE, _HOME_PREFIXES)
+_PRIVATE_WORDS = _words(_PRIVATE_SPACED, _PRIVATE_ANYWHERE, _PRIVATE_PREFIXES)
 #: Arabic tatweel and short-vowel marks, removed before matching so a stretched or vowelled word still matches.
 _ARABIC_MARKS = re.compile("[\u0640\u064b-\u0652\u0670]")
 
@@ -415,7 +439,7 @@ def has_house_number(text: str) -> bool:
     return any(ch.isdigit() for ch in text)
 
 
-_HOUSE_NUMBER_PART = re.compile(r"^(?:д\.?|дом|n[º°o.]?|no\.?|nr\.?|número|numéro)?\s*\d+\s*[a-zа-я]?(?:\s*[/-]\s*\d+[a-zа-я]?)?\.?$", re.I)
+_HOUSE_NUMBER_PART = re.compile(r"^(?:д\.?|дом|n[º°o.]?|no\.?|nr\.?|número|numéro)?\s*\d{1,4}\s*[a-zа-я]?(?:\s*[/-]\s*\d{1,4}[a-zа-я]?)?\.?$", re.I)
 
 
 def _core(parts: list[str]) -> int:
@@ -428,6 +452,54 @@ def _core(parts: list[str]) -> int:
     if len(parts) > 1 and _HOUSE_NUMBER_PART.match(parts[1]):
         return 2
     return 0
+
+
+_NUMBER_TOKEN = re.compile(r"(?<![^\W_])(\d{1,4}\s?[^\W\d_]?)(?![^\W_])")
+
+
+def house_number(text: str) -> str | None:
+    """The house number the address names, normalised ("12", "5a"), or ``None``. Read from the part that carries it (:func:`_core`)."""
+    parts = [p.strip() for p in (text or "").split(",") if p.strip()]
+    core = _core(parts)
+    if core == 0:
+        return None
+    if core == 2:
+        source = parts[0] if _HOUSE_NUMBER_PART.match(parts[0]) else parts[1]
+    else:
+        source = parts[0]
+    match = _NUMBER_TOKEN.search(source)
+    return _number(match.group(1)) if match else None
+
+
+def _number(value: Any) -> str:
+    return re.sub(r"\s+", "", str(value)).lower()
+
+
+#: OSM tags that say an object is somebody's home, whatever the page says (R691, structural and language-free).
+_DWELLING_BUILDINGS = frozenset({
+    "house", "residential", "detached", "semidetached_house", "terrace", "apartments", "bungalow", "cabin", "dormitory", "farm",
+    "farm_auxiliary", "houseboat", "static_caravan", "hut", "villa", "manor", "stilt_house", "trullo", "ger",
+})
+_PRIVATE_TOURISM = frozenset({"guest_house", "apartment", "chalet", "alpine_hut", "camp_pitch", "caravan_site"})
+#: An object is a public place only when OSM says so: a public-facing key, or a link to Wikidata or Wikipedia.
+_PUBLIC_KEYS = ("amenity", "shop", "tourism", "leisure", "office", "healthcare", "public_transport", "aeroway", "emergency", "religion",
+                "wikidata", "wikipedia")
+
+
+def _public_place(answer: dict[str, Any], number: str | None) -> bool:
+    """FAILS CLOSED: an answer without facts, with another house number, tagged as a dwelling or private, or with nothing that makes it
+    public is never placed (R691: what OSM itself says the object is, in no language at all)."""
+    facts = answer.get("facts")
+    if not isinstance(facts, dict) or number is None:
+        return False
+    osm_numbers = {_number(n) for n in re.split(r"[;,]", str(facts.get("addr:housenumber") or "")) if n.strip()}
+    if number not in osm_numbers:
+        return False
+    if str(facts.get("building") or "").lower() in _DWELLING_BUILDINGS or "residential" in str(facts.get("building:use") or "").lower():
+        return False
+    if str(facts.get("access") or "").lower() in ("private", "no") or str(facts.get("tourism") or "").lower() in _PRIVATE_TOURISM:
+        return False
+    return any(facts.get(k) for k in _PUBLIC_KEYS if not (k == "tourism" and facts.get(k) in _PRIVATE_TOURISM))
 
 
 def variants(text: str) -> list[str]:
@@ -490,7 +562,7 @@ def resolve(text: str, geocoder: Any = None, *, guarded: bool = False) -> dict[s
     # (``guarded``) for the answer to agree with.
     tries = [q for q in tries if len(q.split(",")) > core] if whole > core else (tries if guarded else [])
     for query in tries:
-        answer = geocoder(query, limit=MAX_ANSWERS + 1)
+        answer = geocoder(query, limit=MAX_ANSWERS + 1, facts=True)
         status = answer.get("status")
         if status == "no-country":
             return {"status": "no_osm_country"}
@@ -504,6 +576,10 @@ def resolve(text: str, geocoder: Any = None, *, guarded: bool = False) -> dict[s
         points = [(float(r["lat"]), float(r["lon"])) for r in results]
         spread = max((metres(p, q) for p in points for q in points), default=0.0)
         if spread > SAME_PLACE_METRES:
+            return {"status": "ambiguous", "answers": total}
+        number = house_number(query)
+        if not all(_public_place(r, number) for r in results):
+            # Another house number, a dwelling, a private object or nothing public: never placed, counted as not confirmed.
             return {"status": "ambiguous", "answers": total}
         first = results[0]
         countries = {c.get("alpha3"): c.get("vintage") for c in answer.get("countries") or []}
@@ -815,6 +891,7 @@ def _report(state: _State, held: dict[str, tuple[str, str, str]], boxes: list, g
             "building and public place infoboxes, nothing on it marks a person or a family and nothing on it names a home; in it, the fields named as an address. Each is "
             "looked up in the local OpenStreetMap address index of the countries you ingested: located when one to "
             f"{MAX_ANSWERS} objects carry every word and lie within {int(SAME_PLACE_METRES)} m of each other, and within "
-            f"{int(COORD_AGREEMENT_METRES / 1000)} km of the page's own coordinate when it has one. Nothing is looked up anywhere else."
+            f"{int(COORD_AGREEMENT_METRES / 1000)} km of the page's own coordinate when it has one; and only when OpenStreetMap tags the object "
+            "as a public place at that house number, never as a dwelling. Nothing is looked up anywhere else."
         ),
     }
