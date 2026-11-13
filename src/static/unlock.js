@@ -445,6 +445,7 @@
     }
 
     document.addEventListener("click", (ev) => {
+      if (ev.isTrusted !== true) return;  // R673: a script's el.click() or dispatchEvent takes no step, as in oo-on (R443)
       const id = ev.target.id;
       if (id === "btn-unlock")
         go(ev.target, () => post("/api/system/unlock", { passphrase: $("pw").value }));

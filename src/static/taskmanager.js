@@ -785,6 +785,7 @@
   // The job rows' controls carry data-tm="cancel|resume|move" (they were
   // inline TM.…(…) click handlers; Q1127 = a). One delegated listener runs them.
   document.addEventListener("click", function (e) {
+    if (e.isTrusted !== true) return;  // R673: a script's el.click() or dispatchEvent takes no step, as in oo-on (R443)
     var b = e.target.closest && e.target.closest("[data-tm]");
     if (!b) return;
     var act = b.getAttribute("data-tm"), id = b.getAttribute("data-id");
