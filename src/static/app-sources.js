@@ -705,14 +705,32 @@
     // never asked for, so they are not an outcome either (R320/R337). It leaves the list and is said in words
     // after the counts (R353 = B); the long form rides on the hover (`tallyHover`). The returned line is PLAIN
     // text: a caller writing it into innerHTML escapes it there.
+    // The outcome keys get words in the reader's language (R665): a CLOSED map of the pipeline's own
+    // keys (IngestResult + entries/not_modified/errors). A key outside it (a newer server, the
+    // per-reason `ff:` breakdown) is shown as sent, never mapped onto the nearest known word.
     function tally(t) {
+      const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) =>
         String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? v[k] : m));
+      const words = {
+        entries: "entries in the feed",
+        stored: "new articles stored",
+        duplicate: "already stored",
+        not_modified: "feed unchanged since the last check",
+        blocked_robots: "refused by the site's robots.txt",
+        robots_unavailable: "robots.txt could not be read",
+        fetch_failed: "could not be downloaded",
+        crawl_delay_deferred: "left for later (the site asked to wait)",
+        extract_failed: "no readable text",
+        non_article: "not an article (menu or index page)",
+        errors: "could not be saved",
+      };
+      const label = (k) => Object.prototype.hasOwnProperty.call(words, k) ? tr(words[k]) : k;
       const counts = Object.entries(t || {})
         .filter(([k,v]) => v > 0 && k !== "skipped_offline" && k !== "stopped_unwalked")
-        .map(([k,v]) => `${k}: ${v}`).join(", ");
+        .map(([k,v]) => `${label(k)}: ${v}`).join(", ");
       const cut = (t && t.stopped_unwalked) || 0;
-      if (!(cut > 0)) return counts || "nothing new";
+      if (!(cut > 0)) return counts || tr("nothing new");
       return counts
         ? tf("{counts} · {n} entries not asked for (you stopped collection)", {counts, n: cut})
         : tf("{n} entries not asked for (you stopped collection)", {n: cut});
