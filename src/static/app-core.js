@@ -1964,6 +1964,14 @@
       if (_nf) {
         return tf("The backup without newsletters was stopped: the clean copy of your corpus could not be made ({reason}). No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead.", { reason: iso(_nf[1]) });
       }
+      // backup/merge.py _WRITER_JOBS_REFUSAL (R659): a restore refused while a background job writes to the corpus. Whole message only;
+      // the jobs are the registry's own labels, each translated where the page has it, joined by "; ".
+      const _wj = /^a background job is writing to your corpus \((.+)\) — nothing was imported, and nothing was written to your corpus\. What it writes during an import would be lost when your corpus is switched\. Let it finish, or stop it if it can be stopped, then import again\.$/.exec(s.trim());
+      if (_wj) {
+        return tf("A background job is writing to your corpus ({jobs}). Nothing was imported and nothing in your corpus changed: what it writes during an import would be lost when your corpus is switched. Let it finish, or stop it if it can be stopped, then import again.", {
+          jobs: _wj[1].split("; ").map((x) => t(x)).join("; "),
+        });
+      }
       for (const [re, kind] of _OO_SPACE_RES) {
         const m = re.exec(s);
         if (!m) continue;
@@ -2563,6 +2571,16 @@
           if (a.includes("resume"))
             acts.push(`<button class="tiny secondary" data-on-click="jobResume(${esc(JSON.stringify(j.id))}, true)">${esc(t("Resume"))}</button>`);
           if (a.includes("cancel") && !a.includes("pause") && j.kind === "keyword-fold")
+            acts.push(`<button class="tiny secondary" data-on-click="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Cancel"))}</button>`);
+        }
+        // Local work the server lists actions for, drawn as listed (R600's second PR): the bulk
+        // summary & translation queue (a waiting run's Cancel; the paused queue's Resume / Cancel)
+        // and the Insights backlog drain (Cancel). Local model and DB work: a resume asks nothing.
+        if (j.kind === "llm-bulk-queue" || j.kind === "insights-backlog") {
+          const a = Array.isArray(j.actions) ? j.actions : [];
+          if (a.includes("resume"))
+            acts.push(`<button class="tiny secondary" data-on-click="jobResume(${esc(JSON.stringify(j.id))}, true)">${esc(t("Resume"))}</button>`);
+          if (a.includes("cancel"))
             acts.push(`<button class="tiny secondary" data-on-click="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Cancel"))}</button>`);
         }
         const qpos = j.queue_position ? ` <span class="muted">#${j.queue_position} ${esc(t("in queue"))}</span>` : "";

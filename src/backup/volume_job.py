@@ -623,7 +623,7 @@ class VolumeBackupManager:
         hold_after_merge: bool = False,
         already_merged_digests: frozenset[str] = frozenset(),
     ):
-        from src.backup.merge import RestoreAborted, RestoreRefused
+        from src.backup.merge import RestoreAborted, RestoreRefused, WriterJobsRefused
 
         # ONE run journal per queue item, opened before anything expensive. Eight
         # sequential imports at ~10 h each sharing one run_id would wrap the beat
@@ -739,19 +739,6 @@ class VolumeBackupManager:
                 resume_after_exclusive_operation,
             )
 
-            was_paused = False
-            try:
-                was_paused = pause_for_exclusive_operation()
-            except Exception as exc:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
-                log_failure(
-                    _LOG,
-                    "pausing background collection for the restore failed",
-                    exc,
-                    passphrase,
-                    corpus_passphrase,
-                    level=logging.WARNING,
-                )
-
             # The user-visible phase TOTAL for this restore: our own manager phases
             # plus run_restore's own plan for these exact flags. Computed, never a
             # constant -- run_restore's plan legitimately differs by commit /
@@ -770,12 +757,32 @@ class VolumeBackupManager:
                     return 0
                 return len(_RESTORE_MANAGER_PHASES) + _restore_plan.index(stage_name) + 1
 
+            # The claim is taken LAST, right before the ``try`` whose ``finally`` gives it back (R383, security read of B3 delta 3): the hold
+            # is counted, so a claim stranded by a raise in between would keep collection off until the app restarts.
+            was_paused = False
+            # R383: the claim this restore takes on the scheduler's hold, so its resume releases exactly that one (the hold is counted)
+            hold_claim: list[bool] = []
+            try:
+                was_paused = pause_for_exclusive_operation(claim=hold_claim)
+            except Exception as exc:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
+                log_failure(
+                    _LOG,
+                    "pausing background collection for the restore failed",
+                    exc,
+                    passphrase,
+                    corpus_passphrase,
+                    level=logging.WARNING,
+                )
+
             try:
                 self._on_prog({
                     "phase": "reassembling", "own_the_machine": True,
                     "phase_index": _RESTORE_MANAGER_PHASES.index("reassembling") + 1,
                     "phase_total": _phase_total,
                 })
+                from src.backup.merge import refuse_while_writer_jobs_run
+
+                refuse_while_writer_jobs_run()  # before the verify and reassembly (R659): a refusal costs no staging
                 staged = read_volume_backup(
                     srcp, passphrase, corpus_passphrase=corpus_passphrase,
                     should_stop=self._stop.is_set,
@@ -1003,8 +1010,11 @@ class VolumeBackupManager:
                 finally:
                     cleanup_staging(staged)
             finally:
+                from src.backup.merge import start_jobs_stopped_for_restore
+
+                start_jobs_stopped_for_restore()  # the jobs this restore stopped (R659), whatever its outcome; never raises
                 try:
-                    resume_after_exclusive_operation(was_paused)
+                    resume_after_exclusive_operation(was_paused, claim=hold_claim)
                 except Exception as exc:  # noqa: BLE001 - the resume is a courtesy, never load-bearing
                     log_failure(
                         _LOG,
@@ -1031,7 +1041,12 @@ class VolumeBackupManager:
             said = record_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
             _LOG.warning("volume restore refused before the swap: %s", said)
             runlog.end("refused", detail=said)  # already cut to FAILURE_MSG_KEEP above: one bound, not two
-            storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="barrier")
+            # Two refusals reach here: the swap barrier's (another job still held the corpus) and R659's (a registered job is writing to
+            # it, raised before anything was staged). The journal names which, so a reader of the record is not sent after a lease holder.
+            if issubclass(type(exc), WriterJobsRefused):
+                storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="writer-jobs")
+            else:
+                storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="barrier")
             with self._lock:
                 self._state = "error"
                 self._error = said

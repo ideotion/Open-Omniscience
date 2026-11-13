@@ -71,6 +71,12 @@ class JobContext:
         self._job = job
 
     @property
+    def yielding(self) -> bool:
+        """True once a committing restore asked this job to step aside (R659): the worker stops at its next safe point and reports a yield,
+        not a cancel. Only a ``stops_for_restore`` job is ever asked."""
+        return self._job._yield.is_set()
+
+    @property
     def stopping(self) -> bool:
         """True once cancel() was called — the worker should stop at the next safe point."""
         return self._job._stop.is_set()
@@ -140,11 +146,17 @@ class BackgroundJob:
         *,
         is_writer: bool = False,
         cancellable: bool = False,
+        stops_for_restore: bool = False,
     ) -> None:
         self.kind = kind
         self.label = label
         self._worker = worker
         self.is_writer = is_writer
+        # ``stops_for_restore`` (R659): stopping this job loses nothing (it resumes from a durable mark), so a committing restore STOPS it
+        # (``stop_jobs_for_restore``) instead of refusing; one still running when the bounded wait ends is named like any other writer. A
+        # restore that then refuses starts it again at once (``start_jobs_after_refusal``), and one that goes ahead leaves it to the import's
+        # own hand-off. Requires ``cancellable=True``, and a job that starts with no arguments (it is started again with none).
+        self.stops_for_restore = stops_for_restore and cancellable
         # HONESTY (no theater): only advertise a Cancel affordance when the worker actually
         # checks ctx.stopping and stops early. A worker that wraps an OPAQUE library call
         # (apply_source_types / backfill_baseline_tags loop internally, take no ctx) cannot
@@ -153,6 +165,10 @@ class BackgroundJob:
         self.cancellable = cancellable
         self._lock = threading.RLock()
         self._stop = threading.Event()
+        # Set by a committing restore (``stop_jobs_for_restore``, R659) on a ``stops_for_restore`` job: a request to step aside for the
+        # import, NOT the operator's cancel, so the run ends as a yield ('done', the worker says it paused for the import), never as
+        # 'cancelled'. Read by the worker through ``ctx.yielding``.
+        self._yield = threading.Event()
         self._thread: threading.Thread | None = None
         self._state = "idle"  # idle | running | done | cancelled | error
         self._error: str | None = None
@@ -192,6 +208,7 @@ class BackgroundJob:
             if self._alive():
                 raise RuntimeError(f"a {self.kind} job is already running")
             self._stop.clear()
+            self._yield.clear()
             self._state = "running"
             self._error = None
             self._result = None
@@ -366,6 +383,132 @@ def all_job_statuses() -> list[dict]:
     with _REG_LOCK:
         jobs = list(_REGISTRY.values())
     return [j.status() for j in jobs]
+
+
+def stop_all_jobs(timeout: float) -> list[str]:
+    """Ask every registered job that is running to stop, and wait for them all against ONE deadline (audit A-029).
+
+    For the app's shutdown, which disposes the database engine next: a job still writing then holds a connection the disposal cannot
+    close, so the log is not written back, and the process exit ends its unit (rolled back, never torn: every worker commits per unit).
+    A cancellable job is asked to stop at its next safe point; a job that cannot be interrupted (``cancellable=False``) is NOT asked,
+    since the flag would only make a late finish read as 'cancelled' (``_run`` keeps it 'done' anyway), and it is waited for within the
+    same deadline. ``timeout`` is the whole wait, shared by every job, never ``timeout`` per job.
+
+    Returns the KINDS still running when the deadline passed (empty when every job ended), in registry order. Kinds only: a job's
+    kwargs can carry a passphrase. Never raises: a shutdown step must not stop the steps after it."""
+    try:
+        with _REG_LOCK:
+            jobs = list(_REGISTRY.values())
+        running = []
+        for job in jobs:
+            try:
+                if job._alive():
+                    running.append(job)
+                    if job.cancellable:
+                        job.cancel()
+            except Exception:  # noqa: BLE001 - one job's state never hides the others
+                running.append(job)
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        left: list[str] = []
+        for job in running:
+            try:
+                if not job.join(max(0.0, deadline - time.monotonic())):
+                    left.append(job.kind)
+            except Exception:  # noqa: BLE001 - a job that cannot be joined is reported as still running
+                left.append(job.kind)
+        return left
+    except Exception:  # noqa: BLE001 - never raises; an unreadable registry stops nothing and says so in the log
+        with contextlib.suppress(Exception):
+            _LOG.warning("background jobs: could not ask the running jobs to stop")
+        return []
+
+
+def running_writer_jobs(*, include_stoppable: bool = True) -> list[tuple[str, str]]:
+    """The registered jobs that commit to the corpus (``is_writer``) and are running now, as ``(kind, label)`` in registry order (R659).
+
+    THE ONE LIST: derived from the registry's own flags, never kept by hand, so a new writer kind is named the moment it registers. A job is
+    named while its thread is alive, whatever window is open: only a job that has actually ended is left out. Kinds and labels only (a job's
+    kwargs can hold a passphrase). A job whose state cannot be read is named: naming a job that was idle costs a retry, leaving out one
+    that writes costs its rows. ``include_stoppable=False`` leaves out the jobs a restore stops for itself (``stops_for_restore``): what the
+    restore would still refuse for, read without stopping anything (the import page's question before it starts)."""
+    with _REG_LOCK:
+        jobs = [j for j in _REGISTRY.values() if include_stoppable or not getattr(j, "stops_for_restore", False)]
+    return [pair for pair in (_writer_pair(job) for job in jobs) if pair is not None]
+
+
+def _writer_pair(job: BackgroundJob) -> tuple[str, str] | None:
+    try:
+        if not job.is_writer or not job._alive():
+            return None
+    except Exception:  # noqa: BLE001 - unreadable state: named, see running_writer_jobs
+        pass
+    return (str(job.kind), str(job.label))
+
+
+def stop_jobs_for_restore(timeout: float) -> list[str]:
+    """Ask every running job flagged ``stops_for_restore`` to stop, and wait for them against ONE deadline (R659). Returns EVERY kind asked.
+
+    For a committing restore, before it decides whether to refuse: such a job resumes from its own durable mark and the restore path starts
+    it again afterwards, so stopping it costs a pause, where refusing would cost the operator the import. A job still running when the wait
+    ends has its ask WITHDRAWN (the restore then names it and refuses): left standing, the ask would stop it at its next safe point for an
+    import that never happens, and nothing would start it again. It is returned all the same, because it may have reached its safe point
+    between the wait and the withdrawal; starting it again is a no-op while it still runs. Never raises."""
+    asked: list[BackgroundJob] = []
+    try:
+        with _REG_LOCK:
+            jobs = [j for j in _REGISTRY.values() if j.stops_for_restore and j.is_writer]
+        asked = [j for j in jobs if _ask_to_stop(j)]
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        for j in asked:
+            if not _joined(j, deadline):
+                j._yield.clear()
+    except Exception:  # noqa: BLE001 - the restore then names whatever still runs
+        pass
+    return [j.kind for j in asked]
+
+
+def start_jobs_after_refusal(kinds: list[str]) -> list[str]:
+    """Start again the jobs a restore stopped (``stop_jobs_for_restore``) when that restore then refused (R659): nothing else would, and the
+    task manager would show a stop the operator never asked for. With no arguments, as a ``stops_for_restore`` job is started. Returns the
+    kinds started; never raises (one that cannot start stays stopped, its durable mark intact, and its own Resume still works)."""
+    started: list[str] = []
+    for kind in kinds:
+        if _start_again(kind):
+            started.append(kind)
+    return started
+
+
+def _start_again(kind: str) -> bool:
+    try:
+        with _REG_LOCK:
+            job = _REGISTRY.get(kind)
+        if job is None or not job.stops_for_restore:
+            return False
+        with job._lock:
+            cancelled = job._state == "cancelled" or job._stop.is_set()  # a Cancel pressed after the yield ended leaves the state 'done'
+        if cancelled:  # the operator's own Cancel since the restore stopped it: never overridden
+            return False
+        job.start()
+        return True
+    except Exception:  # noqa: BLE001 - already running again, or the thread could not be made: logged by start(), never raised
+        return False
+
+
+def _ask_to_stop(job: BackgroundJob) -> bool:
+    try:
+        if job._alive():
+            job._yield.set()  # a yield for the import, never the operator's cancel (the task manager would show a stop nobody asked for)
+            return True
+    except Exception:  # noqa: BLE001 - not asked: named by the refusal if it runs
+        pass
+    return False
+
+
+def _joined(job: BackgroundJob, deadline: float) -> bool:
+    try:
+        return job.join(max(0.0, deadline - time.monotonic()))
+    except Exception:  # noqa: BLE001 - not known to have stopped
+        return False
 
 
 def _reset_registry_for_tests() -> None:

@@ -933,12 +933,16 @@
       const tally = lawFloorStatesIn(sizes)
         .map((st) => `<div class="living-row"><span title="${esc(lawFloorStateWhy(st, t))}">${esc(lawFloorStateWords(st, t))}</span>`
           + ` <b>${esc(String(sizes[st]))}</b></div>`).join("");
-      // A state this build does not know sorts after the known ones, never first.
+      // A state this build does not know sorts after the known ones, never first. Within a state the server's order holds
+      // (R679: population reached from the operator's dated table, else by code), so the browser never re-sorts by code.
       const rank = (cc) => { const i = _LAW_FLOOR_ORDER.indexOf(stateOf[cc]); return i < 0 ? _LAW_FLOOR_ORDER.length : i; };
+      const pos = {};
+      for (const st of Object.keys(f.by_state)) (Array.isArray(f.by_state[st]) ? f.by_state[st] : []).forEach((cc, i) => { pos[cc] = i; });
+      const at = (cc) => (cc in pos ? pos[cc] : Infinity);
       const langRow = (r) => {
         const members = [];
         for (const basis of ["official", "de-facto", "regional"]) for (const cc of (r[basis] || [])) members.push({ cc, basis });
-        members.sort((a, b) => rank(a.cc) - rank(b.cc) || (a.cc < b.cc ? -1 : 1));
+        members.sort((a, b) => rank(a.cc) - rank(b.cc) || at(a.cc) - at(b.cc) || (a.cc < b.cc ? -1 : 1));
         const contested = new Set(r.contested || []);
         const list = members.map((m) => `<div>${ooCountryCell(m.cc)} <span class="muted">${esc(lawFloorBasisWords(m.basis, t))}`
           + `${contested.has(m.cc) ? " · " + esc(t("contested")) : ""}</span> · ${esc(lawFloorStateWords(stateOf[m.cc], t))}</div>`).join("");
@@ -959,7 +963,10 @@
       const many = f.many_country_sources
         ? Object.keys(f.many_country_sources).reduce((n, k) => n + Object.keys(f.many_country_sources[k] || {}).length, 0) : 0;
       const unplaced = f.unplaced_documents ? Object.keys(f.unplaced_documents).reduce((n, k) => n + (Number(f.unplaced_documents[k]) || 0), 0) : 0;
-      const notes = `<p class="hint">${esc(t("Each country is in exactly one state. Only law sources count: an IP office or a court-decision site does not. Within a state the countries are listed by code; ordering by population reached waits for a dated population table. These are counts of countries, never a share of anything."))}</p>`
+      const byPop = f.order && f.order.by === "population";
+      const notes = `<p class="hint">${esc(byPop
+        ? tf("Each country is in exactly one state. Only law sources count: an IP office or a court-decision site does not. Within a state the countries are listed by population reached ({source}, {date}); any the table lacks follow by code. These are counts of countries, never a share of anything.", { source: String(f.order.source || "—"), date: f.order.as_of ? ooIsoDate(f.order.as_of) : "—" })
+        : t("Each country is in exactly one state. Only law sources count: an IP office or a court-decision site does not. Within a state the countries are listed by code; ordering by population reached waits for a dated population table. These are counts of countries, never a share of anything."))}</p>`
         + (many ? `<p class="hint">${esc(tf("{n} sources that serve many countries at once are credited to no single country.", { n: String(many) }))}</p>` : "")
         + (unplaced ? `<p class="hint">${esc(tf("{n} tracked documents state no country and are credited to none.", { n: String(unplaced) }))}</p>` : "");
       return caveat + unchecked + head + tally + rows.map(langRow).join("") + zhNote + notes;

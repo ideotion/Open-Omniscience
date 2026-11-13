@@ -54,8 +54,6 @@ _VIEW_ONLY = {
     "agExcludeClear": "browser-local calendar-feed exclusions (localStorage)",
     "agToggleExclude": "browser-local calendar-feed exclusions (localStorage)",
     "bulkLlmStop": "aborts this tab's own in-flight request and hides its panel",
-    "bulkJobCancel": "this tab's own queue and its own in-flight request",
-    "bulkJobClearDone": "this tab's own queue list",
     "bulkPanelHide": "hides a panel in the open view",
     "cardResetTunable": "puts a briefing-card input back to its default value, saves nothing",
     "clearIdxCompare": "empties the open comparison selection",
@@ -246,7 +244,7 @@ def test_the_trusted_click_table_is_real_and_not_contradicted() -> None:
     """Every row is an allowlisted action with a reason that has no prompt of its own; a name that asks first leaves the table."""
     js = app_js()
     listed = set(_allowlist())
-    assert len(TRUSTED_CLICK_ONLY) == 26, f"the table changed size: {len(TRUSTED_CLICK_ONLY)}"
+    assert len(TRUSTED_CLICK_ONLY) == 28, f"the table changed size: {len(TRUSTED_CLICK_ONLY)}"
     assert all(reason.strip() for reason in TRUSTED_CLICK_ONLY.values())
     dead = sorted(set(TRUSTED_CLICK_ONLY) - listed)
     assert not dead, f"on the trusted-click table but not an allowlisted action: {dead}"

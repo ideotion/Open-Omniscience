@@ -886,6 +886,19 @@ def jobs_ledger(limit: int = 200) -> dict:
     }
 
 
+#: Registered jobs whose rows their owner draws: the bulk queue's running run is already its ``llm`` task row (with its Stop), and
+#: a second row for the drain around it would show one run twice.
+_OWN_ROW_KINDS = frozenset({"llm-bulk-queue"})
+
+
+def _llm_queue_jobs() -> list[dict]:
+    """The server-side bulk summarize/translate queue (R600's second PR): each run waiting its turn (Cancel), or the queue a
+    restart paused (Resume / Cancel). The running run is the ``llm`` task row. Local work: a resume opens no connection."""
+    from src.jobs.llm_bulk_queue import queue_rows
+
+    return queue_rows()
+
+
 def _background_jobs() -> list[dict]:
     """The generic background jobs (field test 2026-07-08, Item 8 P1): the heavy button
     actions that used to run synchronously — governments load-standard, enrich-source-types,
@@ -898,6 +911,8 @@ def _background_jobs() -> list[dict]:
     for s in all_job_statuses():
         if s["state"] not in ("running", "error"):
             continue  # idle/done/cancelled are not shown (mirrors the reindex/import helpers)
+        if s["kind"] in _OWN_ROW_KINDS and s["state"] == "running":
+            continue  # the owner draws its own rows (_llm_queue_jobs)
         state = "failed" if s["state"] == "error" else "running"
         # HONEST cancel affordance: only a cooperatively-cancellable worker (governments)
         # advertises Cancel — the opaque ones (enrich/backfill) can't be interrupted mid-pass,
@@ -937,6 +952,25 @@ _DB_WRITER_KINDS = ("collect", "import", "reindex", "quarantine") + (
 )
 
 
+def _registry_writer_kinds() -> set[str]:
+    """Every registered background job kind flagged ``is_writer`` (R659: the arbitration list is derived, never only kept by hand)."""
+    from src.jobs.background import all_job_statuses
+
+    return {str(s["kind"]) for s in all_job_statuses() if s.get("is_writer")}
+
+
+def _import_refusal() -> str | None:
+    """The refusal a committing restore would raise now (R659), read without stopping anything; None when it would go ahead."""
+    try:
+        from src.backup.merge import _WRITER_JOBS_REFUSAL
+        from src.jobs.background import running_writer_jobs
+
+        running = running_writer_jobs(include_stoppable=False)
+    except Exception:  # noqa: BLE001 - the import's own check still refuses; the page then shows the server's sentence
+        return None
+    return _WRITER_JOBS_REFUSAL.format(jobs="; ".join(label for _kind, label in running)) if running else None
+
+
 @router.get("")
 def list_jobs() -> dict:
     """Every visible job, aggregated LIVE from the owning systems (no shadow
@@ -963,6 +997,7 @@ def list_jobs() -> dict:
     jobs.extend(_model_pull_jobs())
     jobs.extend(_background_jobs())
     jobs.extend(_task_jobs())
+    jobs.extend(_llm_queue_jobs())
     f = _live_fetch()
     if f:
         jobs.append(f)
@@ -973,7 +1008,10 @@ def list_jobs() -> dict:
     # writer lock nor (usually) hosts. The arbitration ASK therefore fires
     # only for DB-WRITER collisions (collect/import kinds); bulk downloads
     # keep their own single-download, reorderable queue among themselves.
-    db_writers = [j for j in running if j["kind"] in _DB_WRITER_KINDS]
+    # ONE LIST (R659): the hand-kept kinds above (the owners that are not registry jobs) plus every registered job flagged
+    # ``is_writer``, read from the registry itself, so the ask and the restore's refusal name the same writers.
+    writer_kinds = set(_DB_WRITER_KINDS) | _registry_writer_kinds()
+    db_writers = [j for j in running if j["kind"] in writer_kinds]
     return {
         "jobs": jobs,
         "running": len(running),
@@ -981,6 +1019,10 @@ def list_jobs() -> dict:
         "network_busy": bool(running),
         "db_writers_busy": bool(db_writers),
         "busy_with": [f"{j['kind']}: {j['label']}" for j in db_writers],
+        # What a committing import would answer right now (R659): the refusal it would raise, or None. The import page reads it before it
+        # starts, so it never offers "Start anyway?" for an import the server is about to refuse. A job the restore stops for itself
+        # (``stops_for_restore``) is left out, because the import stops it rather than refusing.
+        "import_refused": _import_refusal(),
         "running_with": [f"{j['kind']}: {j['label']}" for j in running],
         "method": (
             "Aggregated live from the scheduler, the dump manager and the "
@@ -1030,6 +1072,21 @@ def cancel_job(job_id: str) -> dict:
         if not ok:
             raise HTTPException(status_code=404, detail=f"unknown OSM download {key!r}")
         return {"cancelled": job_id, "detail": "download paused (resumable; delete it in Settings → OpenStreetMap)"}
+    if job_id.startswith("llm-bulk:") or job_id == "llm-bulk-queue":
+        # The server-side bulk queue: a waiting run is dropped before it starts; the paused queue's Cancel drops every run a
+        # restart left waiting (the articles they already stored stay stored).
+        from src.jobs.llm_bulk_queue import get_queue
+
+        if job_id == "llm-bulk-queue":
+            get_queue().cancel_pending()
+            return {"cancelled": job_id, "detail": "Waiting runs cancelled; finished articles stay stored."}
+        try:
+            entry_id = int(job_id.split(":", 1)[1])
+        except ValueError:
+            raise HTTPException(status_code=404, detail=f"unknown run {job_id!r}") from None
+        if not get_queue().cancel(entry_id):
+            raise HTTPException(status_code=404, detail=f"run {job_id!r} is not waiting or running")
+        return {"cancelled": job_id, "detail": "Cancelled."}
     if job_id.startswith("task:"):
         # A background AI run that no longer ends with its tab (src/api/detached_stream.py): it stops after the articles in
         # flight (a generation computed but not yet stored is dropped); every article it finished stays stored.
@@ -1150,6 +1207,14 @@ def resume_job(job_id: str) -> dict:
     the partial file from where it stopped). The frontend gates this through the
     ONE network-consent popup first (invariant #14) — a resume re-opens a fetch;
     the download path itself still refuses while the kill switch is engaged."""
+    if job_id == "llm-bulk-queue":
+        # Local model work on loopback: no network, no consent popup. The run a restart stopped goes first and skips what it
+        # had already stored.
+        from src.jobs.llm_bulk_queue import get_queue
+
+        if not get_queue().resume():
+            raise HTTPException(status_code=404, detail="Nothing paused to resume.")
+        return {"resumed": job_id, "detail": "Summary & translation queue resumed."}
     if job_id.startswith("dump:"):
         from src.wiki.dumps import get_manager
 
