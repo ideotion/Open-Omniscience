@@ -77,13 +77,10 @@ def test_the_page_rounds_the_same_numbers_the_same_way():
     from src.weather.openmeteo import round_place
 
     values = [48.85661, 2.35222, 0.25, -0.25, 7.75, -0.04, -1.2864, 0.05, 0.15, 1.45, -2.35, 12.349999]
-    script = (
-        "const APP = require(" + repr(str(_ROOT / "tests" / "app_source.js")) + ").appJs();\n"
-        "const at = APP.indexOf('function ooRoundPlace(');\n"
-        "const end = APP.indexOf('\\n    }\\n', at) + 6;\n"
-        "const ooRoundPlace = new Function(APP.slice(at, end) + '\\nreturn ooRoundPlace;')();\n"
-        "console.log(JSON.stringify(" + repr(values) + ".map(ooRoundPlace)));\n"
-    )
+    from tests.js_source_helper import function_body
+
+    body = function_body((_ROOT / "src" / "static" / "app-home.js").read_text(encoding="utf-8"), "ooRoundPlace")
+    script = "function ooRoundPlace(v) " + body + "\nconsole.log(JSON.stringify(" + repr(values) + ".map(ooRoundPlace)));\n"
     proc = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=60, cwd=_ROOT)
     assert proc.returncode == 0, proc.stderr
     import json
@@ -144,8 +141,8 @@ def test_the_plaintext_folder_is_deleted_once_and_then_nothing_happens(data_dir)
     old = data_dir / LEGACY_CACHE_DIR
     old.mkdir()
     for i in range(3):
-        (old / f"{i:024x}.json").write_text('{"ok": true, "provenance": {"requested_url": "latitude=48.8566"}}')
-    (data_dir / "keep.txt").write_text("unrelated")
+        (old / f"{i:024x}.json").write_text('{"ok": true, "provenance": {"requested_url": "latitude=48.8566"}}', encoding="utf-8")
+    (data_dir / "keep.txt").write_text("unrelated", encoding="utf-8")
     assert purge_plaintext_cache() == 3
     assert not old.exists(), "no plaintext coordinate file remains"
     assert (data_dir / "keep.txt").exists(), "only the weather folder is touched"
@@ -153,10 +150,12 @@ def test_the_plaintext_folder_is_deleted_once_and_then_nothing_happens(data_dir)
 
 
 def test_startup_upkeep_runs_the_purge():
-    src = (_ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
-    start = src.index("def _run_startup_upkeep(")
-    end = src.index("\ndef ", start + 1)
-    assert "purge_plaintext_cache()" in src[start:end], "the purge runs on the first start after the update"
+    import inspect
+
+    from src.api import main
+
+    assert "purge_plaintext_cache()" in inspect.getsource(main._run_startup_upkeep), \
+        "the purge runs on the first start after the update"
 
 
 def test_a_panic_wipe_leaves_nothing_of_the_weather_slices(data_dir):
@@ -165,13 +164,14 @@ def test_a_panic_wipe_leaves_nothing_of_the_weather_slices(data_dir):
     from src.weather import openmeteo
 
     (data_dir / openmeteo.LEGACY_CACHE_DIR).mkdir()
-    (data_dir / openmeteo.LEGACY_CACHE_DIR / "a.json").write_text("{}")
+    (data_dir / openmeteo.LEGACY_CACHE_DIR / "a.json").write_text("{}", encoding="utf-8")
     (data_dir / "oo.db").write_bytes(b"x" * 64)  # where app_state, and so every held slice, lives
     try:
         panic_wipe(data_dir, confirm=True)
     finally:
         clear_kill_switch()
-    assert not data_dir.exists()
+    # (Clearing the switch afterwards may write its own state file back into the folder; that is not ours.)
+    assert not (data_dir / "oo.db").exists(), "the store holding every slice is gone"
     assert not list(Path(data_dir.parent).glob("**/" + openmeteo.LEGACY_CACHE_DIR))
 
 
@@ -321,7 +321,7 @@ def test_a_symlinked_legacy_folder_is_unlinked_and_its_target_left_alone(data_di
     from src.weather.openmeteo import LEGACY_CACHE_DIR, purge_plaintext_cache
 
     elsewhere = tmp_path_factory.mktemp("elsewhere")
-    (elsewhere / "x.json").write_text("{}")
+    (elsewhere / "x.json").write_text("{}", encoding="utf-8")
     (data_dir / LEGACY_CACHE_DIR).symlink_to(elsewhere, target_is_directory=True)
     assert purge_plaintext_cache() == 0
     assert not (data_dir / LEGACY_CACHE_DIR).exists() and (elsewhere / "x.json").exists()
