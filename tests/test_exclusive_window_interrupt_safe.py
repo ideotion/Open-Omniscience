@@ -143,7 +143,7 @@ def test_an_inner_window_interrupted_before_it_counted_leaves_the_outer_one_stan
     assert not sched.held and sched.running and sched.starts == 1 and not R.exclusive_window_open()
 
 
-def test_an_inner_window_that_never_counted_gives_nothing_back_when_the_outer_one_left_first(sched, monkeypatch):
+def test_an_inner_window_that_never_counted_gives_back_only_its_own_claim_when_the_outer_one_left_first(sched, monkeypatch):
     outer = R.exclusive_window()
     assert outer.__enter__() is True
     real = R._EXCL_LOCK
@@ -159,6 +159,8 @@ def test_an_inner_window_that_never_counted_gives_nothing_back_when_the_outer_on
     monkeypatch.setattr(R, "exclusive_window_open", open_once_for_the_inner_window)
     with pytest.raises(KeyboardInterrupt), R.exclusive_window():
         pytest.fail("the body must not run")
-    # The outer window left (and gave the scheduler back) before the inner one's ``finally`` ran; the inner one owns nothing, so it does not give it back again.
-    assert sched.releases == 1 and sched.starts == 1 and sched.running and not sched.held
+    # The outer window left (and gave the scheduler back) before the inner one's ``finally`` ran. The inner one's pause had already taken its
+    # own claim (R383: the claim comes before the window read, which is where the interrupt lands), so it gives back exactly that claim, and
+    # the loop is started once.
+    assert sched.releases == 2 and sched.starts == 1 and sched.running and not sched.held
     assert R._EXCL_DEPTH == 0
