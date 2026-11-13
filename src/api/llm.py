@@ -1948,7 +1948,10 @@ def _custom_identifier_refusal(backend: str, identifier: str) -> str | None:
         # of this ever reached a path.
         return "'..' is never part of a model name."
     if backend != "vllm":
-        return None
+        from src.llm.remote_models import REFUSAL, is_cloud_name
+
+        # R671: a cloud model is a stub that forwards every prompt to Ollama's cloud; it is never downloaded here.
+        return REFUSAL if is_cloud_name(identifier) else None
     if ":" in identifier:
         return (
             f"'{identifier}' looks like an Ollama tag, and vLLM downloads Hugging Face "
@@ -1988,6 +1991,16 @@ def llm_pull_custom_model(req: CustomModelRequest) -> dict:
     identifier = (req.identifier or "").strip()
     if not identifier:
         raise HTTPException(status_code=400, detail="No model name was given.")
+    from src.llm.remote_models import REFUSAL, is_cloud_name
+
+    if is_cloud_name(identifier):
+        # R671, answered before the airplane check: going online would not make a cloud model acceptable, so it is never the advice.
+        return {
+            "backend": "ollama",
+            "action": "nothing_to_do",
+            "queued": [],
+            "refused": [{"key": identifier, "label": identifier, "reason": REFUSAL}],
+        }
     if not egress_permitted(PURPOSE_AI_INSTALL):
         raise HTTPException(
             status_code=409,
