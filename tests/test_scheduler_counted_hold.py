@@ -175,20 +175,43 @@ def test_the_release_and_the_deferred_start_are_one_step(sch):
     sch.release_exclusive()
 
 
-def test_a_pause_inside_a_window_takes_no_claim_and_its_resume_releases_none(sch):
-    """The read's note 3: a resume releases only what its own pause took. A standalone pause started inside a window takes no claim (the
-    window owns the machine), so after the window closes, its resume must not end a third operation's claim."""
+def test_a_restore_begun_inside_a_window_keeps_the_machine_when_the_window_ends_first(sch):
+    """The reverse order (security reads A and B of B3): a window (an export, a bundle) is open, a volume restore starts inside it and the
+    window ends first. The restore's pause takes its OWN claim, so the window's last exit cannot start collection under the restore; the
+    restore's resume releases exactly that claim, and a third operation's claim is never ended by it."""
+    assert sch.start() is True
     inner: list[bool] = []
     with runner_mod.exclusive_window(timeout=HANG_GUARD_S, resume_retries=0):
         inner_paused = _restore_pause(inner)
-        assert inner == [], "a pause inside a window must not take a claim"
+        assert inner == [True], "a pause inside a window must take its own claim"
+        assert inner_paused is False, "the window already stopped the loop: this pause stopped nothing"
+    # the window has ended; the restore is still running
+    assert sch.holds_exclusive() is True, "the window's exit ended the restore's hold"
+    assert sch.is_running() is False and sch.run_now() is False and sch.start() is False, "collection came back under the restore"
     other: list[bool] = []
     _restore_pause(other)  # a third operation holds the machine now
-    _restore_resume(inner_paused, inner)  # the inner operation ends after the window closed
+    _restore_resume(inner_paused, inner)
     assert sch.holds_exclusive() is True, "a resume released a claim it never took"
-    assert sch.run_now() is False
     _restore_resume(False, other)
     assert sch.holds_exclusive() is False
+    assert sch.is_running() is True, "the start refused during the restore was never made"
+
+
+def test_a_start_handed_to_a_window_without_a_claim_is_made_at_its_exit(sch, monkeypatch):
+    """Security read B, should-fix 1 (and the delta read's): a window that opened while another was closing holds no claim. A restore that
+    stopped the loop ends inside it and hands it the start; the window's exit, with nothing to release, must still make that start."""
+    assert sch.start() is True
+    restore: list[bool] = []
+    was_paused = _restore_pause(restore)
+    assert was_paused is True
+    # window B read ``already`` while A was open and A has closed since: B counts, but neither pauses nor claims
+    monkeypatch.setattr(runner_mod, "exclusive_window_open", lambda: True)
+    with runner_mod.exclusive_window(timeout=HANG_GUARD_S, resume_retries=0):
+        monkeypatch.setattr(runner_mod, "exclusive_window_open", lambda: runner_mod._EXCL_WINDOW)
+        _restore_resume(was_paused, restore)  # the restore ends inside B: its start is handed to B
+        assert sch.holds_exclusive() is False
+        assert sch.is_running() is False, "the start was made inside the window"
+    assert sch.is_running() is True, "the start handed to the window was dropped at its exit"
 
 
 def test_an_unmatched_release_never_goes_below_zero_and_a_later_claim_still_holds(sch):
