@@ -184,7 +184,7 @@ def test_a_stop_in_the_instant_the_server_starts_is_forwarded(tmp_path):
         os.kill(proc.pid, signal.SIGTERM)  # the stop arrives while the launcher is still between starting the server and anything after it
         time.sleep(0.5)
         assert proc.poll() is None, f"the launcher died of the stop it should have forwarded (status {proc.poll()})"
-        (work / "released").write_text("1")
+        (work / "released").write_text("1", encoding="utf-8")
         conn.close()
         status = proc.wait(timeout=30)
         assert (work / "teardown").exists(), "the server's teardown did not run: the stop was never forwarded to it"
@@ -213,7 +213,7 @@ def test_a_stop_before_the_server_has_a_pid_is_carried_out_once_it_has_one(tmp_p
         os.kill(proc.pid, signal.SIGTERM)
         time.sleep(0.5)
         assert proc.poll() is None, f"the launcher died of the stop instead of keeping it (status {proc.poll()})"
-        (work / "released").write_text("1")
+        (work / "released").write_text("1", encoding="utf-8")
         status = proc.wait(timeout=30)
         assert status >= 0, f"the launcher was killed by a signal ({status})"
         pidfile = tmp_path / "server.pid"
