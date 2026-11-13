@@ -2284,6 +2284,21 @@ def test_ui_invariants():
     assert '<dialog id="wiki-tc"' not in html, (
         "the tracked-changes view lives in the Living sources tab, never a dialog again (#32)"
     )
+    # 33. Climate (R661, R662): a MAIN tab, so the roster of invariant #2 grew by one again. The
+    #     caveat is visible, and the one egressing click passes the consent popup and says
+    #     consent:true. Behaviour: tests/test_climate_api.py + tests/climate_node_test.js.
+    assert '<button class="nav-item" data-tab="climate"' in html, (
+        "Climate is a dedicated main tab in the sidebar (CLAUDE.md #33, #2)"
+    )
+    assert 'class="card-caveat" id="climate-caveat"' in html, (
+        "the Climate caveat renders visibly, never behind a toggle (#33, informed consent)"
+    )
+    _climate_js = (_SRC / "static" / "app-climate.js").read_text(encoding="utf-8")
+    _fetch_body = _climate_js[_climate_js.index("async function climateFetch("):]
+    assert _fetch_body.index("ensureOnline(") < _fetch_body.index('api("/api/climate/fetch"'), (
+        "the climate fetch passes the ONE consent popup before it asks the server (#33, #14)"
+    )
+    assert "consent: true" in _fetch_body, "the climate fetch says consent:true, the endpoint refuses without it (#14f)"
     # 8. external links ALWAYS confirmed via popup before opening (ruled
     #    2026-06-10) — delegated capture-phase guard in the UI.
     assert "_externalLinkGuard" in html, (
@@ -8314,7 +8329,7 @@ def test_docs_index_covers_live_docs():
 #: amendment is the growth the clause above calls normal.
 #: RAISED 2026-10-06: 792 -> 796, four lines amending protocol rule (5a)(b): a lesson and a shipped-log
 #: entry are each a NEW FILE (docs/ledger/lessons.d/, shipped_log.d/), never an append to the archives.
-_CLAUDE_MD_LINE_CEILING = 796
+_CLAUDE_MD_LINE_CEILING = 802
 
 
 def _claude_md_lines() -> int:
