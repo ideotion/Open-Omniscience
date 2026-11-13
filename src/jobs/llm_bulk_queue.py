@@ -377,13 +377,23 @@ class LlmBulkQueue:
             if self._paused or self._draining or not any(entry.get("state") == "queued" for entry in self._entries):
                 return
             self._draining = True
+        try:
+            _JOB.start()
+            return
+        except RuntimeError:
+            pass
+        # The previous drain found the queue empty and is returning. Wait for its thread OFF the request (Lane F row 13: three
+        # joins of 5 s held an add or a Resume for up to 15 s), then start again.
+        threading.Thread(target=self._start_after_previous, name="oo-llmbulk-kick", daemon=True).start()
+
+    def _start_after_previous(self) -> None:
         for _ in range(3):
+            _JOB.join(5)
             try:
                 _JOB.start()
                 return
             except RuntimeError:
-                # The previous drain found the queue empty and is returning: wait for its thread, then start again.
-                _JOB.join(5)
+                continue
         with self._lock:
             self._draining = False
         _LOG.warning("bulk queue: the drain could not be started; the next add or Resume tries again")
@@ -511,7 +521,10 @@ class LlmBulkQueue:
         try:
             req = BulkLLMRequest(**body)
             with SessionLocal() as db:
-                tok, gen, ids = prepare_bulk_run(req, db, get_llm_client_with_name(), resume_since=since)
+                # R689 (1): the stop is looked at while a generation runs, so a shutdown's stop lands within its deadline.
+                tok, gen, ids = prepare_bulk_run(
+                    req, db, get_llm_client_with_name(), resume_since=since, should_stop=lambda: ctx.stopping,
+                )
         except HTTPException as exc:
             # A refusal of the selection can quote it (an unreadable search's words, an unknown source's name): the finished run
             # keeps a fixed phrase instead, so nothing of what it was run on outlives it (R669(b)). The model's own refusals
@@ -553,6 +566,10 @@ class LlmBulkQueue:
                             entry["stored"] = int(entry.get("stored") or 0) + 1
                         elif status in ("stored", "skipped", "failed"):
                             entry[status] = int(entry.get(status) or 0) + 1
+                    elif ev == "stopped":
+                        # The generation in flight was abandoned and nothing of it stored: a task-manager Stop cancels the run,
+                        # anything else (the job's stop: a shutdown, a model release) leaves it paused for the resume.
+                        outcome = ("cancelled", None) if _tasks.cancel_requested(tok) else ("paused", None)
                     elif ev == "done":
                         if o.get("aborted"):
                             # The only abort is the model backend being unreachable (stopped, model gone, airplane mode):
@@ -563,7 +580,7 @@ class LlmBulkQueue:
                             outcome = ("done", None)
                     done_now = entry["done"]
                 ctx.set_progress(done=done_now)
-                if ev == "done":
+                if ev in ("done", "stopped"):
                     break
                 if ctx.stopping:
                     outcome = ("paused", None)
@@ -640,7 +657,7 @@ def get_queue() -> LlmBulkQueue:
 
 
 def pause_for_backend() -> bool:
-    """Before the model backend is released or stopped: the run in flight pauses after the article it is on, and the queue
+    """Before the model backend is released or stopped: the run in flight pauses at once (the article in flight is dropped and redone on resume), and the queue
     behind it waits paused for a Resume (R669: paused, never lost, nothing stored twice). True when a run was going."""
     if not _JOB.status().get("running"):
         return False

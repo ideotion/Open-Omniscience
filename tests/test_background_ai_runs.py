@@ -171,7 +171,7 @@ def test_the_three_streamed_runs_are_detached_and_stoppable():
     assert ai.count("detail_vars={\"model\": model}, cancellable=True") == 2 and ai.count("detached(_stream(), _tok") == 2
     # The bulk run is built by prepare_bulk_run (shared with the server-side queue, R600's second PR) and the streamed route
     # wraps its generator in detached() with the token it returns.
-    assert llm.count("detail_vars={\"model\": model}, cancellable=True") == 1 and llm.count("detached(gen, tok") == 1
+    assert llm.count("detail_vars={\"model\": _label_model(model)}, cancellable=True") == 1 and llm.count("detached(gen, tok") == 1
     # The page's own Cancel needs the run's task id to stop it on the server (Opus read of #1830).
     assert ai.count('headers={"X-OO-Task": f"task:{_tok}"}') == 2 and llm.count('headers={"X-OO-Task": f"task:{tok}"}') == 1
 

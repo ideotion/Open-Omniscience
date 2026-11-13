@@ -1065,7 +1065,7 @@ def _mark_index_attempt(session: Session, article_id: int) -> None:
         log_failure(_LOG, f"could not record the index attempt for {article_id}", exc, level=logging.WARNING)
 
 
-def backfill_corpus(session: Session, *, extractor, limit: int | None = 200) -> dict:
+def backfill_corpus(session: Session, *, extractor, limit: int | None = 200, should_stop=None) -> dict:
     """Index articles that have no mentions yet, up to ``limit``. Returns progress.
 
     LEAST-RECENTLY-ATTEMPTED, NOT LOWEST-ID (PRH-01, live-reproduced in
@@ -1110,6 +1110,11 @@ def backfill_corpus(session: Session, *, extractor, limit: int | None = 200) -> 
 
     attempted = newly_indexed = no_terms = failed = 0
     for art in articles:
+        if should_stop is not None and should_stop():
+            # R689 (1): a stop is honoured between ARTICLES, not after the whole batch (each article commits on its own, so
+            # nothing is half-written); the counts are skipped, since a stopping caller does not read them.
+            return {"indexed": attempted, "newly_indexed": newly_indexed, "no_terms": no_terms, "failed": failed,
+                    "remaining": None, "never_attempted": None, "stopped": True}
         art_id = art.id
         try:
             out = index_article(session, art, extractor=extractor, country=art.country)

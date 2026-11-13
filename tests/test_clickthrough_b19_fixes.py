@@ -206,10 +206,14 @@ def test_a_background_job_publishes_a_framed_detail_and_keeps_the_english():
 def test_every_model_detail_producer_sends_its_frame():
     llm = (_ROOT / "src" / "api" / "llm.py").read_text(encoding="utf-8")
     ai = (_ROOT / "src" / "api" / "ai.py").read_text(encoding="utf-8")
-    sites = llm.count('detail=f"model {model}"') + ai.count('detail=f"model {model}"')
-    framed = (llm.count('detail_i18n="model {model}", detail_vars={"model": model}')
+    # R689 / Lane F row 15: llm.py shows a model name only through ``_label_model`` (a closed name or "a model").
+    sites = (llm.count('detail=f"model {_label_model(model)}"') + llm.count('detail=f"model {model}"')
+             + ai.count('detail=f"model {model}"'))
+    framed = (llm.count('detail_i18n="model {model}", detail_vars={"model": _label_model(model)}')
+              + llm.count('detail_i18n="model {model}", detail_vars={"model": model}')
               + ai.count('detail_i18n="model {model}", detail_vars={"model": model}'))
     assert sites == framed == 5, (sites, framed)
+    assert 'detail=f"model {model}"' not in llm, "llm.py shows a raw model name again"
     assert 'detail=Framed(f"model {mdl}", "model {model}", model=mdl)' in ai
 
 
