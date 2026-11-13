@@ -5446,6 +5446,7 @@
   "This event also appears in: {calendars}": "このイベントは次にも含まれます：{calendars}",
   "This event is outside the map's current signal set.": "このイベントは地図の現在のシグナルセットの範囲外です。",
   "This file is not an evidence bundle (no manifest).": "このファイルは証拠バンドルではありません（マニフェストがありません）。",
+  "This file is not in the shape of an evidence bundle.": "このファイルは証拠バンドルの形式ではありません。",
   "This folder already holds an Open Omniscience corpus. Continuing will open it rather than create a new one.": "このフォルダーには既に Open Omniscience のコーパスがあります。続行すると、新規作成ではなくそれを開きます。",
   "This folder can be used. Your corpus will live in:": "このフォルダーを使用できます。コーパスの保存先：",
   "This folder is not writable — pick another for a backup destination.": "このフォルダーには書き込めません — バックアップ先に別のフォルダーを選んでください。",

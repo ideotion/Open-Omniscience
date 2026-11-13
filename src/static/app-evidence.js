@@ -173,6 +173,7 @@
         [/^no manifest/, t("This file is not an evidence bundle (no manifest).")],
         [/untrusted key/, t("Signed by a different key than the one you gave.")],
         [/merkle root mismatch/, t("Changed since signing: an entry was altered, added or removed.")],
+        [/^malformed bundle/, t("This file is not in the shape of an evidence bundle.")],
         [/malformed/, t("The signature or the key in the file is damaged.")],
         [/signature does not match/, t("The signature does not match: the file was changed, or signed with another key.")],
       ];
@@ -219,7 +220,9 @@
       if (!out || !file) return;
       out.textContent = t("Checking…");
       try {
-        const isImage = /^image\//.test(file.type || "");
+        // the browser leaves the type empty for some images (HEIC on Linux, RAW): the name decides then
+        const isImage = /^image\//.test(file.type || "")
+          || (!file.type && /\.(jpe?g|png|gif|webp|tiff?|heic|heif|bmp)$/i.test(file.name || ""));
         if (isImage) {
           const fd = new FormData();
           fd.append("file", file, file.name);

@@ -5446,6 +5446,7 @@
   "This event also appears in: {calendars}": "Это событие также есть в: {calendars}",
   "This event is outside the map's current signal set.": "Это событие находится за пределами текущего набора сигналов карты.",
   "This file is not an evidence bundle (no manifest).": "Этот файл не является пакетом доказательств (нет манифеста).",
+  "This file is not in the shape of an evidence bundle.": "Этот файл не имеет формы пакета доказательств.",
   "This folder already holds an Open Omniscience corpus. Continuing will open it rather than create a new one.": "В этой папке уже есть корпус Open Omniscience. Продолжение откроет его, а не создаст новый.",
   "This folder can be used. Your corpus will live in:": "Эту папку можно использовать. Корпус будет храниться в:",
   "This folder is not writable — pick another for a backup destination.": "В эту папку нельзя записывать — выберите другую в качестве места для резервной копии.",

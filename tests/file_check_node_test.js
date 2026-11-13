@@ -66,6 +66,7 @@ const pinned = visible(R.bundleCheckHtml({ verified: true, reason: "ok (signatur
 assert.ok(pinned.includes("signed by the key you gave"), pinned);
 const cases = {
   "no manifest": "not an evidence bundle",
+  "malformed bundle: not the shape this app exports": "not in the shape of an evidence bundle",
   "signed by an untrusted key (does not match the pinned public key)": "different key",
   "merkle root mismatch (an item was altered/added/removed)": "Changed since signing",
   "malformed signature or public key": "damaged",

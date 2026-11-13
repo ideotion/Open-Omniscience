@@ -15,7 +15,6 @@ score" -- metadata is evidence to weigh, not a verdict.
 from __future__ import annotations
 
 import io
-import warnings
 from dataclasses import dataclass, field
 
 from PIL import Image, UnidentifiedImageError
@@ -82,17 +81,17 @@ def _parse_gps(gps_ifd: dict) -> dict:
 
 def extract_image_metadata(data: bytes) -> ImageMetadata:
     """Extract format, dimensions, EXIF and GPS from image bytes."""
+    # (no process-wide warnings filter: this runs in a thread pool, and the cap below
+    # fires before Pillow's own bomb warning; past twice that, open() itself raises)
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", Image.DecompressionBombWarning)
-            img = Image.open(io.BytesIO(data))
-            if img.width * img.height > MAX_DECODE_PIXELS:
-                raise ImageError(
-                    f"image too large to read here: {img.width} x {img.height} pixels "
-                    f"(limit {MAX_DECODE_PIXELS:,})"
-                )
-            img.load()
-    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+        img = Image.open(io.BytesIO(data))
+        if img.width * img.height > MAX_DECODE_PIXELS:
+            raise ImageError(
+                f"image too large to read here: {img.width} x {img.height} pixels "
+                f"(limit {MAX_DECODE_PIXELS:,})"
+            )
+        img.load()
+    except Image.DecompressionBombError as exc:
         raise ImageError(f"image too large to read here: {record_text(exc)}") from exc
     except (UnidentifiedImageError, OSError) as exc:
         raise ImageError(f"not a readable image: {record_text(exc)}") from exc
@@ -108,6 +107,14 @@ def extract_image_metadata(data: bytes) -> ImageMetadata:
                     gps = _parse_gps(exif_raw.get_ifd(tag_id))
                 except Exception:
                     gps = {}
+            elif name == "ExifOffset":
+                # the pointer to the Exif sub-block, where the CAPTURE date
+                # (DateTimeOriginal), exposure and lens live: read it, never list the pointer
+                try:
+                    for sub_id, sub_val in exif_raw.get_ifd(tag_id).items():
+                        exif[TAGS.get(sub_id, str(sub_id))] = _jsonable(sub_val)
+                except Exception:
+                    pass
             else:
                 exif[name] = _jsonable(value)
 

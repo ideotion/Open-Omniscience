@@ -5446,6 +5446,7 @@
   "This event also appears in: {calendars}": "This event also appears in: {calendars}",
   "This event is outside the map's current signal set.": "This event is outside the map's current signal set.",
   "This file is not an evidence bundle (no manifest).": "This file is not an evidence bundle (no manifest).",
+  "This file is not in the shape of an evidence bundle.": "This file is not in the shape of an evidence bundle.",
   "This folder already holds an Open Omniscience corpus. Continuing will open it rather than create a new one.": "This folder already holds an Open Omniscience corpus. Continuing will open it rather than create a new one.",
   "This folder can be used. Your corpus will live in:": "This folder can be used. Your corpus will live in:",
   "This folder is not writable — pick another for a backup destination.": "This folder is not writable — pick another for a backup destination.",

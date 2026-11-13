@@ -5446,6 +5446,7 @@
   "This event also appears in: {calendars}": "此事件也出现在：{calendars}",
   "This event is outside the map's current signal set.": "该事件不在地图当前的信号集合范围内。",
   "This file is not an evidence bundle (no manifest).": "此文件不是证据包（没有清单）。",
+  "This file is not in the shape of an evidence bundle.": "此文件不是证据包的格式。",
   "This folder already holds an Open Omniscience corpus. Continuing will open it rather than create a new one.": "此文件夹中已有一个 Open Omniscience 语料库。继续将打开它，而不是新建一个。",
   "This folder can be used. Your corpus will live in:": "此文件夹可以使用。您的语料库将存放在：",
   "This folder is not writable — pick another for a backup destination.": "此文件夹不可写入 — 请另选一个作为备份目标。",
