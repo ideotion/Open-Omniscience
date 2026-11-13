@@ -697,7 +697,8 @@ def test_an_answer_osm_does_not_call_a_public_place_at_that_number_is_never_plac
 
 def test_an_answer_osm_calls_public_at_that_number_is_placed():
     assert L.resolve("5 Mill Lane, Townville", _one({"addr:housenumber": "5", "amenity": "library"}))["status"] == "located"
-    assert L.resolve("5 Mill Lane, Townville", _one({"addr:housenumber": "3;5", "wikidata": "Q1"}))["status"] == "located"
+    assert L.resolve("5 Mill Lane, Townville", _one({"addr:housenumber": "3;5", "amenity": "place_of_worship"}))["status"] == "located"
+    assert L.resolve("५ मार्ग, दिल्ली", _one({"addr:housenumber": "5", "shop": "books"}))["status"] == "located"
     assert L.resolve("ул. Ленина, 5, Москва", _one({"addr:housenumber": "5", "tourism": "museum"}))["status"] == "located"
 
 
@@ -738,3 +739,24 @@ def test_what_a_place_is_now_and_who_holds_it_count(title, text):
 )
 def test_a_biography_known_only_by_its_categories_or_its_title(edition, title, text):
     assert L.page_addresses(edition, text, title) == {"skip": "about_a_person"}
+
+
+@pytest.mark.parametrize(
+    "facts",
+    [
+        {"addr:housenumber": "5", "office": "company"},  # a firm in someone's house
+        {"addr:housenumber": "5", "building": "yes", "office": "consulting"},
+        {"addr:housenumber": "5", "building": "yes", "religion": "christian"},  # a clergy house
+        {"addr:housenumber": "5", "building": "yes", "wikidata": "Q1"},  # a lived-in listed house
+        {"addr:housenumber": "5", "building": "yes", "tourism": "attraction"},
+        {"addr:housenumber": "5", "leisure": "garden"},
+        {"addr:housenumber": "5", "amenity": "childcare"},  # a home daycare
+        {"addr:housenumber": "5", "amenity": "cafe", "access": "residents"},
+        {"addr:housenumber": "5", "amenity": "cafe", "building": "semi"},
+        {"addr:housenumber": "5", "amenity": "cafe", "building": "House "},
+        {"addr:housenumber": "5", "amenity": "cafe", "building": "house;yes"},
+    ],
+)
+def test_a_key_that_describes_without_opening_the_door_is_not_public(facts):
+    # Security read 3: public is an allowlist of OSM values for places people walk into, never a key on its own.
+    assert L.resolve("5 Mill Lane, Townville", _one(facts))["status"] == "ambiguous"

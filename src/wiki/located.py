@@ -16,9 +16,10 @@ is read only beside the page's own ``{{coord}}``, since one may be run from some
 street alone, since "5 Mill Lane" answers from whichever village has one.
 
 WHAT OSM ITSELF SAYS DECIDES (R691, structural and in no language). A located answer is placed only when every object the index answered
-with carries the house number the address names, and the placed one is something OSM calls public: a public-facing key (amenity, shop,
-tourism, leisure, office, healthcare, public transport, aeroway, emergency, religion) or a Wikidata/Wikipedia link, and is not tagged as a
-dwelling (building=house, residential, detached, apartments, farm ...), as residential use, as private access or as a guest house. Anything
+with carries the house number the address names, and the placed one is something OSM names as a place people walk into: a shop, or an
+allowlisted value (a place of worship, a school, a library, a hospital, a museum, a hotel, a stadium, a station, a government office ...);
+never a bare office, religion, Wikidata link, garden or childcare tag, and never a dwelling (building=house, residential, detached,
+apartments, farm ...), residential use, or private or residents-only access. Anything
 else is counted as ambiguous, never placed. A type or a marker nobody wrote down
 costs a located address, never a person's privacy: the map can never become a way to find where someone lives.
 Addresses in article BODIES (wiki and press) are not read either: without an infobox key, a body-text grammar would place strings that only
@@ -48,6 +49,7 @@ import math
 import re
 import threading
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -454,7 +456,9 @@ def _core(parts: list[str]) -> int:
     return 0
 
 
-_NUMBER_TOKEN = re.compile(r"(?<![^\W_])(\d{1,4}\s?[^\W\d_]?)(?![^\W_])")
+#: A house number: one to four digits and at most one letter right after them, which must END the token ("5a", "12 b"), so "५ मार्ग"
+#: never reads as "५म" (a vowel sign is not a letter to a lookahead).
+_NUMBER_TOKEN = re.compile(r"(?<![^\W_])(\d{1,4}(?:\s?[^\W\d_](?=[\s,;/]|$))?)(?![^\W_])")
 
 
 def house_number(text: str) -> str | None:
@@ -472,34 +476,55 @@ def house_number(text: str) -> str | None:
 
 
 def _number(value: Any) -> str:
-    return re.sub(r"\s+", "", str(value)).lower()
+    """Compared as ASCII digits: "५", "৫", "٥" and "５" are 5, as in OSM's own tags."""
+    text = re.sub(r"\s+", "", str(value)).lower()
+    return "".join(str(unicodedata.digit(ch)) if ch.isdigit() else ch for ch in text)
 
 
 #: OSM tags that say an object is somebody's home, whatever the page says (R691, structural and language-free).
 _DWELLING_BUILDINGS = frozenset({
-    "house", "residential", "detached", "semidetached_house", "terrace", "apartments", "bungalow", "cabin", "dormitory", "farm",
-    "farm_auxiliary", "houseboat", "static_caravan", "hut", "villa", "manor", "stilt_house", "trullo", "ger",
+    "house", "residential", "detached", "semidetached_house", "semi_detached", "semi", "terrace", "row_house", "apartments", "bungalow",
+    "cabin", "dormitory", "farm", "farmhouse", "farm_auxiliary", "houseboat", "static_caravan", "hut", "villa", "manor", "stilt_house",
+    "trullo", "ger", "allotment_house", "presbytery", "parsonage", "rectory",
 })
-_PRIVATE_TOURISM = frozenset({"guest_house", "apartment", "chalet", "alpine_hut", "camp_pitch", "caravan_site"})
-#: An object is a public place only when OSM says so: a public-facing key, or a link to Wikidata or Wikipedia.
-_PUBLIC_KEYS = ("amenity", "shop", "tourism", "leisure", "office", "healthcare", "public_transport", "aeroway", "emergency", "religion",
-                "wikidata", "wikipedia")
+_REFUSED_ACCESS = frozenset({"private", "no", "residents", "permit", "delivery"})
+#: What makes an object PUBLIC, as an allowlist of OSM values that name a place people walk into (security read 3, R691). A key alone is
+#: not enough: ``office`` is often a firm in someone's house, ``religion`` a clergy house, ``wikidata`` a lived-in listed house,
+#: ``leisure=garden`` a private garden and ``amenity=childcare`` a home daycare.
+_PUBLIC_VALUES: dict[str, frozenset[str]] = {
+    "amenity": frozenset({
+        "place_of_worship", "school", "college", "university", "library", "hospital", "clinic", "townhall", "courthouse", "police",
+        "fire_station", "post_office", "theatre", "cinema", "arts_centre", "community_centre", "conference_centre", "events_venue",
+        "exhibition_centre", "concert_hall", "restaurant", "cafe", "bar", "pub", "fast_food", "bank", "marketplace", "public_building",
+        "music_school", "language_school", "prison", "planetarium", "casino", "nightclub",
+    }),
+    "tourism": frozenset({"museum", "gallery", "hotel", "hostel", "motel", "zoo", "aquarium", "theme_park"}),
+    "leisure": frozenset({"stadium", "sports_centre", "sports_hall", "ice_rink", "water_park", "fitness_centre", "park"}),
+    "healthcare": frozenset({"hospital", "clinic"}),
+    "public_transport": frozenset({"station"}),
+    "aeroway": frozenset({"aerodrome", "terminal"}),
+    "office": frozenset({"government"}),
+}
+
+
+def _tag(facts: dict[str, Any], key: str) -> str:
+    return str(facts.get(key) or "").strip().lower()
 
 
 def _public_place(answer: dict[str, Any], number: str | None) -> bool:
-    """FAILS CLOSED: an answer without facts, with another house number, tagged as a dwelling or private, or with nothing that makes it
-    public is never placed (R691: what OSM itself says the object is, in no language at all)."""
+    """FAILS CLOSED: an answer without facts, with another house number, tagged as a dwelling or private, or with nothing that OSM names
+    as a public place (a shop, or a value on :data:`_PUBLIC_VALUES`) is never placed (R691: what OSM itself says the object is)."""
     facts = answer.get("facts")
     if not isinstance(facts, dict) or number is None:
         return False
     osm_numbers = {_number(n) for n in re.split(r"[;,]", str(facts.get("addr:housenumber") or "")) if n.strip()}
     if number not in osm_numbers:
         return False
-    if str(facts.get("building") or "").lower() in _DWELLING_BUILDINGS or "residential" in str(facts.get("building:use") or "").lower():
+    if any(b.strip() in _DWELLING_BUILDINGS for b in _tag(facts, "building").split(";")) or "residential" in _tag(facts, "building:use"):
         return False
-    if str(facts.get("access") or "").lower() in ("private", "no") or str(facts.get("tourism") or "").lower() in _PRIVATE_TOURISM:
+    if any(a.strip() in _REFUSED_ACCESS for a in _tag(facts, "access").split(";")):
         return False
-    return any(facts.get(k) for k in _PUBLIC_KEYS if not (k == "tourism" and facts.get(k) in _PRIVATE_TOURISM))
+    return bool(_tag(facts, "shop")) or any(_tag(facts, key) in values for key, values in _PUBLIC_VALUES.items())
 
 
 def variants(text: str) -> list[str]:
