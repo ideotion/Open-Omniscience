@@ -35,6 +35,7 @@ const SHELL = [
   "/static/app-ipcc.js",
   "/static/app-observatory.js",
   "/static/app-living.js",
+  "/static/app-climate.js",
   "/static/app-maintenance.js",
   "/static/app-diagnostics.js",
   "/static/app-corpus.js",

@@ -634,6 +634,12 @@ finding things, or it finds so much that every answer is the same answer).
    a change the stream only COUNTED reads as counted and offers no diff; the storage cells are
    Settings → Storage's own minus the budget input (#8). Enforced in test_ui_invariants (#32) +
    tests/test_living_sources.py + tests/living_sources_node_test.js.
+33. **CLIMATE IS A MAIN TAB (R661; R662; 0.6 gate row A):** six published records (GISTEMP, NSIDC, ONI,
+   USGS quakes, OWID, one GHCN station at a time) in `#tab-climate`, one subtab each through `ooSubtabs`; the #2
+   roster grows by one. Reading is local; the ONE egress is the per-dataset Fetch button, behind `ensureOnline` and
+   `consent: true` (#14/#14f). Each subtab names its source, licence and last fetch; the caveat is visible; no score.
+   A re-fetch stores only new or revised values (R662). Enforced in test_ui_invariants (#33) +
+   tests/test_climate_api.py + tests/climate_node_test.js.
 8. **The UI shows DATA, never plumbing (ruled 2026-06-11, stated GENERALLY):**
    data tabs present the aggregated data itself — "that's the added value of
    this app"; acquisition/configuration surfaces live in Settings. First

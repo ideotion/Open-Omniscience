@@ -2659,12 +2659,12 @@ def _all_diagnostics_manifest(
             {
                 "endpoint": "/api/diagnostics/source-quality",
                 "reason": "a whole-corpus decrypt pass producing a bulky per-source "
-                "text-sample ZIP — run it from its own Diagnostics button",
+                "text-sample ZIP — saved by the Field data button",
             },
             {
                 "endpoint": "/api/diagnostics/source-samples",
-                "reason": "TEMPORARY: one random stored article per source (full text) as "
-                "zips of at most 4 MB, walked by a cursor — run it from its own Diagnostics button",
+                "reason": "one random stored article per source (full text) as zips of at most "
+                "4 MB, walked by a cursor — saved by the Field data button",
             },
             {
                 "endpoint": "/api/diagnostics/card-audit/preflight",
@@ -3249,11 +3249,12 @@ def _bundle_exclusive_window():
 
     Uses ``runner.exclusive_window()`` -- the existing RE-ENTRANT, imbalance-proof
     mechanism -- rather than calling ``hold_exclusive``/``release_exclusive`` directly.
-    That distinction is load-bearing, not stylistic: ``_exclusive_hold`` is a BOOLEAN, so a
-    bundle started during a restore would clear the RESTORE's hold on its own release and
-    put a manual "Run now" back on the machine mid-restore -- reinstating exactly the
-    concurrency defect the 2026-07-24 lesson records. ``exclusive_window`` restores the flag
-    to what it FOUND, so only the outermost block ever resumes.
+    That distinction is load-bearing, not stylistic: ``exclusive_window`` restores the window
+    flag to what it FOUND, so only the outermost block ever resumes. The scheduler's own hold
+    was a BOOLEAN until R383, so a bundle started inside a STANDALONE restore (whose bare pause
+    the window cannot see) cleared the restore's hold on its own release and put a manual
+    "Run now" back on the machine mid-restore; the hold is now counted, so the bundle's release
+    ends only its own claim (tests/test_scheduler_counted_hold.py).
 
     Yields the honest facts rather than an assumed exclusivity: ``paused_collection`` is
     ``was_paused``, i.e. whether the continuous loop was actually running and got signalled

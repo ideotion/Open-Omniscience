@@ -418,6 +418,8 @@ from .country_codes import (
 # observed.
 from .qualification_merge import (
     _MAX_MERGE_UPLOADS,
+    _MERGE_MEDIA_TYPES,
+    _form_body_only,
     source_qualification_merge,
 )
 # One file of a numbered keyword-log set (1 MB parts, 2026-10-01): appended after the merge
@@ -439,7 +441,7 @@ from .vitals_history import vitals_history_report
 from .runs import diagnostics_runs_report
 # Which form the store keeps its country codes in (2026-10-15, row B1): the same slice position.
 from .country_form import country_form_status
-# One random article per source, zipped <= 4 MB (2026-11-08, TEMPORARY): the same slice position.
+# One random article per source, zipped <= 4 MB (2026-11-08; kept for the Field data button, R664): the same slice position.
 from .source_samples import (
     SAMPLE_ZIP_MAX_BYTES,
     _BODY_COLUMNS,
@@ -491,6 +493,8 @@ __all__ = [
     "include_newsletter_text",
     "source_samples",
     "_MAX_MERGE_UPLOADS",
+    "_MERGE_MEDIA_TYPES",
+    "_form_body_only",
     "_PEAK_RISE_ABSENT_REASON",
     "_PREVIOUS_JOURNAL_MAX_BYTES",
     "_PREVIOUS_JOURNAL_MAX_LINE_CHARS",
