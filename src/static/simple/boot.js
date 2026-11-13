@@ -2,8 +2,8 @@
  * Simple mode, first paint (invariant #34, ruling R682). GPL-3.0-or-later.
  *
  * Runs in <head>, before the body paints, so a reader who chose simple mode never sees the
- * full interface flash first. It only reads two per-device flags and sets one attribute;
- * it touches no network and no server state.
+ * full interface flash first. It reads two per-device flags, sets one attribute and marks a deep
+ * link as a peek (below); it touches no network and no server state.
  *
  *   localStorage  oo.ui.simple = "1"  the reader's choice (the top-bar switch)
  *   sessionStorage oo.ui.peek  = "1"  a tool was opened in full view from simple mode, in
@@ -15,6 +15,12 @@
   var simple = false, peek = false;
   try { simple = localStorage.getItem("oo.ui.simple") === "1"; } catch (e) { /* storage blocked: full mode */ }
   try { peek = sessionStorage.getItem("oo.ui.peek") === "1"; } catch (e) { /* storage blocked */ }
+  // A deep link into a full-view tool (?corpus=, ?analyze=, ... opened in a new browser tab) is a
+  // request for that tool: it opens in full view with the "Back to simple view" bar.
+  if (simple && !peek && location.search && location.search.length > 1) {
+    peek = true;
+    try { sessionStorage.setItem("oo.ui.peek", "1"); } catch (e) { /* storage blocked */ }
+  }
   var root = document.documentElement;
   if (simple && !peek) {
     root.setAttribute("data-mode", "simple");

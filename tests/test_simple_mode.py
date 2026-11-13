@@ -124,7 +124,7 @@ def test_never_hidden_surfaces_stay_visible_in_simple_mode():
         'html[data-mode="simple"] #navGroups', 'html[data-mode="simple"] .tab-page',
         'html[data-mode="simple"] .tab-page.active', 'html[data-mode="simple"] #subtab-strip',
         'html[data-mode="simple"] #rate-toggle', 'html[data-mode="simple"] #tm-open', 'html[data-mode="simple"] #llm',
-        'html[data-mode="simple"] #health:has(.dot.ok)',
+        'html[data-mode="simple"] #health:has(.dot.ok)', 'html[data-mode="simple"] #nav-more',
     }
     assert set(hidden) <= allowed, f"simple mode hides something new: {set(hidden) - allowed}"
     # R682: never hidden in either mode.
@@ -136,6 +136,8 @@ def test_never_hidden_surfaces_stay_visible_in_simple_mode():
     # The health pill hides only while it says healthy.
     assert 'html[data-mode="simple"] #health:has(.dot.ok)' in hidden
     assert 'html[data-mode="simple"] #health {' not in css.replace("  ", " ")
+    # ...and keeps its slot while hidden (invariant #3: nothing on the right shifts).
+    assert re.search(r'#health:has\(\.dot\.ok\)\s*\{\s*visibility\s*:\s*hidden', css)
 
 
 def test_going_online_uses_the_one_consent_path():
@@ -192,3 +194,25 @@ def test_full_mode_is_untouched_when_the_switch_is_off():
             assert (
                 s.startswith(("html[data-mode", "#simple-", "#ui-simple-toggle", "[dir=\"rtl\"] #ui-simple-toggle"))
             ), f"unscoped rule in simple.css: {s}"
+
+
+def test_glance_names_the_set_the_way_the_corpus_endpoints_read_it():
+    code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
+    glance = code.split("function Glance(", 1)[1].split("\n  }\n", 1)[0]
+    # /api/insights/corpus-* read "article_ids"; "ids" would silently describe the whole corpus.
+    assert 'set("article_ids"' in glance and 'set("ids"' not in glance
+    assert "article_ids" in _read(_ROOT / "src" / "api" / "insights.py")
+
+
+def test_skin_check_reads_the_gallery_key():
+    code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
+    gallery = _read(_STATIC / "guis" / "boot.js")
+    assert 'UI_KEY = "oo.ui"' in gallery and ".gui" in gallery
+    has = code.split("function hasSkin(", 1)[1].split("\n  }\n", 1)[0]
+    assert 'lsGet("oo.ui")' in has and ".gui" in has and "oo.ui.gui" not in has
+
+
+def test_going_online_reads_the_live_state_first():
+    code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
+    fn = code.split("function goOnline(", 1)[1].split("\n  }\n", 1)[0]
+    assert fn.index('"/api/system/network"') < fn.index("window.toggleNetwork()")

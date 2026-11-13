@@ -8346,7 +8346,7 @@ def test_docs_index_covers_live_docs():
 #: amendment is the growth the clause above calls normal.
 #: RAISED 2026-10-06: 792 -> 796, four lines amending protocol rule (5a)(b): a lesson and a shipped-log
 #: entry are each a NEW FILE (docs/ledger/lessons.d/, shipped_log.d/), never an append to the archives.
-_CLAUDE_MD_LINE_CEILING = 811
+_CLAUDE_MD_LINE_CEILING = 812
 
 
 def _claude_md_lines() -> int:

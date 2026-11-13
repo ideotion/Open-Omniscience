@@ -648,7 +648,8 @@ finding things, or it finds so much that every answer is the same answer).
    NEVER hidden in either mode: the consent popup (going online calls the full app's `toggleNetwork`), airplane and
    Tor/Protected state, lock, destructive confirms, errors. A full-view tool opens with a one-click "Back to simple view"
    bar. Preact 10 + hooks + htm vendored in `src/static/simple/vendor/`, sha256-pinned, licences shipped, no eval, no
-   request off this origin. Enforced in test_ui_invariants (#34) + tests/test_simple_mode.py.
+   request off this origin. Exemptions, simple mode only: the sidebar list (#2) and #rate-toggle/#tm-open (#4) step aside;
+   #health keeps its slot (#3) and shows when not healthy. Enforced in test_ui_invariants (#34) + tests/test_simple_mode.py.
 8. **The UI shows DATA, never plumbing (ruled 2026-06-11, stated GENERALLY):**
    data tabs present the aggregated data itself — "that's the added value of
    this app"; acquisition/configuration surfaces live in Settings. First

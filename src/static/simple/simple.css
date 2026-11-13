@@ -36,7 +36,9 @@ html[data-mode="simple"] #rate-toggle,
 html[data-mode="simple"] #tm-open,
 html[data-mode="simple"] #llm { display:none !important; }
 /* The health pill steps aside only while it says "healthy"; any other state shows. */
-html[data-mode="simple"] #health:has(.dot.ok) { display:none; }
+html[data-mode="simple"] #health:has(.dot.ok) { visibility:hidden; }  /* keeps its slot (invariant #3) */
+/* The full sidebar's "Show more" row opens tabs simple mode does not list; More tools does that. */
+html[data-mode="simple"] #nav-more { display:none; }
 
 /* ---------- the back bar (a full-view tool opened from simple mode) ---------- */
 #simple-back { align-items:center; justify-content:center; gap:12px; flex-wrap:wrap; padding:8px 16px;

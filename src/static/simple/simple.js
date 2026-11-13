@@ -117,10 +117,15 @@
       var btn = back.querySelector("button");
       if (msg) msg.textContent = t("This tool is part of the full view.");
       if (btn) btn.textContent = t("Back to simple view");
+      back.setAttribute("aria-label", t("Simple view"));
     }
   }
 
-  function hasSkin() { var g = lsGet("oo.ui.gui"); return !!(g && g !== "default"); }
+  // The GUIs gallery keeps its skin in localStorage "oo.ui" as JSON, field "gui" (guis/boot.js).
+  function hasSkin() {
+    try { var u = JSON.parse(lsGet("oo.ui") || "null"); var g = u && u.gui; return !!(g && g !== "default"); }
+    catch (e) { return false; }
+  }
 
   function enterSimple() {
     lsSet(K_SIMPLE, "1");
@@ -208,11 +213,12 @@
   }
   function emit() { saveState(); subs.slice().forEach(function (f) { f(); }); }
   function go(view, extra) {
+    var moved = store.view !== view;
     store.view = view;
     if (extra) Object.assign(store, extra);
     document.body.classList.remove("nav-open");
     emit();
-    focusMain();
+    if (moved) focusMain();   // a new view takes focus; a change inside a view leaves it where it is
   }
 
   // Everything below needs the vendored renderer. Without it, the switch still paints and
@@ -237,10 +243,11 @@
     var s = useState({ loading: true, error: null, data: null }), state = s[0], set = s[1];
     useEffect(function () {
       var live = true;
-      set({ loading: true, error: null, data: null });
+      // Keep what is on screen while it reloads: a refresh never blanks a panel or closes an open ⓘ.
+      set(function (x) { return { loading: true, error: null, data: x.data }; });
       Promise.resolve().then(fn).then(
         function (d) { if (live) set({ loading: false, error: null, data: d }); },
-        function (e) { if (live) set({ loading: false, error: (e && e.message) || String(e), data: null }); });
+        function (e) { if (live) set(function (x) { return { loading: false, error: (e && e.message) || String(e), data: x.data }; }); });
       return function () { live = false; };
     }, deps);
     return state;
@@ -359,13 +366,32 @@
   }
   // The ONE consent path: the full app's own airplane switch, which opens the consent popup
   // (invariant #14). Simple mode never POSTs /api/system/network itself.
+  // The panel's figure can be up to 20 s old and the switch flips state, so read the live state
+  // first: the switch is pressed only while the app is still offline AND the top-bar plane says
+  // so; otherwise the panel just refreshes. A stale panel can never send the reader offline.
+  function refreshStatus() { document.dispatchEvent(new CustomEvent("oo:simple-refresh")); }
   function goOnline() {
     if (typeof window.toggleNetwork !== "function") return;
-    Promise.resolve(window.toggleNetwork()).then(function () {
-      setTimeout(function () { document.dispatchEvent(new CustomEvent("oo:simple-refresh")); }, 600);
-    });
+    var plane = document.getElementById("net-toggle");
+    apiCall("/api/system/network", { polled: true }).then(function (n) {
+      if (n && n.online === false && plane && plane.classList.contains("off")) {
+        return Promise.resolve(window.toggleNetwork()).then(function () { setTimeout(refreshStatus, 600); });
+      }
+      refreshStatus();
+    }, refreshStatus);
+  }
+  // A network change made anywhere (the top-bar plane, the consent popup) repaints the panel.
+  function watchNetwork() {
+    var plane = document.getElementById("net-toggle");
+    if (!plane || typeof MutationObserver !== "function") return;
+    var last = plane.classList.contains("off");
+    new MutationObserver(function () {
+      var now = plane.classList.contains("off");
+      if (now !== last) { last = now; if (mounted) refreshStatus(); }
+    }).observe(plane, { attributes: true, attributeFilter: ["class"] });
   }
 
+  var MAX_IDS = 500;   // the most article ids one request carries
   function LeadCard(props) {
     var c = props.card;
     var title = cardText(c, "title") || c.title;
@@ -382,8 +408,9 @@
       <div class="s-actions">
         ${Array.isArray(c.article_ids) && c.article_ids.length
           ? html`<button type="button" class="s-btn" onClick=${function () {
-              go("search", { query: "", ids: c.article_ids.slice(0, 500), label: title });
-            }}>${t("Read the articles ({n})", { n: c.article_ids.length })}</button>` : null}
+              go("search", { query: "", ids: c.article_ids.slice(0, MAX_IDS), label: title });
+            }}>${t("Read the articles ({n})", { n: fmtInt(Math.min(c.article_ids.length, MAX_IDS)) })}</button>
+            ${c.article_ids.length > MAX_IDS ? html`<${Mark} kind="partial"/>` : null}` : null}
         <${Details} what=${title}>
           ${trig.plain ? html`<p class="s-why"><b>${t("Why you see this")}</b> ${tf(trig.plain)}</p>` : null}
           ${c.caveat ? html`<p class="s-caveat"><b>${t("Caveat")}</b> ${cardText(c, "caveat") || c.caveat}</p>` : null}
@@ -419,19 +446,26 @@
     if (r.loading) return html`<${Loading}/>`;
     if (r.error) return html`<${ErrorLine} msg=${r.error}/>`;
     var wins = (r.data && r.data.windows) || [];
-    var w = wins.filter(function (x) { return x.window_days === 7 && (x.terms || []).length; })[0]
-      || wins.filter(function (x) { return (x.terms || []).length; })[0];
+    var w = wins.filter(function (x) { return x.window_days === 7 && !x.skipped && (x.terms || []).length; })[0]
+      || wins.filter(function (x) { return !x.skipped && (x.terms || []).length; })[0];
     if (!w) return html`<${Empty}>${t("No topic is rising yet.")}<//>`;
+    var d = r.data || {};
+    // Not the usual week: say so with a mark; the ⓘ names the window actually shown.
+    var other = w.window_days !== 7;
     return html`<div class="s-chips">
       ${w.terms.map(function (x) {
         return html`<button type="button" class="s-chip s-term" onClick=${function () { go("search", { query: x.term, ids: null, label: "" }); }}>
           <span dir="auto">${x.term}</span> <span class="s-n">${x.recent}</span>
           ${x.growth_is_ratio === false ? html`<${Mark} kind="approx"/>` : null}</button>`;
       })}
+      ${other ? html`<${Mark} kind="partial"/>` : null}
       <${Details} what=${t("Rising topics")}>
         <p>${t("Mentions in the last {d} days compared with the {b} days before. The number on each topic is its recent mention count.", { d: w.window_days, b: w.baseline_days })}</p>
         <p>${t("~ marks a topic with too few earlier mentions to compare: it is new, not necessarily growing.")}</p>
         <${Row} k=${t("Topics scanned")} v=${fmtInt(w.scanned)}/>
+        ${d.method ? html`<p class="s-method"><b>${t("Method")}</b> ${t(d.method)}</p>` : null}
+        ${d.caveat ? html`<p class="s-caveat"><b>${t("Caveat")}</b> ${t(d.caveat)}</p>` : null}
+        ${d.computed_at ? html`<${Row} k=${t("Computed")} v=${fmtTime(d.computed_at)}/>` : null}
       <//>
     </div>`;
   }
@@ -480,17 +514,27 @@
     var s = useStore();
     var ls = useState({ rows: [], cursor: null, more: false, loading: true, error: null, held: null, method: "", caveat: "" });
     var st = ls[0], set = ls[1];
+    var gen = useRef(0);
     function load(reset) {
+      // Only the newest request may write: an older answer (a previous order, a slow page)
+      // arriving late is dropped instead of mixing lists.
+      var mine = ++gen.current;
       var p = new URLSearchParams({ order: s.order === "shuffled" ? "shuffled" : "recent", limit: "20" });
       if (s.order === "shuffled") p.set("seed", "1");
       if (!reset && st.cursor) p.set("after", st.cursor);
       set(function (x) { return Object.assign({}, x, { loading: true, error: null }, reset ? { rows: [] } : {}); });
       apiCall("/api/feed?" + p.toString()).then(function (d) {
+        if (mine !== gen.current) return;
         set(function (x) {
+          // The server counts held-back articles on the first page only; later pages keep it.
           return { rows: (reset ? [] : x.rows).concat(d.results || []), cursor: d.next_cursor, more: !!d.has_more,
-            loading: false, error: null, held: d.held_back, method: d.method || "", caveat: d.caveat || "" };
+            loading: false, error: null, held: d.held_back != null ? d.held_back : (reset ? null : x.held),
+            method: d.method || x.method, caveat: d.caveat || x.caveat };
         });
-      }, function (e) { set(function (x) { return Object.assign({}, x, { loading: false, error: e.message || String(e) }); }); });
+      }, function (e) {
+        if (mine !== gen.current) return;
+        set(function (x) { return Object.assign({}, x, { loading: false, error: e.message || String(e) }); });
+      });
     }
     useEffect(function () { load(true); }, [s.order]);
     var held = st.held ? (st.held.source_not_qualified || 0) + (st.held.quarantined || 0) : 0;
@@ -527,7 +571,12 @@
     var s = props.s;
     var key = (s.ids ? s.ids.join(",") : "") + "|" + s.query;
     var r = useLoad(function () {
-      var p = searchParams(s).toString();
+      // The corpus endpoints name the set "article_ids" (the article list calls it "ids").
+      var g = new URLSearchParams();
+      if (s.ids && s.ids.length) g.set("article_ids", s.ids.join(","));
+      else g.set("query", s.query);
+      g.set("ui_lang", curLang());
+      var p = g.toString();
       return Promise.all([
         apiCall("/api/insights/corpus-sources?" + p).catch(function () { return null; }),
         apiCall("/api/insights/corpus-www?" + p).catch(function () { return null; }),
@@ -716,6 +765,7 @@
     bar.id = "simple-back";
     bar.setAttribute("data-i18n-dyn", "");
     bar.setAttribute("role", "region");
+    bar.setAttribute("aria-label", t("Simple view"));
     var msg = document.createElement("span");
     msg.className = "simple-back-msg";
     var btn = document.createElement("button");
@@ -732,6 +782,7 @@
     backBar();
     var b = document.getElementById("ui-simple-toggle");
     if (b) b.addEventListener("click", onSwitch);
+    watchNetwork();
     paintSwitch();
     document.addEventListener("oo:langchange", function () {
       loadStrings().then(function () { paintSwitch(); if (mounted) emit(); var hs = hosts(); });
