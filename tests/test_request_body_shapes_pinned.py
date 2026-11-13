@@ -12,7 +12,8 @@ the schema are:
 * 148 declare none; THREE of them read the body themselves, so a ``text/plain`` or form POST reaches the parser and only the Origin layer
   stands before it: ``POST /api/claims/trail-bundle/verify`` (``await request.body()``, a pure check) and the two corpus-writing uploads
   ``POST /api/newsletters/import`` and ``POST /api/documents/pdf/upload`` (``await request.form()``: multipart in practice, declared as
-  nothing; measured 2026-10-27 to answer 200 to NO body at all and to create the "Imported newsletters (.eml)" source row on an empty POST);
+  nothing; measured 2026-10-27 to answer 200 to NO body at all and to create the "Imported newsletters (.eml)" source row on an empty POST; since R663
+  both answer 415 to anything but multipart/form-data);
 * 4 declare ``multipart/form-data``, a "simple request" type a browser sends cross-site without a preflight.
 
 A new route can add a SIXTH shape (a raw-stream reader, a ``text/plain`` model, a form body) without changing any count above and

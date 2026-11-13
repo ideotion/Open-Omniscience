@@ -418,6 +418,8 @@ from .country_codes import (
 # observed.
 from .qualification_merge import (
     _MAX_MERGE_UPLOADS,
+    _MERGE_MEDIA_TYPES,
+    _form_body_only,
     source_qualification_merge,
 )
 # One file of a numbered keyword-log set (1 MB parts, 2026-10-01): appended after the merge
@@ -491,6 +493,8 @@ __all__ = [
     "include_newsletter_text",
     "source_samples",
     "_MAX_MERGE_UPLOADS",
+    "_MERGE_MEDIA_TYPES",
+    "_form_body_only",
     "_PEAK_RISE_ABSENT_REASON",
     "_PREVIOUS_JOURNAL_MAX_BYTES",
     "_PREVIOUS_JOURNAL_MAX_LINE_CHARS",

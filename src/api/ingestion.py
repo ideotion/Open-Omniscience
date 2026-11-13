@@ -438,9 +438,10 @@ _MAX_UPLOAD_FILES = 5000
 # ordinary newsletters is legitimate and is not refused). What the request body costs on disk
 # (Starlette spools file parts to a temporary file) is outside this bound and is a stated limit.
 _MAX_EML_BYTES = 36 * 1024 * 1024
+_EML_BATCH_BYTES = 64 * 1024 * 1024
+
 # The one body encoding the two uploads read (R663): every caller sends FormData.
 _UPLOAD_MEDIA_TYPES = frozenset({MULTIPART})
-_EML_BATCH_BYTES = 64 * 1024 * 1024
 
 
 def _upload_size(f: Any) -> int:

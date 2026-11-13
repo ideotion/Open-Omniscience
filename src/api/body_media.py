@@ -8,11 +8,15 @@ corpus-writing uploads read ``request.form()`` themselves and declare nothing, a
 fields, so all three answered 200 to a POST with NO body or a ``text/plain`` one (measured 2026-10-27,
 ``audit-0.5.0/proposal-raw-body-content-type-2026-10-27.md``); the newsletter import then get-or-created its source row. The Origin layer
 already refuses a cross-site POST, so this is depth, not a hole: each route now answers 415 to any media type it was not written to read,
-before it parses or writes anything. Every caller in the app sends ``FormData`` (multipart), so no button changes.
+before its handler runs (the uploads check before they read the form; for the merge FastAPI asks Starlette for the form first, which reads
+nothing for a refused type). Every caller in the app sends ``FormData`` (multipart), so no button changes.
 
-Stated limit: multipart is itself a "simple request" type a browser sends without a preflight, so the Origin layer stays the only guard
-against a cross-site multipart POST; and an EMPTY multipart POST still reaches the handler (the newsletter import still get-or-creates its
-fixed source row for it, because its tally shape comes from the store call that needs the row).
+Stated limits: multipart and url-encoded are both "simple request" types a browser sends without a preflight, so against a cross-site POST
+in those encodings the Origin layer stays the only guard: for the merge this removes only ``text/plain`` and the body-less POST (the
+uploads lose url-encoded too). Any multipart POST,
+EMPTY or carrying real files, still reaches all three handlers, and any url-encoded POST, empty included, still reaches the merge (which
+then walks the whole corpus). The newsletter import still get-or-creates its fixed source row for an empty multipart POST, because its
+tally shape comes from the store call that needs the row.
 """
 
 from __future__ import annotations
@@ -28,7 +32,8 @@ def media_type(request: Request) -> str:
     return request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
 
 
-def require_media_type(request: Request, allowed: frozenset[str]) -> None:
-    """Answer 415 unless the body was sent as one of ``allowed``. Reads only the header, never the body."""
+def require_media_type(request: Request, allowed: frozenset[str], what: str = "upload") -> None:
+    """Answer 415 unless the body was sent as one of ``allowed``. Reads only the header, never the body; the detail is built from
+    constants only, nothing the request sent is echoed."""
     if media_type(request) not in allowed:
-        raise HTTPException(status_code=415, detail="send the upload as " + " or ".join(sorted(allowed)))
+        raise HTTPException(status_code=415, detail=f"send the {what} as " + " or ".join(sorted(allowed)))

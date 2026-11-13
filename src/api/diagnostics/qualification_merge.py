@@ -38,7 +38,7 @@ _MERGE_MEDIA_TYPES = frozenset({MULTIPART, URLENCODED})
 
 
 def _form_body_only(request: Request) -> None:
-    require_media_type(request, _MERGE_MEDIA_TYPES)
+    require_media_type(request, _MERGE_MEDIA_TYPES, "form")
 
 
 @router.post("/source-qualification-merge", dependencies=[Depends(_form_body_only)])

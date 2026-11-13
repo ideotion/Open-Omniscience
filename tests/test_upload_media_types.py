@@ -80,6 +80,17 @@ def test_a_multipart_content_type_with_its_boundary_and_odd_case_is_accepted():
     assert media_type(_R()) == "multipart/form-data"  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize("path", _UPLOADS)
+def test_an_odd_case_padded_multipart_header_is_accepted_over_http(path):
+    """The check and Starlette's own form reader must agree on what multipart is, so a header a browser could send still imports."""
+    boundary = "oo-r663-boundary"
+    body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"files\"; filename=\"n.txt\"\r\n"
+            f"Content-Type: text/plain\r\n\r\nnot an email or a pdf\r\n--{boundary}--\r\n").encode()
+    with TestClient(app) as c:
+        r = c.post(path, headers={"content-type": f" MULTIPART/Form-Data ; boundary={boundary}"}, content=body)
+    assert r.status_code == 200, r.text
+
+
 @pytest.mark.parametrize("shape", ["none", "text/plain", "json", "octet-stream"])
 def test_the_merge_not_sent_as_a_form_is_a_415_and_computes_nothing(shape, monkeypatch):
     import src.catalog.qualification_export as export
