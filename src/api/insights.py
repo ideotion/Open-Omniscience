@@ -1150,6 +1150,17 @@ def insights_reindex(limit: int = Query(300, ge=1, le=5000), db: Session = Depen
         note_page_drain()
 
 
+@router.post("/backlog")
+def insights_backlog_start() -> dict:
+    """Start draining the never-attempted indexing backlog on the server (src/jobs/insights_backlog.py, R600's second PR): the
+    drain the Insights page used to run as a loop in the tab, so it now goes on with the browser closed and shows in the task
+    manager. Idempotent: ``started`` False with a ``reason`` when it runs already, other work owns the rows, or a stuck backlog
+    stopped the restarts."""
+    from src.jobs.insights_backlog import start
+
+    return start()
+
+
 @router.post("/prune-keywords")
 def insights_prune_keywords(db: Session = Depends(get_db)) -> dict:
     """Garbage-collect keywords that no view references (zero mentions) — the cleanup

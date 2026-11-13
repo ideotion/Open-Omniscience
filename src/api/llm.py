@@ -1893,7 +1893,10 @@ def _custom_identifier_refusal(backend: str, identifier: str) -> str | None:
         # of this ever reached a path.
         return "'..' is never part of a model name."
     if backend != "vllm":
-        return None
+        from src.llm.remote_models import REFUSAL, is_cloud_name
+
+        # R671: a cloud model is a stub that forwards every prompt to Ollama's cloud; it is never downloaded here.
+        return REFUSAL if is_cloud_name(identifier) else None
     if ":" in identifier:
         return (
             f"'{identifier}' looks like an Ollama tag, and vLLM downloads Hugging Face "
@@ -1933,6 +1936,16 @@ def llm_pull_custom_model(req: CustomModelRequest) -> dict:
     identifier = (req.identifier or "").strip()
     if not identifier:
         raise HTTPException(status_code=400, detail="No model name was given.")
+    from src.llm.remote_models import REFUSAL, is_cloud_name
+
+    if is_cloud_name(identifier):
+        # R671, answered before the airplane check: going online would not make a cloud model acceptable, so it is never the advice.
+        return {
+            "backend": "ollama",
+            "action": "nothing_to_do",
+            "queued": [],
+            "refused": [{"key": identifier, "label": identifier, "reason": REFUSAL}],
+        }
     if not egress_permitted(PURPOSE_AI_INSTALL):
         raise HTTPException(
             status_code=409,
@@ -2160,7 +2173,7 @@ def translate_article(
 
     _t = (article.title or "article")[:48]
     try:
-        with track("llm", f"Translating → {req.target_language}: “{_t}”", detail=f"model {model}",
+        with track("llm", f"Translating → {_label_target(req.target_language)}: “{_t}”", detail=f"model {model}",
                    detail_i18n="model {model}", detail_vars={"model": model},
                    **_translate_label_frame(req.target_language, "Translating → {language}: “{title}”",
                                             title=_t)):
@@ -2460,6 +2473,14 @@ def _translate_label_frame(target_name: str, frame: str, **values) -> dict:
     return {"label_i18n": frame, "label_vars": {"language": code, **values}}
 
 
+def _label_target(target_name: str) -> str:
+    """The target a task LABEL may show (R672): a language this table knows, by its English name, else a fixed word. The
+    target is free text, and a task label is shown by /api/jobs and the terminal panel, so only a closed set goes in it."""
+    tgt = (target_name or "").strip().lower()
+    code = next((c for c, name in _LANG_EN.items() if name.lower() == tgt or c == tgt), None)
+    return _LANG_EN[code] if code else "another language"
+
+
 def _is_target_language(article_lang: str | None, target_name: str) -> bool:
     """True when an article is ALREADY in the translation target (so it is skipped).
     Unknown language -> False (never skip on a guess)."""
@@ -2508,6 +2529,82 @@ def bulk_llm(
     chunk), so a stored ``ArticleAnalysis`` never gets attributed to the wrong
     article and re-running with concurrency=1 is byte-identical to before.
     """
+    tok, gen, _work_ids = prepare_bulk_run(req, db, client_info)
+    # The run outlives its tab (src/api/detached_stream.py): closing the browser no longer stops it; the task manager's Stop does.
+    from src.api.detached_stream import detached
+
+    return StreamingResponse(detached(gen, tok, name="oo-llm-bulk"), media_type="application/x-ndjson",
+        headers={"X-OO-Task": f"task:{tok}"},  # the page's own Cancel stops the run through the task manager's Stop
+    )
+
+
+# --- The server-side bulk queue (R600's second PR): runs that wait their turn keep waiting, and keep running, with the browser
+# closed. The page adds, cancels and reads; src/jobs/llm_bulk_queue.py owns the queue and runs it one at a time.
+
+
+def _bulk_queue():
+    from src.jobs.llm_bulk_queue import get_queue
+
+    return get_queue()
+
+
+@router.get("/bulk/queue")
+def bulk_queue_read() -> dict:
+    """The queue as stored on the server: every run waiting, running, paused by a restart, or recently finished, with the counts
+    each run reported (done / total / stored / skipped / failed). ``readable`` is False while the corpus is locked."""
+    return _bulk_queue().snapshot()
+
+
+@router.post("/bulk/queue")
+def bulk_queue_add(req: BulkLLMRequest) -> dict:
+    """Add a run to the end of the queue (its selection is snapshotted now; the articles it covers are frozen when it starts).
+    It starts at once when nothing runs ahead of it, unless a restart paused the queue (then the queue's Resume starts it)."""
+    from src.jobs.llm_bulk_queue import QueueUnavailable
+
+    try:
+        return _bulk_queue().enqueue(req.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=http_detail(exc, limit=200)) from None
+    except QueueUnavailable:
+        raise HTTPException(status_code=409, detail="Unlock the corpus first: the queue is stored in it.") from None
+
+
+@router.post("/bulk/queue/{entry_id}/cancel")
+def bulk_queue_cancel(entry_id: int) -> dict:
+    """Drop a waiting run, or stop the running one after the articles in flight (what it finished stays stored)."""
+    if not _bulk_queue().cancel(entry_id):
+        raise HTTPException(status_code=404, detail="No such run waiting or running.")
+    return {"cancelled": entry_id}
+
+
+@router.post("/bulk/queue/resume")
+def bulk_queue_resume() -> dict:
+    """Carry on a queue a restart paused (the run that was going first, without storing any article twice)."""
+    return {"resumed": _bulk_queue().resume()}
+
+
+@router.post("/bulk/queue/clear-finished")
+def bulk_queue_clear_finished() -> dict:
+    return {"cleared": _bulk_queue().clear_finished()}
+
+
+def prepare_bulk_run(
+    req: BulkLLMRequest,
+    db: Session,
+    client_info: tuple[str, LlmBackend],
+    *,
+    resume_since: datetime | None = None,
+):
+    """Resolve a bulk run's articles, register its task-manager row and return ``(token, stream, article_ids)``.
+
+    Shared by the streamed ``POST /api/llm/bulk`` and the server-side queue (src/jobs/llm_bulk_queue.py, R600's second PR):
+    the stream is the same NDJSON generator either way, so a queued run stores exactly what a streamed one stores. Raises
+    ``HTTPException`` (400/404) before anything is registered when the selection is empty or invalid.
+
+    ``resume_since`` is the queue's resume after a restart: an article that already has a result of this kind written at or
+    after that moment was stored by this same run before the app stopped, so it is skipped (status ``skipped``, reason
+    ``done before the restart``) whatever ``skip_existing`` says. That is what keeps a resumed run from storing an article
+    twice, including the one whose result was committed just before the stop could be recorded."""
     client_backend_name, client = client_info
     op = (req.op or "").strip().lower()
     if op not in {"summarize", "translate"}:
@@ -2585,6 +2682,23 @@ def bulk_llm(
                 ex = ex.filter(ArticleAnalysis.prompt_version == prompt_version)
             already.update(r[0] for r in ex.all())
 
+    # A queued run resumed after a restart: what it stored before the stop is done, whatever skip_existing says.
+    resumed: set[int] = set()
+    if resume_since is not None:
+        work_ids = [w[0] for w in work]
+        for _i in range(0, len(work_ids), _BULK_ID_CHUNK):
+            chunk = work_ids[_i : _i + _BULK_ID_CHUNK]
+            rows = db.query(ArticleAnalysis.article_id, ArticleAnalysis.prompt_version).filter(
+                ArticleAnalysis.article_id.in_(chunk),
+                ArticleAnalysis.kind == kind,
+                ArticleAnalysis.created_at >= resume_since,
+            ).all()
+            # A translation's version carries its target; a chunked run appends "+<mode>-<parts>" (_version_with_method).
+            resumed.update(
+                aid for aid, pv in rows
+                if op != "translate" or pv == prompt_version or (pv or "").startswith(prompt_version + "+")
+            )
+
     # A translate run NEVER translates an article already in the target language
     # (maintainer 2026-06-20) — unconditional, independent of skip_existing.
     same_lang: set[int] = set()
@@ -2597,7 +2711,7 @@ def bulk_llm(
     # (when skipping) and minus the already-in-target-language ones.
     to_process = sum(
         1 for w in work
-        if w[0] not in same_lang and not (req.skip_existing and w[0] in already)
+        if w[0] not in same_lang and w[0] not in resumed and not (req.skip_existing and w[0] in already)
     )
     capped = False  # no cap anymore; kept for response compatibility
 
@@ -2606,7 +2720,7 @@ def bulk_llm(
     # work, never a fabricated %). Always finished, even on an early abort.
     from src.monitoring import tasks as _bgtasks
 
-    _verb = "Summarizing" if op == "summarize" else f"Translating → {target}"
+    _verb = "Summarizing" if op == "summarize" else f"Translating → {_label_target(target)}"
     _frame = (
         {"label_i18n": "Summarizing {n} article(s)", "label_vars": {"n": total}}
         if op == "summarize"
@@ -2631,7 +2745,7 @@ def bulk_llm(
         try:
           yield emit({
             "event": "start", "op": op, "total": total, "requested": requested,
-            "to_process": to_process, "already_done": len(already),
+            "to_process": to_process, "already_done": len(already | resumed),
             "same_language": len(same_lang), "capped": capped, "model": model,
             "target_language": target if op == "translate" else None,
             # PREEMPTION (2026-08-01 ruling 13): this is a USER-initiated batch, so
@@ -2673,6 +2787,12 @@ def bulk_llm(
                         yield emit({"event": "item", "i": pos, "total": total,
                                     "article_id": aid, "title": title, "status": "skipped",
                                     "reason": "already in target language"})
+                        continue
+                    if aid in resumed:
+                        skipped += 1
+                        yield emit({"event": "item", "i": pos, "total": total,
+                                    "article_id": aid, "title": title, "status": "skipped",
+                                    "reason": "done before the restart"})
                         continue
                     if req.skip_existing and aid in already:
                         skipped += 1
@@ -2737,9 +2857,4 @@ def bulk_llm(
         finally:
             _bgtasks.finish(_tok)
 
-    # The run outlives its tab (src/api/detached_stream.py): closing the browser no longer stops it; the task manager's Stop does.
-    from src.api.detached_stream import detached
-
-    return StreamingResponse(detached(_stream(), _tok, name="oo-llm-bulk"), media_type="application/x-ndjson",
-        headers={"X-OO-Task": f"task:{_tok}"},  # the page's own Cancel stops the run through the task manager's Stop
-    )
+    return _tok, _stream(), [w[0] for w in work]

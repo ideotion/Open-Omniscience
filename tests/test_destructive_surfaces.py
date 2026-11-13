@@ -146,7 +146,7 @@ _EXEMPT_GROUPS: dict[str, tuple[str, ...]] = {
         "diagnostics.keyword_triage.keyword_triage_cancel", "diagnostics.model_bench.model_bench_cancel",
         "diagnostics.p0.p0_validation_cancel", "diagnostics.perception.perception_extract_cancel",
         "diagnostics.release_run.release_run_cancel", "diagnostics.source_tags.source_tags_cancel",
-        "geo.osm_download_pause", "jobs.cancel_job", "llm.llm_pull_cancel", "llm.ollama_stop", "llm.vllm_install_cancel",
+        "geo.osm_download_pause", "jobs.cancel_job", "llm.bulk_queue_cancel", "llm.llm_pull_cancel", "llm.ollama_stop", "llm.vllm_install_cancel",
         "llm.vllm_stop", "quarantine.quarantine_action", "scheduler.scheduler_stop",
         "source_management.qualify_sources_bulk_cancel", "system.unattended_stop", "wiki.dumps_index_cancel",
         "wiki.dumps_pause",
@@ -175,7 +175,7 @@ _EXEMPT_GROUPS: dict[str, tuple[str, ...]] = {
         "source_management.remove_source_from_groups", "source_management.remove_sources_from_group",  # /groups/{id}/sources
     ),
     _DERIVED: (
-        "backup_v2.import_queue_clear", "database.vacuum", "insights.insights_prune_keywords", "wiki.dumps_index_clear",
+        "backup_v2.import_queue_clear", "database.vacuum", "llm.bulk_queue_clear_finished", "insights.insights_prune_keywords", "wiki.dumps_index_clear",
     ),
     _FILES: ("geo.osm_download_delete", "llm.llm_remove", "wiki.dumps_delete"),
     _OWN_LISTS: (

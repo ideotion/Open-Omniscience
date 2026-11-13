@@ -69,6 +69,9 @@ _cache: dict[tuple[str, str], str | None] = {}
 #: not moved since: a reader that missed the cache just before a restore replaced the file would otherwise store the old file's
 #: value AFTER the invalidation and serve it for the life of the process.
 _epoch = 0
+#: Moves only on a WHOLE invalidation (``kv_invalidate()``: a file swap by a panic wipe, a restore, a merge or a migration), never on
+#: one key's, so a holder of state read from the store (the bulk queue) can tell "the file was swapped" from "a setting was saved".
+_swap_epoch = 0
 #: Moves, for ONE key, at every settings write of that key (save or delete). A reader notes it BEFORE it reads the file and fills the
 #: cache only if it has not moved: a reader that read the file before a writer's commit could otherwise store its older value after the
 #: writer's own fill and serve it for the life of the process. Never cleared (a reset could meet a noted number again); one int per
@@ -594,7 +597,18 @@ def kv_get_json_strict(key: str) -> dict | None:
     return _loads_strict(raw)
 
 
-def kv_set_json(key: str, obj: dict) -> None:
+class KvSwapped(RuntimeError):
+    """A write made with ``expect_swap`` found the file swapped since: nothing was written."""
+
+
+def _swapped_since(expect_swap: int | None) -> bool:
+    if expect_swap is None:
+        return False
+    with _lock:
+        return _swap_epoch != expect_swap
+
+
+def kv_set_json(key: str, obj: dict, *, expect_swap: int | None = None) -> None:
     """Upsert ``obj`` (as JSON) under ``key`` transactionally, under the write gate.
 
     Raises on a genuine write failure (a locked encrypted store, a disk error) so a
@@ -621,6 +635,10 @@ def kv_set_json(key: str, obj: dict) -> None:
     from src.database.writer import write_lock
 
     with _write_slot() as epoch, write_lock():
+        # ``expect_swap`` (:func:`kv_swap_epoch` when the caller read what it writes): checked HERE, after a restore's hold was
+        # waited out, because a save that waited lands in the new file, and state read from the old one must not.
+        if _swapped_since(expect_swap):
+            raise KvSwapped("the corpus file was swapped since this value was read")
         committed = False
         try:
             conn = _open(path)
@@ -661,14 +679,17 @@ def kv_set_json(key: str, obj: dict) -> None:
                     _failed.pop((path, key), None)
 
 
-def kv_delete(key: str) -> None:
-    """Remove ``key`` (best-effort; a missing table is a no-op)."""
+def kv_delete(key: str, *, expect_swap: int | None = None) -> None:
+    """Remove ``key`` (best-effort; a missing table is a no-op). With ``expect_swap``, nothing is removed from a file swapped in
+    since (see :func:`kv_set_json`)."""
     path = _db_path()
     if path is None:
         return
     from src.database.writer import write_lock
 
     with _write_slot(), write_lock():
+        if _swapped_since(expect_swap):
+            return
         try:
             try:
                 conn = _open(path)
@@ -695,16 +716,22 @@ def kv_invalidate(key: str | None = None) -> None:
 
     ``None`` clears everything; a key clears just that key's entries across data dirs.
     """
-    global _epoch
+    global _epoch, _swap_epoch
     with _lock:
         _epoch += 1
         if key is None:
+            _swap_epoch += 1
             _cache.clear()
             _failed.clear()
             _seen.clear()
         else:
             _forget_key(_failed, key)
             _forget_key(_cache, key)
+
+
+def kv_swap_epoch() -> int:
+    """How many whole invalidations (file swaps) this process has seen; see ``_swap_epoch``."""
+    return _swap_epoch
 
 
 def _forget_key(table: dict, key: str) -> None:
