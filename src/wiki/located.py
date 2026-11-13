@@ -162,7 +162,7 @@ _PERSON_WORDS = (
 #: Person templates some editions name without an infobox prefix, or that mark a biography with no infobox at all (de Personendaten).
 _PERSON_UNPREFIXED = _names(
     "персона", "государственный деятель", "учёный", "писатель", "футболист", "музыкант", "人物", "政治家", "基礎情報 人物",
-    "personendaten", "actoractress", "actor actress", "基礎情報 音楽家", "基礎情報 政治家", "スポーツ選手",
+    "personendaten", "persondata", "actoractress", "actor actress", "基礎情報 音楽家", "基礎情報 政治家", "スポーツ選手",
 )
 #: Category name fragments that mark a page about a person, per the editions' own conventions (living people, births, deaths).
 _PERSON_CATEGORY = re.compile(
@@ -250,7 +250,7 @@ def classify_page(edition: str, wikitext: str) -> tuple[str | None, str | None, 
     """
     text = wikitext or ""
     for cat in _CATEGORY_LINK.findall(text):
-        if _PERSON_CATEGORY.search(" ".join(cat.split())):
+        if _PERSON_CATEGORY.search(" ".join(cat.replace("_", " ").split())):
             return "about_a_person", None, None
     allowed = PLACE_TYPES.get(edition, frozenset())
     first: tuple[str, int] | None = None
@@ -366,13 +366,18 @@ def metres(a: tuple[float, float], b: tuple[float, float]) -> float:
     return 2 * 6_371_008.8 * math.asin(min(1.0, math.sqrt(h)))
 
 
-def resolve(text: str, geocoder: Any = None) -> dict[str, Any]:
+def resolve(text: str, geocoder: Any = None, *, guarded: bool = False) -> dict[str, Any]:
     """One cleaned address through the local index. Returns ``{"status", ...}``; a ``located`` answer carries the point and its objects."""
     if geocoder is None:
         from src.osm.places import geocode as geocoder
     tries = variants(text)
     if not tries:
         return {"status": "no_house_number"}
+    whole = len([p for p in text.split(",") if p.strip()])
+    if not guarded and whole > 1:
+        # Without the page's own coordinate to check against, a shortened address keeps its locality: "1 avenue de la Gare" alone would
+        # answer from whichever ingested country has one, which is a namesake, not this place.
+        tries = [q for q in tries if len(q.split(",")) >= 2]
     for query in tries:
         answer = geocoder(query, limit=MAX_ANSWERS + 1)
         status = answer.get("status")
@@ -382,7 +387,8 @@ def resolve(text: str, geocoder: Any = None) -> dict[str, Any]:
         total = int(answer.get("total") or 0)
         if not results:
             continue
-        if total > MAX_ANSWERS:
+        if total > MAX_ANSWERS or len(results) < total:
+            # More answers than the index handed back (a stale index, a row in another country): placing one would be a pick.
             return {"status": "ambiguous", "answers": total}
         points = [(float(r["lat"]), float(r["lon"])) for r in results]
         spread = max((metres(p, q) for p in points for q in points), default=0.0)
@@ -412,11 +418,13 @@ def outside_every_country(point: tuple[float, float] | None, bboxes: list[tuple[
     return not any(b[0] <= lat <= b[2] and b[1] <= lon <= b[3] for b in bboxes)
 
 
-def page_addresses(edition: str, wikitext: str) -> dict[str, Any]:
+def page_addresses(edition: str, wikitext: str, title: str | None = None) -> dict[str, Any]:
     """Pure: what one stored page offers. ``{"skip": reason}``, ``{"none": True}`` or ``{"type", "candidates": [(field, text)], "coord"}``."""
     skip, kind, fields = classify_page(edition, wikitext)
     if skip is not None:
         return {"skip": skip}
+    if kind is not None and title and _HOME_WORDS.search(title):
+        return {"skip": "a_home"}  # "John Smith House": the title names a home when no field does
     if kind is None or fields is None:
         return {"none": True}
     keys = ADDRESS_KEYS.get(edition, ADDRESS_KEYS["en"])
@@ -447,7 +455,7 @@ class _Page:
 @dataclass
 class _State:
     pages: dict[str, _Page] = field(default_factory=dict)
-    resolved: dict[tuple[str, str], dict[str, Any]] = field(default_factory=dict)
+    resolved: dict[tuple[str, str, bool], dict[str, Any]] = field(default_factory=dict)
     osm_signature: str | None = None
     lane_marker: Any = None
 
@@ -515,19 +523,24 @@ def _held(lane: Any) -> dict[str, tuple[str, str, str]]:
 
     editions = list(PLACE_TYPES)
     out: dict[str, tuple[str, str, str]] = {}
-    for eid, language, rid in lane.execute(
-        select(VersionedEntity.id, VersionedEntity.language, func.max(VersionedRevision.id))
+    # SQLite's bare-column rule: content_hash is the one of the row max() picked, so a recreated lane whose row ids restart cannot pass
+    # for the old one.
+    for eid, language, rid, chash in lane.execute(
+        select(VersionedEntity.id, VersionedEntity.language, func.max(VersionedRevision.id), VersionedRevision.content_hash)
         .join(VersionedRevision, VersionedRevision.entity_id == VersionedEntity.id)
         .where(VersionedRevision.content.is_not(None), VersionedEntity.language.in_(editions))
         .group_by(VersionedEntity.id, VersionedEntity.language)
     ):
-        out[f"hot:{eid}"] = ("hot", str(language), str(rid))
-    for wid, edition, revid, fetched in lane.execute(
-        select(WikiWarmPage.id, WikiWarmPage.edition, WikiWarmPage.latest_revid, WikiWarmPage.fetched_at).where(
-            WikiWarmPage.latest_text.is_not(None), WikiWarmPage.deleted_at.is_(None), WikiWarmPage.edition.in_(editions)
+        out[f"hot:{eid}"] = ("hot", str(language), f"{rid}:{chash}")
+    # ONLY columns stored before the texts: a column after ``latest_text`` makes SQLite walk (and SQLCipher decrypt) every row's text
+    # overflow pages, which on a large lane spends the whole budget before one text is read. WARM replaces ``latest_text`` only with a
+    # newer revid, so the revid alone versions it. A deleted page keeps its last text (Q713) and is read like any other.
+    for wid, edition, revid in lane.execute(
+        select(WikiWarmPage.id, WikiWarmPage.edition, WikiWarmPage.latest_revid).where(
+            WikiWarmPage.latest_text.is_not(None), WikiWarmPage.edition.in_(editions)
         )
     ):
-        out[f"warm:{wid}"] = ("warm", str(edition), f"{revid}@{fetched}")
+        out[f"warm:{wid}"] = ("warm", str(edition), str(revid))
     return out
 
 
@@ -545,7 +558,7 @@ def _read(lane: Any, state: _State, todo: list[str], held: dict[str, tuple[str, 
         hot = {int(r.split(":")[1]): r for r in batch if r.startswith("hot:")}
         warm = {int(r.split(":")[1]): r for r in batch if r.startswith("warm:")}
         if hot:
-            rids = {int(held[ref][2]): eid for eid, ref in hot.items()}
+            rids = {int(held[ref][2].split(":")[0]): eid for eid, ref in hot.items()}
             texts = dict(lane.execute(select(VersionedRevision.id, VersionedRevision.content).where(VersionedRevision.id.in_(list(rids)))).all())
             names = {e: (t, x) for e, t, x in lane.execute(
                 select(VersionedEntity.id, VersionedEntity.title, VersionedEntity.external_id).where(VersionedEntity.id.in_(list(hot)))
@@ -553,18 +566,18 @@ def _read(lane: Any, state: _State, todo: list[str], held: dict[str, tuple[str, 
             for rid, eid in rids.items():
                 tier, edition, version = held[hot[eid]]
                 title, external_id = names.get(eid, (None, None))
-                state.pages[hot[eid]] = _Page(edition, tier, version, title, external_id, _offer(edition, texts.get(rid) or ""))
+                state.pages[hot[eid]] = _Page(edition, tier, version, title, external_id, _offer(edition, texts.get(rid) or "", title))
         if warm:
             for wid, edition, title, page_id, text in lane.execute(
                 select(WikiWarmPage.id, WikiWarmPage.edition, WikiWarmPage.title, WikiWarmPage.page_id, WikiWarmPage.latest_text)
                 .where(WikiWarmPage.id.in_(list(warm)))
             ):
                 tier, _, version = held[warm[wid]]
-                state.pages[warm[wid]] = _Page(edition, tier, version, title, f"{edition}:#{page_id}", _offer(edition, text or ""))
+                state.pages[warm[wid]] = _Page(edition, tier, version, title, f"{edition}:#{page_id}", _offer(edition, text or "", title))
 
 
-def _offer(edition: str, text: str) -> dict[str, Any] | None:
-    offer = page_addresses(edition, text)
+def _offer(edition: str, text: str, title: str | None) -> dict[str, Any] | None:
+    offer = page_addresses(edition, text, title)
     return None if offer.get("none") else offer
 
 
@@ -581,12 +594,14 @@ def located_report(lane: Any, *, budget: float = SCAN_BUDGET_SECONDS, geocoder: 
         marker = _lane_marker()
         if marker != _state.lane_marker:
             _state = _State(lane_marker=marker)
+            _last = None
         signature, boxes = _osm_scope()
         if _state.osm_signature != signature:
             _state.resolved.clear()
             _state.osm_signature = signature
         try:
             held = _held(lane)
+            deadline = max(deadline, time.monotonic() + budget / 2)  # the listing never eats the whole budget for the reads
             # A text that changed or went (a new revision, a WARM text replaced in place, a deleted or evicted page) is read again or
             # forgotten: what was read of an old version never stays on the map.
             for ref in [r for r, page in _state.pages.items() if r not in held or held[r][2] != page.version]:
@@ -606,18 +621,18 @@ def located_report(lane: Any, *, budget: float = SCAN_BUDGET_SECONDS, geocoder: 
         _lock.release()
 
 
-def _answer(state: _State, edition: str, text: str, geocoder: Any, deadline: float) -> dict[str, Any]:
+def _answer(state: _State, edition: str, text: str, geocoder: Any, deadline: float, *, guarded: bool = False) -> dict[str, Any]:
     if state.osm_signature is None:
         return {"status": "osm_unreadable"}
     if state.osm_signature == "[]":
         return {"status": "no_osm_country"}
-    memo = (edition, text)
+    memo = (edition, text, guarded)
     if memo in state.resolved:
         return state.resolved[memo]
     if time.monotonic() >= deadline:
         return {"status": "pending"}
     try:
-        answer = resolve(text, geocoder)
+        answer = resolve(text, geocoder, guarded=guarded)
     except Exception as exc:  # noqa: BLE001 - one failed lookup is counted, never memoized, never a silent drop
         log_failure(_LOG, "located addresses: one lookup in the OSM index failed", exc, level=logging.WARNING)
         return {"status": "lookup_failed"}
@@ -639,7 +654,7 @@ def _report(state: _State, held: dict[str, tuple[str, str, str]], boxes: list, g
         coord = offer.get("coord")
         for key, text in offer["candidates"]:
             row["found"] = row.get("found", 0) + 1
-            answer = _answer(state, page.edition, text, geocoder, deadline)
+            answer = _answer(state, page.edition, text, geocoder, deadline, guarded=coord is not None)
             status = answer["status"]
             if status == "not_located" and outside_every_country(coord, boxes):
                 status = "outside_your_osm_countries"

@@ -391,7 +391,7 @@ def test_a_page_that_changes_is_read_again_and_a_page_that_goes_is_forgotten(lan
     lane.commit()
     rep = L.located_report(lane, budget=5.0)
     assert rep["points"] == [] and rep["per_edition"] == {"en": {"skipped_about_a_person": 1}}
-    warm.deleted_at = T0
+    lane.delete(warm)  # evicted from the WARM tier; a deleted_at page keeps its text (Q713) and stays read
     lane.commit()
     rep = L.located_report(lane, budget=5.0)
     assert rep["texts_held"] == {"hot": 1, "warm": 0} == rep["texts_read"] and rep["complete"] is True
@@ -413,3 +413,40 @@ def test_addresses_left_unresolved_at_the_deadline_are_pending_not_zero(lane, sc
     L._state.resolved.clear()
     rep = L.located_report(lane, budget=0.0)
     assert rep["per_edition"]["en"] == {"found": 1, "pending": 1} and rep["complete"] is False
+
+
+def test_round_two_review_probes():
+    # A category written with underscores is still a person.
+    assert L.classify_page("en", "{{Infobox building|address=1 Main Street}}[[Category:Living_people]]")[0] == "about_a_person"
+    # A house named in the title is a home even when the infobox says nothing about use.
+    assert L.page_addresses("en", "{{Infobox building|address=1 Main Street, Springfield}}", "John Smith House") == {"skip": "a_home"}
+    # Persondata alone marks a person.
+    assert L.classify_page("en", "{{Infobox building|address=1 Main Street}}{{Persondata|NAME=A}}")[0] == "about_a_person"
+
+
+def test_a_partial_answer_is_ambiguous_never_a_pick():
+    geo = lambda q, limit=5: {"status": "located", "total": 3, "results": [_hit(1.0, 1.0)]}  # noqa: E731
+    assert L.resolve("1 Main Street, Springfield", geo)["status"] == "ambiguous"
+
+
+def test_without_a_page_coordinate_a_shortened_address_keeps_its_locality():
+    asked = []
+
+    def geo(q, limit=5):
+        asked.append(q)
+        return {"status": "empty", "total": 0, "results": []}
+
+    L.resolve("1 avenue de la Gare, 1700 Fribourg", geo)
+    assert asked and all("," in q for q in asked)
+    asked.clear()
+    L.resolve("1 avenue de la Gare, 1700 Fribourg", geo, guarded=True)
+    assert "1 avenue de la Gare" in asked
+
+
+def test_held_reads_no_warm_text_column():
+    import inspect
+
+    src = inspect.getsource(L._held)
+    warm = src[src.index("select(WikiWarmPage.id"):]
+    warm = warm[: warm.index(".where(")]
+    assert "latest_text" not in warm and "deleted_at" not in warm
