@@ -280,10 +280,10 @@ def run_fetch(dataset: str, param: str | None, *, fetchers: Any = None) -> tuple
 _Key = tuple[str, str, str]
 
 
-def _latest_stored(session: Session, agency: str, series: set[str], areas: set[str]) -> dict[_Key, tuple]:
-    """The latest stored vintage per (series, area, period) for these series and areas."""
+def _latest_stored(session: Session, agency: str, series: set[str], areas: set[str] | None) -> dict[_Key, tuple]:
+    """The latest stored vintage per (series, area, period) for these series and areas (``None``: every area)."""
     latest: dict[_Key, tuple] = {}
-    if not series or not areas:
+    if not series or (areas is not None and not areas):
         return latest
     cols = (
         StatFigureRow.series_id, StatFigureRow.ref_area, StatFigureRow.time_period, StatFigureRow.value,
@@ -292,8 +292,9 @@ def _latest_stored(session: Session, agency: str, series: set[str], areas: set[s
     q = select(*cols).where(
         StatFigureRow.agency == agency,
         StatFigureRow.series_id.in_(sorted(series)),
-        StatFigureRow.ref_area.in_(sorted(areas)),
     )
+    if areas is not None:
+        q = q.where(StatFigureRow.ref_area.in_(sorted(areas)))
     for row in session.execute(q):
         key = (row[0], row[1], row[2])
         prev = latest.get(key)
@@ -302,13 +303,15 @@ def _latest_stored(session: Session, agency: str, series: set[str], areas: set[s
     return latest
 
 
-def store_new_or_revised(session: Session, figures: Iterable[StatFigure]) -> dict:
+def store_new_or_revised(session: Session, figures: Iterable[StatFigure], *, all_areas: bool = False) -> dict:
     """Store only figures that are new, or differ from the latest stored vintage (R662).
 
     Returns ``{new, revised, unchanged, gaps, withdrawn, withdrawn_sample}``: ``withdrawn``
-    counts stored (series, area, period) keys of the SAME series and areas that this fetch no
-    longer carries; they are kept (never deleted) and named so the surface can say so. The
-    caller owns the transaction.
+    counts stored (series, area, period) keys of the SAME series that this fetch no longer
+    carries; they are kept (never deleted) and named so the surface can say so. With
+    ``all_areas`` (the fetched file is the whole series, every area in it) an area the source
+    dropped entirely counts too; without it only the areas this fetch carries are compared (a
+    file that covers one area, such as one GHCN station). The caller owns the transaction.
     """
     figs = list(figures)
     by_agency: dict[str, list[StatFigure]] = {}
@@ -318,7 +321,8 @@ def store_new_or_revised(session: Session, figures: Iterable[StatFigure]) -> dic
     withdrawn: list[str] = []
     rows: list[dict] = []
     for agency, group in by_agency.items():
-        latest = _latest_stored(session, agency, {f.series_id for f in group}, {f.ref_area for f in group})
+        latest = _latest_stored(session, agency, {f.series_id for f in group},
+                                None if all_areas else {f.ref_area for f in group})
         seen: set[_Key] = set()
         for f in group:
             key = (f.series_id, f.ref_area, f.time_period)
@@ -395,7 +399,9 @@ def fetch_and_store(
     figures, diagnostics, urls = run_fetch(dataset, p, fetchers=fetchers)
     if progress:
         progress("storing")
-    tally = store_new_or_revised(session, figures)
+    # Every dataset but a GHCN station is one whole file per series, so an area it no longer carries
+    # was withdrawn by the source (R662); a station fetch covers that station's own area only.
+    tally = store_new_or_revised(session, figures, all_areas=dataset != "ghcnd")
     stamps = sorted({f.extracted_at for f in figures})
     record = {
         "dataset": dataset,

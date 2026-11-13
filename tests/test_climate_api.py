@@ -118,6 +118,32 @@ def test_a_period_the_publisher_stopped_serving_is_counted_never_deleted(db):
     assert _rows(db) == 6
 
 
+def _fig(area: str, period: str, value: float, stamp: str):
+    from src.stats.sdmx import StatFigure
+
+    return StatFigure(agency="owid", series_id="owid.co2", ref_area=area, time_period=period, value=value, unit="Mt",
+                      methodology_ref=None, adjustment=None, base_year=None, extracted_at=stamp)
+
+
+def test_an_area_the_source_dropped_entirely_is_counted_as_withdrawn(db):
+    """Lane F review row 21: a whole-file dataset that no longer carries an area withdrew it (R662), counted, never deleted."""
+    first = [_fig("FRA", "2020", 1.0, "2026-11-01T00:00:00+00:00"), _fig("XKX", "2020", 2.0, "2026-11-01T00:00:00+00:00")]
+    climate.store_new_or_revised(db, first, all_areas=True)
+    again = [_fig("FRA", "2020", 1.0, "2026-11-02T00:00:00+00:00")]
+    tally = climate.store_new_or_revised(db, again, all_areas=True)
+    assert tally["withdrawn"] == 1 and tally["withdrawn_sample"] == ["owid.co2 XKX 2020"]
+    assert _rows(db) == 2, "kept, never deleted"
+    # A file that covers one area (a GHCN station) compares only the areas it carries.
+    assert climate.store_new_or_revised(db, again, all_areas=False)["withdrawn"] == 0
+
+
+def test_only_a_station_fetch_compares_its_own_area_only():
+    import inspect
+
+    src = inspect.getsource(climate.fetch_and_store)
+    assert 'all_areas=dataset != "ghcnd"' in src
+
+
 def test_a_period_repeated_inside_one_file_is_counted_and_never_breaks_the_fetch(db):
     twice = ONI_V1 + "JFM  1950 25.17 -1.34\n"
     record = climate.fetch_and_store(db, "oni", None, fetchers=_oni_fetchers(twice, "2026-11-01T00:00:00+00:00"))

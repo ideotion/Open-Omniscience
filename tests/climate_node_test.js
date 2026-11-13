@@ -91,6 +91,9 @@ const unit = (over) => Object.assign({
   const link = /<a\b[^>]*>([\s\S]*?)<\/a>/.exec(h);
   assert.ok(link, "the source page is a link");
   assert.strictEqual(visible(link[1]), unit().source_page, "the link's visible text is the full URL (#6)");
+  // #6 extended: the local preview opens first; the link is never a bare shortcut out.
+  assert.ok(/data-on-click="ooPrevent\(event\);openLinkPreview\(/.test(link[0]), link[0]);
+  assert.ok(!/target="_blank"/.test(link[0]), "no bare outbound link: " + link[0]);
   assert.ok(visible(h).includes("NASA GISS, public domain"), "the licence is named");
   noJunk(h, "never fetched");
 }

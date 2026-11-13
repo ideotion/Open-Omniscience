@@ -143,8 +143,9 @@
       if (!unit) return "";
       const txt = climateText(unit.dataset, t);
       const facts = [];
+      // Invariant #6 (extended): the local preview first, never a bare shortcut out; the visible text is the full URL.
       facts.push(_climateFact(t("Source"),
-        `<a href="${esc(unit.source_page)}" target="_blank" rel="noopener noreferrer">${esc(unit.source_page)}</a>`, txt.method));
+        `<a href="${esc(unit.source_page)}" data-on-click="ooPrevent(event);openLinkPreview(${esc(JSON.stringify(unit.source_page))})">${esc(unit.source_page)}</a>`, txt.method));
       facts.push(_climateFact(t("Licence"), esc(unit.licence), ""));
       const rec = unit.last_fetch, st = unit.stored || {};
       if (rec && rec.fetched_at) {
@@ -513,9 +514,9 @@
         param = String(param).trim().toUpperCase();
       }
       const title = climateText(id, t).title;
-      // The ONE consent (invariant #14); its answer is USED.
-      if (typeof ensureOnline === "function"
-          && !await ensureOnline(tf("Fetch {dataset} from {host}, over your transport", {dataset: title, host: _climateHost(id)}))) return;
+      // The ONE consent (invariant #14); its answer is USED, and without the popup nothing is sent (fails closed).
+      if (typeof ensureOnline !== "function"
+          || !await ensureOnline(tf("Fetch {dataset} from {host}, over your transport", {dataset: title, host: _climateHost(id)}))) return;
       say(t("Fetching in the background…"));
       try {
         const started = await api("/api/climate/fetch", {method: "POST", body: JSON.stringify({dataset: id, param: param, consent: true})});
