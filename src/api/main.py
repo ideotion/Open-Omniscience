@@ -737,12 +737,13 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 - best-effort shutdown
         log_failure(logger, "Error stopping the storage guard on shutdown", exc, level=logging.WARNING)
 
-    # The registered background jobs (backfills, enrichments, imports: src/jobs/background.py) write through the same engine and nothing
+    # The registered background jobs (backfills, enrichments, the mailbox pull: src/jobs/background.py) write through the same engine and nothing
     # stopped them before the disposal (audit A-029): one still writing keeps its connection checked out, so the write-back below cannot
     # fold the log, and the exit then ends its unit. Ask them to stop and wait for all of them against ONE 5 s deadline: each commits per
     # unit, so a cancellable one ends at its next unit, and 5 s is half the scheduler stop's own 10 s join above, so a shutdown a service
     # manager times at about 90 s is not spent here. A job still running after it is named in the log, by its kind only (its arguments can
-    # hold a passphrase). Not in the forensics record: its ``dispose`` member has no byte room left (R201, tests/test_session_forensics_budget.py).
+    # hold a passphrase). NOT covered: the backup import queue, the .eml import manager, the re-index managers and the backup threads, which
+    # are not registry jobs and keep their own stops. Not in the forensics record: its ``dispose`` member has no byte room left (R201, tests/test_session_forensics_budget.py).
     try:
         from src.jobs.background import stop_all_jobs
 

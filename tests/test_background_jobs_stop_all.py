@@ -72,10 +72,11 @@ def test_a_job_that_does_not_stop_is_named_and_the_wait_is_one_shared_deadline(r
     a.start()
     b.start()
     began = time.monotonic()
-    left = bg.stop_all_jobs(0.3)
+    left = bg.stop_all_jobs(1.0)
     took = time.monotonic() - began
     assert left == ["stubborn-a", "stubborn-b"]
-    assert took < 0.3 + 0.5, f"two jobs must share ONE deadline, not one each ({took:.2f} s)"
+    # one shared deadline takes ~1.0 s; a wait of the timeout PER job would take ~2.0 s, so the bound tells the two apart
+    assert took < 1.5, f"two jobs must share ONE deadline, not one each ({took:.2f} s)"
     # an opaque job is not flagged: a late finish must read 'done', never 'cancelled'
     assert not a._stop.is_set()
     release.set()
