@@ -80,7 +80,7 @@ const zero = { stored: 0, duplicate: 0, fetch_failed: 0, entries: 0 };
   {
     const { h, log } = sandbox({ "/api/sources/7/ingest": { source_id: 7, tally: { ...zero, stored: 3 } } });
     await h.ingestSource();
-    assert.ok(/stored: 3/.test(log.texts["ingest-result"]) && !/skipped_offline|Airplane/.test(log.texts["ingest-result"]));
+    assert.ok(/new articles stored: 3/.test(log.texts["ingest-result"]) && !/skipped_offline|Airplane/.test(log.texts["ingest-result"]));
     assert.deepStrictEqual(log.toasts, [["Ingest complete.", "ok"]]);
     assert.strictEqual(log.searches, 1);
   }
@@ -88,7 +88,7 @@ const zero = { stored: 0, duplicate: 0, fetch_failed: 0, entries: 0 };
   {
     const { h } = sandbox({});
     assert.strictEqual(h.tally({ skipped_offline: 2 }), "nothing new", "skipped_offline alone is not an outcome");
-    assert.strictEqual(h.tally({ stored: 1, skipped_offline: 2 }), "stored: 1");
+    assert.strictEqual(h.tally({ stored: 1, skipped_offline: 2 }), "new articles stored: 1");
   }
   // ---- ingestBatch -------------------------------------------------------------------------------------------------
   {

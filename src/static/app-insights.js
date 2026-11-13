@@ -1737,4 +1737,3 @@
     // visible "N to index" count ticks down to 0 on its own.
     let _indexing = false;
     let _autoIndexCooldownUntil = 0;      // throttles the 6 s status poll's re-kick
-    let _autoIndexLastRemaining = -1;     // detects a genuinely stuck backlog
