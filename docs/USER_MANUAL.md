@@ -137,7 +137,7 @@ has real articles in it.
 
 **The shell.** Navigation lives in a **left sidebar** — a **flat list** of the data
 tools: **Home · Feed · Explore · Insights · Observatory · World map · Governments ·
-Agenda · Climate · Indices · Commodities · Living sources · Library** (at the
+Agenda · Climate · Indices · Commodities *(advanced)* · Living sources · Library** (at the
 **Essentials** interface depth only Home and Feed are pinned and the rest sit behind a
 labelled **Show more** row; see [3.](#3-the-tools-one-by-one)) (it collapses to an icon rail on narrow windows but never
 disappears). A **Settings** button sits at the **bottom of the sidebar** (with the
@@ -324,14 +324,16 @@ Destructive actions always ask first.
 The sidebar is a **flat list** of the data tools (top to bottom):
 
 - **Home · Feed · Explore · Insights · Observatory · World map · Governments · Agenda ·
-  Climate · Indices · Commodities · Living sources · Library** — plus the **Settings**
+  Climate · Indices · Commodities *(advanced)* · Living sources · Library** — plus the
+  **Settings**
   button at the bottom of the sidebar. Help opens from the **?** button in the top bar.
   There is no "Collect" tab: collection lives in Settings.
 - **Explore** is one page: the search box on top, and the analysis of the matching
   articles under the results as soon as a search returns (see [3.1](#31-search) and
   [3.1a](#31a-analysis--the-corpora-window)). A keyword
-  clicked anywhere opens its analysis on this page; a Home Lead's **Open corpus ↗** and
-  Enter in the omnibar open it on Explore in a **new browser tab**.
+  clicked inside the app opens its analysis on this page; a keyword in the article
+  reader, a Home Lead's **Open corpus ↗** and Enter in the omnibar open it on Explore in
+  a **new browser tab**.
 - **Interface depth** (Settings → General) changes what the sidebar *pins*, never what
   you can reach. At **Essentials** only Home and Feed are pinned and the other tabs sit
   behind a labelled **Show more** row; **Standard** and **Full** list every tab. The
@@ -509,7 +511,7 @@ appears when you:
 
 - run a search in Explore (or choose *"Run the full Boolean search"* in the omnibar),
 - press **Enter** in the omnibar (this opens Explore in a new browser tab),
-- click a **keyword** anywhere (Insights, a Lead's back, a reader),
+- click a **keyword** anywhere (Insights, a Lead's back, or the reader, where it opens in a new browser tab),
 - click a **Home Lead** (its "Open corpus ↗" opens the *exact* article set, in a new browser tab), or
 - click a commodity chart title / **Analyse ↗**.
 
