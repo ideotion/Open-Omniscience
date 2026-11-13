@@ -506,7 +506,7 @@ oo_stop() {
         STOP_SIGNAL="$1"
     fi
 }
-trap 'STOP_REQUESTED=1; oo_stop HUP' HUP
+trap 'STOP_REQUESTED=1; oo_stop HUP' HUP  # STOP_REQUESTED=1 also here: the S0.2 guards read this first trap line for it
 trap 'STOP_REQUESTED=1; oo_stop TERM' TERM
 if [ -n "${MALLOC_ARENA_MAX:-}" ]; then
     if [ -n "$STDERR_RECORD" ]; then
@@ -522,7 +522,8 @@ else
     fi
 fi
 SERVER=$!
-# a stop that arrived while the server was being started, before its pid was known: carried out now (oo_stop clears nothing, so it runs once)
+# a stop that arrived while the server was being started, before its pid was known: carried out now. Once only: oo_stop forwards nothing while
+# SERVER is empty, and from here on SERVER is set, so a later stop takes oo_stop's direct path.
 if [ -n "$STOP_SIGNAL" ]; then
     record_stop "$STOP_SIGNAL"
     kill "$SERVER" 2>/dev/null || true

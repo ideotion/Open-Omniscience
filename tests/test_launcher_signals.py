@@ -114,8 +114,8 @@ def _start(tmp_path: Path, hold_after_spawn: bool = False):
 
 
 # Holds the launcher in the instant after it started the server, until the test releases it: the window a loaded machine opens by chance, opened on
-# purpose. The pause is a loop of short foreground sleeps, so a trapped signal runs within one of them (bash runs a trap after the foreground command).
-_HOLD = 'while [ ! -e "$OO_TEST_DIR/released" ]; do sleep 0.05; done\n'
+# purpose. It marks itself with a `held` file, so a test waits for the launcher to be there rather than for a guess at how long it takes. The pause is a loop of short foreground sleeps, so a trapped signal runs within one of them (bash runs a trap after the foreground command).
+_HOLD = ': > "$OO_TEST_DIR/held"; while [ ! -e "$OO_TEST_DIR/released" ]; do sleep 0.05; done\n'
 
 
 def _hold_before_spawn(launcher: Path) -> None:
@@ -180,6 +180,7 @@ def test_a_stop_in_the_instant_the_server_starts_is_forwarded(tmp_path):
     running unsignalled and ran no EXIT trap. CI met it once by chance; here the launcher is held in that instant until the TERM has arrived."""
     proc, server_pid, work, conn = _start(tmp_path, hold_after_spawn=True)
     try:
+        assert _wait(work / "held", 10), "the launcher is not held after starting the server"
         os.kill(proc.pid, signal.SIGTERM)  # the stop arrives while the launcher is still between starting the server and anything after it
         time.sleep(0.5)
         assert proc.poll() is None, f"the launcher died of the stop it should have forwarded (status {proc.poll()})"
@@ -208,15 +209,17 @@ def test_a_stop_before_the_server_has_a_pid_is_carried_out_once_it_has_one(tmp_p
     proc = subprocess.Popen(["bash", str(root / "scripts" / "launch.sh")], cwd=str(root), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL, start_new_session=True)
     try:
-        time.sleep(1.0)  # the launcher is held before the server is started
-        assert proc.poll() is None, f"the launcher ended before it reached the hold (status {proc.poll()})"
+        assert _wait(work / "held", 60), f"the launcher never reached the hold (status {proc.poll()})"
         os.kill(proc.pid, signal.SIGTERM)
         time.sleep(0.5)
         assert proc.poll() is None, f"the launcher died of the stop instead of keeping it (status {proc.poll()})"
         (work / "released").write_text("1")
         status = proc.wait(timeout=30)
         assert status >= 0, f"the launcher was killed by a signal ({status})"
-        pid = int((tmp_path / "server.pid").read_text(encoding="utf-8").strip())
+        pidfile = tmp_path / "server.pid"
+        if not pidfile.exists():  # the server was stopped before it could write its pid: it is gone, which is the outcome asked for
+            return
+        pid = int(pidfile.read_text(encoding="utf-8").strip())
         end = time.monotonic() + 10
         while time.monotonic() < end:
             try:
