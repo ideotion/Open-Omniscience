@@ -277,7 +277,7 @@
       if (unit && unit.stored && unit.stored.stored_rows) climateDrawCharts(unit);
     }
 
-    async function _climateOwidPickers(unit) {
+    async function _climateOwidPickers(unit, gen) {
       const t = _climateT();
       const colSel = $("climate-owid-col"), areaSel = $("climate-owid-area");
       if (!colSel || !areaSel) return null;
@@ -285,6 +285,7 @@
       if (!cols.some((c) => c.series_id === _climateOwid.column)) _climateOwid.column = cols.length ? cols[0].series_id : "";
       colSel.innerHTML = cols.map((c) => `<option value="${esc(c.series_id)}"${c.series_id === _climateOwid.column ? " selected" : ""}>${esc(climateSeriesLabel(c.series_id, t))}</option>`).join("");
       const a = await api("/api/climate/areas?dataset=owid&param=" + encodeURIComponent(unit.param));
+      if (gen !== _climateDrawGen) return null;  // a newer draw owns the pickers now
       const areas = (a.areas || []).slice().sort((x, y) => String(x.name).localeCompare(String(y.name)));
       if (!areas.some((x) => x.code === _climateOwid.area) && areas.length) _climateOwid.area = areas[0].code;
       areaSel.innerHTML = areas.map((x) => `<option value="${esc(x.code)}"${x.code === _climateOwid.area ? " selected" : ""}>${esc(x.name)}</option>`).join("");
@@ -304,7 +305,7 @@
       const gen = ++_climateDrawGen;
       let charts = unit.charts || [], area = unit.area;
       if (unit.dataset === "owid") {
-        const pick = await _climateOwidPickers(unit);
+        const pick = await _climateOwidPickers(unit, gen);
         if (gen !== _climateDrawGen) return;
         charts = pick ? [pick] : [];
         area = _climateOwid.area;

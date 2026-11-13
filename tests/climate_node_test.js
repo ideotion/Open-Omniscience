@@ -86,7 +86,9 @@ const unit = (over) => Object.assign({
   const h = R.climateFactsHtml(unit(), t, tf);
   assert.ok(visible(h).includes("never fetched on this machine"), visible(h));
   assert.ok(!visible(h).includes("Stored"), "no stored line for nothing stored");
-  assert.ok(visible(h).includes("https://data.giss.nasa.gov/gistemp/"), "the link's visible text is the full URL (#6)");
+  const link = /<a\b[^>]*>([\s\S]*?)<\/a>/.exec(h);
+  assert.ok(link, "the source page is a link");
+  assert.strictEqual(visible(link[1]), unit().source_page, "the link's visible text is the full URL (#6)");
   assert.ok(visible(h).includes("NASA GISS, public domain"), "the licence is named");
   noJunk(h, "never fetched");
 }
