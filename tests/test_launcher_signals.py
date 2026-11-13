@@ -80,7 +80,7 @@ def _wait(path: Path, secs: float) -> bool:
     return path.exists()
 
 
-def _start(tmp_path: Path):
+def _start(tmp_path: Path, hold_after_spawn: bool = False):
     root, env = _launcher_tree(tmp_path, "")
     work = tmp_path / "work"
     work.mkdir()
@@ -93,6 +93,8 @@ def _start(tmp_path: Path):
     script = os.environ.get("OO_LAUNCH_SH_UNDER_TEST")
     if script:
         (root / "scripts" / "launch.sh").write_bytes(Path(script).read_bytes())
+    if hold_after_spawn:
+        _hold_after_spawn(root / "scripts" / "launch.sh")
     # a launcher run from a terminal is the foreground group's leader: its own session here, so no signal of the test leaks into it
     proc = subprocess.Popen(["bash", str(root / "scripts" / "launch.sh")], cwd=str(root), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL, start_new_session=True, preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL))
@@ -109,6 +111,24 @@ def _start(tmp_path: Path):
     conn.sendall(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n")
     assert _wait(work / "request.started", 10)
     return proc, server_pid, work, conn
+
+
+# Holds the launcher in the instant after it started the server, until the test releases it: the window a loaded machine opens by chance, opened on
+# purpose. The pause is a loop of short foreground sleeps, so a trapped signal runs within one of them (bash runs a trap after the foreground command).
+_HOLD = 'while [ ! -e "$OO_TEST_DIR/released" ]; do sleep 0.05; done\n'
+
+
+def _hold_before_spawn(launcher: Path) -> None:
+    src = launcher.read_text(encoding="utf-8")
+    at = '\nif [ -n "${MALLOC_ARENA_MAX:-}" ]; then\n'
+    assert src.count(at) == 1, "the launcher no longer starts its server where this test holds it"
+    launcher.write_text(src.replace(at, "\n" + _HOLD + at.lstrip("\n")), encoding="utf-8")
+
+
+def _hold_after_spawn(launcher: Path) -> None:
+    src = launcher.read_text(encoding="utf-8")
+    assert src.count("\nSERVER=$!\n") == 1, "the launcher no longer starts its server where this test holds it"
+    launcher.write_text(src.replace("\nSERVER=$!\n", "\nSERVER=$!\n" + _HOLD), encoding="utf-8")
 
 
 def _signals(work: Path) -> list[str]:
@@ -153,3 +173,61 @@ def test_the_launcher_leaves_after_the_server_has_finished_its_teardown(tmp_path
         assert status in (143, 0), status
     finally:
         _finish(proc, server_pid, conn)
+
+
+def test_a_stop_in_the_instant_the_server_starts_is_forwarded(tmp_path):
+    """R674 (13 Nov): a TERM that reached the launcher between the server's start and its stop traps killed it outright (status -15), left the server
+    running unsignalled and ran no EXIT trap. CI met it once by chance; here the launcher is held in that instant until the TERM has arrived."""
+    proc, server_pid, work, conn = _start(tmp_path, hold_after_spawn=True)
+    try:
+        os.kill(proc.pid, signal.SIGTERM)  # the stop arrives while the launcher is still between starting the server and anything after it
+        time.sleep(0.5)
+        assert proc.poll() is None, f"the launcher died of the stop it should have forwarded (status {proc.poll()})"
+        (work / "released").write_text("1")
+        conn.close()
+        status = proc.wait(timeout=30)
+        assert (work / "teardown").exists(), "the server's teardown did not run: the stop was never forwarded to it"
+        assert _signals(work) == ["TERM"], f"TERM is forwarded exactly once, got {_signals(work)}"
+        assert status in (143, 0), status
+    finally:
+        _finish(proc, server_pid, conn)
+
+
+def test_a_stop_before_the_server_has_a_pid_is_carried_out_once_it_has_one(tmp_path):
+    """The other half of R674: a stop that arrives before the server is started is remembered, and the server is stopped the moment it exists."""
+    root, env = _launcher_tree(tmp_path, "")
+    work = tmp_path / "work"
+    work.mkdir()
+    server = tmp_path / "bin" / "open-omniscience"
+    server.write_text('#!/usr/bin/env bash\necho $$ > "$OO_TEST_PIDFILE"\nexec sleep 60\n', encoding="utf-8")
+    env.update(OO_TEST_DIR=str(work), OO_NO_BROWSER="1")
+    script = os.environ.get("OO_LAUNCH_SH_UNDER_TEST")
+    if script:
+        (root / "scripts" / "launch.sh").write_bytes(Path(script).read_bytes())
+    _hold_before_spawn(root / "scripts" / "launch.sh")
+    proc = subprocess.Popen(["bash", str(root / "scripts" / "launch.sh")], cwd=str(root), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, start_new_session=True)
+    try:
+        time.sleep(1.0)  # the launcher is held before the server is started
+        assert proc.poll() is None, f"the launcher ended before it reached the hold (status {proc.poll()})"
+        os.kill(proc.pid, signal.SIGTERM)
+        time.sleep(0.5)
+        assert proc.poll() is None, f"the launcher died of the stop instead of keeping it (status {proc.poll()})"
+        (work / "released").write_text("1")
+        status = proc.wait(timeout=30)
+        assert status >= 0, f"the launcher was killed by a signal ({status})"
+        pid = int((tmp_path / "server.pid").read_text(encoding="utf-8").strip())
+        end = time.monotonic() + 10
+        while time.monotonic() < end:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            pytest.fail("the server outlived a stop that arrived before it was started")
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        with contextlib.suppress(OSError, ValueError):
+            os.kill(int((tmp_path / "server.pid").read_text(encoding="utf-8").strip()), signal.SIGKILL)
