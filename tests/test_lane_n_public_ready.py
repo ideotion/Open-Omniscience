@@ -54,6 +54,8 @@ def test_the_map_has_a_scale_bar_that_follows_zoom_and_resize():
     )
     bar = function_body(js, "_ooMapScaleBar")
     assert "getScreenCTM()" in bar and "barPx < 8" in bar and "Math.max(8" not in bar
+    # The visible label carries its own approximation mark (informed consent: one short caveat stays visible).
+    assert "`≈ ${fmt(km)} km`" in bar
     css = read_static("app.css")
     rule = re.search(r"\.oomap-scale \{([^}]*)\}", css).group(1)
     assert "right:8px" in rule, "bottom left is the Country/layers group above 600 px"

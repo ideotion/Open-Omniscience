@@ -1568,7 +1568,8 @@
       const bar = box.querySelector(".oomap-scale-bar"), lab = box.querySelector(".oomap-scale-l");
       if (bar) bar.style.width = `${Math.round(barPx)}px`;
       const fmt = (v) => (typeof fmtNum === "function") ? fmtNum(v, 0) : String(v);
-      if (lab) lab.textContent = km >= 1 ? `${fmt(km)} km` : `${fmt(km * 1000)} m`;
+      // "≈": a distance on an equal-area map is approximate, and the mark says so visibly.
+      if (lab) lab.textContent = km >= 1 ? `≈ ${fmt(km)} km` : `≈ ${fmt(km * 1000)} m`;
       box.hidden = false;
     }
 
