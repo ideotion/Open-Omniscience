@@ -152,7 +152,7 @@ def help_drafts() -> list[str]:
         text = path.read_text(encoding="utf-8")
         m = re.match(r"\s*<!--(.*?)-->", text, re.S)
         banner = " ".join(m.group(1).split()) if m else ""
-        cov = re.search(r"Coverage: (.*?)\.(?:\s|$)", banner)
+        cov = re.search(r"Coverage: (.*?)\.(?=\s+[A-Z]|\s*$)", banner)
         # no banner means not known to be reviewed
         reviewed = bool(m) and "not yet reviewed" not in banner
         rows.append(
