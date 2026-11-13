@@ -580,10 +580,10 @@ _API_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_deadlined', 'return on_busy(exc)'): 1,
     },
     'src/api/llm.py': {
-        ('bulk_llm._stream', 'if isinstance(res.error, LLMUnavailable):'): 1,
-        ('bulk_llm._stream', 'assert res.error is not None  # a not-ok result always carries its error'): 1,
-        ('bulk_llm._stream', '"error": http_detail(res.error, limit=200)})'): 1,
-        ('bulk_llm._stream', '"aborted": True, "reason": http_detail(res.error, limit=200)})'): 1,
+        ('prepare_bulk_run._stream', 'if isinstance(res.error, LLMUnavailable):'): 1,
+        ('prepare_bulk_run._stream', 'assert res.error is not None  # a not-ok result always carries its error'): 1,
+        ('prepare_bulk_run._stream', '"error": http_detail(res.error, limit=200)})'): 1,
+        ('prepare_bulk_run._stream', '"aborted": True, "reason": http_detail(res.error, limit=200)})'): 1,
     },
     'src/api/main.py': {
         # the 422 handler reads a validation error's type, loc and msg (the msg through ``scrubbed``) and drops ``input``/``ctx``, the

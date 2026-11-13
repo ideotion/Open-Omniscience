@@ -69,7 +69,7 @@ def backlog_budget_s() -> float:
         return 30.0
 
 
-def _backlog_busy_reason() -> str | None:
+def _backlog_busy_reason(exclude_kind: str | None = None) -> str | None:
     """Why the slice must not run now: work that already owns the unindexed articles. The collection loop's window does not pass
     through the offline timer's yield checks, so the slice makes the ones that matter to it here: a re-index drain (an import's
     resume picks the same least-recently-attempted rows, and both writers would race for every one), any registered corpus lease,
@@ -94,7 +94,8 @@ def _backlog_busy_reason() -> str | None:
     try:
         from src.jobs.background import all_job_statuses
 
-        if any(st.get("running") and st.get("is_writer") for st in all_job_statuses()):
+        # ``exclude_kind``: the Insights backlog job (src/jobs/insights_backlog.py) asks this too, and is not its own rival.
+        if any(st.get("running") and st.get("is_writer") and (exclude_kind is None or st.get("kind") != exclude_kind) for st in all_job_statuses()):
             return "writer_job_running"
     except Exception:  # noqa: BLE001
         return "jobs_unreadable"
