@@ -791,12 +791,13 @@ def _show_log(scr: Any, server: ServerProcess, stopping: list[bool] | None = Non
     with contextlib.suppress(TermiosError, OSError):
         saved = termios.tcgetattr(fd)
         tty.setcbreak(fd)  # one key, no Enter; ISIG stays, so Ctrl-C is still the terminal's stop
-    sys.stdout.write("\n--- The server's own messages appear below as it prints them. Press any key to return to the panel. ---\n\n")
-    sys.stdout.flush()
     # Every way out goes back through curses first: curses.wrapper calls endwin() again when the panel ends, and a second endwin()
     # without a refresh between them fails, which read as "the panel could not start" right above the launcher's own message.
     back = True
     try:
+        # Inside the try: a write that fails (the terminal hung up) still restores the terminal's own mode below.
+        sys.stdout.write("\n--- The server's own messages appear below as it prints them. Press any key to return to the panel. ---\n\n")
+        sys.stdout.flush()
         while True:
             if not server.alive() or (stopping is not None and stopping[0]):
                 back = False
