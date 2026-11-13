@@ -6,8 +6,9 @@
 // What these lists must NOT do is most of what they are:
 //   * an item says what was measured, never a verdict ("fake", "manipulated", "propaganda"...);
 //   * a value from the server (a source name, a phrase, a headline) is text, never markup;
-//   * the count line says how many and when, and the caveat is one click away beside it,
-//     behind a real button that says whether it is open (aria-expanded) and what it opens;
+//   * the count line says how many and when; the caveat is a VISIBLE line under it, and the method
+//     and thresholds are one click away behind a real button that says whether it is open
+//     (aria-expanded) and what it opens;
 //   * an empty list says so, never an empty box;
 //   * nothing is shown for a dismissed count of zero.
 //
@@ -60,9 +61,13 @@ for (const def of P.OO_PATTERNS) {
   ok(!VERDICT.test(line), def.type + ": an item states a measurement, never a verdict: " + line);
   ok(!html.includes("<img"), def.type + ": server text is escaped, never markup");
   ok(html.includes("1 found, computed 2026-11-13T20:00:00+00:00"), def.type + ": count and computed time on the count line");
-  ok(/<button type="button" class="ghost tiny pat-how" aria-expanded="false" aria-controls="pat-how-/.test(html), def.type + ": the caveat control is a real, announced button");
-  ok(html.includes('title="A shape, not a verdict."'), def.type + ": the caveat rides the button's hover");
-  ok(/role="region"[^>]*hidden>\s*<p class="card-caveat">A shape, not a verdict\.<\/p>/.test(html), def.type + ": the caveat is one click away, in the region the button opens");
+  ok(/<button type="button" class="ghost tiny pat-how" aria-expanded="false" aria-controls="pat-how-/.test(html), def.type + ": the method control is a real, announced button");
+  // The caveat is VISIBLE (never behind the toggle in the full UI); the button opens the method and thresholds.
+  const region = html.slice(html.indexOf('role="region"'));
+  ok(/<p class="card-caveat pat-caveat">A shape, not a verdict\.<\/p>/.test(html), def.type + ": the caveat is a visible line");
+  ok(html.indexOf("A shape, not a verdict.") < html.indexOf('role="region"') && !region.includes("A shape, not a verdict."),
+     def.type + ": the caveat sits before, never inside, the region the button hides");
+  ok(region.includes("Counted."), def.type + ": the method is one click away, in the region the button opens");
   ok(/<ul class="hint pat-thresholds"><li>/.test(html), def.type + ": the thresholds the server applied are listed in words");
   const ids = P.patternItemIds(item);
   ok(ids.length > 0 && html.includes("Open " + ids.length + " articles"), def.type + ": each item opens its articles");
@@ -85,11 +90,11 @@ const ov = P.patternsOverviewHtml({copypasta: 3, flooded_topic: null}, t, tf);
 ok(ov.includes("3 found") && ov.includes("could not be read") && ov.includes("Loading…"), "overview counts, failures and pending rows");
 ok((ov.match(/data-pattern-list="/g) || []).length === 8, "every list has its button in the overview");
 
-// Who: names are text, counts are counts, the caveat is behind the same control.
+// Who: names are text, counts are counts, the caveat is visible as on the eight lists.
 const who = P.whoListHtml({entities: [{name: "Ada " + XSS, "class": "person", articles: 4, mentions: 9}], caveat: "Deduced from text, never confirmed.",
   computed_at: "2026-11-13T20:00:00+00:00", min_articles: 1}, t, tf);
 ok(!who.includes("<img") && who.includes("person · 4 articles · 9 mentions"), "who rows are escaped counts");
-ok(who.includes('aria-controls="pat-how-who"') && who.includes("Deduced from text, never confirmed."), "who carries its caveat");
+ok(who.includes('aria-controls="pat-how-who"') && who.includes('<p class="card-caveat pat-caveat">Deduced from text, never confirmed.</p>'), "who shows its caveat as a visible line");
 ok(P.whoListHtml({entities: []}, t, tf).includes("No people or organisations found yet."), "an empty Who says so");
 
 // The dismissed-cards button: nothing for zero, the count otherwise.

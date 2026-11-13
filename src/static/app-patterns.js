@@ -12,10 +12,11 @@
    origin: example.org"), never what it proves, and never with words like "fake" or
    "manipulated" — a list names real sources. The pattern's name carries the label; the
    caveat qualifies it. Each list's count line says how many items it holds and when the
-   server computed them, and the "How this was measured" button right beside it reveals the
-   translated caveat, the method and the thresholds. The caveat also rides the button's
-   hover (#oo-tip), the same layering as the back of a Lead card (#23). The button is a real
-   <button> with aria-expanded, so it works by keyboard, touch and screen reader.
+   server computed them; the translated caveat is VISIBLE right under it, always (the
+   informed-consent non-negotiable: a caveat is never behind a toggle in the full UI), and the
+   "How this was measured" button beside the count reveals the longer method and the
+   thresholds. The button is a real <button> with aria-expanded, so it works by keyboard,
+   touch and screen reader.
 
    UNDO THAT WAS MISSING. A dismissed Lead could never come back, and a keyword hidden from
    the explorer could never be shown again. Now: the dismiss toast is an Undo
@@ -163,7 +164,8 @@
       return (typeof ooLabelHtml === "function") ? ooLabelHtml(label, val) : `${label}: ${val}`;
     }
 
-    // The count line and its "How this was measured" control, shared by the eight lists and Who.
+    // The count line, the caveat (always visible) and the "How this was measured" control for the
+    // method and thresholds, shared by the eight lists and Who.
     // `id` names the region the button opens, so aria-controls points at it.
     function patternHeadHtml(p, shown, id, t, tf) {
       const when = p && p.computed_at
@@ -177,11 +179,10 @@
         ? `<p class="hint">${_patEsc(tf("Showing the first {n}.", {n: _patNum(OO_PATTERN_LIMIT)}))}</p>` : "";
       return `<div class="row pat-head" style="gap:8px;align-items:center;flex-wrap:wrap">
           <span class="pat-count">${_patEsc(count)}</span>
-          <button type="button" class="ghost tiny pat-how" aria-expanded="false" aria-controls="${_patEsc(id)}"
-                  title="${_patEsc(caveat)}">${_patEsc(t("How this was measured"))}</button>
+          <button type="button" class="ghost tiny pat-how" aria-expanded="false" aria-controls="${_patEsc(id)}">${_patEsc(t("How this was measured"))}</button>
         </div>
+        ${caveat ? `<p class="card-caveat pat-caveat">${_patEsc(caveat)}</p>` : ""}
         <div class="pat-how-body" id="${_patEsc(id)}" role="region" aria-label="${_patEsc(t("How this was measured"))}" hidden>
-          ${caveat ? `<p class="card-caveat">${_patEsc(caveat)}</p>` : ""}
           ${p && p.method ? `<p class="hint">${_patServerText(p.method, t)}</p>` : ""}
           ${thresholds.length ? `<ul class="hint pat-thresholds">${thresholds.map((r) => `<li>${_patEsc(r)}</li>`).join("")}</ul>` : ""}
         </div>${capped}`;
