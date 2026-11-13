@@ -14,6 +14,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+import os
 import random
 import sqlite3
 from datetime import UTC, date, datetime, timedelta
@@ -838,6 +839,11 @@ def test_under_the_apps_own_engine_settings_a_checkpoint_passes_between_statemen
 
     app_session.init_db()
     engine = app_session.engine
+    # The engine is the process's own, so its POOL is too: whatever connections the earlier tests in this process left checked in are
+    # what this measurement would otherwise run on (R674: red once on CI, core-only shard 2, every contrast call reading 0, and not
+    # reproduced at the same commit, the same install and the same file placement, nor under load). Fresh connections from the same
+    # engine keep everything the claim is about (its creator, pragmas, pool class, listeners) and drop only what a neighbour left.
+    engine.dispose()
     path = engine.url.database
     assert path and str(path) != ":memory:"
     Sess = sessionmaker(bind=engine, future=True)
@@ -890,7 +896,28 @@ def _app_engine_body(engine, Sess, path, monkeypatch, own):
     assert len(busy) >= 20 and set(busy) == {0}, "the app's own engine held the log between statements"
     # the contrast on the same engine: the single statement, with its cursor open, DOES keep the checkpoint out
     monkeypatch.setattr(dq, "GROUPED_CHUNK", 2)
-    old: list[int] = []
-    with Sess() as s:
-        _reference(s, TODAY - timedelta(days=6), TODAY + timedelta(days=1), lambda k, v: old.append(_checkpoint_passes(path)[0]) or True)
-    assert 1 in old, "the contrast did not pin on the app's engine: the assertion above proved nothing"
+    old: list[tuple[int, int, int]] = []
+    reader: dict[str, object] = {}
+
+    def _note_reader(conn, cur, st, params, ctx, many):  # noqa: ANN001
+        if "GROUP BY" in st and "dbapi" not in reader:
+            reader["dbapi"] = conn.connection.dbapi_connection
+
+    def _keep(_k, _v):
+        if "file" not in reader:  # which file the open statement reads, asked on its own connection while it is open
+            reader["file"] = reader["dbapi"].execute("PRAGMA database_list").fetchone()[2]
+        old.append(_checkpoint_passes(path))
+        return True
+
+    event.listen(engine, "before_cursor_execute", _note_reader)
+    try:
+        with Sess() as s:
+            _reference(s, TODAY - timedelta(days=6), TODAY + timedelta(days=1), _keep)
+    finally:
+        event.remove(engine, "before_cursor_execute", _note_reader)
+    same = bool(reader.get("file")) and os.path.samefile(str(reader["file"]), str(path))
+    assert 1 in [b for b, _, _ in old], (
+        "the contrast did not pin on the app's engine: the assertion above proved nothing "
+        f"(the open statement read {reader.get('file')!r}, the checkpoints ran on {path!r}, same file: {same}; "
+        f"(busy, log, checkpointed) per call: {old[:6]})"
+    )
