@@ -16,6 +16,7 @@ import ast
 import json
 import subprocess
 import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -28,11 +29,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def registry():
-    """The real registry, emptied for the test and given back afterwards."""
+    """The real registry, emptied for the test and given back afterwards; the restore's set of stopped kinds starts and ends empty."""
+    from src.backup import merge
+
     with bg._REG_LOCK:
         saved = dict(bg._REGISTRY)
         bg._REGISTRY.clear()
+    with merge._STOPPED_LOCK:
+        merge._STOPPED_FOR_RESTORE.clear()
     yield
+    with merge._STOPPED_LOCK:
+        merge._STOPPED_FOR_RESTORE.clear()
     with bg._REG_LOCK:
         bg._REGISTRY.clear()
         bg._REGISTRY.update(saved)
@@ -185,6 +192,73 @@ def test_a_stoppable_job_that_does_not_stop_in_time_is_named(registry, monkeypat
         monkeypatch.setattr(merge, "_STOP_FOR_RESTORE_S", 0.05)
         with pytest.raises(merge.WriterJobsRefused, match=r"\(A slow writer\)"):
             merge.refuse_while_writer_jobs_run()
+    finally:
+        release.set()
+        job.join(5)
+
+
+def test_a_job_whose_safe_point_comes_after_the_wait_is_not_left_to_stop_for_an_import_that_never_happens(registry, monkeypatch):
+    """The ask is withdrawn when the wait ends: otherwise the job stops at its next safe point after the refusal, and nothing starts it."""
+    from src.backup import merge
+
+    release = threading.Event()
+    started = threading.Event()
+    reached = threading.Event()
+
+    def late(ctx):
+        started.set()
+        time.sleep(0.3)  # the safe point is further away than the restore waits
+        reached.set()
+        while not release.wait(0.01):
+            if ctx.stopping or ctx.yielding:
+                return
+
+    job = bg.register_job(bg.BackgroundJob("late", "A late writer", late, is_writer=True, cancellable=True, stops_for_restore=True))
+    job.start()
+    assert started.wait(5)
+    try:
+        monkeypatch.setattr(merge, "_STOP_FOR_RESTORE_S", 0.05)
+        with pytest.raises(merge.WriterJobsRefused, match=r"\(A late writer\)"):
+            merge.refuse_while_writer_jobs_run()
+        assert reached.wait(5)
+        time.sleep(0.1)
+        assert job._alive(), "a restore that refused leaves the job running"
+        assert not merge._STOPPED_FOR_RESTORE
+    finally:
+        release.set()
+        job.join(5)
+
+
+def test_a_restore_ending_inside_a_window_forgets_what_it_stopped(registry, monkeypatch):
+    """The import run starts the drain when it ends; a stale entry would let a later restore start a drain the operator cancelled."""
+    from src.backup import merge
+    from src.scheduler import runner
+
+    merge._remember_stopped(["reindex-resume"])
+    monkeypatch.setattr(runner, "exclusive_window_open", lambda: True)
+    assert merge.start_jobs_stopped_for_restore() == []
+    assert not merge._STOPPED_FOR_RESTORE
+
+
+def test_a_job_the_operator_cancelled_is_never_started_again_by_a_restore(registry):
+    from src.backup import merge
+
+    release = threading.Event()
+
+    def worker(ctx):
+        while not release.wait(0.01):
+            if ctx.stopping:
+                return
+
+    job = bg.register_job(bg.BackgroundJob("c", "Cancelled", worker, is_writer=True, cancellable=True, stops_for_restore=True))
+    job.start()
+    job.cancel()
+    assert job.join(5)
+    assert job.status()["state"] == "cancelled"
+    merge._remember_stopped(["c"])
+    try:
+        assert merge.start_jobs_stopped_for_restore() == []
+        assert not job._alive()
     finally:
         release.set()
         job.join(5)

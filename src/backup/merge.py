@@ -8696,16 +8696,16 @@ def start_jobs_stopped_for_restore() -> list[str]:
     """Start again the jobs a committing restore stopped, whatever its outcome (R659): called where a restore ends (the volume restore's
     and the single-file restore's ``finally``) and by a refusal. A successful import with its re-index deferred has already started the
     drain (``hand_off_reindex``; this start then finds it running and does nothing); a refused, failed or stopped restore, or one that
-    re-indexed inline, has not, and nothing else would. Inside an import run's window it starts nothing: the run starts the drain once,
-    when it ends. Never raises; returns the kinds started."""
+    re-indexed inline, has not, and nothing else would. Inside an import run's window it starts nothing and forgets the kinds: the run starts
+    the drain once, when it ends. A job the operator cancelled since is never started. Never raises; returns the kinds started."""
     try:
         from src.scheduler.runner import exclusive_window_open
 
-        if exclusive_window_open():
-            return []
         with _STOPPED_LOCK:
             kinds = sorted(_STOPPED_FOR_RESTORE)
-            _STOPPED_FOR_RESTORE.clear()
+            _STOPPED_FOR_RESTORE.clear()  # also inside a window: left there, a later restore would start a drain the operator has cancelled
+        if exclusive_window_open():
+            return []
         from src.jobs.background import start_jobs_after_refusal
 
         return start_jobs_after_refusal(kinds)

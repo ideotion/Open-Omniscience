@@ -446,18 +446,25 @@ def _writer_pair(job: BackgroundJob) -> tuple[str, str] | None:
 
 
 def stop_jobs_for_restore(timeout: float) -> list[str]:
-    """Ask every running job flagged ``stops_for_restore`` to stop, and wait for them against ONE deadline (R659). Returns the kinds stopped.
+    """Ask every running job flagged ``stops_for_restore`` to stop, and wait for them against ONE deadline (R659). Returns EVERY kind asked.
 
     For a committing restore, before it decides whether to refuse: such a job resumes from its own durable mark and the restore path starts
-    it again afterwards, so stopping it costs a pause, where refusing would cost the operator the import. Never raises."""
+    it again afterwards, so stopping it costs a pause, where refusing would cost the operator the import. A job still running when the wait
+    ends has its ask WITHDRAWN (the restore then names it and refuses): left standing, the ask would stop it at its next safe point for an
+    import that never happens, and nothing would start it again. It is returned all the same, because it may have reached its safe point
+    between the wait and the withdrawal; starting it again is a no-op while it still runs. Never raises."""
+    asked: list[BackgroundJob] = []
     try:
         with _REG_LOCK:
             jobs = [j for j in _REGISTRY.values() if j.stops_for_restore and j.is_writer]
         asked = [j for j in jobs if _ask_to_stop(j)]
         deadline = time.monotonic() + max(0.0, float(timeout))
-        return [j.kind for j in asked if _joined(j, deadline)]
+        for j in asked:
+            if not _joined(j, deadline):
+                j._yield.clear()
     except Exception:  # noqa: BLE001 - the restore then names whatever still runs
-        return []
+        pass
+    return [j.kind for j in asked]
 
 
 def start_jobs_after_refusal(kinds: list[str]) -> list[str]:
@@ -476,6 +483,10 @@ def _start_again(kind: str) -> bool:
         with _REG_LOCK:
             job = _REGISTRY.get(kind)
         if job is None or not job.stops_for_restore:
+            return False
+        with job._lock:
+            cancelled = job._state == "cancelled"
+        if cancelled:  # the operator's own Cancel since the restore stopped it: never overridden
             return False
         job.start()
         return True
