@@ -136,6 +136,11 @@
   "{n} more countries have sources but no articles yet.": "{n} more countries have sources but no articles yet.",
   "{n} values": "{n} values",
   "{n} values stored": "{n} values stored",
-  "{name} is already in your sources.": "{name} is already in your sources."
+  "{name} is already in your sources.": "{name} is already in your sources.",
+  "The latest stored price of each series.": "The latest stored price of each series.",
+  "Prices are imported in the full view, with your consent; nothing is fetched here. Each card shows the newest stored value and its date.": "Prices are imported in the full view, with your consent; nothing is fetched here. Each card shows the newest stored value and its date.",
+  "A price can be old: read its date.": "A price can be old: read its date.",
+  "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.",
+  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here."
  }
 }

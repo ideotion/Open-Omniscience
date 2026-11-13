@@ -244,3 +244,14 @@ def test_world_and_numbers_read_local_aggregates_only():
     # reader to the full view, where the consent gate lives (#14, #33).
     assert "fetch(" not in nums and "/fetch" not in nums and "ensureOnline" not in nums
     assert 'peekFull("climate")' in nums and 'peekFull("markets")' in nums
+
+
+def test_a_known_site_with_a_new_feed_is_still_added():
+    code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
+    add = code.split("function AddSource(", 1)[1].split("\n  }\n", 1)[0]
+    # The server keeps a second feed of a known domain as a sibling source, so the duplicate check
+    # must compare the feed too, never the domain alone.
+    assert 'String(x.rss_url || "") === feed' in add
+    # An article set (ids) outranks a country scope, which never narrows a lead's own articles.
+    sp = code.split("function searchParams(", 1)[1].split("\n  }\n", 1)[0]
+    assert '!(s.ids && s.ids.length)' in sp

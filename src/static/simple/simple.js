@@ -218,6 +218,8 @@
     try {
       var s = JSON.parse(ssGet(K_STATE) || "null");
       if (s && typeof s === "object") Object.assign(store, s);
+      if (!Array.isArray(store.countries)) store.countries = null;
+      if (!Array.isArray(store.ids)) store.ids = null;
     } catch (e) { /* start clean */ }
     if (["today", "read", "search", "world", "numbers", "more"].indexOf(store.view) < 0) store.view = "today";
   }
@@ -597,7 +599,7 @@
       g.set("ui_lang", curLang());
       var p = g.toString();
       return Promise.all([
-        apiCall("/api/insights/corpus-sources?" + p).catch(function () { return null; }),
+        apiCall("/api/insights/corpus-sources?limit=200&" + p).catch(function () { return null; }),
         apiCall("/api/insights/corpus-www?" + p).catch(function () { return null; }),
       ]);
     }, [key]);
@@ -617,6 +619,7 @@
       if (x.country) byC[x.country] = (byC[x.country] || 0) + (x.articles || 0);
     });
     var from = Object.keys(byC).sort(function (a, b) { return byC[b] - byC[a]; });
+    var srcCapped = !!(src && src.sources && src.sources.length >= 200);   // the endpoint's page, not every source
     var rows = [];
     if (from.length) rows.push([t("Covered from"), from.slice(0, 8).map(function (c) { return c + " (" + fmtInt(byC[c]) + ")"; }).join(", ")
       + (from.length > 8 ? " " + t("and {n} more", { n: from.length - 8 }) : "")]);
@@ -627,7 +630,7 @@
     if (!rows.length) return null;
     return html`<section class="s-card s-glance" aria-labelledby="s-glance-h">
       <div class="s-glance-head"><h2 id="s-glance-h" class="s-h3">${t("At a glance")}</h2>
-        ${www && www.capped ? html`<${Mark} kind="partial"/>` : null}
+        ${(www && www.capped) || srcCapped ? html`<${Mark} kind="partial"/>` : null}
         <${Details} what=${t("At a glance")}>
           <p class="s-caveat">${t("Counts of articles, never a verdict. Places, people and years are deduced from the text and never confirmed.")}</p>
           <p>${t("Covered from: the country each source is catalogued under, never where a story happened.")}</p>
@@ -723,6 +726,7 @@
           ${d.caveat ? html`<p class="s-caveat"><b>${t("Caveat")}</b> ${t(d.caveat)}</p>` : null}
           <${Row} k=${t("Articles")} v=${fmtInt(d.total_articles)}/>
           <${Row} k=${t("sources")} v=${fmtInt(d.total_sources)}/>
+          <p>${t("Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.")}</p>
           ${d.unlocated && d.unlocated.sources ? html`<${Row} k=${t("Sources with no country")} v=${fmtInt(d.unlocated.sources)}/>` : null}
           ${d.computed_at ? html`<${Row} k=${t("Computed")} v=${fmtTime(d.computed_at)}/>` : null}
         <//>
@@ -752,13 +756,16 @@
     var rows = (r.data && r.data.series) || [];
     if (!rows.length) return html`<${Empty}>${t("No prices stored yet.")}
       <button type="button" class="s-link" onClick=${function () { peekFull("markets"); }}>${t("Import prices in the full view")}</button><//>`;
-    return html`<ul class="s-nums">${rows.map(function (x) {
+    return html`<div class="s-toolbar s-toolbar-start"><p class="s-lede">${t("The latest stored price of each series.")}</p>
+      <${Details} what=${t("Prices")}>
+        <p>${t("Prices are imported in the full view, with your consent; nothing is fetched here. Each card shows the newest stored value and its date.")}</p>
+        <p class="s-caveat">${t("A price can be old: read its date.")}</p>
+      <//></div><ul class="s-nums">${rows.map(function (x) {
       var l = x.latest || {};
-      var thin = typeof x.points === "number" && x.points < 10;
       return html`<li class="s-num"><button type="button" class="s-num-btn" onClick=${function () { peekFull("markets"); }}>
         <span class="s-num-name" dir="auto">${x.name || x.symbol}</span>
         <b class="s-num-val">${fmtNum(l.price)} <small>${(l.currency || "") + (l.unit ? "/" + l.unit : "")}</small></b>
-        <span class="s-meta">${fmtDate(l.observed_on)}${thin ? html` · <${Mark} kind="approx"/>` : null}</span>
+        <span class="s-meta">${fmtDate(l.observed_on)}</span>
         <span class="s-sr">${t("{n} values stored", { n: fmtInt(x.points) })}</span></button></li>`;
     })}</ul>`;
   }
@@ -791,7 +798,10 @@
       <h1 class="s-h1">${t("Numbers")}</h1>
       <h2 class="s-h2">${t("Prices")}</h2>
       <${Markets}/>
-      <h2 class="s-h2">${t("Climate")}</h2>
+      <div class="s-toolbar"><h2 class="s-h2">${t("Climate")}</h2>
+        <${Details} what=${t("Climate")}>
+          <p>${t("Published records, fetched with your consent in the full view. The count includes every revision the publisher made.")}</p>
+        <//></div>
       <${Climate}/>
     </div>`;
   }
@@ -804,19 +814,27 @@
     function field(k) { return function (e) { var o = Object.assign({}, v); o[k] = e.currentTarget.value; setV(o); }; }
     function submit(e) {
       e.preventDefault();
-      var domain = v.domain.trim().replace(/^[a-z]+:\/\//i, "").replace(/\/.*$/, "");
+      // A bare host, as the server stores it: no scheme, login, port, path or "www.", lower case.
+      var domain = v.domain.trim().toLowerCase().replace(/^[a-z]+:\/\//, "").replace(/[\/?#].*$/, "")
+        .replace(/^[^@]*@/, "").replace(/:\d+$/, "").replace(/^www\./, "");
       if (!v.name.trim() || !domain) { setS({ busy: false, msg: "", err: t("A name and a web address are needed.") }); return; }
       setS({ busy: true, msg: "", err: "" });
       // The server hands back the existing row for a known domain, so look first and say so.
       var low = domain.toLowerCase();
-      apiCall("/api/sources/?limit=50&q=" + encodeURIComponent(low)).then(function (list) {
-        var have = (list || []).filter(function (x) { return String(x.domain || "").toLowerCase() === low; })[0];
+      var feed = v.rss.trim();
+      apiCall("/api/sources/?limit=1000&q=" + encodeURIComponent(low)).then(function (list) {
+        // A second feed of a known site is a new source (the server keeps it as a sibling);
+        // only the same site with the same feed (or with no feed on both) is already there.
+        var have = (list || []).filter(function (x) {
+          return String(x.domain || "").toLowerCase().replace(/^www\./, "") === low
+            && String(x.rss_url || "") === feed;
+        })[0];
         if (have) {
           setS({ busy: false, msg: t("{name} is already in your sources.", { name: have.name || low }), err: "" });
           return null;
         }
         return apiCall("/api/sources/", { method: "POST", body: JSON.stringify({
-          name: v.name.trim(), domain: domain, rss_url: v.rss.trim() || null, tags: "" }) }).then(function () {
+          name: v.name.trim(), domain: domain, rss_url: feed || null, tags: "" }) }).then(function () {
           setV({ name: "", domain: "", rss: "" });
           setS({ busy: false, msg: t("Added. It is collected from the next time you are online."), err: "" });
         });

@@ -136,6 +136,11 @@
   "{n} more countries have sources but no articles yet.": "আরও {n}টি দেশে উৎস আছে কিন্তু এখনও নিবন্ধ নেই।",
   "{n} values": "{n}টি মান",
   "{n} values stored": "{n}টি মান সংরক্ষিত",
-  "{name} is already in your sources.": "{name} ইতিমধ্যে আপনার উৎসে আছে।"
+  "{name} is already in your sources.": "{name} ইতিমধ্যে আপনার উৎসে আছে।",
+  "The latest stored price of each series.": "প্রতিটি সিরিজের সর্বশেষ সংরক্ষিত দাম।",
+  "Prices are imported in the full view, with your consent; nothing is fetched here. Each card shows the newest stored value and its date.": "দাম আপনার সম্মতিতে পূর্ণ দৃশ্যে আমদানি হয়; এখানে কিছুই আনা হয় না। প্রতিটি কার্ড সর্বশেষ সংরক্ষিত মান ও তার তারিখ দেখায়।",
+  "A price can be old: read its date.": "দাম পুরোনো হতে পারে: তার তারিখ দেখুন।",
+  "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "প্রকাশিত রেকর্ড, আপনার সম্মতিতে পূর্ণ দৃশ্যে আনা হয়। গণনায় প্রকাশকের প্রতিটি সংশোধন অন্তর্ভুক্ত।",
+  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "উৎস যাচাই না হওয়া পর্যন্ত আটকে রাখা নিবন্ধ অনুসন্ধানে লুকানো থাকে, তাই কোনো দেশের তালিকা এখানের গণনার চেয়ে ছোট হতে পারে।"
  }
 }

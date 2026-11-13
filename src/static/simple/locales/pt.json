@@ -136,6 +136,11 @@
   "{n} more countries have sources but no articles yet.": "Mais {n} países têm fontes mas ainda não têm artigos.",
   "{n} values": "{n} valores",
   "{n} values stored": "{n} valores guardados",
-  "{name} is already in your sources.": "{name} já está nas suas fontes."
+  "{name} is already in your sources.": "{name} já está nas suas fontes.",
+  "The latest stored price of each series.": "O último preço guardado de cada série.",
+  "Prices are imported in the full view, with your consent; nothing is fetched here. Each card shows the newest stored value and its date.": "Os preços são importados na vista completa, com o seu consentimento; nada é obtido aqui. Cada cartão mostra o valor guardado mais recente e a sua data.",
+  "A price can be old: read its date.": "Um preço pode ser antigo: veja a sua data.",
+  "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "Registos publicados, obtidos com o seu consentimento na vista completa. A contagem inclui cada revisão feita pelo editor.",
+  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "A pesquisa oculta artigos retidos até a fonte ser verificada, por isso a lista de um país pode ser mais curta do que a contagem aqui."
  }
 }

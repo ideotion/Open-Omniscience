@@ -136,6 +136,11 @@
   "{n} more countries have sources but no articles yet.": "{n} और देशों में स्रोत हैं पर अभी लेख नहीं।",
   "{n} values": "{n} मान",
   "{n} values stored": "{n} मान संग्रहीत",
-  "{name} is already in your sources.": "{name} पहले से आपके स्रोतों में है।"
+  "{name} is already in your sources.": "{name} पहले से आपके स्रोतों में है।",
+  "The latest stored price of each series.": "हर श्रृंखला का अंतिम संग्रहीत मूल्य।",
+  "Prices are imported in the full view, with your consent; nothing is fetched here. Each card shows the newest stored value and its date.": "मूल्य आपकी सहमति से पूर्ण दृश्य में आयात होते हैं; यहाँ कुछ भी प्राप्त नहीं होता। हर कार्ड नवीनतम संग्रहीत मान और उसकी तारीख दिखाता है।",
+  "A price can be old: read its date.": "मूल्य पुराना हो सकता है: उसकी तारीख देखें।",
+  "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "प्रकाशित रिकॉर्ड, जो आपकी सहमति से पूर्ण दृश्य में प्राप्त होते हैं। गिनती में प्रकाशक का हर संशोधन शामिल है।",
+  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "खोज उन लेखों को छिपाती है जो स्रोत की जाँच तक रोके गए हैं, इसलिए किसी देश की सूची यहाँ की गिनती से छोटी हो सकती है।"
  }
 }

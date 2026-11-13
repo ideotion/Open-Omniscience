@@ -136,6 +136,11 @@
   "{n} more countries have sources but no articles yet.": "另有 {n} 个国家有来源但尚无文章。",
   "{n} values": "{n} 个数值",
   "{n} values stored": "已存储 {n} 个数值",
-  "{name} is already in your sources.": "{name} 已在您的来源中。"
+  "{name} is already in your sources.": "{name} 已在您的来源中。",
+  "The latest stored price of each series.": "每个系列最新存储的价格。",
+  "Prices are imported in the full view, with your consent; nothing is fetched here. Each card shows the newest stored value and its date.": "价格需在您同意后于完整视图中导入；此处不获取任何内容。每张卡片显示最新存储的数值及其日期。",
+  "A price can be old: read its date.": "价格可能已过时：请查看其日期。",
+  "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "已发布的记录，在您同意后于完整视图中获取。计数包含发布方的每次修订。",
+  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "搜索会隐藏在来源核实前被暂扣的文章，因此某国的列表可能少于此处的计数。"
  }
 }

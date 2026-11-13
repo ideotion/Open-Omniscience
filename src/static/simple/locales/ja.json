@@ -136,6 +136,11 @@
   "{n} more countries have sources but no articles yet.": "ほか {n} か国にソースがありますが、まだ記事はありません。",
   "{n} values": "{n} 件の値",
   "{n} values stored": "保存済みの値 {n} 件",
-  "{name} is already in your sources.": "{name} はすでにソースに含まれています。"
+  "{name} is already in your sources.": "{name} はすでにソースに含まれています。",
+  "The latest stored price of each series.": "各系列で最後に保存された価格。",
+  "Prices are imported in the full view, with your consent; nothing is fetched here. Each card shows the newest stored value and its date.": "価格は同意のうえ完全表示でインポートします。ここでは何も取得しません。各カードは最新の保存値とその日付を示します。",
+  "A price can be old: read its date.": "価格は古い場合があります。日付を確認してください。",
+  "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "公開された記録で、同意のうえ完全表示で取得します。件数には発行元による改訂もすべて含まれます。",
+  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "検索ではソース確認まで保留中の記事を表示しないため、国の一覧がここでの件数より短いことがあります。"
  }
 }
