@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-13,tui,Terminal panel log view sets cbreak before it asks for a key,shipped,PR #1934,src/tui/panel.py; tests/test_terminal_panel.py,"The Server messages view wrote its Press any key prompt before tty.setcbreak, so a key pressed at once landed in line mode or was discarded by the TCSAFLUSH and the view did not return (CI flake on test_the_server_messages_view_returns_on_any_key). cbreak is now set first and the prompt is written inside the try that restores the terminal; a source-order test pins it."
