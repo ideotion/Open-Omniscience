@@ -755,6 +755,8 @@ def test_a_biography_known_only_by_its_categories_or_its_title(edition, title, t
         {"addr:housenumber": "5", "amenity": "cafe", "building": "semi"},
         {"addr:housenumber": "5", "amenity": "cafe", "building": "House "},
         {"addr:housenumber": "5", "amenity": "cafe", "building": "house;yes"},
+        {"addr:housenumber": "5", "shop": "vacant"},
+        {"addr:housenumber": "5", "shop": "no"},
     ],
 )
 def test_a_key_that_describes_without_opening_the_door_is_not_public(facts):

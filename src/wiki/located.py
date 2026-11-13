@@ -92,6 +92,8 @@ GAPS: tuple[str, ...] = (
     "Addresses in article bodies (Wikipedia and press) are not read: only an infobox field named as an address is.",
     "Infoboxes of a type not on the edition's list are not read; the list is closed and fails closed.",
     "An address written in a script the OpenStreetMap index splits differently (Chinese, Japanese) is rarely located.",
+    "A business that both Wikipedia and OpenStreetMap present as open to the public is placed even when someone also lives there (a "
+    "bed and breakfast tagged as a hotel, a shop on the ground floor of a house): neither source can tell, and that is the stated limit.",
 )
 
 
@@ -524,7 +526,7 @@ def _public_place(answer: dict[str, Any], number: str | None) -> bool:
         return False
     if any(a.strip() in _REFUSED_ACCESS for a in _tag(facts, "access").split(";")):
         return False
-    return bool(_tag(facts, "shop")) or any(_tag(facts, key) in values for key, values in _PUBLIC_VALUES.items())
+    return _tag(facts, "shop") not in ("", "no", "vacant", "disused", "closed") or any(_tag(facts, key) in values for key, values in _PUBLIC_VALUES.items())
 
 
 def variants(text: str) -> list[str]:
