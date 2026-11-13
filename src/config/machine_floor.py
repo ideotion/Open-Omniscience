@@ -193,7 +193,8 @@ def machine_floor(
         # AVAILABLE is deliberately NOT adjusted. It is a live reading of free memory,
         # not a provisioned size -- there is no nominal "1 GB available" a machine was
         # built with, so rounding it toward a boundary would invent headroom.
-        nominal_total = nominal_ram_mb(total)
+        # A cgroup limit is a hard cap, never an under-reported hardware size: judged as it is (R302).
+        nominal_total = total if total_from == "cgroup limit" else nominal_ram_mb(total)
         low_total = nominal_total is not None and nominal_total < MIN_TOTAL_MB
         low_avail = avail is not None and avail < MIN_AVAILABLE_MB
         below = bool(low_total or low_avail)

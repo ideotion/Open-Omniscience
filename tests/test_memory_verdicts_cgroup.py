@@ -182,3 +182,51 @@ def test_a_small_cgroup_trips_the_guard_a_host_reading_never_would(monkeypatch, 
     _cgroup(monkeypatch, _NO_LIMIT)
     g2 = memguard.MemoryGuard(trip_after=1, avail_floor_mb=256.0)
     assert g2.poll() is False
+
+
+# --------------------------------------------------------------------------- review findings
+def test_a_cgroup_limit_is_never_rounded_up_to_the_gib_above_it(monkeypatch):
+    """A 3,980 MiB limit is within 3% of 4 GiB, which a psutil reading would be read as (it under-reports installed RAM). A cgroup
+    limit is a hard cap the kernel kills at: it stays a small machine and stays under the scan floor."""
+    from src.config import machine_floor as MF
+    from src.config import memory_budget as mb
+
+    monkeypatch.setattr(cgroup_memory, "machine_memory_mb", lambda: (16384.0, 15000.0))
+    monkeypatch.setattr(mb, "total_ram_mb", lambda: 16384.0)
+    _cgroup(monkeypatch, dict(_SMALL_CGROUP, min_limit_mb=3980.0, limit_mb=3980.0, available_mb=3000.0))
+    got = mb.resolve()
+    assert got["tier"] == "small" and got["nominal_ram_mb"] == 3980.0 and "nominal" not in got["reason"]
+    assert mb.reading_vs_now()["now"]["tier"] == "small"
+    v = MF.machine_floor(override=False)
+    assert v["below"] is True and v["total_from"] == "cgroup limit"
+    # the same figure from the machine is still read as the 4 GiB it was sold as
+    assert mb.resolve_for(3980.0)["tier"] != "small"
+
+
+def test_without_psutil_the_guard_still_reads_the_cgroup_during_a_pass(monkeypatch):
+    import builtins
+
+    from src.monitoring import collect_perf
+
+    real_import = builtins.__import__
+
+    def no_psutil(name, *a, **k):
+        if name == "psutil":
+            raise ImportError("core install")
+        return real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", no_psutil)
+    _cgroup(monkeypatch, _SMALL_CGROUP)
+    v = collect_perf._vitals()
+    assert v["mem_avail_mb"] == 1500.0 and v["mem_total_mb"] == 2048.0
+    assert v["mem_from"] == {"total": "cgroup limit", "available": "cgroup limit"}
+
+
+def test_without_psutil_the_budget_reason_does_not_claim_a_comparison(monkeypatch):
+    from src.config import memory_budget as mb
+
+    monkeypatch.setattr(mb, "total_ram_mb", lambda: None)
+    _cgroup(monkeypatch, _SMALL_CGROUP)
+    got = mb.resolve()
+    assert got["total_ram_from"] == "cgroup limit"
+    assert "could not be read" in got["reason"] and "smaller than the machine" not in got["reason"]

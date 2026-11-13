@@ -335,12 +335,14 @@ def _vitals() -> dict:
         vm = psutil.virtual_memory()
         out["mem_avail_mb"] = round(vm.available / (1024 * 1024), 1)
         out["mem_total_mb"] = round(vm.total / (1024 * 1024), 1)
-        _bound_by_cgroup(out)
         proc = _proc_handle()
         out["cpu_proc_pct"] = proc.cpu_percent(interval=None)
         out["rss_mb"] = round(proc.memory_info().rss / (1024 * 1024), 1)
     except Exception:  # noqa: BLE001 - vitals are best-effort
         pass
+    # Outside the psutil block: a core install without psutil still has the cgroup's figures, and they are the ones the kernel
+    # kills at, so the guard must see them during a pass exactly as it does between passes.
+    _bound_by_cgroup(out)
     # S1.2: swap, the reading that separates a kill from a thrash and stops a
     # swap-out reading as a recovery. Absent when unmeasurable, never 0.
     try:

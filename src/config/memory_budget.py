@@ -161,11 +161,12 @@ def nominal_ram_mb(total_mb: float | None) -> float | None:
     return total_mb
 
 
-def _tier(total_mb: float | None) -> str:
+def _tier(total_mb: float | None, exact: bool = False) -> str:
     if total_mb is None:
         return "unmeasured"
-    # Compared on the NOMINAL size, never the raw reading -- see _TIER_TOLERANCE.
-    nominal = nominal_ram_mb(total_mb)
+    # Compared on the NOMINAL size, never the raw reading -- see _TIER_TOLERANCE. ``exact`` is a cgroup limit: a hard cap the kernel
+    # kills at, not an under-reported hardware size, so it is never rounded up to the GiB above it.
+    nominal = total_mb if exact else nominal_ram_mb(total_mb)
     if nominal is None:  # unreachable for a non-None reading; kept so the type is honest
         return "unmeasured"
     if nominal < SMALL_RAM_MB:
@@ -208,22 +209,32 @@ def _env_int(name: str) -> int | None:
 
 def resolve() -> dict[str, Any]:
     """The resident budget for THIS machine (measures RAM bounded by any cgroup limit, then delegates)."""
-    total, total_from = budget_ram_mb()
-    out = resolve_for(total)
+    from src.config.cgroup_memory import smaller_total_mb
+
+    machine = total_ram_mb()
+    total, total_from = smaller_total_mb(machine)
+    exact = total_from == "cgroup limit"
+    out = resolve_for(total, exact=exact)
     out["total_ram_from"] = total_from
-    if total_from == "cgroup limit" and "reason" in out:
-        out["reason"] += " The figure is the cgroup memory limit this process runs under, smaller than the machine's RAM."
+    if exact and "reason" in out:
+        out["reason"] += (
+            " The figure is the cgroup memory limit this process runs under, smaller than the machine's RAM."
+            if machine is not None
+            else " The figure is the cgroup memory limit this process runs under; the machine's RAM could not be read."
+        )
     return out
 
 
-def resolve_for(total_mb: float | None) -> dict[str, Any]:
+def resolve_for(total_mb: float | None, *, exact: bool = False) -> dict[str, Any]:
     """The resident budget for a machine of ``total_mb``, with its reasoning attached.
 
     ``None`` means UNMEASURABLE, not "go and measure": the two are different facts and
     a single parameter that meant both would make the unmeasured tier untestable —
-    which is the tier whose whole point is that it must not narrow anything."""
+    which is the tier whose whole point is that it must not narrow anything.
+
+    ``exact`` says ``total_mb`` is a cgroup limit, judged as it is and never rounded up to a nominal GiB (see :func:`_tier`)."""
     measured = total_mb
-    tier = _tier(measured)
+    tier = _tier(measured, exact)
     base = {"small": _SMALL, "medium": _MEDIUM, "large": _LARGE, "unmeasured": _LARGE}[tier]
 
     overrides: dict[str, int] = {}
@@ -253,7 +264,7 @@ def resolve_for(total_mb: float | None) -> dict[str, Any]:
         # The size the tier was actually decided on. Reported BESIDE the raw reading,
         # never instead of it: "4,093.8 measured" and "a 4,096 MiB machine" are two
         # different facts and the operator is owed both (D1).
-        "nominal_ram_mb": _rounded_nominal(measured),
+        "nominal_ram_mb": round(measured, 1) if exact and measured is not None else _rounded_nominal(measured),
         "tier": tier,
         "db_pool_size": values["db_pool_size"],
         "db_max_overflow": values["db_max_overflow"],
@@ -279,6 +290,7 @@ def resolve_for(total_mb: float | None) -> dict[str, Any]:
             "stay user-activated (2026-07-12 ruling)."
         ),
     }
+    note = "" if exact else _nominal_note(measured)
     if tier == "unmeasured":
         out["reason"] = (
             "total RAM could not be read (psutil absent), so the shipped values are "
@@ -288,7 +300,7 @@ def resolve_for(total_mb: float | None) -> dict[str, Any]:
         )
     elif tier == "small":
         out["reason"] = (
-            f"{measured:,.0f} MiB of RAM{_nominal_note(measured)} is below the "
+            f"{measured:,.0f} MiB of RAM{note} is below the "
             f"{SMALL_RAM_MB:,} MiB floor, so the "
             f"pool is {values['db_pool_size']}+{values['db_max_overflow']} connections at "
             f"{values['sqlite_cache_mb']} MiB of page cache each (worst case "
@@ -298,7 +310,7 @@ def resolve_for(total_mb: float | None) -> dict[str, Any]:
         )
     else:
         out["reason"] = (
-            f"{measured:,.0f} MiB of RAM{_nominal_note(measured)} is at or above the "
+            f"{measured:,.0f} MiB of RAM{note} is at or above the "
             f"{SMALL_RAM_MB:,} MiB floor ({tier} tier); worst-case pool page cache "
             f"{worst_case_cache_mb:,} MiB."
         )
@@ -414,7 +426,8 @@ def reading_vs_now() -> dict[str, Any]:
     reading is the machine's real size."""
     resolved = resolved_reading()
     now_total, now_from = budget_ram_mb()
-    now_tier = _tier(now_total)
+    now_exact = now_from == "cgroup limit"
+    now_tier = _tier(now_total, now_exact)
     differs = now_tier != resolved["tier"]
     caveat = (
         "the budget is not re-resolved while the process runs, so a machine whose total "
@@ -436,7 +449,7 @@ def reading_vs_now() -> dict[str, Any]:
             # Beside the rounded total, because the tier is decided on the nominal size of the
             # UNROUNDED reading: two totals that print alike (3,973.1 and 3,973.1) can be two
             # tiers, and this is what tells them apart.
-            "nominal_ram_mb": _rounded_nominal(now_total),
+            "nominal_ram_mb": round(now_total, 1) if now_exact and now_total is not None else _rounded_nominal(now_total),
             "tier": now_tier,
         },
         "tier_differs": differs,
