@@ -843,7 +843,7 @@ def test_under_the_apps_own_engine_settings_a_checkpoint_passes_between_statemen
     # what this measurement would otherwise run on (R674: red once on CI, core-only shard 2, every contrast call reading 0, and not
     # reproduced at the same commit, the same install and the same file placement, nor under load). Fresh connections from the same
     # engine keep everything the claim is about (its creator, pragmas, pool class, listeners) and drop only what a neighbour left.
-    engine.dispose()
+    app_session.dispose_engine()  # the module's own disposal, so its record of connections left checked out stays true
     path = engine.url.database
     assert path and str(path) != ":memory:"
     Sess = sessionmaker(bind=engine, future=True)
@@ -904,7 +904,7 @@ def _app_engine_body(engine, Sess, path, monkeypatch, own):
             reader["dbapi"] = conn.connection.dbapi_connection
 
     def _keep(_k, _v):
-        if "file" not in reader:  # which file the open statement reads, asked on its own connection while it is open
+        if "file" not in reader and reader.get("dbapi") is not None:  # the file the open statement reads, asked on its connection
             reader["file"] = reader["dbapi"].execute("PRAGMA database_list").fetchone()[2]
         old.append(_checkpoint_passes(path))
         return True
@@ -915,7 +915,10 @@ def _app_engine_body(engine, Sess, path, monkeypatch, own):
             _reference(s, TODAY - timedelta(days=6), TODAY + timedelta(days=1), _keep)
     finally:
         event.remove(engine, "before_cursor_execute", _note_reader)
-    same = bool(reader.get("file")) and os.path.samefile(str(reader["file"]), str(path))
+    try:
+        same: bool | str = bool(reader.get("file")) and os.path.samefile(str(reader["file"]), str(path))
+    except OSError as exc:  # a file that is gone is itself the answer, and must not cost the message
+        same = f"cannot say ({type(exc).__name__})"
     assert 1 in [b for b, _, _ in old], (
         "the contrast did not pin on the app's engine: the assertion above proved nothing "
         f"(the open statement read {reader.get('file')!r}, the checkpoints ran on {path!r}, same file: {same}; "
