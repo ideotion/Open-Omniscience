@@ -165,9 +165,12 @@ def fetch_daily_slice(
             fetcher = make_fetcher()
         fetched = fetcher.fetch(url, require_html=False)
     except Exception as exc:  # noqa: BLE001 - every refusal becomes a verdict, never a crash
+        from src.ingest.fetch_verdict import without_private_query
         from src.markets.csv_feeds import classify_failed_check
 
         verdict, note, retryable = classify_failed_check(exc)
+        # A library can quote the request it failed on ("url: /v1/archive?latitude=..."); the note names no place (R683).
+        note = without_private_query(note)
         return {"ok": False, "verdict": verdict, "verdict_note": note,
                 "retryable": retryable, "requested_url": url, "label": label}
 

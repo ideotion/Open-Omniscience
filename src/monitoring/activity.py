@@ -229,20 +229,19 @@ class ActivityMonitor:
             }
 
 
-#: Hosts whose query string IS personal data, shown here without it (R675): an Open-Meteo archive
-#: request carries the coordinates of a place the person typed, probably where they live. The
-#: top bar, the vitals and anything that copies them see the host and path only.
-_PRIVATE_QUERY_HOSTS = frozenset({"archive-api.open-meteo.com"})
-
-
 def _without_private_query(shown: str) -> str:
+    # R675: the top bar, the vitals and anything that copies them see an Open-Meteo request's host and path only. The host list and
+    # the rule are failure_url's (src/ingest/fetch_verdict.py PRIVATE_QUERY_HOSTS, R683), which already applied it; kept as a
+    # second layer for a URL that reaches here another way.
     from urllib.parse import urlsplit
+
+    from src.ingest.fetch_verdict import PRIVATE_QUERY_HOSTS
 
     try:
         parts = urlsplit(shown)
     except ValueError:
         return shown
-    if (parts.hostname or "").lower() in _PRIVATE_QUERY_HOSTS and parts.query:
+    if (parts.hostname or "").lower() in PRIVATE_QUERY_HOSTS and parts.query:
         return shown.split("?", 1)[0] + "?…"
     return shown
 

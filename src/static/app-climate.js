@@ -476,7 +476,8 @@
         // The ONE consent (invariant #14); it names what leaves the machine. A place is personal,
         // so it is asked for EVERY request (R675): when the app is already online the consent
         // popup would not open, and a plain confirmation naming the place stands in for it.
-        if (!await ooAskToSendPlace(lat, lon)) return;
+        // What stays on this machine is said in the same question: the browser keeps the rounded place.
+        if (!await ooAskToSendPlace(lat, lon, {shadow: t("This browser also keeps the rounded place, unencrypted, to fill it in next time.")})) return;
         say(t("Fetching…"));
         const d = await api("/api/weather/anomaly", {method: "POST", body: JSON.stringify({
           lat: lat, lon: lon, start_date: q.start, end_date: q.end, force: !!again, consent: true,

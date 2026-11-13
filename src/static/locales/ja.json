@@ -5424,6 +5424,7 @@
   "This article is credited to the source, but the stored page was fetched from another site.": "この記事はソースに帰属していますが、保存されたページは別のサイトから取得されました。",
   "This article is not detected as English — VADER tone is unreliable here.": "この記事は英語として検出されていません — ここでの VADER トーンは信頼できません。",
   "This article's most-mentioned keyword, counted when it was indexed.": "この記事で最も多く言及されたキーワード。インデックス作成時に集計されました。",
+  "This browser also keeps the rounded place, unencrypted, to fill it in next time.": "このブラウザーは、次回入力を省けるよう、丸めた場所を暗号化せずに保存します。",
   "This build reports no language floor.": "このビルドは言語ベースの最低ラインを報告しません。",
   "This cannot be undone except from a backup.": "これはバックアップからしか元に戻せません。",
   "This cannot be undone.": "これは元に戻せません。",
