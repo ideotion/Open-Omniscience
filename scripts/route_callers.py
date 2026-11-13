@@ -242,7 +242,7 @@ def _js_literals(text: str) -> list[str]:
     return out
 
 
-_SCRIPT = re.compile(r"<script\b[^>]*>(.*?)</script>", re.S | re.I)
+_SCRIPT = re.compile(r"<script\b[^>]*>(.*?)</script\b[^>]*>", re.S | re.I)
 _ATTR = re.compile(r"""\b[\w:-]+\s*=\s*(?:"([^"]*)"|'([^']*)')""")
 
 
