@@ -3132,7 +3132,7 @@ def exclusive_window(timeout: float = 10.0, *, resume_retries: int = 19) -> Iter
                     _EXCL_WINDOW = _EXCL_BASE
                 resume, _EXCL_PAUSED = _EXCL_PAUSED, False
                 claims, _EXCL_CLAIMS = _EXCL_CLAIMS, []
-        if last and (counted or not already or claims):  # a nested window that never counted owns nothing to give back
+        if last and (counted or not already or claims):  # a window that never counted gives back only the claims it holds
             resume_after_exclusive_operation(resume, claim=claims, retries=resume_retries)
 
 
@@ -3251,7 +3251,7 @@ def _hand_start_to_window() -> bool:
     """A standalone operation ended inside an open window, which owns the machine: its start is the window's to make (R383).
 
     False when the window closed in between: nothing will resume for it, so the caller starts the loop itself (with its retries and the
-    pending-resume watcher). The window's last exit starts the loop even when it holds no claim of its own (see the resume)."""
+    pending-resume watcher). The window's last exit starts the loop with the claims its windows took (see the resume)."""
     global _EXCL_PAUSED
     with _EXCL_LOCK:
         if _EXCL_WINDOW:
@@ -3332,7 +3332,9 @@ def resume_after_exclusive_operation(
     list the caller handed to :func:`pause_for_exclusive_operation`: one ``True`` per claim that pause took (it takes one also inside an
     open window, so a window that ends first does not start collection under it). Every claim in it is released here, ALWAYS, also when a window is open now, and the list
     is emptied, so a second call with it does nothing. ``claim=None`` is the call that recorded nothing (a caller from before R383): one
-    claim is then assumed, since every pause takes one, inside a window too. The release and the deferred start are read in ONE locked step
+    claim is then assumed, since every pause takes one, inside a window too. So ``claim=None`` may only follow a pause that RETURNED, once:
+    a resume after a pause that raised before claiming, or a resume never paired with a pause, would end somebody else's claim (no caller in
+    ``src/`` does either; every one there keeps a list). The release and the deferred start are read in ONE locked step
     (:meth:`BackgroundScheduler.release_exclusive`), so two operations that end together never strand a start between them. When this was
     not the last claim (another operation still holds the machine) nothing is started: a loop this operation stopped is queued behind the
     holder, whose own resume starts it. When a window is open, the start is handed to the window, whose last exit resumes it.
@@ -3340,8 +3342,8 @@ def resume_after_exclusive_operation(
     window = exclusive_window_open()
     claims = 1 if claim is None else len(claim)  # a pause takes a claim inside a window too, so a caller that kept no list holds one
     if claims == 0:
-        # Nothing of this caller's to release. A window that holds no claim (it opened while another window was closing) can still have
-        # been handed a start (:func:`_hand_start_to_window`): its last exit must make it, or collection stays off with nothing pending.
+        # Nothing of this caller's to release: a repeated resume, or a pause that failed before it claimed (every window now claims, so a
+        # window's last exit always comes through the branch below). A start this caller is owed is still made, behind any holder.
         if not was_paused or window:
             return
         sch = get_scheduler()
