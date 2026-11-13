@@ -1060,8 +1060,15 @@
         // Their own read, so a failure here leaves the page points drawn and simply adds no squares.
         if (_wikiLayerCache) {
           try {
-            const a = await api("/api/wiki/lane/located-addresses");
-            if (a && a.measured === true && Array.isArray(a.points)) _wikiLayerCache.addresses = a.points;
+            const a = await api("/api/wiki/lane/located-addresses?limit=20000");
+            if (a && a.measured === true && Array.isArray(a.points)) {
+              _wikiLayerCache.addresses = a.points;
+              // Partial is said, never drawn as the whole: the scan is incremental and the answer bounded. A partial layer is asked
+              // again on the next switch-on rather than kept for the page's lifetime.
+              _wikiLayerCache.addressesPartial = a.complete !== true || a.truncated === true;
+              _wikiLayerCache.addressesRead = a.texts_read || {};
+              _wikiLayerCache.addressesHeld = a.texts_held || {};
+            }
           } catch (_e2) { /* no squares: the scope sentence in the legend still says what is never located */ }
         }
       } catch (_e) {
@@ -1500,7 +1507,7 @@
             : t("attributed under") + " " + _ooWorldviewLabel(wv))}</span></span>` : ""}
         ${pointRows.length ? `<span class="muted">○ ${esc(t("small areas shown as points"))}</span>` : ""}
         ${opts.placesOn ? `<span class="muted">○ ${esc(t("mentioned places (deduced)"))}</span>` : ""}
-        ${opts.wikiPlaces && opts.wikiPlaces.measured ? `<span class="muted">● ${esc(t("Wikipedia page (linked to Wikidata)"))} · ○ ${esc(t("Wikipedia page (not yet linked)"))} · <span title="${esc(t("Addresses outside your OpenStreetMap countries are not located."))}">■ ${esc(t("address from an infobox"))}</span></span>` : ""}
+        ${opts.wikiPlaces && opts.wikiPlaces.measured ? `<span class="muted">● ${esc(t("Wikipedia page (linked to Wikidata)"))} · ○ ${esc(t("Wikipedia page (not yet linked)"))} · <span title="${esc(t("Addresses outside your OpenStreetMap countries are not located."))}">■ ${esc(t("address from an infobox"))}</span>${opts.wikiPlaces.addressesPartial ? ` <span class="card-caveat">${esc(t("(partial)"))}</span>` : ""}</span>` : ""}
         ${opts.serverOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;background:#8b5cf6"></span>${esc(t("server IP location (CDN edge / anycast)"))}</span>` : ""}
         ${opts.serverOn && opts.serverMeta ? `<span class="muted" title="${esc(t("Many sources sharing one host/ASN — a shape to investigate, never a verdict."))}">${esc(opts.serverMeta)}</span>` : ""}
         ${opts.serverOn ? `<span class="muted">${esc(t("IP Geolocation by DB-IP"))} · <a href="https://db-ip.com" target="_blank" rel="noopener">db-ip.com</a> · CC BY 4.0</span>` : ""}
@@ -2232,8 +2239,8 @@
         wikiOn: _ooMapWikiOn, wikiPlaces: _ooMapWikiOn ? _ooMapWikiPlaces : null,
         onWiki: async () => {
           _ooMapWikiOn = !_ooMapWikiOn;
-          if (_ooMapWikiOn && _ooMapWikiPlaces === null) {
-            _ooMapWikiPlaces = await ooWikiPlaces();
+          if (_ooMapWikiOn && (_ooMapWikiPlaces === null || (_ooMapWikiPlaces && _ooMapWikiPlaces.addressesPartial))) {
+            _ooMapWikiPlaces = await ooWikiPlaces(_ooMapWikiPlaces !== null);
           }
           _renderOoMapDim();
         },

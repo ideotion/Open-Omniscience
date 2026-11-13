@@ -768,13 +768,14 @@ const WIKI = {
   assert.ok(phov.includes("Last event: Could not be read"), "an unreadable last event drew 'never'");
   // R17 step 4 (R678): the located counters, summed over editions, as "n of m"; the reasons are counts in the hover; the scan's progress is said.
   const LOC = { ...COV, located: { measured: true, complete: false, texts_read: { hot: 30, warm: 10 }, texts_held: { hot: 30, warm: 70 },
-    per_edition: { en: { found: 4, located: 2, ambiguous: 1, no_house_number: 1, skipped_about_a_person: 3 }, fr: { found: 1, outside_your_osm_countries: 1 } } } };
+    per_edition: { en: { found: 7, located: 2, ambiguous: 1, no_house_number: 1, pending: 2, lookup_failed: 1, skipped_about_a_person: 3, skipped_a_home: 1 }, fr: { found: 1, outside_your_osm_countries: 1 } } } };
   const lg = group(R.livingWikiGroups({ ...WIKI, coverage: LOC }, t, tf), "Edition coverage");
   noJunk(lg, "the located counters"); noVerdict(lg, "the located counters");
-  assert.ok(visible(lg).includes("Addresses located 2 of 5 addresses located"), visible(lg));
+  assert.ok(visible(lg).includes("Addresses located 2 of 8 addresses located"), visible(lg));
   const lh = hovers(lg);
   assert.ok(lh.includes("1 ambiguous, 0 not located, 1 outside your OpenStreetMap countries, 1 without a house number."), lh);
-  assert.ok(lh.includes("3 infoboxes about a person were not read.") && lh.includes("Read 40 of 100 stored pages so far."), lh);
+  assert.ok(lh.includes("4 pages about a person or a home were not read.") && lh.includes("Read 40 of 100 stored pages so far."), lh);
+  assert.ok(lh.includes("2 addresses are still being looked up.") && lh.includes("1 addresses could not be looked up"), lh);
   assert.ok(lh.includes("Addresses outside your OpenStreetMap countries are not located."), "the Q820 scope sentence is missing: " + lh);
   const empty = group(R.livingWikiGroups({ ...WIKI, coverage: { ...COV, located: { measured: true, complete: true, per_edition: {} } } }, t, tf), "Edition coverage");
   assert.ok(visible(empty).includes("Addresses located No address found yet") && !/Read \d/.test(hovers(empty)), visible(empty));

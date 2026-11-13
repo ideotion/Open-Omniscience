@@ -7,21 +7,25 @@ WHAT IS READ. The wikitext this machine already STORED -- a followed (HOT) page'
 reader's stripped text (``src/api/wiki.py`` peels the infoboxes away) and never a new request. In it, the first infobox whose TYPE is on the
 edition's closed list of organisation, building and place infoboxes, and in that infobox only the fields whose KEY names an address.
 
-WHAT IS NEVER READ (R678's condition). An infobox about a PERSON, or of any type this module does not list, is skipped and counted with its
-reason. The list fails closed: a type nobody wrote down is not located, so the map can never become a way to find where an individual lives.
+WHAT IS NEVER READ (R678), DECIDED FOR THE WHOLE PAGE AND FAILING CLOSED. A page is skipped, and counted with its reason, when any
+template or category on it marks a person (an infobox about a person, de ``Personendaten``, "Living people", births and deaths), when any
+of its infoboxes is not on the list, or when the place infobox names a home (a house, a residence). A type or a marker nobody wrote down
+costs a located address, never a person's privacy: the map can never become a way to find where someone lives.
 Addresses in article BODIES (wiki and press) are not read either: without an infobox key, a body-text grammar would place strings that only
 look like addresses. That is a recorded gap, stated in the counters' ``gaps`` rather than shown as zero.
 
 HOW AN ADDRESS IS LOCATED. Only through the local OpenStreetMap address index of the countries the user ingested
 (:func:`src.osm.places.geocode`, S05-04): never an external geocoder, nothing leaves the machine (Q820). An address is located when the index
 answers with one to five OSM objects carrying every word of it, all within :data:`SAME_PLACE_METRES` of each other (one address on a building
-and its entrance). More answers, or answers spread further apart, are AMBIGUOUS: counted, never placed. Trailing comma parts (country, region)
+and its entrance), and within :data:`COORD_AGREEMENT_METRES` of the page's own ``{{coord}}`` when it has one. More answers, answers spread
+further apart, or an answer far from the page's coordinate are AMBIGUOUS: counted, never placed. Trailing comma parts (country, region)
 may be dropped one at a time; the leading street part never is. A value with no digit has no house number and is counted, never looked up.
 "Outside your OpenStreetMap countries" is claimed only when the page's own ``{{coord}}`` lies outside the bounding box of every ingested
 country; anything else not found is "not located", because the index cannot tell a missing address from a differently worded one.
 
-THE READ IS INCREMENTAL AND BOUNDED. The texts are many and compressed, so a call reads for at most :data:`SCAN_BUDGET_SECONDS` and keeps what
-it learned in memory; the counters say how many of the stored texts have been read so far. A call that finds the scan busy answers with the
+THE READ IS INCREMENTAL AND BOUNDED. A call reads and looks up for at most :data:`SCAN_BUDGET_SECONDS` and keeps what it learned in memory,
+keyed by each text's version: a page that changes is read again, a page that goes is forgotten, and a replaced lane file starts over. The
+counters say how many stored texts were read and how many addresses are still pending. A call that finds the scan busy answers with the
 last snapshot instead of waiting (a poll never waits on a read). Nothing is written to disk.
 """
 
@@ -63,9 +67,14 @@ STATUSES: tuple[str, ...] = (
     "outside_your_osm_countries",
     "no_house_number",
     "no_osm_country",
+    "osm_unreadable",
+    "lookup_failed",
+    "pending",
 )
-#: Why an infobox was not read, counted per edition.
-SKIPS: tuple[str, ...] = ("about_a_person", "type_not_on_the_list")
+#: Why a page was not read, counted per edition. Every one fails closed: a page is read only when nothing on it says otherwise.
+SKIPS: tuple[str, ...] = ("about_a_person", "a_home", "type_not_on_the_list")
+#: A located answer further than this from the page's own ``{{coord}}`` is not trusted: it is counted as ambiguous, never placed.
+COORD_AGREEMENT_METRES: float = 50_000.0
 
 GAPS: tuple[str, ...] = (
     "Addresses in article bodies (Wikipedia and press) are not read: only an infobox field named as an address is.",
@@ -74,9 +83,19 @@ GAPS: tuple[str, ...] = (
 )
 
 
+_NAMESPACES = (
+    "template:", "modèle:", "vorlage:", "plantilla:", "predefinição:", "шаблон:", "模板:", "テンプレート:", "قالب:", "templat:",
+    "साँचा:", "টেমপ্লেট:",
+)
+
+
 def _norm(name: str) -> str:
-    """A template or field name as compared here: case-folded, underscores as spaces, one space between words."""
-    return " ".join((name or "").replace("_", " ").casefold().split())
+    """A template or field name as compared here: case-folded, underscores as spaces, one space between words, no namespace prefix."""
+    out = " ".join((name or "").replace("_", " ").casefold().split())
+    for ns in _NAMESPACES:
+        if out.startswith(ns):
+            return out[len(ns):].strip()
+    return out
 
 
 def _names(*items: str) -> frozenset[str]:
@@ -133,15 +152,38 @@ PLACE_TYPES: dict[str, frozenset[str]] = {
 # Infobox types about a PERSON. Only for the count of "skipped: about a person": the closed list above already keeps them out, and an
 # unlisted person type is skipped as "type not on the list" all the same.
 _PERSON_WORDS = (
-    "person", "biography", "officeholder", "politician", "musical artist", "actor", "writer", "scientist", "sportsperson", "athlete",
-    "footballer", "royalty", "military person", "criminal", "artist", "philosopher", "religious biography", "journalist",
+    "person", "biography", "officeholder", "politician", "musical artist", "musician", "actor", "writer", "scientist", "sportsperson",
+    "athlete", "footballer", "cricketer", "player", "royalty", "military person", "criminal", "artist", "philosopher", "journalist",
     "personnalité", "biographie", "politicien", "acteur", "écrivain", "sportif", "footballeur", "artiste",
-    "person", "persönlichkeit", "biografía", "ficha de persona", "ficha de político", "ficha de deportista", "ficha de artista",
+    "persönlichkeit", "biografía", "ficha de persona", "ficha de político", "ficha de deportista", "ficha de artista",
     "info/biografia", "info/político", "info/ator", "персона", "государственный деятель", "учёный", "писатель", "футболист",
-    "人物", "政治家", "شخص", "سيرة", "tokoh", "biografi", "व्यक्ति", "ব্যক্তি",
+    "музыкант", "人物", "政治家", "شخص", "سيرة", "tokoh", "biografi", "व्यक्ति", "ব্যক্তি",
 )
-#: Person infoboxes some editions name without an infobox prefix (ru, ja, zh), so they are recognised as infoboxes at all.
-_PERSON_UNPREFIXED = _names("персона", "государственный деятель", "учёный", "писатель", "футболист", "人物", "政治家", "基礎情報 人物")
+#: Person templates some editions name without an infobox prefix, or that mark a biography with no infobox at all (de Personendaten).
+_PERSON_UNPREFIXED = _names(
+    "персона", "государственный деятель", "учёный", "писатель", "футболист", "музыкант", "人物", "政治家", "基礎情報 人物",
+    "personendaten", "actoractress", "actor actress", "基礎情報 音楽家", "基礎情報 政治家", "スポーツ選手",
+)
+#: Category name fragments that mark a page about a person, per the editions' own conventions (living people, births, deaths).
+_PERSON_CATEGORY = re.compile(
+    r"living people|\b\d{3,4} births|\b\d{3,4} deaths|naissance en|décès en|^geboren |^gestorben |^mann$|^frau$|nacidos en|fallecidos en|"
+    r"nascidos em|mortos em|pessoas vivas|родившиеся|умершие|персоналии|在世人物|出生|逝世|存命人物|年生|年没|أشخاص على قيد الحياة|مواليد|وفيات|"
+    r"tokoh yang masih hidup|kelahiran|kematian|जीवित लोग|जन्म|निधन|জীবিত ব্যক্তি|জন্ম|মৃত্যু",
+    re.I,
+)
+_CATEGORY_LINK = re.compile(
+    r"\[\[\s*(?:category|catégorie|kategorie|categoría|categoria|категория|分类|分類|カテゴリ|تصنيف|kategori|श्रेणी|বিষয়শ্রেণী)\s*:\s*([^\]|]+)",
+    re.I,
+)
+#: Infoboxes that may share a page with a place infobox without saying anything about who lives there.
+_HARMLESS = _names("infobox mapframe", "infobox map")
+#: A place infobox whose type or use field names one of these is a home: skipped (R678 extends to where a household lives).
+_HOME_FIELDS = _names("building type", "nrhp type", "type", "current use", "current_use", "use", "usage", "nutzung", "uso", "тип")
+_HOME_WORDS = re.compile(
+    r"\b(house|residence|residential|home|dwelling|villa|cottage|farmhouse|apartment|maison|habitation|wohnhaus|wohngebäude|"
+    r"residencia|vivienda|residência|moradia|жилой|дом|住宅|منزل|سكني|rumah|आवास|বাসভবন)\b",
+    re.I,
+)
 
 # The infobox keys that name an address, per edition. ``address`` is read in every edition: many localised templates keep the English
 # parameter name.
@@ -164,44 +206,12 @@ _TEMPLATE_OPEN = re.compile(r"\{\{\s*([^\n|{}]+?)\s*(?=\||\}\}|\n)")
 _COORD_OPEN = re.compile(r"\{\{\s*[Cc]oord\s*\|")
 _WRAPPERS = _names("nowrap", "nobr", "small", "smaller", "lang", "transl", "plainlist", "unbulleted list", "ubl", "hlist", "flatlist", "nbsp")
 _INNER_TEMPLATE = re.compile(r"\{\{([^{}]*)\}\}")
-_REF = re.compile(r"<ref[^>/]*/>|<ref[^>]*>.*?</ref>", re.S | re.I)
+_REF = re.compile(r"<ref\b[^>]*?/>|<ref\b[^>]*>.*?</ref>", re.S | re.I)
 _COMMENT = re.compile(r"<!--.*?-->", re.S)
 _BR = re.compile(r"<br\s*/?>", re.I)
 _TAG = re.compile(r"<[^>]+>")
 _LINK = re.compile(r"\[\[(?:[^\]|]*\|)?([^\]]*)\]\]")
 _EXTLINK = re.compile(r"\[(?:https?:)?//\S+\s*([^\]]*)\]")
-
-
-def infobox_type_and_fields(wikitext: str) -> tuple[str, dict[str, str], bool] | None:
-    """The first infobox of ANY kind, as ``(normalised type, fields, a person infobox is on the page)``; ``None`` with no infobox.
-
-    Every template name on the page is looked at, so a person's infobox anywhere on it is seen: R678's rule is about the PAGE, and a
-    building infobox below a biography's must not be read.
-    """
-    text = wikitext or ""
-    first: tuple[str, int] | None = None
-    person = False
-    for match in _TEMPLATE_OPEN.finditer(text):
-        name = _norm(match.group(1))
-        if not _looks_like_infobox(name):
-            continue
-        if _is_person_type(name):
-            person = True
-        if first is None:
-            first = (name, match.start())
-    if first is None:
-        return None
-    name, start = first
-    body = _balanced_template(text, start)
-    if body is None:
-        return None
-    fields: dict[str, str] = {}
-    for part in _split_top_level(body):
-        key, sep, value = part.partition("=")
-        k = _norm(key)
-        if sep and k and k not in fields:
-            fields[k] = value.strip()
-    return name, fields, person
 
 
 _INFOBOX_PREFIXES = ("infobox", "ficha de", "info/", "карточка", "基礎情報", "صندوق معلومات", "ज्ञानसन्दूक", "তথ্যছক")
@@ -213,16 +223,61 @@ def _is_person_type(name: str) -> bool:
 
 
 def _looks_like_infobox(name: str) -> bool:
-    return name.startswith(_INFOBOX_PREFIXES) or name in _ALL_PLACE_TYPES or name in _PERSON_UNPREFIXED
+    """An infobox of any kind: a known prefix, a listed type, a person template, or ``infobox`` anywhere (``#invoke:Infobox``)."""
+    return (
+        name.startswith(_INFOBOX_PREFIXES) or "infobox" in name or name in _ALL_PLACE_TYPES or name in _PERSON_UNPREFIXED
+    )
 
 
-def classify_type(edition: str, name: str, *, person_on_page: bool = False) -> str | None:
-    """``None`` when the infobox may be read, else the skip reason. A person infobox anywhere on the page wins over every other type."""
-    if person_on_page or _is_person_type(name):
-        return "about_a_person"
-    if name in PLACE_TYPES.get(edition, frozenset()):
+def _fields(text: str, start: int) -> dict[str, str] | None:
+    body = _balanced_template(text, start)
+    if body is None:
         return None
-    return "type_not_on_the_list"
+    fields: dict[str, str] = {}
+    for part in _split_top_level(body):
+        key, sep, value = part.partition("=")
+        k = _norm(key)
+        if sep and k and k not in fields:
+            fields[k] = value.strip()
+    return fields
+
+
+def classify_page(edition: str, wikitext: str) -> tuple[str | None, str | None, dict[str, str] | None]:
+    """``(skip reason, place type, fields)``. FAILS CLOSED AT PAGE LEVEL (R678): a page is read only when EVERY infobox on it is on the
+    edition's place list (or harmless), no template or category on it marks a person, and the place infobox does not name a home.
+
+    ``(None, None, None)`` is a page with no infobox at all.
+    """
+    text = wikitext or ""
+    for cat in _CATEGORY_LINK.findall(text):
+        if _PERSON_CATEGORY.search(" ".join(cat.split())):
+            return "about_a_person", None, None
+    allowed = PLACE_TYPES.get(edition, frozenset())
+    first: tuple[str, int] | None = None
+    unlisted = False
+    seen = False
+    for match in _TEMPLATE_OPEN.finditer(text):
+        name = _norm(match.group(1))
+        if _is_person_type(name) and (_looks_like_infobox(name) or name in _PERSON_UNPREFIXED):
+            return "about_a_person", None, None
+        if not _looks_like_infobox(name) or name in _HARMLESS:
+            continue
+        seen = True
+        if name not in allowed:
+            unlisted = True
+        elif first is None:
+            first = (name, match.start())
+    if not seen:
+        return None, None, None
+    if unlisted or first is None:
+        return "type_not_on_the_list", None, None
+    fields = _fields(text, first[1])
+    if fields is None:
+        return "type_not_on_the_list", None, None
+    for key in _HOME_FIELDS:
+        if key in fields and _HOME_WORDS.search(clean_value(fields[key]) or ""):
+            return "a_home", None, None
+    return None, first[0], fields
 
 
 def clean_value(raw: str) -> str | None:
@@ -269,7 +324,7 @@ def variants(text: str) -> list[str]:
     out = []
     for n in range(len(parts), 0, -1):
         candidate = ", ".join(parts[:n])
-        if has_house_number(candidate):
+        if has_house_number(candidate) and any(ch.isalpha() for ch in candidate):
             out.append(candidate)
     return out
 
@@ -327,7 +382,7 @@ def resolve(text: str, geocoder: Any = None) -> dict[str, Any]:
         total = int(answer.get("total") or 0)
         if not results:
             continue
-        if total > MAX_ANSWERS or len(results) != total:
+        if total > MAX_ANSWERS:
             return {"status": "ambiguous", "answers": total}
         points = [(float(r["lat"]), float(r["lon"])) for r in results]
         spread = max((metres(p, q) for p in points for q in points), default=0.0)
@@ -359,13 +414,11 @@ def outside_every_country(point: tuple[float, float] | None, bboxes: list[tuple[
 
 def page_addresses(edition: str, wikitext: str) -> dict[str, Any]:
     """Pure: what one stored page offers. ``{"skip": reason}``, ``{"none": True}`` or ``{"type", "candidates": [(field, text)], "coord"}``."""
-    found = infobox_type_and_fields(wikitext)
-    if found is None:
-        return {"none": True}
-    kind, fields, person = found
-    skip = classify_type(edition, kind, person_on_page=person)
+    skip, kind, fields = classify_page(edition, wikitext)
     if skip is not None:
         return {"skip": skip}
+    if kind is None or fields is None:
+        return {"none": True}
     keys = ADDRESS_KEYS.get(edition, ADDRESS_KEYS["en"])
     candidates = []
     for key, value in fields.items():
@@ -385,18 +438,15 @@ def page_addresses(edition: str, wikitext: str) -> dict[str, Any]:
 class _Page:
     edition: str
     tier: str
-    ref: str  # "hot:<entity id>" or "warm:<row id>"
     version: str
     title: str | None
     external_id: str | None
-    offer: dict[str, Any]
+    offer: dict[str, Any] | None  # None: nothing to count (no infobox, or a place infobox without an address field)
 
 
 @dataclass
 class _State:
     pages: dict[str, _Page] = field(default_factory=dict)
-    hot_after: int = 0
-    warm_after: int = 0
     resolved: dict[tuple[str, str], dict[str, Any]] = field(default_factory=dict)
     osm_signature: str | None = None
     lane_marker: Any = None
@@ -408,22 +458,35 @@ _last: dict[str, Any] | None = None
 
 
 def reset() -> None:
-    """Forget every page read (tests, and a lane that was replaced)."""
+    """Forget every page read (tests; and done on its own when the lane file is replaced)."""
     global _state, _last
     with _lock:
         _state = _State()
         _last = None
 
 
-def _osm_scope() -> tuple[str, list[tuple[float, float, float, float]]]:
-    """The ingested, indexed countries as a signature (their vintages) and their bounding boxes. Reads the OSM lane; ``("", [])`` without one."""
+def _lane_marker() -> Any:
+    """The wiki lane file's identity: a restore, an erase or an encryption swap replaces the file, and what was read of the old one goes."""
+    import os
+
+    from src.versioned.store import lane_path
+
+    try:
+        st = os.stat(lane_path("wiki"))
+    except OSError:
+        return None
+    return (st.st_dev, st.st_ino)
+
+
+def _osm_scope() -> tuple[str | None, list[tuple[float, float, float, float]]]:
+    """The ingested, indexed countries as a signature and their bounding boxes. ``(None, [])`` when the OSM state could not be read."""
     from src.osm.places import index_state
 
     try:
         scope = [c for c in index_state() if c.get("indexed")]
-    except Exception as exc:  # noqa: BLE001 - an unreadable OSM lane locates nothing, and says so as no country
+    except Exception as exc:  # noqa: BLE001 - an unreadable OSM lane is said as such, never as "no country"
         log_failure(_LOG, "located addresses: the OSM index state could not be read", exc, level=logging.WARNING)
-        return "", []
+        return None, []
     signature = json.dumps(sorted((c["alpha3"], c.get("vintage")) for c in scope))
     if not scope:
         return signature, []
@@ -443,109 +506,146 @@ def _osm_scope() -> tuple[str, list[tuple[float, float, float, float]]]:
     return signature, boxes
 
 
-def _scan(lane: Any, state: _State, deadline: float) -> None:
-    """Read stored texts in id order until the deadline: HOT's newest revisions first, then WARM's latest texts."""
+def _held(lane: Any) -> dict[str, tuple[str, str, str]]:
+    """Every stored text of the twelve editions, as ``ref -> (tier, edition, version)``. Small rows, no text: read every call."""
     from sqlalchemy import func, select
 
     from src.versioned.models import VersionedEntity, VersionedRevision
     from src.wiki.lane_models import WikiWarmPage
 
-    newest = (
-        select(VersionedRevision.entity_id, func.max(VersionedRevision.id).label("rid"))
-        .where(VersionedRevision.content.is_not(None))
-        .group_by(VersionedRevision.entity_id)
-        .subquery()
-    )
-    while time.monotonic() < deadline:
-        rows = lane.execute(
-            select(VersionedEntity.id, VersionedEntity.language, VersionedEntity.title, VersionedEntity.external_id, newest.c.rid)
-            .join(newest, newest.c.entity_id == VersionedEntity.id)
-            .where(VersionedEntity.id > state.hot_after)
-            .order_by(VersionedEntity.id)
-            .limit(SCAN_BATCH)
-        ).all()
-        if not rows:
-            break
-        texts = dict(lane.execute(select(VersionedRevision.id, VersionedRevision.content).where(VersionedRevision.id.in_([r[4] for r in rows]))).all())
-        for eid, language, title, external_id, rid in rows:
-            edition = str(language or "")
-            ref = f"hot:{eid}"
-            if edition in PLACE_TYPES:
-                state.pages[ref] = _Page(edition, "hot", ref, str(rid), title, external_id, page_addresses(edition, texts.get(rid) or ""))
-            state.hot_after = eid
-    while time.monotonic() < deadline:
-        rows = lane.execute(
-            select(WikiWarmPage.id, WikiWarmPage.edition, WikiWarmPage.title, WikiWarmPage.page_id, WikiWarmPage.latest_revid, WikiWarmPage.latest_text)
-            .where(WikiWarmPage.id > state.warm_after, WikiWarmPage.latest_text.is_not(None))
-            .order_by(WikiWarmPage.id)
-            .limit(SCAN_BATCH)
-        ).all()
-        if not rows:
-            break
-        for wid, edition, title, page_id, revid, text in rows:
-            ref = f"warm:{wid}"
-            if edition in PLACE_TYPES:
-                state.pages[ref] = _Page(edition, "warm", ref, str(revid), title, f"{edition}:#{page_id}", page_addresses(edition, text or ""))
-            state.warm_after = wid
+    editions = list(PLACE_TYPES)
+    out: dict[str, tuple[str, str, str]] = {}
+    for eid, language, rid in lane.execute(
+        select(VersionedEntity.id, VersionedEntity.language, func.max(VersionedRevision.id))
+        .join(VersionedRevision, VersionedRevision.entity_id == VersionedEntity.id)
+        .where(VersionedRevision.content.is_not(None), VersionedEntity.language.in_(editions))
+        .group_by(VersionedEntity.id, VersionedEntity.language)
+    ):
+        out[f"hot:{eid}"] = ("hot", str(language), str(rid))
+    for wid, edition, revid, fetched in lane.execute(
+        select(WikiWarmPage.id, WikiWarmPage.edition, WikiWarmPage.latest_revid, WikiWarmPage.fetched_at).where(
+            WikiWarmPage.latest_text.is_not(None), WikiWarmPage.deleted_at.is_(None), WikiWarmPage.edition.in_(editions)
+        )
+    ):
+        out[f"warm:{wid}"] = ("warm", str(edition), f"{revid}@{fetched}")
+    return out
 
 
-def _totals(lane: Any) -> dict[str, int]:
-    from sqlalchemy import func, select
+def _read(lane: Any, state: _State, todo: list[str], held: dict[str, tuple[str, str, str]], deadline: float) -> None:
+    """Read the texts of ``todo`` in batches until the deadline."""
+    from sqlalchemy import select
 
-    from src.versioned.models import VersionedRevision
+    from src.versioned.models import VersionedEntity, VersionedRevision
     from src.wiki.lane_models import WikiWarmPage
 
-    hot = lane.execute(select(func.count(func.distinct(VersionedRevision.entity_id))).where(VersionedRevision.content.is_not(None))).scalar() or 0
-    warm = lane.execute(select(func.count(WikiWarmPage.id)).where(WikiWarmPage.latest_text.is_not(None))).scalar() or 0
-    return {"hot": int(hot), "warm": int(warm)}
+    for i in range(0, len(todo), SCAN_BATCH):
+        if time.monotonic() >= deadline:
+            return
+        batch = todo[i : i + SCAN_BATCH]
+        hot = {int(r.split(":")[1]): r for r in batch if r.startswith("hot:")}
+        warm = {int(r.split(":")[1]): r for r in batch if r.startswith("warm:")}
+        if hot:
+            rids = {int(held[ref][2]): eid for eid, ref in hot.items()}
+            texts = dict(lane.execute(select(VersionedRevision.id, VersionedRevision.content).where(VersionedRevision.id.in_(list(rids)))).all())
+            names = {e: (t, x) for e, t, x in lane.execute(
+                select(VersionedEntity.id, VersionedEntity.title, VersionedEntity.external_id).where(VersionedEntity.id.in_(list(hot)))
+            )}
+            for rid, eid in rids.items():
+                tier, edition, version = held[hot[eid]]
+                title, external_id = names.get(eid, (None, None))
+                state.pages[hot[eid]] = _Page(edition, tier, version, title, external_id, _offer(edition, texts.get(rid) or ""))
+        if warm:
+            for wid, edition, title, page_id, text in lane.execute(
+                select(WikiWarmPage.id, WikiWarmPage.edition, WikiWarmPage.title, WikiWarmPage.page_id, WikiWarmPage.latest_text)
+                .where(WikiWarmPage.id.in_(list(warm)))
+            ):
+                tier, _, version = held[warm[wid]]
+                state.pages[warm[wid]] = _Page(edition, tier, version, title, f"{edition}:#{page_id}", _offer(edition, text or ""))
+
+
+def _offer(edition: str, text: str) -> dict[str, Any] | None:
+    offer = page_addresses(edition, text)
+    return None if offer.get("none") else offer
 
 
 def located_report(lane: Any, *, budget: float = SCAN_BUDGET_SECONDS, geocoder: Any = None) -> dict[str, Any]:
-    """Advance the scan for at most ``budget`` seconds, resolve what it found, and report: points with provenance, counters per edition.
-
-    Never raises: an unreadable lane is ``measured: false`` with the reason.
+    """Bring what was read up to date with the lane, read new or changed texts and resolve their addresses for at most ``budget``
+    seconds, and report: points with provenance, counters per edition. Never raises: a failure is ``measured: false`` with the reason.
     """
-    global _last
+    global _state, _last
     if not _lock.acquire(blocking=False):
         # Another call is reading: the last answer, marked as such, rather than a wait (a poll never waits on a read).
         return {**_last, "from_previous_read": True} if _last else {"measured": False, "reason": "busy", "scope": SCOPE}
     try:
+        deadline = time.monotonic() + budget
+        marker = _lane_marker()
+        if marker != _state.lane_marker:
+            _state = _State(lane_marker=marker)
         signature, boxes = _osm_scope()
         if _state.osm_signature != signature:
             _state.resolved.clear()
             _state.osm_signature = signature
         try:
-            _scan(lane, _state, time.monotonic() + budget)
-            totals = _totals(lane)
+            held = _held(lane)
+            # A text that changed or went (a new revision, a WARM text replaced in place, a deleted or evicted page) is read again or
+            # forgotten: what was read of an old version never stays on the map.
+            for ref in [r for r, page in _state.pages.items() if r not in held or held[r][2] != page.version]:
+                del _state.pages[ref]
+            todo = [r for r in held if r not in _state.pages]
+            _read(lane, _state, todo, held, deadline)
         except Exception as exc:  # noqa: BLE001 - the report says it could not read, never blanks the surface it rides
             log_failure(_LOG, "located addresses: the stored texts could not be read", exc, level=logging.WARNING)
             return {"measured": False, "reason": "unreadable", "scope": SCOPE}
-        _last = _report(_state, totals, boxes, geocoder)
+        try:
+            _last = _report(_state, held, boxes, geocoder, deadline)
+        except Exception as exc:  # noqa: BLE001
+            log_failure(_LOG, "located addresses: the report could not be built", exc, level=logging.WARNING)
+            return {"measured": False, "reason": "unreadable", "scope": SCOPE}
         return _last
     finally:
         _lock.release()
 
 
-def _report(state: _State, totals: dict[str, int], boxes: list, geocoder: Any) -> dict[str, Any]:
+def _answer(state: _State, edition: str, text: str, geocoder: Any, deadline: float) -> dict[str, Any]:
+    if state.osm_signature is None:
+        return {"status": "osm_unreadable"}
+    if state.osm_signature == "[]":
+        return {"status": "no_osm_country"}
+    memo = (edition, text)
+    if memo in state.resolved:
+        return state.resolved[memo]
+    if time.monotonic() >= deadline:
+        return {"status": "pending"}
+    try:
+        answer = resolve(text, geocoder)
+    except Exception as exc:  # noqa: BLE001 - one failed lookup is counted, never memoized, never a silent drop
+        log_failure(_LOG, "located addresses: one lookup in the OSM index failed", exc, level=logging.WARNING)
+        return {"status": "lookup_failed"}
+    state.resolved[memo] = answer
+    return answer
+
+
+def _report(state: _State, held: dict[str, tuple[str, str, str]], boxes: list, geocoder: Any, deadline: float) -> dict[str, Any]:
     per: dict[str, dict[str, int]] = {}
     points: list[dict[str, Any]] = []
     for page in state.pages.values():
-        row = per.setdefault(page.edition, {})
         offer = page.offer
+        if offer is None:
+            continue
+        row = per.setdefault(page.edition, {})
         if "skip" in offer:
             row["skipped_" + offer["skip"]] = row.get("skipped_" + offer["skip"], 0) + 1
             continue
-        if "candidates" not in offer:
-            continue
+        coord = offer.get("coord")
         for key, text in offer["candidates"]:
             row["found"] = row.get("found", 0) + 1
-            memo = (page.edition, text)
-            if memo not in state.resolved:
-                state.resolved[memo] = resolve(text, geocoder) if state.osm_signature not in ("", "[]") else {"status": "no_osm_country"}
-            answer = state.resolved[memo]
+            answer = _answer(state, page.edition, text, geocoder, deadline)
             status = answer["status"]
-            if status == "not_located" and outside_every_country(offer.get("coord"), boxes):
+            if status == "not_located" and outside_every_country(coord, boxes):
                 status = "outside_your_osm_countries"
+            if status == "located" and coord is not None and metres(coord, (answer["lat"], answer["lon"])) > COORD_AGREEMENT_METRES:
+                # The index found the street somewhere the page itself says the place is not: a namesake, never this place.
+                status = "ambiguous"
             row[status] = row.get(status, 0) + 1
             if status == "located":
                 points.append(
@@ -561,22 +661,24 @@ def _report(state: _State, totals: dict[str, int], boxes: list, geocoder: Any) -
                         **{k: answer[k] for k in ("query", "lat", "lon", "osm_object", "osm_address", "osm_country", "osm_vintage", "answers")},
                     }
                 )
-    read = {"hot": sum(1 for p in state.pages if p.startswith("hot:")), "warm": sum(1 for p in state.pages if p.startswith("warm:"))}
+    read = {"hot": sum(1 for r in state.pages if r.startswith("hot:")), "warm": sum(1 for r in state.pages if r.startswith("warm:"))}
+    total = {"hot": sum(1 for r in held if r.startswith("hot:")), "warm": sum(1 for r in held if r.startswith("warm:"))}
     return {
         "measured": True,
         "scope": SCOPE,
         "points": points,
         "per_edition": {e: dict(sorted(c.items())) for e, c in sorted(per.items()) if c},
         "texts_read": read,
-        "texts_held": totals,
-        "complete": read["hot"] >= totals["hot"] and read["warm"] >= totals["warm"],
+        "texts_held": total,
+        "complete": read == total and not any(c.get("pending") for c in per.values()),
         "statuses": list(STATUSES),
         "skips": list(SKIPS),
         "gaps": list(GAPS),
         "method": (
-            "The first infobox of a stored page, when its type is on the edition's closed list of organisation, building and place "
-            "infoboxes; in it, the fields named as an address. Each is looked up in the local OpenStreetMap address index of the "
-            f"countries you ingested: located when one to {MAX_ANSWERS} objects carry every word and lie within "
-            f"{int(SAME_PLACE_METRES)} m of each other. Nothing is looked up anywhere else."
+            "A stored page is read only when every infobox on it is on the edition's closed list of organisation, building and place "
+            "infoboxes, nothing on it marks a person and the infobox does not name a home; in it, the fields named as an address. Each is "
+            "looked up in the local OpenStreetMap address index of the countries you ingested: located when one to "
+            f"{MAX_ANSWERS} objects carry every word and lie within {int(SAME_PLACE_METRES)} m of each other, and within "
+            f"{int(COORD_AGREEMENT_METRES / 1000)} km of the page's own coordinate when it has one. Nothing is looked up anywhere else."
         ),
     }

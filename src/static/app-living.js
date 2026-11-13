@@ -225,10 +225,13 @@
           c: _livingCount(sum("outside_your_osm_countries")), d: _livingCount(sum("no_house_number")) }));
       }
       if (sum("no_osm_country") > 0) parts.push(t("No OpenStreetMap country is ingested, so no address can be located."));
-      const person = sum("skipped_about_a_person");
-      if (person > 0) parts.push(tf("{n} infoboxes about a person were not read.", { n: _livingCount(person) }));
+      const person = sum("skipped_about_a_person") + sum("skipped_a_home");
+      if (person > 0) parts.push(tf("{n} pages about a person or a home were not read.", { n: _livingCount(person) }));
+      if (sum("pending") > 0) parts.push(tf("{n} addresses are still being looked up.", { n: _livingCount(sum("pending")) }));
+      const failed = sum("lookup_failed") + sum("osm_unreadable");
+      if (failed > 0) parts.push(tf("{n} addresses could not be looked up: the OpenStreetMap index could not be read.", { n: _livingCount(failed) }));
       const read = loc.texts_read || {}, held = loc.texts_held || {};
-      if (loc.complete !== true) {
+      if (loc.complete !== true && ((read.hot || 0) + (read.warm || 0)) < ((held.hot || 0) + (held.warm || 0))) {
         parts.push(tf("Read {n} of {m} stored pages so far.", {
           n: _livingCount((read.hot || 0) + (read.warm || 0)), m: _livingCount((held.hot || 0) + (held.warm || 0)) }));
       }

@@ -301,3 +301,115 @@ def test_a_fixture_infobox_address_is_located_through_the_real_local_index(osm_l
     assert pt["title"] == "Fixture Building" and pt["osm_object"] == "way/13" and pt["osm_country"] == "ZZZ"
     assert pt["query"] == "1 Fixture Road, Fixtureville", "the country part was dropped, the street part kept"
     assert pt["osm_address"] == "1 Fixture Road 00000 Fixtureville"
+
+
+# --------------------------------------------------------------------------- #
+# The review's probes (PR #1948): the person rule fails closed at PAGE level, and the scan follows the lane as it changes.
+# --------------------------------------------------------------------------- #
+_BUILDING = "{{Infobox building|address=10 Fixture Street}}\n"
+
+
+@pytest.mark.parametrize(
+    "edition,extra",
+    [
+        ("en", "{{Infobox cricketer|name=A}}"),
+        ("en", "{{Infobox ice hockey player|name=A}}"),
+        ("en", "{{Infobox musician|name=A}}"),
+        ("en", "{{Template:Infobox person|name=A}}"),
+        ("en", "[[Category:Living people]]"),
+        ("en", "[[Category:1950 births]]"),
+        ("de", "{{Personendaten|NAME=A}}"),
+        ("ru", "{{Музыкант|имя=A}}"),
+        ("ja", "{{ActorActress|名前=A}}"),
+        ("ja", "[[カテゴリ:存命人物]]"),
+        ("fr", "[[Catégorie:Naissance en 1950]]"),
+    ],
+)
+def test_any_person_signal_anywhere_on_the_page_keeps_it_unread(edition, extra):
+    building = {"en": _BUILDING, "de": "{{Infobox Bauwerk|Adresse=Fixturestraße 4}}\n", "ru": "{{Здание|адрес=ул. Ленина, 5}}\n",
+                "ja": "{{Infobox 建築物|所在地=東京都 1-2-3}}\n", "fr": "{{Infobox Bâtiment|adresse=3 rue Fixture}}\n"}[edition]
+    assert L.page_addresses(edition, building + extra) == {"skip": "about_a_person"}
+
+
+@pytest.mark.parametrize("extra", ["{{#invoke:Infobox|infobox|label1=Born}}", "{{Infobox settlement|name=X}}"])
+def test_a_second_infobox_not_on_the_list_keeps_the_page_unread(extra):
+    assert L.page_addresses("en", _BUILDING + extra) == {"skip": "type_not_on_the_list"}
+
+
+def test_a_harmless_mapframe_beside_the_place_infobox_is_fine():
+    assert L.page_addresses("en", _BUILDING + "{{Infobox mapframe|zoom=10}}")["candidates"] == [("address", "10 Fixture Street")]
+
+
+@pytest.mark.parametrize("field", ["building_type = Private house", "nrhp_type = Residence", "type = [[Villa]]"])
+def test_a_home_is_never_read(field):
+    assert L.page_addresses("en", "{{Infobox building|" + field + "|address=123 Elm Street}}") == {"skip": "a_home"}
+
+
+def test_a_ref_whose_name_carries_a_slash_does_not_swallow_the_address():
+    assert L.clean_value('2 Fixture Road<ref name="a/b"/>, Fixtureville<ref>x</ref>') == "2 Fixture Road, Fixtureville"
+
+
+def test_a_number_alone_is_never_looked_up():
+    assert L.variants("5, Rue Fixture") == ["5, Rue Fixture"]
+
+
+def test_a_located_answer_far_from_the_pages_own_coord_is_not_placed(lane, scope):
+    _page(lane, "en", "Namesake Hall", "{{Infobox building|address=2 Fixture Road, Elsewhere}} {{coord|-33.9|151.2}}", 1)
+    lane.commit()
+    scope('[["FXL", "2026-10-01"]]', [], _geo({"2 Fixture Road": [_hit(48.85, 2.35)]}))
+    rep = L.located_report(lane, budget=5.0)
+    assert rep["per_edition"]["en"] == {"ambiguous": 1, "found": 1} and rep["points"] == []
+
+
+def test_a_failed_lookup_and_an_unreadable_osm_lane_are_named_never_raised(lane, scope, monkeypatch):
+    _page(lane, "en", "Fixture Hall", HALL, 1)
+    lane.commit()
+
+    def boom(q, limit=5):
+        raise RuntimeError("osm lane locked")
+
+    scope('[["FXL", "2026-10-01"]]', [], boom)
+    rep = edition_coverage(lane, now=T0)["located"]
+    assert rep["measured"] is True and rep["per_edition"]["en"] == {"found": 1, "lookup_failed": 1}
+    L.reset()
+    scope(None, [], boom)
+    rep = L.located_report(lane, budget=5.0)
+    assert rep["per_edition"]["en"] == {"found": 1, "osm_unreadable": 1}
+
+
+def test_a_page_that_changes_is_read_again_and_a_page_that_goes_is_forgotten(lane, scope):
+    _page(lane, "en", "Fixture Hall", HALL, 1)
+    lane.add(WikiWarmPage(edition="fr", page_id=9, title="Salle", latest_revid=9, latest_text="{{Infobox Bâtiment|adresse=3 rue Fixture}}"))
+    lane.commit()
+    scope('[["FXL", "2026-10-01"]]', [], _geo({"2 Fixture Road, Fixtureville": [_hit(48.85, 2.35)], "3 rue Fixture": [_hit(48.86, 2.36)]}))
+    assert len(L.located_report(lane, budget=5.0)["points"]) == 2
+    # The HOT page gains a person infobox in a new revision; the WARM text is replaced in place by one without an infobox.
+    entity = lane.query(VersionedEntity).filter_by(external_id="en:#1").one()
+    lane.add(VersionedRevision(entity_id=entity.id, revision_ref="999", content_hash="h999", content=HALL + "{{Infobox person|name=A}}", byte_size=1))
+    warm = lane.query(WikiWarmPage).one()
+    warm.latest_revid, warm.latest_text = 10, "Now a stub."
+    lane.commit()
+    rep = L.located_report(lane, budget=5.0)
+    assert rep["points"] == [] and rep["per_edition"] == {"en": {"skipped_about_a_person": 1}}
+    warm.deleted_at = T0
+    lane.commit()
+    rep = L.located_report(lane, budget=5.0)
+    assert rep["texts_held"] == {"hot": 1, "warm": 0} == rep["texts_read"] and rep["complete"] is True
+
+
+def test_an_edition_outside_the_twelve_does_not_hold_complete_false(lane, scope):
+    _page(lane, "nl", "Gebouw", "{{Infobox gebouw|adres=Straat 1}}", 1)
+    lane.commit()
+    scope("[]", [], lambda q, limit=5: {})
+    rep = L.located_report(lane, budget=5.0)
+    assert rep["complete"] is True and rep["texts_held"] == {"hot": 0, "warm": 0}
+
+
+def test_addresses_left_unresolved_at_the_deadline_are_pending_not_zero(lane, scope):
+    _page(lane, "en", "Fixture Hall", HALL, 1)
+    lane.commit()
+    scope('[["FXL", "2026-10-01"]]', [], _geo({}))
+    L.located_report(lane, budget=5.0)  # reads the page
+    L._state.resolved.clear()
+    rep = L.located_report(lane, budget=0.0)
+    assert rep["per_edition"]["en"] == {"found": 1, "pending": 1} and rep["complete"] is False
