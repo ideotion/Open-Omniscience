@@ -49,7 +49,8 @@ _ROOT = Path(__file__).resolve().parent.parent
 # says what bounds the upload and what the Origin layer is the only guard for.
 _MULTIPART: dict[tuple[str, str], str] = {
     ("POST", "/api/catalog/import"): "a source-catalogue sheet upload; the file part is required (422 without it, 400 for an empty file), bounded at _MAX_IMPORT_BYTES after the read",
-    ("POST", "/api/diagnostics/source-qualification-merge"): "per-instance qualification exports; every part is optional, so an empty POST answers 200 (it computes, it writes no file)",
+    ("POST", "/api/diagnostics/source-qualification-merge"): "per-instance qualification exports; every part is optional, so an empty multipart or url-encoded POST answers 200 (it computes, it writes "
+    "no file); any other Content-Type, or none, answers 415 before the handler runs (R663, test_upload_media_types.py)",
     ("POST", "/api/commodities/{symbol}/prices/import-csv"): "a price CSV, bounded read of 16 MiB; the commodity router needs the [analysis] extra",
     ("POST", "/api/verify/image-metadata"): "an image for EXIF extraction, bounded read of 50 MiB; no write",
 }
@@ -68,14 +69,15 @@ _RAW_BODY_READERS: dict[str, tuple[tuple[str, str], str]] = {
     ),
     "src/api/ingestion.py::import_newsletters": (
         ("POST", "/api/newsletters/import"),
-        "local .eml files ingested anonymised into the corpus; parses request.form() itself, so the schema shows no body and any Content-Type "
-        "or none answers 200 (an empty POST still gets-or-creates the 'Imported newsletters (.eml)' source row); per-file bound _MAX_EML_BYTES on the in-memory read, not on the upload; "
-        "a declared `files: list[UploadFile]` would put it in the multipart group (proposal, not decided)",
+        "local .eml files ingested anonymised into the corpus; parses request.form() itself, so the schema shows no body; any Content-Type but "
+        "multipart/form-data, or none, answers 415 before the form is read or the source row is created (R663, test_upload_media_types.py); "
+        "an EMPTY multipart POST still gets-or-creates the 'Imported newsletters (.eml)' source row (stated limit); per-file bound "
+        "_MAX_EML_BYTES on the in-memory read, not on the upload; no route split (R663)",
     ),
     "src/api/ingestion.py::upload_pdfs": (
         ("POST", "/api/documents/pdf/upload"),
-        "local PDFs ingested into the corpus; parses request.form() itself, any Content-Type or none answers 200; per-file bound _MAX_PDF_BYTES "
-        "(200 MiB) on the in-memory read, not on the upload; same declared-UploadFile proposal as the newsletter import",
+        "local PDFs ingested into the corpus; parses request.form() itself; any Content-Type but multipart/form-data, or none, answers 415 "
+        "before the form is read (R663); per-file bound _MAX_PDF_BYTES (200 MiB) on the in-memory read, not on the upload",
     ),
 }
 

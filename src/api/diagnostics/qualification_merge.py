@@ -17,9 +17,10 @@ wants two copies of.
 
 from __future__ import annotations
 
-from fastapi import Depends, File, Form, UploadFile
+from fastapi import Depends, File, Form, Request, UploadFile
 from sqlalchemy.orm import Session
 
+from src.api.body_media import MULTIPART, URLENCODED, require_media_type
 from src.api.country_wire import CountryWireResponse as JSONResponse
 from src.database.session import get_db
 
@@ -31,8 +32,16 @@ from ._base import router
 # list out. Both are stated in the refusal, so a run that hits them says which.
 _MAX_MERGE_UPLOADS = 25
 
+# The two encodings the route's File/Form parameters are declared in (R663). Every parameter is optional, so before this an empty or
+# text/plain POST ran the whole merge; now any other media type, or none, is a 415 before the handler runs.
+_MERGE_MEDIA_TYPES = frozenset({MULTIPART, URLENCODED})
 
-@router.post("/source-qualification-merge")
+
+def _form_body_only(request: Request) -> None:
+    require_media_type(request, _MERGE_MEDIA_TYPES)
+
+
+@router.post("/source-qualification-merge", dependencies=[Depends(_form_body_only)])
 def source_qualification_merge(
     files: list[UploadFile] = File(default=[]),
     accept_newest: bool = Form(default=False),

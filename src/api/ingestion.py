@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from src.api.body_media import MULTIPART, require_media_type
 from src.database.models import Source
 from src.database.session import get_db
 from src.database.source_lookup import source_for_domain
@@ -437,6 +438,8 @@ _MAX_UPLOAD_FILES = 5000
 # ordinary newsletters is legitimate and is not refused). What the request body costs on disk
 # (Starlette spools file parts to a temporary file) is outside this bound and is a stated limit.
 _MAX_EML_BYTES = 36 * 1024 * 1024
+# The one body encoding the two uploads read (R663): every caller sends FormData.
+_UPLOAD_MEDIA_TYPES = frozenset({MULTIPART})
 _EML_BATCH_BYTES = 64 * 1024 * 1024
 
 
@@ -465,7 +468,10 @@ async def import_newsletters(request: Request, db: Session = Depends(get_db)) ->
 
     The form is parsed with ``max_files`` raised above Starlette's 1000 default so a
     large selection no longer 400s; a truly huge set should use the folder import.
+    Anything but ``multipart/form-data`` (or no body) is a 415 before the form is read
+    or the source row is created (R663).
     """
+    require_media_type(request, _UPLOAD_MEDIA_TYPES)
     try:
         form = await request.form(max_files=_MAX_UPLOAD_FILES, max_fields=_MAX_UPLOAD_FILES + 100)
     except Exception as exc:
@@ -610,7 +616,9 @@ async def upload_pdfs(request: Request, db: Session = Depends(get_db)) -> dict:
     """Import local PDF files into the unified corpus. ZERO network: each PDF is
     parsed and its text extracted locally (nothing is ever fetched). A scanned /
     encrypted / mis-decoded PDF is SKIPPED with an honest reason and stores NOTHING.
-    Dedup is by content hash, so re-importing the same document is idempotent."""
+    Dedup is by content hash, so re-importing the same document is idempotent.
+    Anything but ``multipart/form-data`` (or no body) is a 415 before the form is read (R663)."""
+    require_media_type(request, _UPLOAD_MEDIA_TYPES)
     from starlette.concurrency import run_in_threadpool
     from starlette.datastructures import UploadFile
 
