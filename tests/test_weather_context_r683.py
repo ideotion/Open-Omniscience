@@ -149,13 +149,15 @@ def test_the_plaintext_folder_is_deleted_once_and_then_nothing_happens(data_dir)
     assert purge_plaintext_cache() == 0
 
 
-def test_startup_upkeep_runs_the_purge():
+def test_startup_runs_the_purge_before_the_lock_check():
     import inspect
 
     from src.api import main
 
-    assert "purge_plaintext_cache()" in inspect.getsource(main._run_startup_upkeep), \
-        "the purge runs on the first start after the update"
+    src = inspect.getsource(main.lifespan)
+    assert "purge_plaintext_cache()" in src, "the purge runs on the first start after the update"
+    assert src.index("purge_plaintext_cache()") < src.index("state = app_lock_state()"), \
+        "before the lock check: it needs no key, and a store never unlocked again keeps no location"
 
 
 def test_a_panic_wipe_leaves_nothing_of_the_weather_slices(data_dir):
