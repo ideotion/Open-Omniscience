@@ -192,10 +192,10 @@
       --accent-text:color-mix(in srgb, var(--fg) 20%, var(--accent) 80%); }
     /* --ok-text / --err-text overrides (see :root). Mixed toward each theme's OWN --fg, never a
        hardcoded hue, and re-measured against panel and panel2 by the lane N sweep. */
-    html[data-theme="light"], html[data-theme="paper"], html[data-theme="dawn"], html[data-theme="mint"] {
+    :root[data-theme="light"], :root[data-theme="paper"], :root[data-theme="dawn"], :root[data-theme="mint"] {
       --ok-text:color-mix(in srgb, var(--fg) 40%, var(--ok) 60%);
       --err-text:color-mix(in srgb, var(--fg) 30%, var(--err) 70%); }
-    html[data-theme="solar"] {
+    :root[data-theme="solar"] {
       --ok-text:color-mix(in srgb, var(--fg) 40%, var(--ok) 60%);
       --err-text:color-mix(in srgb, var(--fg) 50%, var(--err) 50%); }
     /* The world map (journalist walk 2026-09-30, findings 1b/1c). A country under the pointer

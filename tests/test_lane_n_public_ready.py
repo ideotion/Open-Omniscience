@@ -74,7 +74,7 @@ def test_text_safe_tone_and_chip_colours():
     assert ".pill.ok{ color:var(--ok-text);" in css and ".pill.err{ color:var(--err-text);" in css
     block = css.split("--ok-text / --err-text overrides", 1)[1].split("/* The world map", 1)[0]
     for theme in ("light", "paper", "dawn", "mint", "solar"):
-        assert f'html[data-theme="{theme}"]' in block, theme
+        assert f':root[data-theme="{theme}"]' in block, theme
     js = app_js()
     tone = function_body(js, "_toneChip")
     assert '"var(--ok-text)"' in tone and '"var(--err-text)"' in tone
