@@ -204,9 +204,36 @@
         }
         facts.push({ label: code, value, hover: (name && name !== code ? ooLabelText(name, hover) : hover) });
       }
-      facts.push({ label: t("Addresses located"), value: t("Not measured yet"),
-        hover: t("Counting addresses found, located and outside your OSM countries needs the address extractor and the local OSM address index, which this build does not have yet. A zero would read as none found; nothing has looked.") });
+      facts.push(livingLocatedFact(c.located, t, tf));
       return { title: t("Edition coverage"), facts };
+    }
+
+    // R17 step 4 (S06-03 S2 + S3, R678): addresses from place infoboxes, located only in the local OpenStreetMap index. Counts, never a
+    // share or a bar; the scan is incremental, so the hover says how many stored pages it has read. An absent block says so, never 0.
+    function livingLocatedFact(loc, t, tf) {
+      const label = t("Addresses located");
+      if (!loc || loc.measured !== true) return { label, value: t("Not measured yet"), hover: t("Addresses outside your OpenStreetMap countries are not located.") };
+      const sum = (k) => Object.values(loc.per_edition || {}).reduce((n, row) => n + (typeof row[k] === "number" ? row[k] : 0), 0);
+      const found = sum("found");
+      const value = found
+        ? tf("{n} of {m} addresses located", { n: _livingCount(sum("located")), m: _livingCount(found) })
+        : t("No address found yet");
+      const parts = [];
+      if (found) {
+        parts.push(tf("{a} ambiguous, {b} not located, {c} outside your OpenStreetMap countries, {d} without a house number.", {
+          a: _livingCount(sum("ambiguous")), b: _livingCount(sum("not_located")),
+          c: _livingCount(sum("outside_your_osm_countries")), d: _livingCount(sum("no_house_number")) }));
+      }
+      if (sum("no_osm_country") > 0) parts.push(t("No OpenStreetMap country is ingested, so no address can be located."));
+      const person = sum("skipped_about_a_person");
+      if (person > 0) parts.push(tf("{n} infoboxes about a person were not read.", { n: _livingCount(person) }));
+      const read = loc.texts_read || {}, held = loc.texts_held || {};
+      if (loc.complete !== true) {
+        parts.push(tf("Read {n} of {m} stored pages so far.", {
+          n: _livingCount((read.hot || 0) + (read.warm || 0)), m: _livingCount((held.hot || 0) + (held.warm || 0)) }));
+      }
+      parts.push(t("Addresses outside your OpenStreetMap countries are not located."));
+      return { label, value, hover: parts.join(" ") };
     }
 
     // Q707's WARM tier (S05-06's S1): the newest text of every OTHER page the stream reports

@@ -55,7 +55,7 @@ const HELPERS = [
 ];
 const LIVING = [
   "livingWhen", "livingSigned", "livingFactHtml", "livingGroupsHtml", "_livingUnmeasured",
-  "livingStorageGroup", "_livingCount", "livingRunFacts", "livingWalkGroup", "livingCoverageGroup", "livingWarmGroup", "livingWikiGroups", "livingLawGroups",
+  "livingStorageGroup", "_livingCount", "livingRunFacts", "livingWalkGroup", "livingCoverageGroup", "livingLocatedFact", "livingWarmGroup", "livingWikiGroups", "livingLawGroups",
   "livingMapGroups", "livingDailyGroup", "livingGroupsFor",
   "livingDiffHtml", "livingStreamRowsHtml", "livingLawRowsHtml", "livingMapRowsHtml",
   "lawFloorStateWords", "lawFloorStateWhy", "lawFloorBasisWords", "lawFloorStatesIn", "lawFloorCountsHtml", "livingLawFloorHtml",
@@ -766,6 +766,18 @@ const WIKI = {
   const nowalk = group(R.livingWikiGroups({ ...WIKI, coverage: NOWALK }, t, tf), "Edition coverage");
   assert.ok(visible(nowalk).includes("All editions Not measured yet") && !/\b0 pages seen/.test(visible(nowalk)), visible(nowalk));
   assert.ok(phov.includes("Last event: Could not be read"), "an unreadable last event drew 'never'");
+  // R17 step 4 (R678): the located counters, summed over editions, as "n of m"; the reasons are counts in the hover; the scan's progress is said.
+  const LOC = { ...COV, located: { measured: true, complete: false, texts_read: { hot: 30, warm: 10 }, texts_held: { hot: 30, warm: 70 },
+    per_edition: { en: { found: 4, located: 2, ambiguous: 1, no_house_number: 1, skipped_about_a_person: 3 }, fr: { found: 1, outside_your_osm_countries: 1 } } } };
+  const lg = group(R.livingWikiGroups({ ...WIKI, coverage: LOC }, t, tf), "Edition coverage");
+  noJunk(lg, "the located counters"); noVerdict(lg, "the located counters");
+  assert.ok(visible(lg).includes("Addresses located 2 of 5 addresses located"), visible(lg));
+  const lh = hovers(lg);
+  assert.ok(lh.includes("1 ambiguous, 0 not located, 1 outside your OpenStreetMap countries, 1 without a house number."), lh);
+  assert.ok(lh.includes("3 infoboxes about a person were not read.") && lh.includes("Read 40 of 100 stored pages so far."), lh);
+  assert.ok(lh.includes("Addresses outside your OpenStreetMap countries are not located."), "the Q820 scope sentence is missing: " + lh);
+  const empty = group(R.livingWikiGroups({ ...WIKI, coverage: { ...COV, located: { measured: true, complete: true, per_edition: {} } } }, t, tf), "Edition coverage");
+  assert.ok(visible(empty).includes("Addresses located No address found yet") && !/Read \d/.test(hovers(empty)), visible(empty));
   const never = group(R.livingWikiGroups({ ...WIKI, coverage: { measured: false, reason: "lane-never-run" } }, t, tf), "Edition coverage");
   assert.ok(visible(never).includes("Not run yet") && !/\d/.test(visible(never).replace("Edition coverage", "")), visible(never));
   const none = group(R.livingWikiGroups(WIKI, t, tf), "Edition coverage");
