@@ -43,7 +43,7 @@ _backlog_clear_at = 0.0
 #: after the page's last batch, so an open Insights page owns the backlog and the slice takes it back once the page is gone.
 PAGE_DRAIN_QUIET_S = 30.0
 _page_drain_at = 0.0
-_page_drain_by_job = False
+_job_drain_at = 0.0
 
 
 #: Writer jobs that never touch the rows the backlog drains (the keyword index), so they do not hold it back.
@@ -55,15 +55,21 @@ def note_page_drain(*, by_job: bool = False) -> None:
     (``by_job``): either way an idle slice under way yields to it."""
     import time
 
-    global _page_drain_at, _page_drain_by_job
-    _page_drain_at = time.monotonic()
-    _page_drain_by_job = by_job
+    global _page_drain_at, _job_drain_at
+    if by_job:
+        _job_drain_at = time.monotonic()
+    else:
+        _page_drain_at = time.monotonic()
 
 
-def _page_draining() -> bool:
+def _page_draining(*, page_only: bool = False) -> bool:
+    """A drain marked recently: the page's (always) or the backlog job's (unless ``page_only``, which the job itself asks)."""
     import time
 
-    return bool(_page_drain_at) and time.monotonic() - _page_drain_at < PAGE_DRAIN_QUIET_S
+    now = time.monotonic()
+    page = bool(_page_drain_at) and now - _page_drain_at < PAGE_DRAIN_QUIET_S
+    job = bool(_job_drain_at) and now - _job_drain_at < PAGE_DRAIN_QUIET_S
+    return page or (job and not page_only)
 
 
 def backlog_budget_s() -> float:
@@ -81,7 +87,7 @@ def _backlog_busy_reason(exclude_kind: str | None = None) -> str | None:
     through the offline timer's yield checks, so the slice makes the ones that matter to it here: a re-index drain (an import's
     resume picks the same least-recently-attempted rows, and both writers would race for every one), any registered corpus lease,
     and a running writer job, and the Insights page's own drain. Unknown state is treated as busy."""
-    if _page_draining() and not (exclude_kind and _page_drain_by_job):  # the backlog job's own mark is not its rival
+    if _page_draining(page_only=bool(exclude_kind)):  # the backlog job's own mark is not its rival; the page's is
         return "page_drain_running"
     try:
         from src.analytics.reindex_job import get_reindex_manager

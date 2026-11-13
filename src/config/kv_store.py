@@ -597,7 +597,18 @@ def kv_get_json_strict(key: str) -> dict | None:
     return _loads_strict(raw)
 
 
-def kv_set_json(key: str, obj: dict) -> None:
+class KvSwapped(RuntimeError):
+    """A write made with ``expect_swap`` found the file swapped since: nothing was written."""
+
+
+def _swapped_since(expect_swap: int | None) -> bool:
+    if expect_swap is None:
+        return False
+    with _lock:
+        return _swap_epoch != expect_swap
+
+
+def kv_set_json(key: str, obj: dict, *, expect_swap: int | None = None) -> None:
     """Upsert ``obj`` (as JSON) under ``key`` transactionally, under the write gate.
 
     Raises on a genuine write failure (a locked encrypted store, a disk error) so a
@@ -624,6 +635,10 @@ def kv_set_json(key: str, obj: dict) -> None:
     from src.database.writer import write_lock
 
     with _write_slot() as epoch, write_lock():
+        # ``expect_swap`` (:func:`kv_swap_epoch` when the caller read what it writes): checked HERE, after a restore's hold was
+        # waited out, because a save that waited lands in the new file, and state read from the old one must not.
+        if _swapped_since(expect_swap):
+            raise KvSwapped("the corpus file was swapped since this value was read")
         committed = False
         try:
             conn = _open(path)
@@ -664,14 +679,17 @@ def kv_set_json(key: str, obj: dict) -> None:
                     _failed.pop((path, key), None)
 
 
-def kv_delete(key: str) -> None:
-    """Remove ``key`` (best-effort; a missing table is a no-op)."""
+def kv_delete(key: str, *, expect_swap: int | None = None) -> None:
+    """Remove ``key`` (best-effort; a missing table is a no-op). With ``expect_swap``, nothing is removed from a file swapped in
+    since (see :func:`kv_set_json`)."""
     path = _db_path()
     if path is None:
         return
     from src.database.writer import write_lock
 
     with _write_slot(), write_lock():
+        if _swapped_since(expect_swap):
+            return
         try:
             try:
                 conn = _open(path)

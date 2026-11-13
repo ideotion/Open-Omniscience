@@ -69,6 +69,8 @@ _OPS = ("summarize", "translate")
 _SELECTION = ("article_ids", "query", "source", "language", "start_date", "end_date")
 _BODY_KEYS = _SELECTION + ("op", "target_language", "output_language", "ui_lang", "model", "skip_existing")
 _PENDING = ("queued", "running", "paused")
+#: What a run that ended forgets: the selection, and the languages typed for it (free text too).
+_FORGOTTEN = _SELECTION + ("target_language", "output_language")
 
 
 def _forget_selection(entry: dict) -> None:
@@ -76,7 +78,7 @@ def _forget_selection(entry: dict) -> None:
     filters and the article ids leave the stored entry, and only the operation and its counts stay for the page's list."""
     body = entry.get("body")
     if isinstance(body, dict):
-        entry["body"] = {k: v for k, v in body.items() if k not in _SELECTION}
+        entry["body"] = {k: v for k, v in body.items() if k not in _FORGOTTEN}
 
 
 def _now_iso() -> str:
@@ -212,6 +214,8 @@ class LlmBulkQueue:
             self._epoch = epoch
         for entry_id in stale_ids:
             self._drop_ids(entry_id)
+        if stale_ids:
+            self._save()  # the stored row still holds the cancelled run's search
         return True
 
     def _save(self) -> None:
@@ -235,16 +239,15 @@ class LlmBulkQueue:
             try:
                 from src.config.kv_store import kv_set_json
 
-                kv_set_json(KV_KEY, data)
+                kv_set_json(KV_KEY, data, expect_swap=epoch)
             except Exception as exc:  # noqa: BLE001 - the run goes on; the next save tries again
                 _LOG.warning("bulk queue: the queue could not be stored (%s)", type(exc).__name__)
 
-    @staticmethod
-    def _save_ids(entry_id: int, ids: list[int]) -> None:
+    def _save_ids(self, entry_id: int, ids: list[int]) -> None:
         try:
             from src.config.kv_store import kv_set_json
 
-            kv_set_json(f"{IDS_KEY_PREFIX}{entry_id}", {"ids": list(ids)})
+            kv_set_json(f"{IDS_KEY_PREFIX}{entry_id}", {"ids": list(ids)}, expect_swap=self._epoch)
         except Exception as exc:  # noqa: BLE001 - a resume then re-reads the selection instead
             _LOG.warning("bulk queue: a run's article list could not be stored (%s)", type(exc).__name__)
 
@@ -259,12 +262,11 @@ class LlmBulkQueue:
         ids = d.get("ids")
         return [int(i) for i in ids if isinstance(i, int)] if isinstance(ids, list) and ids else None
 
-    @staticmethod
-    def _drop_ids(entry_id: int) -> None:
+    def _drop_ids(self, entry_id: int) -> None:
         try:
             from src.config.kv_store import kv_delete
 
-            kv_delete(f"{IDS_KEY_PREFIX}{entry_id}")
+            kv_delete(f"{IDS_KEY_PREFIX}{entry_id}", expect_swap=self._epoch)  # never another file's run of the same number
         except Exception:  # noqa: BLE001 - an orphaned list is a few kilobytes, never a wrong result
             pass
 
@@ -444,7 +446,8 @@ class LlmBulkQueue:
         before: dict = {}
 
         def _halt() -> bool:
-            return ctx.stopping or (tok is not None and _tasks.cancel_requested(int(tok)))
+            # ``stopping``: a Cancel pressed before the run's first start, when it has no task row to cancel yet.
+            return ctx.stopping or bool(entry.get("stopping")) or (tok is not None and _tasks.cancel_requested(int(tok)))
 
         def _say(detail: str) -> None:
             # A Framed line keeps its keyed frame, so the task manager writes it in the UI language. The run's own line is kept
@@ -527,10 +530,9 @@ class LlmBulkQueue:
             self._save_ids(int(entry["id"]), ids)
         with self._lock:
             entry["task"] = tok
-            # A resumed run keeps what it stored before the restart; those articles come back as "done before the restart" and
-            # are not counted again as skipped, so the tally is the run's whole one.
-            prior = int(entry.get("stored") or 0) if entry.get("resumed") else 0
-            entry.update(total=len(ids), done=0, stored=prior, skipped=0, failed=0)
+            # A resumed run counts from zero: the articles it stored before the restart come back as "done before the restart"
+            # (``resume_since`` makes that set exact) and are counted as stored, so the tally is the run's whole one.
+            entry.update(total=len(ids), done=0, stored=0, skipped=0, failed=0)
             stop_now = bool(entry.get("stopping"))
         if stop_now:
             _tasks.request_cancel(tok)  # Cancel pressed while the run was being prepared
@@ -548,7 +550,7 @@ class LlmBulkQueue:
                         entry["done"] = int(o.get("i") or entry["done"])
                         status = o.get("status")
                         if status == "skipped" and o.get("reason") == "done before the restart":
-                            pass
+                            entry["stored"] = int(entry.get("stored") or 0) + 1
                         elif status in ("stored", "skipped", "failed"):
                             entry[status] = int(entry.get(status) or 0) + 1
                     elif ev == "done":
@@ -571,6 +573,9 @@ class LlmBulkQueue:
                     break
                 if not self._stand_aside(ctx, entry):
                     outcome = ("paused", None)
+                    break
+                if self._stale(gen0):  # the restore it waited for swapped the file: not one more article from the old list
+                    outcome = ("cancelled", None)
                     break
                 if _tasks.cancel_requested(tok):
                     outcome = ("cancelled", None)
@@ -598,11 +603,12 @@ def _drain(ctx: JobContext) -> dict:
             entry = q._next()
             if entry is None:
                 break
+            gen = q._gen
             try:
                 q._run(ctx, entry)
-            except Exception as exc:
-                q._finish(entry, "error", f"The run stopped on an error ({type(exc).__name__}).")
-                raise
+            except Exception as exc:  # noqa: BLE001 - that run ends in error and the runs behind it go on
+                _LOG.warning("bulk queue: a run failed (%s)", type(exc).__name__)
+                q._finish(entry, "error", f"The run stopped on an error ({type(exc).__name__}).", gen=gen)
             ran += 1
     except BaseException:
         with q._lock:

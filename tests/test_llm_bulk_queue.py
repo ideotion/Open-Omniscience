@@ -94,6 +94,9 @@ def store(monkeypatch):
     state = {"locked": False}
     real = {n: getattr(kv_store, n) for n in ("kv_get_json_checked", "kv_get_json", "kv_set_json", "kv_delete")}
 
+    def _copy(value):
+        return None if value is None else json.loads(json.dumps(value))
+
     def _ours(key) -> bool:
         return str(key).startswith(lbq.KV_KEY)
 
@@ -102,15 +105,28 @@ def store(monkeypatch):
             return real["kv_get_json_checked"](key)
         if state["locked"]:
             raise RuntimeError("file is not a database")
-        return rows.get(key)
+        return _copy(rows.get(key))  # a copy, as the real store reads one: an edit in memory is not a write
 
     monkeypatch.setattr(kv_store, "kv_get_json_checked", _get_checked)
-    monkeypatch.setattr(kv_store, "kv_get_json", lambda key: rows.get(key) if _ours(key) else real["kv_get_json"](key))
-    monkeypatch.setattr(
-        kv_store, "kv_set_json",
-        lambda key, obj: rows.__setitem__(key, json.loads(json.dumps(obj))) if _ours(key) else real["kv_set_json"](key, obj),
-    )
-    monkeypatch.setattr(kv_store, "kv_delete", lambda key: rows.pop(key, None) if _ours(key) else real["kv_delete"](key))
+    monkeypatch.setattr(kv_store, "kv_get_json", lambda key: _copy(rows.get(key)) if _ours(key) else real["kv_get_json"](key))
+    def _swapped(expect_swap) -> bool:
+        return expect_swap is not None and kv_store.kv_swap_epoch() != expect_swap
+
+    def _set(key, obj, *, expect_swap=None):
+        if not _ours(key):
+            return real["kv_set_json"](key, obj, expect_swap=expect_swap)
+        if _swapped(expect_swap):  # the real store checks this after a restore's hold: same contract
+            raise kv_store.KvSwapped("swapped")
+        rows[key] = json.loads(json.dumps(obj))
+
+    def _delete(key, *, expect_swap=None):
+        if not _ours(key):
+            return real["kv_delete"](key, expect_swap=expect_swap)
+        if not _swapped(expect_swap):
+            rows.pop(key, None)
+
+    monkeypatch.setattr(kv_store, "kv_set_json", _set)
+    monkeypatch.setattr(kv_store, "kv_delete", _delete)
     return rows, state
 
 
@@ -476,7 +492,7 @@ def test_the_backlog_drain_is_a_cancellable_writer_and_the_idle_slice_is_not_its
     from src.scheduler import maintenance
 
     assert ib.get_job().is_writer and ib.get_job().cancellable
-    monkeypatch.setattr(maintenance, "_page_draining", lambda: False)
+    monkeypatch.setattr(maintenance, "_page_draining", lambda **_: False)
     monkeypatch.setattr(
         "src.jobs.background.all_job_statuses", lambda: [{"kind": ib.KIND, "running": True, "is_writer": True}]
     )
@@ -558,6 +574,7 @@ def test_the_bulk_queue_does_not_hold_the_insights_backlog_back(monkeypatch):
     from src.scheduler import maintenance
 
     monkeypatch.setattr(maintenance, "_page_drain_at", 0.0)
+    monkeypatch.setattr(maintenance, "_job_drain_at", 0.0)
     statuses = [{"kind": "llm-bulk-queue", "running": True, "is_writer": True}]
     monkeypatch.setattr("src.jobs.background.all_job_statuses", lambda: statuses)
     assert maintenance._backlog_busy_reason() is None
@@ -587,6 +604,7 @@ def test_the_backlog_drain_does_not_take_its_own_yield_signal_for_a_rival(monkey
 
     ib._reset_for_tests()
     monkeypatch.setattr(maintenance, "_page_drain_at", 0.0)
+    monkeypatch.setattr(maintenance, "_job_drain_at", 0.0)
     left = [900]
 
     def _batch(session, *, extractor, limit):
@@ -612,3 +630,98 @@ def test_a_task_label_never_carries_a_free_text_target_language():
     assert _label_target("French") == "French" and _label_target("fr") == "French"
     assert _label_target("my private codeword") == "another language"
     assert _translate_label_frame("my private codeword", "Translating → {language} {n} article(s)", n=1) == {}
+
+
+def test_the_store_refuses_a_write_read_from_a_file_swapped_since():
+    """The guard the queue's writes rely on: checked after a restore's hold, so a save that waited never lands in the new file."""
+    from src.config import kv_store
+
+    old = kv_store.kv_swap_epoch()
+    kv_store.kv_invalidate()
+    with pytest.raises(kv_store.KvSwapped):
+        kv_store.kv_set_json("jobs.test_swap_guard", {"x": 1}, expect_swap=old)
+    kv_store.kv_delete("jobs.test_swap_guard", expect_swap=old)  # a no-op, never an error
+
+
+def test_a_save_that_waited_through_a_swap_writes_nothing(queue, store):
+    rows, _ = store
+    assert queue._load()
+    queue._paused = True
+    queue.enqueue({"op": "summarize", "query": "held inquiry"})
+    rows.clear()
+    release = threading.Event()
+    real = queue._write_lock
+
+    class _Gated:
+        def __enter__(self):
+            if threading.current_thread().name == "held-saver":
+                assert release.wait(10)
+            return real.__enter__()
+
+        def __exit__(self, *exc):
+            return real.__exit__(*exc)
+
+    queue._write_lock = _Gated()
+    t = threading.Thread(target=queue._save, name="held-saver")
+    t.start()  # snapshot under the old file, then waits (as behind a restore's hold)
+    assert _wait(lambda: queue._save_seq >= 2, 5)
+    from src.config.kv_store import kv_invalidate
+
+    kv_invalidate()  # the swap
+    release.set()
+    t.join(10)
+    assert "held inquiry" not in str(rows), "a save read from the old file landed in the new one"
+
+
+def test_a_run_that_crashes_ends_in_error_and_the_runs_behind_it_go_on(queue, monkeypatch):
+    real_run = lbq.LlmBulkQueue._run
+    calls = []
+
+    def _run(self, ctx, entry):
+        calls.append(entry["id"])
+        if len(calls) == 1:
+            raise RuntimeError("boom")
+        return real_run(self, ctx, entry)
+
+    monkeypatch.setattr(lbq.LlmBulkQueue, "_run", _run)
+    _use(monkeypatch, _FakeLlm())
+    ids = _seed(1)
+    assert queue._load()
+    queue._paused = True
+    first = queue.enqueue({"op": "summarize", "model": "m", "article_ids": ids})["entry"]["id"]
+    second = queue.enqueue({"op": "summarize", "model": "m", "article_ids": ids, "skip_existing": False})["entry"]["id"]
+    queue.resume()
+    assert lbq._JOB.join(15)
+    entries = {e["id"]: e for e in queue.snapshot()["entries"]}
+    assert entries[first]["state"] == "error" and "boom" not in str(entries[first])
+    assert entries[second]["state"] == "done", entries
+
+
+def test_a_cancel_before_the_first_start_is_honoured_during_a_restore_hold(queue, monkeypatch):
+    hold = threading.Event()
+    hold.set()
+
+    class _Sched:
+        def holds_exclusive(self):
+            return hold.is_set()
+
+    monkeypatch.setattr("src.scheduler.runner.get_scheduler", lambda: _Sched())
+    _use(monkeypatch, _FakeLlm())
+    eid = queue.enqueue({"op": "summarize", "model": "m", "article_ids": _seed(1)})["entry"]["id"]
+    assert _wait(lambda: {e["id"]: e for e in queue.snapshot()["entries"]}[eid]["state"] == "running", 5)
+    assert queue.cancel(eid)
+    try:
+        assert lbq._JOB.join(10), "the Cancel waited for the restore to end"
+    finally:
+        hold.clear()
+    assert {e["id"]: e for e in queue.snapshot()["entries"]}[eid]["state"] == "cancelled"
+
+
+def test_a_cancel_restored_at_load_is_written_back(store):
+    rows, _ = store
+    rows[lbq.KV_KEY] = {"seq": 6, "paused": False, "entries": [
+        {"id": 6, "op": "translate", "body": {"op": "translate", "query": "restored inquiry", "target_language": "Klingon"},
+         "state": "running", "stopping": True},
+    ]}
+    _restart(store).snapshot()
+    assert "restored inquiry" not in str(rows) and "Klingon" not in str(rows), rows
