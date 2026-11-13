@@ -9,8 +9,8 @@ Lane M's route sweep found twelve reader features with no button. This pins:
   a cache hit carries the time the scan ran, not the time it was served;
 * the page's registry of the eight pattern lists matches the server's routes and the array each
   one answers with, so a renamed route or key fails here, not as an empty dialog;
-* each control is wired where its task happens: a Lead's back opens its list, the dismiss toast
-  undoes, the Briefing header brings dismissed cards back, a hidden keyword has its undo beside it;
+* each control is wired where its task happens: a Lead's back opens its list, a dismissed card leaves
+  an Undo button in its place, the Briefing header brings dismissed cards back, a hidden keyword has its undo beside it;
 * the three undo POSTs answer a person's click only (event.isTrusted, as R673 does);
 * every word the lists add is in all 12 locales with its placeholders, and no item frame carries a
   verdict word (R685: the pattern's name carries the label, the caveat qualifies it).
@@ -89,7 +89,7 @@ def test_each_control_sits_where_its_task_happens():
     # A Lead's back opens its list, beside "Open corpus".
     assert re.search(r"\$\{openBtn\}\s*\$\{typeof ooPatternListButton === \"function\" \? ooPatternListButton\(c\) : \"\"\}", home)
     # Dismissing offers its undo; the header offers to bring every dismissed card back.
-    assert "ooCardDismissedToast(id)" in function_source(home, "_dismissCardNow")
+    assert "ooCardDismissedUndo(el, id)" in function_source(home, "_dismissCardNow")
     assert "ooPaintBriefDismissed(data.dismissed_count)" in home
     assert '<span id="brief-dismissed"' in html
     # A hidden keyword gets its undo right beside the button that hid it.
@@ -108,8 +108,11 @@ def test_the_undo_posts_answer_a_persons_click_only():
         src = function_source(_JS, fn)
         assert f'api("{route}"' in src, route
         assert src.index("if (!ev.isTrusted) return;") < src.index(f'api("{route}"'), route
-    # The single-card restore runs from the toast's own click handler, which only a click reaches.
-    assert 'toast(_patT()("Card dismissed. Click to undo."), "ok", () => { ooRestoreCard(id); });' in _JS
+    # The single-card Undo is a real button left where the card was (keyboard and screen readers reach it,
+    # a toast they could not), and it too answers a person's click only.
+    undo = function_source(_JS, "ooCardDismissedUndo")
+    assert 'undo.addEventListener("click", (ev) => { if (!ev.isTrusted) return;' in undo and "ooRestoreCard(id)" in undo
+    assert 'undo.type = "button"' in undo and "undo.focus()" in undo
 
 
 def test_no_new_name_joins_the_declarative_allow_list():
@@ -135,7 +138,7 @@ _VERDICT = re.compile(r"\b(fake|manipulat\w*|propaganda|disinformation|misinform
 def test_no_item_frame_carries_a_verdict_word():
     body = function_source(_JS, "patternItemText")
     frames = re.findall(r'tf\("((?:[^"\\]|\\.)*)"', body)
-    assert len(frames) == 8
+    assert len(frames) == 10, "eight patterns; headline vs body names which of its two checks passed"
     for fr in frames:
         assert not _VERDICT.search(fr), fr
 

@@ -278,7 +278,7 @@ _REQUEST_EXEMPT = {
     "dismissRetiredMode": "clears one informational 'retired mode' notice flag in the scheduler config",
     "ooKeywordUndoButton": "the UNDO of a hidden keyword (R685): it shows the keyword again (/api/insights/include); Hide hides it again",
     "ooPaintBriefDismissed": "brings every dismissed Lead BACK (R685, /api/briefing/dismissed/clear): it removes nothing, it un-hides",
-    "ooRestoreCard": "brings one dismissed Lead BACK from the dismiss toast (R685, /api/briefing/restore); Dismiss hides it again",
+    "ooRestoreCard": "brings one dismissed Lead BACK from the Undo left in its place (R685, /api/briefing/restore); Dismiss hides it again",
     "overlayMerge": "posts the picked export files and reads back a merged REPORT; it writes no corpus row",
     "runLangDetect": "no caller in src/static (dead code); its cancel half would stop a running detection pass (job control)",
     "stopWikiLane": "switches the wiki lane off in the scheduler config (job control; the toggle switches it on again)",

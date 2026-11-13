@@ -74,6 +74,19 @@ for (const def of P.OO_PATTERNS) {
 }
 ok(P.patternItemText("source_laundering", SAMPLES.source_laundering.clusters[0], t, tf) === "12 sources (30 articles) cite the same origin: example.org",
    "the R685 example reads exactly as ruled");
+// Headline vs body: the server lists an item when EITHER check passed; the line names the one that did.
+const HB = {d_min: 0.67, sentiment_gap_min: 0.5};
+ok(P.patternItemText("headline_body_mismatch", {title: "T", lexical_div: 0.3, sentiment_gap: 0.9}, t, tf, HB) ===
+   "“T”: the headline's tone differs from the article body's (sentiment gap 0.9)", "a tone-only item never claims a word divergence");
+ok(P.patternItemText("headline_body_mismatch", {title: "T", lexical_div: 0.8, sentiment_gap: 0.9}, t, tf, HB).includes("and its tone differs"),
+   "both checks passed: both are said");
+ok(P.patternItemText("headline_body_mismatch", {title: "T", lexical_div: 0.8, sentiment_gap: null}, t, tf, HB) ===
+   "“T”: the headline's words are rare in the article body (divergence 0.8)", "a word-only item (or a non-English one) says only that");
+// The "first N" note appears only where a limit was asked: the two signals routes take none.
+const many = Array.from({length: 120}, () => ({distinct_sources: 2, distinct_dates: 2, span_days: 3, sources: ["a", "b"]}));
+ok(!P.patternListHtml("disputed_chronology", {items: many}, t, tf).includes("Showing the first"), "no cap note on a list nobody capped");
+ok(P.patternListHtml("copypasta", {items: Array.from({length: 100}, () => SAMPLES.copypasta.items[0])}, t, tf).includes("Showing the first 100."),
+   "the cap note where the page asked for at most 100");
 ok(P.patternItemText("flooded_topic", SAMPLES.flooded_topic.items[0], t, tf).includes("42% of its recent articles"), "shares are shown as percentages");
 
 // An empty list says so; it is never an empty box.

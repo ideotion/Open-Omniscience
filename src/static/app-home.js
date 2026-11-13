@@ -2121,9 +2121,8 @@
       try {
         await api("/api/briefing/dismiss", {method:"POST", body: JSON.stringify({id})});
         const el = document.querySelector(`.card[data-card="${id}"]`);
-        if (el) el.remove();
-        // R685: the dismissal can be undone from its own toast (POST /api/briefing/restore).
-        if (typeof ooCardDismissedToast === "function") ooCardDismissedToast(id);
+        // R685: the card's place keeps a one-line note with an Undo button (POST /api/briefing/restore).
+        if (el && typeof ooCardDismissedUndo === "function") ooCardDismissedUndo(el, id); else if (el) el.remove();
       } catch (e) { toast(_failMsg("Could not dismiss: {error}", e), "err"); }
     }
 

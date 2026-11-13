@@ -62,6 +62,11 @@
       const x = String(s == null ? "" : s);
       return x.length > n ? x.slice(0, n - 1) + "…" : x;
     }
+    function _patDec(v) {
+      const x = Number(v);
+      if (!isFinite(x)) return "?";
+      return (typeof fmtNum === "function") ? fmtNum(x, 2) : String(Math.round(x * 100) / 100);
+    }
     function _patPct(share) {
       const v = Number(share);
       return isFinite(v) ? String(Math.round(v * 1000) / 10) : "?";
@@ -88,7 +93,7 @@
 
     // ONE line per item, saying what was measured. Each frame is a literal tf() so the i18n
     // gates see it; the values are data (names, phrases, dates) and are escaped by the caller.
-    function patternItemText(type, it, t, tf) {
+    function patternItemText(type, it, t, tf, p) {
       const srcCount = (it && it.distinct_sources != null) ? it.distinct_sources : (Array.isArray(it && it.sources) ? it.sources.length : 0);
       switch (type) {
         case "copypasta":
@@ -98,9 +103,24 @@
           return tf("{source}: {now}% of its recent articles were about “{keyword}” ({recent} of {total}), against {base}% before",
             {source: it.source, now: _patPct(it.share_now), keyword: it.term, recent: it.recent_articles,
              total: it.recent_total, base: _patPct(it.baseline_share)});
-        case "headline_body_mismatch":
-          return tf("“{title}”: the headline's words are rare in the article body (divergence {div})",
-            {title: _patShort(it.title || t("(untitled)"), 120), div: it.lexical_div});
+        case "headline_body_mismatch": {
+          // The server lists an item when EITHER check passed (headline_body.py): say the one(s) that did,
+          // never a measurement that was not the trigger.
+          const title = _patShort(it.title || t("(untitled)"), 120);
+          const div = _patDec(it.lexical_div), gap = _patDec(it.sentiment_gap);
+          const dMin = p && p.d_min != null ? Number(p.d_min) : 0.67;
+          const gMin = p && p.sentiment_gap_min != null ? Number(p.sentiment_gap_min) : Infinity;
+          const lexHit = Number(it.lexical_div) >= dMin;
+          const toneHit = it.sentiment_gap != null && Number(it.sentiment_gap) >= gMin;
+          if (lexHit && toneHit) {
+            return tf("“{title}”: the headline's words are rare in the article body (divergence {div}), and its tone differs (sentiment gap {gap})",
+              {title: title, div: div, gap: gap});
+          }
+          if (toneHit) {
+            return tf("“{title}”: the headline's tone differs from the article body's (sentiment gap {gap})", {title: title, gap: gap});
+          }
+          return tf("“{title}”: the headline's words are rare in the article body (divergence {div})", {title: title, div: div});
+        }
         case "manufactured_emergence":
           return tf("“{keyword}”: in {n} articles from {sources} sources within days, with almost no earlier mention and no dated event cited",
             {keyword: it.term, n: it.recent_articles, sources: it.recent_sources});
@@ -143,6 +163,7 @@
       if (has("min_gap_days")) rows.push(tf("A gap of at least {n} days", {n: p.min_gap_days}));
       if (has("k")) rows.push(tf("Phrases of at least {n} words", {n: p.k}));
       if (has("d_min")) rows.push(tf("Headline–body divergence of at least {n}", {n: p.d_min}));
+      if (has("sentiment_gap_min")) rows.push(tf("Or a headline–body sentiment gap of at least {n} (English only)", {n: p.sentiment_gap_min}));
       if (has("z_min")) rows.push(tf("A share jump of at least {n} standard deviations", {n: p.z_min}));
       if (has("min_share")) rows.push(tf("At least {n}% of the source's recent articles", {n: _patPct(p.min_share)}));
       if (has("min_recent_count")) rows.push(tf("At least {n} recent articles", {n: p.min_recent_count}));
@@ -167,7 +188,7 @@
     // The count line, the caveat (always visible) and the "How this was measured" control for the
     // method and thresholds, shared by the eight lists and Who.
     // `id` names the region the button opens, so aria-controls points at it.
-    function patternHeadHtml(p, shown, id, t, tf) {
+    function patternHeadHtml(p, shown, id, t, tf, cap) {
       const when = p && p.computed_at
         ? ((typeof fmtDateTime === "function") ? fmtDateTime(p.computed_at) : String(p.computed_at)) : "";
       const count = when
@@ -175,8 +196,9 @@
         : tf("{n} found", {n: _patNum(shown)});
       const caveat = p && p.caveat ? t(p.caveat) : "";
       const thresholds = patternThresholds(p, t, tf);
-      const capped = shown >= OO_PATTERN_LIMIT
-        ? `<p class="hint">${_patEsc(tf("Showing the first {n}.", {n: _patNum(OO_PATTERN_LIMIT)}))}</p>` : "";
+      // Only a list that was asked for at most `cap` items can have been cut there.
+      const capped = (cap && shown >= cap)
+        ? `<p class="hint">${_patEsc(tf("Showing the first {n}.", {n: _patNum(cap)}))}</p>` : "";
       return `<div class="row pat-head" style="gap:8px;align-items:center;flex-wrap:wrap">
           <span class="pat-count">${_patEsc(count)}</span>
           <button type="button" class="ghost tiny pat-how" aria-expanded="false" aria-controls="${_patEsc(id)}">${_patEsc(t("How this was measured"))}</button>
@@ -192,7 +214,8 @@
     function patternListHtml(type, payload, t, tf) {
       const def = patternByType(type);
       const items = (payload && def && Array.isArray(payload[def.key])) ? payload[def.key] : [];
-      const head = patternHeadHtml(payload, items.length, "pat-how-" + type, t, tf);
+      const cap = (def && def.path.startsWith("/api/insights/")) ? OO_PATTERN_LIMIT : 0;
+      const head = patternHeadHtml(payload, items.length, "pat-how-" + type, t, tf, cap);
       if (!items.length) {
         return head + `<p class="muted">${_patEsc(t("Nothing matches these thresholds in your corpus yet."))}</p>`;
       }
@@ -201,7 +224,7 @@
         const open = ids.length
           ? ` <button type="button" class="ghost tiny pat-open" data-pat-item="${i}">${_patEsc(tf("Open {n} articles", {n: _patNum(ids.length)}))}</button>`
           : "";
-        return `<li class="pat-item"><span>${_patEsc(patternItemText(type, it, t, tf))}</span>${open}</li>`;
+        return `<li class="pat-item"><span>${_patEsc(patternItemText(type, it, t, tf, payload))}</span>${open}</li>`;
       }).join("");
       return head + `<ol class="pat-list">${rows}</ol>`;
     }
@@ -226,7 +249,7 @@
           const it = items[Number(b.dataset.patItem)];
           if (!it) return;
           const t = _patT(), tf = _patTf();
-          const label = patternLabel(type, t) + " — " + _patShort(patternItemText(type, it, t, tf), 80);
+          const label = patternLabel(type, t) + " — " + _patShort(patternItemText(type, it, t, tf, payload), 80);
           const dlg = document.getElementById("pattern-list");
           if (dlg && dlg.open && dlg.close) dlg.close();
           if (typeof openAnalysisForIds === "function") openAnalysisForIds(patternItemIds(it), label);
@@ -322,9 +345,10 @@
 
     // -- Insights > Who: people and organisations across the whole corpus, with counts --------
     let _whoCache = null;
+    const OO_WHO_LIMIT = 200;
     function whoListHtml(payload, t, tf) {
       const ents = (payload && Array.isArray(payload.entities)) ? payload.entities : [];
-      const head = patternHeadHtml(payload, ents.length, "pat-how-who", t, tf);
+      const head = patternHeadHtml(payload, ents.length, "pat-how-who", t, tf, OO_WHO_LIMIT);
       if (!ents.length) return head + `<p class="muted">${_patEsc(t("No people or organisations found yet."))}</p>`;
       const rows = ents.map((e, i) => {
         const kind = e["class"] === "person" ? t("person") : (e["class"] === "organization" ? t("organisation") : String(e["class"] || ""));
@@ -353,7 +377,7 @@
       const cls = sel ? sel.value : "";
       host.innerHTML = `<p class="muted">${_patEsc(_patT()("Loading…"))}</p>`;
       try {
-        _whoCache = await api("/api/insights/who?limit=200" + (cls ? "&entity_class=" + encodeURIComponent(cls) : ""));
+        _whoCache = await api("/api/insights/who?limit=" + OO_WHO_LIMIT + (cls ? "&entity_class=" + encodeURIComponent(cls) : ""));
         _whoPaint();
       } catch (e) {
         host.innerHTML = `<p class="err-line">${_patEsc((typeof _failMsg === "function") ? _failMsg("Could not load the list: {error}", e) : _patT()("Could not load the list."))}</p>`;
@@ -361,7 +385,8 @@
     }
 
     // -- Undo controls -------------------------------------------------------------------------
-    // A dismissed Lead comes back: the dismiss toast is the undo for one card.
+    // A dismissed Lead comes back: where the card was, a one-line note with a real Undo button
+    // (keyboard, touch and screen reader reach it, unlike a toast), for this card only.
     async function ooRestoreCard(id) {
       try {
         await api("/api/briefing/restore", {method: "POST", body: JSON.stringify({id: id})});
@@ -369,8 +394,22 @@
         toast(_patT()("The card is back."));
       } catch (e) { toast(_failMsg("Could not bring the card back: {error}", e), "err"); }
     }
-    function ooCardDismissedToast(id) {
-      toast(_patT()("Card dismissed. Click to undo."), "ok", () => { ooRestoreCard(id); });
+    function ooCardDismissedUndo(el, id) {
+      if (!el || !el.replaceChildren) { if (el) el.remove(); return; }
+      const t = _patT();
+      const note = document.createElement("span");
+      note.className = "hint"; note.textContent = t("Card dismissed.");
+      const undo = document.createElement("button");
+      undo.type = "button"; undo.className = "ghost tiny card-undo"; undo.textContent = t("Undo");
+      undo.title = t("Cards you dismissed stay hidden until you bring them back");
+      undo.addEventListener("click", (ev) => { if (!ev.isTrusted) return; undo.disabled = true; ooRestoreCard(id); });
+      el.className = "card-dismissed row";
+      el.removeAttribute("aria-label");
+      el.setAttribute("role", "status");
+      el.style.cssText = "gap:8px;align-items:center;padding:6px 0";
+      el.replaceChildren(note, undo);
+      undo.focus();
+      ooPaintBriefDismissed(_patDismissedN + 1);   // the header's count follows at once, not at the next refresh
     }
     // Every dismissed Lead comes back at once, from the Briefing header.
     function briefDismissedHtml(n, t, tf) {
@@ -379,7 +418,9 @@
       return `<button type="button" class="ghost tiny" id="brief-dismissed-show"
         title="${_patEsc(t("Cards you dismissed stay hidden until you bring them back"))}">${_patEsc(tf("Show {n} dismissed cards", {n: _patNum(k)}))}</button>`;
     }
+    let _patDismissedN = 0;
     function ooPaintBriefDismissed(n) {
+      _patDismissedN = Number(n) || 0;
       const host = document.getElementById("brief-dismissed");
       if (!host) return;
       host.innerHTML = briefDismissedHtml(n, _patT(), _patTf());
@@ -417,7 +458,6 @@
     document.addEventListener("click", (ev) => {
       const b = ev.target && ev.target.closest ? ev.target.closest("[data-pattern-list]") : null;
       if (!b) return;
-      ev.stopPropagation();   // a button on a Lead's back never flips the card
       openPatternList(b.getAttribute("data-pattern-list"));
     });
     // Insights > Who: changing "Show" reads the list again for that kind of name.
