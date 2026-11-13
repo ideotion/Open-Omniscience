@@ -7405,6 +7405,7 @@
   "{n} undated": "{n}টি তারিখহীন",
   "{n} undone": "{n} টি পূর্বাবস্থায়",
   "{n} updated": "{n}টি হালনাগাদ হয়েছে",
+  "{n} values repeated a period already in the same file; the first was kept.": "{n}টি মান একই ফাইলে আগে থেকে থাকা একটি সময়কাল পুনরাবৃত্তি করেছে; প্রথমটি রাখা হয়েছে।",
   "{n} verdicts in the merged file": "একত্রিত ফাইলে {n}টি রায়",
   "{n} verdicts ship with this install": "এই ইনস্টলের সঙ্গে {n}টি রায় আসে",
   "{n} versions in force on {day} contain these words, in {docs} documents.": "{day} তারিখে বলবৎ {n}টি সংস্করণে এই শব্দগুলি আছে, {docs}টি দলিলে।",

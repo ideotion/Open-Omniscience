@@ -314,7 +314,7 @@ def store_new_or_revised(session: Session, figures: Iterable[StatFigure]) -> dic
     by_agency: dict[str, list[StatFigure]] = {}
     for f in figs:
         by_agency.setdefault(f.agency, []).append(f)
-    new = revised = unchanged = gaps = 0
+    new = revised = unchanged = gaps = repeated = 0
     withdrawn: list[str] = []
     rows: list[dict] = []
     for agency, group in by_agency.items():
@@ -322,6 +322,11 @@ def store_new_or_revised(session: Session, figures: Iterable[StatFigure]) -> dic
         seen: set[_Key] = set()
         for f in group:
             key = (f.series_id, f.ref_area, f.time_period)
+            if key in seen:
+                # The same period twice in ONE file: the first is kept, the repeat is counted.
+                # Storing both would break the vintage key and roll the whole fetch back.
+                repeated += 1
+                continue
             seen.add(key)
             if f.value is None:
                 gaps += 1
@@ -350,6 +355,7 @@ def store_new_or_revised(session: Session, figures: Iterable[StatFigure]) -> dic
         "revised": revised,
         "unchanged": unchanged,
         "gaps": gaps,
+        "repeated": repeated,
         "withdrawn": len(withdrawn),
         "withdrawn_sample": withdrawn[:SAMPLE_KEPT],
     }

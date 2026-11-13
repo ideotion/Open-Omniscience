@@ -118,6 +118,19 @@ def test_a_period_the_publisher_stopped_serving_is_counted_never_deleted(db):
     assert _rows(db) == 6
 
 
+def test_a_period_repeated_inside_one_file_is_counted_and_never_breaks_the_fetch(db):
+    twice = ONI_V1 + "JFM  1950 25.17 -1.34\n"
+    record = climate.fetch_and_store(db, "oni", None, fetchers=_oni_fetchers(twice, "2026-11-01T00:00:00+00:00"))
+    assert _rows(db) == 6  # the first copy kept, the repeat not stored
+    assert record["tally"]["repeated"] == 2  # its anomaly and its total
+
+
+@pytest.mark.parametrize("cell", ["nan", "inf", "-inf", "1e999"])
+def test_a_non_finite_oni_cell_is_refused_never_stored(cell):
+    parsed = parse_oni("SEAS YR   TOTAL ANOM\nDJF  1950 24.72 " + cell + "\n", extracted_at="2026-11-01T00:00:00+00:00")
+    assert not parsed.figures
+
+
 def test_a_gap_stays_a_gap_on_the_chart(db):
     climate.fetch_and_store(db, "oni", None, fetchers=_oni_fetchers(ONI_V1, "2026-11-01T00:00:00+00:00"))
     shown = climate.read_series(db, "oni", "oni.anom", "nino34")
@@ -255,6 +268,8 @@ def test_the_reads_work_in_airplane_mode_from_local_storage(client, maker):
         assert oni_unit["stored"]["stored_rows"] == 6
         assert oni_unit["last_fetch"]["fetched_at"] == "2026-11-01T00:00:00+00:00"
         assert oni_unit["licence"] and oni_unit["source_page"].startswith("https://")
+        # The first station fetch's consent popup names its host before any station is stored.
+        assert d["hosts"]["ghcnd"] == climate.DATASETS["ghcnd"].host and set(d["hosts"]) == set(climate.DATASETS)
         r = client.get("/api/climate/series", params={"dataset": "oni", "series_id": "oni.anom", "area": "nino34"})
         assert r.status_code == 200 and r.json()["n"] == 2
     finally:

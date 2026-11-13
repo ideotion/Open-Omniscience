@@ -7405,6 +7405,7 @@
   "{n} undated": "日付なし {n}",
   "{n} undone": "{n} 件取り消し済み",
   "{n} updated": "{n} 件を更新",
+  "{n} values repeated a period already in the same file; the first was kept.": "{n} 件の値が同じファイル内の既出の期間を繰り返していました。最初の値を残しました。",
   "{n} verdicts in the merged file": "統合ファイル内の判定 {n} 件",
   "{n} verdicts ship with this install": "このインストールには判定が {n} 件同梱されています",
   "{n} versions in force on {day} contain these words, in {docs} documents.": "{day} に効力を有していた版のうち {n} 件がこれらの語を含みます（{docs} 件の文書）。",

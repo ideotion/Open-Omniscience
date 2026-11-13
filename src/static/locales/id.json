@@ -7405,6 +7405,7 @@
   "{n} undated": "{n} tanpa tanggal",
   "{n} undone": "{n} dibatalkan",
   "{n} updated": "{n} diperbarui",
+  "{n} values repeated a period already in the same file; the first was kept.": "{n} nilai mengulang periode yang sudah ada di file yang sama; yang pertama dipertahankan.",
   "{n} verdicts in the merged file": "{n} vonis dalam berkas gabungan",
   "{n} verdicts ship with this install": "{n} vonis dikirim bersama instalasi ini",
   "{n} versions in force on {day} contain these words, in {docs} documents.": "{n} versi yang berlaku pada {day} memuat kata-kata ini, dalam {docs} dokumen.",

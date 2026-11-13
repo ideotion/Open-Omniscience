@@ -7405,6 +7405,7 @@
   "{n} undated": "{n} sin fecha",
   "{n} undone": "{n} deshechas",
   "{n} updated": "{n} actualizados",
+  "{n} values repeated a period already in the same file; the first was kept.": "{n} valores repetían un periodo ya presente en el mismo archivo; se conservó el primero.",
   "{n} verdicts in the merged file": "{n} veredictos en el archivo fusionado",
   "{n} verdicts ship with this install": "{n} veredictos vienen con esta instalación",
   "{n} versions in force on {day} contain these words, in {docs} documents.": "{n} versiones vigentes el {day} contienen estas palabras, en {docs} documentos.",

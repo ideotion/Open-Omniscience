@@ -21,6 +21,8 @@
     let _climateSubtabs = null;
     let _climateView = "gistemp";
     let _climateUnits = null;
+    let _climateHosts = {};
+    let _climateDrawGen = 0;
     const _climatePick = { gistemp: "GLB", nsidc: "N", owid: "co2", ghcnd: "" };
     const _climateOwid = { area: "World", column: "" };
     const _CLIMATE_IDS = ["gistemp", "nsidc", "oni", "usgs", "owid", "ghcnd"];
@@ -173,6 +175,7 @@
       lines.push(tf("Last fetch: {new} new, {revised} revised, {unchanged} unchanged values; {gaps} published gaps.",
         {new: n(tally.new), revised: n(tally.revised), unchanged: n(tally.unchanged), gaps: n(tally.gaps)}));
       if (tally.withdrawn) lines.push(tf("{n} stored periods are no longer in the publisher's file; they are kept, not deleted.", {n: n(tally.withdrawn)}));
+      if (tally.repeated) lines.push(tf("{n} values repeated a period already in the same file; the first was kept.", {n: n(tally.repeated)}));
       if (d.refused_total) lines.push(tf("{n} lines refused by the parser as not matching the documented layout.", {n: n(d.refused_total)}));
       if (d.coverage_gap_days) lines.push(tf("{n} days with part of the pole not observed.", {n: n(d.coverage_gap_days)}));
       if (d.rows_with_unknown_missing_area) lines.push(tf("{n} days whose observed coverage is unknown.", {n: n(d.rows_with_unknown_missing_area)}));
@@ -220,6 +223,7 @@
       try {
         const d = await api("/api/climate/datasets");
         _climateUnits = d.units || [];
+        _climateHosts = d.hosts || {};
         renderClimate();
       } catch (e) {
         const body = $("climate-body");
@@ -296,9 +300,12 @@
       const t = _climateT(), tf = _climateTf();
       const host = $("climate-charts");
       if (!host) return;
+      // A newer draw (another subtab or parameter) makes this one stale: it stops after each await.
+      const gen = ++_climateDrawGen;
       let charts = unit.charts || [], area = unit.area;
       if (unit.dataset === "owid") {
         const pick = await _climateOwidPickers(unit);
+        if (gen !== _climateDrawGen) return;
         charts = pick ? [pick] : [];
         area = _climateOwid.area;
       }
@@ -308,6 +315,7 @@
         const loaded = await Promise.all(group.map((s) => api("/api/climate/series?" + new URLSearchParams({
           dataset: unit.dataset, series_id: s.series_id, area: area || "", param: unit.param || "",
         }).toString()).catch(() => null)));
+        if (gen !== _climateDrawGen) return;
         const withData = loaded.map((d, k) => ({ d, s: group[k] })).filter((x) => x.d && x.d.points && x.d.points.length);
         const el = $("climate-chart-" + i), note = $("climate-note-" + i);
         if (!el) continue;
@@ -350,7 +358,7 @@
 
     function _climateHost(id) {
       const u = (_climateUnits || []).find((x) => x.dataset === id);
-      return u ? u.host : "";
+      return u ? u.host : (_climateHosts[id] || "");
     }
 
     async function climateFetch(id, param) {

@@ -7405,6 +7405,7 @@
   "{n} undated": "без даты: {n}",
   "{n} undone": "{n} отменено",
   "{n} updated": "{n} обновлено",
+  "{n} values repeated a period already in the same file; the first was kept.": "{n} значений повторяли период, уже имеющийся в том же файле; сохранено первое.",
   "{n} verdicts in the merged file": "{n} вердиктов в объединённом файле",
   "{n} verdicts ship with this install": "{n} вердиктов поставляются с этой установкой",
   "{n} versions in force on {day} contain these words, in {docs} documents.": "Версий, действовавших на {day} и содержащих эти слова: {n}, в документах: {docs}.",

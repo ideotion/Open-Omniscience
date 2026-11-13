@@ -7405,6 +7405,7 @@
   "{n} undated": "{n} बिना तारीख के",
   "{n} undone": "{n} पूर्ववत",
   "{n} updated": "{n} अद्यतन किए गए",
+  "{n} values repeated a period already in the same file; the first was kept.": "{n} मानों ने उसी फ़ाइल में पहले से मौजूद अवधि दोहराई; पहला मान रखा गया।",
   "{n} verdicts in the merged file": "मिली-जुली फ़ाइल में {n} निर्णय",
   "{n} verdicts ship with this install": "इस इंस्टॉल के साथ {n} निर्णय आते हैं",
   "{n} versions in force on {day} contain these words, in {docs} documents.": "{day} को लागू {n} संस्करणों में ये शब्द हैं, {docs} दस्तावेज़ों में।",

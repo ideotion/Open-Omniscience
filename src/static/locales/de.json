@@ -7405,6 +7405,7 @@
   "{n} undated": "{n} undatiert",
   "{n} undone": "{n} rückgängig gemacht",
   "{n} updated": "{n} aktualisiert",
+  "{n} values repeated a period already in the same file; the first was kept.": "{n} Werte wiederholten einen Zeitraum, der in derselben Datei bereits vorkam; der erste wurde behalten.",
   "{n} verdicts in the merged file": "{n} Urteile in der zusammengeführten Datei",
   "{n} verdicts ship with this install": "{n} Urteile werden mit dieser Installation ausgeliefert",
   "{n} versions in force on {day} contain these words, in {docs} documents.": "{n} am {day} geltende Versionen enthalten diese Wörter, in {docs} Dokumenten.",

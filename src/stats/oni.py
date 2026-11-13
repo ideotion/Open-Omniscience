@@ -57,6 +57,7 @@ FOUR HONESTY PROPERTIES, each a refusal rather than a caveat:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from src.stats.sdmx import StatFigure
@@ -162,9 +163,14 @@ def _numeric(raw: str) -> tuple[float | None, bool]:
     if text in _MISSING_SENTINELS:
         return None, True
     try:
-        return float(text), True
+        value = float(text)
     except ValueError:
         return None, False
+    # "nan", "inf" and an overflow parse as floats but are no measurement: a refusal, as in
+    # the other five climate parsers (an inf cannot be served as JSON, a nan reads as a gap).
+    if not math.isfinite(value):
+        return None, False
+    return value, True
 
 
 def parse_oni(text: str, *, extracted_at: str) -> OniParse:

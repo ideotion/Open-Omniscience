@@ -7405,6 +7405,7 @@
   "{n} undated": "{n} بلا تاريخ",
   "{n} undone": "تمّ التراجع عن {n}",
   "{n} updated": "حُدِّث {n}",
+  "{n} values repeated a period already in the same file; the first was kept.": "{n} قيمة كرّرت فترة موجودة أصلًا في الملف نفسه؛ احتُفظ بالأولى.",
   "{n} verdicts in the merged file": "‏{n} حكمًا في الملف المدمج",
   "{n} verdicts ship with this install": "‏{n} حكمًا تُشحن مع هذه النسخة",
   "{n} versions in force on {day} contain these words, in {docs} documents.": "{n} إصداراً نافذاً في {day} يحتوي على هذه الكلمات، في {docs} وثيقة.",

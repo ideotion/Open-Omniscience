@@ -7405,6 +7405,7 @@
   "{n} undated": "{n} undated",
   "{n} undone": "{n} undone",
   "{n} updated": "{n} updated",
+  "{n} values repeated a period already in the same file; the first was kept.": "{n} values repeated a period already in the same file; the first was kept.",
   "{n} verdicts in the merged file": "{n} verdicts in the merged file",
   "{n} verdicts ship with this install": "{n} verdicts ship with this install",
   "{n} versions in force on {day} contain these words, in {docs} documents.": "{n} versions in force on {day} contain these words, in {docs} documents.",

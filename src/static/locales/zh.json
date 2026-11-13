@@ -7405,6 +7405,7 @@
   "{n} undated": "{n} 篇无日期",
   "{n} undone": "{n} 条已撤销",
   "{n} updated": "更新 {n} 条",
+  "{n} values repeated a period already in the same file; the first was kept.": "{n} 个值重复了同一文件中已有的时期；保留了第一个。",
   "{n} verdicts in the merged file": "合并文件中有 {n} 条判定",
   "{n} verdicts ship with this install": "本安装随附 {n} 条判定",
   "{n} versions in force on {day} contain these words, in {docs} documents.": "在 {day} 有效的版本中，有 {n} 个包含这些词，分布于 {docs} 份文件。",

@@ -83,6 +83,9 @@ def climate_datasets() -> dict:
                 units.append(unit_status(db, ds.id, param))
     return {
         "units": units,
+        # Every dataset's publisher host, also for a dataset with nothing stored yet: the consent
+        # popup names it on the very first fetch (a GHCN station has no unit until one is stored).
+        "hosts": {ds.id: ds.host for ds in DATASETS.values()},
         "method": "Read from this install's own database; nothing is requested from the network.",
     }
 
