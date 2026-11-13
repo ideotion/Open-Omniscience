@@ -18,14 +18,17 @@ only guarantees how those bytes arrive:
 * a new file is written to a private file first (``O_EXCL``, 0600, flushed), then linked into place
   with ``os.link``, so no reader sees it half written and two creators end with ONE file;
 * a file is replaced in place only by ``os.replace`` of a finished private copy, only after the
-  caller's own check passed on the copy, and only if the file is still exactly the one that was
+  caller's own check passed on the sealed bytes (outside the lock: a key derivation) and the copy
+  read back byte for byte as those bytes, and only if the file is still exactly the one that was
   read (device, inode, size, modification time).
 * the key file's own name changes (the link of a creation, a replace and the alias removal after
   it, the restore taking back a key it placed) are flushed to their folder, so a power cut cannot
   bring back the NAME of what was replaced, and are made under :data:`KEY_FILES_LOCK`, which the
   erase holds too; the bytes a replace frees are overwritten where that can be done (not a promise
-  on an SSD or a copy-on-write filesystem). Not flushed and not under the lock: the creation and
-  removal of the empty ``keys/.pending`` folder, and the restore's creation of ``keys/`` itself.
+  on an SSD or a copy-on-write filesystem). The creation and removal of the empty
+  ``keys/.pending`` folder are under the lock too (a removal outside it could break another caller's
+  flush of it); the folder's own creation and removal are not flushed (an empty ``.pending`` coming back
+  after a power cut holds no name). Not under the lock: the restore's creation of ``keys/`` itself.
 
 Nothing here reads or logs a passphrase or key bytes.
 """
