@@ -292,7 +292,11 @@ def replace_in_place(
         # A link is refused before the copy is paid for (``make`` derives a key from the passphrase), and
         # again below, since the name can change while the copy is made.
         _refuse_a_linked_name(path, os.lstat(path))
-        sealed = make()  # the slow part (a key derivation), and the only part outside the lock
+        sealed = make()  # a key derivation: slow, so outside the lock
+        # The check opens the sealed bytes, a second key derivation, so it runs here too, on the bytes ``make`` returned. Under the
+        # lock below, the private copy is only compared with them, byte for byte: an erase never waits on a key derivation, only on
+        # writes and flushes (the hardening lane's review, row 7).
+        check(sealed)
         # From the private copy to the folder flush, ONE step for every key-file change in this process, the
         # erase's among them (KEY_FILES_LOCK). An erase that ran while ``make`` did has removed the file, so the
         # ``lstat`` below fails and nothing is written at all: not the replacement, and not a private copy of the
@@ -306,7 +310,8 @@ def replace_in_place(
                 raise ReplaceRefused("the key file changed while the replacement was made")
             _refuse_a_linked_name(path, old)
             tmp = write_private(path, "rewrap", sealed)
-            check(tmp.read_bytes())
+            if tmp.read_bytes() != sealed:
+                raise OSError("the private copy of the wrapped key does not read back as written")
             replaced = _open_replaced(path, old)
             try:
                 os.replace(tmp, path)
@@ -338,7 +343,10 @@ def replace_in_place(
                 tmp.unlink(missing_ok=True)
         return False
     finally:
-        drop_pending(path)
+        # Under the lock (the review's row 6): outside it, this could remove ``keys/.pending`` between another caller's rename out of
+        # it and that caller's flush of it, so the flush failed and the replaced plaintext key's bytes were never overwritten.
+        with KEY_FILES_LOCK:
+            drop_pending(path)
 
 
 def create_new(path: Path, data: bytes) -> None:
@@ -373,6 +381,9 @@ def create_new(path: Path, data: bytes) -> None:
         finally:
             with contextlib.suppress(OSError):
                 tmp.unlink(missing_ok=True)
+            # The private name was a second name for the key's bytes: flushed away, so a power cut cannot bring that alias back
+            # (the review's row 8). Best effort, like every flush here; the next wrap's alias sweep is the net beneath it.
+            flush_key_folder(path.parent / PENDING, path.name)
             drop_pending(path)
 
 
