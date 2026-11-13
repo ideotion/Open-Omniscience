@@ -52,7 +52,7 @@ on:
 
 jobs:
   # Lightweight weekly job (RM-10): dependency + SAST audit only. Runs ONLY on
-  # the schedule; the push/PR lanes get the same gates inside the test job.
+  # the schedule; the push/PR lanes get the same gates in the `static` job (R668).
   scheduled-audit:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
@@ -580,7 +580,7 @@ jobs:
           python -m pip install pip-audit==2.10.1  # pinned (OO-D15-004): an unpinned audit tool can redden PRs through no code change, exactly like bandit/mypy
           pip-audit --skip-editable
 
-  # `test-all` IS THE REQUIRED CHECK `test`: green only if all three legs above are. `if: always()` because a job that needs a failed job is SKIPPED otherwise, and a
+  # `test-all` IS THE REQUIRED CHECK `test`: green only if all three legs above and the `static` job are (R668). `if: always()` because a job that needs a failed job is SKIPPED otherwise, and a
   # skipped required check reads as passing; `needs.test.result` is `success` only when every leg of the matrix succeeded (a cancelled or skipped leg is not
   # `success`), so a leg that never started fails this job instead of vanishing from it. It installs nothing.
   test-all:

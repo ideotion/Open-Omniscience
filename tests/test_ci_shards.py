@@ -547,7 +547,7 @@ _PLAN = 'python scripts/ci_shard.py plan --shard ${{ matrix.shard }}/%d --out "$
 #: The junit report each leg's pytest step writes (tests/test_ci_pytest_flags_and_preflight.py pins that step) and the artifact each leg uploads it as (R433).
 _REPORT = "${{ runner.temp }}/junit.xml"
 _ARTIFACT = "junit-%s-shard-${{ matrix.shard }}"
-#: Steps of ``test`` that every leg runs; any other step of it must say ``matrix.shard == 1``.
+#: Steps of ``test`` that every leg runs; any other step belongs in the ``static`` job (R668).
 _EVERY_LEG = (
     "Set up Python",
     "Install the tesseract",
@@ -567,16 +567,18 @@ _ENV_OF = {"static": "STATIC"}
 _STATIC_GATES = (
     ("Lint — correctness", "ruff check --select=F,B"),
     ("Lint — style non-growth ratchet", "scripts/ruff_ratchet.py --max"),
-    ("Planned-work index — blocked or forbidden paths", "scripts/planned.py --diff"),
+    ("Planned-work index — blocked or forbidden paths", "--strict"),
     ("i18n locale completeness", "i18n_report.py --min 100"),
     ("i18n untranslatable-string ratchet", "--max-untranslatable 0"),
-    ("i18n unkeyed t() call sites", "i18n_report.py"),
+    ("i18n unkeyed t() call sites", "--max-unkeyed-t-calls 0"),
     ("i18n unkeyed tf() frames", "--max-unkeyed-tf-frames 0"),
     ("Migration drift", "alembic check"),
     ("Type check (mypy, BLOCKING)", "python -m mypy src/"),
     ("SAST (bandit", "bandit -r src/ -ll"),
     ("Dependency audit (pip-audit)", "pip-audit"),
 )
+#: The one gate that runs on a condition: the blocked-paths index compares a PR with its base, which a push has none of (as in leg 1 before R668).
+_STATIC_GATE_IF = {"Planned-work index — blocked or forbidden paths": "github.event_name == 'pull_request'"}
 _STATIC_INSTALL = 'python -m pip install -e ".[analysis,dev,segmentation,pdf,ocr,geo]"'
 
 
@@ -603,8 +605,13 @@ def _static_problems(jobs: dict) -> list[str]:
             found.append(f"static: the step `{prefix}...` must run `{piece}`, it runs {step.get('run')!r}")
         if step.get("continue-on-error"):
             found.append(f"static: the step `{prefix}...` must block, it says continue-on-error")
-        if "matrix" in str(step.get("if") or ""):
-            found.append(f"static: the step `{prefix}...` is conditional on a matrix this job does not have")
+        want_if = _STATIC_GATE_IF.get(prefix)
+        if step.get("if") != want_if:
+            found.append(f"static: the step `{prefix}...` must say {'no `if`' if want_if is None else f'exactly `if: {want_if}`'}, it says {step.get('if')!r}")
+        # the gate's own command line (the index step's `git fetch ... || true` before it is a best-effort fetch, not the gate)
+        gate_lines = [line for line in str(step.get("run") or "").splitlines() if piece in line]
+        if any(re.search(r"\|\|\s*(true|:)(\s|$)|\|\|\s*exit\s+0", line) for line in gate_lines):
+            found.append(f"static: the step `{prefix}...` swallows its own failure (`|| true`): a gate must fail the job")
     return found
 
 
@@ -794,7 +801,12 @@ _MUTANTS = {
     "mypy turns advisory": (lambda j: _step(j, "static", "Type check").__setitem__("continue-on-error", True), "must block, it says continue-on-error"),
     "bandit stops scanning src": (lambda j: _step(j, "static", "SAST").__setitem__("run", "true"), "must run `bandit -r src/ -ll`"),
     "the blocking planned-work index is dropped": (lambda j: j["static"]["steps"].remove(_step(j, "static", "Planned-work index — blocked")), "found 0"),
-    "a static step keeps the leg condition": (lambda j: _step(j, "static", "Migration drift").__setitem__("if", "matrix.shard == 1"), "matrix this job does not have"),
+    "a static step keeps the leg condition": (lambda j: _step(j, "static", "Migration drift").__setitem__("if", "matrix.shard == 1"), "must say no `if`"),
+    "mypy never runs": (lambda j: _step(j, "static", "Type check").__setitem__("if", "false"), "must say no `if`"),
+    "the blocking index runs on pushes only": (lambda j: _step(j, "static", "Planned-work index — blocked").__setitem__("if", "github.event_name == 'push'"), "must say exactly `if:"),
+    "the blocking index loses --strict": (lambda j: _step(j, "static", "Planned-work index — blocked").__setitem__("run", 'python scripts/planned.py --diff "origin/main"'), "must run `--strict`"),
+    "mypy swallows its failure": (lambda j: _step(j, "static", "Type check").__setitem__("run", "python -m mypy src/ || true"), "swallows its own failure"),
+    "the t() gate loses its ceiling": (lambda j: _step(j, "static", "i18n unkeyed t()").__setitem__("run", "python scripts/i18n_report.py"), "must run `--max-unkeyed-t-calls 0`"),
     "the required check stops needing the static job": (lambda j: j["test-all"].__setitem__("needs", ["test", "changes", "docs-checks"]), "test-all: must need exactly"),
     "the required check stops reading the static result": (lambda j: j["test-all"]["steps"][0]["env"].pop("STATIC"), "fails unless it is `success`"),
     "the required check ignores a red static job": (
