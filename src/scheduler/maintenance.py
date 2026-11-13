@@ -43,14 +43,21 @@ _backlog_clear_at = 0.0
 #: after the page's last batch, so an open Insights page owns the backlog and the slice takes it back once the page is gone.
 PAGE_DRAIN_QUIET_S = 30.0
 _page_drain_at = 0.0
+_page_drain_by_job = False
 
 
-def note_page_drain() -> None:
-    """The Insights page is about to index a batch of the backlog (called by its endpoint)."""
+#: Writer jobs that never touch the rows the backlog drains (the keyword index), so they do not hold it back.
+_NOT_BACKLOG_RIVALS = frozenset({"llm-bulk-queue"})
+
+
+def note_page_drain(*, by_job: bool = False) -> None:
+    """The Insights page is about to index a batch of the backlog (called by its endpoint), or the server-side backlog job is
+    (``by_job``): either way an idle slice under way yields to it."""
     import time
 
-    global _page_drain_at
+    global _page_drain_at, _page_drain_by_job
     _page_drain_at = time.monotonic()
+    _page_drain_by_job = by_job
 
 
 def _page_draining() -> bool:
@@ -74,7 +81,7 @@ def _backlog_busy_reason(exclude_kind: str | None = None) -> str | None:
     through the offline timer's yield checks, so the slice makes the ones that matter to it here: a re-index drain (an import's
     resume picks the same least-recently-attempted rows, and both writers would race for every one), any registered corpus lease,
     and a running writer job, and the Insights page's own drain. Unknown state is treated as busy."""
-    if _page_draining():
+    if _page_draining() and not (exclude_kind and _page_drain_by_job):  # the backlog job's own mark is not its rival
         return "page_drain_running"
     try:
         from src.analytics.reindex_job import get_reindex_manager
@@ -94,8 +101,14 @@ def _backlog_busy_reason(exclude_kind: str | None = None) -> str | None:
     try:
         from src.jobs.background import all_job_statuses
 
-        # ``exclude_kind``: the Insights backlog job (src/jobs/insights_backlog.py) asks this too, and is not its own rival.
-        if any(st.get("running") and st.get("is_writer") and (exclude_kind is None or st.get("kind") != exclude_kind) for st in all_job_statuses()):
+        # ``exclude_kind``: the Insights backlog job (src/jobs/insights_backlog.py) asks this too, and is not its own rival. The bulk
+        # summary/translation queue writes one ArticleAnalysis row per article, never the keyword index, and can run for hours:
+        # holding the backlog back for it would leave every article collected meanwhile unindexed.
+        if any(
+            st.get("running") and st.get("is_writer") and st.get("kind") not in _NOT_BACKLOG_RIVALS
+            and (exclude_kind is None or st.get("kind") != exclude_kind)
+            for st in all_job_statuses()
+        ):
             return "writer_job_running"
     except Exception:  # noqa: BLE001
         return "jobs_unreadable"

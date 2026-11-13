@@ -71,6 +71,7 @@ def _drain(ctx: JobContext) -> dict:
     from src.analytics.extract import get_extractor
     from src.analytics.store import backfill_corpus
     from src.database.session import SessionLocal
+    from src.scheduler.maintenance import note_page_drain
 
     extractor = get_extractor("baseline")
     batches = attempted = newly = failed = 0
@@ -82,6 +83,8 @@ def _drain(ctx: JobContext) -> dict:
         if busy:
             ended = busy
             break
+        # The signal the page's own drain gave: an idle-maintenance slice already under way yields at its next batch.
+        note_page_drain(by_job=True)
         with SessionLocal() as session:
             r = backfill_corpus(session, extractor=extractor, limit=BATCH)
         batches += 1
@@ -109,7 +112,8 @@ def _drain(ctx: JobContext) -> dict:
             if _stuck["last"] == left:
                 _stuck["refused"] = True
             _stuck["last"] = left
-        elif ended == "drained":
+        else:
+            # Drained, cancelled or stood aside: only two stuck runs IN A ROW stop the restarts.
             _stuck["last"] = None
     return {
         "ended": ended,

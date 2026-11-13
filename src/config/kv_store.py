@@ -69,6 +69,9 @@ _cache: dict[tuple[str, str], str | None] = {}
 #: not moved since: a reader that missed the cache just before a restore replaced the file would otherwise store the old file's
 #: value AFTER the invalidation and serve it for the life of the process.
 _epoch = 0
+#: Moves only on a WHOLE invalidation (``kv_invalidate()``: a file swap by a panic wipe, a restore, a merge or a migration), never on
+#: one key's, so a holder of state read from the store (the bulk queue) can tell "the file was swapped" from "a setting was saved".
+_swap_epoch = 0
 #: Moves, for ONE key, at every settings write of that key (save or delete). A reader notes it BEFORE it reads the file and fills the
 #: cache only if it has not moved: a reader that read the file before a writer's commit could otherwise store its older value after the
 #: writer's own fill and serve it for the life of the process. Never cleared (a reset could meet a noted number again); one int per
@@ -695,16 +698,22 @@ def kv_invalidate(key: str | None = None) -> None:
 
     ``None`` clears everything; a key clears just that key's entries across data dirs.
     """
-    global _epoch
+    global _epoch, _swap_epoch
     with _lock:
         _epoch += 1
         if key is None:
+            _swap_epoch += 1
             _cache.clear()
             _failed.clear()
             _seen.clear()
         else:
             _forget_key(_failed, key)
             _forget_key(_cache, key)
+
+
+def kv_swap_epoch() -> int:
+    """How many whole invalidations (file swaps) this process has seen; see ``_swap_epoch``."""
+    return _swap_epoch
 
 
 def _forget_key(table: dict, key: str) -> None:

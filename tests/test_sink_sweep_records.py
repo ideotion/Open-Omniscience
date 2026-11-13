@@ -966,6 +966,10 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # kept to be re-raised on the caller's side: not written
         ('BackgroundJob._run', 'failure = exc'): 1,
     },
+    'src/jobs/llm_bulk_queue.py': {
+        # the status code chooses between a fixed phrase and the scrubbed detail (http_detail): the selection's words are never kept
+        ('LlmBulkQueue._run', 'refusal = _start_refusal(exc.status_code, http_detail(exc, limit=200))'): 1,
+    },
     'src/law/corpus.py': {
         # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
         ('upsert_law_corpus_article', 'if not is_integrity_error(exc):'): 1,

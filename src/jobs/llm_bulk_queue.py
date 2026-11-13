@@ -23,8 +23,11 @@ WHAT KEEPS IT HONEST.
     that matches more later does not grow it), and a resumed run skips every article that already got this run's result
     (``resume_since``), including the one committed just before the stop could be recorded, so nothing is stored twice.
   * Stops: the task manager's Stop on the running row (or the page's Cancel) ends THAT run after the articles in flight and the
-    queue goes on; stopping the job itself (the app shutting down) leaves the run paused, never lost. A queued run's Cancel
-    removes it before it starts.
+    queue goes on; stopping the job itself (the shutdown's stop of registered jobs, R670) leaves the run paused, never lost. A
+    process that dies without that stop relies on the last save instead: a run stored as running comes back paused, and one
+    whose Cancel was stored comes back cancelled. A queued run's Cancel removes it before it starts.
+  * A swapped corpus file (a panic wipe, a restore, a merge) takes the queue with it: what was read from the old file, typed
+    searches included, is forgotten, the run in flight stops, and nothing of it is written into the file that is live.
   * It stands aside, holding no transaction, while a restore owns the machine (the scheduler's exclusive hold) or the storage
     guard is engaged, and says so on the run's row.
   * Counts only: done / total / stored / skipped / failed are what the run reported, never an estimate. No network: the model is
@@ -98,6 +101,25 @@ def _clean_body(body: dict) -> dict:
     return out
 
 
+_SEARCH_REFUSED = "The search could not be read; check its wording and queue it again."
+_NOTHING_MATCHED = "No matching articles with content."
+
+
+def _start_refusal(status: int, detail: str) -> str:
+    """What a run that could not start keeps as its error: never the selection's own words."""
+    if status >= 500:
+        return detail
+    return _NOTHING_MATCHED if detail == _NOTHING_MATCHED else _SEARCH_REFUSED
+
+
+def _store_epoch() -> int:
+    """The kv store's swap epoch: ``kv_invalidate()`` moves it on every file swap (panic wipe, restore, merge, migration), and a
+    single setting's invalidation does not."""
+    from src.config.kv_store import kv_swap_epoch
+
+    return kv_swap_epoch()
+
+
 class QueueUnavailable(RuntimeError):
     """The encrypted store cannot be read yet (a locked app): nothing is queued, so nothing can be lost."""
 
@@ -115,14 +137,49 @@ class LlmBulkQueue:
         # True from a kick until the drain finds no queued run (set and cleared under ``_lock``), so a run added while the drain is
         # ending is never left waiting: either the drain still sees it, or the kick starts a new drain once the old one is gone.
         self._draining = False
+        # The store this queue was read from (the kv store's swap epoch: a panic wipe, a restore or a merge swaps the file and bumps
+        # it), and a generation that moves each time the queue forgets a store, so a run started against the old file never writes
+        # into the new one.
+        self._epoch = -1
+        self._gen = 0
+        # Saves are numbered under ``_lock`` and written under ``_write_lock`` in order: an older snapshot never lands after a
+        # newer one (a cancelled run's search must not come back from a periodic save that was taken just before the cancel).
+        self._write_lock = threading.Lock()
+        self._save_seq = 0
+        self._written_seq = 0
+
+    # -- the store this queue belongs to ------------------------------------ #
+    def _forget_store(self) -> None:
+        """The corpus file was swapped (a panic wipe, a restore, a merge): drop everything read from the old one, typed searches
+        included, and stop the run in flight. Called under ``_lock``; the next read loads the queue of the file that is live."""
+        from src.monitoring.tasks import request_cancel
+
+        for entry in self._entries:
+            if entry.get("state") == "running" and entry.get("task") is not None:
+                with contextlib.suppress(Exception):
+                    request_cancel(int(entry["task"]))
+        self._entries = []
+        self._paused = False
+        self._seq = 0
+        self._loaded = False
+        self._gen += 1
+
+    def _stale(self, gen: int | None = None) -> bool:
+        """True when the store was swapped since this queue read it (and forget it), or since generation ``gen``."""
+        with self._lock:
+            if self._loaded and self._epoch != _store_epoch():
+                self._forget_store()
+            return gen is not None and gen != self._gen
 
     # -- persistence -------------------------------------------------------- #
     def _load(self) -> bool:
         """Read the stored queue once the store can be read. A run that was going when the app stopped comes back paused, and
         so does the queue behind it: nothing starts by itself after a restart."""
         with self._lock:
+            self._stale()
             if self._loaded:
                 return True
+            epoch = _store_epoch()
             try:
                 from src.config.kv_store import kv_get_json_checked
 
@@ -131,9 +188,19 @@ class LlmBulkQueue:
                 _LOG.debug("bulk queue: the store is not readable yet (%s)", type(exc).__name__)
                 return False
             entries = [entry for entry in (data.get("entries") or []) if isinstance(entry, dict) and entry.get("op") in _OPS]
+            stale_ids: list[int] = []
             for entry in entries:
                 if entry.get("state") not in _PENDING:
                     _forget_selection(entry)
+                if entry.get("state") == "running" and entry.get("stopping"):
+                    # Cancel was pressed and stored, and the process died before the run said it had stopped: it stays cancelled.
+                    entry["state"] = "cancelled"
+                    entry["ended_at"] = entry.get("ended_at") or _now_iso()
+                    entry["stopping"] = False
+                    entry.pop("task", None)
+                    _forget_selection(entry)
+                    stale_ids.append(int(entry.get("id") or 0))
+                    continue
                 if entry.get("state") in ("running", "paused"):
                     entry["state"] = "paused"
                     entry["stopping"] = False
@@ -142,10 +209,15 @@ class LlmBulkQueue:
             self._seq = max([int(data.get("seq") or 0)] + [int(entry.get("id") or 0) for entry in entries])
             self._paused = bool(data.get("paused")) or any(entry.get("state") in _PENDING for entry in entries)
             self._loaded = True
-            return True
+            self._epoch = epoch
+        for entry_id in stale_ids:
+            self._drop_ids(entry_id)
+        return True
 
     def _save(self) -> None:
         """Write the queue back (best effort: a write the store refuses is logged, and the queue in memory goes on)."""
+        if self._stale():
+            return
         with self._lock:
             if not self._loaded:
                 return
@@ -154,12 +226,18 @@ class LlmBulkQueue:
             self._entries = keep
             data = {"seq": self._seq, "paused": self._paused, "entries": [dict(entry) for entry in keep]}
             self._last_save = time.monotonic()
-        try:
-            from src.config.kv_store import kv_set_json
+            self._save_seq += 1
+            seq, epoch = self._save_seq, self._epoch
+        with self._write_lock:
+            if seq < self._written_seq or epoch != _store_epoch():
+                return  # a newer snapshot is already stored, or the file it was read from is gone
+            self._written_seq = seq
+            try:
+                from src.config.kv_store import kv_set_json
 
-            kv_set_json(KV_KEY, data)
-        except Exception as exc:  # noqa: BLE001 - the run goes on; the next save tries again
-            _LOG.warning("bulk queue: the queue could not be stored (%s)", type(exc).__name__)
+                kv_set_json(KV_KEY, data)
+            except Exception as exc:  # noqa: BLE001 - the run goes on; the next save tries again
+                _LOG.warning("bulk queue: the queue could not be stored (%s)", type(exc).__name__)
 
     @staticmethod
     def _save_ids(entry_id: int, ids: list[int]) -> None:
@@ -237,6 +315,8 @@ class LlmBulkQueue:
                 entry["state"] = "cancelled"
                 entry["ended_at"] = _now_iso()
                 _forget_selection(entry)
+                if not any(x.get("state") in _PENDING for x in self._entries):
+                    self._paused = False  # nothing is left waiting: a run added later starts, and no row says "paused"
         if dropped:
             self._drop_ids(entry_id)
         if tok is not None:
@@ -339,7 +419,9 @@ class LlmBulkQueue:
         self._save()
         return entry
 
-    def _finish(self, entry: dict, state: str, reason: str | None = None) -> None:
+    def _finish(self, entry: dict, state: str, reason: str | None = None, *, gen: int | None = None) -> None:
+        if self._stale(gen):
+            return  # the store this run belonged to is gone: nothing of it is written into the one that is live
         with self._lock:
             entry["state"] = state
             entry["stopping"] = False
@@ -359,37 +441,45 @@ class LlmBulkQueue:
         from src.monitoring import tasks as _tasks
 
         tok = entry.get("task")
+        before: dict = {}
+
+        def _halt() -> bool:
+            return ctx.stopping or (tok is not None and _tasks.cancel_requested(int(tok)))
 
         def _say(detail: str) -> None:
-            # A Framed line keeps its keyed frame, so the task manager writes it in the UI language.
-            if tok is not None:
-                _tasks.update(
-                    int(tok), detail=str(detail), detail_i18n=getattr(detail, "i18n", None), detail_vars=getattr(detail, "vars", None)
-                )
+            # A Framed line keeps its keyed frame, so the task manager writes it in the UI language. The run's own line is kept
+            # the first time, so it comes back once the wait is over.
+            if tok is None:
+                return
+            if not before:
+                row = next((t for t in _tasks.snapshot() if t.get("token") == int(tok)), None) or {}
+                before.update(detail=row.get("detail") or "", detail_i18n=row.get("detail_i18n"), detail_vars=row.get("detail_vars"))
+            _tasks.update(
+                int(tok), detail=str(detail), detail_i18n=getattr(detail, "i18n", None), detail_vars=getattr(detail, "vars", None)
+            )
 
         try:
             from src.scheduler.runner import get_scheduler
 
             sched = get_scheduler()
             said = False
-            while not ctx.stopping and sched.holds_exclusive():
+            while not _halt() and sched.holds_exclusive():
                 if not said:
                     _say(Framed(_FRAME_RESTORE_WAIT, _FRAME_RESTORE_WAIT))
                     said = True
                 deadline = time.monotonic() + STAND_ASIDE_POLL_S
-                while not ctx.stopping and time.monotonic() < deadline:
+                while not _halt() and time.monotonic() < deadline:
                     time.sleep(0.25)
         except Exception:  # noqa: BLE001
             pass
         try:
             from src.scheduler.storage_guard import stand_aside_detail, storage_guard
 
-            storage_guard.wait_if_engaged(
-                should_stop=lambda: ctx.stopping or (tok is not None and _tasks.cancel_requested(int(tok))),
-                on_wait=lambda kind: _say(stand_aside_detail(kind)),
-            )
+            storage_guard.wait_if_engaged(should_stop=_halt, on_wait=lambda kind: _say(stand_aside_detail(kind)))
         except Exception as exc:  # noqa: BLE001
             _LOG.warning("bulk queue: the storage guard could not be consulted (%s)", type(exc).__name__)
+        if before and tok is not None:
+            _tasks.update(int(tok), **before)
         return not ctx.stopping
 
     def _run(self, ctx: JobContext, entry: dict) -> None:
@@ -401,6 +491,13 @@ class LlmBulkQueue:
         from src.monitoring import tasks as _tasks
         from src.monitoring.secret_scrub import http_detail
 
+        gen0 = self._gen
+        if not self._stand_aside(ctx, entry):
+            self._finish(entry, "paused", gen=gen0)  # stopped while a restore held the machine: nothing was resolved yet
+            return
+        if entry.get("stopping"):
+            self._finish(entry, "cancelled", gen=gen0)
+            return
         body = dict(entry["body"])
         frozen = self._read_ids(int(entry["id"])) if entry.get("resumed") else None
         if frozen:
@@ -413,16 +510,27 @@ class LlmBulkQueue:
             with SessionLocal() as db:
                 tok, gen, ids = prepare_bulk_run(req, db, get_llm_client_with_name(), resume_since=since)
         except HTTPException as exc:
-            self._finish(entry, "error", http_detail(exc, limit=200))
+            # A refusal of the selection can quote it (an unreadable search's words, an unknown source's name): the finished run
+            # keeps a fixed phrase instead, so nothing of what it was run on outlives it (R669(b)). The model's own refusals
+            # (5xx: not installed, not running) say nothing of the selection and are kept, scrubbed.
+            refusal = _start_refusal(exc.status_code, http_detail(exc, limit=200))
+            self._finish(entry, "error", refusal, gen=gen0)
             return
-        except Exception as exc:  # noqa: BLE001 - a run that cannot start ends as an error with its reason
-            self._finish(entry, "error", http_detail(exc, limit=200))
+        except Exception as exc:  # noqa: BLE001 - a run that cannot start ends as an error; a database error can quote the search
+            self._finish(entry, "error", f"The run could not start ({type(exc).__name__}).", gen=gen0)
+            return
+        if self._stale(gen0):
+            with contextlib.suppress(Exception):
+                gen.close()
             return
         if not frozen:
             self._save_ids(int(entry["id"]), ids)
         with self._lock:
             entry["task"] = tok
-            entry.update(total=len(ids), done=0, stored=0, skipped=0, failed=0)
+            # A resumed run keeps what it stored before the restart; those articles come back as "done before the restart" and
+            # are not counted again as skipped, so the tally is the run's whole one.
+            prior = int(entry.get("stored") or 0) if entry.get("resumed") else 0
+            entry.update(total=len(ids), done=0, stored=prior, skipped=0, failed=0)
             stop_now = bool(entry.get("stopping"))
         if stop_now:
             _tasks.request_cancel(tok)  # Cancel pressed while the run was being prepared
@@ -439,7 +547,9 @@ class LlmBulkQueue:
                     if ev == "item":
                         entry["done"] = int(o.get("i") or entry["done"])
                         status = o.get("status")
-                        if status in ("stored", "skipped", "failed"):
+                        if status == "skipped" and o.get("reason") == "done before the restart":
+                            pass
+                        elif status in ("stored", "skipped", "failed"):
                             entry[status] = int(entry.get(status) or 0) + 1
                     elif ev == "done":
                         if o.get("aborted"):
@@ -452,6 +562,9 @@ class LlmBulkQueue:
                     break
                 if ctx.stopping:
                     outcome = ("paused", None)
+                    break
+                if self._stale(gen0):
+                    outcome = ("cancelled", None)
                     break
                 if _tasks.cancel_requested(tok):
                     outcome = ("cancelled", None)
@@ -468,11 +581,11 @@ class LlmBulkQueue:
                 # The stream ended with no done line of its own (read before the close below forgets the Stop).
                 outcome = ("cancelled", None) if _tasks.cancel_requested(tok) else ("done", None)
         except Exception as exc:  # noqa: BLE001 - a run that failed mid-way: what it stored stays stored
-            outcome = ("error", http_detail(exc, limit=200))
+            outcome = ("error", f"The run stopped on an error ({type(exc).__name__}).")
         finally:
             with contextlib.suppress(Exception):
                 gen.close()  # the runner's own finally: the task row's finish and the model hold's release
-        self._finish(entry, outcome[0] if outcome else "error", outcome[1] if outcome else "the run ended unexpectedly")
+        self._finish(entry, outcome[0] if outcome else "error", outcome[1] if outcome else "the run ended unexpectedly", gen=gen0)
 
 
 def _drain(ctx: JobContext) -> dict:
@@ -485,7 +598,11 @@ def _drain(ctx: JobContext) -> dict:
             entry = q._next()
             if entry is None:
                 break
-            q._run(ctx, entry)
+            try:
+                q._run(ctx, entry)
+            except Exception as exc:
+                q._finish(entry, "error", f"The run stopped on an error ({type(exc).__name__}).")
+                raise
             ran += 1
     except BaseException:
         with q._lock:

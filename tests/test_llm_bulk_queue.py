@@ -136,7 +136,8 @@ def _restart(store) -> lbq.LlmBulkQueue:
 
 
 def test_a_queued_run_runs_and_stores_with_nobody_reading_and_runs_go_one_at_a_time(queue, monkeypatch):
-    fake = _FakeLlm()
+    gate = threading.Semaphore(0)  # holds the first run until the second is added, so "ahead" is not a race
+    fake = _FakeLlm(gate)
     _use(monkeypatch, fake)
     a, b = _seed(3), _seed(2)
     from src.api.main import app
@@ -146,6 +147,8 @@ def test_a_queued_run_runs_and_stores_with_nobody_reading_and_runs_go_one_at_a_t
         r2 = client.post("/api/llm/bulk/queue", json={"op": "summarize", "model": "m", "article_ids": b})
         assert r1.status_code == 200 and r2.status_code == 200, (r1.text, r2.text)
         assert r2.json()["ahead"] == 1
+    for _ in range(5):
+        gate.release()
     # The client is gone: the page never reads, and the server finishes both runs.
     assert lbq._JOB.join(15)
     snap = queue.snapshot()
@@ -230,7 +233,8 @@ def test_a_shutdown_leaves_the_run_paused_and_resume_finishes_it_without_storing
     final = {e["id"]: e for e in q2.snapshot()["entries"]}
     assert final[eid]["state"] == "done" and final[behind]["state"] == "done", final
     assert [_summaries(aid) for aid in ids] == [1, 1, 1, 1], "a resumed run stored an article twice or skipped one"
-    assert final[eid]["skipped"] >= 2, "the articles stored before the restart were not recognised as done"
+    # The articles stored before the restart were recognised as done: the whole run's tally is 4 stored, none counted twice.
+    assert final[eid]["stored"] == 4 and final[eid]["skipped"] == 0, final[eid]
 
 
 def test_a_finished_run_keeps_no_trace_of_the_search_it_ran_on(queue, store, monkeypatch):
@@ -245,8 +249,8 @@ def test_a_finished_run_keeps_no_trace_of_the_search_it_ran_on(queue, store, mon
 
     monkeypatch.setattr("src.api.llm.prepare_bulk_run", _prep)
     _use(monkeypatch, _FakeLlm())
+    assert queue._load()
     queue._paused = True  # hold the drain so the second run can be cancelled while it waits
-    queue._loaded = True
     done_id = queue.enqueue({"op": "summarize", "query": "secret inquiry one"})["entry"]["id"]
     gone_id = queue.enqueue({"op": "translate", "query": "secret inquiry two", "target_language": "French"})["entry"]["id"]
     assert "secret inquiry" in str(rows[lbq.KV_KEY])  # pending: held, in the encrypted store only
@@ -258,6 +262,91 @@ def test_a_finished_run_keeps_no_trace_of_the_search_it_ran_on(queue, store, mon
     assert entries[done_id]["state"] == "done" and entries[gone_id]["state"] == "cancelled"
     assert "secret inquiry" not in str(rows), "a finished or cancelled run left its search in the store"
     assert not [k for k in rows if k.startswith(lbq.IDS_KEY_PREFIX)]
+
+
+def test_a_search_the_index_refuses_leaves_a_fixed_phrase_not_its_words(queue, store, monkeypatch):
+    """R669 (b): the refusal of a malformed search quotes the typed words; the finished run keeps a fixed phrase instead."""
+    from fastapi import HTTPException
+
+    rows, _ = store
+
+    def _prep(req, db, client_info, *, resume_since=None):
+        raise HTTPException(status_code=400, detail="Invalid search query: unexpected token: 'zebrafinch'")
+
+    monkeypatch.setattr("src.api.llm.prepare_bulk_run", _prep)
+    _use(monkeypatch, _FakeLlm())
+    eid = queue.enqueue({"op": "summarize", "query": "zebrafinch AND"})["entry"]["id"]
+    assert lbq._JOB.join(15)
+    entry = {x["id"]: x for x in queue.snapshot()["entries"]}[eid]
+    assert entry["state"] == "error" and entry["error"] == lbq._SEARCH_REFUSED
+    assert "zebrafinch" not in str(rows) and "zebrafinch" not in str(queue.snapshot())
+
+
+def test_a_swapped_corpus_file_takes_the_queue_and_its_searches_with_it(queue, store, monkeypatch):
+    """A panic wipe (or a restore, a merge) swaps the file under the queue: what was read from the old one, typed searches
+    included, is neither served nor written into the new one. Saving one setting is not a swap."""
+    from src.config.kv_store import kv_invalidate
+
+    rows, _ = store
+    _use(monkeypatch, _FakeLlm())
+    assert queue._load()
+    queue._paused = True
+    queue.enqueue({"op": "summarize", "query": "wiped inquiry"})
+    kv_invalidate("some.setting")  # one key: the queue stays
+    assert len(queue.snapshot()["entries"]) == 1
+    rows.clear()  # the new file holds no queue
+    kv_invalidate()  # what panic_wipe, a restore and a merge call
+    assert queue.snapshot()["entries"] == [] and queue.snapshot()["paused"] is False
+    queue._save()
+    assert "wiped inquiry" not in str(rows), "the old corpus's search was written into the new one"
+
+
+def test_a_run_in_flight_when_the_file_is_swapped_stops_and_writes_nothing_of_it(queue, store, monkeypatch):
+    from src.config.kv_store import kv_invalidate
+
+    gate = threading.Semaphore(0)
+    _use(monkeypatch, _FakeLlm(gate))
+    rows, _ = store
+    ids = _seed(5)
+    queue.enqueue({"op": "summarize", "model": "m", "query": "swap inquiry", "article_ids": ids})
+    gate.release()
+    assert _wait(lambda: _summaries(ids[0]) == 1)
+    rows.clear()
+    kv_invalidate()
+    for _ in range(10):
+        gate.release()
+    assert lbq._JOB.join(15)
+    assert sum(_summaries(aid) for aid in ids[2:]) == 0, "the run went on against a swapped file"
+    assert "swap inquiry" not in str(rows) and not rows, rows
+
+
+def test_an_older_snapshot_never_lands_after_a_newer_one(queue, store):
+    """Two saves racing: the one snapshotted first but written last is dropped, so a cancelled run's search cannot come back."""
+    rows, _ = store
+    assert queue._load()
+    queue._paused = True
+    eid = queue.enqueue({"op": "summarize", "query": "racing inquiry"})["entry"]["id"]
+    release = threading.Event()
+    real = queue._write_lock
+
+    class _Gated:
+        def __enter__(self):
+            if threading.current_thread().name == "stale-saver":
+                assert release.wait(10)
+            return real.__enter__()
+
+        def __exit__(self, *exc):
+            return real.__exit__(*exc)
+
+    queue._write_lock = _Gated()
+    stale = threading.Thread(target=queue._save, name="stale-saver")
+    stale.start()  # snapshots while the run still holds its search, then waits before writing
+    assert _wait(lambda: queue._save_seq >= 2, 5)
+    assert queue.cancel(eid)  # the newer snapshot: cancelled, search forgotten, written
+    release.set()
+    stale.join(10)
+    assert rows[lbq.KV_KEY]["entries"][0]["state"] == "cancelled"
+    assert "racing inquiry" not in str(rows), "a stale snapshot brought a cancelled run's search back"
 
 
 def test_the_model_is_loopback_only_so_a_resume_needs_no_network_consent():
@@ -393,3 +482,124 @@ def test_the_backlog_drain_is_a_cancellable_writer_and_the_idle_slice_is_not_its
     )
     assert maintenance._backlog_busy_reason(exclude_kind=ib.KIND) in (None, "corpus_lease_held", "reindex_running")
     assert maintenance._backlog_busy_reason() == "writer_job_running", "the idle slice must stand back while the job drains"
+
+
+def test_a_cancel_stored_before_the_process_died_stays_a_cancel(store):
+    rows, _ = store
+    rows[lbq.KV_KEY] = {"seq": 4, "paused": False, "entries": [
+        {"id": 4, "op": "summarize", "body": {"op": "summarize", "query": "dropped inquiry"}, "state": "running", "stopping": True,
+         "task": 3, "since": "2026-11-13T10:00:00"},
+    ]}
+    rows[f"{lbq.IDS_KEY_PREFIX}4"] = {"ids": [1, 2]}
+    snap = _restart(store).snapshot()
+    assert [(e["id"], e["state"]) for e in snap["entries"]] == [(4, "cancelled")]
+    assert snap["paused"] is False, "a queue with nothing left waiting was restored paused"
+    assert "dropped inquiry" not in str(snap) and f"{lbq.IDS_KEY_PREFIX}4" not in rows
+
+
+def test_cancelling_the_last_waiting_run_lifts_the_restart_pause(store):
+    rows, _ = store
+    rows[lbq.KV_KEY] = {"seq": 2, "paused": True, "entries": [
+        {"id": 2, "op": "summarize", "body": {"op": "summarize", "query": "q"}, "state": "paused", "since": "2026-11-13T10:00:00"},
+    ]}
+    q = _restart(store)
+    assert q.snapshot()["paused"] is True
+    assert q.cancel(2)
+    assert q.snapshot()["paused"] is False
+    assert rows[lbq.KV_KEY]["paused"] is False
+
+
+def test_a_source_the_run_cannot_find_is_not_quoted_in_its_error(queue, store, monkeypatch):
+    from fastapi import HTTPException
+
+    rows, _ = store
+
+    def _prep(req, db, client_info, *, resume_since=None):
+        raise HTTPException(status_code=404, detail="Unknown source: 'Quietpaper Gazette'")
+
+    monkeypatch.setattr("src.api.llm.prepare_bulk_run", _prep)
+    _use(monkeypatch, _FakeLlm())
+    eid = queue.enqueue({"op": "summarize", "source": "Quietpaper Gazette"})["entry"]["id"]
+    assert lbq._JOB.join(15)
+    entry = {x["id"]: x for x in queue.snapshot()["entries"]}[eid]
+    assert entry["error"] == lbq._SEARCH_REFUSED and "Quietpaper" not in str(rows)
+
+
+def test_a_cancel_is_honoured_while_a_restore_holds_the_machine(queue, monkeypatch):
+    """A Stop pressed during the restore hold ends the run then, not when the restore is over."""
+    hold = threading.Event()
+    hold.set()
+
+    class _Sched:
+        def holds_exclusive(self):
+            return hold.is_set()
+
+    gate = threading.Semaphore(0)
+    _use(monkeypatch, _FakeLlm(gate))
+    ids = _seed(4)
+    eid = queue.enqueue({"op": "summarize", "model": "m", "article_ids": ids})["entry"]["id"]
+    gate.release()
+    assert _wait(lambda: _summaries(ids[0]) == 1)
+    monkeypatch.setattr("src.scheduler.runner.get_scheduler", lambda: _Sched())
+    gate.release()
+    assert _wait(lambda: _summaries(ids[1]) == 1)
+    assert queue.cancel(eid)
+    try:
+        assert lbq._JOB.join(10), "the Stop waited for the restore to end"
+    finally:
+        hold.clear()
+        for _ in range(5):
+            gate.release()
+    assert {e["id"]: e for e in queue.snapshot()["entries"]}[eid]["state"] == "cancelled"
+
+
+def test_the_bulk_queue_does_not_hold_the_insights_backlog_back(monkeypatch):
+    """The queue writes summaries, never the keyword index, and may run for hours: indexing carries on beside it."""
+    from src.scheduler import maintenance
+
+    monkeypatch.setattr(maintenance, "_page_drain_at", 0.0)
+    statuses = [{"kind": "llm-bulk-queue", "running": True, "is_writer": True}]
+    monkeypatch.setattr("src.jobs.background.all_job_statuses", lambda: statuses)
+    assert maintenance._backlog_busy_reason() is None
+    statuses.append({"kind": "some-writer", "running": True, "is_writer": True})
+    assert maintenance._backlog_busy_reason() == "writer_job_running"
+
+
+def test_two_stuck_runs_must_be_back_to_back_to_stop_the_restarts(backlog, monkeypatch):
+    left = {"n": 5}
+    monkeypatch.setattr(
+        "src.analytics.store.backfill_corpus",
+        lambda session, *, extractor, limit: {"indexed": limit, "newly_indexed": 0, "failed": 0, "never_attempted": left["n"]},
+    )
+    assert backlog.start()["started"] and backlog.get_job().join(15)
+    left["n"] = 0
+    assert backlog.start()["started"] and backlog.get_job().join(15)  # drained in between
+    left["n"] = 5
+    assert backlog.start()["started"] and backlog.get_job().join(15)
+    assert backlog.start()["started"], "a stuck run that was not back to back with the first stopped the restarts"
+    assert backlog.get_job().join(15)
+
+
+def test_the_backlog_drain_does_not_take_its_own_yield_signal_for_a_rival(monkeypatch):
+    """Each batch tells an idle slice to yield (the page's old signal); the job itself must not stop on it."""
+    from src.jobs import insights_backlog as ib
+    from src.scheduler import maintenance
+
+    ib._reset_for_tests()
+    monkeypatch.setattr(maintenance, "_page_drain_at", 0.0)
+    left = [900]
+
+    def _batch(session, *, extractor, limit):
+        left[0] = max(0, left[0] - limit)
+        return {"indexed": limit, "newly_indexed": limit, "failed": 0, "never_attempted": left[0]}
+
+    monkeypatch.setattr("src.analytics.store.backfill_corpus", _batch)
+    try:
+        r = ib.start()
+        assert r["started"], r
+        assert ib.get_job().join(15)
+        result = ib.get_job().status()["result"]
+        assert result["ended"] == "drained" and result["batches"] == 3, result
+        assert maintenance._page_draining(), "an idle slice under way was not told to yield"
+    finally:
+        ib._reset_for_tests()
