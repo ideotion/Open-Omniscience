@@ -230,3 +230,22 @@ def test_without_psutil_the_budget_reason_does_not_claim_a_comparison(monkeypatc
     got = mb.resolve()
     assert got["total_ram_from"] == "cgroup limit"
     assert "could not be read" in got["reason"] and "smaller than the machine" not in got["reason"]
+
+
+# --------------------------------------------------------------------------- 4. the import's page-cache budget (Lane B)
+def test_the_import_cache_reads_the_cgroup(monkeypatch):
+    from src.backup import merge as M
+
+    monkeypatch.setattr(M, "_meminfo_mb", lambda *keys: {"MemTotal": 16384, "MemAvailable": 15542})
+    _cgroup(monkeypatch, _SMALL_CGROUP)
+    assert M._total_ram_mb() == 2048 and M._available_ram_mb() == 1500
+    _cgroup(monkeypatch, _NO_LIMIT)
+    assert M._total_ram_mb() == 16384 and M._available_ram_mb() == 15542
+
+
+def test_the_import_cache_without_meminfo_still_reads_the_cgroup(monkeypatch):
+    from src.backup import merge as M
+
+    monkeypatch.setattr(M, "_meminfo_mb", lambda *keys: {})
+    _cgroup(monkeypatch, _SMALL_CGROUP)
+    assert M._total_ram_mb() == 2048 and M._available_ram_mb() == 1500
