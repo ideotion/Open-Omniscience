@@ -1522,8 +1522,8 @@
     function _toneChip(a) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!a || !a.sentiment_label) return "";
-      const c = a.sentiment_label === "positive" ? "var(--ok)"
-        : (a.sentiment_label === "negative" ? "var(--err)" : "var(--muted)");
+      const c = a.sentiment_label === "positive" ? "var(--ok-text)"
+        : (a.sentiment_label === "negative" ? "var(--err-text)" : "var(--muted)");
       const sc = (a.sentiment_score != null) ? " " + Number(a.sentiment_score).toFixed(2) : "";
       return ` <span style="color:${c};font-size:.85em" title="${esc(t("Tone (VADER, English-only) — a signal, not a verdict."))}">${esc(t(a.sentiment_label))}${esc(sc)}</span>`;
     }

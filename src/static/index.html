@@ -439,7 +439,7 @@
       <h2>Search the corpus</h2>
       <label for="q">Boolean query <span class="muted">(AND / OR / NOT, "phrases", parentheses)</span></label>
       <input id="q" placeholder='e.g.  (climate OR energy) AND policy NOT opinion' autocomplete="off">
-      <div class="row">
+      <div class="row explore-filters">
         <div><label for="f-source">Source</label><input id="f-source" placeholder="exact name (optional)"></div>
         <div><label for="f-lang">Language</label><input id="f-lang" placeholder="en (optional)"></div>
         <div style="flex:1;min-width:240px"><label>Time range</label>
@@ -4248,6 +4248,16 @@
            guide closed or skipped here leaves Standard; Essentials only by a real choice.
            Local only (oo.ui); nothing is sent. -->
       <section class="gw-step" data-step="depth" hidden>
+        <!-- WHAT THIS APP DOES, before the first question (lane N, 2026-11-13): a person who
+             just installed was asked about "pinned tabs" before being told what the app is,
+             what stays on their computer and what needs the network. Three lines, no new
+             step, so the depth question still opens the guide (Q1121) and _GW_STEPS is
+             unchanged. Each line is a fact the app enforces, never a promise it cannot keep. -->
+        <ul class="gw-intro" aria-label="What this app does">
+          <li>It gathers public news, Wikipedia pages and laws, and keeps a copy on this computer.</li>
+          <li>It goes online only when you say so, to read public websites. No account, no cloud, no tracking.</li>
+          <li>Then you search and compare who reports what, where and when. The app shows counts and how it got them; you draw the conclusions.</li>
+        </ul>
         <h3 style="margin:0 0 6px">How much should the app show at once?</h3>
         <p class="muted" style="margin-top:0">This changes what is pinned, never what you can reach. You can change it anytime in Settings → General.</p>
         <div role="radiogroup" aria-label="Interface depth" class="depth-pick">
