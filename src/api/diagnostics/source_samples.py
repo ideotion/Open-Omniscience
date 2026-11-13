@@ -1,8 +1,10 @@
-"""One randomly chosen stored article per source, as zips of at most 4 MB (TEMPORARY diagnostic).
+"""One randomly chosen stored article per source, as zips of at most 4 MB (saved by the Field data button).
 
-THROWAWAY: delete this slice, its entry in ``__init__.py`` / ``test_diagnostics_package_split.py``
-and the Diagnostics button once the analyst has seen how articles and sources are ingested and
-stored. Imported LAST, like every route added after the split, so no pinned position moves.
+KEPT FOR THE FIELD DATA BUTTON (R664, 2026-11-13): it was a temporary export with its own
+Diagnostics button (R587, queue item 37); that button went when the ONE Field data button
+replaced it (R654, #1910), and ``FIELD_DATA_EXPORTS`` in ``src/static/app-diagnostics.js`` walks
+this route. Delete it only together with that entry. Imported LAST, like every route added after
+the split, so no pinned position moves.
 
 STATELESS BY DESIGN. Nothing is written to disk and nothing is kept between requests: each GET
 returns ONE zip and a cursor (the last source id it covered) in ``X-Source-Samples-Next``; the page
@@ -186,7 +188,7 @@ def build_sample_zip(
 
 
 # --------------------------------------------------------------------------- #
-# TEMPORARY / REMOVABLE diagnostic -- delete with its Diagnostics button.
+# Saved by the Field data button (R654, R664) -- delete only with its FIELD_DATA_EXPORTS entry.
 # --------------------------------------------------------------------------- #
 @router.get("/source-samples", dependencies=[Depends(refuse_cross_site_get)])
 def source_samples(

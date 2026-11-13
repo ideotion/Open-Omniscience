@@ -843,11 +843,10 @@ def _show_log(scr: Any, server: ServerProcess, stopping: list[bool] | None = Non
     from termios import error as TermiosError
 
     curses.endwin()
-    sys.stdout.write("\n--- " + _t("The server's own messages appear below as it prints them. Press any key to return to the panel.")
-                     + " ---\n\n")
-    sys.stdout.flush()
     fd = sys.stdin.fileno()
     saved = None
+    # cbreak BEFORE the prompt: endwin() leaves the terminal in line mode, and a key pressed as soon as the prompt shows used to land
+    # there (echoed, waiting for Enter) or be discarded by setcbreak's flush, so the view did not return on it (a CI flake, 2026-11-13).
     with contextlib.suppress(TermiosError, OSError):
         saved = termios.tcgetattr(fd)
         tty.setcbreak(fd)  # one key, no Enter; ISIG stays, so Ctrl-C is still the terminal's stop
@@ -855,6 +854,10 @@ def _show_log(scr: Any, server: ServerProcess, stopping: list[bool] | None = Non
     # without a refresh between them fails, which read as "the panel could not start" right above the launcher's own message.
     back = True
     try:
+        # Inside the try: a write that fails (the terminal hung up) still restores the terminal's own mode below.
+        sys.stdout.write("\n--- " + _t("The server's own messages appear below as it prints them. Press any key to return to the panel.")
+                         + " ---\n\n")
+        sys.stdout.flush()
         while True:
             if not server.alive() or (stopping is not None and stopping[0]):
                 back = False
