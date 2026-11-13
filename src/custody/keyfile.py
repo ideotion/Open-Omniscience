@@ -28,7 +28,8 @@ only guarantees how those bytes arrive:
   on an SSD or a copy-on-write filesystem). The creation and removal of the empty
   ``keys/.pending`` folder are under the lock too (a removal outside it could break another caller's
   flush of it); the folder's own creation and removal are not flushed (an empty ``.pending`` coming back
-  after a power cut holds no name). Not under the lock: the restore's creation of ``keys/`` itself.
+  after a power cut holds no name). Not under the lock: the creation of ``keys/`` itself (by the restore, and by a key load in
+  ``src/custody/signing.py`` and ``src/reporting/evidence.py``, which after an erase can only make a NEW key).
 
 Nothing here reads or logs a passphrase or key bytes.
 """
@@ -277,7 +278,7 @@ def replace_in_place(
     The caller decides what the new bytes are (the SAME key in its sealed form: a new key would
     orphan everything already signed, whose public half is in shipped evidence) and how to tell
     that they still hold that key (``check`` raises if not). The new bytes go to a private file of
-    this caller's, are read back and checked BEFORE they replace anything, so a failure at any step
+    this caller's, are checked (on the sealed bytes) and read back byte for byte BEFORE they replace anything, so a failure at any step
     leaves the original file exactly as it was. ``seen`` is the state of the file when the caller
     read the key from it (``fstat`` of the open file; ``None`` takes it now); the replacement lands
     only if the file is still exactly that, so a key erased, restored over or sealed by another
