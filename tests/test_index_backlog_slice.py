@@ -26,6 +26,7 @@ _REAL = (
 def db(monkeypatch):
     monkeypatch.setattr(m, "_backlog_clear_at", 0.0)
     monkeypatch.setattr(m, "_page_drain_at", 0.0)
+    monkeypatch.setattr(m, "_job_drain_at", 0.0)
     engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

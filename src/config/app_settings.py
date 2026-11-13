@@ -319,6 +319,12 @@ def load_settings(*, strict: bool = False) -> AppSettings:
     if llm_model is not None and not _MODEL_RE.match(str(llm_model)):
         _LOG.warning("ignoring invalid stored llm_model %r", llm_model)
         llm_model = None
+    if llm_model is not None:
+        from src.llm.remote_models import is_cloud_name
+
+        if is_cloud_name(str(llm_model)):  # R671: a cloud model stored before the rule is not used
+            _LOG.warning("ignoring stored llm_model %r: it runs on Ollama's cloud, not on this computer", llm_model)
+            llm_model = None
     keep_alive = str(raw.get("llm_keep_alive", defaults.llm_keep_alive))
     if not _KEEP_ALIVE_RE.match(keep_alive):
         _LOG.warning("ignoring invalid stored llm_keep_alive %r", keep_alive)
@@ -512,6 +518,10 @@ def save_settings(updates: dict, *, replace_damaged: bool = False) -> AppSetting
         if val in (None, ""):
             current.llm_model = None
         elif isinstance(val, str) and _MODEL_RE.match(val):
+            from src.llm.remote_models import REFUSAL, is_cloud_name
+
+            if is_cloud_name(val):  # R671: never stored as the model every AI action runs on
+                raise AppSettingsError(REFUSAL)
             current.llm_model = val
         else:
             raise AppSettingsError(f"invalid llm_model {val!r} (must be an Ollama model tag)")

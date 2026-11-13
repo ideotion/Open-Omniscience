@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-13,llm/ollama,R671 Ollama cloud models refused,shipped,PR #1941; R671,src/llm/remote_models.py; src/llm/ollama.py; src/llm/vllm_client.py; src/config/app_settings.py; src/api/llm.py; src/static/app-settings.js,"A cloud-suffixed Ollama model name is refused with no request; any other name must be listed by /api/tags with no remote field, failing closed; picker, settings, pull, unload, vLLM and custom download covered; an app-started daemon gets OLLAMA_NO_CLOUD=1."

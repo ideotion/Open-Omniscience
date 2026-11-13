@@ -130,6 +130,10 @@ def client(tmp_path):
 
     def _fake_llm():
         def handler(request):
+            if request.url.path == "/api/tags":  # R671: the daemon lists the model as local before it runs
+                from src.llm.ollama import DEFAULT_MODEL
+
+                return httpx.Response(200, json={"models": [{"name": DEFAULT_MODEL}]})
             return httpx.Response(
                 200, json={"response": "Election: the corruption scandal outraged voters."}
             )
