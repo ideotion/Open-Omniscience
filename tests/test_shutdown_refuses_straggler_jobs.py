@@ -237,16 +237,10 @@ def _flushed_but_uncommitted(go: threading.Event, results: list, savepoint: bool
         try:
             with session_scope() as s:
                 if savepoint:
-                    try:
-                        s.begin_nested()
-                    except Exception as exc:  # noqa: BLE001 - a job that swallows the refused savepoint and goes on
-                        results.append(f"savepoint:{type(exc).__name__}")
-                s.execute(
-                    text(
-                        "INSERT INTO app_state (key, value, updated_at) VALUES ('r689-row', '1', 'x')"
-                    )
-                )
-        except Exception as exc:  # noqa: BLE001
+                    s.begin_nested()
+                s.execute(text("INSERT INTO app_state (key, value, updated_at) VALUES ('r689-row', '1', 'x')"))
+                results.append("insert:ok")  # flushed: the INSERT reached the driver, inside the open transaction
+        except Exception as exc:  # noqa: BLE001 - the test records what happened
             results.append(f"write:{type(exc).__name__}")
         results.append(f"gate-owner:{write_gate._owner}")
 
@@ -254,42 +248,112 @@ def _flushed_but_uncommitted(go: threading.Event, results: list, savepoint: bool
 
 
 @pytest.mark.parametrize("savepoint", [False, True])
-def test_nothing_a_refused_job_flushed_lands_and_the_gate_is_left_free(
-    registry, monkeypatch, savepoint
-):
-    from sqlalchemy import text
+def test_nothing_a_refused_job_flushed_lands_and_the_gate_is_left_free(registry, monkeypatch, savepoint):
+    """The refusal lands AFTER the job's INSERT reached the driver. Without a savepoint the commit is what is refused. With one, the
+    session's commit first sends ``RELEASE SAVEPOINT``, and pysqlite's legacy mode (no BEGIN) makes that the real COMMIT: refusing
+    only the commit event would let the row land, so the RELEASE is refused as the statement it is (every statement is)."""
+    from sqlalchemy import event, text
+    from sqlalchemy.engine import Engine
 
     from src.config import kv_store
     from src.database.session import session_scope
 
     kv_store.kv_set_json("r689-warm", {"x": 1})  # the table exists
-    go, results = threading.Event(), []
-    job = bg.register_job(
-        bg.BackgroundJob(
-            "half-writer", "half", _flushed_but_uncommitted(go, results, savepoint), is_writer=True
-        )
-    )
-    registry.append(job)
-    job.start()
-    monkeypatch.setattr(after_shutdown._LOG, "warning", lambda *a: None)
-    # the refusal lands between the job's statements: its INSERT is refused, or its commit is
-    real_check = after_shutdown.check
-    calls = {"n": 0}
+    job_sql: list[str] = []  # the job's statements that reached the driver (this listener runs after the refusal's own)
 
-    def late(what: str) -> None:
-        calls["n"] += 1
-        if "commit" in what or calls["n"] > 1:
+    def note(conn, cursor, statement, *a):
+        if threading.current_thread().name.startswith("bgjob-"):
+            job_sql.append(str(statement).split()[0].upper())
+
+    event.listen(Engine, "before_cursor_execute", note)
+    refused: list[str] = []
+    real_check = after_shutdown.check
+
+    def only_the_commit(what: str) -> None:
+        # Let every statement through but the one after the job's INSERT: with a savepoint, the session's commit sends
+        # SAVEPOINT, INSERT, then RELEASE (traced), and that RELEASE is what has to be refused.
+        if what == "a commit" or (what == "a statement" and job_sql[-1:] == ["INSERT"]):
+            refused.append(what)
             real_check(what)
 
-    monkeypatch.setattr(after_shutdown, "check", late)
-    after_shutdown.close_for_jobs(bg.running_job_threads())
-    go.set()
-    assert job.join(10)
-    assert any(r.endswith("WriteAfterShutdownRefused") for r in results), results
-    assert results[-1] == "gate-owner:None", results
+    monkeypatch.setattr(after_shutdown, "check", only_the_commit)
+    monkeypatch.setattr(after_shutdown._LOG, "warning", lambda *a: None)
+    go, results = threading.Event(), []
+    job = bg.register_job(bg.BackgroundJob("half-writer", "half", _flushed_but_uncommitted(go, results, savepoint), is_writer=True))
+    registry.append(job)
+    try:
+        job.start()
+        after_shutdown.close_for_jobs(bg.running_job_threads())
+        go.set()
+        assert job.join(10)
+    finally:
+        event.remove(Engine, "before_cursor_execute", note)
+    assert results == ["insert:ok", "write:WriteAfterShutdownRefused", "gate-owner:None"], results
+    assert job_sql == (["SAVEPOINT", "INSERT"] if savepoint else ["INSERT"]), job_sql
+    assert refused == (["a statement"] if savepoint else ["a commit"]), refused
     with session_scope() as s:
         n = s.execute(text("SELECT COUNT(*) FROM app_state WHERE key = 'r689-row'")).scalar()
     assert n == 0
+
+
+def test_the_manual_collection_pass_and_its_workers_are_refused(monkeypatch):
+    """The manual pass stores on its ``oo-collect`` pool; the workers inherit the pass thread's refusal."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    monkeypatch.setattr(after_shutdown._LOG, "warning", lambda *a: None)
+    go, seen = threading.Event(), {}
+
+    def manual_pass():
+        go.wait(10)
+        mine: list = []
+        _try_db(mine)
+        seen["pass"] = mine
+
+        def worker(_source, _source_id):
+            r: list = []
+            _try_db(r)
+            return r
+
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="oo-collect") as pool:
+            run = after_shutdown.inherit(worker)
+            seen["workers"] = [f.result() for f in [pool.submit(run, None, i) for i in (1, 2)]]
+
+    t = threading.Thread(target=manual_pass, name="oo-scrape-now")
+    t.start()
+    after_shutdown.close_for_jobs([])
+    go.set()
+    t.join(10)
+    refused = ["orm:WriteAfterShutdownRefused", "gate:WriteAfterShutdownRefused"]
+    assert seen == {"pass": refused, "workers": [refused, refused]}, seen
+    # the collector wraps its workers so (source-level: a real pass needs the network)
+    runner = (ROOT / "src/scheduler/runner.py").read_text(encoding="utf-8")
+    assert "pool.submit(run_worker, s, s.id)" in runner and "run_worker = _inherit_refusal(_worker)" in runner
+
+
+def test_a_reused_pool_thread_carries_no_refusal_into_later_work(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    monkeypatch.setattr(after_shutdown._LOG, "warning", lambda *a: None)
+    gate = threading.Event()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        holder: dict = {}
+
+        def parent():
+            holder["run"] = after_shutdown.inherit(lambda: gate.wait(10))
+            pool.submit(holder["run"]).result()
+
+        p = threading.Thread(target=parent, name="parent-under-test")
+        p.start()
+        after_shutdown.refuse_threads([(p, "parent-under-test")])
+        gate.set()
+        p.join(10)
+
+        def later():
+            r: list = []
+            _try_db(r)
+            return r
+
+        assert pool.submit(later).result() == ["orm:ok", "gate:ok"]
 
 
 def test_the_helpers_of_a_refused_job_and_a_job_started_after_the_wait_are_refused(

@@ -1128,8 +1128,13 @@ def run_scrape_once(
                 with ThreadPoolExecutor(
                     max_workers=w_max, thread_name_prefix="oo-collect"
                 ) as pool:
+                    # The pool's threads answer to the shutdown's job refusal as this pass's thread does (R689): the manual
+                    # pass (oo-scrape-now) is refused once the shutdown stops waiting, and its stores are made here.
+                    from src.database.after_shutdown import inherit as _inherit_refusal
+
+                    run_worker = _inherit_refusal(_worker)
                     for s in sources:
-                        futures.append(pool.submit(_worker, s, s.id))
+                        futures.append(pool.submit(run_worker, s, s.id))
                     for fut in as_completed(futures):
                         read_futures.add(fut)
                         tally, pages, processed = fut.result()

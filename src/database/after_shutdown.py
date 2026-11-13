@@ -16,18 +16,21 @@ settings write raises :class:`WriteAfterShutdownRefused` on:
 * any ``bgjob-*`` thread, so a job started after the wait (a request still being served) is refused too;
 * a helper thread such a job runs its work on (:func:`inherit`, used by ``run_concurrent``'s pool, where a
   coordinator turn's members commit on ``oo-llmbatch-*`` threads while the job thread only waits for them);
-* the manual collection pass (``oo-scrape-now``), which the scheduler's stop never joins.
+* the manual collection pass (``oo-scrape-now``), which the scheduler's stop never joins, and its ``oo-collect`` workers
+  (:func:`inherit` again).
 
-A refused commit never reaches the driver, so nothing the job had not committed lands; its rollback is not
-refused. The refusal is logged once per job, by its kind (never its arguments, which can carry a
+A refused commit never reaches the driver, and every statement is refused too (a savepoint's ``RELEASE``, which pysqlite turns
+into the real COMMIT, included), so nothing the job had not committed lands; its rollback is not refused. The refusal is logged once per job, by its kind (never its arguments, which can carry a
 passphrase). The shutdown's own steps (the write-back, the disposal, the flushes) run on another thread and
 are not touched, nor is any other thread. :func:`clear` (the app's start) reopens it.
 
 Stated limits: a raw DBAPI cursor (``engine.raw_connection()``; the incremental vacuum, the hygiene pass)
 runs no SQLAlchemy event, and a settings write already past the write gate when the database closed can
 still commit; neither is a job's corpus write today. The columnar store (DuckDB) is a separate file and is
-not covered. Threads that are not registry jobs (the import queue, the re-index managers, the backup threads,
-the rollup and keyword-fold builders, the request-bound AI streams) keep their own stops.
+not covered. Threads that are not registry jobs keep their own stops: the import queue, the re-index managers, the
+backup threads, the rollup and keyword-fold builders, the request-bound AI streams, and the scheduler's own threads
+(``oo-scheduler``, whose stop gives up after a 10 s join, with its ``oo-collect`` pool; ``oo-briefing-bg``;
+``oo-housekeeping-lane``). A statement that passed its check an instant before the database closed can still finish.
 """
 
 from __future__ import annotations
@@ -93,25 +96,39 @@ def is_closed() -> bool:
     return _CLOSED
 
 
-def inherit[T, R](fn: Callable[[T], R]) -> Callable[[T], R]:
+def inherit[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
     """Wrap ``fn`` so the thread that runs it answers to the refusal as the thread that wrapped it does. For helper pools a job
-    runs its work on: once the job is refused, so is its helper's next statement."""
+    runs its work on: once the job is refused, so is its helper's next statement. The link lasts while ``fn`` runs, so a pool
+    thread that is reused for other work afterwards carries no refusal into it."""
     parent = threading.current_thread()
 
     @functools.wraps(fn)
-    def run(item: T) -> R:
+    def run(*args: P.args, **kwargs: P.kwargs) -> R:
         me = threading.current_thread()
-        if me is not parent:
+        if me is parent:
+            return fn(*args, **kwargs)
+        with _LOCK:
+            before = _PARENT.get(me)
+            _PARENT[me] = parent
+        try:
+            return fn(*args, **kwargs)
+        finally:
             with _LOCK:
-                _PARENT[me] = parent
-        return fn(item)
+                if before is None:
+                    _PARENT.pop(me, None)
+                else:
+                    _PARENT[me] = before
 
     return run
 
 
+#: How many helper links are followed (a coordinator turn's member may run a pool of its own); a cap, so a cycle cannot spin.
+_MAX_HELPER_DEPTH = 8
+
+
 def _kind_of(t: threading.Thread) -> str | None:
     kind = _REFUSED.get(t)
-    if kind is None and t.name.startswith(_JOB_THREAD_PREFIX):
+    if kind is None and _CLOSED and t.name.startswith(_JOB_THREAD_PREFIX):
         kind = t.name[len(_JOB_THREAD_PREFIX) :]
     return kind
 
@@ -120,20 +137,15 @@ def refused_kind() -> str | None:
     """The job kind this thread is refused under, or None. One bool read while the database is open to jobs."""
     if not _CLOSED and not _REFUSED:
         return None
-    me = threading.current_thread()
-    if not _CLOSED:
-        kind = _REFUSED.get(me)
-        if kind is None:
-            parent = _PARENT.get(me)
-            if parent is not None:
-                kind = _REFUSED.get(parent)
-        return kind
-    kind = _kind_of(me)
-    if kind is None:
-        parent = _PARENT.get(me)
-        if parent is not None:
-            kind = _kind_of(parent)
-    return kind
+    t: threading.Thread | None = threading.current_thread()
+    for _ in range(_MAX_HELPER_DEPTH + 1):
+        if t is None:
+            return None
+        kind = _kind_of(t)
+        if kind is not None:
+            return kind
+        t = _PARENT.get(t)
+    return None
 
 
 def check(what: str) -> None:
