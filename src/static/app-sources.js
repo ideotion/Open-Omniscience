@@ -623,8 +623,9 @@
       const un = (d && d.unavailable) || {};
       const shown = ips.map((x) => {
         const when = tf("first seen {a}, last seen {b}", {a: ooIsoDate(x.first_seen || "?"), b: ooIsoDate(x.last_seen || "?")});
-        const where = x.country ? " " + x.country : "";
-        return `<span title="${esc(when)}"><code>${esc(x.ip)}</code>${esc(where)} ×${esc(String(x.articles))}</span>`;
+        // the code visible, the country's name in the hover (Q302), through the one helper
+        const where = x.country ? " " + ooCountryCell(x.country) : "";
+        return `<span title="${esc(when)}"><code>${esc(x.ip)}</code>${where} ×${esc(String(x.articles))}</span>`;
       }).join(" · ");
       const gaps = [];
       if (un.tor_or_proxy) gaps.push(tf("{n} via Tor or a proxy (no IP by design)", {n: un.tor_or_proxy}));

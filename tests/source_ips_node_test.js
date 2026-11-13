@@ -29,6 +29,10 @@ function extract(text, name) {
 
 const src =
   "function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;'); }\n" +
+  // ooCountryCell is the shared country renderer (app-core.js, alpha-3 tables and CLDR behind it);
+  // a stand-in with its contract -- the code visible and escaped, a name in the hover -- keeps this
+  // test on srcIpsHtml. tests/test_alpha3_display_surfaces.py pins that the real helper is called.
+  "function ooCountryCell(v) { return '<span title=\"' + esc('name of ' + v) + '\">' + esc(v) + '</span>'; }\n" +
   "var window = {}; var document = { documentElement: { dir: \"ltr\" } };\n" + extract(CORE, "ooIsoDate") + "\n" + extract(CORE, "ooLabelHtml") + "\n" + extract(SRC, "srcIpsHtml") +
   "\nmodule.exports = { srcIpsHtml };";
 const m = { exports: {} };
@@ -52,6 +56,7 @@ const html = srcIpsHtml(d, t, tf);
 const v = visible(html);
 assert.ok(v.includes("Server IPs (2)"), v);
 assert.ok(v.includes("203.0.113.7 FR ×12") && v.includes("198.51.100.2 ×3"), v);
+assert.ok(html.includes('<span title="name of FR">FR</span>'), "the country goes through the shared cell, its name in the hover");
 assert.ok(v.includes("4 via Tor or a proxy (no IP by design)") && v.includes("9 not captured"), v);
 assert.ok(html.includes('title="first seen 2026-10-01, last seen 2026-11-12"'), html);
 assert.ok(html.includes('title="first seen ?, last seen ?"'), "a missing date reads as unknown, never 'null'");
