@@ -161,9 +161,28 @@ def test_an_artifact_malformed_inside_is_not_measured_never_a_traceback(tmp_path
     assert code == 3 and out["status"] == "not-measured" and "malformed" in out["reason"]
 
 
-def test_a_missing_sample_is_not_measured_never_a_traceback(tmp_path, monkeypatch):
+@pytest.mark.parametrize("body", [None, "[]", '{"items": {}}', '{"items": [{"id": "x", "lang": "en"}]}'])
+def test_a_missing_or_malformed_sample_is_not_measured_and_named(tmp_path, monkeypatch, body):
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
     import topic_sample_measure as tsm
 
-    code, out = tsm.run(tmp_path / "eurovoc.json", tmp_path / "nope.json")
-    assert code == 3 and "sample could not be read" in out["reason"]
+    sample = tmp_path / "sample.json"
+    if body is not None:
+        sample.write_text(body, "utf-8")
+    code, out = tsm.run(tmp_path / "eurovoc.json", sample)
+    assert code == 3 and "sample could not be read" in out["reason"] and out["sample"] == str(sample)
+
+
+def test_a_bug_on_valid_data_surfaces_as_a_bug_never_as_not_measured(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    import topic_sample_measure as tsm
+
+    path = tmp_path / "eurovoc.json"
+    path.write_text(json.dumps(_art(dp=({"en": "data protection"}, {}))), "utf-8")
+
+    def broken(*a, **k):
+        raise TypeError("a regression in the tagger")
+
+    monkeypatch.setattr(tt, "measure", broken)
+    with pytest.raises(TypeError):
+        tsm.run(path, SAMPLE)

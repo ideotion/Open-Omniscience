@@ -36,13 +36,49 @@ DEFAULT_ARTIFACT = ROOT / "src" / "catalog" / "data" / "skos" / "eurovoc.json"
 NOT_MEASURED = 3
 
 
+def _sample_problem(doc: Any) -> str | None:
+    """Why the sample cannot be measured, or None. Shape only: what resolve_sample and measure read."""
+    if not isinstance(doc, dict) or not isinstance(doc.get("items"), list):
+        return "no 'items' list"
+    for n, item in enumerate(doc["items"]):
+        if not isinstance(item, dict) or not all(isinstance(item.get(k), str) for k in ("id", "lang", "text")):
+            return f"item {n} lacks a string id, lang or text"
+        labels = item.get("expected_labels", [])
+        if not isinstance(labels, list) or not all(isinstance(e, dict) for e in labels):
+            return f"item {n}: expected_labels is not a list of objects"
+    return None
+
+
+def _artifact_problem(art: dict[str, Any]) -> str | None:
+    """Why the artifact cannot be measured, or None: a string scheme and concepts {uri: {pref: {lang: str},
+    alt: {lang: [str]}}}, the shape src.catalog.skos.build_artifact writes."""
+    if not isinstance(art.get("scheme"), str):
+        return "'scheme' is not a string"
+    concepts = art.get("concepts")
+    if not isinstance(concepts, dict):
+        return "'concepts' is not an object"
+    for uri, c in concepts.items():
+        if not isinstance(c, dict):
+            return f"concept {uri!r} is not an object"
+        pref, alt = c.get("pref", {}), c.get("alt", {})
+        if not isinstance(pref, dict) or not all(isinstance(v, str) for v in pref.values()):
+            return f"concept {uri!r}: pref is not {{lang: label}}"
+        if not isinstance(alt, dict) or not all(
+            isinstance(v, list) and all(isinstance(x, str) for x in v) for v in alt.values()
+        ):
+            return f"concept {uri!r}: alt is not {{lang: [labels]}}"
+    return None
+
+
 def run(artifact_path: Path, sample_path: Path) -> tuple[int, dict[str, Any]]:
     try:
         doc = json.loads(sample_path.read_text(encoding="utf-8"))
-        if not isinstance(doc, dict) or not isinstance(doc.get("items"), list):
-            raise ValueError("no 'items' list")
+        problem = _sample_problem(doc)
     except (OSError, ValueError) as exc:
-        return NOT_MEASURED, {"status": "not-measured", "reason": f"the labelled sample could not be read: {exc}"}
+        problem = str(exc)
+    if problem:
+        return NOT_MEASURED, {"sample": str(sample_path), "status": "not-measured",
+                              "reason": f"the labelled sample could not be read: {problem}"}
     head = {"sample": str(sample_path.relative_to(ROOT)) if sample_path.is_relative_to(ROOT) else str(sample_path),
             "sample_as_of": doc.get("as_of"), "labelled_by": doc.get("labelled_by"), "n_sample": len(doc["items"])}
     if not artifact_path.exists():
@@ -53,12 +89,11 @@ def run(artifact_path: Path, sample_path: Path) -> tuple[int, dict[str, Any]]:
         art = skos.load_artifact(artifact_path)
     except (OSError, ValueError) as exc:  # SkosError is a ValueError; a JSON error is one too
         return NOT_MEASURED, {**head, "status": "not-measured", "reason": f"the artifact could not be read: {exc}"}
-    try:
-        res = tt.resolve_sample(doc["items"], art)
-        m = tt.measure(res["sample"], tt.Index([art]))
-    except (AttributeError, KeyError, TypeError, ValueError) as exc:  # a file shaped like an artifact on top only
-        return NOT_MEASURED, {**head, "status": "not-measured",
-                              "reason": f"the artifact or the sample is malformed inside ({type(exc).__name__}: {exc})"}
+    problem = _artifact_problem(art)
+    if problem:  # checked up front, so an exception below is a bug and surfaces as one, never as "not measured"
+        return NOT_MEASURED, {**head, "status": "not-measured", "reason": f"the artifact is malformed inside: {problem}"}
+    res = tt.resolve_sample(doc["items"], art)
+    m = tt.measure(res["sample"], tt.Index([art]))
     return 0, {**head, "status": "measured", "scheme": art.get("scheme"), "vintage": art.get("vintage"),
                "license": art.get("license"), "resolved_labels": res["resolved"], "unresolved": res["unresolved"],
                "labels_for_other_schemes": res["other_schemes"],
