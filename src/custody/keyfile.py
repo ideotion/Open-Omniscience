@@ -20,6 +20,9 @@ only guarantees how those bytes arrive:
 * a file is replaced in place only by ``os.replace`` of a finished private copy, only after the
   caller's own check passed on the copy, and only if the file is still exactly the one that was
   read (device, inode, size, modification time).
+* every change to a key file's name (a link, a replace, the alias removal after it) is flushed to
+  the folder, so a power cut cannot bring back the file it replaced, and is made under
+  :data:`KEY_FILES_LOCK`, which the erase holds too.
 
 Nothing here reads or logs a passphrase or key bytes.
 """
@@ -37,6 +40,36 @@ from collections.abc import Callable
 from pathlib import Path
 
 log = logging.getLogger(__name__)
+
+#: Held by every change to a key file's NAME in this process (the link of :func:`create_new`, the
+#: check-then-replace of :func:`replace_in_place`) and by the erase's key steps
+#: (``src/safety/crypto_erase.py``). Without it the check that the file is still the one that was read
+#: and the ``os.replace`` that acts on it were two steps an erase could fall between: the erase
+#: destroyed the key, and the replacement then put that same key (wrapped) back under its name, after
+#: the erase had reported it destroyed (OPEN_QUEUE item 41(c)). A process-level lock, so another
+#: process on the same data folder is not covered; that is a stated limit, as the identity check is.
+KEY_FILES_LOCK = threading.RLock()
+
+
+def _flush_folder(folder: Path, what: str) -> None:
+    """Flush ``folder`` so the rename, link or unlink just done in it survives a power cut.
+
+    Until the folder is flushed, a power cut can bring back what the name held before: after a
+    plaintext key was wrapped in place, that is the PLAINTEXT key, on a machine that is off, which
+    is exactly the case the at-rest encryption is for (OPEN_QUEUE item 41(c)). Never raises: the new
+    name is already in place, and a failure here only means it may not survive a power cut, which
+    the log says (the exception CLASS only).
+    """
+    from src.safety.file_lock import flush_folder
+
+    try:
+        flush_folder(folder)
+    except Exception as exc:  # noqa: BLE001 - the change is made; only its durability is unknown
+        log.warning(
+            "%s: the keys folder could not be flushed to disk (%s); a power cut now could bring the old file back",
+            what,
+            type(exc).__name__,
+        )
 
 
 def write_new(path: Path, data: bytes) -> None:
@@ -213,15 +246,26 @@ def replace_in_place(
         _refuse_a_linked_name(path, os.lstat(path))
         tmp = write_private(path, "rewrap", make())
         check(tmp.read_bytes())
-        # the NAME's own state: a symbolic link answers for itself, not for its target
-        old = os.lstat(path)
-        if stat.S_ISLNK(old.st_mode):
-            raise KeyFileLinked("the key file is a symbolic link")
-        if identity(old) != identity(seen):
-            raise ReplaceRefused("the key file changed while the replacement was made")
-        _refuse_a_linked_name(path, old)
-        os.replace(tmp, path)
-        drop_aliases(path, old)
+        # The check and the replace are ONE step for every key-file change in this process, the erase's
+        # among them (KEY_FILES_LOCK): an erase that destroyed the file after this check would otherwise
+        # see the key put back under its name by the replace that follows it.
+        with KEY_FILES_LOCK:
+            # the NAME's own state: a symbolic link answers for itself, not for its target
+            old = os.lstat(path)
+            if stat.S_ISLNK(old.st_mode):
+                raise KeyFileLinked("the key file is a symbolic link")
+            if identity(old) != identity(seen):
+                raise ReplaceRefused("the key file changed while the replacement was made")
+            _refuse_a_linked_name(path, old)
+            os.replace(tmp, path)
+            tmp = None  # it IS the key file now: never removed below
+            aliases = pending_aliases(path, old)
+            drop_aliases(path, old)
+        # The rename first, then the removed aliases: until both folders are flushed a power cut can bring
+        # the old bytes back, which here were the plaintext key.
+        _flush_folder(path.parent, what)
+        if aliases:
+            _flush_folder(path.parent / PENDING, what)
         return True
     except Exception as exc:  # noqa: BLE001 - best effort by design; the original file is untouched
         if isinstance(exc, ReplaceRefused):
@@ -251,15 +295,21 @@ def create_new(path: Path, data: bytes) -> None:
     try:
         tmp = write_private(path, "new", data)
     except OSError:
-        write_new(path, data)
+        with KEY_FILES_LOCK:
+            write_new(path, data)
+        _flush_folder(path.parent, path.name)
         return
     try:
-        try:
-            os.link(tmp, path)
-        except FileExistsError:
-            raise
-        except OSError:
-            write_new(path, data)
+        with KEY_FILES_LOCK:
+            try:
+                os.link(tmp, path)
+            except FileExistsError:
+                raise
+            except OSError:
+                write_new(path, data)
+        # the new name is what a power cut would lose: flushed before the private name goes, so the key
+        # is never left with no name on disk at all
+        _flush_folder(path.parent, path.name)
     finally:
         with contextlib.suppress(OSError):
             tmp.unlink(missing_ok=True)

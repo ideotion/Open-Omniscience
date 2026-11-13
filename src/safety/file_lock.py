@@ -181,13 +181,20 @@ def _flush_directory(path: Path) -> None:
     move, but the move itself is a change to the folder, and until the folder is flushed the old file can come back. POSIX only; where the platform or the
     filesystem cannot, the replace stands and :func:`_skip_directory_flush` names why. Any other failure (EIO, a full disk reported only here) is raised, as the
     file's own flush does: the new file is then in place and may not survive a power cut, which the caller is told."""
+    flush_folder(path.parent)
+
+
+def flush_folder(folder: Path) -> None:
+    """Flush ``folder`` itself, so a rename, link or unlink done in it survives a power cut. The rules of :func:`_flush_directory`, which calls
+    this: POSIX only, a platform or filesystem that cannot is named once and passes, any other failure is raised. Also used for the private key files
+    (``src/custody/keyfile.py``), whose names change by ``os.replace``, ``os.link`` and ``os.unlink`` and never through :func:`atomic_replace`."""
     if sys.platform == "win32":
         _skip_directory_flush("this build does not flush a folder on windows")
         return
     fd: int | None = None
     try:
         try:
-            fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+            fd = os.open(folder, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
         except OSError as fault:
             _skip_directory_flush(f"the folder could not be opened: {type(fault).__name__}")
             return
