@@ -39,7 +39,6 @@ import threading
 import time
 from pathlib import Path
 
-
 _LOG = logging.getLogger(__name__)
 
 APP_NAME = "open-omniscience"

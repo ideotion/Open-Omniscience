@@ -6,12 +6,18 @@ empties the pool, so the job's next commit opened a fresh connection and landed 
 the uninstall's stop) disposed the engine BEFORE signalling, so on the stop path people use, the stop-all came after a disposal the jobs
 and the collector had already reopened.
 
-Which stop paths wait for the jobs, stated here and pinned below:
-  * WAIT (through the lifespan shutdown: scheduler stop, stop-all, write-back, disposal, in that order): the power button, the
-    update's stop, the memory guard's stop (memstop) and the data-volume guard's stop (all through ``request_shutdown``), the
-    uninstall's stop, Ctrl-C and SIGTERM (the launcher's stop and a service manager's).
-  * DO NOT WAIT, deliberately: the panic wipe. It destroys the key and the data at once and never waits on a job; it does not stop
-    the process at all.
+Which stop paths wait for the jobs, stated here and pinned below where a test can reach them:
+  * WAIT (through the lifespan shutdown: scheduler stop, stop-all, the database closed to jobs, write-back, disposal, in that
+    order): the power button, the update's stop, the memory guard's stop (memstop) and the data-volume guard's stop
+    (``_shut_down``), all through ``request_shutdown``; the uninstall's stop; Ctrl-C and SIGTERM (the launcher's stop, a service
+    manager's), and on Windows the in-app stop's SIGINT.
+  * DO NOT WAIT:
+    - the panic wipe, deliberately: it destroys the key and the data at once, whatever is running, and does not stop the process;
+    - the data-volume guard's restart after the drive comes back (``_restart_after_reconnect``: ``os.execve``): no lifespan, no
+      stop-all and no disposal, so the ordering holds only because nothing is disposed; work in progress ends mid-unit, rolled back;
+    - a SECOND Ctrl-C during uvicorn's connection drain, which makes it skip the lifespan shutdown: the exit hook then closes the
+      database to jobs and disposes (``arm_exit_disposal``), without waiting;
+    - Windows ending a console session, which ends the process after about 5 s, before the stop-all deadline.
 """
 
 from __future__ import annotations
@@ -140,7 +146,9 @@ def test_a_job_that_stopped_in_time_is_never_refused(registry, monkeypatch):
     registry.append(job)
     with TestClient(app):
         job.start()
-    assert not after_shutdown._REFUSED, dict(after_shutdown._REFUSED)
+    assert not after_shutdown._REFUSED, dict(
+        after_shutdown._REFUSED
+    )  # nobody refused by name: it had stopped
 
 
 def test_the_power_button_does_not_dispose_before_the_lifespan_stops_the_jobs(monkeypatch):
@@ -165,7 +173,7 @@ def test_no_graceful_stop_path_disposes_on_its_own():
     main = (ROOT / "src/api/main.py").read_text(encoding="utf-8")
     i_stop, i_refuse, i_dispose = (
         main.index("jobs_left = stop_all_jobs("),
-        main.index("refuse_threads(running_job_threads())"),
+        main.index("close_for_jobs(running_job_threads())"),
         main.index("disposed = dispose_engine()"),
     )
     assert i_stop < i_refuse < i_dispose
@@ -216,3 +224,141 @@ def test_a_refused_job_cannot_write_or_delete_settings_even_with_the_gate_off(
     go.set()
     assert job.join(10)
     assert results == ["set:WriteAfterShutdownRefused", "delete:WriteAfterShutdownRefused"]
+
+
+def _flushed_but_uncommitted(go: threading.Event, results: list, savepoint: bool):
+    def worker(ctx):
+        from sqlalchemy import text
+
+        from src.database.session import session_scope
+        from src.database.writer import write_gate
+
+        go.wait(10)
+        try:
+            with session_scope() as s:
+                if savepoint:
+                    try:
+                        s.begin_nested()
+                    except Exception as exc:  # noqa: BLE001 - a job that swallows the refused savepoint and goes on
+                        results.append(f"savepoint:{type(exc).__name__}")
+                s.execute(
+                    text(
+                        "INSERT INTO app_state (key, value, updated_at) VALUES ('r689-row', '1', 'x')"
+                    )
+                )
+        except Exception as exc:  # noqa: BLE001
+            results.append(f"write:{type(exc).__name__}")
+        results.append(f"gate-owner:{write_gate._owner}")
+
+    return worker
+
+
+@pytest.mark.parametrize("savepoint", [False, True])
+def test_nothing_a_refused_job_flushed_lands_and_the_gate_is_left_free(
+    registry, monkeypatch, savepoint
+):
+    from sqlalchemy import text
+
+    from src.config import kv_store
+    from src.database.session import session_scope
+
+    kv_store.kv_set_json("r689-warm", {"x": 1})  # the table exists
+    go, results = threading.Event(), []
+    job = bg.register_job(
+        bg.BackgroundJob(
+            "half-writer", "half", _flushed_but_uncommitted(go, results, savepoint), is_writer=True
+        )
+    )
+    registry.append(job)
+    job.start()
+    monkeypatch.setattr(after_shutdown._LOG, "warning", lambda *a: None)
+    # the refusal lands between the job's statements: its INSERT is refused, or its commit is
+    real_check = after_shutdown.check
+    calls = {"n": 0}
+
+    def late(what: str) -> None:
+        calls["n"] += 1
+        if "commit" in what or calls["n"] > 1:
+            real_check(what)
+
+    monkeypatch.setattr(after_shutdown, "check", late)
+    after_shutdown.close_for_jobs(bg.running_job_threads())
+    go.set()
+    assert job.join(10)
+    assert any(r.endswith("WriteAfterShutdownRefused") for r in results), results
+    assert results[-1] == "gate-owner:None", results
+    with session_scope() as s:
+        n = s.execute(text("SELECT COUNT(*) FROM app_state WHERE key = 'r689-row'")).scalar()
+    assert n == 0
+
+
+def test_the_helpers_of_a_refused_job_and_a_job_started_after_the_wait_are_refused(
+    registry, monkeypatch
+):
+    from src.llm.concurrency import run_concurrent
+
+    monkeypatch.setattr(after_shutdown._LOG, "warning", lambda *a: None)
+    go, members = threading.Event(), []
+
+    def coordinator(ctx):
+        go.wait(10)  # one coordinator turn; its members commit on the pool's threads
+
+        def member(_i):
+            r: list = []
+            _try_db(r)
+            return r
+
+        members.extend(x.value for x in run_concurrent([1, 2], member, max_workers=2))
+
+    job = bg.register_job(bg.BackgroundJob("coord", "coord", coordinator, is_writer=True))
+    registry.append(job)
+    job.start()
+    after_shutdown.close_for_jobs(bg.running_job_threads())
+    go.set()
+    assert job.join(10)
+    assert members == [["orm:WriteAfterShutdownRefused", "gate:WriteAfterShutdownRefused"]] * 2
+    # a job started AFTER the database closed (a request still being served) is refused by its thread's name
+    late_go, results = threading.Event(), []
+    late = bg.register_job(
+        bg.BackgroundJob("late-start", "late", _stubborn(late_go, results), is_writer=True)
+    )
+    registry.append(late)
+    late.start()
+    late_go.set()
+    assert late.join(10)
+    assert results == ["orm:WriteAfterShutdownRefused", "gate:WriteAfterShutdownRefused"]
+
+
+def test_the_helper_pool_inherits_the_refusal(monkeypatch):
+    from src.llm.concurrency import run_concurrent
+
+    monkeypatch.setattr(after_shutdown._LOG, "warning", lambda *a: None)
+    seen: list = []
+    gate = threading.Event()
+
+    def parent_job():
+        def member(_i):
+            gate.wait(10)
+            r: list = []
+            _try_db(r)
+            return r
+
+        seen.extend(x.value for x in run_concurrent([1, 2], member, max_workers=2))
+
+    t = threading.Thread(target=parent_job, name="parent-under-test")
+    t.start()
+    after_shutdown.refuse_threads([(t, "parent-under-test")])
+    gate.set()
+    t.join(10)
+    assert seen == [["orm:WriteAfterShutdownRefused", "gate:WriteAfterShutdownRefused"]] * 2
+
+
+def test_the_exit_hook_disposes_only_when_the_lifespan_did_not(monkeypatch):
+    disposed: list = []
+    monkeypatch.setattr("src.database.session.dispose_engine", lambda: disposed.append(1))
+    after_shutdown.note_lifespan_disposed()
+    after_shutdown._dispose_at_exit()
+    assert disposed == []
+    monkeypatch.setattr(after_shutdown, "_LIFESPAN_DISPOSED", False)
+    after_shutdown._dispose_at_exit()
+    assert disposed == [1] and after_shutdown.is_closed()

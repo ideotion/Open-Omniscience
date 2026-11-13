@@ -856,3 +856,13 @@ def pytest_xdist_make_scheduler(config, log):
         "xdist: --dist loadfile runs with the suite's fixed file placement (tests/_xdist_placement.py), not xdist's first-free-worker order"
     )
     return FilePlacementScheduling(config, log)
+
+
+@pytest.fixture(autouse=True)
+def _database_open_to_jobs():
+    """R689: a client's shutdown closes the database to background jobs until the next start, and a test that starts a job with no
+    client of its own must not inherit an earlier test's shutdown."""
+    from src.database import after_shutdown
+
+    after_shutdown.clear()
+    yield
