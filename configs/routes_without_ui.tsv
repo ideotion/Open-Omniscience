@@ -156,13 +156,10 @@ GET	/api/links/export.json	feature	2	Explore > Links (N)	download the citation g
 GET	/api/links/stats	feature	3	Explore > Links (N)	corpus-wide link totals
 POST	/api/llm/bulk	superseded			the synchronous bulk summarize/translate; R600 PR2 (#1938) moved the UI to /api/llm/bulk/queue
 POST	/api/llm/generate	internal		api	single-shot generation for programmatic callers
-POST	/api/llm/ollama/release	feature	1	Settings > Models (N)	'free the GPU': Ollama drops loaded models without stopping
 GET	/api/llm/ollama/state	feature	2	Settings > Models (N)	installed and running as two facts
-POST	/api/llm/ollama/stop	feature	2	Settings > Models (N)	stop an Ollama this app started (start has a button, stop does not)
 POST	/api/llm/pull	superseded			the UI pulls through /api/llm/models/pull-custom
 POST	/api/llm/pull/queue	superseded			the UI pulls through /api/llm/models/pull-custom
 POST	/api/llm/vllm/install/cancel	superseded			the task manager cancels the install job through /api/jobs
-GET	/api/llm/vllm/install/preflight	feature	2	Settings > Models (N)	disk, RAM and volume cost of a vLLM install shown BEFORE the click (#14e spirit)
 POST	/api/llm/vllm/start	feature	3	Settings > Models (N)	start vLLM (stop and status have buttons)
 GET	/api/markets/overview	superseded			Markets reads /api/markets/board
 PUT	/api/markets/rules/{rule_id}	feature	3	Markets (O)	edit an alert rule (create, run and delete exist)
@@ -176,7 +173,6 @@ DELETE	/api/quarantine/host-pairs	feature	2	Quarantine (O)	withdraw a confirmed 
 GET	/api/quarantine/host-pairs	feature	2	Quarantine (O)	list confirmed host pairs
 POST	/api/quarantine/host-pairs	feature	2	Quarantine (O)	'this source really publishes on that host': releases false quarantines
 POST	/api/safety/backup/encrypted	superseded			encrypted snapshot download; the Backup tab exports through /api/backup/v2
-POST	/api/scheduler/memory-guard/resume	feature	1	Task manager (O)	collection paused for low memory has no 'resume now' button
 GET	/api/scheduler/runs	feature	3	Task manager (O)	recent scheduler run reports
 POST	/api/search/index-job/{action}	superseded			the task manager pauses, resumes and cancels it through /api/jobs/{job_id}/... (job 'search-reindex')
 GET	/api/search/instant/status	internal		diagnostics	title-index coverage counts for a status line
