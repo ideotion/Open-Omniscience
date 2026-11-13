@@ -4572,6 +4572,8 @@
   "Significant at p < 0.05": "p < 0.05 पर सार्थक",
   "Signing key (Ed25519), to give the recipient some other way:": "हस्ताक्षर कुंजी (Ed25519), जो प्राप्तकर्ता को किसी और तरीके से देनी है:",
   "Silent in this trail": "इस निशान में मौन",
+  "Simple": "सरल",
+  "Simple view": "सरल दृश्य",
   "Since": "से",
   "Since lemmatisation was added, new articles file “studies” under “study”; articles indexed before then still keep “studies” as its own keyword, so one word is split across two. Folding moves those older mentions to the base form, exactly as a re-index would, without re-reading any article. Only single words in the languages the app lemmatises are folded; phrases, names and keywords your families or groups use are left as they are. Each keyword’s language is then set from the languages of its mentions. The report lists the largest folds.": "जब से लेमैटाइज़ेशन जोड़ा गया है, नए लेख “studies” को “study” के अंतर्गत रखते हैं; उससे पहले अनुक्रमित लेख अब भी “studies” को अलग कीवर्ड के रूप में रखते हैं, इसलिए एक ही शब्द दो में बँटा रहता है। मिलान उन पुराने उल्लेखों को मूल रूप में ले जाता है, ठीक वैसे ही जैसे पुनः अनुक्रमण करता, किसी लेख को दोबारा पढ़े बिना। केवल उन भाषाओं के एकल शब्द मिलाए जाते हैं जिन्हें ऐप लेमैटाइज़ करता है; वाक्यांश, नाम और आपके परिवारों या समूहों द्वारा उपयोग किए गए कीवर्ड जैसे हैं वैसे ही रहते हैं। इसके बाद हर कीवर्ड की भाषा उसके उल्लेखों की भाषाओं से तय की जाती है। रिपोर्ट सबसे बड़े मिलानों की सूची देती है।",
   "Since the last restart": "पिछले पुनरारंभ से",

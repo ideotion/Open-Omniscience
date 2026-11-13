@@ -4572,6 +4572,8 @@
   "Significant at p < 0.05": "在 p < 0.05 时显著",
   "Signing key (Ed25519), to give the recipient some other way:": "签名密钥（Ed25519），请通过其他途径交给接收者：",
   "Silent in this trail": "在此轨迹中沉默",
+  "Simple": "简洁",
+  "Simple view": "简洁视图",
   "Since": "自",
   "Since lemmatisation was added, new articles file “studies” under “study”; articles indexed before then still keep “studies” as its own keyword, so one word is split across two. Folding moves those older mentions to the base form, exactly as a re-index would, without re-reading any article. Only single words in the languages the app lemmatises are folded; phrases, names and keywords your families or groups use are left as they are. Each keyword’s language is then set from the languages of its mentions. The report lists the largest folds.": "自加入词形还原以来，新文章会把“studies”归入“study”；在此之前索引的文章仍把“studies”作为单独的关键词，因此同一个词被拆成了两个。合并会把这些旧的提及移到基本形式，结果与重新索引完全相同，但不会重新读取任何文章。只合并本应用做词形还原的语言中的单个词；短语、名称以及您的词族或分组所使用的关键词保持不变。随后，每个关键词的语言将根据其提及的语言来确定。报告会列出规模最大的合并。",
   "Since the last restart": "自上次重启以来",

@@ -1,0 +1,171 @@
+/*
+ * Simple mode (invariant #34, ruling R682). GPL-3.0-or-later.
+ * Every rule is scoped to html[data-mode=…] or to simple mode's own ids, so the full
+ * interface is untouched when the switch is off. Colours come from the active theme's own
+ * variables, so all themes apply.
+ */
+
+/* ---------- the top-bar switch (all modes; constant footprint, invariant #3) ---------- */
+#ui-simple-toggle { width:auto; min-width:92px; padding:0 10px; gap:7px; display:inline-flex; align-items:center;
+  justify-content:center; font-size:12px; font-weight:600; color:var(--fg-soft, var(--fg)); }
+#ui-simple-toggle .simple-switch-track { position:relative; flex:0 0 auto; width:28px; height:16px; border-radius:999px;
+  background:color-mix(in srgb, var(--muted) 40%, transparent); border:1px solid color-mix(in srgb, var(--muted) 60%, transparent); transition:background .15s ease; }
+#ui-simple-toggle .simple-switch-knob { position:absolute; top:1px; left:1px; width:12px; height:12px; border-radius:50%;
+  background:var(--panel, #fff); box-shadow:0 0 0 1px color-mix(in srgb, var(--muted) 60%, transparent); transition:transform .15s ease; }
+#ui-simple-toggle.on .simple-switch-track { background:var(--accent); border-color:var(--accent); }
+#ui-simple-toggle.on .simple-switch-knob { transform:translateX(12px); background:var(--accent-fg, #fff); }
+[dir="rtl"] #ui-simple-toggle.on .simple-switch-knob { transform:translateX(-12px); }
+[dir="rtl"] #ui-simple-toggle .simple-switch-knob { left:auto; right:1px; }
+#ui-simple-toggle .simple-switch-label { white-space:nowrap; max-width:7em; overflow:hidden; text-overflow:ellipsis; }
+@media (max-width: 600px) { #ui-simple-toggle { min-width:44px; padding:0 8px; } #ui-simple-toggle .simple-switch-label { display:none; } }
+@media (prefers-reduced-motion: reduce) { #ui-simple-toggle .simple-switch-track, #ui-simple-toggle .simple-switch-knob { transition:none; } }
+
+/* ---------- what each mode shows ---------- */
+#simple-root, #simple-nav, #simple-back { display:none; }
+html[data-mode="simple"] #simple-root { display:block; }
+html[data-mode="simple"] #simple-nav { display:block; }
+html[data-mode="peek"] #simple-back { display:flex; }
+
+html[data-mode="simple"] #navGroups,
+html[data-mode="simple"] .tab-page,
+html[data-mode="simple"] .tab-page.active,
+html[data-mode="simple"] #subtab-strip { display:none !important; }
+/* Operational controls most visits never use. Airplane mode, the Wikipedia stream, the
+   activity chip, language, help and shut down stay (R682: network state is never hidden). */
+html[data-mode="simple"] #rate-toggle,
+html[data-mode="simple"] #tm-open,
+html[data-mode="simple"] #llm { display:none !important; }
+/* The health pill steps aside only while it says "healthy"; any other state shows. */
+html[data-mode="simple"] #health:has(.dot.ok) { display:none; }
+
+/* ---------- the back bar (a full-view tool opened from simple mode) ---------- */
+#simple-back { align-items:center; justify-content:center; gap:12px; flex-wrap:wrap; padding:8px 16px;
+  background:color-mix(in srgb, var(--accent) 14%, var(--panel)); border-bottom:1px solid var(--border);
+  color:var(--fg); font-size:14px; }
+#simple-back button { font-weight:600; }
+
+/* ---------- sidebar list ---------- */
+#simple-nav { padding:6px 10px; }
+#simple-nav .simple-nav-list { display:flex; flex-direction:column; gap:2px; }
+#simple-nav .nav-item { width:100%; }
+
+/* ---------- the views ---------- */
+#simple-root { outline:none; }
+#simple-root .s-view { max-width:920px; margin:0 auto; padding:22px 20px 64px; color:var(--fg); }
+#simple-root .s-h1 { font-size:28px; line-height:1.2; font-weight:700; margin:0 0 18px; letter-spacing:-.01em; }
+#simple-root .s-h2 { font-size:18px; font-weight:650; margin:30px 0 12px; }
+#simple-root .s-h3 { font-size:16px; font-weight:650; margin:0; }
+#simple-root .s-lede { color:var(--fg-soft, var(--fg)); font-size:15px; margin:-6px 0 18px; }
+#simple-root .s-muted { color:var(--muted); }
+#simple-root .s-card { background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:16px 18px;
+  box-shadow:0 1px 2px rgba(0,0,0,.06); }
+#simple-root .s-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:14px; align-items:start; }
+#simple-root .s-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+
+/* status */
+#simple-root .s-status { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px 24px; }
+#simple-root .s-figs { display:flex; align-items:center; gap:14px 26px; flex-wrap:wrap; flex:1 1 auto; }
+#simple-root .s-fig { display:flex; flex-direction:column; }
+#simple-root .s-fig b { font-size:26px; font-weight:700; line-height:1.1; font-variant-numeric:tabular-nums; }
+#simple-root .s-fig span { color:var(--muted); font-size:13px; }
+#simple-root .s-collect { display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:14px; }
+#simple-root .s-dot { width:10px; height:10px; border-radius:50%; background:var(--muted); flex:0 0 auto; }
+#simple-root .s-dot.ok { background:var(--ok, #3fb950); }
+#simple-root .s-dot.idle { background:var(--warn, #d29922); }
+#simple-root .s-dot.off { background:transparent; border:2px solid var(--muted); }
+
+/* leads */
+#simple-root .s-lead { display:flex; flex-direction:column; gap:8px; }
+#simple-root .s-lead-top { display:flex; align-items:center; gap:8px; }
+#simple-root .s-lead-title { font-size:16px; line-height:1.35; margin:0; font-weight:650; }
+#simple-root .s-lead-sum { margin:0; color:var(--fg-soft, var(--fg)); font-size:14px; line-height:1.5;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+#simple-root .s-chip { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:3px 10px;
+  font-size:12px; font-weight:600; background:var(--panel2); border:1px solid var(--border); color:var(--fg); }
+#simple-root .s-b-overtold { box-shadow:inset 3px 0 0 #d9822b; }
+#simple-root .s-b-undertold { box-shadow:inset 3px 0 0 #8a63d2; }
+#simple-root .s-b-watch, #simple-root .s-b-keep_watching { box-shadow:inset 3px 0 0 #c9b52e; }
+#simple-root .s-b-context { box-shadow:inset 3px 0 0 #2fb5a5; }
+#simple-root .s-chips { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+#simple-root button.s-term { cursor:pointer; font-size:14px; padding:6px 12px; min-height:34px; }
+#simple-root button.s-term:hover { border-color:var(--accent); }
+#simple-root .s-n { color:var(--muted); font-variant-numeric:tabular-nums; font-weight:500; }
+
+/* buttons */
+#simple-root .s-btn { display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:0 14px;
+  border-radius:9px; border:1px solid var(--border); background:var(--panel2); color:var(--fg); font:inherit; font-size:14px;
+  font-weight:600; text-decoration:none; cursor:pointer; }
+#simple-root .s-btn:hover { border-color:var(--accent); }
+#simple-root .s-btn.primary { background:var(--accent); color:var(--accent-fg, #fff); border-color:var(--accent); }
+#simple-root .s-btn.ghost { background:transparent; }
+#simple-root .s-btn.wide { width:100%; margin-top:12px; }
+#simple-root .s-link { background:none; border:0; padding:8px 0; color:var(--accent); font:inherit; font-weight:600; cursor:pointer; }
+#simple-root .s-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:auto; padding-top:4px; }
+#simple-root :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+/* the ⓘ disclosure and the marks */
+/* display:contents puts the ⓘ inline with its neighbours and lets the panel take a full row. */
+#simple-root .s-info { display:contents; }
+#simple-root .s-info-panel { flex:1 1 100%; }
+#simple-root .s-info-btn { width:32px; height:32px; min-width:32px; border-radius:50%; border:1px solid var(--border);
+  background:transparent; color:var(--muted); font-size:16px; line-height:1; cursor:pointer; }
+#simple-root .s-info-btn:hover, #simple-root .s-info-btn[aria-expanded="true"] { color:var(--accent); border-color:var(--accent); }
+#simple-root .s-info-panel { margin-top:8px; padding:10px 12px; border-radius:10px; background:var(--bg2, var(--panel2));
+  border:1px solid var(--border); font-size:13px; line-height:1.5; color:var(--fg-soft, var(--fg)); width:100%; box-sizing:border-box; }
+#simple-root .s-info-panel p { margin:0 0 8px; }
+#simple-root .s-info-panel .s-caveat { color:var(--caveat, var(--fg)); }
+#simple-root .s-drow { display:flex; gap:10px; justify-content:space-between; padding:3px 0; font-size:13px; border-top:1px dashed var(--border); }
+#simple-root .s-drow:first-child { border-top:0; }
+#simple-root .s-dk { color:var(--muted); flex:0 0 auto; max-width:50%; }
+#simple-root .s-dv { text-align:end; overflow-wrap:anywhere; }
+#simple-root .s-glance .s-drow { font-size:14px; padding:6px 0; }
+#simple-root .s-glance-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
+#simple-root .s-mark { display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:20px; padding:0 4px;
+  border-radius:6px; font-size:13px; font-weight:700; color:var(--caveat, var(--warn, #b7791f));
+  border:1px solid color-mix(in srgb, var(--caveat, #b7791f) 50%, transparent); cursor:help; }
+
+/* lists */
+#simple-root .s-toolbar { display:flex; align-items:flex-start; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+#simple-root .s-seg { display:inline-flex; border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+#simple-root .s-seg button { border:0; background:transparent; color:var(--fg); padding:8px 14px; font:inherit; font-size:14px; cursor:pointer; min-height:36px; }
+#simple-root .s-seg button[aria-pressed="true"] { background:var(--accent); color:var(--accent-fg, #fff); }
+#simple-root .s-list { display:flex; flex-direction:column; }
+#simple-root .s-item { padding:16px 2px; border-bottom:1px solid var(--border); }
+#simple-root .s-item-title { margin:0 0 4px; font-size:17px; line-height:1.35; font-weight:650; }
+#simple-root .s-item-title a, #simple-root .s-title-btn { color:var(--fg); text-decoration:none; background:none; border:0; padding:0;
+  font:inherit; text-align:start; cursor:pointer; }
+#simple-root .s-item-title a:hover, #simple-root .s-title-btn:hover { color:var(--accent); text-decoration:underline; }
+#simple-root .s-meta { color:var(--muted); font-size:13px; display:flex; gap:4px; flex-wrap:wrap; }
+#simple-root .s-excerpt { margin:8px 0 0; color:var(--fg-soft, var(--fg)); font-size:15px; line-height:1.55;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+#simple-root .s-excerpt.open { display:block; -webkit-line-clamp:unset; }
+#simple-root .s-count { font-size:15px; font-weight:600; margin:6px 0 12px; }
+#simple-root .s-glance { margin:0 0 12px; }
+
+/* search */
+#simple-root .s-search { display:flex; gap:8px; margin-bottom:14px; }
+#simple-root .s-search input { flex:1 1 auto; min-width:0; min-height:44px; padding:0 14px; border-radius:10px;
+  border:1px solid var(--border); background:var(--panel); color:var(--fg); font:inherit; font-size:16px; }
+#simple-root .s-search input:focus { border-color:var(--accent); outline:none; box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+#simple-root .s-search .s-btn { min-height:44px; }
+#simple-root .s-scope { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 12px; margin-bottom:12px;
+  border-radius:10px; background:var(--panel2); font-size:14px; }
+
+/* tools */
+#simple-root .s-tools { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:10px; }
+#simple-root .s-tool { width:100%; height:100%; text-align:start; display:flex; flex-direction:column; gap:4px; padding:14px 16px;
+  border-radius:12px; border:1px solid var(--border); background:var(--panel); color:var(--fg); font:inherit; cursor:pointer; }
+#simple-root .s-tool:hover { border-color:var(--accent); }
+#simple-root .s-tool b { font-size:15px; }
+#simple-root .s-tool span { color:var(--muted); font-size:13px; line-height:1.4; }
+
+/* states */
+#simple-root .s-loading { color:var(--muted); padding:14px 0; }
+#simple-root .s-error { color:var(--err, #e5534b); padding:12px 14px; border:1px solid currentColor; border-radius:10px; margin:8px 0; }
+#simple-root .s-empty { color:var(--fg-soft, var(--fg)); padding:18px; border:1px dashed var(--border); border-radius:12px; text-align:center; }
+
+@media (max-width: 600px) {
+  #simple-root .s-view { padding:16px 16px 56px; }
+  #simple-root .s-h1 { font-size:24px; }
+  #simple-root .s-search { flex-direction:column; }
+}

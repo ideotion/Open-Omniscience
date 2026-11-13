@@ -4572,6 +4572,8 @@
   "Significant at p < 0.05": "Значимо при p < 0.05",
   "Signing key (Ed25519), to give the recipient some other way:": "Ключ подписи (Ed25519), чтобы передать получателю другим путём:",
   "Silent in this trail": "Молчат в этом следе",
+  "Simple": "Просто",
+  "Simple view": "Простой вид",
   "Since": "С",
   "Since lemmatisation was added, new articles file “studies” under “study”; articles indexed before then still keep “studies” as its own keyword, so one word is split across two. Folding moves those older mentions to the base form, exactly as a re-index would, without re-reading any article. Only single words in the languages the app lemmatises are folded; phrases, names and keywords your families or groups use are left as they are. Each keyword’s language is then set from the languages of its mentions. The report lists the largest folds.": "С тех пор как появилась лемматизация, новые статьи относят «исследования» к «исследование»; статьи, проиндексированные раньше, по-прежнему хранят «исследования» как отдельное ключевое слово, и одно слово оказывается разделено на два. Сведение переносит эти старые упоминания к начальной форме точно так, как это сделала бы переиндексация, не перечитывая ни одной статьи. Сводятся только отдельные слова на языках, которые приложение лемматизирует; словосочетания, имена и ключевые слова, используемые вашими семействами или группами, остаются как есть. Затем язык каждого ключевого слова определяется по языкам его упоминаний. В отчёте перечислены самые крупные сведения.",
   "Since the last restart": "С последнего перезапуска",
