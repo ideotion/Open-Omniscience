@@ -120,3 +120,17 @@ def test_without_a_cgroup_limit_the_verdict_names_the_machine(monkeypatch):
     monkeypatch.setattr(rollup_serve, "_guard_floor_mb", lambda: 256.0)
     verdict = rollup_serve._affordability_verdict()
     assert verdict["available_mb"] == 1000.0 and verdict["available_from"] == "machine"
+
+
+def test_reclaim_is_counted_per_level_so_a_full_child_still_wins(tmp_path):
+    """Review finding: an ancestor whose small raw headroom is mostly a sibling's page cache must not hide a child cgroup that is
+    full of anonymous memory. Ancestor: 4 GB limit, 3.5 GB used of which 3 GB inactive cache (3.5 GB reclaimable room). Child:
+    2 GB limit, 1.2 GB used, no cache (0.8 GB room). The child's 0.8 GB is the answer."""
+    G = 1024 * MB
+    root, proc = _v2(tmp_path, own="/slice/app", levels={
+        "/slice": {"memory.max": str(4 * G), "memory.current": str(int(3.5 * G)), "memory.stat": f"inactive_file {3 * G}\n"},
+        "/slice/app": {"memory.max": str(2 * G), "memory.current": str(int(1.2 * G)), "memory.stat": "inactive_file 0\n"},
+    })
+    got = cgroup_memory.cgroup_available_mb(root, proc)
+    assert got["available_mb"] == pytest.approx(0.8 * 1024, abs=0.2)
+    assert got["limit_mb"] == pytest.approx(2 * 1024, abs=0.1)

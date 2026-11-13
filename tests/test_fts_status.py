@@ -364,7 +364,7 @@ def test_a_no_drift_verdict_over_an_empty_index_says_the_index_is_outside_it():
     assert report["verdict"] == "no drift" and report["drift"] is False  # the six checks are unchanged (no fts check: options B/C declined)
     assert not any("fts" in name or "index" in name for name, _ in _VERDICT_CHECKS)
     method = report["method"]
-    assert "Drift covers counters, mentions and foreign keys, NOT the full-text index (read fts)" in method
+    assert "Drift covers counters, orphan keywords, dangling mentions and foreign keys, NOT the full-text index (read fts)" in method
 
 
 def test_a_slow_population_count_is_a_status_and_leaves_the_rest_of_the_answer_alone():

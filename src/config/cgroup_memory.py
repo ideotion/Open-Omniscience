@@ -53,10 +53,20 @@ def cgroup_available_mb(root: str | None = None, proc_cgroup: str | None = None)
     out: dict[str, Any] = {"available_mb": None, "limit_mb": None, "source": source, "unreadable": bool(reading.get("unreadable"))}
     if head is None or limit is None or source is None:
         return out
-    used = max(0, limit - head)
-    inactive = _inactive_file_bytes(root or reader.CGROUP_ROOT, source, reading.get("path") or "/")
-    reclaim = min(inactive, used) if inactive is not None else 0
-    out["available_mb"] = round((head + reclaim) / (1024 * 1024), 1)
+    # The reclaimable cache is added PER LEVEL and the tightest result wins: the level with the smallest raw headroom is not
+    # always the tightest once its cache is counted (an ancestor full of a sibling's page cache beside a process cgroup full of
+    # anonymous memory), and the kernel kills at whichever limit is reached first.
+    levels = reading.get("levels") or [{"source": source, "limit_bytes": limit, "used_bytes": max(0, limit - head),
+                                         "path": reading.get("path") or "/"}]
+    avail: int | None = None
+    for lvl in levels:
+        l_limit, l_used = lvl["limit_bytes"], lvl["used_bytes"]
+        inactive = _inactive_file_bytes(root or reader.CGROUP_ROOT, lvl["source"], lvl["path"])
+        reclaim = min(inactive, l_used) if inactive is not None else 0
+        room = max(0, l_limit - l_used) + reclaim
+        if avail is None or room < avail:
+            avail, limit = room, l_limit
+    out["available_mb"] = round((avail if avail is not None else head) / (1024 * 1024), 1)
     out["limit_mb"] = round(limit / (1024 * 1024), 1)
     return out
 

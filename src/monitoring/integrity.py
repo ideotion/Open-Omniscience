@@ -766,7 +766,7 @@ def corpus_integrity(
         "it starts over), and a figure finished that way says assembled_across_builds. The "
         "foreign-key pass watches articles and keywords only: a change confined to another table "
         "between builds is not seen by a resumed pass. Counter drift samples the top-mention keywords unless "
-        "full=1. Drift covers counters, mentions and foreign keys, NOT the full-text index (read fts); "
+        "full=1. Drift covers counters, orphan keywords, dangling mentions and foreign keys, NOT the full-text index (read fts); "
         "reported, never fixed (reconcile/prune own that). Counts only, no score. The verdict "
         "reads COMPLETED checks only: drift=true if any found drift, false only if all completed "
         "clean, null if one did not (incomplete_checks names it; timed_out: budget ran out)."
