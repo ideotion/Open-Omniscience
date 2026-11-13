@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -139,6 +140,40 @@ def cell(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
 
 
+def help_drafts() -> list[str]:
+    """The translated Help documents on disk (``docs/i18n/<lang>/``), each read from its own banner comment.
+
+    A Help draft is a whole document, not a key, so it has no merge diff to read: the file itself says what it
+    is (AI-drafted, its coverage) in the comment that opens it, and this section lists exactly that.
+    """
+    base = ROOT / "docs" / "i18n"
+    rows = []
+    for path in sorted(base.glob("*/*.md")):
+        text = path.read_text(encoding="utf-8")
+        m = re.match(r"\s*<!--(.*?)-->", text, re.S)
+        banner = " ".join(m.group(1).split()) if m else ""
+        cov = re.search(r"Coverage: ([^.]*)\.", banner)
+        reviewed = "not yet reviewed" not in banner
+        rows.append(
+            f"| {path.parent.name} | `docs/i18n/{path.parent.name}/{path.name}` | "
+            f"{cell(cov.group(1)) if cov else 'not stated'} | {'yes' if reviewed else 'no'} |"
+        )
+    if not rows:
+        return []
+    return [
+        "## Help documents",
+        "",
+        "Translated Help documents served by Help in that language (the English original is authoritative).",
+        "To act: read the draft beside the English document, correct it with a pull request, and when a native",
+        'speaker has read it, replace "not yet reviewed by a native speaker" in its opening comment.',
+        "",
+        "| Language | File | Coverage (from its opening comment) | Native-reviewed |",
+        "|---|---|---|---|",
+        *rows,
+        "",
+    ]
+
+
 def build() -> dict[Path, str]:
     langs = lang_codes()
     others = [lang for lang in langs if lang != "en"]
@@ -185,6 +220,7 @@ def build() -> dict[Path, str]:
     for n in NOTES:
         doc.append(f"- {n}")
     doc.append("")
+    doc += help_drafts()
 
     sheets: dict[str, list[str]] = {lang: [] for lang in others}
     for gid, ref, title, pr, sha, en, per in data:

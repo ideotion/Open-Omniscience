@@ -7,7 +7,7 @@ refuses a draft that is only a fragment. Three states, decided by the files them
 * COMPLETE: ``docs/i18n/<lang>/<FILE>`` exists, is UTF-8 Markdown and has the SAME HEADING SKELETON as the English (the same sequence of
   heading levels, headings in code fences not counted): the omnibar's Help-content group lands on headings, so a translated document with a
   different skeleton would send a reader to the wrong place. Only these count toward the ratchet.
-* PARTIAL: the file exists but its skeleton differs (``fr/QUICKSTART.md`` is an 8-heading abridgement of a 17-heading document). It is served, and
+* PARTIAL: the file exists but its skeleton differs (``fr/QUICKSTART.md`` was an 8-heading abridgement of a 17-heading document until 2026-11-13). It is served, and
   it is LISTED in ``PARTIAL`` below with the reason; it is never counted as translated.
 * ABSENT: no file. The gap is the complement of the other two, named in every failure message.
 
@@ -36,11 +36,9 @@ TRANCHES: dict[int, tuple[str, ...]] = {
     3: ("design", "roadmap", "changes"),
 }
 #: COMPLETE (slug, lang) drafts per tranche that must always exist. Raise it with the drafts; lowering it needs a ruling.
-FLOOR: dict[int, int] = {1: 0, 2: 0, 3: 0}
+FLOOR: dict[int, int] = {1: 22, 2: 0, 3: 0}
 #: Drafts that exist and are served but are NOT complete: the reason is the measurement, never a judgement of the translation.
-PARTIAL: dict[tuple[str, str], str] = {
-    ("quickstart", "fr"): "an abridgement: 8 headings against the English document's 17 (docs/i18n/fr/QUICKSTART.md, hand-seeded 2026-06-10)",
-}
+PARTIAL: dict[tuple[str, str], str] = {}
 
 _FENCE = re.compile(r"^\s{0,3}(```|~~~)")
 _HEADING = re.compile(r"^(#{1,6}) +(.*\S)\s*$")
