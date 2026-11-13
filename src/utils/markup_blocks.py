@@ -323,3 +323,97 @@ def search_anchored(
             return None
         pos = nxt if nxt > start else start + 1
     return None
+
+
+# --------------------------------------------------------------------------- #
+#  The HTML family, shared (audit recheck 2026-11-13, P1/P2)
+# --------------------------------------------------------------------------- #
+# THE SAME MISS A THIRD TIME. The 2026-08-05 fix made the <style>/<script> BLOCK linear in
+# src/analytics/extract.py and left, beside it, ``<!--.*?-->`` (the lazy-closer shape) and the
+# opener ``<(style|script)\b[^>]*>`` searched with ``.search`` (the ``[^X]*X`` shape), both still
+# K*N; and src/ingest/email.py kept all three of the original patterns, on newsletter bodies the
+# person did not write. MEASURED on main ca1ab824: 280 KB of unclosed ``<style>`` 42.7 s in the
+# newsletter strip, 160 KB of ``<!--`` 1.9 s in the article strip, each 4x per doubling. So the
+# HTML family lives HERE, once, and both modules call it.
+
+#: The <style>/<script> opener and its per-tag closers (``</\1\s*>`` as two patterns).
+HTML_STYLE_SCRIPT_OPEN = re.compile(r"<(style|script)\b[^>]*>", re.IGNORECASE | re.DOTALL)
+_HTML_STYLE_SCRIPT_CLOSE = {tag: re.compile(r"</%s\s*>" % tag, re.IGNORECASE) for tag in ("style", "script")}
+#: The opener's own fixed prefix (``\b`` included, so a failed attempt fails at the ``[^>]*>``
+#: body and never at the word, which is what makes the strong resync rule sound).
+_HTML_STYLE_SCRIPT_ANCHOR = re.compile(r"<(style|script)\b", re.IGNORECASE)
+_GT_RESYNC = stop_char_resync(">")
+_HTML_COMMENT_OPEN = re.compile(r"<!--")
+_HTML_COMMENT_CLOSE = re.compile(r"-->")
+#: ``<[^>]+>``, the bare tag strip the newsletter path and the keyword cleaner use.
+HTML_ANY_TAG = re.compile(r"<[^>]+>", re.DOTALL)
+
+
+def find_style_script_opener(text: str, pos: int = 0) -> re.Match[str] | None:
+    """``HTML_STYLE_SCRIPT_OPEN.search(text, pos)``, identical, in one walk."""
+    return search_anchored(text, HTML_STYLE_SCRIPT_OPEN, pos, anchor=_HTML_STYLE_SCRIPT_ANCHOR, resync=_GT_RESYNC)
+
+
+def strip_style_script(text: str, repl: str = " ") -> str:
+    r"""``re.sub(r"<(style|script)\b[^>]*>.*?</\1\s*>", repl, text, flags=I|S)``, byte-identical, linear.
+
+    Not :func:`strip_blocks`, and the reason is a case that function gets wrong for this family:
+    the opener's ``[^>]*`` crosses ``<``, so ``<style <script>x</script>`` matches the opener
+    ``<style <script>``; when ``style`` has no closer, ``strip_blocks`` resumes AFTER that match and
+    never sees the ``<script>`` block inside it, which the regex removes. A seeded differential found
+    it (``tests/test_html_strips_linear.py``). Here the family comes from the ANCHOR, so a dead
+    family's opener costs one anchor step and a live one's opener is matched only when it can be
+    used:
+
+    * the regex's opener ends at the FIRST ``>`` after the anchor (``[^>]`` cannot hold one), and its
+      lazy body ends at the first closer after that: two literal-ish searches;
+    * no ``>`` after an anchor means no later opener can complete either: stop;
+    * no closer for a family after one of its openers means none after any later one: the family is
+      dead, and its later anchors are stepped over.
+
+    Every live search either removes a block (the scan jumps past its ``>``) or kills a family, so
+    the walk is linear in ``text``.
+    """
+    out: list[str] = []
+    copied = pos = 0
+    dead: set[str] = set()
+    while True:
+        a = _HTML_STYLE_SCRIPT_ANCHOR.search(text, pos)
+        if a is None:
+            break
+        family = a.group(1).lower()
+        if family in dead:
+            pos = a.end()
+            continue
+        gt = text.find(">", a.end())
+        if gt < 0:
+            break
+        close = _HTML_STYLE_SCRIPT_CLOSE[family].search(text, gt + 1)
+        if close is None:
+            dead.add(family)
+            pos = a.end()
+            continue
+        out.append(text[copied : a.start()])
+        out.append(repl)
+        copied = pos = close.end()
+    if not out:
+        return text
+    out.append(text[copied:])
+    return "".join(out)
+
+
+def strip_html_comments(text: str, repl: str = " ") -> str:
+    """``re.sub(r"<!--.*?-->", repl, text, flags=S)``, byte-identical, linear."""
+    return strip_one_block(text, _HTML_COMMENT_OPEN, _HTML_COMMENT_CLOSE, repl)
+
+
+def has_html_comment(text: str) -> bool:
+    """``re.search(r"<!--.*?-->", text, flags=S) is not None`` in two literal scans: a closed
+    comment exists exactly when some ``-->`` follows the FIRST ``<!--``."""
+    i = text.find("<!--")
+    return i >= 0 and text.find("-->", i + 4) >= 0
+
+
+def strip_html_tags(text: str, repl: str = " ") -> str:
+    """``HTML_ANY_TAG.sub(repl, text)``, byte-identical, linear (the wiki strip's own rule)."""
+    return sub_anchored(text, HTML_ANY_TAG, repl, anchor="<", resync=_GT_RESYNC)

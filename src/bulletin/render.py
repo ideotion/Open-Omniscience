@@ -798,6 +798,26 @@ def _coverage_blocks(section: dict, T: Translator) -> list[tuple[str | None, str
     return blocks
 
 
+#: The schemes a bulletin may link to (audit recheck P6, 2026-11-13). The exported HTML opens
+#: from a file, with no Content-Security-Policy to stop a ``javascript:`` link, and the record's
+#: URL is whatever the source published: the reader already passes the same field through
+#: ``safe_href``. Anything else is shown as the title alone, never as a link.
+_LINK_SCHEMES = ("http", "https", "mailto")
+
+
+def _link_target(url: object) -> str | None:
+    """``url`` when it is a link a reader can follow safely (``_LINK_SCHEMES``), else ``None``.
+
+    Control characters and spaces are refused rather than stripped: a browser drops them before
+    reading the scheme (``java\tscript:``), and ``_MD_LINK`` stops at whitespace anyway."""
+    if not isinstance(url, str) or not url or re.search(r"[\x00-\x20\x7f]", url):
+        return None
+    scheme, sep, _rest = url.partition(":")
+    if not sep or scheme.lower() not in _LINK_SCHEMES:
+        return None
+    return url
+
+
 def _article_lines(row: dict, T: Translator) -> list[str]:
     """One article as a few lines, with its two classes of fact kept apart.
 
@@ -809,7 +829,7 @@ def _article_lines(row: dict, T: Translator) -> list[str]:
     asserted = row.get("asserted") or {}
     deduced = row.get("deduced") or {}
     title = str(row.get("title") or "(untitled)")
-    url = row.get("url")
+    url = _link_target(row.get("url"))
     head = f"[{title}]({url})" if url else title
     # The reference number, when the record has been numbered. It is the article's
     # annex filename, so a reader following `[0012]` from here opens exactly one file
