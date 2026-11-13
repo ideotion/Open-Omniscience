@@ -116,7 +116,7 @@ the `INT` lane ingests one treaty in six languages aligned by identity (Q908), a
 measured on a labelled sample with the ≈ share stated. **Operator:** the live verification of each seed row
 (the allowlist of 0.4 row V or the maintainer's machine). Brief `S06-02`.
 
-**Progress 2026-11-13 (Lane K, PR pending; R679, R680): what the session can build is built; the row stays OPEN on operator
+**Progress 2026-11-13 (Lane K, PR #1945; R679, R680): what the session can build is built; the row stays OPEN on operator
 steps.** Of the three closing conditions:
 - *The coverage report* ships (PR #1710): `/api/diagnostics/law-coverage` → `floor` and the Living sources law entry place all
   140 floor countries in one of four states, with the twelve-language tally and zh on its own line. New here (R679): within a
