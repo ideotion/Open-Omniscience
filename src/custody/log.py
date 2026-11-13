@@ -505,7 +505,7 @@ def _is_yours(signer: tuple[str, str | None], local: PublicIdentity) -> bool:
     ed, ml = signer
     if not ed or ed != local.ed25519_pub:
         return False
-    return ml is None or local.ml_dsa_pub is None or ml == local.ml_dsa_pub
+    return ml is None or ml == local.ml_dsa_pub  # a hybrid half this install does not hold is not this install's
 
 
 def describe_export(bundle: dict, *, local: PublicIdentity | None, require_signer: bool = False) -> dict:
@@ -518,15 +518,28 @@ def describe_export(bundle: dict, *, local: PublicIdentity | None, require_signe
     with keys of their own verifies, so the first answer is only given when the keys are this
     installation's (``local``; ``None`` when they cannot be read)."""
     ok, issues = verify_export(bundle, require_signer=require_signer)
+    if not bundle.get("entries"):
+        ok, issues = False, [*issues, "the bundle carries no entries: there is nothing to verify"]
     counts: dict[tuple[str, str | None], int] = {}
+    proven: dict[tuple[str, str | None], bool] = {}
     for d in bundle.get("entries", []):
         try:
-            key = _signer_of(CustodyEntry.from_dict(d))
+            e = CustodyEntry.from_dict(d)
+            key = _signer_of(e)
+            good, _reason = signing.verify(e.signature, canonical_bytes({**e.signable_core()}))
         except Exception:  # noqa: BLE001 - a malformed entry is already an issue from verify_export
             continue
         counts[key] = counts.get(key, 0) + 1
+        proven[key] = proven.get(key, True) and good
+    # ``yours`` is said only of a signer whose every signature verified: a key merely CLAIMED by an entry with a
+    # bad signature proves nothing, and answering for it would let any caller ask whether a key is this install's.
     signed_by = [
-        {"ed25519_pub": ed, "ml_dsa_pub": ml, "entries": n, "yours": None if local is None else _is_yours((ed, ml), local)}
+        {
+            "ed25519_pub": ed,
+            "ml_dsa_pub": ml,
+            "entries": n,
+            "yours": None if local is None or not proven[(ed, ml)] else _is_yours((ed, ml), local),
+        }
         for (ed, ml), n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0][0]))
     ]
     if not ok:

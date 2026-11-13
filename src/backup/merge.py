@@ -7888,7 +7888,10 @@ def _replace_file_bytes(target: Path, data: bytes) -> None:
 
     tmp = target.with_name(f"{target.name}.{secrets.token_hex(4)}.tmp")
     try:
-        tmp.write_bytes(data)
+        with open(tmp, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
         os.replace(tmp, target)
     except BaseException:
         tmp.unlink(missing_ok=True)

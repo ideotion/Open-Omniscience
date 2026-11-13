@@ -788,6 +788,11 @@ def read_volume_backup(
 #  Read / stage
 # --------------------------------------------------------------------------- #
 _EXTRACT_CHUNK = 1024 * 1024
+#: What one member, and one directory level of its path, cost on disk beyond their bytes (a block and an inode, rounded up).
+_ENTRY_OVERHEAD = 4096
+#: Far beyond any backup the app writes (a few files, plus the public files an artifact may carry), far below what fills a disk.
+_MAX_MEMBERS = 200_000
+_MAX_DEPTH = 64
 
 
 def _safe_extract(zf: zipfile.ZipFile, staging: Path) -> None:
@@ -797,14 +802,25 @@ def _safe_extract(zf: zipfile.ZipFile, staging: Path) -> None:
     see the archive, and a zip's members may inflate far beyond it (a 204 KB zip was measured
     inflating to 200 MiB), so the sum of the DECLARED sizes is preflighted here, before a byte is
     written; and since a declared size can lie, each member is then copied by hand and refused
-    the moment it yields more than it declared. Together the two keep a crafted or damaged backup
-    from filling the data disk the live store writes to."""
+    the moment it yields more than it declared. Bytes are not all a member costs: each one, and each
+    directory level of its path, also takes a block and an inode, so a few hundred empty members
+    nested hundreds of levels deep wrote 705 MiB from a 737 KB zip whose declared sum was 203 bytes.
+    So each member and each level of its path is charged ``_ENTRY_OVERHEAD`` too, and the member
+    count and path depth are capped. Together these keep a crafted or damaged backup from filling
+    the data disk the live store writes to."""
     root = staging.resolve()
     infos = zf.infolist()
+    if len(infos) > _MAX_MEMBERS:
+        raise ArtifactError(f"artifact has {len(infos)} members, more than any backup carries ({_MAX_MEMBERS})")
     targets: list[tuple[zipfile.ZipInfo, Path]] = []
+    needed = 0
     for info in infos:
         name = info.filename
-        if Path(name).is_absolute() or ".." in Path(name).parts:
+        parts = Path(name).parts
+        if len(parts) > _MAX_DEPTH:
+            raise ArtifactError(f"member path in artifact is {len(parts)} levels deep, more than any backup carries")
+        needed += max(0, info.file_size) + _ENTRY_OVERHEAD * len(parts)
+        if Path(name).is_absolute() or ".." in parts:
             raise ArtifactError(f"unsafe member path in artifact: {name!r}")
         target = (staging / name).resolve()
         # Containment must be checked with ``is_relative_to``, never a string prefix
@@ -814,7 +830,7 @@ def _safe_extract(zf: zipfile.ZipFile, staging: Path) -> None:
         if not target.is_relative_to(root):
             raise ArtifactError(f"unsafe member path in artifact: {name!r}")
         targets.append((info, target))
-    preflight_free_space(staging, sum(max(0, info.file_size) for info in infos), what="restore")
+    preflight_free_space(staging, needed, what="restore")
     for info, target in targets:
         if info.is_dir():
             target.mkdir(parents=True, exist_ok=True)

@@ -71,6 +71,38 @@ def test_an_honest_archive_still_extracts_whole(tmp_path):
     assert (tmp_path / "manifest.json").read_text() == "{}"
 
 
+def test_each_member_and_each_level_of_its_path_is_charged_beyond_its_bytes(tmp_path, monkeypatch):
+    """Empty members nested deep declare almost nothing and still cost a block and an inode per level."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for i in range(20):
+            zf.writestr(f"d{i}/" + "a/" * 40 + "f", b"")
+    monkeypatch.setattr(folder_backup, "free_bytes", lambda _p: 1024 * 1024)
+    with zipfile.ZipFile(io.BytesIO(buf.getvalue())) as zf:
+        assert sum(i.file_size for i in zf.infolist()) == 0
+        with pytest.raises(artifact.BackupSpaceError):
+            artifact._safe_extract(zf, tmp_path)
+    assert list(tmp_path.iterdir()) == [], "nothing was written before the refusal"
+
+
+def test_a_path_deeper_than_any_backup_is_refused(tmp_path):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("a/" * (artifact._MAX_DEPTH + 1) + "f", b"")
+    with zipfile.ZipFile(io.BytesIO(buf.getvalue())) as zf, pytest.raises(artifact.ArtifactError, match="levels deep"):
+        artifact._safe_extract(zf, tmp_path)
+
+
+def test_more_members_than_any_backup_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(artifact, "_MAX_MEMBERS", 3)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for i in range(4):
+            zf.writestr(f"m{i}", b"")
+    with zipfile.ZipFile(io.BytesIO(buf.getvalue())) as zf, pytest.raises(artifact.ArtifactError, match="members"):
+        artifact._safe_extract(zf, tmp_path)
+
+
 # --------------------------------------------------------------------------- P5
 def test_the_folder_manifest_is_written_through_a_temp_file_and_a_rename(tmp_path, monkeypatch):
     target = tmp_path / folder_backup.MANIFEST_NAME
@@ -151,6 +183,33 @@ def test_a_verify_never_creates_signing_keys(client, tmp_path):
     assert v["verdict"] == "signatures-valid-your-keys-unreadable"
     assert v["signer_is_yours"] is None
     assert not list(tmp_path.rglob("custody_ed25519.pem")), "a verify is a read"
+
+
+def test_a_key_claimed_by_a_bad_signature_is_never_said_to_be_yours(client):
+    """Otherwise any caller could ask whether a key is this installation's by posting it with a junk signature."""
+    client.post("/api/custody/log", json={"item_id": "article:7", "item_hash": "c" * 64, "action": "ingest"})
+    bundle = client.get("/api/custody/export").json()
+    entry = dict(bundle["entries"][0])
+    entry["signature"] = {**entry["signature"], "ed25519": {**entry["signature"]["ed25519"], "sig": "00"}}
+    v = client.post("/api/custody/verify", json={"bundle": {**bundle, "entries": [entry]}}).json()
+    assert v["verified"] is False
+    assert [s["yours"] for s in v["signed_by"]] == [None]
+
+
+def test_an_empty_bundle_is_not_verified(client):
+    client.post("/api/custody/log", json={"item_id": "article:7", "item_hash": "c" * 64, "action": "ingest"})
+    v = client.post("/api/custody/verify", json={"bundle": {"entries": []}}).json()
+    assert v["verified"] is False and v["verdict"] == "not-verified"
+    assert any("no entries" in i for i in v["issues"])
+
+
+def test_a_hybrid_half_this_install_does_not_hold_is_not_yours():
+    from src.custody.log import _is_yours
+    from src.custody.signing import PublicIdentity
+
+    local = PublicIdentity("ab" * 32, None, None)
+    assert _is_yours(("ab" * 32, None), local) is True
+    assert _is_yours(("ab" * 32, "cd" * 40), local) is False
 
 
 # --------------------------------------------------------------------------- P16

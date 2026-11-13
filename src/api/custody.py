@@ -246,13 +246,18 @@ class VerifyBundleRequest(BaseModel):
 
 def _local_identity():
     """This installation's custody signing identity, or ``None`` when it has none yet or it cannot
-    be read (sealed keys with no passphrase). Never creates a key: a verify is a read."""
-    from src.custody.signing import _keys_dir
+    be read (sealed keys with no passphrase). Creates no key, since a verify is a read: it answers
+    ``None`` when the Ed25519 key file is absent, and it loads the post-quantum half only when that
+    key file already exists (``use_pqc`` would otherwise create one). Loading the signer re-seals a
+    legacy plaintext key file in place, as every load of it does."""
+    from src.paths import data_dir
 
+    keys = data_dir() / "keys"
     try:
-        if not (_keys_dir() / "custody_ed25519.pem").exists():
+        if not (keys / "custody_ed25519.pem").exists():
             return None
-        return HybridSigner(use_pqc=load_settings().pqc_enabled).public_identity()
+        has_pqc_key = (keys / "custody_ml_dsa_65.key").exists()
+        return HybridSigner(use_pqc=has_pqc_key).public_identity()
     except Exception:  # noqa: BLE001 - unreadable keys: the verdict says so instead of guessing
         return None
 
