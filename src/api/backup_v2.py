@@ -41,6 +41,7 @@ from src.backup.merge import (
     RestoreAborted,
     RestoreRefused,
     check_memory_before_staging,
+    refuse_while_writer_jobs_run,
     run_restore,
 )
 from src.jobs.background import BackgroundJob, Framed, register_job
@@ -247,6 +248,12 @@ def restore_legacy_path(
             raise HTTPException(status_code=400, detail=f"could not read {p}: {http_detail(exc, "", passphrase)}") from None
         if size > _MAX_RESTORE_BYTES:
             raise HTTPException(status_code=413, detail="the file exceeds the 2 GiB legacy restore cap; restore it as a volume set")
+        # Before a byte is decrypted (R659): a restore that would refuse at its working copy because a corpus writer runs says so now.
+        try:
+            refuse_while_writer_jobs_run()
+        except RestoreRefused as exc:
+            storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="writer-jobs")
+            raise HTTPException(status_code=400, detail=http_detail(exc, "", passphrase)) from None
         try:
             data = p.read_bytes()
         except OSError as exc:
@@ -1463,9 +1470,9 @@ _REINDEX_RESUME_JOB = register_job(
         _reindex_resume_worker,
         is_writer=True,
         cancellable=True,
-        # It stops inside its article loop once an import holds the exclusive window (``_yield_to_import`` below), and the queue
-        # starts it after every item, so a queued restore must not refuse because of it (R659).
-        yields_to_exclusive=True,
+        # Stopping it loses nothing: the per-article watermark resumes where it stopped, and every import starts it again when it
+        # ends (hand_off_reindex). So a committing restore stops it rather than refusing because of it (R659).
+        stops_for_restore=True,
     )
 )
 

@@ -623,7 +623,7 @@ class VolumeBackupManager:
         hold_after_merge: bool = False,
         already_merged_digests: frozenset[str] = frozenset(),
     ):
-        from src.backup.merge import RestoreAborted, RestoreRefused
+        from src.backup.merge import RestoreAborted, RestoreRefused, WriterJobsRefused
 
         # ONE run journal per queue item, opened before anything expensive. Eight
         # sequential imports at ~10 h each sharing one run_id would wrap the beat
@@ -776,6 +776,9 @@ class VolumeBackupManager:
                     "phase_index": _RESTORE_MANAGER_PHASES.index("reassembling") + 1,
                     "phase_total": _phase_total,
                 })
+                from src.backup.merge import refuse_while_writer_jobs_run
+
+                refuse_while_writer_jobs_run()  # before the verify and reassembly (R659): a refusal costs no staging
                 staged = read_volume_backup(
                     srcp, passphrase, corpus_passphrase=corpus_passphrase,
                     should_stop=self._stop.is_set,
@@ -1031,7 +1034,12 @@ class VolumeBackupManager:
             said = record_text(exc, passphrase, corpus_passphrase, typed=False, limit=runlog.FAILURE_MSG_KEEP)
             _LOG.warning("volume restore refused before the swap: %s", said)
             runlog.end("refused", detail=said)  # already cut to FAILURE_MSG_KEEP above: one bound, not two
-            storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="barrier")
+            # Two refusals reach here: the swap barrier's (another job still held the corpus) and R659's (a registered job is writing to
+            # it, raised before anything was staged). The journal names which, so a reader of the record is not sent after a lease holder.
+            if isinstance(exc, WriterJobsRefused):
+                storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="writer-jobs")
+            else:
+                storage_events.run_ended(note, "refused", failure=type(exc).__name__, reason="barrier")
             with self._lock:
                 self._state = "error"
                 self._error = said
@@ -1246,3 +1254,4 @@ def get_volume_manager() -> VolumeBackupManager:
         if _MANAGER is None:
             _MANAGER = VolumeBackupManager()
         return _MANAGER
+

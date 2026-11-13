@@ -8637,32 +8637,43 @@ def _restore_reindex_policy(stats: dict) -> Callable[[int, float], bool] | None:
     return reindex_flush_policy(target)
 
 
+class WriterJobsRefused(RestoreRefused):
+    """R659's refusal: a registered background job is writing to the corpus. A :class:`RestoreRefused`, so every caller that already
+    reports a refusal reports this one; its own class only so the run journal can say which refusal it was."""
+
+
 #: The refusal's fixed words (R659). The page turns them into the operator's language (``ooServerText`` in app-core.js), so a change
 #: here is a change there too (tests/test_restore_refuses_writer_jobs.py pins both).
 _WRITER_JOBS_REFUSAL = (
     "a background job is writing to your corpus ({jobs}) — nothing was imported, and nothing was written to your corpus. What it "
-    "writes during an import would be lost when your corpus is switched. Stop it, or let it finish, then import again."
+    "writes during an import would be lost when your corpus is switched. Let it finish, or stop it if it can be stopped, then import again."
 )
+#: How long a committing restore waits for the jobs it may stop (``stops_for_restore``) to reach their next safe point.
+_STOP_FOR_RESTORE_S = 30.0
 
 
-def _refuse_while_writer_jobs_run() -> None:
+def refuse_while_writer_jobs_run() -> None:
     """Refuse a committing restore while a registered background job that commits to the corpus is running (R659, queue item 21, option B
     reduced).
 
     Everything such a job commits between the working copy and the swap is discarded by the swap, so the restore refuses rather than lose it.
-    The list is the registry's own ``is_writer`` flags (:func:`src.jobs.background.running_writer_jobs`), never a second hand-kept list; a
-    job that stops itself inside the exclusive window (``yields_to_exclusive``: the re-index drain the import queue restarts after every
-    item) is not named while that window is open. Called before the restore prepares anything and again at the working copy.
+    The list is the registry's own ``is_writer`` flags (:func:`src.jobs.background.running_writer_jobs`), never a second hand-kept list. A
+    job flagged ``stops_for_restore`` (the re-index drain: it resumes from its watermark, and the import, or the import queue once its run has
+ended, starts it again) is stopped first,
+    with one bounded wait, and named only if it is still running after it. Called before the backup is staged (the volume restore, the
+    single-file restore), before ``run_restore`` prepares anything, and again at the working copy.
 
-    STATED LIMITS: a job started AFTER the copy is not caught (the swap's own barrier waits only for a lease holder); writers that are not
-    registry jobs (the collection pass, the housekeeping lane, the Wikipedia drain, API write routes) are outside this list, as are writers
-    left unflagged on purpose (``tests/test_job_writer_flags.py``)."""
-    from src.jobs.background import running_writer_jobs
-    from src.scheduler.runner import exclusive_window_open
+    STATED LIMITS: a job started AFTER the working copy is not caught (the swap's own barrier waits only for a lease holder); writers that are
+    not registry jobs (the collection pass, the housekeeping lane, the Wikipedia drain, API write routes) are outside this list, as are
+    writers left unflagged on purpose (``tests/test_job_writer_flags.py``). A job that cannot be cancelled can only be let finish, so the
+    indexes a fresh launch builds (``title-index``, ``keyword-day-counts``) refuse an import until they are done or stopped. In a checkpoint group a
+    refusal at a later item discards the merges the group was still holding, as any refusal there does: the operator imports again."""
+    from src.jobs.background import running_writer_jobs, stop_jobs_for_restore
 
-    running = running_writer_jobs(window_open=exclusive_window_open())
+    stop_jobs_for_restore(_STOP_FOR_RESTORE_S)
+    running = running_writer_jobs()
     if running:
-        raise RestoreRefused(_WRITER_JOBS_REFUSAL.format(jobs="; ".join(label for _kind, label in running)))
+        raise WriterJobsRefused(_WRITER_JOBS_REFUSAL.format(jobs="; ".join(label for _kind, label in running)))
 
 
 def run_restore(
@@ -8754,7 +8765,7 @@ def run_restore(
     ``report["collector_exit"]``. WHAT IT IS NOT: a lock on the corpus. The housekeeping
     lane, the Wikipedia drain, AI sweeps, boot upkeep and every API write route are not
     stopped. A registered background job that commits to the corpus is not stopped either, but a
-    committing restore REFUSES while one runs (R659, :func:`_refuse_while_writer_jobs_run`), before it
+    committing restore REFUSES while one runs (R659, :func:`refuse_while_writer_jobs_run`), before it
     prepares anything and again at the working copy; before R659 none of them was looked at (tags backfill, language
     detection, the governments jobs, bulk source qualification, the mailbox import: the
     job registry has no exclusive-hold check; two registered jobs look at the window in
@@ -8857,7 +8868,7 @@ def run_restore(
         timings.record(f"stage_a:{_name}", _seconds)
 
     if commit:
-        _refuse_while_writer_jobs_run()  # before the hours of preparing and merging, so a refusal costs the operator nothing (R659)
+        refuse_while_writer_jobs_run()  # before preparing and merging (R659); the callers that stage a backup also ask before staging
     _abort_point("prepare_staged")
     with timings.stage("prepare_staged"):
         # SPLIT, because the aggregate cannot be acted on. On the field's largest
@@ -8907,7 +8918,7 @@ def run_restore(
 
     _abort_point("snapshot_working_copy")
     if commit:
-        _refuse_while_writer_jobs_run()  # again at the copy: a job started while the backup was being prepared (R659)
+        refuse_while_writer_jobs_run()  # again at the copy: a job started while the backup was being prepared (R659)
     # The Q701-note trust answer, resolved ONCE per restore (the per-import override
     # if the operator made one for this import, else their first-launch answer) and
     # recorded in `meta` so the import report says which choice produced the result.

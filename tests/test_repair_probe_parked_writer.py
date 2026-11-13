@@ -56,6 +56,12 @@ every ``BEGIN IMMEDIATE`` / ``BEGIN EXCLUSIVE`` a statement in ``src/`` issues (
 SQLite's write lock outside it), file by file, each with the reason it cannot meet the repair's window. A new one fails that test until its
 row says why, or until item 18's refusal on the swap path is built.
 
+WHAT THAT GUARD DOES NOT SEE, stated so it is not read as more than it is: it matches the literal text ``BEGIN IMMEDIATE`` / ``BEGIN
+EXCLUSIVE`` only. An ungated writer that takes the write lock another way (a Core ``engine.begin()`` or ``exec_driver_sql`` write, a plain
+``BEGIN`` followed by a write, a raw ``sqlite3`` connection's implicit transaction) passes it, and so does a site that moves inside a file
+already pinned, since it counts per file. The limit itself is unchanged by that: it rests on the shipped app having no such writer during a
+repair, which this test checks only for its commonest spelling.
+
 No test here reads a clock for its verdict: the ORDER is asserted (the creator had not run for the second connection when the probe failed and the
 writer was inside the wait or queued on the gate; it had when the window was over), and the 0.5 s is the probe's own busy timeout, which the property does not
 depend on.
@@ -346,7 +352,8 @@ def _raw_write_lock_sites() -> dict[str, int]:
 
 def test_every_raw_write_lock_transaction_in_src_is_classified() -> None:
     """R660: the limit above holds only while no ungated writer can take SQLite's write lock during a repair. A new raw ``BEGIN IMMEDIATE``
-    or ``BEGIN EXCLUSIVE`` in ``src/`` is exactly that kind of writer; it fails here until it is classified (or item 18's refusal is built)."""
+    or ``BEGIN EXCLUSIVE`` in ``src/`` is the commonest spelling of that kind of writer; it fails here until it is classified (or item 18's
+    refusal is built). Other spellings pass (the module docstring names them)."""
     found = _raw_write_lock_sites()
     pinned = {path: count for path, (count, _why) in _RAW_WRITE_LOCK_SITES.items()}
     assert found == pinned, (

@@ -944,6 +944,18 @@ def _registry_writer_kinds() -> set[str]:
     return {str(s["kind"]) for s in all_job_statuses() if s.get("is_writer")}
 
 
+def _import_refusal() -> str | None:
+    """The refusal a committing restore would raise now (R659), read without stopping anything; None when it would go ahead."""
+    try:
+        from src.backup.merge import _WRITER_JOBS_REFUSAL
+        from src.jobs.background import running_writer_jobs
+
+        running = running_writer_jobs(include_stoppable=False)
+    except Exception:  # noqa: BLE001 - the import's own check still refuses; the page then shows the server's sentence
+        return None
+    return _WRITER_JOBS_REFUSAL.format(jobs="; ".join(label for _kind, label in running)) if running else None
+
+
 @router.get("")
 def list_jobs() -> dict:
     """Every visible job, aggregated LIVE from the owning systems (no shadow
@@ -991,6 +1003,10 @@ def list_jobs() -> dict:
         "network_busy": bool(running),
         "db_writers_busy": bool(db_writers),
         "busy_with": [f"{j['kind']}: {j['label']}" for j in db_writers],
+        # What a committing import would answer right now (R659): the refusal it would raise, or None. The import page reads it before it
+        # starts, so it never offers "Start anyway?" for an import the server is about to refuse. A job the restore stops for itself
+        # (``stops_for_restore``) is left out, because the import stops it rather than refusing.
+        "import_refused": _import_refusal(),
         "running_with": [f"{j['kind']}: {j['label']}" for j in running],
         "method": (
             "Aggregated live from the scheduler, the dump manager and the "

@@ -140,16 +140,16 @@ class BackgroundJob:
         *,
         is_writer: bool = False,
         cancellable: bool = False,
-        yields_to_exclusive: bool = False,
+        stops_for_restore: bool = False,
     ) -> None:
         self.kind = kind
         self.label = label
         self._worker = worker
         self.is_writer = is_writer
-        # ``yields_to_exclusive`` (R659): the worker itself stops committing once an exclusive window is open (it reads
-        # ``exclusive_window_open`` inside its unit loop), so a restore that owns the machine need not refuse because of it.
-        # Set it ONLY on a worker that does that: a wrong True is a writer the restore no longer names.
-        self.yields_to_exclusive = yields_to_exclusive
+        # ``stops_for_restore`` (R659): stopping this job loses nothing (it resumes from a durable mark, and the restore path starts it
+        # again afterwards), so a committing restore STOPS it (``stop_jobs_for_restore``) instead of refusing; one still running when the
+        # bounded wait ends is named like any other writer. Requires ``cancellable=True``.
+        self.stops_for_restore = stops_for_restore and cancellable
         # HONESTY (no theater): only advertise a Cancel affordance when the worker actually
         # checks ctx.stopping and stops early. A worker that wraps an OPAQUE library call
         # (apply_source_types / backfill_baseline_tags loop internally, take no ctx) cannot
@@ -411,28 +411,58 @@ def stop_all_jobs(timeout: float) -> list[str]:
         return []
 
 
-def running_writer_jobs(*, window_open: bool = False) -> list[tuple[str, str]]:
+def running_writer_jobs(*, include_stoppable: bool = True) -> list[tuple[str, str]]:
     """The registered jobs that commit to the corpus (``is_writer``) and are running now, as ``(kind, label)`` in registry order (R659).
 
-    THE ONE LIST: derived from the registry's own flags, never kept by hand, so a new writer kind is named the moment it registers.
-    With ``window_open`` (the caller holds the exclusive window), a job that stops itself inside that window
-    (``yields_to_exclusive``) is left out: it commits nothing during the window. Kinds and labels only (a job's kwargs can hold
-    a passphrase). Never raises: a job whose state cannot be read is named, since naming a job that was idle costs a retry and
-    leaving out one that writes costs its rows."""
+    THE ONE LIST: derived from the registry's own flags, never kept by hand, so a new writer kind is named the moment it registers. A job is
+    named while its thread is alive, whatever window is open: only a job that has actually ended is left out. Kinds and labels only (a job's
+    kwargs can hold a passphrase). A job whose state cannot be read is named: naming a job that was idle costs a retry, leaving out one
+    that writes costs its rows. ``include_stoppable=False`` leaves out the jobs a restore stops for itself (``stops_for_restore``): what the
+    restore would still refuse for, read without stopping anything (the import page's question before it starts)."""
     with _REG_LOCK:
-        jobs = list(_REGISTRY.values())
-    return [pair for pair in (_writer_pair(job, window_open) for job in jobs) if pair is not None]
+        jobs = [j for j in _REGISTRY.values() if include_stoppable or not getattr(j, "stops_for_restore", False)]
+    return [pair for pair in (_writer_pair(job) for job in jobs) if pair is not None]
 
 
-def _writer_pair(job: BackgroundJob, window_open: bool) -> tuple[str, str] | None:
+def _writer_pair(job: BackgroundJob) -> tuple[str, str] | None:
     try:
         if not job.is_writer or not job._alive():
-            return None
-        if window_open and job.yields_to_exclusive:
             return None
     except Exception:  # noqa: BLE001 - unreadable state: named, see running_writer_jobs
         pass
     return (str(job.kind), str(job.label))
+
+
+def stop_jobs_for_restore(timeout: float) -> list[str]:
+    """Ask every running job flagged ``stops_for_restore`` to stop, and wait for them against ONE deadline (R659). Returns the kinds stopped.
+
+    For a committing restore, before it decides whether to refuse: such a job resumes from its own durable mark and the restore path starts
+    it again afterwards, so stopping it costs a pause, where refusing would cost the operator the import. Never raises."""
+    try:
+        with _REG_LOCK:
+            jobs = [j for j in _REGISTRY.values() if j.stops_for_restore and j.is_writer]
+        asked = [j for j in jobs if _ask_to_stop(j)]
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        return [j.kind for j in asked if _joined(j, deadline)]
+    except Exception:  # noqa: BLE001 - the restore then names whatever still runs
+        return []
+
+
+def _ask_to_stop(job: BackgroundJob) -> bool:
+    try:
+        if job._alive():
+            job.cancel()
+            return True
+    except Exception:  # noqa: BLE001 - not asked: named by the refusal if it runs
+        pass
+    return False
+
+
+def _joined(job: BackgroundJob, deadline: float) -> bool:
+    try:
+        return job.join(max(0.0, deadline - time.monotonic()))
+    except Exception:  # noqa: BLE001 - not known to have stopped
+        return False
 
 
 def _reset_registry_for_tests() -> None:

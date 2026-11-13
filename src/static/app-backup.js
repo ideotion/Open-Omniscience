@@ -1474,6 +1474,15 @@
       // has always asked; the import never did, so a re-index quietly parked with no
       // word to the operator about why its counter stopped. The reassurance is the
       // point of asking here: the honest answer is "yes, and nothing is lost".
+      // ASK THE SERVER FIRST WHETHER IT WOULD REFUSE (R659): while a background job writes to the corpus a committing import refuses, so
+      // offering "Start anyway?" for it would be a choice the server then takes back. The refusal is the server's own sentence.
+      let _refusal = null;
+      try { _refusal = (await api("/api/jobs")).import_refused || null; } catch { _refusal = null; }
+      if (_refusal) {
+        btn.disabled = false;
+        if (progEl) progEl.innerHTML = `<span style="color:var(--err)">${esc(ooServerText(_refusal))}</span>`;
+        return;
+      }
       if (!await arbitrate(t("Import"), t("A running re-index pauses while the import runs and resumes afterwards — nothing is lost."))) {
         btn.disabled = false;
         if (progEl) progEl.textContent = "";
