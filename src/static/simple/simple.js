@@ -71,12 +71,15 @@
     if (n == null || isNaN(n)) return "—";
     try { return new Intl.NumberFormat(curLang()).format(n); } catch (e) { return String(n); }
   }
+  // A date that Intl cannot format falls back to the app's own ISO helper, which isolates it
+  // under a right-to-left page (the raw-date ratchet, R258).
+  function isoDate(iso) { return typeof window.ooIsoDate === "function" ? window.ooIsoDate(iso) : String(iso).split("T")[0]; }
   function fmtDate(iso) {
     if (!iso) return "";
     var d = new Date(String(iso).replace(" ", "T"));
-    if (isNaN(d)) return String(iso).slice(0, 10);
+    if (isNaN(d)) return isoDate(iso);
     try { return new Intl.DateTimeFormat(curLang(), { year: "numeric", month: "short", day: "numeric" }).format(d); }
-    catch (e) { return String(iso).slice(0, 10); }
+    catch (e) { return isoDate(iso); }
   }
   function fmtTime(iso) {
     if (!iso) return "";
