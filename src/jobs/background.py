@@ -471,6 +471,9 @@ def stop_jobs_for_restore(timeout: float) -> list[str]:
         with _REG_LOCK:
             jobs = [j for j in _REGISTRY.values() if j.stops_for_restore and j.is_writer]
         asked = [j for j in jobs if _ask_to_stop(j)]
+        with _REG_LOCK:
+            for j in asked:  # the shutdown count when the restore stopped it: a later shutdown is never undone by a restart
+                _STOPS_SEEN_AT_YIELD[j.kind] = stop_all_count()
         deadline = time.monotonic() + max(0.0, float(timeout))
         for j in asked:
             if not _joined(j, deadline):
@@ -491,19 +494,42 @@ def start_jobs_after_refusal(kinds: list[str]) -> list[str]:
     return started
 
 
+#: For each kind a restore stopped, :func:`stop_all_count` at that moment (read by :func:`_start_again`).
+_STOPS_SEEN_AT_YIELD: dict[str, int] = {}
+#: How long a restart waits for a stopped job's thread to finish its own way out (its ``finally``) before deciding it still runs.
+_RESTART_JOIN_S = 2.0
+
+
 def _start_again(kind: str) -> bool:
     try:
         with _REG_LOCK:
             job = _REGISTRY.get(kind)
+            seen = _STOPS_SEEN_AT_YIELD.pop(kind, None)
         if job is None or not job.stops_for_restore:
             return False
-        with job._lock:
-            cancelled = job._state == "cancelled" or job._stop.is_set()  # a Cancel pressed after the yield ended leaves the state 'done'
-        if cancelled:  # the operator's own Cancel since the restore stopped it: never overridden
-            return False
-        job.start()
-        return True
-    except Exception:  # noqa: BLE001 - already running again, or the thread could not be made: logged by start(), never raised
+        # A job that met the yield late may still be in its own ``finally``: give it a moment, or the start below would find it
+        # alive, be refused as "already running", and leave it ended as paused for an import that never happened.
+        if job._alive():
+            job.join(_RESTART_JOIN_S)
+        refused: list[str] = []
+        with job._lock:  # the check and the start under ONE hold, so a Cancel pressed in between is never overridden
+            if job._state == "cancelled" or job._stop.is_set():  # a Cancel pressed after the yield ended leaves the state 'done'
+                return False
+            if seen is None or stop_all_count() != seen:  # the app began shutting down since the stop: never start a writer then
+                return False
+            if job._alive():  # still running (it never yielded): nothing to start
+                return False
+            try:
+                job._start({}, refused)
+            except Exception:  # noqa: BLE001 - the thread could not be made; logged below, after the lock, as start() does
+                pass
+            else:
+                return True
+        if refused:
+            with contextlib.suppress(Exception):
+                _LOG.warning("background job %s did not start: %s", job.kind, refused[0])
+        return False
+    except Exception:  # noqa: BLE001 - never raised
         return False
 
 
@@ -545,3 +571,4 @@ def running_job_threads() -> list[tuple[threading.Thread, str]]:
 def _reset_registry_for_tests() -> None:
     with _REG_LOCK:
         _REGISTRY.clear()
+        _STOPS_SEEN_AT_YIELD.clear()

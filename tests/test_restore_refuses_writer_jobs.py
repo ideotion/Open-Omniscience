@@ -43,6 +43,7 @@ def registry():
     with bg._REG_LOCK:
         bg._REGISTRY.clear()
         bg._REGISTRY.update(saved)
+        bg._STOPS_SEEN_AT_YIELD.clear()
 
 
 def _running(kind: str, label: str, *, is_writer: bool = True, stops: bool = False):
@@ -387,3 +388,55 @@ def test_the_page_reads_the_refusal_back_in_the_operator_language():
     for path in sorted((ROOT / "src/static/locales").glob("*.json")):
         table = json.loads(path.read_text("utf-8"))
         assert key in table and "{jobs}" in table[key], path.name
+
+
+def test_a_shutdown_after_the_stop_is_never_undone_by_the_restart(registry, monkeypatch):
+    """R689: the app began shutting down after the restore stopped the drain. The shutdown's stop-all did not see the drain (it had
+    already ended), so the restore's end must not start a writer the shutdown is about to close the database under."""
+    from src.backup import merge
+
+    drain, release = _running("reindex-resume", "finishing the re-index of imported articles", stops=True)
+    try:
+        monkeypatch.setattr(merge, "_STOP_FOR_RESTORE_S", 5.0)
+        merge.refuse_while_writer_jobs_run()
+        assert drain.join(1)
+        bg.stop_all_jobs(0.1)
+        assert merge.start_jobs_stopped_for_restore() == []
+        assert not drain._alive()
+    finally:
+        release.set()
+        drain.join(5)
+
+
+def test_a_job_still_on_its_way_out_is_started_again_once_it_is_out(registry, monkeypatch):
+    """The drain met the yield after the restore's wait and was still in its own finally when the restore refused and started it again:
+    the start must wait for it to be out, not be refused as 'already running' and leave it paused for an import that never happened."""
+    from src.backup import merge
+
+    runs = []
+    release = threading.Event()
+
+    def worker(ctx):
+        runs.append(1)
+        if len(runs) > 1:  # the second run: an ordinary drain
+            while not release.wait(0.01):
+                if ctx.stopping:
+                    return
+            return
+        try:
+            while not release.wait(0.01):
+                if ctx.yielding:
+                    return
+        finally:
+            time.sleep(0.3)  # its way out takes longer than the restore waits
+
+    drain = bg.register_job(bg.BackgroundJob("reindex-resume", "Drain", worker, is_writer=True, cancellable=True, stops_for_restore=True))
+    drain.start()
+    try:
+        monkeypatch.setattr(merge, "_STOP_FOR_RESTORE_S", 0.05)
+        with pytest.raises(merge.WriterJobsRefused):
+            merge.refuse_while_writer_jobs_run()
+        assert drain._alive() and len(runs) == 2, "the drain was not started again after its way out"
+    finally:
+        release.set()
+        drain.join(5)
