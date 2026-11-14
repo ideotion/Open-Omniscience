@@ -2059,7 +2059,7 @@
       if (btn) btn.disabled = true;
       try {
         const r = await api(url, {method: "POST"});
-        if (r.deferred) toast(t("The running summary or translation run pauses after its current article; the model is freed then. Resume it in the task manager."));
+        if (r.deferred) toast(t("The running summary or translation run pauses first; the model is freed then. Resume it in the task manager."));
         else if (r.reason && !r.stopped && !(r.released || []).length) toast(t(r.reason));
         else toast(t(doneMsg));
       } catch (e) {

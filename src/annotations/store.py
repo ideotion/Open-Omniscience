@@ -258,7 +258,11 @@ def remove_author(author_id_value: str) -> bool:
         except Exception:  # noqa: BLE001
             continue
         if r.get("author_id") == author_id_value:
-            p.unlink()
+            # Under the record's lock, as ``set_trusted`` writes it: otherwise a trust toggle that read the
+            # record before this unlink replaces it after, and the removed author comes back (audit recheck
+            # P10, 2026-11-13). Missing by then is the same answer: the author is gone.
+            with file_lock(p):
+                p.unlink(missing_ok=True)
             return True
     return False
 

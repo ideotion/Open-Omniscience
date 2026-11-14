@@ -121,6 +121,36 @@ def _year(value: object) -> int | None:
     return value if 1 <= value <= 9999 else None
 
 
+#: The caveat a stated date carries once it has gone by.
+PASSED_CAVEAT = (
+    "This date has passed, as the source stated it. The next election is not in this calendar "
+    "unless it is listed separately."
+)
+
+
+def has_passed(event: dict[str, Any], today: date) -> bool:
+    """Has the election this entry STATES already gone by on ``today``?
+
+    Read only from what the entry states: the year (``window_year``, else the ``until_year``
+    that bounds a one-cycle entry), then its month and day when given. An entry that states no
+    year cannot be shown to have passed and is never guessed at, so it answers False. A month
+    with no day passes only once that month is over; a year alone, once that year is over.
+    """
+    year = _year(event.get("window_year")) or _year(event.get("until_year"))
+    if year is None:
+        return False
+    month = _month(event.get("month"))
+    if month is None:
+        return year < today.year
+    day = _positive_int(event.get("day"))
+    if day is None:
+        return (year, month) < (today.year, today.month)
+    try:
+        return date(year, month, day) < today
+    except ValueError:
+        return (year, month) < (today.year, today.month)
+
+
 def is_election(event: dict[str, Any]) -> bool:
     """Is this catalog entry an election (and so eligible for a confidence tier)?"""
     return str(event.get("calendar") or "") == ELECTIONS_CALENDAR
@@ -264,4 +294,9 @@ def annotate(event: dict[str, Any], today: date | None = None) -> dict[str, Any]
     out["date_caveat"] = proj["caveat"] if proj else caveat_for(tier)
     if proj is not None:
         out["projection"] = proj
+    if tier in (SCHEDULED, WINDOW):
+        # A stated date that has gone by is still the entry the source gave, never moved forward.
+        out["passed"] = has_passed(event, today or date.today())
+        if out["passed"]:
+            out["date_caveat"] = PASSED_CAVEAT
     return out

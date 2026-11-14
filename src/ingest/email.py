@@ -49,6 +49,7 @@ from src.database.write import is_locked_error, run_write_with_retry
 from src.ingest.newsletter_source import parse_list_id
 from src.monitoring.secret_scrub import log_failure, record_text
 from src.privacy.link_sanitizer import SanitizedLink, SanitizeStats, sanitize_text_links
+from src.utils.markup_blocks import strip_html_comments, strip_html_tags, strip_style_script
 from src.utils.url_utils import generate_content_hash
 
 _LOG = logging.getLogger(__name__)
@@ -63,9 +64,11 @@ _NEWSLETTER_SOURCE_TYPE = "newsletter"
 # COMMENTS must go BEFORE the generic tag strip — otherwise the CSS/JS text survives
 # as body content and Outlook/MSO conditional comments (which contain '>') defeat a
 # naive <[^>]+> regex, leaking '-->' fragments. (Field test 2026-06-20.)
-_STYLE_SCRIPT_RE = re.compile(r"<(style|script)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
-_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
-_TAG_RE = re.compile(r"<[^>]+>", re.DOTALL)
+# The three strips are the LINEAR forms in src.utils.markup_blocks, byte-identical to the
+# regexes they replace (``<(style|script)\b[^>]*>.*?</\1\s*>``, ``<!--.*?-->``, ``<[^>]+>``),
+# which were K*N on an unclosed opener: MEASURED 42.7 s for 280 KB of ``<style>`` and 30.7 s
+# for 160 KB of ``<!--`` (4x per doubling) under a 36 MiB per-message cap, so one newsletter
+# the person did not write could hold the import for hours (audit recheck P1, 2026-11-13).
 
 
 @dataclass
@@ -127,9 +130,9 @@ def _strip_html(html_text: str) -> str:
     &rsquo; …) and collapses whitespace — including non-breaking / hair / zero-width
     spaces — so the stored copy carries no markup noise (field test 2026-06-20).
     """
-    text = _STYLE_SCRIPT_RE.sub(" ", html_text)
-    text = _COMMENT_RE.sub(" ", text)
-    text = _TAG_RE.sub(" ", text)
+    text = strip_style_script(html_text)
+    text = strip_html_comments(text)
+    text = strip_html_tags(text)
     text = unescape(text)
     text = text.replace("\u200b", "").replace("\ufeff", "")  # strip zero-width chars
     return re.sub(r"\s+", " ", text).strip()
