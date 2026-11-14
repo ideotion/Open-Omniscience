@@ -380,7 +380,8 @@ def test_every_refusing_raise_of_the_start_follows_its_record_and_only_the_unkno
                     without += 1
                     text = ast.unparse(stmt)
                     assert "unknown folder-backup mode" in text, f"{fn.name}:{stmt.lineno}: a raise with no record before it: {text}"
-    assert (with_record, without) == (4, 1)
+    # R712 (Plan's ruling): the large-data restore's refusal while a backup export runs is the fifth, recorded.
+    assert (with_record, without) == (5, 1)
 
 
 @pytest.mark.parametrize("name", ["_run_backup", "_run_restore", "_run_verify"])
@@ -408,7 +409,7 @@ def test_the_manager_records_into_the_journal_this_module_reads_and_every_run_is
         for n in ast.walk(tree)
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in {"run_started", "run_refused"}
     ]
-    assert len(started) == 3 + 3
+    assert len(started) == 3 + 4  # R712: the export-running refusal of a large-data restore
     for call in started:
         via = [kw for kw in call.keywords if kw.arg == "via"]
         assert len(via) == 1 and isinstance(via[0].value, ast.Constant) and via[0].value.value == "folder", call.lineno

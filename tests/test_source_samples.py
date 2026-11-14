@@ -56,6 +56,9 @@ def test_one_article_per_source_and_a_manifest_row_for_an_empty_source(db):
     assert [r["source_id"] for r in man["sources"]] == [1]
     assert man["sources_without_article"]["rows"] == [[2, "s2.example"]]
     assert man["sources_in_this_zip"] == 2
+    from src.paths import instance_tag
+
+    assert man["instance"] == instance_tag() and len(man["instance"]) == 8   # a hash of the data folder, never its path
     names = z.namelist()
     assert "samples/source-0000001.json" in names and "samples/source-0000002.json" not in names
     doc = json.loads(z.read("samples/source-0000001.json"))

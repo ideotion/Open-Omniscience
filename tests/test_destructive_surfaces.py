@@ -141,6 +141,7 @@ _EXEMPT_GROUPS: dict[str, tuple[str, ...]] = {
     _JOB_CONTROL: (
         "ai.ai_detect_language_cancel", "backup_v2.import_queue_stop", "backup_v2.reindex_backlog_resume_cancel",
         "backup_v2.volume_backup_cancel", "backup_v2.volume_backup_pause", "bulletin.narration_stop",
+        "backup_v2.export_job_cancel", "backup_v2.export_job_pause",  # R701: the one export job (the dialog confirms its cancel)
         "diagnostics.ai_check.ai_check_cancel", "diagnostics.ai_coordinator.ai_coordinator_cancel",
         "diagnostics.corpus.card_audit_cancel", "diagnostics.discovery.discover_world_cancel",
         "diagnostics.keyword_triage.keyword_triage_cancel", "diagnostics.model_bench.model_bench_cancel",
@@ -366,7 +367,8 @@ def test_request_sites_outside_any_named_function_are_the_known_delegated_click_
     the reader's curation buttons and the task manager's job controls (the fifth: the low-memory pause's Resume, a retry the
     guard takes back if memory is still low). A new one has to be looked at. The ninth is not a request but a table row:
     the Field data button's FIELD_DATA_EXPORTS lists the cards export as a POST (R694, it reads article text; it writes
-    nothing), sent only by downloadFieldData on the operator's click (2026-11-14, Lane X)."""
+    nothing), sent only by downloadFieldData on the operator's click (2026-11-14, Lane X). The tenth, the same table's
+    candidate-sources export, is a POST for the same reason (R694: it groups the article table) and writes nothing."""
     outside: dict[str, int] = {}
     for path in _js_files():
         js = path.read_text(encoding="utf-8")
@@ -380,4 +382,4 @@ def test_request_sites_outside_any_named_function_are_the_known_delegated_click_
         for req in re.finditer(r"""["']?method["']?\s*:\s*[^,}]*\b(?:DELETE|POST|PUT|PATCH)\b""", js):
             if not any(a <= req.start() < b for a, b in spans):
                 outside[path.name] = outside.get(path.name, 0) + 1
-    assert outside == {"app-diagnostics.js": 1, "reader.js": 3, "taskmanager.js": 5}, outside
+    assert outside == {"app-diagnostics.js": 2, "reader.js": 3, "taskmanager.js": 5}, outside

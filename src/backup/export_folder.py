@@ -36,6 +36,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import stat
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -55,10 +56,22 @@ BACKUP_FOLDER_TOKEN = "OpenOmniscience"
 #: remembered it had been asked for: the reopened dialog read "Backup complete" over a
 #: folder with no models in it. With the request on the drive beside the backup,
 #: :func:`src.backup.export_summary.export_facts` compares it with what is actually there
-#: and names what is missing. A record, never a gate: nothing reads it to decide what
-#: to write.
+#: and names what is missing.
+#:
+#: R701 MADE IT THE RESUME CURSOR. It used to be "a record, never a gate: nothing reads it
+#: to decide what to write". The export is now ONE server-side job
+#: (:mod:`src.backup.export_job`) and the record carries the phase it is in
+#: (``volumes``, ``folder``, ``done`` or ``cancelled``), so a resume -- in this process
+#: or after a restart -- continues the phase the record names, in THIS folder, and never
+#: allocates a second one. It still holds no secret: a resume of the volumes phase asks
+#: the operator for the passphrase again.
 REQUEST_NAME = "oo-export-request.json"
 REQUEST_SCHEMA = "oo-export-request-1"
+
+#: The phases the record can name (R701). ``volumes`` and ``folder`` are UNFINISHED: the
+#: reopened panel offers «Resume export» for them. ``done`` and ``cancelled`` are not.
+UNFINISHED_PHASES = ("volumes", "folder")
+RECORD_PHASES = (*UNFINISHED_PHASES, "done", "cancelled")
 
 #: ``YYYYMMDDHHMM_OpenOmniscience_Backup``. The suffix is part of the ruled name.
 BACKUP_FOLDER_SUFFIX = "Backup"
@@ -155,6 +168,8 @@ def write_export_request(
     corpus: bool,
     categories: list[str],
     inside: bool = False,
+    phase: str | None = None,
+    verify_after_write: bool | None = None,
 ) -> Path | None:
     """Record, inside a freshly allocated export folder, what the export was asked for.
 
@@ -162,6 +177,11 @@ def write_export_request(
     they ride INSIDE the encrypted artifact rather than being copied beside it, in
     which case no separate copy is owed. Only known categories are kept, in the order
     given, so a stray value from a client can never name a member that does not exist.
+
+    ``phase`` (R701) is where the export job is: see :data:`RECORD_PHASES`. Left out
+    (the older ``/export-folder`` caller), the record names no phase, which reads as
+    unknown rather than finished. ``verify_after_write`` is recorded so a resume after a
+    restart re-applies the choice the export started with; it is a flag, never a secret.
 
     NEVER RAISES. The record is an aid to reporting, not part of the backup: a drive
     that refuses this small write will refuse the volumes a moment later, and that
@@ -182,15 +202,109 @@ def write_export_request(
         "categories": seen,
         "inside": bool(inside) and bool(corpus) and bool(seen),
     }
+    if phase in RECORD_PHASES:
+        record["phase"] = phase
+    if verify_after_write is not None:
+        record["verify_after_write"] = bool(verify_after_write)
+    return _write_record(d, record)
+
+
+def update_export_phase(folder: str | os.PathLike[str], phase: str) -> Path | None:
+    """Move the record's resume cursor to ``phase`` (R701), keeping what the export asked for.
+
+    The record is REBUILT from the keys this module writes, read back through
+    :func:`read_export_request` -- never re-dumped from the file as found. The folder sits
+    on an external drive, so anyone who can write that drive can plant keys in it, and a
+    resume would otherwise copy them through. A folder with no readable record gets none:
+    inventing one here would claim to know what the export was asked for. NEVER RAISES,
+    like :func:`write_export_request`.
+    """
+    if phase not in RECORD_PHASES:
+        return None
+    d = Path(folder)
+    req = read_export_request(d)
+    if req is None:
+        return None
+    record: dict[str, Any] = {
+        "schema": REQUEST_SCHEMA,
+        "requested_at": req["requested_at"],
+        "corpus": req["corpus"],
+        "categories": list(req["categories"]),
+        "inside": req["inside"] and req["corpus"] and bool(req["categories"]),
+        "phase": phase,
+    }
+    if req["verify_after_write"] is not None:
+        record["verify_after_write"] = req["verify_after_write"]
+    return _write_record(d, record)
+
+
+def _write_record(d: Path, record: dict[str, Any]) -> Path | None:
+    """Write the record through a temp file, atomically, and NEVER through a link.
+
+    R701 rewrites the record in an EXISTING folder on a drive someone else may write to.
+    ``Path.write_text`` follows a symlink, so a ``.oopart`` planted as a link to any file
+    this process can write turned «Resume export» into an overwrite of that file (the
+    security re-read of baf4f4938). So: a record path that is a link is refused; a
+    leftover temp file -- link or not -- is unlinked (removing a link never touches its
+    target); and the temp file is created EXCLUSIVELY and, where the platform has it,
+    with ``O_NOFOLLOW``, so a link planted in between makes the create fail rather than
+    write through it."""
     p = d / REQUEST_NAME
     tmp = d / (REQUEST_NAME + ".oopart")
+    if p.is_symlink():
+        _LOG.warning("export folder: the request record in %s is a link; it was not rewritten", d.name)
+        return None
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
     try:
-        tmp.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        if tmp.is_symlink() or tmp.exists():
+            tmp.unlink()
+        fd = os.open(tmp, flags, 0o644)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, indent=2))
         os.replace(tmp, p)
     except OSError as exc:
         log_failure(_LOG, f"export folder: could not record the request in {d}", exc, level=logging.WARNING)
         return None
     return p
+
+
+#: The largest record this module reads back. It writes a few hundred bytes; anything far
+#: bigger was not written here.
+_RECORD_MAX_BYTES = 64 * 1024
+
+
+def _read_small_regular(p: Path) -> str | None:
+    """The text of ``p`` when it is a REGULAR file of at most :data:`_RECORD_MAX_BYTES`, else None.
+
+    The folder sits on a drive anyone may write to, and the record is read under the
+    export's lock and the shared restore marker's: a FIFO planted in its place made the
+    read wait forever, and every restore and status call with it (the round-3 security
+    read). So: never through a link (``O_NOFOLLOW``), never blocking on open
+    (``O_NONBLOCK``: a FIFO opens at once), and only once ``fstat`` of what was OPENED says
+    it is a regular file of a sane size -- the check is on the file read, not on a name
+    that could be swapped between a look and the read."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+    try:
+        if p.is_symlink():
+            return None  # a record we never write: what was asked for is unknown, not whatever it points at
+        fd = os.open(p, flags)
+    except OSError:
+        return None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_size > _RECORD_MAX_BYTES:
+            return None
+        data = os.read(fd, _RECORD_MAX_BYTES + 1)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+    if len(data) > _RECORD_MAX_BYTES:
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
 
 
 def read_export_request(folder: str | os.PathLike[str]) -> dict[str, Any] | None:
@@ -200,17 +314,32 @@ def read_export_request(folder: str | os.PathLike[str]) -> dict[str, Any] | None
     unreadable: in both cases what was asked for is UNKNOWN, which the caller must
     report as unknown rather than as "nothing was asked for".
     """
-    p = Path(folder) / REQUEST_NAME
+    text = _read_small_regular(Path(folder) / REQUEST_NAME)
+    if text is None:
+        return None
     try:
-        raw = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        raw = json.loads(text)
+    except ValueError:
         return None
     if not isinstance(raw, dict) or raw.get("schema") != REQUEST_SCHEMA:
         return None
+    from src.backup.folder_backup import _CATEGORIES
+
+    # Only the categories this app knows, as the writer keeps (R701): the record sits on an
+    # external drive and is editable there, and it is now a resume cursor -- a stray name
+    # read back would reach the folder job, which widens a list of unknown names to EVERY
+    # category.
     cats = raw.get("categories")
+    known: list[str] = []
+    for c in cats if isinstance(cats, list) else []:
+        if isinstance(c, str) and c in _CATEGORIES and c not in known:
+            known.append(c)
     return {
         "corpus": bool(raw.get("corpus")),
-        "categories": [str(c) for c in cats] if isinstance(cats, list) else [],
+        "categories": known,
         "inside": bool(raw.get("inside")),
-        "requested_at": raw.get("requested_at"),
+        "requested_at": raw["requested_at"][:64] if isinstance(raw.get("requested_at"), str) else None,
+        # R701: the resume cursor; None for a record written before the export was one job.
+        "phase": raw.get("phase") if raw.get("phase") in RECORD_PHASES else None,
+        "verify_after_write": raw.get("verify_after_write") if isinstance(raw.get("verify_after_write"), bool) else None,
     }

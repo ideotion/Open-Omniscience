@@ -598,7 +598,7 @@
           : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
         const co = (d.cooccurrences || []).slice(0, 4).filter((c) => c && c.term).map((c) => {
           if (c.cooccur == null) return c.term;
-          const count = t(c.cooccur === 1 ? "{n} article" : "{n} articles").replace("{n}", c.cooccur);
+          const count = _tfn(c.cooccur === 1 ? "{n} article" : "{n} articles", { n: c.cooccur });
           return (c.pmi != null)
             ? tf("{term} ({count}, Association {pmi})", {term: c.term, count, pmi: c.pmi.toFixed(1)})
             : tf("{term} ({count})", {term: c.term, count});

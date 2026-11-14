@@ -970,6 +970,18 @@ _GUARDED_MODULES = {
     ),
     "monitoring/release_run_fresh_restore": ({"main"}, 1, False, {}),
     "backup/volume_job": ({"start_backup", "_run_backup", "_run_restore", "_run_verify"}, 17, False, {}),
+    "backup/export_job": (
+        {"start", "resume", "_begin"},
+        1,
+        False,
+        {
+            "_begin": (
+                "its `except Exception` around starting the worker thread empties the held passphrase, records the class only "
+                "and raises the failure again as it was; its callers are the export start and resume routes, both inside "
+                "`with scrub_and_reraise` with the request's passphrase (R701)"
+            )
+        },
+    ),
     "backup/stream_backup": (
         {"verify_stream_backup"},
         1,

@@ -173,6 +173,10 @@ _hold_lock = threading.RLock()
 _hold = threading.Condition(_hold_lock)  # guards the three names below; notified when a hold ends or a write finishes
 _hold_by: int | None = None  # ident of the thread holding settings writes (a restore), or None
 _hold_file_bytes: int | None = None  # size of the live file when the hold started (None: unread), for the refusal's Retry-After
+#: What a save refused during the hold is told, and how long it may wait at the door first: a restore's text and
+#: :data:`KV_WRITE_WAIT_S` unless the holder named its own (the panic wipe refuses at once, in its own words).
+_hold_text: str | None = None
+_hold_wait_s: float | None = None
 #: One token per settings write between its start and its end (they may be waiting for the gate). A SET and not a count: a write is
 #: counted by ONE call (``add``, under ``_hold_lock``, with the hold check) and released by ONE lock-free call (``remove``; a KeyError, caught,
 #: for a token that was never added), then the lock is taken only to wake a waiting hold. A KeyboardInterrupt landing in a release that took the
@@ -306,15 +310,15 @@ def _write_slot() -> Iterator[int]:
                 from src.database.writer import write_gate
 
                 if write_gate.held_by_current_thread():  # waiting here would make the restore wait for this thread's connection: refuse now
-                    raise KvWriteRefused(_REFUSED_TEXT, _retry_after_s(_hold_file_bytes))
-                deadline = time.monotonic() + KV_WRITE_WAIT_S
+                    raise KvWriteRefused(_hold_text or _REFUSED_TEXT, _retry_after_s(_hold_file_bytes))
+                deadline = time.monotonic() + (KV_WRITE_WAIT_S if _hold_wait_s is None else _hold_wait_s)
                 # the loop is `while True: if not <wanted>: break` and not `while <wanted>:` -- CPython 3.13 leaves the back-edge of the second form outside the `with`'s exception table (src/utils/interrupts.py)
                 while True:
                     if _hold_by is None:
                         break
                     left = deadline - time.monotonic()
                     if left <= 0:
-                        raise KvWriteRefused(_REFUSED_TEXT)
+                        raise KvWriteRefused(_hold_text or _REFUSED_TEXT)
                     _wait_hold(left)
             if not passthrough:
                 _inflight.add(token)  # the one statement that counts this write
@@ -340,13 +344,14 @@ _REFUSED_TEXT = (
 
 
 @contextmanager
-def hold_writes(timeout: float) -> Iterator[None]:
+def hold_writes(timeout: float, *, refused_text: str | None = None, wait_s: float | None = None) -> Iterator[None]:
     """Hold settings writes for the calling thread (a restore, from before it reads the live settings to after it has switched the
     file): a write that starts meanwhile waits (:data:`KV_WRITE_WAIT_S`) and then lands in the NEW file, or is refused with nothing
     written. Waits, up to ``timeout``, for the writes already in flight to finish; raises :class:`KvWriteBusy` (and holds nothing)
     when they do not. ``0`` does not wait: it holds only if no settings write is in flight. Not reentrant, and it takes no lock
-    the single-writer gate or the corpus knows about."""
-    global _hold_by, _hold_file_bytes
+    the single-writer gate or the corpus knows about. ``refused_text`` / ``wait_s`` replace, for this hold only, what a refused
+    save is told and how long a save waits at the door (default :data:`KV_WRITE_WAIT_S`; ``0`` refuses at once)."""
+    global _hold_by, _hold_file_bytes, _hold_text, _hold_wait_s
     me = threading.get_ident()
     deadline = time.monotonic() + max(0.0, timeout)
     held = False
@@ -360,6 +365,7 @@ def hold_writes(timeout: float) -> Iterator[None]:
             held = True  # before the hold itself, so no interrupt can leave the hold set without the flag
             _hold_by = me  # from here a new write waits at the door
             _hold_file_bytes = file_bytes
+            _hold_text, _hold_wait_s = refused_text, wait_s
         _note_section("restore hold drain")
         with _hold_lock:
             # the loop is `while True: if not <wanted>: break` and not `while <wanted>:` -- CPython 3.13 leaves the back-edge of the second form outside the `with`'s exception table (src/utils/interrupts.py)
@@ -377,6 +383,7 @@ def hold_writes(timeout: float) -> Iterator[None]:
                 if _hold_by == me:  # held is set one statement before the hold: another thread may own it by now
                     _hold_by = None
                     _hold_file_bytes = None
+                    _hold_text = _hold_wait_s = None
                 _note_section("restore hold release")  # after the clear, for the same reason; names a leak of THIS lock by its last entry
                 _hold.notify_all()
 

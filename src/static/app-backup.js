@@ -45,110 +45,104 @@
       const sum = document.getElementById("ux-summary");
       if (sum) sum.innerHTML = "";
       _uxExportFacts = null;
+      _uxWatchGen++;  // R701: an earlier watcher of this dialog stops drawing; the reopen re-attaches ONE
       document.getElementById("ux-run").disabled = false;
       dlg.showModal();
       await _uxLoadInventory();
       _uxShowLastCompletedExportSummary();  // best-effort; never blocks opening the dialog
     }
 
-    // Which of the two managers' finished states is the LAST export (2026-09-26
-    // click-through, J1). The folder phase runs after the corpus phase of the same
-    // export, so when both name ONE folder the folder job is the later state. When they
-    // name DIFFERENT folders they are two exports -- a corpus-only export leaves the
-    // folder manager holding an OLDER export's destination -- and the later START wins.
-    // (The old rule let the folder job win unconditionally, so the dialog named the
-    // older export, and a paused corpus export lost its Resume button to it.)
-    // Returns whichever of the two statuses to show, or null.
-    function _uxPickLastExport(vol, fold) {
-      if (vol && fold) {
-        return (_uxSamePath(vol.dest, fold.dest) || (fold.started_at || 0) >= (vol.started_at || 0))
-          ? fold : vol;
-      }
-      return vol || fold || null;
+    // The dated folder of the last export this browser started (R701), kept so the panel
+    // reopened after an APP RESTART can name it: the export job lives in the server
+    // process, so a restart forgets it, and its folder's request record is then the only
+    // thing that knows a phase is unfinished. A convenience only -- read back solely to
+    // offer «Resume export» for a folder whose record names an unfinished phase.
+    function _uxRememberExportDir(dir) {
+      try { if (dir) localStorage.setItem("oo.export.lastDir", String(dir)); } catch (_e) { /* storage may be unavailable */ }
+    }
+    function _uxLastExportDir() {
+      try { return localStorage.getItem("oo.export.lastDir") || null; } catch (_e) { return null; }
     }
 
     // Mirrors _uxShowLastCompletedSummary() for the Import dialog (audit finding
-    // 2026-07-17 -- the same field report 2026-07-16 root cause applies here too): a
-    // large export can run for hours as a background job (task-manager-visible), so
-    // the tab is very likely closed/reloaded before it finishes, and this function's
-    // own closure -- the one that would have written "Backup complete" into
-    // #ux-progress -- is gone with it. openUnifiedExport() unconditionally blanked
-    // #ux-progress on every reopen, discarding that result forever. Each job manager
-    // (get_volume_manager(), get_folder_manager()) is a PROCESS-WIDE singleton whose
-    // last completed state survives any number of page reloads until a NEW job
-    // starts -- so recover it here, filtered to mode==="backup" (never show a
-    // restore's or verify's status in the EXPORT dialog).
+    // 2026-07-17): a large export runs for hours, so the tab is very likely closed or
+    // reloaded before it finishes. R701: the export is ONE server-side job, so this reads
+    // ITS status and nothing else. A running export is RE-ATTACHED (its phase and progress
+    // drawn, and the dialog finishes it as a straight run would); a paused one gets its
+    // Resume button back; a finished one its completion panel. After an app restart the
+    // job knows nothing (it never restarts on its own: that would need the passphrase),
+    // and the last folder's request record is read instead -- «Resume export» is offered
+    // when it names an unfinished phase.
     async function _uxShowLastCompletedExportSummary() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const prog = document.getElementById("ux-progress");
       const bar = document.getElementById("ux-bar");
       const pauseBtn = document.getElementById("ux-pause");
-      const exportState = (s) => s && s.mode === "backup" && (s.state === "done" || s.state === "paused");
-      let vol = null, fold = null;
-      try {
-        const s = await api("/api/backup/v2/volumes/status");
-        if (exportState(s)) vol = s;
-      } catch (e) { /* best-effort: one endpoint failing must not hide the other */ }
-      try {
-        const s = await api("/api/backup/folder/status");
-        if (exportState(s)) fold = s;
-      } catch (e) { /* best-effort */ }
-      const shown = _uxPickLastExport(vol, fold);
-      if (!shown) return;
-      let phase = null;
-      if (shown === fold) phase = "folder";
-      else phase = "volumes";
-      const dest = shown.dest || (document.getElementById("ux-dest").value || "").trim();
-      // Recover the folder BEFORE the branch: a PAUSED export resumed after a page
-      // reload must re-enter the folder it paused in, and the only place that survives
-      // the reload is the job manager's own dest. Setting it only on the completed
-      // branch would leave a reloaded resume allocating a fresh folder.
-      _uxExportDir = shown.dest || null;
-      if (shown.state === "paused") {
-        // Audit finding 2026-07-17 (M8): a reopened dialog used to print "paused" text
-        // with NO way to resume -- _uxPhase (which endpoint a resume must target) stayed
-        // null from page load, and the actual #ux-pause button (default display:none)
-        // was never unhidden/relabelled, only this status text. _uxShowPaused is the
-        // SAME helper _uxRun already uses for a mid-run pause -- reuse it here so the
-        // reopened dialog gets a real, correctly-targeted Resume button.
+      let s = null;
+      try { s = await api("/api/backup/export/status"); } catch (e) { s = null; /* best-effort */ }
+      // "stopping" is live too: a pause asked of the corpus phase lands only between volumes,
+      // so it can last minutes, and the export is still writing into its folder meanwhile.
+      if (s && (s.state === "running" || s.state === "stopping")) {
+        _uxExportDir = s.dest || null;
+        _uxPhase = s.phase || null;
+        if (s.requested) _uxExportIncluded = { corpus: !!s.requested.corpus, blobs: (s.requested.categories || []).slice() };
+        _uxWatchExport(document.getElementById("ux-run"));
+        return;
+      }
+      const live = !!(s && s.dest && s.state && s.state !== "idle");
+      const dest = live ? s.dest : _uxLastExportDir();
+      if (!dest) return;
+      // Recover the folder BEFORE the branch: a PAUSED export resumed after a page reload
+      // must re-enter the folder it paused in (the server resumes it there; never a second one).
+      _uxExportDir = dest;
+      if (live && s.state === "paused") {
+        // Audit finding 2026-07-17 (M8): the reopened dialog gets a real Resume button,
+        // through the SAME helper a mid-run pause uses. _uxPhase says whether the resume
+        // needs the passphrase again (the corpus phase) or not (the large-data copy).
+        const phase = s.phase || null;
         _uxPhase = phase;
         _uxShowPaused(prog, bar, pauseBtn, t);
-      } else {
-        // A completed export: the panel a reopened dialog shows is the same panel the
-        // run itself ended on, built from the same server-side facts rather than from a
-        // remembered sentence.
-        // dir="ltr": a path is left-to-right data, and inside the Arabic dialog its
-        // leading slash was drawn at the far end (J3). The brackets are the LOCALE's, from
-        // a keyed frame: welded ASCII ones read "(上次已完成的导出)" in Chinese (J-3).
-        const tfb = (window.OOI18N && OOI18N.tf)
-          ? OOI18N.tf
-          : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
-        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span> ${esc(tfb("({text})", { text: t("last completed export") }))}`;
-        if (dest) {
-          try {
-            let facts = await api("/api/backup/export-summary?dir=" + encodeURIComponent(dest));
-            // J2: the job writes BACKUP_SUMMARY.md when it completes. Should the file
-            // still be missing (that write failed), ask for it once more here, and if
-            // that fails too the panel NAMES the missing file rather than reading as
-            // if one were there.
-            if (facts && !facts.summary_path && shown.state === "done") {
-              try {
-                const w = await api("/api/backup/export-summary", { method: "POST", body: JSON.stringify({ dir: dest }) });
-                facts = { ...(w.facts || {}), summary_path: w.summary_path };
-              } catch (e) {
-                facts = { ...facts, summary_error: String((e && e.message) || e) };
-              }
-            }
-            _uxRenderExportPanel(facts, t);
-            // J-1: a folder missing a member the export was asked for is not a completed
-            // backup, whatever the job that last wrote into it reported.
-            const miss = (facts && facts.missing) || {};
-            if (miss.corpus || (miss.categories || []).length) {
-              prog.innerHTML = `<b>${esc(t("Backup incomplete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span>`;
-            }
-          } catch (e) { /* best-effort: the completion line stands on its own */ }
-        }
+        return;
       }
+      // dir="ltr": a path is left-to-right data, and inside the Arabic dialog its leading
+      // slash was drawn at the far end (J3). The brackets are the LOCALE's, from a keyed
+      // frame: welded ASCII ones read "(上次已完成的导出)" in Chinese (J-3).
+      const tfb = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      let facts = null;
+      try { facts = await api("/api/backup/export-summary?dir=" + encodeURIComponent(dest)); } catch (e) { facts = null; }
+      const req = (facts && facts.requested) || {};
+      const unfinished = req.phase === "volumes" || req.phase === "folder";
+      // A folder remembered only by this browser is shown ONLY to offer its resume: one the
+      // job no longer knows and whose record says nothing is left is not "the last export".
+      if (!live && !unfinished) return;
+      if (live && (s.state === "failed" || s.state === "cancelled")) {
+        prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(_uxExportErrorText(s, t("Cancelled.")))}</span>`;
+      } else {
+        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span> ${esc(tfb("({text})", { text: t("last completed export") }))}`;
+      }
+      if (!facts) return;
+      try {
+        // J2: the job writes BACKUP_SUMMARY.md when it completes. Should the file still
+        // be missing (that write failed), ask for it once more here, and if that fails too
+        // the panel NAMES the missing file rather than reading as if one were there.
+        if (!facts.summary_path && live && s.state === "done") {
+          try {
+            const w = await api("/api/backup/export-summary", { method: "POST", body: JSON.stringify({ dir: dest }) });
+            facts = { ...(w.facts || {}), summary_path: w.summary_path };
+          } catch (e) {
+            facts = { ...facts, summary_error: String((e && e.message) || e) };
+          }
+        }
+        _uxRenderExportPanel(facts, t);
+        // J-1: a folder missing a member the export was asked for is not a completed
+        // backup, whatever the job that last wrote into it reported.
+        const miss = (facts && facts.missing) || {};
+        if ((miss.corpus || (miss.categories || []).length) && !(live && s.state === "failed")) {
+          prog.innerHTML = `<b>${esc(t("Backup incomplete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span>`;
+        }
+      } catch (e) { /* best-effort: the completion line stands on its own */ }
     }
 
     // ONE renderer for the completion panel (R4; Q208 = a). The facts come from
@@ -310,10 +304,17 @@
           if (!members.some((m) => (m.categories || []).includes(c))) lost.push(c);
         }
       }
+      const reqPhase = (facts.requested || {}).phase;
+      const resumable = reqPhase === "volumes" || reqPhase === "folder";
       const incomplete = !lost.length ? ""
         : `<div class="ux-incomplete" style="margin-top:8px;color:var(--err)">` +
           `<b>${esc(tf("Incomplete — requested for this export but not in this folder: {members}", { members: lost.join(" · ") }))}</b>` +
-          (owed.length
+          // R701: «Resume export» when the folder's record names an unfinished phase (the
+          // export job's resume cursor); the older copy button for a record that predates it.
+          (resumable
+            ? `<div style="margin-top:4px"><button type="button" class="secondary" data-ux-complete title="${esc(t("Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above."))}">${esc(t("Resume export"))}</button>`
+              + ` <button type="button" class="secondary" data-ux-dismiss title="${esc(t("Cancel this export? Corpus volumes written so far are removed from the folder; large-data files already copied stay."))}">${esc(t("Cancel export"))}</button></div>`
+            : owed.length
             ? `<div style="margin-top:4px"><button type="button" class="secondary" data-ux-complete title="${esc(t("Starts the large-data copy into this same folder. The encrypted volumes already in it are not touched."))}">${esc(t("Copy the large-data files now"))}</button></div>`
             : "") +
           `</div>`;
@@ -329,6 +330,8 @@
       // A listener, not an inline handler: the button is re-drawn on every repaint.
       const again = host.querySelector ? host.querySelector("[data-ux-complete]") : null;
       if (again) again.addEventListener("click", () => _uxCompleteExport(again));
+      const dismiss = host.querySelector ? host.querySelector("[data-ux-dismiss]") : null;
+      if (dismiss) dismiss.addEventListener("click", () => _uxDismissExport(dismiss));
     }
 
     // The verify verdict as ONE sentence. The five not-verified cases stay apart: "off",
@@ -567,6 +570,11 @@
       return ` · ${tf("phase {n} of {total}", { n: i, total: n })}`;
     }
     function _uxProgressView(kind, s, t) {
+      if (kind === "export") {
+        // R701: the export job carries its running phase's own counts; drawn as that phase is.
+        const sub = { mode: "backup", state: s.state, progress: s.progress || {} };
+        return _uxProgressView(s.phase === "folder" ? "folder" : "volumes", sub, t);
+      }
       const p = s.progress || {};
       // Every count here is ONE keyed frame chosen by number, its figures through fmtNum
       // (R14): "12/40 files" and "3 restored, 0 skipped" welded raw numbers to English
@@ -660,9 +668,11 @@
       // frame rather than a hardcoded ": " (J9). The frame is filled with two markers and
       // escaped first, then the markers are swapped for the prefix (text, escaped here)
       // and the progress (already HTML), so neither is escaped twice or not at all.
-      const withPrefix = (html) => (!ui.prefix ? html
+      // R701: the export job's prefix follows its phase (ui.prefixOf), read on every tick.
+      let prefix = ui.prefix;
+      const withPrefix = (html) => (!prefix ? html
         : esc(tf("{prefix}: {text}", { prefix: "\u0001", text: "\u0002" }))
-          .replace("\u0001", () => esc(ui.prefix)).replace("\u0002", () => html));
+          .replace("\u0001", () => esc(prefix)).replace("\u0002", () => html));
       // PER-PHASE ETA baseline (field report 2026-07-29: a 50,000-article import
       // quoted "~4000 min left"). This used to be ONE startMs for the whole job while
       // `view.frac` resets to ~0 at every phase boundary, so the rule of three computed
@@ -682,6 +692,10 @@
         let fails = 0;                    // consecutive poll-transport failures
         const MAX_FAILS = 40;             // give up POLLING (not the job) after ~minutes of backoff
         const tick = async () => {
+          // R701: a watcher that is no longer THE one (a newer watcher took over, or the
+          // dialog closed) stops here, without drawing: two pollers on one dialog painted
+          // over each other and finished the same export twice.
+          if (ui.alive && !ui.alive()) return resolve({ state: "detached" });
           let s;
           try {
             s = await api(url);
@@ -697,7 +711,10 @@
             setTimeout(tick, Math.min(1200 * Math.pow(1.6, fails - 1), 15000));
             return;
           }
+          if (ui.alive && !ui.alive()) return resolve({ state: "detached" });
           const state = s.state || "";
+          if (ui.onTick) ui.onTick(s);
+          if (ui.prefixOf) prefix = ui.prefixOf(s);
           const view = _uxProgressView(kind, s, t);
           _uxPaintBar(ui.bar, view);
           // A client-side rule-of-three ETA for byte/fraction-based jobs (folder copy);
@@ -708,10 +725,15 @@
           const etaTxt = etaSec != null ? _uxEta(etaSec, t, true) : "";
           if (ui.label) ui.label.innerHTML = withPrefix(view.text + esc(etaTxt));
           if (state === "done" || state === "paused") return resolve(s);  // paused = stopped, not a hang
-          if (state === "error" || state === "cancelled") {
+          if (state === "error" || state === "failed" || state === "cancelled") {
             // Surface the REAL backend error (the volume manifest/checksum message),
             // never a bare "cancelled" — field report: "Import failed — see console".
-            return reject(new Error(s.error || view.text || state));
+            // "failed" is the export job's (R701), with its named reason in s.error.
+            const err = new Error(s.error || (kind === "export" && state === "cancelled" ? t("Cancelled.") : (view.text || state)));
+            // R701: the export's error_phase rides beside its untouched error. NOT err.status, which
+            // api() uses for an HTTP status NUMBER: a job that ended badly is not a refused request.
+            err.jobStatus = s;
+            return reject(err);
           }
           setTimeout(tick, 1200);
         };
@@ -741,31 +763,35 @@
       try {
         await startCall();
       } catch (e) {
+        // R701: an ANSWER is never a lost response. A refusal the server sent (a 409 while a
+        // restore runs, a 400 for a missing passphrase) is the outcome, and is shown; only a
+        // start whose response never arrived (no status at all) is checked against the job.
+        if (kind === "export" && e && typeof e.status === "number") throw e;
         let st = null;
         try { st = await api(statusUrl); } catch (_) { throw e; }  // can't confirm → original error
         const s = (st && st.state) || "";
         // Only a LIVE job (running|paused) proves the start reached the server despite the
         // lost response. NOT "done": a just-started job cannot be instantly done, so a "done"
         // here is a STALE state from a prior run and must not mask a failed start as complete.
-        if (!(s === "running" || s === "paused")) throw e;
+        if (!(s === "running" || s === "paused" || (kind === "export" && s === "stopping"))) throw e;
         // …and the live job must be OURS. All volume ops share one manager + one /status, so a
         // 409 from an UNRELATED job (a Verify, a restore, or a backup to a DIFFERENT drive) would
         // otherwise be adopted here and its "done" reported as our corpus backup (data-safety bug:
         // the corpus for THIS dest is never written). Re-throw when mode/dest don't match ours.
         if (expect && expect.mode && st.mode && st.mode !== expect.mode) throw e;
         if (expect && expect.dest && st.dest && !_uxSamePath(st.dest, expect.dest)) throw e;
+        // R701: a fresh export's folder is allocated by the server, so only its PARENT is ours to compare.
+        if (expect && expect.parent && st.parent && !_uxSamePath(st.parent, expect.parent)) throw e;
         // else: the job is live AND ours despite the lost start response → poll it
       }
       return _uxPoll(statusUrl, kind, ui);
     }
 
-    async function _uxRun(btn, resumeDir) {
+    async function _uxRun(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const parent = (document.getElementById("ux-dest").value || "").trim();
       if (!parent) { toast(t("Enter a destination folder first."), "err"); return; }
       const prog = document.getElementById("ux-progress");
-      const bar = document.getElementById("ux-bar");
-      const pauseBtn = document.getElementById("ux-pause");
       // Which folder-backup categories a ticked member carries comes from the member
       // itself (`data-cats`, written by the inventory), never from a list repeated here:
       // the "LLM models" tick has always exported BOTH model stores, and a mapping kept
@@ -807,78 +833,116 @@
       btn.disabled = true;
       const sumHost = document.getElementById("ux-summary");
       if (sumHost) sumHost.innerHTML = "";
+      // R701: ONE server-side export job. The server allocates the dated folder (R5;
+      // Q210-Q213), records what was asked for in it (J-1), runs the corpus volumes, checks
+      // they are a finished BACKUP of THIS folder (the data-safety gate of field 2026-07-14,
+      // which used to run here and now runs in src/backup/export_job.py, unchanged), and
+      // only then copies the large-data files into the same folder -- or skips the copy when
+      // they ride INSIDE the artifact (S6.2). This page starts it and reads its one status,
+      // so a reload between the phases no longer leaves the copy unstarted: the reopened
+      // dialog re-attaches to the job. The passphrase goes to the job once; nothing echoes it.
+      prog.innerHTML = `<span class="muted">${esc(t("Preparing the export folder…"))}</span>`;
+      await _uxWatchExport(btn, () => api("/api/backup/export/start", { method: "POST", body: JSON.stringify({
+        parent, corpus: wantCorpus, categories: blobs, inside, passphrase: pass, verify_after_write: verifyAfterWrite }) }),
+        { mode: "backup", parent });
+    }
+
+    // Watch the ONE export job to its end (R701): a straight run, a resume and a re-attach
+    // after a reload all end here. ``startCall`` (absent on a re-attach) is made
+    // job-state-as-truth by _uxStartThenPoll: a lost start response with the job live and
+    // ours is watched, never reported as a failure. The prefix follows the job's phase.
+    //
+    // ONE WATCHER AT A TIME. Each call takes the next generation; an older watcher whose
+    // generation is no longer current -- or any watcher once the dialog is closed -- stops
+    // polling and draws nothing more (_uxPoll's ui.alive). The dated folder is remembered
+    // the moment the server names it -- the start's own answer, then every status tick --
+    // not only at the end: a restart mid-export must still find it to offer «Resume export».
+    let _uxWatchGen = 0;
+    //: The export whose completion was drawn (its folder and start time), so it is drawn once.
+    let _uxFinishedKey = null;
+    async function _uxWatchExport(btn, startCall, expect) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const prog = document.getElementById("ux-progress");
+      const bar = document.getElementById("ux-bar");
+      const pauseBtn = document.getElementById("ux-pause");
+      const cancelBtn = document.getElementById("ux-cancel");
+      const dlg = document.getElementById("ux-export");
+      const gen = ++_uxWatchGen;
+      const alive = () => gen === _uxWatchGen && (!dlg || !!dlg.open);
+      const remember = (st) => {
+        if (st && st.dest) { _uxExportDir = st.dest; _uxRememberExportDir(st.dest); }
+      };
+      if (btn) btn.disabled = true;
       if (pauseBtn) { pauseBtn.style.display = ""; pauseBtn.disabled = false; pauseBtn.dataset.mode = "pause"; pauseBtn.textContent = t("Pause"); }
-      // THE DATED FOLDER (R5; Q210-Q213). Allocated once, server-side, BEFORE either
-      // phase, so both write into the same folder and the panel names the folder that
-      // exists. A resume goes back to the folder it paused in -- allocating a second one
-      // would orphan the first, along with the volumes already in it.
-      let dest = resumeDir || null;
-      if (!dest) {
-        prog.innerHTML = `<span class="muted">${esc(t("Preparing the export folder…"))}</span>`;
-        try {
-          // What this export is ASKED to hold rides the allocation, and the server records
-          // it in the new folder (J-1): the large-data copy is started from THIS page once
-          // the corpus phase is done, so a reload in between left the copy unstarted with
-          // nothing anywhere remembering it was wanted. The reopened panel now compares
-          // the record with the folder and names what is missing.
-          const made = await api("/api/backup/export-folder", { method: "POST", body: JSON.stringify({
-            parent, corpus: wantCorpus, categories: blobs, inside }) });
-          dest = made.dir;
-        } catch (e) {
-          prog.innerHTML = `<span style="color:var(--err)">${esc(t("Could not create the export folder:"))} ${esc(e.message || e)}</span>`;
-          btn.disabled = false;
-          if (pauseBtn) pauseBtn.style.display = "none";
+      if (cancelBtn) { cancelBtn.style.display = ""; cancelBtn.disabled = false; }
+      const ui = { bar, label: prog, alive, onTick: remember,
+        prefixOf: (st) => (st.phase === "folder" ? t("Large data") : t("Corpus")) };
+      const hide = () => {
+        if (bar) bar.style.display = "none";
+        if (pauseBtn) pauseBtn.style.display = "none";
+        if (cancelBtn) cancelBtn.style.display = "none";
+      };
+      const start = startCall ? async () => { const r = await startCall(); remember(r); return r; } : null;
+      try {
+        const s = start
+          ? await _uxStartThenPoll(start, "/api/backup/export/status", "export", ui, expect)
+          : await _uxPoll("/api/backup/export/status", "export", ui);
+        if (!alive() || (s && s.state === "detached")) return;  // superseded or closed: the newer watcher draws
+        remember(s);
+        if (s && s.requested) _uxExportIncluded = { corpus: !!s.requested.corpus, blobs: (s.requested.categories || []).slice() };
+        if (s && s.state === "paused") {
+          _uxPhase = s.phase || null;
+          _uxShowPaused(prog, bar, pauseBtn, t);
+          if (btn) btn.disabled = false;
           return;
         }
-      }
-      _uxExportDir = dest;
-      try {
-        if (wantCorpus) {
-          _uxPhase = "volumes";
-          const s1 = await _uxStartThenPoll(
-            () => api("/api/backup/v2/volumes/start", { method: "POST", body: JSON.stringify(inside
-              ? { dest, passphrase: pass, include_blobs: blobs, verify_after_write: verifyAfterWrite }
-              : { dest, passphrase: pass, verify_after_write: verifyAfterWrite }) }),
-            "/api/backup/v2/volumes/status", "volumes", { bar, label: prog, prefix: t("Corpus") },
-            { mode: "backup", dest });
-          if (s1 && s1.state === "paused") { _uxShowPaused(prog, bar, pauseBtn, t); btn.disabled = false; return; }
-          // DATA-SAFETY GATE (field 2026-07-14): the large-data (blob) phase is unreachable, and
-          // "Backup complete" is never shown, unless the volumes phase PROVABLY completed as a
-          // `backup` of the corpus into THIS dest. Without this a lost/masked start that adopted an
-          // unrelated live job's "done" would skip the corpus yet print success.
-          //
-          // Deselecting the corpus does NOT weaken this. The gate exists so a corpus the user
-          // ASKED for cannot be silently skipped behind a success message; when they did not ask
-          // for one there is nothing to confirm, and the completion line below says so by name
-          // rather than letting "Backup complete" imply a corpus is in there.
-          if (!s1 || s1.state !== "done" || s1.mode !== "backup" || (s1.dest && !_uxSamePath(s1.dest, dest))) {
-            throw new Error(t("The corpus backup could not be confirmed — aborting before the large-data files so you never get a partial backup that looks complete."));
-          }
-        }
-        // Skipped when they rode INSIDE: copying them a second time alongside the
-        // artifact would double the bytes on the drive to deliver the same files.
-        if (blobs.length && !inside) {
-          _uxPhase = "folder";
-          const s2 = await _uxStartThenPoll(
-            () => api("/api/backup/folder/start", { method: "POST", body: JSON.stringify({ dest, categories: blobs }) }),
-            "/api/backup/folder/status", "folder", { bar, label: prog, prefix: t("Large data") },
-            { dest });
-          if (s2 && s2.state === "paused") { _uxShowPaused(prog, bar, pauseBtn, t); btn.disabled = false; return; }
-        }
         _uxPhase = null;
-        if (bar) bar.style.display = "none";
-        if (pauseBtn) pauseBtn.style.display = "none";
-        await _uxFinishExport(prog, dest, t);
+        hide();
+        const key = `${(s && s.dest) || _uxExportDir}|${(s && s.started_at) || ""}`;
+        if (_uxFinishedKey !== key) {
+          _uxFinishedKey = key;
+          await _uxFinishExport(prog, (s && s.dest) || _uxExportDir, t);
+        }
       } catch (e) {
+        if (!alive()) return;
+        if (e && typeof e.status === "number" && start) {
+          // The server REFUSED the start or the resume (it answered, with a reason): nothing
+          // started and the export is as it was. A refused resume stays a paused export.
+          hide();
+          const said = ooServerText(e.message || e);
+          if (expect && expect.dest) {
+            _uxShowPaused(prog, bar, pauseBtn, t);
+            prog.innerHTML += `<div style="color:var(--err)">${esc(t("Could not resume:"))} ${esc(said)}</div>`;
+          } else {
+            prog.innerHTML = `<span style="color:var(--err)">${esc(t("Could not start:"))} ${esc(said)}</span>`;
+          }
+          if (btn) btn.disabled = false;
+          return;
+        }
         _uxPhase = null;
-        if (bar) bar.style.display = "none";
-        if (pauseBtn) pauseBtn.style.display = "none";
+        hide();
         // The dialog's own error colour, not the floating .note toast box (W6; B13's fix
         // for the import dialog): the toast class slid in with a shadow inside the panel.
-        prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
-        console.error("ux run", e);
+        prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(_uxExportErrorText(e && e.jobStatus, (e && e.message) || e))}</span>`;
+        console.error("ux export", e);
       }
-      btn.disabled = false;
+      if (btn) btn.disabled = false;
+    }
+
+    // The export's error in the operator's language (R701). The server sends a manager's
+    // own sentence UNCHANGED and the phase it came from beside it (error_phase), so the
+    // whole-message translations in ooServerText still match it -- the wrong-passphrase
+    // sentence, the data-safety gate's refusal -- and the phase is the locale's own
+    // "{prefix}: {text}" frame, never English welded to the front of the message.
+    function _uxExportErrorText(st, fallback) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      const text = ooServerText((st && st.error) || fallback || "");
+      const ph = st && st.error_phase;
+      if (ph !== "volumes" && ph !== "folder") return text;
+      return tf("{prefix}: {text}", { prefix: ph === "folder" ? t("Large data") : t("Corpus"), text });
     }
 
     // THE ONE COMPLETION, for a straight run and a resumed large-data copy alike (W1). A
@@ -920,47 +984,37 @@
       }
     }
 
-    // Finish an INCOMPLETE export (J-1): copy the large-data files its folder is missing
-    // INTO THAT SAME FOLDER, which is exactly the phase _uxRun would have started had the
-    // page not been reloaded -- same endpoint, same destination guard, same completion.
-    // What to copy comes from the panel's facts, i.e. from the request the server
-    // recorded in the folder, never from the checklist, whose ticks may have changed.
+    // Finish an INCOMPLETE export (J-1), IN THAT SAME FOLDER, through the export job's
+    // resume (R701): the server continues the phase the folder's request record names, or
+    // -- for a record older than the job -- copies the large-data files the folder is
+    // missing. What it carries comes from the panel's facts, i.e. from the request the
+    // server recorded, never from the checklist, whose ticks may have changed.
     async function _uxCompleteExport(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const facts = _uxExportFacts || {};
       const dest = facts.destination;
+      const req = facts.requested || {};
       const cats = ((facts.missing || {}).categories || []).slice();
-      if (!dest || !cats.length) return;
-      const prog = document.getElementById("ux-progress");
-      const bar = document.getElementById("ux-bar");
-      const pauseBtn = document.getElementById("ux-pause");
-      const runBtn = document.getElementById("ux-run");
+      if (!dest) return;
+      const body = { dir: dest };
+      // The passphrase only where the server will run the corpus phase: the record names it,
+      // or a record older than the cursor still lacks the corpus. A done or cancelled
+      // export's resume is the large-data copy alone, and needs none.
+      if (req.phase === "volumes" || (req.phase == null && (facts.missing || {}).corpus)) {
+        const pass = (document.getElementById("ux-pass") || {}).value || "";
+        if (!pass) { toast(t("Enter the passphrase to resume the corpus backup."), "err"); return; }
+        const vBox = document.getElementById("ux-verify");
+        body.passphrase = pass;
+        body.verify_after_write = !vBox || vBox.checked;
+      }
       if (btn) btn.disabled = true;
-      if (runBtn) runBtn.disabled = true;
       _uxExportDir = dest;
-      _uxExportIncluded = { corpus: !!facts.corpus_included, blobs: cats };
+      _uxPhase = body.passphrase ? "volumes" : "folder";  // what a refused resume's Resume button re-asks
+      _uxExportIncluded = { corpus: !!(req.corpus || facts.corpus_included), blobs: (req.categories || cats).slice() };
       const sumHost = document.getElementById("ux-summary");
       if (sumHost) sumHost.innerHTML = "";
-      if (pauseBtn) { pauseBtn.style.display = ""; pauseBtn.disabled = false; pauseBtn.dataset.mode = "pause"; pauseBtn.textContent = t("Pause"); }
-      try {
-        _uxPhase = "folder";
-        const s2 = await _uxStartThenPoll(
-          () => api("/api/backup/folder/start", { method: "POST", body: JSON.stringify({ dest, categories: cats }) }),
-          "/api/backup/folder/status", "folder", { bar, label: prog, prefix: t("Large data") },
-          { dest });
-        if (s2 && s2.state === "paused") { _uxShowPaused(prog, bar, pauseBtn, t); if (runBtn) runBtn.disabled = false; return; }
-        _uxPhase = null;
-        if (bar) bar.style.display = "none";
-        if (pauseBtn) pauseBtn.style.display = "none";
-        await _uxFinishExport(prog, dest, t);
-      } catch (e) {
-        _uxPhase = null;
-        if (bar) bar.style.display = "none";
-        if (pauseBtn) pauseBtn.style.display = "none";
-        prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
-        console.error("ux complete", e);
-      }
-      if (runBtn) runBtn.disabled = false;
+      await _uxWatchExport(document.getElementById("ux-run"),
+        () => api("/api/backup/export/resume", { method: "POST", body: JSON.stringify(body) }), { mode: "backup", dest });
     }
 
     // Paused ≠ complete (the paused-state label, field-test Item 9): show the honest state
@@ -969,51 +1023,87 @@
       if (bar) bar.style.display = "none";
       prog.innerHTML = `<b>${esc(t("Backup paused."))}</b> ${esc(t("Resume to continue where it left off."))}`;
       if (pauseBtn) { pauseBtn.style.display = ""; pauseBtn.disabled = false; pauseBtn.dataset.mode = "resume"; pauseBtn.textContent = t("Resume"); }
+      // R701: a paused export can be cancelled too (the server takes it), so the button stays.
+      const cancelBtn = document.getElementById("ux-cancel");
+      if (cancelBtn) { cancelBtn.style.display = ""; cancelBtn.disabled = false; }
     }
 
-    // Pause the live phase, or resume a paused backup — continuing from the resume log /
-    // already-copied files, never re-doing finished work.
+    // Pause the export's running phase, or resume a paused export -- in the SAME dated
+    // folder, continuing from the volumes or files already written (R701).
     async function _uxPauseResume(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (btn.dataset.mode === "resume") { btn.dataset.mode = "pause"; await _uxResume(btn); return; }
-      const ep = _uxPhase === "folder" ? "/api/backup/folder/pause" : "/api/backup/v2/volumes/pause";
       btn.disabled = true;
-      try { await api(ep, { method: "POST" }); }
+      try { await api("/api/backup/export/pause", { method: "POST" }); }
       catch (e) { toast(t("Could not pause:") + " " + (e.message || e), "err"); btn.disabled = false; }
-      // The poll then observes state="paused" and _uxShowPaused flips this button to Resume.
+      // The watch then observes state="paused" and _uxShowPaused flips this button to Resume.
     }
 
     async function _uxResume(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const prog = document.getElementById("ux-progress");
-      const bar = document.getElementById("ux-bar");
-      if (_uxPhase === "folder") {
-        // The folder copy has a dedicated resume endpoint (re-plans + skips copied files).
-        btn.dataset.mode = "pause"; btn.textContent = t("Pause");
-        try {
-          // Re-enable the Pause button for the resumed copy (skeptic MED: it was stuck
-          // disabled through the whole multi-GB resume). _uxStartThenPoll keeps the resume
-          // request hiccup-tolerant (job-state-as-truth), same as a fresh start.
-          btn.disabled = false;
-          const s = await _uxStartThenPoll(
-            () => api("/api/backup/folder/resume", { method: "POST" }),
-            "/api/backup/folder/status", "folder", { bar, label: prog, prefix: t("Large data") });
-          if (s && s.state === "paused") { _uxShowPaused(prog, bar, btn, t); return; }
-          _uxPhase = null;
-          if (bar) bar.style.display = "none"; btn.style.display = "none";
-          // The same completion the straight run shows, summary file included (W1).
-          await _uxFinishExport(prog, _uxExportDir || (document.getElementById("ux-dest").value || "").trim(), t);
-        } catch (e) {
-          _uxPhase = null; if (bar) bar.style.display = "none"; btn.style.display = "none";
-          prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
+      // The server resumes the phase the export paused in, in its own folder; it never
+      // allocates a second one. The corpus phase needs the passphrase again (the job let
+      // go of it once that phase had started); the large-data copy needs none.
+      const body = { dir: _uxExportDir || "" };
+      if (_uxPhase === "volumes") {
+        const pass = (document.getElementById("ux-pass") || {}).value || "";
+        if (!pass) {
+          btn.dataset.mode = "resume";
+          toast(t("Enter the passphrase to resume the corpus backup."), "err");
+          return;
         }
-        return;
+        // Q218 = a: re-supplied on a resume too, never left to a default.
+        const vBox = document.getElementById("ux-verify");
+        body.passphrase = pass;
+        body.verify_after_write = !vBox || vBox.checked;
       }
-      // Volumes phase: re-running the flow continues the corpus from its resume log,
-      // then does any selected large-data blobs -- INSIDE the folder this export already
-      // allocated. Without that argument the re-entry would read the destination box and
-      // allocate a fresh dated folder, leaving the paused volumes behind in the old one.
-      _uxRun(document.getElementById("ux-run"), _uxExportDir);
+      btn.dataset.mode = "pause"; btn.textContent = t("Pause"); btn.disabled = false;
+      await _uxWatchExport(document.getElementById("ux-run"),
+        () => api("/api/backup/export/resume", { method: "POST", body: JSON.stringify(body) }),
+        { mode: "backup", dest: _uxExportDir });
+    }
+
+    // Cancel an UNFINISHED export named by the panel (R701): paused, failed, or left by an
+    // app restart. The server cancels it from its folder's record -- its partial volumes go,
+    // the record says cancelled -- so «Resume export» stops being offered for it.
+    async function _uxDismissExport(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const dest = (_uxExportFacts || {}).destination;
+      if (!dest) return;
+      if (!confirm(t("Cancel this export? Corpus volumes written so far are removed from the folder; large-data files already copied stay."))) return;
+      if (btn) btn.disabled = true;
+      try { await api("/api/backup/export/cancel", { method: "POST", body: JSON.stringify({ dir: dest }) }); }
+      catch (e) { toast(t("Could not cancel:") + " " + ooServerText(e.message || e), "err"); if (btn) btn.disabled = false; return; }
+      const host = document.getElementById("ux-summary");
+      if (host) host.innerHTML = "";
+      _uxExportFacts = null;
+      const prog = document.getElementById("ux-progress");
+      if (prog) prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(t("Cancelled."))}</span>`;
+    }
+
+    // Cancel the running export (R701). A cancelled corpus phase removes its partial volume
+    // set -- never mistakable for a good backup -- so it asks first.
+    async function _uxCancelExport(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!confirm(t("Cancel this export? Corpus volumes written so far are removed from the folder; large-data files already copied stay."))) return;
+      if (btn) btn.disabled = true;
+      let r = null;
+      try { r = await api("/api/backup/export/cancel", { method: "POST" }); }
+      catch (e) { toast(t("Could not cancel:") + " " + ooServerText(e.message || e), "err"); if (btn) btn.disabled = false; return; }
+      // A RUNNING export's watcher sees the cancel and draws it. A PAUSED one has no
+      // watcher (its worker had ended), and the server cancelled it at once: draw it here.
+      if (r && r.state === "cancelled") {
+        _uxPhase = null;
+        const bar = document.getElementById("ux-bar");
+        const pauseBtn = document.getElementById("ux-pause");
+        if (bar) bar.style.display = "none";
+        if (pauseBtn) pauseBtn.style.display = "none";
+        if (btn) btn.style.display = "none";
+        const prog = document.getElementById("ux-progress");
+        if (prog) prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(t("Cancelled."))}</span>`;
+        const run = document.getElementById("ux-run");
+        if (run) run.disabled = false;
+      }
     }
 
     // ---- Unified Import dialog (folder discovery) -------------------------- //

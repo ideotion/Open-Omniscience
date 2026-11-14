@@ -39,6 +39,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import text
 
+from src.database.models import MENTIONS_VIEW
 from src.monitoring.secret_scrub import log_failure
 
 _LOG = logging.getLogger(__name__)
@@ -124,8 +125,8 @@ def _vocabulary(session) -> list[tuple[int, str]]:
     """(keyword id, normalised term) for every suggestible keyword."""
     rows = session.execute(
         text(
-            "SELECT k.id, k.normalized_term FROM keywords k "
-            "JOIN (SELECT keyword_id, COUNT(*) AS n FROM keyword_mentions "
+            "SELECT k.id, k.normalized_term FROM keywords k "  # nosec B608 - MENTIONS_VIEW is a module constant
+            f"JOIN (SELECT keyword_id, COUNT(*) AS n FROM {MENTIONS_VIEW} "
             "GROUP BY keyword_id HAVING COUNT(*) >= :min) m ON m.keyword_id = k.id "
             "WHERE k.is_ngram IS NOT 1"
         ),
@@ -271,7 +272,7 @@ def suggest(session, word: str) -> list[dict]:
         marks = ", ".join(f":i{j}" for j in range(len(id_chunk)))
         for kid, n in session.execute(
             text(
-                "SELECT keyword_id, COUNT(*) FROM keyword_mentions "  # nosec B608 - only generated :iN placeholders are interpolated
+                f"SELECT keyword_id, COUNT(*) FROM {MENTIONS_VIEW} "  # nosec B608 - only generated :iN placeholders are interpolated
                 f"WHERE keyword_id IN ({marks}) GROUP BY keyword_id"
             ),
             id_params,
