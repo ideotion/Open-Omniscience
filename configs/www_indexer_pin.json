@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "40eee39a928060ecddb9a82e3457ecc83f80f9d6768fa7e80e565b9de163085d",
+  "digest": "e3c2cd9c68546de90cd9b0eb2839c4ef2da23f2f654945684e72ad3078a53438",
   "log": [
     {
       "version": 1,
@@ -19,6 +19,12 @@
       "digest": "40eee39a928060ecddb9a82e3457ecc83f80f9d6768fa7e80e565b9de163085d",
       "kind": "same",
       "note": "R415 review: reindex_parallel.py (_extract_www picks the text and source country) joins the www modules"
+    },
+    {
+      "version": 1,
+      "digest": "e3c2cd9c68546de90cd9b0eb2839c4ef2da23f2f654945684e72ad3078a53438",
+      "kind": "same",
+      "note": "R697 touched reindex_parallel.py and store.py only in the date language the pool hands extract_dates; places and entities are extracted from the same text and country as before"
     }
   ]
 }

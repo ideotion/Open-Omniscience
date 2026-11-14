@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "digest": "6611aad4bf34b1a1c57db036d0d7daf7a2591b81a6726ea8a18f103659430627",
+  "version": 2,
+  "digest": "8f2746190878948ccf255c97e6d559b19348051230575a1c99e404bfff030db5",
   "log": [
     {
       "version": 1,
@@ -43,6 +43,12 @@
       "digest": "6611aad4bf34b1a1c57db036d0d7daf7a2591b81a6726ea8a18f103659430627",
       "kind": "same",
       "note": "PR #1949 (audit P2/P8) replaced the quadratic comment, tag, style/script and e-mail regexes in extract.py, text_processor.py and markup_blocks.py with linear scans that are byte-identical to the old regexes (differential on every shipped HTML page, 300k seeded random documents incl. Unicode case folds, tests/test_html_strips_linear.py), so no row index_article writes can change"
+    },
+    {
+      "version": 2,
+      "digest": "8f2746190878948ccf255c97e6d559b19348051230575a1c99e404bfff030db5",
+      "kind": "bump",
+      "note": "R699 causes 1, 3 and 4: an asserted language its text's own script refutes is cleared and re-deduced (keywords move to the right language and stoplist), and script-code lines and LaTeX command names are blanked before tokenising (no more addclass/mathcal keywords); R697: the pooled re-index now extracts dates under the article's own language (never the stoplist's \"en\" guess) and a tag stored with no language says so in its extractor field"
     }
   ]
 }

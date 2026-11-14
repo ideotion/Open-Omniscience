@@ -12170,6 +12170,17 @@ slice: pass `art.language` in the task (inline-identical, loses the pooled recal
 `store_for_article` to use the resolved language (gains recall on both paths, changes stored
 dates for existing corpora on the next re-index). The second looks better and is a behaviour
 ruling, not a refactor.
+**CLOSED 2026-11-14 (R697 = RN1 (a), the coordinator under the maintainer's standing rule; lane V,
+the keyword-engine session):** the first option. The pooled re-index now hands `extract_dates`
+`article.language` (a fourth slot of `www_ctx`, read after `_resolve_known_language`), so the pool, the
+inline store, the collector and the ingest precompute all pass the same value, and a context without the
+slot means unknown, never "en". A tag stored with no article language carries
+`extractor = "dateextract:no-language"`, so "language unknown" is recorded on the row. Known cost, as
+the ruling accepted: an untagged article whose language was only DEDUCED no longer gets that language's
+gated months in the pool. **Old rows do not converge on their own:** the date store is additive (it never
+removes a tag, to keep human confirm/reject decisions), so a tag the pool once stored under the "en" guess
+stays after a re-index, and an existing tag keeps its old `dateextract` label even when it is found again with no language. Pruning unconfirmed tags that a re-extraction no longer finds is a separate
+change, not made here. Enforced by tests/test_date_language_every_path.py.
 
 **RECORDED, NOT FIXED (2) — the collector could gain the same date recall and deliberately
 does not.** `ArticleBatch._precompute` passes `a.language` for dates, byte-identical to the
@@ -16469,11 +16480,15 @@ counts and no `top_source_share`), so the feeds behind each cause are NOT named 
 1. **Cyrillic articles tagged `en`.** 50 of the 54 `lng` words read in the English shard are Cyrillic (новости 2,094 articles, 2,087 of them tagged `en`; россии 1,541; краткий 1,532;
    июл 1,234; пересказ 1,228). That is news text whose feed or page language tag says English. Fix upstream: the language tag of the feed, or the detector, not the stoplist. The reverse also
    shows: the other 267 `lng` words sit in the shards of 28 other languages and are mostly Latin-script (bn 86, ru 33, ar 28, fr 17, nl 16), and the tool refuses 233 of the 321 as `content_elsewhere` (real keywords of their own language) or `not_in_log`.
+   **CLOSED 2026-11-14 (R699 = RN6 (a), Lane V):** `src/analytics/script_check.py` + `_resolve_known_language` clear an asserted tag when under 25% of the text's letters are in that language's own script, and the article is re-deduced (or stays unknown). Same-script mis-tags (French tagged `en`) are out of its reach by design; two-script languages are never judged. Old rows converge only after a re-index (INDEXER_VERSION 2). **Known limits (the Opus read of #1989):** the cleared tag is not kept anywhere but the info log, so a wrongly refuted tag cannot be restored from the row, and a cleared row is not re-checked if the table or threshold changes later; a source whose configured language is wrong re-asserts it on every new row, and each index pass clears it again (correct for the rows, but the source's own setting stays wrong until someone fixes it).
 2. **zh text decoded with the wrong charset.** `nw`: 19 zh fragments (1 to 7 articles each) such as `гҗӯ` and `еӣҫе` are UTF-8 Chinese read as a single-byte charset; one ja word is the same
    (`جچ¹`). Fix at fetch or extraction: the charset decision. No stoplist word was added for any of them.
+   **CLOSED 2026-11-14 (R699 = RN6 (a), Lane V):** `src/ingest/charset.py` decides the encoding from the bytes (BOM, declared UTF-16/32, valid UTF-8, the header unless it is requests' ISO-8859-1 default, `<meta charset>`, then the guesser). Reproduced first: one stray byte in a UTF-8 Chinese page made `charset_normalizer` answer `ptcp154`, which turns 图片 into `еӣҫзүҮ`. Already-stored garbled bodies stay garbled: a re-index cannot repair text decoded wrongly at fetch; only a re-fetch does.
 3. **ko pages whose script text survives extraction.** `oth`: 12 ko tokens (`addclass`, `attr`, `cssclip`, `pdesc`, `pmurl` ...) at 2 articles each, plus keyboard noise (`dhmkkh`, `dhmkkhh`, 25
    articles each). Fix in extraction: drop script and style text for these pages. Eight of the words ship in batch 1 as a bridge.
+   **CLOSED 2026-11-14 (R699, Lane V, PR #1989):** `strip_non_prose` in `src/analytics/extract.py` blanks lines that read as script code before tokenising. The keyboard noise (`dhmkkh`) is NOT addressed: it is not code and no rule can tell it from a rare word; the stoplist bridge stays for it.
 4. **LaTeX in en articles.** `oth`: `mathcal`, `mathbf`, `mathbb`, `mathrm` (7 to 34 articles). Four words ship in batch 1; a macro that is not yet in the list will not be hidden until extraction removes math markup.
+   **CLOSED 2026-11-14 (R699, Lane V, PR #1989):** in a text carrying a known LaTeX macro, every backslash command and environment name is blanked before tokenising, so an unlisted macro is never minted. Old rows converge only after a re-index.
 
 **TOOL GAP (found by the guard, not by the tool):** `scripts/stopword_batch.py --apply` writes a batch to the file of the language it was run for, so a Latin-script word read in a log of a
 non-Latin language lands in a file the script test (`tests/test_stopword_file_scripts.py`) refuses. The batch-1 ko words were moved to `_multilingual.yml` by hand. Teach `--apply` that rule before
