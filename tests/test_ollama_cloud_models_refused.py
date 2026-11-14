@@ -336,6 +336,10 @@ def test_a_server_that_says_it_is_a_proxy_gets_no_text(cards):
     {"/v1/models": httpx.Response(200, json={"data": []})},
     {"/api/tags": httpx.Response(200, content=b"<html>not json</html>")},                    # a catch-all page
     {},                                                                                       # 404 on both lists
+    {"/api/tags": httpx.Response(200, json={"error": "Unexpected endpoint or method. (GET /api/tags)"})},  # LM Studio
+    {"/api/tags": httpx.Response(200, json={"models": [{"name": "q.gguf", "model": "q.gguf"}], "object": "list",
+                                            "data": [{"id": "q.gguf", "owned_by": "llamacpp"}]}),            # llama-server
+     "/v1/models": httpx.Response(200, json={"data": [{"id": "q.gguf", "owned_by": "llamacpp"}]})},
 ])
 def test_another_local_server_runs_as_before_and_is_named_other(routes):
     """R688 as amended: a server that is neither vLLM nor a known relay keeps working; Settings carries the caveat."""
