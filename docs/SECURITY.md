@@ -503,7 +503,7 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   signer's key to prove *provenance*, not just integrity. Verification needs nothing
   but the bundle + key (no DB, no trust in this tool).
 - An append-only, hash-chained, **signed custody log** (`src/custody/`) records
-  ongoing actions on an item; verify offline with `scripts/verify_custody.py`.
+  ongoing actions on an item; verify offline with `scripts/verify_custody.py`, which fails closed on an empty bundle, a record cut short, a bundle signed by more than one key, and a bundle whose entries do not match the head its export signs (count and last entry). A tail re-signed with a second key is refused as a key change. A bundle re-signed whole by someone else passes the tool: compare the printed signer key with one you already know, since that comparison, not the tool, is what catches it. A genuine log whose key was re-created partway (after a restore, say) is refused too; the in-app chain check still passes it, and a signed key-rotation record that lets the checker follow such a change is coming. It cannot see a cut made before export.
   Signatures are **hybrid Ed25519 + post-quantum ML-DSA** when the `pqc` extra is
   installed (honestly labelled `ed25519` otherwise; hybrid verification requires
   *both* components — never a silent downgrade). Independent time comes from
@@ -581,15 +581,16 @@ down is a RECORD of that date and carries its own disposition table.)*
   and no `Referer` (legacy only). The known side-effect `GET`s are closed by one dependency,
   `refuse_cross_site_get` (`src/api/cross_site.py`: Host, then `Sec-Fetch-Site`, then `Origin` /
   `Referer` judged by the middleware's own `_foreign_origin`, so default ports are normalised):
-  the heavy diagnostics (`performance`, the benchmarks, `llm-bench`, `llm-throughput`, `rollup-benchmark`,
-  `/all`, `/debug-bundle`, the selftests, `recursive-loop`), the custody export (`/api/custody/export`, which can create the
-  custody signing key), and the three downloads that append to the
+  the Thorough-build estimate (`/all-job/estimate`), the Field data sample walk (`/source-samples`), the custody export
+  (`/api/custody/export`, which can create the custody signing key), and the three downloads that append to the
   diagnostics run log (`/all-job/download`, `/all-job/volumes/{name}`, `/keywords/parts/{set_id}/{name}`),
   answer a foreign page 403 before their handler runs. The reads that reach the network and the annotation export are not
   `GET`s at all since R694 (R278's proposal adopted): `POST /api/hazards`, `POST /api/monitoring/health`,
   `POST /api/wiki/dumps/probe` and `/sizes`, `POST /api/geo/downloads/size` (which also refuses without `consent=true` (400)
   and under the kill switch (409) before any socket is opened) and `POST /api/annotations/export` (signing the bundle creates
-  the annotation signing key the first time). A `GET` there is answered 405 before any handler runs, and the `POST` sits
+  the annotation signing key the first time), and the heavy diagnostics: `performance`, the benchmarks, `llm-bench`,
+  `llm-throughput`, `rollup-benchmark`, `/all`, `/debug-bundle`, `recursive-loop` and every self-test, `/api/signals/fdr-selftest`
+  included (their buttons post and save the answer as a file). A `GET` there is answered 405 before any handler runs, and the `POST` sits
   behind layer 1 like every other state-changing route (`tests/test_get_cross_site_refusal.py::MOVED_TO_POST`).
   `/api/database/backup` has its own guard (`_refuse_cross_site` in
   `src/api/database.py`) with the same checks, judging Origin through the same `_foreign_origin`. The stated limit of both is a browser that sends none of the three
