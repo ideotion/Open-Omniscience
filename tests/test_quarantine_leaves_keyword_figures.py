@@ -423,7 +423,7 @@ def test_the_upgrade_heal_subtracts_the_quarantined_articles_once_and_bumps_the_
     epoch = get_corpus_epoch(db)
     engine = db.get_bind()
 
-    assert heal_r101_transition(engine)["articles"] == 1
+    assert heal_r101_transition(engine)["keywords"] >= 1
     kw = _kw(db)
     assert kw.article_count == 2
     assert (kw.mention_count, kw.article_count) == _live_unquarantined(db, kw.id)
@@ -473,7 +473,7 @@ def test_the_upgrade_heal_on_a_store_with_no_quarantined_article_only_writes_its
     _corpus(db)
     before = (_kw(db).mention_count, _kw(db).article_count)
     epoch = get_corpus_epoch(db)
-    assert heal_r101_transition(db.get_bind()) == {"articles": 0}
+    assert heal_r101_transition(db.get_bind()) == {"keywords": 0}
     kw = _kw(db)
     assert (kw.mention_count, kw.article_count) == before
     assert get_corpus_epoch(db) == epoch, "nothing to rebuild: the stores already agree"
@@ -483,7 +483,7 @@ def test_the_upgrade_heal_on_a_store_with_no_quarantined_article_only_writes_its
 def test_a_crash_between_the_epoch_bump_and_the_subtraction_subtracts_exactly_once_on_the_next_boot(db, monkeypatch):
     """The bump commits first; the subtraction and the marker commit together. A failure after the bump leaves no
     marker and no subtraction, so the next boot does both, once."""
-    from src.analytics import store
+    from src.analytics import quarantine_transition as qt
     from src.analytics.corpus_epoch import get_corpus_epoch
     from src.analytics.quarantine_transition import R101_TRANSITION_KEY, heal_r101_transition
     from src.database.models import DerivedMeta
@@ -498,16 +498,57 @@ def test_a_crash_between_the_epoch_bump_and_the_subtraction_subtracts_exactly_on
         raise RuntimeError("power cut")
 
     with monkeypatch.context() as m:
-        m.setattr(store, "shift_keyword_counters_for_quarantine", _boom)
+        m.setattr(qt, "_recompute_counters_of_quarantined_keywords", _boom)
         assert heal_r101_transition(db.get_bind()) == {"skipped": "error"}
     kw = _kw(db)
     assert (kw.mention_count, kw.article_count) == before, "nothing subtracted"
     assert get_corpus_epoch(db) == epoch + 1, "the bump landed first"
     assert db.get(DerivedMeta, R101_TRANSITION_KEY) is None
 
-    assert heal_r101_transition(db.get_bind())["articles"] == 1
+    assert heal_r101_transition(db.get_bind())["keywords"] >= 1
     kw = _kw(db)
     assert (kw.mention_count, kw.article_count) == _live_unquarantined(db, kw.id)
     assert heal_r101_transition(db.get_bind()) == {"skipped": "done"}
     kw = _kw(db)
+    assert (kw.mention_count, kw.article_count) == _live_unquarantined(db, kw.id)
+
+
+def _fail_the_heal_once(db, monkeypatch) -> None:
+    from src.analytics import quarantine_transition as qt
+
+    def _boom(*a, **k):
+        raise RuntimeError("disk full")
+
+    with monkeypatch.context() as m:
+        m.setattr(qt, "_recompute_counters_of_quarantined_keywords", _boom)
+        assert qt.heal_r101_transition(db.get_bind()) == {"skipped": "error"}
+
+
+def test_a_failed_heal_then_a_reconcile_then_the_heal_does_not_take_anything_out_twice(db, monkeypatch):
+    """After a failed attempt the app runs on, and the budgeted reconcile brings the counters to R101 terms before
+    the marker exists. The next attempt must leave them there (a one-off subtraction would go below the truth)."""
+    from src.analytics.quarantine_transition import heal_r101_transition
+
+    arts = _corpus(db)
+    db.query(Article).filter(Article.id == arts[0].id).update({"quarantined": True}, synchronize_session=False)
+    db.commit()
+    _fail_the_heal_once(db, monkeypatch)
+    reconcile_keyword_counters(db, budget_s=0)
+    heal_r101_transition(db.get_bind())
+    kw = _kw(db)
+    assert kw.article_count == 2
+    assert (kw.mention_count, kw.article_count) == _live_unquarantined(db, kw.id)
+
+
+def test_a_failed_heal_then_a_new_stamp_then_the_heal_does_not_take_anything_out_twice(db, monkeypatch):
+    from src.analytics.quarantine_transition import heal_r101_transition
+
+    arts = _corpus(db)
+    db.query(Article).filter(Article.id == arts[0].id).update({"quarantined": True}, synchronize_session=False)
+    db.commit()
+    _fail_the_heal_once(db, monkeypatch)
+    _stamp(db, arts[1])  # a stamp by the new code while the app runs on: it shifts its own article out
+    heal_r101_transition(db.get_bind())
+    kw = _kw(db)
+    assert kw.article_count == 1
     assert (kw.mention_count, kw.article_count) == _live_unquarantined(db, kw.id)
