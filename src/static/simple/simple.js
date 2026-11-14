@@ -838,10 +838,7 @@
           setS({ busy: false, msg: t("{name} is already in your sources.", { name: have.name || low }), err: "" });
           return null;
         }
-        // "/api/sources/?" (an empty query) rather than a bare "/api/sources/": the route-caller
-        // ratchet (#35) reads a literal ending in "/" as a head for any word in this file, and
-        // "search" here is a view name, never a call to /api/sources/search.
-        return apiCall("/api/sources/?", { method: "POST", body: JSON.stringify({
+        return apiCall("/api/sources/", { method: "POST", body: JSON.stringify({
           name: v.name.trim(), domain: domain, rss_url: feed || null, tags: "" }) }).then(function (r) {
           // The server matches feeds more loosely than the check above (scheme, case, a trailing
           // slash) and hands back the existing row then: an id we already had means nothing was added.

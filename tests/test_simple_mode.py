@@ -148,7 +148,7 @@ def test_going_online_uses_the_one_consent_path():
     # Simple mode never writes the network state itself (#14). Its one write is adding a source,
     # a local row: nothing is fetched until the reader is online.
     writes = re.findall(r"""apiCall\(\s*["'`]([^"'`]+)["'`]\s*,\s*\{\s*method\s*:\s*["'](POST|PUT|PATCH|DELETE)""", code)
-    assert writes == [("/api/sources/?", "POST")], writes
+    assert writes == [("/api/sources/", "POST")], writes
     assert len(re.findall(r"method\s*:\s*[\"'][a-z]", code, re.I)) == 1, "every write must be the one listed above"
     # Outbound originals open the local preview first (invariant #6), never the site.
     assert "openLinkPreview" in code
