@@ -621,7 +621,7 @@ def test_a_publish_that_cannot_be_stamped_or_an_archive_that_cannot_be_written_t
 
     monkeypatch.setattr("src.bulletin.evidence.build_evidence_archive", _os_raise)
     monkeypatch.setattr("src.bulletin.facts.layer_a", lambda *_a, **_k: {})
-    told = _told(api.post(f"/api/bulletin/evidence/build?cadence=weekly&dest={tmp_path}"), 500)
+    told = _told(api.post(f"/api/bulletin/evidence/build?cadence=weekly&dest={tmp_path}&plaintext_ack=true"), 500)
     assert "could not write the archive" in told and WORDS in told
 
 

@@ -41,7 +41,7 @@ _GROUPS: dict[str, tuple[str, ...]] = {
     _MODEL_STOP: ("stopOllama",),
     _FINISHED_LIST: ("bulkJobClearDone",),
     _JOB: (
-        "_uxPauseResume", "bulkJobCancel", "cancelP0Validation", "cancelPull", "dumpFtsCancel", "jobCancel", "maintAction", "mbRun",
+        "_uxPauseResume", "bulkJobCancel", "bulletinNarrateStop", "cancelP0Validation", "cancelPull", "dumpFtsCancel", "jobCancel", "maintAction", "mbRun",
         "pauseDump", "pauseOsm", "qualifyBulkCancel", "releaseRunCancel", "runAiCheck", "schedulerStop", "stopVllm",
         "toggleAiCoordinator", "unattendedStop",
     ),
