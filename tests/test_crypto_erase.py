@@ -984,3 +984,25 @@ def test_in_a_shared_folder_every_copy_of_the_salt_and_every_key_of_the_app_s_is
     assert b"PRIVATE KEY" not in kept["key"].read_bytes()
     assert not db.exists() and not salvage.exists() and not key.exists()
     assert (shared / "thesis.docx").read_bytes() == b"years of work"
+
+
+def test_an_unlistable_oos_data_folder_is_erased_app_only(tmp_path, monkeypatch):
+    """R715 end to end: a folder the app chose that the scope question cannot list keeps everything but the app's own files."""
+    from src.safety import data_scope
+
+    folder = tmp_path / "OOS data"
+    folder.mkdir()
+    (folder / "open_omniscience.db").write_bytes(b"S" * 8192)
+    (folder / "app_settings.json").write_text("{}", encoding="utf-8")
+    (folder / "thesis.docx").write_bytes(b"years of work")
+
+    def refuse(path):
+        raise PermissionError(13, "denied", str(path))
+
+    scope_os(monkeypatch, data_scope, scandir=refuse)  # only the scope question fails; the erase still walks the folder
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
+    assert report["scope"] == "app-only" and report["scope_reason"] == "unlistable"
+    assert folder.is_dir() and report["removed"] is False
+    assert not (folder / "open_omniscience.db").exists() and not (folder / "app_settings.json").exists()
+    assert (folder / "thesis.docx").read_bytes() == b"years of work"
+    assert report["left_untouched"] == ["thesis.docx"]
