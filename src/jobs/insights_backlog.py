@@ -86,11 +86,13 @@ def _drain(ctx: JobContext) -> dict:
         # The signal the page's own drain gave: an idle-maintenance slice already under way yields at its next batch.
         note_page_drain(by_job=True)
         with SessionLocal() as session:
-            r = backfill_corpus(session, extractor=extractor, limit=BATCH)
+            r = backfill_corpus(session, extractor=extractor, limit=BATCH, should_stop=lambda: ctx.stopping)
         batches += 1
         attempted += int(r.get("indexed") or 0)
         newly += int(r.get("newly_indexed") or 0)
         failed += int(r.get("failed") or 0)
+        if r.get("stopped"):
+            break  # R689 (1): stopped between two articles of the batch; ``left`` keeps the last count read
         left = r.get("never_attempted")
         if left is None:
             left = r.get("remaining")

@@ -6,8 +6,8 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 WHY. The guard's pause stops NEW work; the memory the process already holds does not return. On the recorded 2026-09-30 plateau the
 machine sat at 64 MB or less for 12 minutes and the kernel then killed the process with no trace of why. A stop the app chooses
-keeps the evidence, ends the work through the path the power button uses (workers reaped, the pool disposed, SIGTERM to self, the
-lifespan's own shutdown), and tells the person at the next start. The saved data is not touched; work that was in progress and could not finish is not finished.
+keeps the evidence, ends the work through the path the power button uses (workers reaped, SIGTERM to self, then the
+lifespan's own shutdown: the jobs stopped, the log written back, the pool disposed, R689), and tells the person at the next start. The saved data is not touched; work that was in progress and could not finish is not finished.
 
 THE CRITERION is ``memguard.stall_decision`` (pure, replayed against the recorded series); this module is only the sequence
 that runs once it holds. ONE SHOT per process. EVERY STEP IS ISOLATED: a step that fails is logged and the rest still run,

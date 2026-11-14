@@ -11,6 +11,9 @@ from sqlalchemy.pool import QueuePool
 
 from src.analytics.reindex_cache import bulk_page_cache, reindex_cache_mb
 
+# A faked machine size means "a machine of this size", never bounded by the cgroup of the machine running the suite (R302).
+pytestmark = pytest.mark.usefixtures("no_cgroup_limit")
+
 
 @pytest.fixture()
 def sess(tmp_path):

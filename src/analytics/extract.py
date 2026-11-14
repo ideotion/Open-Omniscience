@@ -40,7 +40,12 @@ from src.analytics.lemma import extraction_lemma, extraction_lemma_enabled
 from src.analytics.managed import normalize_lang
 from src.analytics.segmentation import segment
 from src.services.stopwords import stopwords_manager
-from src.utils.markup_blocks import strip_blocks
+from src.utils.markup_blocks import (
+    find_style_script_opener,
+    has_html_comment,
+    strip_html_comments,
+    strip_style_script,
+)
 from src.utils.safe_yaml import load_safe_yaml
 
 # A word token: starts with a (unicode) letter, may contain letters, marks,
@@ -123,11 +128,11 @@ def _term_floor(word: str, segmented: bool) -> int:
 # than the C-level `re.sub` (0.015 s vs 0.004 s), because it pays two Python-level
 # searches per block. Trading 10 ms on the healthy path for 138 s on the broken
 # one is the whole point; both numbers are stated so the trade stays visible.
-_MARKUP_STYLE_OPEN_RE = re.compile(r"<(style|script)\b[^>]*>", re.IGNORECASE | re.DOTALL)
-_MARKUP_STYLE_CLOSE_RE = {
-    tag: re.compile(r"</%s\s*>" % tag, re.IGNORECASE) for tag in ("style", "script")
-}
-_MARKUP_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+# 2026-11-13 (audit recheck P2): the opener and the comment were the same class one step away,
+# and still K*N -- ``<!--.*?-->`` (lazy closer) and the opener's ``[^>]*>`` searched with
+# ``.search``: MEASURED 0.63 s -> 1.92 s for 80 -> 160 KB of ``<!--`` and 0.11 -> 0.48 s for
+# 35 -> 70 KB of ``<style `` with no ``>``, on this path every collected page runs through. The
+# whole HTML family now lives in ``src.utils.markup_blocks`` (the newsletter strip had all three).
 _MARKUP_TAG_RE = re.compile(r"</?[a-zA-Z][\w-]*(\s[^<>]*?)?/?>", re.DOTALL)
 _MARKUP_ENTITY_RE = re.compile(r"&[#a-zA-Z][#a-zA-Z0-9]*;")
 
@@ -153,9 +158,7 @@ def _strip_style_script(text: str, repl: str = " ") -> str:
     # itself to a sibling, only a shared primitive does. Behaviour is unchanged --
     # `strip_blocks` retires on the CLOSER's pattern rather than the tag name, and
     # each tag here has its own closer, so the families partition identically.
-    return strip_blocks(
-        text, _MARKUP_STYLE_OPEN_RE, lambda m: _MARKUP_STYLE_CLOSE_RE[m.group(1).lower()], repl
-    )
+    return strip_style_script(text, repl)
 
 
 def _has_markup(text: str) -> bool:
@@ -168,8 +171,8 @@ def _has_markup(text: str) -> bool:
     """
     return bool(
         _MARKUP_TAG_RE.search(text)
-        or _MARKUP_STYLE_OPEN_RE.search(text)
-        or _MARKUP_COMMENT_RE.search(text)
+        or find_style_script_opener(text) is not None
+        or has_html_comment(text)
         or _MARKUP_ENTITY_RE.search(text)
     )
 
@@ -187,7 +190,7 @@ def strip_markup(text: str) -> str:
     if not _has_markup(text):
         return text
     out = _strip_style_script(text)
-    out = _MARKUP_COMMENT_RE.sub(" ", out)
+    out = strip_html_comments(out)
     out = _MARKUP_TAG_RE.sub(" ", out)
     return unescape(out)
 

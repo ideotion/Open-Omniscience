@@ -238,16 +238,19 @@ def test_watcher_removes_exactly_the_planned_paths(tmp_path):
     assert audit.exists() and "uninstall watcher done" in audit.read_text(encoding="utf-8")
 
 
-def test_close_db_quietly_disposes_engine(monkeypatch):
-    called = {"n": 0}
-    monkeypatch.setattr("src.database.session.dispose_engine", lambda: called.__setitem__("n", called["n"] + 1))
-    U._close_db_quietly()
-    assert called["n"] == 1
-    # never raises even if dispose blows up (best-effort shutdown)
-    monkeypatch.setattr("src.database.session.dispose_engine",
-                        lambda: (_ for _ in ()).throw(RuntimeError("boom")))
-    U._close_db_quietly()
+def test_the_uninstall_stop_leaves_the_disposal_to_the_lifespan(monkeypatch):
+    """R689: the uninstall's stop thread no longer disposes the engine before it signals: the lifespan shutdown the signal runs stops
+    the jobs and the collector first, then disposes. A disposal here came before both."""
+    import threading
 
+    from src.safety import shutdown as S
+
+    disposed, signalled = [], threading.Event()
+    monkeypatch.setattr("src.database.session.dispose_engine", lambda: disposed.append(1))
+    monkeypatch.setattr(S, "stop_self", signalled.set)
+    U._default_arm_shutdown(0.0)
+    assert signalled.wait(10)
+    assert disposed == []
 
 def test_api_uninstall_plan_preview_deletes_nothing(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient

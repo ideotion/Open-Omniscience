@@ -115,7 +115,7 @@ def test_the_floor_reason_is_its_frame_filled_in_english(total, avail) -> None:
 
 
 def test_the_unmeasured_reason_is_a_frame_too(monkeypatch) -> None:
-    monkeypatch.setattr(MF, "_mem_readings", lambda: (None, None))
+    monkeypatch.setattr(MF, "_mem_reading", lambda: {"total_mb": None, "available_mb": None})
     v = MF.machine_floor(override=False)
     assert v["reason_i18n"] in MF.REASON_FRAMES and v["reason_vars"] == {}
     assert v["reason"] == v["reason_i18n"]

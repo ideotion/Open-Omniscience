@@ -301,6 +301,13 @@ class LLMUnavailable(LLMError):
     """Ollama is unreachable, or the requested model is not installed."""
 
 
+class RemoteModelRefused(LLMUnavailable):
+    """The model runs on Ollama's cloud (or another host), so a prompt would leave this computer (R671, ``src/llm/remote_models.py``).
+
+    A subclass of :class:`LLMUnavailable`, so every caller that already degrades loudly when the AI is unavailable does so here too.
+    """
+
+
 # An HTTP status line says a call failed; the RESPONSE BODY says why. Both local
 # backends answer a failure with a JSON body naming the cause ("model requires more
 # system memory than is available", "This model's maximum context length is ..."),
@@ -599,7 +606,10 @@ class OllamaClient:
                 f"Ollama not reachable at {self.base_url}: {record_text(exc)}. Is the ollama service running?"
             ) from exc
         data = resp.json()
-        return [m["name"] for m in data.get("models", [])]
+        # R671: a model the daemon forwards to Ollama's cloud is not "installed" here; it is never offered or counted.
+        from src.llm.remote_models import is_remote_entry
+
+        return [m["name"] for m in data.get("models", []) if not is_remote_entry(m)]
 
     def list_installed_detailed(self) -> list[dict]:
         """Installed models with sizes/dates as Ollama reports them (live, local).
@@ -615,8 +625,12 @@ class OllamaClient:
             raise LLMUnavailable(
                 f"Ollama not reachable at {self.base_url}: {record_text(exc)}. Is the ollama service running?"
             ) from exc
+        from src.llm.remote_models import is_remote_entry
+
         out = []
         for m in resp.json().get("models", []):
+            if is_remote_entry(m):
+                continue  # R671: the picker never lists a model that runs off this computer
             size = m.get("size")
             out.append(
                 {
@@ -631,6 +645,37 @@ class OllamaClient:
                 }
             )
         return out
+
+    # -- the local-only rule (R671) ----------------------------------------- #
+
+    def _require_local_model(self, model: str) -> None:
+        """Refuse, BEFORE any request that would run ``model``, a model the daemon would forward off this computer.
+
+        Fail closed (``src/llm/remote_models.py`` has the rule and where in Ollama's source it was read): a cloud-suffixed name is
+        refused without asking the daemon; any other name must appear in the daemon's own ``/api/tags`` with no remote field. A name
+        the list does not show is "not installed" (the daemon would 404 it; asking is the same answer, earlier); a list that cannot be
+        read is "not reachable". Costs one loopback ``/api/tags`` read per generation, next to a generation that takes seconds.
+        """
+        from src.llm.remote_models import REFUSAL, is_cloud_name, local_entry
+
+        def refuse() -> RemoteModelRefused:
+            return RemoteModelRefused(f"{REFUSAL} ({model!r})")
+
+        if is_cloud_name(model):
+            raise refuse()
+        try:
+            resp = self._client.get("/api/tags")
+            resp.raise_for_status()
+            models = (resp.json() or {}).get("models") or []
+        except (httpx.HTTPError, ValueError, AttributeError) as exc:
+            raise LLMUnavailable(
+                f"Ollama not reachable at {self.base_url}: {record_text(exc)}. Is the ollama service running?"
+            ) from exc
+        verdict, _entry = local_entry(model, models if isinstance(models, list) else [])
+        if verdict == "cloud":
+            raise refuse()
+        if verdict == "missing":
+            raise LLMUnavailable(f"Model {model!r} is not installed. Run: ollama pull {model}")
 
     # -- generation -------------------------------------------------------- #
 
@@ -649,6 +694,7 @@ class OllamaClient:
         the model loaded, "0" to unload at once). None leaves Ollama's own default.
         """
         self._check_kill_switch()
+        self._require_local_model(model)
         payload: dict = {"model": model, "prompt": prompt, "stream": False}
         if system:
             payload["system"] = system
@@ -730,9 +776,16 @@ class OllamaClient:
 
         Returns whether Ollama accepted the request. A model that was not resident is
         not an error: the post-condition asked for is "not holding the card", and that
-        already held.
+        already held. A model that is not plainly local is never sent (R671: the daemon would forward
+        even an empty request): a cloud-suffixed name with no request at all, and a name ``/api/tags``
+        lists as remote, or does not list, after that one read. Neither is resident here, so the answer
+        is False.
         """
         self._check_kill_switch()
+        try:
+            self._require_local_model(model)
+        except LLMUnavailable:
+            return False
         try:
             resp = self._client.post(
                 "/api/generate", json={"model": model, "prompt": "", "keep_alive": 0}
@@ -750,7 +803,14 @@ class OllamaClient:
         NOTE ON TRANSPORT (maintainer Q9, 2026-06-16): the pull egresses through the
         Ollama PROCESS over CLEARNET, NOT the app's Tor proxy/guarded factory — so
         airplane+Tor do not cover it. Airplane mode (the kill switch) still refuses it
-        here; the UI must DISCLOSE the clearnet egress at consent."""
+        here; the UI must DISCLOSE the clearnet egress at consent.
+
+        A cloud model is refused before the request (R671): it is a stub whose only use is to forward prompts off this computer."""
+        from src.llm.remote_models import REFUSAL, is_cloud_name
+
+        # the refusal comes first: in airplane mode "network off" would suggest going online helps, and it does not
+        if is_cloud_name(model):
+            raise RemoteModelRefused(f"{REFUSAL} ({model!r})")
         self._check_kill_switch(clearnet=True)
         import json as _json
 
