@@ -470,6 +470,7 @@
   // the button re-reads its own state from the response rather than assuming the POST
   // did what was asked -- the row stays AI-derived either way.
   document.addEventListener("click", function (ev) {
+    if (ev.isTrusted !== true) return;  // R673: a script's el.click() or dispatchEvent takes no step, as in oo-on (R443)
     var btn = ev.target && ev.target.closest ? ev.target.closest(".r-aibtn") : null;
     if (!btn) return;
     var id = parseInt(btn.getAttribute("data-aikw"), 10);
@@ -836,6 +837,7 @@
   // The Dates pane's confirm / reject / extract buttons (were an inline <script> the
   // server appended; moved here so the CSP can drop script-src 'unsafe-inline', Q1127).
   document.addEventListener("click", function (e) {
+    if (e.isTrusted !== true) return;  // R673: a script's el.click() or dispatchEvent takes no step, as in oo-on (R443)
     var b = e.target.closest && e.target.closest(".amd-act");
     if (b) {
       e.preventDefault();
