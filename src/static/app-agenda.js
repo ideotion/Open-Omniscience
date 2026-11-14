@@ -706,6 +706,7 @@
     let _bulNarrating = false;
     // True once Stop was pressed for the watched run, so a redraw does not offer it again.
     let _bulStopAsked = false;
+    let _bulPollFails = 0;
     function _bulNarrateButtons() {
       const run = $("bul-narrate-run"), stop = $("bul-narrate-stop");
       if (run) run.disabled = _bulNarrating;
@@ -748,8 +749,16 @@
       _bulNarratePoll = setInterval(async () => {
         let d = null;
         try { d = await api("/api/bulletin/narration"); }
-        // One failed read says nothing about the run: keep Stop on screen and ask again next tick.
-        catch { return; }
+        // One failed read says nothing about the run: keep Stop on screen and ask again next
+        // tick. Five in a row (the server gone, the store locked) end the watch, said plainly.
+        catch {
+          if (++_bulPollFails < 5) return;
+          clearInterval(_bulNarratePoll); _bulNarratePoll = null;
+          _bulNarrating = false; _bulStopAsked = false; _bulNarrateButtons();
+          _bulSay("bul-pub", "Lost track of the narration. Open the Review again to see where it is.");
+          return;
+        }
+        _bulPollFails = 0;
         const job = d.job || {};
         const n = {done: job.done || 0, total: job.total || 0};
         if (job.running) {
@@ -843,6 +852,11 @@
       }
     }
     async function bulletinEvidenceBuild(btn) {
+      if (_bulEvBuilding) return;  // the write in flight owns the panel and its status line
+      if (_bulEvPlan && _bulEvPlan.used) {
+        _bulSay("bul-ev-msg", "This archive is written. Check again to write another.");
+        return;
+      }
       if (!_bulEvReady()) {
         // The period or the folder changed since the Check: its numbers describe another file.
         _bulSay("bul-ev-msg", "The period or the folder changed since the check. Check again first.");

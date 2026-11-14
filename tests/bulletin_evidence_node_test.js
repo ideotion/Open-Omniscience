@@ -114,6 +114,10 @@ const PLAN_OK = {articles: 12, estimated_bytes: 5000, destination_writable: true
   assert.ok(els["bul-ev-out"].innerHTML.includes("/data/archive/x.zip"));
   assert.ok(els["bul-ev-out"].innerHTML.includes("Articles: 12 · 4000 B"));
   assert.strictEqual(buildBtn.disabled, true, "a written archive needs a new Check before another Write");
+  const n1 = calls.length;
+  await M.bulletinEvidenceBuild(buildBtn);
+  assert.strictEqual(calls.length, n1, "a written archive is not written again without a Check");
+  assert.ok(els["bul-ev-msg"].textContent.includes("Check again to write another"));
   assert.strictEqual(els["bul-ev-plan"].disabled, false);
 
   // --- an unwritable folder keeps Write off -------------------------------- //

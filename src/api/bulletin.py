@@ -724,10 +724,7 @@ def evidence_build_route(
     of a period of the corpus, which is not something to push through a tab. Same
     shape as the large-data folder backup, for the same reason.
     """
-    from src.bulletin.evidence import build_evidence_archive
-    from src.bulletin.facts import layer_a
     from src.bulletin.period import resolve_period
-    from src.bulletin.store import read_edition
 
     _require_gate()
     try:
@@ -743,6 +740,19 @@ def evidence_build_route(
             detail="the archive is plain text; send plaintext_ack=true once that has been shown to the operator",
         )
     dest = _evidence_dest(dest)
+    # Taken before the edition is built, so a refused second write does no work at all.
+    if not _EVIDENCE_WRITE.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="an evidence archive is already being written; wait for it to finish")
+    try:
+        return _evidence_build_locked(db, period, dest, edition_file)
+    finally:
+        _EVIDENCE_WRITE.release()
+
+
+def _evidence_build_locked(db: Session, period, dest: str, edition_file: str) -> dict:
+    from src.bulletin.evidence import build_evidence_archive
+    from src.bulletin.facts import layer_a
+    from src.bulletin.store import read_edition
 
     if edition_file:
         try:
@@ -752,8 +762,6 @@ def evidence_build_route(
     else:
         edition = layer_a(db, period)
 
-    if not _EVIDENCE_WRITE.acquire(blocking=False):
-        raise HTTPException(status_code=409, detail="an evidence archive is already being written; wait for it to finish")
     try:
         return build_evidence_archive(db, edition, period, dest)
     except ValueError as exc:
@@ -762,8 +770,6 @@ def evidence_build_route(
         raise HTTPException(
             status_code=500, detail=http_detail(exc, "could not write the archive: ")
         ) from None
-    finally:
-        _EVIDENCE_WRITE.release()
 
 
 @router.delete("/editions/{filename}")
