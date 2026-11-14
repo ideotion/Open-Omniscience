@@ -163,7 +163,8 @@ def test_a_bundle_signed_by_other_keys_is_never_called_verified_without_saying_b
     assert v["verified"] is True, "the signatures are valid: that stays true"
     assert v["verdict"] == "signatures-valid-signer-not-yours"
     assert v["signer_is_yours"] is False
-    assert v["signed_by"] == [{"ed25519_pub": bundle["signer"]["ed25519_pub"], "ml_dsa_pub": None, "entries": 1, "yours": False}]
+    assert v["signed_by"] == [{"ed25519_pub": bundle["signer"]["ed25519_pub"], "ml_dsa_pub": None, "entries": 1, "yours": False,
+                            "earlier_key": False}]
     assert "not who the signer is" in v["verdict_text"]
 
 
@@ -211,6 +212,67 @@ def test_a_hybrid_half_this_install_does_not_hold_is_not_yours():
     local = PublicIdentity("ab" * 32, None, None)
     assert _is_yours(("ab" * 32, None), local) is True
     assert _is_yours(("ab" * 32, "cd" * 40), local) is False
+
+
+def _rotated_bundle(tmp_path: Path, *, endorsed: bool) -> tuple[dict, HybridSigner, HybridSigner]:
+    """A log signed by ``old``, then by ``new`` across a key-rotation record (#2005)."""
+    old = HybridSigner(tmp_path / "old.pem", tmp_path / "old.key")
+    new = HybridSigner(tmp_path / "new.pem", tmp_path / "new.key")
+    db = str(tmp_path / "rotated.db")
+    with CustodyLog(db_path=db, signer=old, anchoring_mode="local") as log:
+        log.record("article:1", "a" * 64, CustodyAction.INGEST)
+        log.record("article:2", "b" * 64, CustodyAction.INGEST)
+    with CustodyLog(db_path=db, signer=new, anchoring_mode="local") as log:
+        if endorsed:
+            log.rotate_signing_key(old)
+        log.record("article:3", "c" * 64, CustodyAction.INGEST)
+        return log.export(), old, new
+
+
+def test_a_log_this_install_rotated_its_own_key_on_is_still_yours(tmp_path):
+    """A rotation gives a bundle several signers by design: the key that endorsed this install's key is this install's."""
+    from src.custody.log import VERDICT_YOURS, describe_export
+
+    bundle, old, new = _rotated_bundle(tmp_path, endorsed=True)
+    out = describe_export(bundle, local=new.public_identity(), require_signer=True)
+    assert out["verified"] is True, out["issues"]
+    assert out["verdict"] == VERDICT_YOURS and out["signer_is_yours"] is True
+    by_key = {s["ed25519_pub"]: s for s in out["signed_by"]}
+    assert set(by_key) == {old.public_identity().ed25519_pub, new.public_identity().ed25519_pub}
+    assert by_key[old.public_identity().ed25519_pub]["earlier_key"] is True
+    assert by_key[new.public_identity().ed25519_pub]["earlier_key"] is False
+    assert all(s["yours"] for s in out["signed_by"])
+    assert any("endorsed by the previous key" in n for n in out["notes"]), "the change of key is named"
+
+
+def test_keys_before_an_unendorsed_rotation_are_not_called_yours(tmp_path):
+    """An unendorsed record is also what restoring another install's log and re-creating keys writes."""
+    from src.custody.log import VERDICT_NOT_YOURS, describe_export
+
+    bundle, old, new = _rotated_bundle(tmp_path, endorsed=False)
+    refused = describe_export(bundle, local=new.public_identity())
+    assert refused["verified"] is False, "unendorsed is refused unless asked to accept it"
+    out = describe_export(bundle, local=new.public_identity(), accept_unendorsed_rotation=True)
+    assert out["verified"] is True and out["verdict"] == VERDICT_NOT_YOURS
+    by_key = {s["ed25519_pub"]: s["yours"] for s in out["signed_by"]}
+    assert by_key == {old.public_identity().ed25519_pub: False, new.public_identity().ed25519_pub: True}
+
+
+def test_a_rotated_log_ending_on_another_installs_key_is_not_yours(tmp_path):
+    from src.custody.log import VERDICT_NOT_YOURS, describe_export
+
+    bundle, old, _new = _rotated_bundle(tmp_path, endorsed=True)
+    out = describe_export(bundle, local=old.public_identity())  # this install holds only the key that handed over
+    assert out["verified"] is True and out["verdict"] == VERDICT_NOT_YOURS
+    assert {s["earlier_key"] for s in out["signed_by"]} == {False}
+
+
+def test_an_earlier_key_is_held_to_the_ml_dsa_half_its_endorsement_names(tmp_path):
+    from src.custody.log import _earlier_own_keys
+
+    bundle, old, new = _rotated_bundle(tmp_path, endorsed=True)
+    own = _earlier_own_keys(bundle["entries"], new.public_identity().ed25519_pub)
+    assert own == {old.public_identity().ed25519_pub: old.public_identity().ml_dsa_pub}
 
 
 # --------------------------------------------------------------------------- P16

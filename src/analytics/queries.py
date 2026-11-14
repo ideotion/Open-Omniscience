@@ -23,6 +23,7 @@ from typing import Any
 
 from sqlalchemy import func
 
+from src.analytics.quarantine_scope import not_quarantined
 from src.database.derived_views import KeywordMentionRead
 from src.database.models import (
     Article,
@@ -994,7 +995,9 @@ def _mention_series(session, ids, *, bucket: str, country: str | None) -> list[d
     for i in range(0, len(ids), _IN_CHUNK):
         chunk = ids[i : i + _IN_CHUNK]
         q = session.query(KeywordMentionRead.observed_on, func.sum(KeywordMentionRead.count)).filter(
-            KeywordMentionRead.keyword_id.in_(chunk), KeywordMentionRead.observed_on.isnot(None)
+            KeywordMentionRead.keyword_id.in_(chunk),
+            KeywordMentionRead.observed_on.isnot(None),
+            not_quarantined(KeywordMentionRead.article_id),  # R101
         )
         if country:
             q = q.filter(KeywordMentionRead.country == country.lower())
@@ -1023,7 +1026,11 @@ def _distinct_articles(session, ids) -> int:
     if len(ids) <= _IN_CHUNK:
         return int(
             session.query(func.count(func.distinct(KeywordMentionRead.article_id)))
-            .filter(KeywordMentionRead.keyword_id.in_(ids), not_a_stand_in_article_id(KeywordMentionRead.article_id))
+            .filter(
+                KeywordMentionRead.keyword_id.in_(ids),
+                not_a_stand_in_article_id(KeywordMentionRead.article_id),
+                not_quarantined(KeywordMentionRead.article_id),  # R101
+            )
             .scalar()
             or 0
         )
@@ -1032,7 +1039,11 @@ def _distinct_articles(session, ids) -> int:
         chunk = ids[i : i + _IN_CHUNK]
         for (aid,) in (
             session.query(KeywordMentionRead.article_id)
-            .filter(KeywordMentionRead.keyword_id.in_(chunk), not_a_stand_in_article_id(KeywordMentionRead.article_id))
+            .filter(
+                KeywordMentionRead.keyword_id.in_(chunk),
+                not_a_stand_in_article_id(KeywordMentionRead.article_id),
+                not_quarantined(KeywordMentionRead.article_id),  # R101
+            )
             .distinct()
             .all()
         ):
@@ -1093,7 +1104,9 @@ def trend(
     if kw is None:
         return {"term": term, "resolved": None, "points": [], "total": 0, "articles": 0}
     q = session.query(KeywordMentionRead.observed_on, func.sum(KeywordMentionRead.count)).filter(
-        KeywordMentionRead.keyword_id == kw.id, KeywordMentionRead.observed_on.isnot(None)
+        KeywordMentionRead.keyword_id == kw.id,
+        KeywordMentionRead.observed_on.isnot(None),
+        not_quarantined(KeywordMentionRead.article_id),  # R101
     )
     if country:
         q = q.filter(KeywordMentionRead.country == country.lower())
@@ -1152,12 +1165,12 @@ def trend_range_article_ids(
     ARTICLES. One article mentioning a term three times contributes 3 to the bar and 1 to
     the set. Reporting only one of them would let it stand for the other.
 
-    QUARANTINE. ``trend`` does not exclude quarantined articles (the standing gap recorded
-    in the GUI plan's 3.4), so a bar counts them -- but the analysis window this selection
-    opens filters them, because ``_query_articles`` always applies
-    ``Article.quarantined.isnot(True)``. Rather than let the user open a selection and
-    silently receive fewer rows, the excluded ones are removed HERE and counted in
-    ``quarantined_excluded`` so the number reported is the number that opens.
+    QUARANTINE (R101). ``trend`` leaves quarantined articles out of its bars, the analysis
+    window this selection opens leaves them out (``_query_articles`` always applies
+    ``Article.quarantined.isnot(True)``), and so does ``mentions`` here. The ids are still
+    read with them and the quarantined ones removed below, so ``quarantined_excluded`` keeps
+    saying how many quarantined articles in the range mention the term: the population the
+    bars no longer count, stated rather than dropped without a word.
 
     The quarantine check is deliberately a SECOND, bounded query rather than a join.
     Joining ``keyword_mentions`` to ``articles`` for one small column is this project's
@@ -1208,7 +1221,10 @@ def trend_range_article_ids(
         for r in session.query(KeywordMentionRead.article_id).filter(*in_range).distinct().all()
     ]
     mentions = int(
-        session.query(func.sum(KeywordMentionRead.count)).filter(*in_range).scalar() or 0
+        session.query(func.sum(KeywordMentionRead.count))
+        .filter(*in_range, not_quarantined(KeywordMentionRead.article_id))  # R101: the bars' own total
+        .scalar()
+        or 0
     )
 
     # Bounded quarantine removal, chunked under SQLite's variable ceiling via the
@@ -1335,6 +1351,9 @@ def top_terms(
                 func.sum(KeywordMentionRead.count).label("m"),
                 func.count(func.distinct(KeywordMentionRead.article_id)).label("arts"),
             ).join(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
+            # R101: the rollup above and the corpus-wide counters leave a quarantined article out, so this does too,
+            # or the same call would answer differently depending on which of them served it.
+            q = q.filter(not_quarantined(KeywordMentionRead.article_id))
             if days and end is not None:
                 # Exact half-open [end - days, end): a closed, reproducible period.
                 q = q.filter(
@@ -2674,7 +2693,9 @@ def trending(
             lo=lo,
             hi=hi,
             keep=keep,
-            where=(KeywordMentionRead.country == country.lower(),) if country else (),
+            # R101: a quarantined article's mentions are left out, as the rollup and the counters leave them out.
+            where=(not_quarantined(KeywordMentionRead.article_id),)
+            + ((KeywordMentionRead.country == country.lower(),) if country else ()),
             deadline=read_deadline,
         )
 
@@ -3472,7 +3493,7 @@ def keyword_stats(
             func.count(func.distinct(KeywordMentionRead.article_id)),
             func.coalesce(func.sum(KeywordMentionRead.count), 0),
         )
-        .filter(KeywordMentionRead.keyword_id.in_(stat_ids))
+        .filter(KeywordMentionRead.keyword_id.in_(stat_ids), not_quarantined(KeywordMentionRead.article_id))
         .one()
     )
     distinct_articles, total_mentions = int(row[0] or 0), int(row[1] or 0)
@@ -3493,6 +3514,7 @@ def keyword_stats(
                 KeywordMentionRead.keyword_id.in_(stat_ids),
                 KeywordMentionRead.observed_on >= lo,
                 KeywordMentionRead.observed_on < hi,
+                not_quarantined(KeywordMentionRead.article_id),
             )
             .scalar()
             or 0

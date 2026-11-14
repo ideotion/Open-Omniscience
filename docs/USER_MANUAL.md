@@ -1451,17 +1451,39 @@ it; the entries stay owed. A gap check alone still answers, and its `drained` bl
 reports `refused_offline`.
 
 Verify a bundle anywhere, without this app. The checker fails closed: it refuses by name a bundle with no
-entries, one cut mid-record, one signed by more than one key, one whose entries do not match the signed head its
+entries, one cut mid-record, one whose signing key changes with no key-rotation record, one whose entries do not match the signed head its
 export carries, and one with no signed head at all (exports made before 0.5.1 carry none: export again). A
 one-item bundle is checked entry by entry, and the result says the links between its entries were not checked.
-A verified bundle proves it is consistent and signed by ONE key. To know that key is the real signer's (and so
-that nobody cut the log and re-signed it whole), compare the printed signer key with one you already know: that
-comparison, not the tool, is what catches it. If your own log's key was re-created partway (after a restore onto a
-new machine, for example), its bundle is refused as signed by more than one key; the in-app chain check still passes
-it, and a key-rotation record that lets the checker follow such a change is coming.
+A verified bundle proves it is consistent and signed by one key, or by a line of keys each handed on to the next by
+a key-rotation record. To know the last key is the real signer's (and so that nobody cut the log and re-signed it
+whole), compare the printed signer key with one you already know: that comparison, not the tool, is what catches it.
+
+**When the signing key changes.** If the key folder is lost or re-created (after a restore onto a new machine, for
+example), the log writes a key-rotation record before the new key signs anything. That record says in plain words
+that the previous key was not available, so nothing but the record links the two keys, and a forged tail would
+read the same: the checker refuses it unless you pass `--accept-unendorsed-rotation` (or `accept_unendorsed_rotation`
+to the route), and then it names the rotation it accepted. A rotation made while the old key is still at hand
+(`CustodyLog.rotate_signing_key`) is endorsed: the old key signs the new key and that place in the chain, and the
+checker follows it without being asked. An endorsement proves only that whoever held the old key approved the change:
+someone who took the old key (from a stolen laptop, say) can endorse a key of their own just as well. A key change with
+no record is refused. An unendorsed rotation stays
+unendorsed: the old key cannot vouch for it later. There is no button for an endorsed rotation yet; it is a Python
+call for now. When a bundle crosses a rotation, its scope line says so, and with `--pin` each stretch of the chain is
+held to the key that introduced it: its Ed25519 key, and its post-quantum key where an entry is signed with one (a
+stretch whose key-rotation record names no post-quantum key, like the stretch before the first rotation, is held to its
+Ed25519 key only). A one-item bundle carries every key-rotation record, so an item untouched since a rotation still
+verifies. The log's own key-rotation records cannot be written through `POST /api/custody/log`. An export made after
+the key changed, before anything new was logged, writes the record first, since the new key signs the export. A
+verified bundle that crosses a rotation prints its line of keys, from the first to the last: compare any key you
+already know with that line. With `--accept-unendorsed-rotation`, `--pin` proves nothing unless you already know the
+last key, because a log cut and re-signed by someone else carries exactly such a record. The in-app **Verify** button
+follows the key through the same records and names each rotation. On your own store it accepts an unendorsed one on its
+word, and a key change with no record at all, which is what a log written before 0.5.1 shows when its key was
+re-created then (the log cannot be given the record afterwards); an exported bundle with such a change is refused. Changing only
+the post-quantum key (or turning it off with no rotation) writes no record, and a pinned check then refuses the log.
 
 ```bash
-python scripts/verify_custody.py custody_bundle.json [--pin]
+python scripts/verify_custody.py custody_bundle.json [--pin] [--accept-unendorsed-rotation]
 python scripts/verify_evidence.py bundle.json [signer_pubkey]
 ```
 
@@ -1696,6 +1718,12 @@ Official **figures** are not here at all — they are data, so they live under
     criteria the source qualification trial uses (a nav-menu page, a link list, a
     broken scrape). A quarantined article is excluded from search and analytics but
     stays in the database and rides your backups; the tally is in the import report.
+    Since 0.5.1 "analytics" includes every keyword figure (the counts, the windows, the
+    trends, whichever store answers them), the per-language series in the Library and the
+    language-balance setting that paces collection: before, those still counted it. The
+    faster stores behind the keyword charts catch up after their next background rebuild,
+    and until then the app answers from the live tables, which already leave it out. A
+    selection brushed on a trend chart says how many quarantined articles it left out.
   > **Legacy / migration paths (kept for older backups).** A separate panel restores an
   > **older single-file `oo-backup-2`** archive with the same additive-merge **preview**
   > (new / duplicate / conflict) before **Apply** (on a verified staged copy, atomic swap,
@@ -3371,7 +3399,7 @@ An **append‑only** SQLite ledger. Each action (`ingest`, `access`, `export`,
 per‑entry hashes, signatures, and timestamp digests. Exports verify offline:
 
 ```bash
-python scripts/verify_custody.py custody_bundle.json [--pin]
+python scripts/verify_custody.py custody_bundle.json [--pin] [--accept-unendorsed-rotation]
 ```
 
 REST: `POST /api/custody/log`, `GET /api/custody/{item}`, `.../verify`,
