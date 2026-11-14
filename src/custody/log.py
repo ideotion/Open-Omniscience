@@ -906,8 +906,10 @@ def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed
                                  "word: its endorsement carries the Ed25519 half of the previous key only")
                 else:
                     notes.append(f"seq {e.seq}: the signing key changed from {was} to {now}, endorsed by the previous key")
-            if evidence_ml is _UNSEEN:
-                # Nothing before the record in this bundle shows the previous identity's post-quantum half.
+            if evidence_ml is _UNSEEN or (one_item and not isinstance(evidence_ml, str)):
+                # Nothing before the record in this bundle shows the previous identity's post-quantum half -- in a
+                # one-item bundle, whose entries are not linked, an entry signed with the Ed25519 key alone shows nothing
+                # a holder of that key could not have written.
                 notes.append(f"seq {e.seq}: nothing before this record in the bundle shows which post-quantum (ML-DSA) "
                              "key the previous identity had, so that is the record's own word"
                              + ("; the whole-log check ties it to the entries before the record" if one_item else ""))

@@ -1476,9 +1476,11 @@ no record is refused. An unendorsed rotation stays
 unendorsed: the old key cannot vouch for it later. There is no button for an endorsed rotation yet; it is a Python
 call for now. When a bundle crosses a rotation, its scope line says so, and with `--pin` each stretch of the chain is
 held to the key that introduced it: its Ed25519 key, and its post-quantum key where an entry is signed with one. A
-stretch whose key-rotation record was written by 0.5.1 or later is held to exactly the identity that record names, so an
-entry or head signature with its post-quantum half stripped off is refused there; the stretch before the first record is
-held to its Ed25519 key only. A one-item bundle carries every key-rotation record, so an item untouched since a rotation still
+stretch whose key-rotation record was written by 0.5.1 or later is held to exactly the identity that record names, and a
+head signature with its post-quantum half stripped off is refused. In every mode, an entry that drops or replaces the
+post-quantum key its signing key had shown, with no record, is refused: someone holding only the Ed25519 key could sign
+exactly that. A log whose post-quantum signing was turned off before 0.5.1 shows that mark, so its bundles now need
+`--accept-unendorsed-rotation` (the in-app **Verify** names it instead). A one-item bundle carries every key-rotation record, so an item untouched since a rotation still
 verifies. The log's own key-rotation records cannot be written through `POST /api/custody/log`. An export made after
 the key changed, before anything new was logged, writes the record first, since the new key signs the export. A
 verified bundle that crosses a rotation prints its line of keys, from the first to the last: compare any key you

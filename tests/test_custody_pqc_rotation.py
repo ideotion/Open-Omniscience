@@ -677,3 +677,19 @@ def test_a_full_record_must_be_signed_with_the_ml_dsa_key_it_introduces(tmp_path
     other = _signer(tmp_path, "new", ml="other")
     ok, issues = verify_export(_forge(bundle, 2, lambda md: None, other, new))
     assert not ok and "the key-rotation record at seq 3 is not signed by the key it introduces" in issues[0]
+
+
+@pqc
+def test_a_one_item_record_after_an_ed25519_only_item_entry_says_its_previous_key_is_its_word(tmp_path):
+    """The re-read's X2: in a one-item bundle, an entry signed with the Ed25519 key alone shows nothing a holder of that
+    key could not have written, so the record after it still says its previous post-quantum key is its own word."""
+    db = str(tmp_path / "c.db")
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "k", use_pqc=False)) as log:
+        log.record("a:1", "a" * 64, CustodyAction.INGEST)
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "k")) as log:  # post-quantum turned on: recorded
+        log.record("a:1", "b" * 64, CustodyAction.INGEST)
+        item, bundle = log.export(item_id="a:1"), log.export()
+    report = verify_export_report(item, require_signer=True)
+    assert report["verified"] and any("record's own word" in n for n in report["notes"])
+    # The whole log links its entries, so there the entry before the record does show it.
+    assert not any("record's own word" in n for n in verify_export_report(bundle)["notes"])
