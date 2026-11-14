@@ -32,6 +32,7 @@ from datetime import UTC, date, datetime
 
 from sqlalchemy import distinct, func
 
+from src.analytics.quarantine_scope import not_quarantined
 from src.database.derived_views import KeywordMentionRead
 from src.database.models import Keyword, Source
 from src.database.outlet import OutletMap, outlet_expr, outlets_unhealed
@@ -97,6 +98,7 @@ def find_story_propagation(
         KeywordMentionRead.observed_on.isnot(None),
         # a mention kept for a lost article is no source, no first sighting and no article of the story
         not_a_stand_in_article_id(KeywordMentionRead.article_id),
+        not_quarantined(KeywordMentionRead.article_id),  # R101
     ]
 
     # Candidate terms: mentioned across >= min_sources distinct OUTLETS in the window (two feeds of one site are one
@@ -231,6 +233,7 @@ def _term_article_ids(session, kid: int, cutoff, hi, cap: int) -> list[int]:
             KeywordMentionRead.observed_on >= cutoff,
             KeywordMentionRead.observed_on < hi,
             not_a_stand_in_article_id(KeywordMentionRead.article_id),
+            not_quarantined(KeywordMentionRead.article_id),  # R101
         )
         .distinct()
         .limit(cap)
