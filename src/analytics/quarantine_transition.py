@@ -119,10 +119,13 @@ def prepare_r101_transition(engine: Any) -> dict:
         bump_corpus_epoch(s, reason="r101-transition", strict=True)
         if s.get(DerivedMeta, R101_PENDING_KEY) is None:
             opened = not is_deferral_open(s)
-            if opened:
-                open_deferral(s, reason="R101: quarantined articles leave the keyword counters")
             s.add(DerivedMeta(key=R101_PENDING_KEY, value="opened" if opened else "kept"))
-            s.commit()
+            if opened:
+                # open_deferral commits this session, so the pending row and the deferral land together: a crash can
+                # never leave a deferral this step opened without the row that lets the recompute close it.
+                open_deferral(s, reason="R101: quarantined articles leave the keyword counters")
+            else:
+                s.commit()
         return {"owed": True}
     except Exception as exc:  # noqa: BLE001 - opening the store must not depend on this
         s.rollback()
