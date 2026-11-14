@@ -89,3 +89,36 @@ def test_a_refresh_that_fails_leaves_the_in_memory_store_serving(monkeypatch, se
         rollup_serve._refresh_persisted_build()
     assert state["con"] is old and not old.closed and spill.exists()
     assert new.closed, "the persisted connection this attempt opened is released"
+
+
+def test_a_cached_persisted_store_is_refreshed_in_place_and_never_closed(monkeypatch, served_in_memory):
+    state, _old, _spill = served_in_memory
+    cached = _Con()
+    state.update(con=cached, persisted=True, spill=None)
+    monkeypatch.setattr(columnar, "open_store", lambda *_a, **_k: pytest.fail("a cached persisted store is not reopened"))
+    assert rollup_serve._refresh_persisted_build() is True
+    assert state["con"] is cached and not cached.closed and state.get("spill") is None
+
+
+def test_a_raise_after_the_store_is_recorded_does_not_close_the_serving_connection(monkeypatch, served_in_memory):
+    """The session's closing commit runs after the swap: if it raises, the recorded persisted store must stay open."""
+    from src.database import session as app_session
+
+    state, old, _spill = served_in_memory
+    new = _Con()
+    monkeypatch.setattr(columnar, "open_store", lambda *_a, **_k: columnar.OpenedStore(new, "persisted"))
+
+    class _S:
+        def get_bind(self):
+            return "bind"
+
+    @contextmanager
+    def scope():
+        yield _S()
+        raise RuntimeError("commit failed")
+
+    monkeypatch.setattr(app_session, "session_scope", scope)
+    with pytest.raises(RuntimeError):
+        rollup_serve._refresh_persisted_build()
+    assert state["con"] is new and not new.closed, "the store recorded as serving was closed under every later serve"
+    assert old.closed

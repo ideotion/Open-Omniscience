@@ -635,13 +635,14 @@ def _refresh_persisted_build() -> bool | None:
                 # An in-memory rollup served until now (the persisted store has only just become available) is retired here, under the
                 # lock serves hold, so none is mid-query: left open it held up to DuckDB's whole memory limit until the process ended, and
                 # its offload folder stayed on disk (open-on-main row 25).
+                bind = s.get_bind()  # read before the first write: a raise below this point would leave a half-recorded store
                 retired = _STATE["con"] if _STATE["con"] is not con else None
                 retired_spill, _STATE["spill"] = _STATE.get("spill"), None
                 _STATE["con"] = con
                 _STATE["persisted"] = True
                 _STATE["built_at"] = time.time()
                 _STATE["rows"] = int(rows)
-                _STATE["bind"] = s.get_bind()
+                _STATE["bind"] = bind
                 _STATE["token"] = token
                 _STATE["pending"] = False
                 if retired is not None:
@@ -649,11 +650,13 @@ def _refresh_persisted_build() -> bool | None:
                         retired.close()
                 _remove_spill(retired_spill)  # after the close: DuckDB holds its files open until then
     except Exception:
-        if opened_now:  # release the file handle so the next attempt can reopen it cleanly
-            try:
+        with _LOCK:
+            recorded = _STATE["con"] is con
+        # Release the file handle so the next attempt can reopen it cleanly -- unless the store was already recorded as serving (the
+        # session's closing commit raised after the swap): closing it then would leave every serve and refresh on a closed connection.
+        if opened_now and not recorded:
+            with contextlib.suppress(Exception):
                 con.close()
-            except Exception:  # noqa: BLE001
-                pass
         raise
     _LOG.info("rollup serve: refreshed persisted keyword_daily (%s rows)", rows)
     return True
