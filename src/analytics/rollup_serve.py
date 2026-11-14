@@ -494,6 +494,13 @@ def _build_inmemory_and_swap() -> dict | None:
             with contextlib.suppress(Exception):
                 con.close()
             _remove_spill(spill)  # after the close: DuckDB holds its files open until then
+    if spill and _corpus_encrypted():
+        # The library was encrypted while this build ran: its offload folder holds plaintext derived data, so the connection is
+        # not served. Closed, folder removed; the next request builds again with no offload. Not a stop: no hold is kept.
+        with contextlib.suppress(Exception):
+            con.close()
+        _remove_spill(spill)
+        return {"reason": ENCRYPTED_DURING_BUILD, "at": time.time()}
     with _LOCK:
         old = _STATE["con"]
         _STATE["con"] = con
@@ -805,6 +812,8 @@ _WALL_REASONS = ("duckdb-limit", "build-failed")
 
 #: The in-memory build's answer when the engine is off (``OO_COLUMNAR=0``): a setting, not a stop, so no hold is kept for it.
 ENGINE_OFF = "engine-off"
+#: The in-memory build's answer when the library was encrypted while it ran with an offload folder: not served, no hold kept.
+ENCRYPTED_DURING_BUILD = "encrypted-during-build"
 
 #: Whether this process has looked at the kept stop record yet (it looks once, at the first build decision, and
 #: every later change goes through ``_keep_stopped`` / ``_release_stopped``, which keep the two in step).
@@ -1453,10 +1462,11 @@ def _build_and_swap() -> str:
                 ran = False
                 outcome = "declined"
                 return outcome
-            if stopped is not None and stopped.get("reason") == ENGINE_OFF:
-                # The engine is off: no build ran and none can. A setting is not a stop, so no hold is kept (it would outlive the setting).
+            if stopped is not None and stopped.get("reason") in (ENGINE_OFF, ENCRYPTED_DURING_BUILD):
+                # The engine is off (no build ran and none can), or the library was encrypted under the build (it is not served and the
+                # next request builds with no offload). Neither is a stop, so no hold is kept (it would outlive the setting or refuse the rebuild).
                 with _LOCK:
-                    _STATE["last_skip"] = {**stopped, "source": "engine"}
+                    _STATE["last_skip"] = {**stopped, "source": "engine" if stopped["reason"] == ENGINE_OFF else "encryption"}
                 ran = False
                 outcome = "declined"
                 return outcome

@@ -171,6 +171,13 @@ def _build_and_swap() -> None:
                 columnar.build_source_coverage(con, s)
                 rows = con.execute("SELECT COUNT(*) FROM source_coverage").fetchone()[0]
                 built_bind = s.get_bind()  # the DB this rollup reflects (the process store)
+            if spill and rollup_serve._corpus_encrypted():
+                # The library was encrypted while this build ran: its offload folder holds plaintext derived data, so it is not
+                # served (closed and removed below) and the next check builds again with no offload.
+                with _LOCK:
+                    _STATE["pending"] = True
+                _LOG.info("map serve: the library was encrypted during the build; not served, rebuilding without offload")
+                return
             with _LOCK:
                 old = _STATE["con"]
                 old_spill = _STATE.get("spill")

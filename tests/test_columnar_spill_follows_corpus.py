@@ -152,3 +152,15 @@ def test_the_memory_ladder_removes_a_closed_serves_folder(monkeypatch, tmp_path)
     rec = release._close_serves(wait=False)
     assert "map_serve" in rec["closed"] and map_serve._STATE["spill"] is None
     assert not folder.exists(), "the closed serve's offload folder was left behind"
+
+
+def test_a_map_build_that_the_library_was_encrypted_under_is_not_served(monkeypatch, db, seen, tmp_path, clean_map_state):
+    answers = iter([False])  # plaintext when the folder is chosen, encrypted at the swap
+    monkeypatch.setattr(rollup_serve, "_corpus_encrypted", lambda: next(answers, True))
+    monkeypatch.setitem(map_serve._STATE, "pending", False)  # only the encrypted-during-build path sets it in this build
+    _map_build(monkeypatch, db)
+    assert seen[0]["spill"], "the build did not start with an offload folder"
+    assert map_serve._STATE["con"] is None and map_serve._STATE["spill"] is None and map_serve._STATE["pending"] is True
+    with pytest.raises(Exception):  # noqa: B017 - DuckDB's class for "connection already closed" differs across versions
+        seen[0]["con"].execute("SELECT 1")
+    assert not any((tmp_path / "duckdb_tmp").glob("*")), "the plaintext offload folder outlived the encryption"

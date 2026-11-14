@@ -1901,3 +1901,19 @@ def test_compacting_changes_no_answer_in_any_window(serve_env, session):
     for name in before:
         assert before[name][0] == after[name][0], f"{name}: counts"
         assert before[name][1] == after[name][1], f"{name}: the ranked (mentions, articles) pairs"
+
+
+def test_a_build_that_the_library_was_encrypted_under_is_not_served_and_takes_its_folder_with_it(
+        serve_env, session, monkeypatch, tmp_path):
+    """The offload folder was chosen while the library was plaintext; the library is encrypted before the swap. The
+    connection is not served (its folder holds plaintext derived data), the folder goes, and no hold is kept."""
+    _seed(session, keywords=20, mentions_per=3)
+    answers = iter([False])  # plaintext when the folder is chosen, encrypted from then on
+    monkeypatch.setattr(rollup_serve, "_corpus_encrypted", lambda: next(answers, True))
+    previous = object()
+    rollup_serve._STATE["con"] = previous
+    stopped = rollup_serve._build_inmemory_and_swap()
+    assert stopped is not None and stopped["reason"] == rollup_serve.ENCRYPTED_DURING_BUILD
+    assert rollup_serve._STATE["con"] is previous and rollup_serve._STATE["spill"] is None
+    root = tmp_path / "duckdb_tmp"
+    assert not (root.exists() and any(root.glob("*"))), "the plaintext offload folder outlived the encryption"
