@@ -588,6 +588,16 @@ async def lifespan(app: FastAPI):
         install_airplane_socket_guard()
     except Exception as exc:  # noqa: BLE001 - the gate then refuses every request, which is the fail-closed answer
         log_failure(logger, "could not install the airplane socket guard at start", exc, level=logging.ERROR)
+    # A start forgets the job threads an earlier shutdown in this process refused (R689): they ended with it, and a test's next client
+    # is a new app, not the one that stopped.
+    try:
+        from src.database.after_shutdown import arm_exit_disposal
+        from src.database.after_shutdown import clear as _clear_after_shutdown
+
+        _clear_after_shutdown()
+        arm_exit_disposal()  # a stop that skips the lifespan's shutdown still closes the jobs out and disposes, at exit
+    except Exception as exc:  # noqa: BLE001 - never blocks a start
+        log_failure(logger, "could not reset the shutdown's job refusal", exc, level=logging.WARNING)
     # The same guard ``_serve`` sets first, for a server that was not started by it (``python -m uvicorn src.api.main:app --loop asyncio``,
     # which the encrypted click-through uses): before the boot record below names the mechanism, and before any request can bring a
     # typed passphrase into this process. ``connect`` guards every place it hands a key to the engine as well.
@@ -750,6 +760,33 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 - best-effort shutdown
         log_failure(logger, "Error stopping the storage guard on shutdown", exc, level=logging.WARNING)
 
+    # The registered background jobs (backfills, enrichments, the mailbox pull: src/jobs/background.py) write through the same engine and nothing
+    # stopped them before the disposal (audit A-029): one still writing keeps its connection checked out, so the write-back below cannot
+    # fold the log, and the exit then ends its unit. Ask them to stop and wait for all of them against ONE 5 s deadline: each commits per
+    # unit, so a cancellable one ends at its next unit, and 5 s is half the scheduler stop's own 10 s join above, so a shutdown a service
+    # manager times at about 90 s is not spent here. A job still running after it is named in the log, by its kind only (its arguments can
+    # hold a passphrase). NOT covered: the backup import queue, the .eml import manager, the re-index managers and the backup threads, which
+    # are not registry jobs and keep their own stops; nor the request-bound AI streams (the streamed POST /api/llm/bulk, ai.py's extract and
+    # prompt runs), which stop at their next line once the server drops the connection and may still commit the article they are on. Not in the forensics record: its ``dispose`` member has no byte room left (R201, tests/test_session_forensics_budget.py).
+    try:
+        from src.jobs.background import stop_all_jobs
+
+        jobs_left = stop_all_jobs(5.0)
+        if jobs_left:
+            logger.warning("background jobs still running at the shutdown disposal: %s", ", ".join(jobs_left))
+    except Exception as exc:  # noqa: BLE001 - best-effort shutdown
+        log_failure(logger, "Error stopping the background jobs on shutdown", exc, level=logging.WARNING)
+    # A job past the deadline keeps its thread, and the disposal below would not stop it writing: the pool opens a fresh connection on
+    # its next checkout. From here on the database is closed to jobs (those threads by name, any job thread, their helper threads and
+    # the manual collection pass), whatever the wait found, even if the wait itself failed (R689).
+    try:
+        from src.database.after_shutdown import close_for_jobs
+        from src.jobs.background import running_job_threads
+
+        close_for_jobs(running_job_threads())
+    except Exception as exc:  # noqa: BLE001 - best-effort shutdown
+        log_failure(logger, "Error closing the database to background jobs on shutdown", exc, level=logging.WARNING)
+
     # Write the log back into the database BEFORE the pool is disposed: the disposal closes only the connections that are IN the pool,
     # and SQLite writes the log back when the LAST connection on the file closes, so one still checked out (a pass the scheduler's
     # stop gave up on) leaves the whole log for the next open to pay for (measured: 100 % left, plain and encrypted). Never waits for
@@ -771,6 +808,12 @@ async def lifespan(app: FastAPI):
         log_failure(logger, "Error writing the log back before the shutdown disposal", exc, level=logging.WARNING)
 
     disposed = dispose_engine()
+    try:
+        from src.database.after_shutdown import note_lifespan_disposed
+
+        note_lifespan_disposed()
+    except Exception as exc:  # noqa: BLE001 - best-effort
+        log_failure(logger, "could not note the lifespan's disposal", exc, level=logging.DEBUG)
     try:
         from src.monitoring.forensics import dispose_facts, record_shutdown_phase
 

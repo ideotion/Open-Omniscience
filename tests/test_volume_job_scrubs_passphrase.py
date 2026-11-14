@@ -272,8 +272,8 @@ def _restore_through_the_runner(monkeypatch, tmp_path: Path, *, pause=None, resu
     if place is not None:
         staged.file_members = [{"name": "blobs/wiki_dumps/x", "category": "wiki_dumps", "rel": "x"}]
         monkeypatch.setattr(fb_mod, "place_artifact_file_members", place)
-    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", pause or (lambda timeout=10.0: True))
-    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", resume or (lambda was_paused: None))
+    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", pause or (lambda timeout=10.0, **_kw: True))
+    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", resume or (lambda was_paused, **_kw: None))
     _own_the_machine(monkeypatch, False)
     monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: staged)
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda s: None)
@@ -289,7 +289,7 @@ def _restore_through_the_runner(monkeypatch, tmp_path: Path, *, pause=None, resu
 def test_a_pause_that_names_the_secrets_is_logged_with_them_out_and_never_aborts_the_restore(
     tmp_path, monkeypatch, caplog
 ):
-    def pause(timeout=10.0):
+    def pause(timeout=10.0, **_kw):
         raise RuntimeError(f"the scheduler refused {PASS} and {CORPUS}")
 
     mgr = _restore_through_the_runner(monkeypatch, tmp_path, pause=pause)
@@ -304,7 +304,7 @@ def test_a_pause_that_names_the_secrets_is_logged_with_them_out_and_never_aborts
 def test_a_resume_that_names_the_secrets_is_logged_with_them_out_and_never_costs_the_restore(
     tmp_path, monkeypatch, caplog
 ):
-    def resume(was_paused):
+    def resume(was_paused, **_kw):
         raise RuntimeError(f"the scheduler refused {CORPUS} and {PASS}")
 
     mgr = _restore_through_the_runner(monkeypatch, tmp_path, resume=resume)

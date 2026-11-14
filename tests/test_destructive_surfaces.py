@@ -146,7 +146,7 @@ _EXEMPT_GROUPS: dict[str, tuple[str, ...]] = {
         "diagnostics.keyword_triage.keyword_triage_cancel", "diagnostics.model_bench.model_bench_cancel",
         "diagnostics.p0.p0_validation_cancel", "diagnostics.perception.perception_extract_cancel",
         "diagnostics.release_run.release_run_cancel", "diagnostics.source_tags.source_tags_cancel",
-        "geo.osm_download_pause", "jobs.cancel_job", "llm.llm_pull_cancel", "llm.ollama_stop", "llm.vllm_install_cancel",
+        "geo.osm_download_pause", "jobs.cancel_job", "llm.bulk_queue_cancel", "llm.llm_pull_cancel", "llm.ollama_stop", "llm.vllm_install_cancel",
         "llm.vllm_stop", "quarantine.quarantine_action", "scheduler.scheduler_stop",
         "source_management.qualify_sources_bulk_cancel", "system.unattended_stop", "wiki.dumps_index_cancel",
         "wiki.dumps_pause",
@@ -175,7 +175,7 @@ _EXEMPT_GROUPS: dict[str, tuple[str, ...]] = {
         "source_management.remove_source_from_groups", "source_management.remove_sources_from_group",  # /groups/{id}/sources
     ),
     _DERIVED: (
-        "backup_v2.import_queue_clear", "database.vacuum", "insights.insights_prune_keywords", "wiki.dumps_index_clear",
+        "backup_v2.import_queue_clear", "database.vacuum", "llm.bulk_queue_clear_finished", "insights.insights_prune_keywords", "wiki.dumps_index_clear",
     ),
     _FILES: ("geo.osm_download_delete", "llm.llm_remove", "wiki.dumps_delete"),
     _OWN_LISTS: (
@@ -356,8 +356,9 @@ def test_the_functions_the_request_finder_added_to_the_trusted_click_table_stay_
 
 
 def test_request_sites_outside_any_named_function_are_the_known_delegated_click_handlers() -> None:
-    """Seven requests sit in anonymous callbacks, all inside a delegated ``click`` listener (a person's own click):
-    the reader's curation buttons and the task manager's job controls. A new one has to be looked at."""
+    """Eight requests sit in anonymous callbacks, all inside a delegated ``click`` listener (a person's own click):
+    the reader's curation buttons and the task manager's job controls (the fifth: the low-memory pause's Resume, a retry the
+    guard takes back if memory is still low). A new one has to be looked at."""
     outside: dict[str, int] = {}
     for path in _js_files():
         js = path.read_text(encoding="utf-8")
@@ -371,4 +372,4 @@ def test_request_sites_outside_any_named_function_are_the_known_delegated_click_
         for req in re.finditer(r"""["']?method["']?\s*:\s*[^,}]*\b(?:DELETE|POST|PUT|PATCH)\b""", js):
             if not any(a <= req.start() < b for a, b in spans):
                 outside[path.name] = outside.get(path.name, 0) + 1
-    assert outside == {"reader.js": 3, "taskmanager.js": 4}, outside
+    assert outside == {"reader.js": 3, "taskmanager.js": 5}, outside

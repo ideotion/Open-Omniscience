@@ -427,3 +427,49 @@ def test_the_route_the_panel_reads_returns_the_floor_beside_the_old_keys():
     data = body["data"]
     assert {"jurisdictions", "enumeration", "floor", "coverage_reasons"} <= set(data)
     assert data["floor"]["state"] == "checked" and data["floor"]["countries"] == len(load_floor()["countries"])
+
+
+# --- the order within a state (R679): population reached, from the operator's DATED table -------------------------------
+
+
+def _pop(rows, *, source="UN WPP 2024 (test)", as_of="2024-07-11"):
+    return {"status": "ok", "reason": None, "weights": rows, "source": source, "as_of": as_of}
+
+
+def test_within_a_state_countries_go_by_population_and_the_table_is_named_with_its_date():
+    floor = _floor(en=[("aa", "official"), ("bb", "official"), ("cc", "official"), ("dd", "official")])
+    rep = floor_report([], {"sources": []}, floor, population=_pop({"bb": 10.0, "cc": 300.0, "dd": 20.0}))
+    assert rep["by_state"][FLOOR_NO_SOURCE] == ["cc", "dd", "bb", "aa"], "largest first; the one the table lacks last"
+    order = rep["order"]
+    assert order["by"] == "population" and order["source"] == "UN WPP 2024 (test)" and order["as_of"] == "2024-07-11"
+    assert order["missing"] == ["aa"], "a country the table lacks is named, never given a figure"
+    assert "300" not in json.dumps(rep), "the report states the order and the table, not the populations themselves"
+
+
+def test_countries_the_table_lacks_follow_by_code_and_a_tie_falls_back_to_code():
+    floor = _floor(en=[("zz", "official"), ("yy", "official"), ("bb", "official"), ("aa", "official")])
+    rep = floor_report([], {"sources": []}, floor, population=_pop({"bb": 5.0, "aa": 5.0}))
+    assert rep["by_state"][FLOOR_NO_SOURCE] == ["aa", "bb", "yy", "zz"]
+    assert rep["order"]["missing"] == ["yy", "zz"]
+
+
+def test_with_no_usable_table_every_country_is_listed_by_code_and_the_block_says_why():
+    floor = _floor(en=[("cc", "official"), ("aa", "official"), ("bb", "official")])
+    for refusal in (
+        {"status": "absent", "reason": "no population table has been placed (an operator step)", "weights": {}},
+        {"status": "undated", "reason": "the population table names no source", "weights": {"aa": 9.0}},
+    ):
+        rep = floor_report([], {"sources": []}, floor, population=refusal)
+        assert rep["by_state"][FLOOR_NO_SOURCE] == ["aa", "bb", "cc"]
+        assert rep["order"] == {"by": "code", "source": None, "as_of": None, "reason": refusal["reason"], "missing": []}
+
+
+def test_the_order_comes_from_the_one_population_loader_by_default(tmp_path, monkeypatch):
+    from src.stats import population
+
+    table = tmp_path / "population_table.json"
+    table.write_text(json.dumps({"source": "a dated test table", "as_of": "2024-01", "rows": {"AA": 1, "BB": 2}}), "utf-8")
+    monkeypatch.setattr(population, "DEFAULT_PATH", table)
+    rep = floor_report([], {"sources": []}, _floor(en=[("aa", "official"), ("bb", "official")]))
+    assert rep["by_state"][FLOOR_NO_SOURCE] == ["bb", "aa"] and rep["order"]["source"] == "a dated test table"
+    assert "load_population_table" in python_function_source(Path(coverage.__file__).read_text("utf-8"), "floor_order")

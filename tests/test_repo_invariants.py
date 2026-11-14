@@ -1401,21 +1401,22 @@ def test_synthesis_opens_a_window_with_selection_metadata_and_export():
 def test_bulk_translate_summary_runs_are_queued():
     """Maintainer field test 2026-06-21: batch translate/summarize runs are QUEUED — a
     new batch can be added while one is ongoing; they run ONE AT A TIME, each snapshots
-    its selection, and the queue is visible with per-job cancel in a persistent panel."""
+    its selection, and the queue is visible with per-job cancel in a persistent panel.
+    AMENDED by R600's second PR (OPEN_QUEUE item 40): the queue moved to the SERVER
+    (src/jobs/llm_bulk_queue.py), so closing the tab no longer loses the runs waiting in it;
+    one-at-a-time is now the one drain job (tests/test_llm_bulk_queue.py pins it), and the
+    page only adds, cancels and reads."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
     app = app_js()
     # persistent queue containers (survive the config panel / extractor reusing the mount)
     assert 'id="bulk-queue-search"' in html and 'id="bulk-queue-an"' in html
-    # queue machinery
-    assert "let _bulkQueue" in app and "_bulkActive" in app and "function _bulkPump(" in app
-    assert "function _bulkRunJob(" in app and "function bulkJobCancel(" in app
-    # bulkLlmRun ENQUEUES (snapshots a job) + pumps, instead of running inline
-    assert "_bulkQueue.push(job)" in app and "_bulkPump()" in app
-    # one at a time: the pump returns if a job is already active
-    assert "if (_bulkActive) return;" in app
-    # the queue renders into every .bulk-queue container with a per-job Cancel
-    assert 'querySelectorAll(".bulk-queue")' in app and "bulkJobCancel(" in app
-    # the custom-extractor path keeps its own abort (not broken by the queue refactor)
+    # the page adds to the SERVER's queue (snapshotting the selection) and reads it back
+    assert "let _bulkQueue" in app and "function _bulkRefresh(" in app and "function bulkJobCancel(" in app
+    assert '"/api/llm/bulk/queue"' in app, "bulkLlmRun must add to the server's queue, not run the batch from the tab"
+    assert "function _bulkPump(" not in app and "_bulkQueue.push(job)" not in app, "the tab-side queue is back"
+    # the queue renders into every .bulk-queue container with a per-job Cancel, and Resume after a restart
+    assert 'querySelectorAll(".bulk-queue")' in app and "bulkJobCancel(" in app and "bulkQueueResume()" in app
+    # the custom-extractor path keeps its own stop (not broken by the queue refactor)
     assert "function bulkLlmStop(" in app and "_bulkJobAbort" in app
 
 
@@ -2300,6 +2301,19 @@ def test_ui_invariants():
         "the climate fetch passes the ONE consent popup before it asks the server (#33, #14)"
     )
     assert "consent: true" in _fetch_body, "the climate fetch says consent:true, the endpoint refuses without it (#14f)"
+    # 34. Simple mode (R682): ONE top-bar switch turns a task-first second interface on and off over
+    #     the same page; never-hidden surfaces stay visible in it, going online passes the full app's
+    #     own consent path, and its renderer is vendored locally. Behaviour: tests/test_simple_mode.py.
+    _index = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    _topbar = _index.split('<header class="topbar">', 1)[1].split("</header>", 1)[0]
+    assert 'id="ui-simple-toggle" role="switch"' in _topbar, "the simple-mode switch lives in the top bar (#34)"
+    assert '<script src="/static/simple/boot.js"></script>' in _index.split("</head>", 1)[0], (
+        "simple mode's flag is read in <head>, before first paint (#34)"
+    )
+    _simple_js = (_SRC / "static" / "simple" / "simple.js").read_text(encoding="utf-8")
+    assert "window.toggleNetwork()" in _simple_js and not re.search(r"method\s*:\s*[\"']POST", _simple_js), (
+        "simple mode goes online through the full app's ONE consent path, never its own POST (#34, #14)"
+    )
     # 8. external links ALWAYS confirmed via popup before opening (ruled
     #    2026-06-10) — delegated capture-phase guard in the UI.
     assert "_externalLinkGuard" in html, (
@@ -6497,8 +6511,10 @@ def test_auto_index_insights_is_throttled_not_a_per_tick_storm():
     assert "if (Date.now() < _autoIndexCooldownUntil) return;" in app, (
         "the 6 s poll can still re-kick a fresh drain every tick"
     )
-    # Each pass is bounded to a sane batch count, never the old 150k-article blast.
-    assert "++guard >= 40" in app, "the per-pass batch bound regressed"
+    # The drain itself runs on the SERVER now (R600's second PR, src/jobs/insights_backlog.py): ONE start
+    # per cooldown window, never a batch loop in the tab (and never the old 150k-article blast).
+    assert '"/api/insights/backlog"' in app, "the backlog drain must be started on the server"
+    assert "/api/insights/reindex?limit=300" not in app, "the tab-side batch loop is back"
     assert "++guard > 500)" not in app, "the old 500-batch (150k-article) blast is back"
     # A stuck backlog must stop re-attempting (Infinity cooldown), not hammer forever.
     assert "_autoIndexCooldownUntil = Infinity" in app
@@ -8330,7 +8346,7 @@ def test_docs_index_covers_live_docs():
 #: amendment is the growth the clause above calls normal.
 #: RAISED 2026-10-06: 792 -> 796, four lines amending protocol rule (5a)(b): a lesson and a shipped-log
 #: entry are each a NEW FILE (docs/ledger/lessons.d/, shipped_log.d/), never an append to the archives.
-_CLAUDE_MD_LINE_CEILING = 802
+_CLAUDE_MD_LINE_CEILING = 812
 
 
 def _claude_md_lines() -> int:
