@@ -432,14 +432,19 @@ def test_the_in_app_check_follows_the_key_and_names_its_rotations(tmp_path):
         _record(log, 1, 2)
         report = log.verify_report()
         assert report["verified"] and any("accepted on the record's word" in n for n in report["notes"])
-        # A key change with no record (here: the rotation record taken out and the chain re-linked would break the
-        # links; a key swapped in place keeps them) is refused by the in-app check too.
-    with CustodyLog(db_path=db, signer=_signer(tmp_path, "new")) as log:
-        log.conn.execute("DELETE FROM custody_entries WHERE item_id = ?", (ROTATION_ITEM,))
-        log.conn.commit()
+    db2 = str(tmp_path / "legacy.db")
+    with CustodyLog(db_path=db2, signer=_signer(tmp_path, "old")) as log:
+        _record(log, 2)
+    with CustodyLog(db_path=db2, signer=_signer(tmp_path, "new")) as log:
+        # What a log written before this version holds: the re-created key signed on with no record in between.
+        log._insert(log._last(), "article:0", "a" * 64, "ingest", "pipeline", {}, None)
         report = log.verify_report()
-        assert not report["verified"]
-        assert any("with no key-rotation record" in i for i in report["issues"])
+        # The operator's own store: a key change with no record (all a log written before these records can show) is
+        # named, not refused -- the log could never be given the record. An exported bundle is still refused.
+        assert report["verified"], report["issues"]
+        assert any("with no key-rotation record" in n and "before 0.5.1" in n for n in report["notes"])
+        ok, issues = verify_export(log.export(), accept_unendorsed_rotation=True)
+        assert not ok and "with no key-rotation record" in issues[0]
 
 
 def test_the_cli_refuses_an_unknown_option(tmp_path):
@@ -528,3 +533,61 @@ def test_a_re_signed_forged_rotation_is_refused_by_the_key_lineage(tmp_path):
 
     # The helper itself forges nothing when nothing is edited: the genuine record re-signed still verifies.
     assert verify_export(_forge(bundle, 2, lambda md: None, new, new))[0]
+
+
+def test_a_key_folder_moved_aside_for_a_moment_writes_no_rotation(tmp_path):
+    """A reload only loads: a key file that is briefly gone is not replaced by a new key under a long-lived log."""
+    import shutil
+
+    db = str(tmp_path / "c.db")
+    keys = tmp_path / "keys"
+    keys.mkdir()
+    log = CustodyLog(db_path=db, signer=HybridSigner(ed25519_path=keys / "k.pem", mldsa_path=keys / "k.key"))
+    try:
+        _record(log, 1)
+        shutil.move(str(keys), str(tmp_path / "aside"))
+        _record(log, 1, 1)  # still signs with the key it holds
+        shutil.move(str(tmp_path / "aside"), str(keys))
+        _record(log, 1, 2)
+        assert [e.action for e in log.all_entries()].count("key_rotation") == 0
+        # No orphan key was created while the folder was away: it holds what it held before.
+        assert not (tmp_path / "aside").exists() and {p.name for p in keys.iterdir()} <= {"k.pem", "k.key"}
+        assert len({e.signature["ed25519"]["pub"] for e in log.all_entries()}) == 1
+    finally:
+        log.close()
+
+
+def test_export_answers_503_when_the_key_cannot_be_read(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api import custody as api
+    from src.api.main import app
+    from src.custody.signing import SigningError
+
+    def refuse():
+        raise SigningError("unreadable")
+
+    monkeypatch.setattr(api, "_log", refuse)
+    r = TestClient(app).get("/api/custody/export", headers={"Sec-Fetch-Site": "same-origin"})
+    assert r.status_code == 503 and "could not be read" in r.json()["detail"]
+
+
+@pytest.mark.skipif(not __import__("src.custody.signing", fromlist=["x"]).PQC_AVAILABLE,
+                    reason="pqcrypto/ML-DSA not installed")
+def test_the_last_stretch_is_pinned_to_its_rotation_and_the_signer_must_agree(tmp_path):
+    db = str(tmp_path / "c.db")
+    old = _signer(tmp_path, "old")
+    with CustodyLog(db_path=db, signer=old) as log:
+        _record(log, 2)
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "new")) as log:
+        log.rotate_signing_key(old)
+    # Post-quantum signing turned off after the rotation: the honest log still verifies pinned.
+    off = HybridSigner(ed25519_path=tmp_path / "new.pem", mldsa_path=tmp_path / "new.key", use_pqc=False)
+    with CustodyLog(db_path=db, signer=off) as log:
+        _record(log, 1, 2)
+        assert verify_export(log.export(), require_signer=True) == (True, [])
+    # The ML-DSA key alone replaced, with no record: the printed signer is not the identity the stretch is held to.
+    other_ml = HybridSigner(ed25519_path=tmp_path / "new.pem", mldsa_path=tmp_path / "other.key")
+    with CustodyLog(db_path=db, signer=other_ml) as log:
+        ok, issues = verify_export(log.export(), require_signer=True)
+    assert not ok and "names an ML-DSA key other than the one the key-rotation record at seq 3 introduced" in issues[0]

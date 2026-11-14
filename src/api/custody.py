@@ -30,11 +30,15 @@ from src.custody.settings import (
     load_settings,
     save_settings,
 )
-from src.custody.signing import HybridSigner
+from src.custody.signing import HybridSigner, SigningError
 from src.custody.timestamp import ENTRY_REFUSED_OFFLINE, TimestampUnavailable
 from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/custody", tags=["custody"])
+
+
+_KEY_UNREADABLE = ("the custody signing key could not be read, so no bundle was signed: unlock the app with its "
+                   "passphrase, or check the key folder")
 
 
 def _log() -> CustodyLog:
@@ -85,9 +89,16 @@ def list_providers() -> dict:
 @router.get("/export", dependencies=[Depends(refuse_cross_site_get)])
 def export(item_id: str | None = None) -> dict:
     """Export an offline-verifiable custody bundle (optionally for one item)."""
-    log = _log()
+    try:
+        log = _log()
+    except SigningError:
+        raise HTTPException(status_code=503, detail=_KEY_UNREADABLE) from None
     try:
         return log.export(item_id=item_id)
+    except SigningError:
+        # The key file cannot be read with what this process holds (wrapped under another passphrase, damaged): no
+        # bundle is signed and nothing is written. The answer says what to do.
+        raise HTTPException(status_code=503, detail=_KEY_UNREADABLE) from None
     finally:
         log.close()
 

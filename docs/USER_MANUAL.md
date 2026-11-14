@@ -1477,7 +1477,9 @@ the key changed, before anything new was logged, writes the record first, since 
 verified bundle that crosses a rotation prints its line of keys, from the first to the last: compare any key you
 already know with that line. With `--accept-unendorsed-rotation`, `--pin` proves nothing unless you already know the
 last key, because a log cut and re-signed by someone else carries exactly such a record. The in-app **Verify** button
-follows the key through the same records, accepts an unendorsed one on its word, and names each rotation. Changing only
+follows the key through the same records and names each rotation. On your own store it accepts an unendorsed one on its
+word, and a key change with no record at all, which is what a log written before 0.5.1 shows when its key was
+re-created then (the log cannot be given the record afterwards); an exported bundle with such a change is refused. Changing only
 the post-quantum key (or turning it off with no rotation) writes no record, and a pinned check then refuses the log.
 
 ```bash

@@ -78,6 +78,13 @@ class CustodyAction(str, Enum):
 ROTATION_ITEM = "custody:signing-key"
 
 
+UNRECORDED_KEY_CHANGE_NOTE = (
+    "the signing key changed here with no key-rotation record. A key re-created before this version wrote those records "
+    "(before 0.5.1) leaves exactly this mark, and the append-only log cannot be given the record afterwards; a tail "
+    "signed by someone else's key reads the same. An exported bundle is refused here."
+)
+
+
 def rotation_payload(previous_ed25519_pub: str, identity: dict, prev_entry_hash: str) -> dict:
     """What the PREVIOUS key signs to endorse the next one: both keys and the place in the chain, so an endorsement
     cannot be lifted onto another log or another point of this one."""
@@ -463,16 +470,19 @@ class CustodyLog:
         The head is signed by the key that signs now, so a key change the log has not recorded yet (keys re-created,
         nothing logged since) is recorded first, or the bundle would end on one key and be signed by another."""
         with _APPEND_LOCK:
+            # Only the rotation check and the choice of signer need the lock: an entry appended after it comes after
+            # this bundle's head, and a large log read under it would hold every custody write in the process.
             self._tail_on_signer()
-            entries = self.entries_for(item_id) if item_id else self.all_entries()
-            if item_id and item_id != ROTATION_ITEM and entries:
-                # Every key-rotation record, so the item's entries can be followed to the key that signs the head now --
-                # including the rotations after its last entry, or an item untouched since a rotation could never verify.
-                rotations = self.entries_for(ROTATION_ITEM)
-                entries = sorted(entries + rotations, key=lambda e: e.seq)
-            ident = self.signer.public_identity()
-            head = _bundle_head(item_id, entries)
-            head_signature = self.signer.sign(canonical_bytes(head))
+            signer = self.signer
+        entries = self.entries_for(item_id) if item_id else self.all_entries()
+        if item_id and item_id != ROTATION_ITEM and entries:
+            # Every key-rotation record, so the item's entries can be followed to the key that signs the head now --
+            # including the rotations after its last entry, or an item untouched since a rotation could never verify.
+            rotations = self.entries_for(ROTATION_ITEM)
+            entries = sorted(entries + rotations, key=lambda e: e.seq)
+        ident = signer.public_identity()
+        head = _bundle_head(item_id, entries)
+        head_signature = signer.sign(canonical_bytes(head))
         return {
             "log_version": LOG_VERSION,
             "item_id": item_id,
@@ -499,10 +509,12 @@ class CustodyLog:
         ok, issues = verify_entries(entries)
         notes: list[str] = []
         if entries:
-            problem, notes = _key_lineage(entries, _sig_ed25519_pub(entries[-1].signature), True)
+            problem, notes = _key_lineage(entries, _sig_ed25519_pub(entries[-1].signature), True,
+                                          accept_unrecorded=True)
             if problem:
                 ok = False
                 issues.append(problem)
+
         return {"verified": ok, "issues": issues, "notes": notes if ok else []}
 
     def close(self) -> None:
@@ -668,9 +680,11 @@ def _entry_shape_problem(d: object) -> str | None:
 
 
 def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed: bool,
-                 one_item: bool = False) -> tuple[str | None, list[str]]:
+                 one_item: bool = False, *, accept_unrecorded: bool = False) -> tuple[str | None, list[str]]:
     """Walk the signing key through the entries. Returns ``(problem or None, notes)``; the key must end as
-    ``signer_key``. See :func:`verify_export`'s WHICH KEY."""
+    ``signer_key``. See :func:`verify_export`'s WHICH KEY. ``accept_unrecorded`` is for the operator's own store only
+    (the in-app check): a key change with no record is named in the notes instead of refused, on the same footing as an
+    unendorsed rotation, since a log written before these records existed can never gain one. Never for a bundle."""
     notes: list[str] = []
     first = entries[0]
     current = _sig_ed25519_pub(first.signature)
@@ -717,8 +731,11 @@ def _key_lineage(entries: list[CustodyEntry], signer_key: str, accept_unendorsed
                 notes.append(f"seq {e.seq}: the signing key changed from {prev_k} to {new_k}, endorsed by the previous key")
             current = new_k
         elif k != current:
-            return (f"the signing key changes at seq {e.seq} with no key-rotation record: a re-created key and a forged "
-                    "tail read the same here, so neither is verified"), notes
+            if not accept_unrecorded:
+                return (f"the signing key changes at seq {e.seq} with no key-rotation record: a re-created key and a "
+                        "forged tail read the same here, so neither is verified"), notes
+            notes.append(f"seq {e.seq}: {UNRECORDED_KEY_CHANGE_NOTE} (from {current} to {k})")
+            current = k
     if current != signer_key:
         return "the entries end on a different key from the bundle's signer key", notes
     if notes:
@@ -874,4 +891,12 @@ def _verify_export(
     # also pinned in full (its ML-DSA half too) to the identity that introduced it -- the stretch after the last rotation
     # to the bundle's signer, a middle stretch to its rotation record's identity when that names an ML-DSA key. The
     # stretch before the first rotation has no identity in the bundle beyond its Ed25519 key, which the lineage checked.
+    last_rot = next(e for e in reversed(entries)
+                    if e.action == CustodyAction.KEY_ROTATION.value and e.item_id == ROTATION_ITEM)
+    rot_ml = last_rot.metadata.get("ml_dsa_pub")
+    if pinned.ml_dsa_pub and isinstance(rot_ml, str) and rot_ml and rot_ml != pinned.ml_dsa_pub:
+        # The printed signer is what a reader compares with a key they know: it must be the identity the last stretch is
+        # held to, not a post-quantum key no rotation record introduced.
+        return False, [f"the bundle's signer names an ML-DSA key other than the one the key-rotation record at seq "
+                       f"{last_rot.seq} introduced, and no record says it changed"]
     return verify_entries(entries, pinned_by_seq=_segment_pins(entries, pinned), chained=not item_id)
