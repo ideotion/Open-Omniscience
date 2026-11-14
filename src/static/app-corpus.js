@@ -1839,17 +1839,32 @@
     // were English template literals beside translated rows -- "↑2.1× (9 recent · 3 prior)"
     // in fr, ar and zh -- and, being composed, no walker could ever match them. One frame
     // each; the numbers are data. A count of one takes the singular keys that exist (N14).
+    //
+    // THE ARROW FOLLOWS THE NUMBER (the 2026-11-13 public-readiness walk). Every frame began
+    // with a fixed "↑", so a super-group whose rate FELL to 0.44x of its usual pace read
+    // "↑0.44×": an up arrow on a decline, the opposite of the fact beside it. `growth` is a
+    // ratio here (the not-a-ratio rows never reach this function: growthFallback answers
+    // them first), so below 1 is a fall and exactly 1 is flat. The keyed frames are kept and
+    // only their leading arrow is swapped, because all twelve translations put the arrow
+    // first; the frames stay one translation each instead of three.
+    function trendArrow(growth) {
+      const g = Number(growth);
+      if (!Number.isFinite(g) || g > 1) return "↑";
+      return g < 1 ? "↓" : "→";
+    }
     function trendRateText(row, opts) {
       const TF = (s2, v) => _kwTf(s2, v);
       if (!row) return "";
-      if (opts && opts.short) return TF("↑{growth}× · {recent} recent", {growth: row.growth, recent: row.recent});
+      const arrow = trendArrow(row.growth);
+      const dir = (s2) => String(s2).replace(/^↑/, arrow);
+      if (opts && opts.short) return dir(TF("↑{growth}× · {recent} recent", {growth: row.growth, recent: row.recent}));
       if (opts && opts.window && row.window_days != null && row.baseline_days != null) {
-        return TF("↑{growth}× ({recent} recent · {prior} prior, {window} days vs {baseline} days)",
+        return dir(TF("↑{growth}× ({recent} recent · {prior} prior, {window} days vs {baseline} days)",
                   {growth: row.growth, recent: row.recent, prior: row.prior,
-                   window: row.window_days, baseline: row.baseline_days});
+                   window: row.window_days, baseline: row.baseline_days}));
       }
-      return TF("↑{growth}× ({recent} recent · {prior} prior)",
-                {growth: row.growth, recent: row.recent, prior: row.prior});
+      return dir(TF("↑{growth}× ({recent} recent · {prior} prior)",
+                {growth: row.growth, recent: row.recent, prior: row.prior}));
     }
     function mentionsArticlesText(n, m) {
       const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

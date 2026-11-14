@@ -213,7 +213,7 @@ def test_the_coverage_block_of_a_lane_with_rows_carries_the_shape_the_panel_read
     assert rows["pt"]["has_run"] is True and rows["pt"]["pages_seen"] is None and rows["pt"]["gaps"]["total"] == 1
     assert rows["de"] == {"edition": "de", "has_run": False, "reason": "no-run-yet"}, "a never-run edition is its name and the reason"
     assert out["totals"]["edition_articles"] == 0 and out["totals"]["editions_without_total"] >= 1
-    assert out["located"]["measured"] is False
+    assert out["located"]["measured"] is True and out["located"]["per_edition"] == {}
 
 
 def test_the_coverage_block_rides_the_wiki_source_of_the_overview(no_lane, corpus):

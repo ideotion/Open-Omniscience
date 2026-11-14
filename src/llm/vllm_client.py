@@ -45,6 +45,17 @@ from src.monitoring.secret_scrub import record_text
 
 _LOG = logging.getLogger(__name__)
 
+#: ``owned_by`` values on ``/v1/models`` that name a proxy to a hosted API, not a model running here (R688). LiteLLM and
+#: other OpenAI-compatible proxies report ``openai``; vLLM says ``vllm``, llama.cpp ``llamacpp``.
+_RELAY_OWNERS = frozenset({"openai", "litellm"})
+
+#: The sentence the person reads when the vLLM address is a proxy (keyed in every locale).
+RELAY_REFUSAL = (
+    "The server at the vLLM address lists its models as owned by OpenAI or LiteLLM, which is how a proxy to an online "
+    "service describes itself, so it is refused: the text you give it could leave the machine. Point the vLLM address at "
+    "a model running on this computer."
+)
+
 #: The app's own listening port (``main.py`` reads ``OO_PORT``, default 8000).
 #: Duplicated as a literal rather than imported so this module keeps no import
 #: edge into the API layer; the invariant test pins the two together.
@@ -307,6 +318,126 @@ class VllmClient:
             if m.get("id")
         ]
 
+    # -- what the server says it is (R671, R688) ---------------------------- #
+
+    def server_kind(self, model: str = "") -> str:
+        """What the server at ``base_url`` says it is: ``"ollama"``, ``"relay"``, ``"vllm"`` or ``"other"``.
+
+        * ``"ollama"``: it answers ``/api/tags`` with a model list (an Ollama daemon, which forwards cloud models);
+        * ``"relay"``: any card on ``/v1/models`` names an owner that identifies a proxy to a hosted API
+          (:data:`_RELAY_OWNERS`: LiteLLM and other OpenAI proxies say ``openai``);
+        * ``"vllm"``: every such card says ``owned_by: "vllm"``, as vLLM's own model card does;
+        * ``"other"``: anything else, including a model list it cannot read -- llama.cpp, LM Studio and similar local
+          servers, which this app cannot see into.
+
+        Raises :class:`LLMUnavailable` when the server does not answer at all, or answers ``/api/tags`` with a 5xx.
+        """
+        return self._identify(model)[0]
+
+    def _identify(self, model: str) -> tuple[str, list]:
+        """:meth:`server_kind`, plus the Ollama model list it read (empty for any other kind), so the check that
+        follows judges the same answer rather than asking twice."""
+        try:
+            tags = self._client.get("/api/tags")
+        except httpx.HTTPError as exc:
+            raise LLMUnavailable(f"vLLM not reachable at {self.base_url}: {record_text(exc)}. Is the vllm server running?") from exc
+        if tags.is_success:
+            try:
+                body = tags.json()
+            except ValueError:
+                body = None  # not JSON at all (a catch-all page): this path is not an Ollama model list
+            entries: list = body.get("models") or [] if isinstance(body, dict) else []
+            entries = entries if isinstance(entries, list) else []
+            remote = any(isinstance(m, dict) and any(m.get(f) for f in ("remote_host", "remote_model")) for m in entries)
+            if isinstance(body, dict) and isinstance(body.get("data"), list) and not remote:
+                # llama.cpp's llama-server answers /api/tags with its OpenAI model list beside an Ollama-style one
+                # ("models" AND "data"); Ollama's own answer has no "data". It is judged by its cards below -- unless
+                # an entry carries a remote field, which only a cloud model has: that list is judged as Ollama's.
+                body = None
+            elif isinstance(body, dict) and "error" in body and "models" not in body:
+                # LM Studio answers an unknown route with 200 and {"error": "Unexpected endpoint ..."}: not a model
+                # list of any kind, so the server is judged by its /v1/models cards below.
+                body = None
+            if body is not None:
+                listed = body.get("models") if isinstance(body, dict) else None
+                if isinstance(listed, list):
+                    return "ollama", listed
+                # JSON on Ollama's own path that is not Ollama's shape: whatever answers there is imitating it, and
+                # passing it as "other" would let a shim in front of a daemon carry a cloud model through.
+                raise LLMUnavailable(f"The server at {self.base_url} answered its model list in a shape this app cannot read, so no text is sent to it.")
+        elif tags.status_code >= 500:
+            # Something serves that path and failed: an Ollama daemon mid-restart reads this way, and passing it as
+            # "other" would send text to the one server known to forward cloud models. vLLM and the local servers
+            # answer 404 there.
+            raise LLMUnavailable(f"The server at {self.base_url} failed to list its models, so no text is sent to it.")
+        try:
+            resp = self._client.get("/v1/models")
+        except httpx.HTTPError as exc:
+            # A server that answered /api/tags and then cannot answer its own model list is failing, not identified:
+            # a proxy whose upstream is down reads this way while its chat route still works.
+            raise LLMUnavailable(f"The server at {self.base_url} did not answer its model list, so no text is sent to it.") from exc
+        if resp.status_code >= 500:
+            raise LLMUnavailable(f"The server at {self.base_url} failed to list its models, so no text is sent to it.")
+        try:
+            resp.raise_for_status()  # a 404 or 401 (vLLM started with --api-key) leaves the server unidentified
+            cards = resp.json().get("data")
+        except (httpx.HTTPError, ValueError, AttributeError):
+            return "other", []
+        cards = [c for c in (cards if isinstance(cards, list) else []) if isinstance(c, dict)]
+        def owner(c: dict) -> str:
+            return str(c.get("owned_by") or "").strip().lower()
+
+        # Being a proxy is a property of the server, so ANY card naming a relay owner marks it, whichever model is asked.
+        if any(owner(c) in _RELAY_OWNERS for c in cards):
+            return "relay", []
+        named = [c for c in cards if not model or c.get("id") == model]
+        if named and all(owner(c) == "vllm" for c in named):
+            return "vllm", []
+        return "other", []
+
+    def _require_local_server(self, model: str) -> None:
+        """Refuse to send text to a server KNOWN to relay it off this computer (R688, as amended).
+
+        A loopback URL proves only that the first hop is local. Ollama serves the same OpenAI-compatible
+        ``/v1/chat/completions`` and forwards a cloud model, or a local alias of one, to ollama.com from its own process
+        (R671); a proxy such as LiteLLM forwards everything to a hosted API. So, before every generation:
+
+        * a cloud-suffixed name is refused with no request at all;
+        * an Ollama daemon (it answers ``/api/tags`` with a model list) must list the model with no remote field, exactly
+          as ``OllamaClient`` requires;
+        * a server whose model card names a proxy owner (:data:`_RELAY_OWNERS`) is refused;
+        * vLLM, and any other local OpenAI-compatible server (llama.cpp, LM Studio and the like), is used as before. For
+          the latter Settings shows a caveat (``vllm_lifecycle.status``'s ``server_kind``), because the app cannot see
+          whether it sends text elsewhere. The stricter rule -- only a server that says it is vLLM -- is the operator's
+          choice to ask for, not ours to impose on a working private setup.
+
+        WHAT IT CANNOT SEE. It reads the server's description of itself. A loopback relay that passes the real answers
+        through (``ssh -L`` to a GPU box, an nginx or socat relay, a vLLM router in front of remote workers) is
+        indistinguishable from the server behind it, and its traffic leaves from a process this app's socket guard does
+        not see. ``owned_by`` is a label anyone can write, and a proxy that hides Ollama's ``/api/tags`` (or adds a
+        ``data`` list to it, as llama.cpp's answer carries, and drops the remote fields) reads as "other". The llama.cpp and LM Studio shapes of
+        ``/api/tags`` are recognised from their published behaviour, not from a live server. Between these reads and the request that follows, another server could take the port. What this closes
+        is the plain case: ``OO_VLLM_URL`` or ``OO_VLLM_PORT`` set to an Ollama daemon carrying a cloud model, or to a
+        proxy that says it is one.
+
+        At most two loopback reads per generation, next to a generation that takes seconds.
+        """
+        from src.llm.ollama import RemoteModelRefused
+        from src.llm.remote_models import REFUSAL, is_cloud_name, local_entry
+
+        if is_cloud_name(model):
+            raise RemoteModelRefused(f"{REFUSAL} ({model!r})")
+        kind, models = self._identify(model)
+        if kind == "relay":
+            raise RemoteModelRefused(RELAY_REFUSAL)  # the exact string, so the UI can translate it
+        if kind != "ollama":
+            return
+        verdict, _entry = local_entry(model, models)
+        if verdict == "cloud":
+            raise RemoteModelRefused(f"{REFUSAL} ({model!r})")
+        if verdict == "missing":
+            raise LLMUnavailable(f"Model {model!r} is not installed on the Ollama server at {self.base_url}.")
+
     # -- generation -------------------------------------------------------- #
 
     def generate(
@@ -334,13 +465,7 @@ class VllmClient:
         so it is still accepted for signature parity and ignored.
         """
         self._check_kill_switch()
-        from src.llm.remote_models import REFUSAL, is_cloud_name
-
-        if is_cloud_name(model):
-            # R671: a loopback URL can be Ollama's own OpenAI-compatible endpoint, which forwards such a name to its cloud
-            from src.llm.ollama import RemoteModelRefused
-
-            raise RemoteModelRefused(f"{REFUSAL} ({model!r})")
+        self._require_local_server(model)
         messages = []
         if system:
             messages.append({"role": "system", "content": system})

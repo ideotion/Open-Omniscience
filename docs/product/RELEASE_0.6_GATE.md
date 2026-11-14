@@ -78,6 +78,18 @@ source, licence, last fetch, gaps and parse diagnostics shown per series. A re-f
 owed for this half: a run against the REAL hosts (the sandbox's egress refuses most of them, so it is the maintainer's
 run), and the AR6 and Open-Meteo lanes. The elections calendar and the statistics directory are untouched.
 
+**Progress 2026-11-13, second PR (R675): the rest of the row that needs no live fetch; the row stays OPEN.**
+Open-Meteo: Climate → Your place compares a window with the 1991–2020 baseline for a typed place, which is rounded to
+0.1 degree before it is sent, asked for through the ONE consent and kept only in the encrypted store (R675; the
+`SECURITY.md` Weather row). AR6 was already shipped. Elections: the app now reads the Wikidata snapshot when the
+operator's run has written one and says so when it has not; a stated election that has gone by reads as **passed** and
+is never rolled forward a year (the US 2026 midterm had been shown as scheduled for 2027-11-03); and the coverage
+report artifact is `docs/product/elections_coverage_2026-11-13.md` (`scripts/elections_coverage_report.py`): 140
+floor countries, 7 window, 3 passed, 8 dateless, 122 missing, curated list only. Statistics directory: `GET
+/api/stats/agencies` now states `directory_progress` — 29 listed, 0 news pages confirmed, about 152 planned — with
+nothing added from memory. Still owed: the Wikidata networked run, the networked directory build and the real-host
+climate run, all the operator's.
+
 ### Row B — OSM change tracking and the trend surfaces · ruled (Q106, Q812 🔒, Q813, Q815, Q816, Q824) · OPEN
 
 **What it must demonstrate.** Geofabrik daily diffs per selected extract applied to the ingested classes; if
@@ -93,6 +105,17 @@ the online consent, the per-country cost shown before selection (Q824). Every tr
 diff (the diff's timestamp as the artifact), the re-baseline path is exercised on the fixture, the ranked table
 is canonical beside every choropleth (Chromium-verified + click-through), and the measured daily diff cost for
 one country is recorded. **Operator:** the daily apply on a real selection. Brief `S06-01`.
+
+**Session evidence, 2026-11-13 (Lane L, on fixtures; the row stays OPEN for the operator's two items).** Built on main by PRs #1712, #1718,
+#1720, #1725, #1728, #1730, #1735, #1736, #1738. A Chromium walk at 1400 px and 375 px on a fixture lane (the synthetic extract re-keyed to
+LU, three daily files and one re-baseline; seed and walk scripts in the project's shared folder, `osm-lane/walk-2026-11-13/`) showed:
+the day-over-day change from the file dated 2025-01-12 (one place marked closed, one `disused:*` key added, one website gained) on the
+trends surface; the re-baseline as a named stretch «not observed between 2025-01-12 and 2025-07-29»; the ranked table under the
+choropleth for every measure and both levels; Luxembourg filled on Equal Earth; no request leaving the loopback. The walk found four
+defects, fixed in the same PR: an all-zero count drew as tall sparse bars (`ooChart`); the screen-reader table under a chart labelled two
+days of one month alike; the four OSM panels carried no © OpenStreetMap contributors · ODbL 1.0 line; the «changed» map measure did not
+say when its window starts. **Still open (operator):** a real day-over-day change on a real selection, and the measured daily diff cost
+for one country.
 
 ### Row C — Laws: breadth to the coverage floor · ruled (R15; Q107, Q911, Q912, Q913, Q930, Q1146, Q902) · OPEN
 
@@ -133,6 +156,9 @@ steps.** Of the three closing conditions:
   sandbox's egress refuses those hosts; the script prints `not-measured` and exits 3 until then. Expected with EuroVoc alone:
   en/fr/de/es/pt are scored, the other seven are set aside as `unsupported_languages` until P5437 is confirmed. R680 (OPEN_QUEUE
   38(d)): zh and ja are now matched as substrings, every such hit ≈, one-character labels never matched.
+  R690 (PR #1959): combining marks and joiners now stay in their word (a Hindi or Bengali vowel sign or virama, a Thai
+  mark, an Arabic haraka never splits one; Arabic vowelling is ignored), tested per script; "one character" counts letters,
+  not marks; Khmer, Lao and Burmese are unsupported until a test shows their matching works, so no figure is given for them.
 
 ### Row D — Wikipedia coverage and located data · ruled (Q108, Q723, Q819) · OPEN
 
@@ -167,6 +193,7 @@ with the translated-of-total figure on each document. Brief `S06-05`.
 | 2026-09-29 | **`RC11` = b: the V1 round re-opens all nine rulings**, so the rows here that cite V1-1..V1-9 are provisional (the banner above); V1-4 answered, PubMed bulk. | maintainer (project chat, 2026-09-29 19:55 UTC) · recorded by the session |
 | 2026-11-04 | **Row E tranche plan, measured (E1, `S06-05` S1; PROPOSED placement per Q1122 = b, not a ruling: the maintainer may move membership).** Method: `len(text)` in characters of each served Help document on main `5f07a389f`, ten slugs from `_DOCS`, against the eleven non-English locales of `src/static/locales/` (ar bn de es fr hi id ja pt ru zh; English is the authoritative text). Sizes: user-manual 225,673 · quickstart 24,620 · ethics 27,844 · governance 4,931 · security 80,666 · design 57,726 · roadmap 97,612 · architecture 24,987 · contributing 12,062 · changes 194,108; total 750,229 characters, so the owed body is 750,229 × 11 = 8,252,519 characters (the earlier ~2 M figure, 167,022 × 12, was the RENDERED Help tab and understates the owed body 4.1 times: 2,004,264 against 8,252,519). **Tranche 1 (0.6):** user-manual + quickstart = 250,293 characters × 11 = 2,753,223 (22 of the 110 document-locale pairs). **Tranche 2 (by 0.7):** governance, ethics, security, contributing, architecture = 150,490 × 11 = 1,655,390 (55 pairs; short, user-facing and safety-relevant first). **Tranche 3 (by 0.8):** design, roadmap, changes = 349,446 × 11 = 3,843,906 (33 pairs; the plan and release-by-release log, read least). Today: 0 of 110 pairs COMPLETE; one PARTIAL draft (`docs/i18n/fr/QUICKSTART.md`: 8 headings against the English 17, served but never counted). Drafting is local-model-only and no local model is reachable in the build container, so drafting the 22 tranche-1 pairs is an OPERATOR step (the maintainer's machine); each draft's banner flags it for native review, never a merge condition. The guard is `tests/test_help_docs_translated.py` (skeleton equality per pair, exact PARTIAL listing, a per-tranche floor that may only rise, a truthful `X-OO-Doc-Lang`, mutation-checked). | session (E1, measured) |
 | 2026-11-04 | **R418: a tag-timing condition on the exit.** The stage-2 stamp table `article_www_stamps` (R415) lands in two merges, the re-index PR with one registry line in `src/backup/merge.py` (cross-owner touch granted) and WAL's carry straight after; no release tag falls between them. | the coordinator session (R418) · recorded by Plan |
+| 2026-11-13 | **Row E, tranche 1 drafted (R677): 22 of 22 pairs COMPLETE.** `docs/i18n/<lang>/USER_MANUAL.md` and `QUICKSTART.md` for ar bn de es fr hi id ja pt ru zh, AI-drafted by Opus workers in a build session (R677 replaces the "local model only" reading of 2026-11-04) from the English refreshed against the code in #1944. Each opens with a banner comment stating it is AI-drafted, not native-reviewed, and its coverage (124 of 124 and 17 of 17 headings); each passes `tests/test_help_docs_translated.py` (skeleton, banner, FLOOR[1] = 22, PARTIAL now empty because the 8-heading fr quick start was replaced); fenced blocks, inline code and link targets are byte-identical to the English, and in-page anchors are rewritten to the translated headings. A fidelity read compared, per language, the quick start, §1, §3.6c, §3.6d, §5.6 and three random subsections with the English; its findings (English-style digit separators in es/pt/fr/de/id/ru, "terms" read as terminology in bn/id/ja, a fail-closed rendering in es, one word in ar) were fixed before merge. Listed in `docs/product/NATIVE_REVIEW_QUEUE.md` (Help documents). A live locale switch in Chromium against a local server (2026-11-13; ja, ar, fr, de) served each language's manual with `X-OO-Doc-Lang` set, its coverage banner drawn and no raw comment; Arabic renders right to left. The row's status is left to the gate owner (the "three i18n gates" wording predates the drafts). | session (Lane J) |
 
 ---
 

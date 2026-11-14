@@ -149,5 +149,5 @@ def test_full_investigative_workflow(client):
     assert ok, reason
 
     # 6. Source health is a real check (the fetcher returns 200 for the feed).
-    r = client.get("/api/monitoring/health")
+    r = client.post("/api/monitoring/health")
     assert r.json()["summary"].get("up") == 1

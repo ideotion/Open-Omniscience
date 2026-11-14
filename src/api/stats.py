@@ -34,6 +34,11 @@ FETCH_CAVEAT = (
 )
 
 
+#: The rough size of the planned directory (Q1147, RELEASE_0.6_GATE row A: "toward the ~152
+#: agencies"). A planning figure, shown as such, never a count.
+STAT_DIRECTORY_PLANNED_ABOUT = 152
+
+
 @router.get("/agencies")
 def stat_agencies() -> dict:
     """The curated directory of official statistical producers — government +
@@ -50,6 +55,23 @@ def stat_agencies() -> dict:
         "agencies": [a.to_dict() for a in agencies],
         "count": len(agencies),
         "continents_covered": sorted(continents_covered()),
+        # Q1147 (0.6 gate row A): how far the directory is from the planned build, stated as
+        # counts. A news_url is set only once someone fetched the page and confirmed it, so the
+        # second number is the confirmed one; nothing here is added from memory.
+        "directory_progress": {
+            "listed": len(agencies),
+            "news_url_confirmed": sum(1 for a in agencies if a.news_url),
+            "planned_about": STAT_DIRECTORY_PLANNED_ABOUT,
+            "method": (
+                "listed = agencies in the shipped directory; news_url_confirmed = those whose news "
+                "page was fetched and confirmed by hand; planned_about = the rough size the 0.6 plan "
+                "names (Q1147), a target and not a count of agencies that exist."
+            ),
+            "caveat": (
+                "The full directory needs a networked session that confirms each agency's news "
+                "page live; until it runs, the gap between the numbers is the honest state."
+            ),
+        },
         "caveat": (
             "A directory of WHO publishes official statistics — every entry is a "
             "STANCED source (a producing state has interests), never a credibility "

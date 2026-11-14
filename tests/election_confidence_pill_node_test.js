@@ -107,6 +107,11 @@ const CAVEAT_PASSED = "The projected date has passed and no result is recorded h
   // Defensive: a projected tier with no projection block at all (should not happen per
   // the backend's own contract, but the UI must not crash or silently mislabel it).
   assert.strictEqual(agElectionTier({ date_confidence: "projected" }), "projected");
+  // A STATED date that has gone by reads as passed, never as the tier it had before it passed.
+  assert.strictEqual(agElectionTier({ date_confidence: "scheduled", passed: true }), "gone");
+  assert.strictEqual(agElectionTier({ date_confidence: "window", passed: true }), "gone");
+  assert.strictEqual(agElectionTier({ date_confidence: "window", passed: false }), "window");
+  assert.ok(agConfPill({ date_confidence: "scheduled", passed: true }).includes(">passed<"));
 }
 
 // --- agConfPill: non-election fallback is BYTE-IDENTICAL to the old markup ------- //

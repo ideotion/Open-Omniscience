@@ -427,20 +427,37 @@ def _engaged() -> bool:
     return _airplane_armed and kill_switch_active()
 
 
+def _as_infos(addresses: object) -> list[tuple[object, ...]]:
+    """``gethostbyname``'s answer as ``getaddrinfo`` rows, for :func:`check_resolution`."""
+    if isinstance(addresses, str):
+        addresses = [addresses]
+    if not isinstance(addresses, (list, tuple)):
+        return []
+    return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (a, 0)) for a in addresses if isinstance(a, str)]
+
+
 def _guarded_gethostbyname(hostname):  # type: ignore[no-untyped-def]
     _lookup_rule(hostname)
     if _engaged() and _is_localhost_name(hostname):
-        return "127.0.0.1"  # answered from the literal: libc would consult /etc/hosts, then DNS
-    with native_call("dns"):
-        return _orig_gethostbyname(hostname)
+        answer = "127.0.0.1"  # answered from the literal: libc would consult /etc/hosts, then DNS
+    else:
+        with native_call("dns"):
+            answer = _orig_gethostbyname(hostname)
+    # The SSRF half, as in _guarded_getaddrinfo (2026-11-14, security read of the GuardedSession scope): PySocks resolves a socks4
+    # destination with gethostbyname and hands the ADDRESS to the proxy, so this answer is the only place the destination is seen.
+    check_resolution(hostname, _as_infos(answer))
+    return answer
 
 
 def _guarded_gethostbyname_ex(hostname):  # type: ignore[no-untyped-def]
     _lookup_rule(hostname)
     if _engaged() and _is_localhost_name(hostname):
-        return ("localhost", [], ["127.0.0.1"])
-    with native_call("dns"):
-        return _orig_gethostbyname_ex(hostname)
+        answer: tuple[str, list[str], list[str]] = ("localhost", [], ["127.0.0.1"])
+    else:
+        with native_call("dns"):
+            answer = _orig_gethostbyname_ex(hostname)
+    check_resolution(hostname, _as_infos(answer[2] if isinstance(answer, tuple) and len(answer) == 3 else []))  # as above
+    return answer
 
 
 def _guarded_gethostbyaddr(ip_address):  # type: ignore[no-untyped-def]

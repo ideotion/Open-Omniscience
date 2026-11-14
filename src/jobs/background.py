@@ -36,6 +36,7 @@ import time
 from typing import Any, Callable
 
 from src.monitoring.secret_scrub import log_failure, record_text
+from src.utils.interrupts import kept
 
 _LOG = logging.getLogger("jobs.background")
 
@@ -316,8 +317,12 @@ class BackgroundJob:
         return not t.is_alive()
 
     def cancel(self) -> None:
-        """Ask the worker to stop at its next safe point (cooperative; never kills a thread)."""
-        self._stop.set()
+        """Ask the worker to stop at its next safe point (cooperative; never kills a thread).
+
+        Under the job's lock, so a restart that checks for a Cancel and then starts (``_start_again``, R659) sees it or comes after it:
+        ``_start`` clears this flag, and a Cancel landing between that check and that clear would otherwise be undone."""
+        with self._lock:
+            self._stop.set()
 
     def status(self) -> dict:
         with self._lock:
@@ -385,6 +390,17 @@ def all_job_statuses() -> list[dict]:
     return [j.status() for j in jobs]
 
 
+#: How many times :func:`stop_all_jobs` has begun (each is a shutdown). A deferred start (the summary queue's kick retry) notes it
+#: when it is scheduled and gives up when it moved, so it never starts a writer the shutdown's stop did not see (R689). A count,
+#: not a flag, so an app started again in the same process (the tests' lifespans) needs no reset.
+_STOP_ALL_SEQ = 0
+
+
+def stop_all_count() -> int:
+    """How many shutdowns have asked every job to stop so far."""
+    return _STOP_ALL_SEQ
+
+
 def stop_all_jobs(timeout: float) -> list[str]:
     """Ask every registered job that is running to stop, and wait for them all against ONE deadline (audit A-029).
 
@@ -396,6 +412,8 @@ def stop_all_jobs(timeout: float) -> list[str]:
 
     Returns the KINDS still running when the deadline passed (empty when every job ended), in registry order. Kinds only: a job's
     kwargs can carry a passphrase. Never raises: a shutdown step must not stop the steps after it."""
+    global _STOP_ALL_SEQ
+    _STOP_ALL_SEQ += 1
     try:
         with _REG_LOCK:
             jobs = list(_REGISTRY.values())
@@ -432,7 +450,8 @@ def running_writer_jobs(*, include_stoppable: bool = True) -> list[tuple[str, st
     that writes costs its rows. ``include_stoppable=False`` leaves out the jobs a restore stops for itself (``stops_for_restore``): what the
     restore would still refuse for, read without stopping anything (the import page's question before it starts)."""
     with _REG_LOCK:
-        jobs = [j for j in _REGISTRY.values() if include_stoppable or not getattr(j, "stops_for_restore", False)]
+        # kept(): a filtered comprehension under the lock is a loop whose back-edge an interrupt can land on (src/utils/interrupts.py)
+        jobs = kept(list(_REGISTRY.values()), lambda j: include_stoppable or not getattr(j, "stops_for_restore", False))
     return [pair for pair in (_writer_pair(job) for job in jobs) if pair is not None]
 
 
@@ -455,13 +474,19 @@ def stop_jobs_for_restore(timeout: float) -> list[str]:
     between the wait and the withdrawal; starting it again is a no-op while it still runs. Never raises."""
     asked: list[BackgroundJob] = []
     try:
+        # kept() and the guard-clause loop below: a loop that ends in a bare ``if`` inside a ``with``/``try`` leaves its back-edge where an
+        # interrupt skips the cleanup (src/utils/interrupts.py); this is reachable from a main-thread release check
         with _REG_LOCK:
-            jobs = [j for j in _REGISTRY.values() if j.stops_for_restore and j.is_writer]
-        asked = [j for j in jobs if _ask_to_stop(j)]
+            jobs = kept(list(_REGISTRY.values()), lambda j: j.stops_for_restore and j.is_writer)
+        asked = kept(jobs, _ask_to_stop)
+        with _REG_LOCK:
+            for j in asked:  # the shutdown count when the restore stopped it: a later shutdown is never undone by a restart
+                _STOPS_SEEN_AT_YIELD[j.kind] = stop_all_count()
         deadline = time.monotonic() + max(0.0, float(timeout))
         for j in asked:
-            if not _joined(j, deadline):
-                j._yield.clear()
+            if _joined(j, deadline):
+                continue
+            j._yield.clear()
     except Exception:  # noqa: BLE001 - the restore then names whatever still runs
         pass
     return [j.kind for j in asked]
@@ -478,19 +503,42 @@ def start_jobs_after_refusal(kinds: list[str]) -> list[str]:
     return started
 
 
+#: For each kind a restore stopped, :func:`stop_all_count` at that moment (read by :func:`_start_again`).
+_STOPS_SEEN_AT_YIELD: dict[str, int] = {}
+#: How long a restart waits for a stopped job's thread to finish its own way out (its ``finally``) before deciding it still runs.
+_RESTART_JOIN_S = 2.0
+
+
 def _start_again(kind: str) -> bool:
     try:
         with _REG_LOCK:
             job = _REGISTRY.get(kind)
+            seen = _STOPS_SEEN_AT_YIELD.pop(kind, None)
         if job is None or not job.stops_for_restore:
             return False
-        with job._lock:
-            cancelled = job._state == "cancelled" or job._stop.is_set()  # a Cancel pressed after the yield ended leaves the state 'done'
-        if cancelled:  # the operator's own Cancel since the restore stopped it: never overridden
-            return False
-        job.start()
-        return True
-    except Exception:  # noqa: BLE001 - already running again, or the thread could not be made: logged by start(), never raised
+        # A job that met the yield late may still be in its own ``finally``: give it a moment, or the start below would find it
+        # alive, be refused as "already running", and leave it ended as paused for an import that never happened.
+        if job._alive():
+            job.join(_RESTART_JOIN_S)
+        refused: list[str] = []
+        with job._lock:  # the check and the start under ONE hold, so a Cancel pressed in between is never overridden
+            if job._state == "cancelled" or job._stop.is_set():  # a Cancel pressed after the yield ended leaves the state 'done'
+                return False
+            if seen is None or stop_all_count() != seen:  # the app began shutting down since the stop: never start a writer then
+                return False
+            if job._alive():  # still running (it never yielded): nothing to start
+                return False
+            try:
+                job._start({}, refused)
+            except Exception:  # noqa: BLE001 - the thread could not be made; logged below, after the lock, as start() does
+                pass
+            else:
+                return True
+        if refused:
+            with contextlib.suppress(Exception):
+                _LOG.warning("background job %s did not start: %s", job.kind, refused[0])
+        return False
+    except Exception:  # noqa: BLE001 - never raised
         return False
 
 
@@ -511,6 +559,25 @@ def _joined(job: BackgroundJob, deadline: float) -> bool:
         return False
 
 
+def running_job_threads() -> list[tuple[threading.Thread, str]]:
+    """The threads of the registered jobs still running, each with its kind (never its kwargs: they can carry a passphrase).
+
+    For the shutdown: the jobs :func:`stop_all_jobs` gave up on are named to the database's refusal
+    (:mod:`src.database.after_shutdown`, R689), so they cannot write after the engine is disposed. Never raises."""
+    out: list[tuple[threading.Thread, str]] = []
+    try:
+        with _REG_LOCK:
+            jobs = list(_REGISTRY.values())
+        for job in jobs:
+            t = job._thread
+            if t is not None and t.is_alive():
+                out.append((t, job.kind))
+    except Exception:  # noqa: BLE001 - a shutdown step never raises
+        return out
+    return out
+
+
 def _reset_registry_for_tests() -> None:
     with _REG_LOCK:
         _REGISTRY.clear()
+        _STOPS_SEEN_AT_YIELD.clear()

@@ -1245,8 +1245,14 @@ def _swap(
     copy began (a resume has none, and opens its own here, before the fold): inside the swap window it is asked whether any
     other connection committed since, and if so nothing is switched."""
     from src.backup.merge import swap_in_corpus
+    from src.database import after_shutdown
     from src.database.session import dispose_engine, init_db
 
+    # Its copy and its swap are raw file and DBAPI work no SQLAlchemy event sees: a repair still running when the shutdown closed
+    # the database to jobs stops HERE, before it disposes or switches anything, recorded as stopped like any stop of the app (R689).
+    # A fresh copy is discarded and made again at the next start; a resumed one keeps its finished copy and sidecar.
+    if after_shutdown.refused_kind() is not None:
+        raise salvage.SalvageStopped
     _quiet(10.0)  # nothing new could start under the exclusive window: this only confirms what the first wait found
     dispose_engine()
     watch = probe if probe is not None else _open_probe(target)  # a resume opens it here: before the fold, which it runs

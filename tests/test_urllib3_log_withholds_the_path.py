@@ -864,11 +864,13 @@ def test_the_debug_request_line_and_the_redirect_hop_log_without_the_path(caplog
 def test_the_installers_own_download_logs_nothing_of_the_signed_address_even_when_the_library_does(caplog, monkeypatch):
     """The installer's real path (``_default_get_bytes`` through ``_get_within`` and a ``GuardedSession``) against a loopback server whose
     answer has a malformed header: the download succeeds and the signature is in no log record. Only the host-list check is patched, because
-    the listed hosts are https on port 443 and this is a loopback socket."""
+    the listed hosts are https on port 443 and this is a loopback socket. The connect-time SSRF guard,
+    which a GuardedSession enters since 2026-11-14, refuses a loopback socket, so it is stood down by its own flag."""
     from src.llm import installer
 
     monkeypatch.setattr(fetcher_mod, "load_settings", lambda: SafetySettings(fetch_mode="transparent"))
     monkeypatch.setattr(fetcher_mod, "refuse_unlisted_host", lambda url, allowed: None)
+    monkeypatch.setenv("OO_SSRF_CONNECT_GUARD", "0")
     caplog.set_level(logging.DEBUG, logger="urllib3")
     caplog.set_level(logging.DEBUG)
     port = _serve(_MALFORMED_HEADER)

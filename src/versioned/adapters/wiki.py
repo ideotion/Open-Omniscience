@@ -14,20 +14,18 @@ them is the same code, which is what makes Q1018's "end-to-end in CI without a s
 a property rather than a claim — and it is why this module builds no client of its
 own, not even as a default.
 
-WHAT THE PRODUCTION CLIENT ACTUALLY GETS, stated precisely because an earlier version
-of this paragraph overstated it. ``src.wiki.client.WikiClient`` builds a
-``guarded_session``, which gives it the network KILL SWITCH (checked on every verb,
-``src/safety/fetcher.py``), the protected-mode proxy, and the honest bot UA — and the
-process-wide AIRPLANE SOCKET GUARD applies to it as it does to everything, because
-that one patches sockets rather than sessions. It does NOT give it the CONNECT-TIME
-SSRF guard: ``ssrf_guard.connect_scope`` has exactly one caller in this tree,
-``EthicalFetcher._guarded_redirect_get`` (``src/ingest/__init__.py:1412``), which a
-``GuardedSession`` never reaches. That is a PRE-EXISTING property of the shared
-session factory — every ``guarded_session`` consumer (dumps, ORES, DuckDuckGo) is in
-the same position and this package introduced none of it — and it is DORMANT here,
-because no production code constructs a ``WikiLaneAdapter`` yet. It stops being
-dormant the day a scheduler job wires one, so it is recorded in ``OPEN_QUEUE.md``
-against that slice rather than left for whoever wires it to rediscover.
+WHAT THE PRODUCTION CLIENT ACTUALLY GETS, stated precisely because two earlier versions
+of this paragraph were wrong (the first overstated it, the second went stale).
+``src.wiki.client.WikiClient`` builds a ``guarded_session``, which gives it the network
+KILL SWITCH (checked on every verb, ``src/safety/fetcher.py``), the protected-mode
+proxy, the honest bot UA, the process-wide AIRPLANE SOCKET GUARD (which patches sockets
+rather than sessions) and, since 2026-11-14, the CONNECT-TIME SSRF guard:
+``GuardedSession.send`` enters ``ssrf_guard.connect_scope`` for the first request and
+for every redirect hop, so a name that resolves to a loopback, private or link-local
+address is refused before a byte is sent (``tests/test_guarded_session_connect_guard.py``;
+OPEN_QUEUE 2026-09-17, finding (1)). What it does NOT get is the EthicalFetcher's
+robots.txt and per-host politeness: an API client follows the service's own etiquette
+at its call sites (``guarded_session``'s docstring).
 
 IDENTITY IN 0.4 IS ``{wiki}:{title}``, AND THE SEAM IS NAMED. Q715 rules the wiki
 lane's identity to be ``WikiPage(wiki, pageid)`` + QID — and Q715 belongs to S04-09,
