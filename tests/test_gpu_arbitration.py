@@ -159,7 +159,9 @@ def test_a_client_that_explodes_never_blocks_a_start(monkeypatch):
 
     monkeypatch.setattr("src.llm.ollama.OllamaClient", boom)
     out = OL.release_vram()
-    assert out["released"] == [] and "connection reset" in out["reason"]
+    # A fixed phrase, never the exception's words: the reason reaches the Settings > Models toast; the log keeps the detail.
+    assert out["released"] == [] and out["attempted"] is True
+    assert out["reason"] == "Ollama could not be asked to unload (see the log)"
 
 
 # --------------------------------------------------------------------------- #

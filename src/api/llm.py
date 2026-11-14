@@ -24,7 +24,9 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import time
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -242,19 +244,30 @@ def _version_with_method(prompt_version: str, method: dict) -> str:
     return combined if len(combined) <= 50 else prompt_version
 
 
-def _user_text_budget(text: str) -> tuple[int, str]:
+def _configured_num_ctx() -> int | None:
+    """The operator's configured context window, or None (settings are advisory here)."""
+    try:
+        s = _llm_settings()
+        return getattr(s, "llm_max_context_length", None) if s else None
+    except Exception:  # noqa: BLE001 - settings are advisory here
+        return None
+
+
+#: ``num_ctx`` not given: read it from the settings.
+_READ_NUM_CTX: Any = object()
+
+
+def _user_text_budget(text: str, num_ctx: Any = _READ_NUM_CTX) -> tuple[int, str]:
     """How much article text fits one call, and which script it is written in.
 
-    Reads the operator's configured context window; with none set this returns the
-    pre-E-S4 constant, so nothing about a default install changes."""
+    Reads the operator's configured context window (unless the caller read it already: a queued run reads it once, so its
+    generation thread never opens the settings store); with none set this returns the pre-E-S4 constant, so nothing about a
+    default install changes."""
     from src.ai_layer.context import dominant_script, text_budget_chars
 
     script = dominant_script(text or "")
-    try:
-        s = _llm_settings()
-        num_ctx = getattr(s, "llm_max_context_length", None) if s else None
-    except Exception:  # noqa: BLE001 - settings are advisory here
-        num_ctx = None
+    if num_ctx is _READ_NUM_CTX:
+        num_ctx = _configured_num_ctx()
     return text_budget_chars(num_ctx, script), script
 
 
@@ -320,6 +333,7 @@ def _run_over_long_text(
     model: str,
     system: str,
     keep_alive,
+    num_ctx: Any = _READ_NUM_CTX,
 ) -> tuple[str, dict]:
     """Run a USER-ASKED summarize/translate over text of any length.
 
@@ -341,7 +355,7 @@ def _run_over_long_text(
     Returns ``(text, method)``; ``method`` carries ``parts`` so the caller can label
     the result. The method change is disclosed, never hidden.
     """
-    budget, script = _user_text_budget(content)
+    budget, script = _user_text_budget(content, num_ctx)
     head = f"Article title: {title or '(untitled)'}" if op == "summary" else f"Title: {title or '(untitled)'}"
     from src.ai_layer.context import chunk_text
 
@@ -666,8 +680,8 @@ def llm_backend_status() -> dict:
     which backend is active, why, and the detection facts (GPU / vLLM installed
     + running / Ollama available). Drives the Settings -> AI tab's disclosure
     (the maintainer must never see a silent switch)."""
-    from src.llm.backend import inference_capability, resolve_backend
     from src.config.app_settings import load_settings
+    from src.llm.backend import inference_capability, resolve_backend
 
     allow_impractical: bool | None = None
     try:
@@ -1705,8 +1719,8 @@ def ollama_release() -> dict:
     return _after_runs_pause(release_vram, "release")
 
 
-#: How often a deferred release or stop says, in the log, that it is still waiting for the run in flight (a CPU model can
-#: take minutes over one article). It never gives up: the run's stop is already committed, so it WILL pause, and the
+#: How often a deferred release or stop says, in the log, that it is still waiting for the run in flight (it stops within a
+#: fraction of a second since R689, but a restore hold can keep it waiting). It never gives up: the run's stop is already committed, so it WILL pause, and the
 #: operator was told the model is freed then.
 _PAUSE_WAIT_S = 900.0
 #: The deferred actions waiting for a pause, by name: a second click while the first waits adds nothing.
@@ -1715,26 +1729,28 @@ _DEFERRED_LOCK = threading.Lock()
 
 
 def _after_runs_pause(action, what: str) -> dict:
-    """Free the model without losing a run's work (R669): a queued summary or translation run in flight pauses after the
-    article it is on, and the release or stop happens once it has. With nothing running the action happens now. A run left
+    """Free the model without losing a run's work (R669): a queued summary or translation run in flight pauses first
+    (R689: the generation in flight is dropped and redone on resume), and the release or stop happens once it has. With nothing running the action happens now. A run left
     paused waits for the operator's Resume, which skips every article it already stored."""
     from src.jobs.llm_bulk_queue import pause_for_backend, wait_paused
 
     deferred = {
         "deferred": True,
         "paused_runs": True,
-        "reason": "the running summary or translation run pauses after its current article; the model is freed then",
+        "reason": "the running summary or translation run pauses first; the model is freed then",
     }
     with _DEFERRED_LOCK:
         if what in _DEFERRED:
             return deferred
-    if not pause_for_backend():
+    # A run in flight pauses first; a model call a stop abandoned (R689) is waited for too, never freed under.
+    if not pause_for_backend() and not abandoned_generations():
         return action()
 
     def _later() -> None:
         try:
             while not wait_paused(_PAUSE_WAIT_S):
-                _LOG.warning("ollama %s: still waiting for the run in flight to finish its article", what)
+                _LOG.warning("ollama %s: still waiting for the run in flight to pause", what)
+            wait_abandoned_generations(log_every_s=_PAUSE_WAIT_S, what=f"ollama {what}")
             try:
                 action()
             except Exception as exc:  # noqa: BLE001 - a deferred release must never take the thread down unseen
@@ -2163,9 +2179,9 @@ def summarize_article(
 
     _t = (article.title or "article")[:48]
     try:
-        with track("llm", f"Summarizing “{_t}”", detail=f"model {model}",
+        with track("llm", f"Summarizing “{_t}”", detail=f"model {_label_model(model)}",
                    label_i18n="Summarizing “{title}”", label_vars={"title": _t},
-                   detail_i18n="model {model}", detail_vars={"model": model}):
+                   detail_i18n="model {model}", detail_vars={"model": _label_model(model)}):
             text, method = _run_over_long_text(
                 client, op="summary", title=article.title or "", content=article.content,
                 model=model, system=system, keep_alive=_effective_keep_alive(),
@@ -2228,8 +2244,8 @@ def translate_article(
 
     _t = (article.title or "article")[:48]
     try:
-        with track("llm", f"Translating → {_label_target(req.target_language)}: “{_t}”", detail=f"model {model}",
-                   detail_i18n="model {model}", detail_vars={"model": model},
+        with track("llm", f"Translating → {_label_target(req.target_language)}: “{_t}”", detail=f"model {_label_model(model)}",
+                   detail_i18n="model {model}", detail_vars={"model": _label_model(model)},
                    **_translate_label_frame(req.target_language, "Translating → {language}: “{title}”",
                                             title=_t)):
             text, method = _run_over_long_text(
@@ -2536,6 +2552,14 @@ def _label_target(target_name: str) -> str:
     return _LANG_EN[code] if code else "another language"
 
 
+def _label_model(model: str | None) -> str:
+    """The model a task DETAIL may show (Lane F row 15, R672's twin): a well-formed model name (``_MODEL_RE``, the pull's own
+    check), else a fixed word. The name arrives free text in the request, and the detail is shown by /api/jobs and the
+    terminal panel."""
+    m = (model or "").strip()
+    return m if m and _MODEL_RE.match(m) else "(name not shown)"
+
+
 def _is_target_language(article_lang: str | None, target_name: str) -> bool:
     """True when an article is ALREADY in the translation target (so it is skipped).
     Unknown language -> False (never skip on a guess)."""
@@ -2643,12 +2667,103 @@ def bulk_queue_clear_finished() -> dict:
     return {"cleared": _bulk_queue().clear_finished()}
 
 
+#: How often a queued run in flight looks at its stop while a generation runs (R689 (1)): well inside the shutdown's 5 s deadline.
+_STOP_POLL_S = 0.2
+
+
+#: Side threads a stop abandoned whose model call has not returned yet. A release or stop of the model waits for them (R669:
+#: never free the model under a generation), and a queued run starts only once they are gone (one generation at a time).
+_ABANDONED_LOCK = threading.Lock()
+_ABANDONED = 0
+
+
+class _GenerationAbandoned(Exception):
+    """Raised in an abandoned side thread instead of its next model call: the stop came, so no further call is made."""
+
+
+class _StopAwareClient:
+    """The model client for one batch's side thread: once the batch is abandoned, it refuses every further ``generate``, so a
+    long article split into parts stops after the part in flight instead of running every part to the end. ``generate`` is all
+    the batch calls (``_run_over_long_text``)."""
+
+    def __init__(self, client, abandoned: threading.Event) -> None:
+        self._client = client
+        self._abandoned = abandoned
+
+    def generate(self, *args, **kwargs):
+        if self._abandoned.is_set():
+            raise _GenerationAbandoned("the run stopped")
+        return self._client.generate(*args, **kwargs)
+
+
+def abandoned_generations() -> int:
+    """How many abandoned side threads still wait on a model call."""
+    with _ABANDONED_LOCK:
+        return _ABANDONED
+
+
+def wait_abandoned_generations(stopped=None, *, log_every_s: float = 900.0, what: str = "") -> bool:
+    """Wait until no abandoned model call is left. False when ``stopped()`` came first. Bounded by the one model call each
+    abandoned thread still has in flight (its next one is refused); logs while it waits, never gives up on its own."""
+    last_log = time.monotonic()
+    while abandoned_generations():
+        if stopped is not None and stopped():
+            return False
+        if what and time.monotonic() - last_log >= log_every_s:
+            _LOG.warning("%s: still waiting for an abandoned model call to return", what)
+            last_log = time.monotonic()
+        time.sleep(_STOP_POLL_S)
+    return True
+
+
+def _await_unless_stopped(work, stopped):
+    """Run ``work(abandoned)`` in a daemon thread and wait for it, looking at ``stopped()`` every :data:`_STOP_POLL_S`. Its result,
+    or ``None`` when the stop came first: ``abandoned`` is then set (the work's client refuses any further model call), the
+    thread is counted in :func:`abandoned_generations` until it ends, and whatever it returns is dropped. The work talks only
+    to the local model: anything it needs from the settings store is read before (R689, a keyed connection never outlives the
+    stop). An exception in ``work`` is raised here, as a direct call would."""
+    global _ABANDONED
+    box: dict = {}
+    done = threading.Event()
+    abandoned = threading.Event()
+
+    def _run() -> None:
+        global _ABANDONED
+        try:
+            box["value"] = work(abandoned)
+        except BaseException as exc:  # noqa: BLE001 - handed to the waiting caller, never lost in the thread
+            box["error"] = exc
+        finally:
+            with _ABANDONED_LOCK:
+                done.set()
+                if abandoned.is_set():
+                    _ABANDONED -= 1
+            if abandoned.is_set() and "error" in box:
+                _LOG.info("an abandoned generation ended on %s; its result was dropped", type(box["error"]).__name__)
+
+    if stopped():
+        return None  # the stop came before the batch: no model call is made at all
+    threading.Thread(target=_run, name="oo-llmbulk-gen", daemon=True).start()
+    while not done.wait(_STOP_POLL_S):
+        if stopped():
+            with _ABANDONED_LOCK:
+                if done.is_set():
+                    break  # it finished as the stop landed: its result is whole, keep it
+                abandoned.set()
+                _ABANDONED += 1
+            return None
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
+
+
 def prepare_bulk_run(
     req: BulkLLMRequest,
     db: Session,
     client_info: tuple[str, LlmBackend],
     *,
     resume_since: datetime | None = None,
+    should_stop=None,
 ):
     """Resolve a bulk run's articles, register its task-manager row and return ``(token, stream, article_ids)``.
 
@@ -2659,7 +2774,13 @@ def prepare_bulk_run(
     ``resume_since`` is the queue's resume after a restart: an article that already has a result of this kind written at or
     after that moment was stored by this same run before the app stopped, so it is skipped (status ``skipped``, reason
     ``done before the restart``) whatever ``skip_existing`` says. That is what keeps a resumed run from storing an article
-    twice, including the one whose result was committed just before the stop could be recorded."""
+    twice, including the one whose result was committed just before the stop could be recorded.
+
+    ``should_stop`` (the server-side queue, R689 (1)): a callable polled WHILE a generation is in flight, so a stop is honoured
+    within a fraction of a second rather than after a whole generation (minutes on a CPU model, past the shutdown's 5 s deadline).
+    When it answers true, or the run's own task-manager Stop is pressed, the stream ends with one ``stopped`` line and stores
+    NOTHING for the article(s) in flight; the abandoned generation finishes in its own thread and its result is dropped, so the
+    article is left for the resume (which skips only what was stored)."""
     client_backend_name, client = client_info
     op = (req.op or "").strip().lower()
     if op not in {"summarize", "translate"}:
@@ -2748,10 +2869,16 @@ def prepare_bulk_run(
                 ArticleAnalysis.kind == kind,
                 ArticleAnalysis.created_at >= resume_since,
             ).all()
-            # A translation's version carries its target; a chunked run appends "+<mode>-<parts>" (_version_with_method).
+            # A translation counts as done only in this run's TARGET (the last ":" part of its prompt version, before the
+            # "+<mode>-<parts>" a chunked run appends, _version_with_method). The rest of the version follows the Settings prompt
+            # and the prompt constants, either of which can change between the pause and the Resume, and matching it exactly
+            # would store this run's own results a second time; for the same reason a summary counts whatever its version (Lane
+            # F row 11 asked for the exact match; the double store is the worse outcome, so a result another run wrote meanwhile
+            # is skipped too).
+            target_tail = ":" + prompt_version.rsplit(":", 1)[-1]
             resumed.update(
                 aid for aid, pv in rows
-                if op != "translate" or pv == prompt_version or (pv or "").startswith(prompt_version + "+")
+                if op != "translate" or (pv or "").split("+", 1)[0].endswith(target_tail)
             )
 
     # A translate run NEVER translates an article already in the target language
@@ -2782,8 +2909,8 @@ def prepare_bulk_run(
         else _translate_label_frame(target, "Translating → {language} {n} article(s)", n=total)
     )
     _tok = _bgtasks.register(
-        "llm", f"{_verb} {total} article(s)", detail=f"model {model}", total=total, **_frame,
-        detail_i18n="model {model}", detail_vars={"model": model}, cancellable=True,
+        "llm", f"{_verb} {total} article(s)", detail=f"model {_label_model(model)}", total=total, **_frame,
+        detail_i18n="model {model}", detail_vars={"model": _label_model(model)}, cancellable=True,
     )
 
     def _stream():
@@ -2819,11 +2946,20 @@ def prepare_bulk_run(
         # B3: vLLM gets several generations in flight at once; Ollama stays
         # serial (max_workers<=1 is a plain for-loop, byte-identical to before).
         concurrency = concurrency_for(client_backend_name)
+        # Read here, in the run's own thread, so a generation's side thread never opens the settings store (R689).
+        num_ctx = _configured_num_ctx()
+
+        def _stopped() -> bool:
+            return bool((should_stop is not None and should_stop()) or _bgtasks.cancel_requested(_tok))
 
         # The hold is released in the context manager's `finally`, so an aborted
         # stream (a client disconnect, a model outage mid-run) can never strand the
         # coordinator paused forever.
         try:
+         # A generation a stop abandoned may still be finishing its one model call: wait for it, so two never run at once.
+         if not wait_abandoned_generations(_stopped):
+             yield emit({"event": "stopped", "total": total, "stored": 0, "skipped": 0, "failed": 0})
+             return
          with user_batch_hold(f"bulk {op}"):
           with SessionLocal() as s:
             i = 0
@@ -2864,16 +3000,28 @@ def prepare_bulk_run(
                 # fits is one call, byte-identical to before, and one that does not
                 # becomes several calls for THAT item only -- the concurrency seam
                 # is unchanged, it just holds a slot longer.
-                results = run_concurrent(
-                    batch,
-                    lambda item: _run_over_long_text(
-                        client,
-                        op=("summary" if op == "summarize" else "translate"),
-                        title=item[2], content=item[3], model=model, system=system,
-                        keep_alive=keep_alive,
-                    ),
-                    max_workers=concurrency,
-                )
+                def _gen_batch(abandoned=None, batch=batch):
+                    gen_client = client if abandoned is None else _StopAwareClient(client, abandoned)
+                    return run_concurrent(
+                        batch,
+                        lambda item: _run_over_long_text(
+                            gen_client,
+                            op=("summary" if op == "summarize" else "translate"),
+                            title=item[2], content=item[3], model=model, system=system,
+                            keep_alive=keep_alive, num_ctx=num_ctx,
+                        ),
+                        max_workers=concurrency,
+                    )
+
+                if should_stop is None:
+                    results = _gen_batch()
+                else:
+                    results = _await_unless_stopped(_gen_batch, _stopped)
+                    if results is None:
+                        # Stopped mid-generation: nothing of this batch is stored; the resume picks the article(s) up again.
+                        yield emit({"event": "stopped", "total": total, "stored": stored,
+                                    "skipped": skipped, "failed": failed})
+                        return
                 # Process/store STRICTLY IN ORDER, regardless of which generation
                 # actually finished first — a stored ArticleAnalysis always lines
                 # up with the right article, and the first LLMUnavailable found
