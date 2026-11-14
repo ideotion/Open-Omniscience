@@ -598,6 +598,14 @@ async def lifespan(app: FastAPI):
         arm_exit_disposal()  # a stop that skips the lifespan's shutdown still closes the jobs out and disposes, at exit
     except Exception as exc:  # noqa: BLE001 - never blocks a start
         log_failure(logger, "could not reset the shutdown's job refusal", exc, level=logging.WARNING)
+    # The same for the repair's stop flag: an earlier shutdown in this process raised it, and from here on a stop is THIS start's. Done
+    # here, before the boot thread exists, and never at the repair step: a quit during the start-up check must still stop the repair.
+    try:
+        from src.database import repair as _repair
+
+        _repair.reset_for_start()
+    except Exception as exc:  # noqa: BLE001 - never blocks a start
+        log_failure(logger, "could not reset the repair's stop", exc, level=logging.WARNING)
     # The same guard ``_serve`` sets first, for a server that was not started by it (``python -m uvicorn src.api.main:app --loop asyncio``,
     # which the encrypted click-through uses): before the boot record below names the mechanism, and before any request can bring a
     # typed passphrase into this process. ``connect`` guards every place it hands a key to the engine as well.

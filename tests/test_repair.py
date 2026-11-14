@@ -388,11 +388,19 @@ def test_a_failed_repair_raises_words_of_ours_and_never_the_drivers_error_or_its
     monkeypatch.setattr(salvage.Salvage, "run", driver_error)
     with pytest.raises(salvage.SalvageFailed) as caught:
         repair.run(repair.plan())
+    def chain(e):
+        seen = []
+        while e is not None and e not in seen:
+            seen.append(e)
+            e = e.__cause__ or e.__context__
+        return seen
+
     err = caught.value
-    assert "hunter2" not in str(err) and err.__cause__ is None and err.__suppress_context__
+    assert err.__cause__ is None and err.__context__ is None, "the driver's error is still attached to what leaves run()"
+    assert not any("hunter2" in str(e) or "hunter2" in repr(e) for e in chain(err))
     assert reg.repairs()[-1]["state"] == "failed" and "hunter2" not in reg.repairs()[-1]["failure"]
 
-    # A salvage failure keeps its own fields, and a file error keeps its class, number and file name, nothing chained.
+    # A file error keeps its class and number (not the path), with nothing chained.
     def disk(self):
         try:
             raise sqlite3.OperationalError(secret)
@@ -403,8 +411,19 @@ def test_a_failed_repair_raises_words_of_ours_and_never_the_drivers_error_or_its
     repair._reset_for_tests()
     with pytest.raises(OSError) as caught_os:
         repair.run(repair.plan())
-    assert (caught_os.value.errno, caught_os.value.filename) == (5, "live.db") and caught_os.value.__cause__ is None
-    assert caught_os.value.__suppress_context__ and "hunter2" not in str(caught_os.value)
+    assert caught_os.value.errno == 5 and caught_os.value.filename is None, "a file error keeps its number, not the path"
+    assert caught_os.value.__cause__ is None and caught_os.value.__context__ is None
+    assert not any("hunter2" in repr(e) for e in chain(caught_os.value))
+
+    # An OSError whose "number" is text (``OSError(text, text)``) is not a file error: it leaves as the fixed failure line.
+    def odd(self):
+        raise OSError(secret, secret)
+
+    monkeypatch.setattr(salvage.Salvage, "run", odd)
+    repair._reset_for_tests()
+    with pytest.raises(salvage.SalvageFailed) as caught_odd:
+        repair.run(repair.plan())
+    assert not any("hunter2" in repr(e) for e in chain(caught_odd.value))
 
 
 def test_a_quit_during_the_repair_gives_the_attempt_back_and_a_second_quit_clears_it(tmp_path, monkeypatch, reg):
@@ -464,6 +483,25 @@ def test_a_stop_that_lands_while_the_repair_waits_for_the_write_gate_is_not_wipe
     assert report["outcome"] == "stopped" and H.sha(live) == before
     assert not list(tmp_path.glob("live.salvage-*")) and not list(tmp_path.glob("live.damaged-*"))
     assert engine_calls == []
+
+
+def test_a_stop_given_during_the_start_up_check_still_stops_the_repair_and_only_the_apps_start_forgets_it(
+    tmp_path, monkeypatch, reg, engine_calls
+):
+    """A quit while the start-up check runs raises the repair's stop BEFORE the repair step: that step must not wipe it, and the
+    repair must not start a copy in a shutdown. Only the app's next start (the lifespan, before the boot thread) forgets it."""
+    live = _live(tmp_path, monkeypatch, reg)
+    before = H.sha(live)
+    copies: list = []
+    real_run = salvage.Salvage.run
+    monkeypatch.setattr(salvage.Salvage, "run", lambda self: copies.append(1) or real_run(self))
+    monkeypatch.setattr(repair, "sweep_kept_copies", lambda: None)
+    repair.stop()  # the quit, during the check
+    assert repair.run_now_and_wait() == "stopped" and copies == [] and H.sha(live) == before
+    repair.reset_for_start()
+    assert not repair._CANCEL.is_set()
+    main = (Path(__file__).resolve().parents[1] / "src/api/main.py").read_text(encoding="utf-8")
+    assert main.index("_repair.reset_for_start()") < main.index("        run_deferred_startup()"), "cleared after the boot thread began"
 
 
 # --------------------------------------------------------------------------- #

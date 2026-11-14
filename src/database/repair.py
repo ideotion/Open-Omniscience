@@ -194,6 +194,12 @@ def stop() -> None:
         _LOG.debug("database repair: could not give back an attempt (%s)", type(exc).__name__)
 
 
+def reset_for_start() -> None:
+    """The app's start (the lifespan, before the boot thread exists): forget a stop an earlier shutdown in this process raised. Only
+    there: cleared at the repair step, it would wipe a stop given while the start-up check ran, and a repair would start in a shutdown."""
+    _CANCEL.clear()
+
+
 def _reset_for_tests() -> None:
     global _ARMED
     with _LOCK:
@@ -752,7 +758,6 @@ def _repair_once() -> str:
     if work is None:
         _record(outcome="skipped")
         return "skipped"
-    _CANCEL.clear()  # a stop left by an earlier start in this process; from here on a stop is this start's shutdown
     try:
         REPAIR_JOB.start(work=work)
     except RuntimeError:
@@ -769,13 +774,13 @@ def _repair_once() -> str:
 
 def _fixed_failure(exc: BaseException, failure: str) -> Exception:
     """The error a failed repair raises in place of ``exc``, made of words of ours only. A salvage failure is rebuilt from its own
-    fields; a file error keeps its class, number, system words and file name (none of which comes from a driver) so a caller can
-    still tell a cut drive from the rest; anything else becomes a ``SalvageFailed`` carrying the record's fixed failure line."""
+    fields; a file error with a real number keeps its class, that number and the system's words for it (``os.strerror``; the file name
+    is left out, as ``damage.failure_label`` leaves it out of a record) so a caller can still tell a cut drive from the rest; anything else becomes a ``SalvageFailed`` carrying the record's fixed failure line."""
     if isinstance(exc, salvage.SalvageFailed):
         return salvage.SalvageFailed(exc.where, exc.reason)
-    if isinstance(exc, OSError):
+    if isinstance(exc, OSError) and isinstance(exc.errno, int):
         try:
-            return type(exc)(exc.errno, exc.strerror, exc.filename) if exc.errno is not None else type(exc)(exc.strerror)
+            return type(exc)(exc.errno, os.strerror(exc.errno))  # the system's own words for the number, never the text it came with
         except Exception:  # noqa: BLE001 - a subclass with its own constructor: the fixed failure line instead
             pass
     return salvage.SalvageFailed("the repair", failure)
@@ -805,6 +810,7 @@ def run(work: dict[str, Any], ctx: JobContext | None = None) -> dict[str, Any]:
     row carrying the keyed sentence) and any other exception for a failure; both leave every file as it was, except the
     scratch this module made."""
     target: Path = work["target"]
+    replacement: Exception | None = None
     rec_id = uuid.uuid4().hex[:8]
     started = time.monotonic()
     report: dict[str, Any] = {
@@ -877,9 +883,10 @@ def run(work: dict[str, Any], ctx: JobContext | None = None) -> dict[str, Any]:
         # was raised from, which a traceback prints too) can carry a statement that holds the passphrase. The record above carries
         # the class and a fixed label of the driver's error (no word of its text); this log carries the class alone.
         _LOG.warning("database repair failed (%s)", type(exc).__name__)
-        # Nor is the error itself passed on as it came: whatever prints it upstream (the job runner's record, a traceback) would show
-        # the driver's text and the chain it was raised from. What leaves here is built from our own words, raised from None.
-        raise _fixed_failure(exc, failure) from None
+        # Nor is the error itself passed on as it came: whatever prints or keeps it upstream (the job runner's record, a traceback)
+        # would reach the driver's text through the chain. What leaves is built from our own words and raised AFTER this handler, so it
+        # carries no ``__context__`` at all (``from None`` would only hide the chain, which stays attached).
+        replacement = _fixed_failure(exc, failure)
     finally:
         report["finished_at"] = time.time()
         report["seconds"] = round(time.monotonic() - started, 1)
@@ -894,6 +901,8 @@ def run(work: dict[str, Any], ctx: JobContext | None = None) -> dict[str, Any]:
                 _remove_scratch(target)
         elif report.get("sidecars_spent"):
             _settle_sidecars(target, list(report["sidecars_spent"]))
+    if replacement is not None:
+        raise replacement
     return report
 
 
@@ -974,7 +983,7 @@ def _repair(work: dict[str, Any], target: Path, report: dict[str, Any], ctx: Job
     report["stamp"] = stamp
     # NOT cleared here (R689 follow-up): this runs after the quiet wait and inside the write gate, whose wait has no time limit, so a
     # clear here wiped a shutdown's stop that landed while the repair waited for the gate, and the copy then ran on, deaf to it. A stop
-    # only ever means the app is shutting down; ``run_now_and_wait`` clears it once, before the job starts.
+    # only ever means the app is shutting down; the app's start clears a stale one (``reset_for_start``), before the boot thread exists.
 
     def progress(event: dict[str, Any]) -> None:
         if ctx is None:
