@@ -531,7 +531,7 @@ def test_the_debug_bundles_section_errors_are_scrubbed(monkeypatch):
     with TestClient(app) as client:
         # held only once the app is up, so the boot itself is not asked to unlock with it
         monkeypatch.setattr(_connect, "_passphrase", SECRET)
-        response = client.get("/api/diagnostics/debug-bundle")
+        response = client.post("/api/diagnostics/debug-bundle")
     assert response.status_code == 200
     assert SECRET not in response.text
     section = response.json()["data"]["request_latency"]

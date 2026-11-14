@@ -171,7 +171,9 @@ _CEILING: dict[str, int] = {
     # 22 since 2026-10-16: ``backfill_keyword_counters`` walks the keywords in id slices so the write gate is held for one slice and not for
     # the table, and each slice's GROUP BY filters the mentions by the slice's id range (two more references to the columns the existing
     # aggregate already groups by). It is a WRITER that reads the mentions to repair the counters it writes, so it stays on the write model.
-    "src/analytics/store.py": 22,
+    # 24 since 2026-11-14 (R101): the reconcile and the backfill leave a quarantined article's mentions out of the counters they
+    # write, one ``not_quarantined(KeywordMention.article_id)`` each on the GROUP BY they already run on the write model.
+    "src/analytics/store.py": 24,
     # A user-facing sentence, keyed by its exact English text in the 11 bulletin catalogs
     # (configs/bulletin_i18n); renaming the model in it would orphan every translation.
     "src/bulletin/sections.py": 1,
@@ -254,6 +256,8 @@ _RAW_CEILING: dict[str, int] = {
     "src/api/ai.py": 1,
     "src/api/database.py": 3,
     "src/api/diagnostics/corpus.py": 1,
+    # Lane X 2026-11-14: card_audit's linked-layer NAME, counted in the field-cards manifest; not a query.
+    "src/api/diagnostics/field_cards.py": 1,
     # Was 3: the export's SQL moved into src/analytics/keyword_log_scan.py (above); what is left
     # here is one docstring sentence.
     "src/api/diagnostics/keywords.py": 1,

@@ -143,7 +143,8 @@ def test_preflight_never_writes_a_permission_it_did_not_establish():
 
     for state, expected in (
         ("allowed", True), ("missing", True),
-        ("disallowed", False), ("blocked", False),
+        ("disallowed", False),
+        ("blocked", None),  # 401/403: robots.txt was never read, so the permission is unknown (OPEN_QUEUE C1)
         ("unreachable", None), ("http_503", None), ("something-new", None),
     ):
         meta = _Meta()

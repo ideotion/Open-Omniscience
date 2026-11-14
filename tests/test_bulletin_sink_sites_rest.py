@@ -123,7 +123,7 @@ def test_the_annexes_keep_the_class_of_each_failure_in_the_bundle_and_log_it_scr
     monkeypatch.setattr("src.bulletin.articles.article_analyses", _raise)
     monkeypatch.setattr("src.bulletin.articles.article_bodies", _raise)
     monkeypatch.setattr(annexes, "concepts_markdown", _raise)
-    out = annexes.build_annexes(_Poisoned(), _edition())
+    out = annexes.build_annexes(_Poisoned(), _edition(), full_text=True)  # the body-reading path (R703: opt-in)
     text = _zip_text(out["data"])
     _class_only(text)
     assert "This list could not be computed (RuntimeError)" in text, "the privacy note names the class"

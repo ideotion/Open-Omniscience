@@ -432,7 +432,7 @@ curl 'http://127.0.0.1:8000/api/commodities/Nd/correlation?query=neodymium'
 相関分析は scipy（Pearson/Spearman）による実際の係数、p 値、n を返し、
 「相関 ≠ 因果」の注意書きを添えます。重なりが少なすぎる場合は → `insufficient_data` です。
 
-**監視。** `GET /api/monitoring/health` は（倫理的フェッチャーを通じて）実際の到達可能性を
+**監視。** `POST /api/monitoring/health` は（倫理的フェッチャーを通じて）実際の到達可能性を
 確認します。`GET /api/monitoring/anomalies` は記事数の急増を z スコアで
 検出します。**メール：** `POST /api/sources/{id}/ingest-email`
 （IMAP）はメッセージを同じ検索可能なコーパスに取り込みます。
@@ -476,7 +476,7 @@ python scripts/verify_custody.py custody-bundle.json                   # exit 0 
   確認できない場合（ネットワークエラー、タイムアウト、5xx、または制限付きの 401/403）、その URL は
   取得**しません**。
 - ホストごとの最小間隔を守ります（`Crawl-delay` に従います）。
-- 取得経路は 1 つだけで、身元を明かす User-Agent を使い、記事は HTML のみを対象とします — 生の回避経路はありません。
+- 取得経路は 1 つだけで、身元を明かす User-Agent を使い（保護モードでは汎用の User-Agent。ただし Wikimedia のサーバーへの API とダンプのリクエストは除く）、記事は HTML のみを対象とします — 生の回避経路はありません。
 - 本文の抽出には trafilatura を使います。実際の記事本文が見つからなければ、何も保存しません
   （「タイトルなし / 内容なし」のようなでっち上げの行は作りません）。
 - 保存されるすべての記事には来歴が付きます：情報源、元の URL、正規 URL、

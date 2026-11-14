@@ -10,7 +10,7 @@
  {
   "path": "/api/diagnostics/keyword-selftest",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "keyword_selftest",
   "endpoint": "keyword_selftest"
@@ -74,7 +74,7 @@
  {
   "path": "/api/diagnostics/ir-eval-selftest",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "ir_eval_selftest",
   "endpoint": "ir_eval_selftest"
@@ -82,7 +82,7 @@
  {
   "path": "/api/diagnostics/perception-eval-selftest",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "perception_eval_selftest",
   "endpoint": "perception_eval_selftest"
@@ -106,7 +106,7 @@
  {
   "path": "/api/diagnostics/keyword-triage-selftest",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "keyword_triage_selftest",
   "endpoint": "keyword_triage_selftest"
@@ -114,7 +114,7 @@
  {
   "path": "/api/diagnostics/recursive-loop",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "recursive_loop",
   "endpoint": "recursive_loop"
@@ -162,7 +162,7 @@
  {
   "path": "/api/diagnostics/search-timing-selftest",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "search_timing_selftest",
   "endpoint": "search_timing_selftest"
@@ -202,7 +202,7 @@
  {
   "path": "/api/diagnostics/bulletin-language-selftest",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "bulletin_language_selftest",
   "endpoint": "bulletin_language_selftest"
@@ -242,7 +242,7 @@
  {
   "path": "/api/diagnostics/power-profile-selftest",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "power_profile_selftest",
   "endpoint": "power_profile_selftest"
@@ -378,7 +378,7 @@
  {
   "path": "/api/diagnostics/source-audit-selftest",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "source_audit_selftest",
   "endpoint": "source_audit_selftest"
@@ -394,7 +394,7 @@
  {
   "path": "/api/diagnostics/performance",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "performance_report",
   "endpoint": "performance_report"
@@ -402,7 +402,7 @@
  {
   "path": "/api/diagnostics/benchmark",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "benchmark_report",
   "endpoint": "benchmark_report"
@@ -410,7 +410,7 @@
  {
   "path": "/api/diagnostics/rollup-benchmark",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "rollup_benchmark",
   "endpoint": "rollup_benchmark"
@@ -418,7 +418,7 @@
  {
   "path": "/api/diagnostics/llm-bench",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "llm_bench",
   "endpoint": "llm_bench"
@@ -426,7 +426,7 @@
  {
   "path": "/api/diagnostics/llm-throughput",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "llm_throughput",
   "endpoint": "llm_throughput"
@@ -442,7 +442,7 @@
  {
   "path": "/api/diagnostics/ai-activity-selftest",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "ai_activity_selftest",
   "endpoint": "ai_activity_selftest"
@@ -450,7 +450,7 @@
  {
   "path": "/api/diagnostics/llm-throughput-selftest",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "llm_throughput_selftest",
   "endpoint": "llm_throughput_selftest"
@@ -466,7 +466,7 @@
  {
   "path": "/api/diagnostics/source-coverage-benchmark",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "source_coverage_benchmark",
   "endpoint": "source_coverage_benchmark"
@@ -634,7 +634,7 @@
  {
   "path": "/api/diagnostics/debug-bundle",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "debug_bundle",
   "endpoint": "debug_bundle"
@@ -642,7 +642,7 @@
  {
   "path": "/api/diagnostics/all",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "all_diagnostics",
   "endpoint": "all_diagnostics"
@@ -818,7 +818,7 @@
  {
   "path": "/api/diagnostics/source-tags-selftest",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "source_tags_selftest",
   "endpoint": "source_tags_selftest"
@@ -938,7 +938,7 @@
  {
   "path": "/api/diagnostics/qualification-assist-selftest",
   "methods": [
-   "GET"
+   "POST"
   ],
   "name": "qualification_assist_selftest",
   "endpoint": "qualification_assist_selftest"

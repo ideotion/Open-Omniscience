@@ -63,7 +63,9 @@ _KEYS = [
 # `_renderWatches` draws the list `loadWatches` fetched, so a language switch can redraw
 # it without a request (N5); the panel's strings live in both.
 _FUNCS = ("loadWatches", "_renderWatches", "createWatch", "toggleWatch", "editWatch",
-          "deleteWatch", "evaluateWatches")
+          "deleteWatch", "evaluateWatches",
+          # the firing rows and the full-history button (R684), split out of _renderWatches
+          "wtHistRowHtml", "wtHistMoreHtml", "_wtLoadFull")
 
 
 def _panel() -> str:

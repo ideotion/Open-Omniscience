@@ -165,6 +165,9 @@ class _Scope:
     allowed_hosts: frozenset[str] = frozenset()
     #: Why the check is standing down for this request, or "" when it is live.
     stood_down: str = ""
+    #: Whether the caller looked the host up and refused a non-public answer BEFORE the fetch (the EthicalFetcher's
+    #: ``_guard_target``). A ``GuardedSession`` makes no such check, so its refusals must not say a check was passed.
+    prechecked: bool = True
     #: Counters, so a test can prove the hook was REACHED rather than infer it
     #: from an absence. An anti-vacuity signal, never a measurement of safety.
     connects_checked: int = 0
@@ -237,7 +240,7 @@ def _proxy_endpoints(proxies: object) -> tuple[frozenset[tuple[str, int]], str]:
 
 
 @contextmanager
-def connect_scope(*, enabled: bool, proxies: object = None) -> Iterator[_Scope]:
+def connect_scope(*, enabled: bool, proxies: object = None, prechecked: bool = True) -> Iterator[_Scope]:
     """Guard every socket this THREAD opens for the duration of one fetch.
 
     ``enabled`` mirrors ``EthicalFetcher._real_session``: an injected test double
@@ -246,6 +249,9 @@ def connect_scope(*, enabled: bool, proxies: object = None) -> Iterator[_Scope]:
 
     Re-entrant (a nested scope pushes its own frame) and unwound on any
     exception, so a refusal can never leave the guard armed on a pooled thread.
+
+    ``prechecked`` says whether the caller already refused a non-public answer before the fetch; it changes only the words of a
+    refusal, never what is refused.
     """
     allowed, reason = _proxy_endpoints(proxies)
     if not guard_enabled():
@@ -256,6 +262,7 @@ def connect_scope(*, enabled: bool, proxies: object = None) -> Iterator[_Scope]:
         allowed=allowed,
         allowed_hosts=frozenset(addr for addr, _ in allowed),
         stood_down=reason,
+        prechecked=prechecked,
     )
     stack: list[_Scope] = getattr(_STATE, "stack", [])
     if not stack:
@@ -316,6 +323,8 @@ def check_connect_target(address: object) -> None:
             f"refusing to connect to a non-public address ({ip}) during a fetch: "
             "the name resolved to a public address when it was checked and to this "
             "one when the connection was made"
+            if scope.prechecked
+            else f"refusing to connect to a non-public address ({ip}) during a fetch"
         )
 
 
@@ -350,6 +359,6 @@ def check_resolution(host: object, infos: Sequence[object]) -> None:
         if is_blocked_ip(ip):
             scope.refusals.append(str(ip))
             raise BlockedConnectTarget(
-                f"refusing {host!r}: it resolved to a non-public address ({ip}) "
-                "during the fetch, after passing the pre-fetch check"
+                f"refusing {host!r}: it resolved to a non-public address ({ip}) during the fetch"
+                + (", after passing the pre-fetch check" if scope.prechecked else "")
             )
