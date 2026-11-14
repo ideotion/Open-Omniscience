@@ -146,7 +146,7 @@ def test_the_carry_files_a_mention_where_index_article_would():
         ],
     )
     _fill_carry_keywords(con)
-    got = dict(((o, l), n) for o, l, n in con.execute("SELECT old, lang, new FROM temp.carry_kw"))
+    got = {(o, lang): n for o, lang, n in con.execute("SELECT old, lang, new FROM temp.carry_kw")}
     assert got == {
         (10, "en-GB"): 2, (11, "en-GB"): None,
         (10, ""): 1, (11, ""): 4,
