@@ -374,14 +374,26 @@ class WikiStreamAdapter:
             # The wiki ANSWERED and said there is no such page. A failure raises out
             # of the client; the two must not share this return value.
             return None
+        text = data.get("text") or ""
+        # The SAME response already carries Q705's props (``fetch_hot_pages`` asks for
+        # them); reading them here costs no request. Absent props stay absent.
+        from src.wiki.pagefacts import facts_from_page
+
         return FetchedVersion(
             external_id=external_id,
             revision_ref=str(data.get("revid")),
-            text=data.get("text") or "",
+            text=text,
             revised_at=_aware(data.get("timestamp")),
             title=data.get("title") or ident.title,
             language=ident.wiki,
+            facts=facts_from_page(data, wikitext=text) or None,
         )
+
+    def store_facts(self, lane, entity_id: int, version: FetchedVersion) -> int:
+        """The substrate's facts hook: write ``version.facts`` to ``versioned_entity_facts``."""
+        from src.wiki.pagefacts import store_facts
+
+        return store_facts(lane, entity_id, dict(version.facts or {}), revision_ref=version.revision_ref)
 
     def to_article(self, session, version: FetchedVersion) -> int | None:
         """Into the corpus through the EXISTING wiki upsert. Never a second path."""
