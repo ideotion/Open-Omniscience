@@ -110,3 +110,73 @@ def test_the_stored_tag_records_that_no_language_was_known():
 
 def test_the_marker_fits_the_column():
     assert len(EXTRACTOR_NO_LANGUAGE) <= ArticleMentionedDate.__table__.c.extractor.type.length
+
+
+def _tag(s, article, on, *, status="candidate", extractor=EXTRACTOR_KNOWN_LANGUAGE):
+    from datetime import date
+
+    s.add(ArticleMentionedDate(
+        article_id=article.id, mentioned_on=date.fromisoformat(on), precision="day",
+        snippet="03/04/2024", confidence=0.9, extractor=extractor, status=status,
+    ))
+    s.commit()
+
+
+def _stored(s, article) -> dict[str, tuple[str, str]]:
+    return {
+        r.mentioned_on.isoformat(): (r.status, r.extractor)
+        for r in s.query(ArticleMentionedDate).filter_by(article_id=article.id).all()
+    }
+
+
+def _untagged_with_old_english_guess(s):
+    """An untagged article as an earlier pooled re-index left it: 03/04/2024 read as
+    4 March under an English guess, and the spelled-out date under the old label."""
+    a = _article(s, "u", language=None)
+    a.content = TEXT
+    a.published_at = datetime(2024, 5, 1, tzinfo=UTC)
+    s.commit()
+    _tag(s, a, "2024-03-04")
+    _tag(s, a, "2024-03-03")
+    return a
+
+
+def test_a_reindex_removes_a_date_guessed_under_english():
+    s = _session()
+    a = _untagged_with_old_english_guess(s)
+    store_for_article(s, a)
+    assert _stored(s, a) == {"2024-03-03": ("candidate", EXTRACTOR_NO_LANGUAGE)}
+
+
+def test_a_human_decision_on_a_guessed_date_is_never_removed():
+    s = _session()
+    a = _untagged_with_old_english_guess(s)
+    s.query(ArticleMentionedDate).filter_by(article_id=a.id).delete()
+    s.commit()
+    _tag(s, a, "2024-03-04", status="confirmed")
+    _tag(s, a, "2024-02-01", status="rejected")
+    store_for_article(s, a)
+    assert _stored(s, a) == {
+        "2024-03-04": ("confirmed", EXTRACTOR_KNOWN_LANGUAGE),
+        "2024-02-01": ("rejected", EXTRACTOR_KNOWN_LANGUAGE),
+        "2024-03-03": ("candidate", EXTRACTOR_NO_LANGUAGE),
+    }
+
+
+def test_another_extractors_tag_is_never_removed():
+    s = _session()
+    a = _untagged_with_old_english_guess(s)
+    _tag(s, a, "2023-01-09", extractor="llm")
+    store_for_article(s, a)
+    got = _stored(s, a)
+    assert got["2023-01-09"] == ("candidate", "llm")
+    assert "2024-03-04" not in got
+
+
+def test_a_second_store_changes_nothing():
+    s = _session()
+    a = _untagged_with_old_english_guess(s)
+    store_for_article(s, a)
+    first = _stored(s, a)
+    assert store_for_article(s, a) == 0
+    assert _stored(s, a) == first
