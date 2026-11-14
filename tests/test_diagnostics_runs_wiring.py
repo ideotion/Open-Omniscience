@@ -300,6 +300,7 @@ _UNRECORDED_ZIP_SITES = {
     "keywords.py": 1,  # the keyword log's scratch zip, deleted once sent
     "sources.py": 1,   # the Field data source-quality zip, answered with the bytes
     "source_samples.py": 1,   # the Field data one-article-per-source zips, answered with the bytes
+    "field_cards.py": 1,   # the Field data cards zip (every Home card + its evidence), answered with the bytes
 }
 
 

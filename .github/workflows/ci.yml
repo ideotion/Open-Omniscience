@@ -780,6 +780,7 @@ jobs:
             tests/test_corpus_epoch.py tests/test_keyword_daily_merge_interrupted.py \
             tests/test_keyword_daily_refresh.py tests/test_keyword_daily_refresh_wal_pinning.py \
             tests/test_keyword_daily_scan_bound_race.py tests/test_map_serve.py \
+            tests/test_columnar_spill_follows_corpus.py \
             tests/test_rollup_benchmark.py tests/test_rollup_benchmark_guard.py \
             tests/test_rollup_generation_check.py tests/test_rollup_parity_bound.py \
             tests/test_rollup_persisted_generation.py tests/test_rollup_scan_plan.py \
@@ -833,6 +834,7 @@ jobs:
             tests/test_corpus_epoch.py tests/test_keyword_daily_merge_interrupted.py \
             tests/test_keyword_daily_refresh.py tests/test_keyword_daily_refresh_wal_pinning.py \
             tests/test_keyword_daily_scan_bound_race.py tests/test_map_serve.py \
+            tests/test_columnar_spill_follows_corpus.py \
             tests/test_rollup_benchmark.py tests/test_rollup_benchmark_guard.py \
             tests/test_rollup_generation_check.py tests/test_rollup_parity_bound.py \
             tests/test_rollup_persisted_generation.py tests/test_rollup_scan_plan.py \
