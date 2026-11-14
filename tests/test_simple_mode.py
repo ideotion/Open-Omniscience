@@ -282,7 +282,9 @@ def test_first_run_offers_both_views_with_nothing_preselected():
     # R710 = b: the guide shows both views side by side, NEITHER preselected, each with one line
     # on how it differs. Simple mode stays opt-in: no default path lands in it.
     assert 'name="gw-start" value="simple">' in html and 'name="gw-start" value="full">' in html
-    assert not re.search(r'name="gw-start"[^>]*\bchecked\b', html), "no starting view is preselected"
+    start_inputs = [t for t in re.findall(r"<input\b[^>]*>", html) if 'name="gw-start"' in t]
+    assert len(start_inputs) == 2
+    assert not any(re.search(r"\bchecked\b", t) for t in start_inputs), "no starting view is preselected"
     assert 'class="depth-pick start-pick"' in html
     assert "Notes on method and limits sit behind \u24d8." in html
     assert "with the notes on method and limits in view." in html
@@ -315,6 +317,12 @@ def test_simple_mode_boots_only_when_the_reader_chose_it():
     code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
     assert code.count('lsSet(K_SIMPLE, "1")') == 1
     assert 'lsSet(K_SIMPLE, "1")' in function_body(code, "enterSimple")
+    # Nothing else in the front end writes the switch directly.
+    for f in _STATIC.rglob("*.js"):
+        if "vendor" in f.parts:
+            continue
+        src = _read(f)
+        assert not re.search(r"setItem\(\s*[\"']oo\.ui\.simple[\"']", src), f"{f} writes oo.ui.simple"
 
 
 def test_search_pages_and_filters_by_language():
