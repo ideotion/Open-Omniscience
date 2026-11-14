@@ -488,7 +488,7 @@ def test_a_pause_hiccup_never_aborts_the_restore(tmp_path, monkeypatch):
     import src.backup.merge as merge_mod
     import src.scheduler.runner as sched_mod
 
-    def _boom_pause(timeout=10.0):
+    def _boom_pause(*_a, **_k):  # the pause takes claim= since R383: a stub without it raised TypeError, not this fault
         raise RuntimeError("scheduler singleton is in a weird state")
 
     captured = {}
