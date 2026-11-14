@@ -51,7 +51,7 @@ def root(tmp_path, monkeypatch):
 
 
 def _aged(folder, seconds_before: float) -> None:
-    then = psutil.Process(int(folder.name.split("-", 1)[0])).create_time() - seconds_before
+    then = psutil.Process(int(folder.name.removeprefix(rollup_serve._STAGING_PREFIX).split("-", 1)[0])).create_time() - seconds_before
     os.utime(folder, (then, then))
 
 
@@ -178,7 +178,7 @@ def test_each_folder_is_handed_out_locked_and_let_go_on_removal(tmp_path, monkey
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     finally:
         os.close(fd)
-    assert not os.path.exists(os.path.join(folder, rollup_serve._OWNER_FILE + ".new"))
+    assert [p.name for p in (tmp_path / "duckdb_tmp").iterdir()] == [os.path.basename(folder)], "a staging folder was left"
     rollup_serve._remove_spill(folder)
     assert folder not in rollup_serve._SPILL_OWNERS and not os.path.exists(folder)
 
@@ -201,3 +201,16 @@ def test_closing_the_serves_lets_go_of_the_owner_lock(tmp_path, monkeypatch):
     monkeypatch.delitem(sys.modules, "src.analytics.map_serve", raising=False)
     release._close_serves(wait=False)
     assert folder not in rollup_serve._SPILL_OWNERS and not os.path.exists(folder)
+
+
+def test_a_folder_still_being_made_is_left_to_its_maker(root, live_pid):
+    """Its ``new-`` name keeps it out of the pid rule until it is locked and renamed; a dead maker's goes."""
+    making = root / f"{rollup_serve._STAGING_PREFIX}{live_pid}-abcd1234"
+    making.mkdir()
+    _aged(making, 3600)
+    dead = 2**22 + 7
+    assert not psutil.pid_exists(dead)
+    abandoned = root / f"{rollup_serve._STAGING_PREFIX}{dead}-abcd1234"
+    abandoned.mkdir()
+    rollup_serve._sweep_spill_folders(root)
+    assert making.exists() and not abandoned.exists()

@@ -1122,27 +1122,30 @@ _OWNER_FILE = ".owner"
 _SPILL_OWNERS: dict[str, int] = {}
 
 
-def _hold_owner_lock(folder) -> None:
-    """Lock ``folder``'s owner file for this process (POSIX; elsewhere a no-op). The file is locked under a temporary name
-    and only then renamed into place, so a sweep in another process never finds an owner file that is not yet locked."""
+#: The prefix of a folder being made: the sweep reads a folder only once it carries its ``<pid>-`` name, which it gets only
+#: after its owner file is locked, so no sweep ever finds an owner-less folder that is in fact live.
+_STAGING_PREFIX = "new-"
+
+
+def _hold_owner_lock(folder) -> int | None:
+    """Lock ``folder``'s owner file for this process and return the descriptor that holds it (POSIX; elsewhere ``None``)."""
     try:
         import fcntl
     except ImportError:
-        return
-    tmp = folder / (_OWNER_FILE + ".new")
-    fd = os.open(tmp, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        return None
+    fd = os.open(folder / _OWNER_FILE, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        os.rename(tmp, folder / _OWNER_FILE)
     except BaseException:
         os.close(fd)
         raise
-    _SPILL_OWNERS[str(folder)] = fd
+    return fd
 
 
 def _owner_alive(folder) -> bool | None:
     """Whether a live process holds ``folder``'s owner lock: ``True``, ``False``, or ``None`` when the folder has no owner file
-    (made before the lock existed, or off POSIX) or the lock cannot be tried."""
+    (made before the lock existed, or off POSIX) or the lock cannot be tried (on Linux NFS, ``flock`` is emulated with POSIX
+    locks and an exclusive lock on a read-only descriptor fails: the sweep then falls back to the pid rule)."""
     try:
         import fcntl
     except ImportError:
@@ -1190,6 +1193,12 @@ def _sweep_spill_folders(root) -> None:
         return  # no way to tell a live process from a dead one: leave them
     mine = os.getpid()
     for child in root.iterdir():
+        if child.name.startswith(_STAGING_PREFIX) and child.is_dir():
+            # A folder that was being made: nothing was ever offloaded into it. Its maker is gone when its pid is.
+            staged = child.name[len(_STAGING_PREFIX):].split("-", 1)[0]
+            if staged.isdigit() and int(staged) != mine and not psutil.pid_exists(int(staged)):
+                shutil.rmtree(child, ignore_errors=True)
+            continue
         head = child.name.split("-", 1)[0]
         if not (child.is_dir() and head.isdigit()):
             continue
@@ -1259,13 +1268,21 @@ def _spill_folder(*, make: bool) -> str:
             # here (open-on-main row 52). A failure is not fatal: each connection's own folder below is 0700 regardless.
             with contextlib.suppress(OSError):
                 os.chmod(root, 0o700)
-        mine = root / f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
-        mine.mkdir(mode=0o700)  # owner-only, like the data directory above it (defence in depth)
+        name = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+        staging = root / (_STAGING_PREFIX + name)
+        staging.mkdir(mode=0o700)  # owner-only, like the data directory above it (defence in depth)
+        fd = None
         try:
-            _hold_owner_lock(mine)
+            fd = _hold_owner_lock(staging)
+            mine = staging.rename(root / name)  # only now visible to a sweep, already locked
         except BaseException:
-            shutil.rmtree(mine, ignore_errors=True)  # a folder no lock vouches for is not handed out
+            if fd is not None:
+                with contextlib.suppress(OSError):
+                    os.close(fd)
+            shutil.rmtree(staging, ignore_errors=True)  # a folder no lock vouches for is not handed out
             raise
+        if fd is not None:
+            _SPILL_OWNERS[str(mine)] = fd
         return str(mine)
 
 

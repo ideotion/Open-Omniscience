@@ -197,9 +197,9 @@ def close_serves_after_encryption() -> dict[str, Any]:
             serving[name] = mod._STATE.get("con")
     out = _close_serves(wait=False)
     for name in out.get("busy", []):
+        # ``None`` too: a build busy swapping in the FIRST connection holds the lock, and the close once free takes that
+        # connection if it came with an offload folder (it was made before the encryption).
         target = serving.get(name)
-        if target is None:
-            continue
         try:
             threading.Thread(
                 target=_close_when_free, args=(name, target), name=f"close-{name}-after-encryption", daemon=True

@@ -92,3 +92,24 @@ def test_a_serve_swapped_in_while_busy_with_a_plaintext_era_folder_is_closed_too
         map_serve._LOCK.release()
     assert _wait_for(lambda: newer.closed and not newer_folder.exists()), "a plaintext-era folder outlived the encryption"
     assert map_serve._STATE["con"] is None and map_serve._STATE["spill"] is None
+
+
+def test_a_first_build_swapping_in_at_the_encryption_is_closed_once_free(monkeypatch, tmp_path):
+    """No serve existed before the encryption: the lock holder is the build swapping in the FIRST connection, made with a
+    folder while the library was plaintext. Nothing was there to close, but that connection must go once it is free."""
+    monkeypatch.setitem(map_serve._STATE, "con", None)
+    monkeypatch.setitem(map_serve._STATE, "spill", None)
+    monkeypatch.delitem(release.sys.modules, "src.analytics.rollup_serve", raising=False)
+    first = _Con()
+    folder = tmp_path / "duckdb_tmp" / "123-ffff0000"
+    folder.mkdir(parents=True)
+    map_serve._LOCK.acquire()
+    try:
+        out = release.close_serves_after_encryption()
+        assert out.get("deferred") == ["map_serve"]
+        map_serve._STATE["con"] = first
+        map_serve._STATE["spill"] = str(folder)
+    finally:
+        map_serve._LOCK.release()
+    assert _wait_for(lambda: first.closed and not folder.exists()), "the first build's plaintext-era folder outlived the encryption"
+    assert map_serve._STATE["con"] is None
