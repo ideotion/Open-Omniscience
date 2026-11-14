@@ -7887,5 +7887,11 @@
   "＋ zoom": "＋ увеличить",
   "－ zoom": "－ уменьшить",
   "📍 places": "📍 места",
-  "🛒 Draft (": "🛒 Черновик ("
+  "🛒 Draft (": "🛒 Черновик (",
+  "Where would you like to start?": "С чего вы хотите начать?",
+  "Starting view": "Начальный вид",
+  "Full view": "Полный вид",
+  "The everyday tasks: leads, reading, search, the world and the numbers. Notes on method and limits sit behind ⓘ.": "Повседневные задачи: зацепки, чтение, поиск, мир и цифры. Заметки о методе и ограничениях скрыты за ⓘ.",
+  "Every tab and tool at once, with the notes on method and limits in view.": "Все вкладки и инструменты сразу, заметки о методе и ограничениях видны.",
+  "Collecting now. The first articles appear in Read as they arrive, then in Today.": "Идёт сбор. Первые статьи появляются в «Чтении» по мере поступления, затем в «Сегодня»."
 }

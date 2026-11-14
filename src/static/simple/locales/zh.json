@@ -141,6 +141,11 @@
   "Prices are imported in the full view, with your consent; nothing is fetched here. Each card shows the newest stored value and its date.": "价格需在您同意后于完整视图中导入；此处不获取任何内容。每张卡片显示最新存储的数值及其日期。",
   "A price can be old: read its date.": "价格可能已过时：请查看其日期。",
   "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "已发布的记录，在您同意后于完整视图中获取。计数包含发布方的每次修订。",
-  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "搜索会隐藏在来源核实前被暂扣的文章，因此某国的列表可能少于此处的计数。"
+  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "搜索会隐藏在来源核实前被暂扣的文章，因此某国的列表可能少于此处的计数。",
+  "Looking for leads in your corpus…": "正在您的语料库中寻找线索…",
+  "Language": "语言",
+  "Any language": "任何语言",
+  "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "计数依据各来源声明的语言，且只针对最新的文章。筛选还会找到根据正文检测出语言的文章，因此计数可能与结果不同。",
+  "Articles counted": "已计数的文章"
  }
 }

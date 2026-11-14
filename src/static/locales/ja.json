@@ -7887,5 +7887,11 @@
   "＋ zoom": "＋ 拡大",
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "Where would you like to start?": "どこから始めますか？",
+  "Starting view": "最初の表示",
+  "Full view": "フル表示",
+  "The everyday tasks: leads, reading, search, the world and the numbers. Notes on method and limits sit behind ⓘ.": "日常の作業：手がかり、閲読、検索、世界、数値。方法と限界についての注記は ⓘ の中にあります。",
+  "Every tab and tool at once, with the notes on method and limits in view.": "すべてのタブとツールを一度に表示し、方法と限界についての注記も見える状態にします。",
+  "Collecting now. The first articles appear in Read as they arrive, then in Today.": "収集中です。最初の記事は届きしだい「読む」に、その後「今日」に表示されます。"
 }
