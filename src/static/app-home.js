@@ -940,12 +940,13 @@
         const terms = ((wk && wk.terms) || []).filter(x =>
           !(typeof growthIsRatio === "function" && growthIsRatio(x) === true && !(Number(x.growth) > 1)));
         if (!terms.length) {
+          _homeTrendTerms = []; _homeTrendCaveat = "";
           if (d.partial && d.caveat) {
             // Not computed is not "nothing is trending": say so where the strip would be (the server's own words).
-            _homeTrendTerms = []; _homeTrendCaveat = d.caveat;
+            _homeTrendCaveat = d.caveat;
             if (panel) panel.hidden = false;
             box.innerHTML = `<div class="hint muted" role="status" style="font-size:12px">${esc(t(d.caveat))}</div>`;
-          } else { _homeTrendTerms = []; _homeTrendCaveat = ""; if (panel) panel.hidden = true; box.innerHTML = ""; }
+          } else { if (panel) panel.hidden = true; box.innerHTML = ""; }
           _homeTrendLang = lang;
           // The compact Overview row reads the same stash: without this it kept the previous
           // poll's chips once every term was filtered out (now common, as falling ones are).
