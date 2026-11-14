@@ -5219,7 +5219,7 @@
   "The country statistics catalogue loads a little on every online pass.": "国家统计目录在每个在线轮次加载一点。",
   "The counts the export measured while it streamed the corpus, articles first.": "导出在读取语料库时测得的计数，文章在前。",
   "The custody log has no ingest entry yet, so there is no start to measure gaps from.": "保管日志中尚无任何采集条目，因此没有可用来度量缺口的起点。",
-  "The custody settings could not be read, so automatic logging is off and each new entry is queued until they can be read. The switches below show the defaults, not your saved choice, and saving is refused until the settings read again.": "无法读取监管链设置，因此自动记录已关闭，每个新条目都会排队，直到设置可以读取。下面的开关显示的是默认值，而不是您保存的选择；在设置重新可读之前，保存会被拒绝。",
+  "The custody settings could not be read, so automatic logging is off and each new entry is queued until they can be read. The switches below show the defaults, not your saved choice.": "无法读取监管链设置，因此自动记录已关闭，每个新条目都会排队，直到设置可以读取。下面的开关显示的是默认值，而不是您保存的选择。",
   "The daily area of ocean with at least 15% ice cover, in million km², for the Arctic or the Antarctic.": "冰覆盖至少 15% 的每日海洋面积，单位百万平方公里，分北极或南极。",
   "The damaged file the repair set aside ({name}, {size}) was removed on {date}, 30 days after the repaired file first read clean.": "修复时搁置的损坏文件（{name}，{size}）已于 {date} 移除，即修复后的文件首次读取无误的 30 天后。",
   "The damaged file the repair set aside is kept as {name} ({size}) in {folder}. Removing it by itself is switched off on this machine (OO_BOOT_REPAIR=0), so it stays until you remove it yourself.": "修复时搁置的损坏文件以 {name}（{size}）保存在 {folder} 中。在这台电脑上，自动移除已被关闭（OO_BOOT_REPAIR=0），所以该文件会一直保留，直到你自行移除。",

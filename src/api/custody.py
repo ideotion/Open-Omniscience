@@ -100,6 +100,11 @@ def export(item_id: str | None = None) -> dict:
         raise HTTPException(status_code=503, detail=_KEY_UNREADABLE) from None
     try:
         return log.export(item_id=item_id)
+    except CustodySettingsUnreadable:
+        # The key changed and its rotation record is owed, but the settings could not be read: no permanent record is
+        # written under guessed preferences.
+        raise HTTPException(status_code=503, detail="the signing key changed and its key-rotation record is owed, but "
+                            "the custody settings could not be read: export again once they can be") from None
     except SigningError:
         # The key file cannot be read with what this process holds (wrapped under another passphrase, damaged): no
         # bundle is signed and nothing is written. The answer says what to do.

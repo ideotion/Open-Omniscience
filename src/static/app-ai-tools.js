@@ -2480,7 +2480,7 @@
     }
 
     const CUST_STORE_UNREADABLE = "The custody settings could not be read, so automatic logging is off and each new entry is queued " +
-      "until they can be read. The switches below show the defaults, not your saved choice, and saving is refused until the settings read again.";
+      "until they can be read. The switches below show the defaults, not your saved choice.";
     const CUST_DRAIN_SETTINGS_UNREADABLE = "Nothing was recorded: the custody settings could not be read, so no entry is signed under " +
       "guessed preferences. The entries stay queued; try again once the settings can be read.";
     const CUST_DRAIN_QUEUE_UNREADABLE = "The queue of owed entries could not be read ({reason}), so the count of queued entries may be low.";

@@ -311,6 +311,8 @@ class CustodyLog:
         self._refresh_signer()
         prev = self._last()
         if prev is not None and _sig_ed25519_pub(prev.signature) != self.signer.public_identity().ed25519_pub:
+            # A permanent record: never written under guessed preferences (an export reaches here too).
+            self._refuse_on_unread_prefs()
             prev = self._insert_rotation(prev, previous_signer=None)
         return prev
 

@@ -5219,7 +5219,7 @@
   "The country statistics catalogue loads a little on every online pass.": "国別統計のカタログは、オンラインの回ごとに少しずつ読み込まれます。",
   "The counts the export measured while it streamed the corpus, articles first.": "エクスポートがコーパスを読み進めながら計測した件数です。記事が先頭です。",
   "The custody log has no ingest entry yet, so there is no start to measure gaps from.": "保全ログにはまだ取り込みエントリがないため、欠落を測る起点がありません。",
-  "The custody settings could not be read, so automatic logging is off and each new entry is queued until they can be read. The switches below show the defaults, not your saved choice, and saving is refused until the settings read again.": "保管の連鎖の設定を読み取れなかったため、自動記録はオフになり、設定を読み取れるようになるまで新しいエントリはすべてキューに入ります。下のスイッチは保存された選択ではなく既定値を示しており、設定を再び読み取れるまで保存は拒否されます。",
+  "The custody settings could not be read, so automatic logging is off and each new entry is queued until they can be read. The switches below show the defaults, not your saved choice.": "保管の連鎖の設定を読み取れなかったため、自動記録はオフになり、設定を読み取れるようになるまで新しいエントリはすべてキューに入ります。下のスイッチは保存された選択ではなく既定値を示しています。",
   "The daily area of ocean with at least 15% ice cover, in million km², for the Arctic or the Antarctic.": "海氷被覆が 15% 以上の海洋の日別面積（百万 km²）。北極または南極。",
   "The damaged file the repair set aside ({name}, {size}) was removed on {date}, 30 days after the repaired file first read clean.": "修復で脇に置かれた破損ファイル（{name}、{size}）は、修復後のファイルが初めて問題なく読めてから30日後の {date} に削除されました。",
   "The damaged file the repair set aside is kept as {name} ({size}) in {folder}. Removing it by itself is switched off on this machine (OO_BOOT_REPAIR=0), so it stays until you remove it yourself.": "修復で脇に置かれた破損ファイルは、{folder} に {name}（{size}）として保管されています。このコンピューターでは自動削除がオフになっている（OO_BOOT_REPAIR=0）ため、ご自身で削除するまで残ります。",

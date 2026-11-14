@@ -245,8 +245,7 @@ def test_the_settings_panel_and_the_reconcile_result_say_what_could_not_be_read(
     assert js.count("const notes = _custDrainNotes(d)") == 2  # the gap check and the record-gaps button both say it
     keys = [
         "The custody settings could not be read, so automatic logging is off and each new entry is queued until they can "
-        "be read. The switches below show the defaults, not your saved choice, and saving is refused until the settings "
-        "read again.",
+        "be read. The switches below show the defaults, not your saved choice.",
         "Nothing was recorded: the custody settings could not be read, so no entry is signed under guessed preferences. "
         "The entries stay queued; try again once the settings can be read.",
         "The queue of owed entries could not be read ({reason}), so the count of queued entries may be low.",
@@ -256,3 +255,41 @@ def test_the_settings_panel_and_the_reconcile_result_say_what_could_not_be_read(
         for k in keys:
             assert data.get(k), (loc.name, k[:40])
             assert ("{reason}" in data[k]) == ("{reason}" in k), loc.name
+
+
+def test_no_permanent_record_is_written_under_unread_settings_by_export_or_rotate(tmp_path, monkeypatch):
+    """An export owing a key-rotation record, and an endorsed rotation, both refuse rather than write under guessed preferences."""
+    from src.custody.log import CustodyAction, CustodyLog
+    from src.custody.settings import CustodySettingsUnreadable
+    from src.custody.signing import HybridSigner
+
+    db = str(tmp_path / "c.db")
+    old = HybridSigner(ed25519_path=tmp_path / "old.pem", mldsa_path=tmp_path / "old.key", use_pqc=False)
+    with CustodyLog(db_path=db, signer=old, anchoring_mode="local") as log:
+        log.record("article:1", "a" * 64, CustodyAction.INGEST)
+    monkeypatch.setattr(settings, "_read_raw_checked", _refuse)
+    log = CustodyLog(db_path=db)  # its own key (another file): a rotation record is owed
+    try:
+        assert log.prefs_unreadable
+        with pytest.raises(CustodySettingsUnreadable):
+            log.export()
+        with pytest.raises(CustodySettingsUnreadable):
+            log.rotate_signing_key(old)
+        assert [e.action for e in log.all_entries()] == ["ingest"]
+    finally:
+        log.close()
+
+
+def test_the_export_route_answers_503_when_a_rotation_is_owed_under_unread_settings(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.custody.log import CustodyAction, CustodyLog
+    from src.custody.signing import HybridSigner
+
+    old = HybridSigner(ed25519_path=tmp_path / "old.pem", mldsa_path=tmp_path / "old.key", use_pqc=False)
+    with CustodyLog(db_path=str(tmp_path / "custody_log.db"), signer=old, anchoring_mode="local") as log:
+        log.record("article:1", "a" * 64, CustodyAction.INGEST)
+    monkeypatch.setattr(settings, "_read_raw_checked", _refuse)
+    r = TestClient(app).get("/api/custody/export", headers={"Sec-Fetch-Site": "same-origin"})
+    assert r.status_code == 503 and "rotation record is owed" in r.json()["detail"]
