@@ -4233,7 +4233,7 @@ def test_analysis_mindmap_controls():
     assert "function anMMset" in html and "const _anMM" in html, "stateful in-map controls required"
     flat = html.replace(" ", "")
     assert "anMMset({cloud:true,concept:false})" in flat, "the Cloud second view is gone"
-    assert "anMMset({cloud:false,concept:false})" in flat, "the Map view is no longer reachable"
+    assert "anMMset({cloud:false,concept:false})" in flat, "the Mind-map tree view is no longer reachable"
     assert "anMMset({cloud:false,concept:true})" in flat, (
         "Q512's Concept view (the ring at the centre, one arm per language) is missing"
     )
@@ -4241,7 +4241,7 @@ def test_analysis_mindmap_controls():
     assert "anMMsetScale(this.value)" in flat, "text-size control"
     import json
     en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
-    for k in ("Map", "Cloud", "Concept", "Enlarge the mindmap"):
+    for k in ("Mind-map", "Cloud", "Concept", "Enlarge the mindmap"):
         assert k in en
 
 

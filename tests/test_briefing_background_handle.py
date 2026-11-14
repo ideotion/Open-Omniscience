@@ -80,7 +80,7 @@ def test_the_cache_is_written_where_the_thread_started_even_if_the_data_folder_m
     in_the_run = threading.Event()
     release = threading.Event()
 
-    def hold(_session):  # the first thing a rebuild does; the real chain then runs on and writes the cache
+    def hold(_session, **_kw):  # the first thing a rebuild does; the real chain then runs on and writes the cache
         in_the_run.set()
         release.wait(HANG_GUARD_S)
 
@@ -251,7 +251,7 @@ def test_the_run_ends_with_the_pin_reset_in_the_context_it_ran_in(monkeypatch, t
     monkeypatch.setattr(service, "_log_pinned", lambda: paused)
     monkeypatch.setattr(service, "refresh_briefing", lambda session, on_progress=None: None)
     monkeypatch.setattr("src.api.insights.warm_cache", lambda session: None)
-    monkeypatch.setattr("src.analytics.watches.evaluate_watches", lambda session: None)
+    monkeypatch.setattr("src.analytics.watches.evaluate_watches", lambda session, **_kw: None)
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     service._bg_refresh(tmp_path / "pinned.json")
     assert service._run_cache_path.get() is None, "the pin outlived the run that set it"
