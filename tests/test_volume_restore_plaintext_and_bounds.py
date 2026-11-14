@@ -224,9 +224,9 @@ def test_the_removal_endpoint_and_the_page_offer_it_only_on_the_operators_yes(tm
             json={"path": str(out), "names": [first + ".plain", "my-notes.plain"], "confirm": True},
         )
     assert r.status_code == 200 and r.json() == {"removed": [first + ".plain"], "failed": []}
-    js = (ROOT / "src/static/app-backup.js").read_text("utf-8")
-    body = js[js.index("function _uxImLeftoverPlaintext(") :]
-    body = body[: body.index("\n    }\n")]
+    from tests.js_source_helper import function_body
+
+    body = function_body((ROOT / "src/static/app-backup.js").read_text("utf-8"), "_uxImLeftoverPlaintext")
     assert "confirm(" in body and body.index("confirm(") < body.index(
         "remove-leftover-plaintext"
     ), "the yes comes first"
@@ -418,8 +418,8 @@ def test_a_link_a_path_outside_and_an_unlisted_name_are_each_refused(tmp_path):
 
 
 def test_the_remove_button_answers_only_the_persons_own_click():
-    js = (ROOT / "src/static/app-backup.js").read_text("utf-8")
-    body = js[js.index("function _uxImLeftoverPlaintext(") :]
-    body = body[: body.index("\n    }\n")]
+    from tests.js_source_helper import function_body
+
+    body = function_body((ROOT / "src/static/app-backup.js").read_text("utf-8"), "_uxImLeftoverPlaintext")
     i = body.index("isTrusted !== true")
     assert i < body.index("confirm(") < body.index("remove-leftover-plaintext")
