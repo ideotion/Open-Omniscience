@@ -15967,7 +15967,10 @@ migration or a re-index is DEFERRED with the change it would make, and is listed
   (`fold_page` resolves per term AND language) and the restore carry (`merge._fill_carry_keywords`, the same Python
   function, keyed on the article's stripped language). The carry also refuses an article whose language the indexer
   would change (a tag its script refutes, or an untagged article it would detect), so that half re-indexes. The
-  fold still equals a re-index because both apply the same rule. Old rows converge only after a re-index. Enforced
+  fold still equals a re-index because both apply the same rule; on a mixed page the fold resolves the known
+  languages before the unknown ones, so a no-language row it creates cannot absorb two languages. Known limit: a
+  row that has no language takes every language until the language reconcile pass labels it. Old rows converge
+  only after a re-index. Enforced
   by tests/test_keyword_language_keying.py and tests/test_derived_carry.py.
 - **The «spread across {n} sources» card under Q411.** The card now carries the term as `title_vars` like the
   rising card, so the serve-time pass can show its translation; whether its title keeps the trailing «spread

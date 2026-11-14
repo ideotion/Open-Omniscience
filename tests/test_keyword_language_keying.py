@@ -168,3 +168,27 @@ def test_a_carry_never_reproduces_a_language_the_indexer_would_change(monkeypatc
     assert _language_resolution_moves(None, None, ru)  # untagged and detectable
     monkeypatch.setattr(ld, "detect_language", lambda *a, **k: None)
     assert not _language_resolution_moves("", " ", ru)  # untagged and undetectable
+
+
+def test_a_mixed_page_keeps_each_language_on_its_own_new_row(tmp_path, monkeypatch):
+    # No «taxi» row exists yet; one page moves «taxis» from an untagged, an English and a
+    # Spanish article. A row the untagged group created would carry no language and take
+    # English and Spanish alike, so the known languages are resolved first.
+    eng, s = _mini(tmp_path)
+    unknown, en, es = _art(s, "u"), _art(s, "a", "en"), _art(s, "b", "es")
+    taxis = _kw(s, "taxis")
+    _mention(s, taxis, unknown)
+    _mention(s, taxis, en, lang="en")
+    _mention(s, taxis, es, lang="es")
+    s.commit()
+
+    _run_fold(tmp_path, eng, monkeypatch)
+    s2 = sessionmaker(bind=eng)()
+    rows = s2.execute(text(
+        "SELECT a.hash, k.id, k.language FROM keyword_mentions m JOIN keywords k ON k.id = m.keyword_id"
+        " JOIN articles a ON a.id = m.article_id WHERE k.normalized_term = 'taxi'"
+    )).fetchall()
+    by_hash = {h: (kid, lang) for h, kid, lang in rows}
+    assert by_hash["a"][1] == "en" and by_hash["b"][1] == "es", by_hash
+    assert by_hash["a"][0] != by_hash["b"][0], by_hash
+    assert by_hash["u"][0] == min(by_hash["a"][0], by_hash["b"][0]), by_hash  # unknown: lowest id

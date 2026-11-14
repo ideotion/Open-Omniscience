@@ -275,7 +275,10 @@ def fold_page(
         by_lang: dict[str | None, set[str]] = {}
         for m in moving:
             by_lang.setdefault(m[6], set()).add(m[4])
-        for real_lang, terms in sorted(by_lang.items(), key=lambda kv: kv[0] or ""):
+        # Known languages FIRST and the unknown group last: a row the unknown group created
+        # would have no language, which every language may join, so creating it first
+        # would merge English and Spanish into one row again on a mixed page.
+        for real_lang, terms in sorted(by_lang.items(), key=lambda kv: (kv[0] is None, kv[0] or "")):
             wanted = sorted(terms)
             found = _prefetch_keywords(session, wanted, language=real_lang)
             for term in wanted:
