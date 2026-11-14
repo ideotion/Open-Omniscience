@@ -84,3 +84,20 @@ def test_agencies_endpoint():
     assert "Africa" in data["continents_covered"] and "Asia" in data["continents_covered"]
     # International producers sort first (deterministic grouping).
     assert data["agencies"][0]["scope"] == "international"
+
+
+def test_the_directory_states_its_progress_as_counts_never_as_agencies_from_memory():
+    """Q1147 (0.6 row A): listed, confirmed news pages and the planned size, side by side.
+
+    The planned figure is a target, never padded into the list: the listed count is exactly the
+    shipped directory, and a confirmed news page is exactly an agency whose news_url is set."""
+    from src.api.stats import STAT_DIRECTORY_PLANNED_ABOUT, stat_agencies
+    from src.stats.agencies import list_agencies
+
+    prog = stat_agencies()["directory_progress"]
+    agencies = list_agencies()
+    assert prog["listed"] == len(agencies)
+    assert prog["news_url_confirmed"] == sum(1 for a in agencies if a.news_url)
+    assert prog["planned_about"] == STAT_DIRECTORY_PLANNED_ABOUT
+    assert prog["news_url_confirmed"] <= prog["listed"]
+    assert "not a count" in prog["method"] and prog["caveat"]

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.weather.openmeteo import (
@@ -74,7 +74,11 @@ def weather_context(req: WeatherContextRequest) -> dict:
 
 
 class WeatherAnomalyRequest(WeatherContextRequest):
-    """Same WINDOW bounds as a context fetch; the 1991-2020 baseline is fixed server-side."""
+    """Same WINDOW bounds as a context fetch; the 1991-2020 baseline is fixed server-side.
+
+    ``consent`` must be true (R675, invariant #14f): this sends the (rounded) place to Open-Meteo."""
+
+    consent: bool = False
 
     @field_validator("variables")
     @classmethod
@@ -91,9 +95,38 @@ class WeatherAnomalyRequest(WeatherContextRequest):
 
 @router.post("/anomaly")
 def weather_anomaly(req: WeatherAnomalyRequest) -> dict:
-    """Anomalies against the stated 1991-2020 baseline. A bounded window fetch plus the fixed
-    30-year baseline (cached per place after the first); the UI gates this behind the one consent popup."""
+    """Anomalies against the stated 1991-2020 baseline (EGRESSES, R675). The place is rounded
+    before it is sent; the slices not held yet (the 30-year baseline once per place, then the
+    window) are fetched and kept in the encrypted store."""
+    from src.ingest import kill_switch_active
+    from src.ingest.fetch_verdict import NETWORK_REFUSED
     from src.weather.anomaly import fetch_anomalies
 
+    if kill_switch_active():
+        raise HTTPException(status_code=409, detail=NETWORK_REFUSED)
+    if not req.consent:
+        raise HTTPException(status_code=400, detail="consent required: this sends the place's rounded coordinates to Open-Meteo")
     return fetch_anomalies(req.lat, req.lon, req.start_date, req.end_date, req.variables,
                            force=req.force)
+
+
+@router.get("/anomaly/held")
+def weather_anomaly_held(
+    lat: float = Query(ge=-90, le=90),
+    lon: float = Query(ge=-180, le=180),
+    start_date: date = Query(),
+    end_date: date = Query(),
+) -> dict:
+    """The same anomalies from slices already held on this machine. Never fetches (R675): a
+    slice not held is named in ``missing``, so a re-view works in airplane mode."""
+    from pydantic import ValidationError
+
+    from src.weather.anomaly import held_anomalies
+
+    try:
+        WeatherAnomalyRequest(lat=lat, lon=lon, start_date=start_date, end_date=end_date)
+    except ValidationError as exc:
+        from src.monitoring.secret_scrub import http_detail
+
+        raise HTTPException(status_code=422, detail=http_detail(exc)) from None
+    return held_anomalies(lat, lon, start_date, end_date)

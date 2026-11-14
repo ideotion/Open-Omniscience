@@ -44,9 +44,9 @@ def reindex_cache_mb() -> int:
             return max(0, int(raw))
         except ValueError:
             pass  # a typo must not switch it off; fall through to the default
-    from src.config.memory_budget import total_ram_mb
+    from src.config.memory_budget import budget_ram_mb
 
-    ram = total_ram_mb()
+    ram = budget_ram_mb()[0]  # bounded by a cgroup limit (R302): a cache sized to the host would outgrow a container
     if ram is None or ram < MIN_RAM_MB:
         return 0
     return int(min(MAX_CACHE_MB, ram // 16))

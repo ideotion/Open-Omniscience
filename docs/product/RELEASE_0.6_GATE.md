@@ -78,6 +78,18 @@ source, licence, last fetch, gaps and parse diagnostics shown per series. A re-f
 owed for this half: a run against the REAL hosts (the sandbox's egress refuses most of them, so it is the maintainer's
 run), and the AR6 and Open-Meteo lanes. The elections calendar and the statistics directory are untouched.
 
+**Progress 2026-11-13, second PR (R675): the rest of the row that needs no live fetch; the row stays OPEN.**
+Open-Meteo: Climate → Your place compares a window with the 1991–2020 baseline for a typed place, which is rounded to
+0.1 degree before it is sent, asked for through the ONE consent and kept only in the encrypted store (R675; the
+`SECURITY.md` Weather row). AR6 was already shipped. Elections: the app now reads the Wikidata snapshot when the
+operator's run has written one and says so when it has not; a stated election that has gone by reads as **passed** and
+is never rolled forward a year (the US 2026 midterm had been shown as scheduled for 2027-11-03); and the coverage
+report artifact is `docs/product/elections_coverage_2026-11-13.md` (`scripts/elections_coverage_report.py`): 140
+floor countries, 7 window, 3 passed, 8 dateless, 122 missing, curated list only. Statistics directory: `GET
+/api/stats/agencies` now states `directory_progress` — 29 listed, 0 news pages confirmed, about 152 planned — with
+nothing added from memory. Still owed: the Wikidata networked run, the networked directory build and the real-host
+climate run, all the operator's.
+
 ### Row B — OSM change tracking and the trend surfaces · ruled (Q106, Q812 🔒, Q813, Q815, Q816, Q824) · OPEN
 
 **What it must demonstrate.** Geofabrik daily diffs per selected extract applied to the ingested classes; if
@@ -126,6 +138,24 @@ state (tracked / verified-not-yet-tracked / unverified / no eligible source) and
 the `INT` lane ingests one treaty in six languages aligned by identity (Q908), and the topic assignment is
 measured on a labelled sample with the ≈ share stated. **Operator:** the live verification of each seed row
 (the allowlist of 0.4 row V or the maintainer's machine). Brief `S06-02`.
+
+**Progress 2026-11-13 (Lane K, PR #1945; R679, R680): what the session can build is built; the row stays OPEN on operator
+steps.** Of the three closing conditions:
+- *The coverage report* ships (PR #1710): `/api/diagnostics/law-coverage` → `floor` and the Living sources law entry place all
+  140 floor countries in one of four states, with the twelve-language tally and zh on its own line. New here (R679): within a
+  state, countries go by population reached, read from the operator's dated table (`configs/population_table.json`,
+  `src.stats.population`, the same drop-in the UN WPP upload fills), its source and date stated in `floor.order`; a country the
+  table lacks follows by code and is named. Until the table is placed the order is by code and the panel says so.
+- *The `INT` lane, one treaty in six languages aligned by identity* ships on SYNTHETIC fixtures (PR #1717: six versions,
+  ar en es fr ru zh, one declared identity, `.test` hosts). Owed: six operator-verified UN Treaty Collection URLs with their
+  robots and licence look; WIPO Lex stays undecided (R420).
+- *The topic assignment measured on a labelled sample*: the sample exists (`src/catalog/data/topic_sample_law_titles.json`,
+  58 hand-labelled law titles across all twelve languages, a no-topic item in each) and
+  `scripts/topic_sample_measure.py` measures it, with the ≈ share and `n` on every figure. **NOT MEASURED YET:** no thesaurus
+  is built, because the licence fetch for EuroVoc (and the UNESCO Thesaurus, AGROVOC, IPTC) is an operator step and the
+  sandbox's egress refuses those hosts; the script prints `not-measured` and exits 3 until then. Expected with EuroVoc alone:
+  en/fr/de/es/pt are scored, the other seven are set aside as `unsupported_languages` until P5437 is confirmed. R680 (OPEN_QUEUE
+  38(d)): zh and ja are now matched as substrings, every such hit ≈, one-character labels never matched.
 
 ### Row D — Wikipedia coverage and located data · ruled (Q108, Q723, Q819) · OPEN
 

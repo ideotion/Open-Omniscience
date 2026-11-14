@@ -347,4 +347,7 @@ def test_the_only_request_the_tab_makes_off_the_machine_goes_through_the_consent
     assert "fetch(" not in js.replace("climateFetch(", "").replace("_climateFetch", "")
     assert "XMLHttpRequest" not in js
     calls = re.findall(r'api\("([^"]+)"', js)
-    assert calls and all(c.startswith("/api/climate/") for c in calls), calls
+    # /api/system/network is the loopback read of airplane mode that decides between the consent
+    # popup and the per-request confirmation for a typed place (R675); it sends nothing out.
+    assert calls and all(c.startswith(("/api/climate/", "/api/weather/anomaly", "/api/system/network"))
+                         for c in calls), calls
