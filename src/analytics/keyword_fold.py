@@ -268,24 +268,34 @@ def fold_page(
             session.commit()
             return res
 
-        # 1) the target keyword rows: the lowest id per term, as extraction resolves them,
-        # created (with extraction's own get-or-create) when the corpus has none yet.
-        wanted = sorted({m[4] for m in moving})
-        found = _prefetch_keywords(session, wanted)
-        tid: dict[str, int] = {}
-        for term in wanted:
-            kw = found.get(term)
-            if kw is None:
-                first_lang = next((m[6] for m in moving if m[4] == term and m[6]), None)
-                kw = _get_or_create_keyword(
-                    session,
-                    ExtractedTerm(term=src.term, normalized=term, kind="term", count=0, first_offset=None),
-                    language=first_lang,
-                    extractor=src.extractor or "baseline",
-                    prefetched=found,
-                )
-                res.targets_created += 1
-            tid[term] = int(kw.id)
+        # 1) the target keyword rows: the lowest id per term IN THE MENTION'S LANGUAGE (R698),
+        # as extraction resolves them, created (with extraction's own get-or-create) when the
+        # corpus has none yet. A row recorded in another language never takes the mention.
+        tid: dict[tuple[str, str | None], int] = {}
+        by_lang: dict[str | None, set[str]] = {}
+        for m in moving:
+            by_lang.setdefault(m[6], set()).add(m[4])
+        # Known languages FIRST and the unknown group last: a row the unknown group created
+        # would have no language, which every language may join, so creating it first
+        # would merge English and Spanish into one row again on a mixed page. This holds
+        # within a page only: a no-language row an earlier page (or extraction) created still
+        # takes every language, as the rule allows, so a fold and a re-index in article order
+        # can label a new term's row differently while grouping its mentions the same way.
+        for real_lang, terms in sorted(by_lang.items(), key=lambda kv: (kv[0] is None, kv[0] or "")):
+            wanted = sorted(terms)
+            found = _prefetch_keywords(session, wanted, language=real_lang)
+            for term in wanted:
+                kw = found.get(term)
+                if kw is None:
+                    kw = _get_or_create_keyword(
+                        session,
+                        ExtractedTerm(term=src.term, normalized=term, kind="term", count=0, first_offset=None),
+                        language=real_lang,
+                        extractor=src.extractor or "baseline",
+                        prefetched=found,
+                    )
+                    res.targets_created += 1
+                tid[(term, real_lang)] = int(kw.id)
 
         aids = sorted({m[1] for m in moving})
         tids = sorted(set(tid.values()))
@@ -338,8 +348,8 @@ def fold_page(
         drop: list[int] = []
         d_men: Counter = Counter()
         d_art: Counter = Counter()
-        for mid, aid, cnt, off, target, lang, _real in moving:
-            t = tid[target]
+        for mid, aid, cnt, off, target, lang, real in moving:
+            t = tid[(target, real)]
             prev = existing.get((t, aid))
             if prev is not None:
                 pmid, pcnt, poff = prev
