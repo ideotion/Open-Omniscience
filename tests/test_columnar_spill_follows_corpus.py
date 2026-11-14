@@ -50,7 +50,7 @@ def seen(monkeypatch, tmp_path):
     def connect(*a, **k):
         con = real(*a, **k)
         temp = con.execute("SELECT current_setting('temp_directory')").fetchone()[0] if con is not None else None
-        out.append({"spill": k.get("spill", "<not passed>"), "temp_directory": temp})
+        out.append({"spill": k.get("spill", "<not passed>"), "temp_directory": temp, "con": con})
         return con
 
     monkeypatch.setattr(columnar, "connect", connect)
@@ -114,6 +114,8 @@ def test_a_failed_map_build_closes_its_connection_and_removes_its_folder(monkeyp
     monkeypatch.setattr(columnar, "build_source_coverage", boom)
     _map_build(monkeypatch, db)
     assert map_serve._STATE["con"] is None and not map_serve._BUILD_LOCK.locked()
+    with pytest.raises(Exception):  # noqa: B017 - DuckDB's class for "connection already closed" differs across versions
+        seen[0]["con"].execute("SELECT 1")
     assert not any((tmp_path / "duckdb_tmp").glob("*")), "a failed build left its offload folder"
 
 
