@@ -290,7 +290,8 @@ class ConnectTargetRefused(requests.exceptions.RequestException):
     """A guarded session's socket was about to reach a non-public address (the connect-time SSRF guard, ``src.ingest.ssrf_guard``).
 
     A ``RequestException`` so every caller that already handles "this request failed" handles it, and NOT a ``ConnectionError``: nothing
-    reached the target, and a retry would ask again for the same refused address (the ``RedirectRefused`` reasoning). The text is the
+    reached the target, and a retry would ask again for the same refused address (the ``RedirectRefused`` reasoning). A caller that
+    retries every exception (the wiki stream, with a capped backoff) still retries it, and is refused again each time. The text is the
     guard's own sentence (the address and port refused), written through ``record_text``.
     """
 

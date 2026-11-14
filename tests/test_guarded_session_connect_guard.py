@@ -76,6 +76,9 @@ def internal_dns(loopback_server: int):
         return saved(host, port, *args, **kwargs)
 
     ap._orig_getaddrinfo = _resolver  # type: ignore[assignment]
+    # Installed here, not left to the session: with OO_SSRF_CONNECT_GUARD=0 the patches are still installed by ``send``, but a test run
+    # alone must never depend on another test having installed them, or the fake resolver above is never reached.
+    ap.ensure_connect_guard_installed()
     clear_kill_switch()
     try:
         yield calls
@@ -113,7 +116,9 @@ def test_a_literal_loopback_address_is_refused_at_connect(loopback_server: int, 
 
 
 def test_the_refusal_is_a_request_exception_and_never_a_connection_error(loopback_server: int, internal_dns: list):
-    """Callers handle ``RequestException``; a ``ConnectionError`` would read as a transient failure and be retried."""
+    """Callers handle ``RequestException``; a ``ConnectionError`` would read as a transient failure, the class a retry loop is
+    written for. (A caller that retries every exception, as the wiki stream does with a capped backoff, retries this too, as it does a
+    ``RedirectRefused``: each attempt is refused again.)"""
     with pytest.raises(requests.RequestException) as excinfo:
         _session().get(f"http://internal.test:{loopback_server}/", timeout=5)
     assert not isinstance(excinfo.value, requests.ConnectionError)
