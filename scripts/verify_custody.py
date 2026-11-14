@@ -21,11 +21,13 @@ could have been swapped for another one signed by the same key. Export it again 
 format is read from the signed head; the bundle's top-level "bundle_format" is informational only.
 
 A change of signing key is followed through its key-rotation record: endorsed by the previous key, it passes and is
-named; unendorsed (the previous key was gone), it is refused unless --accept-unendorsed-rotation is given.
+named; unendorsed (the previous key was gone), it is refused unless --accept-unendorsed-rotation is given. A record
+that changes only the post-quantum (ML-DSA) half is signed by the same Ed25519 key and passes, named.
 
 With --pin, the head and every entry must be signed by the signer identity embedded in the
 bundle (internal-consistency pinning); across a key rotation, each stretch of the chain is
-held to the identity its rotation record introduced instead. To prove the bundle came from a *known*
+held to the identity its rotation record introduced instead; where a 0.5.1 record introduced it, or for the head, a
+signature stripped to its Ed25519 half under a signer that names an ML-DSA key is refused. To prove the bundle came from a *known*
 signer, compare the printed signer public keys to that signer's known keys.
 """
 

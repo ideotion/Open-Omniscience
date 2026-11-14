@@ -1475,9 +1475,10 @@ someone who took the old key (from a stolen laptop, say) can endorse a key of th
 no record is refused. An unendorsed rotation stays
 unendorsed: the old key cannot vouch for it later. There is no button for an endorsed rotation yet; it is a Python
 call for now. When a bundle crosses a rotation, its scope line says so, and with `--pin` each stretch of the chain is
-held to the key that introduced it: its Ed25519 key, and its post-quantum key where an entry is signed with one (a
-stretch whose key-rotation record names no post-quantum key, like the stretch before the first rotation, is held to its
-Ed25519 key only). A one-item bundle carries every key-rotation record, so an item untouched since a rotation still
+held to the key that introduced it: its Ed25519 key, and its post-quantum key where an entry is signed with one. A
+stretch whose key-rotation record was written by 0.5.1 or later is held to exactly the identity that record names, so an
+entry or head signature with its post-quantum half stripped off is refused there; the stretch before the first record is
+held to its Ed25519 key only. A one-item bundle carries every key-rotation record, so an item untouched since a rotation still
 verifies. The log's own key-rotation records cannot be written through `POST /api/custody/log`. An export made after
 the key changed, before anything new was logged, writes the record first, since the new key signs the export. A
 verified bundle that crosses a rotation prints its line of keys, from the first to the last: compare any key you
@@ -1485,8 +1486,12 @@ already know with that line. With `--accept-unendorsed-rotation`, `--pin` proves
 last key, because a log cut and re-signed by someone else carries exactly such a record. The in-app **Verify** button
 follows the key through the same records and names each rotation. On your own store it accepts an unendorsed one on its
 word, and a key change with no record at all, which is what a log written before 0.5.1 shows when its key was
-re-created then (the log cannot be given the record afterwards); an exported bundle with such a change is refused. Changing only
-the post-quantum key (or turning it off with no rotation) writes no record, and a pinned check then refuses the log.
+re-created then (the log cannot be given the record afterwards); an exported bundle with such a change is refused. Since 0.5.1,
+changing only the post-quantum key (turning post-quantum signing on or off, or re-creating its key) writes a key-rotation
+record too. The Ed25519 key that signed everything before signs that record, so it is followed without being accepted by
+name, and its note says the old post-quantum key did not vouch for the change. Every record now names the whole previous
+key, its post-quantum half included, and an endorsement must carry that same post-quantum key. A checker older than
+0.5.1 refuses a log with such a record rather than misreading it.
 
 ```bash
 python scripts/verify_custody.py custody_bundle.json [--pin] [--accept-unendorsed-rotation]
