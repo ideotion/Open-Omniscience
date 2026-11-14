@@ -2201,7 +2201,7 @@ native name; `region` is kept only as descriptive metadata — no continent `gro
 `?scope=dumps` adds inline `~GB` size estimates); dumps under `/api/wiki/dumps…`.
 
 **Chain of custody** — `POST /api/custody/log`; `GET /api/custody/{item}` (+
-`/verify`); `POST /api/custody/verify`; `GET /api/custody/export`;
+`/verify`); `POST /api/custody/verify`; `POST /api/custody/export`;
 `GET /api/custody/providers`; `POST /api/custody/anchor`;
 `GET/PUT /api/custody/settings`; `POST /api/custody/reconcile` (an INGEST entry that
 could not be written when its article was stored is queued and written later, at the end
@@ -3423,7 +3423,7 @@ python scripts/verify_custody.py custody_bundle.json [--pin] [--accept-unendorse
 ```
 
 REST: `POST /api/custody/log`, `GET /api/custody/{item}`, `.../verify`,
-`GET /api/custody/export`, `POST /api/custody/verify`.
+`POST /api/custody/export`, `POST /api/custody/verify`.
 
 Opt‑in auto‑logging on ingest: set `OO_CUSTODY_ON_INGEST=1`
 (`Config.custody_on_ingest`). It is **off by default** — an explicit evidentiary
