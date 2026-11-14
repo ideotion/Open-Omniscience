@@ -53,7 +53,7 @@ const code = [
   "var OOI18N;",
   "function _fmtBytes(n){ return n + ' B'; } function ooIsoDate(s){ return String(s || '').slice(0, 10); }",
   line("let _bulExcludeSections"), line("let _bulExcludeStories"), line("let _bulFile"),
-  line("let _bulGate"), line("const _bulMsgs"), line("let _bulNarrating"), line("let _bulEvPlan"),
+  line("let _bulGate"), line("const _bulMsgs"), line("let _bulNarrating"), line("let _bulStopAsked"), line("let _bulEvPlan"),
   "const _BUL_CADENCE_LABEL = {};",
   ...["_bulT", "_bulTf", "_bulSay", "_bulPaintMsg", "_bulRepaint", "_bulPaintGate",
       "_bulPaintNarrationGate", "_bulPaintEditions", "_bulUnit", "_bulStoryTermsHtml", "_bulRender", "_bulPaintPrivacy",

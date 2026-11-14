@@ -530,8 +530,8 @@
       else if (st.error != null) body = `<div class="hint">${esc(tf("Could not compare coverage: {error}", {error: st.error}))}</div>`;
       else if (d) {
         const items = d.items || [];
-        const tested = esc(tf("Pairs tested: {tests} · shown: {shown} · window: {days} days",
-          {tests: d.tests || 0, shown: items.length, days: d.window_days || 0}));
+        const tested = esc(tf("Pairs tested: {tests} · passed the correction: {passed} · shown: {shown} · window: {days} days",
+          {tests: d.tests || 0, passed: d.survivors != null ? d.survivors : items.length, shown: items.length, days: d.window_days || 0}));
         if (!items.length) {
           const why = d.note ? t(_MKT_RIPPLE_NOTES[d.note] || d.note)
             : t("No pair co-moves strongly enough once the false-discovery correction is applied.");
@@ -540,9 +540,9 @@
           const rows = items.map((it, i) =>
             `<tr><td data-i18n-dyn>${esc(it.commodity)}</td><td data-i18n-dyn>${esc(it.keyword)}</td>`
             + `<td style="text-align:right;font-variant-numeric:tabular-nums">${esc(ooLtrIsolate(it.correlation == null ? "—" : Number(it.correlation).toLocaleString("en", {minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero"})))}</td>`
-            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${esc(String(it.fdr_qvalue))}</td>`
+            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${esc(ooLtrIsolate(it.fdr_qvalue == null ? "—" : (it.fdr_qvalue < 0.001 ? "< 0.001" : fmtNum(it.fdr_qvalue, 3))))}</td>`
             + `<td style="text-align:right;font-variant-numeric:tabular-nums">${esc(String(it.distinct_sources_commodity || 0))} / ${esc(String(it.distinct_sources_keyword || 0))}</td>`
-            + `<td><button class="ghost" data-on-click="mktRippleOpen(${i})">${esc(tf("Articles: {n}", {n: it.n_articles || 0}))}</button></td></tr>`).join("");
+            + `<td><button class="ghost" data-on-click="mktRippleOpen(${i})" title="${esc(t("At most 300 articles. Where the two topics share none, these are the commodity's own articles in the window."))}">${esc(tf("Articles: {n}", {n: it.n_articles || 0}))}</button></td></tr>`).join("");
           body = `<div style="overflow:auto"><table class="data"><thead><tr>`
             + `<th>${esc(t("Commodity"))}</th><th>${esc(t("Topic"))}</th>`
             + `<th style="text-align:right" title="${esc(t("Pearson correlation of the two daily shares of coverage, from -1 to +1."))}">r</th>`

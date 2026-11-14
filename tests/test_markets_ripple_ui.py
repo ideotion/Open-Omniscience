@@ -62,7 +62,7 @@ def test_every_empty_reason_the_server_sends_has_a_keyed_sentence() -> None:
         for key in (
             "Coverage that moves with a commodity",
             "Coverage moving together, never proof that one causes the other.",
-            "Pairs tested: {tests} · shown: {shown} · window: {days} days",
+            "Pairs tested: {tests} · passed the correction: {passed} · shown: {shown} · window: {days} days",
             "No tracked commodity matches a keyword in your corpus yet.",
         ):
             assert key in en and data.get(key), f"{path.name}: {key}"

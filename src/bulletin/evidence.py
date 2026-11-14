@@ -35,6 +35,7 @@ import json
 import logging
 import os
 import shutil
+import stat
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -273,6 +274,29 @@ def _attribution_markdown(lines: list[dict]) -> str:
     return "\n".join(out)
 
 
+def _open_private_new(tmp: Path) -> int:
+    """Create the archive's temp file for writing: owner-only (0600) from the first byte, never through a link.
+
+    The archive is the period's articles in PLAIN TEXT, and the corpus it copies is 0600; a plain ``open``
+    made it 0644 under the usual umask, followed a symlink, and wrote into a file someone else had already
+    created under the predictable temp name (in a shared folder that hands them the corpus). ``O_EXCL`` and
+    ``O_NOFOLLOW`` refuse both. A leftover temp file from our own earlier, interrupted build is a regular
+    file we own, and only that is removed; anything else in the way is refused, never written through.
+    """
+    try:
+        st = os.lstat(tmp)
+    except FileNotFoundError:
+        st = None
+    if st is not None:
+        ours = not hasattr(os, "getuid") or st.st_uid == os.getuid()
+        if stat.S_ISREG(st.st_mode) and ours:
+            tmp.unlink()
+        else:
+            raise ValueError(f"something that is not this app's own leftover file is in the way: {tmp}")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    return os.open(tmp, flags, 0o600)
+
+
 def build_evidence_archive(
     session,
     edition: dict,
@@ -316,8 +340,9 @@ def build_evidence_archive(
             }
         )
 
+    fd = _open_private_new(tmp)
     try:
-        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
+        with os.fdopen(fd, "wb") as fh, zipfile.ZipFile(fh, "w", zipfile.ZIP_DEFLATED) as zf:
             _add(zf, "README.md", _readme(edition, period, len(ids)))
             # A JSON FILE is not a response, so it does not pass the app's country boundary by itself: through it
             # explicitly, or a published record reads `fr` in the archive and `FRA` over the API (S05-02 S2).
@@ -459,7 +484,12 @@ def build_evidence_archive(
             "note": "the partial archive was removed — it must never look like a finished one",
         }
 
-    os.replace(tmp, final)
+    try:
+        os.replace(tmp, final)
+    except BaseException:
+        # A complete plaintext archive under a temp name is still the corpus in clear text.
+        tmp.unlink(missing_ok=True)
+        raise
     return {
         "path": str(final),
         "filename": name,

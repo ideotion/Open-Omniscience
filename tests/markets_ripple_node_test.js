@@ -41,7 +41,7 @@ function line(startsWith) {
   return APP.slice(at, APP.indexOf("\n", at));
 }
 
-const NAMES = ["mktRippleLoad", "mktRippleOpen", "paintMktRipple"];
+const NAMES = ["mktRippleLoad", "mktRippleOpen", "paintMktRipple", "fmtNum"];
 const src =
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g," +
   "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
@@ -70,25 +70,25 @@ const caveatVisible = () => /<p class="card-caveat"[^>]*>Coverage moving togethe
   let p = M.mktRippleLoad(btn);
   assert.strictEqual(calls[0], "/api/signals/supply-chain-ripple");
   assert.ok(btn.disabled && host.innerHTML.includes("Comparing daily coverage"));
-  pending.shift().res({items: [], tests: 0, window_days: 90, note: "no tracked commodity resolves to a keyword", caveat: "LONG", method: "M"});
+  pending.shift().res({items: [], tests: 0, survivors: 0, window_days: 90, note: "no tracked commodity resolves to a keyword", caveat: "LONG", method: "M"});
   await p;
   assert.strictEqual(btn.disabled, false);
   assert.ok(host.innerHTML.includes("No tracked commodity matches a keyword in your corpus yet."), host.innerHTML);
   assert.ok(!host.innerHTML.includes("resolves to a keyword"), "the server's raw note must not reach the page");
-  assert.ok(host.innerHTML.includes("Pairs tested: 0 · shown: 0 · window: 90 days"));
+  assert.ok(host.innerHTML.includes("Pairs tested: 0 · passed the correction: 0 · shown: 0 · window: 90 days"));
   assert.ok(caveatVisible());
   assert.ok(host.innerHTML.includes('title="LONG"'), "the long caveat rides the hover");
 
   // --- survivors: a row per pair, and Articles opens exactly its ids ---------- //
   p = M.mktRippleLoad(btn);
-  pending.shift().res({tests: 40, window_days: 90, caveat: "LONG", method: "M", items: [
+  pending.shift().res({tests: 40, survivors: 11, window_days: 90, caveat: "LONG", method: "M", items: [
     {commodity: "Gold", keyword: "inflation", correlation: 0.71, fdr_qvalue: 0.012, distinct_sources_commodity: 5,
      distinct_sources_keyword: 9, article_ids: [3, 4, 5], n_articles: 3},
-    {commodity: "<b>x</b>", keyword: "drought", correlation: -0.2, fdr_qvalue: 0.04, article_ids: [8], n_articles: 1}]});
+    {commodity: "<b>x</b>", keyword: "drought", correlation: -0.2, fdr_qvalue: 0.00001, article_ids: [8], n_articles: 1}]});
   await p;
   const h = host.innerHTML;
-  assert.ok(h.includes("+0.71") && h.includes("-0.20") && h.includes("0.012") && h.includes("5 / 9"), h);
-  assert.ok(h.includes("Pairs tested: 40 · shown: 2"));
+  assert.ok(h.includes("+0.71") && h.includes("-0.20") && h.includes("0.012") && h.includes("&lt; 0.001") && h.includes("5 / 9"), h);
+  assert.ok(h.includes("Pairs tested: 40 · passed the correction: 11 · shown: 2"));
   assert.ok(!h.includes("<b>x</b>") && h.includes("&lt;b&gt;x&lt;/b&gt;"), "a label is escaped");
   assert.ok(h.includes('<td data-i18n-dyn>Gold</td>'), "corpus labels opt out of the key walker");
   assert.ok(caveatVisible());

@@ -18,6 +18,8 @@ Every route is gated on the same hardware predicate as the rest of the feature
 
 from __future__ import annotations
 
+import threading
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -662,6 +664,28 @@ def publish(
     }
 
 
+#: One evidence archive written at a time: two writes into one folder share the temp and the final
+#: name, so the second would truncate or remove the first's file mid-write.
+_EVIDENCE_WRITE = threading.Lock()
+
+
+def _evidence_dest(dest: str) -> str:
+    """The archive's destination as an ABSOLUTE path, ``~`` expanded; refused when empty or relative.
+
+    A relative path or an empty one resolved against the server's working directory -- a folder the
+    operator never named -- and ``~`` was never expanded, so ``~/x`` read as "cannot be written".
+    """
+    import os
+
+    raw = (dest or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="name the folder to write the archive into")
+    path = os.path.expanduser(raw)
+    if not os.path.isabs(path):
+        raise HTTPException(status_code=400, detail="the folder must be a full path, starting from the top of the disk")
+    return os.path.normpath(path)
+
+
 @router.post("/evidence/plan")
 def evidence_plan_route(
     cadence: str = Query("weekly"),
@@ -683,7 +707,7 @@ def evidence_plan_route(
         period = resolve_period(cadence)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from None
-    return evidence_plan(db, period, dest=dest or None)
+    return evidence_plan(db, period, dest=_evidence_dest(dest) if (dest or "").strip() else None)
 
 
 @router.post("/evidence/build")
@@ -691,6 +715,7 @@ def evidence_build_route(
     cadence: str = Query("weekly"),
     dest: str = Query(..., description="destination directory on THIS machine"),
     edition_file: str = Query("", description="an existing edition; omit to build a fresh one"),
+    plaintext_ack: bool = Query(False, description="the caller showed the plain-text warning (the plan's disclosure)"),
     db: Session = Depends(get_db),
 ) -> dict:
     """Write the evidence archive to a directory on this machine.
@@ -709,6 +734,15 @@ def evidence_build_route(
         period = resolve_period(cadence)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from None
+    # The archive is the period's articles in PLAIN TEXT out of an encrypted store. The panel
+    # shows that warning with the plan's numbers before Write is possible; this flag makes the
+    # same hold for any caller, the #14f consent pattern.
+    if not plaintext_ack:
+        raise HTTPException(
+            status_code=400,
+            detail="the archive is plain text; send plaintext_ack=true once that has been shown to the operator",
+        )
+    dest = _evidence_dest(dest)
 
     if edition_file:
         try:
@@ -718,6 +752,8 @@ def evidence_build_route(
     else:
         edition = layer_a(db, period)
 
+    if not _EVIDENCE_WRITE.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="an evidence archive is already being written; wait for it to finish")
     try:
         return build_evidence_archive(db, edition, period, dest)
     except ValueError as exc:
@@ -726,6 +762,8 @@ def evidence_build_route(
         raise HTTPException(
             status_code=500, detail=http_detail(exc, "could not write the archive: ")
         ) from None
+    finally:
+        _EVIDENCE_WRITE.release()
 
 
 @router.delete("/editions/{filename}")

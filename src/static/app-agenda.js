@@ -432,6 +432,7 @@
       // The §18 enumeration is fetched right after the review renders, so it is on
       // screen before the operator reaches the download button rather than after.
       _bulPrivacy();
+      _bulAdoptRunningNarration();
     }
 
     // ONE renderer for a narrated unit's label and per-sentence verdicts, shared by
@@ -534,7 +535,7 @@
         ${stories ? `<h4 style="margin:12px 0 4px">${esc(_bulT("Stories"))}</h4>${stories}` : ""}
         <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
           <button class="secondary" data-on-click="bulletinNarrate(this)" id="bul-narrate-run"${_bulNarrating ? " disabled" : ""}>${esc(_bulT("Narrate with the local model"))}</button>
-          <button class="secondary" data-on-click="bulletinNarrateStop(this)" id="bul-narrate-stop"${_bulNarrating ? "" : " hidden"} title="${esc(_bulT("Stops after the paragraph being written. Each finished paragraph is kept, so narrating again carries on from there."))}">${esc(_bulT("Stop narration"))}</button>
+          <button class="secondary" data-on-click="bulletinNarrateStop(this)" id="bul-narrate-stop"${_bulNarrating ? "" : " hidden"}${_bulStopAsked ? " disabled" : ""} title="${esc(_bulT("Stops after the paragraph being written. Each finished paragraph is kept, so narrating again carries on from there."))}">${esc(_bulT("Stop narration"))}</button>
           <button class="secondary" data-on-click="bulletinOpen('html')">${esc(_bulT("Preview"))}</button>
           <button class="secondary" data-on-click="bulletinDownloadBundle(this)">${esc(_bulT("Download report + annexes"))}</button>
           <button class="secondary" data-on-click="bulletinOpen('markdown')">${esc(_bulT("Report only"))}</button>
@@ -703,10 +704,12 @@
     // True while a run is being watched, so a Review redrawn mid-run (a language switch,
     // a re-read) keeps Stop on screen and Narrate off.
     let _bulNarrating = false;
+    // True once Stop was pressed for the watched run, so a redraw does not offer it again.
+    let _bulStopAsked = false;
     function _bulNarrateButtons() {
       const run = $("bul-narrate-run"), stop = $("bul-narrate-stop");
       if (run) run.disabled = _bulNarrating;
-      if (stop) { stop.hidden = !_bulNarrating; if (!_bulNarrating) stop.disabled = false; }
+      if (stop) { stop.hidden = !_bulNarrating; stop.disabled = _bulNarrating && _bulStopAsked; }
     }
 
     async function bulletinNarrate(btn) {
@@ -721,7 +724,20 @@
       } catch (e) {
         _bulSay("bul-pub", "Could not start narration: {error}", {error: e.message});
         btn.disabled = false;
+        _bulAdoptRunningNarration();  // a 409 means a run is already going: offer its Stop
       }
+    }
+
+    // A run this page did not start (a reload, another tab, a 409 on Narrate) can be stopped
+    // too: if the server says one is running, watch it and show Stop. Called when the Review
+    // opens and after a refused start; it never starts anything.
+    async function _bulAdoptRunningNarration() {
+      if (_bulNarrating) return;
+      let d = null;
+      try { d = await api("/api/bulletin/narration"); } catch { return; }
+      if (!(d && d.job && d.job.running) || _bulNarrating) return;
+      _bulNarrating = true; _bulNarrateButtons();
+      _bulWatchNarration();
     }
 
     // The poll stops on a terminal state and re-reads the review, so the operator sees
@@ -732,7 +748,8 @@
       _bulNarratePoll = setInterval(async () => {
         let d = null;
         try { d = await api("/api/bulletin/narration"); }
-        catch { clearInterval(_bulNarratePoll); _bulNarratePoll = null; _bulNarrating = false; _bulNarrateButtons(); return; }
+        // One failed read says nothing about the run: keep Stop on screen and ask again next tick.
+        catch { return; }
         const job = d.job || {};
         const n = {done: job.done || 0, total: job.total || 0};
         if (job.running) {
@@ -770,7 +787,6 @@
     // (the cursor is saved per unit), so Narrate again resumes rather than starts over. That
     // is why it asks no confirm(): nothing is lost (tests/trusted_click_table.py lists it
     // with the other job stops). The poll above reports the outcome in its own words.
-    let _bulStopAsked = false;
     async function bulletinNarrateStop(btn) {
       btn.disabled = true;
       try {
@@ -792,17 +808,20 @@
     // folder, and re-checks that at the click, so the numbers the operator decided on
     // describe the file that gets written. The plaintext warning is the visible caveat
     // (R685): this is the one place the encrypted corpus leaves as clear text.
-    let _bulEvPlan = null, _bulEvBuilt = null, _bulEvSeq = 0;
+    let _bulEvPlan = null, _bulEvBuilt = null, _bulEvSeq = 0, _bulEvBuilding = false;
     function _bulEvKey() {
       return {cadence: ($("bul-cadence") || {}).value || "weekly",
         dest: (($("bul-ev-dest") || {}).value || "").trim()};
     }
     function _bulEvReady() {
+      // Never while a write is in flight: a second write into the same folder races the first.
+      if (_bulEvBuilding) return false;
       const p = _bulEvPlan, k = _bulEvKey();
-      return !!(p && p.d && p.cadence === k.cadence && p.dest === k.dest
+      return !!(p && p.d && !p.used && p.cadence === k.cadence && p.dest === k.dest
         && p.d.destination_writable === true && (p.d.articles || 0) > 0);
     }
     async function bulletinEvidencePlan(btn) {
+      if (_bulEvBuilding) return;  // the panel belongs to the write until it answers
       const k = _bulEvKey();
       if (!k.dest) { _bulSay("bul-ev-msg", "Type the folder on this machine to write it into."); return; }
       const seq = ++_bulEvSeq;
@@ -830,25 +849,30 @@
         _bulPaintEvidence();
         return;
       }
-      const k = _bulEvKey(), seq = ++_bulEvSeq;
+      const k = _bulEvKey();
+      _bulEvBuilding = true;
       btn.disabled = true;
+      _bulPaintEvidence();
       _bulSay("bul-ev-msg", "Writing the archive… a long period can take several minutes.");
       try {
-        const r = await api(`/api/bulletin/evidence/build?cadence=${encodeURIComponent(k.cadence)}&dest=${encodeURIComponent(k.dest)}`,
+        const r = await api(`/api/bulletin/evidence/build?cadence=${encodeURIComponent(k.cadence)}&dest=${encodeURIComponent(k.dest)}&plaintext_ack=true`,
           {method: "POST"});
-        if (seq !== _bulEvSeq) return;
         _bulEvBuilt = r;
+        // A written archive is not written again by a second click: the next Write
+        // needs a new Check (the server would replace the file of the same name).
+        if (_bulEvPlan) _bulEvPlan = Object.assign({}, _bulEvPlan, {used: true});
         _bulClearMsg("bul-ev-msg");
       } catch (e) {
-        if (seq !== _bulEvSeq) return;
         _bulSay("bul-ev-msg", "Could not write the archive: {error}", {error: e.message});
       } finally {
+        _bulEvBuilding = false;
         _bulPaintEvidence();
       }
     }
     function _bulPaintEvidence() {
-      const out = $("bul-ev-out"), wbtn = $("bul-ev-build");
+      const out = $("bul-ev-out"), wbtn = $("bul-ev-build"), cbtn = $("bul-ev-plan");
       if (wbtn) wbtn.disabled = !_bulEvReady();
+      if (cbtn) cbtn.disabled = _bulEvBuilding;
       if (!out) return;
       const p = _bulEvPlan && _bulEvPlan.d, b = _bulEvBuilt;
       if (!p) { out.innerHTML = ""; return; }

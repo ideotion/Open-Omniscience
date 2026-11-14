@@ -38,14 +38,14 @@ const NAMES = ["_bulT", "_bulTf", "_bulSay", "_bulClearMsg", "_bulPaintMsg", "_b
 const src =
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g," +
   "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
-  "var _bulMsgs = {}; let _bulEvPlan = null, _bulEvBuilt = null, _bulEvSeq = 0; let _bulNarrating = false;\n" +
+  "var _bulMsgs = {}; let _bulEvPlan = null, _bulEvBuilt = null, _bulEvSeq = 0, _bulEvBuilding = false; let _bulNarrating = false, _bulStopAsked = false;\n" +
   NAMES.map(extract).join("\n") + "\n" +
-  "return { " + NAMES.join(", ") + ", setNarrating: (v) => { _bulNarrating = v; } };";
+  "return { " + NAMES.join(", ") + ", setNarrating: (v) => { _bulNarrating = v; }, setStopAsked: (v) => { _bulStopAsked = v; } };";
 
 const els = {};
 function el(id, extra) { els[id] = Object.assign({id, value: "", textContent: "", innerHTML: "", disabled: false, hidden: false}, extra || {}); return els[id]; }
 el("bul-cadence", {value: "weekly"}); el("bul-ev-dest"); el("bul-ev-msg"); el("bul-ev-out");
-el("bul-ev-build", {disabled: true}); el("bul-narrate-run"); el("bul-narrate-stop", {hidden: true});
+el("bul-ev-build", {disabled: true}); el("bul-ev-plan"); el("bul-narrate-run"); el("bul-narrate-stop", {hidden: true});
 const calls = [];
 let pending = [];
 function api(url, opts) {
@@ -100,9 +100,21 @@ const PLAN_OK = {articles: 12, estimated_bytes: 5000, destination_writable: true
   assert.strictEqual(buildBtn.disabled, false);
   p = M.bulletinEvidenceBuild(buildBtn);
   assert.ok(calls[calls.length - 1].url.startsWith("/api/bulletin/evidence/build?cadence=weekly&dest=%2Fdata%2Farchive"));
+  assert.ok(calls[calls.length - 1].url.endsWith("&plaintext_ack=true"), "the write says the warning was shown");
+  // WHILE the write is in flight: a repaint (a language switch) or a Check must not turn Write back on.
+  M._bulPaintEvidence();
+  assert.strictEqual(buildBtn.disabled, true, "a repaint during a write re-enabled Write");
+  assert.strictEqual(els["bul-ev-plan"].disabled, true, "Check stays off during a write");
+  const n0 = calls.length;
+  await M.bulletinEvidencePlan(planBtn);
+  assert.strictEqual(calls.length, n0, "a Check during a write must not reach the server");
+  await M.bulletinEvidenceBuild(buildBtn);
+  assert.strictEqual(calls.length, n0, "a second Write during a write must not reach the server");
   pending.shift().res({path: "/data/archive/x.zip", articles: 12, articles_expected: 12, complete: true, bytes: 4000}); await p;
   assert.ok(els["bul-ev-out"].innerHTML.includes("/data/archive/x.zip"));
   assert.ok(els["bul-ev-out"].innerHTML.includes("Articles: 12 · 4000 B"));
+  assert.strictEqual(buildBtn.disabled, true, "a written archive needs a new Check before another Write");
+  assert.strictEqual(els["bul-ev-plan"].disabled, false);
 
   // --- an unwritable folder keeps Write off -------------------------------- //
   p = M.bulletinEvidencePlan(planBtn);
@@ -134,6 +146,9 @@ const PLAN_OK = {articles: 12, estimated_bytes: 5000, destination_writable: true
   M.setNarrating(true); M._bulNarrateButtons();
   assert.strictEqual(els["bul-narrate-stop"].hidden, false);
   assert.strictEqual(els["bul-narrate-run"].disabled, true);
+  M.setStopAsked(true); M._bulNarrateButtons();
+  assert.strictEqual(els["bul-narrate-stop"].disabled, true, "Stop is not offered twice");
+  M.setStopAsked(false);
   M.setNarrating(false); M._bulNarrateButtons();
   assert.strictEqual(els["bul-narrate-stop"].hidden, true);
   assert.strictEqual(els["bul-narrate-run"].disabled, false);
