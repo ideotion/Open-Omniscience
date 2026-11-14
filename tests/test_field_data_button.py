@@ -70,14 +70,17 @@ def test_sources_and_articles_come_first_and_every_export_is_a_loopback_read():
         "/api/diagnostics/source-quality?download=1",
         "/api/diagnostics/source-samples?after=",
         "/api/diagnostics/field-cards",
+        "/api/diagnostics/source-qualification-export?download=1",
+        "/api/diagnostics/field-candidate-sources",
     ]
     # same-origin paths only: nothing the button saves goes online
     assert all(u.startswith("/api/") for u in urls)
     # several instances send their files back together: every name carries the press time and the instance
     names = re.findall(r'name: "([^"]+)"', exports)
-    assert len(names) == 3 and all(n.startswith("oo-field-{press}-") for n in names), names
-    # the cards export reads article text, so it is a POST (R694)
+    assert len(names) == 5 and all(n.startswith("oo-field-{press}-") for n in names), names
+    # the cards export reads article text and the candidate list groups the article table, so both are POSTs (R694)
     assert 'method: "POST", url: "/api/diagnostics/field-cards"' in exports
+    assert 'method: "POST", url: "/api/diagnostics/field-candidate-sources"' in exports
     run = function_body(js, "downloadFieldData")
     assert "fetch(ex.url, ex.method ? {method: ex.method} : undefined)" in run and "fetch(ex.url + after)" in run
     assert "ensureOnline(" not in run

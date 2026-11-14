@@ -422,3 +422,44 @@ def field_cards(db: Session = Depends(get_db)) -> Response:
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{fname}"', "X-OO-Instance": inst},
     )
+
+
+# --------------------------------------------------------------------------- #
+# Sources this install qualified that no shipped catalogue has, PROPOSED for review (maintainer 2026-11-14). Saved by the
+# Field data button; scripts/propose_source_additions.py reads it. Nothing is ever added to a catalogue by this.
+# --------------------------------------------------------------------------- #
+@router.post("/field-candidate-sources")
+def field_candidate_sources(db: Session = Depends(get_db)) -> Response:
+    """ONE zip: ``candidates.json`` (src/catalog/candidate_sources.py) and a ``manifest.json`` that says what it holds.
+    POST (R694): it reads the whole sources table and groups the article table. Read-only, no network."""
+    from src import __version__
+    from src.catalog.candidate_sources import build_candidate_sources
+    from src.monitoring.secret_scrub import scrubbed_value
+    from src.paths import instance_tag
+
+    inst = instance_tag()
+    doc = scrubbed_value(build_candidate_sources(db))
+    cands = doc.get("candidates") or []
+    manifest = {
+        "schema": "oo-field-candidate-sources-1",
+        "generated_at": doc.get("generated_at"),
+        "app_version": __version__,
+        "instance": inst,
+        "what_it_holds": (
+            f"{len(cands)} sources this install qualified by its own measurement that no shipped catalogue has, each "
+            "with its name, domain, feed address (scheme, host, port and path only), tags, language, country and the "
+            "qualification evidence (attempt counts and dates, articles stored and their dates). No article text."
+        ),
+        "left_out": doc.get("left_out"),
+        "proposal": "every row is proposed: nothing is added to the shipped list without a maintainer's review and a pull request",
+    }
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        z.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=1))
+        z.writestr("candidates.json", json.dumps(doc, ensure_ascii=False, separators=(",", ":"), default=str))
+    fname = f"oo-candidate-sources-{datetime.now().strftime('%Y%m%d-%H%M')}-{inst}.zip"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"', "X-OO-Instance": inst},
+    )

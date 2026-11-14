@@ -30,6 +30,7 @@ anywhere, including at module load.
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 
 APP_DIRNAME = "open-omniscience"
@@ -121,6 +122,7 @@ def data_dir() -> Path:
 
 #: The file in the data folder that holds its instance tag (see ``instance_tag``).
 INSTANCE_ID_FILE = "instance_id"
+_INSTANCE_LOCK = threading.Lock()
 
 
 def instance_tag() -> str:
@@ -136,20 +138,22 @@ def instance_tag() -> str:
     import secrets
 
     path = data_dir() / INSTANCE_ID_FILE
-    try:
-        tag = path.read_text(encoding="ascii").strip()
-        if re.fullmatch(r"[0-9a-f]{8}", tag):
-            return tag
-    except (OSError, UnicodeDecodeError):
-        pass
-    tag = secrets.token_hex(4)
-    try:
-        from src.safety.file_lock import atomic_replace
+    with _INSTANCE_LOCK:   # two exports at once on a new folder must not each make (and name files with) their own tag
+        try:
+            with path.open("rb") as fh:
+                tag = fh.read(64).decode("ascii", "replace").strip()   # a capped read: the file is 9 bytes when it is ours
+            if re.fullmatch(r"[0-9a-f]{8}", tag):
+                return tag
+        except OSError:
+            pass
+        tag = secrets.token_hex(4)
+        try:
+            from src.safety.file_lock import atomic_replace
 
-        atomic_replace(path, tag + "\n", encoding="ascii")
-    except OSError:
-        return "no-id"
-    return tag
+            atomic_replace(path, tag + "\n", encoding="ascii")
+        except OSError:
+            return "no-id"
+        return tag
 
 
 def diagnostics_dir() -> Path:
