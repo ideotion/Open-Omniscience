@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-14,bulletin,"annexes excerpt-only by default, full text a visible opt-in (R703)",shipped,PR #1993; R703,src/api/bulletin.py; src/bulletin/annexes.py; src/bulletin/privacy.py; src/static/app-agenda.js,The annexes ZIP carries each cited article's details and an excerpt unless the operator ticks a checkbox whose hint says the bundle redistributes publishers' text; the download and the privacy enumeration send the same flag.
