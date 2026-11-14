@@ -1311,6 +1311,8 @@ def test_the_fixed_unreadable_text_sentence_is_kept_at_exactly_the_sites_that_ha
     kept = Counter((rel, fn.split(":")[0]) for (rel, fn), has in calls.items() if has)
     assert kept == Counter(
         {
+            ("src/api/backup_v2.py", "export_job_resume"): 2,  # R701: the export's 400 and 409, as safety.encrypted_backup does
+            ("src/api/backup_v2.py", "export_job_start"): 2,
             ("src/api/diagnostics/p0.py", "p0_validation_start"): 1,
             ("src/api/diagnostics/release_run.py", "release_run_resume"): 1,
             ("src/api/diagnostics/release_run.py", "release_run_start"): 1,

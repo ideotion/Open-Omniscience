@@ -49,7 +49,7 @@ from src.backup.merge import (
 )
 from src.jobs.background import BackgroundJob, Framed, register_job
 from src.monitoring import storage_events
-from src.monitoring.secret_scrub import http_detail, log_failure, scrub_and_reraise
+from src.monitoring.secret_scrub import UNREADABLE_TEXT, http_detail, log_failure, scrub_and_reraise
 from src.scheduler.runner import exclusive_window_open
 
 _LOG = logging.getLogger("api.backup_v2")
@@ -945,9 +945,9 @@ def export_job_start(body: ExportStartBody) -> dict:
                 verify_after_write=body.verify_after_write,
             )
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase)) from None
+            raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
         except RuntimeError as exc:
-            raise HTTPException(status_code=409, detail=http_detail(exc, "", body.passphrase)) from None
+            raise HTTPException(status_code=409, detail=http_detail(exc, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
 
 
 @router.get("/export/status")
@@ -995,9 +995,9 @@ def export_job_resume(body: ExportResumeBody) -> dict:
                 body.dir or None, passphrase=body.passphrase, verify_after_write=body.verify_after_write
             )
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase)) from None
+            raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
         except RuntimeError as exc:
-            raise HTTPException(status_code=409, detail=http_detail(exc, "", body.passphrase)) from None
+            raise HTTPException(status_code=409, detail=http_detail(exc, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
 
 
 class ImportQueueItem(BaseModel):

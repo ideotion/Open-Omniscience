@@ -75,7 +75,7 @@ from src.backup.export_folder import (
     write_export_request,
 )
 from src.jobs.background import BackgroundJob, register_job, stop_all_count
-from src.monitoring.secret_scrub import exception_text
+from src.monitoring.secret_scrub import record_text
 
 _LOG = logging.getLogger(__name__)
 
@@ -241,7 +241,7 @@ class ExportJobManager:
             try:
                 dest = allocate_export_folder(parent)
             except ExportFolderError as exc:
-                raise ValueError(str(exc)) from None
+                raise ValueError(record_text(exc, passphrase, typed=False)) from None
             phases = ([PHASE_VOLUMES] if want_corpus else []) + ([PHASE_FOLDER] if cats and not inside else [])
             request = {
                 "corpus": want_corpus,
@@ -503,7 +503,7 @@ class ExportJobManager:
                 _backup_fn=self._seams.get("_backup_fn"),
             )
         except Exception as exc:  # noqa: BLE001 - a refusal is the export's failure, written without the passphrase
-            text = exception_text(exc, pw, typed=False)
+            text = record_text(exc, pw, typed=False)
             pw = ""
             return self._fail("volumes-refused", text, PHASE_VOLUMES)
         pw = ""  # the volumes phase has started: this orchestrator holds no passphrase from here on
@@ -543,7 +543,7 @@ class ExportJobManager:
                 _targets=self._seams.get("_targets"),
             )
         except (ValueError, RuntimeError) as exc:
-            return self._fail("folder-refused", exception_text(exc, typed=False), PHASE_FOLDER)
+            return self._fail("folder-refused", record_text(exc, typed=False), PHASE_FOLDER)
         self._note_started(began)
         st = self._wait(ctx, fold)
         if not self._ours(st):
