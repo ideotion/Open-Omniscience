@@ -74,13 +74,13 @@ IDENTITY_SCHEMA = "oo-index-engine-2"
 #: rows ``index_article`` produces for the same input; a change that provably leaves them
 #: alone is recorded with ``--same "why"`` and leaves this number where it is, which is
 #: the point -- the restore then still carries. The guard is ``tests/test_indexer_pin.py``.
-INDEXER_VERSION = 1
+INDEXER_VERSION = 2
 
 #: The hand-bumped version of the PLACES AND ENTITIES stage alone (R415). Same discipline as :data:`INDEXER_VERSION`, policed by
 #: ``configs/www_indexer_pin.json`` (``python scripts/indexer_pin.py --engine www --bump|--same "<sentence>"``). A change confined to
 #: the www modules below bumps THIS number and leaves the keyword stamp where it is, so a restore still carries the keyword rows and
 #: re-extracts only the places and entities.
-WWW_INDEXER_VERSION = 1
+WWW_INDEXER_VERSION = 2
 
 #: The prefix every stamp carries. A stamp is ``e1-`` + 32 hex digits = 35 characters,
 #: inside ``Article.index_engine``'s String(40).
@@ -102,6 +102,7 @@ ENGINE_MODULES: tuple[str, ...] = (
     "src/analytics/lemma.py",
     "src/analytics/managed.py",
     "src/analytics/reindex_parallel.py",
+    "src/analytics/script_check.py",
     "src/analytics/segmentation.py",
     "src/analytics/sentiment.py",
     "src/analytics/store.py",
@@ -157,6 +158,7 @@ WWW_ONLY_MODULES: tuple[str, ...] = (
 WWW_SHARED_MODULES: tuple[str, ...] = (
     "src/catalog/__init__.py",
     "src/analytics/reindex_parallel.py",
+    "src/analytics/script_check.py",
     "src/catalog/aggregates.py",
     "src/catalog/countries.py",
     "src/timemap/__init__.py",

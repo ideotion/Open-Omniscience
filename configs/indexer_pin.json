@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "digest": "6611aad4bf34b1a1c57db036d0d7daf7a2591b81a6726ea8a18f103659430627",
+  "version": 2,
+  "digest": "2194085d3e4080beddfc32c1b64dd275580cb9403c6589ecd613d093117ffe21",
   "log": [
     {
       "version": 1,
@@ -43,6 +43,12 @@
       "digest": "6611aad4bf34b1a1c57db036d0d7daf7a2591b81a6726ea8a18f103659430627",
       "kind": "same",
       "note": "PR #1949 (audit P2/P8) replaced the quadratic comment, tag, style/script and e-mail regexes in extract.py, text_processor.py and markup_blocks.py with linear scans that are byte-identical to the old regexes (differential on every shipped HTML page, 300k seeded random documents incl. Unicode case folds, tests/test_html_strips_linear.py), so no row index_article writes can change"
+    },
+    {
+      "version": 2,
+      "digest": "2194085d3e4080beddfc32c1b64dd275580cb9403c6589ecd613d093117ffe21",
+      "kind": "bump",
+      "note": "R699 cause 1: an asserted language its text's own script refutes is cleared and re-deduced, so those articles' keywords move to the right language and stoplist"
     }
   ]
 }

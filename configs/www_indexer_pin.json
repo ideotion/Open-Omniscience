@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "digest": "40eee39a928060ecddb9a82e3457ecc83f80f9d6768fa7e80e565b9de163085d",
+  "version": 2,
+  "digest": "12ac06f73de263886e239fc7469c5ddf1880d898971964f2be0e464223b9264f",
   "log": [
     {
       "version": 1,
@@ -19,6 +19,12 @@
       "digest": "40eee39a928060ecddb9a82e3457ecc83f80f9d6768fa7e80e565b9de163085d",
       "kind": "same",
       "note": "R415 review: reindex_parallel.py (_extract_www picks the text and source country) joins the www modules"
+    },
+    {
+      "version": 2,
+      "digest": "12ac06f73de263886e239fc7469c5ddf1880d898971964f2be0e464223b9264f",
+      "kind": "bump",
+      "note": "R699 cause 1: a cleared, refuted language tag reaches date extraction as unknown instead of the wrong language, so those articles' dates can change"
     }
   ]
 }
