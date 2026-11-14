@@ -15956,6 +15956,9 @@ migration or a re-index is DEFERRED with the change it would make, and is listed
 - **Explicit `OO_DATA_DIR` and the first-launch data-location step.** `unlock.html`'s `legalToDataLocation`
   comment says an explicit `OO_DATA_DIR` skips the step; the backend's `offerable` ignores `explicit_override`, so
   it is offered anyway. Which one is right is a product decision; the code and the comment must end up agreeing.
+  **RESOLVED 2026-11-14 (PR #1987, open-on-main row 14): the comment wins.** With `OO_DATA_DIR` set,
+  `offerable` is false with a reason naming the variable, and both write paths answer 409, so a recorded
+  folder can never replace the operator's own choice. Pinned in `tests/test_data_location.py`.
 - **Stage 3 after a kill in an import's tail** (the deferred sub-part of I4). A run killed after its stage-4 read
   now boots as finished, but `optimize_after_bulk` (stage 3) is not re-run on boot, so full-text segments stay
   unmerged until the next import or re-index. The fix is a boot-time writer, which the deferred-startup path does

@@ -320,19 +320,48 @@ def data_location() -> dict:
     from src.paths import data_dir
 
     state = app_lock_state()
-    return {
-        "data_dir": str(data_dir()),
-        "explicit_override": bool(os.getenv("OO_DATA_DIR")),
-        "state": state,
-        "offerable": state == "fresh",
-        "subdir": DATA_SUBDIR,
-        "why_not_offerable": None
-        if state == "fresh"
-        else (
+    explicit = _explicit_data_dir()
+    if state != "fresh":
+        why = (
             "A corpus already exists here. Moving it is a file copy with the app stopped, "
             "not a setting — see the manual."
-        ),
+        )
+    elif explicit:
+        why = _EXPLICIT_WHY
+    else:
+        why = None
+    return {
+        "data_dir": str(data_dir()),
+        "explicit_override": explicit,
+        "state": state,
+        "offerable": why is None,
+        "subdir": DATA_SUBDIR,
+        "why_not_offerable": why,
     }
+
+
+# An operator who set OO_DATA_DIR has already chosen, and `src.paths.data_dir()` lets that
+# variable win over everything. A folder this step recorded in oo.env would then either
+# silently replace the operator's own choice at the next `scripts/launch.sh` start (which
+# sources the file after the environment) or be ignored by any start that does not read the
+# file. Neither is the control as shown, so it is not offered and both write paths refuse;
+# unlock.js already skips the step on `offerable` (open-on-main row 14).
+_EXPLICIT_WHY = (
+    "OO_DATA_DIR is set for this launch, so the corpus lives in the folder it names. "
+    "To use another folder, change OO_DATA_DIR before starting the app."
+)
+
+
+def _explicit_data_dir() -> bool:
+    """True when the operator named the data folder themselves (``OO_DATA_DIR``)."""
+    return bool(os.getenv("OO_DATA_DIR"))
+
+
+def _refuse_unless_offerable() -> None:
+    if app_lock_state() != "fresh":
+        raise HTTPException(status_code=409, detail="a database already exists")
+    if _explicit_data_dir():
+        raise HTTPException(status_code=409, detail=_EXPLICIT_WHY)
 
 
 @router.post("/data-location/check")
@@ -345,8 +374,7 @@ def data_location_check(body: DataLocationBody) -> dict:
     """
     from src.safety.data_location import preflight
 
-    if app_lock_state() != "fresh":
-        raise HTTPException(status_code=409, detail="a database already exists")
+    _refuse_unless_offerable()
     return preflight(body.path)
 
 
@@ -360,8 +388,7 @@ def data_location_set(body: DataLocationBody) -> dict:
     """
     from src.safety.data_location import persist
 
-    if app_lock_state() != "fresh":
-        raise HTTPException(status_code=409, detail="a database already exists")
+    _refuse_unless_offerable()
     out = persist(body.path)
     if not out.get("saved"):
         raise HTTPException(status_code=400, detail=out.get("reason", "could not save"))

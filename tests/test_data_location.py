@@ -327,6 +327,11 @@ def test_every_warning_and_refusal_is_machine_readable(tmp_path, monkeypatch) ->
 # --------------------------------------------------------------------------- #
 # The endpoints: the refusal is the data-safety half
 # --------------------------------------------------------------------------- #
+# The suite's conftest sets OO_DATA_DIR for every test (an isolated store), so a test of the
+# step as a first-time operator sees it says the folder was NOT named by hand.
+_NOT_EXPLICIT = lambda: False  # noqa: E731
+
+
 def _client():
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -346,6 +351,7 @@ def test_the_choice_is_offered_only_while_nothing_has_been_written(monkeypatch, 
     environment to the new, empty folder and reports `fresh`, with the corpus orphaned."""
     import src.api.unlock as unlock_mod
 
+    monkeypatch.setattr(unlock_mod, "_explicit_data_dir", _NOT_EXPLICIT)
     monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "fresh")
     body = _client().get("/api/system/data-location").json()
     assert body["offerable"] is True
@@ -390,6 +396,7 @@ def test_a_fresh_instance_can_record_a_choice_and_it_lands_in_oo_env(monkeypatch
     env = tmp_path / "install" / "oo.env"
     env.parent.mkdir(parents=True)
     monkeypatch.setattr(dl, "env_file_path", lambda: env)
+    monkeypatch.setattr(unlock_mod, "_explicit_data_dir", _NOT_EXPLICIT)
     monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "fresh")
 
     drive = tmp_path / "drive"
@@ -418,6 +425,7 @@ def test_an_unusable_folder_is_a_400_and_changes_nothing(monkeypatch, tmp_path):
     env = tmp_path / "oo.env"
     env.write_text('export OO_DATA_DIR="/previous/choice"\n', encoding="utf-8")
     monkeypatch.setattr(dl, "env_file_path", lambda: env)
+    monkeypatch.setattr(unlock_mod, "_explicit_data_dir", _NOT_EXPLICIT)
     monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "fresh")
 
     r = _client().post("/api/system/data-location", json={"path": "relative/path"})
@@ -452,6 +460,7 @@ def _gated_client():
 def test_at_fresh_the_real_app_serves_the_step(monkeypatch, tmp_path, env_file):
     import src.api.unlock as unlock_mod
 
+    monkeypatch.setattr(unlock_mod, "_explicit_data_dir", _NOT_EXPLICIT)
     monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "fresh")
     c = _gated_client()
     got = c.get("/api/system/data-location")
@@ -611,3 +620,27 @@ def test_every_rendered_string_of_the_step_has_a_key_in_all_twelve_locales() -> 
         catalog = _json.loads(f.read_text(encoding="utf-8"))
         missing = [s for s in literals if s not in catalog]
         assert not missing, f"{f.stem}: {missing}"
+
+
+def test_an_operator_who_set_oo_data_dir_is_never_offered_the_move(monkeypatch, tmp_path, env_file):
+    """Open-on-main row 14: with OO_DATA_DIR set, the step must not be offered at `fresh`,
+    and both write paths refuse, so a folder recorded in oo.env can never replace the
+    operator's own choice. The suite really runs with OO_DATA_DIR set; nothing is faked here
+    but the lock state."""
+    import os
+
+    import src.api.unlock as unlock_mod
+
+    assert os.environ.get("OO_DATA_DIR"), "the suite is expected to run with OO_DATA_DIR set"
+    monkeypatch.setattr(unlock_mod, "app_lock_state", lambda: "fresh")
+    c = _client()
+    body = c.get("/api/system/data-location").json()
+    assert body["explicit_override"] is True
+    assert body["offerable"] is False
+    assert "OO_DATA_DIR" in body["why_not_offerable"]
+
+    target = tmp_path / "elsewhere"
+    assert c.post("/api/system/data-location/check", json={"path": str(target)}).status_code == 409
+    assert c.post("/api/system/data-location", json={"path": str(target)}).status_code == 409
+    assert not target.exists(), "a refused probe creates nothing"
+    assert not env_file.exists(), "a refused write records nothing"
