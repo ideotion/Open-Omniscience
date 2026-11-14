@@ -350,7 +350,9 @@ def parse_hot_pages(payload: dict) -> dict[int, dict]:
     # sends no ``continue``: a long page's full wikitext plus categories, images and
     # extlinks at ``max`` can be cut, and a prop past the cut is ABSENT for want of an
     # answer, not because the page lost it (the same trap ``parse_walk_batch`` guards).
-    # A caller that reads an absent prop as an answer must check this first.
+    # A caller that reads an absent prop as an answer must check this first. ``bool(...)`` is
+    # right only under ``formatversion=2`` (``batchcomplete: true``); formatversion 1 sends "",
+    # which would read every whole answer as incomplete (safe: nothing clears, but silently).
     props_complete = bool((payload or {}).get("batchcomplete")) and "continue" not in (payload or {})
     out: dict[int, dict] = {}
     for page in pages if isinstance(pages, list) else []:
