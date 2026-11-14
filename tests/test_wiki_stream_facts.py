@@ -234,3 +234,38 @@ def test_a_failed_clear_rolls_the_version_back_with_it(lane, monkeypatch):
         assert any("store" in e for e in result.errors)
         assert session.query(VersionedRevision).filter(VersionedRevision.entity_id == entity.id).count() == 0
         assert session.query(VersionedEntityFact).count() == 0
+
+
+def test_a_cut_answer_never_overwrites_a_list_fact_with_a_partial_one(lane):
+    """Final Opus read: a ``continue`` can truncate categories/images/extlinks at ``max``;
+    the stored whole value must survive, while a fact the cut answer DID carry (length) is kept."""
+
+    class _Whole(_Client):
+        def fetch_hot_pages(self, wiki, pageids, *, with_assessments=False):
+            pages = super().fetch_hot_pages(wiki, pageids, with_assessments=with_assessments)
+            return {
+                pid: {**p, "categories": [{"title": f"Category:C{i}"} for i in range(3)], "extlinks": [{"url": f"https://e/{i}"} for i in range(7)]}
+                for pid, p in pages.items()
+            }
+
+    class _CutShort(_Whole):
+        def fetch_hot_pages(self, wiki, pageids, *, with_assessments=False):
+            pages = super().fetch_hot_pages(wiki, pageids, with_assessments=with_assessments)
+            return {
+                pid: {**p, "categories": p["categories"][:1], "extlinks": p["extlinks"][:2], "props_complete": False}
+                for pid, p in pages.items()
+            }
+
+    whole = WikiStreamAdapter(client=_Whole(), editions=(EDITION,)).fetch_version(external_id_for(EDITION, DELTA))
+    cut = WikiStreamAdapter(client=_CutShort(), editions=(EDITION,)).fetch_version(external_id_for(EDITION, DELTA))
+    assert cut is not None and "categories" not in cut.facts and "external_link_count" not in cut.facts
+    assert "length_bytes" in cut.facts
+    with lane_session("wiki") as session:
+        entity = VersionedEntity(external_id=external_id_for(EDITION, DELTA), title="Fixture Delta", language=EDITION)
+        session.add(entity)
+        session.flush()
+        adapter = WikiStreamAdapter(client=_Whole(), editions=(EDITION,))
+        _store_facts(session, adapter, entity, whole)
+        _store_facts(session, adapter, entity, cut)
+        stored = _facts(session, entity.id)
+    assert stored["external_link_count"] == 7 and len(stored["categories"]) == 3

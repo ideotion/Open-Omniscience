@@ -219,6 +219,11 @@ def to_feed_change(change: StreamChange) -> FeedChange:
     )
 
 
+#: Facts built from a prop the API pages (``cllimit``/``imlimit``/``ellimit``): on a cut
+#: answer they are partial, never a value to store.
+_LIST_DERIVED_FACTS: tuple[str, ...] = ("categories", "image_count", "external_link_count")
+
+
 class WikiStreamAdapter:
     """The ``VersionedAdapter`` the substrate drives for the stream. ``kind='wiki'``."""
 
@@ -390,6 +395,13 @@ class WikiStreamAdapter:
         from src.wiki.pagefacts import facts_from_page, unanswered_facts
 
         facts = facts_from_page(data, wikitext=text)
+        if ident.page_id is not None and data.get("props_complete") is not True:
+            # A cut answer (``continue``, no ``batchcomplete``) can hold a TRUNCATED list:
+            # ``cllimit``/``ellimit``/``imlimit`` are ``max`` and a long page runs past them.
+            # Storing that would overwrite a correct earlier value with a partial one, so the
+            # list-derived facts are dropped and the stored ones kept until a whole answer.
+            for name in _LIST_DERIVED_FACTS:
+                facts.pop(name, None)
         return FetchedVersion(
             external_id=external_id,
             revision_ref=str(data.get("revid")),
