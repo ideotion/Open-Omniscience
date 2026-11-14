@@ -568,7 +568,7 @@ def test_export_answers_503_when_the_key_cannot_be_read(tmp_path, monkeypatch):
         raise SigningError("unreadable")
 
     monkeypatch.setattr(api, "_log", refuse)
-    r = TestClient(app).get("/api/custody/export", headers={"Sec-Fetch-Site": "same-origin"})
+    r = TestClient(app).post("/api/custody/export")  # a POST since R694
     assert r.status_code == 503 and "could not be read" in r.json()["detail"]
 
 

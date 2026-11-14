@@ -11,10 +11,9 @@ standalone scripts/verify_custody.py.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from src.api.cross_site import refuse_cross_site_get
 from src.custody.anchor import AnchorError, AnchorUnavailable, available_providers, get_provider
 from src.custody.log import (
     ROTATION_ITEM,
@@ -44,6 +43,18 @@ _KEY_UNREADABLE = ("the custody signing key could not be read, so no bundle was 
 def _log() -> CustodyLog:
     """A fresh log handle bound to the current data dir (honours OO_DATA_DIR)."""
     return CustodyLog()
+
+
+_NO_ENTRIES = "no custody entries for that item"
+
+
+def _read_log() -> CustodyLog:
+    """The log opened to READ it (R694): a GET never creates the log file or a signing key. No log yet answers 404, as an
+    item with no entries does."""
+    try:
+        return CustodyLog(create=False)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=_NO_ENTRIES) from exc
 
 
 class LogRequest(BaseModel):
@@ -86,9 +97,11 @@ def list_providers() -> dict:
     return {"providers": available_providers()}
 
 
-@router.get("/export", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/export")
 def export(item_id: str | None = None) -> dict:
-    """Export an offline-verifiable custody bundle (optionally for one item)."""
+    """Export an offline-verifiable custody bundle (optionally for one item).
+
+    A POST (R278 F2, R694): the export signs its head, so the first one creates the signing key and the log file."""
     try:
         log = _log()
     except SigningError:
@@ -112,9 +125,24 @@ def _settings_status(*, count_late: bool = True) -> dict:
     """
     prefs = load_settings()
     avail = availability()
-    # Build the signer the way the log would, to report the real identity that
-    # would sign entries under the current preference (creates keys on first use).
-    signer = HybridSigner(use_pqc=prefs.pqc_enabled)
+    # Load the signer the way the log would, to report the real identity that signs entries under the current preference. A read
+    # never mints a key (R694): with none yet, the identity is absent and ``keys_created`` says so; the first entry makes them.
+    # An ML-DSA pair not made yet is not claimed either: pqc_effective stays False until a signature has asked for it.
+    # A key that is there but cannot be opened with what this process holds (wrapped under another passphrase, damaged) is
+    # reported as unreadable, as the export answers it, never as a 500 with the parser's text.
+    signer: HybridSigner | None
+    unreadable = False
+    try:
+        signer = HybridSigner(use_pqc=prefs.pqc_enabled, create=False)
+    except FileNotFoundError:
+        signer = None
+    except SigningError:
+        signer, unreadable = None, True
+    from src.paths import data_dir
+
+    # The log can outlive its key (the keys folder lost or moved): then the next entry makes a NEW key and records the change
+    # without the old key's endorsement, which the Custody tab says rather than "no key yet".
+    log_exists = (data_dir() / "custody_log.db").exists()
     return {
         **prefs.to_dict(),
         "anchoring_modes": list(VALID_ANCHORING),
@@ -123,12 +151,14 @@ def _settings_status(*, count_late: bool = True) -> dict:
         # cannot complete a sign/verify round trip both report False, and only one of
         # them is fixed by installing something.
         "pqc_reason": avail["pqc_reason"],
-        "pqc_effective": signer.is_hybrid,  # signed as hybrid only if truly available
+        "pqc_effective": bool(signer and signer.is_hybrid),  # signed as hybrid only if truly available
         "ots_available": avail["ots_available"],
         "ots_reason": avail["ots_reason"],
         "ots_effective": prefs.anchoring_mode == "opentimestamps" and avail["ots_available"],
-        "key_protection": signer.key_protection,
-        "signer": signer.public_identity().to_dict(),
+        "keys_created": signer is not None or unreadable,
+        "log_exists": log_exists,
+        "key_protection": "unreadable" if unreadable else (signer.key_protection if signer else None),
+        "signer": signer.public_identity().to_dict() if signer else None,
         # CUST-1 (2026-09-24): ingest entries a failure left owed, and those written late.
         # Shown beside the chain's own status, because a gap nobody reports is the defect.
         "late": _late_block(count_late=count_late),
@@ -237,11 +267,11 @@ def reconcile(req: ReconcileRequest) -> dict:
 
 @router.get("/{item_id}")
 def entries(item_id: str) -> dict:
-    log = _log()
+    log = _read_log()
     try:
         items = [e.to_dict() for e in log.entries_for(item_id)]
         if not items:
-            raise HTTPException(status_code=404, detail="no custody entries for that item")
+            raise HTTPException(status_code=404, detail=_NO_ENTRIES)
         return {"item_id": item_id, "entry_count": len(items), "entries": items}
     finally:
         log.close()
@@ -250,10 +280,10 @@ def entries(item_id: str) -> dict:
 @router.get("/{item_id}/verify")
 def verify_item(item_id: str) -> dict:
     """Verify the full custody chain in this store (the item must be present)."""
-    log = _log()
+    log = _read_log()
     try:
         if not log.entries_for(item_id):
-            raise HTTPException(status_code=404, detail="no custody entries for that item")
+            raise HTTPException(status_code=404, detail=_NO_ENTRIES)
         # The chain's links and signatures, and its signing key followed through every key-rotation record.
         return log.verify_report()
     finally:
