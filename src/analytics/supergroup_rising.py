@@ -76,6 +76,7 @@ def _distinct_sources_windowed(db, keyword_ids, lo: date, hi: date, outlets=None
     """Distinct OUTLETS (a site's several feeds are one voice: row J, R146) that carried any of the keywords."""
     from src.database.derived_views import KeywordMentionRead
     from src.database.outlet import OutletMap
+    from src.analytics.quarantine_scope import not_quarantined
     from src.database.stand_in import not_a_stand_in_article_id
 
     outlets = outlets or OutletMap(db)
@@ -94,6 +95,7 @@ def _distinct_sources_windowed(db, keyword_ids, lo: date, hi: date, outlets=None
                 KeywordMentionRead.source_id.isnot(None),
                 # a mention kept for a lost article is no independent outlet (its source is whatever was written beside it)
                 not_a_stand_in_article_id(KeywordMentionRead.article_id),
+                not_quarantined(KeywordMentionRead.article_id),  # R101: the card's share and growth leave them out too
             )
             .distinct()
         ):
@@ -103,6 +105,7 @@ def _distinct_sources_windowed(db, keyword_ids, lo: date, hi: date, outlets=None
 
 def _article_ids_windowed(db, keyword_ids, lo: date, hi: date) -> list[int]:
     from src.database.derived_views import KeywordMentionRead
+    from src.analytics.quarantine_scope import not_quarantined
     from src.database.stand_in import not_a_stand_in_article_id
 
     ids = sorted(keyword_ids)
@@ -117,6 +120,7 @@ def _article_ids_windowed(db, keyword_ids, lo: date, hi: date) -> list[int]:
                 KeywordMentionRead.observed_on >= lo,
                 KeywordMentionRead.observed_on < hi,
                 not_a_stand_in_article_id(KeywordMentionRead.article_id),
+                not_quarantined(KeywordMentionRead.article_id),  # R101: the card's share and growth leave them out too
             )
             .distinct()
         ):
@@ -211,6 +215,7 @@ def find_rising_supergroups(
     from src.analytics.managed import normalize_lang
     from src.database.derived_views import KeywordMentionRead
     from src.database.outlet import OutletMap
+    from src.analytics.quarantine_scope import not_quarantined
     from src.database.stand_in import not_a_stand_in_article_id
 
     outlets = OutletMap(db)
@@ -223,6 +228,7 @@ def find_rising_supergroups(
             KeywordMentionRead.observed_on < hi,
             KeywordMentionRead.source_id.isnot(None),
             not_a_stand_in_article_id(KeywordMentionRead.article_id),
+            not_quarantined(KeywordMentionRead.article_id),  # R101
         )
         .group_by(KeywordMentionRead.source_id)
         .all()

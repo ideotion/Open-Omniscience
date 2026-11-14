@@ -108,6 +108,7 @@ def across_channels(session, period: Period, *, terms: list[dict] | None = None)
     ``ix_mention_keyword_date`` index rather than a whole-period mention scan.
     Without those terms there is nothing to attribute, and the section says so.
     """
+    from src.analytics.quarantine_scope import not_quarantined
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import Keyword
     from src.database.stand_in import not_a_stand_in_article_id
@@ -176,6 +177,8 @@ def across_channels(session, period: Period, *, terms: list[dict] | None = None)
             KeywordMentionRead.observed_on < hi,
             # a mention kept for a lost article is no sighting: its source would be credited as the first channel to carry a concept
             not_a_stand_in_article_id(KeywordMentionRead.article_id),
+            # R101: nor is a page the app judged not to be an article
+            not_quarantined(KeywordMentionRead.article_id),
         )
         .group_by(KeywordMentionRead.keyword_id, KeywordMentionRead.source_id)
         .all()

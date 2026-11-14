@@ -687,3 +687,46 @@ def test_the_bulletin_country_coverage_leaves_a_quarantined_article_out(db):
     assert fr["local"]["articles"] == 2
     term = next(t for t in fr["local"]["terms"] if t["normalized"] == WORD)
     assert term["articles"] == 2
+
+
+def test_the_rising_galaxy_cards_outlets_and_drill_leave_a_quarantined_article_out(db):
+    """The rising-galaxy card filtered its share and growth (_corpus_volume) but counted a quarantined page's outlet in
+    distinct_sources and listed the page in its article drill: one card in two scopes."""
+    from src.analytics.store import reindex_articles
+    from src.analytics.supergroup_rising import _article_ids_windowed, _distinct_sources_windowed
+
+    db.add(Source(name="T", domain="y.test", country="de", language="en"))
+    db.commit()
+    arts = _corpus(db)
+    db.query(Article).filter(Article.id == arts[0].id).update({"source_id": 2}, synchronize_session=False)
+    db.commit()
+    reindex_articles(db, extractor=BaselineExtractor(), article_ids=[arts[0].id])
+    kid = _kw(db).id
+    lo, hi = date.today() - timedelta(days=30), date.today() + timedelta(days=1)
+    assert _distinct_sources_windowed(db, [kid], lo, hi) == 2
+    assert arts[0].id in _article_ids_windowed(db, [kid], lo, hi)
+    _stamp(db, arts[0])
+    assert _distinct_sources_windowed(db, [kid], lo, hi) == 1
+    assert arts[0].id not in _article_ids_windowed(db, [kid], lo, hi)
+
+
+def test_the_bulletin_first_channel_is_never_a_quarantined_page(db):
+    from src.bulletin.period import Period
+    from src.bulletin.sections import across_channels
+
+    now = datetime.now(UTC)
+    early = _add(db, 0, when=now - timedelta(days=5))
+    later = [_add(db, n, when=now - timedelta(days=2)) for n in (1, 2)]
+    for a in [early, *later]:
+        index_article(db, a, extractor=BaselineExtractor())
+    today = now.date()
+    period = Period(cadence="weekly", start=today - timedelta(days=7), end=today + timedelta(days=1),
+                    baseline_start=today - timedelta(days=35))
+
+    def _first_seen() -> str:
+        out = across_channels(db, period, terms=[{"normalized": WORD, "term": WORD}])
+        return next(t for t in out["terms"] if t["normalized"] == WORD)["first_seen"]
+
+    assert _first_seen() == (now - timedelta(days=5)).date().isoformat()
+    _stamp(db, early)
+    assert _first_seen() == (now - timedelta(days=2)).date().isoformat()
