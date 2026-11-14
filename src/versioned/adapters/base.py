@@ -26,9 +26,10 @@ method that raises at runtime is one it cannot.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from sqlalchemy.orm import Session
 
@@ -55,6 +56,15 @@ class FetchedVersion:
     #: (Q312 = a): an adapter that has alpha-2 converts before returning, so no
     #: alpha-2 ever reaches a lane column.
     country_alpha3: str | None = None
+    #: The page facts the SAME response answered, in the lane's own vocabulary, or
+    #: ``None`` when the adapter read none. The substrate never reads them: it hands
+    #: them back to the adapter's optional ``store_facts`` hook inside the version's
+    #: savepoint, so a fact is stored with the version that answered it or not at all.
+    #: A field the source did not answer is ABSENT from the mapping, never a default.
+    facts: Mapping[str, Any] | None = field(default=None, compare=False)
+    #: Fact names the source was ASKED for and answered WITHOUT (the page lost them). The
+    #: adapter's hook clears these; a lane that cannot tell an answer from a gap leaves it empty.
+    facts_unanswered: tuple[str, ...] = field(default=(), compare=False)
 
 
 @dataclass(frozen=True, slots=True)

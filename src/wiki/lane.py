@@ -366,22 +366,47 @@ class WikiStreamAdapter:
     def fetch_version(self, external_id: str) -> FetchedVersion | None:
         """The current wikitext of one page, or ``None`` when the wiki says it is gone."""
         ident = parse_external_id(external_id)
+        # What the request ASKED for AND GOT A WHOLE ANSWER TO: by id it is the HOT prop set
+        # (``fetch_current_text_by_id`` goes through ``fetch_hot_pages`` without assessments),
+        # but only when the answer was complete -- a ``continue`` leaves props unanswered, not
+        # absent. By title the props are not known here. Either way nothing missing is read as
+        # an answer unless both hold.
+        requested: tuple[str, ...] = ()
         if ident.page_id is not None:
             data = self._client.fetch_current_text_by_id(ident.wiki, ident.page_id)
+            from src.wiki.mediawiki import HOT_PROPS
+
+            if data and data.get("props_complete") is True:
+                requested = HOT_PROPS
         else:
             data = self._client.fetch_current_text(ident.wiki, ident.title)
         if not data or data.get("missing"):
             # The wiki ANSWERED and said there is no such page. A failure raises out
             # of the client; the two must not share this return value.
             return None
+        text = data.get("text") or ""
+        # The SAME response already carries Q705's props (``fetch_hot_pages`` asks for
+        # them); reading them here costs no request. Absent props stay absent.
+        from src.wiki.pagefacts import facts_from_page, unanswered_facts
+
+        facts = facts_from_page(data, wikitext=text)
         return FetchedVersion(
             external_id=external_id,
             revision_ref=str(data.get("revid")),
-            text=data.get("text") or "",
+            text=text,
             revised_at=_aware(data.get("timestamp")),
             title=data.get("title") or ident.title,
             language=ident.wiki,
+            facts=facts or None,
+            facts_unanswered=unanswered_facts(facts, requested_props=requested),
         )
+
+    def store_facts(self, lane, entity_id: int, version: FetchedVersion) -> int:
+        """The substrate's facts hook: write ``version.facts`` and clear the ones the source answered without."""
+        from src.wiki.pagefacts import clear_facts, store_facts
+
+        written = store_facts(lane, entity_id, dict(version.facts or {}), revision_ref=version.revision_ref)
+        return written + clear_facts(lane, entity_id, version.facts_unanswered)
 
     def to_article(self, session, version: FetchedVersion) -> int | None:
         """Into the corpus through the EXISTING wiki upsert. Never a second path."""

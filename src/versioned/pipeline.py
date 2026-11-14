@@ -292,6 +292,25 @@ def store_version(
     return ("revision", article_id)
 
 
+def _store_facts(lane: Session, adapter: VersionedAdapter, entity: VersionedEntity, version: FetchedVersion) -> None:
+    """Hand a version's facts back to the adapter that read them, in the version's savepoint.
+
+    LANE-AGNOSTIC BY DESIGN: the substrate neither names nor reads a fact. A lane that
+    has facts implements ``store_facts(lane, entity_id, version)``; a lane without the
+    hook, or a version that carries none, stores nothing. Called on every successful
+    outcome, ``unchanged`` included, because a page's facts (its protection, its
+    categories) can change while its text does not. A version may also carry facts the
+    source was asked for and answered without, which the hook clears. A failure here rolls
+    the version back with it, so a stored version never claims facts that were not written.
+    """
+    if not version.facts and not version.facts_unanswered:
+        return
+    hook = getattr(adapter, "store_facts", None)
+    if hook is None:
+        return
+    hook(lane, entity.id, version)
+
+
 def run_feed_once(
     lane: Session,
     adapter: VersionedAdapter,
@@ -523,6 +542,7 @@ def run_feed_once(
         lane_sp = lane.begin_nested()
         try:
             outcome, article_id = store_version(lane, adapter, entity, version, corpus=corpus)
+            _store_facts(lane, adapter, entity, version)
             _link_ingested(lane, feed, external_id, entity.id)
             # On EVERY successful path (a revision already held, an unchanged text, a baseline),
             # so the backlog's "newer than the stored text" is decided in one place.

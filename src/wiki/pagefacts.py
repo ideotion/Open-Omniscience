@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from typing import Any
 
 #: The fact names this lane writes. A CLOSED vocabulary: a name not in here is
@@ -220,6 +221,58 @@ def facts_from_page(page: dict, *, wikitext: str | None = None) -> dict[str, Any
             out["infobox"] = box
 
     return out
+
+
+#: The prop each CLEARABLE fact is read from. A fact whose prop was requested and that the
+#: answer did not carry is ANSWERED ABSENT (the page lost its coordinates, was unlinked from
+#: Wikidata, left every category): the stored row is then a claim the source no longer makes.
+#: Facts not listed here are never cleared: ``protection`` is always answered, ``length_bytes``
+#: always present, and the COUNTS (images, external links) are absent on a page with none,
+#: which would read as a zero rather than an absence -- a separate decision, not taken here.
+#: ``coordinates`` is requested without ``coprop``/``colimit``, so only the PRIMARY
+#: coordinate is asked: a page left with secondary coordinates only is cleared, by design
+#: (the map places a page at its primary coordinate). Clearing also requires a COMPLETE
+#: answer (``props_complete``); the batched HOT path never clears.
+_CLEARABLE_FROM_PROP: dict[str, str] = {
+    "qid": "pageprops",
+    "coordinates": "coordinates",
+    "categories": "categories",
+    "assessment_class": "pageassessments",
+}
+
+
+def unanswered_facts(facts: dict[str, Any], *, requested_props: Iterable[str]) -> tuple[str, ...]:
+    """The clearable facts whose prop WAS requested and that ``facts`` does not carry.
+
+    ``requested_props`` is what the request ASKED for, never what came back: a caller that
+    cannot say (the title-addressed path, a prop an edition does not support) passes
+    nothing, and nothing is cleared -- an unknown is a gap, never an answer.
+    """
+    asked = set(requested_props)
+    return tuple(
+        name for name, prop in _CLEARABLE_FROM_PROP.items() if prop in asked and name not in facts
+    )
+
+
+def clear_facts(session, entity_id: int, names: Iterable[str]) -> int:
+    """Delete the named facts for one entity. Returns how many rows went.
+
+    The deliberate act :func:`store_facts` refers to: called only with names
+    :func:`unanswered_facts` returned, so a fact is removed only when the source was asked
+    for it and answered without it.
+    """
+    from src.versioned.models import VersionedEntityFact
+
+    wanted = [n for n in names if n in _CLEARABLE_FROM_PROP]
+    if not wanted:
+        return 0
+    gone = (
+        session.query(VersionedEntityFact)
+        .filter(VersionedEntityFact.entity_id == entity_id, VersionedEntityFact.name.in_(wanted))
+        .delete(synchronize_session=False)
+    )
+    session.flush()
+    return int(gone or 0)
 
 
 def store_facts(session, entity_id: int, facts: dict[str, Any], *, revision_ref: str | None = None) -> int:
