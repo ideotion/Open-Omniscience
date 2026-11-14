@@ -262,3 +262,35 @@ def test_a_backup_window_that_ends_during_the_swap_does_not_free_the_machine_und
     assert seen == [(True, None)] and drains == [], "the drain ran, or the machine was free, while the file was being replaced"
     assert runner.owns_the_machine() is False and runner.exclusive_window_open() is False, "and it is free once the route is over"
     assert g.drain_if_due() is not None and drains == [1]
+
+
+def test_encrypting_in_place_retires_a_serve_built_while_plaintext_with_its_offload_folder(monkeypatch, route, tmp_path):
+    """A serve built while the library was plaintext may hold a DuckDB offload folder of derived data; left serving, that folder
+    outlives the encryption. The route closes the serves after the keyed pool is installed. RED WITHOUT the close: the folder
+    and the connection stay."""
+    from src.analytics import map_serve
+
+    folder = tmp_path / "duckdb_tmp" / "123-abc"
+    folder.mkdir(parents=True)
+    closed: list[int] = []
+
+    class _Con:
+        def close(self):
+            closed.append(1)
+
+    monkeypatch.setitem(map_serve._STATE, "con", _Con())
+    monkeypatch.setitem(map_serve._STATE, "spill", str(folder))
+    monkeypatch.setitem(map_serve._STATE, "built_at", 1.0)
+    monkeypatch.setattr(encrypt_tool, "encrypt_all", lambda key: {})
+    unlock_mod.encrypt_db(_body())
+    assert closed == [1] and map_serve._STATE["con"] is None and map_serve._STATE["spill"] is None
+    assert not folder.exists(), "the plaintext offload folder outlived the encryption"
+
+
+def test_a_cleanup_that_fails_does_not_turn_a_finished_encryption_into_an_error(monkeypatch, route):
+    def broken():
+        raise RuntimeError("the close failed")
+
+    monkeypatch.setattr("src.scheduler.release.close_serves_after_encryption", broken)
+    monkeypatch.setattr(encrypt_tool, "encrypt_all", lambda key: {})
+    assert unlock_mod.encrypt_db(_body())["encrypted"] is True

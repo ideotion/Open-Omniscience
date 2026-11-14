@@ -1109,9 +1109,9 @@ def _spill_setting() -> str:
             _OWN_SPILL_SWEPT = True  # even with no folder to sweep: from here on this pid's folders are live ones
             if encrypted:
                 return ""
-            root.mkdir(parents=True, exist_ok=True)
+            root.mkdir(mode=0o700, parents=True, exist_ok=True)
             mine = root / f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
-            mine.mkdir()
+            mine.mkdir(mode=0o700)  # owner-only, like the data directory above it (defence in depth)
             return str(mine)
     except Exception:  # noqa: BLE001 - no folder -> no offload (a decline, never a crash)
         return ""

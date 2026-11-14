@@ -300,6 +300,7 @@ def encrypt_db(body: EncryptBody) -> dict:
             raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
         set_passphrase(body.passphrase)
         dispose_engine()  # next connection opens through the keyed factory
+        _close_plaintext_serves()  # a serve built while plaintext may hold a plaintext offload folder: retire it with its folder
     _LOG.info("store encrypted in place")
     return {"encrypted": True, "reports": reports, "state": app_lock_state()}
 
@@ -633,6 +634,19 @@ def _begin_recovery_notice(wal_state: dict | None) -> int | None:
     except Exception as exc:  # noqa: BLE001 - a notice never blocks an unlock
         log_failure(_LOG, "could not record the recovery notice", exc, level=logging.DEBUG)
         return None
+
+
+def _close_plaintext_serves() -> None:
+    """The library was just encrypted in place: close the columnar serves built while it was plaintext, so their DuckDB
+    offload folders (plaintext derived data under the data directory) go with them. Never waits, never raises."""
+    try:
+        from src.scheduler.release import close_serves_after_encryption
+
+        rec = close_serves_after_encryption()
+        if rec.get("busy"):
+            _LOG.warning("encrypt in place: a columnar serve was in use and stays open until its next rebuild (%s)", rec["busy"])
+    except Exception as exc:  # noqa: BLE001 - the encryption itself has succeeded; this cleanup must not turn it into a failure
+        log_failure(_LOG, "encrypt in place: could not close the columnar serves", exc, level=logging.WARNING)
 
 
 def _close_serves_of_the_cleared_key() -> None:

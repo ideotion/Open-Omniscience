@@ -167,6 +167,17 @@ def close_serves_for_cleared_key() -> dict[str, Any]:
     return _close_serves(wait=False)
 
 
+def close_serves_after_encryption() -> dict[str, Any]:
+    """Close the columnar serve connections because the library was just encrypted in place.
+
+    A serve built while the library was plaintext may hold a DuckDB offload folder of derived data under the data directory
+    (``rollup_serve._spill_setting``); left serving, that plaintext folder would outlive the encryption until the next rebuild.
+    Closing the serves removes their folders, and the next build sees the passphrase and offloads nothing. Never waits and never
+    raises, like the cleared-key close: a serve in use at that moment is left open and named in ``busy``.
+    """
+    return _close_serves(wait=False)
+
+
 def _collect_garbage(swapping: bool | None) -> dict[str, Any]:
     """``gc.collect()`` — skipped while our pages are in swap, or unmeasurable.
 
