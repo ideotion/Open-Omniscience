@@ -167,13 +167,13 @@ def test_a_panic_wipe_leaves_nothing_of_the_weather_slices(data_dir):
 
     (data_dir / openmeteo.LEGACY_CACHE_DIR).mkdir()
     (data_dir / openmeteo.LEGACY_CACHE_DIR / "a.json").write_text("{}", encoding="utf-8")
-    (data_dir / "oo.db").write_bytes(b"x" * 64)  # where app_state, and so every held slice, lives
+    (data_dir / "open_omniscience.db").write_bytes(b"x" * 64)  # where app_state, and so every held slice, lives
     try:
         panic_wipe(data_dir, confirm=True)
     finally:
         clear_kill_switch()
     # (Clearing the switch afterwards may write its own state file back into the folder; that is not ours.)
-    assert not (data_dir / "oo.db").exists(), "the store holding every slice is gone"
+    assert not (data_dir / "open_omniscience.db").exists(), "the store holding every slice is gone"
     assert not list(Path(data_dir.parent).glob("**/" + openmeteo.LEGACY_CACHE_DIR))
 
 

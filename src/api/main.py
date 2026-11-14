@@ -657,6 +657,14 @@ async def lifespan(app: FastAPI):
         _persist = data_dir_persistence()
         if _persist.get("at_risk") is True:
             logger.warning("data-dir persistence: %s", _persist.get("note"))
+        # R711: a data folder shared with other files (a home folder, a drive root...) is said at every start; both pages show
+        # it too (data-volume.js), because an emergency wipe there removes only the app's own files.
+        from src.paths import data_dir as _scope_dir
+        from src.safety.data_scope import startup_warning
+
+        _scope_note = startup_warning(_scope_dir())
+        if _scope_note:
+            logger.warning("data folder: %s", _scope_note)
     except Exception as exc:  # noqa: BLE001 - forensics must never block startup
         log_failure(logger, "could not stamp the session sentinel", exc, level=logging.WARNING)
 
@@ -3807,12 +3815,20 @@ def _panic_cli(*, force: bool) -> None:
 
     target = data_dir()
     if not force:
-        ans = input(f"Irreversibly wipe ALL data under {target}? Type 'wipe' to confirm: ")
+        ans = input(f"Irreversibly wipe the app's data under {target}? Type 'wipe' to confirm: ")
         if ans.strip().lower() != "wipe":
             print("Aborted.")
             return
     report = panic_wipe(confirm=True)
     print(f"Wiped {report['files_wiped']}/{report['files_seen']} files under {report['data_dir']}.")
+    if report.get("scope") == "app-only":
+        # R711: a folder the app does not own keeps everything that is not the app's, and the folder itself.
+        print(f"The data folder is not the app's own ({report.get('scope_reason')}): only the app's files were removed; "
+              f"{len(report.get('left_untouched') or [])} other entries and the folder were left.")
+        if report.get("left_common_names"):
+            print("Also left, because the name is common and may be yours: " + ", ".join(report["left_common_names"]))
+    if report.get("after_erase_failures"):
+        print("The erase completed; these steps after it failed: " + ", ".join(report["after_erase_failures"]))
     print(report["limit"])
 
 
@@ -3990,6 +4006,18 @@ def _serve() -> None:
 
         if needs_acceptance():
             print(notice_text())
+    except Exception:  # noqa: BLE001 - a notice must never break startup
+        pass
+    # R711: in the terminal too, before the server starts, for an operator who launched from one.
+    try:
+        from src.paths import data_dir as _scope_dir
+        from src.safety.data_scope import startup_warning
+
+        _scope_note = startup_warning(_scope_dir())
+        if _scope_note:
+            import sys as _sys
+
+            print(f"WARNING: {_scope_note}", file=_sys.stderr)
     except Exception:  # noqa: BLE001 - a notice must never break startup
         pass
 

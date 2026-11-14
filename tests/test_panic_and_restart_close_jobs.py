@@ -187,14 +187,14 @@ def test_the_wipe_rewrites_the_kept_files_after_the_dispose_and_once_more_later(
 
     done = threading.Event()
 
-    def rescrub(*, close):
+    def rescrub(*, close, generation=None):
         panic_steps.append(("rescrub", close))
         if close:
             done.set()
         return 1
 
     monkeypatch.setattr(crypto_erase, "rescrub_held", rescrub)
-    monkeypatch.setattr(crypto_erase, "held_count", lambda: 1)
+    monkeypatch.setattr(crypto_erase, "held_count", lambda *_a: 1)
     monkeypatch.setattr(panic, "_LATE_RESCRUB_S", 0.01)
     panic_wipe(confirm=True)
     assert done.wait(10)
@@ -209,17 +209,63 @@ def test_the_late_pass_runs_even_when_the_first_rewrote_nothing(panic_steps, mon
 
     done = threading.Event()
 
-    def rescrub(*, close):
+    def rescrub(*, close, generation=None):
         panic_steps.append(("rescrub", close))
         if close:
             done.set()
         return 0
 
     monkeypatch.setattr(crypto_erase, "rescrub_held", rescrub)
-    monkeypatch.setattr(crypto_erase, "held_count", lambda: 2)
+    monkeypatch.setattr(crypto_erase, "held_count", lambda *_a: 2)
     monkeypatch.setattr(panic, "_LATE_RESCRUB_S", 0.01)
     panic_wipe(confirm=True)
     assert done.wait(10)
+
+
+def test_a_failing_step_after_a_completed_erase_still_returns_the_report(panic_steps, monkeypatch):
+    """Row 35: the erase succeeded, so the wipe answers with its report and names the step that failed, never a 500."""
+    from src.api import served_cache
+    from src.safety import panic_wipe
+
+    real = served_cache.invalidate
+    calls = []
+
+    def boom(*a, **k):
+        if not calls:  # the wipe's call fails; a later one (the suite's own isolation) goes through
+            calls.append(True)
+            raise RuntimeError("cache broken")
+        return real(*a, **k)
+
+    monkeypatch.setattr(served_cache, "invalidate", boom)
+    report = panic_wipe(confirm=True)
+    assert report["after_erase_failures"] == ["served_counts"]
+    assert panic_steps[-1] == ("dispose",), "the pool is still closed after the failed step"
+
+
+def test_the_kill_switch_failing_is_named_and_the_rest_still_runs(panic_steps, monkeypatch):
+    import src.ingest as ingest
+    from src.database import connect
+    from src.safety import panic_wipe
+
+    cleared = []
+    monkeypatch.setattr(ingest, "activate_kill_switch", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no switch")))
+    monkeypatch.setattr(connect, "invalidate_header_cache", lambda: cleared.append(True))
+    report = panic_wipe(confirm=True)
+    assert report["after_erase_failures"] == ["kill_switch"]
+    assert cleared == [True]
+
+
+def test_a_failed_erase_still_raises_after_the_tidying(panic_steps, monkeypatch):
+    import src.safety.crypto_erase as crypto_erase
+    from src.safety import panic_wipe
+
+    def broken(**_k):
+        raise OSError("erase failed")
+
+    monkeypatch.setattr(crypto_erase, "quick_crypto_erase", broken)
+    with pytest.raises(OSError):
+        panic_wipe(confirm=True)
+    assert panic_steps[-1] == ("dispose",)
 
 
 def test_a_failed_execve_shuts_down_even_when_recording_it_fails(restart_steps, monkeypatch):

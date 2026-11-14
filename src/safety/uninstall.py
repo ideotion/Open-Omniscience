@@ -52,7 +52,7 @@ AUDIT_LOG = Path.home() / ".open-omniscience-uninstall.log"
 # absolute paths + flags — the detached process computes NO paths itself (so it can only
 # ever remove exactly what plan_uninstall decided in-process).
 _WATCHER_SRC = r"""
-import os, sys, json, time, shutil, datetime
+import os, re, sys, json, time, shutil, datetime
 pid = int(sys.argv[1]); plan = json.loads(sys.argv[2])
 os.chdir(os.path.expanduser("~"))          # never sit inside a folder we may delete
 for _ in range(240):                        # wait <=120s for the server to exit, then go
@@ -68,13 +68,16 @@ def rec(m): log.append(datetime.datetime.now().isoformat(timespec="seconds") + "
 # overwritten. The old code capped EVERY file at the first 4 MiB, so most of a large
 # corpus survived (audit OO-02).
 PAGE1 = 4096; CHUNK = 8 * 1024 * 1024
-_ENC = ("open_omniscience.db", "custody_log.db", "analytics.duckdb", "analytics.duckdb.kdf", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb")
+# The lane databases join from the plan (row 30): each is an encrypted database with its own salt page, and a whole rewrite of a
+# 100 GB lane would turn the uninstall's wipe into hours. Their names come from the lane registry, in-process.
+_ENC = ("open_omniscience.db", "custody_log.db", "analytics.duckdb", "analytics.duckdb.kdf", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb") + tuple(plan.get("enc_names") or ())
 # The -wal and the -journal are overwritten WHOLE (R708): every commit that touched page 1 left a copy of it, salt
 # included, in a WAL frame or the journal far past their first 4 KiB. Only the -shm index (no page data) is head-only.
 def header_only(name):
     return name in _ENC or any(name == b + "-shm" for b in _ENC)
 def overwrite(p, head_only):
     try:
+        if os.path.islink(p) or not os.path.isfile(p): return   # a link is never written through, nor a FIFO or a device
         n = os.path.getsize(p)
         limit = min(n, PAGE1) if head_only else n
         with open(p, "r+b", buffering=0) as f:
@@ -92,13 +95,45 @@ if v:
     shutil.rmtree(v, ignore_errors=True)
     rec(("removed venv " if not os.path.exists(v) else "venv KEPT (in use?) ") + v)
 wd = plan.get("wipe_data_dir")
+# R711: a data folder the app does not own (a home folder, a drive root...) is never walked whole or removed. The plan then
+# carries the app's own NAMES (decided in-process, src/safety/data_scope.py, its common names such as "models" left out),
+# matched against the folder's top level when the wipe runs, so a file the app wrote while it shut down is reached too, plus
+# the app's key files by path; everything else stays, and the audit log gives only its COUNT (the names are the operator's).
+only = plan.get("app_only")
+def linkish(p):   # a symlink, or a Windows junction (os.walk enters those); any reparse point on a Python without isjunction
+    try:
+        if os.path.islink(p): return True
+        if hasattr(os.path, "isjunction"): return os.path.isjunction(p)
+        return bool(getattr(os.lstat(p), "st_file_attributes", 0) & 0x400)
+    except OSError: return True
+def ours(nm):
+    for c in dict.fromkeys((nm, re.sub(only["strip"], "", nm))):
+        if c and (c in only["names"] or c.startswith(tuple(only["prefixes"])) or c.endswith(tuple(only["suffixes"]))): return True
+    return False
+def roots():
+    if not only: return [wd]
+    try: tops = [os.path.join(wd, nm) for nm in sorted(os.listdir(wd)) if ours(nm)]
+    except OSError: tops = []
+    keys = [os.path.join(wd, k) for k in only.get("key_paths", [])]
+    kd = os.path.join(wd, "keys")
+    try: keys += [os.path.join(kd, n) for n in os.listdir(kd) if n.endswith(tuple(only.get("key_suffixes", [])))]
+    except OSError: pass
+    return tops + [p for p in dict.fromkeys(keys) if os.path.lexists(p)]
 if wd and os.path.isdir(wd):
     seen = wiped = 0
-    for root, _d, names in os.walk(wd):
-        for nm in names:
-            seen += 1; fp = os.path.join(root, nm); overwrite(fp, header_only(nm))
-            try: os.remove(fp); wiped += 1
+    for top in roots():
+        if top != wd and (linkish(top) or not os.path.isdir(top)):
+            seen += 1; overwrite(top, header_only(os.path.basename(top)))
+            try: os.remove(top); wiped += 1
             except OSError: pass
+            continue
+        for root, dirs, names in os.walk(top):
+            dirs[:] = [d for d in dirs if not linkish(os.path.join(root, d))]
+            for nm in names:
+                seen += 1; fp = os.path.join(root, nm); overwrite(fp, header_only(nm))
+                try: os.remove(fp); wiped += 1
+                except OSError: pass
+        if top != wd: shutil.rmtree(top, ignore_errors=True)
     scrubbed = 0                              # optional defence-in-depth free-space scrub
     passes = plan.get("passes")
     if passes in (1, 3, 8):
@@ -117,7 +152,15 @@ if wd and os.path.isdir(wd):
             except OSError: pass
             try: os.remove(fp)
             except OSError: pass
-    shutil.rmtree(wd, ignore_errors=True)
+    if only:
+        try: os.rmdir(os.path.join(wd, "keys"))     # only when empty: what is left in it is not the app's
+        except OSError: pass
+        try: left = len(os.listdir(wd))
+        except OSError: left = -1
+        rec("wiped the app's own files in %s, a folder it does not own (%s), and left the folder and %d other entries"
+            % (wd, only.get("reason"), left))
+    else:
+        shutil.rmtree(wd, ignore_errors=True)
     rec("wiped data %s (%d/%d files, crypto-erase: DB salt pages destroyed; %d scrub bytes)" % (wd, wiped, seen, scrubbed))
 # DuckDB analytics cache can live outside the data dir (OO_COLUMNAR_DIR). Only present in
 # the plan when it actually differs from wd -- head-wipe the two known files there (never
@@ -140,7 +183,7 @@ rec("uninstall watcher done")
 lp = plan.get("audit_log")
 if lp:
     try:
-        with open(lp, "a", encoding="utf-8") as fh:
+        with open(lp, "a", encoding="utf-8", errors="backslashreplace") as fh:
             fh.write("\n".join(log) + "\n")
     except OSError: pass
 """
@@ -221,6 +264,15 @@ def plan_uninstall(src_dir: Path | None = None, *, remove_folder: bool = False,
     app_folder = str(root) if remove_folder else None
     wipe_data_dir = data if (wipe_data and data and data_exists) else None
     wipe_store_dir = store if (wipe_data and store and Path(store).is_dir()) else None
+    # R711: the scope of the data folder, read now (the watcher only applies it). A broad one is wiped by the app's names only.
+    data_scope = None
+    if data and data_exists:
+        try:
+            from src.safety.data_scope import folder_scope
+
+            data_scope = folder_scope(Path(data))
+        except Exception:  # noqa: BLE001 - unknown scope: reported as unknown, and the wipe below keeps to the app's names
+            data_scope = {"broad": True, "reason": "unknown"}
     removable = bool(
         venv.exists() or launchers or (remove_folder and root.exists()) or wipe_data_dir
     )
@@ -236,6 +288,7 @@ def plan_uninstall(src_dir: Path | None = None, *, remove_folder: bool = False,
         "wipe_data": wipe_data,
         "wipe_data_dir": wipe_data_dir,         # the data dir wiped in secure
         "wipe_store_dir": wipe_store_dir,       # OO_COLUMNAR_DIR override, wiped in secure
+        "data_scope": data_scope,               # R711: a broad folder keeps everything but the app's own files
         "audit_log": str(AUDIT_LOG),
         "removable": removable,
     }
@@ -249,6 +302,27 @@ def _system_python() -> str:
     return shutil.which("python3") or sys.executable
 
 
+def _lane_names() -> list[str]:
+    """The lane database file names, from the lane registry (each with its own salt page)."""
+    try:
+        from src.versioned.lanes import all_lanes
+
+        return [spec.filename for spec in all_lanes()]
+    except Exception:  # noqa: BLE001 - the registry's names as of writing; a whole rewrite is the slow fallback, never a skip
+        return ["wiki.db", "law.db", "osm.db"]
+
+
+def _app_only(scope: dict | None) -> dict | None:
+    """The app's own names for the watcher when the data folder is broad (R711), else None (the folder is removed whole)."""
+    if not scope or not scope.get("broad"):
+        return None
+    from src.safety.crypto_erase import _KEY_FILES, _KEYS_PENDING, _OTHER_KEY_FILES, KEY_FORM_SUFFIXES
+    from src.safety.data_scope import owned_spec
+
+    keys = [f"keys/{n}" for n in (*_KEY_FILES, *_OTHER_KEY_FILES, _KEYS_PENDING)]
+    return {**owned_spec(shared=True), "key_paths": keys, "key_suffixes": list(KEY_FORM_SUFFIXES), "reason": scope.get("reason")}
+
+
 def _default_spawn(plan: dict, server_pid: int) -> None:
     """Launch the detached watcher that removes the planned paths after the server exits."""
     payload = {
@@ -258,6 +332,8 @@ def _default_spawn(plan: dict, server_pid: int) -> None:
         "wipe_data_dir": plan.get("wipe_data_dir"),
         "wipe_store_dir": plan.get("wipe_store_dir"),  # OO_COLUMNAR_DIR override, if set
         "passes": plan.get("passes"),  # optional defence-in-depth free-space scrub (1/3/8)
+        "enc_names": _lane_names(),  # row 30: the lane databases, header-only like the corpus
+        "app_only": _app_only(plan.get("data_scope")),  # R711: a broad data folder is wiped by the app's own names only
         "audit_log": plan.get("audit_log"),
     }
     # The watcher outlives the app and has no use for the passphrase: it is not handed the server's copy (``child_env``).

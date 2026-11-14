@@ -652,7 +652,7 @@ def test_the_default_dir_crypto_erase_still_overwrites_when_forgetting_the_store
     from src.safety.crypto_erase import quick_crypto_erase
 
     _store(env)
-    side = tmp_path / "side.txt"
+    side = tmp_path / "briefing_cache.json"  # one of the app's files: a file it does not know would make the folder shared (R711)
     side.write_text("x" * 64, encoding="utf-8")
 
     def boom():
