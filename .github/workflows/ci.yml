@@ -706,7 +706,7 @@ jobs:
     if: github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'
     needs: [changes]
     runs-on: ubuntu-latest
-    name: PQC signing path (hybrid Ed25519 + ML-DSA)
+    name: PQC signing path (hybrid Ed25519 + ML-DSA), and the urllib3 log table on its floor release
     timeout-minutes: 20  # R475: a hung job holds a runner slot for the default six hours; the slowest measured run of this job is well under half of this
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -746,6 +746,25 @@ jobs:
             tests/test_annotations.py \
             tests/test_dependency_ceilings.py
 
+      # THE urllib3 LOG TABLE ON THE FLOOR RELEASE, in a second environment of this job (folded in from the former `urllib3-floor` job on
+      # 2026-11-14, PR #1988, so a run takes one runner fewer). The table of urllib3 log calls (src/ingest/urllib3_log.py) was read from two
+      # releases, and the `test` job resolves the newest one the pyproject range admits, so the OLDEST is exercised here: "verified on 2.7.0"
+      # is a sentence that nothing else keeps true. Core + dev only, then the floor release forced, in its own venv so the [pqc] install
+      # above neither helps nor hides anything. After the steps above, so a red step there stops these: fix it and the next run reads them.
+      - name: Install (core + dev), then force the urllib3 floor release
+        run: |
+          python -m venv "$RUNNER_TEMP/urllib3-floor"
+          . "$RUNNER_TEMP/urllib3-floor/bin/activate"
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install --no-deps "urllib3==2.7.0"
+          python -c "import urllib3; print('urllib3', urllib3.__version__)"
+
+      - name: Test (the urllib3 log-shape table against the floor release)
+        run: |
+          . "$RUNNER_TEMP/urllib3-floor/bin/activate"
+          python -m pytest -q tests/test_urllib3_log_withholds_the_path.py tests/test_external_freshness.py
+
   # ----------------------------------------------------------------------- #
   # Columnar derived store (DuckDB): the [columnar] extra is NOT in the main
   # test lane, so the D2/D3 rollup + D1 loader tests skip there (duckdb absent).
@@ -760,7 +779,7 @@ jobs:
     if: github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'
     needs: [changes]
     runs-on: ubuntu-latest
-    name: Columnar store (DuckDB rollup + D1 persisted-httpfs)
+    name: Columnar store (DuckDB rollup + D1 persisted-httpfs, and the same files on DuckDB 1.x)
     timeout-minutes: 30  # R475: a hung job holds a runner slot for the default six hours; the slowest measured run of this job is well under half of this
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -806,36 +825,26 @@ jobs:
           OO_CI_INSTALL_HTTPFS: "1"
         run: python -m pytest -q tests/test_columnar_httpfs_loader.py -k ci_encrypted_persisted_round_trip
 
-  # ----------------------------------------------------------------------- #
-  # The same columnar files on DuckDB 1.x. pyproject says `duckdb>=1.4` with no ceiling, so the job above installs the newest release
-  # (2.0.0 on 2026-11-05) and no lane ran the 1.x line that the floor admits: the join-plan assertion in test_top_terms_pre_aggregate reads
-  # a profile shape that 1.x and 2.x write differently, and a regression on either side was invisible to the other (R392, R412). This job
-  # installs `duckdb<2` (1.5.6 on 2026-11-05) and runs the SAME file list; tests/test_version_floor_legs.py fails if the two lists
-  # differ, or if this job stops pinning the 1.x line. No httpfs step: the persisted-encrypted round trip needs the network and stays in
-  # the job above. The floor of the registry entry duckdb-crypto-extension stays equal to pyproject's `duckdb>=` (test-enforced).
-  # ----------------------------------------------------------------------- #
-  columnar-duckdb1:
-    if: github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'
-    needs: [changes]
-    runs-on: ubuntu-latest
-    name: Columnar store on DuckDB 1.x
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Python 3.13
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.13"
-
+      # THE SAME FILES ON DUCKDB 1.x, in a second environment of this job (folded in from the former `columnar-duckdb1` job on 2026-11-14,
+      # PR #1988, so a run takes one runner fewer: CI's wall time was set by runners waiting for a free slot, not by the tests). pyproject says
+      # `duckdb>=1.4` with no ceiling, so the steps above install the newest release (2.0.0 on 2026-11-05) and nothing else would run the 1.x
+      # line that the floor admits: the join-plan assertion in test_top_terms_pre_aggregate reads a profile shape that 1.x and 2.x write
+      # differently, and a regression on either side was invisible to the other (R392, R412). These steps install `duckdb<2` (1.5.6 on
+      # 2026-11-05) into their own venv and run the SAME file list; tests/test_version_floor_legs.py fails if the two lists differ, or if these
+      # steps stop pinning the 1.x line. No httpfs step here: the persisted-encrypted round trip needs the network and runs once, above. The
+      # floor of the registry entry duckdb-crypto-extension stays equal to pyproject's `duckdb>=` (test-enforced). They run after the steps
+      # above, so a red step there stops them: fix it and the next run reads the 1.x line again.
       - name: Install (core + analysis + dev + columnar), with DuckDB held to the 1.x line
         run: |
+          python -m venv "$RUNNER_TEMP/duckdb1"
+          . "$RUNNER_TEMP/duckdb1/bin/activate"
           python -m pip install --upgrade pip
           python -m pip install -e ".[analysis,dev,columnar]" "duckdb<2"
           python -c "import sys, duckdb; print('duckdb', duckdb.__version__); sys.exit(0 if duckdb.__version__.startswith('1.') else 1)"
 
       - name: Columnar rollup + D1 loader on DuckDB 1.x (in-memory + fixture verify)
         run: |
+          . "$RUNNER_TEMP/duckdb1/bin/activate"
           python -m pytest -q \
             tests/test_columnar_engine.py tests/test_columnar_readmodel.py \
             tests/test_keyword_daily_rollup.py tests/test_source_coverage_rollup.py \
@@ -852,6 +861,7 @@ jobs:
             tests/test_rollup_store_kind.py tests/test_serve_change_gate.py \
             tests/test_serve_out_of_memory_goes_live.py tests/test_top_terms_pre_aggregate.py \
             tests/test_wave7_poll_cache.py tests/test_external_freshness.py
+
 
   # ----------------------------------------------------------------------- #
   # PORTABILITY (macOS and Windows) RUNS WEEKLY + ON DEMAND, IN THREE SHARDS, NOT PER PUSH (R461, 2026-11-07). Windows came off the per-push path on
@@ -1002,32 +1012,6 @@ jobs:
           tests/test_poisoned_connection.py tests/test_database_verify_pages.py tests/test_sqlcipher_engine_compat.py
           tests/test_database_damage.py tests/test_damage_reread.py tests/test_database_verify.py
           tests/test_salvage.py tests/test_repair.py tests/test_bundle_damaged_read.py tests/test_stand_in_rows.py
-
-  # The table of urllib3 log calls (src/ingest/urllib3_log.py) was read from two releases, and the `test` job resolves the newest one the
-  # pyproject range admits, so the OLDEST is exercised here: "verified on 2.7.0" is a sentence that nothing else keeps true.
-  urllib3-floor:
-    if: github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'
-    needs: [changes]
-    runs-on: ubuntu-latest
-    name: urllib3 log table (floor release)
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Python 3.13
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.13"
-
-      - name: Install (core + dev), then force the floor release
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
-          python -m pip install --no-deps "urllib3==2.7.0"
-          python -c "import urllib3; print('urllib3', urllib3.__version__)"
-
-      - name: Test (the log-shape table against the floor release)
-        run: python -m pytest -q tests/test_urllib3_log_withholds_the_path.py tests/test_external_freshness.py
 
   # A pinned lock file must INSTALL from a clean environment against public PyPI --
   # not just "the developer's existing venv still works" (audit finding OO-03:

@@ -65,8 +65,8 @@ version, per platform+arch**. On a DuckDB bump:
 5. [ ] Update `pyproject.toml` `duckdb>=` **and** the registry `duckdb-crypto-extension`
    `{floor, verified}` **together** (the test `test_duckdb_floor_matches_pyproject`
    enforces they match) + bump `columnar.STORE_SCHEMA_VERSION` if the table shapes changed.
-   Two CI jobs run the columnar test files: `columnar` resolves the newest DuckDB the floor admits and `columnar-duckdb1`
-   installs `duckdb<2`, so both lines are exercised; a floor at 2.x, or a ceiling, changes what the second job means
+   The `columnar` CI job runs the columnar test files twice: first on the newest DuckDB the floor admits, then in a second venv
+   that installs `duckdb<2`, so both lines are exercised; a floor at 2.x, or a ceiling, changes what the second run means
    (`tests/test_version_floor_legs.py` fails until it is read again).
 6. [ ] Re-bundle the **D1 persisted-store** `httpfs` binaries (S3.1): build each per-OS/arch
    binary with statically-linked OpenSSL at the new DuckDB version, place them in
@@ -149,7 +149,7 @@ the encrypted round trip — that in-lane checksum is **never** written back int
   logger the module does not cover (however it is bound) fails by name. Decide per failure whether the table is out of date
   (extend `SHAPES`, and the target positions if the new line carries an address) or the library began to log something this app
   must not keep; never loosen a test to pass. Then move the pyproject range, the registry `{floor, verified, ceiling, current}`,
-  the `urllib3-floor` job in `.github/workflows/ci.yml` if the floor moved, and, if it moved, `requirements.lock` together. The
+  the urllib3 floor venv of the `crypto` job in `.github/workflows/ci.yml` if the floor moved, and, if it moved, `requirements.lock` together. The
   weekly freshness run opens the issue when upstream publishes a release past `current`.
 - **trafilatura** (`trafilatura-floor`) — the article extractor. `src/ingest/extract.py` runs every parse of the app's article HTML
   through it (lxml, htmldate and justext inside it) under one process-wide lock, and `tests/test_extract_lock.py` walks `src/` to keep it
