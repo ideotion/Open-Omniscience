@@ -335,6 +335,11 @@
     .depth-opt { display:flex; align-items:flex-start; gap:8px; cursor:pointer; }
     .depth-opt input { margin-top:3px; }
     .depth-opt .depth-d { display:block; color:var(--muted); font-size:12.5px; }
+    /* The first-run start choice (R710 = b): the two views side by side, neither preselected. */
+    .depth-pick.start-pick { flex-direction:row; gap:10px; }
+    .start-pick .depth-opt { flex:1 1 0; border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
+    .start-pick .depth-opt:has(input:checked) { border-color:var(--accent); }
+    @media (max-width:600px) { .depth-pick.start-pick { flex-direction:column; } }
     /* Collapsed sidebar → icon rail */
     html[data-sidebar="collapsed"] .sidebar { --sidebar-w:66px; }
     /* a11y-rail-labels (measured 2026-09-09; axe-core CRITICAL). These labels used to
