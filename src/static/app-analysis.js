@@ -1376,7 +1376,8 @@
             if (!placed.some((q) => hit(q, bx))) break;
             r += fsOf(n) * 1.1;
           }
-          n._x = cx + r * ca; n._y = cy + r * sa; placed.push(bx);
+          // the box recorded is the one at the radius drawn, also when all 12 tries collided
+          n._x = cx + r * ca; n._y = cy + r * sa; bx = boxOf(n, n._x, n._y); placed.push(bx);
         }
         const ext = placed.reduce((e, q) => ({l: Math.min(e.l, q.l), r: Math.max(e.r, q.r),
           t: Math.min(e.t, q.t), b: Math.max(e.b, q.b)}), {l: 0, r: W, t: 0, b: H});
