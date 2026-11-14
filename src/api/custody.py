@@ -287,7 +287,9 @@ def verify_bundle(req: VerifyBundleRequest) -> dict:
     # What a "verified" covers, said with it: a one-item bundle's links run through entries it does not carry, and
     # every key rotation crossed is named in the notes.
     scope = scope_note(req.bundle, report["notes"]) if ok else None
-    return {"verified": ok, "issues": report["issues"], "notes": report["notes"], "scope": scope}
+    # R714: an old-format bundle verifies, but its weaker guarantee travels with the verdict.
+    return {"verified": ok, "issues": report["issues"], "notes": report["notes"], "scope": scope,
+            "format": report["format"], "format_note": report["format_note"]}
 
 
 class AnchorRequest(BaseModel):

@@ -74,7 +74,9 @@ def main(argv: list[str]) -> int:
         print(f"scope          : {scope_note(bundle, report['notes'])}")
         for n in report["notes"]:
             print(f"key rotation   : {n}")
-    print(f"VERIFIED       : {ok}")
+        # R714: an old-format bundle is never reported as equal to a new one.
+        print(f"format         : {report['format_note'] or 'the signed head commits to every entry hash'}")
+    print(f"VERIFIED       : {ok}" + (" (old format: weaker guarantee)" if ok and report["format_note"] else ""))
     if issues:
         print("ISSUES:")
         for i in issues:

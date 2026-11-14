@@ -49,6 +49,17 @@ from src.monitoring.secret_scrub import record_text
 
 GENESIS_PREV = "0" * 64
 LOG_VERSION = "oo-custody-1"
+#: The export format (R714). Format 2's signed head commits to every entry hash in the bundle, so no entry can be
+#: swapped, added or removed anywhere in it -- in a one-item bundle too, whose entries are not linked to each other.
+#: A bundle whose signed head names no format is format 1 (development builds between the signed head and this
+#: change): its head commits only to the count and the last entry. Exports are written in format 2 only; format 1 is still read, and said to be weaker.
+BUNDLE_FORMAT = 2
+LEGACY_FORMAT_NOTE = (
+    "This bundle is in an older export format, which gives a weaker guarantee: its signed head commits "
+    "only to how many entries it holds and to its last entry, not to each entry. In a one-item bundle, whose entries "
+    "are not linked to each other, an entry in the middle could be swapped for another entry signed by the same key "
+    "without this check seeing it. Export the bundle again from the app for the full check."
+)
 
 # PROCESS-WIDE append lock (field report 2026-07-02: 34 `UNIQUE constraint failed:
 # custody_entries.seq` under 50-way parallel ingest with auto-log-on-ingest default-on).
@@ -507,11 +518,12 @@ class CustodyLog:
         head_signature = signer.sign(canonical_bytes(head))
         return {
             "log_version": LOG_VERSION,
+            "bundle_format": BUNDLE_FORMAT,  # informational: the signed head carries the format the checker goes by
             "item_id": item_id,
             "signer": ident.to_dict(),
             "entry_count": len(entries),
-            # Signed at export: how many entries this bundle holds and which one is last, so a bundle cut at its end
-            # (the one cut the chain links cannot show, since every remaining link still holds) is refused by name.
+            # Signed at export: how many entries this bundle holds, which one is last, and (format 2, R714) a digest of
+            # every entry's hash, so a bundle cut at its end, or with an entry swapped anywhere in it, is refused by name.
             "head": head,
             "head_signature": head_signature,
             "entries": [e.to_dict() for e in entries],
@@ -554,16 +566,25 @@ class CustodyLog:
 # --------------------------------------------------------------------------- #
 
 
-def _bundle_head(item_id: str | None, entries: list[CustodyEntry]) -> dict:
-    """The part of an export its signer commits to: the bundle's scope, its size and its last entry."""
+def _bundle_head(item_id: str | None, entries: list[CustodyEntry], bundle_format: int = BUNDLE_FORMAT) -> dict:
+    """The part of an export its signer commits to: the bundle's scope, its size and its last entry, and (format 2)
+    a digest of every entry's seq and hash, in order."""
     last = entries[-1] if entries else None
-    return {
+    head = {
         "log_version": LOG_VERSION,
         "item_id": item_id,
         "entry_count": len(entries),
         "last_seq": last.seq if last else None,
         "last_entry_hash": last.entry_hash if last else None,
     }
+    if bundle_format >= 2:
+        head["bundle_format"] = bundle_format
+        head["entries_digest"] = _entries_digest(entries)
+    return head
+
+
+def _entries_digest(entries: list[CustodyEntry]) -> str:
+    return sha256(canonical_bytes({"entries": [[e.seq, e.entry_hash] for e in entries]})).hex()
 
 
 def verify_entries(
@@ -814,7 +835,12 @@ def verify_export_report(
     except UnicodeEncodeError:
         # A lone surrogate (JSON "\ud800") has no UTF-8 form, so no signature over it can exist.
         ok, issues = False, ["a text field holds a character with no UTF-8 form (a lone surrogate), so no signature covers it"]
-    return {"verified": ok, "issues": issues, "notes": notes if ok else []}
+    head = bundle.get("head") if isinstance(bundle, dict) else None
+    legacy = ok and isinstance(head, dict) and "bundle_format" not in head
+    # R714: an old-format bundle is never reported as equal to a new one -- ``format`` and ``format_note`` say so.
+    return {"verified": ok, "issues": issues, "notes": notes if ok else [],
+            "format": (1 if legacy else BUNDLE_FORMAT) if ok else None,
+            "format_note": LEGACY_FORMAT_NOTE if legacy else None}
 
 
 def _verify_export(
@@ -897,12 +923,19 @@ def _verify_export(
     ok, reason = signing.verify(head_sig, canonical_bytes(head), pinned=pinned)
     if not ok:
         return False, [f"head signature invalid: {reason}"]
-    expected = _bundle_head(item_id, entries)
+    fmt = head.get("bundle_format", 1)
+    if fmt not in (1, BUNDLE_FORMAT) or isinstance(fmt, bool):
+        return False, [f"unknown bundle format {fmt!r}: this checker reads formats 1 and {BUNDLE_FORMAT}"]
+    expected = _bundle_head(item_id, entries, bundle_format=fmt)
     if head != expected:
         if head.get("entry_count") != len(entries):
             return False, [
                 f"truncated or padded: the signed head says {head.get('entry_count')} entries, the bundle holds {len(entries)}"
             ]
+        if fmt >= 2 and {k: v for k, v in head.items() if k != "entries_digest"} == {
+                k: v for k, v in expected.items() if k != "entries_digest"}:
+            return False, ["the bundle's entries do not match the entry hashes its signed head commits to: an entry "
+                           "was swapped, added or removed"]
         return False, ["the bundle's entries do not match its signed head (a different last entry, scope or version)"]
     if item_id and any(e.item_id not in (item_id, ROTATION_ITEM) for e in entries):
         return False, [f"the bundle is for {item_id!r} but holds entries of other items"]

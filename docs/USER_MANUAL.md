@@ -1452,7 +1452,11 @@ reports `refused_offline`.
 
 Verify a bundle anywhere, without this app. The checker fails closed: it refuses by name a bundle with no
 entries, one cut mid-record, one whose signing key changes with no key-rotation record, one whose entries do not match the signed head its
-export carries, and one with no signed head at all (exports made before 0.5.1 carry none: export again). A
+export carries, and one with no signed head at all (exports made before 0.5.1 carry none: export again). The signed
+head commits to every entry's hash, so an entry swapped, added or removed anywhere in the bundle is refused by name. A
+bundle from a development build whose head commits only to its count and last entry (an older export format) still
+verifies, but the result says plainly that it is the weaker format: in a one-item bundle an entry in the middle could
+have been swapped for another one signed by the same key. Export it again for the full check. A
 one-item bundle is checked entry by entry, and the result says the links between its entries were not checked.
 A verified bundle proves it is consistent and signed by one key, or by a line of keys each handed on to the next by
 a key-rotation record. To know the last key is the real signer's (and so that nobody cut the log and re-signed it
