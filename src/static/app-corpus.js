@@ -2105,6 +2105,17 @@
         // opt-in as dashChartSvg's; the trending caller keeps the directional colour.
         const col = opts.neutral ? "var(--accent)" : (up ? "var(--ok)" : "var(--err)");
         const slot = plotW / Math.max(n, 1), bw = Math.max(2, Math.min(slot * 0.6, 14));
+        // THE PANEL READS ON ITS OWN (journalist review 4d): the shared max is written at its
+        // dashed line and the first and last real dates under the baseline, so a panel is no
+        // longer a bare trace with its scale in a footnote; each mark carries its date and
+        // count as an SVG <title> (no words, so nothing to translate).
+        const dt = (v) => {
+          const sv = String(v == null ? "" : v);
+          const short = typeof ooIsoDate === "function" ? ooIsoDate(sv) : sv.slice(0, 10);
+          const same = real.length > 1 && String(real[0].date || "").slice(0, 10) === String(real[real.length - 1].date || "").slice(0, 10);
+          return same && sv.includes("T") && typeof ooIsoDateTime === "function" ? ooIsoDateTime(sv) : short;
+        };
+        const tip = (pt) => `<title>${esc((pt.date != null ? dt(pt.date) + " · " : "") + fmtNum(pt.count))}</title>`;
         const body = lineMode
           // A HOLE IS DRAWN AS A HOLE. This renderer was missed by the honest-gaps
           // pass that fixed dashChartSvg and ooChart: one unbroken <polyline> over
@@ -2115,8 +2126,10 @@
               run.length === 1
                 // A single surviving point between two holes has no line to draw;
                 // a dot keeps it visible instead of vanishing.
-                ? `<circle cx="${X(run[0]).toFixed(1)}" cy="${Y(pts[run[0]].count).toFixed(1)}" r="1.6" fill="${col}"/>`
+                ? `<circle cx="${X(run[0]).toFixed(1)}" cy="${Y(pts[run[0]].count).toFixed(1)}" r="1.6" fill="${col}">${tip(pts[run[0]])}</circle>`
                 : `<polyline fill="none" stroke="${col}" stroke-width="1.4" points="${run.map(i => `${X(i).toFixed(1)},${Y(pts[i].count).toFixed(1)}`).join(" ")}"/>`
+                  // an invisible hover target on every real point, so the line answers a hover too
+                  + run.map(i => `<circle cx="${X(i).toFixed(1)}" cy="${Y(pts[i].count).toFixed(1)}" r="${Math.max(1.5, Math.min(slot / 2, 4)).toFixed(1)}" fill="transparent">${tip(pts[i])}</circle>`).join("")
             ).join("")
           : pts.map((pt, i) => {
               if (_missing(pt.count)) return "";   // no bar for a gap, never a zero-height one
@@ -2129,11 +2142,16 @@
               // only mode this renderer actually reaches. Same 2px value-cap
               // dashChartSvg uses to keep a flush-minimum bar visible; it marks the
               // true value and never invents height.
-              return `<rect x="${x0.toFixed(1)}" y="${by.toFixed(1)}" width="${bwc}" height="${hgt.toFixed(1)}" fill="${col}" opacity="0.72"/>`
+              return `<rect x="${x0.toFixed(1)}" y="${by.toFixed(1)}" width="${bwc}" height="${hgt.toFixed(1)}" fill="${col}" opacity="0.72">${tip(pt)}</rect>`
                 + (hgt < 2 ? `<rect x="${x0.toFixed(1)}" y="${(by - 1).toFixed(1)}" width="${bwc}" height="2" fill="${col}"/>` : "");
             }).join("");
         const gr = `<line x1="${padL}" x2="${w - padR}" y1="${Y(maxV).toFixed(1)}" y2="${Y(maxV).toFixed(1)}" stroke="var(--border)" stroke-dasharray="2 3" stroke-width="0.5"/>`
-          + `<line x1="${padL}" x2="${w - padR}" y1="${baseY.toFixed(1)}" y2="${baseY.toFixed(1)}" stroke="var(--border)" stroke-width="0.5"/>`;
+          + `<line x1="${padL}" x2="${w - padR}" y1="${baseY.toFixed(1)}" y2="${baseY.toFixed(1)}" stroke="var(--border)" stroke-width="0.5"/>`
+          + `<text x="${w - padR}" y="${(Y(maxV) - 1).toFixed(1)}" text-anchor="end" font-size="8" fill="var(--muted)">${esc(fmtNum(maxV))}</text>`
+          + (real.length && real[0].date != null
+            ? `<text x="${padL}" y="${h - 3}" font-size="8" fill="var(--muted)">${esc(dt(real[0].date))}</text>`
+              + (real.length > 1 ? `<text x="${w - padR}" y="${h - 3}" text-anchor="end" font-size="8" fill="var(--muted)">${esc(dt(real[real.length - 1].date))}</text>` : "")
+            : "");
         const svg = `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="${esc((p.label || "") + " — n=" + nReal + (nReal < n ? " (" + (n - nReal) + " gaps)" : ""))}" style="display:block">${gr}${body}</svg>`;
         const oc = p.term != null ? `data-on-click='openAnalysisFor(${esc(JSON.stringify(p.term))});return false'` : "";
         const head = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:4px">`

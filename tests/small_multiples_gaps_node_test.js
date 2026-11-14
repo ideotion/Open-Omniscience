@@ -180,9 +180,6 @@ test("an all-empty grid says so rather than rendering an empty box", () => {
   assert(/No series to show yet/.test(svg), "an empty grid needs an honest empty state");
 });
 
-console.log(`\n${passed} passed`);
-
-
 // --------------------------------------------------------------------------- //
 //  The caveat may claim only what the data can exhibit
 // --------------------------------------------------------------------------- //
@@ -209,3 +206,28 @@ test("a MEASURED zero stays visible and is not mistaken for a gap", () => {
   assert(rects(zeroed) > rects(gapped),
     "a measured zero must draw something a gap does not");
 });
+
+// --------------------------------------------------------------------------- //
+//  A panel reads on its own (journalist review 4d): its scale, its dates, a hover
+// --------------------------------------------------------------------------- //
+test("each panel writes the shared max at its dashed line", () => {
+  const svg = smallMultiplesSvg([{label: "en", points: dense([1, 7, 3])}, {label: "fr", points: dense([2, 2, 2])}]);
+  const labels = svg.match(/<text[^>]*text-anchor="end"[^>]*>7<\/text>/g) || [];
+  assert(labels.length === 2, `both panels must carry the shared max 7, got ${labels.length}`);
+});
+
+test("each panel names its first and last real dates", () => {
+  const svg = smallMultiplesSvg([{label: "en", points: [{date: "2026-07-01", count: null}, ...dense([4, 5, 6]).slice(1)]}]);
+  assert(/>2026-07-02<\/text>/.test(svg) && />2026-07-03<\/text>/.test(svg), svg);
+  assert(!/>2026-07-01<\/text>/.test(svg), "a leading gap is not a date the panel has data for");
+});
+
+test("every drawn mark answers a hover with its date and count, in both modes", () => {
+  const bars = smallMultiplesSvg([{label: "en", points: dense([3, 0, 5])}]);
+  assert(/<rect[^>]*><title>2026-07-03 · 5<\/title><\/rect>/.test(bars), bars);
+  const line = smallMultiplesSvg([{label: "en", points: dense([...run(SPARSE - 1, 2), 9])}]);
+  const titles = (line.match(/<title>/g) || []).length;
+  assert(titles === SPARSE, `a dense panel needs a hover target per real point (${SPARSE}), got ${titles}`);
+});
+
+console.log(`\n${passed} passed`);
