@@ -7887,5 +7887,11 @@
   "＋ zoom": "＋ 放大",
   "－ zoom": "－ 缩小",
   "📍 places": "📍 地点",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "Where would you like to start?": "您想从哪里开始？",
+  "Starting view": "起始视图",
+  "Full view": "完整视图",
+  "The everyday tasks: leads, reading, search, the world and the numbers. The switch at the top opens every tool.": "日常任务：线索、阅读、搜索、世界和数字。顶部的开关可打开所有工具。",
+  "Every tab and tool at once. The same switch turns on the simple view later.": "一次显示所有标签页和工具。之后可用同一个开关打开简洁视图。",
+  "Collecting now. The first articles appear in Read as they arrive, then in Today.": "正在收集。第一批文章到达后会出现在“阅读”中，随后出现在“今天”中。"
 }

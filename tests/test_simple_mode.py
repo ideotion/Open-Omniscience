@@ -127,6 +127,9 @@ def test_never_hidden_surfaces_stay_visible_in_simple_mode():
         'html[data-mode="simple"] .tab-page.active', 'html[data-mode="simple"] #subtab-strip',
         'html[data-mode="simple"] #rate-toggle', 'html[data-mode="simple"] #tm-open', 'html[data-mode="simple"] #llm',
         'html[data-mode="simple"] #health:has(.dot.ok)', 'html[data-mode="simple"] #nav-more',
+        # Phones only: the top-bar search box, so the bar fits on one row. Simple mode has its own
+        # Search view, and the palette's keyboard shortcut still opens every tab.
+        'html[data-mode="simple"] .topbar .omni',
     }
     assert set(hidden) <= allowed, f"simple mode hides something new: {set(hidden) - allowed}"
     # R682: never hidden in either mode.
@@ -272,3 +275,41 @@ def test_a_known_site_with_a_new_feed_is_still_added():
     # An article set (ids) outranks a country scope, which never narrows a lead's own articles.
     sp = function_body(code, "searchParams")
     assert '!(s.ids && s.ids.length)' in sp
+
+
+def test_first_run_offers_simple_mode_as_the_starting_view():
+    html = _read(_STATIC / "index.html")
+    # The guide's first step asks where to start; simple view is preselected, the full view is
+    # the other choice, and the top-bar switch changes it any time.
+    assert re.search(r'name="gw-start" value="simple" checked', html)
+    assert 'name="gw-start" value="full"' in html
+    core = _strip_js_comments(_read(_STATIC / "app-core.js"))
+    close = function_body(core, "closeGuide")
+    # Applied after the dialog closes, whichever way it closes, so the view never swaps under a modal.
+    assert close.index("dlg.close()") < close.index("_gwApplyStart()")
+    apply = function_body(core, "_gwApplyStart")
+    assert "s.enter()" in apply and "s.leave()" in apply
+    # Set once per opening, so going Back keeps the reader's pick; a re-run starts from the view in use.
+    assert "_gwRenderStart()" in function_body(core, "openGuide")
+    assert "_gwRenderStart()" not in function_body(core, "_gwPaint")
+    assert "guideDone()" in function_body(core, "_gwRenderStart")
+
+
+def test_search_pages_and_filters_by_language():
+    code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
+    results = function_body(code, "Results")
+    assert 'p.set("offset", String(rows.length))' in results, "Search shows more than its first page"
+    assert "x.key !== key" in results, "a late page never lands on a newer search"
+    sp = function_body(code, "searchParams")
+    assert 'p.set("langs"' in sp and '!(s.ids && s.ids.length)' in sp
+    assert "/^[a-z]{2,3}(-[a-z0-9]{2,8})?$/i.test(c)" in function_body(code, "loadState")
+    assert '"/api/insights/corpus-source-language-facets"' in function_body(code, "Search")
+
+
+def test_today_waits_for_leads_being_built():
+    code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
+    leads = function_body(code, "Leads")
+    # The server builds leads in the background and says "refreshing": Today asks again a bounded
+    # number of times instead of reading "nothing stands out" on a first visit.
+    assert "r.data.refreshing" in leads and "tries >= 6" in leads
+    assert leads.index("Looking for leads in your corpus") < leads.index("Nothing stands out yet")

@@ -141,6 +141,10 @@
   "Prices are imported in the full view, with your consent; nothing is fetched here. Each card shows the newest stored value and its date.": "Os preços são importados na vista completa, com o seu consentimento; nada é obtido aqui. Cada cartão mostra o valor guardado mais recente e a sua data.",
   "A price can be old: read its date.": "Um preço pode ser antigo: veja a sua data.",
   "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "Registos publicados, obtidos com o seu consentimento na vista completa. A contagem inclui cada revisão feita pelo editor.",
-  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "A pesquisa oculta artigos retidos até a fonte ser verificada, por isso a lista de um país pode ser mais curta do que a contagem aqui."
+  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "A pesquisa oculta artigos retidos até a fonte ser verificada, por isso a lista de um país pode ser mais curta do que a contagem aqui.",
+  "Looking for leads in your corpus…": "A procurar pistas no seu corpus…",
+  "The language each article is written in, as its source states it or, failing that, as detected from its text. The counts are for the whole corpus.": "A língua em que cada artigo está escrito, como a fonte a indica ou, na falta disso, como detetada no texto. Os números são de todo o corpus.",
+  "Language": "Idioma",
+  "Any language": "Qualquer idioma"
  }
 }

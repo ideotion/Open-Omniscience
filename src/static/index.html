@@ -4317,6 +4317,14 @@
           <li>It goes online only when you say so, to read public websites. No account, no cloud, no tracking.</li>
           <li>Then you search and compare who reports what, where and when. The app shows counts and how it got them; you draw the conclusions.</li>
         </ul>
+        <!-- WHERE TO START (R682, round 3): a new reader starts in simple mode unless they pick the
+             full view here; the top-bar switch changes it any time. Applied on closing the guide,
+             whichever way it closes, like the depth below (a skipped question keeps its default). -->
+        <h3 style="margin:0 0 6px">Where would you like to start?</h3>
+        <div role="radiogroup" aria-label="Starting view" class="depth-pick" style="margin-bottom:14px">
+          <label class="depth-opt"><input type="radio" name="gw-start" value="simple" checked><span class="depth-t"><b>Simple view</b><span class="depth-d">The everyday tasks: leads, reading, search, the world and the numbers. The switch at the top opens every tool.</span></span></label>
+          <label class="depth-opt"><input type="radio" name="gw-start" value="full"><span class="depth-t"><b>Full view</b><span class="depth-d">Every tab and tool at once. The same switch turns on the simple view later.</span></span></label>
+        </div>
         <h3 style="margin:0 0 6px">How much should the app show at once?</h3>
         <p class="muted" style="margin-top:0">This changes what is pinned, never what you can reach. You can change it anytime in Settings → General.</p>
         <div role="radiogroup" aria-label="Interface depth" class="depth-pick">

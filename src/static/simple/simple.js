@@ -211,7 +211,7 @@
   }
 
   // ---------------------------------------------------------------- state
-  var store = { view: "today", query: "", ids: null, countries: null, label: "", order: "recent" };
+  var store = { view: "today", query: "", ids: null, countries: null, langs: null, label: "", order: "recent" };
   var subs = [];
   function saveState() { ssSet(K_STATE, JSON.stringify(store)); }
   function loadState() {
@@ -223,6 +223,10 @@
         ? store.countries.filter(function (c) { return typeof c === "string" && /^[a-z]{2,3}$/i.test(c); })
         : null;
       if (store.countries && !store.countries.length) store.countries = null;
+      store.langs = Array.isArray(store.langs)
+        ? store.langs.filter(function (c) { return typeof c === "string" && /^[a-z]{2,3}(-[a-z0-9]{2,8})?$/i.test(c); })
+        : null;
+      if (store.langs && !store.langs.length) store.langs = null;
       if (!Array.isArray(store.ids)) store.ids = null;
     } catch (e) { /* start clean */ }
     if (["today", "read", "search", "world", "numbers", "more"].indexOf(store.view) < 0) store.view = "today";
@@ -428,7 +432,7 @@
       <div class="s-actions">
         ${Array.isArray(c.article_ids) && c.article_ids.length
           ? html`<button type="button" class="s-btn" onClick=${function () {
-              go("search", { query: "", ids: c.article_ids.slice(0, MAX_IDS), countries: null, label: title });
+              go("search", { query: "", ids: c.article_ids.slice(0, MAX_IDS), countries: null, langs: null, label: title });
             }}>${t("Read the articles ({n})", { n: fmtInt(Math.min(c.article_ids.length, MAX_IDS)) })}</button>
             ${c.article_ids.length > MAX_IDS ? html`<${Mark} kind="partial"/>` : null}` : null}
         <${Details} what=${title}>
@@ -445,13 +449,23 @@
 
   function Leads() {
     var lang = curLang();
-    var r = useLoad(function () { return apiCall("/api/briefing?target_lang=" + encodeURIComponent(lang)); }, [lang]);
-    if (r.loading) return html`<${Loading}/>`;
+    var tick = useState(0), tries = tick[0], setTries = tick[1];
+    var r = useLoad(function () { return apiCall("/api/briefing?target_lang=" + encodeURIComponent(lang)); }, [lang, tries]);
+    // The server builds leads in the background and says so ("refreshing"): ask again while it
+    // works (a few times, spaced out), so a first visit does not read "nothing stands out" yet.
+    var building = !!(r.data && r.data.refreshing);
+    useEffect(function () {
+      if (!building || tries >= 6) return undefined;
+      var h = setTimeout(function () { setTries(tries + 1); }, 3000 + tries * 2000);
+      return function () { clearTimeout(h); };
+    }, [building, tries]);
+    if (r.loading && !r.data) return html`<${Loading}/>`;
     if (r.error) return html`<${ErrorLine} msg=${r.error}/>`;
     var cards = [];
     (r.data.buckets || []).forEach(function (b) {
       (b.cards || []).forEach(function (c) { cards.push({ card: c, bucket: bucketLabel(b) }); });
     });
+    if (!cards.length && building) return html`<div class="s-loading" role="status">${t("Looking for leads in your corpus…")}</div>`;
     if (!cards.length) {
       return html`<${Empty}>${t("Nothing stands out yet. Leads appear here as your corpus grows.")}<//>`;
     }
@@ -474,7 +488,7 @@
     var other = w.window_days !== 7;
     return html`<div class="s-chips">
       ${w.terms.map(function (x) {
-        return html`<button type="button" class="s-chip s-term" onClick=${function () { go("search", { query: x.term, ids: null, countries: null, label: "" }); }}>
+        return html`<button type="button" class="s-chip s-term" onClick=${function () { go("search", { query: x.term, ids: null, countries: null, langs: null, label: "" }); }}>
           <span dir="auto">${x.term}</span> <span class="s-n">${x.recent}</span>
           ${x.growth_is_ratio === false ? html`<${Mark} kind="approx"/>` : null}</button>`;
       })}
@@ -586,9 +600,12 @@
     if (s.ids && s.ids.length) p.set("ids", s.ids.join(","));
     else if (s.query) p.set("query", s.query);
     if (s.countries && s.countries.length && !(s.ids && s.ids.length)) p.set("countries", s.countries.join(","));
+    if (s.langs && s.langs.length && !(s.ids && s.ids.length)) p.set("langs", s.langs.join(","));
     return p;
   }
-  function setKey(s) { return (s.ids ? s.ids.join(",") : "") + "|" + s.query + "|" + (s.countries ? s.countries.join(",") : ""); }
+  function setKey(s) {
+    return (s.ids ? s.ids.join(",") : "") + "|" + s.query + "|" + (s.countries ? s.countries.join(",") : "") + "|" + (s.langs ? s.langs.join(",") : "");
+  }
   function Glance(props) {
     var s = props.s;
     var key = setKey(s);
@@ -599,6 +616,7 @@
       else {
         if (s.query) g.set("query", s.query);
         if (s.countries && s.countries.length) g.set("countries", s.countries.join(","));
+        if (s.langs && s.langs.length) g.set("langs", s.langs.join(","));
       }
       g.set("ui_lang", curLang());
       var p = g.toString();
@@ -661,14 +679,29 @@
       p.set("ui_lang", curLang());
       return apiCall("/api/articles?" + p.toString());
     }, [key]);
-    if (r.loading) return html`<${Loading}/>`;
+    // Further pages, appended under the first; a new search starts again from the top.
+    var more = useState({ key: key, rows: [], busy: false, err: null }), setExtra = more[1];
+    var extra = more[0].key === key ? more[0] : { key: key, rows: [], busy: false, err: null };
+    if (r.loading && !r.data) return html`<${Loading}/>`;
     if (r.error) return html`<${ErrorLine} msg=${r.error}/>`;
-    var rows = r.data.results || [];
+    var rows = (r.data.results || []).concat(extra.rows);
     var total = r.data.total || 0;
+    function loadMore() {
+      var p = searchParams(s);
+      p.set("limit", "20");
+      p.set("offset", String(rows.length));
+      p.set("ui_lang", curLang());
+      setExtra({ key: key, rows: extra.rows, busy: true, err: null });
+      apiCall("/api/articles?" + p.toString()).then(function (d) {
+        setExtra(function (x) { return x.key !== key ? x : { key: key, rows: x.rows.concat(d.results || []), busy: false, err: null }; });
+      }, function (e) {
+        setExtra(function (x) { return x.key !== key ? x : Object.assign({}, x, { busy: false, err: (e && e.message) || String(e) }); });
+      });
+    }
     if (!rows.length) return html`<${Empty}>${t("No article matches. Try fewer or different words.")}<//>`;
     return html`<div>
       <div class="s-count">${t("{n} articles", { n: fmtInt(total) })}
-        ${total > rows.length ? html`<span class="s-muted"> · ${t("showing the first {n}", { n: rows.length })}</span>` : null}</div>
+        ${total > rows.length ? html`<span class="s-muted"> · ${t("showing the first {n}", { n: fmtInt(rows.length) })}</span>` : null}</div>
       <${Glance} s=${s}/>
       <div class="s-actions"><button type="button" class="s-btn" onClick=${function () { openFullAnalysis(s); }}>
         ${t("Open the full analysis")}</button></div>
@@ -681,13 +714,20 @@
           ${snip ? html`<p class="s-excerpt" dir="auto">${snip}${(a.content || "").length > 220 ? "…" : ""}</p>` : null}
         </article>`;
       })}</div>
+      ${extra.err ? html`<${ErrorLine} msg=${extra.err}/>` : null}
+      ${total > rows.length ? html`<button type="button" class="s-btn wide" disabled=${extra.busy} onClick=${loadMore}>
+        ${extra.busy ? t("Loading…") : t("Show more")}</button>` : null}
     </div>`;
   }
   function Search() {
     var s = useStore();
     var q = useState(s.query || ""), text = q[0], setText = q[1];
     useEffect(function () { setText(s.query || ""); }, [s.query]);
-    var active = (s.ids && s.ids.length) || (s.query && s.query.trim()) || (s.countries && s.countries.length);
+    var active = (s.ids && s.ids.length) || (s.query && s.query.trim()) || (s.countries && s.countries.length) || (s.langs && s.langs.length);
+    // The languages the corpus holds, with their article counts, for the language filter.
+    var lr = useLoad(function () { return apiCall("/api/insights/corpus-source-language-facets").catch(function () { return null; }); }, []);
+    var langs = (lr.data && lr.data.languages) || [];
+    var picked = s.langs && s.langs.length ? s.langs[0] : "";
     return html`<div class="s-view">
       <h1 class="s-h1">${t("Search")}</h1>
       <form class="s-search" role="search" onSubmit=${function (e) {
@@ -699,6 +739,18 @@
           onInput=${function (e) { setText(e.currentTarget.value); }}/>
         <button type="submit" class="s-btn primary">${t("Search")}</button>
       </form>
+      ${langs.length > 1 && !(s.ids && s.ids.length) ? html`<div class="s-toolbar s-toolbar-start">
+        <label class="s-inline" for="s-lang">${t("Language")}</label>
+        <select id="s-lang" class="s-select" value=${picked}
+          onChange=${function (e) { var v = e.currentTarget.value; go("search", { langs: v ? [v] : null }); }}>
+          <option value="">${t("Any language")}</option>
+          ${langs.map(function (x) { return html`<option value=${x.language}>${langName(x.language) + " (" + fmtInt(x.n) + ")"}</option>`; })}
+          ${picked && !langs.some(function (x) { return x.language === picked; }) ? html`<option value=${picked}>${langName(picked)}</option>` : null}
+        </select>
+        <${Details} what=${t("Language")}>
+          <p>${t("The language each article is written in, as its source states it or, failing that, as detected from its text. The counts are for the whole corpus.")}</p>
+        <//>
+      </div>` : null}
       ${s.ids && s.ids.length ? html`<div class="s-scope">
         <span>${t("The articles behind: {label}", { label: s.label || "" })}</span>
         <button type="button" class="s-btn ghost" onClick=${function () { go("search", { ids: null, label: "" }); }}>${t("Clear")}</button></div>` : null}
@@ -738,7 +790,8 @@
       </div>
       ${withArt.length ? html`<ol class="s-ranks">${withArt.map(function (c) {
         return html`<li><button type="button" class="s-rank" title=${c.name || c.country}
-          onClick=${function () { go("search", { query: "", ids: null, countries: [c.country], label: "" }); }}>
+          aria-label=${(c.name ? c.name + " (" + c.country + ")" : c.country) + ", " + t("{n} articles", { n: fmtInt(c.articles) })}
+          onClick=${function () { go("search", { query: "", ids: null, countries: [c.country], langs: null, label: "" }); }}>
           <b class="s-code">${c.country}</b>
           <span class="s-barbox" aria-hidden="true"><span class="s-bar" style=${"width:" + Math.max(2, Math.round(100 * c.articles / max)) + "%"}></span></span>
           <span class="s-n">${t("{n} articles", { n: fmtInt(c.articles) })}</span>
@@ -767,7 +820,9 @@
         <p class="s-caveat">${t("A price can be old: read its date.")}</p>
       <//></div><ul class="s-nums">${rows.map(function (x) {
       var l = x.latest || {};
-      return html`<li class="s-num"><button type="button" class="s-num-btn" onClick=${function () { peekFull("markets"); }}>
+      return html`<li class="s-num"><button type="button" class="s-num-btn" onClick=${function () { peekFull("markets"); }}
+        aria-label=${[x.name || x.symbol, fmtNum(l.price) + " " + (l.currency || "") + (l.unit ? "/" + l.unit : ""), fmtDate(l.observed_on),
+          t("{n} values stored", { n: fmtInt(x.points) })].join(", ")}>
         <span class="s-num-name" dir="auto">${x.name || x.symbol}</span>
         <b class="s-num-val">${fmtNum(l.price)} <small>${(l.currency || "") + (l.unit ? "/" + l.unit : "")}</small></b>
         <span class="s-meta">${fmtDate(l.observed_on)}</span>

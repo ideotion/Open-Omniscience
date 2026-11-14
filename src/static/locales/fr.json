@@ -7887,5 +7887,11 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lieux",
-  "🛒 Draft (": "🛒 Brouillon ("
+  "🛒 Draft (": "🛒 Brouillon (",
+  "Where would you like to start?": "Par où voulez-vous commencer ?",
+  "Starting view": "Vue de départ",
+  "Full view": "Vue complète",
+  "The everyday tasks: leads, reading, search, the world and the numbers. The switch at the top opens every tool.": "Les tâches de tous les jours : pistes, lecture, recherche, le monde et les chiffres. L'interrupteur en haut ouvre tous les outils.",
+  "Every tab and tool at once. The same switch turns on the simple view later.": "Tous les onglets et outils à la fois. Le même interrupteur active la vue simple plus tard.",
+  "Collecting now. The first articles appear in Read as they arrive, then in Today.": "Collecte en cours. Les premiers articles apparaissent dans « Lire » à mesure qu'ils arrivent, puis dans « Aujourd'hui »."
 }

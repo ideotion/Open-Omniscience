@@ -7887,5 +7887,11 @@
   "＋ zoom": "＋ увеличить",
   "－ zoom": "－ уменьшить",
   "📍 places": "📍 места",
-  "🛒 Draft (": "🛒 Черновик ("
+  "🛒 Draft (": "🛒 Черновик (",
+  "Where would you like to start?": "С чего вы хотите начать?",
+  "Starting view": "Начальный вид",
+  "Full view": "Полный вид",
+  "The everyday tasks: leads, reading, search, the world and the numbers. The switch at the top opens every tool.": "Повседневные задачи: зацепки, чтение, поиск, мир и цифры. Переключатель вверху открывает все инструменты.",
+  "Every tab and tool at once. The same switch turns on the simple view later.": "Все вкладки и инструменты сразу. Тот же переключатель позже включает простой вид.",
+  "Collecting now. The first articles appear in Read as they arrive, then in Today.": "Идёт сбор. Первые статьи появляются в «Чтении» по мере поступления, затем в «Сегодня»."
 }

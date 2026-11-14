@@ -141,6 +141,10 @@
   "Prices are imported in the full view, with your consent; nothing is fetched here. Each card shows the newest stored value and its date.": "価格は同意のうえ完全表示でインポートします。ここでは何も取得しません。各カードは最新の保存値とその日付を示します。",
   "A price can be old: read its date.": "価格は古い場合があります。日付を確認してください。",
   "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "公開された記録で、同意のうえ完全表示で取得します。件数には発行元による改訂もすべて含まれます。",
-  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "検索ではソース確認まで保留中の記事を表示しないため、国の一覧がここでの件数より短いことがあります。"
+  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "検索ではソース確認まで保留中の記事を表示しないため、国の一覧がここでの件数より短いことがあります。",
+  "Looking for leads in your corpus…": "コーパスの中から手がかりを探しています…",
+  "The language each article is written in, as its source states it or, failing that, as detected from its text. The counts are for the whole corpus.": "各記事が書かれている言語。情報源が示す言語、示されていなければ本文から検出した言語です。件数はコーパス全体のものです。",
+  "Language": "言語",
+  "Any language": "すべての言語"
  }
 }

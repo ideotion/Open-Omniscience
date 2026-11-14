@@ -141,6 +141,10 @@
   "Prices are imported in the full view, with your consent; nothing is fetched here. Each card shows the newest stored value and its date.": "تُستورد الأسعار في العرض الكامل بموافقتك؛ لا يُجلب شيء هنا. تعرض كل بطاقة أحدث قيمة مخزّنة وتاريخها.",
   "A price can be old: read its date.": "قد يكون السعر قديمًا: انظر إلى تاريخه.",
   "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "سجلات منشورة تُجلب بموافقتك في العرض الكامل. يشمل العدد كل مراجعة أجراها الناشر.",
-  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "يُخفي البحث المقالات المحجوزة حتى يُتحقق من مصدرها، لذا قد تكون قائمة البلد أقصر من عددها هنا."
+  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "يُخفي البحث المقالات المحجوزة حتى يُتحقق من مصدرها، لذا قد تكون قائمة البلد أقصر من عددها هنا.",
+  "Looking for leads in your corpus…": "جارٍ البحث عن خيوط في مجموعتك…",
+  "The language each article is written in, as its source states it or, failing that, as detected from its text. The counts are for the whole corpus.": "اللغة التي كُتبت بها كل مقالة، كما يذكرها مصدرها أو، إن لم يذكرها، كما اكتُشفت من نصها. الأعداد تخص المجموعة كلها.",
+  "Language": "اللغة",
+  "Any language": "أي لغة"
  }
 }

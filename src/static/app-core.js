@@ -976,6 +976,20 @@
         } catch (_e) { /* best-effort local settings write; never block the guide */ }
       }
     }
+    // Where the reader starts (R682): a first run offers simple mode; a re-run starts from the
+    // view in use. Applied on closing the guide, any way it closes, like the depth.
+    function _gwRenderStart() {
+      const inSimple = !!(window.ooSimple && window.ooSimple.mode() === "simple");
+      const want = (!guideDone() || inSimple) ? "simple" : "full";
+      document.querySelectorAll('#guide-wizard input[name="gw-start"]').forEach((i) => { i.checked = i.value === want; });
+    }
+    function _gwApplyStart() {
+      const pick = document.querySelector('#guide-wizard input[name="gw-start"]:checked');
+      const s = window.ooSimple;
+      if (!pick || !s) return;
+      if (pick.value === "simple" && s.mode() !== "simple") s.enter();
+      else if (pick.value === "full" && s.mode() === "simple") s.leave();
+    }
     function _gwRenderDepth() {
       const stored = (typeof getUi === "function") ? getUi().depth : null;
       const want = ["essentials", "standard", "full"].includes(stored) ? stored : "standard";
@@ -989,7 +1003,7 @@
     }
     function openGuide() {
       const dlg = $("guide-wizard"); if (!dlg) return;
-      _gwIdx = 0; _gwPaint();
+      _gwIdx = 0; _gwRenderStart(); _gwPaint();   // the start choice is set once per opening, so Back keeps a pick
       if (typeof dlg.showModal === "function" && !dlg.open) dlg.showModal();
       else dlg.setAttribute("open", "");
       if (window.OOI18N && OOI18N.apply) OOI18N.apply(dlg);  // translate freshly-shown chrome
@@ -1015,6 +1029,7 @@
       _gwApplyDepth();
       if (markDone !== false) { const s = _guideState(); s.done = true; _guideSave(s); }
       try { dlg.close(); } catch { dlg.removeAttribute("open"); }
+      _gwApplyStart();   // after the dialog closes, so the view swap never happens under a modal
       _syncRerunGuide();
     }
     // The Settings "Re-run the first-launch guide" toggle is the user-VISIBLE
@@ -1059,7 +1074,10 @@
         // The first-run reader is told WHERE the first result will appear (lane N): the
         // collector starts by itself, so without this the guide closed on an empty Home
         // with nothing saying what to do next. No time is promised: it depends on the network.
-        toast(t("Collecting now. The first articles appear in Feed as they arrive, then in Home and Explore."), "ok");
+        const startSimple = !!document.querySelector('#guide-wizard input[name="gw-start"][value="simple"]:checked');
+        toast(startSimple
+          ? t("Collecting now. The first articles appear in Read as they arrive, then in Today.")
+          : t("Collecting now. The first articles appear in Feed as they arrive, then in Home and Explore."), "ok");
         // Once online the background collector runs continuously on its own (only
         // airplane mode stops it) — no manual seed/ingest step or progress card needed.
         closeGuide(true);
