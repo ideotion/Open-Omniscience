@@ -29,9 +29,6 @@ POST	/api/backup/reindex-backlog/resume	superseded			the task manager's waiting 
 POST	/api/backup/reindex-backlog/resume/cancel	superseded			the running job is the task manager's own row; its Cancel goes through POST /api/jobs/reindex-resume/cancel (the generic background-job cancel)
 GET	/api/backup/v2/batches	feature	2	Settings > Backup (B)	import history with counts and verification (ruled: history lives in Settings > Backup, Q222 = b)
 GET	/api/bulletin/editions/{filename}/ai-plan	feature	3	Agenda > Bulletin (O)	phase 2 plan of a bulletin edition (what a local model would do)
-POST	/api/bulletin/evidence/build	feature	2	Agenda > Bulletin (O)	write a period's evidence archive to a folder
-POST	/api/bulletin/evidence/plan	feature	2	Agenda > Bulletin (O)	size and contents of that archive before writing it
-POST	/api/bulletin/narration/stop	feature	2	Agenda > Bulletin (O)	stop a running narration; it can be started but not stopped from the app
 GET	/api/catalog/columns	internal		api	CSV column reference for programmatic callers; the import dialog states its columns
 POST	/api/commodities/{symbol}/prices/import-csv	feature	3	Markets (O)	import a commodity price series from CSV
 POST	/api/custody/log	internal		api	custody entries are appended by ingest; a manual append is programmatic
@@ -164,7 +161,6 @@ GET	/api/search/spell-index	feature	3	Settings > Maintenance (N)	state of the 'd
 POST	/api/search/spell-index/build	feature	3	Settings > Maintenance (N)	rebuild it
 GET	/api/signals/dismiss-reasons	internal		diagnostics	counts of dismissal reasons, for tuning
 POST	/api/signals/hazards/snapshot	internal		api	population path of the local hazard snapshot
-GET	/api/signals/supply-chain-ripple	feature	2	Markets (O)	commodity vs topic coverage co-movement (correlation, never causation)
 GET	/api/signals/weather-signals	internal		api	derived signal keywords read by producers
 POST	/api/signals/weather-signals/refresh	internal		api	derives those keywords
 POST	/api/sources/batch/disable	superseded			source-group/metadata API of the pre-catalogue era; the Sources tab manages tags and enablement through /api/catalog and /api/sources/{id}
