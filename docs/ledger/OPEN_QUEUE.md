@@ -15960,6 +15960,15 @@ migration or a re-index is DEFERRED with the change it would make, and is listed
   in `fold_page` and `_get_or_create_keyword`, skip a mention whose language differs from every language already
   recorded for the target. It changes stored keys, and it breaks the fold's «equal to a lemmatised re-index»
   test on Dutch «studies» → «studie», so it needs a ruling (S04-06's S5 forbids it as the brief stands).
+  **CLOSED 2026-11-14 (R698 = RN2 (a), the coordinator under the maintainer's standing rule; lane V):** a mention
+  goes to the lowest-id row of its term whose language is unset or the same primary subtag
+  (`store.keyword_language_takes`), else a new row in its language; an article of unknown language keeps the plain
+  lowest id. The rule is applied in extraction (`_prefetch_keywords`, `_get_or_create_keyword`), the fold
+  (`fold_page` resolves per term AND language) and the restore carry (`merge._fill_carry_keywords`, the same Python
+  function, keyed on the article's stripped language). The carry also refuses an article whose language the indexer
+  would change (a tag its script refutes, or an untagged article it would detect), so that half re-indexes. The
+  fold still equals a re-index because both apply the same rule. Old rows converge only after a re-index. Enforced
+  by tests/test_keyword_language_keying.py and tests/test_derived_carry.py.
 - **The «spread across {n} sources» card under Q411.** The card now carries the term as `title_vars` like the
   rising card, so the serve-time pass can show its translation; whether its title keeps the trailing «spread
   across {n} sources» clause beside Q411's «"{term_translation}" (translated from {term_lang}: {term})» form is a
