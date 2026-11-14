@@ -23,6 +23,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.jobs import background as bg
+from tests.js_source_helper import python_function_source
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -171,8 +172,7 @@ def test_the_restores_start_the_stopped_jobs_again_in_their_finally():
     fin = vj[vj.index("refuse_while_writer_jobs_run()") :]
     assert "start_jobs_stopped_for_restore()" in fin[: fin.index("resume_after_exclusive_operation(was_paused")], "volume restore's finally"
     legacy = (ROOT / "src/api/backup_v2.py").read_text("utf-8")
-    body = legacy[legacy.index("def restore_legacy_path(") :]
-    body = body[: body.index("\n@router.")]
+    body = python_function_source(legacy, "restore_legacy_path")
     assert body.count("start_jobs_stopped_for_restore()") == 2, "the staging failure and the finally"
 
 
@@ -281,8 +281,7 @@ def test_run_restore_asks_before_preparing_and_again_at_the_working_copy():
     """A job started while the backup was being prepared is caught by the second ask, at the working copy (read from source: driving a
     real restore to that point needs a staged corpus)."""
     src = (ROOT / "src/backup/merge.py").read_text("utf-8")
-    body = src[src.index("def run_restore("):]
-    body = body[: body.find("\ndef ", 1) if "\ndef " in body[1:] else len(body)]
+    body = python_function_source(src, "run_restore")
     first = body.index("refuse_while_writer_jobs_run()")
     second = body.index("refuse_while_writer_jobs_run()", first + 1)
     assert "refuse_while_writer_jobs_run()" not in body[second + 1 :], "two asks, no more"
