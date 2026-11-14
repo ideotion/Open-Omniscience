@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-14,unlock/data-location,An explicit OO_DATA_DIR is never offered the first-launch data-location move,shipped,PR #1987,src/api/unlock.py;tests/test_data_location.py,"offerable is false when OO_DATA_DIR is set (reason names the variable) and the check and set endpoints answer 409, so a folder recorded in oo.env cannot override or be ignored against the operator's own choice; unlock.js already skipped on offerable."

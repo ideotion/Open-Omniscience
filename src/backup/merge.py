@@ -4230,6 +4230,100 @@ def _carry_enabled() -> bool:
     return os.getenv("OO_CARRY_DERIVED", "1") != "0"
 
 
+#: Distinct terms per local lookup when resolving the carried keywords (SQLite's default
+#: variable limit is far above it; the chunk only bounds one statement's size).
+_CARRY_TERM_CHUNK = 500
+
+
+def _language_resolution_moves(language: str | None, detected: str | None, text: str) -> bool:
+    """Would ``store._resolve_known_language`` change this incoming article's language?
+
+    The carry files mentions from the stored columns. index_article first clears a tag the
+    text's own script refutes (R699) and detects a language for an article that has none;
+    either moves the mentions to other keyword rows (R698) and rewrites the article's
+    columns, which the carry does not do. Pure and offline, the same two calls the indexer
+    makes, so a forged or stale backup cannot carry past them."""
+    from src.analytics.langdetect import detect_language
+    from src.analytics.script_check import script_refutes
+
+    asserted = (language or "").strip()
+    if asserted:
+        return script_refutes(asserted, text)
+    if (detected or "").strip():
+        return False
+    return detect_language(text) is not None
+
+
+def _fill_carry_keywords(con: sqlite3.Connection) -> None:
+    """``temp.carry_kw``: each (incoming keyword, article language) the carried mentions
+    name, resolved to the local keyword row index_article would file the mention under.
+
+    The rule is ``store.keyword_language_takes`` itself, applied in Python over the local
+    rows of each term in id order, rather than a SQL copy of it: SQLite's ``trim`` and
+    ``lower`` are ASCII-only, and a value like ``-en`` (a language that normalises to
+    nothing) reads differently in each, so a SQL rendition could file a carried mention on
+    a row a re-index would not choose. A pair with no eligible row gets NULL, which the
+    ``keyword_unmapped`` guard refuses, exactly as a re-index would create a new row."""
+    from src.analytics.store import keyword_language_takes
+
+    # Staged in a temp table and resolved a page of terms at a time: a field backup names
+    # millions of keywords, and holding every pair in Python at once is what this avoids.
+    con.execute("DROP TABLE IF EXISTS temp.carry_kw_pairs")
+    con.execute(
+        "CREATE TEMP TABLE carry_kw_pairs (old INTEGER NOT NULL, lang TEXT NOT NULL,"
+        " term TEXT, inc_entity INTEGER NOT NULL)"
+    )
+    con.execute(
+        "INSERT INTO temp.carry_kw_pairs (old, lang, term, inc_entity)"
+        " SELECT p.kid, p.lang, ik.normalized_term, COALESCE(ik.is_entity, 0)"
+        " FROM (SELECT DISTINCT im.keyword_id AS kid, cp.key_lang AS lang"
+        "  FROM temp.carry_plan cp"
+        "  CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old WHERE cp.kw = 1) p"
+        " JOIN inc.keywords ik ON ik.id = p.kid"
+    )
+    con.execute("CREATE INDEX temp.carry_kw_pairs_term ON carry_kw_pairs (term)")
+    # NULL terms first (they resolve to nothing), then every term in order, a page at a time.
+    con.executemany(
+        "INSERT INTO temp.carry_kw (old, lang, new, inc_entity) VALUES (?, ?, NULL, ?)",
+        _q(con, "SELECT old, lang, inc_entity FROM temp.carry_kw_pairs WHERE term IS NULL"),
+    )
+    after: str | None = None  # None = from the first term, so an empty-string term is not skipped
+    while True:
+        chunk = [r[0] for r in _q(
+            con,
+            "SELECT DISTINCT term FROM temp.carry_kw_pairs WHERE term IS NOT NULL"
+            " AND (? IS NULL OR term > ?) ORDER BY term LIMIT ?",
+            (after, after, _CARRY_TERM_CHUNK),
+        )]
+        if not chunk:
+            break
+        after = chunk[-1]
+        marks = ",".join("?" * len(chunk))
+        local: dict[str, list[tuple[int, str | None]]] = {}
+        for term, kid, lang in _q(
+            con,
+            f"SELECT normalized_term, id, language FROM keywords WHERE normalized_term IN ({marks})"  # noqa: S608  # nosec B608 # only placeholders are interpolated
+            " ORDER BY id",
+            tuple(chunk),
+        ):
+            local.setdefault(term, []).append((int(kid), lang))
+        rows = []
+        for old, lang, term, entity in _q(
+            con,
+            f"SELECT old, lang, term, inc_entity FROM temp.carry_kw_pairs WHERE term IN ({marks})",  # noqa: S608  # nosec B608 # only placeholders are interpolated
+            tuple(chunk),
+        ):
+            new = next(
+                (kid for kid, row_lang in local.get(term, ()) if keyword_language_takes(row_lang, lang)),
+                None,
+            )
+            rows.append((int(old), lang, new, int(entity)))
+        con.executemany(
+            "INSERT INTO temp.carry_kw (old, lang, new, inc_entity) VALUES (?, ?, ?, ?)", rows
+        )
+    con.execute("DROP TABLE IF EXISTS temp.carry_kw_pairs")
+
+
 def _ensure_carry_tables(con: sqlite3.Connection) -> None:
     """The plan's temp tables, created empty if the plan step did not run -- so a caller
     that runs `_merge_articles` alone joins an empty plan and carries nothing."""
@@ -4241,12 +4335,38 @@ def _ensure_carry_tables(con: sqlite3.Connection) -> None:
         " old INTEGER PRIMARY KEY, source_id INTEGER, inputs TEXT,"
         " observed_on TEXT, country TEXT, language TEXT,"
         " top_keyword_id INTEGER, top_keyword_count INTEGER, top_keyword_tied_n INTEGER,"
-        " kw INTEGER NOT NULL DEFAULT 0, www INTEGER NOT NULL DEFAULT 0, www_inputs TEXT)"
+        " kw INTEGER NOT NULL DEFAULT 0, www INTEGER NOT NULL DEFAULT 0, www_inputs TEXT,"
+        " key_lang TEXT NOT NULL DEFAULT '')"
     )
     con.execute(
         "CREATE TEMP TABLE IF NOT EXISTS carry_kw ("
-        " old INTEGER PRIMARY KEY, new INTEGER, inc_entity INTEGER)"
+        " old INTEGER NOT NULL, lang TEXT NOT NULL, new INTEGER, inc_entity INTEGER,"
+        " PRIMARY KEY (old, lang))"
     )
+
+
+#: How many words one INSERT of :func:`_fill_carry_hidden` binds (well under SQLite's variable limit).
+_HIDDEN_CHUNK = 500
+
+
+def _fill_carry_hidden(con: sqlite3.Connection) -> None:
+    """``temp.carry_hidden``: the LOCAL ids of the keywords whose normalized term is on the shipped
+    stoplist (``src.analytics.extract.global_stopwords``), the set
+    ``stoplist_recompute.hidden_keyword_ids`` reads through the ORM, read here on the merge's own
+    connection. Runs after the ``keywords`` step, so a word the backup brought is already here."""
+    from src.analytics.extract import global_stopwords
+
+    con.execute("DROP TABLE IF EXISTS temp.carry_hidden")
+    con.execute("CREATE TEMP TABLE carry_hidden (new INTEGER PRIMARY KEY)")
+    words = sorted(global_stopwords())
+    for i in range(0, len(words), _HIDDEN_CHUNK):
+        batch = words[i : i + _HIDDEN_CHUNK]
+        marks = ",".join("?" * len(batch))
+        con.execute(
+            "INSERT OR IGNORE INTO temp.carry_hidden (new)"
+            f" SELECT id FROM main.keywords WHERE normalized_term IN ({marks})",  # noqa: S608  # nosec B608 # only ? marks are interpolated
+            batch,
+        )
 
 
 def _inc_has_table(con: sqlite3.Connection, name: str) -> bool:
@@ -4353,7 +4473,7 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         "refused": {
             "already_present": 0, "source_unmapped": 0, "inputs_changed": 0,
             "keyword_unmapped": 0, "entity_upgrade": 0, "keyword_collision": 0,
-            "www_inputs_changed": 0, "article_missing": 0,
+            "www_inputs_changed": 0, "article_missing": 0, "language_unresolved": 0,
         },
         "method": (
             "an incoming article's keywords are carried only when its keyword stamp names this engine AND its "
@@ -4517,6 +4637,16 @@ def _plan_derived_carry(con, batch_id, results) -> None:
                     refused["www_inputs_changed"] += 1
                 else:
                     www_ok = True
+            if kw_ok and _language_resolution_moves(lang, detected, text):
+                # index_article resolves the language before it files a single mention
+                # (store._resolve_known_language): a tag its own script refutes is cleared
+                # (R699) and an untagged article is detected. Either changes which keyword
+                # row a mention takes (R698), and the article's own columns, so the carry
+                # cannot reproduce it from the stored values: the keyword half re-indexes.
+                # The www half may still carry: places and entities never read the
+                # language (src/timemap/whostore.py), which is why its digest has none.
+                refused["language_unresolved"] += 1
+                kw_ok = False
             if not kw_ok and not www_ok:
                 continue
             known = (lang or "").strip() or (detected or "").strip() or None
@@ -4528,10 +4658,14 @@ def _plan_derived_carry(con, batch_id, results) -> None:
                 _carried_country(normalize_country(country), form, canonical_country),
                 normalize_lang(known) or None,
                 int(kw_ok), int(www_ok), www_inputs if www_ok else None,
+                # The value index_article hands the keyword resolution (known_lang): the
+                # stripped tag or detection, NOT its normalised form -- "-en" normalises to
+                # "" yet is a language, and keyword_language_takes treats the two apart.
+                known or "",
             ))
         con.executemany(
-            "INSERT INTO temp.carry_plan (old, source_id, inputs, observed_on, country, language, kw, www, www_inputs)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO temp.carry_plan (old, source_id, inputs, observed_on, country, language, kw, www, www_inputs, key_lang)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             planned,
         )
 
@@ -4549,17 +4683,13 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         return
 
     # Resolve each incoming keyword the carried mentions name, the way index_article
-    # resolves a term: by normalized_term alone, lowest id (_prefetch_keywords).
-    # Only the articles whose KEYWORDS are carried (kw = 1): an article carried for its places and entities alone names no keyword.
-    con.execute(
-        "INSERT INTO temp.carry_kw (old, new, inc_entity)"
-        " SELECT ik.id,"
-        "  (SELECT MIN(k.id) FROM keywords k WHERE k.normalized_term = ik.normalized_term),"
-        "  COALESCE(ik.is_entity, 0)"
-        " FROM inc.keywords ik WHERE ik.id IN ("
-        "  SELECT DISTINCT im.keyword_id FROM temp.carry_plan cp"
-        "  CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old WHERE cp.kw = 1)"
-    )
+    # resolves a term (_prefetch_keywords): by normalized_term, lowest id, among the rows
+    # that may take a mention in the article's language (R698 = RN2 (a),
+    # store.keyword_language_takes, called here in Python so the two cannot drift). The
+    # resolution is per (incoming keyword, article language), and every join below
+    # matches on both. Only the articles whose KEYWORDS are carried (kw = 1): an article
+    # carried for its places and entities alone names no keyword.
+    _fill_carry_keywords(con)
 
     def _refuse(key: str, sql: str) -> None:
         # The three guards below are about the KEYWORDS, so a refusal takes the keyword half of the article's plan and leaves its places and
@@ -4574,13 +4704,13 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         "keyword_unmapped",
         "SELECT im.article_id FROM temp.carry_plan cp"
         " CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old"
-        " LEFT JOIN temp.carry_kw ck ON ck.old = im.keyword_id WHERE cp.kw = 1 AND ck.new IS NULL",
+        " LEFT JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = cp.key_lang WHERE cp.kw = 1 AND ck.new IS NULL",
     )
     _refuse(
         "entity_upgrade",
         "SELECT im.article_id FROM temp.carry_plan cp"
         " CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old"
-        " JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
+        " JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = cp.key_lang"
         " JOIN keywords k ON k.id = ck.new"
         " WHERE cp.kw = 1 AND ck.inc_entity = 1 AND COALESCE(k.is_entity, 0) = 0",
     )
@@ -4588,7 +4718,7 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         "keyword_collision",
         "SELECT im.article_id FROM temp.carry_plan cp"
         " CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old"
-        " JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
+        " JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = cp.key_lang"
         " WHERE cp.kw = 1"
         " GROUP BY im.article_id, ck.new HAVING COUNT(*) > 1",
     )
@@ -4598,18 +4728,31 @@ def _plan_derived_carry(con, batch_id, results) -> None:
     # computes it from the rows a pass writes: positive counts only; the highest count;
     # how many keywords reach it; the LOWEST LOCAL id among them as the representative.
     # Local ids, because the tie-break is over this corpus's ids, not the exporter's.
+    #
+    # And WITHOUT the shipped stoplist's words, as every local writer of these columns computes them
+    # (R111 step T3: ``keyword_fold``, the stoplist pass, ``index_article``): a carried article whose
+    # most frequent word is one this corpus hides would otherwise arrive with that word as its top.
+    # Every planned mention has a ``carry_kw`` row (the ``keyword_unmapped`` refusal above), so the
+    # join drops nothing but the hidden words. An article whose every word is hidden gets no top,
+    # which is what ``top_keyword_of`` answers for an empty map.
+    _fill_carry_hidden(con)
     con.execute(
         "UPDATE temp.carry_plan SET top_keyword_count = ("
         " SELECT MAX(im.count) FROM inc.keyword_mentions im"
-        " WHERE im.article_id = carry_plan.old AND im.count > 0) WHERE kw = 1"
+        " JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = carry_plan.key_lang"
+        " WHERE im.article_id = carry_plan.old AND im.count > 0"
+        " AND ck.new NOT IN (SELECT new FROM temp.carry_hidden)) WHERE kw = 1"
     )
     con.execute(
         "UPDATE temp.carry_plan SET"
         " top_keyword_tied_n = (SELECT COUNT(*) FROM inc.keyword_mentions im"
-        "  WHERE im.article_id = carry_plan.old AND im.count = carry_plan.top_keyword_count),"
+        "  JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = carry_plan.key_lang"
+        "  WHERE im.article_id = carry_plan.old AND im.count = carry_plan.top_keyword_count"
+        "  AND ck.new NOT IN (SELECT new FROM temp.carry_hidden)),"
         " top_keyword_id = (SELECT MIN(ck.new) FROM inc.keyword_mentions im"
-        "  JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
-        "  WHERE im.article_id = carry_plan.old AND im.count = carry_plan.top_keyword_count)"
+        "  JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = carry_plan.key_lang"
+        "  WHERE im.article_id = carry_plan.old AND im.count = carry_plan.top_keyword_count"
+        "  AND ck.new NOT IN (SELECT new FROM temp.carry_hidden))"
         " WHERE kw = 1 AND top_keyword_count IS NOT NULL"
     )
     plan["planned"] = _count(con, "SELECT COUNT(*) FROM temp.carry_plan WHERE kw = 1")
@@ -4651,24 +4794,24 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
     con.execute(
         "CREATE TEMP TABLE carry_ids (old INTEGER PRIMARY KEY, new INTEGER NOT NULL,"
         " source_id INTEGER, inputs TEXT, observed_on TEXT, country TEXT,"
-        " language TEXT, kw INTEGER NOT NULL, www INTEGER NOT NULL, www_inputs TEXT)"
+        " language TEXT, kw INTEGER NOT NULL, www INTEGER NOT NULL, www_inputs TEXT,"
+        " key_lang TEXT NOT NULL)"
     )
     con.execute(
-        "INSERT INTO temp.carry_ids (old, new, source_id, inputs, observed_on, country, language, kw, www, www_inputs)"
+        "INSERT INTO temp.carry_ids (old, new, source_id, inputs, observed_on, country, language, kw, www, www_inputs, key_lang)"
         " SELECT cp.old, ma.new, cp.source_id, cp.inputs, cp.observed_on, cp.country,"
-        " cp.language, cp.kw, cp.www, cp.www_inputs FROM temp.carry_plan cp"
+        " cp.language, cp.kw, cp.www, cp.www_inputs, cp.key_lang FROM temp.carry_plan cp"
         " JOIN temp.map_articles ma ON ma.old = cp.old"
         " JOIN merged_rows r ON r.batch_id = ? AND r.table_name = 'articles' AND r.row_id = ma.new",
         (batch_id,),
     )
     ids = [int(r[0]) for r in _q(con, "SELECT old FROM temp.carry_ids ORDER BY old")]
     if ids:
-        # R111 step T3 (src/analytics/stoplist_recompute.py): a carried article's top keyword was
-        # computed from the incoming mention rows with NO stoplist filter, so it can hold a word this
-        # corpus hides. Forget the finished stoplist run: the next maintenance window then walks every
-        # hidden word, once, and takes each one out of the tops. The working copy
-        # becomes the live corpus at the swap, so this is atomic with the tops it answers for. (The
-        # carry plan's own filter would be the fuller fix; it is recorded in OPEN_QUEUE.md.)
+        # R111 step T3 (src/analytics/stoplist_recompute.py): the carry plan computes each carried
+        # article's top keyword without the hidden words (``_fill_carry_hidden``). Forgetting the
+        # finished stoplist run stays as the second net, at the cost of one walk of the hidden words
+        # in the next maintenance window after a merge that carried articles. The working copy
+        # becomes the live corpus at the swap, so this is atomic with the tops it answers for.
         from src.analytics.stoplist_recompute import CURSOR_KEY, DONE_KEY
 
         # Both keys: a cursor left in the working copy would resume a pass in flight past the carried
@@ -4693,7 +4836,8 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
         con.execute(
             "CREATE TEMP TABLE carry_win (old INTEGER PRIMARY KEY, new INTEGER NOT NULL,"
             " source_id INTEGER, inputs TEXT, observed_on TEXT, country TEXT,"
-            " language TEXT, kw INTEGER NOT NULL, www INTEGER NOT NULL, www_inputs TEXT)"
+            " language TEXT, kw INTEGER NOT NULL, www INTEGER NOT NULL, www_inputs TEXT,"
+            " key_lang TEXT NOT NULL)"
         )
         con.execute(
             "INSERT INTO temp.carry_win SELECT * FROM temp.carry_ids WHERE old >= ? AND old <= ?",
@@ -4715,7 +4859,7 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
             " SELECT ck.new, w.new, im.count, im.first_offset, w.observed_on, w.country,"
             " NULL, w.language, w.source_id, 'baseline', ?"
             " FROM temp.carry_win w CROSS JOIN inc.keyword_mentions im ON im.article_id = w.old"
-            " JOIN temp.carry_kw ck ON ck.old = im.keyword_id"
+            " JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = w.key_lang"
             " WHERE w.kw = 1"
             " ORDER BY ck.new, w.new",
             (now,),
@@ -4751,7 +4895,11 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
             "INSERT INTO temp.carry_delta (kid, m, a) SELECT ck.new, SUM(im.count), COUNT(*)"
             " FROM temp.carry_win w"
             " CROSS JOIN inc.keyword_mentions im ON im.article_id = w.old"
-            " JOIN temp.carry_kw ck ON ck.old = im.keyword_id WHERE w.kw = 1 GROUP BY ck.new"
+            " JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = w.key_lang WHERE w.kw = 1"
+            # R101: an article that arrives already quarantined adds nothing to the counters. Answered from
+            # idx_article_quarantined (one covering range read per window), never by reading the article rows.
+            " AND w.new NOT IN (SELECT id FROM main.articles WHERE quarantined IS 1)"
+            " GROUP BY ck.new"
         )
         con.execute(
             "UPDATE main.keywords SET"
@@ -6608,9 +6756,7 @@ def merge_side_files(staged: StagedArtifact) -> dict:
             state[name] = merge_imported_store(name, incoming)
         elif not local.exists():
             local.parent.mkdir(parents=True, exist_ok=True)
-            tmp = local.with_name(local.name + ".tmp")
-            tmp.write_bytes(path.read_bytes())
-            os.replace(tmp, local)
+            _replace_file_bytes(local, path.read_bytes())
             state[name] = {"action": "restored", "reason": "no local file existed"}
         else:
             try:
@@ -6661,9 +6807,7 @@ def merge_side_files(staged: StagedArtifact) -> dict:
                 ann["errors"].append(f"{name}: {record_text(exc)}")
         else:
             local.parent.mkdir(parents=True, exist_ok=True)
-            tmp = local.with_name(local.name + ".tmp")
-            tmp.write_bytes(path.read_bytes())
-            os.replace(tmp, local)
+            _replace_file_bytes(local, path.read_bytes())
             ann["restored_mine"] = True
     report["annotations"] = ann
 
@@ -6742,9 +6886,7 @@ def merge_side_files(staged: StagedArtifact) -> dict:
                 continue
             try:
                 local.parent.mkdir(parents=True, exist_ok=True)
-                tmp = local.with_name(local.name + ".tmp")
-                tmp.write_bytes(path.read_bytes())
-                os.replace(tmp, local)
+                _replace_file_bytes(local, path.read_bytes())
                 restored += 1
             except OSError as exc:
                 refused.append(f"{name}: {exception_text(exc, typed=False)}")
@@ -7156,9 +7298,7 @@ def _restore_ring_members(staged: StagedArtifact, base: Path) -> dict:
             continue
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
-            tmp = target.with_name(target.name + ".tmp")
-            tmp.write_bytes(path.read_bytes())
-            os.replace(tmp, target)
+            _replace_file_bytes(target, path.read_bytes())
         except OSError as exc:
             out["refused"].append({"name": name, "reason": f"write failed: {exception_text(exc, typed=False)}"})
             continue
@@ -7887,6 +8027,25 @@ def find_completed_import(digest: str | None) -> dict | None:
     }
 
 
+def _replace_file_bytes(target: Path, data: bytes) -> None:
+    """Replace ``target`` with ``data`` through a temp file of its own and a rename (audit recheck P16).
+
+    The temp name is unique per write, so two writers never share one ``<name>.tmp``, and a write
+    that fails takes its temp file with it instead of leaving it beside the target."""
+    import secrets
+
+    tmp = target.with_name(f"{target.name}.{secrets.token_hex(4)}.tmp")
+    try:
+        with open(tmp, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, target)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def _reindex_state_path() -> Path:
     return data_dir() / _REINDEX_STATE_FILE
 
@@ -7898,15 +8057,13 @@ def _save_reindex_cursor(batch_id: int, *, last_id: int, done: int, total: int) 
     try:
         path = _reindex_state_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(
+        _replace_file_bytes(  # atomic: a torn read can never yield a bogus watermark
+            path,
             json.dumps(
                 {"batch_id": batch_id, "last_id": last_id, "done": done, "total": total},
                 sort_keys=True,
-            ),
-            encoding="utf-8",
+            ).encode("utf-8"),
         )
-        os.replace(tmp, path)  # atomic: a torn read can never yield a bogus watermark
     except Exception as exc:  # noqa: BLE001 - the watermark is an optimisation, never a guarantee
         log_failure(_LOG, "could not persist the re-index watermark", exc, level=logging.DEBUG)
 
@@ -8657,6 +8814,82 @@ def _restore_reindex_policy(stats: dict) -> Callable[[int, float], bool] | None:
     return reindex_flush_policy(target)
 
 
+class WriterJobsRefused(RestoreRefused):
+    """R659's refusal: a registered background job is writing to the corpus. A :class:`RestoreRefused`, so every caller that already
+    reports a refusal reports this one; its own class only so the run journal can say which refusal it was."""
+
+
+#: The refusal's fixed words (R659). The page turns them into the operator's language (``ooServerText`` in app-core.js), so a change
+#: here is a change there too (tests/test_restore_refuses_writer_jobs.py pins both).
+_WRITER_JOBS_REFUSAL = (
+    "a background job is writing to your corpus ({jobs}) — nothing was imported, and nothing was written to your corpus. What it "
+    "writes during an import would be lost when your corpus is switched. Let it finish, or stop it if it can be stopped, then import again."
+)
+#: How long a committing restore waits for the jobs it may stop (``stops_for_restore``) to reach their next safe point.
+_STOP_FOR_RESTORE_S = 30.0
+
+
+def refuse_while_writer_jobs_run() -> None:
+    """Refuse a committing restore while a registered background job that commits to the corpus is running (R659, queue item 21, option B
+    reduced).
+
+    Everything such a job commits between the working copy and the swap is discarded by the swap, so the restore refuses rather than lose it.
+    The list is the registry's own ``is_writer`` flags (:func:`src.jobs.background.running_writer_jobs`), never a second hand-kept list. A
+    job flagged ``stops_for_restore`` (the re-index drain: it resumes from its watermark, and the import, or the import queue once its run
+    has ended, starts it again) is stopped first, with one bounded wait, and named only if it is still running after it; when the restore
+    refuses anyway (another writer runs), the jobs it stopped are started again before it raises. Called before the backup is staged (the volume restore, the
+    single-file restore), before ``run_restore`` prepares anything, and again at the working copy.
+
+    STATED LIMITS: a job started AFTER the working copy is not caught (the swap's own barrier waits only for a lease holder); writers that are
+    not registry jobs (the collection pass, the housekeeping lane, the Wikipedia drain, API write routes) are outside this list, as are
+    writers left unflagged on purpose (``tests/test_job_writer_flags.py``). A writer the restore does not stop for itself refuses an import
+    until it ends or the operator stops it (where it can be stopped), so the indexes a fresh launch builds (``title-index``,
+    ``keyword-day-counts``) refuse one until they are done or stopped. In a checkpoint group a
+    refusal at a later item discards the merges the group was still holding, as any refusal there does: the operator imports again."""
+    from src.jobs.background import running_writer_jobs, stop_jobs_for_restore
+
+    # The writers it may not stop FIRST: a restore that will refuse anyway stops nothing (security and correctness reads of a18a7d01).
+    blocking = running_writer_jobs(include_stoppable=False)
+    if blocking:
+        raise WriterJobsRefused(_WRITER_JOBS_REFUSAL.format(jobs="; ".join(label for _kind, label in blocking)))
+    _remember_stopped(stop_jobs_for_restore(_STOP_FOR_RESTORE_S))
+    running = running_writer_jobs()
+    if running:
+        start_jobs_stopped_for_restore()  # nothing is imported, so nothing else would start them again
+        raise WriterJobsRefused(_WRITER_JOBS_REFUSAL.format(jobs="; ".join(label for _kind, label in running)))
+
+
+#: The kinds a committing restore stopped (``stops_for_restore``) and has not yet started again (R659).
+_STOPPED_FOR_RESTORE: set[str] = set()
+_STOPPED_LOCK = threading.Lock()
+
+
+def _remember_stopped(kinds: list[str]) -> None:
+    with _STOPPED_LOCK:
+        _STOPPED_FOR_RESTORE.update(kinds)
+
+
+def start_jobs_stopped_for_restore() -> list[str]:
+    """Start again the jobs a committing restore stopped, whatever its outcome (R659): called where a restore ends (the volume restore's
+    and the single-file restore's ``finally``) and by a refusal. A successful import with its re-index deferred has already started the
+    drain (``hand_off_reindex``; this start then finds it running and does nothing); a refused, failed or stopped restore, or one that
+    re-indexed inline, has not, and nothing else would. Inside an import run's window it starts nothing and forgets the kinds: the run starts
+    the drain once, when it ends. A job the operator cancelled since is never started. Never raises; returns the kinds started."""
+    try:
+        from src.scheduler.runner import exclusive_window_open
+
+        with _STOPPED_LOCK:
+            kinds = sorted(_STOPPED_FOR_RESTORE)
+            _STOPPED_FOR_RESTORE.clear()  # also inside a window: left there, a later restore would start a drain the operator has cancelled
+        if exclusive_window_open():
+            return []
+        from src.jobs.background import start_jobs_after_refusal
+
+        return start_jobs_after_refusal(kinds)
+    except Exception:  # noqa: BLE001 - a job left stopped keeps its durable mark and its own Resume
+        return []
+
+
 def run_restore(
     staged: StagedArtifact,
     *,
@@ -8745,7 +8978,9 @@ def run_restore(
     (:mod:`src.backup.collector_exit`), and records what it found as
     ``report["collector_exit"]``. WHAT IT IS NOT: a lock on the corpus. The housekeeping
     lane, the Wikipedia drain, AI sweeps, boot upkeep and every API write route are not
-    stopped; neither are most registered background jobs (tags backfill, language
+    stopped. A registered background job that commits to the corpus is not stopped either, but a
+    committing restore REFUSES while one runs (R659, :func:`refuse_while_writer_jobs_run`), before it
+    prepares anything and again at the working copy; before R659 none of them was looked at (tags backfill, language
     detection, the governments jobs, bulk source qualification, the mailbox import: the
     job registry has no exclusive-hold check; two registered jobs look at the window in
     their own workers: the re-index drain stops inside its article loop and the queue
@@ -8846,6 +9081,8 @@ def run_restore(
     for _name, _seconds in (staged.stage_a_timings or {}).items():
         timings.record(f"stage_a:{_name}", _seconds)
 
+    if commit:
+        refuse_while_writer_jobs_run()  # before preparing and merging (R659); the callers that stage a backup also ask before staging
     _abort_point("prepare_staged")
     with timings.stage("prepare_staged"):
         # SPLIT, because the aggregate cannot be acted on. On the field's largest
@@ -8894,6 +9131,8 @@ def run_restore(
         runlog.milestone("collector_exit", **collector_exit)
 
     _abort_point("snapshot_working_copy")
+    if commit:
+        refuse_while_writer_jobs_run()  # again at the copy: a job started while the backup was being prepared (R659)
     # The Q701-note trust answer, resolved ONCE per restore (the per-import override
     # if the operator made one for this import, else their first-launch answer) and
     # recorded in `meta` so the import report says which choice produced the result.

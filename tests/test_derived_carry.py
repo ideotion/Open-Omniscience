@@ -405,17 +405,27 @@ def test_a_merge_into_a_populated_corpus_matches_a_re_index(backup, tmp_path, mo
     # KEYWORD ROW each mention landed on where two rows share a term.
     snap = _snapshot(tmp_path / "carry.db")
     _assert_same(snap, _snapshot(tmp_path / "classic.db"))
-    plain_rows = {r[1] for r in snap["mentions"] if r[2] == planted["plain_term"]}
+    plain = [r for r in snap["mentions"] if r[2] == planted["plain_term"]]
+    con = sqlite3.connect(tmp_path / "carry.db")
+    rows_by_id = dict(con.execute(
+        "SELECT id, language FROM keywords WHERE normalized_term = ?", (planted["plain_term"],)
+    ).fetchall())
+    con.close()
     con = sqlite3.connect(target)
-    lowest = con.execute(
+    italian = con.execute(
         "SELECT MIN(id) FROM keywords WHERE normalized_term = ?", (planted["plain_term"],)
     ).fetchone()[0]
     con.close()
-    # The term exists here under another language with a LOWER id than the row the merge
-    # inserts for the incoming one. The indexer resolves by term alone to the lowest id,
-    # the merge's own map by term + language to the inserted row; the carry must follow
-    # the indexer, so every mention of the term lands on the planted row.
-    assert plain_rows == {lowest}, f"expected every {planted['plain_term']!r} on {lowest}: {plain_rows}"
+    # The term exists here in ITALIAN with a LOWER id than the row the merge inserts for
+    # the incoming one. The indexer files a mention under the lowest-id row of the term
+    # that may take the article's language (R698: a row with no language, or the same
+    # one), so the carry must follow it: an English mention never lands on the Italian
+    # row, and each lands on the lowest row of its own language.
+    assert plain and all(r[8] for r in plain), plain
+    for r in plain:
+        eligible = [i for i, lang in rows_by_id.items() if not lang or lang == r[8]]
+        assert r[1] == min(eligible), (r, rows_by_id)
+    assert italian not in {r[1] for r in plain if r[8] != "it"}, (italian, plain)
     con = sqlite3.connect(tmp_path / "carry.db")
     marks = ",".join("?" * len(carried["reindexed"])) or "NULL"
     carried_uses = con.execute(
@@ -1305,3 +1315,62 @@ def test_a_leftover_www_stamp_on_a_reused_id_cannot_certify_a_new_article(backup
         "the fixture did not reuse the id, so this proves nothing"
     )
     assert _scalar(working, "SELECT COUNT(*) FROM article_www_stamps WHERE article_id = ?", gone_id) == 0, "a leftover www stamp survived onto a new article"
+
+
+def test_a_carried_top_keyword_never_holds_a_hidden_word(backup, tmp_path, monkeypatch):
+    """R111 step T3, the fuller fix (OPEN_QUEUE: the merge carry): the carry plan computes each carried article's top
+    keyword WITHOUT the shipped stoplist's words, as ``keyword_fold`` and the stoplist pass do. The backup here carries a
+    mention of a hidden word ('the') that outnumbers every other word of one article; the article must arrive with its top
+    taken from the words that remain, and the hidden word's mention row is still carried as it came."""
+    from src.analytics.extract import global_stopwords
+
+    assert "the" in global_stopwords(), "the scenario needs a word the shipped list hides"
+    planted = tmp_path / "planted.db"
+    shutil.copyfile(backup, planted)
+    con = sqlite3.connect(planted)
+    try:
+        aid, lang = con.execute("SELECT id, language FROM articles WHERE hash = 'h0001'").fetchone()
+        top = con.execute(
+            "SELECT MAX(count) FROM keyword_mentions WHERE article_id = ? AND count > 0", (aid,)
+        ).fetchone()[0]
+        assert top, "the article must have keywords of its own"
+        tied = con.execute(
+            "SELECT COUNT(*) FROM keyword_mentions WHERE article_id = ? AND count = ?", (aid, top)
+        ).fetchone()[0]
+        con.execute(
+            "INSERT INTO keywords (term, normalized_term, language, frequency, is_ngram,"
+            " ngram_size, is_entity, mention_count, article_count)"
+            " VALUES ('the', 'the', ?, 0, 0, 1, 0, 0, 0)",
+            # In the article's own language (R698): a row of another language cannot take
+            # its mention, so the carry would refuse the article and leave it to a re-index.
+            (lang,),
+        )
+        kid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+        con.execute(
+            "INSERT INTO keyword_mentions (keyword_id, article_id, count, first_offset) VALUES (?, ?, ?, 0)",
+            (kid, aid, top + 5),
+        )
+        con.commit()
+    finally:
+        con.close()
+    counts, _batch, working = _merge_only(planted, tmp_path, monkeypatch)
+    assert counts["_derived_carry"]["carried"]["articles"] == _N, counts["_derived_carry"]
+    con = sqlite3.connect(working)
+    try:
+        hidden_id = con.execute("SELECT id FROM keywords WHERE normalized_term = 'the'").fetchone()[0]
+        row = con.execute(
+            "SELECT top_keyword_id, top_keyword_count, top_keyword_tied_n FROM articles WHERE hash = 'h0001'"
+        ).fetchone()
+        expected = con.execute(
+            "SELECT MIN(m.keyword_id) FROM keyword_mentions m JOIN articles a ON a.id = m.article_id"
+            " WHERE a.hash = 'h0001' AND m.count = ? AND m.keyword_id != ?", (top, hidden_id)
+        ).fetchone()[0]
+        carried_hidden = con.execute(
+            "SELECT m.count FROM keyword_mentions m JOIN articles a ON a.id = m.article_id"
+            " WHERE a.hash = 'h0001' AND m.keyword_id = ?", (hidden_id,)
+        ).fetchone()
+    finally:
+        con.close()
+    assert row[0] != hidden_id, "the hidden word became the carried article's top keyword"
+    assert row == (expected, top, tied), "the top is the lowest local id among the remaining words, as top_keyword_of"
+    assert carried_hidden == (top + 5,), "the mention row itself is carried unchanged"

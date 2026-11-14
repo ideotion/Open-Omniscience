@@ -2978,7 +2978,7 @@ FUTURE_DEVELOPMENTS §6 запрещает единую автоматическ
 | Метод и путь | Назначение |
 |---|---|
 | `GET /api/annotations/mine` · `POST` · `DELETE /mine/{i}` | созданные вами аннотации |
-| `GET /api/annotations/export` | подписанный переносимый пакет ваших аннотаций |
+| `POST /api/annotations/export` | подписанный переносимый пакет ваших аннотаций |
 | `POST /api/annotations/import` | проверить и сохранить импортированный пакет (отклоняется, если недействителен) |
 | `GET /api/annotations/authors` · `PUT /authors/trust` · `DELETE /authors/{id}` | сеть доверия |
 | `GET /api/annotations/for?target=` | прозрачное объединение — кто что утверждал |

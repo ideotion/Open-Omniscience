@@ -321,7 +321,7 @@ def test_the_map_rollup_build_declines_while_an_exclusive_window_is_open(
 
     built: list[int] = []
 
-    monkeypatch.setattr(C, "connect", lambda passphrase=None: built.append(1))
+    monkeypatch.setattr(C, "connect", lambda passphrase=None, spill=None: built.append(1))
 
     with R.exclusive_window():
         MS._BUILD_LOCK.acquire()
@@ -339,7 +339,7 @@ def test_the_map_rollup_build_reaches_its_work_when_no_window_is_open(
 
     reached: list[int] = []
 
-    def _connect(passphrase=None):
+    def _connect(passphrase=None, spill=None):
         reached.append(1)
         return None  # a None connection returns early; reaching it is the assertion
 

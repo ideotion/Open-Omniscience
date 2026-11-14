@@ -537,7 +537,10 @@ def test_the_real_query_plan_is_index_only(tmp_path):
     with eng.connect() as conn:
         q, p = grouped[0]
         plan = " | ".join(r[3] for r in conn.exec_driver_sql("EXPLAIN QUERY PLAN " + q, p))
-        assert "COVERING" not in plan, f"expected a bare scan without the index: {plan}"
+        # R101's quarantine subquery is covered by idx_article_quarantined on its own line, so the negative reads the
+        # OUTER scan (the plan's first line), which is the one this index made index-only.
+        assert "COVERING" not in plan.split(" | ")[0], f"expected a bare scan without the index: {plan}"
+        assert "COVERING INDEX idx_article_quarantined" in plan, f"the quarantine filter left its index: {plan}"
 
 
 # --------------------------------------------------------------------------- #

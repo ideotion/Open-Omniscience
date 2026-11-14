@@ -50,7 +50,7 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/backup/folder_backup.py": (2, "WAL"),
     "src/backup/import_queue.py": (2, "WAL"),
     "src/backup/import_reports.py": (4, "WAL"),
-    "src/backup/merge.py": (12, "export"),
+    "src/backup/merge.py": (3, "export"),
     "src/backup/newsletter_export.py": (1, "export"),
     "src/backup/parity.py": (4, "export"),
     "src/backup/runlog.py": (5, "export"),

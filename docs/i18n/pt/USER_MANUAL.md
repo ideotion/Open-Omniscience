@@ -2862,7 +2862,7 @@ Deixar de confiar num autor exclui as anotações dele; remover um autor as apag
 | Método e caminho | Finalidade |
 |---|---|
 | `GET /api/annotations/mine` · `POST` · `DELETE /mine/{i}` | as anotações que você criou |
-| `GET /api/annotations/export` | um pacote assinado e portátil das suas anotações |
+| `POST /api/annotations/export` | um pacote assinado e portátil das suas anotações |
 | `POST /api/annotations/import` | verificar + armazenar um pacote importado (recusado se inválido) |
 | `GET /api/annotations/authors` · `PUT /authors/trust` · `DELETE /authors/{id}` | a rede de confiança |
 | `GET /api/annotations/for?target=` | agregação transparente — quem afirmou o quê |

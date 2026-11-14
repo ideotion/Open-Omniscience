@@ -11,11 +11,10 @@ returns *who asserted what* for a source, never a consensus number.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from src.annotations import store
-from src.api.cross_site import refuse_cross_site_get
 from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/annotations", tags=["annotations"])
@@ -69,9 +68,12 @@ def set_author(body: AuthorName) -> dict:
     return store.set_author_name(body.name)
 
 
-@router.get("/export", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/export")
 def export() -> dict:
-    """A signed, portable bundle of your authored annotations."""
+    """A signed, portable bundle of your authored annotations.
+
+    A POST (R278 P4, R694): signing the bundle creates the annotation signing key the first time, so the key is made by
+    the person's own export, never by a GET another page could fire."""
     return store.export_bundle()
 
 
