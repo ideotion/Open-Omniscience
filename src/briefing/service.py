@@ -446,9 +446,11 @@ def _evaluate_watches_bounded(session) -> bool:
 
     The pass runs before the producers so a watch that just crossed its threshold surfaces in the same refresh, and it was the one
     part of the refresh R666 left unbounded: its reads hold the write-ahead log's read mark like a producer's. It now runs under
-    :data:`PRODUCER_DEADLINE_S` (not armed under an enclosing deadline, which bounds the whole refresh), and a pass that ran past
-    it is reported as stopped even when it finished, as a producer is, because ``statement_deadline`` cannot cut Python between
-    statements. The pass's writes are flushed after the deadline has exited, so none is interrupted; the firings it recorded before
+    :data:`PRODUCER_DEADLINE_S` (not armed under an enclosing deadline, which bounds the whole refresh). ``statement_deadline``
+    cannot cut Python between statements, so the loop also asks the deadline before each watch: a pass that ran past the bound
+    stops at the next watch. Only a pass that left watches unevaluated is reported as stopped; one whose last watch ran past the
+    bound reached every watch, and its cards are all there (unlike a producer's, nothing is dropped), so Home is not told any are
+    missing. The pass's writes are flushed after the deadline has exited, so none is interrupted; the firings it recorded before
     a stop are kept, and the watches it did not reach stay unstamped and are evaluated by the next refresh. A watch problem never
     blocks the briefing."""
     from src.briefing.registry import _is_memory_short, _is_statement_timeout, _producer_deadline
@@ -465,7 +467,10 @@ def _evaluate_watches_bounded(session) -> bool:
         finished = True
     except Exception as exc:  # noqa: BLE001 - the watch pass is additive, never fatal to the feed
         timed_out = armed and _is_statement_timeout(type(exc)) and not _is_memory_short(type(exc))
-        if not timed_out:
+        if not armed and _is_statement_timeout(type(exc)) and not _is_memory_short(type(exc)):
+            # An ENCLOSING deadline (a diagnostics member) ran out: a stop, not a failure; that deadline's owner reports it.
+            _LOG.info("watch evaluation stopped by an enclosing deadline; the watches it did not reach are evaluated next refresh")
+        elif not timed_out:
             log_failure(_LOG, "watch evaluation failed; briefing continues", exc, level=logging.WARNING)
     took = time.monotonic() - began
     if finished or timed_out:
@@ -479,7 +484,7 @@ def _evaluate_watches_bounded(session) -> bool:
             # A failed flush leaves the session unusable for the producers that follow; if the rollback fails too, they report it.
             with contextlib.suppress(Exception):
                 session.rollback()
-    if armed and (timed_out or took >= PRODUCER_DEADLINE_S):
+    if timed_out:
         _LOG.warning(
             "watch evaluation stopped after %.0f s (bound %.0f s); the watches it did not reach are evaluated next refresh",
             took, PRODUCER_DEADLINE_S,

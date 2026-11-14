@@ -161,6 +161,24 @@ def test_a_pass_that_ran_past_the_bound_without_raising_is_named_and_stops_betwe
     assert {w["name"] for w in W.recent_fired_watches(db)} == {"Slow"}
 
 
+def test_a_pass_whose_last_watch_ran_past_the_bound_reached_every_watch_and_names_nothing_missing(db, home, monkeypatch):
+    """The second Opus read of R695: a pass that reached every watch has nothing missing, so Home is not told a kind is."""
+    ids = _articles(db, 3)
+    slow_id, later_id = _watches(db)
+
+    def _matcher(_session, query):
+        if query == "later":  # the last watch in id order
+            time.sleep(_BOUND + 0.2)
+        return list(ids)
+
+    monkeypatch.setattr(W, "_fts_matcher", _matcher)
+    payload = service.refresh_briefing(db)
+    db.commit()
+    assert "stopped_producers" not in payload
+    assert _stamped(db, slow_id) is not None and _stamped(db, later_id) is not None
+    assert {w["name"] for w in W.recent_fired_watches(db)} == {"Slow", "Later"}
+
+
 def test_a_stop_inside_the_concept_lookup_is_not_taken_for_a_missing_disclosure(monkeypatch):
     """The ring lookup swallows its own errors (a disclosure must not break a pass), but not the deadline's interrupt: swallowed,
     the watch would be searched on the literal word only, stamped, and remember that narrower set (the Opus read of R695)."""
