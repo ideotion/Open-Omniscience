@@ -20,8 +20,8 @@ from src.custody.log import (
     ROTATION_ITEM,
     CustodyAction,
     CustodyLog,
+    describe_export,
     scope_note,
-    verify_export_report,
 )
 from src.custody.settings import (
     VALID_ANCHORING,
@@ -267,17 +267,39 @@ class VerifyBundleRequest(BaseModel):
     accept_unendorsed_rotation: bool = False
 
 
+def _local_identity():
+    """This installation's custody signing identity, or ``None`` when it has none yet or it cannot
+    be read (sealed keys with no passphrase). Creates no key, since a verify is a read: it answers
+    ``None`` when the Ed25519 key file is absent, and it loads the post-quantum half only when that
+    key file already exists (``use_pqc`` would otherwise create one). Loading the signer re-seals a
+    legacy plaintext key file in place, as every load of it does."""
+    from src.paths import data_dir
+
+    keys = data_dir() / "keys"
+    try:
+        if not (keys / "custody_ed25519.pem").exists():
+            return None
+        has_pqc_key = (keys / "custody_ml_dsa_65.key").exists()
+        return HybridSigner(use_pqc=has_pqc_key).public_identity()
+    except Exception:  # noqa: BLE001 - unreadable keys: the verdict says so instead of guessing
+        return None
+
+
 @router.post("/verify")
 def verify_bundle(req: VerifyBundleRequest) -> dict:
-    """Verify a posted custody bundle offline (no DB needed)."""
-    report = verify_export_report(
-        req.bundle, require_signer=req.require_signer, accept_unendorsed_rotation=req.accept_unendorsed_rotation
+    """Verify a posted custody bundle offline (no DB needed), and say by whom it is signed (R681):
+    ``verified`` never travels without ``signed_by`` and a ``verdict`` that tells "verified against
+    your keys" from "signatures valid, signer not yours"; every key rotation crossed is named in ``notes``."""
+    out = describe_export(
+        req.bundle,
+        local=_local_identity(),
+        require_signer=req.require_signer,
+        accept_unendorsed_rotation=req.accept_unendorsed_rotation,
     )
-    ok = report["verified"]
     # What a "verified" covers, said with it: a one-item bundle's links run through entries it does not carry, and
     # every key rotation crossed is named in the notes.
-    scope = scope_note(req.bundle, report["notes"]) if ok else None
-    return {"verified": ok, "issues": report["issues"], "notes": report["notes"], "scope": scope}
+    out["scope"] = scope_note(req.bundle, out["notes"]) if out["verified"] else None
+    return out
 
 
 class AnchorRequest(BaseModel):

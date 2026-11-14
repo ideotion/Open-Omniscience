@@ -900,3 +900,193 @@ def _verify_export(
         return False, [f"the bundle's signer names an ML-DSA key other than the one the key-rotation record at seq "
                        f"{last_rot.seq} introduced, and no record says it changed"]
     return verify_entries(entries, pinned_by_seq=_segment_pins(entries, pinned), chained=not item_id)
+
+
+#: R681: the verdicts a posted bundle can get, each naming whose keys it is checked against.
+VERDICT_YOURS = "verified-against-your-keys"
+VERDICT_NOT_YOURS = "signatures-valid-signer-not-yours"
+VERDICT_UNKNOWN = "signatures-valid-your-keys-unreadable"
+VERDICT_INVALID = "not-verified"
+
+_VERDICT_TEXT = {
+    VERDICT_YOURS: (
+        "Verified against this installation's own signing keys: every entry was signed by them, or by an earlier key"
+        " of this installation that endorsed the next one (each change of key is named in the notes)."
+    ),
+    VERDICT_NOT_YOURS: (
+        "Every signature is valid, but not every entry was signed by this installation's keys: the signers are listed. A valid"
+        " signature proves the entries were not altered after signing, not who the signer is; compare the listed keys with"
+        " ones you know."
+    ),
+    VERDICT_UNKNOWN: (
+        "Every signature is valid, but this installation's own keys could not be read, so whose keys they are is not known:"
+        " the signers are listed. Compare them with keys you know."
+    ),
+    VERDICT_INVALID: "Not verified: see the issues.",
+}
+
+
+#: Said beside a one-item bundle that crosses a key rotation: why its earlier keys are not called this installation's.
+ONE_ITEM_EARLIER_KEY_NOTE = (
+    "This one-item bundle crosses a change of signing key. Its entries signed before the change are not tied to the"
+    " change record (they link through entries the bundle does not carry), so only entries signed by this installation's"
+    " current key are called its own here. Export the whole log to check the earlier entries against your keys."
+)
+
+
+def _signer_of(entry: CustodyEntry) -> tuple[str, str | None]:
+    sig = entry.signature or {}
+    ed = (sig.get("ed25519") or {}).get("pub") or ""
+    ml = (sig.get("ml_dsa") or {}).get("pub") if sig.get("algorithm") == "hybrid" else None
+    if not isinstance(ed, str) or not (ml is None or isinstance(ml, str)):
+        # a posted bundle is untrusted JSON: a list or a number here would crash the count and the sort that follow
+        raise TypeError("signer key is not a string")
+    return ed, ml
+
+
+def _is_yours(signer: tuple[str, str | None], local: PublicIdentity) -> bool:
+    ed, ml = signer
+    if not ed or ed != local.ed25519_pub:
+        return False
+    return ml is None or ml == local.ml_dsa_pub  # a hybrid half this install does not hold is not this install's
+
+
+def _own_positions(entries: list[CustodyEntry], local: PublicIdentity, *, chained: bool = True) -> list[PublicIdentity | None]:
+    """For each entry of a VERIFIED bundle, the identity of this installation's that it must be signed by to be this
+    installation's, or ``None`` when no key of this installation's signs that place in the chain.
+
+    The rotation records cut the chain into stretches, each signed by one key (``_key_lineage`` checked that every entry
+    is signed by its stretch's key, and every record by the key it introduces). The LAST stretch is this installation's
+    only when its key is this installation's own. Going back, a stretch is this installation's only when the one after it
+    is, and the record between them is ENDORSED: the previous key's holder handed the log over, which
+    ``rotate_signing_key`` only writes with the old key at hand, and the endorsement is signed with that key's whole
+    identity, so it also names its ML-DSA half. An UNENDORSED record stops the walk: it says the previous key was not
+    available, which is also what restoring another installation's log and re-creating keys would write.
+
+    The answer is by POSITION, never by key: an earlier key covers only the stretch it signed before handing over. A key
+    that leaked and was rotated away from can still sign, so an entry it signed anywhere else (after a forged rotation
+    back to it) is not this installation's, whatever the same key signed before.
+
+    Only a ``chained`` bundle (the whole log) gets earlier-stretch credit: there each rotation record, signed by the next
+    key, commits through its previous-entry hash to everything before it. A one-item bundle is not chained (its record
+    links to an entry the bundle does not carry), so a leaked earlier key could rewrite the stretch it signed and nothing
+    in the bundle would tell; only the last stretch is credited there."""
+    rotations = [i for i, e in enumerate(entries)
+                 if e.action == CustodyAction.KEY_ROTATION.value and e.item_id == ROTATION_ITEM]
+    starts = [0, *rotations]
+    ends = [*rotations, len(entries)]
+    out: list[PublicIdentity | None] = [None] * len(entries)
+    expected: PublicIdentity | None = local
+    for k in range(len(starts) - 1, -1, -1):
+        lo, hi = starts[k], ends[k]
+        stretch_key = _sig_ed25519_pub(entries[lo].signature) if lo < hi else None
+        if expected is None or (stretch_key is not None and stretch_key != expected.ed25519_pub):
+            break
+        for i in range(lo, hi):
+            out[i] = expected
+        if k == 0 or not chained:
+            break
+        md = entries[starts[k]].metadata  # the record that opened this stretch
+        endorsement = md.get("endorsement")
+        prev = md.get("previous_ed25519_pub")
+        if not isinstance(endorsement, dict) or not isinstance(prev, str) or not prev:
+            break
+        ml = (endorsement.get("ml_dsa") or {}).get("pub") if endorsement.get("algorithm") == "hybrid" else None
+        expected = PublicIdentity(ed25519_pub=prev, ml_dsa_variant=None, ml_dsa_pub=ml if isinstance(ml, str) and ml else None)
+    return out
+
+
+def describe_export(
+    bundle: dict, *, local: PublicIdentity | None, require_signer: bool = False, accept_unendorsed_rotation: bool = False
+) -> dict:
+    """Verify a posted custody bundle and say BY WHOM it is signed (R681).
+
+    ``verified`` keeps its meaning (the chain is intact and every signature is valid against the key
+    it carries, or against the bundle's own signer when ``require_signer`` is set). It never travels
+    alone: ``signed_by`` lists every distinct signer with its entry count, and ``verdict`` separates
+    "verified against your keys" from "signatures valid, signer not yours" -- a bundle anyone signed
+    with keys of their own verifies, so the first answer is only given when the keys are this
+    installation's (``local``; ``None`` when they cannot be read).
+
+    Across a key rotation a bundle has several signers by design. A signer older than this installation's key is
+    called this installation's only for the stretch it signed before an unbroken run of ENDORSED rotations led from it
+    to that key (see ``_own_positions``); ``earlier_key`` marks it, and ``notes`` names every change of key, as
+    :func:`verify_export_report` does."""
+    report = verify_export_report(
+        bundle, require_signer=require_signer, accept_unendorsed_rotation=accept_unendorsed_rotation
+    )
+    ok, issues, notes = report["verified"], report["issues"], report["notes"]
+    raw = bundle.get("entries") if isinstance(bundle, dict) else None
+    raw = raw if isinstance(raw, list) else []  # untrusted JSON: a number or a string here would crash the loop below
+    if not raw:
+        ok, issues = False, [*issues, "the bundle carries no entries: there is nothing to verify"]
+    parsed: list[CustodyEntry] = []
+    keyed: list[tuple[str, str | None]] = []
+    counts: dict[tuple[str, str | None], int] = {}
+    proven: dict[tuple[str, str | None], bool] = {}
+    for d in raw:
+        try:
+            e = CustodyEntry.from_dict(d)
+            key = _signer_of(e)
+            good, _reason = signing.verify(e.signature, canonical_bytes({**e.signable_core()}))
+        except Exception:  # noqa: BLE001 - a malformed entry is already an issue from verify_export
+            continue
+        parsed.append(e)
+        keyed.append(key)
+        counts[key] = counts.get(key, 0) + 1
+        proven[key] = proven.get(key, True) and good
+    # ``yours`` is said only of a signer whose every signature verified: a key merely CLAIMED by an entry with a
+    # bad signature proves nothing, and answering for it would let any caller ask whether a key is this install's.
+    # And only of a signer every one of whose entries sits where this installation's key signs (``_own_positions``).
+    # A bundle that did not verify gets no rotation credit: each signer is only compared with this installation's key.
+    one_item = bool(bundle.get("item_id"))
+    owns = (
+        (_own_positions(parsed, local, chained=not one_item) if ok and len(parsed) == len(raw) else [local] * len(parsed))
+        if local
+        else []
+    )
+    own_everywhere: dict[tuple[str, str | None], bool] = {}
+    earlier: set[str] = set()
+    for (ed, ml), want in zip(keyed, owns, strict=False):  # ``owns`` is empty when this installation's keys are unread
+        mine = want is not None and _is_yours((ed, ml), want)
+        own_everywhere[(ed, ml)] = own_everywhere.get((ed, ml), True) and mine
+        if mine and want is not local:
+            earlier.add(ed)
+
+    if ok and local is not None and one_item and len(parsed) == len(raw) and any(
+        e.action == CustodyAction.KEY_ROTATION.value and e.item_id == ROTATION_ITEM for e in parsed
+    ):
+        notes = [*notes, ONE_ITEM_EARLIER_KEY_NOTE]
+
+    def yours(ed: str, ml: str | None) -> bool | None:
+        if local is None or not proven[(ed, ml)]:
+            return None
+        return own_everywhere.get((ed, ml), False)
+
+    signed_by = [
+        {
+            "ed25519_pub": ed,
+            "ml_dsa_pub": ml,
+            "entries": n,
+            "yours": yours(ed, ml),
+            "earlier_key": ed in earlier,
+        }
+        for (ed, ml), n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0][0]))
+    ]
+    if not ok:
+        verdict = VERDICT_INVALID
+    elif local is None:
+        verdict = VERDICT_UNKNOWN
+    elif signed_by and all(s["yours"] for s in signed_by):
+        verdict = VERDICT_YOURS
+    else:
+        verdict = VERDICT_NOT_YOURS
+    return {
+        "verified": ok,
+        "issues": issues,
+        "notes": notes,
+        "verdict": verdict,
+        "verdict_text": _VERDICT_TEXT[verdict],
+        "signed_by": signed_by,
+        "signer_is_yours": None if local is None else verdict == VERDICT_YOURS,
+    }
