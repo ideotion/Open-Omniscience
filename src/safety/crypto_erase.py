@@ -275,6 +275,8 @@ def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str], unlis
             wiped += w
         pending = keys_dir / _KEYS_PENDING
         if _is_link(pending) or not pending.is_dir():
+            with contextlib.suppress(OSError):
+                keys_dir.rmdir()  # only when empty: what is left in it is not the app's to remove
             return seen, wiped
         keys_dir = pending  # walked and removed below, like the whole folder in the app's own data folder
     if keys_dir.is_dir():

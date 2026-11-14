@@ -683,7 +683,7 @@ imply a protection we cannot deliver.
   beside one of them; kept complete by a test over the names the code joins onto `data_dir()`). The app's COMMON names
   whose contents are re-downloadable or say nothing about the corpus (`models`, `cache`, `leases`, `runtime`) are left
   there, because an operator's own folder may carry one (`annotations`, `triage`, `bench`, `bulletin` and `diagnostics`
-  always go); a
+  always go, so an operator's own entry under one of those names there goes too); a
   `keys` folder loses the app's key files, every file named like one of its key forms (`*_ed25519.pem`, `*_ml_dsa_65.key`)
   and its `.pending` folder, and keeps the rest. Stated limit: the databases (the corpus, the custody log, the lane files
   `wiki.db`, `law.db`, `osm.db`) are erased by name in either scope, so an operator's own file under one of those names in

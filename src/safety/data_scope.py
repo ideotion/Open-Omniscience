@@ -160,8 +160,9 @@ def chosen_by_app(base: Path) -> bool:
 
 def _first_other(base: Path) -> bool | None:
     """Whether ``base`` holds an entry the app does not own (stopping at the first: a home folder may hold a million), None
-    when it cannot be listed. The full name set: the app's own common names are the app's in this question."""
-    spec = owned_spec()
+    when it cannot be listed. A COMMON name (``models``, ``cache``...) counts as not the app's here too: a folder holding an
+    operator's own ``models`` beside the app's files must never be removed whole."""
+    spec = owned_spec(shared=True)
     try:
         it = os.scandir(base)
     except FileNotFoundError:

@@ -196,3 +196,13 @@ def test_the_watchdog_endpoint_carries_the_scope(home, monkeypatch):
     assert out["data_folder_scope"] == {"broad": True, "reason": "home"}
     assert str(home) not in json.dumps(out), "this endpoint answers before unlock: never the path"
     unlock._data_folder_scope.cache_clear()
+
+
+def test_an_operator_s_models_folder_beside_the_app_s_files_makes_the_folder_shared(home, monkeypatch):
+    folder = home / "ai"
+    folder.mkdir()
+    (folder / "models").mkdir()
+    (folder / "models" / "llama.gguf").write_bytes(b"weights")
+    (folder / "app_settings.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("OO_DATA_DIR", str(folder))
+    assert folder_scope(folder)["reason"] == "shared_folder"

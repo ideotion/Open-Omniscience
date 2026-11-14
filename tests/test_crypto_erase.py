@@ -888,3 +888,54 @@ def test_a_plaintext_database_step_one_could_not_unlink_is_rewritten_whole(tmp_p
     monkeypatch.setattr(Path, "unlink", unlink)
     crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
     assert calls and b"plaintext-row" not in kept.read_bytes()
+
+
+def test_an_encrypted_database_step_one_could_not_unlink_loses_its_head_again_and_is_not_rewritten_whole(tmp_path, monkeypatch):
+    """Step 6 (Windows, an open pool): an encrypted store's database whose salt step 1 destroyed is overwritten at the head once
+    more and unlinked, never rewritten whole (hours at corpus size)."""
+    folder = tmp_path / "OOS data"
+    folder.mkdir()
+    main = folder / "open_omniscience.db"
+    con = connect(main, key=_PW)
+    con.execute("CREATE TABLE t(x)")
+    con.executemany("INSERT INTO t VALUES (?)", [("row" * 50,)] * 200)
+    con.commit()
+    con.close()
+    body = main.read_bytes()[4096:]
+    kept = tmp_path / "kept"
+    os.link(main, kept)
+    real_unlink = Path.unlink
+    calls = []
+
+    def unlink(self, *a, **k):
+        if self.name == "open_omniscience.db" and not calls:
+            calls.append(self)
+            raise PermissionError("held open")
+        return real_unlink(self, *a, **k)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    heads = []
+    real_overwrite = crypto_erase._overwrite
+
+    def overwrite(path, *, head_bytes=None, zeros=False):
+        if path.name == "open_omniscience.db":
+            heads.append(head_bytes)
+        return real_overwrite(path, head_bytes=head_bytes, zeros=zeros)
+
+    monkeypatch.setattr(crypto_erase, "_overwrite", overwrite)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
+    assert report["encrypted_corpus"] is True and calls
+    assert not main.exists()
+    assert None not in heads and heads.count(4096) >= 3, "head passes only, the last one in step 6"
+    assert kept.read_bytes()[4096:] == body
+
+
+def test_a_shared_keys_folder_without_pending_is_removed_once_empty(tmp_path):
+    shared = tmp_path / "projects"
+    shared.mkdir()
+    (shared / "thesis.docx").write_bytes(b"x")
+    (shared / "keys").mkdir()
+    (shared / "keys" / "custody_ed25519.pem").write_bytes(b"PRIVATE")
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=shared)
+    assert report["scope"] == "app-only" and not (shared / "keys").exists()
+    assert report["left_common_names"] == []
