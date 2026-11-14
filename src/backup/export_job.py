@@ -62,6 +62,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from src.backup import restore_marker
 from src.backup.export_folder import (
     UNFINISHED_PHASES,
     ExportFolderError,
@@ -180,8 +181,12 @@ class ExportJobManager:
             return self._state in _LIVE_STATES or self._job._alive()
 
     def _restore_running(self) -> bool:
-        """Whether a restore runs now (R712 the other way round). Read off the import queue
-        and the two managers' own restore modes; an unreadable one counts as running."""
+        """Whether a restore runs now (R712 the other way round): the shared marker every
+        restore path enters (:mod:`src.backup.restore_marker`), then -- for the window before
+        a worker has entered it -- the import queue and the two managers' own restore modes.
+        An unreadable one counts as running."""
+        if restore_marker.restore_in_progress():
+            return True  # every restore path, the synchronous single-file one included
         try:
             from src.backup import import_queue
 
@@ -224,7 +229,9 @@ class ExportJobManager:
             raise ValueError("Choose at least one thing to back up.")
         if want_corpus and not passphrase:
             raise ValueError("the corpus backup is always encrypted: a passphrase is required")
-        with self._lock:
+        # restore_marker.LOCK first (R712): the check and going live are one step against a
+        # restore's entry into its marker, so neither can slip past the other.
+        with restore_marker.LOCK, self._lock:
             if self.live():
                 raise RuntimeError(ALREADY_RUNNING)
             if self._restore_running():
@@ -266,7 +273,9 @@ class ExportJobManager:
         volumes phase is to be resumed without the passphrase (:data:`NEEDS_PASSPHRASE`);
         RuntimeError while one runs, while a restore runs, or when nothing is left.
         """
-        with self._lock:
+        # restore_marker.LOCK first (R712): the check and going live are one step against a
+        # restore's entry into its marker, so neither can slip past the other.
+        with restore_marker.LOCK, self._lock:
             if self.live():
                 raise RuntimeError(ALREADY_RUNNING)
             if self._restore_running():
@@ -338,26 +347,48 @@ class ExportJobManager:
         """Pause the running phase (kept on the drive; Resume continues it in this folder).
         A Cancel already asked outranks it."""
         with self._lock:
-            if self.live():
+            if self._state in _LIVE_STATES:
                 self._stop_asked = self._stop_asked or "pause"
                 self._wake.set()
         return self.status()
 
-    def cancel(self) -> dict:
+    def cancel(self, folder: str | None = None) -> dict:
         """Cancel the export. While a phase runs (or is stopping on a Pause), the LAST
         explicit request wins and a Cancel outranks a Pause: the running phase is
         cancelled, and a corpus phase removes its partial volume set, as the volume job's
-        own cancel always has. A PAUSED export is cancelled here and now: the same
-        cleanup, and the record says ``cancelled``; large-data files already copied stay."""
+        own cancel always has.
+
+        An export that is NOT running -- paused, or failed, here or (``folder``) after a
+        restart, read from its record -- is cancelled here and now, never through a flag a
+        worker may already have stopped reading: its partial volumes are removed the same
+        way and its record says ``cancelled``, so «Resume export» is no longer offered for
+        it. Large-data files already copied stay."""
         with self._lock:
-            if self.live():
+            mine = folder is None or (self._dest is not None and _same_path(folder, self._dest))
+            if mine and self._state in _LIVE_STATES:
                 self._stop_asked = "cancel"
                 self._wake.set()
-            elif self._state == "paused" and self._dest:
-                self._cancel_paused(self._phase, self._dest)
-                update_export_phase(self._dest, "cancelled")
-                self._state = "cancelled"
+                return self.status()
+            target = folder or self._dest
+            if target:
+                self._cancel_stopped(Path(target), mine)
         return self.status()
+
+    def _cancel_stopped(self, dest: Path, mine: bool) -> None:
+        """Cancel an export that is not running, from its record. Call under ``self._lock``."""
+        if not is_export_folder_name(dest.name) or not dest.is_dir():
+            return
+        req = read_export_request(dest)
+        phase = req.get("phase") if req else None
+        if mine and self._state in ("paused", "failed") and self._phase:
+            phase = self._phase
+        if phase not in UNFINISHED_PHASES:
+            return
+        self._cancel_paused(phase, str(dest))
+        update_export_phase(dest, "cancelled")
+        if mine and self._state in ("paused", "failed"):
+            self._state = "cancelled"
+            self._phase = phase
 
     def _cancel_paused(self, phase: str | None, dest: str) -> None:
         """A paused corpus phase's partial volumes are removed on a cancel, as a running
@@ -427,6 +458,10 @@ class ExportJobManager:
         req = self._request
         pw = self._secret.pop() if self._secret else ""
         self._secret = []
+        asked = self._stop_wanted(ctx)  # read under the lock, right before the phase starts
+        if asked:
+            pw = ""
+            return self._end_stopped(asked, PHASE_VOLUMES)
         if not pw:
             return self._fail("passphrase-missing", NEEDS_PASSPHRASE, PHASE_VOLUMES)
         try:
@@ -466,6 +501,11 @@ class ExportJobManager:
         if not cats:
             # Never an empty list: the folder job reads "none known" as EVERY category.
             return self._fail("no-categories", NO_CATEGORIES, PHASE_FOLDER)
+        # A stop that landed after the last boundary check: the copy never starts, rather
+        # than starting and pausing at once. Read under the lock, right before the start.
+        asked = self._stop_wanted(ctx)
+        if asked:
+            return self._end_stopped(asked, PHASE_FOLDER)
         try:
             began = fold.start(
                 dest,

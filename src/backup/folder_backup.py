@@ -981,10 +981,11 @@ def verify_folder_backup(
 # --------------------------------------------------------------------------- #
 # The pausable job (one giant copy at a time, visible in the task manager)
 # --------------------------------------------------------------------------- #
+import contextlib  # noqa: E402  (kept local to the job section)
 import threading  # noqa: E402  (kept local to the job section)
 import time  # noqa: E402  (same)
 
-from src.backup import runlog  # noqa: E402  (same, beside the manager it serves)
+from src.backup import restore_marker, runlog  # noqa: E402  (same, beside the manager it serves)
 from src.monitoring import storage_events  # noqa: E402  (same)
 
 #: The storage-events journal's kind for each mode: a folder ``backup`` is an ``export`` there, a ``restore`` an ``import``. (The run
@@ -1122,10 +1123,23 @@ class FolderBackupManager:
         """Validate + preflight, then launch the worker. Raises ValueError on a bad
         destination / insufficient free space; RuntimeError if one is already running.
         ``_items``/``_targets`` are test seams (the production path collects them)."""
-        with self._lock, storage_events.run_refusals_net(
+        # R712 (Plan's ruling): a large-data restore -- the import queue's ``blobs`` item and
+        # /folder/restore alike -- is refused for the WHOLE time a backup export runs, in every
+        # phase, naming it. Checked under the shared restore marker's lock, which the export's
+        # own check-and-go holds too, so neither can start past the other; the worker then
+        # holds the marker itself (``_run_restore``).
+        gate = restore_marker.LOCK if mode == "restore" else contextlib.nullcontext()
+        with gate, self._lock, storage_events.run_refusals_net(
             _RUN_OF.get(mode, ""), via="folder", refused_as=storage_events.NOT_A_FOLDER if mode in ("restore", "verify") else ()
         ):
             what = _RUN_OF.get(mode, "")  # "" for a mode that is not one: the journal records no refusal for a kind it does not have
+            if mode == "restore":
+                from src.backup.merge import export_refusal
+
+                exporting = export_refusal()
+                if exporting:
+                    storage_events.run_refused(what, "export-running", via="folder")
+                    raise RuntimeError(exporting)
             if self._alive():
                 storage_events.run_refused(what, "folder-running", via="folder")
                 raise RuntimeError("A folder backup is already running.")
@@ -1235,6 +1249,7 @@ class FolderBackupManager:
             finally:
                 storage_events.run_ended(note, "ended-without-a-recorded-outcome")
 
+    @restore_marker.marked  # R712: an export refuses to start or resume while this runs
     def _run_restore(self, srcp: Path, _items: list[BackupItem], cats: list[str]) -> None:
         with runlog.run("folder-import", label=srcp.name, dest=str(srcp), categories=cats):
             # No free-space figure: the files go to the live folders of each category, which can be on several volumes, and one number

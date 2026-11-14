@@ -353,6 +353,14 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
     assert.deepStrictEqual(live.watched, [{ dir: A, phase: "folder" }], "a running export was not re-attached");
     assert.ok(!live.calls.some((c) => c.method === "POST"), "re-attaching started something");
 
+    // A STOPPING export (a pause landing between volumes, which can take minutes) is live:
+    // re-attached, and nothing says it is complete (review of baf4f4938, item 3).
+    const stopping = await reopen({ mode: "backup", state: "stopping", running: true, dest: A, phase: "volumes",
+                                    requested: { corpus: true, categories: ["models"] } }, withPath, A);
+    assert.deepStrictEqual(stopping.watched, [{ dir: A, phase: "volumes" }], "a stopping export was not re-attached");
+    assert.ok(!/Backup complete/.test(stopping.dom["ux-progress"].innerHTML), "a stopping export read as complete: " + stopping.dom["ux-progress"].innerHTML);
+    assert.ok(!/Resume export/.test(stopping.dom["ux-summary"].innerHTML), "a stopping export was offered a resume");
+
     // A paused large-data phase keeps its Resume target and its folder.
     const paused = await reopen({ mode: "backup", state: "paused", dest: A, phase: "folder" }, withPath);
     assert.strictEqual(paused.phase, "folder", "a paused large-data phase lost its Resume target");
@@ -570,6 +578,22 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
       assert.ok(FR[key] && line.includes(esc_(FR[key])), "the export's error is not in French: " + line);
       assert.ok(line.includes(esc_(FR["Corpus"])), "the phase is not named in French: " + line);
       assert.ok(!line.includes(error), "the English sentence is still on the page: " + line);
+    }
+
+    // REVIEW OF baf4f4938, ITEM 4: a resume the server REFUSED (it answered 409) is shown,
+    // translated -- never taken for a lost response and redrawn as a bare "paused".
+    {
+      const H = harness("fr");
+      const RESTORE = "A restore is in progress, so the export did not start: it would read a corpus that is being switched. Let the restore finish, then export again.";
+      H.status = { ...running(A), state: "paused", phase: "folder" };
+      const refusal = new Error(RESTORE);
+      refusal.status = 409;
+      H.startAnswer = refusal;
+      await H.m.watch(H.dom["ux-run"], () => api_start(H), { mode: "backup", dest: A });
+      const line = H.dom["ux-progress"].innerHTML;
+      assert.ok(FR[RESTORE] && line.includes(esc_(FR[RESTORE])), "the refusal is not shown in French: " + line);
+      assert.ok(line.includes(esc_(FR["Could not resume:"])), "the refusal is not named as a refused resume: " + line);
+      assert.strictEqual(H.timers.length, 0, "a refused resume was polled as if it had started");
     }
 
     // ITEM 9: a paused export keeps its Cancel button, and Cancel ends it on the page.

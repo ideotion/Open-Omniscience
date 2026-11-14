@@ -80,7 +80,9 @@
       const pauseBtn = document.getElementById("ux-pause");
       let s = null;
       try { s = await api("/api/backup/export/status"); } catch (e) { s = null; /* best-effort */ }
-      if (s && s.state === "running") {
+      // "stopping" is live too: a pause asked of the corpus phase lands only between volumes,
+      // so it can last minutes, and the export is still writing into its folder meanwhile.
+      if (s && (s.state === "running" || s.state === "stopping")) {
         _uxExportDir = s.dest || null;
         _uxPhase = s.phase || null;
         if (s.requested) _uxExportIncluded = { corpus: !!s.requested.corpus, blobs: (s.requested.categories || []).slice() };
@@ -310,7 +312,8 @@
           // R701: «Resume export» when the folder's record names an unfinished phase (the
           // export job's resume cursor); the older copy button for a record that predates it.
           (resumable
-            ? `<div style="margin-top:4px"><button type="button" class="secondary" data-ux-complete title="${esc(t("Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above."))}">${esc(t("Resume export"))}</button></div>`
+            ? `<div style="margin-top:4px"><button type="button" class="secondary" data-ux-complete title="${esc(t("Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above."))}">${esc(t("Resume export"))}</button>`
+              + ` <button type="button" class="secondary" data-ux-dismiss title="${esc(t("Cancel this export? Corpus volumes written so far are removed from the folder; large-data files already copied stay."))}">${esc(t("Cancel export"))}</button></div>`
             : owed.length
             ? `<div style="margin-top:4px"><button type="button" class="secondary" data-ux-complete title="${esc(t("Starts the large-data copy into this same folder. The encrypted volumes already in it are not touched."))}">${esc(t("Copy the large-data files now"))}</button></div>`
             : "") +
@@ -327,6 +330,8 @@
       // A listener, not an inline handler: the button is re-drawn on every repaint.
       const again = host.querySelector ? host.querySelector("[data-ux-complete]") : null;
       if (again) again.addEventListener("click", () => _uxCompleteExport(again));
+      const dismiss = host.querySelector ? host.querySelector("[data-ux-dismiss]") : null;
+      if (dismiss) dismiss.addEventListener("click", () => _uxDismissExport(dismiss));
     }
 
     // The verify verdict as ONE sentence. The five not-verified cases stay apart: "off",
@@ -756,13 +761,17 @@
       try {
         await startCall();
       } catch (e) {
+        // R701: an ANSWER is never a lost response. A refusal the server sent (a 409 while a
+        // restore runs, a 400 for a missing passphrase) is the outcome, and is shown; only a
+        // start whose response never arrived (no status at all) is checked against the job.
+        if (kind === "export" && e && e.status) throw e;
         let st = null;
         try { st = await api(statusUrl); } catch (_) { throw e; }  // can't confirm → original error
         const s = (st && st.state) || "";
         // Only a LIVE job (running|paused) proves the start reached the server despite the
         // lost response. NOT "done": a just-started job cannot be instantly done, so a "done"
         // here is a STALE state from a prior run and must not mask a failed start as complete.
-        if (!(s === "running" || s === "paused")) throw e;
+        if (!(s === "running" || s === "paused" || (kind === "export" && s === "stopping"))) throw e;
         // …and the live job must be OURS. All volume ops share one manager + one /status, so a
         // 409 from an UNRELATED job (a Verify, a restore, or a backup to a DIFFERENT drive) would
         // otherwise be adopted here and its "done" reported as our corpus backup (data-safety bug:
@@ -894,6 +903,20 @@
         }
       } catch (e) {
         if (!alive()) return;
+        if (e && e.status && start) {
+          // The server REFUSED the start or the resume (it answered, with a reason): nothing
+          // started and the export is as it was. A refused resume stays a paused export.
+          hide();
+          const said = ooServerText(e.message || e);
+          if (expect && expect.dest) {
+            _uxShowPaused(prog, bar, pauseBtn, t);
+            prog.innerHTML += `<div style="color:var(--err)">${esc(t("Could not resume:"))} ${esc(said)}</div>`;
+          } else {
+            prog.innerHTML = `<span style="color:var(--err)">${esc(t("Could not start:"))} ${esc(said)}</span>`;
+          }
+          if (btn) btn.disabled = false;
+          return;
+        }
         _uxPhase = null;
         hide();
         // The dialog's own error colour, not the floating .note toast box (W6; B13's fix
@@ -984,6 +1007,7 @@
       }
       if (btn) btn.disabled = true;
       _uxExportDir = dest;
+      _uxPhase = body.passphrase ? "volumes" : "folder";  // what a refused resume's Resume button re-asks
       _uxExportIncluded = { corpus: !!(req.corpus || facts.corpus_included), blobs: (req.categories || cats).slice() };
       const sumHost = document.getElementById("ux-summary");
       if (sumHost) sumHost.innerHTML = "";
@@ -1035,6 +1059,24 @@
       await _uxWatchExport(document.getElementById("ux-run"),
         () => api("/api/backup/export/resume", { method: "POST", body: JSON.stringify(body) }),
         { mode: "backup", dest: _uxExportDir });
+    }
+
+    // Cancel an UNFINISHED export named by the panel (R701): paused, failed, or left by an
+    // app restart. The server cancels it from its folder's record -- its partial volumes go,
+    // the record says cancelled -- so «Resume export» stops being offered for it.
+    async function _uxDismissExport(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const dest = (_uxExportFacts || {}).destination;
+      if (!dest) return;
+      if (!confirm(t("Cancel this export? Corpus volumes written so far are removed from the folder; large-data files already copied stay."))) return;
+      if (btn) btn.disabled = true;
+      try { await api("/api/backup/export/cancel", { method: "POST", body: JSON.stringify({ dir: dest }) }); }
+      catch (e) { toast(t("Could not cancel:") + " " + ooServerText(e.message || e), "err"); if (btn) btn.disabled = false; return; }
+      const host = document.getElementById("ux-summary");
+      if (host) host.innerHTML = "";
+      _uxExportFacts = null;
+      const prog = document.getElementById("ux-progress");
+      if (prog) prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(t("Cancelled."))}</span>`;
     }
 
     // Cancel the running export (R701). A cancelled corpus phase removes its partial volume

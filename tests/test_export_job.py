@@ -800,3 +800,233 @@ def test_every_fixed_export_sentence_is_translated_whole_in_every_locale():
     out = _ooservertext_in("de", sentences)
     de = json.loads((Path(__file__).resolve().parents[1] / "src/static/locales/de.json").read_text("utf-8"))
     assert out == [de[s] for s in sentences]
+
+
+# =========================================================================== #
+#  Security re-read of baf4f4938: each test below fails on that commit.
+# =========================================================================== #
+def _planted_folder(tmp_path: Path, monkeypatch) -> Path:
+    """A dated folder on the drive with a valid record in the large-data phase, carrying a
+    planted key, as anyone who can write the drive could leave it."""
+    from src.backup.export_folder import allocate_export_folder
+
+    monkeypatch.setattr(fb, "collect_items", lambda **_k: _items(tmp_path))
+    dest = allocate_export_folder(tmp_path / "drive")
+    (dest / REQUEST_NAME).write_text(json.dumps({
+        "schema": "oo-export-request-1", "requested_at": "2026-11-14T12:00:00+00:00", "corpus": False,
+        "categories": ["models"], "inside": False, "phase": "folder", "planted": "ATTACKER-SHAPED",
+    }), encoding="utf-8")
+    return dest
+
+
+def test_a_planted_temp_file_link_is_never_written_through_on_resume(mgrs, tmp_path, monkeypatch):
+    """Security item 1: ``.oopart`` planted as a link to a file outside the folder."""
+    exp, _vol, _fold = mgrs
+    dest = _planted_folder(tmp_path, monkeypatch)
+    victim = tmp_path / "victim.txt"
+    victim.write_text("untouched", encoding="utf-8")
+    link = dest / (REQUEST_NAME + ".oopart")
+    try:
+        link.symlink_to(victim)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available here")
+    exp.resume(str(dest))
+    st = _wait(exp, ("done", "failed", "paused", "cancelled"))
+    assert victim.read_text(encoding="utf-8") == "untouched", "the resume wrote through the planted link"
+    assert st["state"] == "done", st
+    rec = dest / REQUEST_NAME
+    assert not rec.is_symlink() and not link.is_symlink()
+    raw = json.loads(rec.read_text(encoding="utf-8"))
+    assert raw["phase"] == "done"
+    assert "planted" not in raw, "a planted key was copied back into the record"
+
+
+def test_a_record_that_is_a_link_is_refused_and_its_target_untouched(mgrs, tmp_path, monkeypatch):
+    """Security item 1: the record itself planted as a link -- read as no record, never rewritten."""
+    exp, _vol, fold = mgrs
+    dest = _planted_folder(tmp_path, monkeypatch)
+    victim = tmp_path / "victim.json"
+    victim.write_text((dest / REQUEST_NAME).read_text(encoding="utf-8"), encoding="utf-8")
+    before = victim.read_text(encoding="utf-8")
+    (dest / REQUEST_NAME).unlink()
+    try:
+        (dest / REQUEST_NAME).symlink_to(victim)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available here")
+    with pytest.raises(ValueError) as err:
+        exp.resume(str(dest))
+    assert str(err.value) == ej.NO_RECORD
+    assert victim.read_text(encoding="utf-8") == before
+    assert fold.status()["state"] == "idle"
+
+
+def test_an_export_refuses_to_start_or_resume_while_a_single_file_restore_holds_the_marker(mgrs, tmp_path):
+    """Security item 2: the synchronous ``/legacy/restore`` owns no manager; it holds the shared
+    marker (src/backup/restore_marker.py), and the export sees it."""
+    from src.api import backup_v2
+    from src.backup import restore_marker
+
+    exp, _vol, _fold = mgrs
+    drive = tmp_path / "drive"
+    started = threading.Event()
+    exp.start(str(drive), corpus=True, categories=["models"], passphrase=_PASS,
+              _backup_fn=_blocking_then(_job_fn(tmp_path, "a"), started), _items=_items(tmp_path))
+    assert started.wait(30)
+    exp.pause()
+    dest = Path(_wait(exp, ("paused",))["dest"])
+
+    inside = threading.Event()
+    leave = threading.Event()
+    seen: dict = {}
+
+    # The real single-file restore's own wrapper, around a body that stands in for its swap.
+    held = restore_marker.marked(lambda: (inside.set(), leave.wait(30)))
+    assert getattr(backup_v2.restore_legacy_path, "__wrapped__", None) is not None, (
+        "the single-file restore does not enter the restore marker"
+    )
+    t = threading.Thread(target=lambda: seen.setdefault("r", held()), daemon=True)
+    t.start()
+    try:
+        assert inside.wait(10)
+        with pytest.raises(RuntimeError) as start_err:
+            exp.start(str(drive), corpus=False, categories=["models"], _items=_items(tmp_path))
+        assert str(start_err.value) == ej.RESTORE_RUNNING
+        with pytest.raises(RuntimeError) as resume_err:
+            exp.resume(str(dest), passphrase=_PASS)
+        assert str(resume_err.value) == ej.RESTORE_RUNNING
+        assert _dated(drive) == [dest]
+    finally:
+        leave.set()
+        t.join(10)
+    assert not restore_marker.restore_in_progress()
+
+
+def test_every_restore_path_enters_the_marker():
+    """Security item 2: the single-file restore, the volume and folder restore workers and the
+    import queue's run all run inside the shared marker."""
+    import ast
+
+    from src.api import backup_v2
+
+    root = Path(__file__).resolve().parents[1]
+    for path, name in (("src/api/backup_v2.py", "restore_legacy_path"), ("src/backup/volume_job.py", "_run_restore"),
+                       ("src/backup/folder_backup.py", "_run_restore"), ("src/backup/import_queue.py", "_run")):
+        tree = ast.parse((root / path).read_text(encoding="utf-8"))
+        fns = [f for f in ast.walk(tree) if isinstance(f, ast.FunctionDef) and f.name == name]
+        assert fns, f"{path}:{name} not found"
+        for fn in fns:
+            assert "restore_marker.marked" in [ast.unparse(d) for d in fn.decorator_list], (
+                f"{path}:{name} does not enter the restore marker")
+    assert backup_v2.restore_legacy_path.__wrapped__ is not None
+
+
+# =========================================================================== #
+#  Correctness read of baf4f4938, and Plan's R712 scope ruling: red on that commit.
+# =========================================================================== #
+def test_a_failed_corpus_phase_can_be_cancelled_here_and_after_a_restart(mgrs, tmp_path, monkeypatch):
+    """Item 5: «Resume export» was offered for a failed folder forever."""
+    exp, _vol, _fold = mgrs
+
+    def boom(dest, pw, **kw):
+        raise OSError("the drive went away")
+
+    exp.start(str(tmp_path / "drive"), corpus=True, categories=["models"], passphrase=_PASS,
+              _backup_fn=boom, _items=_items(tmp_path))
+    st = _wait(exp, ("failed",))
+    dest = Path(st["dest"])
+    assert read_export_request(dest)["phase"] == "volumes"
+    partial = dest / "vol-0001.ooenc"
+    partial.write_bytes(b"partial")
+    # After a restart: the folder's record is all there is.
+    fresh = ej.ExportJobManager()
+    monkeypatch.setattr(ej, "_MANAGER", fresh)
+    fresh.cancel(str(dest))
+    assert read_export_request(dest)["phase"] == "cancelled"
+    assert not partial.exists(), "the cancelled corpus phase kept its partial volumes"
+    # And in the same process.
+    exp2_drive = tmp_path / "drive2"
+    exp.start(str(exp2_drive), corpus=True, categories=[], passphrase=_PASS, _backup_fn=boom)
+    dest2 = Path(_wait(exp, ("failed",))["dest"])
+    assert exp.cancel()["state"] == "cancelled"
+    assert read_export_request(dest2)["phase"] == "cancelled"
+
+
+def test_a_cancel_after_paused_but_before_the_worker_exits_is_acted_on(mgrs, tmp_path, monkeypatch):
+    """Item 6: the flag a worker has stopped reading is never the whole of a cancel."""
+    exp, _vol, _fold = mgrs
+    started = threading.Event()
+    exp.start(str(tmp_path / "drive"), corpus=True, categories=["models"], passphrase=_PASS,
+              _backup_fn=_blocking_then(_job_fn(tmp_path, "a"), started), _items=_items(tmp_path))
+    assert started.wait(30)
+    exp.pause()
+    dest = Path(_wait(exp, ("paused",))["dest"])
+    monkeypatch.setattr(exp._job, "_alive", lambda: True)  # the worker has set paused and not yet returned
+    st = exp.cancel()
+    assert st["state"] == "cancelled", st
+    assert read_export_request(dest)["phase"] == "cancelled"
+
+
+def test_a_stop_after_the_boundary_check_never_starts_the_copy(mgrs, tmp_path, monkeypatch):
+    """Item 7: a pause landing between the boundary check and the copy's start."""
+    spy = _SpyFolder()
+    exp = ej.ExportJobManager(folder_manager=spy)
+    real = ej.update_export_phase
+
+    def cursor_then_pause(folder, phase):
+        out = real(folder, phase)
+        if phase == "folder":
+            exp.pause()  # after the corpus phase's boundary check, before the copy starts
+        return out
+
+    monkeypatch.setattr(ej, "update_export_phase", cursor_then_pause)
+    try:
+        exp.start(str(tmp_path / "drive"), corpus=True, categories=["models"], passphrase=_PASS,
+                  _backup_fn=_job_fn(tmp_path, "a"), _items=_items(tmp_path))
+        st = _wait(exp, ("done", "failed", "paused", "cancelled"))
+    finally:
+        exp._job.join(10)
+    assert st["state"] == "paused" and st["phase"] == "folder", st
+    assert spy.started == [], "the copy started after the pause"
+
+
+def _restorable(tmp_path: Path) -> Path:
+    src = tmp_path / "blobsrc"
+    src.mkdir()
+    return src
+
+
+@pytest.mark.parametrize("phase", ["volumes", "folder"])
+def test_a_large_data_import_is_refused_by_name_while_an_export_runs(mgrs, tmp_path, blocking_copy, phase):
+    """Item 9 (Plan's R712 ruling): a ``blobs`` import is refused for the whole export, naming it."""
+    exp, _vol, fold = mgrs
+    started = threading.Event()
+    fn = _blocking_then(_job_fn(tmp_path, "a"), started) if phase == "volumes" else _job_fn(tmp_path, "a")
+    exp.start(str(tmp_path / "drive"), corpus=True, categories=["models"], passphrase=_PASS,
+              _backup_fn=fn, _items=_items(tmp_path))
+    assert (started if phase == "volumes" else blocking_copy).wait(60)
+    assert exp.status()["phase"] == phase
+    with pytest.raises(RuntimeError, match="Backup export"):
+        fold.start(str(_restorable(tmp_path)), ["models"], mode="restore")
+
+
+def test_an_export_start_is_refused_while_a_large_data_import_holds_the_marker(mgrs, tmp_path, monkeypatch):
+    """Item 9: the blobs import's worker holds the shared marker for its whole run."""
+    exp, _vol, fold = mgrs
+    inside, leave = threading.Event(), threading.Event()
+
+    def blocking_restore(*_a, **_k):
+        inside.set()
+        leave.wait(30)
+        return {"restored": 0, "skipped": 0}
+
+    monkeypatch.setattr(fb, "restore_folder_backup", blocking_restore)
+    t = threading.Thread(target=fold._run_restore, args=(_restorable(tmp_path), [], ["models"]), daemon=True)
+    t.start()
+    try:
+        assert inside.wait(10)
+        with pytest.raises(RuntimeError) as err:
+            exp.start(str(tmp_path / "drive"), corpus=False, categories=["models"], _items=_items(tmp_path))
+        assert str(err.value) == ej.RESTORE_RUNNING
+    finally:
+        leave.set()
+        t.join(10)

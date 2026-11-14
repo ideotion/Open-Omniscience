@@ -35,6 +35,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from src.backup import restore_marker
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
 from src.backup.merge import (
     MergeError,
@@ -232,6 +233,7 @@ def legacy_restore(body: LegacyRestoreBody) -> dict:
 
 
 @storage_events.run_refusals_net("import", via="single-file", refused_as=((HTTPException, "not-a-file"),))
+@restore_marker.marked  # R712: an export refuses to start or resume while this runs (src/backup/restore_marker.py)
 def restore_legacy_path(
     path: str,
     passphrase: str | None,
@@ -964,12 +966,19 @@ def export_job_pause() -> dict:
     return get_export_manager().pause()
 
 
+class ExportCancelBody(BaseModel):
+    # The dated folder of a paused or failed export to cancel from its record (after a
+    # restart the page names it); empty = the export this process runs or last ran.
+    dir: str = ""
+
+
 @router.post("/export/cancel")
-def export_job_cancel() -> dict:
-    """Cancel the running phase (a cancelled corpus phase removes its partial volume set)."""
+def export_job_cancel(body: ExportCancelBody | None = None) -> dict:
+    """Cancel the running phase (a cancelled corpus phase removes its partial volume set),
+    or a paused or failed export at once, from its record, so it stops offering a resume."""
     from src.backup.export_job import get_export_manager
 
-    return get_export_manager().cancel()
+    return get_export_manager().cancel((body.dir if body else "") or None)
 
 
 @router.post("/export/resume")

@@ -22,7 +22,7 @@ from typing import Any
 # Module-level, not lazy: _on_prog fires once per merged article (~700k times on
 # a large import), and even a sys.modules lookup does not belong on that path.
 # runlog imports nothing but stdlib at module scope, so this cannot cycle.
-from src.backup import runlog
+from src.backup import restore_marker, runlog
 from src.backup.newsletter_export import NewsletterFilterRefused
 from src.monitoring import storage_events
 
@@ -610,6 +610,7 @@ class VolumeBackupManager:
             self._start_worker(self._thread)
             return self.status()
 
+    @restore_marker.marked  # R712: an export refuses to start or resume while this runs
     def _run_restore(
         self,
         srcp,

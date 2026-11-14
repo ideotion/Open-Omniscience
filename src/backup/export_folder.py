@@ -209,30 +209,57 @@ def write_export_request(
 
 
 def update_export_phase(folder: str | os.PathLike[str], phase: str) -> Path | None:
-    """Move the record's resume cursor to ``phase`` (R701), keeping everything else in it.
+    """Move the record's resume cursor to ``phase`` (R701), keeping what the export asked for.
 
-    A folder with no readable record gets none: inventing one here would claim to know
-    what the export was asked for. NEVER RAISES, like :func:`write_export_request`.
+    The record is REBUILT from the keys this module writes, read back through
+    :func:`read_export_request` -- never re-dumped from the file as found. The folder sits
+    on an external drive, so anyone who can write that drive can plant keys in it, and a
+    resume would otherwise copy them through. A folder with no readable record gets none:
+    inventing one here would claim to know what the export was asked for. NEVER RAISES,
+    like :func:`write_export_request`.
     """
     if phase not in RECORD_PHASES:
         return None
     d = Path(folder)
-    p = d / REQUEST_NAME
-    try:
-        raw = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    req = read_export_request(d)
+    if req is None:
         return None
-    if not isinstance(raw, dict) or raw.get("schema") != REQUEST_SCHEMA:
-        return None
-    raw["phase"] = phase
-    return _write_record(d, raw)
+    record: dict[str, Any] = {
+        "schema": REQUEST_SCHEMA,
+        "requested_at": req["requested_at"],
+        "corpus": req["corpus"],
+        "categories": list(req["categories"]),
+        "inside": req["inside"] and req["corpus"] and bool(req["categories"]),
+        "phase": phase,
+    }
+    if req["verify_after_write"] is not None:
+        record["verify_after_write"] = req["verify_after_write"]
+    return _write_record(d, record)
 
 
 def _write_record(d: Path, record: dict[str, Any]) -> Path | None:
+    """Write the record through a temp file, atomically, and NEVER through a link.
+
+    R701 rewrites the record in an EXISTING folder on a drive someone else may write to.
+    ``Path.write_text`` follows a symlink, so a ``.oopart`` planted as a link to any file
+    this process can write turned «Resume export» into an overwrite of that file (the
+    security re-read of baf4f4938). So: a record path that is a link is refused; a
+    leftover temp file -- link or not -- is unlinked (removing a link never touches its
+    target); and the temp file is created EXCLUSIVELY and, where the platform has it,
+    with ``O_NOFOLLOW``, so a link planted in between makes the create fail rather than
+    write through it."""
     p = d / REQUEST_NAME
     tmp = d / (REQUEST_NAME + ".oopart")
+    if p.is_symlink():
+        _LOG.warning("export folder: the request record in %s is a link; it was not rewritten", d.name)
+        return None
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
     try:
-        tmp.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        if tmp.is_symlink() or tmp.exists():
+            tmp.unlink()
+        fd = os.open(tmp, flags, 0o644)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, indent=2))
         os.replace(tmp, p)
     except OSError as exc:
         log_failure(_LOG, f"export folder: could not record the request in {d}", exc, level=logging.WARNING)
@@ -248,6 +275,8 @@ def read_export_request(folder: str | os.PathLike[str]) -> dict[str, Any] | None
     report as unknown rather than as "nothing was asked for".
     """
     p = Path(folder) / REQUEST_NAME
+    if p.is_symlink():
+        return None  # a record we never write: what was asked for is unknown, not whatever it points at
     try:
         raw = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -269,7 +298,7 @@ def read_export_request(folder: str | os.PathLike[str]) -> dict[str, Any] | None
         "corpus": bool(raw.get("corpus")),
         "categories": known,
         "inside": bool(raw.get("inside")),
-        "requested_at": raw.get("requested_at"),
+        "requested_at": raw["requested_at"][:64] if isinstance(raw.get("requested_at"), str) else None,
         # R701: the resume cursor; None for a record written before the export was one job.
         "phase": raw.get("phase") if raw.get("phase") in RECORD_PHASES else None,
         "verify_after_write": raw.get("verify_after_write") if isinstance(raw.get("verify_after_write"), bool) else None,
