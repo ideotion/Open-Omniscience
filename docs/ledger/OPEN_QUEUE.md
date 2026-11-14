@@ -12170,6 +12170,17 @@ slice: pass `art.language` in the task (inline-identical, loses the pooled recal
 `store_for_article` to use the resolved language (gains recall on both paths, changes stored
 dates for existing corpora on the next re-index). The second looks better and is a behaviour
 ruling, not a refactor.
+**CLOSED 2026-11-14 (R697 = RN1 (a), the coordinator under the maintainer's standing rule; lane V,
+the keyword-engine session):** the first option. The pooled re-index now hands `extract_dates`
+`article.language` (a fourth slot of `www_ctx`, read after `_resolve_known_language`), so the pool, the
+inline store, the collector and the ingest precompute all pass the same value, and a context without the
+slot means unknown, never "en". A tag stored with no article language carries
+`extractor = "dateextract:no-language"`, so "language unknown" is recorded on the row. Known cost, as
+the ruling accepted: an untagged article whose language was only DEDUCED no longer gets that language's
+gated months in the pool. **Old rows do not converge on their own:** the date store is additive (it never
+removes a tag, to keep human confirm/reject decisions), so a tag the pool once stored under the "en" guess
+stays after a re-index, and an existing tag keeps its old `dateextract` label even when it is found again with no language. Pruning unconfirmed tags that a re-extraction no longer finds is a separate
+change, not made here. Enforced by tests/test_date_language_every_path.py.
 
 **RECORDED, NOT FIXED (2) — the collector could gain the same date recall and deliberately
 does not.** `ArticleBatch._precompute` passes `a.language` for dates, byte-identical to the

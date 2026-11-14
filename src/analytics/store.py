@@ -1664,6 +1664,11 @@ def _reindex_articles_impl(
                 art.country,
                 observed.date().isoformat() if observed else None,
                 None,  # `today`: the store's own default, never a worker's clock
+                # R697: the date language is the article's OWN column, the value the inline
+                # store and the ingest precompute pass; `lang or "en"` below is only the
+                # keyword stoplist pick. Read after _resolve_known_language, which clears a
+                # tag the script refutes.
+                art.language,
             )
             if scope in ("full", "www"):
                 tasks.append((art.id, body, art.title or "", lang or "en", lang, www_ctx))
