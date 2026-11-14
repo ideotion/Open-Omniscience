@@ -32,6 +32,10 @@ from src.custody.log import scope_note, verify_export_report  # noqa: E402
 
 
 def main(argv: list[str]) -> int:
+    # A bundle's own text is printed back; a lone surrogate in it has no UTF-8 form and must not crash the report.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
     args = [a for a in argv[1:] if not a.startswith("--")]
     flags = {a for a in argv[1:] if a.startswith("--")}
     if len(args) != 1:
@@ -42,7 +46,7 @@ def main(argv: list[str]) -> int:
 
     try:
         bundle = json.loads(Path(args[0]).read_text())
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+    except (OSError, ValueError, RecursionError) as exc:  # ValueError: JSONDecodeError, UnicodeDecodeError, >4300-digit ints
         # A file cut mid-record is not JSON at all: refused by name, never a traceback.
         print(f"VERIFIED       : False\nISSUES:\n  - not a readable custody bundle ({type(exc).__name__}: {exc}); "
               "a file cut mid-record reads like this")

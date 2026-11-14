@@ -112,7 +112,7 @@ def test_a_whole_log_bundle_relabelled_as_one_item_is_refused(bundle):
     b["item_id"] = "article:1"
     b["head"]["item_id"] = "article:1"
     ok, issues = verify_export(b)
-    assert not ok  # the head was signed for the whole log, so its scope no longer matches
+    assert not ok and issues[0].startswith("head signature invalid")  # signed for the whole log, not this scope
 
 
 def test_the_route_refuses_and_names_the_scope(bundle, monkeypatch):
@@ -181,6 +181,8 @@ def test_odd_shapes_are_refused_by_name_never_raised(bundle, mutate, which):
     mutate(b)
     ok, issues = verify_export(b, require_signer=True)
     assert not ok and issues
+    if "\ud800" in json.dumps(b, ensure_ascii=False):
+        assert "lone surrogate" in issues[0] or "holds entries of other items" in issues[0]
 
 
 def test_a_refused_bundle_states_no_scope(bundle):
@@ -266,6 +268,17 @@ def test_a_lone_surrogate_is_refused_by_the_route_and_the_cli(bundle, tmp_path):
     path.write_text(text)
     r = subprocess.run([sys.executable, str(ROOT / "scripts/verify_custody.py"), str(path)], capture_output=True, text=True)
     assert r.returncode == 1 and "surrogate" in r.stdout and "Traceback" not in r.stderr
+    # In a field the report prints back (the second read: the print itself raised).
+    for field, refused in (("item_id", True), ("log_version", False)):  # the top-level log_version is not signed
+        path.write_text(json.dumps({**bundle[1], field: "x"}).replace('"x"', '"\\ud800"'))
+        r = subprocess.run([sys.executable, str(ROOT / "scripts/verify_custody.py"), str(path)], capture_output=True,
+                           text=True)
+        assert "Traceback" not in r.stderr and "\\ud800" in r.stdout, r.stderr
+        assert (r.returncode == 1) is refused
+    # A number too long for int(): a ValueError that is not a JSONDecodeError.
+    path.write_text('{"entries": [{"seq": ' + "9" * 5000 + "}]}")
+    r = subprocess.run([sys.executable, str(ROOT / "scripts/verify_custody.py"), str(path)], capture_output=True, text=True)
+    assert r.returncode == 1 and "not a readable custody bundle" in r.stdout and "Traceback" not in r.stderr
 
 
 def test_an_empty_item_bundle_is_named_as_such(tmp_path):
