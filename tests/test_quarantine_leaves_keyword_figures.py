@@ -407,43 +407,84 @@ def test_a_keyword_fold_moves_a_quarantined_articles_rows_but_not_the_counters(t
     assert s.execute(text("SELECT COUNT(*) FROM keyword_mentions WHERE article_id = :a"), {"a": aid}).scalar() > 0
 
 
-def test_the_upgrade_heal_subtracts_the_quarantined_articles_once_and_bumps_the_epoch(db):
-    """A store written before R101 counted its quarantined articles. The one-time boot heal subtracts them, bumps the
-    corpus epoch so the rollup and the day counts rebuild, and does neither twice."""
-    from src.analytics.corpus_epoch import get_corpus_epoch
-    from src.analytics.quarantine_transition import R101_TRANSITION_KEY, heal_r101_transition
-    from src.database.models import DerivedMeta
-
+def _old_store(db) -> list[Article]:
+    """The pre-R101 state: an article stamped by the old job, its mentions still in the counters."""
     arts = _corpus(db)
-    # The pre-R101 state: an article stamped by the old job, its mentions still in the counters.
     db.query(Article).filter(Article.id == arts[0].id).update({"quarantined": True}, synchronize_session=False)
     db.commit()
-    kw = _kw(db)
-    assert kw.article_count == 3, "the fixture must start as an old store does, still counting it"
+    assert _kw(db).article_count == 3, "the fixture must start as an old store does, still counting it"
+    return arts
+
+
+def test_the_upgrade_marks_the_counters_estimated_at_open_and_recomputes_them_in_the_upkeep(db):
+    """init_db's half bumps the epoch and opens the counter deferral (fast); the upkeep's half recomputes the
+    counters and closes the deferral in one commit with the done marker. Neither repeats."""
+    from src.analytics.corpus_epoch import get_corpus_epoch
+    from src.analytics.counter_deferral import is_deferral_open
+    from src.analytics.quarantine_transition import (
+        R101_PENDING_KEY,
+        R101_TRANSITION_KEY,
+        heal_r101_transition,
+        prepare_r101_transition,
+    )
+    from src.analytics.store import counter_envelope
+    from src.database.models import DerivedMeta
+
+    _old_store(db)
     epoch = get_corpus_epoch(db)
     engine = db.get_bind()
 
+    assert prepare_r101_transition(engine) == {"owed": True}
+    db.expire_all()
+    assert get_corpus_epoch(db) == epoch + 1
+    assert is_deferral_open(db) and not counter_envelope(db).is_exact(), "the stale counters say estimated"
+    assert _kw(db).article_count == 3, "nothing recomputed while the store opens"
+    assert prepare_r101_transition(engine) == {"owed": True}
+    db.expire_all()
+    assert db.get(DerivedMeta, R101_PENDING_KEY).value == "opened"
+
     assert heal_r101_transition(engine)["keywords"] >= 1
+    db.expire_all()
     kw = _kw(db)
     assert kw.article_count == 2
     assert (kw.mention_count, kw.article_count) == _live_unquarantined(db, kw.id)
-    assert get_corpus_epoch(db) == epoch + 1
     assert db.get(DerivedMeta, R101_TRANSITION_KEY) is not None
+    assert db.get(DerivedMeta, R101_PENDING_KEY) is None
+    assert not is_deferral_open(db), "the deferral it opened is closed with the recompute"
 
+    epoch = get_corpus_epoch(db)
+    assert prepare_r101_transition(engine) == {"skipped": "done"}
     assert heal_r101_transition(engine) == {"skipped": "done"}
+    db.expire_all()
     kw = _kw(db)
-    assert (kw.mention_count, kw.article_count) == _live_unquarantined(db, kw.id), "a second boot must not subtract again"
-    assert get_corpus_epoch(db) == epoch + 1
+    assert (kw.mention_count, kw.article_count) == _live_unquarantined(db, kw.id)
+    assert get_corpus_epoch(db) == epoch
 
 
-def test_init_db_runs_the_upgrade_heal():
+def test_the_recompute_leaves_open_a_deferral_it_did_not_open(db):
+    from src.analytics.counter_deferral import is_deferral_open, open_deferral
+    from src.analytics.quarantine_transition import heal_r101_transition, prepare_r101_transition
+
+    _old_store(db)
+    open_deferral(db, reason="a re-index drain")
+    prepare_r101_transition(db.get_bind())
+    heal_r101_transition(db.get_bind())
+    db.expire_all()
+    assert is_deferral_open(db), "only the drain's own complete reconcile may close its deferral"
+
+
+def test_init_db_runs_the_fast_half_and_the_upkeep_the_recompute():
+    """The recompute must not hold the store closed: init_db only bumps and marks, the upkeep (after the store is
+    queryable on the unlock path) recomputes."""
     import inspect
 
+    from src.api import main
     from src.database import session as sess
 
     src = inspect.getsource(sess.init_db)
-    assert "heal_r101_transition(engine)" in src
-    assert src.index("heal_r101_transition(engine)") < src.index("align_stamp_to_head(engine)")
+    assert "prepare_r101_transition(engine)" in src and "heal_r101_transition" not in src
+    assert src.index("prepare_r101_transition(engine)") < src.index("align_stamp_to_head(engine)")
+    assert "heal_r101_transition(" in inspect.getsource(main._run_startup_upkeep)
 
 
 def test_the_keyword_hover_stats_leave_a_quarantined_article_out(db):
@@ -465,52 +506,54 @@ def test_the_vocabulary_growth_curve_leaves_a_quarantined_article_out(db):
     assert after["tokens"] < before["tokens"]
 
 
-def test_the_upgrade_heal_on_a_store_with_no_quarantined_article_only_writes_its_marker(db):
+def test_the_upgrade_on_a_store_with_no_quarantined_article_only_writes_its_marker(db):
     from src.analytics.corpus_epoch import get_corpus_epoch
-    from src.analytics.quarantine_transition import R101_TRANSITION_KEY, heal_r101_transition
+    from src.analytics.counter_deferral import is_deferral_open
+    from src.analytics.quarantine_transition import (
+        R101_TRANSITION_KEY,
+        heal_r101_transition,
+        prepare_r101_transition,
+    )
     from src.database.models import DerivedMeta
 
     _corpus(db)
     before = (_kw(db).mention_count, _kw(db).article_count)
     epoch = get_corpus_epoch(db)
-    assert heal_r101_transition(db.get_bind()) == {"keywords": 0}
+    assert prepare_r101_transition(db.get_bind()) == {"owed": False}
+    assert heal_r101_transition(db.get_bind()) == {"skipped": "done"}
+    db.expire_all()
     kw = _kw(db)
     assert (kw.mention_count, kw.article_count) == before
     assert get_corpus_epoch(db) == epoch, "nothing to rebuild: the stores already agree"
     assert db.get(DerivedMeta, R101_TRANSITION_KEY) is not None
+    assert not is_deferral_open(db)
 
 
-def test_a_crash_between_the_epoch_bump_and_the_subtraction_subtracts_exactly_once_on_the_next_boot(db, monkeypatch):
-    """The bump commits first; the subtraction and the marker commit together. A failure after the bump leaves no
-    marker and no subtraction, so the next boot does both, once."""
-    from src.analytics import quarantine_transition as qt
-    from src.analytics.corpus_epoch import get_corpus_epoch
-    from src.analytics.quarantine_transition import R101_TRANSITION_KEY, heal_r101_transition
+def test_a_failed_recompute_keeps_the_counters_estimated_and_the_next_start_finishes_it(db, monkeypatch):
+    from src.analytics.counter_deferral import is_deferral_open
+    from src.analytics.quarantine_transition import (
+        R101_TRANSITION_KEY,
+        heal_r101_transition,
+        prepare_r101_transition,
+    )
     from src.database.models import DerivedMeta
 
-    arts = _corpus(db)
-    db.query(Article).filter(Article.id == arts[0].id).update({"quarantined": True}, synchronize_session=False)
-    db.commit()
-    epoch = get_corpus_epoch(db)
+    _old_store(db)
     before = (_kw(db).mention_count, _kw(db).article_count)
-
-    def _boom(*a, **k):
-        raise RuntimeError("power cut")
-
-    with monkeypatch.context() as m:
-        m.setattr(qt, "_recompute_counters_of_quarantined_keywords", _boom)
-        assert heal_r101_transition(db.get_bind()) == {"skipped": "error"}
+    prepare_r101_transition(db.get_bind())
+    _fail_the_heal_once(db, monkeypatch)
+    db.expire_all()
     kw = _kw(db)
-    assert (kw.mention_count, kw.article_count) == before, "nothing subtracted"
-    assert get_corpus_epoch(db) == epoch + 1, "the bump landed first"
+    assert (kw.mention_count, kw.article_count) == before
     assert db.get(DerivedMeta, R101_TRANSITION_KEY) is None
+    assert is_deferral_open(db), "still estimated"
 
+    prepare_r101_transition(db.get_bind())  # the next start
     assert heal_r101_transition(db.get_bind())["keywords"] >= 1
+    db.expire_all()
     kw = _kw(db)
     assert (kw.mention_count, kw.article_count) == _live_unquarantined(db, kw.id)
-    assert heal_r101_transition(db.get_bind()) == {"skipped": "done"}
-    kw = _kw(db)
-    assert (kw.mention_count, kw.article_count) == _live_unquarantined(db, kw.id)
+    assert not is_deferral_open(db)
 
 
 def _fail_the_heal_once(db, monkeypatch) -> None:
@@ -527,11 +570,10 @@ def _fail_the_heal_once(db, monkeypatch) -> None:
 def test_a_failed_heal_then_a_reconcile_then_the_heal_does_not_take_anything_out_twice(db, monkeypatch):
     """After a failed attempt the app runs on, and the budgeted reconcile brings the counters to R101 terms before
     the marker exists. The next attempt must leave them there (a one-off subtraction would go below the truth)."""
-    from src.analytics.quarantine_transition import heal_r101_transition
+    from src.analytics.quarantine_transition import heal_r101_transition, prepare_r101_transition
 
-    arts = _corpus(db)
-    db.query(Article).filter(Article.id == arts[0].id).update({"quarantined": True}, synchronize_session=False)
-    db.commit()
+    _old_store(db)
+    prepare_r101_transition(db.get_bind())
     _fail_the_heal_once(db, monkeypatch)
     reconcile_keyword_counters(db, budget_s=0)
     heal_r101_transition(db.get_bind())
@@ -541,11 +583,10 @@ def test_a_failed_heal_then_a_reconcile_then_the_heal_does_not_take_anything_out
 
 
 def test_a_failed_heal_then_a_new_stamp_then_the_heal_does_not_take_anything_out_twice(db, monkeypatch):
-    from src.analytics.quarantine_transition import heal_r101_transition
+    from src.analytics.quarantine_transition import heal_r101_transition, prepare_r101_transition
 
-    arts = _corpus(db)
-    db.query(Article).filter(Article.id == arts[0].id).update({"quarantined": True}, synchronize_session=False)
-    db.commit()
+    arts = _old_store(db)
+    prepare_r101_transition(db.get_bind())
     _fail_the_heal_once(db, monkeypatch)
     _stamp(db, arts[1])  # a stamp by the new code while the app runs on: it shifts its own article out
     heal_r101_transition(db.get_bind())
