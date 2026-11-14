@@ -2311,9 +2311,15 @@ def test_ui_invariants():
         "simple mode's flag is read in <head>, before first paint (#34)"
     )
     _simple_js = (_SRC / "static" / "simple" / "simple.js").read_text(encoding="utf-8")
-    assert "window.toggleNetwork()" in _simple_js and not re.search(r"method\s*:\s*[\"']POST", _simple_js), (
-        "simple mode goes online through the full app's ONE consent path, never its own POST (#34, #14)"
-    )
+    assert "window.toggleNetwork()" in _simple_js, "simple mode goes online through the full app's ONE consent path (#34)"
+    for _opts in re.findall(r"""/api/system/network['"`]\s*,\s*\{([^}]*)\}""", _simple_js):
+        assert not re.search(r"\bmethod\b", _opts, re.I), (
+            "simple mode never sends its own request to /api/system/network: going online is toggleNetwork's (#34, #14)"
+        )
+    # Wherever a method key hides (a nested body, an options variable), simple mode's only write is adding a source.
+    assert len(re.findall(r"""\bmethod\s*:\s*["'`](?:get|post|put|patch|delete)\b""", _simple_js, re.I)) == len(
+        re.findall(r"""apiCall\(\s*["'`]/api/sources/\??["'`]\s*,\s*\{\s*method\s*:""", _simple_js)
+    ) == 1, "simple mode's one write is POST /api/sources/ (#34, #14)"
     # 35. R684: every route no UI calls is listed with a reason, and the count of reader features
     #     without a button only goes down. Behaviour: tests/test_routes_have_a_caller.py.
     _ratchet = _ROOT / "tests" / "test_routes_have_a_caller.py"

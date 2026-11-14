@@ -375,7 +375,7 @@ a paleta de comandos (Ctrl/⌘-K).
   reprodutível. Para uma cópia assinada dos artigos subjacentes, use Provas e custódia.
 - **Layout com o conteúdo em primeiro lugar:** uma faixa compacta **de relance** fica fixada no topo (contagens
   ao vivo + se a coleta automática está rodando), e as Pistas abaixo podem ser filtradas
-  por **família** através de subabas verticais (uma lente padrão **"Todos os pistas"**, mais uma aba por
+  por **família** através de subabas verticais (uma lente padrão **"Todas as pistas"**, mais uma aba por
   categoria, cada uma com a sua cor). O catálogo selecionado é carregado automaticamente e a coleta começa quando você
   fica online, então um Início vazio simplesmente mostra um estado vazio honesto — sem cartão de boas-vindas. *(A
   antiga saudação de destaque e a linha de "Ações rápidas" foram removidas — Início abre direto no
@@ -417,7 +417,7 @@ medidos. Início diz o que se destacou; o Fluxo apenas entrega artigos, um após
 outro, e deixa você rolar.
 
 - **Duas ordens, ambas declaradas.** **Mais recentes primeiro** é a data de publicação, a mais recente no topo.
-  **Baralhado** é uma ordem fixa escolhida por uma **semente**: a posição de um artigo depende
+  **Embaralhada** é uma ordem fixa escolhida por uma **semente**: a posição de um artigo depende
   do seu id e dessa semente e de **nada mais**. Cada página traz a sua própria linha de método
   dizendo qual das duas você está lendo.
 - **O embaralhamento é uma ajuda para navegar, não um recomendador.** Não há **nenhuma pontuação de engajamento
@@ -434,10 +434,10 @@ outro, e deixa você rolar.
 - **Onde você parou.** A rolagem mantém a sua posição entre sessões guardando **um
   marcador de posição** no seu navegador — uma semente e um único cursor, nunca uma lista do que
   você leu. **Configurações → Geral → Histórico de deslocamento do fluxo** tem os dois controles:
-  **Baralhar de novo** (uma nova semente, uma nova ordem, de volta ao início) e **Começar do topo**
+  **Embaralhar de novo** (uma nova semente, uma nova ordem, de volta ao início) e **Começar do topo**
   (mesma ordem, posição apagada).
 - **A lacuna honesta de cada ordem.** A coleta continua rodando enquanto você rola, e cada
-  ordem deixa escapar os artigos recém-chegados de um jeito diferente: em **Baralhado** eles podem cair *abaixo*
+  ordem deixa escapar os artigos recém-chegados de um jeito diferente: em **Embaralhada** eles podem cair *abaixo*
   do ponto que você alcançou (baralhar de novo os alcança), e em **Mais recentes primeiro** eles
   chegam *acima* dele (voltar ao topo os alcança). A página diz qual caso se aplica.
 - **Cada cartão** mostra o título, a fonte, a data e as **três principais palavras-chave do próprio
