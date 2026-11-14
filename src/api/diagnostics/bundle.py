@@ -66,7 +66,7 @@ from .corpus import (
     home_card_diagnostics,
     keyword_engine,
     keyword_growth,
-    leads_quality,
+    leads_quality_for_bundle,
     lemma_preview,
     month_occupancy,
     non_article_scan,
@@ -91,7 +91,7 @@ from .performance import (
     ai_activity,
     ai_activity_selftest,
     benchmark_report,
-    bulletin_preview,
+    bulletin_weekly_for_bundle,
     llm_throughput_selftest,
     performance_report,
 )
@@ -1327,7 +1327,7 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # (Depends/Query) is only resolved when FastAPI itself calls the function, and
         # Query(False) is a truthy object — a bare ai_diagnostics() here would take the
         # measure_corpus branch and hand article_length_report a Depends sentinel. The
-        # file's own convention for a db-taking member (leads_quality below) is the fix.
+        # file's own convention for a db-taking member (card_audit below) is the fix.
         ("ai.json", lambda: ai_diagnostics(measure_corpus=False, db=db)),
         # What this instance would contribute to the shipped qualification overlay, and
         # the split of its app-provided sources (judged vs still pending). Read-only.
@@ -1350,7 +1350,10 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("law-ingest.json", lambda: law_ingest(download=False, db=db)),
         # S6.1 (Leads-calibration, 2026-07-18): the CURRENT Home Leads feed as a
         # bounded, real-facts report — the measurement loop for the card system.
-        ("leads-quality.json", lambda: leads_quality(download=False, db=db)),
+        # Row 18 (2026-11-14): read from Home's cached feed when it is fresh, because this
+        # bundle already runs every producer in card-audit.json and the pass here measured
+        # 86 s on a 200k-article corpus; the file and the manifest entry say which source.
+        ("leads-quality.json", lambda: leads_quality_for_bundle(db)),
         # The DEEP card-system audit at SUMMARY depth (no article content): the
         # per-card trigger arithmetic recomputed, corpus fidelity, independence,
         # non-fabrication checks, and — the reason it exists — an inventory row for
@@ -1366,7 +1369,10 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # spread, and the disclosures naming what no window can see. Weekly, so the
         # scan stays bounded; a long-cadence edition is a deliberate operator run.
         # On hardware below the gate this member is a stated refusal, not a figure.
-        ("bulletin-weekly.json", lambda: bulletin_preview(cadence="weekly", download=False, db=db)),
+        # Row 18 (2026-11-14): without the cards section, which reran every producer (75 of
+        # 107 s on a 200k-article corpus); the section stays listed with the reason, and the
+        # manifest entry carries it as ``bundle_note``. The route serves the full edition.
+        ("bulletin-weekly.json", lambda: bulletin_weekly_for_bundle(db)),
     ]
 
 
@@ -2910,6 +2916,9 @@ def _write_all_diagnostics_zip(
             outcome = "ok"
             err: str | None = None
             nbytes = 0
+            # A member whose bundle copy differs from what its route serves (a section left out, another source read) says so
+            # in plain words (``bundle_note`` in its own payload), and the manifest entry repeats it as ``bundle_note`` (row 18).
+            bundle_note: str | None = None
             # THE MACHINE'S REFUSAL IS READ FIRST, and the order carries meaning (R27).
             # A RAM decline would happen on the FULL profile too, so reporting it as a
             # light-profile choice would tell the operator they skipped something they
@@ -3003,6 +3012,8 @@ def _write_all_diagnostics_zip(
                     # _write_member for why the old `writestr(_member_bytes(...))`
                     # cost three copies of the largest member.
                     nbytes = _write_member(zf, name, value)
+                    if isinstance(value, dict) and isinstance(value.get("bundle_note"), str):
+                        bundle_note = value["bundle_note"]
                 elif outcome == "skipped-deadline":
                     # NAMED, not an `else`. This branch used to be the catch-all, which
                     # made it a deadline marker for any outcome that was not ok -- so the
@@ -3086,6 +3097,8 @@ def _write_all_diagnostics_zip(
                 # diagnostics 2026-09-30, B4: "6,907.7" was the last sample, 6,773.0 the nearest
                 # to the digest's start). A member the gate does not know has no reading.
                 entry["gate"] = gate_reading
+            if bundle_note is not None:
+                entry["bundle_note"] = bundle_note
             if declined_reason is not None:
                 # The reason travels IN the manifest, not only in the marker file: a reader
                 # parsing manifest.json must be able to say why a member is absent without

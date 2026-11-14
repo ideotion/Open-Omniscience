@@ -101,7 +101,7 @@
       const d = e.date || "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       return {
-        title: t("{n} articles mention this date").replace("{n}", e.n_articles),
+        title: _tfn("{n} articles mention this date", { n: e.n_articles }),
         category: "deduced", country: null, tags: [],
         confirmed: false,                      // deduced from text — never a confirmed event
         next_occurrence: d,
@@ -112,8 +112,8 @@
         day: null,
         calendar: "deduced", deduced: true,
         article_ids: e.article_ids || [], n_articles: e.n_articles, n_sources: e.n_sources,
-        note: t("Deduced from {n} articles ({s} sources), never confirmed.")
-          .replace("{n}", e.n_articles).replace("{s}", e.n_sources),
+        note: _tfn("Deduced from {n} articles ({s} sources), never confirmed.",
+          { n: e.n_articles, s: e.n_sources }),
       };
     }
     async function loadAgenda() {

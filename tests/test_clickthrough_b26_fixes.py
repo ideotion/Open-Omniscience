@@ -178,10 +178,11 @@ def test_a_missing_corpus_is_named_too(tmp_path):
 def test_the_page_sends_the_request_and_can_finish_the_copy():
     app = read_static("app.js")
     run = function_body(app, "_uxRun")
-    assert_present(run, "parent, corpus: wantCorpus, categories: blobs, inside }",
-                   why="the allocation must carry what the export was asked for")
+    assert_present(run, "parent, corpus: wantCorpus, categories: blobs, inside,",
+                   why="the export job's start must carry what the export was asked for")
     finish = function_body(app, "_uxCompleteExport")
-    assert_present(finish, '"/api/backup/folder/start"')
+    # R701: finishing an incomplete export is the export job's resume, in the same folder
+    assert_present(finish, '"/api/backup/export/resume"')
     assert_present(finish, "(facts.missing || {}).categories",
                    why="the copy must take its categories from the folder's facts, not the checklist")
     assert_absent(finish, "_uxMemberBoxes", why="the checklist's ticks may have changed since")

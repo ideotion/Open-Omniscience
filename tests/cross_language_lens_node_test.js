@@ -39,7 +39,7 @@ function extract(name) {
 // `fmtNum`. Every one of these renderers guards for exactly that, and a sandbox that
 // supplied them would leave the guard untested -- which is the branch a reader on a
 // slow first paint actually gets.
-const NAMES = ["_anParseLens", "_anApplyLens", "_anLensSeed", "_anApplyLensSeed",
+const NAMES = ["_tfn", "_anParseLens", "_anApplyLens", "_anLensSeed", "_anApplyLensSeed",
                "_anWriteLensToUrl", "_anUrlNamesActiveTab", "_anSlug", "_anFormCountsHtml", "_anLangCell",
                "_anGroupRowsByLanguage", "_crossLangNotice",
                // app-core's keyed "Label: value" frame, which the notice's per-language

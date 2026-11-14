@@ -777,7 +777,7 @@ def test_every_hook_hands_over_a_class_name_a_table_key_and_a_named_fact():
     # a hook added or removed here moves the number in the same change, which is the point of a ratchet; a floor with slack let one
     # missing hook through.
     counts = {"src/backup/volume_job.py": 28, "src/backup/export_summary.py": 1, "src/api/backup_v2.py": 8, "src/ingest/import_job.py": 8,
-              "src/backup/folder_backup.py": 17}
+              "src/backup/folder_backup.py": 18}  # R712: a large-data restore refused while a backup export runs
     for path, expected in counts.items():
         assert seen.get(path, 0) == expected, f"the scan found {seen.get(path, 0)} hooks in {path}, expected {expected}"
 
@@ -840,6 +840,7 @@ def test_the_net_is_on_the_header_of_every_start_and_on_the_legacy_restore():
     start = next(f for f in ast.walk(folder) if isinstance(f, ast.FunctionDef) and f.name == "start")
     header = next(n for n in ast.walk(start) if isinstance(n, ast.With))
     assert [ast.unparse(item.context_expr) for item in header.items] == [
+        "gate",  # R712: the shared restore marker's lock for a restore, nothing for a backup or a verify (taken BEFORE the manager's)
         "self._lock",
         "storage_events.run_refusals_net(_RUN_OF.get(mode, ''), via='folder', "
         "refused_as=storage_events.NOT_A_FOLDER if mode in ('restore', 'verify') else ())",
@@ -847,7 +848,8 @@ def test_the_net_is_on_the_header_of_every_start_and_on_the_legacy_restore():
     legacy = ast.parse((ROOT / "src/api/backup_v2.py").read_text(encoding="utf-8"))
     fn = next(f for f in ast.walk(legacy) if isinstance(f, ast.FunctionDef) and f.name == "restore_legacy_path")
     assert [ast.unparse(d) for d in fn.decorator_list] == [
-        "storage_events.run_refusals_net('import', via='single-file', refused_as=((HTTPException, 'not-a-file'),))"
+        "storage_events.run_refusals_net('import', via='single-file', refused_as=((HTTPException, 'not-a-file'),))",
+        "restore_marker.marked",  # R712: inside the net, so a refusal it raises is still recorded
     ]
     opened = [n for n in ast.walk(fn) if isinstance(n, ast.With) and any("run_open" in ast.unparse(i.context_expr) for i in n.items)]
     assert len(opened) == 1, "the legacy restore's run is opened by one `with`, on the header that already converted its errors"

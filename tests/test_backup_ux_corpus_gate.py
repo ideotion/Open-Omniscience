@@ -19,10 +19,14 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 from pathlib import Path
-from tests.js_source_helper import app_js, function_body as _slice
+
+from tests.js_source_helper import app_js, python_function_source
+from tests.js_source_helper import function_body as _slice
 
 _ROOT = Path(__file__).resolve().parent.parent
 _APP_JS = app_js()
+#: R701: the export is ONE server-side job, and the gate lives there now, unchanged.
+_JOB = (_ROOT / "src" / "backup" / "export_job.py").read_text(encoding="utf-8")
 _STREAM = (_ROOT / "src" / "backup" / "stream_backup.py").read_text(encoding="utf-8")
 
 
@@ -32,15 +36,22 @@ def _fn_body(src: str, name: str) -> str:
 
 
 def test_ux_run_gates_the_folder_phase_on_a_confirmed_corpus_backup():
-    run = _fn_body(_APP_JS, "_uxRun")
-    # the load-bearing gate: the folder/blob phase is unreachable unless the volumes job is a
-    # completed `backup` (state done + mode backup) of this dest.
-    assert 's1.state !== "done"' in run and 's1.mode !== "backup"' in run, "the corpus-confirm gate is missing"
-    # and the gate is BEFORE the folder start, so a failed confirm aborts into the catch
-    # ("Backup failed") and never starts the blob phase / prints success.
-    assert run.index('s1.state !== "done"') < run.index("/api/backup/folder/start"), (
-        "the confirm gate must precede folder/start"
-    )
+    # R701: the gate moved from the page into the export job, unchanged. The folder/blob
+    # phase is unreachable unless the volumes job is a completed `backup` (state done +
+    # mode backup) of this dest -- the corpus phase ENDS the export otherwise, so the
+    # worker never reaches the folder phase (tests/test_export_job.py drives it).
+    # The review of 1b88c0b74 (item 7) added the job's identity to it: THIS job, by the
+    # started_at its start answered with, so another job's "done" is never taken for it.
+    gate = python_function_source(_JOB, "_run_volumes")
+    assert "if not self._ours(st):" in gate and 'if state != "done":' in gate, "the corpus-confirm gate is missing"
+    assert 'return self._fail("volumes-unconfirmed", UNCONFIRMED, PHASE_VOLUMES)' in gate
+    ours = python_function_source(_JOB, "_ours")
+    for needle in ('st.get("mode") == "backup"', '_same_path(str(st["dest"]), dest)', 'st.get("started_at") == started'):
+        assert needle in ours, f"the job-identity check lost {needle!r}"
+    worker = python_function_source(_JOB, "_work")
+    assert "if ended:" in worker, "an ended corpus phase must stop the export before the next phase"
+    # the page no longer chains the second phase at all
+    assert "/api/backup/folder/start" not in _fn_body(_APP_JS, "_uxRun")
 
 
 def test_carrying_the_large_files_inside_the_artifact_replaces_the_folder_phase():
@@ -48,11 +59,17 @@ def test_carrying_the_large_files_inside_the_artifact_replaces_the_folder_phase(
     INSIDE the artifact, the folder phase must not ALSO copy them next to it -- that would
     double the bytes on the drive to deliver the same files, silently."""
     run = _fn_body(_APP_JS, "_uxRun")
-    assert "include_blobs: blobs" in run, "the categories must reach the volumes job"
-    assert "if (blobs.length && !inside) {" in run, "the folder phase must be skipped"
+    assert "categories: blobs, inside" in run, "the choice must reach the export job"
+    # R701: the job carries them into the volumes and skips the folder phase.
+    start = python_function_source(_JOB, "start")
+    assert "[PHASE_FOLDER] if cats and not inside else []" in start, "the folder phase must be skipped"
+    assert 'include_blobs=list(req.get("categories") or []) if req.get("inside") else None' in _JOB, (
+        "the categories must reach the volumes job"
+    )
     # It only applies when a corpus is actually being written: with no artifact there is
     # nothing to carry them in, so the request must be the one that shipped.
     assert "wantCorpus && blobs.length" in run
+    assert "inside = bool(inside) and want_corpus and bool(cats)" in start
 
 
 def test_the_inside_choice_is_disabled_rather_than_ignored():
@@ -106,9 +123,9 @@ def test_ux_show_last_completed_export_summary_restores_the_resume_control():
     assert "_uxPhase = phase" in fn, (
         "a paused reopen must restore _uxPhase so a Resume click targets the right endpoint"
     )
-    # phase is tracked per endpoint so folder (which runs after volumes in a full export)
-    # wins when BOTH are paused — matching the existing docstring: "the more recent state".
-    assert 'phase = "volumes"' in fn and 'phase = "folder"' in fn
+    # R701: the phase comes from the ONE export job's status (it says which phase paused,
+    # so a Resume knows whether to ask for the passphrase again).
+    assert "const phase = s.phase || null;" in fn
 
 
 def test_ux_show_paused_is_the_single_source_of_the_resume_button_state():

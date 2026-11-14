@@ -257,11 +257,12 @@ def _pool_problems(source: str) -> list[str]:
 
 def test_every_thread_pool_carries_a_prefix():
     """A pool's workers are ``ThreadPoolExecutor-N`` unless it passes ``thread_name_prefix``: a family ``thread_family`` knows, but with no
-    purpose in it. The last two (``src/llm/concurrency.py``, ``src/ingest/segmented_download.py``) are ``oo-llmbatch`` and ``oo-segfetch`` now.
+    purpose in it. The last two were ``src/llm/concurrency.py`` (``oo-llmbatch``, daemon threads since R689) and ``src/ingest/segmented_download.py`` (``oo-segfetch``).
     Stated limits: a pool built through ``functools.partial`` or handed in from another module is unseen."""
     problems = [f"{name}: {why}" for name, text in _src_files() for why in _pool_problems(text)]
     assert not problems, f"a ThreadPoolExecutor whose workers are not named for their purpose (pass thread_name_prefix='oo-<purpose>'): {problems}"
-    assert sum(len(_pool_calls(text)) for _n, text in _src_files()) >= 3, "the scan stopped seeing the ThreadPoolExecutor constructors in src/"
+    # >= 2 since R689 moved src/llm/concurrency.py to daemon threads (a pool's workers hold the process at exit).
+    assert sum(len(_pool_calls(text)) for _n, text in _src_files()) >= 2, "the scan stopped seeing the ThreadPoolExecutor constructors in src/"
 
 
 def test_the_pool_scan_sees_each_unnamed_shape_and_accepts_a_named_one():
@@ -277,10 +278,11 @@ def test_the_pool_scan_sees_each_unnamed_shape_and_accepts_a_named_one():
 
 
 def test_stripping_one_real_pools_prefix_makes_the_scan_fail_on_that_line():
-    path = "src/llm/concurrency.py"
+    # (src/llm/concurrency.py runs named daemon threads, not a pool, since its workers must not hold the process at exit: R689.)
+    path = "src/ingest/segmented_download.py"
     source = dict(_src_files())[path]
     assert _pool_problems(source) == []
-    stripped = source.replace(', thread_name_prefix="oo-llmbatch"', "")
+    stripped = source.replace(', thread_name_prefix="oo-segfetch"', "")
     assert stripped != source
-    line = next(i for i, t in enumerate(stripped.splitlines(), 1) if "ThreadPoolExecutor(max_workers=workers)" in t)
+    line = next(i for i, t in enumerate(stripped.splitlines(), 1) if "ThreadPoolExecutor(max_workers=len(segs))" in t)
     assert _pool_problems(stripped) == [f"line {line}: no thread_name_prefix"]

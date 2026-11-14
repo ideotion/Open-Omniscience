@@ -43,9 +43,12 @@ def test_the_frontend_calls_paths_that_actually_exist():
     app_js = (Path(__file__).resolve().parents[1] / "src/static/app-backup.js").read_text(
         encoding="utf-8"
     )
-    for called in ("/api/backup/export-folder", "/api/backup/export-summary"):
+    # R701: the dialog starts ONE export job, which allocates the dated folder itself;
+    # /export-folder stays for API callers (R713) and is listed in routes_without_ui.tsv.
+    for called in ("/api/backup/export/start", "/api/backup/export/status", "/api/backup/export-summary"):
         assert called in app_js, f"the export dialog no longer calls {called}"
         assert called in paths, f"{called} is called but not served"
+    assert "/api/backup/export-folder" in paths, "R713 keeps the allocation route"
 
 
 def test_allocating_returns_a_fresh_dated_folder(client, tmp_path):

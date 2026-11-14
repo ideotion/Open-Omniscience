@@ -123,7 +123,7 @@ def keyword_engine(download: bool = Query(False), db: Session = Depends(get_db))
     diff two of these over time to see whether an optimization landed. With
     ``download=1`` it returns as a dated attachment."""
     from src.analytics.engine_report import keyword_engine_report
-    from src.monitoring.kpi import record_translation_coverage
+    from src.monitoring.kpi import record_keyword_generic_terms, record_translation_coverage
 
     report = keyword_engine_report(db)
     # Write the ring-coverage figure down where the scan is MADE. Until 2026-09-07 this
@@ -132,6 +132,7 @@ def keyword_engine(download: bool = Query(False), db: Session = Depends(get_db))
     # board and structurally unwatchable. Best-effort by construction: a failed write
     # records nothing and K6 then says so, rather than breaking this diagnostic.
     record_translation_coverage(report)
+    record_keyword_generic_terms(report)  # K5's record (R706): the generic-term list's date and size, never a share
     headers = {}
     if download:
         fname = f"oo-keyword-engine-{datetime.now().strftime('%Y%m%d')}.json"
@@ -360,6 +361,14 @@ def leads_quality(download: bool = Query(False), db: Session = Depends(get_db)) 
         fname = f"oo-leads-quality-{datetime.now().strftime('%Y%m%d')}.json"
         headers["Content-Disposition"] = f'attachment; filename="{fname}"'
     return JSONResponse(report, headers=headers)
+
+
+def leads_quality_for_bundle(db: Session) -> dict:
+    """The all-diagnostics member ``leads-quality.json``: Home's cached feed when it is fresh (the file says so in
+    ``source`` and ``source_note``), else the same bounded producer pass the route runs."""
+    from src.analytics.leads_quality import leads_quality_report
+
+    return leads_quality_report(db, budget_s=_leads_quality_budget_s(), prefer_home_cache=True)
 
 
 # --------------------------------------------------------------------------- #

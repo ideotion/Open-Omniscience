@@ -67,11 +67,14 @@ def source_quality(
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for name, data in files.items():
             z.writestr(name, data)
-    fname = f"oo-source-quality-{datetime.now().strftime('%Y%m%d-%H%M')}.zip"
+    from src.paths import instance_tag
+
+    inst = instance_tag()   # which data folder this came from (a random tag kept in it): the Field data button names its files with it
+    fname = f"oo-source-quality-{datetime.now().strftime('%Y%m%d-%H%M')}-{inst}.zip"
     return Response(
         content=buf.getvalue(),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers={"Content-Disposition": f'attachment; filename="{fname}"', "X-OO-Instance": inst},
     )
 
 
@@ -109,6 +112,12 @@ def source_audit(
 
     allow = {d.strip() for d in os.getenv("OO_SOURCE_AUDIT_ALLOWLIST", "").split(",") if d.strip()}
     report = audit_sources(db, allowlist=allow, with_furniture=with_furniture)
+    # K8's record (R706): the status counts and per-region failing shares, written where the audit is made. Only the full audit
+    # (furniture check included) is recorded: without it a failing source can read as healthy, and the board would keep that.
+    if with_furniture:
+        from src.monitoring.kpi import record_source_audit_status
+
+        record_source_audit_status(report, allowlisted=len(allow))
     if recency_window:
         # RC06 = a (2026-09-15): BESIDE, never replacing. It is its own key, carrying its own
         # window, its own n per source and its own caveat -- merging it into the rows above
@@ -180,7 +189,10 @@ def source_qualification_export(
     if fmt == "yaml":
         headers = {"Content-Disposition": f'attachment; filename="source_qualification-{stamp}.yml"'}
         return Response(to_overlay_yaml(report), media_type="text/yaml", headers=headers)
-    headers = {}
+    from src.paths import instance_tag
+
+    # which data folder this came from (a random tag kept in it), in the header only: the body stays the overlay's schema
+    headers = {"X-OO-Instance": instance_tag()}
     if download:
         headers["Content-Disposition"] = (
             f'attachment; filename="oo-source-qualification-{stamp}.json"'

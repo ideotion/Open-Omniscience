@@ -20,7 +20,6 @@ The renderers themselves run as real code in tests/pattern_lists_node_test.js.
 
 from __future__ import annotations
 
-import json
 import re
 import shutil
 import subprocess
@@ -32,6 +31,7 @@ from fastapi.testclient import TestClient
 from src.api.main import app
 from src.database.session import init_db
 from tests.js_source_helper import function_source
+from tests.locale_forms import load_locale
 
 _ROOT = Path(__file__).resolve().parents[1]
 _STATIC = _ROOT / "src" / "static"
@@ -143,7 +143,7 @@ def test_every_word_the_lists_add_is_in_all_twelve_locales():
     assert len(keys) > 40
     ph = lambda s: sorted(re.findall(r"\{(\w+)\}", s))  # noqa: E731
     for f in sorted((_STATIC / "locales").glob("*.json")):
-        table = json.loads(f.read_text(encoding="utf-8"))
+        table = load_locale(f)
         for k in keys:
             assert k in table, f"{f.name}: {k!r}"
             assert ph(table[k]) == ph(k), f"{f.name}: placeholders of {k!r}"

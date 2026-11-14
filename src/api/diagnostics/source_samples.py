@@ -198,8 +198,12 @@ def build_sample_zip(
             if not full:
                 cursor = ids[-1]
                 done = len(ids) < _BATCH
+        # which data folder this came from: a random tag kept in it, nothing about its path
+        from src.paths import instance_tag
+
         z.writestr("manifest.json", json.dumps({
             "temporary_diagnostic": True,
+            "instance": instance_tag(),
             "seed": seed,
             "cursor_after": after,
             "last_source_id": last,
@@ -232,6 +236,8 @@ def source_samples(
     data, nxt, covered, total = build_sample_zip(
         db, after=after, seed=seed, cap=SAMPLE_ZIP_MAX_BYTES, include_newsletters=include_newsletter_text(),
     )
+    from src.paths import instance_tag
+
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
     return Response(
         content=data,
@@ -241,7 +247,8 @@ def source_samples(
             "X-Source-Samples-Next": "" if nxt is None else str(nxt),
             "X-Source-Samples-Covered": str(covered),
             "X-Source-Samples-Total": str(total),
+            "X-OO-Instance": instance_tag(),
             "Access-Control-Expose-Headers": "X-Source-Samples-Next, X-Source-Samples-Covered, "
-                                             "X-Source-Samples-Total, Content-Disposition",
+                                             "X-Source-Samples-Total, X-OO-Instance, Content-Disposition",
         },
     )

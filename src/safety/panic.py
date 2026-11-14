@@ -17,6 +17,7 @@ run without an explicit confirmation.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 from pathlib import Path
@@ -26,6 +27,10 @@ from src.safety.crypto_erase import _LIMIT_NOTE  # noqa: F401
 
 _LOG = logging.getLogger(__name__)
 
+#: How long the wipe waits for settings saves already in flight before it goes ahead without holding new ones.
+_PANIC_HOLD_S = 2.0
+#: What a settings save made during the wipe is told: it is refused at once, never kept waiting behind an erase that can take hours.
+_PANIC_REFUSED = "A panic wipe is erasing this app's data, so this was not saved — nothing was written."
 
 def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
     """Instantly crypto-erase, then delete everything under the data dir. Requires
@@ -42,17 +47,45 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
     _close_database_now()
     generation = new_hold_generation()  # this wipe's own kept descriptors, closed by its own late pass (row 36)
     failed: list[str] = []
-    try:
-        report = quick_crypto_erase(confirm=True, data_dir=data_dir, hold_for_rescrub=True, hold_generation=generation)
-    finally:
-        # In a `finally` because a partial wipe still removed the store.
+    # Settings writes are HELD from before the erase until after the tidying's settings_cache step (Lane E follow-up (a), the
+    # security reads): a save from another thread is refused at once, in the wipe's own words, so nothing commits into the file
+    # being erased and a value read from the old file never lands in a fresh one. The wipe waits at most _PANIC_HOLD_S for a save
+    # already in flight; when the hold cannot be taken (that save, another holder) it goes ahead without it, and the epoch bumps
+    # before the erase and in the tidying still refuse the saves made with ``expect_swap``. A save made AFTER the wipe has ended is
+    # a first run's, and creates a fresh store like any first run.
+    with _hold_settings_writes():
         try:
-            _tidy_after_erase(failed)
+            # The store's swap epoch moves BEFORE the erase too: a save made from state read in the old file is refused from here.
+            _settings_cache()
+        except Exception as exc:  # noqa: BLE001 - never stops the wipe
+            from src.monitoring.secret_scrub import log_failure
+
+            log_failure(_LOG, "panic wipe: the settings cache could not be cleared before the erase", exc, level=logging.WARNING)
+        try:
+            report = quick_crypto_erase(confirm=True, data_dir=data_dir, hold_for_rescrub=True, hold_generation=generation)
         finally:
-            _dispose_after_erase(generation)  # whatever the tidying above did: the late-commit rewrite must still run
+            # In a `finally` because a partial wipe still removed the store.
+            try:
+                _tidy_after_erase(failed)
+            finally:
+                _dispose_after_erase(generation)  # whatever the tidying above did: the late-commit rewrite must still run
     if failed:
         report["after_erase_failures"] = failed
     return report
+
+
+def _hold_settings_writes() -> contextlib.ExitStack:
+    """The settings-write hold the wipe runs under, or an empty one when it cannot be taken: the wipe runs whatever the hold says."""
+    hold = contextlib.ExitStack()
+    try:
+        from src.config.kv_store import hold_writes
+
+        hold.enter_context(hold_writes(_PANIC_HOLD_S, refused_text=_PANIC_REFUSED, wait_s=0.0))
+    except Exception as exc:  # noqa: BLE001 - the wipe runs whatever the hold says
+        from src.monitoring.secret_scrub import log_failure
+
+        log_failure(_LOG, "panic wipe: settings writes could not be held, wiping without the hold", exc, level=logging.WARNING)
+    return hold
 
 
 def _kill_switch() -> None:
