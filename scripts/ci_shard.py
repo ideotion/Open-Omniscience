@@ -24,8 +24,8 @@ HOW A FILE GETS ITS SHARD (and why it is not a plain round robin, a hash, or a h
   (a hand-kept list would conflict between open PRs after every merge, the shared-tail problem the ledger rules already fought), and spreads
   new files evenly in the long run. ``plan`` prints how many files were not in the table, so a table that has fallen behind is read, not guessed.
 * ``overhead_seconds`` is a head start per shard for work a leg does besides its tests. Shard 1 ran the static steps of the ``test`` job until
-  R668 (2026-11-13) moved them to the ``static`` job; the table still carries 80 so that the deal does not move until the two order-dependent
-  tests a re-deal exposed are fixed (docs/maintenance/CI_SHARDS.md).
+  R668 (2026-11-13) moved them to the ``static`` job, so the list is empty now: the 80 it carried stayed until the two order-dependent tests the
+  first re-deal exposed were made independent of their neighbours (R674, PR #1943), and went in the PR after it (docs/maintenance/CI_SHARDS.md).
 
 HOW A SHARD IS RUN (and why it is not "pytest FILE FILE ..."). A shard ignores the other shards' files and lets pytest collect ``tests`` itself, so
 everything the one-process run relied on at collection still applies: ``collect_ignore`` in tests/conftest.py (which keeps the analysis tests out of a
