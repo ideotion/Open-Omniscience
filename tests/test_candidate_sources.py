@@ -129,11 +129,11 @@ def test_the_script_groups_by_domain_across_instances_and_adds_nothing(tmp_path,
     (tmp_path / "x-part-001-of-002.zip").write_bytes(b"PK\x03\x04 half a zip")   # a lone piece is reported, not fatal
     out = tmp_path / "out"
     assert psa.main([str(tmp_path), "--out", str(out)]) == 0
-    rep = json.loads((out / "proposed-sources.json").read_text())
+    rep = json.loads((out / "proposed-sources.json").read_text(encoding="utf-8"))
     row = rep["rows"][0]
     assert row["domain"] == "new.example" and row["instances_n"] == 2 and row["max_articles_stored"] == 40
     assert row["disagreement"] == ["language"] and row["proposal"] == "proposed" and row["already_shipped"] is False
     assert row["attempts"] == {"qualified": 3} and row["tags"] == {"news": 2}, "one count per instance, never per press"
     assert rep["unreadable"] == ["x-part-001-of-002.zip: BadZipFile"]
     assert [r for r in rep["rows"] if r["domain"] == "old.example"][0]["already_shipped"] is True
-    assert "Proposed source additions" in (out / "proposed-sources.md").read_text()
+    assert "Proposed source additions" in (out / "proposed-sources.md").read_text(encoding="utf-8")
