@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-14,bulletin,"the Markdown export links only to http, https and mailto",shipped,PR #1968,src/bulletin/render.py; tests/test_bulletin_markdown_links.py,"render_markdown reads its whole text once at the end by link target (after '](', ']:' or '<'); a target outside http/https/mailto is escaped with one backslash, so a script-scheme link in a source title stays text and stops being a link, matching the HTML export (#1949 leftover)."
