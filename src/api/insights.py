@@ -1136,10 +1136,19 @@ def insights_status(db: Session = Depends(get_db)) -> dict:
 
 @router.post("/reindex")
 def insights_reindex(limit: int = Query(300, ge=1, le=5000), db: Session = Depends(get_db)) -> dict:
-    """Index up to ``limit`` not-yet-indexed articles (call repeatedly to finish)."""
+    """Index up to ``limit`` not-yet-indexed articles (call repeatedly to finish).
+
+    Superseded by the server's backlog job (``POST /api/insights/backlog``). While that job runs, this answers with nothing indexed
+    and ``busy``, instead of draining the same rows beside it for one batch (Lane E follow-up (e))."""
     from src.analytics.extract import get_extractor
     from src.analytics.store import backfill_corpus
+    from src.jobs.insights_backlog import KIND as _BACKLOG_KIND
+    from src.jobs.insights_backlog import _JOB as _BACKLOG_JOB
     from src.scheduler.maintenance import note_page_drain
+
+    if _BACKLOG_JOB.status().get("running"):
+        return {"indexed": 0, "newly_indexed": 0, "no_terms": 0, "failed": 0, "remaining": None, "never_attempted": None,
+                "busy": _BACKLOG_KIND, "reason": "the Insights backlog job is indexing these articles now"}
 
     # The idle-maintenance backlog slice stands back while this page drains the same rows: stamped at the start AND the end of
     # the batch, so a batch longer than the slice's quiet window is never taken for a page that has gone.

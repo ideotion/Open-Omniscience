@@ -383,7 +383,9 @@ def server_log_tail(
             **_held_back_note(ends),
         }
     except OSError as exc:
-        return {"available": False, "reason": f"could not read the server log: {record_text(exc)}"}
+        log_failure(_LOG, "could not read the vLLM server log", exc, level=logging.INFO)
+        # A fixed phrase, not the exception's words: this reason reaches the status poll and the UI; the log keeps the detail.
+        return {"available": False, "reason": "could not read the server log (see the log)"}
 
 
 #: Fatal signatures, MOST SPECIFIC FIRST -- the cause, then the generic wrappers around
@@ -542,7 +544,9 @@ def failure_excerpt(*, limit: int = 900) -> dict:
                 return {"available": False, "reason": "the server log is one unfinished or overlong line so far: it cannot be checked for the passphrase in pieces"}
             raw = raw[: end + 1]
     except OSError as exc:
-        return {"available": False, "reason": f"could not read the server log: {record_text(exc)}"}
+        log_failure(_LOG, "could not read the vLLM server log for a failure excerpt", exc, level=logging.INFO)
+        # A fixed phrase, not the exception's words: this reason reaches the activation answer and the UI; the log keeps the detail.
+        return {"available": False, "reason": "could not read the server log (see the log)"}
 
     # scrubbed where it is read, before any window is cut: arbitration, activation and the backend only ever pass scrubbed text along
     text = scrubbed(raw.decode("utf-8", errors="replace"))
@@ -853,7 +857,9 @@ def record_install_attempt(
                 _atomic_write_text(path, "\n".join(lines[-_ATTEMPTS_CAP:]) + "\n")
     except Exception as exc:  # noqa: BLE001 - must NEVER break the install it records
         _history_disabled = True
-        _history_disabled_reason = record_text(exc, typed=True, limit=200)
+        # A fixed phrase, not the exception's words: it reaches the status answer as recording_stopped_reason; the
+        # log_failure below keeps the detail.
+        _history_disabled_reason = "the install-attempt journal could not be written (see the log)"
         try:
             log_failure(_LOG, "vLLM install-attempt journal write failed -- recording disabled "
                 "for this process", exc, level=logging.WARNING)
@@ -1948,7 +1954,9 @@ def newest_failed_start_log(*, limit: int = _BUNDLED_FAILED_LOG_BYTES) -> dict:
         # never held whole in memory.
         ends = _scrubbed_log_ends(newest, head_cap=half, keep=limit)
     except OSError as exc:
-        return {"available": False, "reason": f"could not read {newest}: {record_text(exc)}"}
+        log_failure(_LOG, "could not read the newest preserved failed-start log", exc, level=logging.INFO)
+        # A fixed phrase, not the exception's words: this reason reaches the diagnostics answer; the log keeps the detail.
+        return {"available": False, "reason": "could not read the newest failed-start log (see the log)"}
     out: dict = {
         "available": True,
         "path": str(newest),
@@ -2202,7 +2210,8 @@ def clear_gpu_for_vllm(*, settle: float = _VRAM_SETTLE_TIMEOUT_S) -> dict:
         released = release_vram()
     except Exception as exc:  # noqa: BLE001 - see the docstring
         log_failure(_LOG, "could not clear the GPU before starting vLLM", exc, level=logging.INFO)
-        released = {"released": [], "reason": record_text(exc), "attempted": True}
+        # A fixed phrase, not the exception's words: this reason reaches the start answer and its toast; the log keeps the detail.
+        released = {"released": [], "reason": "the GPU could not be cleared before the start (see the log)", "attempted": True}
     waited = 0.0
     if released.get("released") and before is not None:
         # Poll until the reading stops improving, not for a fixed nap: the release is
@@ -2564,7 +2573,9 @@ def stop(*, timeout: float = 10.0, adopt: bool = True) -> dict:
     try:
         pids = _adoptable_server_pids()
     except Exception as exc:  # noqa: BLE001 - a scan that fails is a reason, not a crash
-        return {"stopped": False, "reason": f"could not identify the server: {record_text(exc)}"[:200]}
+        log_failure(_LOG, "could not identify the vLLM server process to stop", exc, level=logging.INFO)
+        # A fixed phrase, not the exception's words: this reason reaches the stop answer and its toast; the log keeps the detail.
+        return {"stopped": False, "reason": "could not identify the server (see the log)"}
     if not pids:
         return {
             "stopped": False,
@@ -3426,7 +3437,9 @@ def kv_basis(model: str) -> dict:
     try:
         rev = _loadable_revision(model)
     except Exception as exc:  # noqa: BLE001 - a diagnostic must degrade, never raise
-        return {"measured": False, "reason": record_text(exc, limit=120, typed=True)}
+        log_failure(_LOG, "could not look for a loadable snapshot revision for the KV basis", exc, level=logging.INFO)
+        # A fixed phrase, not the exception's words: this reason reaches the diagnostics answer; the log keeps the detail.
+        return {"measured": False, "reason": "could not look for a loadable snapshot revision (see the log)"}
     if rev is None:
         return {
             "measured": False,
@@ -3440,7 +3453,9 @@ def kv_basis(model: str) -> dict:
     try:
         got = _kv_from_checkpoint(model)
     except Exception as exc:  # noqa: BLE001
-        return {"measured": False, "reason": record_text(exc, limit=120, typed=True)}
+        log_failure(_LOG, "could not read the KV shape from the checkpoint", exc, level=logging.INFO)
+        # A fixed phrase, not the exception's words: this reason reaches the diagnostics answer; the log keeps the detail.
+        return {"measured": False, "reason": "could not read the KV shape from the checkpoint (see the log)"}
     if got is None:
         return {
             "measured": False,
@@ -3740,7 +3755,14 @@ def run_models_download_job(
             # from a bare "failed", and only one of them is the operator's to fix.
             results.append({"model": model, "state": "error", "error": record_text(exc)})
         except Exception as exc:  # noqa: BLE001 - one model's surprise is not the batch's
-            results.append({"model": model, "state": "error", "error": record_text(exc, typed=True)})
+            log_failure(_LOG, "a model download failed unexpectedly", exc, level=logging.WARNING)
+            # A fixed phrase, not the exception's words: the batch result reaches the jobs answer; the log keeps the detail.
+            # The two branches above keep their text on purpose, and it is NOT only this module's words: a pin mismatch quotes the
+            # model name, the pinned revision and the one read back from the download, and a failed download carries the last three
+            # lines of the downloader's own output (huggingface_hub: an HTTP error, a gated-repo notice), scrubbed of every secret
+            # the process holds. Those lines are what tell a gated repo from a typo, and the same scrubbed lines already reach the
+            # task manager live as the download's progress, so they are not new exposure.
+            results.append({"model": model, "state": "error", "error": "the download failed unexpectedly (see the log)"})
     downloaded = [r for r in results if r.get("state") in {"downloaded", "already_cached"}]
     failed = [r for r in results if r.get("state") == "error"]
     return {
@@ -3941,9 +3963,9 @@ def run_install_job(
     try:
         tmp.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        raise VllmLifecycleError(
-            f"could not create pip's unpack directory {tmp}: {record_text(exc)}"
-        ) from exc
+        log_failure(_LOG, "could not create pip's unpack directory", exc, level=logging.WARNING)
+        # A fixed phrase, not the exception's words: the job's error reaches the jobs answer and the UI; the log keeps the detail.
+        raise VllmLifecycleError("could not create pip's unpack directory beside the vLLM install (see the log)") from None
     try:
         run = runner or _default_runner
         stop = _stop_probe(ctx)

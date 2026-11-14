@@ -302,6 +302,10 @@ class BackgroundJob:
         """Ask the worker to stop at its next safe point (cooperative; never kills a thread)."""
         self._stop.set()
 
+    def stop_requested(self) -> bool:
+        """True once :meth:`cancel` was called on the run in flight (what its worker reads as ``ctx.stopping``)."""
+        return self._stop.is_set()
+
     def status(self) -> dict:
         with self._lock:
             total = self._total

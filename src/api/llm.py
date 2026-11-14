@@ -2757,6 +2757,11 @@ def _await_unless_stopped(work, stopped):
     return box.get("value")
 
 
+class BulkRunStopped(Exception):
+    """A queued run's stop came while it was being prepared (resolving the model, selecting the articles): nothing was
+    registered and nothing stored."""
+
+
 def prepare_bulk_run(
     req: BulkLLMRequest,
     db: Session,
@@ -2828,7 +2833,11 @@ def prepare_bulk_run(
     if not work:
         raise HTTPException(status_code=404, detail="No matching articles with content.")
 
-    model = req.model or active_model()
+    # The backend is the one the client was resolved for: asking again would probe the machine a second time (nvidia-smi and the
+    # servers, seconds a stop waits through) and could answer differently (active_model's docstring).
+    model = req.model or active_model(client_backend_name)
+    if should_stop is not None and should_stop():
+        raise BulkRunStopped()
     target = (req.target_language or "English").strip() or "English"
     keep_alive = _effective_keep_alive()
     if op == "summarize":
@@ -3013,15 +3022,14 @@ def prepare_bulk_run(
                         max_workers=concurrency,
                     )
 
-                if should_stop is None:
-                    results = _gen_batch()
-                else:
-                    results = _await_unless_stopped(_gen_batch, _stopped)
-                    if results is None:
-                        # Stopped mid-generation: nothing of this batch is stored; the resume picks the article(s) up again.
-                        yield emit({"event": "stopped", "total": total, "stored": stored,
-                                    "skipped": skipped, "failed": failed})
-                        return
+                # The streamed route (no ``should_stop``) polls its task-manager Stop the same way, so a Stop never waits for a
+                # whole generation there either.
+                results = _await_unless_stopped(_gen_batch, _stopped)
+                if results is None:
+                    # Stopped mid-generation: nothing of this batch is stored; the resume picks the article(s) up again.
+                    yield emit({"event": "stopped", "total": total, "stored": stored,
+                                "skipped": skipped, "failed": failed})
+                    return
                 # Process/store STRICTLY IN ORDER, regardless of which generation
                 # actually finished first — a stored ArticleAnalysis always lines
                 # up with the right article, and the first LLMUnavailable found
