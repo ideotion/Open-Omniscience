@@ -297,6 +297,29 @@ def _stoplist_fingerprint() -> str | None:
         return None
 
 
+def _stoplist_differs(payload: dict) -> bool:
+    """True when the cards were made under another shipped stoplist than the one shipped now (an unreadable list never counts)."""
+    current = _stoplist_fingerprint()
+    return current is not None and payload.get("stoplist") != current
+
+
+def _feed_outdated(session, payload: dict, *, count=None) -> bool:
+    """An older cache shape, or a corpus that has grown past the stale threshold since the feed was made. ``count`` (a
+    zero-argument callable) supplies the article count, and is only called when the shape is current."""
+    if payload.get("version") != CACHE_VERSION:
+        return True
+    return _is_cache_stale(session, payload, current=count() if count is not None else None)
+
+
+def feed_is_current(session, payload: dict) -> bool:
+    """Home's own staleness test without its repair throttles: the feed is in the current cache shape, the corpus has
+    not grown past the stale threshold since it was made, and it was made under the stoplist shipped now. A stop marker
+    (``kept_reason`` / ``incomplete_reason``) or ``stopped_producers`` does not make it outdated; a reader of such a feed
+    says it is partial. Used by readers that would otherwise rerun every producer (the all-diagnostics leads-quality
+    member), so they and Home cannot drift apart."""
+    return not _feed_outdated(session, payload) and not _stoplist_differs(payload)
+
+
 def _stoplist_wants_refresh(payload: dict) -> bool:
     """True when the cards were made under another shipped stoplist and a refresh is allowed now.
 
@@ -305,8 +328,7 @@ def _stoplist_wants_refresh(payload: dict) -> bool:
     marker repair's own throttle, so a refresh that keeps ending early (``kept_reason``) is
     retried every ``_MARKER_RETRY_S``, never on every Home poll. A cache written before this
     field existed has none and is refreshed once."""
-    current = _stoplist_fingerprint()
-    if current is None or payload.get("stoplist") == current:
+    if not _stoplist_differs(payload):
         return False
     if not _has_headroom_for_a_repair() or _scheduler_is_busy_with_the_whole_corpus():
         return False
@@ -726,9 +748,9 @@ def get_briefing(
             _counted.append(_article_count(session))
         return _counted[0]
 
+    # The first two causes are ``feed_is_current``'s, which readers that reuse this feed apply too (unthrottled there).
     stale = cached is not None and (
-        cached.get("version") != CACHE_VERSION  # a servable prior shape: recompute once
-        or _is_cache_stale(session, cached, current=_count_once())
+        _feed_outdated(session, cached, count=_count_once)  # a servable prior shape, or a corpus that grew
         or _marker_wants_refresh(cached)
         or _stoplist_wants_refresh(cached)
     )
