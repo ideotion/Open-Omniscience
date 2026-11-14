@@ -563,7 +563,7 @@ def _verify_export(bundle: dict, *, require_signer: bool = False) -> tuple[bool,
         return False, ["not a custody bundle (not a JSON object)"]
     raw = bundle.get("entries")
     if not isinstance(raw, list) or not raw:
-        if isinstance(bundle.get("item_id"), str) and bundle.get("item_id"):
+        if isinstance(raw, list) and isinstance(bundle.get("item_id"), str) and bundle.get("item_id"):
             return False, [f"this item has no custody entries: the bundle for {bundle['item_id']!r} holds none to verify"]
         return False, ["empty log: the bundle holds no custody entries, so there is nothing to verify"]
     entries: list[CustodyEntry] = []
