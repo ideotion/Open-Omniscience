@@ -362,8 +362,10 @@ def test_a_copy_that_cannot_be_removed_is_named_and_the_rest_still_go(tmp_path, 
             raise PermissionError("in use")
         return real(path, *a, **kw)
 
-    monkeypatch.setattr(os, "unlink", stuck)
-    monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {stuck})
+    from src.backup import volumes as volumes_module
+    from tests.os_scope import scope_os
+
+    scope_os(monkeypatch, volumes_module, unlink=stuck, supports_dir_fd=os.supports_dir_fd | {stuck})
     res = remove_leftover_plaintext(out, [n + ".plain" for n in names])
     assert res == {"removed": [names[1] + ".plain"], "failed": [names[0] + ".plain"]}
 
