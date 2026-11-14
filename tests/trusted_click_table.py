@@ -32,7 +32,13 @@ _FINISHED_LIST = (
     "list's line about each run goes"
 )
 
+_MODEL_STOP = (
+    "stops the Ollama this app started (never one it did not start): it is started again by Launch Ollama, and a summary or "
+    "translation run in flight pauses first (resumable, nothing stored twice); any other request in flight to it fails and stores nothing"
+)
+
 _GROUPS: dict[str, tuple[str, ...]] = {
+    _MODEL_STOP: ("stopOllama",),
     _FINISHED_LIST: ("bulkJobClearDone",),
     _JOB: (
         "_uxPauseResume", "bulkJobCancel", "cancelP0Validation", "cancelPull", "dumpFtsCancel", "jobCancel", "maintAction", "mbRun",

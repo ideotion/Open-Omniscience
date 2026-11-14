@@ -64,6 +64,7 @@ const LIVING = [
 // without it raises ReferenceError on the bare global read (the recorded node trap).
 const src =
   "function ooLtrIsolate(s){return String(s==null?'':s);} function ooLtrPct(s){return String(s==null?'':s);}" + "\n" +
+  "function ooIsoDate(s){return String(s==null?'':s).slice(0,10);}" + "\n" +
     extractConst("esc") + "\n" +
   extractConst("_LTR_ISOLATE") + "\n" +
   extract("_ltrIsolate") + "\n" +
@@ -673,6 +674,22 @@ const WIKI = {
   const settled = R.livingLawFloorHtml({ floor: { ...CHECKED, verification_status: "verified 2026-12-01" } }, t, tf);
   assert.ok(visible(settled).includes("Status of the list of countries: verified 2026-12-01"), visible(settled));
   assert.ok(!visible(settled).includes("drafted from memory"), "a settled list still carried the unsettled caveat");
+}
+{
+  // R679: within a state the SERVER's order holds (population reached from the operator's dated table), never a re-sort by
+  // code in the browser, and the note names the table's source and date instead of saying the order is waiting.
+  const POP = {
+    state: "checked", reason: null, as_of: "2026-09-07", verification_status: "verified 2026-12-01", countries: 3,
+    by_state: { tracked: [], "verified-not-yet-tracked": ["in", "bd", "aa"], unverified: [], "no-eligible-source": [] },
+    order: { by: "population", source: "UN WPP 2024", as_of: "2024-07-11", reason: null, missing: ["aa"] },
+    languages: [{ language: "bn", official: ["aa", "bd", "in"], states: { tracked: 0, "verified-not-yet-tracked": 3, unverified: 0, "no-eligible-source": 0 }, documents: 0 }],
+    zh_beyond_floor: {}, many_country_sources: {}, unplaced_documents: {},
+  };
+  const text = visible(R.livingLawFloorHtml({ floor: POP }, t, tf));
+  assert.ok(text.indexOf("CC(in)") < text.indexOf("CC(bd)") && text.indexOf("CC(bd)") < text.indexOf("CC(aa)"),
+    `the browser re-sorted the server's population order: ${text}`);
+  assert.ok(text.includes("listed by population reached (UN WPP 2024, 2024-07-11); any the table lacks follow by code"), text);
+  assert.ok(!text.includes("waits for a dated population table"), "a placed table still read as waiting");
 }
 {
   // The catalogue could not be read: tracked is still true, the rest is "Not looked up", never "No eligible source".
