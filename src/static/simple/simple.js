@@ -211,15 +211,25 @@
   }
 
   // ---------------------------------------------------------------- state
-  var store = { view: "today", query: "", ids: null, label: "", order: "recent" };
+  var store = { view: "today", query: "", ids: null, countries: null, langs: null, label: "", order: "recent" };
   var subs = [];
   function saveState() { ssSet(K_STATE, JSON.stringify(store)); }
   function loadState() {
     try {
       var s = JSON.parse(ssGet(K_STATE) || "null");
       if (s && typeof s === "object") Object.assign(store, s);
+      // Only bare country codes survive a reload; anything else would become a hidden scope.
+      store.countries = Array.isArray(store.countries)
+        ? store.countries.filter(function (c) { return typeof c === "string" && /^[a-z]{2,3}$/i.test(c); })
+        : null;
+      if (store.countries && !store.countries.length) store.countries = null;
+      store.langs = Array.isArray(store.langs)
+        ? store.langs.filter(function (c) { return typeof c === "string" && /^[a-z]{2,3}(-[a-z0-9]{2,8})?$/i.test(c); })
+        : null;
+      if (store.langs && !store.langs.length) store.langs = null;
+      if (!Array.isArray(store.ids)) store.ids = null;
     } catch (e) { /* start clean */ }
-    if (["today", "read", "search", "more"].indexOf(store.view) < 0) store.view = "today";
+    if (["today", "read", "search", "world", "numbers", "more"].indexOf(store.view) < 0) store.view = "today";
   }
   function emit() { saveState(); subs.slice().forEach(function (f) { f(); }); }
   function go(view, extra) {
@@ -270,6 +280,8 @@
       read: "M4 5h10M4 10h10M4 15h7M16 4h4v4h-4zM16 12h4v4h-4z",
       search: "M11 4a7 7 0 1 1 0 14 7 7 0 0 1 0-14zM20 20l-3.5-3.5",
       more: "M4 6h16M4 12h16M4 18h10",
+      world: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9s1.3-6.4 3.8-9z",
+      numbers: "M4 20V10M10 20V4M16 20v-7M22 20H2",
       ext: "M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5",
     };
     return html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
@@ -306,6 +318,8 @@
     { id: "today", label: function () { return t("Today"); } },
     { id: "read", label: function () { return t("Read"); } },
     { id: "search", label: function () { return t("Search"); } },
+    { id: "world", label: function () { return t("World"); } },
+    { id: "numbers", label: function () { return t("Numbers"); } },
     { id: "more", label: function () { return t("More tools"); } },
   ];
   function Nav() {
@@ -418,7 +432,7 @@
       <div class="s-actions">
         ${Array.isArray(c.article_ids) && c.article_ids.length
           ? html`<button type="button" class="s-btn" onClick=${function () {
-              go("search", { query: "", ids: c.article_ids.slice(0, MAX_IDS), label: title });
+              go("search", { query: "", ids: c.article_ids.slice(0, MAX_IDS), countries: null, langs: null, label: title });
             }}>${t("Read the articles ({n})", { n: fmtInt(Math.min(c.article_ids.length, MAX_IDS)) })}</button>
             ${c.article_ids.length > MAX_IDS ? html`<${Mark} kind="partial"/>` : null}` : null}
         <${Details} what=${title}>
@@ -435,13 +449,23 @@
 
   function Leads() {
     var lang = curLang();
-    var r = useLoad(function () { return apiCall("/api/briefing?target_lang=" + encodeURIComponent(lang)); }, [lang]);
-    if (r.loading) return html`<${Loading}/>`;
+    var tick = useState(0), tries = tick[0], setTries = tick[1];
+    var r = useLoad(function () { return apiCall("/api/briefing?target_lang=" + encodeURIComponent(lang)); }, [lang, tries]);
+    // The server builds leads in the background and says so ("refreshing"): ask again while it
+    // works (a few times, spaced out), so a first visit does not read "nothing stands out" yet.
+    var building = !!(r.data && r.data.refreshing);
+    useEffect(function () {
+      if (!building || tries >= 6) return undefined;
+      var h = setTimeout(function () { setTries(tries + 1); }, 3000 + tries * 2000);
+      return function () { clearTimeout(h); };
+    }, [building, tries]);
+    if (r.loading && !r.data) return html`<${Loading}/>`;
     if (r.error) return html`<${ErrorLine} msg=${r.error}/>`;
     var cards = [];
     (r.data.buckets || []).forEach(function (b) {
       (b.cards || []).forEach(function (c) { cards.push({ card: c, bucket: bucketLabel(b) }); });
     });
+    if (!cards.length && building) return html`<div class="s-loading" role="status">${t("Looking for leads in your corpus…")}</div>`;
     if (!cards.length) {
       return html`<${Empty}>${t("Nothing stands out yet. Leads appear here as your corpus grows.")}<//>`;
     }
@@ -464,7 +488,7 @@
     var other = w.window_days !== 7;
     return html`<div class="s-chips">
       ${w.terms.map(function (x) {
-        return html`<button type="button" class="s-chip s-term" onClick=${function () { go("search", { query: x.term, ids: null, label: "" }); }}>
+        return html`<button type="button" class="s-chip s-term" onClick=${function () { go("search", { query: x.term, ids: null, countries: null, langs: null, label: "" }); }}>
           <span dir="auto">${x.term}</span> <span class="s-n">${x.recent}</span>
           ${x.growth_is_ratio === false ? html`<${Mark} kind="approx"/>` : null}</button>`;
       })}
@@ -574,21 +598,30 @@
   function searchParams(s) {
     var p = new URLSearchParams();
     if (s.ids && s.ids.length) p.set("ids", s.ids.join(","));
-    else p.set("query", s.query);
+    else if (s.query) p.set("query", s.query);
+    if (s.countries && s.countries.length && !(s.ids && s.ids.length)) p.set("countries", s.countries.join(","));
+    if (s.langs && s.langs.length && !(s.ids && s.ids.length)) p.set("langs", s.langs.join(","));
     return p;
+  }
+  function setKey(s) {
+    return (s.ids ? s.ids.join(",") : "") + "|" + s.query + "|" + (s.countries ? s.countries.join(",") : "") + "|" + (s.langs ? s.langs.join(",") : "");
   }
   function Glance(props) {
     var s = props.s;
-    var key = (s.ids ? s.ids.join(",") : "") + "|" + s.query;
+    var key = setKey(s);
     var r = useLoad(function () {
       // The corpus endpoints name the set "article_ids" (the article list calls it "ids").
       var g = new URLSearchParams();
       if (s.ids && s.ids.length) g.set("article_ids", s.ids.join(","));
-      else g.set("query", s.query);
+      else {
+        if (s.query) g.set("query", s.query);
+        if (s.countries && s.countries.length) g.set("countries", s.countries.join(","));
+        if (s.langs && s.langs.length) g.set("langs", s.langs.join(","));
+      }
       g.set("ui_lang", curLang());
       var p = g.toString();
       return Promise.all([
-        apiCall("/api/insights/corpus-sources?" + p).catch(function () { return null; }),
+        apiCall("/api/insights/corpus-sources?limit=200&" + p).catch(function () { return null; }),
         apiCall("/api/insights/corpus-www?" + p).catch(function () { return null; }),
       ]);
     }, [key]);
@@ -602,7 +635,17 @@
     function names(list, nameKey) {
       return list.map(function (x) { return (x[nameKey] || x.name || x.label || x.text || "") + " (" + fmtInt(x.articles || x.count || x.mentions) + ")"; }).join(", ");
     }
+    // Where the coverage comes from: the sources' own (catalogue-asserted) countries, summed.
+    var byC = {};
+    (src && src.sources ? src.sources : []).forEach(function (x) {
+      if (x.country) byC[x.country] = (byC[x.country] || 0) + (x.articles || 0);
+    });
+    var from = Object.keys(byC).sort(function (a, b) { return byC[b] - byC[a]; });
+    // Partial when the set itself was capped, or when the 200-source page may have left sources out.
+    var srcCapped = !!(src && (src.capped || (src.sources && src.sources.length >= 200)));
     var rows = [];
+    if (from.length) rows.push([t("Covered from"), from.slice(0, 8).map(function (c) { return c + " (" + fmtInt(byC[c]) + ")"; }).join(", ")
+      + (from.length > 8 ? " " + t("and {n} more", { n: from.length - 8 }) : "")]);
     if (top.length) rows.push([t("Most coverage from"), names(top, "name")]);
     if (years.length) rows.push([t("Years mentioned"), names(years, "year")]);
     if (places.length) rows.push([t("Places mentioned"), names(places, "name")]);
@@ -610,9 +653,10 @@
     if (!rows.length) return null;
     return html`<section class="s-card s-glance" aria-labelledby="s-glance-h">
       <div class="s-glance-head"><h2 id="s-glance-h" class="s-h3">${t("At a glance")}</h2>
-        ${www && www.capped ? html`<${Mark} kind="partial"/>` : null}
+        ${(www && www.capped) || srcCapped ? html`<${Mark} kind="partial"/>` : null}
         <${Details} what=${t("At a glance")}>
           <p class="s-caveat">${t("Counts of articles, never a verdict. Places, people and years are deduced from the text and never confirmed.")}</p>
+          <p>${t("Covered from: the country each source is catalogued under, never where a story happened.")}</p>
           ${www ? html`<${Row} k=${t("Articles read")} v=${fmtInt(www.n_articles) + " / " + fmtInt(www.total_matched)}/>` : null}
           ${www && www.computed_at ? html`<${Row} k=${t("Computed")} v=${fmtTime(www.computed_at)}/>` : null}
         <//>
@@ -623,26 +667,56 @@
   function openFullAnalysis(s) {
     peekFull("explore", function () {
       if (s.ids && s.ids.length && typeof window.openAnalysisForIds === "function") window.openAnalysisForIds(s.ids, s.label || "");
-      else if (typeof window.openAnalysisFor === "function") window.openAnalysisFor(s.query);
+      else if (typeof window.openAnalysisFor === "function") {
+        // The country and language scopes travel as the analysis's own filters, so it reads the same set.
+        var adv = {};
+        if (s.countries && s.countries.length) adv.countries = s.countries;
+        if (s.langs && s.langs.length) adv.langs = s.langs;
+        window.openAnalysisFor(s.query, Object.keys(adv).length ? { adv: adv } : undefined);
+      }
     });
   }
   function Results(props) {
     var s = props.s;
-    var key = (s.ids ? s.ids.join(",") : "") + "|" + s.query;
+    var key = setKey(s);
     var r = useLoad(function () {
       var p = searchParams(s);
       p.set("limit", "20");
       p.set("ui_lang", curLang());
       return apiCall("/api/articles?" + p.toString());
     }, [key]);
+    // Further pages, appended under the first; a new search starts again from the top.
+    var more = useState({ key: key, rows: [], busy: false, err: null }), setExtra = more[1];
+    var extra = more[0].key === key ? more[0] : { key: key, rows: [], busy: false, err: null };
+    // A new search never shows the previous one's rows (useLoad keeps old data while it reloads).
     if (r.loading) return html`<${Loading}/>`;
     if (r.error) return html`<${ErrorLine} msg=${r.error}/>`;
-    var rows = r.data.results || [];
+    var rows = (r.data.results || []).concat(extra.rows);
     var total = r.data.total || 0;
+    function loadMore() {
+      var p = searchParams(s);
+      p.set("limit", "20");
+      p.set("offset", String(rows.length));
+      p.set("ui_lang", curLang());
+      setExtra({ key: key, rows: extra.rows, busy: true, err: null });
+      apiCall("/api/articles?" + p.toString()).then(function (d) {
+        setExtra(function (x) {
+          if (x.key !== key) return x;
+          // Newest first by offset: articles collected meanwhile push rows across the page edge,
+          // so a row already on screen is dropped rather than shown twice.
+          var seen = {};
+          (r.data.results || []).concat(x.rows).forEach(function (a) { seen[a.id] = true; });
+          var fresh = (d.results || []).filter(function (a) { return !seen[a.id]; });
+          return { key: key, rows: x.rows.concat(fresh), busy: false, err: null };
+        });
+      }, function (e) {
+        setExtra(function (x) { return x.key !== key ? x : Object.assign({}, x, { busy: false, err: (e && e.message) || String(e) }); });
+      });
+    }
     if (!rows.length) return html`<${Empty}>${t("No article matches. Try fewer or different words.")}<//>`;
     return html`<div>
       <div class="s-count">${t("{n} articles", { n: fmtInt(total) })}
-        ${total > rows.length ? html`<span class="s-muted"> · ${t("showing the first {n}", { n: rows.length })}</span>` : null}</div>
+        ${total > rows.length ? html`<span class="s-muted"> · ${t("showing the first {n}", { n: fmtInt(rows.length) })}</span>` : null}</div>
       <${Glance} s=${s}/>
       <div class="s-actions"><button type="button" class="s-btn" onClick=${function () { openFullAnalysis(s); }}>
         ${t("Open the full analysis")}</button></div>
@@ -655,29 +729,216 @@
           ${snip ? html`<p class="s-excerpt" dir="auto">${snip}${(a.content || "").length > 220 ? "…" : ""}</p>` : null}
         </article>`;
       })}</div>
+      ${extra.err ? html`<${ErrorLine} msg=${extra.err}/>` : null}
+      ${total > rows.length ? html`<button type="button" class="s-btn wide" disabled=${extra.busy} onClick=${loadMore}>
+        ${extra.busy ? t("Loading…") : t("Show more")}</button>` : null}
     </div>`;
   }
   function Search() {
     var s = useStore();
     var q = useState(s.query || ""), text = q[0], setText = q[1];
     useEffect(function () { setText(s.query || ""); }, [s.query]);
-    var active = (s.ids && s.ids.length) || (s.query && s.query.trim());
+    var active = (s.ids && s.ids.length) || (s.query && s.query.trim()) || (s.countries && s.countries.length) || (s.langs && s.langs.length);
+    // The languages the corpus holds, with their article counts, for the language filter.
+    var lr = useLoad(function () { return apiCall("/api/insights/corpus-source-language-facets").catch(function () { return null; }); }, []);
+    var langs = (lr.data && lr.data.languages) || [];
+    var langPartial = !!(lr.data && lr.data.corpus_total > lr.data.corpus_n);
+    var picked = s.langs && s.langs.length ? s.langs[0] : "";
     return html`<div class="s-view">
       <h1 class="s-h1">${t("Search")}</h1>
       <form class="s-search" role="search" onSubmit=${function (e) {
         e.preventDefault();
-        go("search", { query: text.trim(), ids: null, label: "" });
+        go("search", { query: text.trim(), ids: null, label: "" });   // a country scope stays until cleared
       }}>
         <label class="s-sr" for="s-q">${t("Search your articles")}</label>
         <input id="s-q" type="search" value=${text} placeholder=${t("Search your articles")} autocomplete="off"
           onInput=${function (e) { setText(e.currentTarget.value); }}/>
         <button type="submit" class="s-btn primary">${t("Search")}</button>
       </form>
+      ${langs.length > 1 && !(s.ids && s.ids.length) ? html`<div class="s-toolbar s-toolbar-start">
+        <label class="s-inline" for="s-lang">${t("Language")}</label>
+        <select id="s-lang" class="s-select" value=${picked}
+          onChange=${function (e) { var v = e.currentTarget.value; go("search", { langs: v ? [v] : null }); }}>
+          <option value="">${t("Any language")}</option>
+          ${langs.map(function (x) { return html`<option value=${x.language}>${langName(x.language) + " (" + fmtInt(x.n) + ")"}</option>`; })}
+          ${picked && !langs.some(function (x) { return x.language === picked; }) ? html`<option value=${picked}>${langName(picked)}</option>` : null}
+        </select>
+        <${Details} what=${t("Language")}>
+          <p>${t("The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.")}</p>
+          ${lr.data ? html`<${Row} k=${t("Articles counted")} v=${fmtInt(lr.data.corpus_n) + " / " + fmtInt(lr.data.corpus_total)}/>` : null}
+        <//>
+        ${langPartial ? html`<${Mark} kind="partial"/>` : null}
+      </div>` : null}
       ${s.ids && s.ids.length ? html`<div class="s-scope">
         <span>${t("The articles behind: {label}", { label: s.label || "" })}</span>
         <button type="button" class="s-btn ghost" onClick=${function () { go("search", { ids: null, label: "" }); }}>${t("Clear")}</button></div>` : null}
+      ${s.countries && s.countries.length && !(s.ids && s.ids.length) ? html`<div class="s-scope">
+        <span>${t("From sources in: {c}", { c: s.countries.join(", ") })}</span>
+        <button type="button" class="s-btn ghost" onClick=${function () { go("search", { countries: null }); }}>${t("Clear")}</button></div>` : null}
       ${active ? html`<${Results} s=${s}/>` : html`<${Empty}>${t("Type a word, a name or a phrase. Use quotes for an exact phrase, OR for either word.")}<//>`}
     </div>`;
+  }
+
+
+  // ---------------------------------------------------------------- World
+  // Where the corpus comes from, by the country each source is catalogued under. A click reads
+  // that country's articles. Codes on screen, names on hover (Q302).
+  function World() {
+    var r = useLoad(function () { return apiCall("/api/insights/map-coverage"); }, []);
+    if (r.loading && !r.data) return html`<div class="s-view"><h1 class="s-h1">${t("World")}</h1><${Loading}/></div>`;
+    if (r.error) return html`<div class="s-view"><h1 class="s-h1">${t("World")}</h1><${ErrorLine} msg=${r.error}/></div>`;
+    var d = r.data || {};
+    var all = d.by_country || [];
+    var withArt = all.filter(function (c) { return c.articles > 0; }).sort(function (a, b) { return b.articles - a.articles; });
+    var waiting = all.length - withArt.length;
+    var max = withArt.length ? withArt[0].articles : 1;
+    return html`<div class="s-view">
+      <h1 class="s-h1">${t("World")}</h1>
+      <div class="s-toolbar s-toolbar-start">
+        <p class="s-lede">${t("Where your articles come from. Choose a country to read its articles.")}</p>
+        <${Details} what=${t("World")}>
+          ${d.method ? html`<p class="s-method"><b>${t("Method")}</b> ${t(d.method)}</p>` : null}
+          ${d.caveat ? html`<p class="s-caveat"><b>${t("Caveat")}</b> ${t(d.caveat)}</p>` : null}
+          <${Row} k=${t("Articles")} v=${fmtInt(d.total_articles)}/>
+          <${Row} k=${t("sources")} v=${fmtInt(d.total_sources)}/>
+          <p>${t("Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.")}</p>
+          ${d.unlocated && d.unlocated.sources ? html`<${Row} k=${t("Sources with no country")} v=${fmtInt(d.unlocated.sources)}/>` : null}
+          ${d.computed_at ? html`<${Row} k=${t("Computed")} v=${fmtTime(d.computed_at)}/>` : null}
+        <//>
+      </div>
+      ${withArt.length ? html`<ol class="s-ranks">${withArt.map(function (c) {
+        return html`<li><button type="button" class="s-rank" title=${c.name || c.country}
+          aria-label=${(c.name ? c.name + " (" + c.country + ")" : c.country) + ", " + t("{n} articles", { n: fmtInt(c.articles) })}
+          onClick=${function () { go("search", { query: "", ids: null, countries: [c.country], langs: null, label: "" }); }}>
+          <b class="s-code">${c.country}</b>
+          <span class="s-barbox" aria-hidden="true"><span class="s-bar" style=${"width:" + Math.max(2, Math.round(100 * c.articles / max)) + "%"}></span></span>
+          <span class="s-n">${t("{n} articles", { n: fmtInt(c.articles) })}</span>
+          <span class="s-sr">${c.name || ""}</span></button></li>`;
+      })}</ol>` : html`<${Empty}>${t("No articles yet. Go online on Today to start collecting.")}<//>`}
+      ${waiting > 0 ? html`<p class="s-muted s-foot">${t("{n} more countries have sources but no articles yet.", { n: fmtInt(waiting) })}</p>` : null}
+      <button type="button" class="s-link" onClick=${function () { peekFull("timemap"); }}>${t("The map and timeline in the full view")}</button>
+    </div>`;
+  }
+
+  // ---------------------------------------------------------------- Numbers
+  function fmtNum(v) {
+    if (v == null || isNaN(v)) return "—";
+    try { return new Intl.NumberFormat(curLang(), { maximumSignificantDigits: 4 }).format(v); } catch (e) { return String(v); }
+  }
+  function Markets() {
+    var r = useLoad(function () { return apiCall("/api/markets/series"); }, []);
+    if (r.loading && !r.data) return html`<${Loading}/>`;
+    if (r.error) return html`<${ErrorLine} msg=${r.error}/>`;
+    var rows = (r.data && r.data.series) || [];
+    if (!rows.length) return html`<${Empty}>${t("No prices stored yet.")}
+      <button type="button" class="s-link" onClick=${function () { peekFull("markets"); }}>${t("Import prices in the full view")}</button><//>`;
+    return html`<div class="s-toolbar s-toolbar-start"><p class="s-lede">${t("The latest stored price of each series.")}</p>
+      <${Details} what=${t("Prices")}>
+        <p>${t("Prices are imported in the full view, with your consent; nothing is fetched here. Each card shows the newest stored value and its date.")}</p>
+        <p class="s-caveat">${t("A price can be old: read its date.")}</p>
+      <//></div><ul class="s-nums">${rows.map(function (x) {
+      var l = x.latest || {};
+      return html`<li class="s-num"><button type="button" class="s-num-btn" onClick=${function () { peekFull("markets"); }}
+        aria-label=${[x.name || x.symbol, fmtNum(l.price) + " " + (l.currency || "") + (l.unit ? "/" + l.unit : ""), fmtDate(l.observed_on),
+          t("{n} values stored", { n: fmtInt(x.points) })].join(", ")}>
+        <span class="s-num-name" dir="auto">${x.name || x.symbol}</span>
+        <b class="s-num-val">${fmtNum(l.price)} <small>${(l.currency || "") + (l.unit ? "/" + l.unit : "")}</small></b>
+        <span class="s-meta">${fmtDate(l.observed_on)}</span>
+        <span class="s-sr">${t("{n} values stored", { n: fmtInt(x.points) })}</span></button></li>`;
+    })}</ul>`;
+  }
+  function Climate() {
+    var r = useLoad(function () { return apiCall("/api/climate/datasets"); }, []);
+    if (r.loading && !r.data) return html`<${Loading}/>`;
+    if (r.error) return html`<${ErrorLine} msg=${r.error}/>`;
+    var units = (r.data && r.data.units) || [];
+    var seen = {}, rows = [];
+    units.forEach(function (u) {
+      var x = seen[u.dataset];
+      if (!x) { x = seen[u.dataset] = { dataset: u.dataset, host: u.host, stored: 0, last: null }; rows.push(x); }
+      x.stored += (u.stored && u.stored.stored_rows) || 0;
+      var at = u.last_fetch && u.last_fetch.fetched_at;
+      if (at && (!x.last || at > x.last)) x.last = at;   // the newest fetch of any of its series
+    });
+    var have = rows.filter(function (x) { return x.stored > 0; });
+    return html`<div>
+      ${have.length ? html`<ul class="s-nums">${have.map(function (x) {
+        return html`<li class="s-num"><button type="button" class="s-num-btn" onClick=${function () { peekFull("climate"); }}>
+          <span class="s-num-name">${x.dataset.toUpperCase()}</span>
+          <b class="s-num-val">${t("{n} values", { n: fmtInt(x.stored) })}</b>
+          <span class="s-meta">${x.last ? t("Fetched {d}", { d: fmtDate(x.last) }) : x.host}</span></button></li>`;
+      })}</ul>` : html`<${Empty}>${t("No climate record is stored yet. Each one is fetched, with your consent, in the full view.")}<//>`}
+      <button type="button" class="s-link" onClick=${function () { peekFull("climate"); }}>${t("Climate records in the full view")}</button>
+    </div>`;
+  }
+  function Numbers() {
+    return html`<div class="s-view">
+      <h1 class="s-h1">${t("Numbers")}</h1>
+      <h2 class="s-h2">${t("Prices")}</h2>
+      <${Markets}/>
+      <div class="s-toolbar"><h2 class="s-h2">${t("Climate")}</h2>
+        <${Details} what=${t("Climate")}>
+          <p>${t("Published records, fetched with your consent in the full view. The count includes every revision the publisher made.")}</p>
+        <//></div>
+      <${Climate}/>
+    </div>`;
+  }
+
+  // ---------------------------------------------------------------- Add a source
+  // A local write: the source joins your list and nothing is fetched until you are online.
+  function AddSource() {
+    var f = useState({ name: "", domain: "", rss: "" }), v = f[0], setV = f[1];
+    var st = useState({ busy: false, msg: "", err: "" }), s = st[0], setS = st[1];
+    function field(k) { return function (e) { var o = Object.assign({}, v); o[k] = e.currentTarget.value; setV(o); }; }
+    function submit(e) {
+      e.preventDefault();
+      // A bare host, as the server stores it: no scheme, login, port, path or "www.", lower case.
+      var domain = v.domain.trim().toLowerCase().replace(/^[a-z]+:\/\//, "").replace(/[\/?#].*$/, "")
+        .replace(/^[^@]*@/, "").replace(/:\d+$/, "").replace(/^www\./, "");
+      if (!v.name.trim() || !domain) { setS({ busy: false, msg: "", err: t("A name and a web address are needed.") }); return; }
+      setS({ busy: true, msg: "", err: "" });
+      // The server hands back the existing row for a known domain, so look first and say so.
+      var low = domain.toLowerCase();
+      var feed = v.rss.trim();
+      apiCall("/api/sources/?limit=1000&q=" + encodeURIComponent(low)).then(function (list) {
+        // A second feed of a known site is a new source (the server keeps it as a sibling);
+        // only the same site with the same feed (or with no feed on both) is already there.
+        var have = (list || []).filter(function (x) {
+          return String(x.domain || "").toLowerCase().replace(/^www\./, "") === low
+            && String(x.rss_url || "") === feed;
+        })[0];
+        if (have) {
+          setS({ busy: false, msg: t("{name} is already in your sources.", { name: have.name || low }), err: "" });
+          return null;
+        }
+        return apiCall("/api/sources/", { method: "POST", body: JSON.stringify({
+          name: v.name.trim(), domain: domain, rss_url: feed || null, tags: "" }) }).then(function (r) {
+          // The server matches feeds more loosely than the check above (scheme, case, a trailing
+          // slash) and hands back the existing row then: an id we already had means nothing was added.
+          var known = (list || []).filter(function (x) { return r && x.id === r.id; })[0];
+          if (known) {
+            setS({ busy: false, msg: t("{name} is already in your sources.", { name: known.name || low }), err: "" });
+            return;
+          }
+          setV({ name: "", domain: "", rss: "" });
+          setS({ busy: false, msg: t("Added. It is collected from the next time you are online."), err: "" });
+        });
+      }).catch(function (er) { setS({ busy: false, msg: "", err: (er && er.message) || String(er) }); });
+    }
+    return html`<form class="s-card s-form" onSubmit=${submit}>
+      <h2 class="s-h3">${t("Add a source")}</h2>
+      <label>${t("Name")}<input type="text" value=${v.name} onInput=${field("name")} autocomplete="off" required/></label>
+      <label>${t("Web address")}<input type="text" inputmode="url" placeholder="example.org" value=${v.domain} onInput=${field("domain")} autocomplete="off" required/></label>
+      <label>${t("Feed address (optional)")}<input type="text" inputmode="url" value=${v.rss} onInput=${field("rss")} autocomplete="off"/></label>
+      <div class="s-actions">
+        <button type="submit" class="s-btn primary" disabled=${s.busy}>${t("Add")}</button>
+        <${Details} what=${t("Add a source")}>
+          <p>${t("Nothing is fetched now. The source is checked against its robots.txt and collected politely once you go online.")}</p>
+        <//>
+      </div>
+      ${s.msg ? html`<p class="s-ok" role="status">${s.msg}</p>` : null}
+      ${s.err ? html`<div class="s-error" role="alert">${t("Not added: {why}", { why: s.err })}</div>` : null}
+    </form>`;
   }
 
   // ---------------------------------------------------------------- More tools
@@ -706,12 +967,13 @@
         return html`<li><button type="button" class="s-tool" onClick=${function () { peekFull(x[0]); }}>
           <b>${t(x[1])}</b><span>${t(x[2])}</span></button></li>`;
       })}</ul>
+      <${AddSource}/>
     </div>`;
   }
 
   function App() {
     var s = useStore();
-    var V = { today: Today, read: Read, search: Search, more: More }[s.view] || Today;
+    var V = { today: Today, read: Read, search: Search, world: World, numbers: Numbers, more: More }[s.view] || Today;
     return html`<${V}/>`;
   }
 

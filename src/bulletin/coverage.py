@@ -41,6 +41,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 
+from src.analytics.quarantine_scope import not_quarantined
 from src.bulletin.period import Period
 from src.catalog.countries import COUNTRY_NAMES, continent_of, country_display_code
 from src.database.derived_views import KeywordMentionRead
@@ -119,6 +120,7 @@ def _terms(
     in_window = [
         KeywordMentionRead.observed_on >= period.start,
         KeywordMentionRead.observed_on < period.end,
+        not_quarantined(KeywordMentionRead.article_id),  # R101: a page judged not an article is no coverage
         *where,
     ]
     # Headroom so a ring member below `limit` still merges (the trending rule). A keyword the
@@ -213,6 +215,7 @@ def _articles(session, period: Period, *, where: list[Any]) -> int:
         .filter(
             KeywordMentionRead.observed_on >= period.start,
             KeywordMentionRead.observed_on < period.end,
+            not_quarantined(KeywordMentionRead.article_id),  # R101
             *where,
         )
         .scalar()
@@ -300,6 +303,7 @@ def country_coverage(
                 KeywordMentionRead.observed_on >= period.start,
                 KeywordMentionRead.observed_on < period.end,
                 KeywordMentionRead.country.isnot(None),
+                not_quarantined(KeywordMentionRead.article_id),  # R101
             )
             .group_by(KeywordMentionRead.country)
             .order_by(func.count(func.distinct(KeywordMentionRead.article_id)).desc())

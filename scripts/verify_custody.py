@@ -10,11 +10,15 @@ post-quantum half of hybrid signatures) -- NOT on the database or running app. A
 third party (court, editor, collaborator) can confirm a custody chain offline.
 
 Usage:
-    python scripts/verify_custody.py custody_bundle.json [--pin]
+    python scripts/verify_custody.py custody_bundle.json [--pin] [--accept-unendorsed-rotation]
 Exit code 0 = verified, 1 = failed, 2 = bad arguments.
 
-With --pin, every entry must be signed by the signer identity embedded in the
-bundle (internal-consistency pinning). To prove the bundle came from a *known*
+A change of signing key is followed through its key-rotation record: endorsed by the previous key, it passes and is
+named; unendorsed (the previous key was gone), it is refused unless --accept-unendorsed-rotation is given.
+
+With --pin, the head and every entry must be signed by the signer identity embedded in the
+bundle (internal-consistency pinning); across a key rotation, each stretch of the chain is
+held to the identity its rotation record introduced instead. To prove the bundle came from a *known*
 signer, compare the printed signer public keys to that signer's known keys.
 """
 
@@ -24,27 +28,52 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.custody.log import verify_export  # noqa: E402
+from src.custody.log import scope_note, verify_export_report  # noqa: E402
 
 
 def main(argv: list[str]) -> int:
+    # A bundle's own text is printed back; a lone surrogate in it has no UTF-8 form and must not crash the report.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
     args = [a for a in argv[1:] if not a.startswith("--")]
     flags = {a for a in argv[1:] if a.startswith("--")}
+    unknown = flags - {"--pin", "--accept-unendorsed-rotation"}
+    if unknown:
+        # A misspelt --pin must not verify without the pin it was meant to add.
+        print(f"unknown option(s): {', '.join(sorted(unknown))}", file=sys.stderr)
+        return 2
     if len(args) != 1:
         print(
-            "usage: python scripts/verify_custody.py <custody_bundle.json> [--pin]", file=sys.stderr
+            "usage: python scripts/verify_custody.py <custody_bundle.json> [--pin] [--accept-unendorsed-rotation]", file=sys.stderr
         )
         return 2
 
-    bundle = json.loads(Path(args[0]).read_text())
-    ok, issues = verify_export(bundle, require_signer="--pin" in flags)
+    try:
+        bundle = json.loads(Path(args[0]).read_text())
+    except (OSError, ValueError, RecursionError) as exc:  # ValueError: JSONDecodeError, UnicodeDecodeError, >4300-digit ints
+        # A file cut mid-record is not JSON at all: refused by name, never a traceback.
+        print(f"VERIFIED       : False\nISSUES:\n  - not a readable custody bundle ({type(exc).__name__}: {exc}); "
+              "a file cut mid-record reads like this")
+        return 1
+    if not isinstance(bundle, dict):
+        bundle = {"entries": bundle}
+    report = verify_export_report(
+        bundle, require_signer="--pin" in flags, accept_unendorsed_rotation="--accept-unendorsed-rotation" in flags
+    )
+    ok, issues = report["verified"], report["issues"]
 
-    signer = bundle.get("signer", {})
+    raw_signer = bundle.get("signer")
+    signer: dict = raw_signer if isinstance(raw_signer, dict) else {}
     print(f"log_version    : {bundle.get('log_version')}")
     print(f"item_id        : {bundle.get('item_id')}")
     print(f"entry_count    : {bundle.get('entry_count')}")
     print(f"signer ed25519 : {signer.get('ed25519_pub')}")
     print(f"signer ml-dsa  : {signer.get('ml_dsa_variant')} {signer.get('ml_dsa_pub')}")
+    if ok:  # what a "verified" covers, said only beside one
+        print(f"scope          : {scope_note(bundle, report['notes'])}")
+        for n in report["notes"]:
+            print(f"key rotation   : {n}")
     print(f"VERIFIED       : {ok}")
     if issues:
         print("ISSUES:")

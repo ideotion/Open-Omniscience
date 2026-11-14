@@ -729,7 +729,7 @@ def test_a_probe_refused_by_name_is_counted_as_the_switch_after_the_switch_is_cl
     app.dependency_overrides[get_db] = _db
     try:
         with TestClient(app, base_url="http://127.0.0.1") as c:
-            body = c.get(
+            body = c.post(
                 "/api/monitoring/health?limit=3",
                 headers={"Sec-Fetch-Site": "same-origin", "Referer": "http://127.0.0.1/", "Origin": "http://127.0.0.1"},
             ).json()

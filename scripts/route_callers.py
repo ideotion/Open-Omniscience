@@ -156,7 +156,10 @@ def _files(kind: str):
 class _FileLits:
     path: str
     lits: list[str]  # every literal, interpolations replaced by _HOLE
-    tokens: set[str]  # every literal's raw text, for the composition rule
+    tokens: set[str]  # every literal's raw text
+    #: head literal ending in "/" -> the strings concatenated straight onto it, the ONLY
+    #: words the head-plus-word composition rule may complete it with (see _concat_words)
+    concat: dict[str, set[str]] = field(default_factory=dict)
 
 
 def _js_literals(text: str) -> list[str]:
@@ -277,6 +280,49 @@ def _shell_literals(text: str) -> list[str]:
 
 _NESTED_WORD = re.compile(r"""['"]([\w-]+)['"]""")
 
+#: A quoted head ending in "/" followed by ``+``: ``"/api/sources/" + ...``.
+_CONCAT_HEAD = re.compile(r"""(["'`])((?:(?!\1)[^\n\\$])*/)\1\s*\+\s*""")
+_QUOTED = re.compile(r"""(["'`])((?:(?!\1)[^\n\\])*)\1""")
+_IDENT = re.compile(r"[A-Za-z_$][\w$]*")
+
+
+def _concat_words(text: str) -> dict[str, set[str]]:
+    """For each quoted head ending in "/", the strings concatenated straight onto it.
+
+    The composition rule used to complete ``"/api/sources/"`` with ANY word the file
+    spells, so a file with a ``"search"`` view name read as calling
+    ``/api/sources/search`` (2026-11-14, simple.js). Now the word must be what is
+    actually added to that head: a literal (``+ "apply"``), a parenthesised expression's
+    literals (``+ (a ? "apply" : "revert")``), or the literals assigned to the variable
+    that is added (``const verb = a ? "apply" : "revert"; ... + verb``). Anything else --
+    a call, an encoded id -- composes nothing, and the parameter rules handle it.
+    """
+    out: dict[str, set[str]] = {}
+    for m in _CONCAT_HEAD.finditer(text):
+        head, i = m.group(2), m.end()
+        words: set[str] = set()
+        rest = text[i : i + 400]
+        q = _QUOTED.match(rest)
+        if q:
+            words.add(q.group(2))
+        elif rest.startswith("("):
+            depth, end = 0, len(rest)
+            for k, ch in enumerate(rest):
+                depth += {"(": 1, ")": -1}.get(ch, 0)
+                if depth == 0:
+                    end = k + 1
+                    break
+            words.update(x.group(2) for x in _QUOTED.finditer(rest[:end]))
+        else:
+            ident = _IDENT.match(rest)
+            if ident and not rest[ident.end() :].lstrip().startswith(("(", ".", "[")):
+                name = re.escape(ident.group(0))
+                for a in re.finditer(r"\b" + name + r"\s*=(?!=)\s*([^;\n]+)", text):
+                    words.update(x.group(2) for x in _QUOTED.finditer(a.group(1)))
+        if words:
+            out.setdefault(head, set()).update(words)
+    return out
+
 
 def collect_literals(kind: str = "ui") -> list[_FileLits]:
     out: list[_FileLits] = []
@@ -294,7 +340,7 @@ def collect_literals(kind: str = "ui") -> list[_FileLits]:
         # quoted words nested inside markup strings count too: data-on-click="altAct(1,'keep')"
         nested = {w for x in raw for w in _NESTED_WORD.findall(x)}
         if lits:
-            out.append(_FileLits(rel, lits, set(raw) | nested))
+            out.append(_FileLits(rel, lits, set(raw) | nested, _concat_words(text)))
     return out
 
 
@@ -372,8 +418,9 @@ def _calls(
         if "{" in tail:
             continue
         # (a "/tail" token after a head ending in "/" always has something spliced
-        # between them, so only the bare word counts here)
-        if any(lit.endswith(head) for lit in fl.lits) and tail in fl.tokens:
+        # between them, so only the bare word counts here, and only a word that is
+        # concatenated onto THAT head -- not any word the file happens to spell)
+        if any(h.endswith(head) and tail in words for h, words in fl.concat.items()):
             return True
     # a trailing parameter appended by concatenation: "/api/events/feeds/user/" + key
     if segs[-1].startswith("{") and len(segs) > 1:

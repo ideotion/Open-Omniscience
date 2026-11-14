@@ -464,13 +464,18 @@ def article_counts_by_language(
     nothing about growth) and it is load-bearing: the equilibrium lever cannot see
     those articles either, so the number is the size of that blind spot.
 
-    QUARANTINE, deliberately: neither this nor ``corpus_language_shares`` excludes
-    quarantined articles. That is arguably wrong for BOTH — the lever would then be
-    steering partly on nav-soup — but it is the lever's own question, and the two must
-    move TOGETHER. Gate one and this graph starts describing a corpus the lever is not
-    steering, which is the entire failure the shared bucket key above was fixed for.
+    QUARANTINE (R101, ruled 2026-09-30): this and ``corpus_language_shares`` BOTH leave
+    quarantined articles out, through the one filter in ``src/analytics/quarantine_scope.py``,
+    so the lever stops steering on nav-soup and this graph keeps describing the corpus the
+    lever steers. They must keep moving TOGETHER: gate one alone and the graph describes a
+    corpus the lever is not steering, the failure the shared bucket key above was fixed for.
+    The filter is ``id NOT IN (SELECT id ... WHERE quarantined IS 1)``, answered from
+    ``idx_article_quarantined``, so the grouped scan below stays index-only. ``begins_at``
+    still reads the first article stored, quarantined or not: the corpus existed from then,
+    so a zero after it is a measured zero.
     """
     from src.analytics.managed import normalize_lang
+    from src.analytics.quarantine_scope import not_quarantined
     from src.database.models import Article
 
     now = now or datetime.now(UTC)
@@ -506,7 +511,7 @@ def article_counts_by_language(
             has_deduced.label("deduced"),
             func.count().label("n"),
         )
-        .filter(Article.created_at >= since)
+        .filter(Article.created_at >= since, not_quarantined(Article.id))
         .group_by("bucket", Article.language, "deduced")
         .all()
     )
