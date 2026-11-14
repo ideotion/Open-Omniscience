@@ -55,6 +55,10 @@ class ModelPullManager:
         # `/` is legit (registry/ns/model), but `..` (traversal) is never a real tag.
         if not _VALID_MODEL.match(model) or ".." in model:
             raise ValueError("invalid model name")
+        from src.llm.remote_models import REFUSAL, is_cloud_name
+
+        if is_cloud_name(model):  # R688: refused when it is submitted, not later when the queue reaches it (pull() refuses it too)
+            raise ValueError(REFUSAL)
         with self._lock:
             if model == self._active or model in self._queue:
                 return self.status()
