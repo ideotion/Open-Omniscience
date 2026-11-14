@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "6611aad4bf34b1a1c57db036d0d7daf7a2591b81a6726ea8a18f103659430627",
+  "digest": "732d10f099bc17b90f650d61ca46f177bda3e01a6cfb0cffb4941a2e594ca740",
   "log": [
     {
       "version": 1,
@@ -43,6 +43,12 @@
       "digest": "6611aad4bf34b1a1c57db036d0d7daf7a2591b81a6726ea8a18f103659430627",
       "kind": "same",
       "note": "PR #1949 (audit P2/P8) replaced the quadratic comment, tag, style/script and e-mail regexes in extract.py, text_processor.py and markup_blocks.py with linear scans that are byte-identical to the old regexes (differential on every shipped HTML page, 300k seeded random documents incl. Unicode case folds, tests/test_html_strips_linear.py), so no row index_article writes can change"
+    },
+    {
+      "version": 1,
+      "digest": "732d10f099bc17b90f650d61ca46f177bda3e01a6cfb0cffb4941a2e594ca740",
+      "kind": "same",
+      "note": "datestore.articles_for_date now also returns each tag's id for the Agenda's confirm and reject; the rows index_article writes are unchanged"
     }
   ]
 }

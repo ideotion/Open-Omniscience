@@ -15,10 +15,7 @@ POST	/api/analysis/mann-whitney	internal		api	statistics calculator over posted 
 POST	/api/analysis/t-test/independent	internal		api	statistics calculator over posted numbers ([analysis] extra); programmatic API, no corpus surface
 POST	/api/analysis/t-test/paired	internal		api	statistics calculator over posted numbers ([analysis] extra); programmatic API, no corpus surface
 PUT	/api/annotations/mine/author	feature	3	Home annotations (N)	set the author name shipped with exported annotation bundles; export exists, the name cannot be set
-GET	/api/article-dates/by-date	feature	2	Agenda (O)	articles that mention a given date: a day in the Agenda could open them
 POST	/api/article-dates/index	superseded			backfill of date tags; deduced dates now flow from ingest (invariant 13b)
-POST	/api/article-dates/{tag_id}/confirm	feature	2	Agenda deduced events (O)	a reader confirms a deduced date; deduced dates stay 'never confirmed' without it
-POST	/api/article-dates/{tag_id}/reject	feature	2	Agenda deduced events (O)	a reader rejects a wrongly deduced date
 POST	/api/backup/folder/plan	feature	2	Settings > Backup (B)	'needs X, Y free' shown before a large-data backup starts, not after it fails
 POST	/api/backup/folder/restore	superseded			the unified Import queue restores large data (/api/backup/import-queue/start, kind 'blobs')
 POST	/api/backup/folder/verify	feature	2	Settings > Backup (B)	verify a large-data folder backup against its manifest (the volumes backup has a Verify button, this one has none)
