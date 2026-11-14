@@ -1,4 +1,4 @@
-<!-- de: Translation of docs/USER_MANUAL.md written by AI (2026-11-13, R677; native review dropped by R721, 2026-11-14); it may contain mistakes, and the English original is authoritative. Coverage: the whole document, 124 of 124 headings. Corrections are welcome as a pull request. -->
+<!-- de: Translation of docs/USER_MANUAL.md written by AI (2026-11-13, R677; native review dropped by R721, 2026-11-14); it may contain mistakes, and the English original is authoritative. Coverage: the whole document, 125 of 125 headings. Corrections are welcome as a pull request. -->
 
 # Open Omniscience — Benutzerhandbuch
 
@@ -442,6 +442,52 @@ anderen, und lässt Sie scrollen.
 - **Jede Karte** zeigt den Titel, die Quelle, das Datum und die **eigenen drei häufigsten
   Schlagwörter** des Artikels — die Schlagwörter dieses Artikels, nicht die dessen, wonach Sie gesucht haben. **Weiterlesen**
   klappt die Zusammenfassung **an Ort und Stelle** auf; der Titel öffnet den Artikel im lokalen Leser.
+
+### 3.0c Einfache Ansicht
+
+**Wofür es da ist:** lesen, was Ihr Korpus enthält, ohne zuerst dreizehn Tabs zu lernen.
+Die einfache Ansicht ist eine zweite, aufgabenorientierte Oberfläche über derselben App,
+denselben Daten und denselben Sicherheitsregeln. Sie entfernt Bildschirme, keine
+Informationen: Jede Zahl behält ihre Methode, ihre Anzahl und ihre Einschränkung einen
+Klick entfernt.
+
+- **Der Schalter.** Der Schalter **Einfach** in der oberen Leiste schaltet sie ein und
+  aus. Die Wahl wird nur auf diesem Gerät (in diesem Browser) gespeichert. Ausschalten
+  bringt die vollständige Oberfläche genau so zurück, wie sie war; nichts wird
+  zurückgesetzt oder geht verloren.
+- **Sechs Ansichten** ersetzen die Tabs der Seitenleiste:
+  - **Heute**: die Spuren, die in Ihrem Korpus herausstechen, die steigenden Themen und
+    der Netzwerkzustand mit einer Schaltfläche **Online gehen**.
+  - **Lesen**: Ihre Artikel als Liste, neueste zuerst oder gemischt. Die Wahl eines Landes
+    unter **Welt** beschränkt die Liste (und ihre Zusammenfassung) auf die Artikel aus den
+    Quellen dieses Landes.
+  - **Suchen**: dieselbe Suche wie in der vollständigen Ansicht. Geben Sie ein Wort, einen
+    Namen oder eine Wortgruppe ein; Anführungszeichen ergeben eine exakte Wortgruppe und OR
+    das eine oder das andere Wort. **Vollständige Analyse öffnen** nimmt dieselbe Suche
+    nach Erkunden mit.
+  - **Welt**: die Länder, aus denen Ihre Artikel stammen, geordnet danach, wie viel sie
+    abdecken. Ein Land ist hier das, unter dem jede Quelle katalogisiert ist, niemals der
+    Ort, an dem eine Geschichte geschah. Ein Klick auf ein Land beschränkt **Lesen** und
+    seine Zusammenfassung.
+  - **Zahlen**: die Marktreihen und Klimadatensätze, die bereits auf Ihrem Computer
+    gespeichert sind, jeweils mit ihrem neuesten Wert und ihrem Datum. Diese Ansicht liest
+    nur: Preise und Klimadatensätze werden, mit Ihrer Einwilligung, in der vollständigen
+    Ansicht abgerufen.
+  - **Weitere Werkzeuge**: ein Link zu jedem Tab der vollständigen Ansicht und das
+    Formular **Quelle hinzufügen**. Ein von hier geöffnetes Werkzeug zeigt eine Leiste
+    **Zurück zur einfachen Ansicht**, die Sie dorthin zurückbringt, wo Sie waren, mit Ihrer
+    Suche noch an ihrem Platz.
+- **Die Schaltfläche ⓘ.** Jede Karte und jede Zahl trägt eine. Sie öffnet die
+  Einschränkung, die Methode, die Anzahl (n), die Quelle und das Datum. Sie funktioniert
+  mit Tastatur, Touch und Screenreadern.
+- **Die Markierungen.** Eine Zahl, die einen zweiten Blick verdient, zeigt eine kleine
+  Markierung daneben, damit Sie wissen, dass das ⓘ etwas enthält, das sich zu öffnen
+  lohnt: **~** ungefähr, **◐** unvollständig, **◷** möglicherweise veraltet.
+- **Was sich nie ändert.** Die einfache Ansicht verbirgt keine der Sicherheitsflächen der
+  App. Die Netzwerk-Einwilligungsabfrage, der Flugmodus und der Tor-Zustand in der oberen
+  Leiste, der Sperrbildschirm, die Bestätigung vor jedem Löschen, Hinweise und
+  Fehlermeldungen bleiben alle sichtbar und funktionieren genau wie in der vollständigen
+  Ansicht.
 
 ### 3.1 Suche
 
