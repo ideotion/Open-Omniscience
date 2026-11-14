@@ -60,7 +60,7 @@ def _live_windowed(session: Session, start, *, scan_bound=_UNBOUNDED):
         params["s"] = start
     return session.execute(text(
         "SELECT keyword_id, SUM(count), COUNT(DISTINCT article_id) FROM keyword_mentions "
-        "WHERE " + clause + " GROUP BY keyword_id"  # nosec B608 - clause is a constant fragment; the value is a bound :param
+        "WHERE " + clause + " GROUP BY keyword_id"  # nosec B608 # clause is a constant fragment; the value is a bound :param
     ), params).fetchall()
 
 

@@ -173,7 +173,7 @@ def _sample_ids(session: Session, sample: int) -> tuple[list[int], dict]:
     basis: dict[str, object] = {"corpus_articles": int(total or 0), "seed": _SEED}
     if not total or lo is None or hi is None:
         return [], basis
-    rng = random.Random(_SEED)  # nosec B311 - sampling for a diagnostic, not security
+    rng = random.Random(_SEED)  # nosec B311 # sampling for a diagnostic, not security
     seen: set[int] = set()
     draws = 0
     # Bounded: a corpus whose ids cluster can need several draws per new article, so the

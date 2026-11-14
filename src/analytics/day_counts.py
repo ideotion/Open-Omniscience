@@ -172,10 +172,10 @@ def install(conn: Connection) -> dict[str, Any]:
             if name in have:
                 if _trigger_body_matches(have[name], sql):
                     continue
-                conn.exec_driver_sql(f'DROP TRIGGER "{name}"')  # nosec B608 - a name from TRIGGERS, not input
+                conn.exec_driver_sql(f'DROP TRIGGER "{name}"')  # a name from TRIGGERS, not input
             conn.exec_driver_sql(sql)
             made += 1
-        conn.exec_driver_sql(f"INSERT OR IGNORE INTO {STATE} (id, complete) VALUES (1, 0)")  # nosec B608 - a constant
+        conn.exec_driver_sql(f"INSERT OR IGNORE INTO {STATE} (id, complete) VALUES (1, 0)")  # a constant
         if made:
             conn.exec_driver_sql(UNBUILT_SQL)
     except BaseException:
@@ -209,7 +209,7 @@ def ensure_day_counts(engine: Engine) -> dict[str, Any]:
 def _state(conn: Connection) -> dict[str, Any] | None:
     try:
         row = conn.exec_driver_sql(
-            f"SELECT complete, built_epoch, watermark, reuse_floor, cursor, started_at, built_at, floor_gen FROM {STATE} WHERE id = 1"  # nosec B608 - a constant
+            f"SELECT complete, built_epoch, watermark, reuse_floor, cursor, started_at, built_at, floor_gen FROM {STATE} WHERE id = 1"  # nosec B608 # a constant
         ).fetchone()
     except Exception:  # noqa: BLE001 - no table yet (a store made before it): not built
         return None
@@ -319,23 +319,23 @@ def _rebuild_day(conn: Connection, day: str, *, after: str | None = None) -> Non
     lo_sql, lo_args = ("observed_on > ? AND ", (after,)) if after is not None else ("", ())
     _end_read(conn)
     with write_lock(), conn.begin():
-        conn.exec_driver_sql(f"DELETE FROM {TABLE} WHERE {lo_sql}observed_on <= ?", (*lo_args, day))  # nosec B608 - constants
-        conn.exec_driver_sql(f"DELETE FROM {DIRTY} WHERE {lo_sql}observed_on <= ?", (*lo_args, day))  # nosec B608 - constants
+        conn.exec_driver_sql(f"DELETE FROM {TABLE} WHERE {lo_sql}observed_on <= ?", (*lo_args, day))  # nosec B608 # constants
+        conn.exec_driver_sql(f"DELETE FROM {DIRTY} WHERE {lo_sql}observed_on <= ?", (*lo_args, day))  # nosec B608 # constants
         conn.exec_driver_sql(
-            f"INSERT INTO {TABLE} (observed_on, keyword_id, mentions) "  # nosec B608 - a constant
+            f"INSERT INTO {TABLE} (observed_on, keyword_id, mentions) "  # nosec B608 # a constant
             "SELECT observed_on, keyword_id, SUM(count) FROM keyword_mentions_all WHERE observed_on = ? GROUP BY keyword_id",
             (day,),
         )
-        conn.exec_driver_sql(f"UPDATE {STATE} SET cursor = ? WHERE id = 1", (day,))  # nosec B608 - a constant
+        conn.exec_driver_sql(f"UPDATE {STATE} SET cursor = ? WHERE id = 1", (day,))  # nosec B608 # a constant
 
 
 def _fold_day(conn: Connection, day: str) -> None:
     _end_read(conn)
     with write_lock(), conn.begin():
-        conn.exec_driver_sql(f"DELETE FROM {TABLE} WHERE observed_on = ?", (day,))  # nosec B608 - a constant
-        conn.exec_driver_sql(f"DELETE FROM {DIRTY} WHERE observed_on = ?", (day,))  # nosec B608 - a constant
+        conn.exec_driver_sql(f"DELETE FROM {TABLE} WHERE observed_on = ?", (day,))  # nosec B608 # a constant
+        conn.exec_driver_sql(f"DELETE FROM {DIRTY} WHERE observed_on = ?", (day,))  # nosec B608 # a constant
         conn.exec_driver_sql(
-            f"INSERT INTO {TABLE} (observed_on, keyword_id, mentions) "  # nosec B608 - a constant
+            f"INSERT INTO {TABLE} (observed_on, keyword_id, mentions) "  # nosec B608 # a constant
             "SELECT observed_on, keyword_id, SUM(count) FROM keyword_mentions_all WHERE observed_on = ? GROUP BY keyword_id",
             (day,),
         )
@@ -381,7 +381,7 @@ def build(engine: Engine, ctx: JobContext | None = None) -> dict[str, Any]:
                 with write_lock(), conn.begin():
                     m = _max_id(conn)
                     conn.exec_driver_sql(
-                        f"UPDATE {STATE} SET complete = 0, built_epoch = ?, watermark = ?, reuse_floor = NULL, "  # nosec B608 - a constant
+                        f"UPDATE {STATE} SET complete = 0, built_epoch = ?, watermark = ?, reuse_floor = NULL, "  # nosec B608 # a constant
                         "cursor = NULL, started_at = ?, built_at = NULL WHERE id = 1",
                         (epoch, m, datetime.now(UTC).isoformat()),
                     )
@@ -425,10 +425,10 @@ def build(engine: Engine, ctx: JobContext | None = None) -> dict[str, Any]:
             _end_read(conn)
             with write_lock(), conn.begin():
                 tail_sql, tail_args = ("observed_on > ?", (cursor,)) if cursor is not None else ("1", ())
-                conn.exec_driver_sql(f"DELETE FROM {TABLE} WHERE {tail_sql}", tail_args)  # nosec B608 - constants
-                conn.exec_driver_sql(f"DELETE FROM {DIRTY} WHERE {tail_sql}", tail_args)  # nosec B608 - constants
+                conn.exec_driver_sql(f"DELETE FROM {TABLE} WHERE {tail_sql}", tail_args)  # nosec B608 # constants
+                conn.exec_driver_sql(f"DELETE FROM {DIRTY} WHERE {tail_sql}", tail_args)  # nosec B608 # constants
                 conn.exec_driver_sql(
-                    f"UPDATE {STATE} SET complete = 1, built_at = ? WHERE id = 1",  # nosec B608 - a constant
+                    f"UPDATE {STATE} SET complete = 1, built_at = ? WHERE id = 1",  # nosec B608 # a constant
                     (datetime.now(UTC).isoformat(),),
                 )
             if ctx is not None:
@@ -472,12 +472,12 @@ def fold_tail(engine: Engine, *, should_stop=None) -> dict[str, Any]:
                 floor = min(_tail_floor(st), m)
                 gen = st["floor_gen"]
                 conn.exec_driver_sql(
-                    f"UPDATE {STATE} SET watermark = ?, reuse_floor = ? WHERE id = 1",  # nosec B608 - a constant
+                    f"UPDATE {STATE} SET watermark = ?, reuse_floor = ? WHERE id = 1",  # nosec B608 # a constant
                     (m, floor + 1 if floor < m else None),
                 )
             stale = {
                 _iso(r[0])
-                for r in conn.exec_driver_sql(f"SELECT observed_on FROM {DIRTY}").fetchall()  # nosec B608 - a constant
+                for r in conn.exec_driver_sql(f"SELECT observed_on FROM {DIRTY}").fetchall()  # nosec B608 # a constant
             }
             stale |= {
                 _iso(r[0])
@@ -498,7 +498,7 @@ def fold_tail(engine: Engine, *, should_stop=None) -> dict[str, Any]:
             _end_read(conn)
             with write_lock(), conn.begin():
                 cleared = conn.exec_driver_sql(
-                    f"UPDATE {STATE} SET reuse_floor = NULL "  # nosec B608 - a constant
+                    f"UPDATE {STATE} SET reuse_floor = NULL "  # nosec B608 # a constant
                     "WHERE id = 1 AND watermark IS ? AND floor_gen IS ?",
                     (m, gen),
                 ).rowcount
@@ -520,12 +520,12 @@ def drop_keywords(session: Session, keyword_ids: list[int]) -> int:
     holes = ",".join("?" for _ in keyword_ids)
     counted = int(
         conn.exec_driver_sql(
-            f"SELECT count(*) FROM {TABLE} WHERE keyword_id IN ({holes}) AND mentions <> 0",  # nosec B608 - placeholders only
+            f"SELECT count(*) FROM {TABLE} WHERE keyword_id IN ({holes}) AND mentions <> 0",  # nosec B608 # placeholders only
             tuple(keyword_ids),
         ).scalar()
         or 0
     )
-    conn.exec_driver_sql(f"DELETE FROM {TABLE} WHERE keyword_id IN ({holes})", tuple(keyword_ids))  # nosec B608 - placeholders only
+    conn.exec_driver_sql(f"DELETE FROM {TABLE} WHERE keyword_id IN ({holes})", tuple(keyword_ids))  # nosec B608 # placeholders only
     return counted
 
 
@@ -572,7 +572,7 @@ def windowed_counts(session: Session, *, lo: date, hi: date, deadline: float | N
         dirty = {
             _iso(r[0])
             for r in conn.exec_driver_sql(
-                f"SELECT observed_on FROM {DIRTY} WHERE observed_on >= ? AND observed_on <= ?", (lo_s, hi_s)  # nosec B608 - a constant
+                f"SELECT observed_on FROM {DIRTY} WHERE observed_on >= ? AND observed_on <= ?", (lo_s, hi_s)  # nosec B608 # a constant
             ).fetchall()
         }
         stale = sorted(dirty | {d for d in tail_days if lo_s <= d <= hi_s})
@@ -583,7 +583,7 @@ def windowed_counts(session: Session, *, lo: date, hi: date, deadline: float | N
         out: dict[int, int] = {
             int(k): int(v)
             for k, v in conn.exec_driver_sql(
-                f"SELECT keyword_id, SUM(mentions) FROM {TABLE} WHERE observed_on >= ? AND observed_on <= ?{not_stale} "  # nosec B608 - placeholders only
+                f"SELECT keyword_id, SUM(mentions) FROM {TABLE} WHERE observed_on >= ? AND observed_on <= ?{not_stale} "  # nosec B608 # placeholders only
                 "GROUP BY keyword_id",
                 (lo_s, hi_s, *stale),
             ).fetchall()

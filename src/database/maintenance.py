@@ -302,7 +302,7 @@ def ensure_hot_indexes(engine: Engine, *, include_deferred: bool = True) -> list
                 if table not in cols_of:
                     cols_of[table] = {
                         r[1]
-                        for r in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()  # noqa: S608  # nosec B608 - table name is a literal from the module-level _INDEX_REQUIRES map, never input
+                        for r in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()  # noqa: S608  table name is a literal from the module-level _INDEX_REQUIRES map, never input
                     }
                 if not set(columns).issubset(cols_of[table]):
                     skipped.append(name)

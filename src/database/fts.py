@@ -635,7 +635,7 @@ def _indexed(row: str, col: str) -> str:
     ``article_fts_norm`` row: kept when a segmenter made it, re-folded when only the Arabic
     fold did, the stored text when there is no row. Mirrors ``fts_norm.indexed_values``."""
     return (
-        f"COALESCE((SELECT CASE WHEN n.mask & {_SEGMENTERS} THEN n.{col} "  # nosec B608 - row and col are the literals "old"/"new" and "title"/"content" passed below; _SEGMENTERS is a module int
+        f"COALESCE((SELECT CASE WHEN n.mask & {_SEGMENTERS} THEN n.{col} "  # nosec B608 # row and col are the literals "old"/"new" and "title"/"content" passed below; _SEGMENTERS is a module int
         f"ELSE oo_fts_norm({row}.{col}, n.mask) END "
         f"FROM article_fts_norm n WHERE n.article_id = {row}.id), {row}.{col})"
     )
@@ -653,14 +653,14 @@ _INDEX_NEW = f"""
         FROM (SELECT oo_fts_used(new.title, new.content, oo_fts_caps()) AS m) WHERE m != 0;
         INSERT INTO article_fts(rowid, title, content)
         VALUES (new.id, {_indexed("new", "title")}, {_indexed("new", "content")});
-"""  # nosec B608 - every interpolation is a module constant (_SEGMENTERS, an int) or a literal row/column name from this file; the trigger bodies take no input
+"""  # nosec B608 # every interpolation is a module constant (_SEGMENTERS, an int) or a literal row/column name from this file; the trigger bodies take no input
 
 # Remove ``old``'s entry with exactly the values it was indexed with, then its record.
 _DELETE_OLD = f"""
         INSERT INTO article_fts(article_fts, rowid, title, content)
         VALUES ('delete', old.id, {_indexed("old", "title")}, {_indexed("old", "content")});
         DELETE FROM article_fts_norm WHERE article_id = old.id;
-"""  # nosec B608 - every interpolation is a module constant (_SEGMENTERS, an int) or a literal row/column name from this file; the trigger bodies take no input
+"""  # nosec B608 # every interpolation is a module constant (_SEGMENTERS, an int) or a literal row/column name from this file; the trigger bodies take no input
 
 #: The tokenizer a NEW index is created with (S05-02 S6, R39). ``categories 'L* N* Co M*'`` keeps the combining marks
 #: and vowel signs of Devanagari, Bengali and vocalised Arabic INSIDE a word: under the default categories सरकार indexed
@@ -686,7 +686,7 @@ def _article_fts_ddl(tokenizer: str = FTS_TOKENIZER) -> str:
         content='articles', content_rowid='id',
         {_tokenize_clause(tokenizer)}
     )
-    """  # nosec B608 - the tokenizer is one of this module's two constants, never input
+    """  # nosec B608 # the tokenizer is one of this module's two constants, never input
 
 
 _FTS_DDL = [
@@ -1077,7 +1077,7 @@ def index_articles(con, ids: Sequence[int]) -> int:
         return 0
     rows = _run(
         con,
-        "SELECT id, title, content FROM articles WHERE id IN"  # noqa: S608  # nosec B608 - the only interpolation is a placeholder count derived from len(ids); every id is a bound parameter
+        "SELECT id, title, content FROM articles WHERE id IN"  # noqa: S608  # nosec B608 # the only interpolation is a placeholder count derived from len(ids); every id is a bound parameter
         f" ({','.join('?' * len(ids))})",
         tuple(ids),
     ).fetchall()
@@ -1166,7 +1166,7 @@ def optimize_after_bulk(session: Session) -> dict:
         _analysis_limit = fts_analysis_limit()  # §7 knob: OO_FTS_ANALYSIS_LIMIT, clamped int.
         connection_first(session)  # the commit above gave the connection back
         with write_lock():
-            # nosec B608 - _analysis_limit is a clamped int from power_profiles, never user input;
+            # nosec B608 # _analysis_limit is a clamped int from power_profiles, never user input;
             # PRAGMA does not accept a bound parameter.
             session.execute(text(f"PRAGMA analysis_limit={_analysis_limit}"))  # noqa: S608
             session.execute(text("PRAGMA optimize"))
@@ -1485,7 +1485,7 @@ def field_where(
         cond, p = _field_condition(ff, f"{prefix}{i}", exact)
         params.update(p)
         body = (
-            "SELECT 1 FROM articles a LEFT JOIN sources s ON s.id = a.source_id "  # nosec B608 - `outer` is checked against three literals above; `cond` is built from _FIELD_COLUMNS literals and one bound :param
+            "SELECT 1 FROM articles a LEFT JOIN sources s ON s.id = a.source_id "  # nosec B608 # `outer` is checked against three literals above; `cond` is built from _FIELD_COLUMNS literals and one bound :param
             f"WHERE a.id = {outer} AND {cond}"
         )
         parts.append(("NOT EXISTS (" if ff.negated else "EXISTS (") + body + ")")
@@ -1545,7 +1545,7 @@ def exact_where(parsed: ParsedQuery, *, outer: str, prefix: str = "oox") -> tupl
     if not cond:
         return "", {}
     return (
-        "EXISTS (SELECT 1 FROM articles a WHERE a.id = "  # nosec B608 - `outer` is checked against three literals above; `cond` holds only instr() over two literal columns and bound :params
+        "EXISTS (SELECT 1 FROM articles a WHERE a.id = "  # nosec B608 # `outer` is checked against three literals above; `cond` holds only instr() over two literal columns and bound :params
         f"{outer} AND {cond})",
         params,
     )
@@ -1656,7 +1656,7 @@ def search_ids(
     # the first line of the concatenation, so the marker belongs HERE and not on the
     # enclosing text(...) call, where it silently does nothing.
     sql = (
-        "SELECT rowid FROM article_fts WHERE article_fts MATCH :q"  # nosec B608 - only the constant `gate` fragment and the literal-built `extra` are concatenated; every value is a bound :param
+        "SELECT rowid FROM article_fts WHERE article_fts MATCH :q"  # nosec B608 # only the constant `gate` fragment and the literal-built `extra` are concatenated; every value is a bound :param
         + gate
         + (" AND " + extra if extra else "")
         + " ORDER BY bm25(article_fts, :wt, :wb) LIMIT :lim"
@@ -1727,7 +1727,7 @@ def field_only_where(
         exact=exact, neg=neg,
     )
     return (
-        "EXISTS (SELECT 1 FROM articles a0 WHERE a0.id = articles.id AND "  # nosec B608 - `where` is built by _field_only_sql from literals and bound :params only
+        "EXISTS (SELECT 1 FROM articles a0 WHERE a0.id = articles.id AND "  # nosec B608 # `where` is built by _field_only_sql from literals and bound :params only
         + where + ")",
         params,
     )
@@ -1740,7 +1740,7 @@ def _field_only_ids(session: Session, query, *, limit, exclude_quarantined, expa
         near_default=near_default, exact=exact, neg=neg,
     )
     sql = (
-        "SELECT a0.id FROM articles a0 WHERE "  # nosec B608 - `where` is built by _field_only_sql from literals and bound :params only
+        "SELECT a0.id FROM articles a0 WHERE "  # nosec B608 # `where` is built by _field_only_sql from literals and bound :params only
         + where
         + " ORDER BY a0.published_at DESC, a0.id DESC LIMIT :lim"
     )
@@ -1811,7 +1811,7 @@ def search_total(
                 near_default=near_default, exact=exact, neg=neg,
             )
             row = session.execute(
-                text("SELECT count(*) FROM articles a0 WHERE " + where), fparams  # nosec B608 - `where` is built by _field_only_sql from literals and bound :params only
+                text("SELECT count(*) FROM articles a0 WHERE " + where), fparams  # nosec B608 # `where` is built by _field_only_sql from literals and bound :params only
             ).fetchone()
             return int(row[0]) if row else 0
     gate = _QUARANTINE_GATE if exclude_quarantined else ""
@@ -1819,7 +1819,7 @@ def search_total(
     # `extra` is literal-built, and every value is a bound :param. bandit attributes B608
     # to the first line of the concatenation, so the marker belongs here.
     sql = (
-        "SELECT count(*) FROM article_fts WHERE article_fts MATCH :q"  # nosec B608 - only the constant `gate` fragment and the literal-built `extra` are concatenated; the query is a bound :param
+        "SELECT count(*) FROM article_fts WHERE article_fts MATCH :q"  # nosec B608 # only the constant `gate` fragment and the literal-built `extra` are concatenated; the query is a bound :param
         + gate
         + (" AND " + extra if extra else "")
     )

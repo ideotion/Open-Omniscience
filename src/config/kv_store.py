@@ -432,7 +432,7 @@ def _read_value(path: str, key: str, *, read_only: bool) -> str | None:
     conn = _open(path, read_only=read_only)
     try:
         row = conn.execute(
-            f"SELECT value FROM {TABLE} WHERE key = ?",  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; the key is a bound param
+            f"SELECT value FROM {TABLE} WHERE key = ?",  # noqa: S608  # nosec B608 # {TABLE} is a fixed constant ("app_state"), never input; the key is a bound param
             (key,),
         ).fetchone()
         return row[0] if row else None
@@ -586,7 +586,7 @@ def kv_get_json_strict(key: str) -> dict | None:
     try:
         try:
             row = conn.execute(
-                f"SELECT value FROM {TABLE} WHERE key = ?",  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; the key is a bound param
+                f"SELECT value FROM {TABLE} WHERE key = ?",  # noqa: S608  # nosec B608 # {TABLE} is a fixed constant ("app_state"), never input; the key is a bound param
                 (key,),
             ).fetchone()
         except Exception as exc:  # noqa: BLE001 - only "no such table" means absent
@@ -650,7 +650,7 @@ def kv_set_json(key: str, obj: dict, *, expect_swap: int | None = None) -> None:
             try:
                 _ensure_table(conn)
                 conn.execute(
-                    f"INSERT INTO {TABLE} (key, value, updated_at) VALUES (?, ?, ?) "  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; values are bound params
+                    f"INSERT INTO {TABLE} (key, value, updated_at) VALUES (?, ?, ?) "  # noqa: S608  # nosec B608 # {TABLE} is a fixed constant ("app_state"), never input; values are bound params
                     "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
                     "updated_at = excluded.updated_at",
                     (key, value, now),
@@ -701,7 +701,7 @@ def kv_delete(key: str, *, expect_swap: int | None = None) -> None:
                 try:
                     _ensure_table(conn)
                     conn.execute(
-                        f"DELETE FROM {TABLE} WHERE key = ?",  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; the key is a bound param
+                        f"DELETE FROM {TABLE} WHERE key = ?",  # noqa: S608  # nosec B608 # {TABLE} is a fixed constant ("app_state"), never input; the key is a bound param
                         (key,),
                     )
                     conn.commit()

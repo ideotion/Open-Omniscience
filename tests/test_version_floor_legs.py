@@ -15,12 +15,13 @@ a test of their own (R412, the version-coupling bundle):
 * STARLETTE 1.8.0, the exposed sites. A test that hands a response an ``http.disconnect`` is a test of what the installed Starlette does with
   it. Every file that names ``http.disconnect`` is listed here, with what it does with it; a new one fails by name until it is listed and
   named in the registry entry ``starlette-gzip-flush``, which is when someone looks at it on the floor release.
-* DUCKDB 1.x. The ``columnar`` job installs the newest DuckDB, so the 1.x line that ``duckdb>=1.4`` admits ran in no lane. The job
-  ``columnar-duckdb1`` installs ``duckdb<2`` and runs the same files; the checks below fail if it stops pinning the 1.x line, if it stops
-  checking what it got, or if its file list drifts from the first job's.
+* DUCKDB 1.x. The ``columnar`` job installs the newest DuckDB, so the 1.x line that ``duckdb>=1.4`` admits ran in no lane. The same job
+  then installs ``duckdb<2`` into a second venv and runs the same files (a job of its own, ``columnar-duckdb1``, until 2026-11-14, PR
+  #1988); the checks below fail if it stops pinning the 1.x line, if it stops checking what it got, or if its file list drifts from the
+  first environment's.
 
 What it does not see. The behaviour test drives the response class through the ASGI interface, not the whole app with its middleware around it. The exposed-sites list is a grep for the literal ``http.disconnect``: a stub that builds the message type some other
-way, or that is written in a helper under another name, is not found. The 1.x job runs on whatever 1.x release pip resolves, not on the
+way, or that is written in a helper under another name, is not found. The 1.x environment runs on whatever 1.x release pip resolves, not on the
 floor (1.4.0), so a defect that exists only on 1.4 is still unseen; the registry says so.
 """
 
@@ -141,45 +142,68 @@ def _jobs() -> dict:
     return yaml.safe_load(_CI.read_text(encoding="utf-8"))["jobs"]
 
 
-def _first_pytest_step_files(job: dict) -> list[str]:
-    """The test files named by the job's FIRST pytest step, in order, with the line continuations of a ``run: |`` block joined.
+#: The step that starts the columnar job's second environment, the DuckDB 1.x one; every step before it is the newest DuckDB's.
+_ONE_X_INSTALL = "Install (core + analysis + dev + columnar), with DuckDB held to the 1.x line"
 
-    The first step of each job is the rollup + loader list. ``columnar`` has a second pytest step (the CI-only httpfs round trip) that
-    names one of the same files again; comparing a prefix of all of its files would let a new file appended to its first list slip past."""
-    for step in job["steps"]:
+
+def _columnar_halves() -> tuple[list[dict], list[dict]]:
+    """The ``columnar`` job's steps before the DuckDB 1.x install (the newest DuckDB) and from it on (the 1.x environment)."""
+    steps = _jobs()["columnar"]["steps"]
+    names = [str(s.get("name") or "") for s in steps]
+    assert names.count(_ONE_X_INSTALL) == 1, f"the columnar job must install the DuckDB 1.x environment in one step named {_ONE_X_INSTALL!r}"
+    at = names.index(_ONE_X_INSTALL)
+    return steps[:at], steps[at:]
+
+
+def _first_pytest_step_files(steps: list[dict]) -> list[str]:
+    """The test files named by the FIRST pytest step of ``steps``, in order, with the line continuations of a ``run: |`` block joined.
+
+    The first pytest step of each environment is the rollup + loader list. The newest environment has a second pytest step (the CI-only
+    httpfs round trip) that names one of the same files again; comparing a prefix of all of its files would let a new file appended to its
+    first list slip past."""
+    for step in steps:
         run = str(step.get("run", ""))
         if "-m pytest" in run:
             return re.findall(r"tests/test_[A-Za-z0-9_]+\.py", run.replace("\\\n", " "))
     return []
 
 
-def test_the_duckdb_1x_job_runs_the_files_of_the_columnar_job_and_pins_the_1x_line():
+def test_the_duckdb_1x_environment_runs_the_files_of_the_newest_one_and_pins_the_1x_line():
     jobs = _jobs()
-    assert "columnar-duckdb1" in jobs, "ci.yml lost the job that runs the columnar files on DuckDB 1.x"
-    one = jobs["columnar-duckdb1"]
-    install = " ".join(str(s.get("run", "")) for s in one["steps"])
-    assert '"duckdb<2"' in install and "[analysis,dev,columnar]" in install, "the 1.x job must install the columnar extra and hold duckdb to <2"
-    assert "startswith('1.')" in install, "the 1.x job must check that it got a 1.x release, or a resolver change would turn it into a second copy of the 2.x job"
-    assert one.get("if") in ("github.event_name != 'schedule'", "github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'"), (
-        "the 1.x job must run on every PR like the columnar job, but a docs-only one (R462; the skip guard counts only that condition)"
+    assert "columnar" in jobs, "ci.yml lost the columnar job"
+    job = jobs["columnar"]
+    newest, one_x = _columnar_halves()
+    install = " ".join(str(s.get("run", "")) for s in one_x)
+    assert '"duckdb<2"' in install and "[analysis,dev,columnar]" in install, "the 1.x environment must install the columnar extra and hold duckdb to <2"
+    assert 'python -m venv "$RUNNER_TEMP/duckdb1"' in install, "the 1.x environment must be a venv of its own, not an upgrade of the newest one"
+    assert "startswith('1.')" in install, "the 1.x environment must check that it got a 1.x release, or a resolver change would turn it into a second copy of the 2.x run"
+    assert job.get("if") in ("github.event_name != 'schedule'", "github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'"), (
+        "the columnar job must run on every PR but a docs-only one (R462; the skip guard counts only that condition)"
     )
-    assert not one.get("continue-on-error"), "the 1.x job is a blocking job"
-    mine = _first_pytest_step_files(one)
-    theirs = _first_pytest_step_files(jobs["columnar"])
-    assert mine, "the 1.x job names no test files"
+    assert not job.get("continue-on-error"), "the columnar job is a blocking job"
+    assert not any(s.get("continue-on-error") or s.get("if") for s in one_x), "the 1.x steps are blocking, unconditional steps"
+    pytest_steps = [s for s in one_x if "-m pytest" in str(s.get("run", ""))]
+    assert pytest_steps and all('. "$RUNNER_TEMP/duckdb1/bin/activate"' in str(s["run"]) for s in pytest_steps), (
+        "every 1.x pytest step must run in the 1.x venv (activated in the step: each step is a new shell)"
+    )
+    mine = _first_pytest_step_files(one_x)
+    theirs = _first_pytest_step_files(newest)
+    assert mine, "the 1.x environment names no test files"
     assert len(set(mine)) == len(mine) and len(set(theirs)) == len(theirs), "a file is named twice in one list"
     assert set(mine) == set(theirs), (
-        "the DuckDB 1.x job and the columnar job run different files: "
-        f"only in 1.x: {sorted(set(mine) - set(theirs))}; only in columnar: {sorted(set(theirs) - set(mine))}"
+        "the DuckDB 1.x environment and the newest one run different files: "
+        f"only in 1.x: {sorted(set(mine) - set(theirs))}; only in the newest: {sorted(set(theirs) - set(mine))}"
     )
 
 
-def test_the_columnar_job_installs_the_newest_duckdb_so_the_two_jobs_are_two_lines():
-    install = " ".join(str(s.get("run", "")) for s in _jobs()["columnar"]["steps"])
+def test_the_columnar_job_installs_the_newest_duckdb_first_so_the_two_environments_are_two_lines():
+    newest, _ = _columnar_halves()
+    install = " ".join(str(s.get("run", "")) for s in newest)
     assert "[analysis,dev,columnar]" in install
     assert "duckdb<" not in install and "duckdb==" not in install, (
-        "the columnar job must resolve the newest duckdb the floor admits; pinning it would leave two jobs on the same line"
+        "the first environment must resolve the newest duckdb the floor admits; pinning it would leave both environments on the same line"
     )
+    assert "activate" not in install, "the first environment is the job's own interpreter, not a venv"
 
 
 def test_pyproject_still_has_no_duckdb_ceiling_for_the_1x_leg_to_matter():
@@ -199,3 +223,25 @@ def test_the_count_ratcheted_dev_tools_are_pinned_to_one_release(tool):
     pins = re.findall(rf'^\s*"{tool}([<>=!~][^"]*)"', text, flags=re.MULTILINE)
     assert len(pins) == 1, f"pyproject.toml must name {tool} exactly once, found {pins}"
     assert re.fullmatch(r"==[0-9]+(\.[0-9]+)+", pins[0]), f"{tool} must be an exact == pin so its count ratchet is true by construction, found {pins[0]!r}"
+
+
+# ------------------------------------------------------------------------------------- the urllib3 floor run
+def test_the_urllib3_floor_run_installs_the_floor_in_its_own_venv_and_tests_there():
+    """The floor run lives in the ``crypto`` job's second environment since PR #1988 (it was the ``urllib3-floor`` job). A pytest step that
+    lost its ``activate`` line would run on the job's own interpreter, the newest urllib3, and pass while reading nothing on the floor."""
+    entry = next(a for a in R.load_registry() if a["id"] == "urllib3-log-shapes")
+    floor = str(entry["pin"]["floor"])
+    steps = _jobs()["crypto"]["steps"]
+    names = [str(s.get("name") or "") for s in steps]
+    install_name = "Install (core + dev), then force the urllib3 floor release"
+    assert names.count(install_name) == 1, f"the crypto job must install the urllib3 floor environment in one step named {install_name!r}"
+    at = names.index(install_name)
+    install = str(steps[at].get("run", ""))
+    assert 'python -m venv "$RUNNER_TEMP/urllib3-floor"' in install and '. "$RUNNER_TEMP/urllib3-floor/bin/activate"' in install
+    assert f'"urllib3=={floor}"' in install, f"the floor environment must force urllib3 {floor}, the registry's floor"
+    tests = [s for s in steps[at + 1:] if "-m pytest" in str(s.get("run", ""))]
+    assert tests and all('. "$RUNNER_TEMP/urllib3-floor/bin/activate"' in str(s["run"]) for s in tests), (
+        "every pytest step after the floor install must run in the floor venv"
+    )
+    assert any("tests/test_urllib3_log_withholds_the_path.py" in str(s["run"]) for s in tests), "the floor run must run the log-table test"
+    assert not any(s.get("continue-on-error") or s.get("if") for s in steps[at:]), "the floor steps are blocking, unconditional steps"

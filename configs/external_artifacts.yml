@@ -561,8 +561,8 @@ artifacts:
       through it; but the table is what lets a KNOWN line keep its host and status, so a release that changes what it logs is read
       before it is allowed. tests/test_urllib3_log_withholds_the_path.py compares the table with the installed release's source (a
       new call, a changed argument or keyword, a second call with one template, a dropped call, a logger it does not cover however
-      it is bound each fail by name) and drives the real library against a loopback socket; the CI job urllib3-floor runs it on the
-      floor release and the test job on the newest the range admits. pyproject.toml carries the range and the ceiling (the first
+      it is bound each fail by name) and drives the real library against a loopback socket; the CI job crypto runs it on the
+      floor release (in its own venv; a job of its own, urllib3-floor, until PR #1988) and the test job on the newest the range admits. pyproject.toml carries the range and the ceiling (the first
       release NOT read, patch releases included).
     upstream: https://pypi.org/project/urllib3/ (https://github.com/urllib3/urllib3)
     check_upstream: "pypi.org/pypi/urllib3/json - compare info.version; 2.8.0 was the newest on 2026-10-16 and is read (it is what pip resolves inside the range); requirements.lock pins 2.7.0, the floor"
@@ -579,8 +579,8 @@ artifacts:
     couplings:
       - "pyproject.toml dependencies urllib3 carries the same floor and a ceiling below the first release not read"
       - "src/ingest/urllib3_log.py SHAPES and LOGGERS equal the installed release's log calls and loggers (test-enforced)"
-      - "requirements.lock pins a release inside the range (2.7.0 today, the floor; the urllib3-floor CI job runs the table test on it)"
-      - ".github/workflows/ci.yml urllib3-floor installs the floor release (2.7.0) and runs the table test"
+      - "requirements.lock pins a release inside the range (2.7.0 today, the floor; the crypto CI job's urllib3 floor venv runs the table test on it)"
+      - ".github/workflows/ci.yml crypto job, its urllib3 floor venv, installs the floor release (2.7.0) and runs the table test"
     last_verified: "2026-10-16"
 
   - id: trafilatura-floor
@@ -1346,14 +1346,14 @@ artifacts:
     couplings:
       - "pyproject.toml [project.optional-dependencies] columnar duckdb>= must equal floor"
       - "the on-disk store format is version-bound; on mismatch the disposable store is rebuilt"
-      - "ci.yml runs the columnar test files twice: the `columnar` job installs the newest duckdb (2.0.0 on 2026-11-05) and `columnar-duckdb1` installs duckdb<2 (1.5.6), so both lines the floor admits are exercised; tests/test_version_floor_legs.py keeps the two file lists equal and the 1.x job on the 1.x line. The 29 files passed on 1.5.6 on 2026-11-05 (472 tests and 2 skips, each of which names its reason; the one failure of a first run was a venv without vaderSentiment, which fails the same way on 2.0.0). The floor itself is not changed and not re-verified here."
+      - "ci.yml runs the columnar test files twice: the `columnar` job installs the newest duckdb (2.0.0 on 2026-11-05) and then, in a second venv, duckdb<2 (1.5.6; the job `columnar-duckdb1` until PR #1988), so both lines the floor admits are exercised; tests/test_version_floor_legs.py keeps the two file lists equal and the 1.x job on the 1.x line. The 29 files passed on 1.5.6 on 2026-11-05 (472 tests and 2 skips, each of which names its reason; the one failure of a first run was a venv without vaderSentiment, which fails the same way on 2.0.0). The floor itself is not changed and not re-verified here."
     # Re-verified 2026-11-08 at duckdb 2.0.0 (freshness issue #1163), a MAJOR bump, read before it
     # was accepted. What was checked, and what was not:
     #   * LIVE half: main's `columnar` CI job already resolves duckdb>=1.4 to 2.0.0 (run
     #     42463055993, 2026-11-08: duckdb-2.0.0 wheel installed, the 29 columnar files 471 passed
     #     and 3 skipped, each skip naming its reason). The same 29 files ran here on 2.0.0: 471
     #     passed and 3 skipped once vaderSentiment was installed (the one failure without it is
-    #     the venv, as recorded in couplings below). `columnar-duckdb1` keeps 1.5.6 exercised.
+    #     the venv, as recorded in couplings below). `columnar-duckdb1` (since PR #1988 the 1.x venv of `columnar`) keeps 1.5.6 exercised.
     #   * THE ENCRYPTED STORE: the same CI job's CI-only httpfs trust path installed the REAL
     #     httpfs for 2.0.0 and test_ci_encrypted_persisted_round_trip passed (1 passed), so v2
     #     does not break the persisted encrypted columnar store. That in-lane checksum is NOT a

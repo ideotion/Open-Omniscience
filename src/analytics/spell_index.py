@@ -151,16 +151,16 @@ def build(ctx=None, *, session_factory=None) -> dict:
     if ctx is not None:
         ctx.set_progress(done=0, total=total, detail="Building the did-you-mean table")
     with session_factory() as s:
-        s.execute(text(f"DROP TABLE IF EXISTS {_BUILD}"))  # nosec B608 - constant table name
+        s.execute(text(f"DROP TABLE IF EXISTS {_BUILD}"))  # constant table name
         s.execute(text(
-            f"CREATE TABLE {_BUILD} (term_delete VARCHAR(64) NOT NULL, "  # nosec B608 - constant table name
+            f"CREATE TABLE {_BUILD} (term_delete VARCHAR(64) NOT NULL, "  # constant table name
             "keyword_id INTEGER NOT NULL, PRIMARY KEY (term_delete, keyword_id)) WITHOUT ROWID"
         ))
     rows = 0
     for start in range(0, total, _CHUNK):
         if ctx is not None and ctx.stopping:
             with session_factory() as s:
-                s.execute(text(f"DROP TABLE IF EXISTS {_BUILD}"))  # nosec B608 - constant table name
+                s.execute(text(f"DROP TABLE IF EXISTS {_BUILD}"))  # constant table name
             return {"state": "cancelled", "keywords": start, "rows": rows}
         batch: list[dict] = []
         for kid, term in vocab[start:start + _CHUNK]:
@@ -168,16 +168,16 @@ def build(ctx=None, *, session_factory=None) -> dict:
                 batch.append({"d": d[:64], "k": kid})
         with session_factory() as s:
             s.execute(
-                text(f"INSERT OR IGNORE INTO {_BUILD} (term_delete, keyword_id) VALUES (:d, :k)"),  # nosec B608 - constant table name
+                text(f"INSERT OR IGNORE INTO {_BUILD} (term_delete, keyword_id) VALUES (:d, :k)"),  # constant table name
                 batch,
             )
         rows += len(batch)
         if ctx is not None:
             ctx.set_progress(done=min(total, start + _CHUNK), total=total)
     with session_factory() as s:
-        s.execute(text(f"DROP TABLE IF EXISTS {_TABLE}"))  # nosec B608 - constant table name
-        s.execute(text(f"ALTER TABLE {_BUILD} RENAME TO {_TABLE}"))  # nosec B608 - constant table names
-        stored = int(s.execute(text(f"SELECT COUNT(*) FROM {_TABLE}")).scalar() or 0)  # nosec B608 - constant table name
+        s.execute(text(f"DROP TABLE IF EXISTS {_TABLE}"))  # constant table name
+        s.execute(text(f"ALTER TABLE {_BUILD} RENAME TO {_TABLE}"))  # constant table names
+        stored = int(s.execute(text(f"SELECT COUNT(*) FROM {_TABLE}")).scalar() or 0)  # nosec B608 # constant table name
         size = _table_bytes(s)
     seconds = round(time.monotonic() - t0, 2)
     meta = {
@@ -248,7 +248,7 @@ def suggest(session, word: str) -> list[dict]:
             marks = ", ".join(f":p{j}" for j in range(len(chunk)))
             for kid, term in session.execute(
                 text(
-                    "SELECT DISTINCT k.id, k.normalized_term FROM spell_deletes d "  # nosec B608 - only generated :pN placeholders are interpolated
+                    "SELECT DISTINCT k.id, k.normalized_term FROM spell_deletes d "  # nosec B608 # only generated :pN placeholders are interpolated
                     f"JOIN keywords k ON k.id = d.keyword_id WHERE d.term_delete IN ({marks})"
                 ),
                 params,
@@ -271,7 +271,7 @@ def suggest(session, word: str) -> list[dict]:
         marks = ", ".join(f":i{j}" for j in range(len(id_chunk)))
         for kid, n in session.execute(
             text(
-                "SELECT keyword_id, COUNT(*) FROM keyword_mentions "  # nosec B608 - only generated :iN placeholders are interpolated
+                "SELECT keyword_id, COUNT(*) FROM keyword_mentions "  # nosec B608 # only generated :iN placeholders are interpolated
                 f"WHERE keyword_id IN ({marks}) GROUP BY keyword_id"
             ),
             id_params,

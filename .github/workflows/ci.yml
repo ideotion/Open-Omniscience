@@ -70,7 +70,14 @@ jobs:
       - name: SAST (bandit, medium+ severity)
         run: |
           python -m pip install bandit==1.9.4  # pinned: unpinned SAST drift reddens PRs with no code change
-          bandit -r src/ -ll -q
+          # Bandit warns "nosec encountered (Bnnn), but no failed test" for a marker on an f-string line even when
+          # the marker does suppress an issue (one line per string part, about 435 of them). Only that warning class
+          # is held back, and counted; every other line and the exit code pass through unchanged (OPEN_QUEUE 24).
+          rc=0
+          bandit -r src/ -ll -q 2> "$RUNNER_TEMP/bandit.err" || rc=$?
+          grep -v -E 'WARNING[[:space:]]+nosec encountered \(B[0-9]+\), but no failed test on file ' "$RUNNER_TEMP/bandit.err" >&2 || true
+          echo "bandit: $(grep -c -E 'WARNING[[:space:]]+nosec encountered \(B[0-9]+\), but no failed test on file ' "$RUNNER_TEMP/bandit.err" || true) 'nosec encountered, but no failed test' warnings not shown"
+          exit "$rc"
       - name: Dependency audit (pip-audit)
         run: |
           python -m pip install pip-audit==2.10.1  # pinned (OO-D15-004): an unpinned audit tool can redden PRs through no code change, exactly like bandit/mypy
@@ -157,7 +164,7 @@ jobs:
   # of it and Core-only. Each leg now runs a third of the test FILES, chosen by scripts/ci_shard.py from the measured cost table
   # configs/ci_shard_costs.json (longest file first to the least-loaded shard; a file the table does not name goes to crc32(path) % 3 + 1, so a new test
   # file needs no edit anywhere), and the leg's list is handed to pytest as `@FILE`. The static steps (lint, the planned-work index, the i18n gates, the
-  # migration check, mypy, bandit, pip-audit) are the `static` job below since R668, so every leg runs only the suite; overhead_seconds stays 80 on purpose (a 0 re-deals the files, and the first run on that deal exposed two order-dependent tests: kept apart, R668 follow-up).
+  # migration check, mypy, bandit, pip-audit) are the `static` job below since R668, so every leg runs only the suite, and the table's overhead_seconds is empty (the 80 for leg 1 went once R674, PR #1943, made the two tests a re-deal had exposed independent of their neighbours).
   #
   # THE REQUIRED CHECK IS NOT A LEG. The check named `test` (branch protection requires it by that name) is the `test-all` job below, which is green only if
   # every leg is. The legs are named "Test (shard N of 3)"; do not name one `test`. tests/test_ci_shards.py pins the pairing, the leg list (1..3, the
@@ -311,10 +318,10 @@ jobs:
   # was the run's critical path by their length: on run 42944433508 (PR #1928) leg 1 took 20.9 min against 18.3 and 17.5 for legs 2 and 3, of which
   # about 1.8 min were these steps (planned-work index 41 s, mypy 32 s, bandit 27 s, pip-audit 8 s, the lints, the i18n gates and the migration check).
   # Here they run beside the legs on their own runner, from the same install line, so mypy sees the same libraries and pip-audit audits the same
-  # environment as before. The table's overhead_seconds for leg 1 STAYS 80, so the files keep the deal every green run so far was measured on: setting
-  # it to 0 re-dealt them, and that run's Core-only legs 1 and 2 each failed one test that passes alone (tests/test_launcher_signals.py's teardown
-  # wait; tests/test_windowed_group_counts.py's app-engine checkpoint, which shares the process's engine with its neighbours). Re-dealing is a
-  # separate change that fixes those first. Every step here still blocks: the
+  # environment as before. Setting the table's overhead_seconds for leg 1 from 80 to 0 re-dealt the files, and that first run's Core-only legs 1 and 2
+  # each failed one test that passes alone (tests/test_launcher_signals.py's teardown wait, a real launcher race; tests/test_windowed_group_counts.py's
+  # app-engine checkpoint, which shared the process's engine with its neighbours). R674 (PR #1943) fixed both, and the re-deal followed in its own
+  # PR. Every step here still blocks: the
   # required check `test` (the `test-all` job below) needs this job and fails unless it is `success`. tests/test_ci_shards.py pins the wiring.
   static:
     if: github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'
@@ -576,7 +583,14 @@ jobs:
       - name: SAST (bandit, medium+ severity)
         run: |
           python -m pip install bandit==1.9.4  # pinned: unpinned SAST drift reddens PRs with no code change
-          bandit -r src/ -ll -q
+          # Bandit warns "nosec encountered (Bnnn), but no failed test" for a marker on an f-string line even when
+          # the marker does suppress an issue (one line per string part, about 435 of them). Only that warning class
+          # is held back, and counted; every other line and the exit code pass through unchanged (OPEN_QUEUE 24).
+          rc=0
+          bandit -r src/ -ll -q 2> "$RUNNER_TEMP/bandit.err" || rc=$?
+          grep -v -E 'WARNING[[:space:]]+nosec encountered \(B[0-9]+\), but no failed test on file ' "$RUNNER_TEMP/bandit.err" >&2 || true
+          echo "bandit: $(grep -c -E 'WARNING[[:space:]]+nosec encountered \(B[0-9]+\), but no failed test on file ' "$RUNNER_TEMP/bandit.err" || true) 'nosec encountered, but no failed test' warnings not shown"
+          exit "$rc"
 
       - name: Dependency audit (pip-audit)
         run: |
@@ -732,6 +746,25 @@ jobs:
             tests/test_annotations.py \
             tests/test_dependency_ceilings.py
 
+      # THE urllib3 LOG TABLE ON THE FLOOR RELEASE, in a second environment of this job (folded in from the former `urllib3-floor` job on
+      # 2026-11-14, PR #1988, so a run takes one runner fewer). The table of urllib3 log calls (src/ingest/urllib3_log.py) was read from two
+      # releases, and the `test` job resolves the newest one the pyproject range admits, so the OLDEST is exercised here: "verified on 2.7.0"
+      # is a sentence that nothing else keeps true. Core + dev only, then the floor release forced, in its own venv so the [pqc] install
+      # above neither helps nor hides anything. After the steps above, so a red step there stops these: fix it and the next run reads them.
+      - name: Install (core + dev), then force the urllib3 floor release
+        run: |
+          python -m venv "$RUNNER_TEMP/urllib3-floor"
+          . "$RUNNER_TEMP/urllib3-floor/bin/activate"
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install --no-deps "urllib3==2.7.0"
+          python -c "import urllib3; print('urllib3', urllib3.__version__)"
+
+      - name: Test (the urllib3 log-shape table against the floor release)
+        run: |
+          . "$RUNNER_TEMP/urllib3-floor/bin/activate"
+          python -m pytest -q tests/test_urllib3_log_withholds_the_path.py tests/test_external_freshness.py
+
   # ----------------------------------------------------------------------- #
   # Columnar derived store (DuckDB): the [columnar] extra is NOT in the main
   # test lane, so the D2/D3 rollup + D1 loader tests skip there (duckdb absent).
@@ -792,36 +825,26 @@ jobs:
           OO_CI_INSTALL_HTTPFS: "1"
         run: python -m pytest -q tests/test_columnar_httpfs_loader.py -k ci_encrypted_persisted_round_trip
 
-  # ----------------------------------------------------------------------- #
-  # The same columnar files on DuckDB 1.x. pyproject says `duckdb>=1.4` with no ceiling, so the job above installs the newest release
-  # (2.0.0 on 2026-11-05) and no lane ran the 1.x line that the floor admits: the join-plan assertion in test_top_terms_pre_aggregate reads
-  # a profile shape that 1.x and 2.x write differently, and a regression on either side was invisible to the other (R392, R412). This job
-  # installs `duckdb<2` (1.5.6 on 2026-11-05) and runs the SAME file list; tests/test_version_floor_legs.py fails if the two lists
-  # differ, or if this job stops pinning the 1.x line. No httpfs step: the persisted-encrypted round trip needs the network and stays in
-  # the job above. The floor of the registry entry duckdb-crypto-extension stays equal to pyproject's `duckdb>=` (test-enforced).
-  # ----------------------------------------------------------------------- #
-  columnar-duckdb1:
-    if: github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'
-    needs: [changes]
-    runs-on: ubuntu-latest
-    name: Columnar store on DuckDB 1.x
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Python 3.13
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.13"
-
+      # THE SAME FILES ON DUCKDB 1.x, in a second environment of this job (folded in from the former `columnar-duckdb1` job on 2026-11-14,
+      # PR #1988, so a run takes one runner fewer: CI's wall time was set by runners waiting for a free slot, not by the tests). pyproject says
+      # `duckdb>=1.4` with no ceiling, so the steps above install the newest release (2.0.0 on 2026-11-05) and nothing else would run the 1.x
+      # line that the floor admits: the join-plan assertion in test_top_terms_pre_aggregate reads a profile shape that 1.x and 2.x write
+      # differently, and a regression on either side was invisible to the other (R392, R412). These steps install `duckdb<2` (1.5.6 on
+      # 2026-11-05) into their own venv and run the SAME file list; tests/test_version_floor_legs.py fails if the two lists differ, or if these
+      # steps stop pinning the 1.x line. No httpfs step here: the persisted-encrypted round trip needs the network and runs once, above. The
+      # floor of the registry entry duckdb-crypto-extension stays equal to pyproject's `duckdb>=` (test-enforced). They run after the steps
+      # above, so a red step there stops them: fix it and the next run reads the 1.x line again.
       - name: Install (core + analysis + dev + columnar), with DuckDB held to the 1.x line
         run: |
+          python -m venv "$RUNNER_TEMP/duckdb1"
+          . "$RUNNER_TEMP/duckdb1/bin/activate"
           python -m pip install --upgrade pip
           python -m pip install -e ".[analysis,dev,columnar]" "duckdb<2"
           python -c "import sys, duckdb; print('duckdb', duckdb.__version__); sys.exit(0 if duckdb.__version__.startswith('1.') else 1)"
 
       - name: Columnar rollup + D1 loader on DuckDB 1.x (in-memory + fixture verify)
         run: |
+          . "$RUNNER_TEMP/duckdb1/bin/activate"
           python -m pytest -q \
             tests/test_columnar_engine.py tests/test_columnar_readmodel.py \
             tests/test_keyword_daily_rollup.py tests/test_source_coverage_rollup.py \
@@ -988,32 +1011,6 @@ jobs:
           tests/test_poisoned_connection.py tests/test_database_verify_pages.py tests/test_sqlcipher_engine_compat.py
           tests/test_database_damage.py tests/test_damage_reread.py tests/test_database_verify.py
           tests/test_salvage.py tests/test_repair.py tests/test_bundle_damaged_read.py tests/test_stand_in_rows.py
-
-  # The table of urllib3 log calls (src/ingest/urllib3_log.py) was read from two releases, and the `test` job resolves the newest one the
-  # pyproject range admits, so the OLDEST is exercised here: "verified on 2.7.0" is a sentence that nothing else keeps true.
-  urllib3-floor:
-    if: github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'
-    needs: [changes]
-    runs-on: ubuntu-latest
-    name: urllib3 log table (floor release)
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Python 3.13
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.13"
-
-      - name: Install (core + dev), then force the floor release
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
-          python -m pip install --no-deps "urllib3==2.7.0"
-          python -c "import urllib3; print('urllib3', urllib3.__version__)"
-
-      - name: Test (the log-shape table against the floor release)
-        run: python -m pytest -q tests/test_urllib3_log_withholds_the_path.py tests/test_external_freshness.py
 
   # A pinned lock file must INSTALL from a clean environment against public PyPI --
   # not just "the developer's existing venv still works" (audit finding OO-03:

@@ -165,9 +165,9 @@ def read_plan(con) -> Plan:
             missing.append(f"{table}.{column}")
             continue
         if table not in tables:
-            tables[table] = con.execute(f"SELECT COUNT(*) FROM {_q(table)}").fetchone()[0]  # noqa: S608  # nosec B608 - `_q` quotes a name from the module's own column registry, never input
+            tables[table] = con.execute(f"SELECT COUNT(*) FROM {_q(table)}").fetchone()[0]  # noqa: S608  # nosec B608 # `_q` quotes a name from the module's own column registry, never input
         plan = ColumnPlan(table, column)
-        for value, n in con.execute(f"SELECT {_q(column)}, COUNT(*) FROM {_q(table)} GROUP BY {_q(column)}").fetchall():  # noqa: S608  # nosec B608 - as above
+        for value, n in con.execute(f"SELECT {_q(column)}, COUNT(*) FROM {_q(table)} GROUP BY {_q(column)}").fetchall():  # noqa: S608  # nosec B608 # as above
             if value is None:
                 plan.nulls = n
                 continue
@@ -221,7 +221,7 @@ def find_collisions(con, plan: Plan) -> list[dict]:
             mapped = f"COALESCE({', '.join(mapped_parts)}, {_q(cp.column)})"
             sel_others = "".join(f", {_q(c)}" for c in others)
             sql = (
-                f"SELECT {mapped} AS mapped{sel_others}, COUNT(*) FROM {_q(cp.table)} "  # noqa: S608  # nosec B608 - identifiers come from the model metadata; every value is bound
+                f"SELECT {mapped} AS mapped{sel_others}, COUNT(*) FROM {_q(cp.table)} "  # noqa: S608  # nosec B608 # identifiers come from the model metadata; every value is bound
                 f"GROUP BY mapped{sel_others} HAVING COUNT(*) > 1"
             )
             for row in con.execute(sql, params).fetchall():
@@ -282,7 +282,7 @@ def _tables_with_rows(con) -> dict[str, int]:
     out: dict[str, int] = {}
     for name in names:
         try:
-            out[name] = con.execute(f"SELECT COUNT(*) FROM {_q(name)}").fetchone()[0]  # noqa: S608  # nosec B608 - a name read from sqlite_master and checked by _q
+            out[name] = con.execute(f"SELECT COUNT(*) FROM {_q(name)}").fetchone()[0]  # noqa: S608  # nosec B608 # a name read from sqlite_master and checked by _q
         except Exception as exc:  # noqa: BLE001 - a shadow table of a module this build lacks is not a copy failure
             _LOG.debug("could not count %s (%s)", name, type(exc).__name__)
     return out
@@ -445,7 +445,7 @@ def _sweep_window(con, cp: ColumnPlan, lo: int, hi: int) -> int:
         for v, t in chunk:
             params += [v, t]
         sql = (
-            f"UPDATE {_q(cp.table)} SET {_q(cp.column)} = {_case_sql(cp.column, len(chunk))} "  # noqa: S608  # nosec B608 - identifiers come from the model metadata; every value is bound
+            f"UPDATE {_q(cp.table)} SET {_q(cp.column)} = {_case_sql(cp.column, len(chunk))} "  # noqa: S608  # nosec B608 # identifiers come from the model metadata; every value is bound
             f"WHERE rowid > ? AND rowid <= ? AND {_q(cp.column)} IN ({', '.join('?' for _ in chunk)})"
         )
         params += [lo, hi] + [v for v, _t in chunk]
@@ -454,7 +454,7 @@ def _sweep_window(con, cp: ColumnPlan, lo: int, hi: int) -> int:
 
 
 def _rowid_span(con, table: str) -> tuple[int, int] | None:
-    lo, hi = con.execute(f"SELECT MIN(rowid), MAX(rowid) FROM {_q(table)}").fetchone()  # noqa: S608  # nosec B608 - a table name from the model metadata
+    lo, hi = con.execute(f"SELECT MIN(rowid), MAX(rowid) FROM {_q(table)}").fetchone()  # noqa: S608  # nosec B608 # a table name from the model metadata
     return None if lo is None else (lo, hi)
 
 
