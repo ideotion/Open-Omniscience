@@ -152,15 +152,25 @@ def stall_decision(
 
 
 def _psutil_readings() -> dict:
-    """Direct psutil readings for between-pass polls. All None on any error —
-    a missing reading must never trip (or hold) the guard."""
-    out: dict = {"rss_mb": None, "mem_avail_mb": None, "mem_total_mb": None}
+    """Direct readings for between-pass polls: RSS from psutil, total and available memory from psutil bounded by any cgroup
+    limit (``mem_from`` names which figure each is). All None on any error — a missing reading must never trip (or hold) the guard."""
+    out: dict = {"rss_mb": None, "mem_avail_mb": None, "mem_total_mb": None, "mem_from": None}
+    try:
+        # Bounded by the cgroup memory limit this process runs under (R302): inside a container the kernel kills at that limit while
+        # psutil still reports the host's memory, so a guard reading the host alone would never trip there.
+        from src.config.cgroup_memory import effective_memory
+
+        mem = effective_memory()
+        if mem["available_mb"] is not None:
+            out["mem_avail_mb"] = round(mem["available_mb"], 1)
+        if mem["total_mb"] is not None:
+            out["mem_total_mb"] = round(mem["total_mb"], 1)
+        out["mem_from"] = {"total": mem["total_from"], "available": mem["available_from"]}
+    except Exception:  # noqa: BLE001 - readings are best-effort
+        pass
     try:
         import psutil
 
-        vm = psutil.virtual_memory()
-        out["mem_avail_mb"] = round(vm.available / (1024 * 1024), 1)
-        out["mem_total_mb"] = round(vm.total / (1024 * 1024), 1)
         out["rss_mb"] = round(psutil.Process().memory_info().rss / (1024 * 1024), 1)
     except Exception:  # noqa: BLE001 - readings are best-effort
         pass

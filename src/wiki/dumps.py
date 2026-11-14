@@ -567,7 +567,11 @@ class DumpDownloadManager:
         if data is None:
             return False
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(data)
+        # Atomic (audit P15, as src/geo/osm_downloads.py): through the one owner of atomic writes, so a crash mid-write leaves no file at the name a
+        # later start would resume from, and no half dump under its real name.
+        from src.safety.file_lock import atomic_replace
+
+        atomic_replace(dest, data)
         entry.total_bytes = len(data)
         entry.downloaded_bytes = len(data)
         entry.status = "done"

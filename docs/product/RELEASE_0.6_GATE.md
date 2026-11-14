@@ -78,6 +78,18 @@ source, licence, last fetch, gaps and parse diagnostics shown per series. A re-f
 owed for this half: a run against the REAL hosts (the sandbox's egress refuses most of them, so it is the maintainer's
 run), and the AR6 and Open-Meteo lanes. The elections calendar and the statistics directory are untouched.
 
+**Progress 2026-11-13, second PR (R675): the rest of the row that needs no live fetch; the row stays OPEN.**
+Open-Meteo: Climate → Your place compares a window with the 1991–2020 baseline for a typed place, which is rounded to
+0.1 degree before it is sent, asked for through the ONE consent and kept only in the encrypted store (R675; the
+`SECURITY.md` Weather row). AR6 was already shipped. Elections: the app now reads the Wikidata snapshot when the
+operator's run has written one and says so when it has not; a stated election that has gone by reads as **passed** and
+is never rolled forward a year (the US 2026 midterm had been shown as scheduled for 2027-11-03); and the coverage
+report artifact is `docs/product/elections_coverage_2026-11-13.md` (`scripts/elections_coverage_report.py`): 140
+floor countries, 7 window, 3 passed, 8 dateless, 122 missing, curated list only. Statistics directory: `GET
+/api/stats/agencies` now states `directory_progress` — 29 listed, 0 news pages confirmed, about 152 planned — with
+nothing added from memory. Still owed: the Wikidata networked run, the networked directory build and the real-host
+climate run, all the operator's.
+
 ### Row B — OSM change tracking and the trend surfaces · ruled (Q106, Q812 🔒, Q813, Q815, Q816, Q824) · OPEN
 
 **What it must demonstrate.** Geofabrik daily diffs per selected extract applied to the ingested classes; if
@@ -93,6 +105,17 @@ the online consent, the per-country cost shown before selection (Q824). Every tr
 diff (the diff's timestamp as the artifact), the re-baseline path is exercised on the fixture, the ranked table
 is canonical beside every choropleth (Chromium-verified + click-through), and the measured daily diff cost for
 one country is recorded. **Operator:** the daily apply on a real selection. Brief `S06-01`.
+
+**Session evidence, 2026-11-13 (Lane L, on fixtures; the row stays OPEN for the operator's two items).** Built on main by PRs #1712, #1718,
+#1720, #1725, #1728, #1730, #1735, #1736, #1738. A Chromium walk at 1400 px and 375 px on a fixture lane (the synthetic extract re-keyed to
+LU, three daily files and one re-baseline; seed and walk scripts in the project's shared folder, `osm-lane/walk-2026-11-13/`) showed:
+the day-over-day change from the file dated 2025-01-12 (one place marked closed, one `disused:*` key added, one website gained) on the
+trends surface; the re-baseline as a named stretch «not observed between 2025-01-12 and 2025-07-29»; the ranked table under the
+choropleth for every measure and both levels; Luxembourg filled on Equal Earth; no request leaving the loopback. The walk found four
+defects, fixed in the same PR: an all-zero count drew as tall sparse bars (`ooChart`); the screen-reader table under a chart labelled two
+days of one month alike; the four OSM panels carried no © OpenStreetMap contributors · ODbL 1.0 line; the «changed» map measure did not
+say when its window starts. **Still open (operator):** a real day-over-day change on a real selection, and the measured daily diff cost
+for one country.
 
 ### Row C — Laws: breadth to the coverage floor · ruled (R15; Q107, Q911, Q912, Q913, Q930, Q1146, Q902) · OPEN
 

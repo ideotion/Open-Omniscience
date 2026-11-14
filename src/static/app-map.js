@@ -1056,6 +1056,20 @@
       try {
         const d = await api("/api/wiki/lane/places");
         _wikiLayerCache = (d && d.measured === true) ? d : false;
+        // R17 step 4 (R678): infobox addresses located in the local OpenStreetMap index ride the same layer, each with its provenance.
+        // Their own read, so a failure here leaves the page points drawn and simply adds no squares.
+        if (_wikiLayerCache) {
+          try {
+            const a = await api("/api/wiki/lane/located-addresses?limit=20000");
+            if (a && a.measured === true && Array.isArray(a.points)) {
+              _wikiLayerCache.addresses = a.points;
+              // Partial is said, never drawn as the whole: the scan is incremental and the answer bounded.
+              _wikiLayerCache.addressesPartial = a.complete !== true || a.truncated === true || a.from_previous_read === true;
+              _wikiLayerCache.addressesRead = a.texts_read || {};
+              _wikiLayerCache.addressesHeld = a.texts_held || {};
+            }
+          } catch (_e2) { /* no squares: the scope sentence in the legend still says what is never located */ }
+        }
       } catch (_e) {
         // FALSE means "asked and could not read", which the caller renders as an
         // honest absence. NULL would mean "not asked yet" and would make it ask again
@@ -1079,8 +1093,24 @@
           : 'fill="transparent" stroke="var(--accent)" stroke-width="1"';
         const label = (pt.title || pt.external_id || "") + (pt.edition ? " (" + pt.edition + ")" : "");
         return `<circle cx="${x}" cy="${y}" r="2.4" ${paint}><title>${esc(label)}</title></circle>`;
-      }).join("");
-      return { markup, n: payload.points.length };
+      }).join("") + (Array.isArray(payload.addresses) ? payload.addresses.map(_ooWikiAddrMarker).join("") : "");
+      return { markup, n: payload.points.length + (Array.isArray(payload.addresses) ? payload.addresses.length : 0) };
+    }
+
+    // A located infobox address: a small square (an address, not a page's own coordinate), its provenance in the hover -- the page and
+    // edition, the infobox field and the address as written, the OpenStreetMap object and its extract date.
+    function _ooWikiAddrMarker(pt) {
+      if (!pt || typeof pt.lat !== "number" || typeof pt.lon !== "number") return "";
+      const sp = project(pt.lon, pt.lat);
+      const x = (+sp.x - 2).toFixed(1), y = (+sp.y - 2).toFixed(1);
+      const tfx = (typeof window !== "undefined" && window.OOI18N && window.OOI18N.tf) ? window.OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const vals = { address: pt.address || "", field: pt.field || "", page: pt.title || pt.external_id || "", edition: pt.edition || "",
+        object: pt.osm_object || "", vintage: pt.osm_vintage ? ooIsoDate(pt.osm_vintage) : "" };
+      const hover = vals.vintage
+        ? tfx("{address}, from the {field} field of {page} ({edition}). Located at OpenStreetMap {object}, extract of {vintage}.", vals)
+        : tfx("{address}, from the {field} field of {page} ({edition}). Located at OpenStreetMap {object}; the extract states no date.", vals);
+      return `<rect x="${x}" y="${y}" width="4" height="4" fill="var(--accent)" stroke="var(--bg)" stroke-width="0.4"><title>${esc(hover)}</title></rect>`;
     }
 
     // The kind chips of the legend, as their own fragment: the visible KINDS change as
@@ -1479,7 +1509,7 @@
             : t("attributed under") + " " + _ooWorldviewLabel(wv))}</span></span>` : ""}
         ${pointRows.length ? `<span class="muted">○ ${esc(t("small areas shown as points"))}</span>` : ""}
         ${opts.placesOn ? `<span class="muted">○ ${esc(t("mentioned places (deduced)"))}</span>` : ""}
-        ${opts.wikiPlaces && opts.wikiPlaces.measured ? `<span class="muted">● ${esc(t("Wikipedia page (linked to Wikidata)"))} · ○ ${esc(t("Wikipedia page (not yet linked)"))}</span>` : ""}
+        ${opts.wikiPlaces && opts.wikiPlaces.measured ? `<span class="muted">● ${esc(t("Wikipedia page (linked to Wikidata)"))} · ○ ${esc(t("Wikipedia page (not yet linked)"))} · <span title="${esc(t("Addresses outside your OpenStreetMap countries are not located."))}">■ ${esc(t("address from an infobox"))}</span>${opts.wikiPlaces.addressesPartial ? ` <span class="card-caveat">${esc(t("(partial)"))}</span>` : ""}</span>` : ""}
         ${opts.serverOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;background:#8b5cf6"></span>${esc(t("server IP location (CDN edge / anycast)"))}</span>` : ""}
         ${opts.serverOn && opts.serverMeta ? `<span class="muted" title="${esc(t("Many sources sharing one host/ASN — a shape to investigate, never a verdict."))}">${esc(opts.serverMeta)}</span>` : ""}
         ${opts.serverOn ? `<span class="muted">${esc(t("IP Geolocation by DB-IP"))} · <a href="https://db-ip.com" target="_blank" rel="noopener">db-ip.com</a> · CC BY 4.0</span>` : ""}
@@ -2269,8 +2299,9 @@
         wikiOn: _ooMapWikiOn, wikiPlaces: _ooMapWikiOn ? _ooMapWikiPlaces : null,
         onWiki: async () => {
           _ooMapWikiOn = !_ooMapWikiOn;
-          if (_ooMapWikiOn && _ooMapWikiPlaces === null) {
-            _ooMapWikiPlaces = await ooWikiPlaces();
+          // Asked again on every switch-on: a page that became a home or a person since the last read drops its square (R691).
+          if (_ooMapWikiOn) {
+            _ooMapWikiPlaces = await ooWikiPlaces(_ooMapWikiPlaces !== null);
           }
           _renderOoMapDim();
         },
@@ -3519,6 +3550,11 @@
         },
       });
     }
+    // ODbL 1.0 s. 4.3: every figure below is derived from OpenStreetMap, so each OSM panel carries the credit once, compact, at its foot.
+    function _osmCredit() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return `<div class="hint" data-osm-credit style="margin-top:6px">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">${esc(t("OpenStreetMap contributors"))}</a> · ODbL 1.0</div>`;
+    }
     function _renderOsmCompleteness() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = $("osm-comp-body"); if (!host || !_osmComp) return;
@@ -3540,6 +3576,7 @@
       host.querySelectorAll("select[data-osm-comp-key]").forEach((sel) => {
         sel.addEventListener("change", () => { _osmCompKey = sel.value; _renderOsmCompleteness(); });
       });
+      host.insertAdjacentHTML("beforeend", _osmCredit());
       for (const c of _osmComp) _osmCompDrawMap(c);
     }
     // -- Trends 2 and 3 (v0.6.0 B3a, S06-01 S3) ------------------------------------------- //
@@ -3732,7 +3769,7 @@
     }
     function _renderOsmTrends() {
       const host = $("osm-trend-body"); if (!host || !_osmTrends) return;
-      host.innerHTML = _osmTrends.map((c, i) => `<div data-osm-trend-country="${i}">${_osmTrendCountry(c, i)}</div>`).join("");
+      host.innerHTML = _osmTrends.map((c, i) => `<div data-osm-trend-country="${i}">${_osmTrendCountry(c, i)}</div>`).join("") + _osmCredit();
       // No `initial`: it would fire onSelect. The active button is in the markup.
       _osmTrendNavs = Array.prototype.map.call(host.querySelectorAll("[data-osm-trend-tabs]"), (nav) => ooSubtabs(nav, _osmTrendShowTab));
       host.querySelectorAll("select[data-osm-trend-key]").forEach((sel) => {
@@ -3957,7 +3994,7 @@
       host.innerHTML = _osmProfileDone.map((lane, i) => {
         const tabs = `<nav class="tabs" data-osm-profile-tabs>${OSM_PROFILE_TABS.map(([k, lab]) => `<button type="button" data-tab="${k}"${k === _osmProfileTab ? ' class="active"' : ""}>${esc(t(lab))}</button>`).join("")}</nav>`;
         return `<div data-osm-profile-country="${i}"><h3 class="lib-sub">${esc(_osmPickLabel(lane.alpha3, lane.name))}</h3>${tabs}<div data-osm-profile-body="${i}">${_osmProfileBody(i)}</div></div>`;
-      }).join("");
+      }).join("") + _osmCredit();
       // No `initial`: it would fire onSelect. The active button is in the markup.
       _osmProfileNavs = Array.prototype.map.call(host.querySelectorAll("[data-osm-profile-tabs]"), (nav) => ooSubtabs(nav, _osmProfileShowTab));
       if (host.getAttribute("data-bound") === "1") return;
@@ -4039,13 +4076,15 @@
       const sig = _osmGeogSigOf(); if (sig === _osmGeogSig) return;
       _osmGeogDone = done; _osmGeogDraw(done);
     }
-    function _osmGeogVintage(name, v) {
+    function _osmGeogVintage(name, v, since) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const extract = v && v.extract ? ooIsoDate(v.extract) : t("Not recorded");
       const sentence = v && v.last_diff
         ? osmCompTf("Counted from the extract of {extract}, with change files applied through {through}.", { extract, through: ooIsoDate(v.last_diff) })
         : osmCompTf("Counted from the extract of {extract}; no change file has been applied since.", { extract });
-      return `${name}: ${sentence}`;
+      // The «changed» measure counts a window, so it says where the window starts (Q814 = b: observed here, never the planet's past).
+      const window_ = since ? " " + osmCompTf("Changes observed here since {since}.", { since: ooIsoDate(since) }) : "";
+      return `${name}: ${sentence}${window_}`;
     }
     function _osmGeogShare(raw, n) { return n > 0 ? `${fmtNum(raw / n * 100, 1)} %` : "—"; }
     // The figures of the level in view: {rows: [{key, name, raw, n}], absent: [{name, why}], vintage: [sentence], note}.
@@ -4055,7 +4094,7 @@
       if (_osmGeogLevel === "countries") {
         for (const a of (_osmGeog.areas || [])) {
           const name = _osmPickLabel(a.alpha3, a.name);
-          out.vintage.push(_osmGeogVintage(name, a.vintage));
+          out.vintage.push(_osmGeogVintage(name, a.vintage, m === "changed" ? a.observed_since : null));
           const raw = (a.values || {})[m];
           if (raw == null) out.absent.push({ name, why: (a.reasons || {})[m] || "" });
           else out.rows.push({ key: (a.alpha2 || "").toLowerCase(), name, raw, n: a.n });
@@ -4143,7 +4182,7 @@
         + `<label>${esc(t("Map by"))} <select data-osm-geog="level">${levelOpts}</select></label>`
         + `<label>${esc(t("Measure"))} <select data-osm-geog="measure">${measureOpts}</select></label>`
         + `<label>${esc(t("Show"))} <select data-osm-geog="form"${_osmGeogMeasure === "places" ? " disabled" : ""}>${formOpts}</select></label></div>`
-        + `<div data-osm-geog-out></div>`;
+        + `<div data-osm-geog-out></div>` + _osmCredit();
       if (host.getAttribute("data-bound") !== "1") {
         host.setAttribute("data-bound", "1");
         // One listener for the host: the controls are rewritten with each render, so none is bound to an element inside it.

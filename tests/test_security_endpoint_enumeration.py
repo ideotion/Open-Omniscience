@@ -131,7 +131,9 @@ def _ascii_host(host: str) -> str:
 _EXTENSIONS = {".py", ".js", ".html", ".css", ".json", ".yml", ".yaml", ".sh",
                ".ps1", ".cmd", ".cfg", ".toml"}
 #: Third-party bytes we vendored. Their own licence banners are not our endpoints.
-_SKIP_PREFIXES = ("scripts/vendor/", "src/static/guis/vendor/", "src/static/fonts/")
+#: simple/vendor holds Preact and htm (invariant #34); their only URLs are XML namespace names,
+#: which tests/test_simple_mode.py pins and proves are never fetched.
+_SKIP_PREFIXES = ("scripts/vendor/", "src/static/guis/vendor/", "src/static/simple/vendor/", "src/static/fonts/")
 
 # --------------------------------------------------------------------------- #
 # Exemptions. Each states WHY, because the next reader's only defence against a
