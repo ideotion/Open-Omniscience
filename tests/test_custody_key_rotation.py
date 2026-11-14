@@ -200,13 +200,15 @@ def test_the_route_and_the_cli_name_the_rotation(tmp_path):
         r = c.post("/api/custody/verify", json={"bundle": bundle}).json()
         assert r["verified"] is False and "no endorsement" in r["issues"][0] and r["notes"] == []
         r = c.post("/api/custody/verify", json={"bundle": bundle, "accept_unendorsed_rotation": True}).json()
-        assert r["verified"] is True and "record's word" in r["notes"][1]
+        assert r["verified"] is True and "record's word" in r["notes"][1] and r["accepted_unendorsed"] is True
     p = tmp_path / "b.json"
     p.write_text(json.dumps(bundle), encoding="utf-8")
     cli = [sys.executable, str(ROOT / "scripts/verify_custody.py"), str(p)]
     assert subprocess.run(cli, capture_output=True, text=True).returncode == 1
     out = subprocess.run([*cli, "--accept-unendorsed-rotation"], capture_output=True, text=True)
-    assert out.returncode == 0 and "key rotation   : seq 3" in out.stdout
+    # R716: accepted on the record's word is exit 4 with a named warning, never a plain "verified" (exit 0).
+    assert out.returncode == 4 and "key rotation   : seq 3" in out.stdout
+    assert "UNENDORSED KEY CHANGE ACCEPTED" in out.stdout
 
 
 # --- found by the two security reads of the first version ------------------------------------------------------------

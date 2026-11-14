@@ -11,7 +11,16 @@ third party (court, editor, collaborator) can confirm a custody chain offline.
 
 Usage:
     python scripts/verify_custody.py custody_bundle.json [--pin] [--accept-unendorsed-rotation]
-Exit code 0 = verified, 1 = failed, 2 = bad arguments, 3 = verified in the older bundle format (weaker guarantee).
+Exit code 0 = verified, 1 = failed, 2 = bad arguments, 3 = verified in the older bundle format (weaker guarantee),
+4 = verified only by accepting an unendorsed key change (R716; it wins over 3).
+
+--accept-unendorsed-rotation (R716) is needed when the signing key changed and the previous key could not vouch for
+the change: keys re-created after a restore or a lost key folder, a post-quantum key re-created, or post-quantum
+signing turned off before 0.5.1 (a log from then shows entries signed with both halves, then with the Ed25519 half
+alone, with no record). Accepting it proves NOTHING about who made that change: someone holding the earlier Ed25519
+key alone, or a forger who cut the log, writes the same. The verdict then never reads as a plain "verified": the
+VERIFIED line says the change was unendorsed, and the exit code is 4. Use it only if you know, from elsewhere, why the
+key changed and which key follows.
 
 Bundle formats (R714). The app writes bundle format 2: its signed head commits to every entry's hash, so an entry
 swapped, reordered, added or removed anywhere in the bundle is refused by name. A bundle from a development build
@@ -40,7 +49,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.custody.log import scope_note, verify_export_report  # noqa: E402
+from src.custody.log import ACCEPTED_UNENDORSED_NOTE, scope_note, verify_export_report  # noqa: E402
 
 
 def main(argv: list[str]) -> int:
@@ -88,13 +97,17 @@ def main(argv: list[str]) -> int:
             print(f"key rotation   : {n}")
         # R714: an old-format bundle is never reported as equal to a new one.
         print(f"format         : {report['format_note'] or 'the signed head commits to every entry hash'}")
-    print(f"VERIFIED       : {ok}" + (" (old format: weaker guarantee)" if ok and report["format_note"] else ""))
+    unendorsed = ok and report["accepted_unendorsed"]
+    print(f"VERIFIED       : {ok}" + (" (old format: weaker guarantee)" if ok and report["format_note"] else "")
+          + (f" -- UNENDORSED KEY CHANGE ACCEPTED: {ACCEPTED_UNENDORSED_NOTE}" if unendorsed else ""))
     if issues:
         print("ISSUES:")
         for i in issues:
             print(f"  - {i}")
     if not ok:
         return 1
+    if unendorsed:
+        return 4  # R716: never a plain "verified" when an unendorsed key change was accepted
     return 3 if report["format_note"] else 0  # R714: never the same answer for the weaker format
 
 

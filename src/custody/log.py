@@ -605,7 +605,8 @@ class CustodyLog:
                 ok = False
                 issues.append(problem)
 
-        return {"verified": ok, "issues": issues, "notes": notes if ok else []}
+        return {"verified": ok, "issues": issues, "notes": notes if ok else [],
+                "accepted_unendorsed": ok and accepted_unendorsed(notes)}
 
     def close(self) -> None:
         self.conn.close()
@@ -1038,9 +1039,29 @@ def verify_export_report(
     fmt = head.get("bundle_format", 1) if ok and isinstance(head, dict) else None  # validated by _verify_export
     legacy = fmt == 1
     # R714: an old-format bundle is never reported as equal to a new one -- ``format`` and ``format_note`` say so.
+    # R716: nor is one verified only by accepting an unendorsed key change -- ``accepted_unendorsed`` says so.
     return {"verified": ok, "issues": issues, "notes": notes if ok else [],
             "format": fmt,
-            "format_note": LEGACY_FORMAT_NOTE if legacy else None}
+            "format_note": LEGACY_FORMAT_NOTE if legacy else None,
+            "accepted_unendorsed": ok and accepted_unendorsed(notes)}
+
+
+#: What every note for a key change accepted on its own word carries (an unendorsed rotation, an endorsement by the
+#: Ed25519 half alone, a post-quantum key changed with no record): ``accepted_unendorsed`` looks for these.
+_ACCEPTED_MARKS = ("accepted on the record's word", "changed with no key-rotation record", UNRECORDED_KEY_CHANGE_NOTE)
+
+
+def accepted_unendorsed(notes: list[str]) -> bool:
+    """Whether a verdict's ``notes`` include a key change accepted on its record's word (R716): then the verdict is never
+    shown as a plain "verified" -- nothing vouches for who made that change."""
+    return any(mark in n for n in notes for mark in _ACCEPTED_MARKS)
+
+
+#: Shown beside a verdict that accepted an unendorsed key change (R716).
+ACCEPTED_UNENDORSED_NOTE = (
+    "verified only by accepting an unendorsed key change: nothing vouches for who made it. It proves nothing about who "
+    "signed after it unless you already know, from elsewhere, the key that follows it"
+)
 
 
 def _verify_export(

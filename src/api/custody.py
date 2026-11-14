@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from src.api.cross_site import refuse_cross_site_get
 from src.custody.anchor import AnchorError, AnchorUnavailable, available_providers, get_provider
 from src.custody.log import (
+    ACCEPTED_UNENDORSED_NOTE,
     ROTATION_ITEM,
     CustodyAction,
     CustodyLog,
@@ -296,8 +297,11 @@ def verify_bundle(req: VerifyBundleRequest) -> dict:
     # every key rotation crossed is named in the notes.
     scope = scope_note(req.bundle, report["notes"]) if ok else None
     # R714: an old-format bundle verifies, but its weaker guarantee travels with the verdict.
+    # R716: a verdict that accepted an unendorsed key change says so beside it, never as a plain "verified".
     return {"verified": ok, "issues": report["issues"], "notes": report["notes"], "scope": scope,
-            "format": report["format"], "format_note": report["format_note"]}
+            "format": report["format"], "format_note": report["format_note"],
+            "accepted_unendorsed": report["accepted_unendorsed"],
+            "accepted_unendorsed_note": ACCEPTED_UNENDORSED_NOTE if report["accepted_unendorsed"] else None}
 
 
 class AnchorRequest(BaseModel):

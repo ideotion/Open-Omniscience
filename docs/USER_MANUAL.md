@@ -1503,6 +1503,10 @@ python scripts/verify_custody.py custody_bundle.json [--pin] [--accept-unendorse
 python scripts/verify_evidence.py bundle.json [signer_pubkey]
 ```
 
+The custody checker exits 0 when verified, 3 for the older, weaker bundle format, and 4 when it verified only
+because you passed `--accept-unendorsed-rotation`: its VERIFIED line then says the key change was unendorsed, never a
+plain "verified", since accepting it proves nothing about who made that change.
+
 The full design — and exactly what each mechanism does and does **not** prove — is
 in [`docs/USER_MANUAL.md`](USER_MANUAL.md). *(A planned overhaul to make
 this tab dummy-proof and largely automatic is captured in
