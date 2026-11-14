@@ -41,6 +41,75 @@ def test_the_panic_wipe_moves_the_swap_epoch_before_it_erases(monkeypatch):
     assert kv_store.kv_swap_epoch() > seen[0], "the epoch must move again after the wipe"
 
 
+def test_the_panic_wipe_holds_settings_writes_until_its_last_invalidate(store, monkeypatch):
+    """Second security read: a save from another thread that arrives during the wipe waits at the door, and one made from
+    state read before the wipe is refused once the hold ends, never written into a fresh store file."""
+    monkeypatch.setattr(kv_store, "KV_WRITE_WAIT_S", 10.0)
+    epoch = kv_store.kv_swap_epoch()
+    out: dict = {}
+    during: dict = {}
+
+    def _saver() -> None:
+        try:
+            kv_store.kv_set_json("followup.panic", {"v": 1}, expect_swap=epoch)
+            out["saved"] = True
+        except kv_store.KvSwapped:
+            out["refused"] = True
+        except Exception as exc:  # noqa: BLE001 - recorded by type for the assertion below
+            out["other"] = type(exc).__name__
+
+    def _erase(**_kw):
+        during["held"] = kv_store._hold_by == threading.get_ident()
+        s = threading.Thread(target=_saver)
+        s.start()
+        time.sleep(0.3)
+        during["waiting"] = s.is_alive()
+        during["thread"] = s
+        return {"files_seen": 0, "files_wiped": 0}
+
+    monkeypatch.setattr("src.safety.crypto_erase.quick_crypto_erase", _erase)
+    monkeypatch.setattr("src.ingest.activate_kill_switch", lambda *a, **k: None)
+    monkeypatch.setattr("src.api.served_cache.invalidate", lambda *a, **k: None)
+    from src.safety.panic import panic_wipe
+
+    try:
+        panic_wipe(confirm=True)
+        during["thread"].join(10)
+        assert during["held"], "the wipe ran without holding settings writes"
+        assert during["waiting"], "a save during the wipe did not wait at the door"
+        assert out == {"refused": True}, out
+        assert kv_store._hold_by is None, "the wipe left settings writes held"
+    finally:
+        _reset_hold_state()
+
+
+def test_the_panic_wipe_never_waits_on_a_hold_it_cannot_take(monkeypatch):
+    ran: list[bool] = []
+    monkeypatch.setattr("src.safety.crypto_erase.quick_crypto_erase", lambda **_kw: ran.append(True) or {"files_seen": 0})
+    monkeypatch.setattr("src.ingest.activate_kill_switch", lambda *a, **k: None)
+    monkeypatch.setattr("src.api.served_cache.invalidate", lambda *a, **k: None)
+    from src.safety.panic import panic_wipe
+
+    entered = threading.Event()
+    release = threading.Event()
+
+    def _other_holder() -> None:
+        with kv_store.hold_writes(5.0):
+            entered.set()
+            release.wait(10)
+
+    h = threading.Thread(target=_other_holder)
+    h.start()
+    try:
+        assert entered.wait(5)
+        panic_wipe(confirm=True)
+        assert ran == [True], "the wipe did not run while another hold was taken"
+    finally:
+        release.set()
+        h.join(10)
+        _reset_hold_state()
+
+
 def test_the_repair_swap_moves_the_swap_epoch_before_the_swap():
     src = (_ROOT / "src" / "database" / "repair.py").read_text(encoding="utf-8")
     swap = src.index("swap_in_corpus(finished, target, check=written_to_since)")

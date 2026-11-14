@@ -226,6 +226,7 @@ def test_a_resume_pressed_while_a_stopped_drain_ends_is_kept_unless_the_app_is_s
     queue._paused = True
     eid = queue.enqueue({"op": "summarize", "model": "m", "article_ids": ids})["entry"]["id"]
     queue._draining = True  # a stopped drain is ending
+    monkeypatch.setattr(lbq._JOB, "stop_requested", lambda: True)
     assert queue.resume()
     counts = iter([0, 1 if shutdown else 0, 1 if shutdown else 0, 1 if shutdown else 0])
     monkeypatch.setattr(lbq, "stop_all_count", lambda: next(counts, 1 if shutdown else 0))
@@ -237,6 +238,52 @@ def test_a_resume_pressed_while_a_stopped_drain_ends_is_kept_unless_the_app_is_s
         assert _wait(lambda: {e["id"]: e["state"] for e in queue.snapshot()["entries"]}[eid] == "done"), queue.snapshot()
         assert lbq._JOB.join(15)
         assert _summaries(ids[0]) == 1
+
+
+def test_a_resume_during_a_drain_that_is_not_stopping_leaves_no_mark_for_a_later_stop(queue, monkeypatch):
+    """Security read 1: a Resume pressed during a normal drain (nothing paused, a 404 to the caller) used to arm the restart, and
+    the mark then outlived the drain into a later, unrelated stop."""
+    assert queue._load()
+    queue._draining = True
+    monkeypatch.setattr(lbq._JOB, "stop_requested", lambda: False)
+    assert queue.resume() is False
+    assert queue._resumed_while_draining is False
+    queue._resumed_while_draining = True  # one armed while stopping...
+    queue.enqueue({"op": "summarize", "model": "m", "article_ids": _seed(1)})
+    assert queue._next() is not None
+    assert queue._resumed_while_draining is False, "...is spent by the next pick, so it never outlives the drain it was for"
+
+
+def test_a_model_release_stop_is_never_undone_by_a_resume_pressed_while_it_lands(queue, monkeypatch):
+    """Security read 1: a release or stop of the model waits for the run to pause; a Resume pressed meanwhile must not start the
+    queue again under the release (it would run the next entry and the model would be freed under it, or reloaded)."""
+    fake = _FakeLlm()
+    _use(monkeypatch, fake)
+    ids = _seed(1)
+    assert queue._load()
+    queue._paused = True  # nothing starts on its own: the drain below is the one the release stopped
+    eid = queue.enqueue({"op": "summarize", "model": "m", "article_ids": ids})["entry"]["id"]
+    calls = {"n": 0}
+    resumed: list[bool] = []
+
+    def _count() -> int:
+        calls["n"] += 1
+        if calls["n"] == 2:  # the drain's end: the release has stopped it, and the operator presses Resume in that instant
+            with queue._lock:
+                queue._backend_pause = True  # what pause_for_backend sets
+            resumed.append(queue.resume())
+        return 0
+
+    monkeypatch.setattr(lbq, "stop_all_count", _count)
+    monkeypatch.setattr(lbq._JOB, "stop_requested", lambda: True)
+    with queue._lock:
+        queue._draining = True
+    lbq._drain(_StoppingCtx())
+    assert calls["n"] >= 2 and queue._resumed_while_draining is False
+    assert queue._draining is False, "the drain started again under the model release"
+    assert queue.snapshot()["paused"] is True
+    assert {e["id"]: e["state"] for e in queue.snapshot()["entries"]}[eid] in ("queued", "paused")
+    assert fake.calls == [] and _summaries(ids[0]) == 0
 
 
 def test_the_streamed_bulk_route_stops_on_its_task_manager_stop_without_waiting_for_the_generation(monkeypatch):

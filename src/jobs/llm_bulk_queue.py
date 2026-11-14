@@ -141,6 +141,9 @@ class LlmBulkQueue:
         # ending is never left waiting: either the drain still sees it, or the kick starts a new drain once the old one is gone.
         self._draining = False
         self._resumed_while_draining = False
+        # Set by :func:`pause_for_backend` until the drain it stopped has ended: a model release or stop is waiting for that pause,
+        # so no Resume may start the queue again under it (second security read of the Lane E follow-ups).
+        self._backend_pause = False
         # The store this queue was read from (the kv store's swap epoch: a panic wipe, a restore or a merge swaps the file and bumps
         # it), and a generation that moves each time the queue forgets a store, so a run started against the old file never writes
         # into the new one.
@@ -360,12 +363,15 @@ class LlmBulkQueue:
                     entry["state"] = "queued"
             self._paused = False
             # A drain that is still ending (stopped, about to pause what is pending) must not take this Resume back: it reads this
-            # mark at its end and starts again instead (Lane E follow-up: the Resume lost at the end of a stopped drain).
-            if self._draining:
+            # mark at its end and starts again instead (Lane E follow-up: the Resume lost at the end of a stopped drain). Only a drain
+            # that is STOPPING is marked, never one a model release stopped (that stop must stick), and ``_next`` clears the mark,
+            # so a Resume pressed during a normal drain leaves nothing behind for a later, unrelated stop.
+            armed = self._draining and _JOB.stop_requested() and not self._backend_pause
+            if armed:
                 self._resumed_while_draining = True
         self._save()
         self.kick()
-        return had
+        return had or armed
 
     def clear_finished(self) -> int:
         if not self._load():
@@ -442,6 +448,7 @@ class LlmBulkQueue:
                 self._draining = False
                 return None
             gen = self._gen
+            self._resumed_while_draining = False  # a Resume before this pick was for this drain, which is still going
             entry["state"] = "running"
             entry["stopping"] = False
             entry["error"] = None
@@ -660,6 +667,8 @@ def _drain(ctx: JobContext) -> dict:
     q = get_queue()
     ran = 0
     stops0 = stop_all_count()
+    with q._lock:
+        q._backend_pause = False  # a mark a release left when the drain it meant had already ended belongs to no drain
     try:
         while not ctx.stopping:
             picked = q._next()
@@ -682,11 +691,16 @@ def _drain(ctx: JobContext) -> dict:
         shutting_down = stop_all_count() != stops0
         with q._lock:
             q._draining = False
-            again = q._resumed_while_draining and not shutting_down and not q._paused
+            again = q._resumed_while_draining and not shutting_down and not q._paused and not q._backend_pause
             q._resumed_while_draining = False
+            q._backend_pause = False
             if not again and any(x.get("state") in _PENDING for x in q._entries):
                 q._paused = True
             if again:
+                # The run the stop paused after that Resume goes back in its place in line, so the queue keeps its order.
+                for x in q._entries:
+                    if x.get("state") == "paused":
+                        x["state"] = "queued"
                 q._draining = True
         q._save()
         if again:
@@ -694,6 +708,7 @@ def _drain(ctx: JobContext) -> dict:
     else:
         with q._lock:
             q._resumed_while_draining = False
+            q._backend_pause = False
     return {"runs": ran}
 
 
@@ -711,6 +726,9 @@ def pause_for_backend() -> bool:
     behind it waits paused for a Resume (R669: paused, never lost, nothing stored twice). True when a run was going."""
     if not _JOB.status().get("running"):
         return False
+    with _QUEUE._lock:
+        _QUEUE._backend_pause = True  # this stop sticks: no Resume restarts the drain before the release has run
+        _QUEUE._resumed_while_draining = False
     _JOB.cancel()  # the job's own stop: ``_run`` ends the run "paused" and the queue pauses behind it
     return True
 

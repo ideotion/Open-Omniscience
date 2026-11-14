@@ -3757,7 +3757,11 @@ def run_models_download_job(
         except Exception as exc:  # noqa: BLE001 - one model's surprise is not the batch's
             log_failure(_LOG, "a model download failed unexpectedly", exc, level=logging.WARNING)
             # A fixed phrase, not the exception's words: the batch result reaches the jobs answer; the log keeps the detail.
-            # The two branches above keep their text: those are this module's own errors, worded here.
+            # The two branches above keep their text on purpose, and it is NOT only this module's words: a pin mismatch quotes the
+            # model name, the pinned revision and the one read back from the download, and a failed download carries the last three
+            # lines of the downloader's own output (huggingface_hub: an HTTP error, a gated-repo notice), scrubbed of every secret
+            # the process holds. Those lines are what tell a gated repo from a typo, and the same scrubbed lines already reach the
+            # task manager live as the download's progress, so they are not new exposure.
             results.append({"model": model, "state": "error", "error": "the download failed unexpectedly (see the log)"})
     downloaded = [r for r in results if r.get("state") in {"downloaded", "already_cached"}]
     failed = [r for r in results if r.get("state") == "error"]
@@ -3961,7 +3965,7 @@ def run_install_job(
     except OSError as exc:
         log_failure(_LOG, "could not create pip's unpack directory", exc, level=logging.WARNING)
         # A fixed phrase, not the exception's words: the job's error reaches the jobs answer and the UI; the log keeps the detail.
-        raise VllmLifecycleError(f"could not create pip's unpack directory {tmp} (see the log)") from None
+        raise VllmLifecycleError("could not create pip's unpack directory beside the vLLM install (see the log)") from None
     try:
         run = runner or _default_runner
         stop = _stop_probe(ctx)

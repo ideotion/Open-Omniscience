@@ -1341,7 +1341,8 @@ def _swap(
 
         # The store's swap epoch moves BEFORE the swap too (Lane E follow-up (a)): a settings save made from state read in the old
         # file (the bulk queue's, with ``expect_swap``) that reaches its check during the swap is refused, never written into the
-        # new file. A declined swap costs only a re-read. The call after the swap below still clears what was read meanwhile.
+        # new file. A declined swap is not free: the bulk queue forgets the store at the bump, so a summary run in flight is stopped
+        # and comes back paused (Resume picks it up). The call after the swap below still clears what was read meanwhile.
         kv_invalidate()
         try:
             swap_in_corpus(finished, target, check=written_to_since)

@@ -17,10 +17,17 @@ run without an explicit confirmation.
 
 from __future__ import annotations
 
+import contextlib
+import logging
 from pathlib import Path
 
 # Re-exported for callers/tests that referenced the honest-limit note here.
 from src.safety.crypto_erase import _LIMIT_NOTE  # noqa: F401
+
+_LOG = logging.getLogger(__name__)
+
+#: How long the wipe waits for settings saves already in flight before it goes ahead without holding new ones.
+_PANIC_HOLD_S = 2.0
 
 
 def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
@@ -33,27 +40,42 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
     from src.database.connect import invalidate_header_cache
     from src.safety.crypto_erase import quick_crypto_erase
 
-    # The store's swap epoch moves BEFORE the wipe too (Lane E follow-up (a)): a settings save made from state read in the old
-    # file (the bulk queue's, with ``expect_swap``) that reaches its check from here on is refused instead of writing a fresh store
-    # file where the wiped one was. The call after the wipe below still clears what was read meanwhile.
-    kv_invalidate()
+    # Settings writes are HELD for the whole wipe (Lane E follow-up (a), second security read): a save from another thread waits at
+    # the door until the trailing invalidate below has run, so a value read from the old file is refused instead of landing in a
+    # fresh store file where the wiped one was, and no save commits into the file being erased. A wipe never waits on a save: when
+    # the hold cannot be taken within _PANIC_HOLD_S (a save still in flight, another holder), the wipe goes ahead without it and the
+    # epoch bumps before and after still refuse the saves made with ``expect_swap``.
+    hold = contextlib.ExitStack()
     try:
-        return quick_crypto_erase(confirm=True, data_dir=data_dir)
-    finally:
-        # S3.6: the store file is gone. A cached header saying "plaintext" would
-        # let the lock middleware answer requests for a corpus that no longer
-        # exists -- in a `finally` because a partial wipe still removed it.
-        from src.ingest import activate_kill_switch
+        from src.config.kv_store import hold_writes
 
-        # A wipe takes the app offline for good, and that comes FIRST: the next settings read is a first run (defaults, which are
-        # direct), and a process still running online must not rebuild a followed session (wiki, ORES, hazards, markets) from it.
+        hold.enter_context(hold_writes(_PANIC_HOLD_S))
+    except Exception as exc:  # noqa: BLE001 - the wipe runs whatever the hold says
+        from src.monitoring.secret_scrub import log_failure
+
+        log_failure(_LOG, "panic wipe: settings writes could not be held, wiping without the hold", exc, level=logging.WARNING)
+    with hold:
+        # The store's swap epoch moves BEFORE the wipe too (Lane E follow-up (a)): a settings save made from state read in the old
+        # file (the bulk queue's, with ``expect_swap``) that reaches its check from here on is refused instead of writing a fresh store
+        # file where the wiped one was. The call after the wipe below still clears what was read meanwhile.
+        kv_invalidate()
         try:
-            activate_kill_switch()
+            return quick_crypto_erase(confirm=True, data_dir=data_dir)
         finally:
-            invalidate_header_cache()
-            from src.config.kv_store import kv_invalidate
+            # S3.6: the store file is gone. A cached header saying "plaintext" would
+            # let the lock middleware answer requests for a corpus that no longer
+            # exists -- in a `finally` because a partial wipe still removed it.
+            from src.ingest import activate_kill_switch
 
-            kv_invalidate()  # the settings cache and the stores seen: a wiped store is not a vanished one
-            from src.api import served_cache
+            # A wipe takes the app offline for good, and that comes FIRST: the next settings read is a first run (defaults, which are
+            # direct), and a process still running online must not rebuild a followed session (wiki, ORES, hazards, markets) from it.
+            try:
+                activate_kill_switch()
+            finally:
+                invalidate_header_cache()
+                from src.config.kv_store import kv_invalidate
 
-            served_cache.invalidate()  # the served counts (and the status scans carried beside them) belong to the file that is gone
+                kv_invalidate()  # the settings cache and the stores seen: a wiped store is not a vanished one
+                from src.api import served_cache
+
+                served_cache.invalidate()  # the served counts (and the status scans carried beside them) belong to the file that is gone
