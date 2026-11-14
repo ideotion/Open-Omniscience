@@ -128,3 +128,37 @@ def test_chunked_splits_into_bounded_groups():
     assert C.chunked([1, 2, 3], 10) == [[1, 2, 3]]
     assert C.chunked([], 3) == []
     assert C.chunked([1, 2, 3], 0) == [[1], [2], [3]]  # size floored to 1, never a div-by-zero
+
+
+def test_the_concurrent_workers_never_hold_the_process_at_exit():
+    """R689: a generation a stop abandoned must not keep the interpreter alive after the shutdown. concurrent.futures joins every
+    executor worker at exit, so the workers are daemon threads, and this call still waits for every item."""
+    seen: list[bool] = []
+
+    def fn(x):
+        seen.append(threading.current_thread().daemon)
+        return x
+
+    results = C.run_concurrent([1, 2, 3, 4], fn, max_workers=3)
+    assert [r.value for r in results] == [1, 2, 3, 4] and all(r.ok for r in results)
+    assert seen and all(seen), "a worker was not a daemon thread"
+
+
+def test_a_base_exception_in_a_worker_reaches_the_caller_as_it_did_from_the_pool():
+    """Opus read: a KeyboardInterrupt or SystemExit is not an item's failure. The pool raised it from ``fut.result()``; the
+    daemon workers keep it and raise it once they have ended, instead of returning items marked "not scheduled"."""
+
+    class _Stop(BaseException):
+        pass
+
+    def fn(x):
+        if x == 2:
+            raise _Stop()
+        return x
+
+    try:
+        C.run_concurrent([1, 2, 3, 4, 5], fn, max_workers=2)
+    except _Stop:
+        pass
+    else:
+        raise AssertionError("the BaseException was swallowed")

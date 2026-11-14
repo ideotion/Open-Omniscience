@@ -664,7 +664,7 @@ _S5_CHAINED_RAISES: dict[str, int] = {
     "src/law/adapters/clml.py": 3,
     "src/llm/ollama.py": 11,  # +1 R671: _require_local_model wraps an unreadable /api/tags exactly as list_installed does (record_text)
     "src/llm/vllm_client.py": 7,  # +2 R688: server_kind chains the connection error when the server does not answer its /api/tags or /v1/models read
-    "src/llm/vllm_lifecycle.py": 1,
+    # src/llm/vllm_lifecycle.py: 0 -- its one site (pip's unpack directory) now raises a fixed phrase "from None" and logs the detail
     "src/safety/crypto.py": 4,
     "src/safety/settings.py": 1,
     "src/services/duckduckgo.py": 1,
@@ -996,7 +996,9 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # an exception handed on in an object / a text already made by the caller from record_text; not made here
         ('run_concurrent', 'out.append(ConcurrentResult(ok=False, error=exc))'): 1,
         # an exception handed on in an object / a text already made by the caller from record_text; not made here
-        ('run_concurrent', 'out[i] = ConcurrentResult(ok=False, error=exc)'): 1,
+        ('run_concurrent._worker', 'out[i] = ConcurrentResult(ok=False, error=exc)'): 1,
+        # a BaseException kept as the object and raised again on the caller's thread, never made into a text
+        ('run_concurrent._worker', 'raised.append(exc)'): 1,
     },
     'src/llm/installer.py': {
         # failure_words returns "HTTP <status>" or the exception's class name and nothing of its text (tests/test_session_host_list.py pins it)

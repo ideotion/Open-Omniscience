@@ -37,6 +37,7 @@ def _reset_hold_state() -> None:
         kv_store._inflight.clear()
         kv_store._hold_by = None
         kv_store._hold_file_bytes = None
+        kv_store._hold_text = kv_store._hold_wait_s = None
 
 
 @pytest.fixture

@@ -140,6 +140,11 @@ class LlmBulkQueue:
         # True from a kick until the drain finds no queued run (set and cleared under ``_lock``), so a run added while the drain is
         # ending is never left waiting: either the drain still sees it, or the kick starts a new drain once the old one is gone.
         self._draining = False
+        self._resumed_while_draining = False
+        # How many model releases or stops are waiting to run (:func:`pause_for_backend` counts one up, :func:`release_done`
+        # down once the release has run): while any is, no Resume starts the queue again under it (security read of the Lane E
+        # follow-ups). A count, not a flag, so two releases in flight never clear each other's.
+        self._backend_pauses = 0
         # The store this queue was read from (the kv store's swap epoch: a panic wipe, a restore or a merge swaps the file and bumps
         # it), and a generation that moves each time the queue forgets a store, so a run started against the old file never writes
         # into the new one.
@@ -353,14 +358,23 @@ class LlmBulkQueue:
         if not self._load():
             return False
         with self._lock:
+            if self._backend_pauses:
+                return False  # the model is being freed: the API says so (release_pending) and the queue stays paused
             had = self._paused or any(entry.get("state") == "paused" for entry in self._entries)
             for entry in self._entries:
                 if entry.get("state") == "paused":
                     entry["state"] = "queued"
             self._paused = False
+            # A drain that is still ending (stopped, about to pause what is pending) must not take this Resume back: it reads this
+            # mark at its end and starts again instead (Lane E follow-up: the Resume lost at the end of a stopped drain). Only a drain
+            # that is STOPPING is marked, never one a model release stopped (that stop must stick), and ``_next`` clears the mark,
+            # so a Resume pressed during a normal drain leaves nothing behind for a later, unrelated stop.
+            armed = self._draining and _JOB.stop_requested()
+            if armed:
+                self._resumed_while_draining = True
         self._save()
         self.kick()
-        return had
+        return had or armed
 
     def clear_finished(self) -> int:
         if not self._load():
@@ -387,9 +401,22 @@ class LlmBulkQueue:
         # joins of 5 s held an add or a Resume for up to 15 s), then start again.
         threading.Thread(target=self._start_after_previous, args=(stop_all_count(),), name="oo-llmbulk-kick", daemon=True).start()
 
+    def release_pending(self) -> bool:
+        """True while a model release or stop waits for the queue's pause (see ``_backend_pauses``)."""
+        with self._lock:
+            return self._backend_pauses > 0
+
     def _start_after_previous(self, stops_seen: int) -> None:
         for _ in range(3):
             _JOB.join(5)
+            with self._lock:
+                if self._backend_pauses:
+                    # A model release came in while the previous drain ended: it stops this restart too. What is pending waits
+                    # paused for a Resume once the model has been freed.
+                    self._draining = False
+                    if any(x.get("state") in _PENDING for x in self._entries):
+                        self._paused = True
+                    return
             if stop_all_count() != stops_seen:
                 # The app is shutting down: do not start a writer the shutdown's stop has not seen.
                 with self._lock:
@@ -424,7 +451,10 @@ class LlmBulkQueue:
             }
 
     # -- the drain ----------------------------------------------------------- #
-    def _next(self) -> dict | None:
+    def _next(self) -> tuple[dict, int] | None:
+        """The next queued entry, marked running, with the queue's generation read under the SAME lock (Lane E follow-up (c)): a
+        store swap between the pick and a later read of the generation could otherwise let a run started against the old file
+        carry the new generation and write into the new one."""
         with self._lock:
             if self._paused:
                 self._draining = False
@@ -433,6 +463,8 @@ class LlmBulkQueue:
             if entry is None:
                 self._draining = False
                 return None
+            gen = self._gen
+            self._resumed_while_draining = False  # a Resume before this pick was for this drain, which is still going
             entry["state"] = "running"
             entry["stopping"] = False
             entry["error"] = None
@@ -443,7 +475,7 @@ class LlmBulkQueue:
                 entry["since"] = datetime.now(UTC).replace(tzinfo=None).isoformat()
             entry["resumed"] = not fresh
         self._save()
-        return entry
+        return entry, gen
 
     def _finish(self, entry: dict, state: str, reason: str | None = None, *, gen: int | None = None) -> None:
         if self._stale(gen):
@@ -509,16 +541,15 @@ class LlmBulkQueue:
             _tasks.update(int(tok), **before)
         return not ctx.stopping
 
-    def _run(self, ctx: JobContext, entry: dict) -> None:
+    def _run(self, ctx: JobContext, entry: dict, gen0: int) -> None:
         """Run one queued entry to its end, a Stop, or the job's own stop (which leaves it paused)."""
         from fastapi import HTTPException
 
-        from src.api.llm import BulkLLMRequest, get_llm_client_with_name, prepare_bulk_run
+        from src.api.llm import BulkLLMRequest, BulkRunStopped, get_llm_client_with_name, prepare_bulk_run
         from src.database.session import SessionLocal
         from src.monitoring import tasks as _tasks
         from src.monitoring.secret_scrub import http_detail
 
-        gen0 = self._gen
         if not self._stand_aside(ctx, entry):
             self._finish(entry, "paused", gen=gen0)  # stopped while a restore held the machine: nothing was resolved yet
             return
@@ -534,11 +565,20 @@ class LlmBulkQueue:
         since = datetime.fromisoformat(entry["since"]) if entry.get("resumed") and entry.get("since") else None
         try:
             req = BulkLLMRequest(**body)
+            client_info = get_llm_client_with_name()  # probes the machine (seconds): the stop is looked at right after
+            if ctx.stopping or entry.get("stopping"):
+                raise BulkRunStopped()
             with SessionLocal() as db:
-                # R689 (1): the stop is looked at while a generation runs, so a shutdown's stop lands within its deadline.
+                # R689 (1): the stop is looked at after the selection and while a generation runs, so a shutdown's stop lands
+                # within its deadline.
                 tok, gen, ids = prepare_bulk_run(
-                    req, db, get_llm_client_with_name(), resume_since=since, should_stop=lambda: ctx.stopping,
+                    req, db, client_info, resume_since=since, should_stop=lambda: ctx.stopping,
                 )
+        except BulkRunStopped:
+            # Stopped while being prepared: nothing registered, nothing stored. A Cancel pressed meanwhile cancels it; the job's
+            # own stop (a shutdown, a model release) leaves it paused for the resume.
+            self._finish(entry, "cancelled" if entry.get("stopping") else "paused", gen=gen0)
+            return
         except HTTPException as exc:
             # A refusal of the selection can quote it (an unreadable search's words, an unknown source's name): the finished run
             # keeps a fixed phrase instead, so nothing of what it was run on outlives it (R669(b)). The model's own refusals
@@ -557,9 +597,14 @@ class LlmBulkQueue:
             self._save_ids(int(entry["id"]), ids)
         with self._lock:
             entry["task"] = tok
-            # A resumed run counts from zero: the articles it stored before the restart come back as "done before the restart"
-            # (``resume_since`` makes that set exact) and are counted as stored, so the tally is the run's whole one.
-            entry.update(total=len(ids), done=0, stored=0, skipped=0, failed=0)
+            # A resumed run counts from zero: the articles it stored before the stop come back as "done before the restart" and
+            # are counted as stored, so the tally is the run's whole one. That set also holds a same-kind result another run wrote
+            # during the pause (Lane E follow-up (b)), so at most as many as this run had counted stored before the stop are taken
+            # as its own; the rest count as skipped. The credit not yet replayed is KEPT in the entry (``prior_stored``), so a stop
+            # that lands before the replay ends never loses it: the next resume credits what was replayed plus what was not.
+            # (Counts are saved every SAVE_EVERY_S, so a hard crash can leave up to that much of the run's own work under skipped.)
+            credit = int(entry.get("stored") or 0) + int(entry.get("prior_stored") or 0) if since is not None else 0
+            entry.update(total=len(ids), done=0, stored=0, skipped=0, failed=0, prior_stored=credit)
             stop_now = bool(entry.get("stopping"))
         if stop_now:
             _tasks.request_cancel(tok)  # Cancel pressed while the run was being prepared
@@ -577,7 +622,12 @@ class LlmBulkQueue:
                         entry["done"] = int(o.get("i") or entry["done"])
                         status = o.get("status")
                         if status == "skipped" and o.get("reason") == "done before the restart":
-                            entry["stored"] = int(entry.get("stored") or 0) + 1
+                            if credit > 0:
+                                credit -= 1
+                                entry["prior_stored"] = credit
+                                entry["stored"] = int(entry.get("stored") or 0) + 1
+                            else:
+                                entry["skipped"] = int(entry.get("skipped") or 0) + 1
                         elif status in ("stored", "skipped", "failed"):
                             entry[status] = int(entry.get(status) or 0) + 1
                     elif ev == "stopped":
@@ -635,14 +685,15 @@ def _drain(ctx: JobContext) -> dict:
     stopped (the app shutting down), which leaves the run in flight paused."""
     q = get_queue()
     ran = 0
+    stops0 = stop_all_count()
     try:
         while not ctx.stopping:
-            entry = q._next()
-            if entry is None:
+            picked = q._next()
+            if picked is None:
                 break
-            gen = q._gen
+            entry, gen = picked
             try:
-                q._run(ctx, entry)
+                q._run(ctx, entry, gen)
             except Exception as exc:  # noqa: BLE001 - that run ends in error and the runs behind it go on
                 _LOG.warning("bulk queue: a run failed (%s)", type(exc).__name__)
                 q._finish(entry, "error", f"The run stopped on an error ({type(exc).__name__}).", gen=gen)
@@ -652,12 +703,32 @@ def _drain(ctx: JobContext) -> dict:
             q._draining = False
         raise
     if ctx.stopping:
-        # A stop that landed between two runs: what is still queued waits for a Resume, as after a restart.
+        # A stop that landed between two runs: what is still queued waits for a Resume, as after a restart. A Resume pressed
+        # while this drain was ending is kept, and the queue starts again behind it, unless the stop was the app's shutdown.
+        shutting_down = stop_all_count() != stops0
         with q._lock:
             q._draining = False
-            if any(x.get("state") in _PENDING for x in q._entries):
+            again = q._resumed_while_draining and not shutting_down and not q._paused and not q._backend_pauses
+            q._resumed_while_draining = False
+            if not again and any(x.get("state") in _PENDING for x in q._entries):
                 q._paused = True
+            if again:
+                # The run the stop paused after that Resume goes back in its place in line, so the queue keeps its order.
+                for x in q._entries:
+                    if x.get("state") == "paused":
+                        x["state"] = "queued"
+                q._draining = True
         q._save()
+        if again:
+            try:
+                threading.Thread(target=q._start_after_previous, args=(stops0,), name="oo-llmbulk-kick", daemon=True).start()
+            except RuntimeError:  # no thread at interpreter teardown: the queue waits paused rather than marked as draining for good
+                with q._lock:
+                    q._draining = False
+                    q._paused = True
+    else:
+        with q._lock:
+            q._resumed_while_draining = False
     return {"runs": ran}
 
 
@@ -675,8 +746,19 @@ def pause_for_backend() -> bool:
     behind it waits paused for a Resume (R669: paused, never lost, nothing stored twice). True when a run was going."""
     if not _JOB.status().get("running"):
         return False
+    with _QUEUE._lock:
+        # This stop sticks until the caller's :func:`release_done`: no Resume restarts the drain before the release has run.
+        _QUEUE._backend_pauses += 1
+        _QUEUE._resumed_while_draining = False
     _JOB.cancel()  # the job's own stop: ``_run`` ends the run "paused" and the queue pauses behind it
     return True
+
+
+def release_done() -> None:
+    """The release or stop one True :func:`pause_for_backend` waited for has run (or will not): a Resume may start the queue
+    again once no other release is waiting."""
+    with _QUEUE._lock:
+        _QUEUE._backend_pauses = max(0, _QUEUE._backend_pauses - 1)
 
 
 def wait_paused(timeout: float) -> bool:
