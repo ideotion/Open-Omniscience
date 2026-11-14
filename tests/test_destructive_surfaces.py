@@ -157,6 +157,7 @@ _EXEMPT_GROUPS: dict[str, tuple[str, ...]] = {
         "signals.signals_record_dismiss_reason",
     ),
     _REVERSIBLE: (
+        "article_dates.reset",  # puts one date tag back to candidate; confirm and reject set it again (the Agenda's Undo)
         "briefing.dismiss_card",  # briefing.restore_card
         "insights.exclude_term",  # the exclusion list is editable and a hidden keyword keeps its mentions
         "insights.family_merge", "insights.family_split", "insights.family_override_clear",  # each other

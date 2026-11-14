@@ -1207,7 +1207,7 @@
     // the status it had. Confirming says the article does mention this date, never that
     // anything happens on it, and the caveat saying so stays visible above the list.
     const AG_MENTIONS_LIMIT = 200;
-    const _agMentions = { date: null, rows: [], prev: {}, changed: false };
+    const _agMentions = { date: null, rows: [], prev: {}, changed: false, gen: 0, busy: new Set() };
     function _agStatusLabel(st) {
       const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (st === "confirmed") return T("confirmed by you");
@@ -1219,15 +1219,21 @@
       const id = Number(r.id);
       const pill = `<span class="pill${r.status === "confirmed" ? " ok" : r.status === "rejected" ? " warn" : ""}">${esc(_agStatusLabel(r.status))}</span>`;
       const acts = [];
+      // A month-only mention ("March 2027") is stored on the 1st: say so, and never call it a day.
+      const monthOnly = r.precision === "month";
+      const confirmTip = monthOnly
+        ? T("This article does mention this month, with no day. It does not confirm that anything happens in it.")
+        : T("This article does mention this date. It does not confirm that anything happens on it.");
+      const busy = _agMentions.busy.has(id) ? " disabled" : "";
       if (r.status !== "confirmed")
-        acts.push(`<button type="button" class="tiny" title="${esc(T("This article does mention this date. It does not confirm that anything happens on it."))}" data-on-click="agMentionSet(${id}, 'confirmed')">${esc(T("Confirm"))}</button>`);
+        acts.push(`<button type="button" class="tiny" title="${esc(confirmTip)}"${busy} data-on-click="agMentionSet(${id}, 'confirmed')">${esc(T("Confirm"))}</button>`);
       if (r.status !== "rejected")
-        acts.push(`<button type="button" class="tiny secondary" title="${esc(T("The date was read wrongly from this article. A rejected mention no longer counts toward the deduced date."))}" data-on-click="agMentionSet(${id}, 'rejected')">${esc(T("Reject"))}</button>`);
+        acts.push(`<button type="button" class="tiny secondary" title="${esc(T("The date was read wrongly from this article. A rejected mention no longer counts toward the deduced date."))}" ${busy} data-on-click="agMentionSet(${id}, 'rejected')">${esc(T("Reject"))}</button>`);
       if (Object.prototype.hasOwnProperty.call(_agMentions.prev, id))
-        acts.push(`<button type="button" class="tiny secondary" data-on-click="agMentionUndo(${id})">${esc(T("Undo"))}</button>`);
-      const when = r.published_at ? ` <span class="muted">· ${esc(String(r.published_at).slice(0, 10))}</span>` : "";
+        acts.push(`<button type="button" class="tiny secondary" ${busy} data-on-click="agMentionUndo(${id})">${esc(T("Undo"))}</button>`);
+      const when = r.published_at ? ` <span class="muted">· ${esc(ooIsoDate(r.published_at))}</span>` : "";
       return `<div class="ag-row" data-tag="${id}"><div class="ag-body">
-        <div><a href="/api/articles/${Number(r.article_id)}/view" target="_blank" rel="noopener" dir="auto">${esc(r.title || T("(untitled)"))}</a>${when} ${pill}</div>
+        <div><a href="/api/articles/${Number(r.article_id)}/view" target="_blank" rel="noopener" dir="auto">${esc(r.title || T("(untitled)"))}</a>${when} ${pill}${monthOnly ? ` <span class="pill">${esc(T("names the month only, no day"))}</span>` : ""}</div>
         ${r.snippet ? `<div class="hint" dir="auto">“${esc(r.snippet)}”</div>` : ""}
         <div style="display:flex;gap:6px;margin-top:4px">${acts.join("")}</div></div></div>`;
     }
@@ -1245,7 +1251,9 @@
     async function agOpenMentions(iso) {
       const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const dlg = $("ag-mentions"); if (!dlg || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return;
-      _agMentions.date = iso; _agMentions.rows = []; _agMentions.prev = {}; _agMentions.changed = false;
+      // A new opening starts a new generation: a reply that belongs to an earlier one is dropped.
+      const gen = ++_agMentions.gen;
+      _agMentions.date = iso; _agMentions.rows = []; _agMentions.prev = {}; _agMentions.busy = new Set();
       let label = iso;
       try { label = new Intl.DateTimeFormat(agLocale(), { dateStyle: "full", timeZone: "UTC" }).format(new Date(iso + "T00:00:00Z")); } catch (_e) { /* keep the ISO date */ }
       $("ag-mentions-title").textContent = T("Articles that mention {date}").replace("{date}", label);
@@ -1253,33 +1261,48 @@
       if (!dlg.open) dlg.showModal();
       try {
         const d = await api("/api/article-dates/by-date?date=" + encodeURIComponent(iso) + "&limit=" + AG_MENTIONS_LIMIT);
-        if (_agMentions.date !== iso) return;
+        if (_agMentions.gen !== gen) return;
         _agMentions.rows = Array.isArray(d.articles) ? d.articles : [];
         _agRenderMentions();
       } catch (e) {
+        if (_agMentions.gen !== gen) return;
         $("ag-mentions-body").innerHTML = `<div class="err">${esc(T("Could not read the mentions:"))} ${esc(e && e.message ? e.message : String(e))}</div>`;
       }
     }
     const _AG_STATUS_ROUTE = { confirmed: "confirm", rejected: "reject", candidate: "reset" };
+    // Returns false when the reply belongs to an earlier opening of the dialog. The agenda is
+    // marked for a re-read BEFORE the request, so closing the dialog while it is in flight
+    // still re-reads; a reply that lands after the close re-reads it itself.
     async function _agMentionPost(id, status) {
-      const r = await api(`/api/article-dates/${Number(id)}/${_AG_STATUS_ROUTE[status]}`, { method: "POST" });
+      const gen = _agMentions.gen;
+      _agMentions.changed = true;
+      _agMentions.busy.add(Number(id)); _agRenderMentions();
+      let r;
+      try {
+        r = await api(`/api/article-dates/${Number(id)}/${_AG_STATUS_ROUTE[status]}`, { method: "POST" });
+      } finally {
+        if (_agMentions.gen === gen) _agMentions.busy.delete(Number(id));
+      }
+      const dlg = $("ag-mentions");
+      if (_agMentions.gen !== gen || !(dlg && dlg.open)) { if (!(dlg && dlg.open)) loadAgenda(); return false; }
       const row = _agMentions.rows.find(x => Number(x.id) === Number(id));
       if (row) row.status = r && r.status ? r.status : status;
-      _agMentions.changed = true;
       _agRenderMentions();
+      return true;
     }
     async function agMentionSet(id, status) {
       const row = _agMentions.rows.find(x => Number(x.id) === Number(id));
       if (!row || !_AG_STATUS_ROUTE[status]) return;
+      if (_agMentions.busy.has(Number(id))) return;
       const before = row.status || "candidate";
       try {
-        await _agMentionPost(id, status);
+        if (!(await _agMentionPost(id, status))) return;
         if (!Object.prototype.hasOwnProperty.call(_agMentions.prev, id)) _agMentions.prev[id] = before;
         _agRenderMentions();
-      } catch (e) { toast((e && e.message) || String(e), "err"); }
+      } catch (e) { _agRenderMentions(); toast((e && e.message) || String(e), "err"); }
     }
     async function agMentionUndo(id) {
-      if (!Object.prototype.hasOwnProperty.call(_agMentions.prev, id)) return;
+      if (!Object.prototype.hasOwnProperty.call(_agMentions.prev, id) || _agMentions.busy.has(Number(id))) return;
       const before = _agMentions.prev[id];
       try {
         delete _agMentions.prev[id];

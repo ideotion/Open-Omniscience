@@ -101,7 +101,7 @@ def test_the_dialog_keeps_the_caveat_visible_and_offers_undo():
 _NODE = r"""
 const calls = [];
 const store = {};
-const el = (id) => (store[id] = store[id] || { innerHTML: "", textContent: "", open: false });
+const el = (id) => (store[id] = store[id] || { innerHTML: "", textContent: "", open: id === "ag-mentions" });
 global.window = {}; global.$ = el; global.esc = (s) => String(s); global.toast = () => {}; global.loadAgenda = () => {};
 global.api = async (url, opts) => {
   calls.push(url);
@@ -109,7 +109,7 @@ global.api = async (url, opts) => {
   return { status: st };
 };
 SRC
-_agMentions.rows = [{ id: 7, article_id: 1, title: "A", status: "candidate" }, { id: 8, article_id: 2, title: "B", status: "confirmed" }];
+_agMentions.rows = [{ id: 7, article_id: 1, title: "A", status: "candidate", precision: "day" }, { id: 8, article_id: 2, title: "B", status: "confirmed", precision: "month" }];
 (async () => {
   await agMentionSet(7, "rejected");
   const afterReject = _agMentions.rows.map(r => r.status);
@@ -117,7 +117,11 @@ _agMentions.rows = [{ id: 7, article_id: 1, title: "A", status: "candidate" }, {
   await agMentionUndo(7);
   await agMentionSet(8, "rejected");
   await agMentionUndo(8);
-  console.log(JSON.stringify({ calls, afterReject, undoShown, final: _agMentions.rows.map(r => r.status), changed: _agMentions.changed }));
+  const monthPill = el("ag-mentions-body").innerHTML.includes("names the month only, no day");
+  // A reply from an earlier opening of the dialog changes nothing in the new one.
+  const p = agMentionSet(7, "confirmed"); _agMentions.gen += 1; await p;
+  const stale = _agMentions.rows[0].status;
+  console.log(JSON.stringify({ calls, afterReject, undoShown, monthPill, stale, final: _agMentions.rows.map(r => r.status), changed: _agMentions.changed }));
 })();
 """
 
@@ -130,7 +134,7 @@ def test_undo_restores_the_status_the_mention_had():
     src = "\n".join(("async " if n in asyncs else "") + function_source(js, n) for n in names)
     consts = (
         "const AG_MENTIONS_LIMIT = 200;\n"
-        "const _agMentions = { date: '2025-03-14', rows: [], prev: {}, changed: false };\n"
+        "const _agMentions = { date: '2025-03-14', rows: [], prev: {}, changed: false, gen: 1, busy: new Set() };\n"
         "const _AG_STATUS_ROUTE = { confirmed: 'confirm', rejected: 'reject', candidate: 'reset' };\n"
     )
     out = subprocess.run(["node", "-e", _NODE.replace("SRC", consts + src)], capture_output=True, text=True, timeout=60, check=True)
@@ -138,7 +142,10 @@ def test_undo_restores_the_status_the_mention_had():
     assert got["calls"] == [
         "/api/article-dates/7/reject", "/api/article-dates/7/reset",
         "/api/article-dates/8/reject", "/api/article-dates/8/confirm",
+        "/api/article-dates/7/confirm",
     ]
+    assert got["monthPill"] is True, "a month-only mention says it names no day"
+    assert got["stale"] == "candidate", "a reply from an earlier opening is dropped"
     assert got["afterReject"] == ["rejected", "confirmed"], "a reject changes that mention only"
     assert got["undoShown"] is True
     assert got["final"] == ["candidate", "confirmed"] and got["changed"] is True
