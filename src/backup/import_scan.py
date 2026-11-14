@@ -252,44 +252,89 @@ LEFTOVER_PLAIN_SUFFIX = ".plain"
 
 #: The only volume names the oo-volumes-1 writer ever made (``vol-00001.ooenc`` ...), mirrored from src.backup.volumes so this
 #: module stays crypto-free. A leftover is only ever ``<one of these>.plain``.
-_V1_VOLUME_NAME = re.compile(r"^vol-[0-9]{5,}\.ooenc$")
+_V1_VOLUME_NAME = re.compile(r"\Avol-[0-9]{5,}\.ooenc\Z")
 _V1_KIND = "oo-volumes-1"
+
+
+def _leftovers_from(manifest_text: str, entries: dict[str, bool]) -> list[str]:
+    """The leftover copies one folder holds, from its manifest's text and its own listing (R686, R692).
+
+    ``entries`` maps each name the folder lists to whether it is a regular file that is not a link. Pure: no path is
+    built or opened here, so a name in a crafted manifest can only ever be compared with what the folder already
+    lists. A name is offered only when the manifest is an oo-volumes-1 manifest (the only format that ever wrote such
+    a copy), lists the volume under a name that writer gives (``vol-NNNNN.ooenc``, so never a path, a drive letter, a
+    stream name, a trailing newline or a file of the user's), the copy is not itself a listed volume in any letter
+    case (a case-insensitive drive treats ``VOL-00001.OOENC.PLAIN`` and ``vol-00001.ooenc.plain`` as one file), and the
+    folder lists it as a regular file."""
+    import json
+
+    try:
+        m = json.loads(manifest_text)
+    except ValueError:
+        return []
+    if not isinstance(m, dict) or m.get("kind") != _V1_KIND:
+        return []
+    vols = m.get("volumes")
+    names = [str(v.get("name") or "") for v in vols if isinstance(v, dict)] if isinstance(vols, list) else []
+    listed = {n.casefold() for n in names}
+    out: set[str] = set()
+    for n in names:
+        cand = n + LEFTOVER_PLAIN_SUFFIX
+        if _V1_VOLUME_NAME.match(n) and cand.casefold() not in listed and entries.get(cand) is True:
+            out.add(cand)
+    return sorted(out)
+
+
+def can_scan_by_handle() -> bool:
+    """Whether this platform reads a folder and the files in it through one no-follow folder handle (POSIX)."""
+    return (
+        hasattr(os, "O_DIRECTORY")
+        and hasattr(os, "O_NOFOLLOW")
+        and os.open in os.supports_dir_fd
+        and os.scandir in os.supports_fd
+    )
+
+
+def leftovers_in_handle(dir_fd: int) -> list[str]:
+    """``leftover_plaintext`` for a folder already opened as a no-follow handle: the manifest and the listing are both
+    read through it, so they describe the very folder a removal through the same handle acts on. Never raises."""
+    try:
+        fd = os.open(_VOL_MANIFEST, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dir_fd)
+        with os.fdopen(fd, "r", encoding="utf-8") as fh:
+            text = fh.read()
+        with os.scandir(dir_fd) as it:
+            entries = {e.name: e.is_file(follow_symlinks=False) for e in it}
+        return _leftovers_from(text, entries)
+    except Exception:  # noqa: BLE001 - a scan must not fail on an unreadable folder
+        return []
+
+
+def open_folder_handle(d: str | os.PathLike[str]) -> int:
+    """Open a backup folder as a no-follow directory handle. Resolved first: a folder reached through the operator's own
+    shortcut is still that folder; the handle then pins it, so a swap after this point cannot redirect what is read
+    or removed through it. Raises ``OSError``; the caller closes the handle."""
+    return os.open(Path(d).resolve(), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
 
 
 def leftover_plaintext(d: str | os.PathLike[str]) -> list[str]:
     """Decrypted volume copies an interrupted restore left in this backup folder (R686), by file name.
 
     Before R686 the oo-volumes-1 reassembly decrypted each volume to ``<volume>.plain`` beside it and removed it
-    after; a crash or a kill in between left that PLAINTEXT on the backup drive. A name is reported only when this
-    folder's own manifest is an oo-volumes-1 manifest (the only format that ever wrote such a copy), lists the
-    volume under a name that writer gives (``vol-NNNNN.ooenc``, so never a path, a drive letter, a stream name or
-    a file of the user's), the copy is not itself a listed volume, and it sits in this folder. Read-only and
-    crypto-free (it reads the manifest's names, nothing else); never raises."""
+    after; a crash or a kill in between left that PLAINTEXT on the backup drive. What is offered is decided by
+    ``_leftovers_from`` from the folder's own manifest and its own listing; a link is never offered (R692). Read-only
+    and crypto-free (it reads the manifest's names, nothing else); never raises."""
     try:
-        import json
-
-        folder = Path(d)
-        m = json.loads((folder / _VOL_MANIFEST).read_text(encoding="utf-8"))
-        if not isinstance(m, dict) or m.get("kind") != _V1_KIND:
-            return []
-        vols = m.get("volumes")
-        names = (
-            [str(v.get("name") or "") for v in vols if isinstance(v, dict)]
-            if isinstance(vols, list)
-            else []
-        )
-        listed = set(names)
-        root = folder.resolve()
-        out: set[str] = set()
-        for n in names:
-            cand = n + LEFTOVER_PLAIN_SUFFIX
-            if not _V1_VOLUME_NAME.match(n) or cand in listed:
-                continue
-            p = folder / cand
-            # a link is never offered (R692): what a removal takes is a copy this folder holds, not something it points at
-            if not p.is_symlink() and p.is_file() and p.parent.resolve() == root:
-                out.add(cand)
-        return sorted(out)
+        if can_scan_by_handle():
+            fd = open_folder_handle(d)
+            try:
+                return leftovers_in_handle(fd)
+            finally:
+                os.close(fd)
+        folder = Path(d)  # Windows: no folder handles, so one manifest read and one listing of the folder
+        text = (folder / _VOL_MANIFEST).read_text(encoding="utf-8")
+        with os.scandir(folder) as it:
+            entries = {e.name: e.is_file(follow_symlinks=False) and not e.is_symlink() for e in it}
+        return _leftovers_from(text, entries)
     except Exception:  # noqa: BLE001 - a scan must not fail on an unreadable folder
         return []
 

@@ -231,35 +231,43 @@ def remove_leftover_plaintext(out_dir: str | os.PathLike[str], names: list[str])
 
     Where the platform allows it the folder is opened once without following a link and each copy is removed
     relative to that handle, so a folder swapped for a link between the check and the removal cannot redirect it."""
-    from src.backup.import_scan import leftover_plaintext
+    from src.backup.import_scan import (
+        can_scan_by_handle,
+        leftover_plaintext,
+        leftovers_in_handle,
+        open_folder_handle,
+    )
 
-    allowed = set(leftover_plaintext(out_dir))
-    wanted = [n for n in dict.fromkeys(names) if n in allowed]
     removed: list[str] = []
     failed: list[str] = []
-    dir_fd: int | None = None
-    if os.unlink in os.supports_dir_fd and hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW"):
+    if can_scan_by_handle() and os.unlink in os.supports_dir_fd:
+        # One handle for the scan and the removal: what is checked is what is removed (R692).
         try:
-            # Resolved first: a backup folder reached through a link (the operator's own shortcut) is still the folder the
-            # scan looked at; the handle then pins it, so a swap after this point cannot redirect a removal.
-            dir_fd = os.open(Path(out_dir).resolve(), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            dir_fd = open_folder_handle(out_dir)
         except OSError:
-            return {"removed": [], "failed": wanted}
-    try:
-        for name in wanted:
-            try:
-                if dir_fd is not None:
+            return {"removed": [], "failed": [n for n in dict.fromkeys(names) if n in set(leftover_plaintext(out_dir))]}
+        try:
+            allowed = set(leftovers_in_handle(dir_fd))
+            for name in [n for n in dict.fromkeys(names) if n in allowed]:
+                try:
                     os.unlink(name, dir_fd=dir_fd)
-                else:
-                    (Path(out_dir) / name).unlink()
-                removed.append(name)
-            except FileNotFoundError:
-                continue
-            except OSError:
-                failed.append(name)
-    finally:
-        if dir_fd is not None:
+                    removed.append(name)
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    failed.append(name)
+        finally:
             os.close(dir_fd)
+        return {"removed": removed, "failed": failed}
+    allowed = set(leftover_plaintext(out_dir))  # Windows: no folder handles
+    for name in [n for n in dict.fromkeys(names) if n in allowed]:
+        try:
+            (Path(out_dir) / name).unlink()
+            removed.append(name)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            failed.append(name)
     return {"removed": removed, "failed": failed}
 
 
