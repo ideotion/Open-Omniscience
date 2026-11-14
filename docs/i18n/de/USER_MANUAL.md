@@ -1523,7 +1523,7 @@ Amtliche **Zahlen** stehen hier überhaupt nicht — sie sind Daten und liegen d
   wenn Sie eine auswählen, wird die Seite neu geladen, um sie anzuwenden. (Die frühere schwebende Schublade „Anpassen“ ist
   jetzt dieser vollwertige Bereich.)
 - **Karten (Spuren auf der Startseite):** jeder Spur-Produzent, den die App ausführen kann, gruppiert nach seiner Familie
-  (*Steigend · Überdeckt erzählt · Unterbelichtet · Untersuchenswert · Rahmung prüfen · Weiter beobachten ·
+  (*Steigend · Überbelichtet · Unterbelichtet · Untersuchenswert · Rahmung prüfen · Weiter beobachten ·
   Kontext · Datenintegrität*). Schalten Sie einen davon aus, erscheint er nicht mehr — das ändert nichts
   an den Artikeln selbst, nur daran, welche Hinweise Ihre Startseite erreichen. Wo eine Spur
   Schwellenwerte hat, sind diese jetzt sichtbar und einstellbar, jeweils mit einem angegebenen **sicheren Bereich**, einer
@@ -2381,12 +2381,12 @@ was es kann. Dies sind die dauerhaften Grenzen der Methoden (audit-07, „Offenl
   Hintergrund-Durchläufe (die Wer/Wo/Wann-Extraktion) schneiden lange Artikel SEHR WOHL ab und
   vermerken das — „die ersten N von M Zeichen analysiert“ —, damit eine dünne
   Extraktion nie mit einem dünnen Artikel verwechselt wird.
-- **Hintergrund-KI läuft auf einer einzigen Spur, und Ihre Arbeit hat Vorrang.** Die Durchläufe, die Sie aktivieren,
+- **Hintergrund-KI läuft auf einem einzigen Strang, und Ihre Arbeit hat Vorrang.** Die Durchläufe, die Sie aktivieren,
   laufen nacheinander auf dem einen lokalen Backend, statt um es zu konkurrieren.
   Alles, was Sie selbst anfordern — eine Massenübersetzung, ein manuell gestarteter Durchlauf —, pausiert
-  diese Spur für seine Dauer, und sie setzt danach von selbst fort; nichts verliert
-  seinen Platz. Auf einem Rechner, auf dem lokale Inferenz unpraktikabel ist, ist die Spur standardmäßig
-  aus, mit Angabe des Grundes, und Sie können sie trotzdem einschalten.
+  diesen Strang für seine Dauer, und er setzt danach von selbst fort; nichts verliert
+  seinen Platz. Auf einem Rechner, auf dem lokale Inferenz unpraktikabel ist, ist der Strang standardmäßig
+  aus, mit Angabe des Grundes, und Sie können ihn trotzdem einschalten.
 - **Die App verarbeitet nur Text.** Sie analysiert Artikeltext. Bei Bildern gibt es nur ehrliche Angaben zu EXIF/Metadaten
   (keine forensischen oder Deepfake-Aussagen); es gibt keine Audio- oder Video-
   Analyse. Eine Behauptung, die nur in einem Video oder Bild steckt, liegt außerhalb dessen, was das Werkzeug
@@ -2522,7 +2522,7 @@ Das Briefing gruppiert Karten in **Rubriken** (in Anzeigereihenfolge):
 | Rubrik | Bedeutung | Redaktionelle Verwendung |
 |---|---|---|
 | **Im Aufwind** | etwas bewegt sich / ist neu | Kandidaten für Aufmacher |
-| **Überdeckt erzählt** | Quellen stimmen zu schnell / zu einheitlich überein | den Chor entlarven |
+| **Überbelichtet** | Quellen stimmen zu schnell / zu einheitlich überein | den Chor entlarven |
 | **Unterbelichtet** | etwas hat sich bewegt, aber kaum jemand / niemand hat darüber berichtet | die Lücke sichtbar machen |
 | **Untersuchenswert** | Quellen oder Daten widersprechen sich | nachbohren |
 | **Rahmung prüfen** | dasselbe Ereignis wird gegensätzlich gerahmt | die Behauptung prüfen |
@@ -2579,7 +2579,7 @@ warum** (lautes Herabstufen); er erfindet niemals eine Karte.
 | **Preis ↔ Narrativ (Price ↔ narrative)** | Kontext | ehrliche scipy-Korrelation (Koeffizient + p + n) | jetzt¹ |
 | **Veraltete Daten** | Datenintegrität | `last_run_at` / `last_status` der Marktextraktionsregeln | jetzt |
 | **Selbstprüfung der Lesediät (Diet self-audit)** | Kontext | `signals.concentration` (Gini + Top-3-Anteil über Ihre Quellen) | jetzt |
-| **Echokammer** | Überdeckt erzählt | Akteursgraph aus `signals.coordination` (Beinahe-Duplikate + Zeitpunkte + Host) | neu |
+| **Echokammer** | Überbelichtet | Akteursgraph aus `signals.coordination` (Beinahe-Duplikate + Zeitpunkte + Host) | neu |
 | **Einsames Signal** | Unterbelichtet | Beinahe-Duplikat-Cluster aus einer einzigen Quelle, das kein Echo fand | neu |
 | **Unplausible Kapazität (Capacity implausible)** | Untersuchenswert | Artikel/Tag im Vergleich zum Median des Korpus | neu |
 | **Emotionsprofil** | Kontext | Emotionslexikon über die Kontextfenster eines Schlagworts | neu² |
