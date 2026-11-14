@@ -161,7 +161,6 @@ GET	/api/search/spell-index	feature	3	Settings > Maintenance (N)	state of the 'd
 POST	/api/search/spell-index/build	feature	3	Settings > Maintenance (N)	rebuild it
 GET	/api/signals/dismiss-reasons	internal		diagnostics	counts of dismissal reasons, for tuning
 POST	/api/signals/hazards/snapshot	internal		api	population path of the local hazard snapshot
-GET	/api/signals/supply-chain-ripple	feature	2	Markets (O)	commodity vs topic coverage co-movement (correlation, never causation)
 GET	/api/signals/weather-signals	internal		api	derived signal keywords read by producers
 POST	/api/signals/weather-signals/refresh	internal		api	derives those keywords
 POST	/api/sources/batch/disable	superseded			source-group/metadata API of the pre-catalogue era; the Sources tab manages tags and enablement through /api/catalog and /api/sources/{id}

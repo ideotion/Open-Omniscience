@@ -479,7 +479,80 @@
       finally { btn.disabled = false; }
     }
 
-    async function loadMarkets() { loadDashboard(); loadMineralsSupply(); }
+    async function loadMarkets() { loadDashboard(); loadMineralsSupply(); paintMktRipple(); }
+
+    // COVERAGE THAT MOVES WITH A COMMODITY (Lane M's routes list: GET
+    // /api/signals/supply-chain-ripple had no button; Home shows at most a couple of these
+    // as Leads, and this is the full list behind them). Pairs of a tracked commodity and a
+    // frequent topic whose daily SHARE of coverage rises and falls together, FDR-corrected
+    // across every pair tested. Co-occurrence, never causation: the short caveat is visible
+    // (R685), the long one and the method are in the hovers, both keyed x12 already.
+    // ON DEMAND: the scan correlates every commodity against every frequent topic, so it
+    // runs when the reader asks, never on every visit to Markets. The payload is kept, so a
+    // language switch repaints from it without a fetch (app-boot's oo:langchange).
+    let _mktRipple = null, _mktRippleSeq = 0;
+    const _MKT_RIPPLE_NOTES = {
+      "window shorter than min_days": "The window is too short to compare daily coverage.",
+      "no tracked commodity resolves to a keyword": "No tracked commodity matches a keyword in your corpus yet.",
+      "no frequent candidate topic in the window": "No topic was covered often enough in this window to compare.",
+      "no comparable commodity/topic pair": "No commodity and topic were both covered by enough distinct sources to compare.",
+    };
+    async function mktRippleLoad(btn) {
+      const seq = ++_mktRippleSeq;
+      if (btn) btn.disabled = true;
+      _mktRipple = {loading: true};
+      paintMktRipple();
+      let next;
+      try { next = {d: await api("/api/signals/supply-chain-ripple")}; }
+      catch (e) { next = {error: e.message}; }
+      if (seq !== _mktRippleSeq) return;  // a later request owns the panel and its state
+      _mktRipple = next;
+      if (btn) btn.disabled = false;
+      paintMktRipple();
+    }
+    function mktRippleOpen(i) {
+      const it = (((_mktRipple || {}).d || {}).items || [])[i];
+      if (!it || typeof openAnalysisForIds !== "function") return;
+      openAnalysisForIds(it.article_ids || [], `${it.commodity} · ${it.keyword}`);
+    }
+    function paintMktRipple() {
+      const host = $("mkt-ripple"); if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
+      const st = _mktRipple || {}, d = st.d || null;
+      const longCaveat = d && d.caveat ? t(d.caveat) : "";
+      const head = `<h2 style="font-size:14px;margin:0 0 4px"${d && d.method ? ` title="${esc(t(d.method))}"` : ""}>${esc(t("Coverage that moves with a commodity"))}</h2>`
+        + `<p class="card-caveat" style="margin:0 0 6px"${longCaveat ? ` title="${esc(longCaveat)}"` : ""}>${esc(t("Coverage moving together, never proof that one causes the other."))}</p>`
+        + `<button class="secondary" data-on-click="mktRippleLoad(this)"${st.loading ? " disabled" : ""}>${esc(t(d ? "Look again" : "Look for co-moving coverage"))}</button>`;
+      let body = "";
+      if (st.loading) body = `<div class="hint">${esc(t("Comparing daily coverage…"))}</div>`;
+      else if (st.error != null) body = `<div class="hint">${esc(tf("Could not compare coverage: {error}", {error: st.error}))}</div>`;
+      else if (d) {
+        const items = d.items || [];
+        const tested = esc(tf("Pairs tested: {tests} · shown: {shown} · window: {days} days",
+          {tests: d.tests || 0, shown: items.length, days: d.window_days || 0}));
+        if (!items.length) {
+          const why = d.note ? t(_MKT_RIPPLE_NOTES[d.note] || d.note)
+            : t("No pair co-moves strongly enough once the false-discovery correction is applied.");
+          body = `<div class="hint">${esc(why)}</div><div class="hint muted">${tested}</div>`;
+        } else {
+          const rows = items.map((it, i) =>
+            `<tr><td data-i18n-dyn>${esc(it.commodity)}</td><td data-i18n-dyn>${esc(it.keyword)}</td>`
+            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${esc(ooLtrIsolate(it.correlation == null ? "—" : Number(it.correlation).toLocaleString("en", {minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero"})))}</td>`
+            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${esc(String(it.fdr_qvalue))}</td>`
+            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${esc(String(it.distinct_sources_commodity || 0))} / ${esc(String(it.distinct_sources_keyword || 0))}</td>`
+            + `<td><button class="ghost" data-on-click="mktRippleOpen(${i})">${esc(tf("Articles: {n}", {n: it.n_articles || 0}))}</button></td></tr>`).join("");
+          body = `<div style="overflow:auto"><table class="data"><thead><tr>`
+            + `<th>${esc(t("Commodity"))}</th><th>${esc(t("Topic"))}</th>`
+            + `<th style="text-align:right" title="${esc(t("Pearson correlation of the two daily shares of coverage, from -1 to +1."))}">r</th>`
+            + `<th style="text-align:right" title="${esc(t("The false-discovery rate at which this pair would still be kept (Benjamini-Hochberg, across every pair tested)."))}">q</th>`
+            + `<th style="text-align:right" title="${esc(t("Distinct sources carrying the commodity / the topic in the window."))}">${esc(t("Sources"))}</th>`
+            + `<th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="hint muted">${tested}</div>`;
+        }
+      }
+      host.innerHTML = `<div class="an-panel">${head}${body ? `<div style="margin-top:6px">${body}</div>` : ""}</div>`;
+    }
 
     // S5.1: the USGS Mineral Commodity Summaries SUPPLY surface — production / reserves /
     // net-import-reliance for minerals (rare earths) that have NO free spot-price source.
