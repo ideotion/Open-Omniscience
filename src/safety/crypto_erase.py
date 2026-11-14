@@ -227,7 +227,8 @@ def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str]) -> tu
         if s and overwritten:
             keys_destroyed.append(name)
     if keys_dir.is_dir():
-        for root, _dirs, names in os.walk(keys_dir):
+        for root, dirs, names in os.walk(keys_dir):
+            dirs[:] = [d for d in dirs if not _is_link(Path(root, d))]  # a junction too, never entered
             for name in names:
                 s, _overwritten, w = track(Path(root) / name)
                 seen += s
@@ -431,28 +432,6 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, h
             if s and overwritten and p == db:
                 headers.append(db.name)
 
-    # 1b) Every OTHER file under the data dir gets the same treatment now, unlinking nothing, before any key or any slow
-    #    step: copies of the corpus live there under names no list here can keep up with (the retained pre-restore-<ts>.db
-    #    snapshots, .restore-* and .bak-build-* staging, salvage and damaged copies), each with the corpus's salt in its
-    #    first page, and step 6 alone (a full overwrite, hours at corpus size) would leave them readable if the erase were
-    #    stopped before it got there. Fail toward shredding more: no file is told apart by its contents (an encrypted page
-    #    is indistinguishable from noise), so every regular file's head goes, a -wal or -journal is rewritten whole and a
-    #    -shm head is zeroed. The keys folder is left to step 2, which owns it under its lock. Counted in step 6.
-    heads_elsewhere = 0
-    if base.exists():
-        keys_root = paths["keys_dir"]
-        for root, dirs, names in os.walk(base):
-            dirs[:] = [d for d in dirs if Path(root, d) != keys_root and not _is_link(Path(root, d))]
-            for name in names:
-                p = Path(root, name)
-                if p.is_symlink() or not p.is_file():
-                    continue
-                whole = name.endswith(("-wal", "-journal"))
-                if _overwrite(p, head_bytes=None if whole else _SQLCIPHER_PAGE1, zeros=name.endswith("-shm")):
-                    heads_elsewhere += 1
-                else:
-                    overwrite_failures.append(str(p))
-
     # 2) Destroy on-disk key material (the scrypt wrap-salt lives inside these files).
     # Under the lock every key-file change of THIS process takes (src/custody/keyfile.py KEY_FILES_LOCK), held
     # until the keys folder is gone: a wrap in place that waited finds its file gone and writes nothing, and a
@@ -482,6 +461,34 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, h
     anchors_seen, _anchors_overwritten, anchors_wiped = _track(paths["anchors_db"])
     seen += anchors_seen
     wiped += anchors_wiped
+
+    def _unlisted(err: OSError) -> None:
+        overwrite_failures.append(str(err.filename or "an unlistable folder"))
+
+    # 4b) Every OTHER file under the data dir gets the same treatment now, unlinking nothing, before the slow step 6.
+    #    Encrypted copies of the corpus live there under names no list here can keep up with (the retained
+    #    pre-restore-<ts>.db snapshots, salvage and damaged copies), each with the corpus's salt in its first page, and
+    #    step 6 alone (a full overwrite, hours at corpus size) would leave them readable if the erase were stopped before
+    #    it got there. Fail toward shredding more: no file is told apart by its contents (an encrypted page is
+    #    indistinguishable from noise), so every regular file's head goes, a -wal or -journal is rewritten whole and a
+    #    -shm head is zeroed. It runs AFTER the keys, the cache and the anchors (a large folder costs one write and sync
+    #    per file, and nothing may delay the keys). NOT covered by it, stated: PLAINTEXT staging (backup members, an
+    #    extracted restore, a reassembling archive) has no salt to lose, and an encrypted member inside an archive sits past
+    #    its head; both are destroyed only by step 6's full rewrite. A folder that cannot be listed is named as a failure.
+    heads_elsewhere = 0
+    if base.exists():
+        keys_root = paths["keys_dir"]
+        for root, dirs, names in os.walk(base, onerror=_unlisted):
+            dirs[:] = [d for d in dirs if Path(root, d) != keys_root and not _is_link(Path(root, d))]
+            for name in names:
+                p = Path(root, name)
+                if p.is_symlink() or not p.is_file():
+                    continue
+                whole = name.endswith(("-wal", "-journal"))
+                if _overwrite(p, head_bytes=None if whole else _SQLCIPHER_PAGE1, zeros=name.endswith("-shm")):
+                    heads_elsewhere += 1
+                else:
+                    overwrite_failures.append(str(p))
 
     # 5) Clear the in-memory passphrase (never persisted) so the app holds no key. Only
     #    for the real default store — an explicit override dir must not mutate process
@@ -518,7 +525,7 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, h
         if chosen is not None and chosen.resolve() == base.resolve():
             forget_volume_id()
     if base.exists():
-        for root, dirs, names in os.walk(base):  # never follows a symlinked folder (followlinks=False) or a junction
+        for root, dirs, names in os.walk(base, onerror=_unlisted):  # never follows a symlinked folder (followlinks=False) or a junction
             dirs[:] = [d for d in dirs if not _is_link(Path(root, d))]
             for name in names:
                 p = Path(root, name)

@@ -642,10 +642,14 @@ imply a protection we cannot deliver.
   lose their salt page first (crypto-erase; the corpus body is never rewritten, so the erase stays fast at any size),
   then their write-ahead log and rollback journal are overwritten WHOLE, because each commit that touched page 1 left a
   copy of the salt in them past their first 4 KiB (R708), and the main heads are overwritten again after that, so a
-  checkpoint running meanwhile cannot carry the salt home. Before any key or slow step, every other file under the data dir loses its head the same
-  way (a -wal or -journal whole), because copies of the corpus with its salt live there under names no list keeps up
-  with (pre-restore snapshots, restore and backup staging, salvage copies), so a wipe stopped early leaves none readable. No step writes through a link or into a FIFO, socket or device, and no symlinked folder or
-  junction is entered (the app's own databases, if linked into place, are erased where they really are); a hard-linked
+  checkpoint running meanwhile cannot carry the salt home. After the keys and before the slow full rewrite, every other file under the data dir loses
+  its head the same way (a -wal or -journal whole), because encrypted copies of the corpus with its salt in their first
+  page live there under names no list keeps up with (pre-restore snapshots, salvage copies), so a wipe stopped before
+  the full rewrite leaves none of those readable. Plaintext staging (backup members, an extracted restore, a
+  reassembling archive) has no salt to lose, and an encrypted member inside an archive sits past its head: both are
+  destroyed only by the full rewrite. A folder the app cannot list is reported as not destroyed. No step writes through a link or into a FIFO, socket or device, and no symlinked folder or
+  junction is entered (the app's own databases, if linked into place, are erased where they really are, and so is a
+  data or keys folder that is itself a link); a hard-linked
   file shares its bytes with its other names, and a mount point under the data dir is walked like any folder. A transaction already under way can still commit into the
   unlinked files; the wipe keeps a descriptor on each and rewrites them once the pool is closed and again 15 s later, and
   a commit later than that is the window left; every file under the data dir the earlier steps did not
