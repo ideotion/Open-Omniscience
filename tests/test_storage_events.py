@@ -1682,6 +1682,13 @@ def test_a_failed_write_is_tried_again_without_another_change(journal, monkeypat
 
 
 def test_a_persistent_write_failure_backs_off_instead_of_writing_every_delay(journal, monkeypatch):
+    # The writer counts consecutive failures in a local of its THREAD, which reset_for_tests does not reach (a reset only moves the
+    # generation), and only a write that succeeds zeroes it. An earlier test in this process whose last write failed left the count at
+    # 1, and this test then read [0.2, 0.4, 0.8] for [0.1, 0.2, 0.4] (random order, seed 1111). One good write first starts the count
+    # at zero, as it is in a process whose writer has never failed.
+    se.record("guard", {"kind": "warm-up"})
+    assert _wait_until(lambda: _file_total(journal, "guard") >= 1), "the warm-up write landed"
+    se.reset_for_tests()
     stamps: list[float] = []
 
     def always(_a, _b):
