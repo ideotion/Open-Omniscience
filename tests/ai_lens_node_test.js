@@ -183,7 +183,9 @@ check("confirming POSTs the id and the wanted state, and reads the answer back",
     setAttribute(k, v) { this._attrs[k] = v; },
     removeAttribute(k) { delete this._attrs[k]; },
     closest: () => btn };
-  handler({ target: btn });
+  handler({ target: btn });  // a script's click (isTrusted false), R673: takes no step
+  assert.strictEqual(calls.length, 0, "a scripted click must not confirm anything (R673)");
+  handler({ target: btn, isTrusted: true });
   assert.strictEqual(calls.length, 1, "exactly one request per click");
   const [url, opts] = calls[0];
   assert.strictEqual(url, "/api/ai/keywords/confirm", "the endpoint that had no consumer");

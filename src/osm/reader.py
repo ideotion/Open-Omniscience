@@ -193,6 +193,7 @@ def cgroup_reading(
     notes: list[str] = []
     own, unreadable, proc_read = _own_cgroup_paths(proc_cgroup, notes)
     best: dict[str, Any] | None = None
+    levels: list[dict[str, Any]] = []  # every level with a readable limit, for a caller that adds reclaimable cache per level
     own_dir_missing = False
     for source, sub, limit_name, usage_name in layouts:
         mounted = os.path.isfile(os.path.join(root, "cgroup.controllers")) if not sub else os.path.isdir(os.path.join(root, sub))
@@ -231,6 +232,7 @@ def cgroup_reading(
                 unreadable = True
                 continue
             head = max(0, limit - used)
+            levels.append({"source": source, "limit_bytes": limit, "used_bytes": used, "path": f"/{rel}"})
             if best is None or head < best["headroom_bytes"]:
                 best = {"source": source, "limit_bytes": limit, "headroom_bytes": head, "path": f"/{rel}"}
     if unreadable:
@@ -239,7 +241,7 @@ def cgroup_reading(
     if best is None:
         return {"source": None, "limit_bytes": None, "headroom_bytes": None, "path": None, "unreadable": False,
                 "own_dir_missing": own_dir_missing, "notes": notes}
-    return {**best, "unreadable": False, "own_dir_missing": own_dir_missing, "notes": notes}
+    return {**best, "unreadable": False, "own_dir_missing": own_dir_missing, "notes": notes, "levels": levels}
 
 
 def cgroup_headroom_bytes() -> int | None:

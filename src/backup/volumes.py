@@ -28,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import secrets
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -208,6 +209,71 @@ def verify_volume_set(
     }
 
 
+def require_unique_volumes(names: Any) -> None:
+    """Refuse a manifest that names one volume twice (R686): read twice, it is written twice, and no
+    size the manifest declares bounds that."""
+    seen: set[str] = set()
+    for name in names:
+        n = str(name or "")
+        # FAT, exFAT, NTFS and APFS treat names that differ only by case or by a trailing dot or space as one file.
+        key = n.casefold().rstrip(". ")
+        if key in seen:
+            raise VolumeError(f"the volume manifest lists the volume {n} more than once; refusing to restore from it")
+        seen.add(key)
+
+
+def remove_leftover_plaintext(out_dir: str | os.PathLike[str], names: list[str]) -> dict[str, list[str]]:
+    """Remove the named leftover plaintext copies, and only those the folder's manifest explains (R686).
+
+    Called only when the operator asked for it: nothing of ours deletes from a backup drive on its own. A name
+    that is not a current leftover is ignored. Answers ``{"removed": [...], "failed": [...]}`` by file name, so a
+    copy the system would not let go of (a file open elsewhere on Windows) is named and the rest still go.
+
+    Where the platform allows it the folder is opened once without following a link and each copy is removed
+    relative to that handle, so a folder swapped for a link between the check and the removal cannot redirect it."""
+    from src.backup.import_scan import (
+        can_scan_by_handle,
+        leftover_plaintext,
+        leftovers_in_handle,
+        looks_like_leftover,
+        open_folder_handle,
+    )
+
+    removed: list[str] = []
+    failed: list[str] = []
+    if can_scan_by_handle() and os.unlink in os.supports_dir_fd:
+        # One handle for the scan and the removal: what is checked is what is removed (R692).
+        try:
+            dir_fd = open_folder_handle(out_dir)
+        except OSError:
+            # The folder cannot be opened, so nothing can be checked or removed: every name shaped like a leftover
+            # copy is reported as not removed, never silently dropped, so the operator knows the copies may remain.
+            return {"removed": [], "failed": [n for n in dict.fromkeys(names) if looks_like_leftover(n)]}
+        try:
+            allowed = set(leftovers_in_handle(dir_fd))
+            for name in [n for n in dict.fromkeys(names) if n in allowed]:
+                try:
+                    os.unlink(name, dir_fd=dir_fd)
+                    removed.append(name)
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    failed.append(name)
+        finally:
+            os.close(dir_fd)
+        return {"removed": removed, "failed": failed}
+    allowed = set(leftover_plaintext(out_dir))  # Windows: no folder handles
+    for name in [n for n in dict.fromkeys(names) if n in allowed]:
+        try:
+            (Path(out_dir) / name).unlink()
+            removed.append(name)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            failed.append(name)
+    return {"removed": removed, "failed": failed}
+
+
 def read_volume_set(
     out_dir: str | os.PathLike[str],
     passphrase: str,
@@ -241,6 +307,16 @@ def read_volume_set(
             "dispatches automatically)"
         )
     out = Path(out_dir)
+    # Before anything is read or repaired (R686): plain volume names, each volume once (by name the way the disk
+    # compares names, never through a link, never two names for one file), and a real declared size to bound by.
+    from src.backup.stream_backup import _require_each_volume_read_once, _require_safe_volume_name
+
+    for v in m.get("volumes") or []:
+        _require_safe_volume_name(str((v or {}).get("name") or ""))
+    _require_each_volume_read_once(m, out)
+    declared = m.get("plaintext_bytes")
+    if isinstance(declared, bool) or not isinstance(declared, int) or declared <= 0:
+        raise VolumeError("the volume manifest declares no plaintext size; refusing to reassemble an unbounded archive")
     status = verify_volume_set(out_dir)
     if status["bad"]:
         if recover is not None:
@@ -259,14 +335,25 @@ def read_volume_set(
                 + ", ".join(sorted(unrepaired))
             )
 
+    # Free space for what is really written: the archive itself plus ONE decrypted volume at a time,
+    # which a volume's ciphertext size bounds from above (R686).
+    from src.backup.artifact import preflight_free_space
+
+    largest = max((((out / v["name"]).stat().st_size) for v in m["volumes"]), default=0)
+    preflight_free_space(Path(dest).parent, declared + largest, what="restore staging")
+
     whole = hashlib.sha256()
+    written = 0
     tmp = Path(dest).with_name(Path(dest).name + ".reassembling")
     try:
         with open(tmp, "wb") as outf:
             for v in m["volumes"]:
                 if should_stop is not None and should_stop():
                     raise VolumeStopped("stopped while reassembling the backup")
-                vtmp = out / (v["name"] + ".plain")
+                # The decrypted working copy goes beside ``dest`` (the restore's own staging, on the app's data volume,
+                # removed with it), NEVER into the backup's folder: a crash there left plaintext on the user's backup
+                # drive, where nothing of ours would ever clean it up (R686).
+                vtmp = Path(dest).with_name(f".{v['name']}.{secrets.token_hex(4)}.plain")
                 try:
                     decrypt_file(out / v["name"], vtmp, passphrase)
                     with open(vtmp, "rb") as vf:
@@ -274,6 +361,11 @@ def read_volume_set(
                             blk = vf.read(_COPY_BUF)
                             if not blk:
                                 break
+                            written += len(blk)
+                            if written > declared:
+                                raise VolumeError(
+                                    "the backup's volumes hold more data than its manifest declares; refusing to go on"
+                                )
                             outf.write(blk)
                             whole.update(blk)
                 finally:

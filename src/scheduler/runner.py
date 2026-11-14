@@ -27,6 +27,7 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from src.database import damage, pool_watch
 from src.database.query import capped
@@ -1127,8 +1128,13 @@ def run_scrape_once(
                 with ThreadPoolExecutor(
                     max_workers=w_max, thread_name_prefix="oo-collect"
                 ) as pool:
+                    # The pool's threads answer to the shutdown's job refusal as this pass's thread does (R689): the manual
+                    # pass (oo-scrape-now) is refused once the shutdown stops waiting, and its stores are made here.
+                    from src.database.after_shutdown import inherit as _inherit_refusal
+
+                    run_worker = _inherit_refusal(_worker)
                     for s in sources:
-                        futures.append(pool.submit(_worker, s, s.id))
+                        futures.append(pool.submit(run_worker, s, s.id))
                     for fut in as_completed(futures):
                         read_futures.add(fut)
                         tally, pages, processed = fut.result()
@@ -1904,7 +1910,10 @@ class BackgroundScheduler:
         # This flag is INDEPENDENT of the loop thread's own running state (it must hold
         # even when the loop was already stopped before the restore began, e.g. under
         # airplane mode) -- see hold_exclusive/release_exclusive below.
-        self._exclusive_hold = False
+        # R383: COUNTED, not one boolean. Two operations that overlap (a diagnostics bundle's window inside a standalone restore) each
+        # hold one claim, and the first to finish takes off only its own: with one boolean it lowered the restore's hold too, and "Run now"
+        # or a Start then put collection back on the machine in the middle of the restore. Read through ``_exclusive_hold`` (count > 0).
+        self._exclusive_holds = 0
         # R367 (F2 of the read of #1607): the stop signal of a pass that no loop owns. ``_stop`` belongs to the loop thread and ``stop()`` used to
         # return before setting it when that thread was not running, so a "Run now" pass (the shape on a machine that booted in airplane mode) was
         # never asked to wind down and an exclusive operation's wait spent its whole bound on it. Set by ``stop()`` only while a pass is in
@@ -2021,24 +2030,40 @@ class BackgroundScheduler:
         threading.Thread(target=self._do_run, name="oo-scrape-now", daemon=True).start()
         return True
 
-    def hold_exclusive(self) -> None:
+    def hold_exclusive(self, claim: list[bool] | None = None) -> None:
         """Claim the machine for an exclusive operation (a restore): blocks every
         future :meth:`run_now` call until :meth:`release_exclusive`. Independent
         of the continuous loop's own running state -- must hold even when the
         loop was already stopped (e.g. under airplane mode) before the exclusive
         operation began, since a manual "Run now" would otherwise still compete
-        for CPU/the single-writer gate with it regardless of the loop's state."""
-        with self._state_lock:
-            if not self._exclusive_hold:
-                self._start_deferred = False  # a FRESH claim: only a start refused during this hold is the operation's to honour
-            self._exclusive_hold = True  # one boolean, so an operation that claims it inside another's hold must not erase the other's deferral
+        for CPU/the single-writer gate with it regardless of the loop's state.
 
-    def release_exclusive(self) -> None:
-        """The other half of :meth:`hold_exclusive` -- always call this in a
-        ``finally``, unconditionally, once the exclusive operation is done
-        (regardless of whether the continuous loop itself resumed)."""
+        ``claim`` (R383): a list the caller keeps; ``True`` is appended to it in the same locked step that takes the claim, so the caller
+        always knows whether it holds one, even when an interrupt lands right after this returns, and releases exactly its own."""
         with self._state_lock:
-            self._exclusive_hold = False
+            if self._exclusive_holds == 0:
+                self._start_deferred = False  # a FRESH claim: only a start refused during this hold is the operation's to honour
+            self._exclusive_holds += 1  # counted (R383): a claim made inside another's hold neither erases its deferral nor ends its hold
+            if claim is not None:
+                claim.append(True)
+
+    def release_exclusive(self, *, hand_over_start: bool = False) -> tuple[bool, bool]:
+        """The other half of :meth:`hold_exclusive`: one claim off, by the operation that took it (R383: the hold is counted, so a release
+        by anyone else ends somebody else's claim).
+
+        Returns ``(hold_ended, start_wanted)`` decided in ONE locked step with the release, so two operations that end together cannot
+        lose a start between them. When this was the LAST claim, ``hold_ended`` is True and ``start_wanted`` is the start refused during
+        the hold (consumed here). When another claim still stands, the hold goes on: ``hand_over_start`` (this operation stopped a running
+        loop) is queued behind it as a deferred start, and ``(False, False)`` says there is nothing to start now. Floored at zero.
+        """
+        with self._state_lock:
+            self._exclusive_holds = max(0, self._exclusive_holds - 1)
+            if self._exclusive_holds == 0:
+                wanted, self._start_deferred = self._start_deferred, False
+                return True, wanted
+            if hand_over_start:
+                self._start_deferred = True
+            return False, False
 
     def _pass_should_stop(self) -> bool:
         """What the pass asks before each source: the loop's stop, or the stop aimed at a pass no loop owns."""
@@ -2048,6 +2073,11 @@ class BackgroundScheduler:
         """Is the machine currently claimed for an exclusive operation?"""
         with self._state_lock:
             return bool(self._exclusive_hold)
+
+    @property
+    def _exclusive_hold(self) -> bool:
+        """Any claim outstanding (R383: the hold is a count; this is the old boolean's reading of it). Callers hold ``_state_lock``."""
+        return self._exclusive_holds > 0
 
     # -- internals --------------------------------------------------------- #
 
@@ -2832,6 +2862,8 @@ class BackgroundScheduler:
                 "running": self.is_running(),
                 "active": self._active,
                 "exclusive_hold": bool(self._exclusive_hold),  # why a start is refused: an import or restore owns the machine
+                # how many operations hold it (R383): a count that stays above zero with nothing running is a claim that was never released
+                "exclusive_holds": int(self._exclusive_holds),
                 "start_deferred": bool(self._start_deferred),  # a refused start is queued behind the hold and starts when it ends
                 "started_at": self._started_at.isoformat() if self._started_at else None,
                 "last_run": self._last_run.isoformat() if self._last_run else None,
@@ -2969,6 +3001,8 @@ _EXCL_DEPTH = 0
 _EXCL_BASE = False
 #: A window of the set paused collection: the LAST window out resumes it, whichever one paused.
 _EXCL_PAUSED = False
+#: The claims the windows of the set took on the scheduler's hold (R383): released by the LAST window out, whichever one took them.
+_EXCL_CLAIMS: list[bool] = []
 
 
 def exclusive_window_open() -> bool:
@@ -3052,7 +3086,7 @@ def exclusive_window(timeout: float = 10.0, *, resume_retries: int = 19) -> Iter
     ``resume_retries`` is passed to :func:`resume_after_exclusive_operation` by the window
     that resumes: a request handler passes 0, so it does not sit in the retry loop (up to 19
     x 30 s) while a lingering pass winds down; the pending-resume watcher takes over."""
-    global _EXCL_TOKEN, _EXCL_WINDOW, _EXCL_DEPTH, _EXCL_BASE, _EXCL_PAUSED
+    global _EXCL_TOKEN, _EXCL_WINDOW, _EXCL_DEPTH, _EXCL_BASE, _EXCL_PAUSED, _EXCL_CLAIMS
     already = exclusive_window_open()
     # The flag is raised AFTER the pause and lowered BEFORE the resume, so this
     # window's own pause/resume go through the SAME guarded functions everything
@@ -3070,9 +3104,12 @@ def exclusive_window(timeout: float = 10.0, *, resume_retries: int = 19) -> Iter
     # resumes what the pause stopped.
     was_paused = False
     counted = False
+    claim: list[bool] = []  # this window's claim on the scheduler's hold, if its pause took one (R383)
     try:
-        if not already:
-            was_paused = pause_for_exclusive_operation(timeout=timeout)
+        # EVERY window pauses, a nested one included (R383, security read of B3 delta 2): inside an open window the pause takes this window's
+        # own claim and stops nothing; a window that read ``already`` while another was closing finds none open and pauses for real, so no
+        # window ever runs without a claim (Start and Run now refused) and with the loop still running.
+        was_paused = pause_for_exclusive_operation(timeout=timeout, claim=claim)
         with _EXCL_LOCK:
             if was_paused:
                 _EXCL_PAUSED = True  # before the count: a window that is interrupted next still resumes what it stopped
@@ -3085,9 +3122,12 @@ def exclusive_window(timeout: float = 10.0, *, resume_retries: int = 19) -> Iter
             _EXCL_WINDOW = True
         yield was_paused
     finally:
+        claims: list[bool] = []
         with _EXCL_LOCK:
             if was_paused:
                 _EXCL_PAUSED = True  # idempotent with the body's own: the body's may not have run when the interrupt came
+            # the claim joins the set's: windows that overlap without nesting leave in any order, and the LAST one out releases them all
+            _EXCL_CLAIMS.extend(claim)
             if counted:
                 _EXCL_DEPTH = max(0, _EXCL_DEPTH - 1)
             last = _EXCL_DEPTH == 0
@@ -3096,19 +3136,22 @@ def exclusive_window(timeout: float = 10.0, *, resume_retries: int = 19) -> Iter
                 if counted:
                     _EXCL_WINDOW = _EXCL_BASE
                 resume, _EXCL_PAUSED = _EXCL_PAUSED, False
-        if last and (counted or not already):  # a nested window that never counted owns nothing to give back
-            resume_after_exclusive_operation(resume, retries=resume_retries)
+                claims, _EXCL_CLAIMS = _EXCL_CLAIMS, []
+        if last and (counted or not already or claims):  # a window that never counted gives back only the claims it holds
+            resume_after_exclusive_operation(resume, claim=claims, retries=resume_retries)
 
 
-def pause_for_exclusive_operation(timeout: float = 10.0) -> bool:
+def pause_for_exclusive_operation(timeout: float = 10.0, *, claim: list[bool] | None = None) -> bool:
     """Pause background collection for the duration of an exclusive,
     machine-owning operation (field-feedback Session A §4, "import owns the
     machine": a large restore competes for CPU and the write path with any
     in-flight collection pass).
 
     NESTED INSIDE AN :func:`exclusive_window` (2026-07-29) this returns False
-    without touching the scheduler -- False being exactly the "I did not pause
+    without stopping anything -- False being exactly the "I did not pause
     anything, so do not resume anything" contract the return value already had.
+    It still takes its OWN claim on the hold (R383), so a window that ends before
+    this operation does cannot start collection under it.
     The matching :func:`resume_after_exclusive_operation` likewise leaves the
     outer window standing. So an individual restore running inside an import run
     neither re-pauses nor (crucially) resumes collection mid-run.
@@ -3138,19 +3181,52 @@ def pause_for_exclusive_operation(timeout: float = 10.0) -> bool:
     :meth:`BackgroundScheduler.stop`'s bounded join means a pass already deep
     in a fetch may still be finishing when this returns.
     """
+    sch = get_scheduler()
+    # The claim FIRST, the window read after it (R383, the security reads of B3). Read the other way round, the last open window could end
+    # between the read and the claim, find the hold free and start collection, and this operation would then take its claim over a running
+    # loop and return False without stopping it. Claimed first, a window that ends now finds this claim standing and leaves its start
+    # deferred behind it; this operation's own release makes that start.
+    _hold(sch, claim)
     if exclusive_window_open():
+        # The window already stopped the loop; this operation's claim keeps a window that ends first from starting collection under it (a
+        # volume restore begun during an export or a bundle).
         return False
-    get_scheduler().hold_exclusive()
-    return get_scheduler().stop(timeout=timeout)
+    return sch.stop(timeout=timeout)
+
+
+def _hold(sch: Any, claim: list[bool] | None) -> None:
+    """Take one claim on the scheduler's hold and, when the caller keeps a ``claim`` list, record it there (R383).
+
+    The real scheduler records it inside its own locked step. A stand-in without the parameter (a test double) is held the old way and
+    the claim recorded right after."""
+    if isinstance(sch, BackgroundScheduler):
+        sch.hold_exclusive(claim)
+        return
+    sch.hold_exclusive()
+    if claim is not None:
+        claim.append(True)
+
+
+def _release_one(sch: Any, hand_over_start: bool) -> tuple[bool, bool]:
+    """Release one claim: ``(hold_ended, start_wanted)`` from :meth:`BackgroundScheduler.release_exclusive`, decided in one locked step.
+
+    A stand-in whose release answers nothing (a test double) is read the pre-R383 way: the deferred start first, then the release, the
+    hold taken as ended."""
+    if isinstance(sch, BackgroundScheduler):
+        return sch.release_exclusive(hand_over_start=hand_over_start)
+    take = getattr(sch, "take_deferred_start", None)
+    wanted = bool(take()) if callable(take) else False
+    sch.release_exclusive()
+    return True, wanted
 
 
 def _start_or_stand_down(retries: int, retry_delay: float) -> bool:
     """True when collection runs or must not be started (the kill switch); False when the retries are spent.
 
-    The retry loop of :func:`resume_after_exclusive_operation`, a function of its own and called from inside that function's ``try``: CPython
-    3.13 leaves a loop's back-edge outside the exception table of the ``try`` around it, so an interrupt delivered there would skip the
-    ``finally`` that releases the scheduler's exclusive window. This function has no handler, so there is nothing for an interrupt to skip;
-    it reaches the call, which the ``finally`` covers (R163; tests/test_gates_survive_an_interrupt.py)."""
+    The retry loop of :func:`resume_after_exclusive_operation`, a function of its own with no handler (R163): CPython 3.13 leaves a loop's
+    back-edge outside the exception table of a ``try`` around it, so a loop kept out of every ``try`` has nothing for an interrupt to skip.
+    The claims are released before it runs (R383), so an interrupt here can leave collection stopped but never the machine held
+    (tests/test_gates_survive_an_interrupt.py)."""
     from src.ingest import kill_switch_active
 
     for attempt in range(retries + 1):
@@ -3163,14 +3239,53 @@ def _start_or_stand_down(retries: int, retry_delay: float) -> bool:
     return False
 
 
+def _defer_start_behind_holder(sch: Any) -> None:
+    """Leave a start for the operation that still holds the machine: ``start()`` refuses while a claim stands and REMEMBERS the start, so that
+    operation's resume makes it. Never under the kill switch, checked first like every start the resume makes, and never raises (a courtesy)."""
+    from src.ingest import kill_switch_active
+
+    try:
+        if kill_switch_active():
+            return
+        sch.start()
+    except Exception as exc:  # noqa: BLE001 - a courtesy call never raises into the operation's own finally
+        _LOG.warning("could not leave a collection start for the operation holding the machine (%s)", type(exc).__name__)
+
+
+def _hand_start_to_window() -> bool:
+    """A standalone operation ended inside an open window, which owns the machine: its start is the window's to make (R383).
+
+    False when the window closed in between: nothing will resume for it, so the caller starts the loop itself (with its retries and the
+    pending-resume watcher). The window's last exit starts the loop with the claims its windows took (see the resume)."""
+    global _EXCL_PAUSED
+    with _EXCL_LOCK:
+        if _EXCL_WINDOW:
+            _EXCL_PAUSED = True
+            return True
+    return False
+
+
+def _release_claims(sch: Any, claims: int, was_paused: bool) -> tuple[bool, bool]:
+    """Release ``claims`` claims, the last with the hand-over; ``(hold_ended, start_wanted)`` of the last release.
+
+    A function of its own with no handler (R163): its loop's back-edge is then outside any ``try`` an interrupt could skip. A start that an
+    earlier release reported (a stray release already lowered the count) is kept, not dropped."""
+    wanted_early = False
+    for _extra in range(claims - 1):  # two windows that paused at once on two threads: all but the last claim end plainly
+        ended, wanted = _release_one(sch, hand_over_start=False)
+        wanted_early = wanted_early or (ended and wanted)
+    hold_ended, wanted = _release_one(sch, hand_over_start=was_paused)
+    return hold_ended, wanted or wanted_early
+
+
 def resume_after_exclusive_operation(
-    was_paused: bool, *, retries: int = 19, retry_delay: float = 30.0
+    was_paused: bool, *, claim: list[bool] | None = None, retries: int = 19, retry_delay: float = 30.0
 ) -> None:
     """The other half of :func:`pause_for_exclusive_operation`.
 
-    ALWAYS releases :meth:`BackgroundScheduler.release_exclusive` (in a
-    ``finally``, unconditionally) -- a manual "Run now" must work again the
-    instant the exclusive operation itself is done, even if the continuous
+    ALWAYS releases the caller's own claims on :meth:`BackgroundScheduler.release_exclusive`,
+    FIRST, before anything that could fail -- a manual "Run now" must work again the
+    instant the last exclusive operation is done, even if the continuous
     loop hasn't actually resumed yet (below).
 
     ``stop()``'s join is BOUNDED (10 s default) and ``_do_run`` has no
@@ -3207,75 +3322,97 @@ def resume_after_exclusive_operation(
     without starting anything; :func:`~src.api.system.set_network_mode`
     starts the scheduler again the next time THEY choose to go online.
 
-    NESTED INSIDE AN :func:`exclusive_window` (2026-07-29) this returns
-    immediately: a single backup finishing inside a multi-backup import run must
-    not put collection back on the machine for the rest of the run (field ruling
-    item 10). Only the window itself resumes, once, at the end.
+    NESTED INSIDE AN :func:`exclusive_window` (2026-07-29) this starts nothing:
+    a single backup finishing inside a multi-backup import run must not put
+    collection back on the machine for the rest of the run (field ruling item 10).
+    Only the window itself resumes, once, at the end. (Since R383 it still
+    releases the caller's own claim first, and hands any start to the window.)
 
     A COURTESY, NOT THE OPERATOR TRYING AGAIN: this and the pending-resume watcher below put back a
     collector that an exclusive operation (a backup, a restore) stopped, so they do NOT go through
     ``damage.retry_for_collection_start``: a file the database reported damaged stays paused across them,
     and only the operator's own start releases it (``tests/test_database_damage.py``).
+
+    COUNTED CLAIMS (R383). The hold is a count, so a claim is released by the operation that took it and by nobody else. ``claim`` is the
+    list the caller handed to :func:`pause_for_exclusive_operation`: one ``True`` per claim that pause took (it takes one also inside an
+    open window, so a window that ends first does not start collection under it). Every claim in it is released here, ALWAYS, also when a window is open now, and the list
+    is emptied, so a second call with it does nothing. ``claim=None`` is the call that recorded nothing (a caller from before R383): one
+    claim is then assumed, since every pause takes one, inside a window too. So ``claim=None`` may only follow a pause that RETURNED, once:
+    a resume after a pause that raised before claiming, or a resume never paired with a pause, would end somebody else's claim (no caller in
+    ``src/`` does either; every one there keeps a list). The release and the deferred start are read in ONE locked step
+    (:meth:`BackgroundScheduler.release_exclusive`), so two operations that end together never strand a start between them. When this was
+    not the last claim (another operation still holds the machine) nothing is started: a loop this operation stopped is queued behind the
+    holder, whose own resume starts it. When a window is open, the start is handed to the window, whose last exit resumes it.
     """
-    if exclusive_window_open():
-        return
-    released = False
+    window = exclusive_window_open()
+    claims = 1 if claim is None else len(claim)  # a pause takes a claim inside a window too, so a caller that kept no list holds one
+    if claims == 0:
+        # Nothing of this caller's to release: a repeated resume, or a pause that failed before it claimed (every window now claims, so a
+        # window's last exit always comes through the branch below). A start this caller is owed is still made, behind any holder.
+        if not was_paused or window:
+            return
+        sch = get_scheduler()
+        held = getattr(sch, "holds_exclusive", None)
+        if callable(held) and held():
+            _defer_start_behind_holder(sch)
+            return
+    else:
+        # The releases come FIRST and outside any ``try``: nothing before them can fail, and ``start()`` refuses while a claim stands (R367, F5).
+        sch = get_scheduler()
+        hold_ended, wanted = _release_claims(sch, claims, was_paused)
+        if claim is not None:
+            claim.clear()  # released: a second resume with this list owns nothing (cleared AFTER, so an interrupt before it never leaks a claim)
+        if not hold_ended:
+            return  # another operation holds the machine; the start (if any) waits for it
+        if not (was_paused or wanted):
+            return
+        if window and _hand_start_to_window():
+            return
+    start_error: str | None = None
     try:
-        take = getattr(get_scheduler(), "take_deferred_start", None)
-        deferred = bool(take()) if callable(take) else False  # a Start or go-online that was refused during the hold is still wanted
-        if not (was_paused or deferred):
-            return
-        # The hold ends BEFORE the start attempts: ``start()`` refuses while it stands (R367, F5), and the operation is done.
-        get_scheduler().release_exclusive()
-        released = True
-        start_error: str | None = None
-        try:
-            started = _start_or_stand_down(retries, retry_delay)
-        except Exception as exc:  # noqa: BLE001 - a courtesy call never raises into the operation's own finally
-            # The loop's thread could not be created (``start()`` re-raises it: "can't start new thread"). Left to propagate it would turn
-            # the operation that has just FINISHED into an error answer (an encrypt whose snapshot report is lost, a diagnostics bundle
-            # that was built and is dropped) and skip the watcher below. The class only, never its words: the operation may have held a
-            # passphrase. The pending-resume watcher takes over, and says so where the operator looks if it cannot start either. The call
-            # is guarded HERE and not inside ``_start_or_stand_down``, whose retry loop must stay free of a handler (R163).
-            _LOG.warning(
-                "could not start background collection after an exclusive operation (%s); a pending resume takes over",
-                type(exc).__name__,
-            )
-            start_error = type(exc).__name__
-            started = False
-        if started:
-            _clear_resume_abandoned()
-            return
-        # SCHED-1 (field round 2026-09-24): the retry budget ran out with the old pass
-        # still alive. The budget was sized against one blocked WRITE (438 s); on a
-        # write-bound machine the unit is a pass's wind-down, and Lenn's took 39 minutes,
-        # so the warning below fired, nothing retried again, autostart was off, and
-        # collection stayed off for FIVE DAYS. The resume now stays PENDING on a watcher
-        # that waits for that pass to actually exit -- and says so where the operator
-        # looks (the task manager's Schedule tab), not only in a log line.
-        try:
-            _watch_for_resume(get_scheduler())
-        except Exception as exc:  # noqa: BLE001 - a courtesy call never raises into the operation's own finally
-            # The class only, never its words (not ``log_failure``, which scrubs the secrets the process KNOWS and keeps the rest of the line):
-            # this runs at the exit of an operation that may have held a passphrase the process does not hold, as the start refusal's log
-            # above does. A thread that cannot be created says nothing the class does not.
-            _LOG.warning("pending collection resume: the watcher thread could not be started (%s)", type(exc).__name__)
-            _note_resume_abandoned(start_error, type(exc).__name__)
-            _LOG.warning(
-                "could not resume background collection after an exclusive operation, and nothing is waiting to -- collection "
-                "stays stopped until it is started again (the Start button, or going online)"
-            )
-            return
-        else:
-            _clear_resume_abandoned()  # a watcher IS waiting now: an older abandonment would contradict ``resume_pending``
+        started = _start_or_stand_down(retries, retry_delay)
+    except Exception as exc:  # noqa: BLE001 - a courtesy call never raises into the operation's own finally
+        # The loop's thread could not be created (``start()`` re-raises it: "can't start new thread"). Left to propagate it would turn
+        # the operation that has just FINISHED into an error answer (an encrypt whose snapshot report is lost, a diagnostics bundle
+        # that was built and is dropped) and skip the watcher below. The class only, never its words: the operation may have held a
+        # passphrase. The pending-resume watcher takes over, and says so where the operator looks if it cannot start either. The call
+        # is guarded HERE and not inside ``_start_or_stand_down``, whose retry loop must stay free of a handler (R163).
         _LOG.warning(
-            "could not resume background collection after an exclusive operation yet "
-            "-- the previous pass is still winding down; collection resumes on its own "
-            "the moment it exits (task manager -> Schedule shows it as pending)"
+            "could not start background collection after an exclusive operation (%s); a pending resume takes over",
+            type(exc).__name__,
         )
-    finally:
-        if not released:
-            get_scheduler().release_exclusive()
+        start_error = type(exc).__name__
+        started = False
+    if started:
+        _clear_resume_abandoned()
+        return
+    # SCHED-1 (field round 2026-09-24): the retry budget ran out with the old pass
+    # still alive. The budget was sized against one blocked WRITE (438 s); on a
+    # write-bound machine the unit is a pass's wind-down, and Lenn's took 39 minutes,
+    # so the warning below fired, nothing retried again, autostart was off, and
+    # collection stayed off for FIVE DAYS. The resume now stays PENDING on a watcher
+    # that waits for that pass to actually exit -- and says so where the operator
+    # looks (the task manager's Schedule tab), not only in a log line.
+    try:
+        _watch_for_resume(get_scheduler())
+    except Exception as exc:  # noqa: BLE001 - a courtesy call never raises into the operation's own finally
+        # The class only, never its words (not ``log_failure``, which scrubs the secrets the process KNOWS and keeps the rest of the line):
+        # this runs at the exit of an operation that may have held a passphrase the process does not hold, as the start refusal's log
+        # above does. A thread that cannot be created says nothing the class does not.
+        _LOG.warning("pending collection resume: the watcher thread could not be started (%s)", type(exc).__name__)
+        _note_resume_abandoned(start_error, type(exc).__name__)
+        _LOG.warning(
+            "could not resume background collection after an exclusive operation, and nothing is waiting to -- collection "
+            "stays stopped until it is started again (the Start button, or going online)"
+        )
+        return
+    else:
+        _clear_resume_abandoned()  # a watcher IS waiting now: an older abandonment would contradict ``resume_pending``
+    _LOG.warning(
+        "could not resume background collection after an exclusive operation yet "
+        "-- the previous pass is still winding down; collection resumes on its own "
+        "the moment it exits (task manager -> Schedule shows it as pending)"
+    )
 
 
 # --------------------------------------------------------------------------- #

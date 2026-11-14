@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# preflight.sh — run three of the CI `test` job's gates locally BEFORE pushing.
+# preflight.sh — run three of the CI gates locally BEFORE pushing.
 #
-# Mirrors .github/workflows/ci.yml (the `test` job): the ruff correctness and mypy commands are the
-# job's own, verbatim, and the mypy gate means what the job's means (BLOCKING: any error fails). The
+# Mirrors .github/workflows/ci.yml: the ruff correctness and mypy commands are the `static` job's own
+# (R668; they ran in leg 1 of the `test` job before), verbatim, and the mypy gate means what the job's means (BLOCKING: any error fails). The
 # pytest command is the job's WITHOUT its `-rsfE` flags, its `--junitxml` report and its shard list
 # `@"$RUNNER_TEMP/shard.args"` (`-r` replaces
 # pytest's default `fE`, so the job names the skip listing `s` first and `fE` after it, which puts the

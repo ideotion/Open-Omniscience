@@ -336,6 +336,8 @@ def _urls(ids: _Ids) -> dict[str, str]:
         "/api/bulletin/editions/{filename}/export-privacy": f"/api/bulletin/editions/{ids.edition}/export-privacy",
         "/api/bulletin/editions/{filename}/render": f"/api/bulletin/editions/{ids.edition}/render",
         "/api/bulletin/editions/{filename}/review": f"/api/bulletin/editions/{ids.edition}/review",
+        "/api/climate/areas": "/api/climate/areas?dataset=owid&param=co2",
+        "/api/climate/series": "/api/climate/series?dataset=oni&series_id=oni.anom&area=nino34",
         "/api/commodities/{symbol}/correlation": "/api/commodities/ND/correlation?query=flood",
         "/api/diagnostics/ai-check/download": "/api/diagnostics/ai-check/download",
         "/api/diagnostics/all-job/download": "/api/diagnostics/all-job/download",
