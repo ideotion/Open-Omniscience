@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from src.monitoring import kpi as K
+from tests.js_source_helper import python_function_source
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -205,5 +206,5 @@ def test_each_instrument_writes_its_record_where_it_measures():
     assert 'record_date_coverage(payload, {"scan": scan, "days": days, "lang": lang})' in dates
     assert "if with_furniture:" in sources and "record_source_audit_status(report, allowlisted=len(allow))" in sources
     snap = (_ROOT / "src/monitoring/kpi.py").read_text(encoding="utf-8")
-    body = snap[snap.index("def kpi_snapshot"):snap.index("def run_kpi_selftest")]
+    body = python_function_source(snap, "kpi_snapshot")
     assert "record_" not in body
