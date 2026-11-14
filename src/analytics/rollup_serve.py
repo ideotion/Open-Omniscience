@@ -598,6 +598,7 @@ def _refresh_persisted_build() -> bool | None:
     with _LOCK:
         con = _STATE["con"] if _STATE["persisted"] else None
     opened_now = con is None
+    new_spill = ""  # the offload folder of a connection opened by THIS call (a cached one keeps the folder recorded with it)
     if opened_now:
         # The dispatcher chose this path a moment ago. The passphrase is read ONCE here and nothing is opened without it: ``columnar.open_store``
         # given no passphrase (or no secure backend) hands back an IN-MEMORY store, which this function would record as the persisted one.
@@ -606,7 +607,17 @@ def _refresh_persisted_build() -> bool | None:
             return _persisted_declined("no-passphrase")  # gone since the verdict: declined; the next verdict re-reads the setting
         if not columnar.secure_crypto_available():
             return _persisted_declined("no-secure-backend")
-        opened = columnar.open_store(passphrase)  # opens the persisted file; the opener REPORTS which store it opened
+        # The persisted connection's own offload folder, under the data directory, removed with the connection (row 48): never DuckDB's
+        # default ``.tmp`` beside the working directory. Handed to the persisted connection ONLY; an in-memory store handed back instead
+        # does not get it (its offload would not be encrypted), and the folder goes with the decline below.
+        new_spill = _persisted_spill_setting()
+        if not new_spill:
+            _LOG.warning("rollup serve: no offload folder for the persisted store; a refresh past its memory limit fails instead")
+        try:
+            opened = columnar.open_store(passphrase, persisted_spill=new_spill or None)
+        except BaseException:
+            _remove_spill(new_spill)  # the opener raised (its own in-memory fallback failed): nothing holds the folder
+            raise
         con = opened.con
         if opened.kind != "persisted":
             # An in-memory store was handed back (the encryption gate failed, or the persisted open raised) or the engine is off: not the store
@@ -616,6 +627,7 @@ def _refresh_persisted_build() -> bool | None:
                     con.close()
                 except Exception:  # noqa: BLE001 - closing a store that is not wanted must not turn a decline into a failure
                     pass
+            _remove_spill(new_spill)
             return _persisted_declined(opened.fallback_reason or "engine-off")
     if con is None:
         return _persisted_declined("engine-off")  # a store cached in ``_STATE`` is never None here; this narrows the type and refuses the impossible
@@ -644,7 +656,12 @@ def _refresh_persisted_build() -> bool | None:
                 # its offload folder stayed on disk (open-on-main row 25).
                 bind = s.get_bind()  # read before the first write: a raise below this point would leave a half-recorded store
                 retired = _STATE["con"] if _STATE["con"] is not con else None
-                retired_spill, _STATE["spill"] = _STATE.get("spill"), None
+                # The folder recorded is the serving connection's: the retired one's goes with it, a cached persisted one keeps its own.
+                retired_spill = _STATE.get("spill") if retired is not None or opened_now else None
+                if opened_now:
+                    _STATE["spill"] = new_spill or None
+                elif retired is not None:
+                    _STATE["spill"] = None
                 _STATE["con"] = con
                 _STATE["persisted"] = True
                 _STATE["built_at"] = time.time()
@@ -664,6 +681,7 @@ def _refresh_persisted_build() -> bool | None:
         if opened_now and not recorded:
             with contextlib.suppress(Exception):
                 con.close()
+            _remove_spill(new_spill)  # after the close: DuckDB holds its files open until then
         raise
     _LOG.info("rollup serve: refreshed persisted keyword_daily (%s rows)", rows)
     return True
@@ -1111,29 +1129,48 @@ def _remove_spill(path: str | None) -> None:
         shutil.rmtree(path, ignore_errors=True)
 
 
+def _spill_folder(*, make: bool) -> str:
+    """Sweep the offload folders of processes that are gone, then (``make``) a NEW owner-only folder under the data
+    directory for one connection alone. Raises when the folder cannot be made; the two callers below turn that into
+    "no offload". The sweep runs whether or not a folder is made: one a plaintext build left before the corpus was
+    encrypted is exactly what must not stay."""
+    from src.paths import data_dir
+
+    global _OWN_SPILL_SWEPT
+    root = data_dir() / "duckdb_tmp"
+    # One caller at a time: the map serve and the source-coverage benchmark take their folder here too, and a first
+    # sweep running beside another caller's new folder of this pid would remove a live connection's folder.
+    with _SPILL_LOCK:
+        if root.is_dir():
+            _sweep_spill_folders(root)
+        _OWN_SPILL_SWEPT = True  # even with no folder to sweep: from here on this pid's folders are live ones
+        if not make:
+            return ""
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        mine = root / f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+        mine.mkdir(mode=0o700)  # owner-only, like the data directory above it (defence in depth)
+        return str(mine)
+
+
 def _spill_setting() -> str:
-    """DuckDB's offload directory for an in-memory build (the keyword rollup, the map serve, both benchmarks): ``""`` (none) for an encrypted corpus, else a NEW
-    folder under the data directory for this connection alone. The folders of processes that are gone are
-    swept in BOTH cases: one a plaintext build left before the corpus was encrypted is exactly what must
-    not stay."""
+    """DuckDB's offload directory for an IN-MEMORY build (the keyword rollup, the map serve, both benchmarks): ``""``
+    (none) for an encrypted corpus, since an in-memory connection's offload is not encrypted, else a NEW folder under
+    the data directory for this connection alone. Never for the persisted store: that is :func:`_persisted_spill_setting`."""
     encrypted = _corpus_encrypted()
     try:
-        from src.paths import data_dir
+        return _spill_folder(make=not encrypted)
+    except Exception:  # noqa: BLE001 - no folder -> no offload (a decline, never a crash)
+        return ""
 
-        global _OWN_SPILL_SWEPT
-        root = data_dir() / "duckdb_tmp"
-        # One caller at a time: the map serve and the source-coverage benchmark take their folder here too, and a first
-        # sweep running beside another caller's new folder of this pid would remove a live connection's folder.
-        with _SPILL_LOCK:
-            if root.is_dir():
-                _sweep_spill_folders(root)
-            _OWN_SPILL_SWEPT = True  # even with no folder to sweep: from here on this pid's folders are live ones
-            if encrypted:
-                return ""
-            root.mkdir(mode=0o700, parents=True, exist_ok=True)
-            mine = root / f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
-            mine.mkdir(mode=0o700)  # owner-only, like the data directory above it (defence in depth)
-            return str(mine)
+
+def _persisted_spill_setting() -> str:
+    """DuckDB's offload directory for the PERSISTED encrypted store only: a NEW folder under the data directory even
+    though the corpus is encrypted, because that connection runs with ``temp_file_encryption`` on
+    (``columnar._persisted_config``), so what it offloads is written under an ephemeral key. ``""`` when no folder can
+    be made (then no offload: a refresh past the memory limit fails instead). The caller records it in ``_STATE``
+    with the connection and removes it when the connection is closed (row 48). Never for an in-memory connection."""
+    try:
+        return _spill_folder(make=True)
     except Exception:  # noqa: BLE001 - no folder -> no offload (a decline, never a crash)
         return ""
 
