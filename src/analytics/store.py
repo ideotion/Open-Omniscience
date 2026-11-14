@@ -189,9 +189,15 @@ def _keyword_takes_language(kw: Keyword, language: str | None) -> bool:
     (``map_keywords``). An article whose language is unknown keeps the plain lowest-id rule:
     no language, no evidence of a mismatch. Old rows converge only after a re-index.
     """
+    return keyword_language_takes(kw.language, language)
+
+
+def keyword_language_takes(row_language: str | None, language: str | None) -> bool:
+    """:func:`_keyword_takes_language` on plain values, so the restore carry
+    (``src.backup.merge``) resolves a carried mention by the very same rule."""
     if not language:
         return True
-    have = normalize_lang(kw.language)
+    have = normalize_lang(row_language)
     return not have or have == normalize_lang(language)
 
 

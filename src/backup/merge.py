@@ -4225,19 +4225,103 @@ _CARRY_PLAN_CHUNK = 500
 #: mention rows -- committed between windows, like every other windowed step.
 _CARRY_WRITE_WINDOW = 2000
 
-#: ``src.analytics.managed.normalize_lang`` in SQL, for the carry's keyword resolution
-#: (R698): lowercased, ``_`` read as ``-``, region and script dropped (``en-GB`` -> ``en``).
-#: A module-local literal; ``col`` is only ever a column name written in this file.
-_SQL_PRIMARY_SUBTAG = (
-    "(CASE WHEN instr(lower(trim(replace({col}, '_', '-'))), '-') > 0"
-    " THEN substr(lower(trim(replace({col}, '_', '-'))), 1,"
-    " instr(lower(trim(replace({col}, '_', '-'))), '-') - 1)"
-    " ELSE lower(trim(replace({col}, '_', '-'))) END)"
-)
-
 
 def _carry_enabled() -> bool:
     return os.getenv("OO_CARRY_DERIVED", "1") != "0"
+
+
+#: Distinct terms per local lookup when resolving the carried keywords (SQLite's default
+#: variable limit is far above it; the chunk only bounds one statement's size).
+_CARRY_TERM_CHUNK = 500
+
+
+def _language_resolution_moves(language: str | None, detected: str | None, text: str) -> bool:
+    """Would ``store._resolve_known_language`` change this incoming article's language?
+
+    The carry files mentions from the stored columns. index_article first clears a tag the
+    text's own script refutes (R699) and detects a language for an article that has none;
+    either moves the mentions to other keyword rows (R698) and rewrites the article's
+    columns, which the carry does not do. Pure and offline, the same two calls the indexer
+    makes, so a forged or stale backup cannot carry past them."""
+    from src.analytics.langdetect import detect_language
+    from src.analytics.script_check import script_refutes
+
+    asserted = (language or "").strip()
+    if asserted:
+        return script_refutes(asserted, text)
+    if (detected or "").strip():
+        return False
+    return detect_language(text) is not None
+
+
+def _fill_carry_keywords(con: sqlite3.Connection) -> None:
+    """``temp.carry_kw``: each (incoming keyword, article language) the carried mentions
+    name, resolved to the local keyword row index_article would file the mention under.
+
+    The rule is ``store.keyword_language_takes`` itself, applied in Python over the local
+    rows of each term in id order, rather than a SQL copy of it: SQLite's ``trim`` and
+    ``lower`` are ASCII-only, and a value like ``-en`` (a language that normalises to
+    nothing) reads differently in each, so a SQL rendition could file a carried mention on
+    a row a re-index would not choose. A pair with no eligible row gets NULL, which the
+    ``keyword_unmapped`` guard refuses, exactly as a re-index would create a new row."""
+    from src.analytics.store import keyword_language_takes
+
+    # Staged in a temp table and resolved a page of terms at a time: a field backup names
+    # millions of keywords, and holding every pair in Python at once is what this avoids.
+    con.execute("DROP TABLE IF EXISTS temp.carry_kw_pairs")
+    con.execute(
+        "CREATE TEMP TABLE carry_kw_pairs (old INTEGER NOT NULL, lang TEXT NOT NULL,"
+        " term TEXT, inc_entity INTEGER NOT NULL)"
+    )
+    con.execute(
+        "INSERT INTO temp.carry_kw_pairs (old, lang, term, inc_entity)"
+        " SELECT p.kid, p.lang, ik.normalized_term, COALESCE(ik.is_entity, 0)"
+        " FROM (SELECT DISTINCT im.keyword_id AS kid, cp.key_lang AS lang"
+        "  FROM temp.carry_plan cp"
+        "  CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old WHERE cp.kw = 1) p"
+        " JOIN inc.keywords ik ON ik.id = p.kid"
+    )
+    con.execute("CREATE INDEX temp.carry_kw_pairs_term ON carry_kw_pairs (term)")
+    # NULL terms first (they resolve to nothing), then every term in order, a page at a time.
+    con.executemany(
+        "INSERT INTO temp.carry_kw (old, lang, new, inc_entity) VALUES (?, ?, NULL, ?)",
+        _q(con, "SELECT old, lang, inc_entity FROM temp.carry_kw_pairs WHERE term IS NULL"),
+    )
+    after: str | None = None  # None = from the first term, so an empty-string term is not skipped
+    while True:
+        chunk = [r[0] for r in _q(
+            con,
+            "SELECT DISTINCT term FROM temp.carry_kw_pairs WHERE term IS NOT NULL"
+            " AND (? IS NULL OR term > ?) ORDER BY term LIMIT ?",
+            (after, after, _CARRY_TERM_CHUNK),
+        )]
+        if not chunk:
+            break
+        after = chunk[-1]
+        marks = ",".join("?" * len(chunk))
+        local: dict[str, list[tuple[int, str | None]]] = {}
+        for term, kid, lang in _q(
+            con,
+            f"SELECT normalized_term, id, language FROM keywords WHERE normalized_term IN ({marks})"  # noqa: S608  # nosec B608 - only placeholders are interpolated
+            " ORDER BY id",
+            tuple(chunk),
+        ):
+            local.setdefault(term, []).append((int(kid), lang))
+        rows = []
+        for old, lang, term, entity in _q(
+            con,
+            f"SELECT old, lang, term, inc_entity FROM temp.carry_kw_pairs WHERE term IN ({marks})",  # noqa: S608  # nosec B608 - only placeholders are interpolated
+            tuple(chunk),
+        ):
+            new = next(
+                (kid for kid, row_lang in local.get(term, ()) if keyword_language_takes(row_lang, lang)),
+                None,
+            )
+            rows.append((int(old), lang, new, int(entity)))
+        con.executemany(
+            "INSERT INTO temp.carry_kw (old, lang, new, inc_entity) VALUES (?, ?, ?, ?)", rows
+        )
+    con.execute("DROP TABLE IF EXISTS temp.carry_kw_pairs")
 
 
 def _ensure_carry_tables(con: sqlite3.Connection) -> None:
@@ -4251,7 +4335,8 @@ def _ensure_carry_tables(con: sqlite3.Connection) -> None:
         " old INTEGER PRIMARY KEY, source_id INTEGER, inputs TEXT,"
         " observed_on TEXT, country TEXT, language TEXT,"
         " top_keyword_id INTEGER, top_keyword_count INTEGER, top_keyword_tied_n INTEGER,"
-        " kw INTEGER NOT NULL DEFAULT 0, www INTEGER NOT NULL DEFAULT 0, www_inputs TEXT)"
+        " kw INTEGER NOT NULL DEFAULT 0, www INTEGER NOT NULL DEFAULT 0, www_inputs TEXT,"
+        " key_lang TEXT NOT NULL DEFAULT '')"
     )
     con.execute(
         "CREATE TEMP TABLE IF NOT EXISTS carry_kw ("
@@ -4364,7 +4449,7 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         "refused": {
             "already_present": 0, "source_unmapped": 0, "inputs_changed": 0,
             "keyword_unmapped": 0, "entity_upgrade": 0, "keyword_collision": 0,
-            "www_inputs_changed": 0, "article_missing": 0,
+            "www_inputs_changed": 0, "article_missing": 0, "language_unresolved": 0,
         },
         "method": (
             "an incoming article's keywords are carried only when its keyword stamp names this engine AND its "
@@ -4528,6 +4613,14 @@ def _plan_derived_carry(con, batch_id, results) -> None:
                     refused["www_inputs_changed"] += 1
                 else:
                     www_ok = True
+            if kw_ok and _language_resolution_moves(lang, detected, text):
+                # index_article resolves the language before it files a single mention
+                # (store._resolve_known_language): a tag its own script refutes is cleared
+                # (R699) and an untagged article is detected. Either changes which keyword
+                # row a mention takes (R698), and the article's own columns, so the carry
+                # cannot reproduce it from the stored values: the keyword half re-indexes.
+                refused["language_unresolved"] += 1
+                kw_ok = False
             if not kw_ok and not www_ok:
                 continue
             known = (lang or "").strip() or (detected or "").strip() or None
@@ -4539,10 +4632,14 @@ def _plan_derived_carry(con, batch_id, results) -> None:
                 _carried_country(normalize_country(country), form, canonical_country),
                 normalize_lang(known) or None,
                 int(kw_ok), int(www_ok), www_inputs if www_ok else None,
+                # The value index_article hands the keyword resolution (known_lang): the
+                # stripped tag or detection, NOT its normalised form -- "-en" normalises to
+                # "" yet is a language, and keyword_language_takes treats the two apart.
+                known or "",
             ))
         con.executemany(
-            "INSERT INTO temp.carry_plan (old, source_id, inputs, observed_on, country, language, kw, www, www_inputs)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO temp.carry_plan (old, source_id, inputs, observed_on, country, language, kw, www, www_inputs, key_lang)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             planned,
         )
 
@@ -4562,23 +4659,11 @@ def _plan_derived_carry(con, batch_id, results) -> None:
     # Resolve each incoming keyword the carried mentions name, the way index_article
     # resolves a term (_prefetch_keywords): by normalized_term, lowest id, among the rows
     # that may take a mention in the article's language (R698 = RN2 (a),
-    # store._keyword_takes_language) -- a row with no language, or the same primary
-    # subtag; an article of unknown language takes the plain lowest id. So the
+    # store.keyword_language_takes, called here in Python so the two cannot drift). The
     # resolution is per (incoming keyword, article language), and every join below
     # matches on both. Only the articles whose KEYWORDS are carried (kw = 1): an article
     # carried for its places and entities alone names no keyword.
-    con.execute(
-        "INSERT INTO temp.carry_kw (old, lang, new, inc_entity)"
-        " SELECT ik.id, p.lang,"
-        "  (SELECT MIN(k.id) FROM keywords k WHERE k.normalized_term = ik.normalized_term"
-        "   AND (p.lang = '' OR COALESCE(TRIM(k.language), '') = ''"
-        f"   OR {_SQL_PRIMARY_SUBTAG.format(col='k.language')} = p.lang)),"
-        "  COALESCE(ik.is_entity, 0)"
-        " FROM (SELECT DISTINCT im.keyword_id AS kid, COALESCE(cp.language, '') AS lang"
-        "  FROM temp.carry_plan cp"
-        "  CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old WHERE cp.kw = 1) p"
-        " JOIN inc.keywords ik ON ik.id = p.kid"
-    )
+    _fill_carry_keywords(con)
 
     def _refuse(key: str, sql: str) -> None:
         # The three guards below are about the KEYWORDS, so a refusal takes the keyword half of the article's plan and leaves its places and
@@ -4593,13 +4678,13 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         "keyword_unmapped",
         "SELECT im.article_id FROM temp.carry_plan cp"
         " CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old"
-        " LEFT JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = COALESCE(cp.language, '') WHERE cp.kw = 1 AND ck.new IS NULL",
+        " LEFT JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = cp.key_lang WHERE cp.kw = 1 AND ck.new IS NULL",
     )
     _refuse(
         "entity_upgrade",
         "SELECT im.article_id FROM temp.carry_plan cp"
         " CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old"
-        " JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = COALESCE(cp.language, '')"
+        " JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = cp.key_lang"
         " JOIN keywords k ON k.id = ck.new"
         " WHERE cp.kw = 1 AND ck.inc_entity = 1 AND COALESCE(k.is_entity, 0) = 0",
     )
@@ -4607,7 +4692,7 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         "keyword_collision",
         "SELECT im.article_id FROM temp.carry_plan cp"
         " CROSS JOIN inc.keyword_mentions im ON im.article_id = cp.old"
-        " JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = COALESCE(cp.language, '')"
+        " JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = cp.key_lang"
         " WHERE cp.kw = 1"
         " GROUP BY im.article_id, ck.new HAVING COUNT(*) > 1",
     )
@@ -4627,7 +4712,7 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         " top_keyword_tied_n = (SELECT COUNT(*) FROM inc.keyword_mentions im"
         "  WHERE im.article_id = carry_plan.old AND im.count = carry_plan.top_keyword_count),"
         " top_keyword_id = (SELECT MIN(ck.new) FROM inc.keyword_mentions im"
-        "  JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = COALESCE(carry_plan.language, '')"
+        "  JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = carry_plan.key_lang"
         "  WHERE im.article_id = carry_plan.old AND im.count = carry_plan.top_keyword_count)"
         " WHERE kw = 1 AND top_keyword_count IS NOT NULL"
     )
@@ -4670,12 +4755,13 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
     con.execute(
         "CREATE TEMP TABLE carry_ids (old INTEGER PRIMARY KEY, new INTEGER NOT NULL,"
         " source_id INTEGER, inputs TEXT, observed_on TEXT, country TEXT,"
-        " language TEXT, kw INTEGER NOT NULL, www INTEGER NOT NULL, www_inputs TEXT)"
+        " language TEXT, kw INTEGER NOT NULL, www INTEGER NOT NULL, www_inputs TEXT,"
+        " key_lang TEXT NOT NULL)"
     )
     con.execute(
-        "INSERT INTO temp.carry_ids (old, new, source_id, inputs, observed_on, country, language, kw, www, www_inputs)"
+        "INSERT INTO temp.carry_ids (old, new, source_id, inputs, observed_on, country, language, kw, www, www_inputs, key_lang)"
         " SELECT cp.old, ma.new, cp.source_id, cp.inputs, cp.observed_on, cp.country,"
-        " cp.language, cp.kw, cp.www, cp.www_inputs FROM temp.carry_plan cp"
+        " cp.language, cp.kw, cp.www, cp.www_inputs, cp.key_lang FROM temp.carry_plan cp"
         " JOIN temp.map_articles ma ON ma.old = cp.old"
         " JOIN merged_rows r ON r.batch_id = ? AND r.table_name = 'articles' AND r.row_id = ma.new",
         (batch_id,),
@@ -4712,7 +4798,8 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
         con.execute(
             "CREATE TEMP TABLE carry_win (old INTEGER PRIMARY KEY, new INTEGER NOT NULL,"
             " source_id INTEGER, inputs TEXT, observed_on TEXT, country TEXT,"
-            " language TEXT, kw INTEGER NOT NULL, www INTEGER NOT NULL, www_inputs TEXT)"
+            " language TEXT, kw INTEGER NOT NULL, www INTEGER NOT NULL, www_inputs TEXT,"
+            " key_lang TEXT NOT NULL)"
         )
         con.execute(
             "INSERT INTO temp.carry_win SELECT * FROM temp.carry_ids WHERE old >= ? AND old <= ?",
@@ -4734,7 +4821,7 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
             " SELECT ck.new, w.new, im.count, im.first_offset, w.observed_on, w.country,"
             " NULL, w.language, w.source_id, 'baseline', ?"
             " FROM temp.carry_win w CROSS JOIN inc.keyword_mentions im ON im.article_id = w.old"
-            " JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = COALESCE(w.language, '')"
+            " JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = w.key_lang"
             " WHERE w.kw = 1"
             " ORDER BY ck.new, w.new",
             (now,),
@@ -4770,7 +4857,7 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
             "INSERT INTO temp.carry_delta (kid, m, a) SELECT ck.new, SUM(im.count), COUNT(*)"
             " FROM temp.carry_win w"
             " CROSS JOIN inc.keyword_mentions im ON im.article_id = w.old"
-            " JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = COALESCE(w.language, '') WHERE w.kw = 1 GROUP BY ck.new"
+            " JOIN temp.carry_kw ck ON ck.old = im.keyword_id AND ck.lang = w.key_lang WHERE w.kw = 1 GROUP BY ck.new"
         )
         con.execute(
             "UPDATE main.keywords SET"

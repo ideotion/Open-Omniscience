@@ -105,3 +105,66 @@ def test_the_fold_files_errores_under_a_spanish_error_not_the_english_one(tmp_pa
     assert [tuple(r) for r in rows] == [("error", "en", "en"), ("error", "es", "es")], rows
     english_after = s2.get(Keyword, english.id)
     assert english_after.mention_count == 1 and english_after.language == "en"
+
+
+# --------------------------------------------------------------------------- #
+# the restore carry resolves a carried mention by the same rule
+# --------------------------------------------------------------------------- #
+def _carry_con(local_rows, incoming_kw, plan):
+    """A bare connection holding just what the carry's keyword resolution reads."""
+    import sqlite3
+
+    from src.backup.merge import _ensure_carry_tables
+
+    con = sqlite3.connect(":memory:")
+    con.execute("ATTACH DATABASE ':memory:' AS inc")
+    con.execute("CREATE TABLE main.keywords (id INTEGER PRIMARY KEY, normalized_term TEXT, language TEXT)")
+    con.execute("CREATE TABLE inc.keywords (id INTEGER PRIMARY KEY, normalized_term TEXT, is_entity INTEGER)")
+    con.execute("CREATE TABLE inc.keyword_mentions (keyword_id INTEGER, article_id INTEGER)")
+    con.executemany("INSERT INTO main.keywords VALUES (?, ?, ?)", local_rows)
+    con.executemany("INSERT INTO inc.keywords VALUES (?, ?, 0)", incoming_kw)
+    _ensure_carry_tables(con)
+    for aid, key_lang, kids in plan:
+        con.execute("INSERT INTO temp.carry_plan (old, kw, key_lang) VALUES (?, 1, ?)", (aid, key_lang))
+        con.executemany("INSERT INTO inc.keyword_mentions VALUES (?, ?)", [(k, aid) for k in kids])
+    return con
+
+
+def test_the_carry_files_a_mention_where_index_article_would():
+    from src.backup.merge import _fill_carry_keywords
+
+    con = _carry_con(
+        # 1: Italian, lowest. 2: no language. 3: English. Plus a term only Italian holds.
+        [(1, "error", "it"), (2, "error", None), (3, "error", "en"), (4, "solo", "it")],
+        [(10, "error"), (11, "solo"), (12, "")],
+        [
+            (100, "en-GB", [10, 11]),  # English: the no-language row 2; "solo" has none
+            (101, "", [10, 11]),  # unknown: plain lowest id
+            (102, "-en", [10]),  # a language that normalises to nothing: only row 2
+            (103, "\tEN\n", [10]),  # whitespace and case Python strips: English
+            (104, "en", [12]),  # an empty term: nothing local
+        ],
+    )
+    _fill_carry_keywords(con)
+    got = dict(((o, l), n) for o, l, n in con.execute("SELECT old, lang, new FROM temp.carry_kw"))
+    assert got == {
+        (10, "en-GB"): 2, (11, "en-GB"): None,
+        (10, ""): 1, (11, ""): 4,
+        (10, "-en"): 2,
+        (10, "\tEN\n"): 2,
+        (12, "en"): None,
+    }, got
+
+
+def test_a_carry_never_reproduces_a_language_the_indexer_would_change(monkeypatch):
+    import src.analytics.langdetect as ld
+    from src.backup.merge import _language_resolution_moves
+
+    ru = "Правительство России представило проект бюджета на следующий год. " * 6
+    assert _language_resolution_moves("en", None, ru)  # refuted by its own script (R699)
+    assert not _language_resolution_moves("ru", None, ru)
+    assert not _language_resolution_moves(None, "ru", ru)  # already deduced: kept
+    monkeypatch.setattr(ld, "detect_language", lambda *a, **k: "ru")
+    assert _language_resolution_moves(None, None, ru)  # untagged and detectable
+    monkeypatch.setattr(ld, "detect_language", lambda *a, **k: None)
+    assert not _language_resolution_moves("", " ", ru)  # untagged and undetectable
