@@ -149,6 +149,71 @@ def test_quick_crypto_erase_destroys_dbs_keys_and_removes_dir(tmp_path):
     assert report["passphrase_cleared"] is False
 
 
+def _salt_hits(data: bytes, salt: bytes) -> list[int]:
+    hits, i = [], data.find(salt)
+    while i != -1:
+        hits.append(i)
+        i = data.find(salt, i + 1)
+    return hits
+
+
+@sqlcipher_only
+@pytest.mark.skipif(sys.platform == "win32", reason="reads an open, unlinked WAL through a hard link (POSIX semantics)")
+def test_quick_crypto_erase_destroys_every_copy_of_the_salt_in_the_write_ahead_log(tmp_path):
+    """R708. SQLCipher keeps the salt in plaintext at the start of page 1, and every commit that touches page 1 leaves a
+    copy of that page in a WAL frame, far past the WAL's first 4 KiB. The old erase overwrote only those 4 KiB, so the
+    salt stayed readable in the frames behind them. The connection stays OPEN (as the running app's does: closing it
+    would checkpoint and delete the WAL), and a hard link outside the data dir keeps the WAL's inode readable after the
+    erase unlinks it, so what is read back is exactly the bytes a seized disk would hold."""
+    data = tmp_path / "data"
+    data.mkdir()
+    db = data / "open_omniscience.db"
+    con = connect(db, key=_PW)
+    try:
+        con.execute("PRAGMA journal_mode=WAL")
+        con.execute("PRAGMA wal_autocheckpoint=0")
+        con.execute("CREATE TABLE t(x)")
+        con.commit()
+        for _ in range(20):
+            con.execute("CREATE TABLE IF NOT EXISTS u(x)")  # schema churn rewrites page 1 on every commit
+            con.execute("INSERT INTO t VALUES (randomblob(3000))")
+            con.commit()
+        salt = db.read_bytes()[:16]
+        wal = db.with_name(db.name + "-wal")
+        kept = tmp_path / "kept-wal"
+        import os
+
+        os.link(wal, kept)
+        before = _salt_hits(kept.read_bytes(), salt)
+        assert [h for h in before if h >= crypto_erase._SQLCIPHER_PAGE1], "the setup must put the salt past the head"
+
+        report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    finally:
+        con.close()
+
+    assert report["overwrite_failures"] == []
+    assert _salt_hits(kept.read_bytes(), salt) == [], "a copy of the salt survived in the write-ahead log"
+
+
+def test_quick_crypto_erase_overwrites_the_whole_rollback_journal(tmp_path):
+    """R708, the rollback-mode twin: a hot -journal holds the original page 1, salt included, at an offset past the
+    head. The erase rewrites it whole."""
+    import os
+
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "open_omniscience.db").write_bytes(b"\x00" * 8192)
+    salt = b"SALT-SALT-SALT-!"
+    journal = data / "open_omniscience.db-journal"
+    journal.write_bytes(b"\x00" * 8192 + salt + b"\x00" * 8192)
+    kept = tmp_path / "kept-journal"
+    os.link(journal, kept)
+
+    crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+
+    assert salt not in kept.read_bytes()
+
+
 def test_quick_crypto_erase_overwrites_the_columnar_key_sidecar_where_the_salt_lives(tmp_path, monkeypatch):
     """The cache's key is stretched from the passphrase AND the salt in ``analytics.duckdb.kdf``, so the erase destroys the
     sidecar with the cache's header: with the salt gone the key is not derivable even from the right passphrase. What is
@@ -291,3 +356,27 @@ def test_uninstall_watcher_embedded_crypto_erase(tmp_path):
     assert not data.exists(), "the watcher must wipe the data dir"
     log_text = audit.read_text(encoding="utf-8")
     assert "crypto-erase" in log_text  # the new (non-4-MiB-cap) code path ran
+
+
+def test_uninstall_watcher_overwrites_the_whole_write_ahead_log(tmp_path):
+    """R708 in the watcher's embedded copy: a server that died without a clean close leaves a -wal whose frames hold
+    copies of page 1, salt included, past the first 4 KiB. The watcher rewrites it whole (and the -shm stays head-only)."""
+    import os
+
+    from src.safety.uninstall import _WATCHER_SRC
+
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    salt = b"SALT-SALT-SALT-!"
+    wal = data / "open_omniscience.db-wal"
+    wal.write_bytes(b"\x00" * 8192 + salt + b"\x00" * 8192)
+    kept = tmp_path / "kept-wal"
+    os.link(wal, kept)
+    plan = {"files": [], "venv": None, "app_folder": None, "wipe_data_dir": str(data), "audit_log": str(tmp_path / "a.log")}
+
+    subprocess.run([sys.executable, "-c", _WATCHER_SRC, str(dead.pid), json.dumps(plan)], check=True, timeout=60)
+
+    assert salt not in kept.read_bytes()

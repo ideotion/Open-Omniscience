@@ -283,18 +283,32 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
     # The lane files join this loop rather than falling through to step 6: each is an
     # encrypted SQLCipher database with its OWN salt page, and head-only is what keeps
     # the erase instant at 100 GB (see ``_lane_dbs``).
-    for db in (main_db, paths["custody_db"], *paths.get("lane_dbs", ())):
-        if db is None:
-            continue
-        for suffix in ("", *_DB_SIDECARS):
-            p = db if suffix == "" else db.with_name(db.name + suffix)
-            s, overwritten, w = _shred(p, head_bytes=_SQLCIPHER_PAGE1)
+    # TWO PASSES (R708). Every main file's salt page goes first, so the corpus is unrecoverable as early as possible.
+    # The sidecars follow, and the write-ahead log and the rollback journal are overwritten WHOLE: SQLCipher keeps the
+    # 16-byte salt in plaintext at the start of page 1, and every committed change to page 1 leaves a copy of that page
+    # in a WAL frame (or, in rollback mode, in the journal) at an offset far past this file's first 4 KiB. Measured on a
+    # 20-commit WAL with checkpoints off: the salt sat in 21 places in the -wal, 20 of them beyond the 4 KiB the old
+    # head-only pass destroyed, so the old erase left the salt readable for as long as the WAL's blocks survived. The
+    # WAL has no journal_size_limit here, so this pass costs one sequential write of the WAL's size (usually a few MiB,
+    # at worst the hundreds of MiB a long un-checkpointed write leaves) -- and it waits on nothing else. The -shm index
+    # holds frame numbers and checksums, never page data, so its head pass stays as it was.
+    dbs = [db for db in (main_db, paths["custody_db"], *paths.get("lane_dbs", ())) if db is not None]
+    for db in dbs:
+        s, overwritten, w = _shred(db, head_bytes=_SQLCIPHER_PAGE1)
+        seen += s
+        wiped += w
+        if s and not overwritten:
+            overwrite_failures.append(str(db))
+        if s and overwritten:
+            headers.append(db.name)
+    for db in dbs:
+        for suffix in _DB_SIDECARS:
+            p = db.with_name(db.name + suffix)
+            s, overwritten, w = _shred(p, head_bytes=_SQLCIPHER_PAGE1 if suffix == "-shm" else None)
             seen += s
             wiped += w
             if s and not overwritten:
                 overwrite_failures.append(str(p))
-            if s and overwritten and suffix == "":
-                headers.append(db.name)
 
     # 2) Destroy on-disk key material (the scrypt wrap-salt lives inside these files).
     # Under the lock every key-file change of THIS process takes (src/custody/keyfile.py KEY_FILES_LOCK), held
@@ -348,6 +362,9 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
     # 6) Overwrite + unlink everything else still under the data dir, then rmtree. The
     #    encrypted DBs/keys/anchors are already gone; remaining files are small side
     #    files, so a full overwrite here is cheap and complete (no 4 MiB cap — OO-02).
+    #    THIS STEP REWRITES EVERY BYTE OF EVERY FILE IT FINDS. A future LARGE file under the data dir (a blob
+    #    store, a dump kept inside it) must not fall through to here: give it its own step above that destroys what
+    #    keys it and then only unlinks it, or the erase -- whose point is an imminent seizure -- runs for hours.
     # A folder the first-launch step marked on a drive (R86): forget its id first, or the
     # next start would wait for a drive that was erased on purpose, and the watchdog would
     # read the folder vanishing below as a disconnection.
