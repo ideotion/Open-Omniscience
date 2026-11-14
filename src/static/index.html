@@ -3640,6 +3640,20 @@
       </div>
       <div id="vacuum-result" class="hint"></div>
 
+      <div id="rebuild-panel" style="margin-top:14px">
+        <h4 style="margin:0 0 4px">Rebuild at the current storage settings</h4>
+        <p class="muted" style="margin-top:0"><span>A library keeps the storage settings it was created with. A rebuild copies it into a new file at today's settings (16 KiB pages, space given back gradually), checks the copy, then switches it in. The old file is kept beside it until you remove it below. Collection and every other job wait while it runs.</span>
+          <span>This covers the main library only: the separate stores for maps, Wikipedia and lanes keep their settings.</span></p>
+        <div id="rebuild-status" class="hint">—</div>
+        <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px;align-items:center">
+          <button class="secondary" id="rebuild-backup-btn" title="Opens the backup export. Come back here once it has finished.">Make a backup first</button>
+          <button class="danger" id="rebuild-btn" disabled>Rebuild…</button>
+          <button class="secondary" id="rebuild-stop-btn" style="display:none">Stop</button>
+        </div>
+        <div id="rebuild-result" class="hint" role="status"></div>
+        <div id="rebuild-kept" style="margin-top:6px"></div>
+      </div>
+
       <hr>
       <h3 style="margin-bottom:6px">Corpus integrity (fixity)</h3>
       <p class="muted" style="margin-top:0"><span>Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.</span></p>
