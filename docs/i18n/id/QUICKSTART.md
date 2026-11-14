@@ -436,7 +436,7 @@ curl 'http://127.0.0.1:8000/api/commodities/Nd/correlation?query=neodymium'
 Korelasi mengembalikan koefisien nyata + nilai p + n dari scipy (Pearson/Spearman),
 dengan catatan "korelasi ≠ kausalitas"; tumpang tindih yang terlalu sedikit → `insufficient_data`.
 
-**Pemantauan.** `GET /api/monitoring/health` melakukan pemeriksaan keterjangkauan yang nyata
+**Pemantauan.** `POST /api/monitoring/health` melakukan pemeriksaan keterjangkauan yang nyata
 (melalui pengambil etis); `GET /api/monitoring/anomalies` menandai
 lonjakan volume artikel berdasarkan skor-z. **Email:** `POST /api/sources/{id}/ingest-email`
 (IMAP) memasukkan pesan ke korpus yang sama yang dapat dicari.
