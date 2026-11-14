@@ -338,7 +338,7 @@ def build_field_cards_files(db: Session, *, now: datetime | None = None) -> dict
         "schema": FIELD_CARDS_SCHEMA,
         "generated_at": now.isoformat(timespec="seconds"),
         "app_version": __version__,
-        "instance": instance_tag(),   # which data folder this came from, as a hash (src/paths.py instance_tag)
+        "instance": instance_tag(),   # which data folder this came from, a random tag kept in the folder (src/paths.py instance_tag)
         "files": {
             "feed.json": "the Home feed as served from the cache, every card, dismissed ones flagged, with the feed's own record",
             "cards.json": "per card: the app's own checks and the evidence it was built from",

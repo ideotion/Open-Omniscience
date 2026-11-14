@@ -69,7 +69,7 @@ def source_quality(
             z.writestr(name, data)
     from src.paths import instance_tag
 
-    inst = instance_tag()   # which data folder this came from, as a hash: the Field data button names its files with it
+    inst = instance_tag()   # which data folder this came from (a random tag kept in it): the Field data button names its files with it
     fname = f"oo-source-quality-{datetime.now().strftime('%Y%m%d-%H%M')}-{inst}.zip"
     return Response(
         content=buf.getvalue(),

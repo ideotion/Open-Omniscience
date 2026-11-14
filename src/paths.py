@@ -119,16 +119,37 @@ def data_dir() -> Path:
     return chosen
 
 
+#: The file in the data folder that holds its instance tag (see ``instance_tag``).
+INSTANCE_ID_FILE = "instance_id"
+
+
 def instance_tag() -> str:
-    """Eight hex characters that tell this data folder's exports apart from another instance's, without naming the folder.
+    """Eight hex characters that tell this data folder's exports apart from another instance's, without saying anything about it.
 
     The Field data button puts it in every file name and manifest it saves (2026-11-14: the maintainer runs several
-    instances, each with its own ``OO_DATA_DIR`` and port, and sends their files back together). A hash of the folder's
-    resolved path: the same folder always gives the same tag, and the path itself (which can hold a user name) never
-    leaves the machine."""
-    import hashlib
+    instances, each with its own ``OO_DATA_DIR`` and port, and sends their files back together). It is RANDOM, made once
+    and kept in the data folder's ``instance_id`` file: a hash of the folder's path would be reversible by guessing
+    (``/home/<a common name>/...`` has few candidates and eight hex characters are 32 bits), a random value carries no
+    information at all. A copied data folder keeps its tag, which is right: it is the same corpus. A folder that cannot
+    be written answers ``"no-id"`` rather than fail an export."""
+    import re
+    import secrets
 
-    return hashlib.sha256(str(data_dir().resolve()).encode("utf-8")).hexdigest()[:8]
+    path = data_dir() / INSTANCE_ID_FILE
+    try:
+        tag = path.read_text(encoding="ascii").strip()
+        if re.fullmatch(r"[0-9a-f]{8}", tag):
+            return tag
+    except (OSError, UnicodeDecodeError):
+        pass
+    tag = secrets.token_hex(4)
+    try:
+        from src.safety.file_lock import atomic_replace
+
+        atomic_replace(path, tag + "\n", encoding="ascii")
+    except OSError:
+        return "no-id"
+    return tag
 
 
 def diagnostics_dir() -> Path:

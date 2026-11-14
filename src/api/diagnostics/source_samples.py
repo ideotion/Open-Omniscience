@@ -198,7 +198,7 @@ def build_sample_zip(
             if not full:
                 cursor = ids[-1]
                 done = len(ids) < _BATCH
-        # which data folder this came from, as a hash, never its path
+        # which data folder this came from: a random tag kept in it, nothing about its path
         from src.paths import instance_tag
 
         z.writestr("manifest.json", json.dumps({

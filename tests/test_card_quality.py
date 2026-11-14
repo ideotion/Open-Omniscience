@@ -333,9 +333,25 @@ def test_the_cards_file_carries_every_card_its_evidence_and_a_manifest(db, tmp_p
     assert files["selfcheck.jsonl"].strip()
     from src.paths import data_dir, instance_tag
 
-    # several instances send files back together: the data folder is named by a hash, its path never leaves
+    # several instances send files back together: the data folder is named by a random tag kept in it, its path never leaves
     assert man["instance"] == instance_tag() and len(man["instance"]) == 8
     assert str(data_dir().resolve()) not in "".join(files.values())
+
+
+def test_the_instance_tag_is_random_kept_and_says_nothing_about_the_folder(tmp_path, monkeypatch):
+    import hashlib
+
+    from src import paths
+
+    a, b = tmp_path / "home" / "alice" / "oo", tmp_path / "home" / "alice" / "oo2"
+    monkeypatch.setenv("OO_DATA_DIR", str(a))
+    first = paths.instance_tag()
+    assert first == paths.instance_tag() and (a / "instance_id").read_text().strip() == first   # made once, kept
+    assert first != hashlib.sha256(str(a.resolve()).encode()).hexdigest()[:8]   # not derived from the path
+    monkeypatch.setenv("OO_DATA_DIR", str(b))
+    assert paths.instance_tag() != first   # another folder, another tag
+    (b / "instance_id").write_text("../../etc\n")
+    assert len(paths.instance_tag()) == 8 and (b / "instance_id").read_text().strip() != "../../etc"
 
 
 def test_the_cards_file_scrubs_a_held_passphrase(db, tmp_path, monkeypatch):
