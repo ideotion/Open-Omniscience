@@ -668,8 +668,35 @@ imply a protection we cannot deliver.
   sidecar that is itself a link is NOT destroyed: its link is removed and it is named in `overwrite_failures`); a hard-linked
   file shares its bytes with its other names, and a mount point under the data dir is walked like any folder. A transaction already under way can still commit into the
   unlinked files; the wipe keeps a descriptor on each and rewrites them once the pool is closed and again 15 s later, and
-  a commit later than that is the window left; every file under the data dir the earlier steps did not
-  handle is then overwritten in full, so a future large file there must get its own unlink-only step after its key is gone. **Honest limit:** overwrite-in-place does *not*
+  a commit later than that is the window left, each wipe's own (a second wipe within the 15 s never shortens the first
+  one's late pass); every file under the data dir the earlier steps did not
+  handle is then overwritten in full, so a future large file there must get its own unlink-only step after its key is gone.
+  The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
+  copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot
+  and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or
+  a folder `DATABASE_URL` points to: an encrypted one loses its head and is unlinked before the slow rewrite, a plaintext
+  one is rewritten whole (a copy of a store not known to be encrypted always is, since a damaged copy's page 1 can stop reading
+  as SQLite with plaintext behind it). **A data folder the app does not own (R711).** Ownership is where the app put the
+  folder, never what is in it (the app writes its own files at every start): the default location and the first-launch
+  `OOS data` folder are the app's; a folder set by hand in `OO_DATA_DIR` is shared when it is, on the path it leads to, the
+  home folder, a folder above it or one of its standard folders such as Documents, a drive root or a mount point, or when it
+  holds any entry the app does not own (system clutter such as `.DS_Store` aside; the check stops at the first such entry).
+  There every step above still runs by name, and the rest reaches only the app's own entries (`src/safety/data_scope.py`:
+  its file and folder names, its databases' side files, its copy and staging patterns, an atomic write's temp and a lock
+  beside one of them; kept complete by a test over the names the code joins onto `data_dir()`). The app's COMMON names
+  whose contents are re-downloadable or say nothing about the corpus (`models`, `cache`, `leases`, `runtime`) are left
+  there, because an operator's own folder may carry one (`annotations`, `triage`, `bench`, `bulletin` and `diagnostics`
+  always go, so an operator's own entry under one of those names there goes too); a
+  `keys` folder loses the app's key files, every file named like one of its key forms (`*_ed25519.pem`, `*_ml_dsa_65.key`)
+  and its `.pending` folder, and keeps the rest. Stated limit: the databases (the corpus, the custody log, the lane files
+  `wiki.db`, `law.db`, `osm.db`) are erased by name in either scope, so an operator's own file under one of those names in
+  that folder (which the app would have opened as its own) is erased too. The folder is kept, and the report says
+  `scope: "app-only"` and names, without reading them, the entries left (`left_untouched`), the common names left
+  (`left_common_names`) and any of the app's own a removal failed on (`not_removed`). A scope that cannot be read counts as
+  shared. A secure uninstall's watcher applies the same names and writes only a count of what it left to its audit log. Such
+  a folder is also said at every start: a warning in the log and the terminal, and a notice on the unlock page and in the
+  app, which carries a reason code and never the path. A step of the tidying after a completed erase that fails is
+  named in the report (`after_erase_failures`), never answered as a failed wipe. **Honest limit:** overwrite-in-place does *not*
   guarantee unrecoverability on SSD/flash or copy-on-write filesystems — only full-disk
   encryption (LUKS/Qubes/Tails) plus key destruction does. Also exposed as a `panic` CLI and
   an `--ephemeral` mode (RAM-only data dir, wiped on process exit).
