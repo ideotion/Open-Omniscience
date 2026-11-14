@@ -35,6 +35,8 @@ MD_FINDINGS_PER_CHECK = 15
 
 
 def load_checks():
+    if "oo_card_quality" in sys.modules:  # loaded once per run
+        return sys.modules["oo_card_quality"]
     spec = importlib.util.spec_from_file_location("oo_card_quality", _MODULE)
     if spec is None or spec.loader is None:
         raise SystemExit(f"cannot load {_MODULE}")
@@ -106,13 +108,9 @@ def load_input(path: Path) -> dict[str, Any]:
                 "producer_timings": timings}, "registered": [t["name"] for t in timings] or None,
                 "per_card": per_card, "selfcheck": [], "manifest": None, "stale_by_corpus_growth": None}
     if "cards" in doc:  # a Home cache, briefing_cache.json
-        return {"kind": "briefing-cache", "cards": mod_with_producers(doc), "meta": doc, "registered": None,
+        return {"kind": "briefing-cache", "cards": load_checks().with_producers(doc), "meta": doc, "registered": None,
                 "per_card": {}, "selfcheck": [], "manifest": None, "stale_by_corpus_growth": None}
     raise SystemExit(f"{path}: not a field-cards file, a card audit or a Home cache")
-
-
-def mod_with_producers(doc: dict) -> list[dict]:
-    return load_checks().with_producers(doc)
 
 
 def _saved_at(data: dict[str, Any]) -> datetime | None:

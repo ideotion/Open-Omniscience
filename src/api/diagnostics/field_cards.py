@@ -72,20 +72,27 @@ _STATEMENT_DEADLINE_S = 240.0
 #: An absolute address inside a string: a web or file address (``scheme://``) or one of the schemes whose body
 #: is an address, a payload or code. A word followed by a colon ("note:x", "sha256:ab") is not one.
 _ADDRESS = re.compile(
-    r"(?i)\b(?:(?:https?|ftps?|wss?|file)://|(?:mailto|data|javascript|vbscript|tel|sms):)[^\s\"'<>]+"
+    r"(?i)(?:\b[a-z][a-z0-9+.-]{1,31}://|(?<![\w/:])//(?=[^\s/])|\b(?:mailto|data|javascript|vbscript|tel|sms):|\bwww\.)"
+    r"[^\s\"'<>]+"
 )
 
 
 def _clean_url(url: str) -> str:
     """An address as this file may carry it.
 
-    ``http``/``https`` keep scheme, host, port and path, never user name, password, query or
-    fragment (a per-subscriber token in a query is the secret an address most often carries, and a
-    newsletter's link sanitizer removes only the parameters it knows). Any other scheme (``mailto:``,
-    ``data:``, ``javascript:``, ...) keeps only its scheme: its body is an address, a payload or
-    code, never something a card check needs. A relative address ("/#markets") is the app's own."""
+    ``http``/``https`` (and a scheme-less ``//host`` or ``www.host``) keep host, port and path, never
+    user name, password, query or fragment (a per-subscriber token in a query is the secret an address
+    most often carries, and a newsletter's link sanitizer removes only the parameters it knows). Every
+    other scheme (``mailto:``, ``data:``, ``javascript:``, ``postgres://``, ``ssh://``, ...) keeps only its
+    scheme: its body is an address, credentials, a payload or code, never something a card check needs.
+    A relative path ("/#markets") is the app's own and is kept."""
+    probe = url
+    if url.startswith("//"):
+        probe = "http:" + url
+    elif url[:4].lower() == "www.":
+        probe = "http://" + url
     try:
-        parts = urlsplit(url)
+        parts = urlsplit(probe)
     except ValueError:
         return "[address withheld]"
     scheme = (parts.scheme or "").lower()
@@ -93,18 +100,23 @@ def _clean_url(url: str) -> str:
         return url
     if scheme in ("http", "https") and parts.netloc:
         host = parts.hostname or ""
+        if ":" in host:
+            host = f"[{host}]"  # an IPv6 literal keeps its brackets, or the port would be unreadable
         try:
             if parts.port:
                 host = f"{host}:{parts.port}"
         except ValueError:
             pass
-        return urlunsplit((scheme, host, parts.path, "", ""))
+        cleaned = urlunsplit((scheme, host, parts.path, "", ""))
+        if probe is not url:  # give it back in the form it came in
+            cleaned = cleaned.removeprefix("http:") if url.startswith("//") else cleaned.removeprefix("http://")
+        return cleaned
     return f"{scheme}:[withheld]"
 
 
 def _clean_text(text: str) -> str:
     """``text`` with every absolute address in it cleaned by :func:`_clean_url`, wherever it sits."""
-    if ":" not in text:
+    if ":" not in text and "//" not in text and "www." not in text.lower():
         return text
     return _ADDRESS.sub(lambda m: _clean_url(m.group(0)), text)
 
@@ -115,7 +127,7 @@ def _clean_urls(value: Any) -> Any:
         return _clean_text(value)
     if isinstance(value, dict):
         return {k: _clean_urls(v) for k, v in value.items()}
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         return [_clean_urls(v) for v in value]
     return value
 
@@ -305,9 +317,11 @@ def build_field_cards_files(db: Session, *, now: datetime | None = None) -> dict
     except OSError:
         history = ""
 
-    feed = scrubbed_value(_clean_urls(feed))
-    cards_doc = scrubbed_value(_clean_urls(cards_doc))
-    quality = scrubbed_value(_clean_urls(quality))
+    # Scrub FIRST, clean after: cleaning cuts and lowercases, and a cut or recased secret is one the scrub can no
+    # longer find (secret_scrub: every cut comes after it). Cleaning can only remove text, never rebuild a secret.
+    feed = _clean_urls(scrubbed_value(feed))
+    cards_doc = _clean_urls(scrubbed_value(cards_doc))
+    quality = _clean_urls(scrubbed_value(quality))
     history = scrubbed_value(history)
 
     shown = _shown_articles(cards_doc)
@@ -358,12 +372,13 @@ def build_field_cards_files(db: Session, *, now: datetime | None = None) -> dict
         "not_included": [
             "the passphrases this app holds: every string is scrubbed of them, in every shape",
             "query strings, fragments, user names and passwords in web addresses, wherever they appear: removed; "
-            "other addresses (mailto:, data:, ...) keep only their scheme",
+            "every other kind of address (mailto:, data:, postgres://, ssh://, ...) keeps only its scheme",
             "anything from the network: nothing is fetched to make this file",
         ],
         "not_detected": [
-            "other credentials (another service's token or key) written into text or into the path of an address: "
-            "the app does not recognise them, so read the file before you send it",
+            "other credentials (another service's token or key) written into text or into the path of an address, "
+            "and an address written without any scheme, // or www.: the app does not recognise them, so read the "
+            "file before you send it",
         ],
         "checks": {k: v["what"] for k, v in CHECKS.items()},
     }

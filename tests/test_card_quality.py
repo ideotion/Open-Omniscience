@@ -467,11 +467,12 @@ def test_a_failed_evidence_read_is_not_counted_as_checked():
     assert rep["evidence"]["checked"] == 0 and rep["evidence"]["not_checked"] == 1
 
 
-def test_an_empty_feed_checks_nothing_so_it_never_reads_as_an_improvement():
+def test_an_empty_feed_checks_no_card_so_it_never_reads_as_an_improvement():
     before = cq.quality_report([_card(caveat="")], now=NOW)
     empty = cq.quality_report([], now=NOW)
-    assert empty["checks_run"] == []
-    assert {p["verdict"] for p in cq.compare_reports(before, empty)["per_check"]} == {"not-comparable"}
+    assert "caveat_missing" not in empty["checks_run"] and "producer_stopped" in empty["checks_run"]
+    verdicts = {p["check"]: p["verdict"] for p in cq.compare_reports(before, empty)["per_check"]}
+    assert verdicts["caveat_missing"] == "not-comparable" and "improved" not in verdicts.values()
 
 
 def test_finding_identity_keeps_two_findings_on_one_card_apart_and_ignores_moving_figures():
@@ -504,3 +505,43 @@ def test_the_script_judges_a_feeds_age_at_save_time_and_survives_a_torn_history_
     rep = mod.build(mod.load_checks(), mod.load_input(z))
     assert "feed_old" not in {f["check"] for f in rep["findings"]}, "a feed an hour old when saved is not old"
     assert rep["selfcheck_history"]["records"] == 1 and rep["selfcheck_history"]["unreadable_lines"] == 1
+
+
+def test_other_schemes_protocol_relative_and_www_addresses_are_cleaned_too():
+    fc = _field_cards_module()
+    out = fc._clean_urls({
+        "a": "postgres://user:secretpw@db/x", "b": "ssh://user:pw@h", "c": "//user:pw@cdn.x.com/a?token=1",
+        "d": "see www.x.com/a?token=1 here", "e": "http://[::1]:8080/p?q=1", "f": ("https://t.example/?k=SECRET",),
+        "g": "a // comment, 10//2, note:x",
+    })
+    blob = json.dumps(out)
+    assert "secretpw" not in blob and ":pw@" not in blob and "token" not in blob and "SECRET" not in blob
+    assert out["a"] == "postgres:[withheld]" and out["c"] == "//cdn.x.com/a" and out["d"] == "see www.x.com/a here"
+    assert out["e"] == "http://[::1]:8080/p" and out["g"] == "a // comment, 10//2, note:x"
+
+
+def test_the_scrub_runs_before_the_cleaning_so_a_cut_or_recased_passphrase_cannot_survive(db, tmp_path, monkeypatch):
+    from src.monitoring import secret_scrub
+
+    fc = _field_cards_module()
+    _feed(tmp_path, monkeypatch, [_card(summary="at https://h.example/Correct-Horse#battery-staple and https://MySecretHost/x")])
+    monkeypatch.setattr(secret_scrub, "held_passphrases", lambda: ("Correct-Horse#battery-staple", "MySecretHost"))
+    blob = "".join(fc.build_field_cards_files(db, now=NOW).values()).lower()
+    assert "correct-horse" not in blob and "mysecrethost" not in blob
+
+
+def test_compare_never_resolves_a_finding_its_check_did_not_look_at_again():
+    per = {"c1": {"arithmetic": {"failed_n": 0}, "evidence": {"total": 4, "missing_n": 1, "quarantined_n": 0}}}
+    before = cq.quality_report([_card(caveat="")], per_card=per, now=NOW)
+    skipped = cq.quality_report([_card(caveat="")], per_card={"c1": {"arithmetic": {"failed_n": 0}}}, now=NOW)
+    cmp_ = cq.compare_reports(before, skipped)
+    assert {p["check"]: p["verdict"] for p in cmp_["per_check"]}["evidence_missing_articles"] == "not-comparable"
+    assert not cmp_["resolved_findings"]
+    empty = cq.compare_reports(before, cq.quality_report([], now=NOW))
+    assert not empty["resolved_findings"], "an empty feed resolves nothing"
+
+
+def test_a_feed_old_finding_keeps_its_identity_as_the_feed_ages():
+    old1 = cq.check_meta({"generated_at": (NOW - timedelta(days=8)).isoformat()}, registered=None, cards=[], now=NOW)
+    old2 = cq.check_meta({"generated_at": (NOW - timedelta(days=9)).isoformat()}, registered=None, cards=[], now=NOW)
+    assert {cq.finding_key(f) for f in old1} == {cq.finding_key(f) for f in old2}

@@ -190,7 +190,7 @@ _PAIRS = (
     ("after", "before"),
     ("current", "previous"),
 )
-_RATIO_METRICS = frozenset({"growth_ratio", "growth", "ratio"})
+_RATIO_METRICS = frozenset({"growth_ratio", "ratio"})  # a bare "growth" can be a count elsewhere
 
 
 def _now() -> datetime:
@@ -526,6 +526,7 @@ def quality_report(
     checked_direction = 0
     arithmetic_seen = evidence_seen = False
     evidence_checked = evidence_not_checked = 0
+    evidence_ids: list[str] = []
     for c in cards:
         findings.extend(check_card(c, now=now))
         if direction_check(c) is None:
@@ -540,6 +541,7 @@ def quality_report(
         if isinstance(ev, dict) and isinstance(ev.get("missing_n"), int) and isinstance(ev.get("quarantined_n"), int):
             evidence_seen = True
             evidence_checked += 1
+            evidence_ids.append(str(c.get("id")))
             findings.extend(check_evidence(c, ev))
         elif not cheap_only:
             evidence_not_checked += 1
@@ -559,7 +561,9 @@ def quality_report(
     ran = [
         k for k, v in CHECKS.items()
         if (k != "arithmetic_failed" or arithmetic_seen) and (v["cheap"] or evidence_seen)
-    ] if cards else []  # no feed is not a clean feed: with no cards nothing was checked, so nothing compares
+    ] if cards else [k for k, v in CHECKS.items() if v["dimension"] in ("performance", "coverage")] + [
+        "feed_incomplete", "feed_old"
+    ]  # no cards is not a clean feed: only the feed-record checks ran, so only they compare
     return {
         "schema": SCHEMA,
         "generated_at": now.isoformat(timespec="seconds"),
@@ -567,7 +571,7 @@ def quality_report(
         "cards": len(cards),
         "checks_run": ran,
         "checks_not_run": [k for k in CHECKS if k not in ran],
-        "evidence": {"checked": evidence_checked, "not_checked": evidence_not_checked,
+        "evidence": {"checked": evidence_checked, "not_checked": evidence_not_checked, "checked_card_ids": evidence_ids,
                      "note": "not_checked cards had no evidence rows in this file (skipped by budget or a failed read)"},
         "direction": {"checked": checked_direction, "not_checkable": not_checkable_direction,
                       "note": "not_checkable cards carry no direction word or no pair of figures; they are not passes"},
@@ -591,8 +595,8 @@ def finding_key(f: dict) -> str:
     detail = str(f.get("detail") or "")
     if f.get("check") == "too_long":
         part = detail.split(" ", 1)[0]  # "title" or "summary", never the length, which moves
-    elif not f.get("card_id") and not f.get("producer"):
-        part = detail.split(" = ", 1)[0]  # a feed-level finding: which marker, never its value
+    elif f.get("check") == "feed_incomplete":
+        part = detail.split(" = ", 1)[0]  # which marker (incomplete_reason / kept_reason), never its value
     else:
         part = ""
     return "|".join(str(x or "") for x in (f.get("check"), f.get("card_id"), f.get("producer"), other, part))
@@ -603,20 +607,37 @@ def compare_reports(previous: dict, current: dict) -> dict:
 
     Fewer findings for a check is ``improved`` and more is ``regressed``; a check run in only
     one of the two reports is ``not-comparable``, never assumed zero."""
+    prev_run = set(previous.get("checks_run") or [])
+    cur_run = set(current.get("checks_run") or [])
+    both_run = prev_run & cur_run
+    ev_prev = set((previous.get("evidence") or {}).get("checked_card_ids") or [])
+    ev_cur = set((current.get("evidence") or {}).get("checked_card_ids") or [])
+    same_evidence = ev_prev == ev_cur
     prev_counts = {c["check"]: c["n"] for c in previous.get("counts") or []}
     cur_counts = {c["check"]: c["n"] for c in current.get("counts") or []}
     per_check = []
-    for check in sorted(set(prev_counts) | set(cur_counts)):
+    for check in sorted(set(prev_counts) | set(cur_counts) | prev_run | cur_run):
         a, b = prev_counts.get(check), cur_counts.get(check)
-        if a is None or b is None:
+        if a is None or b is None or check not in both_run:
             verdict = "not-comparable"
+        elif CHECKS.get(check, {}).get("cheap") is False and not same_evidence:
+            verdict = "not-comparable"  # the two files read the evidence of different cards
         else:
             verdict = "improved" if b < a else "regressed" if b > a else "unchanged"
         per_check.append({"check": check, "previous": a, "current": b, "verdict": verdict})
-    prev_keys = {finding_key(f) for f in previous.get("findings") or []}
-    cur = current.get("findings") or []
+
+    def comparable(f: dict) -> bool:
+        if f.get("check") not in both_run:
+            return False  # a finding of a check that did not run in both is neither new nor resolved
+        if CHECKS.get(str(f.get("check")), {}).get("cheap") is False:
+            return str(f.get("card_id")) in (ev_prev & ev_cur)
+        return True
+
+    prev_f = [f for f in previous.get("findings") or [] if comparable(f)]
+    cur = [f for f in current.get("findings") or [] if comparable(f)]
+    prev_keys = {finding_key(f) for f in prev_f}
     cur_keys = {finding_key(f) for f in cur}
-    gone = [f for f in previous.get("findings") or [] if finding_key(f) not in cur_keys]
+    gone = [f for f in prev_f if finding_key(f) not in cur_keys]
     new = [f for f in cur if finding_key(f) not in prev_keys]
     return {
         "schema": COMPARE_SCHEMA,
@@ -626,7 +647,8 @@ def compare_reports(previous: dict, current: dict) -> dict:
         "verdict_counts": dict(Counter(p["verdict"] for p in per_check)),
         "new_findings": new,
         "resolved_findings": gone,
-        "note": "Counts compared per check; a check run in only one report is not-comparable. No blended verdict.",
+        "note": ("Counts compared per check; a check run in only one report, or an evidence check over different "
+                 "cards' evidence, is not-comparable, and its findings are neither new nor resolved. No blended verdict."),
     }
 
 
