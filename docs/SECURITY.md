@@ -649,7 +649,8 @@ imply a protection we cannot deliver.
   reassembling archive) has no salt to lose, and an encrypted member inside an archive sits past its head: both are
   destroyed only by the full rewrite. A folder the app cannot list is reported as not destroyed. No step writes through a link or into a FIFO, socket or device, and no symlinked folder or
   junction is entered (the app's own databases, if linked into place, are erased where they really are, and so is a
-  data or keys folder that is itself a link); a hard-linked
+  data, keys or cache folder that is itself a link; a key file, `anchors.db`, a cache file or a
+  sidecar that is itself a link is NOT destroyed: its link is removed and it is named in `overwrite_failures`); a hard-linked
   file shares its bytes with its other names, and a mount point under the data dir is walked like any folder. A transaction already under way can still commit into the
   unlinked files; the wipe keeps a descriptor on each and rewrites them once the pool is closed and again 15 s later, and
   a commit later than that is the window left; every file under the data dir the earlier steps did not

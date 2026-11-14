@@ -95,7 +95,7 @@ def _overwrite(path: Path, *, head_bytes: int | None = None, zeros: bool = False
     try:
         if path.is_symlink():
             raise OSError("a link is never written through")
-        fd = os.open(path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+        fd = os.open(path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0) | getattr(os, "O_BINARY", 0))
         try:
             st = os.fstat(fd)
             if not stat.S_ISREG(st.st_mode):
@@ -213,7 +213,7 @@ def _key_files_lock() -> contextlib.AbstractContextManager:
     return KEY_FILES_LOCK
 
 
-def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str]) -> tuple[int, int]:
+def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str], unlisted=None) -> tuple[int, int]:
     """Step 2 and 2b of the quick erase, ``(seen, wiped)``: the named key files, then everything else in the keys folder
     (the evidence key, a private copy in ``keys/.pending``), then the folder itself, so nothing can be added to it
     before the caller lets the key-file lock go. A function of its own with no handler, called inside the caller's
@@ -227,7 +227,7 @@ def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str]) -> tu
         if s and overwritten:
             keys_destroyed.append(name)
     if keys_dir.is_dir():
-        for root, dirs, names in os.walk(keys_dir):
+        for root, dirs, names in os.walk(keys_dir, onerror=unlisted):
             dirs[:] = [d for d in dirs if not _is_link(Path(root, d))]  # a junction too, never entered
             for name in names:
                 s, _overwritten, w = track(Path(root) / name)
@@ -343,6 +343,9 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, h
     # "keys_destroyed", which must only ever mean the overwrite actually completed.
     overwrite_failures: list[str] = []
 
+    def _unlisted(err: OSError) -> None:  # a folder a walk cannot list is named, never skipped in silence
+        overwrite_failures.append(str(err.filename or "an unlistable folder"))
+
     def _track(p: Path, *, head_bytes: int | None = None) -> tuple[bool, bool, bool]:
         s, overwritten, w = _shred(p, head_bytes=head_bytes)
         if s and not overwritten:
@@ -440,7 +443,7 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, h
     # rest of step 6, which rewrites everything left (a wiki dump can take hours) while a signing request waits.
     keys_dir: Path = paths["keys_dir"]
     with _key_files_lock():
-        _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed)
+        _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed, _unlisted)
     seen += _s
     wiped += _w
 
@@ -461,9 +464,6 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, h
     anchors_seen, _anchors_overwritten, anchors_wiped = _track(paths["anchors_db"])
     seen += anchors_seen
     wiped += anchors_wiped
-
-    def _unlisted(err: OSError) -> None:
-        overwrite_failures.append(str(err.filename or "an unlistable folder"))
 
     # 4b) Every OTHER file under the data dir gets the same treatment now, unlinking nothing, before the slow step 6.
     #    Encrypted copies of the corpus live there under names no list here can keep up with (the retained

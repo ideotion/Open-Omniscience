@@ -226,8 +226,12 @@ def test_a_failed_execve_shuts_down_even_when_recording_it_fails(restart_steps, 
     def boom():
         raise OSError("exec format error")
 
-    def broken(*_a, **_k):
-        raise RuntimeError("incident log broken")
+    calls = []
+
+    def broken(event, **_k):
+        calls.append(event)
+        if event == "restart_failed":
+            raise RuntimeError("incident log broken")
 
     closed = []
     monkeypatch.setattr(data_volume, "_restart_process", boom)

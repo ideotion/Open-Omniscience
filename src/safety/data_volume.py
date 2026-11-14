@@ -643,9 +643,10 @@ def _restart_after_reconnect() -> None:
             try:
                 log_failure(_LOG, "data drive: the restart failed; shutting down instead", exc, level=logging.ERROR)
                 record_incident("restart_failed", error=type(exc).__name__)
-            finally:
-                with MONITOR._lock:
-                    MONITOR._close("the restart after the drive came back failed")
+            except Exception:  # noqa: BLE001 - the shutdown below must happen whatever saying so did  # nosec B110
+                pass
+            with MONITOR._lock:
+                MONITOR._close("the restart after the drive came back failed")
 
     threading.Thread(target=_go, name="oo-data-volume-restart", daemon=True).start()
 
