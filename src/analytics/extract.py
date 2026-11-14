@@ -293,6 +293,88 @@ def _strip_urls(text: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# Text that is not prose: script code and LaTeX (R699, causes 3 and 4)
+# --------------------------------------------------------------------------- #
+# The 2026-10-06 keyword triage (OPEN_QUEUE, "WHAT THE KEYWORD TRIAGE RUN EXPOSED")
+# found two kinds of text that survive extraction as words and become keywords: page
+# script left in the body of some ko pages (`addclass`, `attr`, `cssclip`, `pdesc`,
+# `pmurl`), and LaTeX math in en articles (`mathcal`, `mathbf`, `mathbb`, `mathrm`).
+# The stoplist hides the words already seen; these remove the TEXT, so a macro or a
+# method name nobody listed yet is never minted either. Both replace what they remove
+# with spaces of the same length, so every offset into the text stays where it was.
+# Both are linear: one pass over the lines, and regexes with no nested repetition.
+
+#: A line carries script code when it has one of these idioms (jQuery/DOM calls,
+#: function literals, declarations) ...
+_CODE_IDIOM_RE = re.compile(
+    r"\$\(|\bfunction\s*\(|=>|\bdocument\.|\bwindow\.|\bvar\s+\w+\s*=|\b(?:let|const)\s+\w+\s*="
+    r"|\.(?:addClass|removeClass|toggleClass|attr|css|on|click|each|ready|append|html|val|find"
+    r"|getElementById|getElementsByClassName|querySelector|querySelectorAll|addEventListener)\s*\("
+)
+#: ... AND enough code punctuation that it is not a sentence quoting one.
+_CODE_PUNCT = frozenset(";{}()=[]$<>'\"")
+#: The share of a line's non-space characters that must be code punctuation.
+CODE_LINE_MIN_PUNCT_SHARE = 0.12
+#: A line with no idiom at all still reads as code above this share (`});`, `}else{`).
+CODE_LINE_PURE_PUNCT_SHARE = 0.35
+
+
+def _is_code_line(line: str) -> bool:
+    stripped = "".join(line.split())
+    if len(stripped) < 2:
+        return False
+    punct = sum(1 for ch in stripped if ch in _CODE_PUNCT)
+    share = punct / len(stripped)
+    if share >= CODE_LINE_PURE_PUNCT_SHARE and len(stripped) >= 3:
+        return True
+    return share >= CODE_LINE_MIN_PUNCT_SHARE and _CODE_IDIOM_RE.search(line) is not None
+
+
+def _strip_code_lines(text: str) -> str:
+    """Blank every line that reads as script code (cause 3); prose lines are untouched."""
+    if not any(ch in text for ch in "{};"):
+        return text  # no line can qualify without code punctuation
+    lines = text.splitlines(keepends=True)
+    changed = False
+    for i, line in enumerate(lines):
+        body = line.rstrip("\r\n")
+        if body and _is_code_line(body):
+            lines[i] = " " * len(body) + line[len(body):]
+            changed = True
+    return "".join(lines) if changed else text
+
+
+#: Macros that only occur in LaTeX. One of them in a text is the evidence that its
+#: backslash commands are LaTeX and not, say, an escaped newline (`\nWorld` in a body
+#: that kept JSON escapes) or a Windows path, which must keep their words.
+_LATEX_EVIDENCE_RE = re.compile(
+    r"\\(?:math[a-z]{2,6}|frac|dfrac|sqrt|begin|end|left|right|sum|prod|int|oint|lim|infty"
+    r"|partial|nabla|alpha|beta|gamma|delta|epsilon|varepsilon|lambda|sigma|theta|omega|cdot"
+    r"|times|leq|geq|neq|approx|operatorname|text|textbf|textit|emph|label|ref|cite)(?![A-Za-z])"
+)
+#: An environment opener/closer: its name (`equation`, `align`) is not a word of the text.
+_LATEX_ENV_RE = re.compile(r"\\(?:begin|end)\{[A-Za-z*]{1,40}\}")
+#: Any other command name. Its braced arguments stay (``\text{mass}`` keeps ``mass``).
+_LATEX_COMMAND_RE = re.compile(r"\\[A-Za-z]+\*?")
+
+
+def _blank(match: re.Match) -> str:
+    return " " * len(match.group(0))
+
+
+def _strip_latex(text: str) -> str:
+    """Blank LaTeX command and environment names when the text carries LaTeX (cause 4)."""
+    if "\\" not in text or _LATEX_EVIDENCE_RE.search(text) is None:
+        return text
+    return _LATEX_COMMAND_RE.sub(_blank, _LATEX_ENV_RE.sub(_blank, text))
+
+
+def strip_non_prose(text: str) -> str:
+    """Script-code lines and LaTeX markup out, same length in, same length out."""
+    return _strip_latex(_strip_code_lines(text))
+
+
+# --------------------------------------------------------------------------- #
 # Digit-heavy "code" tokens (field diagnostics 2026-06-23)
 # --------------------------------------------------------------------------- #
 # The live keyword log showed a ~35k bucket of alphanumeric code tokens (A-10C,
@@ -888,6 +970,7 @@ class BaselineExtractor:
             return []
         text = strip_markup(text)  # never mint div/span/max-width/font-size keywords
         text = _strip_urls(text)   # never mint utm_source/mc_eid/path-fragment keywords from links
+        text = strip_non_prose(text)  # never mint addclass/mathcal from script code or LaTeX (R699)
         entities = self._entities(text)
         ent_norms = {e.normalized for e in entities}
         # Topical terms. A term whose normalized form is in the gazetteer is promoted
@@ -947,6 +1030,7 @@ class SpacyExtractor:
             return []
         text = strip_markup(text)  # never mint div/span/max-width/font-size keywords
         text = _strip_urls(text)   # never mint utm_source/mc_eid/path-fragment keywords from links
+        text = strip_non_prose(text)  # never mint addclass/mathcal from script code or LaTeX (R699)
         doc = self._nlp(text[:1_000_000])  # spaCy default max length guard
         ents: dict[str, ExtractedTerm] = {}
         for ent in doc.ents:
