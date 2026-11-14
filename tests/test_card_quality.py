@@ -331,6 +331,34 @@ def test_the_cards_file_carries_every_card_its_evidence_and_a_manifest(db, tmp_p
     assert pc["newsletter_bodies"].startswith("withheld") and pc["dismissed_cards"] == 1
     assert letter["linked"].get("withheld"), "the layers read out of a newsletter body stay home too"
     assert files["selfcheck.jsonl"].strip()
+    from src.paths import data_dir, instance_tag
+
+    # several instances send files back together: the data folder is named by a random tag kept in it, its path never leaves
+    assert man["instance"] == instance_tag() and len(man["instance"]) == 8
+    assert str(data_dir().resolve()) not in "".join(files.values())
+
+
+def test_the_instance_tag_is_random_kept_and_says_nothing_about_the_folder(tmp_path, monkeypatch):
+    import hashlib
+
+    from src import paths
+
+    a, b = tmp_path / "home" / "alice" / "oo", tmp_path / "home" / "alice" / "oo2"
+    monkeypatch.setenv("OO_DATA_DIR", str(a))
+    first = paths.instance_tag()
+    assert first == paths.instance_tag() and (a / ".oo-instance-id").read_text(encoding="utf-8").strip() == first   # made once, kept
+    assert first != hashlib.sha256(str(a.resolve()).encode()).hexdigest()[:8]   # not derived from the path
+    monkeypatch.setenv("OO_DATA_DIR", str(b))
+    assert paths.instance_tag() != first   # another folder, another tag
+    (b / ".oo-instance-id").write_text("../../etc\n", encoding="utf-8")
+    assert len(paths.instance_tag()) == 8 and (b / ".oo-instance-id").read_text(encoding="utf-8").strip() != "../../etc"
+    import os
+
+    c = tmp_path / "fifo"
+    c.mkdir()
+    os.mkfifo(c / ".oo-instance-id")   # a FIFO would block a read forever, holding the lock for every later export
+    monkeypatch.setenv("OO_DATA_DIR", str(c))
+    assert paths.instance_tag() == "no-id"
 
 
 def test_the_cards_file_scrubs_a_held_passphrase(db, tmp_path, monkeypatch):
@@ -352,6 +380,9 @@ def test_the_route_is_a_post_and_answers_a_zip(db, tmp_path, monkeypatch):
     assert paths == {("/api/diagnostics/field-cards", ("POST",))}
     resp = field_cards.field_cards(db=db)
     assert resp.media_type == "application/zip"
+    from src.paths import instance_tag
+
+    assert resp.headers["X-OO-Instance"] == instance_tag() and instance_tag() in resp.headers["Content-Disposition"]
     with zipfile.ZipFile(io.BytesIO(resp.body)) as z:
         assert "manifest.json" in z.namelist()
 
