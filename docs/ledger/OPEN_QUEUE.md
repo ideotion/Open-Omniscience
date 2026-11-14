@@ -16190,7 +16190,10 @@ the tag), the workflow uploads the files, appends only the checksums and keeps t
 no-telemetry re-check never reaches them and no warning says so. The `v0.4.0` instructions in row G avoid it
 by deleting the release before the tag moves. A lasting fix would append the generated notes' re-check
 section when an existing body lacks it; `S03-01` forbade touching `release.yml` in the flip, so it waits
-for a ruling or its own PR.
+for a ruling or its own PR. **FIXED 2026-11-14 (Lane G, its own PR):** when the release already exists and its body has no
+`### No-telemetry re-check` heading, the workflow appends that section of the generated notes (only that section)
+with a log warning, and edits the notes only when something was added; `tests/test_release_workflow.py` runs the
+step's own shell against a fake `gh`.
 
 ## 2026-09-28 — Row I's Essentials depth amends invariant #2: ANSWERED «Yes, amend #2» 19:33 UTC (R46, PR #1208)
 
