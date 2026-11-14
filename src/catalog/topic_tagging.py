@@ -23,8 +23,9 @@ sequence in a title or provision and returns what matched and HOW, so nothing is
   never splits a Hindi or Bengali word, a haraka never splits an Arabic one). A language in
   ``UNVERIFIED_LANGUAGES`` is not tagged at all until a test shows its matching works: its items count
   as unsupported, never as a precision figure. In a language without spaces a substring hit must also
-  start and end on a syllable edge (never cutting off a vowel sign, a stacked consonant or a vowel
-  written before its consonant); that is what took Khmer, Lao and Burmese out of that set. It does not
+  start and end on a syllable edge (never cutting off a vowel sign, a Thai or Lao vowel letter
+  written after its consonant, a Burmese final closed by asat, a stacked consonant or a vowel written
+  before its consonant); that is what took Khmer, Lao and Burmese out of that set. It does not
   find WORD edges: a label can still match across two syllables of different words, which is why every
   such hit stays ≈.
 
@@ -56,9 +57,21 @@ UNVERIFIED_LANGUAGES: frozenset[str] = frozenset()
 # - never start right after a stacking sign (Khmer coeng U+17D2, Burmese virama U+1039), which binds the
 #   next consonant to the one before it;
 # - never start right after, or end on, a vowel written before its consonant (Thai U+0E40-U+0E44,
-#   Lao U+0EC0-U+0EC4), which belongs to the following syllable.
+#   Lao U+0EC0-U+0EC4), which belongs to the following syllable;
+# - never end right before a Thai or Lao vowel written AFTER its consonant as a plain letter (category
+#   Lo, not a mark: Thai U+0E30, U+0E32, U+0E45, Lao U+0EB0, U+0EB2);
+# - never end right before a Burmese consonant closed by asat (U+103A), which is that syllable's final.
+# A variation selector (U+FE00-U+FE0F, U+E0100-U+E01EF) is a mark by category but picks a glyph, never a
+# syllable, so it does not count as one.
 _STACKERS = frozenset({"\u17d2", "\u1039"})
 _LEADING_VOWELS = frozenset(chr(c) for c in (*range(0x0E40, 0x0E45), *range(0x0EC0, 0x0EC5)))
+_TRAILING_VOWEL_LETTERS = frozenset({"\u0e30", "\u0e32", "\u0e45", "\u0eb0", "\u0eb2"})
+_ASAT = "\u103a"
+
+
+def _is_variation_selector(ch: str) -> bool:
+    c = ord(ch)
+    return 0xFE00 <= c <= 0xFE0F or 0xE0100 <= c <= 0xE01EF
 
 # Optional in ordinary writing, so dropped before tokenizing (never a boundary): a text that carries them
 # and a label that does not are the same word. Arabic harakat, tanwin, shadda, sukun, superscript alef and
@@ -187,7 +200,12 @@ def _on_syllable_edges(run: str, start: int, end: int) -> bool:
         return False
     if run[end - 1] in _STACKERS or run[end - 1] in _LEADING_VOWELS:
         return False
-    return not (end < len(run) and unicodedata.category(run[end])[0] == "M")
+    if end >= len(run):
+        return True
+    nxt = run[end]
+    if nxt in _TRAILING_VOWEL_LETTERS or (end + 1 < len(run) and run[end + 1] == _ASAT):
+        return False
+    return not (unicodedata.category(nxt)[0] == "M" and not _is_variation_selector(nxt))
 
 
 def _substring_hits(text: str, lang: str, index: Index) -> list[tuple[str, str, str, bool]]:
