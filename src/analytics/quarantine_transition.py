@@ -119,7 +119,7 @@ def prepare_r101_transition(engine: Any) -> dict:
         bump_corpus_epoch(s, reason="r101-transition", strict=True)
         if s.get(DerivedMeta, R101_PENDING_KEY) is None:
             s.add(DerivedMeta(key=R101_PENDING_KEY, value=datetime.now(UTC).isoformat(timespec="seconds")))
-        s.commit()  # the bump and the pending row land together
+        s.commit()  # bump_corpus_epoch committed first; a crash before this line only repeats the bump next boot
         return {"owed": True}
     except Exception as exc:  # noqa: BLE001 - opening the store must not depend on this
         s.rollback()
