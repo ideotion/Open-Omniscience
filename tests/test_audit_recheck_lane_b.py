@@ -232,3 +232,16 @@ def test_merge_has_no_fixed_tmp_name_left():
     src = (ROOT / "src/backup/merge.py").read_text("utf-8")
     assert 'name + ".tmp")' not in src
     assert 'with_suffix(".tmp")' not in src
+
+
+def test_a_signer_key_that_is_not_a_string_is_an_answer_not_a_crash(client):
+    """A posted bundle is untrusted JSON: a list or a number where a key belongs must read as not verified, never a 500."""
+    client.post("/api/custody/log", json={"item_id": "article:7", "item_hash": "c" * 64, "action": "ingest"})
+    client.post("/api/custody/log", json={"item_id": "article:8", "item_hash": "d" * 64, "action": "ingest"})
+    bundle = client.get("/api/custody/export").json()
+    first, second = (dict(e) for e in bundle["entries"][:2])
+    first["signature"] = {**first["signature"], "ed25519": {**first["signature"]["ed25519"], "pub": ["ab"]}}
+    second["signature"] = {**second["signature"], "ed25519": {**second["signature"]["ed25519"], "pub": 7}}
+    r = client.post("/api/custody/verify", json={"bundle": {**bundle, "entries": [first, second]}})
+    assert r.status_code == 200
+    assert r.json()["verified"] is False

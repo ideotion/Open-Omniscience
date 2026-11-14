@@ -498,6 +498,9 @@ def _signer_of(entry: CustodyEntry) -> tuple[str, str | None]:
     sig = entry.signature or {}
     ed = (sig.get("ed25519") or {}).get("pub") or ""
     ml = (sig.get("ml_dsa") or {}).get("pub") if sig.get("algorithm") == "hybrid" else None
+    if not isinstance(ed, str) or not (ml is None or isinstance(ml, str)):
+        # a posted bundle is untrusted JSON: a list or a number here would crash the count and the sort that follow
+        raise TypeError("signer key is not a string")
     return ed, ml
 
 
