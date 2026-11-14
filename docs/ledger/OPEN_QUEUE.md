@@ -4000,6 +4000,11 @@
   Tracked on the board as **BUL-3** in [`docs/ROADMAP.md`](../ROADMAP.md) → *The Bulletin* →
   REMAINING, alongside the four other Bulletin carry-overs; this entry holds the reasoning,
   that table holds the status.
+  **RULED 2026-11-14 (R703), the second option:** the annexes default to excerpt-only on the
+  route, the builder and the enumeration, and full text is a visible checkbox in the Bulletin
+  review ("Include each article's full text in the annexes") whose hint, when ticked, says the
+  bundle redistributes publishers' text and names the terms question. The download and the
+  enumeration take the same flag. The evidence archive (shape a) is unchanged.
 - **SETTINGS-TAB REVIEW 2026-07-31 — 15 SUBTABS → 10, A NEW CARDS TAB, A NEW ADVANCED TAB
   (maintainer reviewed every Settings subtab and gave per-subtab remarks; 23 follow-up questions
   put and ANSWERED the same day; PLANNING ONLY this session, code-verified against `main`@b5bc6b6;
@@ -4406,7 +4411,7 @@
   maintainer-ruled default model) scoring **94.7% hallucination rate on "who" extraction** — the
   eval-gate correctly refused to store any of the 700,242 gated articles' candidates (fail-safe
   working as designed), but this is real evidence the ruled default model may not clear the
-  perception-extraction quality bar at all. FOUR MORE NEW findings, each reproduced on 2+ independent
+  perception-extraction quality bar at all. **RULED 2026-11-14 (R704):** who-extraction runs only on a measurement of THE model that would extract — the gate (`bind_gate_to_model`) reads every language as unmeasured when the last eval report measured another model or names none, so a clean report from one model can no longer license Mistral-7B, and the Settings → AI gate names the measured model above the rates it shows. (Mistral-7B is no longer the app's default either: the catalogue default is Ministral 3 8B.) FOUR MORE NEW findings, each reproduced on 2+ independent
   instances: (a) schema/alembic-stamp drift on 3 of the 4 newer-schema instances, all missing the
   same `sources.last_crawled_at` index the actively-enabled crawl-by-default feature needs; (b) a
   power-profile diagnostic reporting `collect_parallelism=1` while the live scheduler setting is
