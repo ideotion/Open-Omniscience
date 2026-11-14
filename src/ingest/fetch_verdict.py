@@ -190,9 +190,26 @@ def _userinfo_span(url: str) -> tuple[int, int] | None:
     return kept[start - 1] + 1, kept[at] + 1
 
 
+#: Hosts whose query string IS personal data (R675, R683): an Open-Meteo archive request carries the coordinates of a place the person
+#: typed, probably where they live. Every sentence that names such a URL (a failure, a log line, the activity readout) keeps the host
+#: and path and withholds the query, written as ``?…``.
+PRIVATE_QUERY_HOSTS = frozenset({"archive-api.open-meteo.com"})
+#: The query of a request to one of :data:`PRIVATE_QUERY_HOSTS`, wherever a library quoted it (``url: /v1/archive?latitude=...``).
+_PRIVATE_QUERY_RE = re.compile(r"\?[^\s'\"<>]*(?:latitude|longitude)(?:=|%3[Dd])[^\s'\"<>]*")
+
+
+def without_private_query(text: str) -> str:
+    """``text`` with the query of a request to a :data:`PRIVATE_QUERY_HOSTS` host withheld. NEVER raises."""
+    try:
+        return _PRIVATE_QUERY_RE.sub("?…", text)
+    except Exception:  # noqa: BLE001 - written from inside a failure
+        return UNREADABLE_URL
+
+
 def failure_url(url: str) -> str:
     """The URL as the fetcher writes it into its failure sentence ("request error for <url>: ..."): the userinfo masked and every
-    whitespace character percent-encoded (its UTF-8 bytes), nothing else changed. NEVER raises.
+    whitespace character percent-encoded (its UTF-8 bytes), the query of a :data:`PRIVATE_QUERY_HOSTS` request withheld (R683), nothing
+    else changed. NEVER raises.
 
     A caller's URL can hold spaces (a feed item's link, a redirect target) and the reader above takes the URL token as everything up to
     the first whitespace, so a raw space let the rest of a link be read as our own words (R616). ``\\s`` here is the reader's ``\\S``
@@ -204,9 +221,23 @@ def failure_url(url: str) -> str:
         span = _userinfo_span(url)
         if span is not None:
             url = url[: span[0]] + USERINFO_MASK + url[span[1] :]
+        url = _private_query_withheld(url)
         return _WHITESPACE_RE.sub(lambda m: "".join(f"%{b:02X}" for b in m.group().encode("utf-8", "surrogatepass")), url)
     except Exception:  # noqa: BLE001 - a failure sentence is written from inside a failure; a URL it cannot read is withheld whole
         return UNREADABLE_URL
+
+
+def _private_query_withheld(url: str) -> str:
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+    except ValueError:  # an unparseable URL is written as the rest of this function writes it; no private host parses that way
+        return url
+    if host in PRIVATE_QUERY_HOSTS and parts.query:
+        return url.split("?", 1)[0] + "?…"
+    return url
 
 
 def failure_netloc(netloc: str) -> str:
