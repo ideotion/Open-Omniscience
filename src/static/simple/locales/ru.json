@@ -141,6 +141,11 @@
   "Prices are imported in the full view, with your consent; nothing is fetched here. Each card shows the newest stored value and its date.": "Цены импортируются в полном виде с вашего согласия; здесь ничего не загружается. Каждая карточка показывает последнее сохранённое значение и его дату.",
   "A price can be old: read its date.": "Цена может быть устаревшей: смотрите на дату.",
   "Published records, fetched with your consent in the full view. The count includes every revision the publisher made.": "Опубликованные данные, загружаемые с вашего согласия в полном виде. Счёт включает все исправления издателя.",
-  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "Поиск скрывает статьи, удержанные до проверки источника, поэтому список страны может быть короче её числа здесь."
+  "Search hides articles held back until their source is checked, so a country's list can be shorter than its count here.": "Поиск скрывает статьи, удержанные до проверки источника, поэтому список страны может быть короче её числа здесь.",
+  "Looking for leads in your corpus…": "Ищем зацепки в вашем корпусе…",
+  "Language": "Язык",
+  "Any language": "Любой язык",
+  "The counts use the language each source states, over the newest articles only. The filter also finds articles whose language was detected from their text, so a count can differ from the results.": "Числа основаны на языке, который указывает каждый источник, и только по самым новым статьям. Фильтр находит и статьи, язык которых определён по тексту, поэтому число может отличаться от результатов.",
+  "Articles counted": "Учтено статей"
  }
 }

@@ -256,6 +256,8 @@ _RAW_CEILING: dict[str, int] = {
     "src/api/ai.py": 1,
     "src/api/database.py": 3,
     "src/api/diagnostics/corpus.py": 1,
+    # Lane X 2026-11-14: card_audit's linked-layer NAME, counted in the field-cards manifest; not a query.
+    "src/api/diagnostics/field_cards.py": 1,
     # Was 3: the export's SQL moved into src/analytics/keyword_log_scan.py (above); what is left
     # here is one docstring sentence.
     "src/api/diagnostics/keywords.py": 1,

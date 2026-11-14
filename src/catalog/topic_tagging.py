@@ -20,9 +20,14 @@ sequence in a title or provision and returns what matched and HOW, so nothing is
   one; such labels are counted so the narrower reach is visible.
 
 * R690: combining marks and joiners belong to their word in every script (a vowel sign or a virama
-  never splits a Hindi or Bengali word, a haraka never splits an Arabic one). Languages in
-  ``UNVERIFIED_LANGUAGES`` (Khmer, Lao, Burmese) are not tagged at all until a test shows their
-  matching works: their items count as unsupported, never as a precision figure.
+  never splits a Hindi or Bengali word, a haraka never splits an Arabic one). A language in
+  ``UNVERIFIED_LANGUAGES`` is not tagged at all until a test shows its matching works: its items count
+  as unsupported, never as a precision figure. In a language without spaces a substring hit must also
+  start and end on a syllable edge (never cutting off a vowel sign, a Thai or Lao vowel letter
+  written after its consonant, a Burmese final closed by asat, a stacked consonant or a vowel written
+  before its consonant); that is what took Khmer, Lao and Burmese out of that set. It does not
+  find WORD edges: a label can still match across two syllables of different words, which is why every
+  such hit stays ≈.
 
 The classifier's module home (S06-02 S4, "record it") is ``src/catalog/topic_tagging.py``.
 No network, no model. An item in a language no loaded scheme carries a single label for is
@@ -42,8 +47,32 @@ UNSEGMENTED_LANGUAGES = frozenset({"zh", "ja", "ko", "th", "my", "km", "lo"})
 
 #: R690(3)/(4): languages whose matching no test shows working yet. Their labels never make the language
 #: taggable, so a sample item in one is counted as unsupported and no precision figure is published for it.
-#: Leaves this set only with a test that matches real words of the script (as Thai, Hindi and Bengali have).
-UNVERIFIED_LANGUAGES = frozenset({"km", "lo", "my"})
+#: A language leaves this set only with a test that matches real words of its script. Khmer, Lao and
+#: Burmese left it with the syllable-edge rule below and tests on real words (tests/test_topic_sample.py).
+UNVERIFIED_LANGUAGES: frozenset[str] = frozenset()
+
+# A substring hit in a language without spaces must start and end on a syllable edge (R690 follow-up):
+# - never end right before a combining mark (a vowel sign, a final-consonant mark, a tone mark) that
+#   belongs to the syllable the match would cut;
+# - never start right after a stacking sign (Khmer coeng U+17D2, Burmese virama U+1039), which binds the
+#   next consonant to the one before it;
+# - never start right after, or end on, a vowel written before its consonant (Thai U+0E40-U+0E44,
+#   Lao U+0EC0-U+0EC4), which belongs to the following syllable;
+# - never end right before a Thai or Lao vowel written AFTER its consonant as a plain letter (category
+#   Lo, not a mark: Thai U+0E30, U+0E32, U+0E45, Lao U+0EB0, U+0EB2);
+# - never end right before a Burmese consonant closed by asat (U+103A), which is that syllable's final.
+# A variation selector (U+FE00-U+FE0F, U+E0100-U+E01EF) is a mark by category but picks a glyph, never a
+# syllable, so it does not count as one.
+_STACKERS = frozenset({"\u17d2", "\u1039"})
+_LEADING_VOWELS = frozenset(chr(c) for c in (*range(0x0E40, 0x0E45), *range(0x0EC0, 0x0EC5)))
+_TRAILING_VOWEL_LETTERS = frozenset({"\u0e30", "\u0e32", "\u0e45", "\u0eb0", "\u0eb2"})
+_ASAT = "\u103a"
+_DOT_BELOW = "\u1037"
+
+
+def _is_variation_selector(ch: str) -> bool:
+    c = ord(ch)
+    return 0xFE00 <= c <= 0xFE0F or 0xE0100 <= c <= 0xE01EF
 
 # Optional in ordinary writing, so dropped before tokenizing (never a boundary): a text that carries them
 # and a label that does not are the same word. Arabic harakat, tanwin, shadda, sukun, superscript alef and
@@ -166,6 +195,28 @@ class Index:
         self.entries.setdefault((lang, toks), []).append((scheme, uri, label, is_pref))
 
 
+def _on_syllable_edges(run: str, start: int, end: int) -> bool:
+    """True when ``run[start:end]`` neither cuts a syllable at its start nor at its end."""
+    if start > 0 and (run[start - 1] in _STACKERS or run[start - 1] in _LEADING_VOWELS):
+        return False
+    if run[end - 1] in _STACKERS or run[end - 1] in _LEADING_VOWELS:
+        return False
+    if end >= len(run):
+        return True
+    nxt = run[end]
+    if nxt in _TRAILING_VOWEL_LETTERS:
+        return False
+    # A Burmese final: the next letter is closed by an asat, directly or after a dot below (NFKC puts U+1037 before the asat, so
+    # ပြည့် stores ည + ့ + ်). Only the dot below is looked past: an asat after a vowel sign closes that VOWEL (ော်, ါ်), which
+    # belongs to the next syllable (နိုင်ငံ inside နိုင်ငံတော် ends on a syllable edge).
+    k = end + 1
+    if k < len(run) and run[k] == _DOT_BELOW:
+        k += 1
+    if k < len(run) and run[k] == _ASAT:
+        return False
+    return not (unicodedata.category(nxt)[0] == "M" and not _is_variation_selector(nxt))
+
+
 def _substring_hits(text: str, lang: str, index: Index) -> list[tuple[str, str, str, bool]]:
     """Longest-first, non-overlapping label hits inside each run of text, never across punctuation or space (R680)."""
     hits: list[tuple[str, str, str, bool]] = []
@@ -174,7 +225,7 @@ def _substring_hits(text: str, lang: str, index: Index) -> list[tuple[str, str, 
         while i < len(run):
             for n in range(min(index.max_chars, len(run) - i), 1, -1):
                 hit = index.substrings.get((lang, run[i:i + n]))
-                if hit:
+                if hit and _on_syllable_edges(run, i, i + n):
                     hits.extend(hit)
                     i += n
                     break
@@ -284,8 +335,8 @@ def measure(sample: list[dict[str, Any]], index: Index) -> dict[str, Any]:
         },
         "method": "whole-word label match (longest first) over the text, per language; "
                   "alt labels and labels shared by several concepts are marked ≈; in a language written "
-                  "without spaces a label of two or more characters is matched inside a run of text and "
-                  "every such hit is ≈ (R680)",
+                  "without spaces a label of two or more characters is matched inside a run of text, only "
+                  "where it starts and ends on a syllable edge, and every such hit is ≈ (R680, R690)",
         "caveat": CAVEAT + " The sample's size and choice bound what these figures mean.",
     }
 

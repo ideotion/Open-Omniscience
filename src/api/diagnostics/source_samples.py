@@ -52,11 +52,17 @@ from src.database.session import get_db
 
 from ._base import router
 
-#: The cap on one zip. Margin below is held back for the central directory and the manifest.
-SAMPLE_ZIP_MAX_BYTES = 4 * 1000 * 1000
-_RESERVE_BYTES = 120 * 1000
-#: One article's text is cut here (and marked) so a single huge page can never push a zip past the cap.
-_TEXT_MAX_CHARS = 1_000_000
+#: The cap on one zip, the Field data button's FIELD_PART_BYTES. Each part is sent back by hand through a chat upload; on
+#: 2026-11-14 about half the parts would not upload, and every one that did was under 175 KB, so 400 KB (was 4 MB).
+#: Margin below is held back for the central directory and the compressed manifest (its rows are counted as written).
+SAMPLE_ZIP_MAX_BYTES = 400 * 1000
+_RESERVE_BYTES = 40 * 1000
+#: One article's text is cut here, in UTF-8 bytes (and marked), so a single huge page cannot push a zip past the cap: the
+#: first source of a part is always admitted, and its text compresses to well under this.
+_TEXT_MAX_BYTES = 200 * 1000
+#: Sources are read in batches of this many ids; one zip keeps reading batches until it is full or the set ends, so a long
+#: run of never-collected sources no longer makes a part of its own (the 2026-11-14 press made five such parts in a row).
+_BATCH = 5000
 
 _SECRETISH = re.compile(r"pass(word|phrase)|secret|token|api_?key|cookie|credential", re.I)
 
@@ -130,61 +136,85 @@ def build_sample_zip(
     A newsletter's body is written only when ``include_newsletters`` is true (R655)."""
     newsletter_sources = set() if include_newsletters else _newsletter_source_ids(db)
     total = db.execute(select(func.count()).select_from(Source)).scalar_one()
-    ids = [r[0] for r in db.execute(
-        select(Source.id).where(Source.id > after).order_by(Source.id).limit(5000)
-    ).all()]
     buf = io.BytesIO()
     manifest: list[dict[str, Any]] = []
+    empty: list[list[Any]] = []   # [source_id, domain] for each source with no stored article
+    rows_bytes = 0   # the manifest's rows as written, before compression: a bound the compressed manifest stays under
     last = None
+    done = False
+    full = False
+    cursor = after
     shown = _shown_source_columns()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-        for sid in ids:
-            src = db.get(Source, sid)
-            if src is None:
-                continue
-            art, n = _pick(db, sid, seed)
-            row: dict[str, Any] = {"source_id": sid, "domain": src.domain, "name": src.name,
-                                   "articles_in_source": n}
-            if art is None:
-                row["article_id"] = None
-                row["note"] = "no stored article for this source"
+        while not full and not done:
+            ids = [r[0] for r in db.execute(
+                select(Source.id).where(Source.id > cursor).order_by(Source.id).limit(_BATCH)
+            ).all()]
+            if not ids:
+                done = True
+                break
+            for sid in ids:
+                src = db.get(Source, sid)
+                if src is None:
+                    continue
+                art, n = _pick(db, sid, seed)
                 data = None
-            else:
-                a = _row_dict(art)
-                if not include_newsletters and (sid in newsletter_sources or art.newsletter_attached_via):
-                    for col in _BODY_COLUMNS:
-                        a[col] = None
-                    a["body_withheld"] = "a newsletter: its body stays on this machine (OO_QUALITY_INCLUDE_NEWSLETTER_TEXT)"
-                    row["body_withheld"] = True
-                text = a.get("content")
-                if isinstance(text, str) and len(text) > _TEXT_MAX_CHARS:
-                    a["content"] = text[:_TEXT_MAX_CHARS]
-                    a["content_truncated_from_chars"] = len(text)
-                    row["text_truncated"] = True
-                doc = {"source": _row_dict(src, shown), "article": a, "articles_in_source": n,
-                       "pick": f"random.Random('{seed}:{sid}').randrange({n}) over articles ordered by id",
-                       "raw_html": "not stored by this app (only extracted text is kept)"}
-                data = json.dumps(doc, ensure_ascii=False, indent=1, default=str).encode("utf-8")
-                row["article_id"] = art.id
-                row["bytes"] = len(data)
-            used = buf.tell() + _RESERVE_BYTES + 400 * (len(manifest) + 1)
-            if manifest and used + len(data or b"") > cap:   # empty sources count too: their manifest rows add up
-                break   # nothing is added that could breach the cap; the next request resumes here
-            if data is not None:
-                z.writestr(f"samples/source-{sid:07d}.json", data)
-            manifest.append(row)
-            last = sid
-            db.expire_all()   # keep the session small across thousands of rows
+                row: dict[str, Any] | None = None
+                if art is not None:
+                    row = {"source_id": sid, "domain": src.domain, "name": src.name, "articles_in_source": n}
+                    a = _row_dict(art)
+                    if not include_newsletters and (sid in newsletter_sources or art.newsletter_attached_via):
+                        for col in _BODY_COLUMNS:
+                            a[col] = None
+                        a["body_withheld"] = "a newsletter: its body stays on this machine (OO_QUALITY_INCLUDE_NEWSLETTER_TEXT)"
+                        row["body_withheld"] = True
+                    text = a.get("content")
+                    raw = text.encode("utf-8") if isinstance(text, str) else b""
+                    if isinstance(text, str) and len(raw) > _TEXT_MAX_BYTES:
+                        # cut by UTF-8 bytes, not characters: 200k CJK characters are 600 KB (the 2026-11-14 read)
+                        a["content"] = raw[:_TEXT_MAX_BYTES].decode("utf-8", errors="ignore")
+                        a["content_truncated_from_chars"] = len(text)
+                        row["text_truncated"] = True
+                    doc = {"source": _row_dict(src, shown), "article": a, "articles_in_source": n,
+                           "pick": f"random.Random('{seed}:{sid}').randrange({n}) over articles ordered by id",
+                           "raw_html": "not stored by this app (only extracted text is kept)"}
+                    data = json.dumps(doc, ensure_ascii=False, default=str).encode("utf-8")
+                    row["article_id"] = art.id
+                    row["bytes"] = len(data)
+                entry: Any = [sid, src.domain] if row is None else row
+                row_bytes = len(json.dumps(entry, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")) + 1
+                used = buf.tell() + _RESERVE_BYTES + rows_bytes + row_bytes
+                if (manifest or empty) and used + len(data or b"") > cap:   # empty sources count too: their rows add up
+                    full = True   # nothing is added that could breach the cap; the next request resumes here
+                    break
+                rows_bytes += row_bytes
+                if row is None:
+                    empty.append(entry)
+                else:
+                    z.writestr(f"samples/source-{sid:07d}.json", data or b"")
+                    manifest.append(row)
+                last = sid
+                db.expire_all()   # keep the session small across thousands of rows
+            if not full:
+                cursor = ids[-1]
+                done = len(ids) < _BATCH
         z.writestr("manifest.json", json.dumps({
             "temporary_diagnostic": True,
             "seed": seed,
             "cursor_after": after,
-            "sources_in_this_zip": len(manifest),
+            "last_source_id": last,
+            "sources_in_this_zip": len(manifest) + len(empty),
             "sources_in_set": total,
             "sources": manifest,
-        }, ensure_ascii=False, indent=1).encode("utf-8"))
-    done = last is None or last == ids[-1] and len(ids) < 5000
-    return buf.getvalue(), (None if done else last), len(manifest), total
+            "sources_without_article": {
+                "note": "no stored article for these sources",
+                "columns": ["source_id", "domain"],
+                "rows": empty,
+            },
+        }, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    if not done and last is None:
+        done = True   # defensive: a zip that took nothing must not hand back the same cursor forever
+    return buf.getvalue(), (None if done else last), len(manifest) + len(empty), total
 
 
 # --------------------------------------------------------------------------- #
@@ -196,7 +226,7 @@ def source_samples(
     seed: int = Query(20261108),
     db: Session = Depends(get_db),
 ) -> Response:
-    """ONE zip (<= 4 MB) holding one randomly chosen article per source for the next run of sources
+    """ONE zip (<= 400 KB) holding one randomly chosen article per source for the next run of sources
     after ``after``; ``X-Source-Samples-Next`` carries the cursor for the next call (empty = done).
     Plain ``def`` -> threadpool. Read-only."""
     data, nxt, covered, total = build_sample_zip(

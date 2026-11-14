@@ -37,7 +37,7 @@ TSV = ROOT / "configs" / "routes_without_ui.tsv"
 
 # Wire a feature, delete its row and lower this by one. Raising it means a new
 # server feature shipped without a button: say why in the PR.
-FEATURE_CEILING = 46
+FEATURE_CEILING = 44
 
 CLASSES = {"internal", "superseded", "feature", "unseen"}
 
@@ -167,6 +167,7 @@ def _calls(path: str, js: str) -> bool:
         "x.js", [x for x in rc._js_literals(js) if "/" in x], set(rc._js_literals(js))
     )
     fl.tokens |= {w for x in rc._js_literals(js) for w in rc._NESTED_WORD.findall(x)}
+    fl.concat = rc._concat_words(js)
     return rc._calls(path, fl)
 
 
@@ -219,6 +220,22 @@ def test_concatenated_shapes_count():
         "/api/integrity/collapse/apply_all",
         'api("/api/integrity/collapse/" + (a ? "apply" : "revert"))',
     )
+
+
+def test_a_word_composes_only_when_it_is_concatenated_onto_the_head():
+    """2026-11-14: simple.js posts to "/api/sources/" and names a view "search"; the old
+    rule paired the two and read the file as calling GET /api/sources/search."""
+    js = 'const VIEWS = ["today", "search"]; api("/api/sources/", {method: "POST", body});'
+    assert not _calls("/api/sources/search", js)
+    assert _calls("/api/sources/search", js + ' api("/api/sources/" + "search");')
+    # the word reaches the head through a variable: what is assigned to it composes
+    via_var = 'const verb = a ? "apply" : "revert"; api("/api/integrity/collapse/" + verb);'
+    assert _calls("/api/integrity/collapse/apply", via_var)
+    assert _calls("/api/integrity/collapse/revert", via_var)
+    assert not _calls("/api/integrity/collapse/apply_all", via_var)
+    # a call added to the head is a parameter, never a word from elsewhere in the file
+    called = 'const t = "search"; api("/api/sources/" + encodeURIComponent(id));'
+    assert not _calls("/api/sources/search", called)
 
 
 def test_a_hole_stands_for_a_named_segment_only_when_the_name_is_spelled():

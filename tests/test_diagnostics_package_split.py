@@ -63,6 +63,7 @@ _ADDED_AFTER_THE_SPLIT: tuple[str, ...] = (
     "country_form_status",
     # 2026-11-08: one random article per source in zips of at most 4 MB (kept for the Field data button, R664).
     "source_samples",
+    "field_cards",  # every Home card + its evidence, saved by the Field data button (2026-11-14, Lane X)
     # 2026-11-08, R459: what a Thorough build is expected to cost, before the release run.
     "all_diagnostics_estimate",
     # 2026-09-18, the 0.4 release acceptance run (gate rows A-E, K, P, Q, T): one job,
