@@ -1191,11 +1191,119 @@
         ? `openAnalysisForIds(${esc(JSON.stringify(e.article_ids))}, ${esc(JSON.stringify(e.title))})`
         : `openAnalysisFor(${esc(JSON.stringify(e.title))})`;
       const titleEl = `<b class="ag-evtitle" style="cursor:pointer" title="Open in analysis — explore this event in your corpus" data-on-click="ooStop(event);${openExpr}">${esc(e.title)}</b>`;
+      // A deduced date can be checked mention by mention (Lane M, R684): the button opens the
+      // articles that mention this date, each with its snippet and Confirm / Reject / Undo.
+      const review = (e.deduced && e.next_occurrence)
+        ? ` <button type="button" class="tiny secondary" title="${esc(T("See each article that mentions this date, with the sentence it was read from, and confirm or reject the reading."))}" data-on-click="ooStop(event);agOpenMentions(${esc(JSON.stringify(e.next_occurrence))})">${esc(T("Check the mentions"))}</button>` : "";
       return `<div class="ag-row"><div class="ag-when">${agWhen(e)}</div>
-        <div class="ag-body"><div>${titleEl} <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?ooCountryCell(e.country,{cls:"pill"}):""} ${conf}${span}${alsoIn}${imp}${prov}${yearNote}</div>
+        <div class="ag-body"><div>${titleEl} <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?ooCountryCell(e.country,{cls:"pill"}):""} ${conf}${span}${alsoIn}${imp}${prov}${yearNote}${review}</div>
           ${variants}
           <div class="hint">${tags} ${e.note?"· "+esc(e.note):""}${src}</div></div></div>`;
     }
+    // -- Articles that mention a date (GET /api/article-dates/by-date) --------- //
+    // One dialog for a picked day and for a deduced event. Each row is ONE date tag: the
+    // article (local reader first, invariant #6), the sentence the date was read from, its
+    // status, and Confirm / Reject. Confirm or reject changes that tag only; Undo puts back
+    // the status it had. Confirming says the article does mention this date, never that
+    // anything happens on it, and the caveat saying so stays visible above the list.
+    const AG_MENTIONS_LIMIT = 200;
+    const _agMentions = { date: null, rows: [], prev: {}, changed: false };
+    function _agStatusLabel(st) {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (st === "confirmed") return T("confirmed by you");
+      if (st === "rejected") return T("rejected by you");
+      return T("not checked");
+    }
+    function _agMentionRow(r) {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const id = Number(r.id);
+      const pill = `<span class="pill${r.status === "confirmed" ? " ok" : r.status === "rejected" ? " warn" : ""}">${esc(_agStatusLabel(r.status))}</span>`;
+      const acts = [];
+      if (r.status !== "confirmed")
+        acts.push(`<button type="button" class="tiny" title="${esc(T("This article does mention this date. It does not confirm that anything happens on it."))}" data-on-click="agMentionSet(${id}, 'confirmed')">${esc(T("Confirm"))}</button>`);
+      if (r.status !== "rejected")
+        acts.push(`<button type="button" class="tiny secondary" title="${esc(T("The date was read wrongly from this article. A rejected mention no longer counts toward the deduced date."))}" data-on-click="agMentionSet(${id}, 'rejected')">${esc(T("Reject"))}</button>`);
+      if (Object.prototype.hasOwnProperty.call(_agMentions.prev, id))
+        acts.push(`<button type="button" class="tiny secondary" data-on-click="agMentionUndo(${id})">${esc(T("Undo"))}</button>`);
+      const when = r.published_at ? ` <span class="muted">· ${esc(String(r.published_at).slice(0, 10))}</span>` : "";
+      return `<div class="ag-row" data-tag="${id}"><div class="ag-body">
+        <div><a href="/api/articles/${Number(r.article_id)}/view" target="_blank" rel="noopener" dir="auto">${esc(r.title || T("(untitled)"))}</a>${when} ${pill}</div>
+        ${r.snippet ? `<div class="hint" dir="auto">“${esc(r.snippet)}”</div>` : ""}
+        <div style="display:flex;gap:6px;margin-top:4px">${acts.join("")}</div></div></div>`;
+    }
+    function _agRenderMentions() {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const body = $("ag-mentions-body"); if (!body) return;
+      const rows = _agMentions.rows;
+      const cut = rows.length >= AG_MENTIONS_LIMIT
+        ? `<div class="hint">${esc(T("Showing the first {n} mentions.").replace("{n}", AG_MENTIONS_LIMIT))}</div>` : "";
+      body.innerHTML = `<div class="card-caveat">${esc(T("Dates read from article text by the app, never confirmed as events. Confirming says the article does mention this date; it does not confirm that anything happens on it."))}</div>` +
+        (rows.length
+          ? `<div class="hint">${esc(T("{n} mentions").replace("{n}", rows.length))}</div>` + cut + rows.map(_agMentionRow).join("")
+          : `<div class="muted">${esc(T("No article in your corpus mentions this date."))}</div>`);
+    }
+    async function agOpenMentions(iso) {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const dlg = $("ag-mentions"); if (!dlg || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return;
+      _agMentions.date = iso; _agMentions.rows = []; _agMentions.prev = {}; _agMentions.changed = false;
+      let label = iso;
+      try { label = new Intl.DateTimeFormat(agLocale(), { dateStyle: "full", timeZone: "UTC" }).format(new Date(iso + "T00:00:00Z")); } catch (_e) { /* keep the ISO date */ }
+      $("ag-mentions-title").textContent = T("Articles that mention {date}").replace("{date}", label);
+      $("ag-mentions-body").innerHTML = `<div class="muted">${esc(T("Loading…"))}</div>`;
+      if (!dlg.open) dlg.showModal();
+      try {
+        const d = await api("/api/article-dates/by-date?date=" + encodeURIComponent(iso) + "&limit=" + AG_MENTIONS_LIMIT);
+        if (_agMentions.date !== iso) return;
+        _agMentions.rows = Array.isArray(d.articles) ? d.articles : [];
+        _agRenderMentions();
+      } catch (e) {
+        $("ag-mentions-body").innerHTML = `<div class="err">${esc(T("Could not read the mentions:"))} ${esc(e && e.message ? e.message : String(e))}</div>`;
+      }
+    }
+    const _AG_STATUS_ROUTE = { confirmed: "confirm", rejected: "reject", candidate: "reset" };
+    async function _agMentionPost(id, status) {
+      const r = await api(`/api/article-dates/${Number(id)}/${_AG_STATUS_ROUTE[status]}`, { method: "POST" });
+      const row = _agMentions.rows.find(x => Number(x.id) === Number(id));
+      if (row) row.status = r && r.status ? r.status : status;
+      _agMentions.changed = true;
+      _agRenderMentions();
+    }
+    async function agMentionSet(id, status) {
+      const row = _agMentions.rows.find(x => Number(x.id) === Number(id));
+      if (!row || !_AG_STATUS_ROUTE[status]) return;
+      const before = row.status || "candidate";
+      try {
+        await _agMentionPost(id, status);
+        if (!Object.prototype.hasOwnProperty.call(_agMentions.prev, id)) _agMentions.prev[id] = before;
+        _agRenderMentions();
+      } catch (e) { toast((e && e.message) || String(e), "err"); }
+    }
+    async function agMentionUndo(id) {
+      if (!Object.prototype.hasOwnProperty.call(_agMentions.prev, id)) return;
+      const before = _agMentions.prev[id];
+      try {
+        delete _agMentions.prev[id];
+        await _agMentionPost(id, _AG_STATUS_ROUTE[before] ? before : "candidate");
+      } catch (e) { _agMentions.prev[id] = before; _agRenderMentions(); toast((e && e.message) || String(e), "err"); }
+    }
+    function agCloseMentions() {
+      const dlg = $("ag-mentions"); if (dlg && dlg.open) dlg.close();
+    }
+    function _agMentionsClosed() {
+      // A confirm or reject moves a deduced date's counts (a rejected mention drops out), so
+      // the agenda re-reads once the dialog closes rather than on every click.
+      if (_agMentions.changed) { _agMentions.changed = false; loadAgenda(); }
+    }
+    (function () {
+      const wire = () => {
+        const dlg = $("ag-mentions"); if (!dlg || dlg.dataset.wired) return;
+        dlg.dataset.wired = "1";
+        dlg.addEventListener("close", _agMentionsClosed);
+        const btn = $("ag-mentions-close"); if (btn) btn.addEventListener("click", agCloseMentions);
+      };
+      if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wire); else wire();
+    })();
+
     // -- Agenda views: MONTH grid (the ruled default) + the original list ----- //
     // The tab shows DATA only (maintainer principle 2026-06-11): calendar
     // subscriptions and the feed directory live in Settings -> Agenda.
@@ -1671,10 +1779,13 @@
           monthOnly.map(e => `<span class="ag-tag" title="${esc(e.title)}">${esc(e.title)}</span>`).join(" ") + `</div>`;
       box.innerHTML = html;
       // Day detail under the grid: the familiar honest rows for the picked day.
-      if (AGV.day && (byDay[AGV.day] || []).length) {
+      // The picked day always offers the articles that mention it (GET /api/article-dates/by-date),
+      // even when no listed event falls on it.
+      if (AGV.day) {
         const label = new Intl.DateTimeFormat(loc, { dateStyle: "full" }).format(new Date(y, m - 1, AGV.day));
-        dayBox.innerHTML = `<h3 style="font-size:13px;margin:12px 0 6px">${esc(label)}</h3>` +
-          byDay[AGV.day].map(agRow).join("");
+        const iso = `${y}-${String(m).padStart(2, "0")}-${String(AGV.day).padStart(2, "0")}`;
+        dayBox.innerHTML = `<h3 style="font-size:13px;margin:12px 0 6px">${esc(label)} <button type="button" class="tiny secondary" title="${esc(t9("Articles in your corpus whose text mentions this day, with the sentence each date was read from."))}" data-on-click="agOpenMentions(${esc(JSON.stringify(iso))})">${esc(t9("Articles that mention this day"))}</button></h3>` +
+          (byDay[AGV.day] || []).map(agRow).join("");
       } else dayBox.innerHTML = "";
     }
     // Events falling on ONE concrete date: annual rules (month+day, any year) +

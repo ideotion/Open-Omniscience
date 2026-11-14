@@ -4030,6 +4030,16 @@
        composed with t()/tf() at render time (data-i18n-dyn) and re-read on a language switch
        (repaintPlaceCardFromCache), because the NAME it shows depends on the language. No
        inline handlers: _placeCardWire binds the close button once. -->
+  <!-- Articles that mention one date (Agenda): opened from a picked day or a deduced event's
+       "Check the mentions"; per-mention Confirm / Reject / Undo. Wired by app-agenda.js. -->
+  <dialog id="ag-mentions" aria-labelledby="ag-mentions-title" style="width:min(680px,94vw);max-height:90vh;padding:18px">
+    <h3 id="ag-mentions-title" data-i18n-dyn style="margin:0 0 8px"></h3>
+    <div id="ag-mentions-body" data-i18n-dyn style="max-height:70vh;overflow:auto"></div>
+    <div style="margin-top:12px;display:flex;justify-content:flex-end">
+      <button class="secondary" type="button" id="ag-mentions-close">Close</button>
+    </div>
+  </dialog>
+
   <dialog id="place-card" style="width:min(620px,94vw);max-height:90vh;padding:18px">
     <h3 id="pc-title" dir="auto" data-i18n-dyn style="margin:0 0 8px"></h3>
     <div id="pc-body" data-i18n-dyn style="max-height:70vh;overflow:auto"></div>

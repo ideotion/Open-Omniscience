@@ -82,6 +82,15 @@ def reject(tag_id: int, db: Session = Depends(get_db)) -> dict:
     return row
 
 
+@router.post("/{tag_id}/reset")
+def reset(tag_id: int, db: Session = Depends(get_db)) -> dict:
+    """Put a date tag back to ``candidate``: the Agenda's undo after a confirm or a reject. Only that tag changes."""
+    row = datestore.set_status(db, tag_id, "candidate")
+    if row is None:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    return row
+
+
 @router.get("/by-date")
 def by_date(
     date: str = Query(..., description="ISO date, e.g. 2001-09-11"),

@@ -187,6 +187,7 @@ def articles_for_date(
     for tag, art in q.limit(limit).all():
         out.append(
             {
+                "id": tag.id,
                 "article_id": art.id,
                 "title": art.title,
                 "url": art.url,
