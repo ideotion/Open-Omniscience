@@ -1470,7 +1470,13 @@ call for now. When a bundle crosses a rotation, its scope line says so, and with
 held to the key that introduced it: its Ed25519 key, and its post-quantum key where an entry is signed with one (a
 stretch whose key-rotation record names no post-quantum key, like the stretch before the first rotation, is held to its
 Ed25519 key only). A one-item bundle carries every key-rotation record, so an item untouched since a rotation still
-verifies. The log's own key-rotation records cannot be written through `POST /api/custody/log`.
+verifies. The log's own key-rotation records cannot be written through `POST /api/custody/log`. An export made after
+the key changed, before anything new was logged, writes the record first, since the new key signs the export. A
+verified bundle that crosses a rotation prints its line of keys, from the first to the last: compare any key you
+already know with that line. With `--accept-unendorsed-rotation`, `--pin` proves nothing unless you already know the
+last key, because a log cut and re-signed by someone else carries exactly such a record. The in-app **Verify** button
+follows the key through the same records, accepts an unendorsed one on its word, and names each rotation. Changing only
+the post-quantum key (or turning it off with no rotation) writes no record, and a pinned check then refuses the log.
 
 ```bash
 python scripts/verify_custody.py custody_bundle.json [--pin]

@@ -38,6 +38,11 @@ def main(argv: list[str]) -> int:
             stream.reconfigure(errors="backslashreplace")
     args = [a for a in argv[1:] if not a.startswith("--")]
     flags = {a for a in argv[1:] if a.startswith("--")}
+    unknown = flags - {"--pin", "--accept-unendorsed-rotation"}
+    if unknown:
+        # A misspelt --pin must not verify without the pin it was meant to add.
+        print(f"unknown option(s): {', '.join(sorted(unknown))}", file=sys.stderr)
+        return 2
     if len(args) != 1:
         print(
             "usage: python scripts/verify_custody.py <custody_bundle.json> [--pin] [--accept-unendorsed-rotation]", file=sys.stderr

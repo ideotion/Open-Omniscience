@@ -55,7 +55,7 @@ def test_a_re_created_key_writes_an_unendorsed_rotation_record_first(tmp_path):
     ok, issues = verify_export(bundle)
     assert not ok and issues[0].startswith("the signing key changes at seq 4 with no endorsement")
     report = verify_export_report(bundle, accept_unendorsed_rotation=True)
-    assert report["verified"] and report["notes"] and "accepted on the record's word" in report["notes"][0]
+    assert report["verified"] and report["notes"] and "accepted on the record's word" in report["notes"][1]
     assert verify_export_report(bundle, require_signer=True, accept_unendorsed_rotation=True)["verified"]
 
 
@@ -76,9 +76,14 @@ def test_an_endorsed_rotation_verifies_with_and_without_a_pin(tmp_path):
         item = log.export(item_id="article:0")
     report = verify_export_report(bundle)
     assert report["verified"], report["issues"]
-    assert report["notes"] == ["seq 4: the signing key changed, endorsed by the previous key"]
+    old_pub, new_pub = old.public_identity().ed25519_pub, bundle["signer"]["ed25519_pub"]
+    # The line of keys is printed in full: an endorsement proves something only to a reader who knows one of them.
+    assert report["notes"] == [
+        f"the chain starts on key {old_pub}; compare any key you already know with this line of keys",
+        f"seq 4: the signing key changed from {old_pub} to {new_pub}, endorsed by the previous key",
+    ]
     assert verify_export(bundle, require_signer=True) == (True, [])
-    # A one-item export carries the rotation records up to its last entry, so its key change can be followed.
+    # A one-item export carries every key-rotation record, so its key change can be followed to the head's key.
     assert any(e["item_id"] == ROTATION_ITEM for e in item["entries"])
     assert verify_export(item, require_signer=True) == (True, [])
 
@@ -192,7 +197,7 @@ def test_the_route_and_the_cli_name_the_rotation(tmp_path):
         r = c.post("/api/custody/verify", json={"bundle": bundle}).json()
         assert r["verified"] is False and "no endorsement" in r["issues"][0] and r["notes"] == []
         r = c.post("/api/custody/verify", json={"bundle": bundle, "accept_unendorsed_rotation": True}).json()
-        assert r["verified"] is True and "record's word" in r["notes"][0]
+        assert r["verified"] is True and "record's word" in r["notes"][1]
     p = tmp_path / "b.json"
     p.write_text(json.dumps(bundle), encoding="utf-8")
     cli = [sys.executable, str(ROOT / "scripts/verify_custody.py"), str(p)]
@@ -376,3 +381,70 @@ def test_a_whole_log_cannot_open_with_a_rotation_record(tmp_path):
     e.seq = 1
     problem, _ = _key_lineage([e], atk.public_identity().ed25519_pub, True)
     assert problem and "opens the log" in problem
+
+
+def test_an_export_after_a_key_change_records_the_rotation_first(tmp_path):
+    """Restore onto a new machine, then export before anything new is logged: the head's new key is recorded first."""
+    db = str(tmp_path / "c.db")
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "old")) as log:
+        _record(log, 3)
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "new")) as log:
+        whole, item = log.export(), log.export(item_id="article:0")
+        assert [e.action for e in log.all_entries()].count("key_rotation") == 1  # once, not once per export
+    for bundle in (whole, item):
+        assert not verify_export(bundle)[0]  # unendorsed: still refused unless accepted on the record's word
+        report = verify_export_report(bundle, require_signer=True, accept_unendorsed_rotation=True)
+        assert report["verified"], report["issues"]
+
+
+def test_a_long_lived_log_follows_its_key_file_instead_of_rotating_back_and_forth(tmp_path):
+    """A collection pass keeps one log open; the key folder is re-created meanwhile and other logs sign with the new key."""
+    db = str(tmp_path / "c.db")
+    keys = tmp_path / "keys"
+    keys.mkdir()
+
+    def signer() -> HybridSigner:
+        return HybridSigner(ed25519_path=keys / "k.pem", mldsa_path=keys / "k.key")
+
+    batch = CustodyLog(db_path=db, signer=signer())
+    try:
+        _record(batch, 2)
+        for p in keys.iterdir():  # the key folder is lost and re-created
+            p.unlink()
+        with CustodyLog(db_path=db, signer=signer()) as other:
+            _record(other, 1, 2)
+        _record(batch, 1, 3)  # the batch reloads the new key rather than signing with the one the folder lost
+        with CustodyLog(db_path=db, signer=signer()) as other:
+            _record(other, 1, 4)
+        _record(batch, 1, 5)
+        entries = batch.all_entries()
+        assert [e.action for e in entries].count("key_rotation") == 1
+        assert batch.verify_report()["verified"]
+    finally:
+        batch.close()
+
+
+def test_the_in_app_check_follows_the_key_and_names_its_rotations(tmp_path):
+    db = str(tmp_path / "c.db")
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "old")) as log:
+        _record(log, 2)
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "new")) as log:
+        _record(log, 1, 2)
+        report = log.verify_report()
+        assert report["verified"] and any("accepted on the record's word" in n for n in report["notes"])
+        # A key change with no record (here: the rotation record taken out and the chain re-linked would break the
+        # links; a key swapped in place keeps them) is refused by the in-app check too.
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "new")) as log:
+        log.conn.execute("DELETE FROM custody_entries WHERE item_id = ?", (ROTATION_ITEM,))
+        log.conn.commit()
+        report = log.verify_report()
+        assert not report["verified"]
+        assert any("with no key-rotation record" in i for i in report["issues"])
+
+
+def test_the_cli_refuses_an_unknown_option(tmp_path):
+    bundle = tmp_path / "b.json"
+    bundle.write_text("{}", encoding="utf-8")
+    out = subprocess.run([sys.executable, str(ROOT / "scripts" / "verify_custody.py"), str(bundle), "--pinn"],
+                         capture_output=True, text=True, cwd=ROOT)
+    assert out.returncode == 2 and "unknown option" in out.stderr

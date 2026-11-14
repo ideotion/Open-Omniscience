@@ -425,6 +425,25 @@ class HybridSigner:
         self._ed_pkcs8 = False  # the Ed25519 key under PKCS8's cheap KDF (see parse_ed25519_key)
         self._ed_key = self._load_or_create_ed25519()
         self._mldsa_pk, self._mldsa_sk = self._load_or_create_mldsa()
+        self._ed_file_seen = self._ed_file_state()
+
+    def _ed_file_state(self) -> tuple[int, int, int, int] | None:
+        try:
+            return keyfile.identity(os.stat(self._ed_path))
+        except OSError:
+            return None
+
+    def key_file_changed(self) -> bool:
+        """Whether the Ed25519 key file is no longer the file this signer loaded (re-created, replaced, removed).
+
+        A long-lived signer would otherwise go on signing with a key the folder no longer holds while a fresh one signs
+        with the new key, and a custody log written by both would change key back and forth. A wrap in place of the
+        same key also reads as changed; reloading it then finds the same key."""
+        return self._ed_file_state() != self._ed_file_seen
+
+    def reloaded(self) -> HybridSigner:
+        """A signer loaded afresh from the same key files, with the same post-quantum preference."""
+        return HybridSigner(self._ed_path, self._mldsa_path, use_pqc=self._use_pqc)
 
     # -- properties -------------------------------------------------------- #
     @property

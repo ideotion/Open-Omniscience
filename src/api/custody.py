@@ -243,8 +243,8 @@ def verify_item(item_id: str) -> dict:
     try:
         if not log.entries_for(item_id):
             raise HTTPException(status_code=404, detail="no custody entries for that item")
-        ok, issues = log.verify()
-        return {"verified": ok, "issues": issues}
+        # The chain's links and signatures, and its signing key followed through every key-rotation record.
+        return log.verify_report()
     finally:
         log.close()
 
