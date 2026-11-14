@@ -158,7 +158,10 @@ steps.** Of the three closing conditions:
   38(d)): zh and ja are now matched as substrings, every such hit ≈, one-character labels never matched.
   R690 (PR #1959): combining marks and joiners now stay in their word (a Hindi or Bengali vowel sign or virama, a Thai
   mark, an Arabic haraka never splits one; Arabic vowelling is ignored), tested per script; "one character" counts letters,
-  not marks; Khmer, Lao and Burmese are unsupported until a test shows their matching works, so no figure is given for them.
+  not marks; Khmer, Lao and Burmese were unsupported until a test showed their matching works. R690 follow-up (Lane K):
+  a substring hit in a language without spaces must start and end on a syllable edge (never cutting off a vowel sign, a
+  stacked consonant or a vowel written before its consonant), tested on real Khmer, Lao and Burmese words, so the three are
+  scored, every hit ≈; the stated limit is that syllable edges are checked and word edges are not.
 
 ### Row D — Wikipedia coverage and located data · ruled (Q108, Q723, Q819) · OPEN
 
