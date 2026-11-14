@@ -87,6 +87,19 @@ class _Server:
                         if self.after_upgrade is not None and _upgrade_command(line):
                             time.sleep(0.3)  # the client has read the reply and sent its ClientHello: this lands in the TLS layer
                             conn.sendall(self.after_upgrade)
+                        if self.starttls is None and _upgrade_command(line) and _accepts_upgrade(reply):
+                            # The upgrade was ACCEPTED and there is no context to upgrade with: what follows is the client's
+                            # TLS handshake, never a command (a REFUSED upgrade stays in plain text, so it keeps parsing). Read
+                            # and discard it until the client goes. Splitting it on CRLF answered "-ERR unexpected" into the
+                            # client's TLS layer whenever the ClientHello's random bytes held one (about 1 run in 100), so a
+                            # test expecting a handshake timeout saw "wrong version number" (open-on-main row 41).
+                            try:
+                                while conn.recv(4096):
+                                    pass
+                            except OSError:
+                                pass
+                            self.eof.set()
+                            return
                         if self.starttls is not None and _upgrade_command(line):
                             try:
                                 conn = self.starttls.wrap_socket(conn, server_side=True)
@@ -98,6 +111,12 @@ class _Server:
     def close(self) -> None:
         self.listener.close()
         self.thread.join(5)
+
+
+def _accepts_upgrade(reply: bytes) -> bool:
+    """Whether the reply to STARTTLS/STLS said yes: POP3's ``+OK``, or IMAP's tagged ``OK`` on the last line."""
+    last = reply.rstrip(b"\r\n").rsplit(b"\r\n", 1)[-1]
+    return last.startswith(b"+OK") or last.split(b" ")[1:2] == [b"OK"]
 
 
 def _upgrade_command(line: bytes) -> bool:
