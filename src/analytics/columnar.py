@@ -1287,6 +1287,7 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
     """
     from sqlalchemy import text as _sql
 
+    from src.analytics.quarantine_scope import quarantined_article_ids
     from src.analytics.queries import kind_from
 
     ensure_store_meta(con)  # idempotent: guarantees oo_meta exists
@@ -1340,6 +1341,10 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
                         f"article_id {id_type} NOT NULL)")
         streamed = 0
         max_streamed_id = 0
+        # R101: a quarantined article's mentions are left out of the rollup, as they are out of the counters and the
+        # live windowed queries, so one call answers the same whichever of them serves it. Read once, here, after the
+        # scan boundary: a stamp that lands later bumps the corpus epoch, and that forces the next full rebuild.
+        quarantined = quarantined_article_ids(session)
         # DuckDB's total at the batches' boundaries: the last reading and the largest. A FATAL error invalidates the
         # instance, so what a stop can say about memory is what was read BEFORE it (a lower bound on the peak).
         seen_mib: dict = {"last": None, "peak": None}
@@ -1364,7 +1369,7 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
             nonlocal streamed, max_streamed_id
             dated_rows = [
                 (int(r[1]), str(r[2])[:10], int(r[3]), int(r[4]))
-                for r in chunk if r[2] is not None
+                for r in chunk if r[2] is not None and int(r[4]) not in quarantined
             ]
             try:
                 if shards == 1:
@@ -1877,7 +1882,8 @@ def keyword_daily_parity(
     from sqlalchemy import text as _sql
 
     roll = windowed_term_counts(con, start_day=start_day, end_day=end_day) or {}  # None (out of memory) reads as before: no rows
-    clauses = ["observed_on IS NOT NULL"]
+    # R101: the live side leaves quarantined articles out exactly as the build does.
+    clauses = ["observed_on IS NOT NULL", "article_id NOT IN (SELECT id FROM articles WHERE quarantined IS 1)"]
     p: dict = {}
     bounded = scan_bound is not _UNBOUNDED
     if bounded:
@@ -2066,6 +2072,8 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
     # -- INCREMENTAL: merge only the tail (id > watermark) ------------------------------- #
     from sqlalchemy import text as _sql
 
+    from src.analytics.quarantine_scope import quarantined_article_ids
+
     last_id = int(_get_meta(con, "keyword_daily.last_mention_id") or 0)
 
     # PR-D / W1 fix-forward (mandatory 4-lens adversarial skeptic matrix,
@@ -2111,6 +2119,7 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
 
     con.execute("CREATE OR REPLACE TABLE keyword_daily_stage "
                 "(keyword_id BIGINT, day VARCHAR, cnt BIGINT, article_id BIGINT)")
+    quarantined = quarantined_article_ids(session)  # R101, as in the full build: a tail row of a quarantined article is left out
     streamed_any = False
     streamed_rows = 0
     max_streamed_id = last_id
@@ -2157,7 +2166,7 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
         streamed_rows += len(chunk)
         dated_rows = [
             (int(r[1]), str(r[2])[:10], int(r[3]), int(r[4]))
-            for r in chunk if r[2] is not None
+            for r in chunk if r[2] is not None and int(r[4]) not in quarantined
         ]
         if dated_rows:
             _bulk_insert(con, "keyword_daily_stage", _STAGE_TYPES, dated_rows)

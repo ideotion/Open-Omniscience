@@ -139,8 +139,8 @@ def test_export_verifies_offline(log):
 def test_export_for_single_item(log):
     _seed(log)
     bundle = log.export(item_id="article:1")
-    # Per-item export is internally consistent for signatures + hashes; note the
-    # global seq numbers are non-contiguous, which a full-chain verify flags.
+    # Per-item export: the global seq numbers skip, so verify_export checks it entry by
+    # entry rather than as a chain (tests/test_custody_export_fails_closed.py).
     assert bundle["entry_count"] == 3
     assert all(e["item_id"] == "article:1" for e in bundle["entries"])
 

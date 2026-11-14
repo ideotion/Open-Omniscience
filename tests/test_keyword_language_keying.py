@@ -192,3 +192,33 @@ def test_a_mixed_page_keeps_each_language_on_its_own_new_row(tmp_path, monkeypat
     assert by_hash["a"][1] == "en" and by_hash["b"][1] == "es", by_hash
     assert by_hash["a"][0] != by_hash["b"][0], by_hash
     assert by_hash["u"][0] == min(by_hash["a"][0], by_hash["b"][0]), by_hash  # unknown: lowest id
+
+
+def test_a_mixed_page_with_a_quarantined_article_keeps_languages_apart_and_counters_exact(tmp_path, monkeypatch):
+    # R698 and R101 on one page: the quarantined English article's mention still moves to
+    # the English row (quarantine is reversible), but adds nothing to its counters; the
+    # Spanish one moves to its own row and counts there.
+    eng, s = _mini(tmp_path)
+    en, es = _art(s, "a", "en"), _art(s, "b", "es")
+    en.quarantined = True
+    taxis = _kw(s, "taxis")
+    _mention(s, taxis, en, count=2, lang="en")
+    taxis.mention_count -= 2  # a quarantined article's mentions are not in the counters
+    taxis.article_count -= 1
+    _mention(s, taxis, es, count=3, lang="es")
+    s.commit()
+
+    _run_fold(tmp_path, eng, monkeypatch)
+    s2 = sessionmaker(bind=eng)()
+    rows = s2.execute(text(
+        "SELECT a.hash, k.language, k.mention_count, k.article_count FROM keyword_mentions m"
+        " JOIN keywords k ON k.id = m.keyword_id JOIN articles a ON a.id = m.article_id"
+        " WHERE k.normalized_term = 'taxi'"
+    )).fetchall()
+    by_hash = {h: (lang, men, arts) for h, lang, men, arts in rows}
+    assert by_hash == {"a": ("en", 0, 0), "b": ("es", 3, 1)}, by_hash
+    left = s2.execute(text(
+        "SELECT COALESCE(SUM(mention_count), 0), COALESCE(SUM(article_count), 0) FROM keywords"
+        " WHERE normalized_term = 'taxis'"
+    )).one()
+    assert tuple(left) == (0, 0), left

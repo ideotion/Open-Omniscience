@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "d5af318ac6654d54b4c8fcf1573a678aa0648fc7a7cd02d0272660bdf82fdc69",
+  "digest": "22d3fc7d948d94e6adde7f655cb96e3ec9ae4fede6bd1288d425db6240f209aa",
   "log": [
     {
       "version": 1,
@@ -51,8 +51,14 @@
       "note": "R699 causes 1, 3 and 4: an asserted language its text's own script refutes is cleared and re-deduced (keywords move to the right language and stoplist), and script-code lines and LaTeX command names are blanked before tokenising (no more addclass/mathcal keywords); R697: the pooled re-index now extracts dates under the article's own language (never the stoplist's \"en\" guess) and a tag stored with no language says so in its extractor field"
     },
     {
+      "version": 2,
+      "digest": "036161fddf109394bdabf7e9d6a4491d85479f784958acf4c53db7e49cdee01c",
+      "kind": "same",
+      "note": "R101 merged onto R699/R697: index_article skips a quarantined article's counter delta and reads its flag from idx_article_quarantined; the mention and date rows it writes are those of version 2"
+    },
+    {
       "version": 3,
-      "digest": "d5af318ac6654d54b4c8fcf1573a678aa0648fc7a7cd02d0272660bdf82fdc69",
+      "digest": "22d3fc7d948d94e6adde7f655cb96e3ec9ae4fede6bd1288d425db6240f209aa",
       "kind": "bump",
       "note": "R698: a keyword row in one language never takes another language's mention (extraction, fold and restore carry); row 31: a re-extraction removes this extractor's unjudged candidate date tags it no longer finds and relabels the ones it finds again. Old rows converge only after a re-index."
     }

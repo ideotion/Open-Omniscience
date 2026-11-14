@@ -633,7 +633,11 @@ def _verify_mldsa(variant: str, pub_hex: str, sig_hex: str, data: bytes) -> bool
     """Return True/False, or None if this verifier cannot check the variant."""
     if not PQC_AVAILABLE or variant != _MLDSA_VARIANT:
         return None
-    return _mldsa_verify(_mldsa, bytes.fromhex(pub_hex), data, bytes.fromhex(sig_hex))
+    try:
+        pub, sig = bytes.fromhex(pub_hex), bytes.fromhex(sig_hex)
+    except (ValueError, TypeError):
+        return False  # not hex: an invalid signature, never an exception out of a verifier
+    return _mldsa_verify(_mldsa, pub, data, sig)
 
 
 def verify(

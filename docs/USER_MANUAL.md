@@ -1450,7 +1450,15 @@ While the switch is still engaged, writing owed entries ("Record them, marked la
 it; the entries stay owed. A gap check alone still answers, and its `drained` block
 reports `refused_offline`.
 
-Verify a bundle anywhere, without this app:
+Verify a bundle anywhere, without this app. The checker fails closed: it refuses by name a bundle with no
+entries, one cut mid-record, one signed by more than one key, one whose entries do not match the signed head its
+export carries, and one with no signed head at all (exports made before 0.5.1 carry none: export again). A
+one-item bundle is checked entry by entry, and the result says the links between its entries were not checked.
+A verified bundle proves it is consistent and signed by ONE key. To know that key is the real signer's (and so
+that nobody cut the log and re-signed it whole), compare the printed signer key with one you already know: that
+comparison, not the tool, is what catches it. If your own log's key was re-created partway (after a restore onto a
+new machine, for example), its bundle is refused as signed by more than one key; the in-app chain check still passes
+it, and a key-rotation record that lets the checker follow such a change is coming.
 
 ```bash
 python scripts/verify_custody.py custody_bundle.json [--pin]
@@ -1688,6 +1696,12 @@ Official **figures** are not here at all — they are data, so they live under
     criteria the source qualification trial uses (a nav-menu page, a link list, a
     broken scrape). A quarantined article is excluded from search and analytics but
     stays in the database and rides your backups; the tally is in the import report.
+    Since 0.5.1 "analytics" includes every keyword figure (the counts, the windows, the
+    trends, whichever store answers them), the per-language series in the Library and the
+    language-balance setting that paces collection: before, those still counted it. The
+    faster stores behind the keyword charts catch up after their next background rebuild,
+    and until then the app answers from the live tables, which already leave it out. A
+    selection brushed on a trend chart says how many quarantined articles it left out.
   > **Legacy / migration paths (kept for older backups).** A separate panel restores an
   > **older single-file `oo-backup-2`** archive with the same additive-merge **preview**
   > (new / duplicate / conflict) before **Apply** (on a verified staged copy, atomic swap,
