@@ -643,3 +643,47 @@ def test_a_deferred_reindex_while_the_recompute_is_owed_keeps_its_own_deferral(d
     assert not is_deferral_open(db)
     assert counter_envelope(db).is_exact()
 
+
+
+# --------------------------------------------------------------------------- open-on-main row 40
+
+
+def test_the_observatory_breadth_leaves_a_quarantined_articles_outlet_out(db):
+    """distinct_sources (the Observatory's radius, every galaxy's breadth) counted the outlet of a page judged not an
+    article as one more independent voice."""
+    from src.analytics.supergroup_stats import _distinct_source_count
+
+    db.add(Source(name="T", domain="y.test", country="de", language="en"))
+    db.commit()
+    arts = _corpus(db)
+    db.query(Article).filter(Article.id == arts[0].id).update({"source_id": 2}, synchronize_session=False)
+    db.commit()
+    from src.analytics.store import reindex_articles
+
+    reindex_articles(db, extractor=BaselineExtractor(), article_ids=[arts[0].id])
+    kid = _kw(db).id
+    assert _distinct_source_count(db, [kid]) == 2
+    _stamp(db, arts[0])
+    assert _distinct_source_count(db, [kid]) == 1
+
+
+def test_the_bulletin_country_coverage_leaves_a_quarantined_article_out(db):
+    from src.bulletin.coverage import country_coverage
+    from src.bulletin.period import Period
+
+    arts = _corpus(db)
+    today = datetime.now(UTC).date()
+    period = Period(cadence="weekly", start=today - timedelta(days=7), end=today + timedelta(days=1),
+                    baseline_start=today - timedelta(days=35))
+
+    def _fr(out: dict) -> dict:
+        return next(c for c in out["countries"] if c["country"] == "fr")
+
+    before = _fr(country_coverage(db, period))
+    assert before["local"]["articles"] == 3
+    _stamp(db, arts[0])
+    after = country_coverage(db, period)
+    fr = _fr(after)
+    assert fr["local"]["articles"] == 2
+    term = next(t for t in fr["local"]["terms"] if t["normalized"] == WORD)
+    assert term["articles"] == 2

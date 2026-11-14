@@ -187,6 +187,7 @@ def _per_id_mentions(
 def _distinct_source_count(db, keyword_ids) -> int:
     from src.database.derived_views import KeywordMentionRead
     from src.database.outlet import OutletMap
+    from src.analytics.quarantine_scope import not_quarantined
     from src.database.stand_in import not_a_stand_in_article_id
 
     ids = sorted(keyword_ids)
@@ -204,6 +205,7 @@ def _distinct_source_count(db, keyword_ids) -> int:
                 KeywordMentionRead.keyword_id.in_(chunk),
                 KeywordMentionRead.source_id.isnot(None),
                 not_a_stand_in_article_id(KeywordMentionRead.article_id),
+                not_quarantined(KeywordMentionRead.article_id),  # R101: a page judged not an article is no outlet's voice
             )
             .distinct()
         ):
