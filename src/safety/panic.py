@@ -17,46 +17,88 @@ run without an explicit confirmation.
 
 from __future__ import annotations
 
+import logging
 import threading
 from pathlib import Path
 
 # Re-exported for callers/tests that referenced the honest-limit note here.
 from src.safety.crypto_erase import _LIMIT_NOTE  # noqa: F401
 
+_LOG = logging.getLogger(__name__)
+
 
 def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
     """Instantly crypto-erase, then delete everything under the data dir. Requires
     ``confirm``. Returns the ``quick_crypto_erase`` summary (``files_seen`` /
-    ``files_wiped`` / ``data_dir`` / ``limit`` preserved for existing callers)."""
+    ``files_wiped`` / ``data_dir`` / ``limit`` preserved for existing callers).
+
+    A step of the tidying after a COMPLETED erase that fails is named in ``after_erase_failures`` and the report is still
+    returned (row 35): before, an exception there made the endpoint answer 500 about an erase that had succeeded, and an
+    operator racing a seizure was told the wipe failed when the key was already gone."""
     if not confirm:
         raise PermissionError("panic_wipe requires confirm=True (this is irreversible)")
-    from src.database.connect import invalidate_header_cache
-    from src.safety.crypto_erase import quick_crypto_erase
+    from src.safety.crypto_erase import new_hold_generation, quick_crypto_erase
 
     _close_database_now()
+    generation = new_hold_generation()  # this wipe's own kept descriptors, closed by its own late pass (row 36)
+    failed: list[str] = []
     try:
-        return quick_crypto_erase(confirm=True, data_dir=data_dir, hold_for_rescrub=True)
+        report = quick_crypto_erase(confirm=True, data_dir=data_dir, hold_for_rescrub=True, hold_generation=generation)
     finally:
-        # S3.6: the store file is gone. A cached header saying "plaintext" would
-        # let the lock middleware answer requests for a corpus that no longer
-        # exists -- in a `finally` because a partial wipe still removed it.
-        from src.ingest import activate_kill_switch
-
-        # A wipe takes the app offline for good, and that comes FIRST: the next settings read is a first run (defaults, which are
-        # direct), and a process still running online must not rebuild a followed session (wiki, ORES, hazards, markets) from it.
+        # In a `finally` because a partial wipe still removed the store.
         try:
-            activate_kill_switch()
+            _tidy_after_erase(failed)
         finally:
-            try:
-                invalidate_header_cache()
-                from src.config.kv_store import kv_invalidate
+            _dispose_after_erase(generation)  # whatever the tidying above did: the late-commit rewrite must still run
+    if failed:
+        report["after_erase_failures"] = failed
+    return report
 
-                kv_invalidate()  # the settings cache and the stores seen: a wiped store is not a vanished one
-                from src.api import served_cache
 
-                served_cache.invalidate()  # the served counts (and the status scans carried beside them) belong to the file that is gone
-            finally:
-                _dispose_after_erase()  # whatever the tidying above did: the late-commit rewrite must still run
+def _kill_switch() -> None:
+    from src.ingest import activate_kill_switch
+
+    activate_kill_switch()
+
+
+def _header_cache() -> None:
+    # S3.6: the store file is gone. A cached header saying "plaintext" would let the lock middleware answer requests for a
+    # corpus that no longer exists.
+    from src.database.connect import invalidate_header_cache
+
+    invalidate_header_cache()
+
+
+def _settings_cache() -> None:
+    from src.config.kv_store import kv_invalidate
+
+    kv_invalidate()  # the settings cache and the stores seen: a wiped store is not a vanished one
+
+
+def _served_counts() -> None:
+    from src.api import served_cache
+
+    served_cache.invalidate()  # the served counts (and the status scans carried beside them) belong to the file that is gone
+
+
+#: What follows an erase, in order, each named in the report when it fails. A wipe takes the app offline for good, and that
+#: comes FIRST: the next settings read is a first run (defaults, which are direct), and a process still running online must
+#: not rebuild a followed session (wiki, ORES, hazards, markets) from it.
+_AFTER_ERASE = (("kill_switch", _kill_switch), ("header_cache", _header_cache), ("settings_cache", _settings_cache),
+                ("served_counts", _served_counts))
+
+
+def _tidy_after_erase(failed: list[str]) -> None:
+    """Run every step of :data:`_AFTER_ERASE`; one that fails is logged (its text scrubbed), named in ``failed`` and never
+    stops the next."""
+    from src.monitoring.secret_scrub import log_failure
+
+    for name, step in _AFTER_ERASE:
+        try:
+            step()
+        except Exception as exc:  # noqa: BLE001 - the erase is done; the report says which step failed
+            failed.append(name)
+            log_failure(_LOG, f"after the erase, the {name} step failed", exc, level=logging.WARNING)
 
 
 def _close_database_now() -> None:
@@ -104,10 +146,12 @@ _COLLECTOR_THREADS = ("oo-scheduler", "oo-collect", "oo-briefing-bg", "oo-housek
 _LATE_RESCRUB_S = 15.0
 
 
-def _dispose_after_erase() -> None:
+def _dispose_after_erase(generation: int | None = None) -> None:
     """Close the pool once the key is gone, then rewrite through the kept descriptors what a transaction already under way
     put back into the unlinked files (its commit writes page 1, salt included): once now, and once more after
-    :data:`_LATE_RESCRUB_S` on a timer that never holds the wipe up. Never raises."""
+    :data:`_LATE_RESCRUB_S` on a timer that never holds the wipe up. Only this wipe's descriptors (``generation``), so a
+    second wipe within the delay never shortens the first one's late pass, nor the first one's timer the second's. Never
+    raises."""
     try:
         from src.database.session import dispose_engine
 
@@ -117,9 +161,9 @@ def _dispose_after_erase() -> None:
     try:
         from src.safety.crypto_erase import held_count, rescrub_held
 
-        rescrub_held(close=False)
-        if held_count():  # even when that pass rewrote nothing: the late pass is also the one that lets the descriptors go
-            late = threading.Timer(_LATE_RESCRUB_S, rescrub_held, kwargs={"close": True})
+        rescrub_held(close=False, generation=generation)
+        if held_count(generation):  # even when that pass rewrote nothing: the late pass is also the one that lets the descriptors go
+            late = threading.Timer(_LATE_RESCRUB_S, rescrub_held, kwargs={"close": True, "generation": generation})
             late.name = "oo-panic-rescrub"
             late.daemon = True
             late.start()

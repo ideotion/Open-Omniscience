@@ -21,6 +21,7 @@ machine or a copied file, never a compromised running session.
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import threading
@@ -373,9 +374,24 @@ def data_location_set(body: DataLocationBody) -> dict:
 def data_volume_state() -> dict:
     """The data-drive watchdog's phase (R86): ``ok`` · ``reconnect`` · ``shutdown`` ·
     ``restarting`` · ``closing``, with the seconds left in a countdown. Needs no database."""
+    from src.paths import data_dir
     from src.safety.data_volume import MONITOR
 
-    return MONITOR.snapshot()
+    # R711: whether the data folder is shared with other files, for the notice both pages show at start (data-volume.js). Read
+    # once per folder and process: it is a fact about where the operator put the data, and this endpoint is polled.
+    return {**MONITOR.snapshot(), "data_folder_scope": _data_folder_scope(str(data_dir()))}
+
+
+@functools.lru_cache(maxsize=4)
+def _data_folder_scope(folder: str) -> dict:
+    from src.safety.data_scope import folder_scope
+
+    try:
+        scope = folder_scope(Path(folder))
+    except Exception as exc:  # noqa: BLE001 - a notice never breaks the watchdog's endpoint
+        log_failure(_LOG, "could not read the data folder's scope", exc, level=logging.DEBUG)
+        return {"broad": False, "reason": None, "data_dir": folder}
+    return {"broad": scope["broad"], "reason": scope["reason"], "data_dir": folder}
 
 
 @router.post("/data-volume/close-now")
