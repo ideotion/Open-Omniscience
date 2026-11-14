@@ -949,6 +949,11 @@ def _background_jobs() -> list[dict]:
 
     jobs: list[dict] = []
     for s in all_job_statuses():
+        if s["kind"] == "backup-export":
+            row = _export_job_row(s)  # R701: the export's own state, not its worker thread's
+            if row is not None:
+                jobs.append(row)
+            continue
         if s["state"] not in ("running", "error"):
             continue  # idle/done/cancelled are not shown (mirrors the reindex/import helpers)
         if s["kind"] in _OWN_ROW_KINDS and s["state"] == "running":
@@ -972,6 +977,38 @@ def _background_jobs() -> list[dict]:
             }
         )
     return jobs
+
+
+def _export_job_row(s: dict) -> dict | None:
+    """The backup export's task-manager row (R701), from the export job's OWN state.
+
+    Its worker thread ends when a phase PAUSES, and the registry then reads that thread
+    as finished; the export is not finished, it is paused, and the row says so (with no
+    action: resuming a corpus phase needs the passphrase, which is asked in the export
+    dialog). Stopping reads as running until its phase has stopped; a failed export as
+    failed. Done, cancelled and idle are not shown, like every other job."""
+    try:
+        from src.backup.export_job import _MANAGER
+
+        st = _MANAGER.status() if _MANAGER is not None else None
+    except Exception:  # noqa: BLE001 - an unreadable export shows the registry's row as it is
+        st = None
+    state = (st or {}).get("state") or ("running" if s["state"] == "running" else s["state"])
+    shown = {"running": "running", "stopping": "running", "paused": "paused", "failed": "failed", "error": "failed"}
+    if state not in shown:
+        return None
+    row_state = shown[state]
+    return {
+        "id": s["kind"],
+        "kind": s["kind"],
+        "label": s["label"],
+        "state": row_state,
+        "progress": s.get("progress"),
+        "detail": s.get("detail"),
+        **_detail_frame(s),
+        "error": (st or {}).get("error") if st is not None else s.get("error"),
+        "actions": ["cancel"] if (row_state == "running" and state == "running") else [],
+    }
 
 
 # DB-writer job kinds that must arbitrate with each other + collection (they take the
@@ -1002,9 +1039,12 @@ def _registry_writer_kinds() -> set[str]:
 def _import_refusal() -> str | None:
     """The refusal a committing restore would raise now (R659), read without stopping anything; None when it would go ahead."""
     try:
-        from src.backup.merge import _WRITER_JOBS_REFUSAL
+        from src.backup.merge import _WRITER_JOBS_REFUSAL, export_refusal
         from src.jobs.background import running_writer_jobs
 
+        exporting = export_refusal()  # R712: a running backup export refuses an import, named
+        if exporting:
+            return exporting
         running = running_writer_jobs(include_stoppable=False)
     except Exception:  # noqa: BLE001 - the import's own check still refuses; the page then shows the server's sentence
         return None

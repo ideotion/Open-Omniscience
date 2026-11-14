@@ -1796,7 +1796,11 @@ def test_large_data_folder_backup():
     # into elements no page carried.)
     assert "async function openUnifiedExport(" in app and 'id="ux-export"' in html
     assert "function openUnifiedImport(" in app and 'id="ux-import"' in html
-    assert '"/api/backup/folder/start"' in app
+    # R701: the dialog runs the copy inside its ONE export job (src/backup/export_job.py
+    # drives the SAME folder manager); /folder/start stays for API callers (R713).
+    assert '"/api/backup/export/start"' in app
+    exp = (_SRC / "backup" / "export_job.py").read_text(encoding="utf-8")
+    assert "get_folder_manager()" in exp and "fold.start(" in exp
     assert '"/api/backup/import-queue/start"' in app
     queue = (_SRC / "backup" / "import_queue.py").read_text(encoding="utf-8")
     assert 'get_folder_manager()' in queue and 'mode="restore"' in queue

@@ -44,7 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from src.backup import collector_exit
+from src.backup import collector_exit, restore_marker
 from src.monitoring.secret_scrub import log_failure, record_text, scrubbed, scrubbed_value
 from src.paths import data_dir
 
@@ -661,6 +661,7 @@ class ImportQueueManager:
         get_import_manager().cancel()
 
     # -- the run ------------------------------------------------------------ #
+    @restore_marker.marked  # R712: an export refuses to start or resume while the queue runs
     def _run(self) -> None:
         # ONE exclusive window for the WHOLE queue (ruling item 10): collection goes
         # down once here and comes back up once at the end, instead of flapping

@@ -141,6 +141,7 @@ _EXEMPT_GROUPS: dict[str, tuple[str, ...]] = {
     _JOB_CONTROL: (
         "ai.ai_detect_language_cancel", "backup_v2.import_queue_stop", "backup_v2.reindex_backlog_resume_cancel",
         "backup_v2.volume_backup_cancel", "backup_v2.volume_backup_pause", "bulletin.narration_stop",
+        "backup_v2.export_job_cancel", "backup_v2.export_job_pause",  # R701: the one export job (the dialog confirms its cancel)
         "diagnostics.ai_check.ai_check_cancel", "diagnostics.ai_coordinator.ai_coordinator_cancel",
         "diagnostics.corpus.card_audit_cancel", "diagnostics.discovery.discover_world_cancel",
         "diagnostics.keyword_triage.keyword_triage_cancel", "diagnostics.model_bench.model_bench_cancel",
