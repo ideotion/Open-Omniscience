@@ -895,7 +895,52 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
         action = _decide_fts_rebuild(conn, rebuild, existed)
         if action == "rebuilt":
             rebuild_index(conn)
+        elif action == _PARTIAL:
+            action = _heal_partial_index(conn)
     return action
+
+
+#: What ``_decide_fts_rebuild`` answers for a populated index whose document count differs from the article count.
+_PARTIAL = "partial"
+
+
+def _heal_partial_index(conn) -> str:
+    """Rebuild a PARTIAL index at boot under a savepoint; on a database error keep the partial index and boot.
+
+    The count comparison (R412, OPEN_QUEUE 2026-10-27 item 9) finds a partial index on exactly the stores where the
+    file itself may be damaged (a torn copy, a malformed page). A rebuild that then fails on that damage must not make
+    every unlock fail where the boot used to come up with a partial index: the savepoint returns the index to what it
+    was, the log names the error's type, and ``fts_status`` and the explicit re-index job remain the way to see and
+    heal it. Anything that is not a database error (an interrupt, a bug) still propagates."""
+    import sqlite3
+
+    from sqlalchemy.exc import DBAPIError
+
+    _run(conn, "SAVEPOINT oo_fts_partial")
+    try:
+        rebuild_index(conn)
+    except (sqlite3.DatabaseError, DBAPIError) as exc:
+        # SQLite can already have rolled the whole transaction back (a full disk, an I/O error): then there is no
+        # savepoint to return to, and the caller sees the original error rather than a boot on a lost transaction.
+        if not _back_to_savepoint(conn, "oo_fts_partial"):
+            raise
+        _LOG.warning("FTS: the partial index could not be rebuilt at boot (%s); kept as it was", type(exc).__name__)
+        return "skipped"
+    except BaseException:
+        _back_to_savepoint(conn, "oo_fts_partial")
+        raise
+    _run(conn, "RELEASE oo_fts_partial")
+    return "rebuilt"
+
+
+def _back_to_savepoint(conn, name: str) -> bool:
+    """Roll back to and release savepoint ``name``; ``False`` when there is none left to return to."""
+    try:
+        _run(conn, f"ROLLBACK TO {name}")
+        _run(conn, f"RELEASE {name}")
+    except Exception:  # noqa: BLE001 - the caller decides what a lost savepoint means
+        return False
+    return True
 
 
 #: Articles read per step of a full rebuild (one read of each article's text).
@@ -1136,7 +1181,7 @@ def _decide_fts_rebuild(conn, rebuild: str, existed_before: bool) -> str:
         _LOG.warning(
             "FTS: the index holds %d documents for %d articles; rebuilding it whole", documents, articles
         )
-        return "rebuilt"
+        return _PARTIAL
     return "skipped"
 
 

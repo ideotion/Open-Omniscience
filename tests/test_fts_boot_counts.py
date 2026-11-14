@@ -94,3 +94,67 @@ def test_a_steady_boot_counts_once_and_reads_no_text():
         "SELECT (SELECT count(*) FROM articles), (SELECT count(*) FROM article_fts_docsize)"
     ]
     assert not [s for s in seen if fts.REBUILD_MARK in s or "content FROM articles" in s]
+
+
+def test_a_null_title_counts_as_a_document_too():
+    eng = _export_store()
+    with sessionmaker(bind=eng, future=True)() as s:
+        s.add(
+            Article(
+                url="n",
+                canonical_url="n",
+                source_id=1,
+                title=None,
+                content="x",
+                hash="hn",
+                language="en",
+            )
+        )
+        s.commit()
+    assert fts.ensure_fts(eng) == "skipped"
+
+
+def test_a_rebuild_that_meets_a_damaged_page_keeps_the_partial_index_and_boots(monkeypatch, caplog):
+    """A partial index is found on exactly the stores a torn copy may also have damaged: a rebuild that fails there
+    must not make every unlock fail, where the boot used to come up with the partial index (Opus read of #1985)."""
+    import sqlite3
+
+    eng = _export_store()
+    _index_only(eng, range(1, _EXPORT_ARTICLES // 2 + 1))
+    monkeypatch.setattr(fts, "_REBUILD_BATCH", 5)
+    real, calls = fts._index_rows, {"n": 0}
+
+    def damaged(con, rows, caps):
+        calls["n"] += 1
+        if calls["n"] == 3:
+            raise sqlite3.DatabaseError("database disk image is malformed")
+        return real(con, rows, caps)
+
+    monkeypatch.setattr(fts, "_index_rows", damaged)
+    with caplog.at_level("WARNING", logger=fts.__name__):
+        assert fts.ensure_fts(eng) == "skipped"
+    assert _export_indexed(eng) == _EXPORT_ARTICLES // 2, (
+        "the savepoint returned the index to what it was"
+    )
+    assert "DatabaseError" in caplog.text and "malformed" not in caplog.text, (
+        "the log names the type, never the text"
+    )
+    monkeypatch.setattr(fts, "_index_rows", real)
+    _healed(eng)
+
+
+def test_a_rebuild_that_fails_for_another_reason_still_propagates(monkeypatch):
+    eng = _export_store()
+    _index_only(eng, range(1, _EXPORT_ARTICLES // 2 + 1))
+
+    def broken(con, rows, caps):
+        raise RuntimeError("a bug, not damage")
+
+    monkeypatch.setattr(fts, "_index_rows", broken)
+    try:
+        fts.ensure_fts(eng)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("a non-database error must not be swallowed")
+    assert _export_indexed(eng) == _EXPORT_ARTICLES // 2
