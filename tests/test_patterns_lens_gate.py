@@ -129,23 +129,25 @@ def test_the_endpoint_is_reachable_through_http_not_only_as_a_function():
     assert "/api/signals/patterns-gate" in paths, f"route not registered: {sorted(paths)[:5]}"
 
 
-def test_the_gate_answers_over_http_and_omits_the_rate_on_the_wire():
+def test_the_gate_answers_over_http_and_omits_the_rate_on_the_wire(tmp_path, monkeypatch):
     """A handler tested as a function never speaks HTTP, so it cannot see a route
     shadowed by a sibling `/{id}` on the same prefix -- and it cannot see what the
     SERIALISER does either. The omission has to survive the wire: a response model
     or a default could put `false_positive_rate: 0.0` back in without touching the
     handler."""
-    import os
-    import tempfile
-
     from fastapi.testclient import TestClient
 
-    with tempfile.TemporaryDirectory() as tmp:
-        os.environ.update(OO_DATA_DIR=tmp, OO_DB_PLAINTEXT="1", OO_NO_SCHEDULER="1")
-        from src.api.main import app
+    from src.api.main import app  # imported BEFORE the variable moves, so the engine stays bound to the suite's directory
 
-        with TestClient(app) as client:
-            r = client.get("/api/signals/patterns-gate")
+    # monkeypatch, so the three variables come back after the test. They were set with ``os.environ.update`` and never restored: the
+    # rest of the process then read its settings from this test's deleted temporary directory, where the store's country-form marker
+    # is absent, and tests/test_country_migration.py's diagnostics card read "alpha2" in a store the app had stamped alpha-3
+    # (random order, seed 1111, bisected to this test).
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    monkeypatch.setenv("OO_NO_SCHEDULER", "1")
+    with TestClient(app) as client:
+        r = client.get("/api/signals/patterns-gate")
     assert r.status_code == 200, r.text
     body = r.json()
     assert "false_positive_rate" not in body, (
