@@ -194,6 +194,10 @@ NOT_OUTPUT_AFFECTING: dict[str, str] = {
         "by the merge in both modes, so a carry and a re-index cannot differ here"
     ),
     "src/analytics/engine_identity.py": "this module; it computes the stamp, not the rows",
+    "src/analytics/quarantine_scope.py": (
+        "the R101 quarantine filter; a pass reads it only to decide whether an already-quarantined article moves "
+        "the keyword COUNTERS, never which mention rows it writes, so a carry and a re-index cannot differ here"
+    ),
     "src/shared.py": (
         "stdlib-only helpers shared by self-tests, benchmarks, a settings parser, a snapshot wrapper, an RSS "
         "reading, a JSON-lines tail reader, an environment tri-state for the serve switches and the import "

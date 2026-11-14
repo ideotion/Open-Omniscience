@@ -286,6 +286,17 @@ def _run_startup_upkeep() -> None:
         optimize_at_boot(_engine)
     except Exception as exc:  # noqa: BLE001 - upkeep must never block startup
         log_failure(logger, "planner-statistics refresh failed", exc, level=logging.WARNING)
+    # R101 on a store written before 0.5.1: recompute the keyword counters without the quarantined articles, once.
+    # init_db already bumped the epoch and marked the counters estimated (src/analytics/quarantine_transition.py),
+    # so this runs here, after the store is queryable on the unlock path, rather than holding the store closed:
+    # tens of seconds on a large store. Best-effort and idempotent; a failure keeps the counters marked estimated.
+    try:
+        from src.analytics.quarantine_transition import heal_r101_transition
+        from src.database.session import engine as _r101_engine
+
+        heal_r101_transition(_r101_engine)
+    except Exception as exc:  # noqa: BLE001 - upkeep must never block startup
+        log_failure(logger, "R101 keyword counter recompute failed", exc, level=logging.WARNING)
     # The re-index BACKLOG, stated at boot (the mandatory guard on the 2026-07-29
     # option-(a) ruling). Since the merge no longer copies the incoming corpus's
     # derived rows, an un-re-indexed import has NO keywords -- honoured structurally

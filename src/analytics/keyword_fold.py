@@ -70,7 +70,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import text, update
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
 from src.database.corpus_lease import corpus_lease
@@ -321,6 +321,18 @@ def fold_page(
 
         before = {a: _top(contrib[a]) for a in aids}
 
+        # R101: a quarantined article's mentions are not in the counters, so moving them must not
+        # move the counters either. The rows still move (quarantine is reversible). Read from
+        # idx_article_quarantined alone, never the article rows.
+        quarantined: set[int] = set()
+        for chunk in _chunks(aids):
+            quarantined.update(
+                int(r[0])
+                for r in session.execute(
+                    select(Article.id).where(Article.quarantined.is_(True), Article.id.in_(chunk))
+                )
+            )
+
         plain: dict[int, list[int]] = {}
         folds: list[dict[str, Any]] = []
         drop: list[int] = []
@@ -339,11 +351,13 @@ def fold_page(
             else:
                 plain.setdefault(t, []).append(mid)
                 existing[(t, aid)] = (mid, cnt, off)
-                d_art[t] += 1
+                if aid not in quarantined:
+                    d_art[t] += 1
                 res.moved += 1
-            d_men[t] += cnt
-            d_men[src.id] -= cnt
-            d_art[src.id] -= 1
+            if aid not in quarantined:
+                d_men[t] += cnt
+                d_men[src.id] -= cnt
+                d_art[src.id] -= 1
             c = contrib[aid]
             c.pop(src.id, None)
             c[t] = c.get(t, 0) + cnt
