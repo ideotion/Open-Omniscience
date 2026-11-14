@@ -1432,14 +1432,16 @@
         b.type = "button";
         b.className = "btn";
         b.textContent = t("Remove the unencrypted copies");
-        b.addEventListener("click", async () => {
+        b.addEventListener("click", async (ev) => {
+          // the person's own click only (the trust rule of oo-on.js, R692): a script's b.click() removes nothing
+          if (!ev || ev.isTrusted !== true) return;
           if (!confirm(t("Remove these unencrypted copies from the backup folder? The backup's encrypted volumes are not touched.") + "\n\n" + names.join("\n"))) return;
           b.disabled = true;
           try {
             const r = await api("/api/backup/import-scan/remove-leftover-plaintext", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ path: set.path, names }),
+              body: JSON.stringify({ path: set.path, names, confirm: true }),
             });
             const n = (r && Array.isArray(r.removed)) ? r.removed.length : 0;
             const failed = (r && Array.isArray(r.failed)) ? r.failed : [];

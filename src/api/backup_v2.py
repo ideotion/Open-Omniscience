@@ -150,6 +150,8 @@ def import_scan_endpoint(path: str) -> dict:
 class RemoveLeftoverPlaintextRequest(BaseModel):
     path: str
     names: list[str]
+    # the operator's yes, sent only after the page's confirm() listed the files (R692); absent means no
+    confirm: bool = False
 
 
 @router.post("/import-scan/remove-leftover-plaintext")
@@ -161,6 +163,8 @@ def remove_leftover_plaintext_endpoint(req: RemoveLeftoverPlaintextRequest) -> d
 
     from src.backup.volumes import remove_leftover_plaintext
 
+    if not req.confirm:
+        raise HTTPException(status_code=400, detail="confirm is required: nothing is removed without the operator's yes")
     if not Path(req.path).is_dir():
         raise HTTPException(status_code=400, detail="not a folder")
     return remove_leftover_plaintext(req.path, list(req.names))

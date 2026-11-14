@@ -213,9 +213,15 @@ def test_the_removal_endpoint_and_the_page_offer_it_only_on_the_operators_yes(tm
     out = _with_leftovers(tmp_path)
     first = json.loads((out / MANIFEST_NAME).read_text(encoding="utf-8"))["volumes"][0]["name"]
     with TestClient(app) as c:
+        # without the operator's yes the server removes nothing, whoever calls it (R692)
+        refused = c.post(
+            "/api/backup/import-scan/remove-leftover-plaintext",
+            json={"path": str(out), "names": [first + ".plain"]},
+        )
+        assert refused.status_code == 400 and (out / (first + ".plain")).exists()
         r = c.post(
             "/api/backup/import-scan/remove-leftover-plaintext",
-            json={"path": str(out), "names": [first + ".plain", "my-notes.plain"]},
+            json={"path": str(out), "names": [first + ".plain", "my-notes.plain"], "confirm": True},
         )
     assert r.status_code == 200 and r.json() == {"removed": [first + ".plain"], "failed": []}
     js = (ROOT / "src/static/app-backup.js").read_text("utf-8")
@@ -384,3 +390,36 @@ def test_a_backup_folder_reached_through_a_link_can_still_be_cleaned(tmp_path):
         "failed": [],
     }
     assert (out / "my-notes.plain").exists()
+
+
+def test_a_link_a_path_outside_and_an_unlisted_name_are_each_refused(tmp_path):
+    """R692 (2): the removal takes only a vol-NNNNN.ooenc.plain copy the folder's own manifest explains, never a link
+    under that name, never a path that leaves the folder and never a name the manifest does not explain."""
+    import os
+
+    out = _legacy_set(tmp_path)
+    names = [v["name"] for v in json.loads((out / MANIFEST_NAME).read_text(encoding="utf-8"))["volumes"]]
+    assert len(names) >= 2
+    outside = tmp_path / "outside.txt"
+    outside.write_text("not the backup's", encoding="utf-8")
+    try:
+        os.symlink(outside, out / (names[0] + ".plain"))
+    except (OSError, NotImplementedError):
+        pytest.skip("this platform cannot make a link here")
+    (out / (names[1] + ".plain")).write_bytes(b"a real leftover")
+    (out / "vol-99999.ooenc.plain").write_bytes(b"unlisted")
+    assert leftover_plaintext(out) == [names[1] + ".plain"], "the link and the unlisted name are not offered"
+    r = remove_leftover_plaintext(
+        out, [names[0] + ".plain", str(outside), "../outside.txt", "vol-99999.ooenc.plain", names[1] + ".plain"]
+    )
+    assert r == {"removed": [names[1] + ".plain"], "failed": []}
+    assert outside.read_text(encoding="utf-8") == "not the backup's"
+    assert (out / (names[0] + ".plain")).is_symlink() and (out / "vol-99999.ooenc.plain").exists()
+
+
+def test_the_remove_button_answers_only_the_persons_own_click():
+    js = (ROOT / "src/static/app-backup.js").read_text("utf-8")
+    body = js[js.index("function _uxImLeftoverPlaintext(") :]
+    body = body[: body.index("\n    }\n")]
+    i = body.index("isTrusted !== true")
+    assert i < body.index("confirm(") < body.index("remove-leftover-plaintext")

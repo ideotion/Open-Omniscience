@@ -286,7 +286,8 @@ def leftover_plaintext(d: str | os.PathLike[str]) -> list[str]:
             if not _V1_VOLUME_NAME.match(n) or cand in listed:
                 continue
             p = folder / cand
-            if p.is_file() and p.parent.resolve() == root:
+            # a link is never offered (R692): what a removal takes is a copy this folder holds, not something it points at
+            if not p.is_symlink() and p.is_file() and p.parent.resolve() == root:
                 out.add(cand)
         return sorted(out)
     except Exception:  # noqa: BLE001 - a scan must not fail on an unreadable folder
