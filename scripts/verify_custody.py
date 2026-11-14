@@ -38,7 +38,7 @@ def main(argv: list[str]) -> int:
 
     try:
         bundle = json.loads(Path(args[0]).read_text())
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
         # A file cut mid-record is not JSON at all: refused by name, never a traceback.
         print(f"VERIFIED       : False\nISSUES:\n  - not a readable custody bundle ({type(exc).__name__}: {exc}); "
               "a file cut mid-record reads like this")

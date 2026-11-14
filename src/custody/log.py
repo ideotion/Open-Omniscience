@@ -484,7 +484,10 @@ ITEM_SCOPE_NOTE = (
     "one item's entries: each entry's hash, signature and timestamp were checked, and that one key signed them all and "
     "their order, but not the links between them, which run through other items' entries"
 )
-WHOLE_LOG_SCOPE = "the whole log, from its first entry to the last entry its signed head names"
+WHOLE_LOG_SCOPE = (
+    "the whole log, from its first entry to the last entry its signed head names, all signed by the bundle's signer "
+    "key; compare that key with the real signer's to know who signed it"
+)
 
 
 def _signature_shape_problem(sig: object) -> str | None:
@@ -532,11 +535,12 @@ def verify_export(bundle: dict, *, require_signer: bool = False) -> tuple[bool, 
     a head whose signature does not verify or was made with another key; and a bundle whose entries do not match its
     head (fewer or more than it says, or a different last entry).
 
-    WHICH KEY. The head's Ed25519 key must be the key of the entry it names last: in a whole log the chain carries every
-    earlier entry to that one, so cutting the log and rewriting the head needs that key. A one-item bundle has no
-    links, so there EVERY entry must carry that same Ed25519 key too. Only the Ed25519 half is compared, so a log whose
-    signer gained the post-quantum half later (hybrid entries after Ed25519 ones) still verifies; each signature is
-    still verified in full. A one-item log whose key changed between its entries is refused, by name.
+    WHICH KEY. The head and every entry must carry the Ed25519 key the bundle names as its signer; the first entry that
+    does not is named and the bundle is refused (a key honestly re-created after a restore reads the same as a tail
+    re-signed by someone else, so neither passes). Only the Ed25519 half is compared, so a log whose signer gained the
+    post-quantum half later still verifies; each signature is still verified in full. THIS PROVES CONSISTENCY, NOT
+    PROVENANCE: anyone can build a whole bundle, head included, with a key of their own. A cut at the end is caught
+    only when the signer key is compared with one the reader already knows to be the real signer's.
 
     What it cannot show: a log cut BEFORE it was exported (the head commits to what was exported, not to what the store
     once held) -- the full log's chain shows a cut at its start or middle, and a one-item export shows neither.
@@ -577,12 +581,19 @@ def verify_export(bundle: dict, *, require_signer: bool = False) -> tuple[bool, 
     if problem:
         return False, [f"head signature unreadable: {problem.replace('its signature', 'the head signature')}"]
     item_id = bundle.get("item_id")
-    key = _ed25519_pub(entries[-1].signature)
+    signer = bundle.get("signer")
+    key = signer.get("ed25519_pub") if isinstance(signer, dict) else None
+    if not isinstance(key, str) or not key:
+        return False, ["no signer identity in the bundle: there is no key to hold its entries and head to"]
     if _ed25519_pub(head_sig) != key:
-        return False, ["head signature invalid: it was not made with the key of the entry it names last"]
-    if item_id and any(_ed25519_pub(e.signature) != key for e in entries):
-        return False, ["a one-item bundle signed by more than one key: without links between its entries, every entry "
-                       "must carry the key that signed its head"]
+        return False, ["head signature invalid: it was not made with the bundle's signer key"]
+    for e in entries:
+        if _ed25519_pub(e.signature) != key:
+            # One key for the whole bundle: where the key changes, a cut followed by entries re-signed with another key
+            # cannot be told apart from a key that was honestly re-created, so neither is passed.
+            return False, [f"the signing key changes at seq {e.seq}: every entry must carry the bundle's signer key, so a "
+                           "bundle signed by more than one key is not verified (a re-created key reads the same as a "
+                           "forged tail)"]
     ok, reason = signing.verify(head_sig, canonical_bytes(head), pinned=pinned)
     if not ok:
         return False, [f"head signature invalid: {reason}"]

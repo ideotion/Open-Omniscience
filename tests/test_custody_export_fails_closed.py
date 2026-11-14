@@ -188,3 +188,40 @@ def test_a_refused_bundle_states_no_scope(bundle):
     with TestClient(app) as c:
         r = c.post("/api/custody/verify", json={"bundle": {**bundle[1], "entries": []}})
     assert r.json()["verified"] is False and r.json()["scope"] is None
+
+
+def test_a_cut_log_with_a_tail_re_signed_by_another_key_is_refused_even_unpinned(tmp_path):
+    """Second security read: keep entries 1-2, forge entry 3 with key B, sign the head with B, leave signer = A."""
+    from src.custody.signing import canonical_bytes
+
+    with _log(tmp_path, "a") as real:
+        for n in range(5):
+            real.record(f"article:{n}", "a" * 64, CustodyAction.INGEST, actor="pipeline")
+        genuine = real.export()
+    with _log(tmp_path, "b") as forger:
+        forger.record("article:0", "a" * 64, CustodyAction.INGEST, actor="pipeline")
+        forger.record("article:1", "a" * 64, CustodyAction.INGEST, actor="pipeline")
+        tail = forger.record("article:9", "z" * 64, CustodyAction.INGEST, actor="x")
+        b = copy.deepcopy(genuine)
+        b["entries"] = b["entries"][:2]
+        # Re-link the forged tail onto the genuine entry 2 and re-sign it with key B.
+        from hashlib import sha256
+
+        from src.custody.log import CustodyEntry, _entry_digest
+
+        e = CustodyEntry.from_dict(tail.to_dict())
+        e.prev_entry_hash = b["entries"][-1]["entry_hash"]
+        partial = {k: v for k, v in e.signable_core().items() if k != "timestamp"}
+        e.timestamp = {**e.timestamp, "digest": sha256(canonical_bytes(partial)).hexdigest()}
+        e.entry_hash = _entry_digest(e.signable_core())
+        e.signature = forger.signer.sign(canonical_bytes(e.signable_core()))
+        b["entries"].append(e.to_dict())
+        b["entry_count"] = 3
+        b["head"] = {**b["head"], "entry_count": 3, "last_seq": e.seq, "last_entry_hash": e.entry_hash}
+        b["head_signature"] = forger.signer.sign(canonical_bytes(b["head"]))
+    ok, issues = verify_export(b)
+    assert not ok and issues[0].startswith("head signature invalid")
+    b["head_signature"] = b["head_signature"]  # and with the signer relabelled to B, the key change is named
+    b["signer"] = {**b["signer"], "ed25519_pub": b["head_signature"]["ed25519"]["pub"]}
+    ok, issues = verify_export(b)
+    assert not ok and issues[0].startswith("the signing key changes at seq 1")
