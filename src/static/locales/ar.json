@@ -4623,6 +4623,8 @@
   "Significant at p < 0.05": "دالّ عند p < 0.05",
   "Signing key (Ed25519), to give the recipient some other way:": "مفتاح التوقيع (Ed25519)، لتسلّمه إلى المستلم بطريقة أخرى:",
   "Silent in this trail": "غائبة عن هذا الأثر",
+  "Simple": "مبسّط",
+  "Simple view": "العرض المبسّط",
   "Since": "منذ",
   "Since lemmatisation was added, new articles file “studies” under “study”; articles indexed before then still keep “studies” as its own keyword, so one word is split across two. Folding moves those older mentions to the base form, exactly as a re-index would, without re-reading any article. Only single words in the languages the app lemmatises are folded; phrases, names and keywords your families or groups use are left as they are. Each keyword’s language is then set from the languages of its mentions. The report lists the largest folds.": "منذ أن صار التطبيق يُرجع الكلمات إلى صيغتها الأساسية، تصنّف المقالات الجديدة «studies» تحت «study»؛ أما المقالات المفهرسة قبل ذلك فما زالت تحتفظ بـ«studies» ككلمة مفتاحية مستقلة، فتتوزع الكلمة الواحدة على اثنتين. ينقل الدمج تلك الإشارات القديمة إلى الصيغة الأساسية، تمامًا كما تفعل إعادة الفهرسة، دون إعادة قراءة أي مقالة. لا تُدمج إلا الكلمات المفردة في اللغات التي يُرجعها التطبيق إلى صيغتها الأساسية؛ وتبقى العبارات والأسماء والكلمات المفتاحية التي تستخدمها عائلاتك أو مجموعاتك كما هي. بعد ذلك تُحدَّد لغة كل كلمة مفتاحية من لغات إشاراتها. يسرد التقرير أكبر عمليات الدمج.",
   "Since the last restart": "منذ آخر إعادة تشغيل",

@@ -4623,6 +4623,8 @@
   "Significant at p < 0.05": "Signifikant bei p < 0.05",
   "Signing key (Ed25519), to give the recipient some other way:": "Signaturschlüssel (Ed25519), dem Empfänger auf anderem Weg zu geben:",
   "Silent in this trail": "In dieser Belegkette stumm",
+  "Simple": "Einfach",
+  "Simple view": "Einfache Ansicht",
   "Since": "Seit",
   "Since lemmatisation was added, new articles file “studies” under “study”; articles indexed before then still keep “studies” as its own keyword, so one word is split across two. Folding moves those older mentions to the base form, exactly as a re-index would, without re-reading any article. Only single words in the languages the app lemmatises are folded; phrases, names and keywords your families or groups use are left as they are. Each keyword’s language is then set from the languages of its mentions. The report lists the largest folds.": "Seit es die Lemmatisierung gibt, legen neue Artikel „Studien“ unter „Studie“ ab; vorher indizierte Artikel führen „Studien“ weiterhin als eigenes Schlüsselwort, sodass ein Wort auf zwei verteilt ist. Die Zusammenführung verschiebt diese älteren Erwähnungen zur Grundform, genau wie es eine Neuindizierung täte, ohne einen Artikel erneut zu lesen. Zusammengeführt werden nur einzelne Wörter in den Sprachen, die die App lemmatisiert; Wortgruppen, Namen und Schlüsselwörter, die Ihre Familien oder Gruppen verwenden, bleiben unverändert. Danach wird die Sprache jedes Schlüsselworts aus den Sprachen seiner Erwähnungen bestimmt. Der Bericht listet die größten Zusammenführungen auf.",
   "Since the last restart": "Seit dem letzten Neustart",

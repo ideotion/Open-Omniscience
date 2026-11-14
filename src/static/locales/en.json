@@ -4623,6 +4623,8 @@
   "Significant at p < 0.05": "Significant at p < 0.05",
   "Signing key (Ed25519), to give the recipient some other way:": "Signing key (Ed25519), to give the recipient some other way:",
   "Silent in this trail": "Silent in this trail",
+  "Simple": "Simple",
+  "Simple view": "Simple view",
   "Since": "Since",
   "Since lemmatisation was added, new articles file “studies” under “study”; articles indexed before then still keep “studies” as its own keyword, so one word is split across two. Folding moves those older mentions to the base form, exactly as a re-index would, without re-reading any article. Only single words in the languages the app lemmatises are folded; phrases, names and keywords your families or groups use are left as they are. Each keyword’s language is then set from the languages of its mentions. The report lists the largest folds.": "Since lemmatisation was added, new articles file “studies” under “study”; articles indexed before then still keep “studies” as its own keyword, so one word is split across two. Folding moves those older mentions to the base form, exactly as a re-index would, without re-reading any article. Only single words in the languages the app lemmatises are folded; phrases, names and keywords your families or groups use are left as they are. Each keyword’s language is then set from the languages of its mentions. The report lists the largest folds.",
   "Since the last restart": "Since the last restart",

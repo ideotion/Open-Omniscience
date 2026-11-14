@@ -4623,6 +4623,8 @@
   "Significant at p < 0.05": "p < 0.05 で有意",
   "Signing key (Ed25519), to give the recipient some other way:": "署名鍵（Ed25519）。受け取る人には別の手段で渡してください：",
   "Silent in this trail": "この跡では沈黙",
+  "Simple": "シンプル",
+  "Simple view": "シンプル表示",
   "Since": "起点",
   "Since lemmatisation was added, new articles file “studies” under “study”; articles indexed before then still keep “studies” as its own keyword, so one word is split across two. Folding moves those older mentions to the base form, exactly as a re-index would, without re-reading any article. Only single words in the languages the app lemmatises are folded; phrases, names and keywords your families or groups use are left as they are. Each keyword’s language is then set from the languages of its mentions. The report lists the largest folds.": "レンマ化が加わって以来、新しい記事は「studies」を「study」の下に登録します。それ以前にインデックスされた記事では「studies」が別のキーワードのまま残っているため、1つの語が2つに分かれています。統合はこれらの古い言及を基本形へ移します。再インデックスと同じ結果になりますが、記事を読み直すことはありません。統合されるのは、アプリがレンマ化する言語の単語1語だけです。フレーズ、名前、そしてあなたのファミリーやグループが使っているキーワードはそのまま残ります。その後、各キーワードの言語は言及の言語から決まります。レポートには最大の統合が一覧表示されます。",
   "Since the last restart": "最後の再起動から",

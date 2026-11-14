@@ -4623,6 +4623,8 @@
   "Significant at p < 0.05": "p < 0.05-এ তাৎপর্যপূর্ণ",
   "Signing key (Ed25519), to give the recipient some other way:": "স্বাক্ষর কী (Ed25519), প্রাপককে অন্য উপায়ে দেওয়ার জন্য:",
   "Silent in this trail": "এই চিহ্নরেখায় নীরব",
+  "Simple": "সহজ",
+  "Simple view": "সহজ ভিউ",
   "Since": "থেকে",
   "Since lemmatisation was added, new articles file “studies” under “study”; articles indexed before then still keep “studies” as its own keyword, so one word is split across two. Folding moves those older mentions to the base form, exactly as a re-index would, without re-reading any article. Only single words in the languages the app lemmatises are folded; phrases, names and keywords your families or groups use are left as they are. Each keyword’s language is then set from the languages of its mentions. The report lists the largest folds.": "লেমাটাইজেশন যোগ হওয়ার পর থেকে নতুন নিবন্ধগুলো “studies”-কে “study”-র অধীনে রাখে; তার আগে সূচিবদ্ধ নিবন্ধগুলো এখনও “studies”-কে আলাদা কীওয়ার্ড হিসেবে রাখে, ফলে একই শব্দ দুটিতে ভাগ হয়ে থাকে। একত্রীকরণ সেই পুরোনো উল্লেখগুলোকে মূল রূপে সরিয়ে নেয়, ঠিক যেভাবে পুনঃসূচীকরণ করত, কোনো নিবন্ধ আবার না পড়েই। অ্যাপ যে ভাষাগুলো লেমাটাইজ করে শুধু সেগুলোর একক শব্দই একত্র করা হয়; বাক্যাংশ, নাম এবং আপনার পরিবার বা গোষ্ঠীগুলো যে কীওয়ার্ড ব্যবহার করে সেগুলো যেমন আছে তেমনই থাকে। এরপর প্রতিটি কীওয়ার্ডের ভাষা তার উল্লেখগুলোর ভাষা থেকে নির্ধারণ করা হয়। প্রতিবেদনে সবচেয়ে বড় একত্রীকরণগুলোর তালিকা থাকে।",
   "Since the last restart": "শেষ পুনঃসূচনার পর থেকে",

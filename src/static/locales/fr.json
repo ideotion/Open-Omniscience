@@ -4623,6 +4623,8 @@
   "Significant at p < 0.05": "Significatif à p < 0.05",
   "Signing key (Ed25519), to give the recipient some other way:": "Clé de signature (Ed25519), à transmettre au destinataire par un autre moyen :",
   "Silent in this trail": "Silencieuses dans ce fil",
+  "Simple": "Simple",
+  "Simple view": "Vue simple",
   "Since": "Depuis",
   "Since lemmatisation was added, new articles file “studies” under “study”; articles indexed before then still keep “studies” as its own keyword, so one word is split across two. Folding moves those older mentions to the base form, exactly as a re-index would, without re-reading any article. Only single words in the languages the app lemmatises are folded; phrases, names and keywords your families or groups use are left as they are. Each keyword’s language is then set from the languages of its mentions. The report lists the largest folds.": "Depuis l’ajout de la lemmatisation, les nouveaux articles classent « études » sous « étude » ; les articles indexés avant gardent « études » comme mot-clé distinct, si bien qu’un même mot est réparti sur deux. Le repli déplace ces anciennes mentions vers la forme de base, exactement comme le ferait une réindexation, sans relire aucun article. Seuls les mots isolés des langues que l’application lemmatise sont repliés ; les expressions, les noms et les mots-clés utilisés par vos familles ou vos groupes restent tels quels. La langue de chaque mot-clé est ensuite déterminée à partir des langues de ses mentions. Le rapport liste les replis les plus importants.",
   "Since the last restart": "Depuis le dernier redémarrage",

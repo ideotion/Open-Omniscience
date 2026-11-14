@@ -4623,6 +4623,8 @@
   "Significant at p < 0.05": "Signifikan pada p < 0.05",
   "Signing key (Ed25519), to give the recipient some other way:": "Kunci tanda tangan (Ed25519), untuk diberikan kepada penerima lewat jalur lain:",
   "Silent in this trail": "Diam dalam jejak ini",
+  "Simple": "Sederhana",
+  "Simple view": "Tampilan sederhana",
   "Since": "Sejak",
   "Since lemmatisation was added, new articles file “studies” under “study”; articles indexed before then still keep “studies” as its own keyword, so one word is split across two. Folding moves those older mentions to the base form, exactly as a re-index would, without re-reading any article. Only single words in the languages the app lemmatises are folded; phrases, names and keywords your families or groups use are left as they are. Each keyword’s language is then set from the languages of its mentions. The report lists the largest folds.": "Sejak lematisasi ditambahkan, artikel baru menyimpan “studies” di bawah “study”; artikel yang diindeks sebelumnya masih menyimpan “studies” sebagai kata kunci tersendiri, sehingga satu kata terbagi menjadi dua. Penggabungan memindahkan sebutan lama itu ke bentuk dasar, persis seperti yang dilakukan pengindeksan ulang, tanpa membaca ulang artikel mana pun. Hanya kata tunggal dalam bahasa yang dilematisasi aplikasi yang digabungkan; frasa, nama, dan kata kunci yang dipakai keluarga atau grup Anda dibiarkan apa adanya. Setelah itu, bahasa setiap kata kunci ditetapkan dari bahasa sebutan-sebutannya. Laporan mencantumkan penggabungan terbesar.",
   "Since the last restart": "Sejak mulai ulang terakhir",
