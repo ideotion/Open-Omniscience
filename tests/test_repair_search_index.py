@@ -434,25 +434,22 @@ def test_an_emptied_index_whose_rebuild_dies_after_some_batches_is_empty_and_the
     assert (_export_indexed(eng), _export_findable(eng)) == (_EXPORT_ARTICLES, _EXPORT_ARTICLES)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="a boot reads ANY docsize row as 'settled' (the boot compares no counts: see the SCOPE paragraph of ensure_fts), so a prefix "
-    "index (some rows, not all) is skipped and nothing repairs it; fts_status names it instead (the next test). Flips when a boot repairs one.",
-)
 def test_a_prefix_index_is_not_read_as_settled_by_a_boot():
     eng = _export_store()
     _prefix_index(eng)
     assert _export_indexed(eng) == _EXPORT_ARTICLES // 2
-    assert fts.ensure_fts(eng) == "rebuilt"
+    assert fts.ensure_fts(eng) == "rebuilt", "the boot compares the two counts (R412, OPEN_QUEUE 2026-10-27 item 9)"
+    assert (_export_indexed(eng), _export_findable(eng)) == (_EXPORT_ARTICLES, _EXPORT_ARTICLES)
+    assert fts.ensure_fts(eng) == "skipped", "a whole index is not rebuilt again"
 
 
 def test_a_prefix_index_that_a_boot_reads_as_settled_is_named_partial_inferred_by_fts_status():
-    """What the xfail above cannot say: the diagnostic does. The ends (the highest document id against the highest article id) differ, so the
-    state is named and refuses the healthy verdict; nothing is counted or repaired, and the boot still skips it."""
+    """The diagnostic names it before any boot: the ends (the highest document id against the highest article id) differ, so the
+    state is named and refuses the healthy verdict; ``fts_status`` repairs nothing, and the next boot rebuilds it (the test above)."""
     eng = _export_store()
     _prefix_index(eng)
     with sessionmaker(bind=eng, future=True)() as s:
         st = fts.fts_status(s)
     assert st["indexed_documents"] == _EXPORT_ARTICLES // 2 and st["rows"] == _EXPORT_ARTICLES, "rows reads the content table: it cannot show it"
     assert st["index_state"] == "partial (inferred)" and st["healthy"] is False and st["error"] == "PartialIndex"
-    assert fts.ensure_fts(eng) == "skipped", "the boot's refusal to count the articles stands"
+    assert fts.ensure_fts(eng) == "rebuilt", "the boot now compares the counts (R412, item 9) and heals it"

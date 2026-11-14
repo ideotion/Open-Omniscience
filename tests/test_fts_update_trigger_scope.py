@@ -197,8 +197,9 @@ def test_the_heal_never_rebuilds_the_index():
 
     assert action == "skipped", f"the heal must not provoke a rebuild, got {action!r}"
     assert not any("'rebuild'" in s or "'delete-all'" in s for s in spy.stmts)
-    # No corpus scan either: the probe reads one sqlite_master row.
-    assert not any("count(*) from articles" in s.lower() for s in spy.stmts)
+    # No article text is read: the heal reads one sqlite_master row, and the boot's one count of each side
+    # (R412, OPEN_QUEUE 2026-10-27 item 9) follows the number of rows through a covering index, never their text.
+    assert not any("content from articles" in s.lower() for s in spy.stmts)
 
 
 def test_the_heal_is_idempotent_and_silent_on_an_already_scoped_store():
