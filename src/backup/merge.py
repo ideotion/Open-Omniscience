@@ -6756,9 +6756,7 @@ def merge_side_files(staged: StagedArtifact) -> dict:
             state[name] = merge_imported_store(name, incoming)
         elif not local.exists():
             local.parent.mkdir(parents=True, exist_ok=True)
-            tmp = local.with_name(local.name + ".tmp")
-            tmp.write_bytes(path.read_bytes())
-            os.replace(tmp, local)
+            _replace_file_bytes(local, path.read_bytes())
             state[name] = {"action": "restored", "reason": "no local file existed"}
         else:
             try:
@@ -6809,9 +6807,7 @@ def merge_side_files(staged: StagedArtifact) -> dict:
                 ann["errors"].append(f"{name}: {record_text(exc)}")
         else:
             local.parent.mkdir(parents=True, exist_ok=True)
-            tmp = local.with_name(local.name + ".tmp")
-            tmp.write_bytes(path.read_bytes())
-            os.replace(tmp, local)
+            _replace_file_bytes(local, path.read_bytes())
             ann["restored_mine"] = True
     report["annotations"] = ann
 
@@ -6890,9 +6886,7 @@ def merge_side_files(staged: StagedArtifact) -> dict:
                 continue
             try:
                 local.parent.mkdir(parents=True, exist_ok=True)
-                tmp = local.with_name(local.name + ".tmp")
-                tmp.write_bytes(path.read_bytes())
-                os.replace(tmp, local)
+                _replace_file_bytes(local, path.read_bytes())
                 restored += 1
             except OSError as exc:
                 refused.append(f"{name}: {exception_text(exc, typed=False)}")
@@ -7304,9 +7298,7 @@ def _restore_ring_members(staged: StagedArtifact, base: Path) -> dict:
             continue
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
-            tmp = target.with_name(target.name + ".tmp")
-            tmp.write_bytes(path.read_bytes())
-            os.replace(tmp, target)
+            _replace_file_bytes(target, path.read_bytes())
         except OSError as exc:
             out["refused"].append({"name": name, "reason": f"write failed: {exception_text(exc, typed=False)}"})
             continue
@@ -8035,6 +8027,25 @@ def find_completed_import(digest: str | None) -> dict | None:
     }
 
 
+def _replace_file_bytes(target: Path, data: bytes) -> None:
+    """Replace ``target`` with ``data`` through a temp file of its own and a rename (audit recheck P16).
+
+    The temp name is unique per write, so two writers never share one ``<name>.tmp``, and a write
+    that fails takes its temp file with it instead of leaving it beside the target."""
+    import secrets
+
+    tmp = target.with_name(f"{target.name}.{secrets.token_hex(4)}.tmp")
+    try:
+        with open(tmp, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, target)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def _reindex_state_path() -> Path:
     return data_dir() / _REINDEX_STATE_FILE
 
@@ -8046,15 +8057,13 @@ def _save_reindex_cursor(batch_id: int, *, last_id: int, done: int, total: int) 
     try:
         path = _reindex_state_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(
+        _replace_file_bytes(  # atomic: a torn read can never yield a bogus watermark
+            path,
             json.dumps(
                 {"batch_id": batch_id, "last_id": last_id, "done": done, "total": total},
                 sort_keys=True,
-            ),
-            encoding="utf-8",
+            ).encode("utf-8"),
         )
-        os.replace(tmp, path)  # atomic: a torn read can never yield a bogus watermark
     except Exception as exc:  # noqa: BLE001 - the watermark is an optimisation, never a guarantee
         log_failure(_LOG, "could not persist the re-index watermark", exc, level=logging.DEBUG)
 

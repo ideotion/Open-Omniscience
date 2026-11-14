@@ -18,6 +18,7 @@ the per-read win so the amortization is honest. Counts + milliseconds only, neve
 
 from __future__ import annotations
 
+import contextlib
 import time
 
 from sqlalchemy.orm import Session
@@ -56,8 +57,18 @@ def run_source_coverage_benchmark(session: Session, *, repeats: int = 3) -> dict
         ),
     }
 
-    con = columnar.connect(passphrase=None)  # offline -> in-memory (never a plaintext file)
+    # In-memory; DuckDB's offload follows the keyword rollup's rule (none for an encrypted corpus, a per-connection
+    # folder under the data directory otherwise), never its plaintext default ``.tmp`` beside the working directory.
+    from src.analytics import rollup_serve
+
+    spill = rollup_serve._spill_setting()
+    try:
+        con = columnar.connect(passphrase=None, spill=spill)
+    except BaseException:
+        rollup_serve._remove_spill(spill)
+        raise
     if con is None:
+        rollup_serve._remove_spill(spill)
         return {"available": False, "reason": "columnar engine unavailable"}
     try:
         epoch = get_corpus_epoch(session)
@@ -90,10 +101,9 @@ def run_source_coverage_benchmark(session: Session, *, repeats: int = 3) -> dict
             n=corpus["located_sources"],
         )
     finally:
-        try:
+        with contextlib.suppress(Exception):
             con.close()
-        except Exception:  # noqa: BLE001
-            pass
+        rollup_serve._remove_spill(spill)  # after the close: DuckDB holds its files open until then
 
     return {
         "available": True,

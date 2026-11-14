@@ -226,18 +226,52 @@ def test_thai_marks_stay_in_the_run_and_one_letter_with_marks_is_still_one_chara
     assert env.short_labels == {"th": 1}, "ที่ is one letter and two marks: never matched (R680)"
 
 
-def test_khmer_lao_and_burmese_are_unsupported_until_a_test_shows_they_work():
-    idx = tt.Index([_art(law=({"km": "ច្បាប់", "lo": "ກົດໝາຍ", "my": "ဥပဒေ", "en": "law"}, {}))])
+def test_khmer_lao_and_burmese_labels_are_found_in_running_text_and_always_approximate():
+    """Real words: ច្បាប់ / ກົດໝາຍ / ဥပဒေ ("law") inside a title written without spaces."""
+    idx = tt.Index([_art(law=({"km": "ច្បាប់", "lo": "ກົດໝາຍ", "my": "ဥပဒေ"}, {}))])
+    for lang, text in (("km", "ច្បាប់ស្តីពីការងារ"), ("lo", "ກົດໝາຍແຮງງານ"), ("my", "အလုပ်သမားဥပဒေ")):
+        assert [(t.concept, t.tier, t.approx_reason) for t in tt.tag_text(text, lang, idx)] == [
+            ("law", "approx", "unsegmented_substring")
+        ], lang
     sample = [
         {"id": "k", "lang": "km", "text": "ច្បាប់ស្តីពីការងារ", "expected": ["law"]},
         {"id": "l", "lang": "lo", "text": "ກົດໝາຍແຮງງານ", "expected": ["law"]},
         {"id": "m", "lang": "my", "text": "အလုပ်သမားဥပဒေ", "expected": ["law"]},
     ]
     m = tt.measure(sample, idx)
-    assert m["unsupported_languages"] == {"km": 1, "lo": 1, "my": 1} and m["n_items"] == 0
-    assert m["precision"]["value"] is None, "no precision figure for a language whose matching is unverified"
-    assert m["unverified_languages"]["labels_set_aside"] == {"km": 1, "lo": 1, "my": 1}
+    assert m["unsupported_languages"] == {} and m["n_items"] == 3
+    assert m["precision"]["value"] == 1.0 and m["approx_share"]["value"] == 1.0
 
+
+def test_a_substring_hit_never_cuts_a_syllable():
+    """Each label below is a real substring of the text, and each would cut a syllable in two."""
+    cases = [
+        ("km", "តីពី", "ស្តីពី"),  # starts on a consonant stacked under the one before it (coeng)
+        ("my", "လုပ", "အလုပ်"),  # ends right before the asat that closes the syllable
+        ("my", "ပဒ", "ဥပဒေ"),  # ends right before the vowel sign ေ of the syllable it cuts
+        ("lo", "ຮງ", "ແຮງງານ"),  # starts right after a vowel written before its consonant
+        ("th", "นแ", "แรงงานแห่งชาติ"),  # ends on a vowel that belongs to the next syllable
+        ("th", "แรงง", "แรงงาน"),  # ends right before า, a vowel written after its consonant as a letter
+        ("th", "กฎหม", "กฎหมาย"),
+        ("lo", "ກົດໝ", "ກົດໝາຍ"),  # the same with Lao າ
+        ("my", "အလု", "အလုပ်သမား"),  # ends right before ပ, the final the asat closes
+        ("my", "အပြ", "အပြည့်"),  # the same when a dot below stands between the final and its asat
+    ]
+    for lang, label, text in cases:
+        assert label in text
+        idx = tt.Index([_art(c=({lang: label}, {}))])
+        assert tt.tag_text(text, lang, idx) == [], (lang, label, text)
+    # An asat after a vowel sign closes the vowel of the next syllable, not a final: these labels end on a syllable edge.
+    for label, text in (("နိုင်ငံ", "နိုင်ငံတော်"), ("ပြည်", "ပြည်ပေါ်")):
+        idx = tt.Index([_art(c=({"my": label}, {}))])
+        assert [t.tier for t in tt.tag_text(text, "my", idx)] == ["approx"], (label, text)
+    # The stated limit: a final consonant written as a plain letter is not a mark, so a label that stops
+    # before it (ច្បា inside ច្បាប់) still matches. Syllable edges are checked, word edges are not: ≈.
+    idx = tt.Index([_art(c=({"km": "ច្បា"}, {}))])
+    assert [t.tier for t in tt.tag_text("ច្បាប់", "km", idx)] == ["approx"]
+    # A variation selector picks a glyph, not a syllable: 法律 followed by one still matches.
+    idx = tt.Index([_art(c=({"zh": "法律"}, {}))])
+    assert [t.concept for t in tt.tag_text("法律\ufe00法", "zh", idx)] == ["c"]
 
 def test_optional_points_and_joiners_and_stray_marks_never_hide_a_word():
     assert tt.fold("می\u200cخواهم") == tt.fold("میخواهم"), "a ZWNJ is written or omitted for the same word"
