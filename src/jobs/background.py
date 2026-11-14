@@ -316,8 +316,12 @@ class BackgroundJob:
         return not t.is_alive()
 
     def cancel(self) -> None:
-        """Ask the worker to stop at its next safe point (cooperative; never kills a thread)."""
-        self._stop.set()
+        """Ask the worker to stop at its next safe point (cooperative; never kills a thread).
+
+        Under the job's lock, so a restart that checks for a Cancel and then starts (``_start_again``, R659) sees it or comes after it:
+        ``_start`` clears this flag, and a Cancel landing between that check and that clear would otherwise be undone."""
+        with self._lock:
+            self._stop.set()
 
     def status(self) -> dict:
         with self._lock:
