@@ -378,7 +378,7 @@ def test_history_never_reaches_an_export_or_a_diagnostics_bundle(history_on) -> 
     for fmt in ("csv", "json"):
         r = history_on.get("/api/articles/export", params={"query": "energy", "format": fmt})
         assert MARKER not in r.text and MARKER not in json.dumps(dict(r.headers))
-    b = history_on.get("/api/diagnostics/debug-bundle")
+    b = history_on.post("/api/diagnostics/debug-bundle")
     assert b.status_code == 200
     assert MARKER.encode() not in b.content
 

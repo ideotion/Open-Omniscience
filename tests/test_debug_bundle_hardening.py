@@ -71,7 +71,7 @@ def test_a_raising_member_and_a_slow_member_yield_a_complete_bounded_bundle(monk
 
     try:
         with TestClient(app) as c:
-            r = c.get("/api/diagnostics/debug-bundle")
+            r = c.post("/api/diagnostics/debug-bundle")
         bundle_came_back_first = not slow_returned.is_set()
     finally:
         release_slow.set()
@@ -130,7 +130,7 @@ def test_a_non_finite_budget_never_crashes_the_bundle(monkeypatch):
     install()
     monkeypatch.setenv("OO_DEBUG_BUNDLE_MEMBER_BUDGET_S", "inf")
     with TestClient(app) as c:
-        r = c.get("/api/diagnostics/debug-bundle")
+        r = c.post("/api/diagnostics/debug-bundle")
     assert r.status_code == 200  # clamped to the 20s default, no overflow
     assert r.json()["data"]["runtime"]["python"]
 
@@ -150,7 +150,7 @@ def test_a_raising_db_member_is_guarded_inline_and_never_aborts(monkeypatch):
 
     monkeypatch.setattr(_intg, "corpus_integrity", _boom)  # -> corpus_integrity (DB, inline)
     with TestClient(app) as c:
-        r = c.get("/api/diagnostics/debug-bundle")
+        r = c.post("/api/diagnostics/debug-bundle")
     assert r.status_code == 200
     data = r.json()["data"]
     ci = data["corpus_integrity"]
@@ -188,7 +188,7 @@ def test_a_member_exception_with_a_broken_str_still_records_error(monkeypatch):
 
     monkeypatch.setattr(_lat, "summary", _boom)  # -> request_latency member
     with TestClient(app) as c:
-        r = c.get("/api/diagnostics/debug-bundle")
+        r = c.post("/api/diagnostics/debug-bundle")
     assert r.status_code == 200
     rl = r.json()["data"]["request_latency"]
     # the one exception text (``secret_scrub.exception_text``): the class, and none of the words that could not be rendered
@@ -206,7 +206,7 @@ def test_a_member_the_deadline_stopped_names_the_deadline(monkeypatch):
 
     monkeypatch.setattr(_intg, "corpus_integrity", _stopped)
     with TestClient(app) as c:
-        ci = c.get("/api/diagnostics/debug-bundle").json()["data"]["corpus_integrity"]
+        ci = c.post("/api/diagnostics/debug-bundle").json()["data"]["corpus_integrity"]
     assert ci["stopped_by"] == "statement deadline" and "7s deadline" in ci["error"], ci
 
 
@@ -220,7 +220,7 @@ def test_a_memory_stop_is_not_called_a_deadline_stop(monkeypatch):
 
     monkeypatch.setattr(_intg, "corpus_integrity", _short)
     with TestClient(app) as c:
-        ci = c.get("/api/diagnostics/debug-bundle").json()["data"]["corpus_integrity"]
+        ci = c.post("/api/diagnostics/debug-bundle").json()["data"]["corpus_integrity"]
     assert "stopped_by" not in ci and "memory" in ci["error"], ci
 
 
@@ -235,5 +235,5 @@ def test_a_member_that_failed_for_another_reason_is_not_called_deadline_stopped(
 
     monkeypatch.setattr(_intg, "corpus_integrity", _other)
     with TestClient(app) as c:
-        ci = c.get("/api/diagnostics/debug-bundle").json()["data"]["corpus_integrity"]
+        ci = c.post("/api/diagnostics/debug-bundle").json()["data"]["corpus_integrity"]
     assert "stopped_by" not in ci

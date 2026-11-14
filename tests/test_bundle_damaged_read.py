@@ -207,7 +207,7 @@ def client():
 
 
 def _bundle(client) -> dict:
-    r = client.get("/api/diagnostics/debug-bundle")
+    r = client.post("/api/diagnostics/debug-bundle")
     assert r.status_code == 200
     return r.json()["data"]
 

@@ -24,6 +24,11 @@ from src.timemap.dateextract import extract_dates
 
 VALID_STATUS = ("candidate", "confirmed", "rejected")
 _CONFIDENCE = {"day": 0.9, "month": 0.7}  # regex extractor: explicit day is firmer than month
+#: R697: a tag found with no article language used only the language-neutral patterns (ISO,
+#: unambiguous numeric, ungated month names). The row says so in its provenance, so "language
+#: unknown" is recorded rather than read later as an English extraction.
+EXTRACTOR_KNOWN_LANGUAGE = "dateextract"
+EXTRACTOR_NO_LANGUAGE = "dateextract:no-language"
 
 
 def _to_row(tag: ArticleMentionedDate) -> dict:
@@ -77,6 +82,7 @@ def store_for_article(
     found = precomputed if precomputed is not None else extract_dates(
         article.content, today=today, anchor=anchor, language=article.language
     )
+    extractor = EXTRACTOR_KNOWN_LANGUAGE if (article.language or "").strip() else EXTRACTOR_NO_LANGUAGE
     for c in found:
         key = (c["date"], c["precision"])
         if key in existing:
@@ -88,7 +94,7 @@ def store_for_article(
                 precision=c["precision"],
                 snippet=c["text"][:300],
                 confidence=_CONFIDENCE.get(c["precision"], 0.5),
-                extractor="dateextract",
+                extractor=extractor,
                 status="candidate",
             )
         )
