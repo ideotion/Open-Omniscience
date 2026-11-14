@@ -157,7 +157,7 @@ jobs:
   # of it and Core-only. Each leg now runs a third of the test FILES, chosen by scripts/ci_shard.py from the measured cost table
   # configs/ci_shard_costs.json (longest file first to the least-loaded shard; a file the table does not name goes to crc32(path) % 3 + 1, so a new test
   # file needs no edit anywhere), and the leg's list is handed to pytest as `@FILE`. The static steps (lint, the planned-work index, the i18n gates, the
-  # migration check, mypy, bandit, pip-audit) are the `static` job below since R668, so every leg runs only the suite; overhead_seconds stays 80 on purpose (a 0 re-deals the files, and the first run on that deal exposed two order-dependent tests: kept apart, R668 follow-up).
+  # migration check, mypy, bandit, pip-audit) are the `static` job below since R668, so every leg runs only the suite, and the table's overhead_seconds is empty (the 80 for leg 1 went once R674, PR #1943, made the two tests a re-deal had exposed independent of their neighbours).
   #
   # THE REQUIRED CHECK IS NOT A LEG. The check named `test` (branch protection requires it by that name) is the `test-all` job below, which is green only if
   # every leg is. The legs are named "Test (shard N of 3)"; do not name one `test`. tests/test_ci_shards.py pins the pairing, the leg list (1..3, the
@@ -311,10 +311,10 @@ jobs:
   # was the run's critical path by their length: on run 42944433508 (PR #1928) leg 1 took 20.9 min against 18.3 and 17.5 for legs 2 and 3, of which
   # about 1.8 min were these steps (planned-work index 41 s, mypy 32 s, bandit 27 s, pip-audit 8 s, the lints, the i18n gates and the migration check).
   # Here they run beside the legs on their own runner, from the same install line, so mypy sees the same libraries and pip-audit audits the same
-  # environment as before. The table's overhead_seconds for leg 1 STAYS 80, so the files keep the deal every green run so far was measured on: setting
-  # it to 0 re-dealt them, and that run's Core-only legs 1 and 2 each failed one test that passes alone (tests/test_launcher_signals.py's teardown
-  # wait; tests/test_windowed_group_counts.py's app-engine checkpoint, which shares the process's engine with its neighbours). Re-dealing is a
-  # separate change that fixes those first. Every step here still blocks: the
+  # environment as before. Setting the table's overhead_seconds for leg 1 from 80 to 0 re-dealt the files, and that first run's Core-only legs 1 and 2
+  # each failed one test that passes alone (tests/test_launcher_signals.py's teardown wait, a real launcher race; tests/test_windowed_group_counts.py's
+  # app-engine checkpoint, which shared the process's engine with its neighbours). R674 (PR #1943) fixed both, and the re-deal followed in its own
+  # PR. Every step here still blocks: the
   # required check `test` (the `test-all` job below) needs this job and fails unless it is `success`. tests/test_ci_shards.py pins the wiring.
   static:
     if: github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'
