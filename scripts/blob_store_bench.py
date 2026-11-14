@@ -19,17 +19,23 @@ What it compares, on the same synthetic corpus and the same access patterns:
               SQLite3 Multiple Ciphers through ``apsw`` (the ``apsw-sqlite3mc``
               wheel), same schema, ChaCha20-Poly1305 and SQLCipher-v4-compatible
               ciphers. Skipped, with the reason in the report, when ``apsw`` is
-              not importable or is not the sqlite3mc build.
+              not importable or is not the sqlite3mc build. THESE TWO CODE PATHS
+              HAVE NEVER BEEN EXECUTED (apsw-sqlite3mc was not installable where this
+              script was written); the ChaCha20 engine is set to 256,000 KDF iterations
+              so its unlock is comparable, but its KDF hash (SHA-256) and MAC still differ
+              from SQLCipher v4's, and the report records that.
   blobpack    the Phase-C PROTOTYPE: metadata + a contentless FTS5 index in
               SQLCipher; article text staged in SQLCipher at ingest, then sealed
-              by a packer into OOENC2-framed packs (AES-256-GCM STREAM, nonce =
-              prefix|counter|final-flag, as ``src/safety/crypto.py``) addressed
-              by HMAC-SHA-256 under a derived key, with dedup by address and
-              opaque random pack names. Pack writes are crash-ordered: pack to
-              a temp name, fsync, rename, fsync the directory, THEN one SQL
-              transaction moves the index rows. Run at two frame sizes (4 MiB,
-              the OOENC2 default, and 64 KiB) because the frame size decides
-              what a single-article read must decrypt.
+              by a packer into fixed-size OOPACK1 packs that reuse OOENC2's STREAM
+              framing (AES-256-GCM, counter + final-flag nonce, as
+              ``src/safety/crypto.py``) under a per-pack HKDF subkey with the header as
+              associated data, addressed by HMAC-SHA-256 under a derived key, with dedup
+              by address, opaque random pack names and padding so every pack is the
+              same size. Pack writes are crash-ordered: pack to a temp name (0600),
+              fsync, rename, fsync every directory involved, THEN one SQL transaction
+              moves the index rows. Every read checks the body against its address.
+              Run at two frame sizes (4 MiB, the OOENC2 default, and 64 KiB) because
+              the frame size decides what a single-article read must decrypt.
 
 Workloads (each the shape of a real app path, named in the report):
   unlock      open + key + first read (PBKDF2 256k for the SQLCipher-format engines).
@@ -83,7 +89,8 @@ AUTO_VACUUM = 2  # INCREMENTAL (DB-10 §1a)
 CACHE_KIB = 64 * 1024
 PACK_TARGET = 8 * 1024 * 1024  # STORAGE_5TB_PLAN §3-C: ~8-16 MB packs
 TAG = 16
-MAGIC2 = b"OOENC2\x00\x00"
+PACK_MAGIC = b"OOPACK1\x00"  # the design note's Q-W2: never OOENC2's magic
+PACK_VERSION = 1
 
 SCHEMA = [
     """CREATE TABLE articles (
@@ -116,12 +123,12 @@ BLOB_SCHEMA = [
     """CREATE VIRTUAL TABLE article_fts USING fts5(
         title, content, content='', contentless_delete=1, tokenize='unicode61')""",
     # bodies not yet sealed into a pack: same consistency domain as the article row
-    "CREATE TABLE blob_staging (addr BLOB PRIMARY KEY, body BLOB NOT NULL) WITHOUT ROWID",
+    "CREATE TABLE blob_staging (id INTEGER PRIMARY KEY, addr BLOB NOT NULL UNIQUE, body BLOB NOT NULL)",
     """CREATE TABLE blobs (addr BLOB PRIMARY KEY, pack_id INTEGER NOT NULL,
         off INTEGER NOT NULL, len INTEGER NOT NULL, codec INTEGER NOT NULL) WITHOUT ROWID""",
-    """CREATE TABLE packs (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE,
+    """CREATE TABLE packs (id INTEGER PRIMARY KEY, name BLOB NOT NULL UNIQUE,
         frame INTEGER NOT NULL, n_frames INTEGER NOT NULL, plain_len INTEGER NOT NULL,
-        nonce_prefix BLOB NOT NULL)""",
+        ct_len INTEGER NOT NULL)""",
 ]
 
 
@@ -255,6 +262,8 @@ def make_open_sqlite3mc(cipher: str) -> Callable[[Path, str, bool], Conn]:
 
         c = Conn(apsw.Connection(str(path)), "apsw")
         c.execute(f"PRAGMA cipher = '{cipher}'")
+        if cipher == "chacha20":
+            c.execute("PRAGMA kdf_iter = 256000")  # SQLCipher v4's count; the hash stays SHA-256
         if cipher == "sqlcipher":
             c.execute("PRAGMA legacy = 4")  # SQLCipher v4 defaults: PBKDF2-SHA512 256k, HMAC-SHA512
             c.execute(f"PRAGMA legacy_page_size = {PAGE_SIZE}")
@@ -289,7 +298,12 @@ def cipher_versions(kind: str) -> dict[str, str]:
         if kind.startswith("sqlite3mc"):
             import apsw
 
-            return {"sqlite": apsw.sqlite_lib_version(), "apsw": apsw.apsw_version()}
+            kdf = (
+                "PBKDF2-HMAC-SHA256 x256,000 (kdf_iter set; MAC Poly1305)"
+                if kind.endswith("chacha20")
+                else "SQLCipher v4 legacy: PBKDF2-HMAC-SHA512 x256,000, HMAC-SHA512"
+            )
+            return {"sqlite": apsw.sqlite_lib_version(), "apsw": apsw.apsw_version(), "kdf": kdf}
     except Exception as exc:  # noqa: BLE001
         return {"error": type(exc).__name__}
     return {}
@@ -297,8 +311,15 @@ def cipher_versions(kind: str) -> dict[str, str]:
 
 # --------------------------------------------------------------------------- blob store prototype
 class BlobStore:
-    """Phase-C prototype. Keys come from one in-process master secret through HKDF with
-    explicit domain labels (STORAGE_5TB_PLAN §5). Nothing here persists a key."""
+    """Phase-C prototype of the design note's §3-§6. Keys come from one in-process master
+    secret through HKDF with explicit domain labels; nothing here persists a key (the real
+    store would keep the master key inside SQLCipher, which this benchmark does not model).
+
+    Pack layout: header = PACK_MAGIC(8) | version(1) | frame(4) | n_frames(4) | name(16),
+    then n_frames AES-256-GCM frames (STREAM nonce: 7 zero bytes | counter | final flag),
+    each under a per-pack subkey HKDF(pack key, "oo/v1/pack-subkey\\0" + name) and with the
+    header as associated data. Every pack holds exactly PACK_TARGET plaintext bytes (bodies
+    then zero padding, all inside the AEAD), so its size says nothing about what it holds."""
 
     def __init__(
         self,
@@ -312,9 +333,10 @@ class BlobStore:
         self.root, self.frame = root, frame
         self.k_addr = self._hkdf(master, b"oo/v1/blob-address")
         self.k_pack = self._hkdf(master, b"oo/v1/pack-aead")
-        self.aes = AESGCM(self.k_pack)
         self.compress, self.decompress, self.codec_id = compress, decompress, codec_id
-        self._pack_cache: dict[int, tuple[str, int, int, bytes]] = {}
+        self._pack_cache: dict[int, tuple[bytes, int, AESGCM, bytes]] = {}
+        self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        _fsync_dir(self.root.parent)
 
     @staticmethod
     def _hkdf(master: bytes, info: bytes) -> bytes:
@@ -323,100 +345,137 @@ class BlobStore:
     def address(self, body: bytes) -> bytes:
         return hmac.new(self.k_addr, body, hashlib.sha256).digest()
 
+    def _cipher(self, name: bytes) -> AESGCM:
+        return AESGCM(self._hkdf(self.k_pack, b"oo/v1/pack-subkey\x00" + name))
+
     @staticmethod
-    def _nonce(prefix: bytes, counter: int, final: bool) -> bytes:
-        return prefix + struct.pack(">I", counter) + (b"\x01" if final else b"\x00")
+    def _nonce(counter: int, final: bool) -> bytes:
+        # the subkey is unique per pack, so the nonce only has to be unique inside one pack
+        return bytes(7) + struct.pack(">I", counter) + (b"\x01" if final else b"\x00")
 
-    def _pack_path(self, name: str) -> Path:
-        return self.root / name[:2] / name
+    @staticmethod
+    def _header(name: bytes, frame: int, n_frames: int) -> bytes:
+        return PACK_MAGIC + bytes([PACK_VERSION]) + struct.pack(">II", frame, n_frames) + name
 
-    def seal(self, c: Conn) -> dict[str, float]:
-        """Move every staged body into packs. Order: pack bytes durable on disk first,
-        then ONE SQL transaction per pack that indexes the pack and drops the staging rows.
-        A crash between the two leaves an unreferenced pack (GC reclaims it), never a
-        reference to bytes that are not there."""
-        staged = c.execute("SELECT addr, body FROM blob_staging ORDER BY addr")
+    def _pack_path(self, name: bytes) -> Path:
+        h = name.hex()
+        return self.root / h[:2] / h
+
+    def seal(self, c: Conn, *, flush_partial: bool = True) -> dict[str, float]:
+        """Move staged bodies into fixed-size packs. Order: pack bytes durable on disk first
+        (file fsync, rename, fsync of every directory on the path that this call created),
+        then ONE SQL transaction per pack that indexes it and drops the staging rows. A crash
+        between the two leaves an unreferenced pack, never a reference to absent bytes.
+        ``flush_partial`` pads and seals the last, part-full pack (the real packer would wait
+        for a full pack or a maximum age; padding keeps the size constant either way)."""
+        staged = c.execute("SELECT id, addr, body FROM blob_staging ORDER BY id")
         packs = 0
         bytes_in = 0
+        pad_bytes = 0
         i = 0
         while i < len(staged):
             buf = bytearray()
-            entries: list[tuple[bytes, int, int]] = []
-            while i < len(staged) and (not buf or len(buf) < PACK_TARGET):
-                addr, body = staged[i]
+            entries: list[tuple[int, bytes, int, int]] = []
+            while i < len(staged):
+                sid, addr, body = staged[i]
                 body = bytes(body)
                 stored = self.compress(body) if self.compress else body
-                entries.append((addr, len(buf), len(stored)))
+                if len(stored) > PACK_TARGET:
+                    raise ValueError(
+                        "a body larger than one pack needs a size class (open question)"
+                    )
+                if len(buf) + len(stored) > PACK_TARGET:
+                    break
+                entries.append((sid, addr, len(buf), len(stored)))
                 buf += stored
                 bytes_in += len(body)
                 i += 1
-            name = secrets.token_hex(16)  # opaque: says nothing about content or order
-            prefix = os.urandom(7)
-            n_frames = max(1, -(-len(buf) // self.frame))
+            if i >= len(staged) and not flush_partial:
+                break
+            used = len(buf)
+            pad_bytes += PACK_TARGET - used
+            buf += bytes(PACK_TARGET - used)
+            name = secrets.token_bytes(16)  # opaque: says nothing about content or order
+            n_frames = -(-PACK_TARGET // self.frame)
+            header = self._header(name, self.frame, n_frames)
+            aead = self._cipher(name)
             path = self._pack_path(name)
-            path.parent.mkdir(parents=True, exist_ok=True)
+            created = not path.parent.exists()
+            path.parent.mkdir(mode=0o700, exist_ok=True)
+            if created:
+                _fsync_dir(self.root)
             tmp = path.with_name(path.name + ".tmp")
-            with open(tmp, "wb") as f:
-                f.write(
-                    MAGIC2
-                    + struct.pack(">III", 0, 0, 0)
-                    + bytes(16)
-                    + prefix
-                    + struct.pack(">I", self.frame)
-                )
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as f:
+                f.write(header)
                 for k in range(n_frames):
                     chunk = bytes(buf[k * self.frame : (k + 1) * self.frame])
-                    f.write(
-                        self.aes.encrypt(self._nonce(prefix, k, k == n_frames - 1), chunk, None)
-                    )
+                    f.write(aead.encrypt(self._nonce(k, k == n_frames - 1), chunk, header))
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp, path)
-            dfd = os.open(path.parent, os.O_RDONLY)
-            try:
-                os.fsync(dfd)
-            finally:
-                os.close(dfd)
+            _fsync_dir(path.parent)
             c.execute("BEGIN IMMEDIATE")
             c.execute(
-                "INSERT INTO packs(name, frame, n_frames, plain_len, nonce_prefix) VALUES (?,?,?,?,?)",
-                (name, self.frame, n_frames, len(buf), prefix),
+                "INSERT INTO packs(name, frame, n_frames, plain_len, ct_len) VALUES (?,?,?,?,?)",
+                (name, self.frame, n_frames, used, path.stat().st_size),
             )
             pack_id = c.execute("SELECT last_insert_rowid()")[0][0]
             c.executemany(
                 "INSERT INTO blobs(addr, pack_id, off, len, codec) VALUES (?,?,?,?,?)",
-                [(a, pack_id, off, ln, self.codec_id) for a, off, ln in entries],
+                [(a, pack_id, off, ln, self.codec_id) for _, a, off, ln in entries],
             )
-            c.executemany("DELETE FROM blob_staging WHERE addr = ?", [(a,) for a, _, _ in entries])
+            c.executemany("DELETE FROM blob_staging WHERE id = ?", [(s,) for s, _, _, _ in entries])
             c.execute("COMMIT")
             packs += 1
-        return {"packs": packs, "plain_bytes": bytes_in}
+        return {"packs": packs, "plain_bytes": bytes_in, "padding_bytes": pad_bytes}
 
     def read(self, c: Conn, addr: bytes) -> bytes:
         row = c.execute("SELECT pack_id, off, len, codec FROM blobs WHERE addr = ?", (addr,))
         if not row:
             staged = c.execute("SELECT body FROM blob_staging WHERE addr = ?", (addr,))
-            return bytes(staged[0][0])
-        pack_id, off, ln, codec = row[0]
-        meta = self._pack_cache.get(pack_id)
-        if meta is None:
-            p = c.execute(
-                "SELECT name, frame, n_frames, nonce_prefix FROM packs WHERE id = ?", (pack_id,)
-            )[0]
-            meta = (p[0], p[1], p[2], bytes(p[3]))
-            self._pack_cache[pack_id] = meta
-        name, frame, n_frames, prefix = meta
-        first, last = off // frame, (off + ln - 1) // frame
-        header = len(MAGIC2) + 12 + 16 + 7 + 4
-        out = bytearray()
-        with open(self._pack_path(name), "rb") as f:
-            f.seek(header + first * (frame + TAG))
-            for k in range(first, last + 1):
-                ct = f.read(frame + TAG)
-                out += self.aes.decrypt(self._nonce(prefix, k, k == n_frames - 1), ct, None)
-        start = off - first * frame
-        stored = bytes(out[start : start + ln])
-        return self.decompress(stored) if (codec and self.decompress) else stored
+            body = bytes(staged[0][0])
+        else:
+            pack_id, off, ln, codec = row[0]
+            meta = self._pack_cache.get(pack_id)
+            if meta is None:
+                p = c.execute("SELECT name, frame, n_frames FROM packs WHERE id = ?", (pack_id,))[0]
+                name = bytes(p[0])
+                meta = (
+                    name,
+                    int(p[2]),
+                    self._cipher(name),
+                    self._header(name, int(p[1]), int(p[2])),
+                )
+                self._pack_cache[pack_id] = meta
+            name, n_frames, aead, header = meta
+            frame = self.frame
+            first, last = off // frame, (off + ln - 1) // frame
+            out = bytearray()
+            with open(self._pack_path(name), "rb") as f:
+                if f.read(len(header)) != header:  # the file must be the pack the index names
+                    raise ValueError("pack header does not match its index row")
+                f.seek(len(header) + first * (frame + TAG))
+                for k in range(first, last + 1):
+                    out += aead.decrypt(
+                        self._nonce(k, k == n_frames - 1), f.read(frame + TAG), header
+                    )
+            start = off - first * frame
+            stored = bytes(out[start : start + ln])
+            body = self.decompress(stored) if (codec and self.decompress) else stored
+        if not hmac.compare_digest(
+            self.address(body), addr
+        ):  # the bytes must be the body asked for
+            raise ValueError("body does not match its address")
+        return body
+
+
+def _fsync_dir(path: Path) -> None:
+    dfd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(dfd)
+    finally:
+        os.close(dfd)
 
 
 # --------------------------------------------------------------------------- workloads
