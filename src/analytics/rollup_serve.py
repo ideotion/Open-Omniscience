@@ -1204,7 +1204,9 @@ def _sweep_spill_folders(root) -> None:
             continue
         pid = int(head)
         if pid == mine:
-            if not _OWN_SPILL_SWEPT:
+            # An earlier process with this pid (a container restarts as pid 1) left it, unless its lock is held: then another
+            # live process, in another pid namespace sharing this data directory, owns it.
+            if not _OWN_SPILL_SWEPT and _owner_alive(child) is not True:
                 shutil.rmtree(child, ignore_errors=True)
             continue
         alive = _owner_alive(child)

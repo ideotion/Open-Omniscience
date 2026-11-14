@@ -214,3 +214,18 @@ def test_a_folder_still_being_made_is_left_to_its_maker(root, live_pid):
     abandoned.mkdir()
     rollup_serve._sweep_spill_folders(root)
     assert making.exists() and not abandoned.exists()
+
+
+def test_a_folder_under_this_pid_whose_lock_is_held_is_not_taken_for_an_earlier_process(root, owner_holder, monkeypatch):
+    """Two containers, both pid 1, sharing one data directory: a folder named for this pid may be the other one's, live."""
+    proc, folder = owner_holder
+    target = root / f"{os.getpid()}-abcd1234"
+    folder.rename(target)
+    monkeypatch.setattr(rollup_serve, "_OWN_SPILL_SWEPT", False)
+    rollup_serve._sweep_spill_folders(root)
+    assert target.exists(), "a live folder was removed as an earlier process's"
+    proc.kill()
+    proc.wait()
+    monkeypatch.setattr(rollup_serve, "_OWN_SPILL_SWEPT", False)
+    rollup_serve._sweep_spill_folders(root)
+    assert not target.exists()
