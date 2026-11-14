@@ -483,10 +483,10 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
     article_id: int | None = None
     log_touched = False
     try:
-        from src.custody.settings import load_settings
+        from src.custody.settings import CustodySettingsUnreadable, load_settings
 
         prefs = load_settings()
-        if not prefs.auto_log_on_ingest:
+        if not prefs.auto_log_on_ingest and not prefs.store_unreadable:
             return
         # The id WITHOUT a database read (CUST-1): after the commit every column is
         # expired, and reading ``article.id`` reloads the row -- which is exactly the call
@@ -500,6 +500,10 @@ def _maybe_record_custody(article: Article, *, batch: _CustodyBatch | None = Non
             article_id = int(ident[0]) if ident else None
         except Exception:  # noqa: BLE001 - not an ORM instance: no id to queue, the write still runs
             article_id = None
+        if prefs.store_unreadable:
+            # Whether the operator wants this entry cannot be read right now (queue:1255): it is owed, not written under a
+            # guessed setting, and paid at the end of a pass only once the setting reads as ON again.
+            raise CustodySettingsUnreadable("custody settings could not be read; the entry waits")
         from src.custody.log import CustodyAction, CustodyLog
 
         # Everything the entry carries is read BEFORE the log is touched: a read that fails (the pool is exhausted and the
