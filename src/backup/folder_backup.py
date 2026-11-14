@@ -1356,6 +1356,19 @@ class FolderBackupManager:
             self._cancelled = True
         self._stop.set()
 
+    def forget_paused(self, dest: str) -> None:
+        """A PAUSED copy into ``dest`` that its owner (the backup export, R701) has cancelled
+        reads ``cancelled`` from now on, so nothing offers to resume it. Nothing else changes."""
+        with self._lock:
+            if self._state != "paused" or self._mode != "backup" or self._dest is None or self._alive():
+                return
+            try:
+                same = Path(self._dest).resolve() == Path(dest).resolve()
+            except OSError:
+                same = False
+            if same:
+                self._state = "cancelled"
+
     def status(self) -> dict:
         with self._lock:
             out = {

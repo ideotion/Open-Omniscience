@@ -36,6 +36,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import stat
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -267,6 +268,45 @@ def _write_record(d: Path, record: dict[str, Any]) -> Path | None:
     return p
 
 
+#: The largest record this module reads back. It writes a few hundred bytes; anything far
+#: bigger was not written here.
+_RECORD_MAX_BYTES = 64 * 1024
+
+
+def _read_small_regular(p: Path) -> str | None:
+    """The text of ``p`` when it is a REGULAR file of at most :data:`_RECORD_MAX_BYTES`, else None.
+
+    The folder sits on a drive anyone may write to, and the record is read under the
+    export's lock and the shared restore marker's: a FIFO planted in its place made the
+    read wait forever, and every restore and status call with it (the round-3 security
+    read). So: never through a link (``O_NOFOLLOW``), never blocking on open
+    (``O_NONBLOCK``: a FIFO opens at once), and only once ``fstat`` of what was OPENED says
+    it is a regular file of a sane size -- the check is on the file read, not on a name
+    that could be swapped between a look and the read."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+    try:
+        if p.is_symlink():
+            return None  # a record we never write: what was asked for is unknown, not whatever it points at
+        fd = os.open(p, flags)
+    except OSError:
+        return None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_size > _RECORD_MAX_BYTES:
+            return None
+        data = os.read(fd, _RECORD_MAX_BYTES + 1)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+    if len(data) > _RECORD_MAX_BYTES:
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
 def read_export_request(folder: str | os.PathLike[str]) -> dict[str, Any] | None:
     """The request recorded by :func:`write_export_request`, or ``None``.
 
@@ -274,12 +314,12 @@ def read_export_request(folder: str | os.PathLike[str]) -> dict[str, Any] | None
     unreadable: in both cases what was asked for is UNKNOWN, which the caller must
     report as unknown rather than as "nothing was asked for".
     """
-    p = Path(folder) / REQUEST_NAME
-    if p.is_symlink():
-        return None  # a record we never write: what was asked for is unknown, not whatever it points at
+    text = _read_small_regular(Path(folder) / REQUEST_NAME)
+    if text is None:
+        return None
     try:
-        raw = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        raw = json.loads(text)
+    except ValueError:
         return None
     if not isinstance(raw, dict) or raw.get("schema") != REQUEST_SCHEMA:
         return None

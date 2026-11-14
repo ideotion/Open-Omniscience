@@ -21,6 +21,7 @@ seams (the volume job's ``_backup_fn``, the folder job's ``_items``) and prove:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import threading
@@ -860,7 +861,7 @@ def test_a_record_that_is_a_link_is_refused_and_its_target_untouched(mgrs, tmp_p
     assert fold.status()["state"] == "idle"
 
 
-def test_an_export_refuses_to_start_or_resume_while_a_single_file_restore_holds_the_marker(mgrs, tmp_path):
+def test_an_export_refuses_to_start_or_resume_while_a_single_file_restore_holds_the_marker(mgrs, tmp_path, monkeypatch):
     """Security item 2: the synchronous ``/legacy/restore`` owns no manager; it holds the shared
     marker (src/backup/restore_marker.py), and the export sees it."""
     from src.api import backup_v2
@@ -877,17 +878,28 @@ def test_an_export_refuses_to_start_or_resume_while_a_single_file_restore_holds_
 
     inside = threading.Event()
     leave = threading.Event()
-    seen: dict = {}
 
-    # The real single-file restore's own wrapper, around a body that stands in for its swap.
-    held = restore_marker.marked(lambda: (inside.set(), leave.wait(30)))
-    assert getattr(backup_v2.restore_legacy_path, "__wrapped__", None) is not None, (
-        "the single-file restore does not enter the restore marker"
-    )
-    t = threading.Thread(target=lambda: seen.setdefault("r", held()), daemon=True)
+    # The REAL single-file restore, held at its first step (round 3, item 7: a wrapper beside
+    # it proved nothing about the restore itself).
+    def held_at_the_memory_check():
+        inside.set()
+        leave.wait(30)
+        raise backup_v2.MergeError("released by the test")
+
+    monkeypatch.setattr(backup_v2, "check_memory_before_staging", held_at_the_memory_check)
+    archive = tmp_path / "old-backup.db"
+    archive.write_bytes(b"x" * 64)
+
+    def run():
+        # the release ends it with a refusal, as intended
+        with contextlib.suppress(Exception):
+            backup_v2.restore_legacy_path(str(archive), None)
+
+    t = threading.Thread(target=run, daemon=True)
     t.start()
     try:
         assert inside.wait(10)
+        assert restore_marker.restore_in_progress(), "the single-file restore is running and the marker does not count it"
         with pytest.raises(RuntimeError) as start_err:
             exp.start(str(drive), corpus=False, categories=["models"], _items=_items(tmp_path))
         assert str(start_err.value) == ej.RESTORE_RUNNING
@@ -960,10 +972,13 @@ def test_a_cancel_after_paused_but_before_the_worker_exits_is_acted_on(mgrs, tmp
     assert started.wait(30)
     exp.pause()
     dest = Path(_wait(exp, ("paused",))["dest"])
+    partial = dest / "vol-0001.ooenc"
+    partial.write_bytes(b"partial")
     monkeypatch.setattr(exp._job, "_alive", lambda: True)  # the worker has set paused and not yet returned
     st = exp.cancel()
     assert st["state"] == "cancelled", st
     assert read_export_request(dest)["phase"] == "cancelled"
+    assert not partial.exists(), "the cancelled corpus phase kept its partial volumes"
 
 
 def test_a_stop_after_the_boundary_check_never_starts_the_copy(mgrs, tmp_path, monkeypatch):
@@ -1030,3 +1045,150 @@ def test_an_export_start_is_refused_while_a_large_data_import_holds_the_marker(m
     finally:
         leave.set()
         t.join(10)
+
+
+# =========================================================================== #
+#  Round 3 on f31454a28: red on that commit (item 5's identity test excepted, see it).
+# =========================================================================== #
+def test_a_cancel_landing_while_a_pause_is_recorded_is_never_lost(mgrs, tmp_path, monkeypatch):
+    """Round 3, item 2: the Cancel arrives after the pause was decided and before the state reads paused."""
+    exp, _vol, _fold = mgrs
+    started = threading.Event()
+    real = ej.update_export_phase
+    fired: list = []
+
+    def cursor_then_cancel(folder, phase):
+        out = real(folder, phase)
+        if phase == "volumes" and exp._state == "stopping" and not fired:
+            fired.append(1)
+            exp.cancel()  # accepted: the export still reads stopping
+        return out
+
+    monkeypatch.setattr(ej, "update_export_phase", cursor_then_cancel)
+    exp.start(str(tmp_path / "drive"), corpus=True, categories=["models"], passphrase=_PASS,
+              _backup_fn=_blocking_then(_job_fn(tmp_path, "a"), started), _items=_items(tmp_path))
+    assert started.wait(30)
+    dest = Path(exp.status()["dest"])
+    partial = dest / "vol-0001.ooenc"
+    partial.write_bytes(b"partial")
+    exp.pause()
+    st = _wait(exp, ("paused", "cancelled", "failed", "done"))
+    assert fired, "the window was never reached"
+    assert st["state"] == "cancelled", st
+    assert read_export_request(dest)["phase"] == "cancelled"
+    assert not partial.exists(), "the cancelled corpus phase kept its partial volumes"
+
+
+def test_a_cancel_before_a_resumed_corpus_phase_starts_removes_the_paused_runs_volumes(mgrs, tmp_path, monkeypatch):
+    """Round 3, item 3."""
+    exp, _vol, _fold = mgrs
+    started = threading.Event()
+    exp.start(str(tmp_path / "drive"), corpus=True, categories=["models"], passphrase=_PASS,
+              _backup_fn=_blocking_then(_job_fn(tmp_path, "a"), started), _items=_items(tmp_path))
+    assert started.wait(30)
+    exp.pause()
+    dest = Path(_wait(exp, ("paused",))["dest"])
+    partial = dest / "vol-0001.ooenc"
+    partial.write_bytes(b"partial")
+    real = ej.update_export_phase
+
+    def cursor_then_cancel(folder, phase):
+        out = real(folder, phase)
+        if phase == "volumes" and exp._state == "running":
+            exp.cancel()  # after the resume went live, before the corpus phase starts
+        return out
+
+    monkeypatch.setattr(ej, "update_export_phase", cursor_then_cancel)
+    exp.resume(str(dest), passphrase=_PASS)
+    st = _wait(exp, ("paused", "cancelled", "failed", "done"))
+    assert st["state"] == "cancelled", st
+    assert read_export_request(dest)["phase"] == "cancelled"
+    assert not partial.exists(), "the paused run's partial volumes stayed in a cancelled folder"
+
+
+def _bounded(fn, timeout: float = 5.0):
+    """Run ``fn`` in a thread; the result, or AssertionError when it is still blocked."""
+    box: dict = {}
+
+    def run():
+        try:
+            box["value"] = fn()
+        except BaseException as exc:  # noqa: BLE001 - handed back to the test
+            box["error"] = exc
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(timeout)
+    return t, box
+
+
+def test_a_fifo_planted_as_the_record_never_blocks_a_resume_or_a_cancel(mgrs, tmp_path, monkeypatch):
+    """Round 3, item 4 (security nit): a FIFO in place of the record used to block the read
+    forever -- under the export's lock and the restore marker's."""
+    import os
+
+    from src.backup import restore_marker
+    from src.backup.export_folder import allocate_export_folder
+
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("no FIFOs here")
+    exp, _vol, _fold = mgrs
+    dest = allocate_export_folder(tmp_path / "drive")
+    fifo = dest / REQUEST_NAME
+    os.mkfifo(fifo)
+    try:
+        for call in (lambda: exp.resume(str(dest), passphrase=_PASS), lambda: exp.cancel(str(dest))):
+            t, box = _bounded(call)
+            assert not t.is_alive(), "a FIFO planted as the record blocked the call"
+            if "error" in box:
+                assert isinstance(box["error"], ValueError) and str(box["error"]) == ej.NO_RECORD, box
+        t, _box = _bounded(restore_marker.restore_in_progress)
+        assert not t.is_alive(), "the restore marker's lock is held by a blocked read"
+    finally:
+        # Unblock a reader still waiting on the FIFO (the old code), so later tests are not held up.
+        try:
+            fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+            os.close(fd)
+        except OSError:
+            pass
+
+
+def test_the_phase_managers_paused_job_reads_cancelled_after_the_export_is_cancelled(mgrs, tmp_path, blocking_copy):
+    """Round 3, item 6: the advanced panel must not offer to resume a cancelled export's copy."""
+    exp, _vol, fold = mgrs
+    exp.start(str(tmp_path / "drive"), corpus=True, categories=["models"], passphrase=_PASS,
+              _backup_fn=_job_fn(tmp_path, "a"), _items=_items(tmp_path))
+    assert blocking_copy.wait(60)
+    exp.pause()
+    _wait(exp, ("paused",))
+    _until(lambda: not fold.status()["running"])
+    assert fold.status()["state"] == "paused"
+    exp.cancel()
+    assert fold.status()["state"] == "cancelled", fold.status()
+
+
+def test_the_live_exports_folder_named_another_way_is_cancelled_through_the_job(mgrs, tmp_path, monkeypatch):
+    """Round 3, item 5 (security nit). The identity is the drive's (``os.path.samefile``), so a
+    case-insensitive drive's other spelling of the live folder is the live folder, and the
+    {dir} path never rewrites its record under the running worker. EMULATED: this test runs on
+    a case-sensitive file system, so the drive's answers are given; it pins the identity rule
+    and is not meaningfully red on f31454a28 there: it fails on that commit only because the
+    module did not import ``os`` (that commit compared resolved spellings, which a real
+    case-insensitive drive defeats and this emulation cannot reproduce)."""
+    import os
+
+    exp, _vol, _fold = mgrs
+    started = threading.Event()
+    exp.start(str(tmp_path / "drive"), corpus=True, categories=["models"], passphrase=_PASS,
+              _backup_fn=_blocking_then(_job_fn(tmp_path, "a"), started), _items=_items(tmp_path))
+    assert started.wait(30)
+    dest = exp.status()["dest"]
+    other = dest.upper()
+    real_exists, real_same = os.path.exists, os.path.samefile
+    monkeypatch.setattr(ej.os.path, "exists", lambda p: real_exists(dest) if str(p) == other else real_exists(p))
+    monkeypatch.setattr(ej.os.path, "samefile",
+                        lambda a, b: str(a).lower() == str(b).lower() or real_same(a, b))
+    assert ej._same_path(other, dest)
+    exp.cancel(other)
+    st = _wait(exp, ("paused", "cancelled", "failed", "done"))
+    assert st["state"] == "cancelled", st  # the job cancelled it: the worker, not a record write

@@ -596,6 +596,29 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
       assert.strictEqual(H.timers.length, 0, "a refused resume was polled as if it had started");
     }
 
+    // ROUND 3, ITEM 1: a job that ENDS badly while a watcher holds a start call is not a
+    // refused request -- the poll's rejection carries the job's status, never an HTTP number.
+    {
+      const H = harness();
+      H.startAnswer = running(A);
+      H.status = { ...running(A), state: "cancelled", phase: "volumes" };
+      await H.m.watch(H.dom["ux-run"], () => api_start(H), { mode: "backup", dest: A });
+      const line = H.dom["ux-progress"].innerHTML;
+      assert.ok(/Backup failed:/.test(line) && /Cancelled\./.test(line), "a resumed export cancelled mid-run: " + line);
+      assert.ok(!/Could not resume/.test(line) && !/Backup paused/.test(line), "a cancelled resume read as a refused one: " + line);
+      assert.notStrictEqual(H.dom["ux-pause"].dataset.mode, "resume", "a cancelled export offers Resume");
+    }
+    {
+      const H = harness();
+      const GATE = "The corpus backup could not be confirmed — aborting before the large-data files so you never get a partial backup that looks complete.";
+      H.startAnswer = running(A);
+      H.status = { ...running(A), state: "failed", reason: "volumes-unconfirmed", error: GATE, error_phase: "volumes" };
+      await H.m.watch(H.dom["ux-run"], () => api_start(H), { mode: "backup", parent: "/x" });
+      const line = H.dom["ux-progress"].innerHTML;
+      assert.ok(/Backup failed:/.test(line) && line.includes(esc_(GATE)), "a fresh export that failed mid-run: " + line);
+      assert.ok(!/Could not start/.test(line), "a failed run read as a refused start: " + line);
+    }
+
     // ITEM 9: a paused export keeps its Cancel button, and Cancel ends it on the page.
     {
       const H = harness();

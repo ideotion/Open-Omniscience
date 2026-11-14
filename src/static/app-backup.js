@@ -730,7 +730,9 @@
             // never a bare "cancelled" — field report: "Import failed — see console".
             // "failed" is the export job's (R701), with its named reason in s.error.
             const err = new Error(s.error || (kind === "export" && state === "cancelled" ? t("Cancelled.") : (view.text || state)));
-            err.status = s;  // R701: the export's error_phase rides beside its untouched error
+            // R701: the export's error_phase rides beside its untouched error. NOT err.status, which
+            // api() uses for an HTTP status NUMBER: a job that ended badly is not a refused request.
+            err.jobStatus = s;
             return reject(err);
           }
           setTimeout(tick, 1200);
@@ -764,7 +766,7 @@
         // R701: an ANSWER is never a lost response. A refusal the server sent (a 409 while a
         // restore runs, a 400 for a missing passphrase) is the outcome, and is shown; only a
         // start whose response never arrived (no status at all) is checked against the job.
-        if (kind === "export" && e && e.status) throw e;
+        if (kind === "export" && e && typeof e.status === "number") throw e;
         let st = null;
         try { st = await api(statusUrl); } catch (_) { throw e; }  // can't confirm → original error
         const s = (st && st.state) || "";
@@ -903,7 +905,7 @@
         }
       } catch (e) {
         if (!alive()) return;
-        if (e && e.status && start) {
+        if (e && typeof e.status === "number" && start) {
           // The server REFUSED the start or the resume (it answered, with a reason): nothing
           // started and the export is as it was. A refused resume stays a paused export.
           hide();
@@ -921,7 +923,7 @@
         hide();
         // The dialog's own error colour, not the floating .note toast box (W6; B13's fix
         // for the import dialog): the toast class slid in with a shadow inside the panel.
-        prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(_uxExportErrorText(e && e.status, (e && e.message) || e))}</span>`;
+        prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(_uxExportErrorText(e && e.jobStatus, (e && e.message) || e))}</span>`;
         console.error("ux export", e);
       }
       if (btn) btn.disabled = false;

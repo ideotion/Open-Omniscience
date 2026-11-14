@@ -57,6 +57,8 @@ uses only this job.
 from __future__ import annotations
 
 import logging
+import os
+import stat
 import threading
 import time
 from pathlib import Path
@@ -273,6 +275,21 @@ class ExportJobManager:
         volumes phase is to be resumed without the passphrase (:data:`NEEDS_PASSPHRASE`);
         RuntimeError while one runs, while a restore runs, or when nothing is left.
         """
+        # The FOLDER is read before any lock is taken: it sits on a drive anyone may write
+        # to, and a read that blocks (a FIFO planted as a manifest) must hang this request
+        # alone, never every restore and status call waiting on the locks below. Then, under
+        # them, the record is read again and must say the same.
+        with self._lock:
+            target = folder or self._dest
+        if not target:
+            raise RuntimeError(NOTHING_TO_RESUME)
+        dest = Path(target)
+        if not is_export_folder_name(dest.name) or not dest.is_dir():
+            raise ValueError(NOT_AN_EXPORT_FOLDER)
+        req = read_export_request(dest)  # its categories are the known ones only; never blocks
+        if req is None:
+            raise ValueError(NO_RECORD)
+        plan = _resume_plan(dest, req)
         # restore_marker.LOCK first (R712): the check and going live are one step against a
         # restore's entry into its marker, so neither can slip past the other.
         with restore_marker.LOCK, self._lock:
@@ -280,16 +297,8 @@ class ExportJobManager:
                 raise RuntimeError(ALREADY_RUNNING)
             if self._restore_running():
                 raise RuntimeError(RESTORE_RUNNING)
-            target = folder or self._dest
-            if not target:
-                raise RuntimeError(NOTHING_TO_RESUME)
-            dest = Path(target)
-            if not is_export_folder_name(dest.name) or not dest.is_dir():
-                raise ValueError(NOT_AN_EXPORT_FOLDER)
-            req = read_export_request(dest)  # its categories are the known ones only
-            if req is None:
-                raise ValueError(NO_RECORD)
-            plan = _resume_plan(dest, req)
+            if read_export_request(dest) != req:
+                raise RuntimeError(NOTHING_TO_RESUME)  # the record moved under us: read it again from the start
             if plan is None:
                 raise RuntimeError(NOTHING_TO_RESUME)
             phase, owed = plan
@@ -366,6 +375,8 @@ class ExportJobManager:
         with self._lock:
             mine = folder is None or (self._dest is not None and _same_path(folder, self._dest))
             if mine and self._state in _LIVE_STATES:
+                # The live export -- however its folder is spelled -- is cancelled through the
+                # job, never by rewriting its record from the {dir} path under the running worker.
                 self._stop_asked = "cancel"
                 self._wake.set()
                 return self.status()
@@ -386,9 +397,22 @@ class ExportJobManager:
             return
         self._cancel_paused(phase, str(dest))
         update_export_phase(dest, "cancelled")
+        self._forget_manager_pause(phase, str(dest))
         if mine and self._state in ("paused", "failed"):
             self._state = "cancelled"
             self._phase = phase
+
+    def _forget_manager_pause(self, phase: str | None, dest: str) -> None:
+        """The phase's own manager still reads ``paused`` on this folder after the export is
+        cancelled, and the advanced panel would offer to resume it: it is told the job was
+        cancelled. Only the manager's job on THIS folder, and only while it is paused."""
+        try:
+            mgr = self._vol() if phase == PHASE_VOLUMES else self._fold() if phase == PHASE_FOLDER else None
+            forget = getattr(mgr, "forget_paused", None)
+            if forget is not None:
+                forget(dest)
+        except Exception as exc:  # noqa: BLE001 - the class only; the export still ends cancelled
+            _LOG.warning("backup export: the phase's paused job could not be closed (%s)", type(exc).__name__)
 
     def _cancel_paused(self, phase: str | None, dest: str) -> None:
         """A paused corpus phase's partial volumes are removed on a cancel, as a running
@@ -398,6 +422,11 @@ class ExportJobManager:
         try:
             if self._vol().status().get("running"):
                 return  # another volume job is at work: not this export's to clean
+            from src.backup.volumes import MANIFEST_NAME
+
+            if not _regular_or_absent(Path(dest) / MANIFEST_NAME):
+                _LOG.warning("backup export: the cancelled folder's volume index is not a regular file; nothing was removed")
+                return  # a FIFO or a link planted there: the cleanup would read it
             from src.backup.stream_backup import cleanup_cancelled_build
 
             cleanup_cancelled_build(Path(dest))
@@ -434,7 +463,7 @@ class ExportJobManager:
                     # A pause or a cancel that arrived as a phase ended takes effect at the
                     # boundary: the next phase never starts.
                     nxt = self._phases[self._phases.index(phase) + 1]
-                    self._end_stopped(asked, nxt)
+                    self._end_stopped(asked, nxt, ctx)
                     return {"state": self._state}
             update_export_phase(self._dest or "", "done")
             with self._lock:
@@ -461,7 +490,7 @@ class ExportJobManager:
         asked = self._stop_wanted(ctx)  # read under the lock, right before the phase starts
         if asked:
             pw = ""
-            return self._end_stopped(asked, PHASE_VOLUMES)
+            return self._end_stopped(asked, PHASE_VOLUMES, ctx)
         if not pw:
             return self._fail("passphrase-missing", NEEDS_PASSPHRASE, PHASE_VOLUMES)
         try:
@@ -505,7 +534,7 @@ class ExportJobManager:
         # than starting and pausing at once. Read under the lock, right before the start.
         asked = self._stop_wanted(ctx)
         if asked:
-            return self._end_stopped(asked, PHASE_FOLDER)
+            return self._end_stopped(asked, PHASE_FOLDER, ctx)
         try:
             began = fold.start(
                 dest,
@@ -600,21 +629,30 @@ class ExportJobManager:
     def _end_phase_stopped(self, ctx: Any, state: str, phase: str) -> bool:
         """A phase that ended paused or cancelled. A Cancel asked while it was stopping on a
         Pause still cancels: the last explicit request wins."""
-        if state == "paused" and self._stop_wanted(ctx) == "cancel":
-            self._cancel_paused(phase, self._dest or "")
-            state = "cancelled"
-        return self._end_stopped("cancel" if state == "cancelled" else "pause", phase)
+        return self._end_stopped("cancel" if state == "cancelled" else "pause", phase, ctx)
 
-    def _end_stopped(self, how: str, phase: str) -> bool:
-        if how == "cancel":
-            update_export_phase(self._dest or "", "cancelled")
+    def _end_stopped(self, how: str, phase: str, ctx: Any) -> bool:
+        """End the export paused or cancelled in ``phase``.
+
+        A PAUSE becomes ``paused`` only under the lock, with the stop ask read again at that
+        moment: a Cancel that landed while the record was being written (the export read
+        ``stopping`` and accepted it) is never lost -- it turns the ending into a cancel.
+        A CANCEL always takes the cancel path: a corpus phase's partial volumes are removed
+        (also those a PAUSED run left, when a resumed corpus phase is cancelled before it
+        starts) and the record says ``cancelled``."""
+        dest = self._dest or ""
+        if how == "pause":
+            update_export_phase(dest, phase)
             with self._lock:
-                self._state = "cancelled"
-                self._phase = phase
-            return True
-        update_export_phase(self._dest or "", phase)
+                if self._stop_wanted(ctx) != "cancel":
+                    self._state = "paused"
+                    self._phase = phase
+                    return True
+        self._cancel_paused(phase, dest)
+        update_export_phase(dest, "cancelled")
+        self._forget_manager_pause(phase, dest)
         with self._lock:
-            self._state = "paused"
+            self._state = "cancelled"
             self._phase = phase
         return True
 
@@ -664,10 +702,26 @@ class ExportJobManager:
 
 
 def _same_path(a: str | Path, b: str | Path) -> bool:
+    """Whether ``a`` and ``b`` are the same folder: by identity on the drive when both exist
+    (``os.path.samefile``: a different spelling on a case-insensitive drive is the SAME
+    folder), else by their resolved, case-normalised spelling."""
     try:
-        return Path(a).resolve() == Path(b).resolve()
+        if os.path.exists(a) and os.path.exists(b):
+            return os.path.samefile(a, b)
+        return os.path.normcase(str(Path(a).resolve())) == os.path.normcase(str(Path(b).resolve()))
     except OSError:
         return False
+
+
+def _regular_or_absent(p: Path) -> bool:
+    """Whether ``p`` is absent or a regular file (never a link, a FIFO or a device)."""
+    try:
+        st = os.lstat(p)
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    return stat.S_ISREG(st.st_mode)
 
 
 def _known_categories(categories: list[str] | None) -> list[str]:
