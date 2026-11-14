@@ -2287,7 +2287,8 @@ class EthicalFetcher:
                     level=logging.DEBUG,
                 )
         merged.update(explicit or {})
-        return {k: v for k, v in merged.items() if k in _SELECTABLE_PROXY_KEYS or "://" in k}
+        # A ``None`` value is deleted by requests' ``merge_setting`` before it selects, so ``select_proxy`` falls through to the next key.
+        return {k: v for k, v in merged.items() if v is not None and (k in _SELECTABLE_PROXY_KEYS or "://" in k)}
 
     def _read_body(
         self, response, url: str, *, token: int | None = None, keep_bytes: bool = False

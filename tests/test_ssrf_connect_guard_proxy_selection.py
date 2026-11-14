@@ -31,7 +31,7 @@ def clean_proxy_env(monkeypatch):
     return monkeypatch
 
 
-@pytest.mark.parametrize("variable", ["HTTPS_PROXY", "all_proxy_unused_scheme"])
+@pytest.mark.parametrize("variable", ["HTTPS_PROXY", "session_https_proxy"])
 def test_a_hostname_proxy_for_another_scheme_cannot_stand_the_guard_down(loopback_server: int, clean_proxy_env, variable: str):  # noqa: F811
     """Before: the rebinding name was fetched as a 200 while ``HTTPS_PROXY`` named a host, for a plain-http page that went direct."""
     if variable == "HTTPS_PROXY":
