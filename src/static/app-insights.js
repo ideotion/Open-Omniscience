@@ -104,6 +104,9 @@
         if (cat === "convergence") loadConvergences();
         if (cat === "watches") loadWatches();
         if (cat === "lunar") loadLunar();
+        // R685 (app-patterns.js): the full pattern lists, and people and organisations corpus-wide.
+        if (cat === "patterns" && typeof loadPatternsOverview === "function") loadPatternsOverview();
+        if (cat === "who" && typeof loadWho === "function") loadWho();
       }
     }
 
@@ -979,6 +982,10 @@
       try {
         await api("/api/insights/exclude", {method: "POST", body: JSON.stringify({term: btn.dataset.norm})});
         btn.textContent = t("hidden"); btn.disabled = true;
+        // R685: the hidden keyword gets its undo right beside it (POST /api/insights/include).
+        if (typeof ooKeywordUndoButton === "function" && !(btn.nextElementSibling && btn.nextElementSibling.classList.contains("kx-undo"))) {
+          btn.insertAdjacentElement("afterend", ooKeywordUndoButton(btn.dataset.norm, btn));
+        }
       } catch (e) { toast(_failMsg("Hide failed: {error}", e), "err"); }
     }
 

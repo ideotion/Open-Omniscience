@@ -407,7 +407,8 @@
 
       <section class="panel">
         <div class="phead"><h2>Briefing</h2><span class="sp"></span>
-          <span id="brief-generated" class="hint" style="margin:0"></span></div>
+          <span id="brief-generated" class="hint" style="margin:0"></span>
+          <span id="brief-dismissed" style="margin-left:6px"></span></div>
         <div class="brief-toolbar">
           <!-- "Show method" toggle retired (field test 2026-06-19 P2-2): each Lead's
                method + "why" now live behind a per-card "?" affordance (bottom-right);
@@ -1436,6 +1437,8 @@
         <button data-tab="convergence">Convergence</button>
         <button data-tab="watches">Watches</button>
         <button data-tab="lunar">Lunar</button>
+        <button data-tab="patterns">Patterns</button>
+        <button data-tab="who">Who</button>
       </nav>
     </section>
 
@@ -1667,6 +1670,27 @@
         <div style="flex:0 0 auto"><button id="lunar-test-btn" class="secondary" data-on-click="lunarTestTerm()" disabled>Test one keyword</button></div>
       </div>
       <div id="lunar-single" class="hint" style="margin-top:8px"></div>
+    </section>
+    <!-- R685: the full lists behind the eight pattern Leads (app-patterns.js). Each row opens its
+         list in #pattern-list; the count line there says how many and when, and "How this was
+         measured" sits beside it. -->
+    <section class="panel ins-view" id="ins-patterns" style="display:none">
+      <h2 style="margin-top:0;font-size:13px">Patterns across your sources</h2>
+      <div id="ins-patterns-body"><div class="muted">Loading…</div></div>
+    </section>
+
+    <!-- R685: people and organisations named across the whole corpus, with counts (GET /api/insights/who). -->
+    <section class="panel ins-view" id="ins-who" style="display:none">
+      <h2 style="margin-top:0;font-size:13px">People and organisations</h2>
+      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap">
+        <div><label for="who-class">Show</label>
+          <select id="who-class">
+            <option value="">People and organisations</option>
+            <option value="person">People</option>
+            <option value="organization">Organisations</option>
+          </select></div>
+      </div>
+      <div id="ins-who-body" style="margin-top:8px"><div class="muted">Loading…</div></div>
     </section>
     </div>
 
@@ -3998,6 +4022,15 @@
        evidence links): before any external link is followed, show what THIS
        database already knows about it; the outbound anchor's visible text IS
        the full URL, and clicking it still passes the external-link confirm. -->
+  <!-- R685: one pattern list (app-patterns.js openPatternList), from a Lead's back or Insights > Patterns. -->
+  <dialog id="pattern-list" aria-labelledby="pl-title" style="width:min(760px,94vw);max-height:90vh;padding:18px">
+    <h3 id="pl-title" style="margin:0 0 8px"></h3>
+    <div id="pl-body"></div>
+    <div style="margin-top:12px;display:flex;justify-content:flex-end">
+      <button class="secondary" data-on-click="ooCloseDialog('pattern-list')">Close</button>
+    </div>
+  </dialog>
+
   <dialog id="link-preview" style="max-width:520px;padding:18px">
     <h3 style="margin:0 0 8px">Before you leave — what this app knows</h3>
     <div id="lp-body" style="display:flex;flex-direction:column;gap:5px"></div>
@@ -4378,6 +4411,7 @@
   <script src="/static/app-sources.js"></script>
   <script src="/static/app-markets.js"></script>
   <script src="/static/app-insights.js"></script>
+  <script src="/static/app-patterns.js"></script>
   <script src="/static/app-ipcc.js"></script>
   <script src="/static/app-observatory.js"></script>
   <script src="/static/app-living.js"></script>
