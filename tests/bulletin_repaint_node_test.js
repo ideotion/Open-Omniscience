@@ -52,10 +52,10 @@ const code = [
   "var window = {};",
   "var OOI18N;",
   line("let _bulExcludeSections"), line("let _bulExcludeStories"), line("let _bulFile"),
-  line("let _bulGate"), line("const _bulMsgs"),
+  line("let _bulGate"), line("const _bulMsgs"), line("let _bulFullText"),
   "const _BUL_CADENCE_LABEL = {};",
   ...["_bulT", "_bulTf", "_bulSay", "_bulPaintMsg", "_bulRepaint", "_bulPaintGate",
-      "_bulPaintNarrationGate", "_bulPaintEditions", "_bulUnit", "_bulStoryTermsHtml", "_bulRender", "_bulPaintPrivacy"].map(extract),
+      "_bulPaintNarrationGate", "_bulPaintEditions", "_bulUnit", "_bulStoryTermsHtml", "_bulFullTextHint", "_bulRender", "_bulPaintPrivacy"].map(extract),
   "module.exports = {",
   "  $, _bulSay, _bulRender, _bulRepaint, _bulPaintPrivacy,",
   "  setState(s){ _bulFile = s.file; _bulView = s.view; _bulPrivacyData = s.privacy; _bulEditions = s.editions; },",
@@ -100,7 +100,10 @@ assert.strictEqual(B.$("bul-pub").textContent,
   "the Review panel's status line was lost or stayed English");
 const html = B.$("bulletin-review").innerHTML;
 for (const key of ["Rising concepts", "Across channels", "Report only", "Publish", "Preview",
-                   "Download report + annexes", "no rising concepts to attribute for this period"]) {
+                   "Download report + annexes", "no rising concepts to attribute for this period",
+                   // R703: the full-text opt-in and the default (excerpt) hint beside it.
+                   "Include each article's full text in the annexes",
+                   "The annexes are one Markdown file per article the report cites, numbered to match, with a contents page. Each carries the article's details and an excerpt."]) {
   assert.ok(fr[key] && fr[key] !== key, "fr.json has no real translation of " + JSON.stringify(key));
   assert.ok(html.includes(esc(fr[key])), "the Review did not repaint " + JSON.stringify(key) + " in French");
 }

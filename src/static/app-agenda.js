@@ -220,6 +220,10 @@
     // those. It never fetches.
     let _bulGate = null, _bulView = null, _bulEditions = null, _bulPrivacyData = null;
     const _bulMsgs = {};
+    // R703: the annexes carry an excerpt per article unless the operator ticks the box
+    // that says the bundle would redistribute publishers' text. Off for every edition
+    // opened; the privacy enumeration and the download read the same flag.
+    let _bulFullText = false;
     function _bulSay(id, key, vars) {
       _bulMsgs[id] = {key, vars: vars || null};
       _bulPaintMsg(id);
@@ -412,7 +416,7 @@
       if (!box) return;
       // A status line belongs to the edition it was about: opening ANOTHER one drops it,
       // while re-reading the same one (after narration finishes) keeps it on screen.
-      if (filename !== _bulFile) delete _bulMsgs["bul-pub"];
+      if (filename !== _bulFile) { delete _bulMsgs["bul-pub"]; _bulFullText = false; }
       _bulFile = filename;
       _bulView = null;
       _bulPrivacyData = null;
@@ -535,7 +539,11 @@
           <button data-on-click="bulletinPublish(this)">${esc(_bulT("Publish"))}</button>
           <div id="bul-pub" class="hint" style="align-self:center"></div>
         </div>
-        <p class="hint">${esc(_bulT("The annexes are one Markdown file per article the report cites, numbered to match, with a contents page. They carry the sources' own text — keep them where you keep the corpus."))}</p>
+        <label class="row" style="${_BUL_CHECK_ROW};margin-top:8px">
+          <input type="checkbox" style="${_BUL_CHECK_BOX}" id="bul-fulltext"${_bulFullText ? " checked" : ""} data-on-change="bulletinToggleFullText(this)">
+          <span>${esc(_bulT("Include each article's full text in the annexes"))}</span>
+        </label>
+        <p class="hint" id="bul-fulltext-hint">${esc(_bulFullTextHint())}</p>
         <div id="bul-privacy" class="hint" style="margin-top:8px"></div>`;
       _bulPaintMsg("bul-pub");
     }
@@ -547,10 +555,29 @@
     //
     // It is measured against the SAME selection the download will use, or it would
     // describe a different file from the one about to be sent.
+    function _bulFullTextHint() {
+      return _bulFullText
+        ? _bulT("With full text on, the annexes redistribute publishers' text: each file carries an article someone else wrote, in full. Keep them where you keep the corpus, and check each publisher's terms before passing them on.")
+        : _bulT("The annexes are one Markdown file per article the report cites, numbered to match, with a contents page. Each carries the article's details and an excerpt.");
+    }
+    function bulletinToggleFullText(cb) {
+      _bulFullText = !!(cb && cb.checked);
+      const hint = $("bul-fulltext-hint");
+      if (hint) hint.textContent = _bulFullTextHint();
+      _bulPrivacy();
+    }
+    // The annexes and their privacy enumeration take the same query, full text included,
+    // or the enumeration would describe a different file from the one downloaded.
+    function _bulAnnexQuery() {
+      const q = _bulQuery();
+      q.set("full_text", _bulFullText ? "true" : "false");
+      return q;
+    }
+
     async function _bulPrivacy() {
       const box = $("bul-privacy");
       if (!box || !_bulFile) return;
-      const q = _bulQuery(); q.set("kind", "annexes");
+      const q = _bulAnnexQuery(); q.set("kind", "annexes");
       try {
         _bulPrivacyData = {d: await api(`/api/bulletin/editions/${encodeURIComponent(_bulFile)}/export-privacy?${q}`)};
       } catch (e) { _bulPrivacyData = {error: e.message}; }
@@ -622,7 +649,7 @@
         await _throwIfNotOk(report);
         _saveBlob(await report.blob(), _filenameOf(report, "bulletin.md"));
 
-        const zip = await fetch(`${base}/annexes?${q}`);
+        const zip = await fetch(`${base}/annexes?${_bulAnnexQuery()}`);
         await _throwIfNotOk(zip);
         const n = zip.headers.get("X-OO-Annex-Articles");
         _saveBlob(await zip.blob(), _filenameOf(zip, "annexes.zip"));

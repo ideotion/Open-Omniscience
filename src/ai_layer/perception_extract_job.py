@@ -173,8 +173,10 @@ def run_progressive_perception_extract_job(
         from src.ai_layer.perception_job import last_perception_eval_live_report
 
         gate_report = last_perception_eval_live_report()
+    # R704: the measurement must be of THIS model, or every language reads unmeasured.
     gate = PE.apply_operator_off(
-        PE.gate_languages_from_report(gate_report), PE.operator_off_languages()
+        PE.bind_gate_to_model(PE.gate_languages_from_report(gate_report), gate_report, model),
+        PE.operator_off_languages(),
     )
 
     # REFUSE TO START WHEN THE GATE CLEARS NOTHING (2026-09-05, field defect 1's
@@ -197,6 +199,13 @@ def run_progressive_perception_extract_job(
             "/api/diagnostics/perception-eval-live). Nothing was swept and no progress "
             "was lost."
         )
+        measured_model = gate_report.get("model")
+        if gate and measured_model and not any(g.get("model_matches") for g in gate.values()):
+            reason = (
+                f"the last perception eval measured {measured_model}, not {model}, so no "
+                f"language is cleared for {model} -- run the live perception eval with it "
+                "first (Settings -> AI). Nothing was swept and no progress was lost."
+            )
         ctx.set_progress(detail=reason)
         _LOG.info("progressive perception-extract refused to start: %s", reason)
         return {
@@ -504,10 +513,41 @@ def current_language_gate() -> dict[str, dict]:
     ruling: the toggle UI shows which strata are active and why)."""
     from src.ai_layer.perception_job import last_perception_eval_live_report
 
+    report = last_perception_eval_live_report()
     return PE.apply_operator_off(
-        PE.gate_languages_from_report(last_perception_eval_live_report()),
+        PE.bind_gate_to_model(PE.gate_languages_from_report(report), report, _stored_extract_model()),
         PE.operator_off_languages(),
     )
+
+
+def _stored_extract_model() -> str | None:
+    """The model a sweep would run, read from the STORED settings only (R704's preview).
+
+    The preview is a GET and opens no socket (tests/test_get_routes_side_effects.py), so
+    it cannot ask ``resolve_backend``/``active_model`` which backend is live -- both probe
+    the local servers. It reads the backend the way ``resolve_backend`` ranks it without
+    a probe -- ``OO_LLM_BACKEND`` first, then the stored setting -- and the model stored
+    for it: the vLLM model when the backend is vLLM, otherwise the Ollama model or the
+    app's default. A machine on ``auto`` that is actually serving vLLM can therefore
+    preview a language the sweep then refuses. The preview never licenses a store: the
+    sweep binds again to the model it really runs and names both in its refusal. ``None``
+    (an unchosen vLLM model, unreadable settings) clears nothing in the preview even
+    where the sweep's own fallback model might clear -- the cautious direction.
+    """
+    try:
+        import os
+
+        from src.config.app_settings import load_settings
+        from src.llm.ollama import DEFAULT_MODEL
+
+        s = load_settings()
+        env = os.getenv("OO_LLM_BACKEND", "").strip().lower()
+        backend = env if env in ("vllm", "ollama") else s.llm_backend
+        if backend == "vllm":
+            return s.llm_model_vllm or None
+        return s.llm_model or DEFAULT_MODEL
+    except Exception:  # noqa: BLE001 - an unreadable choice of model clears nothing (R704)
+        return None
 
 
 __all__ = [

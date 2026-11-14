@@ -444,10 +444,20 @@ def test_the_stored_model_text_is_labelled_and_carries_its_provenance(corpus):
 
 
 def test_the_article_files_carry_the_full_stored_text(corpus):
-    files = _unzip(build_annexes(corpus, _edition()))
+    files = _unzip(build_annexes(corpus, _edition(), full_text=True))
     body = files["20260811_OOS_Bulletin_Weekly/20260805_Article_0001.md"]
     assert body.count("Le corps entier de l'article onze.") == 20, "all of it, not the excerpt"
     assert "## The article, as stored" in body
+
+
+def test_the_default_bundle_carries_excerpts_not_publishers_full_text(corpus):
+    """R703: full text redistributes publishers' writing, so it is an opt-in. The
+    default bundle is the excerpt-only one, and the contents page says so."""
+    out = build_annexes(corpus, _edition())
+    files = _unzip(out)
+    assert out["full_text"] is False
+    assert "EXCERPT ONLY" in files["20260811_OOS_Bulletin_Weekly/20260811_Table_of_Contents.md"]
+    assert files["20260811_OOS_Bulletin_Weekly/20260805_Article_0001.md"].count("Le corps entier") == 0
 
 
 def test_an_excerpt_only_bundle_says_so_rather_than_looking_complete(corpus):
@@ -464,7 +474,7 @@ def test_an_excerpt_only_bundle_says_so_rather_than_looking_complete(corpus):
 def test_the_text_budget_degrades_loudly_and_names_the_boundary(corpus):
     """A bundle quietly holding excerpts where it promised full text would be worse
     than a large download."""
-    out = build_annexes(corpus, _edition(), text_budget_bytes=800)
+    out = build_annexes(corpus, _edition(), full_text=True, text_budget_bytes=800)
     files = _unzip(out)
     toc = files["20260811_OOS_Bulletin_Weekly/20260811_Table_of_Contents.md"]
     assert out["text_truncated_from"] is not None
@@ -683,7 +693,7 @@ def test_the_bundle_follows_the_report_into_its_language(corpus):
 def test_the_publishers_own_words_are_never_translated(corpus):
     """The twin, and the line the bundle states in every language: chrome follows the
     report, the article's own text never does."""
-    files = _unzip(build_annexes(corpus, _edition(), report_lang="fr"))
+    files = _unzip(build_annexes(corpus, _edition(), full_text=True, report_lang="fr"))
     art = files["20260811_OOS_Bulletin_Weekly/20260805_Article_0001.md"]
     assert art.count("Le corps entier de l'article onze.") == 20, "the body, untouched"
     # The title comes from the RECORD, not the DB row (the module reads the record so

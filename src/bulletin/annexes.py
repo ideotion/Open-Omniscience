@@ -24,13 +24,16 @@ disagree. Two callers that each numbered their own way would be the recorded
 one-key-two-meanings defect with a filename attached: a reader following a
 reference to the wrong article would have no way to tell.
 
-FULL TEXT IS THE DEFAULT, AS ASKED, AND IT IS DISCLOSED. ``articles.py`` says a
-shareable document should carry an excerpt, because putting a period's full text in
-one turns a summary into a redistribution of other people's writing. That still
-holds for the REPORT, which is why the report still carries excerpts. The annexes
-are the operator's own working set of the sources they cited, and they say so, in
-the contents page and in every file. ``full_text=False`` produces an
-excerpt-only bundle for an operator who intends to pass it on.
+EXCERPTS ARE THE DEFAULT; FULL TEXT IS A VISIBLE OPT-IN (R703, 2026-11-14). ``articles.py``
+says a shareable document should carry an excerpt, because putting a period's full
+text in one turns a summary into a redistribution of other people's writing. That
+holds for the REPORT, and since R703 it holds for the annexes too: a bundle is a file
+that travels, and the operator who downloads it is not always the last person to open
+it. ``full_text=True`` still produces the operator's own working set of the sources
+they cited, in full; the Bulletin panel asks for it with a checkbox that says it
+redistributes publishers' text, and the contents page and every file say so. Until
+R703 full text was the default (the original ask), which put the redistribution on
+the path of least resistance.
 """
 
 from __future__ import annotations
@@ -857,7 +860,7 @@ def build_annexes(
     edition: dict,
     *,
     ordinal: int = 1,
-    full_text: bool = True,
+    full_text: bool = False,
     text_budget_bytes: int = DEFAULT_TEXT_BUDGET_BYTES,
     report_lang: str = "en",
 ) -> dict:

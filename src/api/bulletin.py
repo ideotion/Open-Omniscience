@@ -373,7 +373,7 @@ def ai_plan(
 def export_privacy_route(
     filename: str,
     kind: str = Query("annexes", description="report | annexes | evidence"),
-    full_text: bool = Query(True, description="for annexes: would the bundle carry full text"),
+    full_text: bool = Query(False, description="for annexes: would the bundle carry full text (off by default, R703)"),
     exclude_sections: str = Query("", description="the same selection the export would use"),
     exclude_stories: str = Query(""),
     db: Session = Depends(get_db),
@@ -564,7 +564,13 @@ def _bundle_stem(edition: dict, filename: str) -> str:
 @router.get("/editions/{filename}/annexes")
 def annexes(
     filename: str,
-    full_text: bool = Query(True, description="carry each article's whole stored text"),
+    full_text: bool = Query(
+        False,
+        description=(
+            "carry each article's whole stored text -- off by default (R703): with it on, "
+            "the bundle redistributes publishers' text"
+        ),
+    ),
     exclude_sections: str = Query("", description="the same selection the report was rendered with"),
     exclude_stories: str = Query(""),
     lang: str = Query("en", description="the language the REPORT was written in"),
