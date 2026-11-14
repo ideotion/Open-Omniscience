@@ -278,4 +278,18 @@ test("a missing measures block is a gap, not a zero-valued galaxy on the axis", 
   assert(L.unplaced[0].value === null, "an unmeasured value must not surface as 0");
 });
 
+// The wedge labels wrap rather than run off a phone-width canvas (2026-11-13 walk at
+// 320 px: "structure", "ance"). A label that fits is untouched; a word is never split.
+test("a domain label wraps inside its room and is untouched when it fits", () => {
+  const ctx = {measureText: (t) => ({width: String(t).length * 6})};   // 6 px per character
+  const fits = S.wrapLabel(ctx, "Climate & environment", 500);
+  assert(fits.length === 1 && fits[0] === "Climate & environment", "a label that fits stays one line");
+  const wrapped = S.wrapLabel(ctx, "Climate & environment", 60);
+  assert(wrapped.join(" ") === "Climate & environment", "wrapping must keep every word: " + wrapped);
+  assert(wrapped.length > 1 && wrapped.every((l) => l.length * 6 <= 66), "each line fits the room: " + wrapped);
+  const one = S.wrapLabel(ctx, "Infrastructure", 30);
+  assert(one.length === 1 && one[0] === "Infrastructure", "a single long word stays whole, never split");
+  assert(S.wrapLabel(ctx, "Physics", Infinity).length === 1, "no known room means no wrapping");
+});
+
 console.log("\n" + passed + " ooSky checks passed.");
