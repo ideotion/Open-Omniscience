@@ -2833,7 +2833,7 @@ FUTURE_DEVELOPMENTS §6 は、単一の自動化された信頼／品質スコ�
 | メソッドとパス | 目的 |
 |---|---|
 | `GET /api/annotations/mine` · `POST` · `DELETE /mine/{i}` | あなたが作成した注釈 |
-| `GET /api/annotations/export` | あなたの注釈の、署名付きで持ち運び可能なバンドル |
+| `POST /api/annotations/export` | あなたの注釈の、署名付きで持ち運び可能なバンドル |
 | `POST /api/annotations/import` | 読み込んだバンドルの検証 + 保存（無効なら拒否） |
 | `GET /api/annotations/authors` · `PUT /authors/trust` · `DELETE /authors/{id}` | 信頼の輪 |
 | `GET /api/annotations/for?target=` | 透明な集約 — 誰が何を主張したか |

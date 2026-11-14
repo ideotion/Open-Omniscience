@@ -73,11 +73,12 @@ def test_core_declares_pysocks_and_the_lock_pins_it_with_hashes():
 
 def test_no_module_claims_that_separate_circuits_make_lookups_unlinkable():
     """Queue item 68(b): the Wikidata getters said distinct lookups were "unlinkable over Tor". A circuit is one hop of linkability: each
-    lookup still sends a bot User-Agent, protected mode included, and they run close together. The docstrings now say "separate circuits"."""
+    lookup still sends a bot User-Agent, protected mode included, and they run close together. The docstrings now say "separate circuits".
+    The fetcher's ``_isolated_proxies`` said a host's circuit was "unlinkable to other hosts' circuits" (R656, found 2026-11-14)."""
     said = [
         f"{p.relative_to(ROOT).as_posix()}:{n}"
         for p in sorted((ROOT / "src").rglob("*.py"))
         for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
-        if re.search(r"unlinkable over Tor|distinct ones are unlinkable", line)
+        if re.search(r"unlinkable over Tor|distinct ones are unlinkable|unlinkable to other", line)
     ]
     assert said == []

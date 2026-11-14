@@ -20,14 +20,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.api.country_wire import CountryWireResponse as JSONResponse
-from src.api.cross_site import refuse_cross_site_get
 from src.database.session import get_db
 from src.monitoring.secret_scrub import http_detail
 
 from ._base import router
 
 
-@router.get("/ir-eval-selftest", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/ir-eval-selftest")
 def ir_eval_selftest(download: bool = Query(False)) -> JSONResponse:
     """Run the IR retrieval-eval harness self-test (keyword-engine Phase 3).
 
@@ -47,7 +46,7 @@ def ir_eval_selftest(download: bool = Query(False)) -> JSONResponse:
     return JSONResponse(log, headers=headers)
 
 
-@router.get("/perception-eval-selftest", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/perception-eval-selftest")
 def perception_eval_selftest(download: bool = Query(False)) -> JSONResponse:
     """S6.5: run the LLM-perception (who/where/when) eval-harness self-test — the GATE for the
     perception track (harness before any extraction feature, the ruled order). Proves the
@@ -100,7 +99,7 @@ def perception_eval_live_last() -> JSONResponse:
     return JSONResponse(last_perception_eval_live_report())
 
 
-@router.get("/keyword-triage-selftest", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/keyword-triage-selftest")
 def keyword_triage_selftest(download: bool = Query(False)) -> JSONResponse:
     """§8: run the LLM keyword-triage self-test — the measure-before-trust GATE before any real
     triage run. Proves the MECHANISM (the constrained-verdict parser · echo-back validation ·
@@ -119,7 +118,7 @@ def keyword_triage_selftest(download: bool = Query(False)) -> JSONResponse:
     return JSONResponse(log, headers=headers)
 
 
-@router.get("/recursive-loop", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/recursive-loop")
 def recursive_loop(download: bool = Query(False)) -> JSONResponse:
     """§6: the recursive-improvement loop SELF-INVENTORY — imports + runs each of the loop's own
     mechanism-proof GATES (the keyword / IR-eval / perception / keyword-triage self-tests) and
@@ -273,7 +272,7 @@ def run_journal(download: bool = Query(False), limit: int = Query(20, ge=1, le=2
     return JSONResponse(payload, headers=headers)
 
 
-@router.get("/search-timing-selftest", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/search-timing-selftest")
 def search_timing_selftest(download: bool = Query(False)) -> JSONResponse:
     """§4: prove the search-timing MECHANISM on a deterministic injected clock — the per-phase
     wall-clock timer, the percentile aggregate, and (the point of the instrument) that the
