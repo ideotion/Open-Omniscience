@@ -28,6 +28,8 @@ _LOG = logging.getLogger(__name__)
 
 #: How long the wipe waits for settings saves already in flight before it goes ahead without holding new ones.
 _PANIC_HOLD_S = 2.0
+#: What a settings save made during the wipe is told: it is refused at once, never kept waiting behind an erase that can take hours.
+_PANIC_REFUSED = "A panic wipe is erasing this app's data, so this was not saved — nothing was written."
 
 
 def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
@@ -40,16 +42,17 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
     from src.database.connect import invalidate_header_cache
     from src.safety.crypto_erase import quick_crypto_erase
 
-    # Settings writes are HELD for the whole wipe (Lane E follow-up (a), second security read): a save from another thread waits at
-    # the door until the trailing invalidate below has run, so a value read from the old file is refused instead of landing in a
-    # fresh store file where the wiped one was, and no save commits into the file being erased. A wipe never waits on a save: when
-    # the hold cannot be taken within _PANIC_HOLD_S (a save still in flight, another holder), the wipe goes ahead without it and the
-    # epoch bumps before and after still refuse the saves made with ``expect_swap``.
+    # Settings writes are HELD for the whole wipe (Lane E follow-up (a), the security reads): a save from another thread is refused
+    # at once, in the wipe's own words, until the trailing invalidate below has run, so nothing commits into the file being erased
+    # and a value read from the old file never lands in a fresh one. The wipe waits at most _PANIC_HOLD_S for a save already in
+    # flight; when the hold cannot be taken (that save, another holder) it goes ahead without it, and the epoch bumps before and
+    # after still refuse the saves made with ``expect_swap``. A save made AFTER the wipe (and its hold) has ended is a first run's,
+    # and creates a fresh store like any first run.
     hold = contextlib.ExitStack()
     try:
         from src.config.kv_store import hold_writes
 
-        hold.enter_context(hold_writes(_PANIC_HOLD_S))
+        hold.enter_context(hold_writes(_PANIC_HOLD_S, refused_text=_PANIC_REFUSED, wait_s=0.0))
     except Exception as exc:  # noqa: BLE001 - the wipe runs whatever the hold says
         from src.monitoring.secret_scrub import log_failure
 

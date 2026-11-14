@@ -1227,6 +1227,8 @@ def resume_job(job_id: str) -> dict:
         # had already stored.
         from src.jobs.llm_bulk_queue import get_queue
 
+        if get_queue().release_pending():
+            raise HTTPException(status_code=409, detail="The model is being freed; resume once it shows as stopped.")
         if not get_queue().resume():
             raise HTTPException(status_code=404, detail="Nothing paused to resume.")
         return {"resumed": job_id, "detail": "Summary & translation queue resumed."}

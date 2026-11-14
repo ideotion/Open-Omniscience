@@ -42,8 +42,8 @@ def test_the_panic_wipe_moves_the_swap_epoch_before_it_erases(monkeypatch):
 
 
 def test_the_panic_wipe_holds_settings_writes_until_its_last_invalidate(store, monkeypatch):
-    """Second security read: a save from another thread that arrives during the wipe waits at the door, and one made from
-    state read before the wipe is refused once the hold ends, never written into a fresh store file."""
+    """Security reads: a save from another thread during the wipe is refused AT ONCE in the wipe's own words (never kept
+    waiting behind an erase that can take hours, never told an import is running), and nothing of it is written."""
     monkeypatch.setattr(kv_store, "KV_WRITE_WAIT_S", 10.0)
     epoch = kv_store.kv_swap_epoch()
     out: dict = {}
@@ -53,8 +53,8 @@ def test_the_panic_wipe_holds_settings_writes_until_its_last_invalidate(store, m
         try:
             kv_store.kv_set_json("followup.panic", {"v": 1}, expect_swap=epoch)
             out["saved"] = True
-        except kv_store.KvSwapped:
-            out["refused"] = True
+        except kv_store.KvWriteRefused as exc:
+            out["refused"] = "panic wipe" in str(exc)
         except Exception as exc:  # noqa: BLE001 - recorded by type for the assertion below
             out["other"] = type(exc).__name__
 
@@ -63,7 +63,7 @@ def test_the_panic_wipe_holds_settings_writes_until_its_last_invalidate(store, m
         s = threading.Thread(target=_saver)
         s.start()
         time.sleep(0.3)
-        during["waiting"] = s.is_alive()
+        during["waited"] = s.is_alive()
         during["thread"] = s
         return {"files_seen": 0, "files_wiped": 0}
 
@@ -76,8 +76,13 @@ def test_the_panic_wipe_holds_settings_writes_until_its_last_invalidate(store, m
         panic_wipe(confirm=True)
         during["thread"].join(10)
         assert during["held"], "the wipe ran without holding settings writes"
-        assert during["waiting"], "a save during the wipe did not wait at the door"
+        assert not during["waited"], "a save during the wipe was kept waiting at the door"
         assert out == {"refused": True}, out
+        con = sqlite3.connect(store)
+        try:
+            assert con.execute("SELECT COUNT(*) FROM app_state WHERE key = 'followup.panic'").fetchone()[0] == 0
+        finally:
+            con.close()
         assert kv_store._hold_by is None, "the wipe left settings writes held"
     finally:
         _reset_hold_state()

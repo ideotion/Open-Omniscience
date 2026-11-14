@@ -99,9 +99,11 @@ def test_freeing_the_model_waits_for_the_generation_a_stop_abandoned(queue, monk
         assert lbq._JOB.join(3), "the pause waited for the generation"
         time.sleep(0.5)
         assert not freed.is_set(), "the model was freed while the abandoned generation still ran"
+        assert queue.release_pending() and queue.resume() is False, "a Resume could run under the release still waiting"
     finally:
         fake.hold.set()
     assert freed.wait(5), "the release never happened after the generation returned"
+    assert _wait(lambda: not queue.release_pending()), "the release ran but kept refusing Resume"
     assert [_summaries(a) for a in ids] == [0, 0]
 
 
@@ -296,9 +298,39 @@ def test_a_resume_during_a_drain_that_is_not_stopping_leaves_no_mark_for_a_later
     assert queue._resumed_while_draining is False, "...is spent by the next pick, so it never outlives the drain it was for"
 
 
-def test_a_model_release_stop_is_never_undone_by_a_resume_pressed_while_it_lands(queue, monkeypatch):
-    """Security read 1: a release or stop of the model waits for the run to pause; a Resume pressed meanwhile must not start the
-    queue again under the release (it would run the next entry and the model would be freed under it, or reloaded)."""
+def test_a_model_release_stop_is_never_undone_by_a_resume_until_the_release_has_run(queue, monkeypatch):
+    """Security read 1 and the Opus re-read: a release or stop of the model waits for the run to pause, then for an abandoned
+    call, and only then frees the model. A Resume pressed anywhere in that wait used to start the queue again under it."""
+    from fastapi import HTTPException
+
+    from src.api.jobs import resume_job
+
+    fake = _SlowLlm(hang_on=1)
+    _use(monkeypatch, fake)
+    ids = _seed(2)
+    eid = queue.enqueue({"op": "summarize", "model": "m", "article_ids": ids})["entry"]["id"]
+    try:
+        assert fake.started.wait(10)
+        assert lbq.pause_for_backend()  # what _after_runs_pause does first
+        assert lbq.wait_paused(10)
+        assert {e["id"]: e["state"] for e in queue.snapshot()["entries"]}[eid] == "paused"
+        assert queue.release_pending()
+        assert queue.resume() is False, "a Resume started the queue before the release had run"
+        with pytest.raises(HTTPException) as refused:
+            resume_job("llm-bulk-queue")
+        assert refused.value.status_code == 409
+        assert {e["id"]: e["state"] for e in queue.snapshot()["entries"]}[eid] == "paused"
+        assert not lbq._JOB.status().get("running")
+    finally:
+        fake.hold.set()
+        lbq.release_done()
+    assert llm_api.wait_abandoned_generations(lambda: False)
+    assert not queue.release_pending()
+    assert queue.resume() and lbq._JOB.join(15)
+    assert {e["id"]: e["state"] for e in queue.snapshot()["entries"]}[eid] == "done"
+
+
+def test_a_resume_at_the_end_of_a_drain_a_release_stopped_does_not_restart_it(queue, monkeypatch):
     fake = _FakeLlm()
     _use(monkeypatch, fake)
     ids = _seed(1)
@@ -306,26 +338,28 @@ def test_a_model_release_stop_is_never_undone_by_a_resume_pressed_while_it_lands
     queue._paused = True  # nothing starts on its own: the drain below is the one the release stopped
     eid = queue.enqueue({"op": "summarize", "model": "m", "article_ids": ids})["entry"]["id"]
     calls = {"n": 0}
-    resumed: list[bool] = []
 
     def _count() -> int:
         calls["n"] += 1
-        if calls["n"] == 2:  # the drain's end: the release has stopped it, and the operator presses Resume in that instant
+        if calls["n"] == 2:  # the drain's end: a release stopped it, and a Resume comes in that instant
             with queue._lock:
-                queue._backend_pause = True  # what pause_for_backend sets
-            resumed.append(queue.resume())
+                queue._backend_pauses += 1  # what pause_for_backend counts
+            queue.resume()
         return 0
 
     monkeypatch.setattr(lbq, "stop_all_count", _count)
     monkeypatch.setattr(lbq._JOB, "stop_requested", lambda: True)
     with queue._lock:
         queue._draining = True
-    lbq._drain(_StoppingCtx())
-    assert calls["n"] >= 2 and queue._resumed_while_draining is False
-    assert queue._draining is False, "the drain started again under the model release"
-    assert queue.snapshot()["paused"] is True
-    assert {e["id"]: e["state"] for e in queue.snapshot()["entries"]}[eid] in ("queued", "paused")
-    assert fake.calls == [] and _summaries(ids[0]) == 0
+    try:
+        lbq._drain(_StoppingCtx())
+        assert calls["n"] >= 2 and queue._resumed_while_draining is False
+        assert queue._draining is False, "the drain started again under the model release"
+        assert queue.snapshot()["paused"] is True
+        assert {e["id"]: e["state"] for e in queue.snapshot()["entries"]}[eid] in ("queued", "paused")
+        assert fake.calls == [] and _summaries(ids[0]) == 0
+    finally:
+        lbq.release_done()
 
 
 def test_the_streamed_bulk_route_stops_on_its_task_manager_stop_without_waiting_for_the_generation(monkeypatch):
