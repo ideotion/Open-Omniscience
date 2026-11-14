@@ -140,7 +140,10 @@ def _check_one(fetcher, source) -> dict:
         elif code in (404, 410):
             rec["robots"] = "missing"  # standard: no robots.txt => everything allowed
         elif code in (401, 403):
-            rec["robots"] = "blocked"  # site forbids reading robots => treat site as off-limits
+            # The host declined to serve robots.txt to us: off-limits, fail-closed, as the fetcher treats it (RobotsUnavailable,
+            # cause "refused"). A refusal on that ONE path, not a policy (over Tor often the exit's reputation): its verdict is
+            # ``robots_refused``, never ``robots_denied``, and the metadata column stays unknown (OPEN_QUEUE C1).
+            rec["robots"] = "blocked"
         else:
             rec["robots"] = f"http_{code}"
     except Exception as exc:  # noqa: BLE001 - per-source problems must not stop the sweep
@@ -173,14 +176,17 @@ def _check_one(fetcher, source) -> dict:
                 # ... and not "ok": the address the homepage sends a crawler to is off-limits by its robots.txt, or its robots.txt
                 # could not be read (steward 3's low 1). ``robots`` stays the homepage's own answer, which is what the metadata
                 # records (``robots_allowed``), since the homepage's robots.txt did allow it.
-                hop_verdict = "robots_denied" if isinstance(exc, RobotsDisallowed) else "unreachable"
+                # A 401/403 on the hop host's robots.txt is "robots_refused" (OPEN_QUEUE C1): the cause, a fixed token, is read, never the words.
+                refused = isinstance(exc, RobotsUnavailable) and exc.cause == "refused"
+                hop_verdict = "robots_denied" if isinstance(exc, RobotsDisallowed) else "robots_refused" if refused else "unreachable"
             else:
                 rec["reachable"] = False
                 rec["homepage_error"] = record_text(exc, limit=200, typed=False)
 
     rec["verdict"] = hop_verdict or (
         "ok" if rec.get("reachable") and rec["robots"] in ("allowed", "missing")
-        else "robots_denied" if rec["robots"] in ("disallowed", "blocked")
+        else "robots_denied" if rec["robots"] == "disallowed"
+        else "robots_refused" if rec["robots"] == "blocked"
         else "unreachable"
     )
     return rec
@@ -188,9 +194,12 @@ def _check_one(fetcher, source) -> dict:
 
 def _apply_to_metadata(session, source, rec: dict) -> None:
     """Record the verdict on the source's scraper settings (real data, no guesses)."""
+    from sqlalchemy import null
+
     from src.database.models import SourceMetadata
 
     meta = session.query(SourceMetadata).filter_by(source_id=source.id).first()
+    created = meta is None
     if meta is None:
         meta = SourceMetadata(source_id=source.id)
         session.add(meta)
@@ -203,10 +212,15 @@ def _apply_to_metadata(session, source, rec: dict) -> None:
     robots_state = rec.get("robots")
     if robots_state in ("allowed", "missing"):
         meta.robots_allowed = True
-    elif robots_state in ("disallowed", "blocked"):
+    elif robots_state == "disallowed":
         meta.robots_allowed = False
-    else:                                   # unreachable / http_5xx / anything unrecognised
-        meta.robots_allowed = None
+    else:                                   # blocked (401/403) / unreachable / http_5xx / anything unrecognised
+        # "blocked" joined this branch with OPEN_QUEUE C1: a robots.txt the host refused to serve us was never read, so it
+        # says nothing about whether crawling is allowed. The fetcher refuses the site either way (fail-closed, unchanged).
+        # On a row this call creates, a plain ``None`` is not written: the ORM leaves a None column with a default out of the
+        # INSERT, so the column's ``default=True`` was stored and a source checked for the first time read as ALLOWED from a
+        # robots.txt nobody read (measured 2026-11-14 for "unreachable"). ``null()`` writes the NULL.
+        meta.robots_allowed = null() if created else None
     if rec.get("crawl_delay_s"):
         meta.crawl_delay = rec["crawl_delay_s"]
         # honour a robots crawl-delay larger than the source's current politeness
@@ -307,6 +321,8 @@ def preflight_sources(
         "complete": True,
         "ok": sum(1 for r in records if r["verdict"] == "ok"),
         "robots_denied": sorted(r["domain"] for r in records if r["verdict"] == "robots_denied"),
+        # 401/403 on robots.txt: refused to us, not a stated policy (OPEN_QUEUE C1); still never scraped.
+        "robots_refused": sorted(r["domain"] for r in records if r["verdict"] == "robots_refused"),
         "unreachable": sorted(r["domain"] for r in records if r["verdict"] == "unreachable"),
         "log": str(path),
     }
@@ -315,6 +331,12 @@ def preflight_sources(
             "preflight: robots.txt denies scraping for: %s (recorded; the fetcher "
             "fail-closes on these regardless)",
             ", ".join(summary["robots_denied"]),
+        )
+    if summary["robots_refused"]:
+        _LOG.warning(
+            "preflight: these hosts refused to serve robots.txt (401/403), so they are not scraped; "
+            "that is a refusal to us, not a stated policy: %s",
+            ", ".join(summary["robots_refused"]),
         )
     return summary
 

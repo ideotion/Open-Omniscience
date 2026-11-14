@@ -141,10 +141,6 @@ _DIAG_THREADS = frozenset({"dbg:*", "all-diag-member"})
 # oo-llmbatch_N: llm.concurrency.run_concurrent (named since R324), reached by the three diagnostics GETs that run the local model
 _LLM_POOL_THREADS = _DIAG_THREADS | {"oo-llmbatch_*"}
 _ROUTES: dict[str, tuple[frozenset[str], frozenset[str], str]] = {
-    "/api/annotations/export": (
-        frozenset({"annotations_ed25519.pem"}), frozenset(),
-        "FINDING F2 (routed to RC2, R278): the first export mints the annotations signing key; a GET should not create a key (a cross-site request is refused since #1526; a same-origin one still mints it)",
-    ),
     "/api/custody/export": (
         frozenset({"custody_log.db", "custody_log.db-wal", "custody_log.db-shm", "custody_ed25519.pem"}), frozenset(),
         "FINDING F2 (routed to RC2, R278): the first export creates the custody signing key and writes the custody log",
@@ -667,7 +663,8 @@ def test_the_seeded_walk_names_every_route_this_walk_found_answering_4xx(observe
 
 def test_the_monitors_see_a_get_that_reaches_the_network_when_the_switch_is_off(tmp_path, monkeypatch):
     """Liveness of the monitors, so a green run is not a blind one: with the kill switch CLEARED, ``/api/hazards`` goes for its two
-    hosts, and the monitor must record both lookups. (With the switch engaged, the test above asserts it does not.)"""
+    hosts, and the monitor must record both lookups. (With the switch engaged, the test above asserts it does not.) The route is a POST
+    since R694 (no GET reaches the network any more), and the monitor does not care which method drove it."""
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("OO_NO_SCHEDULER", "1")
     from src.api.main import app
@@ -676,7 +673,7 @@ def test_the_monitors_see_a_get_that_reaches_the_network_when_the_switch_is_off(
     with TestClient(app) as client:
         clear_kill_switch()
         with _Monitor([tmp_path]) as mon:
-            client.get("/api/hazards", headers={"Host": "testserver"})
+            client.post("/api/hazards", headers={"Host": "testserver"})
     assert {"earthquake.usgs.gov", "www.gdacs.org"} <= set(mon.lookups), mon.lookups
 
 

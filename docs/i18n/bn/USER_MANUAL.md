@@ -2855,7 +2855,7 @@ FUTURE_DEVELOPMENTS §6 একক স্বয়ংক্রিয় আস্
 | পদ্ধতি ও পথ | উদ্দেশ্য |
 |---|---|
 | `GET /api/annotations/mine` · `POST` · `DELETE /mine/{i}` | আপনার লেখা টীকা |
-| `GET /api/annotations/export` | আপনার টীকাগুলোর একটি স্বাক্ষরিত, বহনযোগ্য বান্ডল |
+| `POST /api/annotations/export` | আপনার টীকাগুলোর একটি স্বাক্ষরিত, বহনযোগ্য বান্ডল |
 | `POST /api/annotations/import` | একটি আমদানি করা বান্ডল যাচাই + সংরক্ষণ (অবৈধ হলে প্রত্যাখ্যাত) |
 | `GET /api/annotations/authors` · `PUT /authors/trust` · `DELETE /authors/{id}` | ওয়েব অফ ট্রাস্ট |
 | `GET /api/annotations/for?target=` | স্বচ্ছ একত্রীকরণ — কে কী দাবি করেছে |

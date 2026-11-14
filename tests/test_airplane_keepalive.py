@@ -463,9 +463,13 @@ def test_closing_a_session_that_raises_does_not_stop_the_stop(monkeypatch):
         clear_kill_switch()
 
 
-def test_stop_closes_the_pooled_connections_of_guarded_sessions(server):
+def test_stop_closes_the_pooled_connections_of_guarded_sessions(server, monkeypatch):
     """The wiki, ORES, stats and Wikidata sessions (``GuardedSession``) are closed on a Stop too (security read B of R638)."""
     from src.safety.fetcher import GuardedSession
+
+    # The server is on loopback, which a GuardedSession's connect-time SSRF guard refuses since 2026-11-14; this test is about the
+    # pool a Stop closes, not about where the session may connect (tests/test_guarded_session_connect_guard.py).
+    monkeypatch.setenv("OO_SSRF_CONNECT_GUARD", "0")
 
     session = GuardedSession()
     session.trust_env = False

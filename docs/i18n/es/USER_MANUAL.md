@@ -2899,7 +2899,7 @@ Retirar la confianza a un autor excluye sus anotaciones; eliminarlo las borra li
 | Método y ruta | Finalidad |
 |---|---|
 | `GET /api/annotations/mine` · `POST` · `DELETE /mine/{i}` | las anotaciones redactadas por usted |
-| `GET /api/annotations/export` | un paquete firmado y portable con sus anotaciones |
+| `POST /api/annotations/export` | un paquete firmado y portable con sus anotaciones |
 | `POST /api/annotations/import` | verificar + almacenar un paquete importado (se rechaza si no es válido) |
 | `GET /api/annotations/authors` · `PUT /authors/trust` · `DELETE /authors/{id}` | la red de confianza |
 | `GET /api/annotations/for?target=` | agregación transparente: quién afirmó qué |
