@@ -155,16 +155,22 @@ class _FakeVolumes:
     def __init__(self, how: str) -> None:
         self.how = how
         self.dest: str | None = None
+        self.t = 1000.0
 
     def start_backup(self, dest, pw, **_kw):
         self.dest = dest
+        return {"state": "running", "mode": "backup", "dest": str(dest), "running": True, "started_at": self.t}
 
     def status(self):
         if self.how == "mode":
-            return {"state": "done", "mode": "verify", "dest": self.dest, "running": False}
+            return {"state": "done", "mode": "verify", "dest": self.dest, "running": False, "started_at": self.t}
         if self.how == "dest":
-            return {"state": "done", "mode": "backup", "dest": str(self.dest) + "_another_drive", "running": False}
-        return {"state": "running", "mode": "backup", "dest": self.dest, "running": True}
+            return {"state": "done", "mode": "backup", "dest": str(self.dest) + "_another_drive", "running": False,
+                    "started_at": self.t}
+        if self.how == "other-job":
+            # Done, a backup, THIS folder -- but not the job this export started (R701 item 7).
+            return {"state": "done", "mode": "backup", "dest": self.dest, "running": False, "started_at": self.t + 1}
+        return {"state": "running", "mode": "backup", "dest": self.dest, "running": True, "started_at": self.t}
 
     def pause(self):
         pass
@@ -185,7 +191,7 @@ class _SpyFolder:
         return {"state": "idle", "mode": "backup", "dest": None, "running": False}
 
 
-@pytest.mark.parametrize("how", ["mode", "dest"])
+@pytest.mark.parametrize("how", ["mode", "dest", "other-job"])
 def test_an_unconfirmed_corpus_phase_never_starts_the_copy(mgrs, tmp_path, how):
     spy = _SpyFolder()
     exp = ej.ExportJobManager(volume_manager=_FakeVolumes(how), folder_manager=spy)
@@ -455,3 +461,342 @@ def test_the_old_phase_routes_stay_for_the_advanced_panel():
         assert (m, p) in paths, p
     js = app_js()
     assert '"/api/backup/v2/volumes/start"' in function_body(js, "volBackupStart"), "the advanced panel lost its start"
+
+
+# =========================================================================== #
+#  Review of 1b88c0b74 (R701 R712 R713): each test below fails on that commit.
+# =========================================================================== #
+class _SlowStop:
+    """A volume manager whose job honours a stop only when ``release`` is set, and then
+    ends as the FIRST stop it was asked for (a pause stays a pause on its side)."""
+
+    def __init__(self) -> None:
+        self.dest: str | None = None
+        self.state = "idle"
+        self.t = 0.0
+        self.asked: list[str] = []
+        self.release = threading.Event()
+
+    def start_backup(self, dest, pw, **_kw):
+        self.dest, self.state, self.t = str(dest), "running", time.time()
+        return self.status()
+
+    def status(self):
+        return {"state": self.state, "mode": "backup", "dest": self.dest,
+                "running": self.state == "running", "started_at": self.t}
+
+    def _end(self) -> None:
+        self.release.wait(30)
+        if self.state == "running":
+            self.state = "paused" if self.asked[0] == "pause" else "cancelled"
+
+    def pause(self):
+        self.asked.append("pause")
+        threading.Thread(target=self._end, daemon=True).start()
+
+    def cancel(self):
+        self.asked.append("cancel")
+        threading.Thread(target=self._end, daemon=True).start()
+
+
+def _until(pred, timeout: float = 10.0) -> None:
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if pred():
+            return
+        time.sleep(0.02)
+    raise AssertionError("condition never held")
+
+
+def test_a_slow_stop_keeps_the_export_live_and_stopping_until_its_phase_ends(mgrs, tmp_path, monkeypatch):
+    """Item 4: no deadline ends the export while its phase still writes into the folder."""
+    from src.backup.merge import WriterJobsRefused, refuse_while_writer_jobs_run
+
+    monkeypatch.setattr(ej, "_STOP_WAIT_S", 0.2, raising=False)  # the old cut-off, made short
+    vol = _SlowStop()
+    exp = ej.ExportJobManager(volume_manager=vol, folder_manager=_SpyFolder())
+    monkeypatch.setattr(ej, "_MANAGER", exp)
+    try:
+        exp.start(str(tmp_path / "drive"), corpus=True, categories=[], passphrase=_PASS)
+        _until(lambda: vol.state == "running")
+        exp.pause()
+        time.sleep(0.8)
+        st = exp.status()
+        assert st["state"] == "stopping" and st["running"] is True, st
+        assert exp.live()
+        with pytest.raises(WriterJobsRefused, match="Backup export"):
+            refuse_while_writer_jobs_run()  # R712 holds while the phase is still stopping
+        vol.release.set()
+        st = _wait(exp, ("paused", "failed", "cancelled", "done"))
+        assert st["state"] == "paused" and st["phase"] == "volumes", st
+        assert not exp.live()
+    finally:
+        vol.release.set()
+        exp._job.join(10)
+
+
+class _Interrupt(BaseException):
+    pass
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")  # the interrupt goes on up, as it must
+def test_a_base_exception_in_the_worker_never_leaves_the_export_running(mgrs, tmp_path):
+    """Item 4: live() cannot stick at True after the worker died of a BaseException."""
+
+    class _Dies(_FakeVolumes):
+        def start_backup(self, dest, pw, **_kw):
+            raise _Interrupt()
+
+    exp = ej.ExportJobManager(volume_manager=_Dies("running"), folder_manager=_SpyFolder())
+    try:
+        exp.start(str(tmp_path / "drive"), corpus=True, categories=[], passphrase=_PASS)
+        exp._job.join(10)
+    finally:
+        exp._job.join(10)
+    st = exp.status()
+    assert st["state"] == "failed" and st["reason"] == "interrupted", st
+    assert not exp.live()
+    assert exp._secret == []
+
+
+def test_pause_then_cancel_while_stopping_ends_cancelled(mgrs, tmp_path, monkeypatch):
+    """Item 9: the last explicit request wins, and a Cancel outranks a Pause -- even when the
+    phase's own job had already taken the Pause."""
+    vol = _SlowStop()
+    exp = ej.ExportJobManager(volume_manager=vol, folder_manager=_SpyFolder())
+    try:
+        exp.start(str(tmp_path / "drive"), corpus=True, categories=[], passphrase=_PASS)
+        _until(lambda: vol.state == "running")
+        exp.pause()
+        _until(lambda: exp.status()["state"] == "stopping")
+        exp.cancel()
+        vol.release.set()
+        st = _wait(exp, ("paused", "failed", "cancelled", "done"))
+    finally:
+        vol.release.set()
+        exp._job.join(10)
+    assert st["state"] == "cancelled", st
+    assert read_export_request(st["dest"])["phase"] == "cancelled"
+
+
+def test_a_paused_export_can_be_cancelled_and_its_partial_volumes_go(mgrs, tmp_path):
+    """Item 9: the page shows Cancel on a paused export, and the server takes it."""
+    exp, _vol, _fold = mgrs
+    started = threading.Event()
+    exp.start(str(tmp_path / "drive"), corpus=True, categories=["models"], passphrase=_PASS,
+              _backup_fn=_blocking_then(_job_fn(tmp_path, "a"), started), _items=_items(tmp_path))
+    assert started.wait(30)
+    exp.pause()
+    dest = Path(_wait(exp, ("paused",))["dest"])
+    partial = dest / "vol-0001.ooenc"
+    partial.write_bytes(b"partial")
+    st = exp.cancel()
+    assert st["state"] == "cancelled", st
+    assert read_export_request(dest)["phase"] == "cancelled"
+    assert not partial.exists(), "a cancelled corpus phase kept its partial volumes"
+    assert not exp.live()
+
+
+def test_the_task_manager_shows_a_paused_export_as_paused(mgrs, tmp_path, blocking_copy):
+    """Item 9: the worker thread has ended, but the export is paused, not done."""
+    from src.api.jobs import _background_jobs
+
+    exp, _vol, _fold = mgrs
+    exp.start(str(tmp_path / "drive"), corpus=True, categories=["models"], passphrase=_PASS,
+              _backup_fn=_job_fn(tmp_path, "a"), _items=_items(tmp_path))
+    assert blocking_copy.wait(60)
+    rows = [r for r in _background_jobs() if r["kind"] == "backup-export"]
+    assert [r["state"] for r in rows] == ["running"], rows
+    exp.pause()
+    _wait(exp, ("paused",))
+    rows = [r for r in _background_jobs() if r["kind"] == "backup-export"]
+    assert [r["state"] for r in rows] == ["paused"], rows
+    assert rows[0]["actions"] == []
+
+
+class _OtherFolderJob:
+    """A folder manager whose status, after the export's start, is ANOTHER copy into the same
+    folder (the advanced panel's /folder/start in the poll window)."""
+
+    def __init__(self) -> None:
+        self.dest: str | None = None
+
+    def start(self, dest, categories, **_kw):
+        self.dest = str(dest)
+        return {"state": "running", "mode": "backup", "dest": self.dest, "running": True, "started_at": 1.0}
+
+    def status(self):
+        return {"state": "done", "mode": "backup", "dest": self.dest, "running": False, "started_at": 2.0}
+
+
+def test_a_large_data_job_that_is_not_this_exports_is_never_counted_as_its_copy(mgrs, tmp_path):
+    """Item 7: identity is mode, folder AND the started_at the start answered with."""
+    exp = ej.ExportJobManager(volume_manager=_FakeVolumes("running"), folder_manager=_OtherFolderJob())
+    try:
+        exp.start(str(tmp_path / "drive"), corpus=False, categories=["models"])
+        st = _wait(exp, ("done", "failed", "paused", "cancelled"))
+    finally:
+        exp._job.join(10)
+    assert st["state"] == "failed" and st["reason"] == "folder-unconfirmed", st
+    assert st["error"] == ej.FOLDER_UNCONFIRMED and st["error_phase"] == "folder"
+    assert read_export_request(st["dest"])["phase"] == "folder"
+
+
+class _Restoring:
+    def status(self):
+        return {"state": "running", "mode": "restore", "dest": "/somewhere", "running": True, "started_at": 1.0}
+
+
+@pytest.mark.parametrize("where", ["volumes", "folder", "queue"])
+def test_an_export_refuses_to_start_or_resume_while_a_restore_runs(mgrs, tmp_path, monkeypatch, where):
+    """Item 8: R712 the other way round, with a named refusal."""
+    import src.backup.import_queue as iq
+
+    exp0, _vol, _fold = mgrs
+    drive = tmp_path / "drive"
+    # A paused large-data phase to try to resume.
+    started = threading.Event()
+    exp0.start(str(drive), corpus=True, categories=["models"], passphrase=_PASS,
+               _backup_fn=_blocking_then(_job_fn(tmp_path, "a"), started), _items=_items(tmp_path))
+    assert started.wait(30)
+    exp0.pause()
+    dest = Path(_wait(exp0, ("paused",))["dest"])
+    kw: dict = {}
+    if where == "volumes":
+        kw["volume_manager"] = _Restoring()
+    elif where == "folder":
+        kw["folder_manager"] = _Restoring()
+    else:
+        class _Q:
+            _state = "running"
+        monkeypatch.setattr(iq, "_MANAGER", _Q())
+    exp = ej.ExportJobManager(**kw)
+    with pytest.raises(RuntimeError) as start_err:
+        exp.start(str(drive), corpus=False, categories=["models"], _items=_items(tmp_path))
+    assert str(start_err.value) == ej.RESTORE_RUNNING
+    with pytest.raises(RuntimeError) as resume_err:
+        exp.resume(str(dest), passphrase=_PASS)
+    assert str(resume_err.value) == ej.RESTORE_RUNNING
+    assert _dated(drive) == [dest], "a refused start still allocated a folder"
+
+
+def test_a_record_naming_only_unknown_categories_is_refused_and_copies_nothing(mgrs, tmp_path, monkeypatch):
+    """Item 6: the folder job widens a list of unknown names to EVERY category."""
+    from src.backup.export_folder import allocate_export_folder
+
+    exp, _vol, fold = mgrs
+    monkeypatch.setattr(fb, "collect_items", lambda **_k: _items(tmp_path))
+    dest = allocate_export_folder(tmp_path / "drive")
+    (dest / REQUEST_NAME).write_text(json.dumps({
+        "schema": "oo-export-request-1", "corpus": False, "categories": ["bogus"], "inside": False, "phase": "folder",
+    }), encoding="utf-8")
+    assert read_export_request(dest)["categories"] == [], "an unknown category was read back from the record"
+    with pytest.raises(ValueError) as err:
+        exp.resume(str(dest))
+    assert str(err.value) == ej.NO_CATEGORIES
+    assert fold.status()["state"] == "idle", "the copy started"
+    assert sorted(p.name for p in dest.iterdir()) == [REQUEST_NAME], "something was copied"
+
+
+@pytest.mark.parametrize("ending", ["cancelled", "done"])
+def test_copy_the_large_data_files_now_finishes_a_done_or_cancelled_export(mgrs, tmp_path, blocking_copy, monkeypatch, ending):
+    """Item 2: the completion panel's «Copy the large-data files now» for a folder whose
+    record says done or cancelled but still lacks the files, through the REAL folder job,
+    into the SAME folder, copying only what is missing."""
+    from src.api.backup_v2 import export_summary_read
+
+    exp, _vol, fold = mgrs
+    drive = tmp_path / "drive"
+    present = tmp_path / "present.bin"
+    present.write_bytes(b"p" * 1000)
+    items = _items(tmp_path) + [BackupItem("models", "m/present.bin", present, 1000)]
+    exp.start(str(drive), corpus=True, categories=["models"], passphrase=_PASS,
+              _backup_fn=_job_fn(tmp_path, "a"), _items=items)
+    assert blocking_copy.wait(60)
+    exp.cancel()
+    dest = Path(_wait(exp, ("cancelled",))["dest"])
+    assert read_export_request(dest)["phase"] == "cancelled"
+    if ending == "done":
+        from src.backup.export_folder import update_export_phase
+
+        update_export_phase(dest, "done")
+    (dest / "models" / "m").mkdir(parents=True)
+    (dest / "models" / "m" / "present.bin").write_bytes(b"p" * 1000)  # already copied before the stop
+    assert export_summary_read(str(dest))["missing"]["categories"] == ["models"]
+    fresh = ej.ExportJobManager()  # a restarted process: nothing but the folder
+    monkeypatch.setattr(ej, "_MANAGER", fresh)
+    monkeypatch.setattr(fb, "collect_items", lambda **_k: items)
+    fresh.resume(str(dest))  # no passphrase: the corpus is already there
+    st = _wait(fresh, ("done", "failed", "paused", "cancelled"))
+    assert st["state"] == "done" and st["dest"] == str(dest), st
+    assert _dated(drive) == [dest]
+    assert (dest / FOLDER_MANIFEST).is_file()
+    prog = fold.status()["progress"]
+    assert prog.get("copied") == 1 and prog.get("skipped") == 1, prog
+    assert export_summary_read(str(dest))["missing"] == {"known": True, "corpus": False, "categories": []}
+
+
+def test_a_managers_own_error_reaches_the_status_unprefixed_with_its_phase_beside_it(mgrs, tmp_path):
+    """Item 5: the page translates a manager's sentence whole; a prefix broke that."""
+    exp, _vol, _fold = mgrs
+
+    def wrong(dest, pw, **kw):
+        raise ValueError("wrong passphrase or the file has been altered")
+
+    exp.start(str(tmp_path / "drive"), corpus=True, categories=[], passphrase=_PASS, _backup_fn=wrong)
+    st = _wait(exp, ("failed",))
+    assert st["error"] == "wrong passphrase or the file has been altered", st["error"]
+    assert st["error_phase"] == "volumes"
+
+
+def _ooservertext_in(lang: str, messages: list[str]) -> list[str]:
+    """ooServerText as shipped, under a page whose t()/tf() read the REAL locale file."""
+    import re
+    import subprocess
+
+    from tests.test_clickthrough_b13_leftovers import array_literal, function_source, object_literal
+
+    js = app_js()
+    table = json.loads((Path(__file__).resolve().parents[1] / f"src/static/locales/{lang}.json").read_text("utf-8"))
+    size_re = re.search(r'const _OO_SIZE_RE = "[^"\n]*";', js)
+    assert size_re
+    prog = "\n".join([
+        "const TABLE = " + json.dumps(table, ensure_ascii=False) + ";",
+        "const OOI18N = { t: (x) => (TABLE[x] || x),",
+        "  tf: (x, v) => (TABLE[x] || x).replace(/\\{(\\w+)\\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)) };",
+        "const window = { OOI18N };",
+        function_source(js, "_sizeText"),
+        "const _OO_SPACE_WHAT = " + object_literal(js, "_OO_SPACE_WHAT") + ";",
+        size_re.group(0),
+        "const _OO_SPACE_RES = " + array_literal(js, "_OO_SPACE_RES") + ";",
+        function_source(js, "ooServerText"),
+        "process.stdout.write(JSON.stringify(" + json.dumps(messages) + ".map(ooServerText)));",
+    ])
+    # On stdin: a whole locale table is past the argv limit.
+    proc = subprocess.run(["node"], input=prog, capture_output=True, text=True, check=False)
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(proc.stdout)
+
+
+def test_the_gate_and_the_wrong_passphrase_sentences_render_translated_in_french():
+    """Item 5: what the status carries is what the page translates -- in a real locale."""
+    fr = json.loads((Path(__file__).resolve().parents[1] / "src/static/locales/fr.json").read_text("utf-8"))
+    gate, wrong = _ooservertext_in("fr", [ej.UNCONFIRMED, "wrong passphrase or the file has been altered"])
+    assert gate == fr[ej.UNCONFIRMED] and gate != ej.UNCONFIRMED, gate
+    assert wrong == fr["Could not open this backup: the passphrase is wrong, or its files have been altered."], wrong
+
+
+_FIXED = ("UNCONFIRMED", "FOLDER_UNCONFIRMED", "NEEDS_PASSPHRASE", "NOTHING_TO_RESUME", "ALREADY_RUNNING",
+          "RESTORE_RUNNING", "NO_CATEGORIES", "NOT_AN_EXPORT_FOLDER", "NO_RECORD", "INTERNAL", "INTERRUPTED")
+
+
+def test_every_fixed_export_sentence_is_translated_whole_in_every_locale():
+    """Item 5: the export's own sentences carry no path or class, and each one is a key."""
+    sentences = [getattr(ej, n) for n in _FIXED]
+    for path in sorted((Path(__file__).resolve().parents[1] / "src/static/locales").glob("*.json")):
+        table = json.loads(path.read_text("utf-8"))
+        for s in sentences:
+            assert s in table, (path.name, s)
+    out = _ooservertext_in("de", sentences)
+    de = json.loads((Path(__file__).resolve().parents[1] / "src/static/locales/de.json").read_text("utf-8"))
+    assert out == [de[s] for s in sentences]

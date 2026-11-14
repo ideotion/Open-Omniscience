@@ -7896,5 +7896,15 @@
   "Resume export": "继续导出",
   "Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above.": "在其自己的文件夹中、从停止的阶段继续此次导出。继续语料库备份需要上方的口令。",
   "Enter the passphrase to resume the corpus backup.": "请输入口令以继续语料库备份。",
-  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "一个备份导出正在运行（{job}）。未导入任何内容，您的语料库也未发生任何变化：导入会替换导出正在读取的语料库。请等导出完成或将其暂停，然后再导入。"
+  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "一个备份导出正在运行（{job}）。未导入任何内容，您的语料库也未发生任何变化：导入会替换导出正在读取的语料库。请等导出完成或将其暂停，然后再导入。",
+  "The large-data copy could not be confirmed as this export's own, so this export does not count it as done.": "无法确认大数据副本属于本次导出，因此本次导出不将其视为已完成。",
+  "Resuming the corpus backup needs the passphrase again.": "继续语料库备份需要再次输入密码短语。",
+  "Nothing to resume: this export is not paused or unfinished.": "没有可继续的内容：本次导出既未暂停也没有未完成的部分。",
+  "A backup export is already running.": "已有一个备份导出正在运行。",
+  "A restore is in progress, so the export did not start: it would read a corpus that is being switched. Let the restore finish, then export again.": "正在进行恢复，因此导出没有开始：它会读取一个正在被替换的语料库。请等恢复完成后再导出。",
+  "This export's record names no large-data category this app knows, so there is nothing to copy.": "本次导出的记录中没有本应用认识的大数据类别，因此没有可复制的内容。",
+  "This folder is not a dated export folder.": "此文件夹不是带日期的导出文件夹。",
+  "This folder carries no export request, so what is left to do there is not known.": "此文件夹中没有导出请求，因此无法得知还剩哪些工作。",
+  "The export stopped on an internal error.": "导出因内部错误而停止。",
+  "The export stopped unexpectedly before it finished.": "导出在完成前意外停止。"
 }

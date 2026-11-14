@@ -7896,5 +7896,15 @@
   "Resume export": "Продолжить экспорт",
   "Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above.": "Продолжает этот экспорт в его собственной папке, с того этапа, на котором он остановился. Для продолжения резервного копирования корпуса нужна парольная фраза выше.",
   "Enter the passphrase to resume the corpus backup.": "Введите парольную фразу, чтобы продолжить резервное копирование корпуса.",
-  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "Выполняется экспорт резервной копии ({job}). Ничего не импортировано, и в вашем корпусе ничего не изменилось: импорт заменил бы корпус, который сейчас читает экспорт. Дождитесь окончания экспорта или приостановите его, затем повторите импорт."
+  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "Выполняется экспорт резервной копии ({job}). Ничего не импортировано, и в вашем корпусе ничего не изменилось: импорт заменил бы корпус, который сейчас читает экспорт. Дождитесь окончания экспорта или приостановите его, затем повторите импорт.",
+  "The large-data copy could not be confirmed as this export's own, so this export does not count it as done.": "Не удалось подтвердить, что копия больших данных относится к этому экспорту, поэтому экспорт не считает её завершённой.",
+  "Resuming the corpus backup needs the passphrase again.": "Чтобы продолжить резервное копирование корпуса, снова нужна парольная фраза.",
+  "Nothing to resume: this export is not paused or unfinished.": "Нечего продолжать: этот экспорт не приостановлен и не оставлен незавершённым.",
+  "A backup export is already running.": "Экспорт резервной копии уже выполняется.",
+  "A restore is in progress, so the export did not start: it would read a corpus that is being switched. Let the restore finish, then export again.": "Идёт восстановление, поэтому экспорт не начат: он читал бы корпус, который сейчас заменяется. Дождитесь окончания восстановления и экспортируйте снова.",
+  "This export's record names no large-data category this app knows, so there is nothing to copy.": "Запись этого экспорта не называет ни одной известной приложению категории больших данных, поэтому копировать нечего.",
+  "This folder is not a dated export folder.": "Эта папка не является датированной папкой экспорта.",
+  "This folder carries no export request, so what is left to do there is not known.": "В этой папке нет запроса экспорта, поэтому неизвестно, что в ней осталось сделать.",
+  "The export stopped on an internal error.": "Экспорт остановлен из-за внутренней ошибки.",
+  "The export stopped unexpectedly before it finished.": "Экспорт неожиданно остановился, не завершившись."
 }

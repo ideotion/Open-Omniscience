@@ -254,10 +254,20 @@ def read_export_request(folder: str | os.PathLike[str]) -> dict[str, Any] | None
         return None
     if not isinstance(raw, dict) or raw.get("schema") != REQUEST_SCHEMA:
         return None
+    from src.backup.folder_backup import _CATEGORIES
+
+    # Only the categories this app knows, as the writer keeps (R701): the record sits on an
+    # external drive and is editable there, and it is now a resume cursor -- a stray name
+    # read back would reach the folder job, which widens a list of unknown names to EVERY
+    # category.
     cats = raw.get("categories")
+    known: list[str] = []
+    for c in cats if isinstance(cats, list) else []:
+        if isinstance(c, str) and c in _CATEGORIES and c not in known:
+            known.append(c)
     return {
         "corpus": bool(raw.get("corpus")),
-        "categories": [str(c) for c in cats] if isinstance(cats, list) else [],
+        "categories": known,
         "inside": bool(raw.get("inside")),
         "requested_at": raw.get("requested_at"),
         # R701: the resume cursor; None for a record written before the export was one job.

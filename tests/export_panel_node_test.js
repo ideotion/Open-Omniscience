@@ -396,6 +396,7 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
         "function ooServerText(s){return String(s);}\n" +
         "function toast(){}\n" +
         "var window = {}; var _uxExportDir = DIR, _uxPhase = 'folder', _uxExportFacts = null;\n" +
+        "let _uxWatchGen = 0; let _uxFinishedKey = null;\n" +
         extract("fmtNum") + "\n" +
         "var _uxExportIncluded = { corpus: true, blobs: ['models'] };\n" +
         "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
@@ -426,4 +427,168 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
 
     console.log("export panel node suite: ok");
   })().catch((e) => { console.error(e); process.exit(1); });
+}
+
+// --- R701 review of 1b88c0b74: the export watcher, run as REAL code ----------- //
+// Items 1 (the folder is remembered as soon as the server names it), 3 (one watcher at
+// a time; none once the dialog closes; one completion per export), 5 (the export's
+// error in the operator's language) and 9 (Cancel on a paused export). The timers are
+// the harness's own, so every poll turn is stepped by hand and counted.
+{
+  // `const NAME = ...;` lifted whole, brackets and quotes balanced (the ooServerText tables).
+  function extractConst(name) {
+    const at = APP.indexOf("const " + name + " =");
+    assert.ok(at !== -1, name + " not found -- was it renamed?");
+    let depth = 0, q = null;
+    for (let i = APP.indexOf("=", at) + 1; i < APP.length; i++) {
+      const c = APP[i];
+      if (q) { if (c === "\\") { i++; continue; } if (c === q) q = null; continue; }
+      // Comments are skipped: an apostrophe in one ("the folder backup's own check") is not a quote.
+      if (c === "/" && APP[i + 1] === "/") { i = APP.indexOf("\n", i); continue; }
+      if (c === "/" && APP[i + 1] === "*") { i = APP.indexOf("*/", i) + 1; continue; }
+      if (c === '"' || c === "'" || c === "`") { q = c; continue; }
+      if ("([{".includes(c)) depth++;
+      else if (")]}".includes(c)) depth--;
+      else if (c === ";" && depth === 0) return APP.slice(at, i + 1);
+    }
+    throw new Error("unbalanced " + name);
+  }
+  const path = require("path");
+  const FR = JSON.parse(require("fs").readFileSync(path.join(__dirname, "..", "src", "static", "locales", "fr.json"), "utf8"));
+  const el = (extra) => ({ innerHTML: "", textContent: "", value: "", style: {}, dataset: {}, disabled: false,
+                           removeAttribute() {}, setAttribute() {}, ...(extra || {}) });
+
+  function harness(lang) {
+    const dom = { "ux-progress": el(), "ux-bar": el(), "ux-pause": el(), "ux-cancel": el({ style: { display: "none" } }),
+                  "ux-run": el(), "ux-summary": el(), "ux-export": el({ open: true }) };
+    const H = { dom, timers: [], status: null, startAnswer: null, finished: [], calls: [], store: {} };
+    const api = async (url, opts) => {
+      H.calls.push({ url, method: (opts && opts.method) || "GET" });
+      if (url === "/api/backup/export/status") return JSON.parse(JSON.stringify(H.status));
+      if (url === "/api/backup/export/start" || url === "/api/backup/export/resume") {
+        if (H.startAnswer instanceof Error) throw H.startAnswer;
+        return H.startAnswer;
+      }
+      if (url === "/api/backup/export/cancel") return { state: "cancelled", dest: "/x/A" };
+      throw new Error("unexpected " + url);
+    };
+    const i18n = lang === "fr"
+      ? "var window = { OOI18N: { t: (x) => (TABLE[x] || x), tf: (x, v) => (TABLE[x] || x).replace(/\\{(\\w+)\\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)) } };\nvar OOI18N = window.OOI18N;\n"
+      : "var window = {};\n";
+    const src =
+      "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g," +
+      "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
+      i18n +
+      "function toast(){}\nfunction confirm(){ return true; }\nconst console = { error(){} };\n" +
+      "var localStorage = { setItem(k, v){ STORE[k] = String(v); }, getItem(k){ return k in STORE ? STORE[k] : null; } };\n" +
+      "var _uxExportDir = null, _uxPhase = null, _uxExportIncluded = null;\n" +
+      "let _uxWatchGen = 0; let _uxFinishedKey = null;\n" +
+      "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
+      "function _uxProgressView(){ return { pct: null, indeterminate: true, text: '' }; }\n" +
+      "function _uxPaintBar(){}\nfunction _uxRuleOfThree(){ return null; }\nfunction _uxEta(){ return ''; }\n" +
+      "async function _uxFinishExport(prog, dest){ FINISHED.push(dest); }\n" +
+      extractConst("_OO_SPACE_WHAT") + "\n" + extractConst("_OO_SIZE_RE") + "\n" + extractConst("_OO_SPACE_RES") + "\n" +
+      extract("_sizeText") + "\n" + extract("ooServerText") + "\n" +
+      extract("_uxRememberExportDir") + "\n" + extract("_uxLastExportDir") + "\n" +
+      extract("_uxSamePath") + "\n" + extract("_uxPoll") + "\n" + extract("_uxShowPaused") + "\n" +
+      (APP.includes("function _uxExportErrorText(") ? extract("_uxExportErrorText") + "\n" : "") +
+      "async " + extract("_uxStartThenPoll") + "\n" +
+      "async " + extract("_uxWatchExport") + "\n" +
+      "async " + extract("_uxCancelExport") + "\n" +
+      "module.exports = { watch: _uxWatchExport, paused: _uxShowPaused, cancel: _uxCancelExport };";
+    const mod = { exports: {} };
+    new Function("module", "exports", "DOM", "api", "setTimeout", "FINISHED", "STORE", "TABLE", src)(
+      mod, mod.exports, dom, api, (fn) => { H.timers.push(fn); }, H.finished, H.store, FR);
+    H.m = mod.exports;
+    H.settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) => setImmediate(r)); };
+    H.turn = async () => { const q = H.timers.splice(0); for (const f of q) f(); await H.settle(); };
+    return H;
+  }
+  const A = "/x/202611141200_OpenOmniscience_Backup", B = "/x/202611141201_OpenOmniscience_Backup";
+  const running = (dest) => ({ kind: "backup-export", state: "running", phase: "volumes", dest, parent: "/x", started_at: 7 });
+
+  (async () => {
+    // ITEM 1: remembered from the start's own answer, while the poll is still running --
+    // a restart mid-export (the page never sees the end) must still find the folder.
+    {
+      const H = harness();
+      H.status = running(A);
+      H.startAnswer = running(A);
+      H.m.watch(H.dom["ux-run"], () => api_start(H), { mode: "backup", parent: "/x" });
+      await H.settle();
+      assert.strictEqual(H.store["oo.export.lastDir"], A, "the folder was not remembered while the export ran");
+      H.dom["ux-export"].open = false;
+      await H.turn();
+    }
+    // …and from the first status tick when the start's answer was lost.
+    {
+      const H = harness();
+      H.status = running(B);
+      H.startAnswer = new Error("NetworkError");
+      H.m.watch(H.dom["ux-run"], () => api_start(H), { mode: "backup", parent: "/x" });
+      await H.settle();
+      assert.strictEqual(H.store["oo.export.lastDir"], B, "a lost start answer left the folder unremembered");
+      H.dom["ux-export"].open = false;
+      await H.turn();
+    }
+
+    // ITEM 3: a second watcher (the dialog reopened) takes over; the first stops polling.
+    {
+      const H = harness();
+      H.status = running(A);
+      H.m.watch(null);
+      await H.settle();
+      assert.strictEqual(H.timers.length, 1);
+      H.m.watch(null);
+      await H.settle();
+      await H.turn();
+      assert.strictEqual(H.timers.length, 1, "two watchers are polling one export: " + H.timers.length);
+      H.status = { ...running(A), state: "done", phase: null };
+      await H.turn();
+      await H.turn();
+      assert.deepStrictEqual(H.finished, [A], "the export was finished " + H.finished.length + " times");
+      // A closed dialog stops polling.
+      H.status = running(B);
+      H.m.watch(null);
+      await H.settle();
+      H.dom["ux-export"].open = false;
+      await H.turn();
+      assert.strictEqual(H.timers.length, 0, "a closed dialog is still polling");
+    }
+
+    // ITEM 5: the gate's refusal and the wrong-passphrase sentence, in French, with the phase.
+    for (const [error, key] of [
+      ["The corpus backup could not be confirmed — aborting before the large-data files so you never get a partial backup that looks complete.",
+       "The corpus backup could not be confirmed — aborting before the large-data files so you never get a partial backup that looks complete."],
+      ["wrong passphrase or the file has been altered",
+       "Could not open this backup: the passphrase is wrong, or its files have been altered."],
+    ]) {
+      const H = harness("fr");
+      H.status = { ...running(A), state: "failed", reason: "volumes-error", error, error_phase: "volumes" };
+      await H.m.watch(null);
+      const line = H.dom["ux-progress"].innerHTML;
+      assert.ok(FR[key] && line.includes(esc_(FR[key])), "the export's error is not in French: " + line);
+      assert.ok(line.includes(esc_(FR["Corpus"])), "the phase is not named in French: " + line);
+      assert.ok(!line.includes(error), "the English sentence is still on the page: " + line);
+    }
+
+    // ITEM 9: a paused export keeps its Cancel button, and Cancel ends it on the page.
+    {
+      const H = harness();
+      H.m.paused(H.dom["ux-progress"], H.dom["ux-bar"], H.dom["ux-pause"], (s) => s);
+      assert.strictEqual(H.dom["ux-cancel"].style.display, "", "a paused export has no Cancel button");
+      await H.m.cancel(H.dom["ux-cancel"]);
+      assert.ok(/Cancelled\./.test(H.dom["ux-progress"].innerHTML), "a cancelled paused export is not drawn: " + H.dom["ux-progress"].innerHTML);
+      assert.strictEqual(H.dom["ux-pause"].style.display, "none");
+    }
+    console.log("export watcher node suite: ok");
+  })().catch((e) => { console.error(e); process.exit(1); });
+
+  function api_start(H) {
+    if (H.startAnswer instanceof Error) return Promise.reject(H.startAnswer);
+    return Promise.resolve(H.startAnswer);
+  }
+  function esc_(s) {
+    return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  }
 }

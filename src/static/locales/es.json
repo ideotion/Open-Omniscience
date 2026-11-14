@@ -7896,5 +7896,15 @@
   "Resume export": "Reanudar la exportación",
   "Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above.": "Continúa esta exportación en su propia carpeta, desde la fase en la que se detuvo. Reanudar la copia del corpus requiere la frase de contraseña de arriba.",
   "Enter the passphrase to resume the corpus backup.": "Introduce la frase de contraseña para reanudar la copia del corpus.",
-  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "Hay una exportación de copia de seguridad en curso ({job}). No se importó nada y nada cambió en tu corpus: una importación sustituiría el corpus que la exportación está leyendo. Deja que la exportación termine, o ponla en pausa, y vuelve a importar."
+  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "Hay una exportación de copia de seguridad en curso ({job}). No se importó nada y nada cambió en tu corpus: una importación sustituiría el corpus que la exportación está leyendo. Deja que la exportación termine, o ponla en pausa, y vuelve a importar.",
+  "The large-data copy could not be confirmed as this export's own, so this export does not count it as done.": "No se pudo confirmar que la copia de datos grandes sea la de esta exportación, así que esta exportación no la cuenta como terminada.",
+  "Resuming the corpus backup needs the passphrase again.": "Reanudar la copia del corpus requiere de nuevo la frase de contraseña.",
+  "Nothing to resume: this export is not paused or unfinished.": "Nada que reanudar: esta exportación no está en pausa ni sin terminar.",
+  "A backup export is already running.": "Ya hay una exportación de copia de seguridad en curso.",
+  "A restore is in progress, so the export did not start: it would read a corpus that is being switched. Let the restore finish, then export again.": "Hay una restauración en curso, así que la exportación no se inició: leería un corpus que se está sustituyendo. Deje que la restauración termine y vuelva a exportar.",
+  "This export's record names no large-data category this app knows, so there is nothing to copy.": "El registro de esta exportación no nombra ninguna categoría de datos grandes que esta aplicación conozca, así que no hay nada que copiar.",
+  "This folder is not a dated export folder.": "Esta carpeta no es una carpeta de exportación con fecha.",
+  "This folder carries no export request, so what is left to do there is not known.": "Esta carpeta no contiene ninguna solicitud de exportación, así que no se sabe qué queda por hacer en ella.",
+  "The export stopped on an internal error.": "La exportación se detuvo por un error interno.",
+  "The export stopped unexpectedly before it finished.": "La exportación se detuvo inesperadamente antes de terminar."
 }

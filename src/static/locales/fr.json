@@ -7896,5 +7896,15 @@
   "Resume export": "Reprendre l'export",
   "Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above.": "Poursuit cet export dans son propre dossier, à partir de l'étape où il s'est arrêté. Reprendre la sauvegarde du corpus demande la phrase de passe ci-dessus.",
   "Enter the passphrase to resume the corpus backup.": "Saisissez la phrase de passe pour reprendre la sauvegarde du corpus.",
-  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "Un export de sauvegarde est en cours ({job}). Rien n'a été importé et rien n'a changé dans votre corpus : une importation remplacerait le corpus que l'export est en train de lire. Laissez l'export se terminer, ou mettez-le en pause, puis importez à nouveau."
+  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "Un export de sauvegarde est en cours ({job}). Rien n'a été importé et rien n'a changé dans votre corpus : une importation remplacerait le corpus que l'export est en train de lire. Laissez l'export se terminer, ou mettez-le en pause, puis importez à nouveau.",
+  "The large-data copy could not be confirmed as this export's own, so this export does not count it as done.": "La copie des grandes données n'a pas pu être confirmée comme étant celle de cet export : cet export ne la compte donc pas comme terminée.",
+  "Resuming the corpus backup needs the passphrase again.": "La reprise de la sauvegarde du corpus demande de nouveau la phrase de passe.",
+  "Nothing to resume: this export is not paused or unfinished.": "Rien à reprendre : cet export n'est ni en pause ni inachevé.",
+  "A backup export is already running.": "Un export de sauvegarde est déjà en cours.",
+  "A restore is in progress, so the export did not start: it would read a corpus that is being switched. Let the restore finish, then export again.": "Une restauration est en cours, l'export n'a donc pas démarré : il lirait un corpus en train d'être remplacé. Laissez la restauration se terminer, puis exportez de nouveau.",
+  "This export's record names no large-data category this app knows, so there is nothing to copy.": "Le registre de cet export ne nomme aucune catégorie de grandes données connue de cette application : il n'y a donc rien à copier.",
+  "This folder is not a dated export folder.": "Ce dossier n'est pas un dossier d'export daté.",
+  "This folder carries no export request, so what is left to do there is not known.": "Ce dossier ne contient aucune demande d'export : on ne sait donc pas ce qu'il reste à y faire.",
+  "The export stopped on an internal error.": "L'export s'est arrêté sur une erreur interne.",
+  "The export stopped unexpectedly before it finished.": "L'export s'est arrêté de façon inattendue avant d'avoir terminé."
 }

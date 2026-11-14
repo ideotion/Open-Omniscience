@@ -7896,5 +7896,15 @@
   "Resume export": "استئناف التصدير",
   "Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above.": "يتابع هذا التصدير في مجلده الخاص، من المرحلة التي توقف عندها. يتطلب استئناف نسخ المجموعة عبارة المرور أعلاه.",
   "Enter the passphrase to resume the corpus backup.": "أدخل عبارة المرور لاستئناف النسخ الاحتياطي للمجموعة.",
-  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "يجري تصدير نسخة احتياطية ({job}). لم يُستورد شيء ولم يتغير شيء في مجموعتك: فالاستيراد سيستبدل المجموعة التي يقرؤها التصدير. دع التصدير ينتهي، أو أوقفه مؤقتًا، ثم أعد الاستيراد."
+  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "يجري تصدير نسخة احتياطية ({job}). لم يُستورد شيء ولم يتغير شيء في مجموعتك: فالاستيراد سيستبدل المجموعة التي يقرؤها التصدير. دع التصدير ينتهي، أو أوقفه مؤقتًا، ثم أعد الاستيراد.",
+  "The large-data copy could not be confirmed as this export's own, so this export does not count it as done.": "تعذّر التأكد من أن نسخة البيانات الكبيرة تخص هذا التصدير، لذا لا يعدّها هذا التصدير مكتملة.",
+  "Resuming the corpus backup needs the passphrase again.": "استئناف نسخ المدوّنة احتياطيًا يتطلب عبارة المرور مرة أخرى.",
+  "Nothing to resume: this export is not paused or unfinished.": "لا شيء لاستئنافه: هذا التصدير ليس متوقفًا مؤقتًا ولا غير مكتمل.",
+  "A backup export is already running.": "يجري تصدير نسخة احتياطية بالفعل.",
+  "A restore is in progress, so the export did not start: it would read a corpus that is being switched. Let the restore finish, then export again.": "تجري عملية استعادة، لذا لم يبدأ التصدير: كان سيقرأ مدوّنة يجري استبدالها. دع الاستعادة تنتهي، ثم صدّر مرة أخرى.",
+  "This export's record names no large-data category this app knows, so there is nothing to copy.": "لا يذكر سجل هذا التصدير أي فئة بيانات كبيرة يعرفها هذا التطبيق، لذا لا يوجد ما يُنسخ.",
+  "This folder is not a dated export folder.": "هذا المجلد ليس مجلد تصدير مؤرَّخًا.",
+  "This folder carries no export request, so what is left to do there is not known.": "لا يحمل هذا المجلد طلب تصدير، لذا لا يُعرف ما تبقّى فعله فيه.",
+  "The export stopped on an internal error.": "توقف التصدير بسبب خطأ داخلي.",
+  "The export stopped unexpectedly before it finished.": "توقف التصدير على نحو غير متوقع قبل أن ينتهي."
 }

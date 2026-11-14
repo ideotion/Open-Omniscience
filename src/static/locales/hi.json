@@ -7896,5 +7896,15 @@
   "Resume export": "निर्यात फिर से शुरू करें",
   "Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above.": "यह निर्यात उसके अपने फ़ोल्डर में, उसी चरण से जारी रहता है जहाँ वह रुका था। कॉर्पस बैकअप फिर से शुरू करने के लिए ऊपर वाला पासफ़्रेज़ चाहिए।",
   "Enter the passphrase to resume the corpus backup.": "कॉर्पस बैकअप फिर से शुरू करने के लिए पासफ़्रेज़ दर्ज करें।",
-  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "एक बैकअप निर्यात चल रहा है ({job})। कुछ भी आयात नहीं हुआ और आपके कॉर्पस में कुछ नहीं बदला: आयात उस कॉर्पस को बदल देगा जिसे निर्यात पढ़ रहा है। निर्यात को पूरा होने दें, या उसे रोकें, फिर दोबारा आयात करें।"
+  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "एक बैकअप निर्यात चल रहा है ({job})। कुछ भी आयात नहीं हुआ और आपके कॉर्पस में कुछ नहीं बदला: आयात उस कॉर्पस को बदल देगा जिसे निर्यात पढ़ रहा है। निर्यात को पूरा होने दें, या उसे रोकें, फिर दोबारा आयात करें।",
+  "The large-data copy could not be confirmed as this export's own, so this export does not count it as done.": "बड़े डेटा की प्रति की इस निर्यात की अपनी होने की पुष्टि नहीं हो सकी, इसलिए यह निर्यात उसे पूरा नहीं मानता।",
+  "Resuming the corpus backup needs the passphrase again.": "कॉर्पस बैकअप फिर से शुरू करने के लिए पासफ़्रेज़ दोबारा चाहिए।",
+  "Nothing to resume: this export is not paused or unfinished.": "फिर से शुरू करने को कुछ नहीं: यह निर्यात न रुका है, न अधूरा है।",
+  "A backup export is already running.": "एक बैकअप निर्यात पहले से चल रहा है।",
+  "A restore is in progress, so the export did not start: it would read a corpus that is being switched. Let the restore finish, then export again.": "एक पुनर्स्थापना चल रही है, इसलिए निर्यात शुरू नहीं हुआ: वह ऐसा कॉर्पस पढ़ता जिसे बदला जा रहा है। पुनर्स्थापना पूरी होने दें, फिर दोबारा निर्यात करें।",
+  "This export's record names no large-data category this app knows, so there is nothing to copy.": "इस निर्यात के रिकॉर्ड में बड़े डेटा की कोई ऐसी श्रेणी नहीं है जिसे यह ऐप जानता हो, इसलिए कॉपी करने को कुछ नहीं है।",
+  "This folder is not a dated export folder.": "यह फ़ोल्डर दिनांकित निर्यात फ़ोल्डर नहीं है।",
+  "This folder carries no export request, so what is left to do there is not known.": "इस फ़ोल्डर में कोई निर्यात अनुरोध नहीं है, इसलिए पता नहीं कि वहाँ क्या करना बाकी है।",
+  "The export stopped on an internal error.": "निर्यात एक आंतरिक त्रुटि पर रुक गया।",
+  "The export stopped unexpectedly before it finished.": "निर्यात पूरा होने से पहले अप्रत्याशित रूप से रुक गया।"
 }

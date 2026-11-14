@@ -450,8 +450,9 @@ def test_the_corpus_data_safety_gate_survives_the_change():
 
     # R701: the gate moved server-side, unchanged: done, backup, THIS folder.
     job = (Path(__file__).resolve().parents[1] / "src/backup/export_job.py").read_text(encoding="utf-8")
-    src = python_function_source(job, "_run_volumes")
-    for needle in ('state == "done"', 'st.get("mode") == "backup"', '_same_path(str(st["dest"]), dest)'):
+    src = python_function_source(job, "_run_volumes") + python_function_source(job, "_ours")
+    for needle in ('if state != "done":', 'st.get("mode") == "backup"', '_same_path(str(st["dest"]), dest)',
+                   'st.get("started_at") == started'):
         assert needle in src, f"the corpus data-safety gate lost its {needle!r} check"
 
 

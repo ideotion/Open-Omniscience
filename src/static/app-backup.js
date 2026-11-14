@@ -45,6 +45,7 @@
       const sum = document.getElementById("ux-summary");
       if (sum) sum.innerHTML = "";
       _uxExportFacts = null;
+      _uxWatchGen++;  // R701: an earlier watcher of this dialog stops drawing; the reopen re-attaches ONE
       document.getElementById("ux-run").disabled = false;
       dlg.showModal();
       await _uxLoadInventory();
@@ -115,7 +116,7 @@
       // job no longer knows and whose record says nothing is left is not "the last export".
       if (!live && !unfinished) return;
       if (live && (s.state === "failed" || s.state === "cancelled")) {
-        prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(ooServerText(s.error || t("Cancelled.")))}</span>`;
+        prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(_uxExportErrorText(s, t("Cancelled.")))}</span>`;
       } else {
         prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span> ${esc(tfb("({text})", { text: t("last completed export") }))}`;
       }
@@ -686,6 +687,10 @@
         let fails = 0;                    // consecutive poll-transport failures
         const MAX_FAILS = 40;             // give up POLLING (not the job) after ~minutes of backoff
         const tick = async () => {
+          // R701: a watcher that is no longer THE one (a newer watcher took over, or the
+          // dialog closed) stops here, without drawing: two pollers on one dialog painted
+          // over each other and finished the same export twice.
+          if (ui.alive && !ui.alive()) return resolve({ state: "detached" });
           let s;
           try {
             s = await api(url);
@@ -701,7 +706,9 @@
             setTimeout(tick, Math.min(1200 * Math.pow(1.6, fails - 1), 15000));
             return;
           }
+          if (ui.alive && !ui.alive()) return resolve({ state: "detached" });
           const state = s.state || "";
+          if (ui.onTick) ui.onTick(s);
           if (ui.prefixOf) prefix = ui.prefixOf(s);
           const view = _uxProgressView(kind, s, t);
           _uxPaintBar(ui.bar, view);
@@ -717,7 +724,9 @@
             // Surface the REAL backend error (the volume manifest/checksum message),
             // never a bare "cancelled" — field report: "Import failed — see console".
             // "failed" is the export job's (R701), with its named reason in s.error.
-            return reject(new Error(s.error || (kind === "export" && state === "cancelled" ? t("Cancelled.") : (view.text || state))));
+            const err = new Error(s.error || (kind === "export" && state === "cancelled" ? t("Cancelled.") : (view.text || state)));
+            err.status = s;  // R701: the export's error_phase rides beside its untouched error
+            return reject(err);
           }
           setTimeout(tick, 1200);
         };
@@ -831,46 +840,84 @@
     // after a reload all end here. ``startCall`` (absent on a re-attach) is made
     // job-state-as-truth by _uxStartThenPoll: a lost start response with the job live and
     // ours is watched, never reported as a failure. The prefix follows the job's phase.
+    //
+    // ONE WATCHER AT A TIME. Each call takes the next generation; an older watcher whose
+    // generation is no longer current -- or any watcher once the dialog is closed -- stops
+    // polling and draws nothing more (_uxPoll's ui.alive). The dated folder is remembered
+    // the moment the server names it -- the start's own answer, then every status tick --
+    // not only at the end: a restart mid-export must still find it to offer «Resume export».
+    let _uxWatchGen = 0;
+    //: The export whose completion was drawn (its folder and start time), so it is drawn once.
+    let _uxFinishedKey = null;
     async function _uxWatchExport(btn, startCall, expect) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const prog = document.getElementById("ux-progress");
       const bar = document.getElementById("ux-bar");
       const pauseBtn = document.getElementById("ux-pause");
       const cancelBtn = document.getElementById("ux-cancel");
+      const dlg = document.getElementById("ux-export");
+      const gen = ++_uxWatchGen;
+      const alive = () => gen === _uxWatchGen && (!dlg || !!dlg.open);
+      const remember = (st) => {
+        if (st && st.dest) { _uxExportDir = st.dest; _uxRememberExportDir(st.dest); }
+      };
       if (btn) btn.disabled = true;
       if (pauseBtn) { pauseBtn.style.display = ""; pauseBtn.disabled = false; pauseBtn.dataset.mode = "pause"; pauseBtn.textContent = t("Pause"); }
       if (cancelBtn) { cancelBtn.style.display = ""; cancelBtn.disabled = false; }
-      const ui = { bar, label: prog, prefixOf: (st) => (st.phase === "folder" ? t("Large data") : t("Corpus")) };
+      const ui = { bar, label: prog, alive, onTick: remember,
+        prefixOf: (st) => (st.phase === "folder" ? t("Large data") : t("Corpus")) };
       const hide = () => {
         if (bar) bar.style.display = "none";
         if (pauseBtn) pauseBtn.style.display = "none";
         if (cancelBtn) cancelBtn.style.display = "none";
       };
+      const start = startCall ? async () => { const r = await startCall(); remember(r); return r; } : null;
       try {
-        const s = startCall
-          ? await _uxStartThenPoll(startCall, "/api/backup/export/status", "export", ui, expect)
+        const s = start
+          ? await _uxStartThenPoll(start, "/api/backup/export/status", "export", ui, expect)
           : await _uxPoll("/api/backup/export/status", "export", ui);
-        if (s && s.dest) { _uxExportDir = s.dest; _uxRememberExportDir(s.dest); }
+        if (!alive() || (s && s.state === "detached")) return;  // superseded or closed: the newer watcher draws
+        remember(s);
         if (s && s.requested) _uxExportIncluded = { corpus: !!s.requested.corpus, blobs: (s.requested.categories || []).slice() };
         if (s && s.state === "paused") {
           _uxPhase = s.phase || null;
-          if (cancelBtn) cancelBtn.style.display = "none";
           _uxShowPaused(prog, bar, pauseBtn, t);
           if (btn) btn.disabled = false;
           return;
         }
         _uxPhase = null;
         hide();
-        await _uxFinishExport(prog, (s && s.dest) || _uxExportDir, t);
+        const key = `${(s && s.dest) || _uxExportDir}|${(s && s.started_at) || ""}`;
+        if (_uxFinishedKey !== key) {
+          _uxFinishedKey = key;
+          await _uxFinishExport(prog, (s && s.dest) || _uxExportDir, t);
+        }
       } catch (e) {
+        if (!alive()) return;
         _uxPhase = null;
         hide();
         // The dialog's own error colour, not the floating .note toast box (W6; B13's fix
         // for the import dialog): the toast class slid in with a shadow inside the panel.
-        prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
+        prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(_uxExportErrorText(e && e.status, (e && e.message) || e))}</span>`;
         console.error("ux export", e);
       }
       if (btn) btn.disabled = false;
+    }
+
+    // The export's error in the operator's language (R701). The server sends a manager's
+    // own sentence UNCHANGED and the phase it came from beside it (error_phase), so the
+    // whole-message translations in ooServerText still match it -- the wrong-passphrase
+    // sentence, the data-safety gate's refusal -- and the phase is the locale's own
+    // "{prefix}: {text}" frame, never English welded to the front of the message.
+    function _uxExportErrorText(st, fallback) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      const text = ooServerText((st && st.error) || fallback || "");
+      const ph = st && st.error_phase;
+      if (ph !== "volumes" && ph !== "folder") return text;
+      return tf("{prefix}: {text}", { prefix: ph === "folder" ? t("Large data") : t("Corpus"), text });
     }
 
     // THE ONE COMPLETION, for a straight run and a resumed large-data copy alike (W1). A
@@ -925,7 +972,10 @@
       const cats = ((facts.missing || {}).categories || []).slice();
       if (!dest) return;
       const body = { dir: dest };
-      if (req.phase === "volumes" || (facts.missing || {}).corpus) {
+      // The passphrase only where the server will run the corpus phase: the record names it,
+      // or a record older than the cursor still lacks the corpus. A done or cancelled
+      // export's resume is the large-data copy alone, and needs none.
+      if (req.phase === "volumes" || (req.phase == null && (facts.missing || {}).corpus)) {
         const pass = (document.getElementById("ux-pass") || {}).value || "";
         if (!pass) { toast(t("Enter the passphrase to resume the corpus backup."), "err"); return; }
         const vBox = document.getElementById("ux-verify");
@@ -947,6 +997,9 @@
       if (bar) bar.style.display = "none";
       prog.innerHTML = `<b>${esc(t("Backup paused."))}</b> ${esc(t("Resume to continue where it left off."))}`;
       if (pauseBtn) { pauseBtn.style.display = ""; pauseBtn.disabled = false; pauseBtn.dataset.mode = "resume"; pauseBtn.textContent = t("Resume"); }
+      // R701: a paused export can be cancelled too (the server takes it), so the button stays.
+      const cancelBtn = document.getElementById("ux-cancel");
+      if (cancelBtn) { cancelBtn.style.display = ""; cancelBtn.disabled = false; }
     }
 
     // Pause the export's running phase, or resume a paused export -- in the SAME dated
@@ -990,8 +1043,23 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!confirm(t("Cancel this export? Corpus volumes written so far are removed from the folder; large-data files already copied stay."))) return;
       if (btn) btn.disabled = true;
-      try { await api("/api/backup/export/cancel", { method: "POST" }); }
-      catch (e) { toast(t("Could not cancel:") + " " + (e.message || e), "err"); if (btn) btn.disabled = false; }
+      let r = null;
+      try { r = await api("/api/backup/export/cancel", { method: "POST" }); }
+      catch (e) { toast(t("Could not cancel:") + " " + ooServerText(e.message || e), "err"); if (btn) btn.disabled = false; return; }
+      // A RUNNING export's watcher sees the cancel and draws it. A PAUSED one has no
+      // watcher (its worker had ended), and the server cancelled it at once: draw it here.
+      if (r && r.state === "cancelled") {
+        _uxPhase = null;
+        const bar = document.getElementById("ux-bar");
+        const pauseBtn = document.getElementById("ux-pause");
+        if (bar) bar.style.display = "none";
+        if (pauseBtn) pauseBtn.style.display = "none";
+        if (btn) btn.style.display = "none";
+        const prog = document.getElementById("ux-progress");
+        if (prog) prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(t("Cancelled."))}</span>`;
+        const run = document.getElementById("ux-run");
+        if (run) run.disabled = false;
+      }
     }
 
     // ---- Unified Import dialog (folder discovery) -------------------------- //

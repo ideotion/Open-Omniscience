@@ -7896,5 +7896,15 @@
   "Resume export": "রপ্তানি আবার শুরু করুন",
   "Continues this export in its own folder, from the phase it stopped in. Resuming the corpus backup needs the passphrase above.": "এই রপ্তানিটি তার নিজের ফোল্ডারে, যে ধাপে থেমেছিল সেখান থেকে চালিয়ে যায়। কর্পাস ব্যাকআপ আবার শুরু করতে উপরের পাসফ্রেজ লাগবে।",
   "Enter the passphrase to resume the corpus backup.": "কর্পাস ব্যাকআপ আবার শুরু করতে পাসফ্রেজ লিখুন।",
-  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "একটি ব্যাকআপ রপ্তানি চলছে ({job})। কিছুই আমদানি হয়নি এবং আপনার কর্পাসে কিছুই বদলায়নি: আমদানি সেই কর্পাসটি বদলে দেবে যা রপ্তানি পড়ছে। রপ্তানি শেষ হতে দিন, বা বিরতি দিন, তারপর আবার আমদানি করুন।"
+  "A backup export is running ({job}). Nothing was imported and nothing in your corpus changed: an import would switch the corpus the export is reading. Let the export finish, or pause it, then import again.": "একটি ব্যাকআপ রপ্তানি চলছে ({job})। কিছুই আমদানি হয়নি এবং আপনার কর্পাসে কিছুই বদলায়নি: আমদানি সেই কর্পাসটি বদলে দেবে যা রপ্তানি পড়ছে। রপ্তানি শেষ হতে দিন, বা বিরতি দিন, তারপর আবার আমদানি করুন।",
+  "The large-data copy could not be confirmed as this export's own, so this export does not count it as done.": "বড় ডেটার কপিটি এই রপ্তানিরই কিনা নিশ্চিত করা যায়নি, তাই এই রপ্তানি সেটিকে সম্পূর্ণ হিসেবে গণ্য করে না।",
+  "Resuming the corpus backup needs the passphrase again.": "কর্পাস ব্যাকআপ আবার চালু করতে পাসফ্রেজ আবার লাগবে।",
+  "Nothing to resume: this export is not paused or unfinished.": "আবার চালু করার কিছু নেই: এই রপ্তানি বিরতিতে নেই, অসম্পূর্ণও নয়।",
+  "A backup export is already running.": "একটি ব্যাকআপ রপ্তানি ইতিমধ্যে চলছে।",
+  "A restore is in progress, so the export did not start: it would read a corpus that is being switched. Let the restore finish, then export again.": "একটি পুনরুদ্ধার চলছে, তাই রপ্তানি শুরু হয়নি: এটি এমন একটি কর্পাস পড়ত যা বদলানো হচ্ছে। পুনরুদ্ধার শেষ হতে দিন, তারপর আবার রপ্তানি করুন।",
+  "This export's record names no large-data category this app knows, so there is nothing to copy.": "এই রপ্তানির রেকর্ডে এই অ্যাপের জানা কোনো বড় ডেটার বিভাগ নেই, তাই কপি করার কিছু নেই।",
+  "This folder is not a dated export folder.": "এই ফোল্ডারটি তারিখযুক্ত রপ্তানি ফোল্ডার নয়।",
+  "This folder carries no export request, so what is left to do there is not known.": "এই ফোল্ডারে কোনো রপ্তানি অনুরোধ নেই, তাই সেখানে কী বাকি আছে তা জানা নেই।",
+  "The export stopped on an internal error.": "একটি অভ্যন্তরীণ ত্রুটিতে রপ্তানি থেমে গেছে।",
+  "The export stopped unexpectedly before it finished.": "রপ্তানি শেষ হওয়ার আগেই অপ্রত্যাশিতভাবে থেমে গেছে।"
 }

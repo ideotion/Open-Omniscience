@@ -35,13 +35,19 @@ continues in the SAME dated folder: a resume never allocates. A process restart 
 job and nothing restarts it (that would need the passphrase, and an export is never silent):
 the reopened panel reads the record and offers «Resume export».
 
-STOPPING. Registered as a :class:`~src.jobs.background.BackgroundJob` kind, so the task
-manager lists one export row and :func:`~src.jobs.background.stop_all_jobs` (R689) stops it
+STOPPING. A stop is forwarded to the running phase and the export reads ``stopping``
+until that phase's job has really ended -- however long it takes, since until then it is
+still writing into the folder -- and then ``paused`` or ``cancelled``. A Cancel outranks a
+Pause, and a paused export can be cancelled.
+
+Registered as a :class:`~src.jobs.background.BackgroundJob` kind, so the task manager
+lists one export row and :func:`~src.jobs.background.stop_all_jobs` (R689) stops it
 on the app's shutdown: a stop asked by a shutdown PAUSES the running phase (the volumes and
 the copied files are kept, the record names the phase); a stop asked from the task manager's
 Cancel cancels it. Not ``is_writer``: it reads the corpus. A restore REFUSES while it runs
 (R712, :func:`src.backup.merge.export_refusal`), because switching the corpus under an export
-that is reading it is wrong in both directions.
+that is reading it is wrong in both directions -- and an export refuses to start or
+resume while a restore runs (:data:`RESTORE_RUNNING`).
 
 The two older start routes (``/v2/volumes/start``, ``/folder/start``) stay, unchanged and
 with the guards they have today, for the advanced panel only (R713); the main export dialog
@@ -78,20 +84,49 @@ PHASE_VOLUMES = "volumes"
 PHASE_FOLDER = "folder"
 
 #: One turn of the wait loop: how long the orchestrator waits on a manager before it
-#: looks again. A pause or a cancel wakes it at once.
+#: looks again. A pause or a cancel wakes it at once. There is NO overall deadline on a
+#: stop: a phase that has been asked to stop and is still running is still writing into
+#: the folder, so the export stays ``stopping`` -- live, and refusing a restore (R712) --
+#: until that phase's own job has ended, and then settles as ``paused`` or ``cancelled``.
+#: (A 60 s cut-off used to end the export ``failed`` while the phase ran on underneath.)
 _POLL_S = 0.1
-#: How long a phase may take to honour a pause or a cancel before the export stops
-#: waiting for it and says so. The volume job stops between volumes and the copy between
-#: files, so this is generous; it bounds the wait rather than describing a normal stop.
-_STOP_WAIT_S = 60.0
 
+# Every sentence the export writes as its OWN error or refusal is one of these fixed
+# strings, and the page translates each one whole (ooServerText in app-core.js). A
+# manager's own message (the volume job's, the folder copy's) is passed through
+# UNCHANGED, never prefixed, with the phase in a separate field (``error_phase``), so
+# the page's whole-message rules still recognise it -- the wrong-passphrase sentence
+# among them.
 #: The data-safety gate's refusal (field 2026-07-14), the sentence the page used to throw.
 UNCONFIRMED = (
     "The corpus backup could not be confirmed — aborting before the large-data files so you "
     "never get a partial backup that looks complete."
 )
+#: The large-data phase's job is not the one this export started (an advanced-panel copy
+#: started in its place, or into another folder): the export does not claim it.
+FOLDER_UNCONFIRMED = (
+    "The large-data copy could not be confirmed as this export's own, so this export does not "
+    "count it as done."
+)
 NEEDS_PASSPHRASE = "Resuming the corpus backup needs the passphrase again."
 NOTHING_TO_RESUME = "Nothing to resume: this export is not paused or unfinished."
+ALREADY_RUNNING = "A backup export is already running."
+#: R712 the other way round: an export does not start while a restore runs.
+RESTORE_RUNNING = (
+    "A restore is in progress, so the export did not start: it would read a corpus that is "
+    "being switched. Let the restore finish, then export again."
+)
+NO_CATEGORIES = (
+    "This export's record names no large-data category this app knows, so there is nothing to copy."
+)
+NOT_AN_EXPORT_FOLDER = "This folder is not a dated export folder."
+NO_RECORD = "This folder carries no export request, so what is left to do there is not known."
+INTERNAL = "The export stopped on an internal error."
+INTERRUPTED = "The export stopped unexpectedly before it finished."
+
+#: The states in which the export is live: a phase is running, or has been asked to stop
+#: and has not stopped yet.
+_LIVE_STATES = ("running", "stopping")
 
 
 class ExportJobManager:
@@ -103,13 +138,14 @@ class ExportJobManager:
         self._vol_override = volume_manager
         self._fold_override = folder_manager
         self._job = BackgroundJob("backup-export", LABEL, self._worker, cancellable=True)
-        self._state = "idle"  # idle | running | paused | done | failed | cancelled
+        self._state = "idle"  # idle | running | stopping | paused | done | failed | cancelled
         self._phase: str | None = None
         self._phases: list[str] = []
         self._dest: str | None = None
         self._request: dict[str, Any] = {}
         self._reason: str | None = None
         self._error: str | None = None
+        self._error_phase: str | None = None
         self._stop_asked: str | None = None  # "pause" | "cancel"
         self._stop_seq = 0
         #: The passphrase, for the volumes phase only: emptied by the worker the moment that
@@ -119,6 +155,9 @@ class ExportJobManager:
         #: job's ``_items`` / ``_targets``), kept for a resume of the same folder.
         self._seams: dict[str, Any] = {}
         self._started_at: float | None = None
+        #: The ``started_at`` the running phase's manager answered its start with: the
+        #: identity of THAT job, so a later status of a different job is never taken for it.
+        self._sub_started: float | None = None
 
     # -- the two managers ---------------------------------------------------- #
     def _vol(self) -> Any:
@@ -136,9 +175,26 @@ class ExportJobManager:
         return get_folder_manager()
 
     def live(self) -> bool:
-        """Whether an export is running now (its worker is alive)."""
+        """Whether an export is running now: a phase runs, or is stopping, or the worker is alive."""
         with self._lock:
-            return self._state == "running" or self._job._alive()
+            return self._state in _LIVE_STATES or self._job._alive()
+
+    def _restore_running(self) -> bool:
+        """Whether a restore runs now (R712 the other way round). Read off the import queue
+        and the two managers' own restore modes; an unreadable one counts as running."""
+        try:
+            from src.backup import import_queue
+
+            q = import_queue._MANAGER
+            if q is not None and getattr(q, "_state", None) == "running":
+                return True
+            for mgr in (self._vol(), self._fold()):
+                st = mgr.status()
+                if st.get("mode") == "restore" and (st.get("running") or st.get("state") == "running"):
+                    return True
+        except Exception:  # noqa: BLE001 - an unknown answer is not a go-ahead
+            return True
+        return False
 
     # -- start / resume ------------------------------------------------------ #
     def start(
@@ -158,14 +214,10 @@ class ExportJobManager:
         """Allocate the dated folder, record the request and run the export.
 
         ValueError for a request that cannot run (nothing chosen, no passphrase for a
-        corpus, an unusable destination); RuntimeError while an export already runs.
+        corpus, an unusable destination); RuntimeError while an export already runs, or
+        while a restore runs (:data:`RESTORE_RUNNING`).
         """
-        from src.backup.folder_backup import _CATEGORIES
-
-        cats: list[str] = []
-        for c in categories or []:
-            if c in _CATEGORIES and c not in cats:
-                cats.append(c)
+        cats = _known_categories(categories)
         want_corpus = bool(corpus)
         inside = bool(inside) and want_corpus and bool(cats)
         if not want_corpus and not cats:
@@ -174,7 +226,9 @@ class ExportJobManager:
             raise ValueError("the corpus backup is always encrypted: a passphrase is required")
         with self._lock:
             if self.live():
-                raise RuntimeError("A backup export is already running.")
+                raise RuntimeError(ALREADY_RUNNING)
+            if self._restore_running():
+                raise RuntimeError(RESTORE_RUNNING)
             try:
                 dest = allocate_export_folder(parent)
             except ExportFolderError as exc:
@@ -201,31 +255,37 @@ class ExportJobManager:
         passphrase: str = "",
         verify_after_write: bool | None = None,
     ) -> dict:
-        """Continue a paused or unfinished export IN ITS OWN FOLDER, from the phase its record names.
+        """Continue a paused or unfinished export IN ITS OWN FOLDER.
 
         ``folder`` is the dated folder (after a restart the page names it); left out, the
-        export this process last ran. Never allocates. ValueError when the folder is not an
-        export with a record, or the volumes phase is to be resumed without the passphrase
-        (:data:`NEEDS_PASSPHRASE`); RuntimeError while one runs, or when nothing is left.
+        export this process last ran. Never allocates. The phase is the one the record
+        names; for a record that says ``done`` or ``cancelled`` (or none) but whose folder
+        still lacks the large-data files it asked for, the large-data phase into the same
+        folder (:func:`_resume_plan`). ValueError when the folder is not an export with a
+        record, its record names no known category to copy (:data:`NO_CATEGORIES`), or the
+        volumes phase is to be resumed without the passphrase (:data:`NEEDS_PASSPHRASE`);
+        RuntimeError while one runs, while a restore runs, or when nothing is left.
         """
         with self._lock:
             if self.live():
-                raise RuntimeError("A backup export is already running.")
+                raise RuntimeError(ALREADY_RUNNING)
+            if self._restore_running():
+                raise RuntimeError(RESTORE_RUNNING)
             target = folder or self._dest
             if not target:
                 raise RuntimeError(NOTHING_TO_RESUME)
             dest = Path(target)
             if not is_export_folder_name(dest.name) or not dest.is_dir():
-                raise ValueError(f"{dest} is not a dated export folder.")
-            req = read_export_request(dest)
+                raise ValueError(NOT_AN_EXPORT_FOLDER)
+            req = read_export_request(dest)  # its categories are the known ones only
             if req is None:
-                raise ValueError(
-                    f"{dest} carries no export request, so what is left to do there is not known."
-                )
-            phase = _resume_phase(dest, req)
-            if phase is None:
+                raise ValueError(NO_RECORD)
+            plan = _resume_plan(dest, req)
+            if plan is None:
                 raise RuntimeError(NOTHING_TO_RESUME)
-            owed = [] if req.get("inside") else list(req.get("categories") or [])
+            phase, owed = plan
+            if phase == PHASE_FOLDER and not owed:
+                raise ValueError(NO_CATEGORIES)
             phases = [PHASE_VOLUMES] + ([PHASE_FOLDER] if owed else []) if phase == PHASE_VOLUMES else [PHASE_FOLDER]
             if phase == PHASE_VOLUMES and not passphrase:
                 raise ValueError(NEEDS_PASSPHRASE)
@@ -235,8 +295,8 @@ class ExportJobManager:
                 verify = req.get("verify_after_write")
             request = {
                 "corpus": bool(req.get("corpus")),
-                "categories": list(req.get("categories") or []),
-                "inside": bool(req.get("inside")),
+                "categories": list(req.get("categories") or []) if phase == PHASE_VOLUMES else list(owed),
+                "inside": bool(req.get("inside")) and phase == PHASE_VOLUMES,
                 "verify_after_write": True if verify is None else bool(verify),
                 "include_newsletters": bool(self._request.get("include_newsletters", True)) if same else True,
             }
@@ -253,7 +313,9 @@ class ExportJobManager:
         self._request = request
         self._reason = None
         self._error = None
+        self._error_phase = None
         self._stop_asked = None
+        self._sub_started = None
         self._wake.clear()
         self._secret = [passphrase] if passphrase and PHASE_VOLUMES in phases else []
         self._seams = seams
@@ -266,13 +328,15 @@ class ExportJobManager:
             self._secret = []
             self._state = "failed"
             self._reason = "not-started"
-            self._error = f"{type(exc).__name__}: the export could not start its worker"
+            self._error = INTERNAL
+            _LOG.warning("backup export could not start its worker (%s)", type(exc).__name__)
             raise
         return self.status()
 
     # -- controls ------------------------------------------------------------ #
     def pause(self) -> dict:
-        """Pause the running phase (kept on the drive; Resume continues it in this folder)."""
+        """Pause the running phase (kept on the drive; Resume continues it in this folder).
+        A Cancel already asked outranks it."""
         with self._lock:
             if self.live():
                 self._stop_asked = self._stop_asked or "pause"
@@ -280,16 +344,52 @@ class ExportJobManager:
         return self.status()
 
     def cancel(self) -> dict:
-        """Cancel the running phase. A cancelled corpus phase removes its partial volume set,
-        as the volume job's own cancel always has."""
+        """Cancel the export. While a phase runs (or is stopping on a Pause), the LAST
+        explicit request wins and a Cancel outranks a Pause: the running phase is
+        cancelled, and a corpus phase removes its partial volume set, as the volume job's
+        own cancel always has. A PAUSED export is cancelled here and now: the same
+        cleanup, and the record says ``cancelled``; large-data files already copied stay."""
         with self._lock:
             if self.live():
                 self._stop_asked = "cancel"
                 self._wake.set()
+            elif self._state == "paused" and self._dest:
+                self._cancel_paused(self._phase, self._dest)
+                update_export_phase(self._dest, "cancelled")
+                self._state = "cancelled"
         return self.status()
+
+    def _cancel_paused(self, phase: str | None, dest: str) -> None:
+        """A paused corpus phase's partial volumes are removed on a cancel, as a running
+        one's are; the large-data files are not (nothing about them is misleading)."""
+        if phase != PHASE_VOLUMES:
+            return
+        try:
+            if self._vol().status().get("running"):
+                return  # another volume job is at work: not this export's to clean
+            from src.backup.stream_backup import cleanup_cancelled_build
+
+            cleanup_cancelled_build(Path(dest))
+        except Exception as exc:  # noqa: BLE001 - the class only; the export still ends cancelled
+            _LOG.warning("backup export: the cancelled corpus phase could not be cleaned (%s)", type(exc).__name__)
 
     # -- the worker ---------------------------------------------------------- #
     def _worker(self, ctx: Any) -> dict:
+        """The export's thread. Whatever ends it -- including a ``BaseException`` the inner
+        handler does not take -- it never leaves the export ``running`` or ``stopping``:
+        a state stuck there would refuse every restore for the life of the process."""
+        try:
+            return self._work(ctx)
+        finally:
+            self._secret = []
+            with self._lock:
+                if self._state in _LIVE_STATES:
+                    self._state = "failed"
+                    self._reason = "interrupted"
+                    self._error = INTERRUPTED
+                    self._error_phase = self._phase
+
+    def _work(self, ctx: Any) -> dict:
         try:
             for phase in list(self._phases):
                 with self._lock:
@@ -316,10 +416,9 @@ class ExportJobManager:
             with self._lock:
                 self._state = "failed"
                 self._reason = "internal"
-                self._error = f"{type(exc).__name__}: the export stopped on an internal error"
+                self._error = INTERNAL
+                self._error_phase = self._phase
             return {"state": "failed"}
-        finally:
-            self._secret = []
 
     def _run_volumes(self, ctx: Any) -> bool:
         """The corpus phase, then the data-safety gate. True when the export ended here."""
@@ -329,9 +428,9 @@ class ExportJobManager:
         pw = self._secret.pop() if self._secret else ""
         self._secret = []
         if not pw:
-            return self._fail("passphrase-missing", NEEDS_PASSPHRASE)
+            return self._fail("passphrase-missing", NEEDS_PASSPHRASE, PHASE_VOLUMES)
         try:
-            vol.start_backup(
+            began = vol.start_backup(
                 dest,
                 pw,
                 include_newsletters=bool(req.get("include_newsletters", True)),
@@ -342,92 +441,129 @@ class ExportJobManager:
         except Exception as exc:  # noqa: BLE001 - a refusal is the export's failure, written without the passphrase
             text = exception_text(exc, pw, typed=False)
             pw = ""
-            return self._fail("volumes-refused", f"The corpus backup did not start: {text}")
+            return self._fail("volumes-refused", text, PHASE_VOLUMES)
         pw = ""  # the volumes phase has started: this orchestrator holds no passphrase from here on
+        self._note_started(began)
         st = self._wait(ctx, vol)
-        if st is None:
-            return self._fail("stop-timeout", "The corpus backup did not stop in time.")
+        if not self._ours(st):
+            return self._fail("volumes-unconfirmed", UNCONFIRMED, PHASE_VOLUMES)
         state = st.get("state")
-        if state == "paused":
-            return self._end_stopped("pause", PHASE_VOLUMES)
-        if state == "cancelled":
-            return self._end_stopped("cancel", PHASE_VOLUMES)
+        if state in ("paused", "cancelled"):
+            return self._end_phase_stopped(ctx, state, PHASE_VOLUMES)
         if state == "error":
-            return self._fail("volumes-error", f"The corpus backup failed: {st.get('error') or 'no reason was recorded'}")
-        # THE DATA-SAFETY GATE, moved here from the page unchanged: done, backup, THIS folder.
-        if not (state == "done" and st.get("mode") == "backup" and st.get("dest") and _same_path(str(st["dest"]), dest)):
-            return self._fail("volumes-unconfirmed", UNCONFIRMED)
+            return self._fail("volumes-error", str(st.get("error") or UNCONFIRMED), PHASE_VOLUMES)
+        # THE DATA-SAFETY GATE, moved here from the page unchanged: done, backup, THIS folder
+        # -- and now also THIS job (the started_at its start answered with).
+        if state != "done":
+            return self._fail("volumes-unconfirmed", UNCONFIRMED, PHASE_VOLUMES)
         return False
 
     def _run_folder(self, ctx: Any) -> bool:
         """The large-data copy into the same folder. True when the export ended here."""
         fold = self._fold()
         dest = self._dest or ""
+        cats = _known_categories(self._request.get("categories"))
+        if not cats:
+            # Never an empty list: the folder job reads "none known" as EVERY category.
+            return self._fail("no-categories", NO_CATEGORIES, PHASE_FOLDER)
         try:
-            fold.start(
+            began = fold.start(
                 dest,
-                list(self._request.get("categories") or []),
+                cats,
                 _items=self._seams.get("_items"),
                 _targets=self._seams.get("_targets"),
             )
         except (ValueError, RuntimeError) as exc:
-            return self._fail("folder-refused", f"The large-data copy did not start: {exception_text(exc, typed=False)}")
+            return self._fail("folder-refused", exception_text(exc, typed=False), PHASE_FOLDER)
+        self._note_started(began)
         st = self._wait(ctx, fold)
-        if st is None:
-            return self._fail("stop-timeout", "The large-data copy did not stop in time.")
+        if not self._ours(st):
+            return self._fail("folder-unconfirmed", FOLDER_UNCONFIRMED, PHASE_FOLDER)
         state = st.get("state")
-        if state == "paused":
-            return self._end_stopped("pause", PHASE_FOLDER)
-        if state == "cancelled":
-            return self._end_stopped("cancel", PHASE_FOLDER)
+        if state in ("paused", "cancelled"):
+            return self._end_phase_stopped(ctx, state, PHASE_FOLDER)
         if state != "done":
-            return self._fail("folder-error", f"The large-data copy failed: {st.get('error') or 'no reason was recorded'}")
+            return self._fail("folder-error", str(st.get("error") or FOLDER_UNCONFIRMED), PHASE_FOLDER)
         return False
+
+    def _note_started(self, began: Any) -> None:
+        with self._lock:
+            self._sub_started = began.get("started_at") if isinstance(began, dict) else None
+
+    def _ours(self, st: dict) -> bool:
+        """Whether ``st`` is the status of the job THIS export started for its running
+        phase: a backup, into this folder, with the ``started_at`` its start answered with.
+        A job that is not -- the advanced panel's copy started into the same folder in the
+        poll window, say -- is never counted as this export's phase."""
+        with self._lock:
+            started, dest = self._sub_started, self._dest
+        return bool(
+            st.get("mode") == "backup"
+            and dest
+            and st.get("dest")
+            and _same_path(str(st["dest"]), dest)
+            and started is not None
+            and st.get("started_at") == started
+        )
 
     def _stop_wanted(self, ctx: Any) -> str | None:
         """``pause`` or ``cancel`` when a stop is asked: the panel's, or the job registry's.
+        A Cancel from either outranks a Pause from either.
 
         A registry stop during a shutdown (``stop_all_jobs``) PAUSES -- the work is kept and
         the record names the phase to resume; any other registry stop is the task manager's
         Cancel."""
         with self._lock:
-            if self._stop_asked:
-                return self._stop_asked
+            asked = {self._stop_asked}
             if ctx.stopping:
-                return "pause" if stop_all_count() != self._stop_seq else "cancel"
-            return None
+                asked.add("pause" if stop_all_count() != self._stop_seq else "cancel")
+        if "cancel" in asked:
+            return "cancel"
+        return "pause" if "pause" in asked else None
 
-    def _wait(self, ctx: Any, mgr: Any) -> dict | None:
-        """Wait IN-PROCESS for ``mgr``'s job to end; the final status, or None when a stop
-        was asked and not honoured within :data:`_STOP_WAIT_S`. Bounded per turn."""
-        asked: str | None = None
-        deadline = 0.0
+    def _wait(self, ctx: Any, mgr: Any) -> dict:
+        """Wait IN-PROCESS for ``mgr``'s job to end, and return its last status.
+
+        Bounded per turn, unbounded overall: a stop is forwarded to the manager (again,
+        when a Pause becomes a Cancel) and the export reads ``stopping`` until the job has
+        ended. It also ends when the manager's status stops being THIS export's job."""
+        forwarded: str | None = None
         while True:
             st = mgr.status()
+            if not self._ours(st):
+                break
             if st.get("state") != "running" and not st.get("running"):
                 break
-            if asked is None:
-                asked = self._stop_wanted(ctx)
-                if asked is not None:
-                    deadline = time.monotonic() + _STOP_WAIT_S
-                    if asked == "cancel":
-                        mgr.cancel()
-                    else:
-                        mgr.pause()
-            elif time.monotonic() > deadline:
-                return None
+            asked = self._stop_wanted(ctx)
+            if asked is not None and asked != forwarded and forwarded != "cancel":
+                forwarded = asked
+                with self._lock:
+                    self._state = "stopping"
+                if asked == "cancel":
+                    mgr.cancel()
+                else:
+                    mgr.pause()
             self._wake.wait(_POLL_S)
             self._wake.clear()
         return dict(st)
 
     # -- endings -------------------------------------------------------------- #
-    def _fail(self, reason: str, text: str) -> bool:
+    def _fail(self, reason: str, text: str, phase: str | None = None) -> bool:
         _LOG.warning("backup export failed: %s", reason)
         with self._lock:
             self._state = "failed"
             self._reason = reason
             self._error = text
+            self._error_phase = phase
         return True
+
+    def _end_phase_stopped(self, ctx: Any, state: str, phase: str) -> bool:
+        """A phase that ended paused or cancelled. A Cancel asked while it was stopping on a
+        Pause still cancels: the last explicit request wins."""
+        if state == "paused" and self._stop_wanted(ctx) == "cancel":
+            self._cancel_paused(phase, self._dest or "")
+            state = "cancelled"
+        return self._end_stopped("cancel" if state == "cancelled" else "pause", phase)
 
     def _end_stopped(self, how: str, phase: str) -> bool:
         if how == "cancel":
@@ -451,7 +587,7 @@ class ExportJobManager:
                 "kind": KIND,
                 "mode": "backup",
                 "state": state,
-                "running": state == "running",
+                "running": state in _LIVE_STATES,
                 "phase": phase,
                 "phases": list(self._phases),
                 "dest": dest,
@@ -464,6 +600,9 @@ class ExportJobManager:
                 },
                 "reason": self._reason,
                 "error": self._error,
+                # The phase the error came from, beside it: the error is a manager's own
+                # sentence, unprefixed, so the page can still translate it whole.
+                "error_phase": self._error_phase,
                 "needs_passphrase": state in ("paused", "failed") and phase == PHASE_VOLUMES,
                 "started_at": self._started_at,
             }
@@ -471,14 +610,14 @@ class ExportJobManager:
         return out
 
     def _phase_progress(self, phase: str | None, dest: str | None) -> dict:
-        """The running phase's own progress counts, only when that manager is on THIS folder."""
+        """The running phase's own progress counts, only when that manager runs THIS export's job."""
         if not phase or not dest:
             return {}
         try:
             st = self._vol().status() if phase == PHASE_VOLUMES else self._fold().status()
         except Exception:  # noqa: BLE001 - a status that cannot be read is no progress
             return {}
-        if st.get("mode") != "backup" or not st.get("dest") or not _same_path(str(st["dest"]), dest):
+        if not self._ours(st):
             return {}
         prog = st.get("progress")
         return dict(prog) if isinstance(prog, dict) else {}
@@ -491,21 +630,42 @@ def _same_path(a: str | Path, b: str | Path) -> bool:
         return False
 
 
-def _resume_phase(dest: Path, req: dict[str, Any]) -> str | None:
-    """The phase a resume continues: the record's cursor, or -- for a record written before
-    the export was one job -- what the folder shows is still owed."""
+def _known_categories(categories: list[str] | None) -> list[str]:
+    """The large-data categories this app knows, in order, once each."""
+    from src.backup.folder_backup import _CATEGORIES
+
+    cats: list[str] = []
+    for c in categories or []:
+        if c in _CATEGORIES and c not in cats:
+            cats.append(c)
+    return cats
+
+
+def _resume_plan(dest: Path, req: dict[str, Any]) -> tuple[str, list[str]] | None:
+    """The phase a resume continues, and the large-data categories it owes.
+
+    The record's cursor when it names an unfinished phase. Otherwise -- the record says
+    ``done`` or ``cancelled``, or predates the cursor -- what the FOLDER shows is still
+    owed: a corpus with no ``volumes.json`` (a record with no cursor only: a done or
+    cancelled export's corpus is not restarted by a copy button), then large-data files
+    with no complete copy's manifest. The folder phase then runs over EVERY category the
+    request owes, not only the absent ones: the copy's manifest is rewritten whole by
+    each complete pass, so a pass over a subset would drop the rest from it -- while the
+    files already there are skipped by size, so only what is missing is actually copied.
+    """
+    from src.backup.export_summary import _folder_manifest, _volume_manifest, missing_members
+
+    owed = [] if req.get("inside") else _known_categories(req.get("categories"))
     phase = req.get("phase")
     if phase in UNFINISHED_PHASES:
-        return str(phase)
-    if phase is not None:
-        return None  # done or cancelled
-    from src.backup.export_summary import _folder_manifest, _volume_manifest
-
-    if req.get("corpus") and _volume_manifest(dest) is None:
-        return PHASE_VOLUMES
-    owed = [] if req.get("inside") else list(req.get("categories") or [])
-    if owed and _folder_manifest(dest) is None:
-        return PHASE_FOLDER
+        return str(phase), owed
+    miss = missing_members(
+        req, corpus_present=_volume_manifest(dest) is not None, copy_done=_folder_manifest(dest) is not None
+    )
+    if phase is None and miss["corpus"]:
+        return PHASE_VOLUMES, owed
+    if miss["categories"]:
+        return PHASE_FOLDER, owed
     return None
 
 

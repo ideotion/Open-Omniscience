@@ -40,10 +40,15 @@ def test_ux_run_gates_the_folder_phase_on_a_confirmed_corpus_backup():
     # phase is unreachable unless the volumes job is a completed `backup` (state done +
     # mode backup) of this dest -- the corpus phase ENDS the export otherwise, so the
     # worker never reaches the folder phase (tests/test_export_job.py drives it).
+    # The review of 1b88c0b74 (item 7) added the job's identity to it: THIS job, by the
+    # started_at its start answered with, so another job's "done" is never taken for it.
     gate = python_function_source(_JOB, "_run_volumes")
-    assert 'state == "done"' in gate and 'st.get("mode") == "backup"' in gate, "the corpus-confirm gate is missing"
-    assert 'return self._fail("volumes-unconfirmed", UNCONFIRMED)' in gate
-    worker = python_function_source(_JOB, "_worker")
+    assert "if not self._ours(st):" in gate and 'if state != "done":' in gate, "the corpus-confirm gate is missing"
+    assert 'return self._fail("volumes-unconfirmed", UNCONFIRMED, PHASE_VOLUMES)' in gate
+    ours = python_function_source(_JOB, "_ours")
+    for needle in ('st.get("mode") == "backup"', '_same_path(str(st["dest"]), dest)', 'st.get("started_at") == started'):
+        assert needle in ours, f"the job-identity check lost {needle!r}"
+    worker = python_function_source(_JOB, "_work")
     assert "if ended:" in worker, "an ended corpus phase must stop the export before the next phase"
     # the page no longer chains the second phase at all
     assert "/api/backup/folder/start" not in _fn_body(_APP_JS, "_uxRun")
