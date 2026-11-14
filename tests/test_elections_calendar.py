@@ -100,12 +100,13 @@ def test_every_election_carries_a_country_year_provenance_tag():
 
 
 def test_confirmed_elections_are_not_in_the_past():
-    """An election may only claim confirmed:true with a concrete day if that day is a
-    REAL upcoming/recurring date — the loader's next_occurrence must resolve it (a fixed
-    statutory date like the US midterms always has a forthcoming occurrence)."""
+    """An election may only claim confirmed:true with a concrete day if that day resolves:
+    either a forthcoming occurrence, or, once the stated date has gone by, a PASSED entry.
+    (This used to read "the US midterms always have a forthcoming occurrence", which is how the
+    2026 midterm came to be rolled forward to 2027; a one-off election never recurs.)"""
     for e in agenda(tag="elections"):
         if e["confirmed"]:
-            assert e["next_occurrence"] is not None, e["title"]
+            assert e["next_occurrence"] is not None or e.get("passed") is True, e["title"]
 
 
 def test_elections_do_not_break_the_wider_catalog():

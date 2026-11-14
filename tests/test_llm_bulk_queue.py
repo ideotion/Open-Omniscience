@@ -163,10 +163,12 @@ def test_a_queued_run_runs_and_stores_with_nobody_reading_and_runs_go_one_at_a_t
         r2 = client.post("/api/llm/bulk/queue", json={"op": "summarize", "model": "m", "article_ids": b})
         assert r1.status_code == 200 and r2.status_code == 200, (r1.text, r2.text)
         assert r2.json()["ahead"] == 1
-    for _ in range(5):
-        gate.release()
-    # The client is gone: the page never reads, and the server finishes both runs.
-    assert lbq._JOB.join(15)
+        for _ in range(5):
+            gate.release()
+        # Nobody reads again: the page is gone, and the server finishes both runs. Joined INSIDE the app's lifetime: leaving
+        # the block is the app's shutdown, whose stop-all (R670) rightly leaves a run in flight PAUSED (R669) -- the
+        # shutdown test below pins that half.
+        assert lbq._JOB.join(15)
     snap = queue.snapshot()
     assert [e["state"] for e in snap["entries"]] == ["done", "done"], snap
     assert [e["stored"] for e in snap["entries"]] == [3, 2]
@@ -257,7 +259,7 @@ def test_a_finished_run_keeps_no_trace_of_the_search_it_ran_on(queue, store, mon
     """R669 (b): the typed search lives in the encrypted store only while the run is pending; done or cancelled, it is gone."""
     rows, _ = store
 
-    def _prep(req, db, client_info, *, resume_since=None):
+    def _prep(req, db, client_info, *, resume_since=None, should_stop=None):
         def gen():
             yield '{"event":"done","aborted":false}\n'
 
@@ -286,7 +288,7 @@ def test_a_search_the_index_refuses_leaves_a_fixed_phrase_not_its_words(queue, s
 
     rows, _ = store
 
-    def _prep(req, db, client_info, *, resume_since=None):
+    def _prep(req, db, client_info, *, resume_since=None, should_stop=None):
         raise HTTPException(status_code=400, detail="Invalid search query: unexpected token: 'zebrafinch'")
 
     monkeypatch.setattr("src.api.llm.prepare_bulk_run", _prep)
@@ -395,7 +397,7 @@ def test_the_frozen_article_list_is_what_a_resumed_run_works_on(queue, store, mo
     """A search that matches more articles after the restart does not grow the run: the list is frozen when it first starts."""
     seen: list = []
 
-    def _prep(req, db, client_info, *, resume_since=None):
+    def _prep(req, db, client_info, *, resume_since=None, should_stop=None):
         seen.append((req.article_ids, req.query, resume_since))
 
         def gen():
@@ -447,7 +449,7 @@ def backlog(monkeypatch):
 def test_the_backlog_drain_runs_to_empty_on_the_server(backlog, monkeypatch):
     left = [650]
 
-    def _batch(session, *, extractor, limit):
+    def _batch(session, *, extractor, limit, should_stop=None):
         left[0] = max(0, left[0] - limit)
         return {"indexed": limit, "newly_indexed": limit, "failed": 0, "never_attempted": left[0]}
 
@@ -462,7 +464,7 @@ def test_the_backlog_drain_runs_to_empty_on_the_server(backlog, monkeypatch):
 def test_a_backlog_stuck_twice_stops_the_restarts(backlog, monkeypatch):
     monkeypatch.setattr(
         "src.analytics.store.backfill_corpus",
-        lambda session, *, extractor, limit: {"indexed": limit, "newly_indexed": 0, "failed": 0, "never_attempted": 5},
+        lambda session, *, extractor, limit, should_stop=None: {"indexed": limit, "newly_indexed": 0, "failed": 0, "never_attempted": 5},
     )
     assert backlog.start()["started"]
     assert backlog.get_job().join(15)
@@ -530,7 +532,7 @@ def test_a_source_the_run_cannot_find_is_not_quoted_in_its_error(queue, store, m
 
     rows, _ = store
 
-    def _prep(req, db, client_info, *, resume_since=None):
+    def _prep(req, db, client_info, *, resume_since=None, should_stop=None):
         raise HTTPException(status_code=404, detail="Unknown source: 'Quietpaper Gazette'")
 
     monkeypatch.setattr("src.api.llm.prepare_bulk_run", _prep)
@@ -586,7 +588,7 @@ def test_two_stuck_runs_must_be_back_to_back_to_stop_the_restarts(backlog, monke
     left = {"n": 5}
     monkeypatch.setattr(
         "src.analytics.store.backfill_corpus",
-        lambda session, *, extractor, limit: {"indexed": limit, "newly_indexed": 0, "failed": 0, "never_attempted": left["n"]},
+        lambda session, *, extractor, limit, should_stop=None: {"indexed": limit, "newly_indexed": 0, "failed": 0, "never_attempted": left["n"]},
     )
     assert backlog.start()["started"] and backlog.get_job().join(15)
     left["n"] = 0
@@ -607,7 +609,7 @@ def test_the_backlog_drain_does_not_take_its_own_yield_signal_for_a_rival(monkey
     monkeypatch.setattr(maintenance, "_job_drain_at", 0.0)
     left = [900]
 
-    def _batch(session, *, extractor, limit):
+    def _batch(session, *, extractor, limit, should_stop=None):
         left[0] = max(0, left[0] - limit)
         return {"indexed": limit, "newly_indexed": limit, "failed": 0, "never_attempted": left[0]}
 

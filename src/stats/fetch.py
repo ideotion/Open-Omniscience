@@ -281,6 +281,10 @@ def _bounded_get(session: Any, url: str, *, max_chars: int) -> Any:
             raise BodyTooLarge(f"the server declares {declared} bytes, over the {max_bytes} the table's own shape allows")
         body = bytearray()  # one copy, not a list of chunks joined into a second one
         for chunk in resp.iter_content(_READ_CHUNK):
+            # Stop (the kill switch) ends a download already under way, not only the next request: the socket guard refuses
+            # new connections, and a large file keeps arriving on the one already open (review row 19; the mail pull's R640).
+            if kill_switch_active():
+                raise RuntimeError(NETWORK_REFUSED)
             body += chunk
             if len(body) > max_bytes:
                 raise BodyTooLarge(f"the body went past {max_bytes} bytes, the most the table's own shape allows; reading stopped")

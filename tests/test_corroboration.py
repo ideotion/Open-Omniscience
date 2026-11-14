@@ -359,20 +359,32 @@ def test_endpoint_validation_bounds(client):
                              "end_date": future}).status_code == 422
 
 
-def test_endpoint_fetch_then_cache_then_kill_switch(client, monkeypatch, tmp_path):
-    """First call fetches (stubbed transport) and states license + provenance;
-    second call is served from the cache WITHOUT touching the fetch factory;
-    with the kill switch engaged a forced refetch returns the 'offline' verdict."""
+def _kv_box(monkeypatch) -> dict:
+    """The encrypted key-value store as a dict: weather slices live there (R683), never in a file."""
+    box: dict = {}
+    monkeypatch.setattr("src.config.kv_store.kv_get_json", lambda k: box.get(k))
+    monkeypatch.setattr("src.config.kv_store.kv_set_json", lambda k, v: box.__setitem__(k, v))
+    return box
+
+
+def test_endpoint_fetch_then_cache_then_kill_switch(client, monkeypatch):
+    """Without consent nothing is fetched (400); the consented call fetches (stubbed transport),
+    rounds the place and states license + provenance; the next call is served from the held
+    slice WITHOUT touching the fetch factory or needing consent, in airplane mode too; a forced
+    refetch with the kill switch engaged is refused (409), naming the switch (R683)."""
     import src.safety.fetcher as sf
     from src.ingest import FetchResult, activate_kill_switch, clear_kill_switch
-    from src.weather.openmeteo import build_archive_url, cache_path
+    from src.ingest.fetch_verdict import NETWORK_REFUSED
+    from src.weather.held import slice_key
+    from src.weather.openmeteo import build_archive_url
 
+    box = _kv_box(monkeypatch)
     body = {"lat": -1.2864, "lon": 36.8172, "start_date": "2024-02-01",
             "end_date": "2024-02-10", "variables": ["precipitation_sum"],
             "label": "Drought"}
     url = build_archive_url(-1.2864, 36.8172, date(2024, 2, 1), date(2024, 2, 10),
                             ["precipitation_sum"])
-    cache_path(url).unlink(missing_ok=True)
+    assert "latitude=-1.3000&longitude=36.8000" in url, "the place is rounded before it is sent"
 
     upstream = ('{"daily":{"time":["2024-02-01","2024-02-02"],'
                 '"precipitation_sum":[0.0,1.2]},'
@@ -385,45 +397,41 @@ def test_endpoint_fetch_then_cache_then_kill_switch(client, monkeypatch, tmp_pat
                                content=upstream, content_type="application/json",
                                fetched_at=datetime.now(UTC))
 
+    def _explode(**kw):
+        raise AssertionError("this call must not construct a fetcher")
+
+    monkeypatch.setattr(sf, "make_fetcher", _explode)
+    r0 = client.post("/api/weather/context", json=body)
+    assert r0.status_code == 400 and "consent" in r0.json()["detail"]
+
     monkeypatch.setattr(sf, "make_fetcher", lambda **kw: StubFetcher())
-    d = client.post("/api/weather/context", json=body).json()
-    assert d["ok"] is True and d["cached"] is False
+    d = client.post("/api/weather/context", json={**body, "consent": True}).json()
+    assert d["ok"] is True and d["cached"] is False and d["kept"] is True
     assert d["daily"]["precipitation_sum"] == [0.0, 1.2]
     assert d["units"]["precipitation_sum"] == "mm"
     assert "CC BY 4.0" in d["provenance"]["license"]
     assert "reanalysis" in d["provenance"]["dataset"]
-    assert cache_path(url).exists()
-
-    def _explode(**kw):
-        raise AssertionError("cache hit must not construct a fetcher")
+    assert slice_key(url) in box and "label" not in box[slice_key(url)]
 
     monkeypatch.setattr(sf, "make_fetcher", _explode)
-    d2 = client.post("/api/weather/context", json=body).json()
-    assert d2["ok"] is True and d2["cached"] is True
-    assert d2["provenance"]["fetched_at"] == d["provenance"]["fetched_at"]
-
-    monkeypatch.undo()
     activate_kill_switch()
     try:
-        d3 = client.post("/api/weather/context", json={**body, "force": True}).json()
-        assert d3["ok"] is False
-        assert d3["verdict"] == "offline"
-        assert d3["retryable"] is False
+        d2 = client.post("/api/weather/context", json=body).json()
+        assert d2["ok"] is True and d2["cached"] is True and d2["label"] == "Drought"
+        assert d2["provenance"]["fetched_at"] == d["provenance"]["fetched_at"]
+        r3 = client.post("/api/weather/context", json={**body, "force": True, "consent": True})
+        assert r3.status_code == 409 and r3.json()["detail"] == NETWORK_REFUSED
     finally:
         clear_kill_switch()
-        cache_path(url).unlink(missing_ok=True)
 
 
 def test_parse_failure_is_a_verdict_not_a_crash(client, monkeypatch):
     import src.safety.fetcher as sf
     from src.ingest import FetchResult
-    from src.weather.openmeteo import build_archive_url, cache_path
 
+    box = _kv_box(monkeypatch)
     body = {"lat": 10.0, "lon": 20.0, "start_date": "2024-03-01",
-            "end_date": "2024-03-05", "variables": ["temperature_2m_max"]}
-    url = build_archive_url(10.0, 20.0, date(2024, 3, 1), date(2024, 3, 5),
-                            ["temperature_2m_max"])
-    cache_path(url).unlink(missing_ok=True)
+            "end_date": "2024-03-05", "variables": ["temperature_2m_max"], "consent": True}
 
     class HtmlFetcher:
         def fetch(self, u, *, require_html=True):
@@ -434,4 +442,4 @@ def test_parse_failure_is_a_verdict_not_a_crash(client, monkeypatch):
     monkeypatch.setattr(sf, "make_fetcher", lambda **kw: HtmlFetcher())
     d = client.post("/api/weather/context", json=body).json()
     assert d["ok"] is False and d["verdict"] == "parse-failed"
-    assert not cache_path(url).exists(), "failures are never cached"
+    assert not box, "failures are never kept"

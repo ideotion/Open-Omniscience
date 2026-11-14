@@ -107,8 +107,13 @@ def run_concurrent(
 
     workers = min(max_workers, len(items))
     out = [ConcurrentResult(ok=False, error=RuntimeError("not scheduled"))] * len(items)
+    # The pool's threads answer to the shutdown's job refusal as the caller's own thread does (R689): a coordinator turn's members commit
+    # here while the job thread only waits for them, so refusing the job thread alone left them free to write after the disposal.
+    from src.database.after_shutdown import inherit
+
+    run = inherit(fn)
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="oo-llmbatch") as ex:
-        futures = {ex.submit(fn, it): i for i, it in enumerate(items)}
+        futures = {ex.submit(run, it): i for i, it in enumerate(items)}
         for fut, i in futures.items():
             try:
                 out[i] = ConcurrentResult(ok=True, value=fut.result())

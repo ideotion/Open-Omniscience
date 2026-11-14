@@ -395,6 +395,8 @@ def _urls(ids: _Ids) -> dict[str, str]:
         "/api/sources/{source_id}/metadata": f"/api/sources/{ids.source}/metadata",
         "/api/sources/{source_id}/observed-ips": f"/api/sources/{ids.source}/observed-ips",
         "/api/sources/{source_id}/provenance": f"/api/sources/{ids.source}/provenance",
+        "/api/weather/anomaly/held": "/api/weather/anomaly/held?lat=48.85&lon=2.35&start_date=2023-05-01&end_date=2023-05-03",
+        "/api/weather/context/held": "/api/weather/context/held?lat=48.85&lon=2.35&start_date=2023-05-01&end_date=2023-05-03",
         "/api/wiki/lane/sections": "/api/wiki/lane/sections?external_id=enwiki:Paris",
         "/api/wiki/pages/{page_id}/compare": f"/api/wiki/pages/{p}/compare?from=t{ids.wrev_old}&to=t{ids.wrev_new}",
         "/api/wiki/pages/{page_id}/revisions": f"/api/wiki/pages/{p}/revisions",

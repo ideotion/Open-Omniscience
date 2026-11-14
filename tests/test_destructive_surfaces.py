@@ -359,8 +359,9 @@ def test_the_functions_the_request_finder_added_to_the_trusted_click_table_stay_
 
 
 def test_request_sites_outside_any_named_function_are_the_known_delegated_click_handlers() -> None:
-    """Seven requests sit in anonymous callbacks, all inside a delegated ``click`` listener (a person's own click):
-    the reader's curation buttons and the task manager's job controls. A new one has to be looked at."""
+    """Eight requests sit in anonymous callbacks, all inside a delegated ``click`` listener (a person's own click):
+    the reader's curation buttons and the task manager's job controls (the fifth: the low-memory pause's Resume, a retry the
+    guard takes back if memory is still low). A new one has to be looked at."""
     outside: dict[str, int] = {}
     for path in _js_files():
         js = path.read_text(encoding="utf-8")
@@ -374,4 +375,4 @@ def test_request_sites_outside_any_named_function_are_the_known_delegated_click_
         for req in re.finditer(r"""["']?method["']?\s*:\s*[^,}]*\b(?:DELETE|POST|PUT|PATCH)\b""", js):
             if not any(a <= req.start() < b for a, b in spans):
                 outside[path.name] = outside.get(path.name, 0) + 1
-    assert outside == {"reader.js": 3, "taskmanager.js": 4}, outside
+    assert outside == {"reader.js": 3, "taskmanager.js": 5}, outside

@@ -220,13 +220,15 @@ def forget_volume_id() -> None:
     next start makes a fresh folder instead of waiting for a drive that was erased)."""
     os.environ.pop(ENV_ID, None)
     try:
-        from src.safety.data_location import env_file_path
+        from src.safety.data_location import env_file_path, write_env_file
 
         env = env_file_path()
         if not env.exists():
             return
         kept = [ln for ln in env.read_text(encoding="utf-8").splitlines() if not ln.startswith(f"export {ENV_ID}=")]
-        env.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+        # temp, fsync, replace (never in place): a cut-short write would leave launch.sh sourcing a
+        # truncated file that names no data folder (audit recheck P4, 2026-11-13)
+        write_env_file(env, "\n".join(kept) + ("\n" if kept else ""))
     except OSError as exc:
         log_failure(_LOG, f"could not remove {ENV_ID} from oo.env", exc, level=logging.WARNING)
 

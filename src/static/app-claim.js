@@ -208,11 +208,14 @@
 
     // ④ -- what the request would tell the host (A7, the metadata shadow). One sentence,
     // shown on the offer AND in the consent popup, so it is read before the click.
+    function _claimRound1(x) { return fmtNum(ooRoundPlace(x), 1); }
+
     function claimShadowText(op, tf) {
       // The coordinates, not only the place name: they are what the host is sent, and for a
       // country they are its stand-in city, which "near France" would hide.
       return tf("Asking {host} tells it this machine's IP address, the point {lat}, {lon} (for {place}) and the dates {start} to {end}: together, which place and period you are looking into.",
-        {host: op.host, lat: op.lat, lon: op.lon, place: op.place || "?", start: op.window_start, end: op.window_end});
+        // The point as SENT: rounded to 0.1 degree by the server (R683), so the line names no finer place than leaves.
+        {host: op.host, lat: _claimRound1(op.lat), lon: _claimRound1(op.lon), place: op.place || "?", start: op.window_start, end: op.window_end});
     }
 
     function claimCorroborationHtml(ws, t, tf) {
@@ -396,16 +399,28 @@
       const op = (((_claimLast || {}).corroboration || {}).offers || [])[i];
       const box = $("claim-wx-" + i);
       if (!op || !box) return;
-      if (!op.cached && !await ensureOnline(
-        t("Fetch weather context for one place and time window (Open-Meteo)"),
-        {shadow: claimShadowText(op, tf)})) return;
+      const req = {lat: op.lat, lon: op.lon, start_date: op.window_start, end_date: op.window_end,
+                   variables: op.variables, label: op.rule_label};
       box.textContent = t("Loading…");
       try {
-        const d = await api("/api/weather/context", {method: "POST", body: JSON.stringify({
-          lat: op.lat, lon: op.lon, start_date: op.window_start, end_date: op.window_end,
-          variables: op.variables, label: op.rule_label,
-        })});
-        if (d && d.ok) { _claimWx[i] = d; op.cached = true; }
+        let d = null;
+        if (op.cached) {
+          // Held, by the offer's own read: read from this machine, nothing sent, nothing asked. If it is no
+          // longer held, the question below is asked after all.
+          const q = new URLSearchParams({lat: String(op.lat), lon: String(op.lon), start_date: op.window_start,
+            end_date: op.window_end, variables: (op.variables || []).join(","), label: op.rule_label || ""});
+          const held = await api("/api/weather/context/held?" + q.toString());
+          if (held && held.held) d = held; else op.cached = false;
+        }
+        if (d === null) {
+          box.textContent = "";
+          // Not held: the place and the host are named before anything is sent (R683).
+          if (!await ooAskToSendPlace(op.lat, op.lon, {shadow: claimShadowText(op, tf)})) return;
+          box.textContent = t("Loading…");
+          d = await api("/api/weather/context", {method: "POST", body: JSON.stringify(Object.assign({}, req, {consent: true}))});
+        }
+        // Held from now on only when the server says it kept it.
+        if (d && d.ok) { _claimWx[i] = d; op.cached = d.cached === true || d.kept !== false; }
         renderWeatherContext(box, d, _claimWxSig(op));
       } catch (e) {
         box.innerHTML = `<div class="note err">${esc((e && e.message) || String(e))}</div>`;

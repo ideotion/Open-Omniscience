@@ -29,6 +29,7 @@ no NEW module may open its own way to the network).
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -36,6 +37,33 @@ import pytest
 from fastapi.testclient import TestClient
 
 _SRC = Path(__file__).resolve().parents[1] / "src"
+
+
+def _imported_names(source: str) -> set[str]:
+    """Every module name ``source`` imports, read from its AST rather than from line starts.
+
+    The line-start regex this replaces (audit recheck P9, 2026-11-13; guards G8) could not see
+    ``import os, socket``, ``from urllib import request``, ``from http import client``, an import
+    behind ``;`` or ``importlib.import_module("socket")``. ``from X import y`` yields both ``X`` and
+    ``X.y`` (``y`` may be a submodule); a call to ``import_module``/``__import__`` with a literal
+    name counts as an import of it."""
+    names: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            names.update(a.name for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            names.add(node.module)
+            names.update(f"{node.module}.{a.name}" for a in node.names)
+        elif isinstance(node, ast.Call) and node.args and isinstance(node.args[0], ast.Constant):
+            fn = node.func
+            called = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", None)
+            if called in ("import_module", "__import__") and isinstance(node.args[0].value, str):
+                names.add(node.args[0].value)
+    return names
+
+
+def _imports_any(source: str, modules: tuple[str, ...]) -> bool:
+    return any(n == m or n.startswith(m + ".") for n in _imported_names(source) for m in modules)
 
 
 @pytest.fixture()
@@ -110,11 +138,10 @@ _ALLOWED_HTTP_IMPORTERS = {
 
 
 def test_no_new_socket_importers():
-    pattern = re.compile(r"^\s*(import (requests|httpx)\b|from (requests|httpx)\b)", re.M)
     offenders = set()
     for py in _SRC.rglob("*.py"):
         rel = py.relative_to(_SRC.parent).as_posix()
-        if pattern.search(py.read_text(encoding="utf-8", errors="replace")):
+        if _imports_any(py.read_text(encoding="utf-8", errors="replace"), ("requests", "httpx")):
             offenders.add(rel)
     new = offenders - _ALLOWED_HTTP_IMPORTERS
     assert not new, (
@@ -192,11 +219,9 @@ def test_no_new_socket_capable_importers():
     imaplib, poplib, http.client, opentimestamps and bare `socket` all reach the
     network, and the narrow ratchet above sees none of them.
     """
-    alt = "|".join(m.replace(".", r"\.") for m in _SOCKET_CAPABLE_MODULES)
-    pattern = re.compile(rf"^\s*(?:import\s+({alt})\b|from\s+({alt})\b)", re.M)
     offenders = set()
     for py in _SRC.rglob("*.py"):
-        if pattern.search(py.read_text(encoding="utf-8", errors="replace")):
+        if _imports_any(py.read_text(encoding="utf-8", errors="replace"), _SOCKET_CAPABLE_MODULES):
             offenders.add(py.relative_to(_SRC.parent).as_posix())
 
     new = offenders - set(_ALLOWED_SOCKET_IMPORTERS)
@@ -211,6 +236,28 @@ def test_no_new_socket_capable_importers():
         f"allowlist is stale (no longer importers): {sorted(gone)} -- drop them, so "
         "the list keeps meaning 'these, and only these, can reach the network'"
     )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import os, socket",
+        "from urllib import request",
+        "from http import client as c",
+        "x = 1; import imaplib",
+        "import importlib\nimportlib.import_module('socket')",
+        "__import__('http.client')",
+        "if True:\n    from urllib3.util import Retry",
+    ],
+)
+def test_the_scanner_sees_the_import_forms_a_line_regex_missed(source: str) -> None:
+    """Red before 2026-11-13: each form passed the line-start regex (guards G8)."""
+    assert _imports_any(source, _SOCKET_CAPABLE_MODULES), source
+
+
+@pytest.mark.parametrize("source", ["import socketserver", "from src.ingest import airplane", "import os", "# import socket"])
+def test_the_scanner_does_not_widen_to_lookalikes(source: str) -> None:
+    assert not _imports_any(source, _SOCKET_CAPABLE_MODULES), source
 
 
 def test_every_socket_importer_allowance_states_a_reason():
