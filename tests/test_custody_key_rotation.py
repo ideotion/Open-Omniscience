@@ -448,3 +448,83 @@ def test_the_cli_refuses_an_unknown_option(tmp_path):
     out = subprocess.run([sys.executable, str(ROOT / "scripts" / "verify_custody.py"), str(bundle), "--pinn"],
                          capture_output=True, text=True, cwd=ROOT)
     assert out.returncode == 2 and "unknown option" in out.stderr
+
+
+def _forge(bundle: dict, at: int, edit, record_signer: HybridSigner, tail_signer: HybridSigner) -> dict:
+    """Edit the metadata of entry ``at``, then re-hash, re-sign and re-link it and every later entry, and re-sign the
+    head: a forger holding ``record_signer``/``tail_signer`` does all of that, so only the key lineage can refuse it."""
+    from hashlib import sha256
+
+    from src.custody.log import CustodyEntry, _bundle_head, _entry_digest
+
+    b = copy.deepcopy(bundle)
+    entries = [CustodyEntry.from_dict(d) for d in b["entries"]]
+    edit(entries[at].metadata)
+    for i in range(at, len(entries)):
+        e = entries[i]
+        if i > at:
+            e.prev_entry_hash = entries[i - 1].entry_hash
+        partial = {k: v for k, v in e.signable_core().items() if k != "timestamp"}
+        e.timestamp = {**e.timestamp, "digest": sha256(canonical_bytes(partial)).hexdigest()}
+        e.entry_hash = _entry_digest(e.signable_core())
+        e.signature = (record_signer if i == at else tail_signer).sign(canonical_bytes(e.signable_core()))
+    b["entries"] = [e.to_dict() for e in entries]
+    b["signer"] = tail_signer.public_identity().to_dict()
+    b["head"] = _bundle_head(b.get("item_id"), entries)
+    b["head_signature"] = tail_signer.sign(canonical_bytes(b["head"]))
+    return b
+
+
+def test_a_re_signed_forged_rotation_is_refused_by_the_key_lineage(tmp_path):
+    """Each check in the key lineage pinned by a forgery the hashes and signatures cannot catch (re-signed throughout)."""
+    from src.custody.log import rotation_payload
+
+    db = str(tmp_path / "c.db")
+    old, new = _signer(tmp_path, "old"), _signer(tmp_path, "new")
+    with CustodyLog(db_path=db, signer=old) as log:
+        _record(log, 2)
+    with CustodyLog(db_path=db, signer=new) as log:
+        log.rotate_signing_key(old)
+        _record(log, 1, 2)
+        bundle = log.export()
+    assert verify_export(bundle, require_signer=True) == (True, [])
+    rot = bundle["entries"][2]
+    attacker = _signer(tmp_path, "attacker")
+    ident = new.public_identity().to_dict()
+
+    # (1) The record names a previous key of the forger's (which endorses it), not the key that signed the entries.
+    def own_previous(md: dict) -> None:
+        a = attacker.public_identity().ed25519_pub
+        md["previous_ed25519_pub"] = a
+        md["endorsement"] = attacker.sign(canonical_bytes(rotation_payload(a, ident, rot["prev_entry_hash"])))
+
+    forged = _forge(bundle, 2, own_previous, new, new)
+    ok, issues = verify_export(forged, accept_unendorsed_rotation=True)
+    assert not ok and "names a previous key that did not sign the entries before it" in issues[0]
+
+    # (2) The record introduces one key and is signed by another.
+    def other_new_key(md: dict) -> None:
+        md["ed25519_pub"] = attacker.public_identity().ed25519_pub
+
+    ok, issues = verify_export(_forge(bundle, 2, other_new_key, new, new), accept_unendorsed_rotation=True)
+    assert not ok and "is not signed by the key it introduces" in issues[0]
+
+    # (3) The endorsement is the previous key's, over something else (here: another new key).
+    def stale_endorsement(md: dict) -> None:
+        other = {**ident, "ed25519_pub": attacker.public_identity().ed25519_pub}
+        md["endorsement"] = old.sign(canonical_bytes(rotation_payload(md["previous_ed25519_pub"], other,
+                                                                      rot["prev_entry_hash"])))
+
+    ok, issues = verify_export(_forge(bundle, 2, stale_endorsement, new, new), accept_unendorsed_rotation=True)
+    assert not ok and "has an invalid endorsement" in issues[0]
+
+    # (4) The endorsement is made by a key other than the previous one.
+    def foreign_endorsement(md: dict) -> None:
+        md["endorsement"] = attacker.sign(canonical_bytes(rotation_payload(md["previous_ed25519_pub"], ident,
+                                                                           rot["prev_entry_hash"])))
+
+    ok, issues = verify_export(_forge(bundle, 2, foreign_endorsement, new, new), accept_unendorsed_rotation=True)
+    assert not ok and "carries an endorsement not made by the previous key" in issues[0]
+
+    # The helper itself forges nothing when nothing is edited: the genuine record re-signed still verifies.
+    assert verify_export(_forge(bundle, 2, lambda md: None, new, new))[0]

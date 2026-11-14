@@ -1464,7 +1464,9 @@ that the previous key was not available, so nothing but the record links the two
 read the same: the checker refuses it unless you pass `--accept-unendorsed-rotation` (or `accept_unendorsed_rotation`
 to the route), and then it names the rotation it accepted. A rotation made while the old key is still at hand
 (`CustodyLog.rotate_signing_key`) is endorsed: the old key signs the new key and that place in the chain, and the
-checker follows it without being asked. A key change with no record is refused. An unendorsed rotation stays
+checker follows it without being asked. An endorsement proves only that whoever held the old key approved the change:
+someone who took the old key (from a stolen laptop, say) can endorse a key of their own just as well. A key change with
+no record is refused. An unendorsed rotation stays
 unendorsed: the old key cannot vouch for it later. There is no button for an endorsed rotation yet; it is a Python
 call for now. When a bundle crosses a rotation, its scope line says so, and with `--pin` each stretch of the chain is
 held to the key that introduced it: its Ed25519 key, and its post-quantum key where an entry is signed with one (a
@@ -1479,7 +1481,7 @@ follows the key through the same records, accepts an unendorsed one on its word,
 the post-quantum key (or turning it off with no rotation) writes no record, and a pinned check then refuses the log.
 
 ```bash
-python scripts/verify_custody.py custody_bundle.json [--pin]
+python scripts/verify_custody.py custody_bundle.json [--pin] [--accept-unendorsed-rotation]
 python scripts/verify_evidence.py bundle.json [signer_pubkey]
 ```
 
@@ -3389,7 +3391,7 @@ An **append‑only** SQLite ledger. Each action (`ingest`, `access`, `export`,
 per‑entry hashes, signatures, and timestamp digests. Exports verify offline:
 
 ```bash
-python scripts/verify_custody.py custody_bundle.json [--pin]
+python scripts/verify_custody.py custody_bundle.json [--pin] [--accept-unendorsed-rotation]
 ```
 
 REST: `POST /api/custody/log`, `GET /api/custody/{item}`, `.../verify`,
