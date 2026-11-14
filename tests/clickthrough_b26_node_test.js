@@ -132,8 +132,7 @@ test("J-1: the incomplete sentence, the button and its hover all go through the 
 async function reopen(I18N, facts) {
   const dom = { "ux-progress": el(), "ux-bar": el(), "ux-pause": el(), "ux-dest": el(), "ux-summary": el() };
   const api = async (url, opts) => {
-    if (url === "/api/backup/v2/volumes/status") return { mode: "backup", state: "done", dest: facts.destination, started_at: 5 };
-    if (url === "/api/backup/folder/status") return { mode: "backup", state: "done", dest: "/older", started_at: 1 };
+    if (url === "/api/backup/export/status") return { mode: "backup", state: "done", dest: facts.destination, phase: null };
     if (url.startsWith("/api/backup/export-summary?dir=")) return { ...facts, summary_path: facts.destination + "/BACKUP_SUMMARY.md" };
     throw new Error("unexpected " + url + " " + JSON.stringify(opts || {}));
   };
@@ -144,7 +143,10 @@ async function reopen(I18N, facts) {
     "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
     "function _uxShowPaused(){ DOM['ux-progress'].innerHTML = 'PAUSED'; }\n" +
     "function _uxCompleteExport(){}\n" +
-    extract("_uxSamePath") + "\n" + extract("_uxPickLastExport") + "\n" +
+    "function _uxWatchExport(){ throw new Error('a finished export was re-attached'); }\n" +
+    "function _uxLastExportDir(){ return null; }\n" +
+    "function ooServerText(s){ return String(s); }\n" +
+    extract("_uxSamePath") + "\n" +
     extract("_uxRenderExportPanel") + "\n" + extract("_uxVerifySentence") + "\n" + extract("_uxVerifyDetail") + "\n" +
     "async " + extract("_uxShowLastCompletedExportSummary") + "\n" +
     "return { run: _uxShowLastCompletedExportSummary };";
@@ -171,7 +173,7 @@ test("J-3: the '(last completed export)' brackets come from a keyed frame, so zh
   assert.ok(!/\(上次/.test(line), "ASCII brackets around a Chinese phrase: " + line);
 });
 
-test("J-1: 'Copy the large-data files now' copies the MISSING categories into the SAME folder, then completes", async () => {
+test("J-1: 'Copy the large-data files now' resumes the export job in the SAME folder, then completes", async () => {
   const dom = { "ux-progress": el(), "ux-bar": el(), "ux-pause": el(), "ux-run": el(), "ux-summary": el() };
   const calls = [];
   const finished = [];
@@ -179,11 +181,10 @@ test("J-1: 'Copy the large-data files now' copies the MISSING categories into th
   const facts = { ...base, missing: { known: true, corpus: false, categories: ["models", "hf_models"] } };
   const src = ESC +
     "function ooServerText(s){return String(s);}\n" +
+    "function toast(){}\n" +
     "var _uxExportDir = null, _uxPhase = null, _uxExportIncluded = null, _uxExportFacts = FACTS;\n" +
     "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
-    "function _uxShowPaused(){ DOM['ux-progress'].innerHTML = 'PAUSED'; }\n" +
-    "async function _uxStartThenPoll(start, statusUrl, kind, ui, expect){ await start(); CALLS.push({ poll: statusUrl, kind, expect }); return { state: 'done' }; }\n" +
-    "async function _uxFinishExport(prog, dest){ FIN.push({ dest, inc: _uxExportIncluded, phase: _uxPhase }); }\n" +
+    "async function _uxWatchExport(btn, start, expect){ await start(); CALLS.push({ watch: true, expect }); FIN.push({ dest: _uxExportDir, inc: _uxExportIncluded }); }\n" +
     "async " + extract("_uxCompleteExport") + "\n" +
     "return { run: _uxCompleteExport, dir: () => _uxExportDir };";
   const I18N = { t: plainT, tf: plainTf };
@@ -191,12 +192,13 @@ test("J-1: 'Copy the large-data files now' copies the MISSING categories into th
     { OOI18N: I18N }, I18N, dom, api, facts, calls, finished);
   const btn = el();
   await mod.run(btn);
-  const start = calls.find((c) => c.url === "/api/backup/folder/start");
+  const start = calls.find((c) => c.url === "/api/backup/export/resume");
   assert.ok(start, "the copy was never started: " + JSON.stringify(calls));
-  assert.deepStrictEqual(start.body, { dest: base.destination, categories: ["models", "hf_models"] },
-    "the copy does not go into the export's own folder with the missing categories");
-  const poll = calls.find((c) => c.poll);
-  assert.deepStrictEqual(poll.expect, { dest: base.destination }, "the poll would adopt another destination's job");
+  assert.deepStrictEqual(start.body, { dir: base.destination },
+    "the resume does not go into the export's own folder (or asked for a passphrase a copy does not need)");
+  assert.ok(!calls.some((c) => c.url === "/api/backup/folder/start"), "the dialog chained the old phase route");
+  const watch = calls.find((c) => c.watch);
+  assert.deepStrictEqual(watch.expect, { mode: "backup", dest: base.destination }, "the watch would adopt another destination's job");
   assert.strictEqual(finished.length, 1, "the finished copy does not end on the one completion");
   assert.strictEqual(finished[0].dest, base.destination);
   assert.deepStrictEqual(finished[0].inc, { corpus: true, blobs: ["models", "hf_models"] });

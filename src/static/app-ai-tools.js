@@ -41,10 +41,12 @@
       try {
         const r = await api(`/api/sources/candidates/${id}/${action}`, {method: "POST"});
         toast(action === "promote"
-          ? `Promoted ${r.promoted} (created disabled — enable it below when ready).`
-          : `Dismissed ${r.dismissed}.`);
+          ? _tfn("Promoted {domain} (created disabled — enable it below when ready).", { domain: r.promoted })
+          : _tfn("Dismissed {domain}.", { domain: r.dismissed }));
         loadCandidates(); loadManagedSources();
-      } catch (e) { toast(`${action} failed: ` + e.message, "err"); }
+      } catch (e) {
+        toast(_failMsg(action === "promote" ? "Promote failed: {error}" : "Dismiss failed: {error}", e), "err");
+      }
     }
 
     // Bulk source QUALIFICATION (2026-07-23 field-feedback S1.2): the manual catch-up

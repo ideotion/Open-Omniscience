@@ -852,10 +852,8 @@
     // must be pre-translated here).
     function _chartAria(label, n, a, b, lo, hi) {
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      return t9("Chart, {label}: {n} points, {a} to {b}, {lo} to {hi}")
-        .replace("{label}", label || t9("Value")).replace("{n}", String(n))
-        .replace("{a}", String(a)).replace("{b}", String(b))
-        .replace("{lo}", String(lo)).replace("{hi}", String(hi));
+      return _tfn("Chart, {label}: {n} points, {a} to {b}, {lo} to {hi}",
+        { label: label || t9("Value"), n: String(n), a: String(a), b: String(b), lo: String(lo), hi: String(hi) });
     }
     function _chartSrTable(rows, label) {
       // rows: [{date, value}]; capped so a dense series can't bloat the DOM (the

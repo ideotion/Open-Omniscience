@@ -1796,7 +1796,11 @@ def test_large_data_folder_backup():
     # into elements no page carried.)
     assert "async function openUnifiedExport(" in app and 'id="ux-export"' in html
     assert "function openUnifiedImport(" in app and 'id="ux-import"' in html
-    assert '"/api/backup/folder/start"' in app
+    # R701: the dialog runs the copy inside its ONE export job (src/backup/export_job.py
+    # drives the SAME folder manager); /folder/start stays for API callers (R713).
+    assert '"/api/backup/export/start"' in app
+    exp = (_SRC / "backup" / "export_job.py").read_text(encoding="utf-8")
+    assert "get_folder_manager()" in exp and "fold.start(" in exp
     assert '"/api/backup/import-queue/start"' in app
     queue = (_SRC / "backup" / "import_queue.py").read_text(encoding="utf-8")
     assert 'get_folder_manager()' in queue and 'mode="restore"' in queue
@@ -4233,7 +4237,7 @@ def test_analysis_mindmap_controls():
     assert "function anMMset" in html and "const _anMM" in html, "stateful in-map controls required"
     flat = html.replace(" ", "")
     assert "anMMset({cloud:true,concept:false})" in flat, "the Cloud second view is gone"
-    assert "anMMset({cloud:false,concept:false})" in flat, "the Map view is no longer reachable"
+    assert "anMMset({cloud:false,concept:false})" in flat, "the Mind-map tree view is no longer reachable"
     assert "anMMset({cloud:false,concept:true})" in flat, (
         "Q512's Concept view (the ring at the centre, one arm per language) is missing"
     )
@@ -4241,7 +4245,7 @@ def test_analysis_mindmap_controls():
     assert "anMMsetScale(this.value)" in flat, "text-size control"
     import json
     en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
-    for k in ("Map", "Cloud", "Concept", "Enlarge the mindmap"):
+    for k in ("Mind-map", "Cloud", "Concept", "Enlarge the mindmap"):
         assert k in en
 
 
@@ -7091,7 +7095,9 @@ def test_i18n_composite_strings_and_translatable_card_titles():
     app = app_js()
     # (a) the engine exposes tf(): template lookup + {named} interpolation, exported
     assert "function tf(s, vars)" in i18n
-    assert "map[s] == null ? s : map[s]" in i18n and "replace(/\\{(\\w+)\\}/g" in i18n
+    # an unknown template falls back to itself (since 2026-11-14 after a plural value's no-number
+    # form is looked back up to its key, so tf(t(KEY), vars) still chooses its plural form)
+    assert "let key = s, out = map[s];" in i18n and "else out = s;" in i18n and "replace(/\\{(\\w+)\\}/g" in i18n
     assert "t, tf," in i18n, "tf must be exported on OOI18N"
     # (b) the UI renders a card's title via cardTitle -> OOI18N.tf, English title as fallback
     ct = app[app.index("function cardTitle(") : app.index("function cardTitle(") + 400]

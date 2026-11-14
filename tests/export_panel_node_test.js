@@ -302,18 +302,17 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
   assert.ok(/Verifying volumes…/.test(first) && !/\d\/|\/\?/.test(first), "the first report drew a made-up count: " + first);
 }
 
-// --- J1: a reopened dialog shows the LATER export, not the folder job's older one //
+// --- R701: a reopened dialog reads the ONE export job; a running one is re-attached //
 {
-  const PICK = APP.includes("function _uxPickLastExport(") ? extract("_uxPickLastExport") : "";
   const el = () => ({ innerHTML: "", textContent: "", value: "", style: {}, dataset: {},
                       removeAttribute() {}, setAttribute() {} });
-  async function reopen(statuses, facts) {
-    const dom = { "ux-progress": el(), "ux-bar": el(), "ux-pause": el(), "ux-dest": el(), "ux-summary": el() };
+  async function reopen(status, facts, lastDir) {
+    const dom = { "ux-progress": el(), "ux-bar": el(), "ux-pause": el(), "ux-dest": el(), "ux-summary": el(), "ux-run": el() };
     const calls = [];
+    const watched = [];
     const api = async (url, opts) => {
       calls.push({ url, method: (opts && opts.method) || "GET" });
-      if (url === "/api/backup/v2/volumes/status") return statuses.vol;
-      if (url === "/api/backup/folder/status") return statuses.fold;
+      if (url === "/api/backup/export/status") return status;
       if (url.startsWith("/api/backup/export-summary?dir=")) return facts(decodeURIComponent(url.split("=")[1]));
       if (url === "/api/backup/export-summary") return { summary_path: "/written/BACKUP_SUMMARY.md", facts: facts("POST") };
       throw new Error("unexpected " + url);
@@ -322,64 +321,79 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
       "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g," +
       "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
       "function humanBytes(n){return String(n)+' B';}\n" +
-      "var window = {}; var _uxExportDir = null, _uxPhase = null, _uxExportFacts = null;\n" +
+      "function ooServerText(s){return String(s);}\n" +
+      "var window = {}; var _uxExportDir = null, _uxPhase = null, _uxExportFacts = null, _uxExportIncluded = null;\n" +
       extract("fmtNum") + "\n" +
       "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
       "function _uxShowPaused(){ DOM['ux-progress'].innerHTML = 'PAUSED'; }\n" +
-      extract("_uxSamePath") + "\n" + PICK + "\n" +
+      "function _uxWatchExport(btn){ WATCHED.push({ dir: _uxExportDir, phase: _uxPhase }); }\n" +
+      "function _uxLastExportDir(){ return LAST; }\n" +
+      extract("_uxSamePath") + "\n" +
       extract("_uxRenderExportPanel") + "\n" + extract("_uxVerifySentence") + "\n" + extract("_uxVerifyDetail") + "\n" +
       // extract() starts at "function", so the async keyword is put back here.
       "async " + extract("_uxShowLastCompletedExportSummary") + "\n" +
       "module.exports = { run: _uxShowLastCompletedExportSummary, phase: () => _uxPhase, dir: () => _uxExportDir };";
     const mod = { exports: {} };
-    new Function("module", "exports", "DOM", "api", rsrc)(mod, mod.exports, dom, api);
+    new Function("module", "exports", "DOM", "api", "WATCHED", "LAST", rsrc)(mod, mod.exports, dom, api, watched, lastDir || null);
     await mod.exports.run();
-    return { dom, calls, phase: mod.exports.phase(), dir: mod.exports.dir() };
+    return { dom, calls, watched, phase: mod.exports.phase(), dir: mod.exports.dir() };
   }
   const A = "/x/202609262011_OpenOmniscience_Backup", B = "/x/202609262012_OpenOmniscience_Backup";
   const withPath = (d) => ({ ...base, destination: d, summary_path: d + "/BACKUP_SUMMARY.md" });
   (async () => {
-    // Export A carried models (both managers -> A); export B was corpus-only (volumes -> B).
-    const r = await reopen({
-      vol: { mode: "backup", state: "done", dest: B, started_at: 300 },
-      fold: { mode: "backup", state: "done", dest: A, started_at: 100 },
-    }, withPath);
-    assert.ok(r.dom["ux-progress"].innerHTML.includes(B) && !r.dom["ux-progress"].innerHTML.includes(A),
-      "the reopened dialog names the OLDER export: " + r.dom["ux-progress"].innerHTML);
+    // A finished export: the dialog names ITS folder and draws its facts.
+    const r = await reopen({ mode: "backup", state: "done", dest: B, phase: null }, withPath);
+    assert.ok(r.dom["ux-progress"].innerHTML.includes(B), "the reopened dialog does not name the export: " + r.dom["ux-progress"].innerHTML);
     assert.ok(r.calls.some((c) => c.url.includes(encodeURIComponent(B))), "the facts were read for the wrong folder");
     assert.ok(/<span dir="ltr"/.test(r.dom["ux-progress"].innerHTML), "the completion path is not isolated LTR (J3)");
 
-    // One export, both phases: the folder job is the later state of the SAME export.
-    const same = await reopen({
-      vol: { mode: "backup", state: "done", dest: A, started_at: 100 },
-      fold: { mode: "backup", state: "paused", dest: A, started_at: 150 },
-    }, withPath);
-    assert.strictEqual(same.phase, "folder", "a paused large-data phase lost its Resume target");
+    // A RUNNING export (the page was reloaded mid-export) is re-attached, never re-started.
+    const live = await reopen({ mode: "backup", state: "running", dest: A, phase: "folder",
+                                requested: { corpus: true, categories: ["models"] } }, withPath);
+    assert.deepStrictEqual(live.watched, [{ dir: A, phase: "folder" }], "a running export was not re-attached");
+    assert.ok(!live.calls.some((c) => c.method === "POST"), "re-attaching started something");
 
-    // A PAUSED later corpus export must win over an older finished one, or its Resume is lost.
-    const paused = await reopen({
-      vol: { mode: "backup", state: "paused", dest: B, started_at: 300 },
-      fold: { mode: "backup", state: "done", dest: A, started_at: 100 },
-    }, withPath);
-    assert.strictEqual(paused.phase, "volumes", "the later, paused corpus export was hidden behind an older one");
-    assert.strictEqual(paused.dir, B);
+    // A STOPPING export (a pause landing between volumes, which can take minutes) is live:
+    // re-attached, and nothing says it is complete (review of baf4f4938, item 3).
+    const stopping = await reopen({ mode: "backup", state: "stopping", running: true, dest: A, phase: "volumes",
+                                    requested: { corpus: true, categories: ["models"] } }, withPath, A);
+    assert.deepStrictEqual(stopping.watched, [{ dir: A, phase: "volumes" }], "a stopping export was not re-attached");
+    assert.ok(!/Backup complete/.test(stopping.dom["ux-progress"].innerHTML), "a stopping export read as complete: " + stopping.dom["ux-progress"].innerHTML);
+    assert.ok(!/Resume export/.test(stopping.dom["ux-summary"].innerHTML), "a stopping export was offered a resume");
+
+    // A paused large-data phase keeps its Resume target and its folder.
+    const paused = await reopen({ mode: "backup", state: "paused", dest: A, phase: "folder" }, withPath);
+    assert.strictEqual(paused.phase, "folder", "a paused large-data phase lost its Resume target");
+    assert.strictEqual(paused.dir, A);
+    assert.strictEqual(paused.dom["ux-progress"].innerHTML, "PAUSED");
+
+    // After an app restart the job is idle: the last folder's record offers «Resume export».
+    const restarted = await reopen({ mode: "backup", state: "idle", dest: null }, (d) => ({
+      ...withPath(d), requested: { corpus: true, categories: ["models"], inside: false, phase: "folder" },
+      missing: { known: true, corpus: false, categories: ["models"] } }), A);
+    assert.ok(/Backup incomplete →/.test(restarted.dom["ux-progress"].innerHTML), restarted.dom["ux-progress"].innerHTML);
+    assert.ok(/Resume export/.test(restarted.dom["ux-summary"].innerHTML), "the record's unfinished phase offers no resume");
+    // …and a remembered folder whose record says nothing is left is not shown at all.
+    const stale = await reopen({ mode: "backup", state: "idle", dest: null }, (d) => ({ ...withPath(d), requested: { phase: "done" } }), A);
+    assert.strictEqual(stale.dom["ux-progress"].innerHTML, "", "a finished folder from an earlier session was shown as the last export");
 
     // J2: the file is missing on reopen -> it is asked for once, and the panel names it.
-    const missing = await reopen({ vol: { mode: "backup", state: "done", dest: B, started_at: 1 }, fold: null },
+    const missing = await reopen({ mode: "backup", state: "done", dest: B },
       (d) => (d === "POST" ? { ...base, destination: B } : { ...base, destination: B, summary_path: null }));
     assert.ok(missing.calls.some((c) => c.url === "/api/backup/export-summary" && c.method === "POST"),
       "a missing BACKUP_SUMMARY.md was not asked for on reopen");
     assert.ok(/\/written\/BACKUP_SUMMARY\.md/.test(missing.dom["ux-summary"].innerHTML),
       "the recovered summary path is not shown");
 
-    // W1: a large-data copy RESUMED after a pause ends on the same completion as a
-    // straight run -- the "Included:" line, BACKUP_SUMMARY.md written, the facts panel.
-    // It ended on a bare "Backup complete →" line and never wrote the summary file.
+    // W1: an export RESUMED after a pause ends on the same completion as a straight run --
+    // the "Included:" line, BACKUP_SUMMARY.md written, the facts panel (R701: through the
+    // export job's resume, in its own folder).
     {
-      const dom = { "ux-progress": el(), "ux-bar": el(), "ux-pause": el(), "ux-dest": el(), "ux-summary": el() };
+      const dom = { "ux-progress": el(), "ux-bar": el(), "ux-pause": el(), "ux-dest": el(), "ux-summary": el(), "ux-run": el(), "ux-cancel": el() };
       const calls = [];
       const api = async (url, opts) => {
-        calls.push({ url, method: (opts && opts.method) || "GET" });
+        calls.push({ url, method: (opts && opts.method) || "GET", body: opts && opts.body ? JSON.parse(opts.body) : null });
+        if (url === "/api/backup/export/resume") return { state: "running" };
         if (url === "/api/backup/export-summary") return { summary_path: A + "/BACKUP_SUMMARY.md", facts: withPath(A) };
         throw new Error("unexpected " + url);
       };
@@ -388,25 +402,31 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
         "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
         "function humanBytes(n){return String(n)+' B';}\n" +
         "function ooServerText(s){return String(s);}\n" +
+        "function toast(){}\n" +
         "var window = {}; var _uxExportDir = DIR, _uxPhase = 'folder', _uxExportFacts = null;\n" +
+        "let _uxWatchGen = 0; let _uxFinishedKey = null;\n" +
         extract("fmtNum") + "\n" +
         "var _uxExportIncluded = { corpus: true, blobs: ['models'] };\n" +
         "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
         "function _uxShowPaused(){ DOM['ux-progress'].innerHTML = 'PAUSED'; }\n" +
-        "function _uxRun(){ throw new Error('the folder resume re-ran the whole export'); }\n" +
-        "async function _uxStartThenPoll(start){ await start(); return { state: 'done' }; }\n" +
+        "function _uxRun(){ throw new Error('the resume re-ran the whole export'); }\n" +
+        "function _uxRememberExportDir(){}\n" +
+        "async function _uxStartThenPoll(start){ await start(); return { state: 'done', dest: DIR, requested: { corpus: true, categories: ['models'] } }; }\n" +
         extract("_uxRenderExportPanel") + "\n" + extract("_uxVerifySentence") + "\n" + extract("_uxVerifyDetail") + "\n" +
         "async " + extract("_uxFinishExport") + "\n" +
+        "async " + extract("_uxWatchExport") + "\n" +
         "async " + extract("_uxResume") + "\n" +
         "module.exports = { resume: _uxResume };";
       const mod = { exports: {} };
-      const apiAll = async (url, opts) => (url === "/api/backup/folder/resume" ? { ok: true } : api(url, opts));
-      new Function("module", "exports", "DOM", "api", "DIR", wsrc)(mod, mod.exports, dom, apiAll, A);
+      new Function("module", "exports", "DOM", "api", "DIR", wsrc)(mod, mod.exports, dom, api, A);
       await mod.exports.resume(dom["ux-pause"]);
+      const resumed = calls.find((c) => c.url === "/api/backup/export/resume");
+      assert.ok(resumed && resumed.body.dir === A, "the resume does not name the export's own folder: " + JSON.stringify(calls));
+      assert.ok(!("passphrase" in resumed.body), "a large-data resume asked for the passphrase");
       const line = dom["ux-progress"].innerHTML;
-      assert.ok(/Backup complete →/.test(line) && line.includes(A), "the resumed copy did not complete: " + line);
+      assert.ok(/Backup complete →/.test(line) && line.includes(A), "the resumed export did not complete: " + line);
       assert.ok(/Included:/.test(line) && /Corpus/.test(line) && /LLM models/.test(line),
-        "the resumed copy's completion does not say what the backup holds: " + line);
+        "the resumed export's completion does not say what the backup holds: " + line);
       assert.ok(calls.some((c) => c.url === "/api/backup/export-summary" && c.method === "POST"),
         "a resumed export never wrote BACKUP_SUMMARY.md");
       assert.ok(/BACKUP_SUMMARY\.md/.test(dom["ux-summary"].innerHTML) && /Encrypted volumes/.test(dom["ux-summary"].innerHTML),
@@ -415,4 +435,207 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
 
     console.log("export panel node suite: ok");
   })().catch((e) => { console.error(e); process.exit(1); });
+}
+
+// --- R701 review of 1b88c0b74: the export watcher, run as REAL code ----------- //
+// Items 1 (the folder is remembered as soon as the server names it), 3 (one watcher at
+// a time; none once the dialog closes; one completion per export), 5 (the export's
+// error in the operator's language) and 9 (Cancel on a paused export). The timers are
+// the harness's own, so every poll turn is stepped by hand and counted.
+{
+  // `const NAME = ...;` lifted whole, brackets and quotes balanced (the ooServerText tables).
+  function extractConst(name) {
+    const at = APP.indexOf("const " + name + " =");
+    assert.ok(at !== -1, name + " not found -- was it renamed?");
+    let depth = 0, q = null;
+    for (let i = APP.indexOf("=", at) + 1; i < APP.length; i++) {
+      const c = APP[i];
+      if (q) { if (c === "\\") { i++; continue; } if (c === q) q = null; continue; }
+      // Comments are skipped: an apostrophe in one ("the folder backup's own check") is not a quote.
+      if (c === "/" && APP[i + 1] === "/") { i = APP.indexOf("\n", i); continue; }
+      if (c === "/" && APP[i + 1] === "*") { i = APP.indexOf("*/", i) + 1; continue; }
+      if (c === '"' || c === "'" || c === "`") { q = c; continue; }
+      if ("([{".includes(c)) depth++;
+      else if (")]}".includes(c)) depth--;
+      else if (c === ";" && depth === 0) return APP.slice(at, i + 1);
+    }
+    throw new Error("unbalanced " + name);
+  }
+  const path = require("path");
+  const FR = JSON.parse(require("fs").readFileSync(path.join(__dirname, "..", "src", "static", "locales", "fr.json"), "utf8"));
+  const el = (extra) => ({ innerHTML: "", textContent: "", value: "", style: {}, dataset: {}, disabled: false,
+                           removeAttribute() {}, setAttribute() {}, ...(extra || {}) });
+
+  function harness(lang) {
+    const dom = { "ux-progress": el(), "ux-bar": el(), "ux-pause": el(), "ux-cancel": el({ style: { display: "none" } }),
+                  "ux-run": el(), "ux-summary": el(), "ux-export": el({ open: true }) };
+    const H = { dom, timers: [], status: null, startAnswer: null, finished: [], calls: [], store: {} };
+    const api = async (url, opts) => {
+      H.calls.push({ url, method: (opts && opts.method) || "GET" });
+      if (url === "/api/backup/export/status") return JSON.parse(JSON.stringify(H.status));
+      if (url === "/api/backup/export/start" || url === "/api/backup/export/resume") {
+        if (H.startAnswer instanceof Error) throw H.startAnswer;
+        return H.startAnswer;
+      }
+      if (url === "/api/backup/export/cancel") return { state: "cancelled", dest: "/x/A" };
+      throw new Error("unexpected " + url);
+    };
+    const i18n = lang === "fr"
+      ? "var window = { OOI18N: { t: (x) => (TABLE[x] || x), tf: (x, v) => (TABLE[x] || x).replace(/\\{(\\w+)\\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)) } };\nvar OOI18N = window.OOI18N;\n"
+      : "var window = {};\n";
+    const src =
+      "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g," +
+      "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
+      i18n +
+      "function toast(){}\nfunction confirm(){ return true; }\nconst console = { error(){} };\n" +
+      "var localStorage = { setItem(k, v){ STORE[k] = String(v); }, getItem(k){ return k in STORE ? STORE[k] : null; } };\n" +
+      "var _uxExportDir = null, _uxPhase = null, _uxExportIncluded = null;\n" +
+      "let _uxWatchGen = 0; let _uxFinishedKey = null;\n" +
+      "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
+      "function _uxProgressView(){ return { pct: null, indeterminate: true, text: '' }; }\n" +
+      "function _uxPaintBar(){}\nfunction _uxRuleOfThree(){ return null; }\nfunction _uxEta(){ return ''; }\n" +
+      "async function _uxFinishExport(prog, dest){ FINISHED.push(dest); }\n" +
+      extractConst("_OO_SPACE_WHAT") + "\n" + extractConst("_OO_SIZE_RE") + "\n" + extractConst("_OO_SPACE_RES") + "\n" +
+      extract("_sizeText") + "\n" + extract("ooServerText") + "\n" +
+      extract("_uxRememberExportDir") + "\n" + extract("_uxLastExportDir") + "\n" +
+      extract("_uxSamePath") + "\n" + extract("_uxPoll") + "\n" + extract("_uxShowPaused") + "\n" +
+      (APP.includes("function _uxExportErrorText(") ? extract("_uxExportErrorText") + "\n" : "") +
+      "async " + extract("_uxStartThenPoll") + "\n" +
+      "async " + extract("_uxWatchExport") + "\n" +
+      "async " + extract("_uxCancelExport") + "\n" +
+      "module.exports = { watch: _uxWatchExport, paused: _uxShowPaused, cancel: _uxCancelExport };";
+    const mod = { exports: {} };
+    new Function("module", "exports", "DOM", "api", "setTimeout", "FINISHED", "STORE", "TABLE", src)(
+      mod, mod.exports, dom, api, (fn) => { H.timers.push(fn); }, H.finished, H.store, FR);
+    H.m = mod.exports;
+    H.settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) => setImmediate(r)); };
+    H.turn = async () => { const q = H.timers.splice(0); for (const f of q) f(); await H.settle(); };
+    return H;
+  }
+  const A = "/x/202611141200_OpenOmniscience_Backup", B = "/x/202611141201_OpenOmniscience_Backup";
+  const running = (dest) => ({ kind: "backup-export", state: "running", phase: "volumes", dest, parent: "/x", started_at: 7 });
+
+  (async () => {
+    // ITEM 1: remembered from the start's own answer, while the poll is still running --
+    // a restart mid-export (the page never sees the end) must still find the folder.
+    {
+      const H = harness();
+      H.status = running(A);
+      H.startAnswer = running(A);
+      H.m.watch(H.dom["ux-run"], () => api_start(H), { mode: "backup", parent: "/x" });
+      await H.settle();
+      assert.strictEqual(H.store["oo.export.lastDir"], A, "the folder was not remembered while the export ran");
+      H.dom["ux-export"].open = false;
+      await H.turn();
+    }
+    // …and from the first status tick when the start's answer was lost.
+    {
+      const H = harness();
+      H.status = running(B);
+      H.startAnswer = new Error("NetworkError");
+      H.m.watch(H.dom["ux-run"], () => api_start(H), { mode: "backup", parent: "/x" });
+      await H.settle();
+      assert.strictEqual(H.store["oo.export.lastDir"], B, "a lost start answer left the folder unremembered");
+      H.dom["ux-export"].open = false;
+      await H.turn();
+    }
+
+    // ITEM 3: a second watcher (the dialog reopened) takes over; the first stops polling.
+    {
+      const H = harness();
+      H.status = running(A);
+      H.m.watch(null);
+      await H.settle();
+      assert.strictEqual(H.timers.length, 1);
+      H.m.watch(null);
+      await H.settle();
+      await H.turn();
+      assert.strictEqual(H.timers.length, 1, "two watchers are polling one export: " + H.timers.length);
+      H.status = { ...running(A), state: "done", phase: null };
+      await H.turn();
+      await H.turn();
+      assert.deepStrictEqual(H.finished, [A], "the export was finished " + H.finished.length + " times");
+      // A closed dialog stops polling.
+      H.status = running(B);
+      H.m.watch(null);
+      await H.settle();
+      H.dom["ux-export"].open = false;
+      await H.turn();
+      assert.strictEqual(H.timers.length, 0, "a closed dialog is still polling");
+    }
+
+    // ITEM 5: the gate's refusal and the wrong-passphrase sentence, in French, with the phase.
+    for (const [error, key] of [
+      ["The corpus backup could not be confirmed — aborting before the large-data files so you never get a partial backup that looks complete.",
+       "The corpus backup could not be confirmed — aborting before the large-data files so you never get a partial backup that looks complete."],
+      ["wrong passphrase or the file has been altered",
+       "Could not open this backup: the passphrase is wrong, or its files have been altered."],
+    ]) {
+      const H = harness("fr");
+      H.status = { ...running(A), state: "failed", reason: "volumes-error", error, error_phase: "volumes" };
+      await H.m.watch(null);
+      const line = H.dom["ux-progress"].innerHTML;
+      assert.ok(FR[key] && line.includes(esc_(FR[key])), "the export's error is not in French: " + line);
+      assert.ok(line.includes(esc_(FR["Corpus"])), "the phase is not named in French: " + line);
+      assert.ok(!line.includes(error), "the English sentence is still on the page: " + line);
+    }
+
+    // REVIEW OF baf4f4938, ITEM 4: a resume the server REFUSED (it answered 409) is shown,
+    // translated -- never taken for a lost response and redrawn as a bare "paused".
+    {
+      const H = harness("fr");
+      const RESTORE = "A restore is in progress, so the export did not start: it would read a corpus that is being switched. Let the restore finish, then export again.";
+      H.status = { ...running(A), state: "paused", phase: "folder" };
+      const refusal = new Error(RESTORE);
+      refusal.status = 409;
+      H.startAnswer = refusal;
+      await H.m.watch(H.dom["ux-run"], () => api_start(H), { mode: "backup", dest: A });
+      const line = H.dom["ux-progress"].innerHTML;
+      assert.ok(FR[RESTORE] && line.includes(esc_(FR[RESTORE])), "the refusal is not shown in French: " + line);
+      assert.ok(line.includes(esc_(FR["Could not resume:"])), "the refusal is not named as a refused resume: " + line);
+      assert.strictEqual(H.timers.length, 0, "a refused resume was polled as if it had started");
+    }
+
+    // ROUND 3, ITEM 1: a job that ENDS badly while a watcher holds a start call is not a
+    // refused request -- the poll's rejection carries the job's status, never an HTTP number.
+    {
+      const H = harness();
+      H.startAnswer = running(A);
+      H.status = { ...running(A), state: "cancelled", phase: "volumes" };
+      await H.m.watch(H.dom["ux-run"], () => api_start(H), { mode: "backup", dest: A });
+      const line = H.dom["ux-progress"].innerHTML;
+      assert.ok(/Backup failed:/.test(line) && /Cancelled\./.test(line), "a resumed export cancelled mid-run: " + line);
+      assert.ok(!/Could not resume/.test(line) && !/Backup paused/.test(line), "a cancelled resume read as a refused one: " + line);
+      assert.notStrictEqual(H.dom["ux-pause"].dataset.mode, "resume", "a cancelled export offers Resume");
+    }
+    {
+      const H = harness();
+      const GATE = "The corpus backup could not be confirmed — aborting before the large-data files so you never get a partial backup that looks complete.";
+      H.startAnswer = running(A);
+      H.status = { ...running(A), state: "failed", reason: "volumes-unconfirmed", error: GATE, error_phase: "volumes" };
+      await H.m.watch(H.dom["ux-run"], () => api_start(H), { mode: "backup", parent: "/x" });
+      const line = H.dom["ux-progress"].innerHTML;
+      assert.ok(/Backup failed:/.test(line) && line.includes(esc_(GATE)), "a fresh export that failed mid-run: " + line);
+      assert.ok(!/Could not start/.test(line), "a failed run read as a refused start: " + line);
+    }
+
+    // ITEM 9: a paused export keeps its Cancel button, and Cancel ends it on the page.
+    {
+      const H = harness();
+      H.m.paused(H.dom["ux-progress"], H.dom["ux-bar"], H.dom["ux-pause"], (s) => s);
+      assert.strictEqual(H.dom["ux-cancel"].style.display, "", "a paused export has no Cancel button");
+      await H.m.cancel(H.dom["ux-cancel"]);
+      assert.ok(/Cancelled\./.test(H.dom["ux-progress"].innerHTML), "a cancelled paused export is not drawn: " + H.dom["ux-progress"].innerHTML);
+      assert.strictEqual(H.dom["ux-pause"].style.display, "none");
+    }
+    console.log("export watcher node suite: ok");
+  })().catch((e) => { console.error(e); process.exit(1); });
+
+  function api_start(H) {
+    if (H.startAnswer instanceof Error) return Promise.reject(H.startAnswer);
+    return Promise.resolve(H.startAnswer);
+  }
+  function esc_(s) {
+    return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  }
 }

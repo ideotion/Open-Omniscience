@@ -55,6 +55,8 @@ APP_FILES: frozenset[str] = frozenset({
     "volumes.building.json", "volumes-readme.json", "weather_signals.json", "world_discovery.json",
     "calendar_autoimport.json", "calendar_feed_attempts.json", "calendar_feed_checks.json", "calendar_feed_imports.json",
     "calendar_feeds.yml", ".oos-volume",
+    # the Field data instance tag (src/paths.INSTANCE_ID_FILE) and the card self-check beside the briefing cache (2026-11-14)
+    ".oo-instance-id", "card_quality_selfcheck.jsonl",
 })
 
 #: Top-level FOLDERS the app writes into its data folder.

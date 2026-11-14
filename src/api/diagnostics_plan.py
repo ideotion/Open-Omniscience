@@ -75,9 +75,9 @@ SCAN_EST_S: dict[str, float] = {
     "keyword-growth.json": 113.3,
     "keyword-log-digest.json": 167.0,
     "keyword-engine.json": 231.0,
-    "leads-quality.json": 275.0,
+    "leads-quality.json": 275.0,  # field figure before row 18; 0.01 s from a fresh Home feed, else the producer pass
     "benchmark.json": 300.0,
-    "bulletin-weekly.json": 300.0,
+    "bulletin-weekly.json": 300.0,  # field figure before row 18 dropped its cards section from the bundle (107 s to 29 s on 200k)
     "performance.json": 300.0,
     "source-audit.json": 300.0,
 }

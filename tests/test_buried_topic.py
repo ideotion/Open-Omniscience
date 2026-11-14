@@ -201,3 +201,14 @@ def test_bury_card_and_finding_carry_the_exact_analyzed_article_set():
     cards = buried_topic(db)
     c = next(c for c in cards if "target" in c.title)
     assert c.article_ids == hit["article_ids"]
+
+
+def test_the_drill_lists_only_the_sourced_articles_the_finding_counted(db):
+    """Row 49: the drill read the window without its ``source_id IS NOT NULL`` gate, so a
+    mention kept for a lost article (no source) was listed though ``a_t`` never counted it."""
+    _seed_bury(db)
+    db.add(KeywordMention(keyword_id=1, article_id=99_999, source_id=None, observed_on=WHEN, count=1))
+    db.commit()
+    hit = next(i for i in find_buried_topics(db)["items"] if i["source"] == "target")
+    assert 99_999 not in hit["article_ids"]
+    assert len(hit["article_ids"]) == hit["corpus_articles_on_topic"] == 120

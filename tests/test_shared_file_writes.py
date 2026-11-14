@@ -45,7 +45,7 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/api/markets.py": (1, "Plan J"),
     "src/backup/artifact.py": (5, "export"),
     "src/backup/country_migration.py": (2, "export"),
-    "src/backup/export_folder.py": (2, "export"),
+    "src/backup/export_folder.py": (1, "export"),
     "src/backup/export_summary.py": (2, "export"),
     "src/backup/folder_backup.py": (2, "WAL"),
     "src/backup/import_queue.py": (2, "WAL"),

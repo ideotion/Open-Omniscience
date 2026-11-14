@@ -819,7 +819,8 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
         - the FTS table was just created here while the store has articles (a schema
           upgrade: the triggers never fired for rows inserted before the table existed), or
         - the table exists but is EMPTY while articles exist (a past rebuild that never
-          completed). Steady-state boots (table present + populated) SKIP the rebuild.
+          completed), or its document count differs from the article count (a partial
+          index, see SCOPE below). Steady-state boots (the two counts agree) SKIP the rebuild.
       * ``"always"`` — force a full rebuild (the explicit re-index / index-repair path).
       * ``"never"`` — ensure only the DDL, never rebuild.
 
@@ -829,28 +830,23 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
     and is reported in the log rather than in this value so every existing caller and
     assertion on it keeps reading the same three words.
 
-    SCOPE OF THE BOOT SELF-HEAL (deliberate): the boot path self-heals only a
-    fully-EMPTY index (docsize == 0 while articles exist) — an O(1) probe. It does NOT try to
-    detect a PARTIAL index (some rows indexed, some not) or a CORRUPT one. The way to see a partial one
-    whole is to compare the indexed-row count against the article count, and the boot makes no such
-    comparison: that is a decision, not a measured necessity, and it is left as it was. What was measured
-    (2026-10-27): ``count(1) FROM articles`` is a scan of a covering index (which one is the planner's choice;
-    on the measured store it was ``idx_article_created_at``, about four times the pages of the smallest
-    candidate at 100,000 articles, so the figure is conservative) and took 0.24 to 0.33 s cold on 1,000,000
-    articles (five cold runs, median 0.29 s). LIMITS of that figure: one
-    machine, an encrypted (SQLCipher) store on a virtual disk reading 1.3 GB/s, synthetic Latin
-    text of 1.3 KB per article, nothing above 1 M, the cost follows the NUMBER of articles and not their
-    text, and the plan is the planner's choice, not a promise (``tests/test_fts_status.py`` pins that it is a
-    covering-index scan on the real schema). An earlier figure for this count, 74 s on a 2.7 GB encrypted corpus, is not reproduced on
-    the current schema and what it timed is not recorded: do not build on it. A
-    partial/corrupt index is UNREACHABLE via normal operation anyway (ingest is an atomic
-    INSERT + trigger; ``'rebuild'`` is atomic; restore runs a full rebuild in ``verify_copy``;
-    re-index never touches article content) — it can arise only from external file corruption
-    (e.g. a torn filesystem-copy backup). Those are the ``fts_status`` (D4) diagnostic's job:
-    it reports a damaged index, an EMPTY one and, while no article has been ingested since, a PARTIAL one whose
-    TAIL is missing (``indexed_documents`` / ``index_state``; the probe it also runs reads the content
-    table and cannot see them), and the explicit re-index job heals it (``rebuild="always"``). It repairs nothing
-    and is operator-initiated: it never runs at boot, and the boot refusal above stands.
+    SCOPE OF THE BOOT SELF-HEAL (deliberate): the boot path rebuilds an index that is EMPTY while articles
+    exist (an O(1) probe) and, since R412 (OPEN_QUEUE 2026-10-27 item 9), one whose document count differs
+    from the article count: a PARTIAL index (a missing head, a hole in the middle, a missing tail) or one
+    holding documents with no article. Both counts follow the NUMBER of rows, never their text:
+    ``count(*) FROM articles`` is a scan of a covering index (which one is the planner's choice; on the
+    measured store it was ``idx_article_created_at``) and took 0.24 to 0.33 s cold on 1,000,000 articles
+    (five cold runs, median 0.29 s, 2026-10-27), and the ``article_fts_docsize`` shadow holds one short row
+    per document. LIMITS of that figure: one machine, an encrypted (SQLCipher) store on a virtual disk reading
+    1.3 GB/s, synthetic Latin text of 1.3 KB per article, nothing above 1 M, and the plan is the planner's
+    choice, not a promise (``tests/test_fts_status.py`` pins that it is a covering-index scan on the real
+    schema). An earlier figure for this count, 74 s on a 2.7 GB encrypted corpus, is not reproduced on the
+    current schema and what it timed is not recorded: do not build on it. A count cannot see a CORRUPT index
+    whose two counts agree, nor a document indexed from stale text; neither is reachable via normal operation
+    (ingest is an atomic INSERT + trigger; a rebuild is atomic; restore runs a full rebuild in
+    ``verify_copy``; re-index never touches article content), only from external file corruption (e.g. a torn
+    filesystem-copy backup). Those are the ``fts_status`` (D4) diagnostic's job, operator-initiated and never
+    run at boot, and the explicit re-index job heals them (``rebuild="always"``).
 
     No-op for non-SQLite engines (PostgreSQL would use its own tsvector path).
     Safe to call repeatedly; called from ``init_db``.
@@ -899,7 +895,52 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
         action = _decide_fts_rebuild(conn, rebuild, existed)
         if action == "rebuilt":
             rebuild_index(conn)
+        elif action == _PARTIAL:
+            action = _heal_partial_index(conn)
     return action
+
+
+#: What ``_decide_fts_rebuild`` answers for a populated index whose document count differs from the article count.
+_PARTIAL = "partial"
+
+
+def _heal_partial_index(conn) -> str:
+    """Rebuild a PARTIAL index at boot under a savepoint; on a database error keep the partial index and boot.
+
+    The count comparison (R412, OPEN_QUEUE 2026-10-27 item 9) finds a partial index on exactly the stores where the
+    file itself may be damaged (a torn copy, a malformed page). A rebuild that then fails on that damage must not make
+    every unlock fail where the boot used to come up with a partial index: the savepoint returns the index to what it
+    was, the log names the error's type, and ``fts_status`` and the explicit re-index job remain the way to see and
+    heal it. Anything that is not a database error (an interrupt, a bug) still propagates."""
+    import sqlite3
+
+    from sqlalchemy.exc import DBAPIError
+
+    _run(conn, "SAVEPOINT oo_fts_partial")
+    try:
+        rebuild_index(conn)
+    except (sqlite3.DatabaseError, DBAPIError) as exc:
+        # SQLite can already have rolled the whole transaction back (a full disk, an I/O error): then there is no
+        # savepoint to return to, and the caller sees the original error rather than a boot on a lost transaction.
+        if not _back_to_savepoint(conn, "oo_fts_partial"):
+            raise
+        _LOG.warning("FTS: the partial index could not be rebuilt at boot (%s); kept as it was", type(exc).__name__)
+        return "skipped"
+    except BaseException:
+        _back_to_savepoint(conn, "oo_fts_partial")
+        raise
+    _run(conn, "RELEASE oo_fts_partial")
+    return "rebuilt"
+
+
+def _back_to_savepoint(conn, name: str) -> bool:
+    """Roll back to and release savepoint ``name``; ``False`` when there is none left to return to."""
+    try:
+        _run(conn, f"ROLLBACK TO {name}")
+        _run(conn, f"RELEASE {name}")
+    except Exception:  # noqa: BLE001 - the caller decides what a lost savepoint means
+        return False
+    return True
 
 
 #: Articles read per step of a full rebuild (one read of each article's text).
@@ -1088,8 +1129,9 @@ def index_articles(con, ids: Sequence[int]) -> int:
 def _decide_fts_rebuild(conn, rebuild: str, existed_before: bool) -> str:
     """Decide whether ``ensure_fts`` should run the corpus-scaled ``'rebuild'``.
 
-    All probes here are CHEAP (``LIMIT 1`` / a shadow-table lookup) — none scans the corpus
-    or reads article content through the codec, so the decision itself is fast even at 5 TB.
+    All probes here are CHEAP (``LIMIT 1`` probes, then one count of each side) — none reads
+    article content through the codec, and the counts follow the number of rows, never their
+    text, so the decision itself stays short at 5 TB (about 0.3 s per million articles cold).
 
     THE EXTERNAL-CONTENT GOTCHA: ``SELECT rowid FROM article_fts`` reads the *content* table
     (``articles``), NOT the index, so it can NEVER tell "is the index populated?" — it
@@ -1122,7 +1164,25 @@ def _decide_fts_rebuild(conn, rebuild: str, existed_before: bool) -> str:
         # risk a corpus-scaled rebuild on a false negative (a false skip only costs a manual
         # re-index; a false rebuild reintroduces the P0.4 slow boot).
         return "skipped"
-    return "rebuilt" if not index_has_docs else "skipped"
+    if not index_has_docs:
+        return "rebuilt"
+    # A populated index is checked WHOLE, not only for emptiness (R412, OPEN_QUEUE 2026-10-27 item 9): every
+    # article is one document (the insert trigger and ``rebuild_index`` both index every row, an empty text
+    # included), so a store whose two counts differ has a hole somewhere -- a missing head, a hole in the middle,
+    # a missing tail or a document left behind -- which ``fts_status`` could only infer from the ends. Both counts
+    # follow the NUMBER of rows, never their text: ``articles`` is counted through a covering index (0.24 to
+    # 0.33 s cold at 1,000,000 articles, median 0.29 s, measured 2026-10-27; the plan is the planner's choice) and
+    # the docsize shadow holds one short row per document. A healthy store pays that once per boot and rebuilds
+    # nothing.
+    articles, documents = conn.execute(
+        text("SELECT (SELECT count(*) FROM articles), (SELECT count(*) FROM article_fts_docsize)")
+    ).one()
+    if articles != documents:
+        _LOG.warning(
+            "FTS: the index holds %d documents for %d articles; rebuilding it whole", documents, articles
+        )
+        return _PARTIAL
+    return "skipped"
 
 
 def optimize_after_bulk(session: Session) -> dict:

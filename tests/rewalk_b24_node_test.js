@@ -54,10 +54,11 @@ function table(lang) {
   return TABLE[lang];
 }
 let LANG = "en";
+// The shipped t()/tf(), plural forms included (2026-11-14), over the active language's table.
+const ENGINE = require("./i18n_engine_node.js").engine;
 const OOI18N = {
-  t: (s) => { const v = table(LANG)[s]; return v == null ? s : v; },
-  tf: (s, vars) => String(OOI18N.t(s)).replace(/\{(\w+)\}/g,
-    (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m),
+  t: (s) => ENGINE(table(LANG), () => LANG).t(s),
+  tf: (s, vars) => ENGINE(table(LANG), () => LANG).tf(s, vars),
   current: () => LANG,
 };
 const T = (lang, s) => { const v = table(lang)[s]; return v == null ? s : v; };
@@ -65,7 +66,7 @@ const T = (lang, s) => { const v = table(lang)[s]; return v == null ? s : v; };
 // ---------------------------------------------------------------- the sandbox
 const NAMES = [
   // app-core
-  "ooLabelHtml", "ooLabelText", "ooListJoin",
+  "ooLabelHtml", "ooLabelText", "ooListJoin", "_tfn",
   // app-analysis
   "commodityOverlaySvg", "_anPriceHtml", "_anLensSuffix", "commoditiesForTerm",
   "renderAnTrend", "_anCtlLabel", "drawAnTrend", "renderAnMindmap",
@@ -244,8 +245,9 @@ GROUPS.u6 = () => {
   for (const [lang, html] of [["en", en], ["ar", ar]]) {
     assert.ok(/style="[^"]*direction:\s*ltr/.test(svgTag(html)),
       `[${lang}] the chart svg does not pin direction:ltr, so rtl flips every anchor`);
-    const frame = T(lang, "Price × coverage: {prices} price points, {coverage} coverage points");
-    const aria = frame.replace("{prices}", "3").replace("{coverage}", "2");
+    // The keyed frame, plural forms chosen by {prices} (2026-11-14).
+    const aria = ENGINE(lang === "en" ? {} : table(lang), () => lang)
+      .tf("Price × coverage: {prices} price points, {coverage} coverage points", { prices: "3", coverage: "2" });
     assert.ok(svgTag(html).includes(`aria-label="${esc(aria)}"`),
       `[${lang}] the aria-label is not the keyed frame: ${svgTag(html)}`);
   }
