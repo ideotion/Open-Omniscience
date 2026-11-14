@@ -60,11 +60,13 @@ def _corpus_volume(db, lo: date, hi: date) -> int:
         return sum(served.values())
     from sqlalchemy import func
 
+    from src.analytics.quarantine_scope import not_quarantined
     from src.database.derived_views import KeywordMentionRead
 
     total = (
         db.query(func.coalesce(func.sum(KeywordMentionRead.count), 0))
         .filter(KeywordMentionRead.observed_on >= lo, KeywordMentionRead.observed_on < hi)
+        .filter(not_quarantined(KeywordMentionRead.article_id))  # R101: the rollup it stands in for leaves them out
         .scalar()
     )
     return int(total or 0)
