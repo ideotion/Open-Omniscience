@@ -137,8 +137,10 @@ def test_checks_are_listed_as_run_only_when_their_input_was_there():
     assert "evidence_missing_articles" in rep["checks_not_run"]
     per = {"c1": {"arithmetic": {"failed_n": 1, "rows": [{"reproduced": False, "label": "r"}]},
                   "evidence": {"total": 4, "missing_n": 1, "quarantined_n": 2}}}
-    rep2 = cq.quality_report([_card()], per_card=per, now=NOW)
+    rep2 = cq.quality_report([_card()], per_card=per, registered=["rising_now"], now=NOW)
     assert not rep2["checks_not_run"]
+    # coverage needs the registry: without it the check is not run, never passed
+    assert "kind_never_seen" in cq.quality_report([_card()], per_card=per, now=NOW)["checks_not_run"]
     assert {f["check"] for f in rep2["findings"]} == {"arithmetic_failed", "evidence_missing_articles", "evidence_quarantined"}
     # the in-app run never claims the evidence checks
     rep3 = cq.quality_report([_card()], per_card=per, cheap_only=True, now=NOW)
@@ -545,3 +547,15 @@ def test_a_feed_old_finding_keeps_its_identity_as_the_feed_ages():
     old1 = cq.check_meta({"generated_at": (NOW - timedelta(days=8)).isoformat()}, registered=None, cards=[], now=NOW)
     old2 = cq.check_meta({"generated_at": (NOW - timedelta(days=9)).isoformat()}, registered=None, cards=[], now=NOW)
     assert {cq.finding_key(f) for f in old1} == {cq.finding_key(f) for f in old2}
+
+
+def test_an_empty_feed_never_resolves_coverage_findings_and_glued_words_keep_their_address():
+    one = cq.quality_report([_card(produced_by="a")], registered=["a", "b"], now=NOW)
+    none = cq.quality_report([], registered=["a", "b"], now=NOW)
+    assert "kind_never_seen" not in none["checks_run"]
+    cmp_ = cq.compare_reports(one, none)
+    assert {p["check"]: p["verdict"] for p in cmp_["per_check"]}["kind_never_seen"] == "not-comparable"
+    assert not [f for f in cmp_["resolved_findings"] if f["check"] == "kind_never_seen"]
+    fc = _field_cards_module()
+    assert fc._clean_text("End.https://a.com/x?tok=1") == "End.https://a.com/x"
+    assert fc._clean_text("foo-https://a.com?x") == "foo-https://a.com"

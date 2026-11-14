@@ -561,9 +561,11 @@ def quality_report(
     ran = [
         k for k, v in CHECKS.items()
         if (k != "arithmetic_failed" or arithmetic_seen) and (v["cheap"] or evidence_seen)
-    ] if cards else [k for k, v in CHECKS.items() if v["dimension"] in ("performance", "coverage")] + [
+    ] if cards else [k for k, v in CHECKS.items() if v["dimension"] == "performance"] + [
         "feed_incomplete", "feed_old"
     ]  # no cards is not a clean feed: only the feed-record checks ran, so only they compare
+    if "kind_never_seen" in ran and not (registered and any(c.get("produced_by") for c in cards)):
+        ran.remove("kind_never_seen")  # it needs the registry AND cards that say who made them
     return {
         "schema": SCHEMA,
         "generated_at": now.isoformat(timespec="seconds"),
@@ -612,7 +614,8 @@ def compare_reports(previous: dict, current: dict) -> dict:
     both_run = prev_run & cur_run
     ev_prev = set((previous.get("evidence") or {}).get("checked_card_ids") or [])
     ev_cur = set((current.get("evidence") or {}).get("checked_card_ids") or [])
-    same_evidence = ev_prev == ev_cur
+    has_ids = all("checked_card_ids" in (r.get("evidence") or {}) for r in (previous, current))
+    same_evidence = has_ids and ev_prev == ev_cur
     prev_counts = {c["check"]: c["n"] for c in previous.get("counts") or []}
     cur_counts = {c["check"]: c["n"] for c in current.get("counts") or []}
     per_check = []

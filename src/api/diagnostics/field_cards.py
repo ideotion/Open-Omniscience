@@ -72,7 +72,7 @@ _STATEMENT_DEADLINE_S = 240.0
 #: An absolute address inside a string: a web or file address (``scheme://``) or one of the schemes whose body
 #: is an address, a payload or code. A word followed by a colon ("note:x", "sha256:ab") is not one.
 _ADDRESS = re.compile(
-    r"(?i)(?:\b[a-z][a-z0-9+.-]{1,31}://|(?<![\w/:])//(?=[^\s/])|\b(?:mailto|data|javascript|vbscript|tel|sms):|\bwww\.)"
+    r"(?i)(?:\b[a-z][a-z0-9+]{1,31}://|(?<![\w/:])//(?=[^\s/])|\b(?:mailto|data|javascript|vbscript|tel|sms):|\bwww\.)"
     r"[^\s\"'<>]+"
 )
 
