@@ -4,7 +4,7 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 The spine is what the report must never do: invent a number for an edition that never ran,
-score or bar a share, count a located address that no extractor produced, or lose the last
+score or bar a share, count a located address the local index did not answer, or lose the last
 known edition total when the siteinfo read fails.
 """
 
@@ -151,10 +151,10 @@ def test_last_event_and_gap_history(lane):
     assert "percent" not in str(r["gaps"])
 
 
-def test_located_counters_are_absent_with_their_reason_never_zero(lane):
+def test_located_counters_list_no_edition_that_found_nothing_and_name_the_press_gap(lane):
     loc = edition_coverage(lane, now=T0)["located"]
-    assert loc["measured"] is False and loc["reason"] == "address-extractor-not-built"
-    assert loc["per_edition"] is None and loc["per_press_lane"] is None
+    assert loc["measured"] is True and loc["per_edition"] == {}, "an edition with no address found is absent, never a row of zeros"
+    assert loc["per_press_lane"] is None and loc["per_press_lane_reason"] == "press-body-addresses-not-read"
 
 
 def test_rides_the_lane_counters_member_and_reads_back(lane):

@@ -1056,6 +1056,20 @@
       try {
         const d = await api("/api/wiki/lane/places");
         _wikiLayerCache = (d && d.measured === true) ? d : false;
+        // R17 step 4 (R678): infobox addresses located in the local OpenStreetMap index ride the same layer, each with its provenance.
+        // Their own read, so a failure here leaves the page points drawn and simply adds no squares.
+        if (_wikiLayerCache) {
+          try {
+            const a = await api("/api/wiki/lane/located-addresses?limit=20000");
+            if (a && a.measured === true && Array.isArray(a.points)) {
+              _wikiLayerCache.addresses = a.points;
+              // Partial is said, never drawn as the whole: the scan is incremental and the answer bounded.
+              _wikiLayerCache.addressesPartial = a.complete !== true || a.truncated === true || a.from_previous_read === true;
+              _wikiLayerCache.addressesRead = a.texts_read || {};
+              _wikiLayerCache.addressesHeld = a.texts_held || {};
+            }
+          } catch (_e2) { /* no squares: the scope sentence in the legend still says what is never located */ }
+        }
       } catch (_e) {
         // FALSE means "asked and could not read", which the caller renders as an
         // honest absence. NULL would mean "not asked yet" and would make it ask again
@@ -1079,8 +1093,24 @@
           : 'fill="transparent" stroke="var(--accent)" stroke-width="1"';
         const label = (pt.title || pt.external_id || "") + (pt.edition ? " (" + pt.edition + ")" : "");
         return `<circle cx="${x}" cy="${y}" r="2.4" ${paint}><title>${esc(label)}</title></circle>`;
-      }).join("");
-      return { markup, n: payload.points.length };
+      }).join("") + (Array.isArray(payload.addresses) ? payload.addresses.map(_ooWikiAddrMarker).join("") : "");
+      return { markup, n: payload.points.length + (Array.isArray(payload.addresses) ? payload.addresses.length : 0) };
+    }
+
+    // A located infobox address: a small square (an address, not a page's own coordinate), its provenance in the hover -- the page and
+    // edition, the infobox field and the address as written, the OpenStreetMap object and its extract date.
+    function _ooWikiAddrMarker(pt) {
+      if (!pt || typeof pt.lat !== "number" || typeof pt.lon !== "number") return "";
+      const sp = project(pt.lon, pt.lat);
+      const x = (+sp.x - 2).toFixed(1), y = (+sp.y - 2).toFixed(1);
+      const tfx = (typeof window !== "undefined" && window.OOI18N && window.OOI18N.tf) ? window.OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const vals = { address: pt.address || "", field: pt.field || "", page: pt.title || pt.external_id || "", edition: pt.edition || "",
+        object: pt.osm_object || "", vintage: pt.osm_vintage ? ooIsoDate(pt.osm_vintage) : "" };
+      const hover = vals.vintage
+        ? tfx("{address}, from the {field} field of {page} ({edition}). Located at OpenStreetMap {object}, extract of {vintage}.", vals)
+        : tfx("{address}, from the {field} field of {page} ({edition}). Located at OpenStreetMap {object}; the extract states no date.", vals);
+      return `<rect x="${x}" y="${y}" width="4" height="4" fill="var(--accent)" stroke="var(--bg)" stroke-width="0.4"><title>${esc(hover)}</title></rect>`;
     }
 
     // The kind chips of the legend, as their own fragment: the visible KINDS change as
@@ -1476,7 +1506,7 @@
             : t("attributed under") + " " + _ooWorldviewLabel(wv))}</span></span>` : ""}
         ${pointRows.length ? `<span class="muted">○ ${esc(t("small areas shown as points"))}</span>` : ""}
         ${opts.placesOn ? `<span class="muted">○ ${esc(t("mentioned places (deduced)"))}</span>` : ""}
-        ${opts.wikiPlaces && opts.wikiPlaces.measured ? `<span class="muted">● ${esc(t("Wikipedia page (linked to Wikidata)"))} · ○ ${esc(t("Wikipedia page (not yet linked)"))}</span>` : ""}
+        ${opts.wikiPlaces && opts.wikiPlaces.measured ? `<span class="muted">● ${esc(t("Wikipedia page (linked to Wikidata)"))} · ○ ${esc(t("Wikipedia page (not yet linked)"))} · <span title="${esc(t("Addresses outside your OpenStreetMap countries are not located."))}">■ ${esc(t("address from an infobox"))}</span>${opts.wikiPlaces.addressesPartial ? ` <span class="card-caveat">${esc(t("(partial)"))}</span>` : ""}</span>` : ""}
         ${opts.serverOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;background:#8b5cf6"></span>${esc(t("server IP location (CDN edge / anycast)"))}</span>` : ""}
         ${opts.serverOn && opts.serverMeta ? `<span class="muted" title="${esc(t("Many sources sharing one host/ASN — a shape to investigate, never a verdict."))}">${esc(opts.serverMeta)}</span>` : ""}
         ${opts.serverOn ? `<span class="muted">${esc(t("IP Geolocation by DB-IP"))} · <a href="https://db-ip.com" target="_blank" rel="noopener">db-ip.com</a> · CC BY 4.0</span>` : ""}
@@ -2208,8 +2238,9 @@
         wikiOn: _ooMapWikiOn, wikiPlaces: _ooMapWikiOn ? _ooMapWikiPlaces : null,
         onWiki: async () => {
           _ooMapWikiOn = !_ooMapWikiOn;
-          if (_ooMapWikiOn && _ooMapWikiPlaces === null) {
-            _ooMapWikiPlaces = await ooWikiPlaces();
+          // Asked again on every switch-on: a page that became a home or a person since the last read drops its square (R691).
+          if (_ooMapWikiOn) {
+            _ooMapWikiPlaces = await ooWikiPlaces(_ooMapWikiPlaces !== null);
           }
           _renderOoMapDim();
         },

@@ -18,6 +18,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 from pathlib import Path
 
@@ -281,3 +282,43 @@ def test_start_seeds_mirrors_and_checksum_only_on_a_new_entry(tmp_path):
     e2 = m._entries["en:pages-articles"]
     assert e2.mirrors == ["https://m.example/a.bz2"]
     assert e2.expected_sha256 == PAYLOAD_SHA256
+
+
+def test_the_segmented_write_goes_through_the_atomic_replace_and_a_failed_write_leaves_nothing(tmp_path, monkeypatch):
+    """Audit P15 (second site): the dump reaches its final name only whole (src.safety.file_lock.atomic_replace), and a failed write leaves no file there."""
+    import src.safety.file_lock as fl
+
+    def _manager(base):
+        return DumpDownloadManager(
+            base_dir=base,
+            http_head=lambda url: _HeadResp(len(PAYLOAD)),
+            fetch_segment=_fetch_segment(PAYLOAD),
+            mirror_probe=_no_probe,
+            segment_min_bytes=100,
+        )
+
+    m = _manager(tmp_path)
+    entry = m._entry_for("en", "pages-articles", expected_sha256=PAYLOAD_SHA256)
+    seen: list = []
+    real = fl.atomic_replace
+
+    def _spy(path, data, **kw):
+        seen.append((Path(path).name, len(data)))
+        return real(path, data, **kw)
+
+    monkeypatch.setattr(fl, "atomic_replace", _spy)
+    assert m._download(entry).status == "done"
+    final = Path(entry.dest)
+    assert seen == [(final.name, len(PAYLOAD))] and final.read_bytes() == PAYLOAD
+    assert sorted(p.name for p in final.parent.iterdir() if p.name.startswith(final.name)) == [final.name], "a temp was left beside the dump"
+
+    m2 = _manager(tmp_path / "b")
+    e2 = m2._entry_for("en", "pages-articles", expected_sha256=PAYLOAD_SHA256)
+
+    def _boom(path, data, **kw):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(fl, "atomic_replace", _boom)
+    with contextlib.suppress(OSError):
+        m2._download(e2)
+    assert not Path(e2.dest).exists(), "a failed segmented write left a file at the dump's name"

@@ -611,6 +611,7 @@ _API_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('lane_attention', 'return _unreadable("attention", exc)'): 1,
         ('lane_counters_route', 'return _unreadable("counters", exc)'): 1,
         ('lane_places', 'return _unreadable("places", exc)'): 1,
+        ('lane_located_addresses', 'return _unreadable("located-addresses", exc)'): 1,
         ('lane_sections', 'return _unreadable("sections", exc)'): 1,
         ('lane_changes', 'return _unreadable("changes", exc)'): 1,
         ('lane_revision_diff', 'return _unreadable("revision", exc)'): 1,
