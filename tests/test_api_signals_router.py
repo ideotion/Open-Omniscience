@@ -69,7 +69,7 @@ def _km(db, source_id, keyword_id, observed, n):
 
 def test_router_exposes_the_three_signal_routes():
     routes = {r.path: r.methods for r in router.routes}
-    assert routes.get("/api/signals/fdr-selftest") == {"GET"}
+    assert routes.get("/api/signals/fdr-selftest") == {"POST"}  # R694
     assert routes.get("/api/signals/bury") == {"GET"}
     assert routes.get("/api/signals/flood") == {"GET"}
 

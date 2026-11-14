@@ -23,9 +23,30 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from src.backup.merge import prune_pre_restore_snapshots_by_age
 from src.backup.stream_backup import active_staging
 from src.paths import data_dir
+
+
+@pytest.fixture(autouse=True)
+def _no_snapshot_from_another_test():
+    """Each test starts and ends with no pre-restore-*.db in the shared data dir.
+
+    The data dir is one per pytest PROCESS, and several tests here leave a snapshot behind on purpose or by their last loop turn
+    (the non-finite test recreates a 200-hour-old one after its final sweep, the zero-hours test leaves its active one): any test
+    that then asserts what a sweep removed read a neighbour's file. Random order, seed 1111: the malformed-env test found
+    ``removed == ['pre-restore-<200 hours ago>.db']``. Other files (test_run_scoped_snapshot, test_session_forensics, ...) write
+    the same name pattern into the same directory, so the reset is on both sides of every test here."""
+
+    def _clear() -> None:
+        for p in data_dir().glob("pre-restore-*.db"):
+            p.unlink(missing_ok=True)
+
+    _clear()
+    yield
+    _clear()
 
 
 def _make_snapshot(age_hours: float):

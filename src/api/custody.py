@@ -11,29 +11,51 @@ standalone scripts/verify_custody.py.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from src.api.cross_site import refuse_cross_site_get
 from src.custody.anchor import AnchorError, AnchorUnavailable, available_providers, get_provider
-from src.custody.log import CustodyAction, CustodyLog, verify_export
+from src.custody.log import (
+    ROTATION_ITEM,
+    CustodyAction,
+    CustodyLog,
+    describe_export,
+    scope_note,
+)
 from src.custody.settings import (
     VALID_ANCHORING,
     CustodySettingsError,
+    CustodySettingsUnreadable,
     availability,
     load_settings,
     save_settings,
 )
-from src.custody.signing import HybridSigner
+from src.custody.signing import HybridSigner, SigningError
 from src.custody.timestamp import ENTRY_REFUSED_OFFLINE, TimestampUnavailable
 from src.monitoring.secret_scrub import http_detail
 
 router = APIRouter(prefix="/api/custody", tags=["custody"])
 
 
+_KEY_UNREADABLE = ("the custody signing key could not be read, so no bundle was signed: unlock the app with its "
+                   "passphrase, or check the key folder")
+
+
 def _log() -> CustodyLog:
     """A fresh log handle bound to the current data dir (honours OO_DATA_DIR)."""
     return CustodyLog()
+
+
+_NO_ENTRIES = "no custody entries for that item"
+
+
+def _read_log() -> CustodyLog:
+    """The log opened to READ it (R694): a GET never creates the log file or a signing key. No log yet answers 404, as an
+    item with no entries does."""
+    try:
+        return CustodyLog(create=False)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=_NO_ENTRIES) from exc
 
 
 class LogRequest(BaseModel):
@@ -50,14 +72,22 @@ def log_action(req: LogRequest) -> dict:
     try:
         action = CustodyAction(req.action)
     except ValueError as exc:
-        valid = ", ".join(a.value for a in CustodyAction)
+        valid = ", ".join(a.value for a in CustodyAction if a is not CustodyAction.KEY_ROTATION)
         raise HTTPException(status_code=400, detail=f"unknown action; use one of: {valid}") from exc
+    if action == CustodyAction.KEY_ROTATION or req.item_id == ROTATION_ITEM:
+        # The log writes its own key-rotation records; one posted here would name keys of the caller's choosing and
+        # leave every later export of the log refused.
+        raise HTTPException(status_code=400, detail="key-rotation records are written by the custody log itself")
     log = _log()
     try:
         entry = log.record(
             req.item_id, req.item_hash, action, actor=req.actor, metadata=req.metadata
         )
         return entry.to_dict()
+    except CustodySettingsUnreadable:
+        # The custody settings could not be read: nothing is signed under guessed preferences (PQC off, local anchoring).
+        raise HTTPException(status_code=503, detail="the custody settings could not be read, so no entry was signed "
+                            "under guessed preferences: try again once the database can be read") from None
     except TimestampUnavailable as exc:
         # R618: in OpenTimestamps mode a Stop refuses the entry rather than give it a permanent local-only proof. The refusal names
         # the kill switch, so it is answered in its own words (503, as an unavailable anchor provider is), never a bare 500.
@@ -72,12 +102,26 @@ def list_providers() -> dict:
     return {"providers": available_providers()}
 
 
-@router.get("/export", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/export")
 def export(item_id: str | None = None) -> dict:
-    """Export an offline-verifiable custody bundle (optionally for one item)."""
-    log = _log()
+    """Export an offline-verifiable custody bundle (optionally for one item).
+
+    A POST (R278 F2, R694): the export signs its head, so the first one creates the signing key and the log file."""
+    try:
+        log = _log()
+    except SigningError:
+        raise HTTPException(status_code=503, detail=_KEY_UNREADABLE) from None
     try:
         return log.export(item_id=item_id)
+    except CustodySettingsUnreadable:
+        # The key changed and its rotation record is owed, but the settings could not be read: no permanent record is
+        # written under guessed preferences.
+        raise HTTPException(status_code=503, detail="the signing key changed and its key-rotation record is owed, but "
+                            "the custody settings could not be read: export again once they can be") from None
+    except SigningError:
+        # The key file cannot be read with what this process holds (wrapped under another passphrase, damaged): no
+        # bundle is signed and nothing is written. The answer says what to do.
+        raise HTTPException(status_code=503, detail=_KEY_UNREADABLE) from None
     finally:
         log.close()
 
@@ -91,9 +135,24 @@ def _settings_status(*, count_late: bool = True) -> dict:
     """
     prefs = load_settings()
     avail = availability()
-    # Build the signer the way the log would, to report the real identity that
-    # would sign entries under the current preference (creates keys on first use).
-    signer = HybridSigner(use_pqc=prefs.pqc_enabled)
+    # Load the signer the way the log would, to report the real identity that signs entries under the current preference. A read
+    # never mints a key (R694): with none yet, the identity is absent and ``keys_created`` says so; the first entry makes them.
+    # An ML-DSA pair not made yet is not claimed either: pqc_effective stays False until a signature has asked for it.
+    # A key that is there but cannot be opened with what this process holds (wrapped under another passphrase, damaged) is
+    # reported as unreadable, as the export answers it, never as a 500 with the parser's text.
+    signer: HybridSigner | None
+    unreadable = False
+    try:
+        signer = HybridSigner(use_pqc=prefs.pqc_enabled, create=False)
+    except FileNotFoundError:
+        signer = None
+    except SigningError:
+        signer, unreadable = None, True
+    from src.paths import data_dir
+
+    # The log can outlive its key (the keys folder lost or moved): then the next entry makes a NEW key and records the change
+    # without the old key's endorsement, which the Custody tab says rather than "no key yet".
+    log_exists = (data_dir() / "custody_log.db").exists()
     return {
         **prefs.to_dict(),
         "anchoring_modes": list(VALID_ANCHORING),
@@ -102,12 +161,14 @@ def _settings_status(*, count_late: bool = True) -> dict:
         # cannot complete a sign/verify round trip both report False, and only one of
         # them is fixed by installing something.
         "pqc_reason": avail["pqc_reason"],
-        "pqc_effective": signer.is_hybrid,  # signed as hybrid only if truly available
+        "pqc_effective": bool(signer and signer.is_hybrid),  # signed as hybrid only if truly available
         "ots_available": avail["ots_available"],
         "ots_reason": avail["ots_reason"],
         "ots_effective": prefs.anchoring_mode == "opentimestamps" and avail["ots_available"],
-        "key_protection": signer.key_protection,
-        "signer": signer.public_identity().to_dict(),
+        "keys_created": signer is not None or unreadable,
+        "log_exists": log_exists,
+        "key_protection": "unreadable" if unreadable else (signer.key_protection if signer else None),
+        "signer": signer.public_identity().to_dict() if signer else None,
         # CUST-1 (2026-09-24): ingest entries a failure left owed, and those written late.
         # Shown beside the chain's own status, because a gap nobody reports is the defect.
         "late": _late_block(count_late=count_late),
@@ -216,11 +277,11 @@ def reconcile(req: ReconcileRequest) -> dict:
 
 @router.get("/{item_id}")
 def entries(item_id: str) -> dict:
-    log = _log()
+    log = _read_log()
     try:
         items = [e.to_dict() for e in log.entries_for(item_id)]
         if not items:
-            raise HTTPException(status_code=404, detail="no custody entries for that item")
+            raise HTTPException(status_code=404, detail=_NO_ENTRIES)
         return {"item_id": item_id, "entry_count": len(items), "entries": items}
     finally:
         log.close()
@@ -229,12 +290,12 @@ def entries(item_id: str) -> dict:
 @router.get("/{item_id}/verify")
 def verify_item(item_id: str) -> dict:
     """Verify the full custody chain in this store (the item must be present)."""
-    log = _log()
+    log = _read_log()
     try:
         if not log.entries_for(item_id):
-            raise HTTPException(status_code=404, detail="no custody entries for that item")
-        ok, issues = log.verify()
-        return {"verified": ok, "issues": issues}
+            raise HTTPException(status_code=404, detail=_NO_ENTRIES)
+        # The chain's links and signatures, and its signing key followed through every key-rotation record.
+        return log.verify_report()
     finally:
         log.close()
 
@@ -242,13 +303,39 @@ def verify_item(item_id: str) -> dict:
 class VerifyBundleRequest(BaseModel):
     bundle: dict
     require_signer: bool = False
+    #: Pass a key change whose record says the previous key was gone, on that record's word (see verify_export).
+    accept_unendorsed_rotation: bool = False
+
+
+def _local_identity():
+    """This installation's custody signing identity, or ``None`` when it has none yet or it cannot
+    be read (sealed keys with no passphrase). Creates no key, since a verify is a read: it answers
+    ``None`` when the Ed25519 key file is absent, and it loads the post-quantum half only when that
+    key file already exists. It is opened as a reader (``create=False``, R694): nothing is made, the keys
+    folder included, and a legacy plaintext key file is left as it is."""
+    try:
+        return HybridSigner(use_pqc=True, create=False).public_identity()
+    except FileNotFoundError:
+        return None
+    except Exception:  # noqa: BLE001 - unreadable keys: the verdict says so instead of guessing
+        return None
 
 
 @router.post("/verify")
 def verify_bundle(req: VerifyBundleRequest) -> dict:
-    """Verify a posted custody bundle offline (no DB needed)."""
-    ok, issues = verify_export(req.bundle, require_signer=req.require_signer)
-    return {"verified": ok, "issues": issues}
+    """Verify a posted custody bundle offline (no DB needed), and say by whom it is signed (R681):
+    ``verified`` never travels without ``signed_by`` and a ``verdict`` that tells "verified against
+    your keys" from "signatures valid, signer not yours"; every key rotation crossed is named in ``notes``."""
+    out = describe_export(
+        req.bundle,
+        local=_local_identity(),
+        require_signer=req.require_signer,
+        accept_unendorsed_rotation=req.accept_unendorsed_rotation,
+    )
+    # What a "verified" covers, said with it: a one-item bundle's links run through entries it does not carry, and
+    # every key rotation crossed is named in the notes.
+    out["scope"] = scope_note(req.bundle, out["notes"]) if out["verified"] else None
+    return out
 
 
 class AnchorRequest(BaseModel):

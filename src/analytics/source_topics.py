@@ -107,6 +107,7 @@ def derive_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> l
     from sqlalchemy import func, select
 
     from src.analytics.filters import hidden_set
+    from src.analytics.quarantine_scope import not_quarantined
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import Keyword, KeywordTag, Source
     from src.database.stand_in import not_a_stand_in_article_id
@@ -129,7 +130,11 @@ def derive_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> l
         .join(KeywordTag, KeywordTag.keyword_id == KeywordMentionRead.keyword_id)
         .join(Source, Source.id == KeywordMentionRead.source_id)
         # a mention kept for a lost article is no article of the source: it would count toward the source's floor and its topic ranking
-        .where(KeywordTag.axis == "topic", not_a_stand_in_article_id(KeywordMentionRead.article_id))
+        .where(
+            KeywordTag.axis == "topic",
+            not_a_stand_in_article_id(KeywordMentionRead.article_id),
+            not_quarantined(KeywordMentionRead.article_id),
+        )
         .group_by(Source.domain, KeywordTag.tag)
     )
     if hidden_ids:
