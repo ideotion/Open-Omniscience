@@ -2173,9 +2173,23 @@
       if (phase === "memory-stop") return "The app is stopping itself because memory stayed exhausted";
       // Nor is the check after an unexpected stop: it is the app reading its own files, never a limit to override.
       if (phase === "paused-verifying") return "Paused: checking the data files after an unexpected stop";
+      // The memory guard's pause (runner.py): collection waits for memory to come back; its own Resume, not the override.
+      if (phase === "paused-low-memory") return "Paused: low memory";
       if (g && g.overridden) return null;
       return { "paused-wal-pinned": "Paused: the database log has grown too large",
                "paused-low-disk": "Paused: the data drive is nearly full" }[phase] || null;
+    }
+    // The low-memory pause's Resume: a retry, never an override -- the guard pauses again if memory is still low.
+    function _memResumeBtn(t) {
+      return `<button class="tiny secondary" title="${esc(t("Collection pauses again if memory is still low."))}" data-on-click="memoryGuardResume()">${esc(t("Resume"))}</button>`;
+    }
+    async function memoryGuardResume() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      try {
+        await api("/api/scheduler/memory-guard/resume", {method: "POST"});
+        toast(t("Resumed."));
+        if (typeof _pollVitals === "function") _pollVitals();
+      } catch (e) { toast(e.message, "err"); }
     }
     async function storageGuardResume() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
@@ -2240,7 +2254,7 @@
         nowHtml = row(esc(t9("Now collecting")), a.active
           ? `<span class="muted">${esc(t9(_phaseTxt || "Collecting…"))}</span>`
           : _pausedTxt
-            ? `<span class="pill warn">${esc(t9(_pausedTxt))}</span>`
+            ? `<span class="pill warn">${esc(t9(_pausedTxt))}</span>` + (a.phase === "paused-low-memory" ? " " + _memResumeBtn(t9) : "")
           : a.running
             ? `<span class="muted">${esc(t9("idle"))}</span>${mins != null ? ` · <span title="${esc(fmtDateTime(a.next_run))}">⏱ ${esc(tf("{n} min", {n: mins}))}</span>` : ""}`
             : `<span class="muted">${esc(t9("scheduler stopped"))}</span>`);
@@ -2576,7 +2590,7 @@
         // Local work the server lists actions for, drawn as listed (R600's second PR): the bulk
         // summary & translation queue (a waiting run's Cancel; the paused queue's Resume / Cancel)
         // and the Insights backlog drain (Cancel). Local model and DB work: a resume asks nothing.
-        if (j.kind === "llm-bulk-queue" || j.kind === "insights-backlog") {
+        if (j.kind === "llm-bulk-queue" || j.kind === "insights-backlog" || j.kind === "reindex-backlog") {
           const a = Array.isArray(j.actions) ? j.actions : [];
           if (a.includes("resume"))
             acts.push(`<button class="tiny secondary" data-on-click="jobResume(${esc(JSON.stringify(j.id))}, true)">${esc(t("Resume"))}</button>`);
@@ -2741,7 +2755,7 @@
       if (a.active) {
         stateHtml = `<span class="pill ok">${esc(t("running — collection in progress"))}</span>`;
       } else if (pausedTxt) {
-        stateHtml = `<span class="pill warn">${esc(t(pausedTxt))}</span>`;
+        stateHtml = `<span class="pill warn">${esc(t(pausedTxt))}</span>` + (a.phase === "paused-low-memory" ? " " + _memResumeBtn(t) : "");
       } else if (a.running) {
         stateHtml = `<span class="pill ok">${esc(t("running"))}</span>`;
       } else {

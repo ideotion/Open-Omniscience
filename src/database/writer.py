@@ -232,6 +232,10 @@ class WriterGate:
         existing call site is byte-identical in behaviour -- a write that waits
         is correct; a write that silently proceeds without the gate is not.
         """
+        # A background job the shutdown stopped waiting for is refused here, before it can take the window (R689).
+        from src.database import after_shutdown
+
+        after_shutdown.check("the write gate")
         # Outside the lock: never spawn a thread while holding the write window.
         _maybe_start_watchdog()
         me = threading.get_ident()
@@ -298,6 +302,13 @@ class WriterGate:
                     # We may have BEEN the head; whoever is now must be woken, or
                     # nothing ever will (a lost wakeup this branch owns).
                     self._wake_head()
+        if granted:
+            # Checked AGAIN once granted: the database may have closed to jobs while this thread queued (R689).
+            try:
+                after_shutdown.check("the write gate")
+            except BaseException:
+                self.release()
+                raise
         return granted
 
     def release(self) -> None:

@@ -385,6 +385,17 @@ def all_job_statuses() -> list[dict]:
     return [j.status() for j in jobs]
 
 
+#: How many times :func:`stop_all_jobs` has begun (each is a shutdown). A deferred start (the summary queue's kick retry) notes it
+#: when it is scheduled and gives up when it moved, so it never starts a writer the shutdown's stop did not see (R689). A count,
+#: not a flag, so an app started again in the same process (the tests' lifespans) needs no reset.
+_STOP_ALL_SEQ = 0
+
+
+def stop_all_count() -> int:
+    """How many shutdowns have asked every job to stop so far."""
+    return _STOP_ALL_SEQ
+
+
 def stop_all_jobs(timeout: float) -> list[str]:
     """Ask every registered job that is running to stop, and wait for them all against ONE deadline (audit A-029).
 
@@ -396,6 +407,8 @@ def stop_all_jobs(timeout: float) -> list[str]:
 
     Returns the KINDS still running when the deadline passed (empty when every job ended), in registry order. Kinds only: a job's
     kwargs can carry a passphrase. Never raises: a shutdown step must not stop the steps after it."""
+    global _STOP_ALL_SEQ
+    _STOP_ALL_SEQ += 1
     try:
         with _REG_LOCK:
             jobs = list(_REGISTRY.values())
@@ -509,6 +522,24 @@ def _joined(job: BackgroundJob, deadline: float) -> bool:
         return job.join(max(0.0, deadline - time.monotonic()))
     except Exception:  # noqa: BLE001 - not known to have stopped
         return False
+
+
+def running_job_threads() -> list[tuple[threading.Thread, str]]:
+    """The threads of the registered jobs still running, each with its kind (never its kwargs: they can carry a passphrase).
+
+    For the shutdown: the jobs :func:`stop_all_jobs` gave up on are named to the database's refusal
+    (:mod:`src.database.after_shutdown`, R689), so they cannot write after the engine is disposed. Never raises."""
+    out: list[tuple[threading.Thread, str]] = []
+    try:
+        with _REG_LOCK:
+            jobs = list(_REGISTRY.values())
+        for job in jobs:
+            t = job._thread
+            if t is not None and t.is_alive():
+                out.append((t, job.kind))
+    except Exception:  # noqa: BLE001 - a shutdown step never raises
+        return out
+    return out
 
 
 def _reset_registry_for_tests() -> None:

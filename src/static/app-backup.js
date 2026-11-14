@@ -1393,6 +1393,7 @@
         if (f.source_csv) notes.push(esc(t("Source CSV found — import it from the Sources panel for now.")) + " " + paren(f.source_csv.map(ltr).join(", ")));
         box.innerHTML = rows.join("") || `<span class="muted">${esc(t("Nothing importable found in this folder."))}</span>`;
         if (notes.length) box.innerHTML += `<p class="muted" style="margin:4px 0 0">${notes.join("<br>")}</p>`;
+        _uxImLeftoverPlaintext(box, corpus, tfs);
         // A passphrase is needed for the encrypted corpus AND for legacy archives.
         const needsPass = corpus.length > 0 || (f.legacy_backup && f.legacy_backup.length > 0);
         document.getElementById("ux-imp-pass-row").style.display = needsPass ? "block" : "none";
@@ -1409,6 +1410,56 @@
         console.error("ux import scan", e);
       }
       btn.disabled = false;
+    }
+
+    // R686: an import interrupted before this release decrypted each volume to "<volume>.plain" INSIDE the backup
+    // folder and removed it after; a crash in between left that unencrypted copy on the backup drive. The scan
+    // names them; this says so plainly and offers to remove them. Nothing is deleted without the operator's yes.
+    function _uxImLeftoverPlaintext(box, corpus, tfs) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      for (const set of corpus) {
+        const names = Array.isArray(set.leftover_plaintext) ? set.leftover_plaintext : [];
+        if (!names.length) continue;
+        const p = document.createElement("p");
+        p.className = "card-caveat";
+        p.style.margin = "6px 0 0";
+        const msg = document.createElement("span");
+        msg.textContent = (names.length === 1
+          ? t("An earlier import that was interrupted left 1 unencrypted copy of a backup volume in this folder. Anyone with this drive can read it.")
+          : tfs("An earlier import that was interrupted left {n} unencrypted copies of backup volumes in this folder. Anyone with this drive can read them.", { n: fmtNum(names.length, 0) })) + " ";
+        msg.title = names.join(", ");
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn";
+        b.textContent = t("Remove the unencrypted copies");
+        b.addEventListener("click", async (ev) => {
+          // the person's own click only (the trust rule of oo-on.js, R692): a script's b.click() removes nothing
+          if (!ev || ev.isTrusted !== true) return;
+          if (!confirm(t("Remove these unencrypted copies from the backup folder? The backup's encrypted volumes are not touched.") + "\n\n" + names.join("\n"))) return;
+          b.disabled = true;
+          try {
+            const r = await api("/api/backup/import-scan/remove-leftover-plaintext", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: set.path, names, confirm: true }),
+            });
+            const n = (r && Array.isArray(r.removed)) ? r.removed.length : 0;
+            const failed = (r && Array.isArray(r.failed)) ? r.failed : [];
+            msg.textContent = n === 1 ? t("Removed 1 unencrypted copy.") : tfs("Removed {n} unencrypted copies.", { n: fmtNum(n, 0) });
+            if (failed.length) {
+              msg.textContent += " " + t("Could not remove these copies, which may be open in another program:") + " " + failed.join(", ") + " ";
+              b.disabled = false;
+            } else {
+              b.remove();
+            }
+          } catch (e) {
+            msg.textContent = t("Could not remove the unencrypted copies:") + " " + (e.message || e) + " ";
+            b.disabled = false;
+          }
+        });
+        p.append(msg, b);
+        box.appendChild(p);
+      }
     }
 
     // The RUN. Field remarks 2026-07-29 remark 2: this used to be a client-side loop
