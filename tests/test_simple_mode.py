@@ -25,6 +25,8 @@ import json
 import re
 from pathlib import Path
 
+from tests.js_source_helper import function_body
+
 _ROOT = Path(__file__).resolve().parents[1]
 _STATIC = _ROOT / "src" / "static"
 _SIMPLE = _STATIC / "simple"
@@ -170,10 +172,10 @@ def test_strings_ship_in_twelve_languages():
 
 def test_details_and_marks_are_accessible():
     code = _read(_SIMPLE / "simple.js")
-    details = code.split("function Details(", 1)[1].split("\n  }\n", 1)[0]
+    details = function_body(code, "Details")
     assert 'type="button"' in details and "aria-expanded" in details and "aria-controls" in details
     assert "aria-label" in details and "Escape" in details
-    mark = code.split("function Mark(", 1)[1].split("\n  }\n", 1)[0]
+    mark = function_body(code, "Mark")
     assert 'class="s-sr"' in mark and "title=" in mark, "a mark carries words for screen readers and a hover"
     # The switch is a real switch.
     html = _read(_STATIC / "index.html")
@@ -198,7 +200,7 @@ def test_full_mode_is_untouched_when_the_switch_is_off():
 
 def test_glance_names_the_set_the_way_the_corpus_endpoints_read_it():
     code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
-    glance = code.split("function Glance(", 1)[1].split("\n  }\n", 1)[0]
+    glance = function_body(code, "Glance")
     # /api/insights/corpus-* read "article_ids"; "ids" would silently describe the whole corpus.
     assert 'set("article_ids"' in glance and 'set("ids"' not in glance
     assert "article_ids" in _read(_ROOT / "src" / "api" / "insights.py")
@@ -208,13 +210,13 @@ def test_skin_check_reads_the_gallery_key():
     code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
     gallery = _read(_STATIC / "guis" / "boot.js")
     assert 'UI_KEY = "oo.ui"' in gallery and ".gui" in gallery
-    has = code.split("function hasSkin(", 1)[1].split("\n  }\n", 1)[0]
+    has = function_body(code, "hasSkin")
     assert 'lsGet("oo.ui")' in has and ".gui" in has and "oo.ui.gui" not in has
 
 
 def test_going_online_reads_the_live_state_first():
     code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
-    fn = code.split("function goOnline(", 1)[1].split("\n  }\n", 1)[0]
+    fn = function_body(code, "goOnline")
     assert fn.index('"/api/system/network"') < fn.index("window.toggleNetwork()")
 
 
@@ -225,7 +227,7 @@ def test_only_named_deep_links_open_the_full_view():
     assert "location.search.length" not in boot
     code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
     for fn in ("enterSimple", "backToSimple"):
-        body = code.split("function " + fn + "(", 1)[1].split("\n  }\n", 1)[0]
+        body = function_body(code, fn)
         assert "clearDeepLink()" in body, fn
 
 
