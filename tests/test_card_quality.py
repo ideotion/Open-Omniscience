@@ -216,7 +216,9 @@ def test_a_home_refresh_records_one_self_check_line_and_a_failure_is_not_fatal(m
 
 def test_the_refresh_calls_the_self_check_after_writing_the_cache_and_keeps_timings():
     src = (ROOT / "src" / "briefing" / "service.py").read_text("utf-8")
-    body = src[src.index("def _refresh_briefing("):src.index("def _self_check_path(")]
+    from tests.js_source_helper import python_function_source
+
+    body = python_function_source(src, "_refresh_briefing")
     assert body.index("_write_cache(payload)") < body.index("record_card_self_check(payload)")
     assert '"producer_timings": timings' in body and "timings=timings" in body
 
