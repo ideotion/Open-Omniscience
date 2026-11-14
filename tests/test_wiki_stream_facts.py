@@ -133,3 +133,64 @@ def test_the_substrate_stores_nothing_for_a_lane_without_the_hook_or_without_fac
     assert calls == []
     _store_facts(None, _Hook(), entity, with_facts)
     assert calls == [7]
+
+
+# --------------------------------------------------------------------------- #
+# A fact the page LOSES is cleared, but only when the source was asked for it.
+# --------------------------------------------------------------------------- #
+class _LostCoords(_Client):
+    """The same page answered later WITHOUT coordinates or a Wikidata item: it lost them."""
+
+    def fetch_hot_pages(self, wiki, pageids, *, with_assessments=False):
+        pages = FixtureWikiClient.fetch_hot_pages(self, wiki, pageids, with_assessments=with_assessments)
+        return {pid: {k: v for k, v in p.items() if k not in ("coordinates", "pageprops")} for pid, p in pages.items()}
+
+
+def test_a_requested_prop_answered_absent_is_named_unanswered():
+    from src.wiki.pagefacts import unanswered_facts
+
+    assert unanswered_facts({}, requested_props=("pageprops", "coordinates")) == ("qid", "coordinates")
+    assert unanswered_facts({"qid": "Q1"}, requested_props=("pageprops",)) == ()
+    assert unanswered_facts({}, requested_props=()) == (), "nothing asked, nothing answered"
+    # assessments were not asked of this edition: their absence is a gap
+    assert "assessment_class" not in unanswered_facts({}, requested_props=("pageprops", "coordinates", "categories"))
+
+
+def test_the_id_path_asks_for_the_props_it_will_clear():
+    """The adapter's ``requested`` set is the HOT builder's own; drift between them would clear on a gap."""
+    from src.wiki import mediawiki as mw
+
+    asked = set(mw.build_hot_pages_params([1])["prop"].split("|"))
+    assert set(mw.HOT_PROPS) == asked
+    assert {"pageprops", "coordinates", "categories"} <= asked
+
+
+def test_a_lost_coordinate_and_qid_are_cleared_on_the_next_pass(lane):
+    first = WikiStreamAdapter(client=_Client(), editions=(EDITION,))
+    _drive(first)
+    with lane_session("wiki") as session:
+        entity = VersionedEntity(external_id=external_id_for(EDITION, DELTA), title="Fixture Delta", language=EDITION)
+        session.add(entity)
+        session.flush()
+        run_feed_once(session, first, FEED, budget=ReadBudget(max_versions=5))
+        assert "coordinates" in _facts(session, entity.id)
+        entity_id = entity.id
+
+    later = WikiStreamAdapter(client=_LostCoords(), editions=(EDITION,))
+    v = later.fetch_version(external_id_for(EDITION, DELTA))
+    assert v is not None and set(v.facts_unanswered) >= {"coordinates", "qid"}
+    with lane_session("wiki") as session:
+        _store_facts(session, later, session.get(VersionedEntity, entity_id), v)
+        stored = _facts(session, entity_id)
+    assert "coordinates" not in stored and "qid" not in stored, "the page left the map"
+    assert "length_bytes" in stored, "a fact still answered is kept"
+
+
+def test_the_title_path_never_clears(lane, monkeypatch):
+    """By title the request's props are not known here, so an absence is a gap and nothing goes."""
+    adapter = WikiStreamAdapter(client=_LostCoords(), editions=(EDITION,))
+    monkeypatch.setattr(
+        _LostCoords, "fetch_current_text", lambda self, wiki, title: {"title": title, "revid": 5, "text": "plain text"}, raising=False
+    )
+    v = adapter.fetch_version(f"{EDITION}:Some title")
+    assert v is not None and v.facts_unanswered == ()

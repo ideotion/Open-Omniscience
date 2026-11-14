@@ -62,6 +62,9 @@ class FetchedVersion:
     #: savepoint, so a fact is stored with the version that answered it or not at all.
     #: A field the source did not answer is ABSENT from the mapping, never a default.
     facts: Mapping[str, Any] | None = field(default=None, compare=False)
+    #: Fact names the source was ASKED for and answered WITHOUT (the page lost them). The
+    #: adapter's hook clears these; a lane that cannot tell an answer from a gap leaves it empty.
+    facts_unanswered: tuple[str, ...] = field(default=(), compare=False)
 
 
 @dataclass(frozen=True, slots=True)

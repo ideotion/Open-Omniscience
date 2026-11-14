@@ -302,6 +302,9 @@ MAX_PAGES_PER_REQUEST: int = 50
 #: here because a Q705 field reads from it; nothing is requested "while we are at it",
 #: because every extra prop is bytes over somebody else's bandwidth.
 _HOT_PROPS = "revisions|info|pageprops|categories|coordinates|images|extlinks"
+#: The same set as a tuple, for a caller that must know what a HOT answer was ASKED (an absent
+#: prop that was requested is an answer; one that was not is a gap).
+HOT_PROPS: tuple[str, ...] = tuple(_HOT_PROPS.split("|"))
 
 
 def build_hot_pages_params(pageids: list[int], *, with_assessments: bool = False) -> dict:

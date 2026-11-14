@@ -299,10 +299,11 @@ def _store_facts(lane: Session, adapter: VersionedAdapter, entity: VersionedEnti
     has facts implements ``store_facts(lane, entity_id, version)``; a lane without the
     hook, or a version that carries none, stores nothing. Called on every successful
     outcome, ``unchanged`` included, because a page's facts (its protection, its
-    categories) can change while its text does not. A failure here rolls the version
-    back with it, so a stored version never claims facts that were not written.
+    categories) can change while its text does not. A version may also carry facts the
+    source was asked for and answered without, which the hook clears. A failure here rolls
+    the version back with it, so a stored version never claims facts that were not written.
     """
-    if not version.facts:
+    if not version.facts and not version.facts_unanswered:
         return
     hook = getattr(adapter, "store_facts", None)
     if hook is None:
