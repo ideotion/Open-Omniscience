@@ -331,9 +331,13 @@
       } catch (e) {
         if (out) out.innerHTML = e && e.status === 409
           ? esc(t("Nothing to confirm: no stored article of this source lives on that site any more."))
+          : e && e.status === 404 ? esc(t("No such source."))
           : _maintServerTextHtml((e && e.message) || String(e), t);
       } finally { btn.disabled = false; }
-      maintLoadPairs(); maintLoadSamples();
+      maintLoadPairs();
+      // The samples only exist once a run has happened; reloading them before that would replace
+      // an empty panel with the server's "no sample is held" note.
+      if (_maintStatus && _maintStatus.state && _maintStatus.state !== "idle") maintLoadSamples();
     }
 
     function _maintWirePairs() {
