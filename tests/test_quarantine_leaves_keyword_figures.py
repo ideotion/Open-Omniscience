@@ -417,8 +417,9 @@ def _old_store(db) -> list[Article]:
 
 
 def test_the_upgrade_marks_the_counters_estimated_at_open_and_recomputes_them_in_the_upkeep(db):
-    """init_db's half bumps the epoch and opens the counter deferral (fast); the upkeep's half recomputes the
-    counters and closes the deferral in one commit with the done marker. Neither repeats."""
+    """init_db's half bumps the epoch and writes R101's pending row (fast), so the counters say estimated; the
+    upkeep's half recomputes them and removes the row in one commit with the done marker. Neither repeats, and
+    neither touches the re-index drain's shared deferral marker."""
     from src.analytics.corpus_epoch import get_corpus_epoch
     from src.analytics.counter_deferral import is_deferral_open
     from src.analytics.quarantine_transition import (
@@ -437,11 +438,14 @@ def test_the_upgrade_marks_the_counters_estimated_at_open_and_recomputes_them_in
     assert prepare_r101_transition(engine) == {"owed": True}
     db.expire_all()
     assert get_corpus_epoch(db) == epoch + 1
-    assert is_deferral_open(db) and not counter_envelope(db).is_exact(), "the stale counters say estimated"
+    env = counter_envelope(db)
+    assert not env.is_exact(), "the stale counters say estimated"
+    assert "upgrade recompute is owed" in env.to_dict()["method"]
+    assert not is_deferral_open(db), "R101 never borrows the drain's shared marker"
     assert _kw(db).article_count == 3, "nothing recomputed while the store opens"
     assert prepare_r101_transition(engine) == {"owed": True}
     db.expire_all()
-    assert db.get(DerivedMeta, R101_PENDING_KEY).value == "opened"
+    assert db.get(DerivedMeta, R101_PENDING_KEY) is not None
 
     assert heal_r101_transition(engine)["keywords"] >= 1
     db.expire_all()
@@ -450,7 +454,7 @@ def test_the_upgrade_marks_the_counters_estimated_at_open_and_recomputes_them_in
     assert (kw.mention_count, kw.article_count) == _live_unquarantined(db, kw.id)
     assert db.get(DerivedMeta, R101_TRANSITION_KEY) is not None
     assert db.get(DerivedMeta, R101_PENDING_KEY) is None
-    assert not is_deferral_open(db), "the deferral it opened is closed with the recompute"
+    assert "upgrade recompute" not in counter_envelope(db).to_dict()["method"]
 
     epoch = get_corpus_epoch(db)
     assert prepare_r101_transition(engine) == {"skipped": "done"}
@@ -531,6 +535,7 @@ def test_the_upgrade_on_a_store_with_no_quarantined_article_only_writes_its_mark
 
 def test_a_failed_recompute_keeps_the_counters_estimated_and_the_next_start_finishes_it(db, monkeypatch):
     from src.analytics.counter_deferral import is_deferral_open
+    from src.analytics.store import counter_envelope
     from src.analytics.quarantine_transition import (
         R101_TRANSITION_KEY,
         heal_r101_transition,
@@ -546,7 +551,7 @@ def test_a_failed_recompute_keeps_the_counters_estimated_and_the_next_start_fini
     kw = _kw(db)
     assert (kw.mention_count, kw.article_count) == before
     assert db.get(DerivedMeta, R101_TRANSITION_KEY) is None
-    assert is_deferral_open(db), "still estimated"
+    assert not counter_envelope(db).is_exact(), "still estimated"
 
     prepare_r101_transition(db.get_bind())  # the next start
     assert heal_r101_transition(db.get_bind())["keywords"] >= 1
@@ -593,3 +598,48 @@ def test_a_failed_heal_then_a_new_stamp_then_the_heal_does_not_take_anything_out
     kw = _kw(db)
     assert kw.article_count == 1
     assert (kw.mention_count, kw.article_count) == _live_unquarantined(db, kw.id)
+
+
+def test_a_deferred_reindex_while_the_recompute_is_owed_keeps_its_own_deferral(db):
+    """A deferred re-index (an import's post-swap re-index, a resume started in the unlock window) that runs between
+    the two halves must not find a deferral marker R101 opened, adopt it, skip its reconcile, and then have the
+    heal close it: its drift would be reported exact. R101 keeps its own row, so the re-index owns and closes its
+    own deferral after a complete reconcile."""
+    from sqlalchemy import func
+
+    from src.analytics.counter_deferral import is_deferral_open
+    from src.analytics.extract import BaselineExtractor
+    from src.analytics.quarantine_transition import heal_r101_transition, prepare_r101_transition
+    from src.analytics.store import counter_envelope, reindex_articles
+    from src.database.models import Keyword, KeywordMention
+
+    arts = _corpus(db)
+    reconcile_keyword_counters(db, budget_s=0)
+    assert counter_envelope(db).is_exact()
+    db.query(Article).filter(Article.id == arts[0].id).update({"quarantined": True}, synchronize_session=False)
+    db.commit()  # the pre-R101 stamp: no counter moved
+    assert prepare_r101_transition(db.get_bind()) == {"owed": True}
+    assert not is_deferral_open(db)
+    new = _add(db, 77)
+    db.query(Article).filter(Article.id == new.id).update(
+        {"content": "Glaciologists measured the Vatnajokull icecap retreating near Hofn harbour during the winter "
+                    "expedition season."},
+        synchronize_session=False,
+    )
+    db.commit()
+    reindex_articles(db, extractor=BaselineExtractor(), article_ids=[new.id], defer_counters=True)
+    heal_r101_transition(db.get_bind())
+    db.expire_all()
+    live = {
+        int(k): int(m)
+        for k, m in db.query(KeywordMention.keyword_id, func.sum(KeywordMention.count))
+        .join(Article, Article.id == KeywordMention.article_id)
+        .filter(Article.quarantined.isnot(True))
+        .group_by(KeywordMention.keyword_id)
+    }
+    drift = [(k.id, k.mention_count, live.get(k.id, 0)) for k in db.query(Keyword)
+             if (k.mention_count or 0) != live.get(k.id, 0)]
+    assert not drift, drift
+    assert not is_deferral_open(db)
+    assert counter_envelope(db).is_exact()
+

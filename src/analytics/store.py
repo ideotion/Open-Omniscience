@@ -3123,6 +3123,23 @@ def counter_envelope(session: Session, *, window_hours: int | None = None, now=N
             ),
             n=n,
         )
+    # R101 on an upgraded store: until the start-up upkeep has recomputed the counters without quarantined
+    # articles, they still count them. Its own row, never the shared deferral marker (quarantine_transition.py).
+    from src.analytics.quarantine_transition import R101_PENDING_KEY
+    from src.database.models import DerivedMeta
+
+    r101_owed = session.get(DerivedMeta, R101_PENDING_KEY)
+    if r101_owed is not None:
+        return Envelope.estimated(
+            n,
+            as_of=str(r101_owed.value or now_iso()),
+            method=(
+                method
+                + f"; an upgrade recompute is owed since {r101_owed.value}: these counters may still count "
+                "quarantined articles until the app finishes starting up"
+            ),
+            n=n,
+        )
     if n == 0:
         # No counters back anything yet — an empty/fresh corpus. Honest, computed now.
         return Envelope.exact(0, as_of=now_iso(), method=method, n=0)

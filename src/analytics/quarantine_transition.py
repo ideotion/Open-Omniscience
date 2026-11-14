@@ -67,9 +67,10 @@ def _recompute_counters_of_quarantined_keywords(session: Any) -> dict:
     return {"keywords": len(kids)}
 
 
-#: ``derived_meta`` key present while the recompute is owed. Its value says whether :func:`prepare_r101_transition`
-#: opened the counter-deferral marker (``opened``) or found it already open (``kept``), so the recompute closes
-#: only a deferral it opened.
+#: ``derived_meta`` key present while the recompute is owed; its value is when it became owed. ``counter_envelope``
+#: reads it and says ``estimated`` while it exists. It is R101's OWN row, never the re-index drain's shared
+#: counter-deferral marker: a deferred re-index adopts that marker when it finds it open and stops maintaining the
+#: counters, so closing it here would leave that re-index's drift reported ``exact``.
 R101_PENDING_KEY = "r101_quarantine_counters_pending"
 
 
@@ -87,8 +88,8 @@ def prepare_r101_transition(engine: Any) -> dict:
     served it, which R101 forbids. When the store holds a quarantined article and the recompute is still owed:
 
     1. bump the corpus epoch, so the rollup and the day counts rebuild and the live path serves until they do;
-    2. open the counter-deferral marker (``counter_deferral.py``) if nothing else holds it open, so every
-       counter-backed figure says ``estimated`` until :func:`heal_r101_transition` has recomputed them. That
+    2. write the pending row (:data:`R101_PENDING_KEY`), so every figure that carries the counter envelope says
+       ``estimated`` until :func:`heal_r101_transition` has recomputed them. That
        recompute runs in the start-up upkeep (``src/api/main.py`` ``_run_startup_upkeep``), after the store is
        queryable on the unlock path, not here: on a large store it takes tens of seconds and must not hold the store
        closed.
@@ -114,18 +115,11 @@ def prepare_r101_transition(engine: Any) -> dict:
             s.commit()
             return {"owed": False}
         from src.analytics.corpus_epoch import bump_corpus_epoch
-        from src.analytics.counter_deferral import is_deferral_open, open_deferral
 
         bump_corpus_epoch(s, reason="r101-transition", strict=True)
         if s.get(DerivedMeta, R101_PENDING_KEY) is None:
-            opened = not is_deferral_open(s)
-            s.add(DerivedMeta(key=R101_PENDING_KEY, value="opened" if opened else "kept"))
-            if opened:
-                # open_deferral commits this session, so the pending row and the deferral land together: a crash can
-                # never leave a deferral this step opened without the row that lets the recompute close it.
-                open_deferral(s, reason="R101: quarantined articles leave the keyword counters")
-            else:
-                s.commit()
+            s.add(DerivedMeta(key=R101_PENDING_KEY, value=datetime.now(UTC).isoformat(timespec="seconds")))
+        s.commit()  # the bump and the pending row land together
         return {"owed": True}
     except Exception as exc:  # noqa: BLE001 - opening the store must not depend on this
         s.rollback()
@@ -139,12 +133,12 @@ def prepare_r101_transition(engine: Any) -> dict:
 def heal_r101_transition(engine: Any) -> dict:
     """The slow half, in the start-up upkeep after :func:`prepare_r101_transition`: under the write gate and in ONE
     commit with the done marker, recompute the counters of every keyword a quarantined article mentions without
-    those articles (:func:`_recompute_counters_of_quarantined_keywords`), and close the counter deferral when
-    :func:`prepare_r101_transition` opened it.
+    those articles (:func:`_recompute_counters_of_quarantined_keywords`) and delete the pending row. It never touches
+    the re-index drain's counter-deferral marker, which belongs to whoever opened it.
 
     The recompute is idempotent, so a failed attempt the app then ran on from (a reconcile or a new stamp landing
     before the marker) cannot make the next attempt take anything out twice; a crash before the commit leaves the
-    deferral open, so the counters keep saying ``estimated`` until the next start finishes the job.
+    pending row, so the counters keep saying ``estimated`` until the next start finishes the job.
     Best-effort: it logs and returns on any failure."""
     import logging
     from datetime import UTC, datetime
@@ -160,7 +154,6 @@ def heal_r101_transition(engine: Any) -> dict:
     try:
         if s.get(DerivedMeta, R101_TRANSITION_KEY) is not None:
             return {"skipped": "done"}
-        from src.analytics.counter_deferral import COUNTER_DEFERRAL_KEY
         from src.database.writer import connection_first, write_lock
 
         connection_first(s)
@@ -170,13 +163,9 @@ def heal_r101_transition(engine: Any) -> dict:
             tally = _recompute_counters_of_quarantined_keywords(s)
             pending = s.get(DerivedMeta, R101_PENDING_KEY)
             if pending is not None:
-                if pending.value == "opened":
-                    deferral = s.get(DerivedMeta, COUNTER_DEFERRAL_KEY)
-                    if deferral is not None:
-                        s.delete(deferral)
                 s.delete(pending)
             s.add(DerivedMeta(key=R101_TRANSITION_KEY, value=datetime.now(UTC).isoformat(timespec="seconds")))
-            s.commit()  # the recompute, the marker and the deferral's close land together
+            s.commit()  # the recompute, the done marker and the pending row's removal land together
         if tally["keywords"]:
             log.info("R101 transition: recomputed the counters of %d keyword(s) without quarantined articles",
                      tally["keywords"])
