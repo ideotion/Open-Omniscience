@@ -568,7 +568,7 @@ def _fail_the_heal_once(db, monkeypatch) -> None:
         raise RuntimeError("disk full")
 
     with monkeypatch.context() as m:
-        m.setattr(qt, "_recompute_counters_of_quarantined_keywords", _boom)
+        m.setattr(qt, "_recompute_quarantined_counters", _boom)
         assert qt.heal_r101_transition(db.get_bind()) == {"skipped": "error"}
 
 

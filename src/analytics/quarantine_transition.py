@@ -23,7 +23,7 @@ R101_TRANSITION_KEY = "r101_quarantine_counters"
 _KEYWORD_CHUNK = 500
 
 
-def _recompute_counters_of_quarantined_keywords(session: Any) -> dict:
+def _recompute_quarantined_counters(session: Any) -> dict:
     """Set the counters of every keyword a quarantined article mentions to their R101 truth: the sum and the
     article count over the mentions of articles that are NOT quarantined (``backfill_keyword_counters``' own
     definition, for just these keywords).
@@ -133,7 +133,7 @@ def prepare_r101_transition(engine: Any) -> dict:
 def heal_r101_transition(engine: Any) -> dict:
     """The slow half, in the start-up upkeep after :func:`prepare_r101_transition`: under the write gate and in ONE
     commit with the done marker, recompute the counters of every keyword a quarantined article mentions without
-    those articles (:func:`_recompute_counters_of_quarantined_keywords`) and delete the pending row. It never touches
+    those articles (:func:`_recompute_quarantined_counters`) and delete the pending row. It never touches
     the re-index drain's counter-deferral marker, which belongs to whoever opened it.
 
     The recompute is idempotent, so a failed attempt the app then ran on from (a reconcile or a new stamp landing
@@ -160,7 +160,7 @@ def heal_r101_transition(engine: Any) -> dict:
         with write_lock():
             if s.get(DerivedMeta, R101_TRANSITION_KEY) is not None:
                 return {"skipped": "done"}
-            tally = _recompute_counters_of_quarantined_keywords(s)
+            tally = _recompute_quarantined_counters(s)
             pending = s.get(DerivedMeta, R101_PENDING_KEY)
             if pending is not None:
                 s.delete(pending)
