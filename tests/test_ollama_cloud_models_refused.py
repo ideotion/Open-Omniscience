@@ -350,6 +350,15 @@ def test_another_local_server_runs_as_before_and_is_named_other(routes):
     assert seen[-1] == "/v1/chat/completions"
 
 
+def test_a_data_list_beside_a_remote_entry_is_still_judged_as_ollama():
+    seen: list[str] = []
+    tags = {"models": [{"name": "m:latest", "remote_host": "https://ollama.com:443"}], "data": []}
+    client = _server({"/api/tags": httpx.Response(200, json=tags)}, seen)
+    with pytest.raises(RemoteModelRefused):
+        client.generate("corpus text", model="m")
+    assert "/v1/chat/completions" not in seen
+
+
 @pytest.mark.parametrize("tags", [
     httpx.Response(500),                                                       # an Ollama daemon mid-restart
     httpx.Response(200, json=[{"name": "m", "remote_host": "https://ollama.com:443"}]),  # JSON, not Ollama's shape

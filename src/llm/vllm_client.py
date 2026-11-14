@@ -346,9 +346,13 @@ class VllmClient:
                 body = tags.json()
             except ValueError:
                 body = None  # not JSON at all (a catch-all page): this path is not an Ollama model list
-            if isinstance(body, dict) and isinstance(body.get("data"), list):
+            entries: list = body.get("models") or [] if isinstance(body, dict) else []
+            entries = entries if isinstance(entries, list) else []
+            remote = any(isinstance(m, dict) and any(m.get(f) for f in ("remote_host", "remote_model")) for m in entries)
+            if isinstance(body, dict) and isinstance(body.get("data"), list) and not remote:
                 # llama.cpp's llama-server answers /api/tags with its OpenAI model list beside an Ollama-style one
-                # ("models" AND "data"); Ollama's own answer has no "data". It is judged by its cards below.
+                # ("models" AND "data"); Ollama's own answer has no "data". It is judged by its cards below -- unless
+                # an entry carries a remote field, which only a cloud model has: that list is judged as Ollama's.
                 body = None
             elif isinstance(body, dict) and "error" in body and "models" not in body:
                 # LM Studio answers an unknown route with 200 and {"error": "Unexpected endpoint ..."}: not a model
@@ -411,7 +415,7 @@ class VllmClient:
         through (``ssh -L`` to a GPU box, an nginx or socat relay, a vLLM router in front of remote workers) is
         indistinguishable from the server behind it, and its traffic leaves from a process this app's socket guard does
         not see. ``owned_by`` is a label anyone can write, and a proxy that hides Ollama's ``/api/tags`` (or adds a
-        ``data`` list to it, as llama.cpp's answer carries) reads as "other". The llama.cpp and LM Studio shapes of
+        ``data`` list to it, as llama.cpp's answer carries, and drops the remote fields) reads as "other". The llama.cpp and LM Studio shapes of
         ``/api/tags`` are recognised from their published behaviour, not from a live server. Between these reads and the request that follows, another server could take the port. What this closes
         is the plain case: ``OO_VLLM_URL`` or ``OO_VLLM_PORT`` set to an Ollama daemon carrying a cloud model, or to a
         proxy that says it is one.
