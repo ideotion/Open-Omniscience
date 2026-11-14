@@ -65,6 +65,13 @@ def run_source_coverage_benchmark(session: Session, *, repeats: int = 3) -> dict
     # A lease for the life of the offload folder (open-on-main row 56): an encryption in place waits for it (or refuses, by
     # name) instead of encrypting while this run's folder, chosen while the library was plaintext, still holds plaintext rows.
     with corpus_lease("source-coverage-benchmark"):
+        # Asked again now the lease is held, as the storage guard's drain does: an encryption in place or a restore that opened its
+        # window before this lease existed has already looked for leases, so this read is the one that sees it (lease first, then ask).
+        from src.scheduler.runner import owns_the_machine
+
+        if owns_the_machine():
+            return {"available": False, "declined": True, "reason": "exclusive-operation", "source": "exclusive-window",
+                    "note": "Not run: an encryption or a restore holds the library. Nothing was built; try again when it has finished."}
         spill = rollup_serve._spill_setting()
         try:
             con = columnar.connect(passphrase=None, spill=spill)

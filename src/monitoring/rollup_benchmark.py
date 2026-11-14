@@ -145,6 +145,13 @@ def _run_built(session: Session, repeats: int, columnar, snap: dict) -> dict:
     # A lease for the life of the offload folder (open-on-main row 56): an encryption in place waits for it (or refuses, by
     # name) instead of encrypting while this run's folder, chosen while the library was plaintext, still holds plaintext rows.
     with corpus_lease("rollup-benchmark"):
+        # Asked again now the lease is held, as the storage guard's drain does: an encryption in place or a restore that opened its
+        # window before this lease existed has already looked for leases, so this read is the one that sees it (lease first, then ask).
+        from src.scheduler.runner import owns_the_machine
+
+        if owns_the_machine():
+            return {"available": False, "declined": True, "reason": "exclusive-operation", "source": "exclusive-window",
+                    "note": "Not run: an encryption or a restore holds the library. Nothing was built; try again when it has finished."}
         # -- the one-time build (this is the amortized cost) --------------------------------- #
         # The offload folder is the serve's rule (none for an encrypted corpus; a folder of this connection's own otherwise): left to DuckDB's default it
         # would write derived data beside the working directory in the clear once the build reached its limit.

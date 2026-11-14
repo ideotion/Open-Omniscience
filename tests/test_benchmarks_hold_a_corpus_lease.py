@@ -81,3 +81,21 @@ def test_the_source_coverage_benchmark_holds_its_lease_while_its_folder_exists(m
         source_coverage_benchmark.run_source_coverage_benchmark(session, repeats=1)
     assert seen and "source-coverage-benchmark" in seen[0], "an encryption in place would not wait for this run's plaintext folder"
     assert "source-coverage-benchmark" not in corpus_lease.active_leases() and not folder.exists()
+
+
+@pytest.mark.parametrize("which", ["rollup", "source-coverage"])
+def test_a_benchmark_started_inside_an_exclusive_window_declines_with_no_folder(monkeypatch, session, tmp_path, which):
+    """The encryption looked for leases before this one existed: once the lease is held the benchmark asks again, and declines."""
+    from src.monitoring import rollup_benchmark, source_coverage_benchmark
+    from src.scheduler import runner
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(runner, "owns_the_machine", lambda: True)
+    monkeypatch.setattr(rollup_serve, "_spill_setting", lambda: pytest.fail("a folder was taken inside the window"))
+    monkeypatch.setattr(columnar, "duckdb_available", lambda: True)
+    if which == "rollup":
+        out = rollup_benchmark._run_built(session, 1, columnar, {"duckdb_limit_mb": 40, "duckdb_threads": 1})
+    else:
+        out = source_coverage_benchmark.run_source_coverage_benchmark(session, repeats=1)
+    assert out["declined"] is True and out["reason"] == "exclusive-operation"
+    assert corpus_lease.active_leases() == []
