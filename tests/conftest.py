@@ -890,6 +890,22 @@ def _panic_hold_given_back():
                 sch._start_deferred = False
 
 
+@pytest.fixture(autouse=True)
+def _panic_rescrub_drained():
+    """A real panic wipe keeps descriptors on the files it unlinked and arms a 15 s late rewrite (``oo-panic-rescrub``).
+    Neither may reach the tests after it: the timer is cancelled and the descriptors let go."""
+    yield
+    import threading
+
+    for t in threading.enumerate():
+        if t.name == "oo-panic-rescrub" and isinstance(t, threading.Timer):
+            t.cancel()
+    from src.safety import crypto_erase
+
+    if crypto_erase.held_count():
+        crypto_erase.rescrub_held(close=True)
+
+
 @pytest.fixture
 def no_cgroup_limit(monkeypatch):
     """The process runs under no cgroup memory limit, whatever the machine running the suite says.

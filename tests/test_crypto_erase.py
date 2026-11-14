@@ -506,6 +506,11 @@ def test_the_erase_never_writes_outside_the_data_dir_through_a_link(tmp_path, mo
     (data / "linked-file.db").symlink_to(precious)
     (data / "loop").symlink_to(data, target_is_directory=True)
     os.mkfifo(data / "a-fifo")
+    # The app's own names too: a sidecar, a key file and anchors.db that are links outside are never written through.
+    for name, target in (("open_omniscience.db-wal", "w"), ("anchors.db", "a"), ("keys/custody_ed25519.pem", "k")):
+        (outside / target).write_bytes(b"KEEP" * 2048)
+        (data / name).parent.mkdir(exist_ok=True)
+        (data / name).symlink_to(outside / target)
     if stop_after_step_one:
 
         def stopped(*_a, **_k):
@@ -519,3 +524,22 @@ def test_the_erase_never_writes_outside_the_data_dir_through_a_link(tmp_path, mo
         assert report["removed"] is True
     assert precious.read_bytes() == b"KEEP" * 2048
     assert (outside / "inner.db-wal").read_bytes() == b"KEEP" * 2048
+    for target in ("w", "a", "k"):
+        assert (outside / target).read_bytes() == b"KEEP" * 2048, target
+
+
+@pytest.mark.skipif(os.name != "posix", reason="symlinks need POSIX here")
+def test_a_corpus_linked_into_place_is_still_erased_where_it_really_is(tmp_path):
+    """The app's own databases are the one place a link is followed: a corpus kept on another drive and linked into the
+    data dir loses its salt page at its real location."""
+    data = tmp_path / "data"
+    data.mkdir()
+    real = tmp_path / "other-drive" / "corpus.db"
+    real.parent.mkdir()
+    real.write_bytes(b"SALT-SALT-SALT-!" + b"S" * 8176)
+    (data / "open_omniscience.db").symlink_to(real)
+
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+
+    assert b"SALT-SALT-SALT-!" not in (real.read_bytes() if real.exists() else b"")
+    assert report["overwrite_failures"] == []

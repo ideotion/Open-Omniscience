@@ -37,6 +37,7 @@ import contextlib
 import logging
 import os
 import shutil
+import stat
 import threading
 from pathlib import Path
 
@@ -85,11 +86,26 @@ def _overwrite(path: Path, *, head_bytes: int | None = None, zeros: bool = False
     whether every byte was actually written and fsynced -- callers must NOT report
     a destructive overwrite as done just because no exception reached them; a
     silent False here with the outcome still reported as success is exactly the
-    false-confidence bug audit OO-02 exists to eliminate."""
+    false-confidence bug audit OO-02 exists to eliminate.
+
+    Writes ONLY a regular file at ``path`` itself: a symlink is never written through (its target may be anywhere,
+    outside the data dir included) and a FIFO, socket or device is never opened to write (it would block or reach
+    hardware); either is reported as not overwritten. ``O_NOFOLLOW`` where the platform has it, so a name swapped for
+    a link between a check and the open is refused too; elsewhere the link check right before the open."""
     try:
-        size = path.stat().st_size
+        if path.is_symlink():
+            raise OSError("a link is never written through")
+        fd = os.open(path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
+                raise OSError("not a regular file")
+        except OSError:
+            os.close(fd)
+            raise
+        size = st.st_size
         limit = size if head_bytes is None else min(size, head_bytes)
-        with open(path, "r+b", buffering=0) as f:
+        with os.fdopen(fd, "r+b", buffering=0) as f:
             written = 0
             # ``while True: if not <wanted>: break``, not ``while <wanted>:``: the back-edge of the second sits outside the ``with``'s exception table
             # on CPython 3.13 (src/utils/interrupts.py; R161/R163)
@@ -120,7 +136,7 @@ def _hold(path: Path, *, whole: bool) -> None:
     if os.name != "posix":
         return
     try:
-        fd = os.open(path, os.O_RDWR)
+        fd = os.open(path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
     except OSError:
         return
     # No lock: the erase waits on nothing, and a rescrub of an earlier wipe may hold it for a long rewrite. A list append
@@ -169,6 +185,21 @@ def _rewrite_held(held: list[tuple[int, bool]], *, close: bool) -> int:
                 with contextlib.suppress(OSError):
                     os.close(fd)
     return done
+
+
+def _is_link(p: Path) -> bool:
+    """A symlink, or a Windows junction (which ``os.walk(followlinks=False)`` still enters)."""
+    try:
+        return p.is_symlink() or bool(getattr(p, "is_junction", lambda: False)())
+    except OSError:
+        return True  # unknown: treated as a link, never entered
+
+
+def _real(db: Path) -> Path:
+    try:
+        return db.resolve() if db.is_symlink() else db
+    except OSError:
+        return db
 
 
 def _key_files_lock() -> contextlib.AbstractContextManager:
@@ -366,7 +397,9 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, h
     # the head of every -shm (its header gone, no connection trusts the log index again, so none checkpoints) and of
     # every main file, unlinking nothing. Pass 2 rewrites the -wal and -journal whole. Pass 3 overwrites the main and
     # -shm heads once more and unlinks them, catching a checkpoint that was already copying page 1 home during pass 2.
-    dbs = [db for db in (main_db, paths["custody_db"], *paths.get("lane_dbs", ())) if db is not None]
+    # A database reached through a link (a corpus kept on another drive and linked into place) is erased where it really
+    # is: these are the app's own files, the one place a link is followed. Every other file is never written through one.
+    dbs = [_real(db) for db in (main_db, paths["custody_db"], *paths.get("lane_dbs", ())) if db is not None]
     head_ok: dict[Path, bool] = {}
     # The -shm head is written with ZEROS, never random bytes: it holds no page data, and a connection that rolls back
     # after the erase reads its frame count from that header and grows the mapped file toward it -- a random count grew
@@ -409,7 +442,7 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, h
     if base.exists():
         keys_root = paths["keys_dir"]
         for root, dirs, names in os.walk(base):
-            dirs[:] = [d for d in dirs if Path(root, d) != keys_root and not Path(root, d).is_symlink()]
+            dirs[:] = [d for d in dirs if Path(root, d) != keys_root and not _is_link(Path(root, d))]
             for name in names:
                 p = Path(root, name)
                 if p.is_symlink() or not p.is_file():
@@ -485,7 +518,8 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, h
         if chosen is not None and chosen.resolve() == base.resolve():
             forget_volume_id()
     if base.exists():
-        for root, _dirs, names in os.walk(base):  # never follows a symlinked folder (followlinks=False)
+        for root, dirs, names in os.walk(base):  # never follows a symlinked folder (followlinks=False) or a junction
+            dirs[:] = [d for d in dirs if not _is_link(Path(root, d))]
             for name in names:
                 p = Path(root, name)
                 if p.is_symlink() or not p.is_file():
@@ -500,6 +534,7 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None, h
     with contextlib.suppress(OSError):
         shutil.rmtree(base, ignore_errors=True)
 
+    overwrite_failures[:] = list(dict.fromkeys(overwrite_failures))  # a file failing in two steps is named once
     if overwrite_failures:
         _LOG.error(
             "CRYPTO-ERASE: %d file(s) could NOT be overwritten (only unlinked, if that): %s",
