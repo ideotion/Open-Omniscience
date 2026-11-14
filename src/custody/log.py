@@ -926,6 +926,14 @@ _VERDICT_TEXT = {
 }
 
 
+#: Said beside a one-item bundle that crosses a key rotation: why its earlier keys are not called this installation's.
+ONE_ITEM_EARLIER_KEY_NOTE = (
+    "This one-item bundle crosses a change of signing key. Its entries signed before the change are not tied to the"
+    " change record (they link through entries the bundle does not carry), so only entries signed by this installation's"
+    " current key are called its own here. Export the whole log to check the earlier entries against your keys."
+)
+
+
 def _signer_of(entry: CustodyEntry) -> tuple[str, str | None]:
     sig = entry.signature or {}
     ed = (sig.get("ed25519") or {}).get("pub") or ""
@@ -943,7 +951,7 @@ def _is_yours(signer: tuple[str, str | None], local: PublicIdentity) -> bool:
     return ml is None or ml == local.ml_dsa_pub  # a hybrid half this install does not hold is not this install's
 
 
-def _own_positions(entries: list[CustodyEntry], local: PublicIdentity) -> list[PublicIdentity | None]:
+def _own_positions(entries: list[CustodyEntry], local: PublicIdentity, *, chained: bool = True) -> list[PublicIdentity | None]:
     """For each entry of a VERIFIED bundle, the identity of this installation's that it must be signed by to be this
     installation's, or ``None`` when no key of this installation's signs that place in the chain.
 
@@ -957,7 +965,12 @@ def _own_positions(entries: list[CustodyEntry], local: PublicIdentity) -> list[P
 
     The answer is by POSITION, never by key: an earlier key covers only the stretch it signed before handing over. A key
     that leaked and was rotated away from can still sign, so an entry it signed anywhere else (after a forged rotation
-    back to it) is not this installation's, whatever the same key signed before."""
+    back to it) is not this installation's, whatever the same key signed before.
+
+    Only a ``chained`` bundle (the whole log) gets earlier-stretch credit: there each rotation record, signed by the next
+    key, commits through its previous-entry hash to everything before it. A one-item bundle is not chained (its record
+    links to an entry the bundle does not carry), so a leaked earlier key could rewrite the stretch it signed and nothing
+    in the bundle would tell; only the last stretch is credited there."""
     rotations = [i for i, e in enumerate(entries)
                  if e.action == CustodyAction.KEY_ROTATION.value and e.item_id == ROTATION_ITEM]
     starts = [0, *rotations]
@@ -971,7 +984,7 @@ def _own_positions(entries: list[CustodyEntry], local: PublicIdentity) -> list[P
             break
         for i in range(lo, hi):
             out[i] = expected
-        if k == 0:
+        if k == 0 or not chained:
             break
         md = entries[starts[k]].metadata  # the record that opened this stretch
         endorsement = md.get("endorsement")
@@ -1026,7 +1039,12 @@ def describe_export(
     # bad signature proves nothing, and answering for it would let any caller ask whether a key is this install's.
     # And only of a signer every one of whose entries sits where this installation's key signs (``_own_positions``).
     # A bundle that did not verify gets no rotation credit: each signer is only compared with this installation's key.
-    owns = (_own_positions(parsed, local) if ok and len(parsed) == len(raw) else [local] * len(parsed)) if local else []
+    one_item = bool(bundle.get("item_id"))
+    owns = (
+        (_own_positions(parsed, local, chained=not one_item) if ok and len(parsed) == len(raw) else [local] * len(parsed))
+        if local
+        else []
+    )
     own_everywhere: dict[tuple[str, str | None], bool] = {}
     earlier: set[str] = set()
     for (ed, ml), want in zip(keyed, owns, strict=False):  # ``owns`` is empty when this installation's keys are unread
@@ -1034,6 +1052,11 @@ def describe_export(
         own_everywhere[(ed, ml)] = own_everywhere.get((ed, ml), True) and mine
         if mine and want is not local:
             earlier.add(ed)
+
+    if ok and local is not None and one_item and len(parsed) == len(raw) and any(
+        e.action == CustodyAction.KEY_ROTATION.value and e.item_id == ROTATION_ITEM for e in parsed
+    ):
+        notes = [*notes, ONE_ITEM_EARLIER_KEY_NOTE]
 
     def yours(ed: str, ml: str | None) -> bool | None:
         if local is None or not proven[(ed, ml)]:

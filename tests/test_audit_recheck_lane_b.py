@@ -343,6 +343,52 @@ def test_a_leaked_earlier_key_cannot_vouch_for_what_it_signs_after_handing_over(
     assert by_key[p_id.ed25519_pub] is False
 
 
+def test_a_one_item_bundle_never_credits_a_key_from_before_its_rotation(tmp_path):
+    """Second security re-read, must-fix: a one-item bundle is not chained, so a leaked pre-rotation key P can rewrite
+    the entries it signed (the rotation record, the last entry and the head stay genuine) and still verify. Its earlier
+    stretch is never called this installation's; the whole-log bundle, which ties it, still is."""
+    from src.custody.log import (
+        ONE_ITEM_EARLIER_KEY_NOTE,
+        VERDICT_NOT_YOURS,
+        VERDICT_YOURS,
+        CustodyEntry,
+        _entry_digest,
+        describe_export,
+    )
+    from src.custody.signing import canonical_bytes
+
+    old = HybridSigner(tmp_path / "old.pem", tmp_path / "old.key")
+    new = HybridSigner(tmp_path / "new.pem", tmp_path / "new.key")
+    db = str(tmp_path / "item.db")
+    with CustodyLog(db_path=db, signer=old, anchoring_mode="local") as log:
+        log.record("article:X", "a" * 64, CustodyAction.INGEST)
+        log.record("article:Y", "b" * 64, CustodyAction.INGEST)
+    with CustodyLog(db_path=db, signer=new, anchoring_mode="local") as log:
+        log.rotate_signing_key(old)
+        log.record("article:X", "c" * 64, CustodyAction.INGEST)
+        whole, item = log.export(), log.export(item_id="article:X")
+    local = new.public_identity()
+    assert describe_export(whole, local=local, require_signer=True)["verdict"] == VERDICT_YOURS
+
+    honest = describe_export(item, local=local, require_signer=True)
+    assert honest["verified"] is True and honest["verdict"] == VERDICT_NOT_YOURS
+    assert ONE_ITEM_EARLIER_KEY_NOTE in honest["notes"]
+
+    from hashlib import sha256
+
+    e = CustodyEntry.from_dict(item["entries"][0])
+    assert e.item_id == "article:X" and e.seq == 1
+    e.item_hash = "f" * 64
+    partial = {k: v for k, v in e.signable_core().items() if k != "timestamp"}
+    e.timestamp = {**e.timestamp, "digest": sha256(canonical_bytes(partial)).hexdigest()}
+    e.entry_hash = _entry_digest(e.signable_core())
+    e.signature = old.sign(canonical_bytes(e.signable_core()))  # the leaked key
+    forged = {**item, "entries": [e.to_dict(), *item["entries"][1:]]}
+    out = describe_export(forged, local=local, require_signer=True)
+    assert out["verdict"] != VERDICT_YOURS and out["signer_is_yours"] is False
+    assert {s["ed25519_pub"]: s["yours"] for s in out["signed_by"]}[old.public_identity().ed25519_pub] is False
+
+
 def test_a_bundle_whose_entries_are_not_a_list_is_an_answer_not_a_crash(client):
     for junk in (5, True, "x", {"a": 1}):
         r = client.post("/api/custody/verify", json={"bundle": {"entries": junk}})
