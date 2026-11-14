@@ -23,7 +23,7 @@ def _with_titles(*rows: dict) -> dict:
 
 
 # Every target CommonMark would follow after `](`, after `]:`, or inside `<...>`, with its scheme.
-_LIVE_INLINE = re.compile(r"(?<!\\)\]\(\s*<?([^\s)>]*)")
+_LIVE_INLINE = re.compile(r"(?<!\\)\](?=\(\s*<?([^\s)>]*))")
 _LIVE_DEFINITION = re.compile(r"(?<!\\)\]:[ \t]*\n?[ \t]*<?(\S*?)>?(?:\s|$)")
 _LIVE_ANGLE = re.compile(r"(?<!\\)<([A-Za-z][A-Za-z0-9+.-]*:|[A-Za-z/!?])")
 
@@ -54,6 +54,11 @@ def _unsafe_targets(md: str) -> list[str]:
         "<javascript:x>",
         '<a href="javascript:x">a</a>',
         "<img src=x onerror=alert(1)>",
+        # A safe outer target swallowing a live inner link (security read of #1968).
+        "a](https://x[b](javascript:alert(1)",
+        "[a](https://x[b](javascript:alert(1))",
+        "![a](https://x![b](data:image/svg+xml,x)",
+        "[a](<https://x [b](javascript:alert(1))>",
     ],
 )
 @pytest.mark.parametrize("url", [None, "https://a.example/"])

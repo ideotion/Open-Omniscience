@@ -822,8 +822,11 @@ def _link_target(url: object) -> str | None:
 # than by its label: a label may hold escaped or nested brackets (``[a [b] c](...)``), which a label
 # pattern misses, while a target always follows ``](``, ``]:`` or ``<``. Each is checked against
 # ``_LINK_SCHEMES`` and, when it fails, broken with ONE backslash, so the reader shows the text as written.
-_MD_INLINE_TARGET = re.compile(r"\]\((\s*)(<[^>\n]*>|[^\s)]*)")
-_MD_DEFINITION_TARGET = re.compile(r"\]:([ \t]*\n?[ \t]*)(<[^>\n]*>|\S*)")
+# The target is read by LOOKAHEAD, never consumed: a safe-looking target can contain a second link
+# (``[a](https://x[b](javascript:y)``, whose outer link a reader rejects for its unbalanced bracket and
+# whose inner one it follows), so every ``](`` and ``]:`` is checked on its own (security read of #1968).
+_MD_INLINE_TARGET = re.compile(r"\]\((?=\s*(<[^>\n]*>|[^\s)]*))")
+_MD_DEFINITION_TARGET = re.compile(r"\]:(?=[ \t]*\n?[ \t]*(<[^>\n]*>|\S*))")
 # An autolink (``<javascript:x>``) or raw HTML (``<a href=...>``, ``<img onerror=...>``): a ``<`` that
 # opens a tag-like run and is not already escaped (an even run of backslashes before it). A safe
 # autolink stays; everything else loses its ``<``, which no source title needs to stay markup.
@@ -840,18 +843,14 @@ def _md_safe_links(text: str) -> str:
     source wrote disappears, it only stops being a link. Code spans are not skipped, on purpose: telling
     them apart is a parser's job, and an extra backslash inside one costs less than a link let through."""
 
-    def inline(m: re.Match[str]) -> str:
-        if _link_target(m.group(2).strip("<>")) is not None:
-            return m.group(0)
-        return "]\\(" + m.group(1) + m.group(2)
+    def escaped(mark: str):
+        def one(m: re.Match[str]) -> str:
+            return m.group(0) if _link_target(m.group(1).strip("<>")) is not None else "]\\" + mark
 
-    def definition(m: re.Match[str]) -> str:
-        if _link_target(m.group(2).strip("<>")) is not None:
-            return m.group(0)
-        return "]\\:" + m.group(1) + m.group(2)
+        return one
 
-    text = _MD_INLINE_TARGET.sub(inline, text)
-    text = _MD_DEFINITION_TARGET.sub(definition, text)
+    text = _MD_INLINE_TARGET.sub(escaped("("), text)
+    text = _MD_DEFINITION_TARGET.sub(escaped(":"), text)
     return _MD_ANGLE.sub(lambda m: m.group(1) + "\\<", text)
 
 
