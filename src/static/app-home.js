@@ -686,7 +686,7 @@
           // which would overstate independent confirmation. Absent when no OTHER outlet.
           const others = (a.also_reported_by || []).length;
           const also = others > 0
-            ? ` <span class="muted">— ${esc(t("also reported by {n} more").replace("{n}", String(others)))}</span>` : "";
+            ? ` <span class="muted">— ${esc(_tfn("also reported by {n} more", { n: String(others) }))}</span>` : "";
           // The LOCAL reader first (invariant #6), as the Recent panel does: the row used
           // to open the external original while its hover said "offline stored copy".
           return `<div class="home-recent-row"><a href="/api/articles/${encodeURIComponent(a.id)}/view" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
@@ -1143,7 +1143,7 @@
       // that there is no local snapshot at all.
       let stale;
       if (d.hazards_available) {
-        const age = (d.hazards_age_hours != null) ? " (" + esc(t("{h}h old").replace("{h}", Math.round(d.hazards_age_hours))) + ")" : "";
+        const age = (d.hazards_age_hours != null) ? " (" + esc(_tfn("{h}h old", { h: Math.round(d.hazards_age_hours) })) + ")" : "";
         const asof = d.hazards_as_of ? esc(ooIsoDateTime(d.hazards_as_of)) : "—";
         stale = `<span class="hint">${ooLabelHtml(esc(t("Hazard snapshot")), asof + age)}${d.hazards_stale ? " · " + esc(t("stale")) : ""}</span>`;
       } else {
@@ -1255,11 +1255,9 @@
           ? "Established stage: enough breadth and time for patterns to be more than a first hint — still descriptive, never a verdict."
           : "Developing stage: patterns are forming but the corpus is not yet broad or old enough to lean on heavily.");
       const rule = t("Stages are descriptive, from real corpus facts — never a score.") + " " +
-        t("Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.")
-          .replace("{a}", th.young_articles ?? 200)
-          .replace("{d}", th.min_span_days ?? 14)
-          .replace("{b}", th.established_articles ?? 1000)
-          .replace("{e}", th.established_days ?? 90);
+        _tfn("Thresholds: early is below {a} articles or {d} days; established is at least {b} articles and {e} days; developing is in between.",
+          { a: th.young_articles ?? 200, d: th.min_span_days ?? 14,
+            b: th.established_articles ?? 1000, e: th.established_days ?? 90 });
       el.className = "corpus-tier tier-" + tier;
       // The #oo-tip hover re-reads this live-translated title (invariant #17).
       el.title = stageLabel + " — " + meaning + " " + rule;
@@ -1452,7 +1450,7 @@
           // before and after: family 13px, card title 15px, width 354px, unchanged.
           + `<h3 class="ov-fam"><span class="fam-dot" style="background:${famHue(b.bucket)}"></span>${esc(b.label)}`
           + ` <a href="#" class="ov-more" data-on-click='selectHomeFamily(${esc(JSON.stringify(String(bi)))});return false'>`
-          + `${esc(t("all {n}").replace("{n}", String((b.cards || []).length)))} →</a></h3>`
+          + `${esc(_tfn("all {n}", { n: String((b.cards || []).length) }))} →</a></h3>`
           + `<div class="cards">${cardHtml(c)}</div>${why}</div>`;
       }).join("");
       return `<div class="brief-bucket" data-fam="__ov">`

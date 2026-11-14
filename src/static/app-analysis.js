@@ -1031,8 +1031,8 @@
       } else {
         html += clusters.map((c, i) => {
           const voice = c.single_source
-            ? t("{n} near-identical copies from one source = one voice").replace("{n}", c.size)
-            : t("{n} near-identical copies across {m} sources = effectively one voice").replace("{n}", c.size).replace("{m}", c.distinct_sources);
+            ? _tfn("{n} near-identical copies from one source = one voice", { n: c.size })
+            : _tfn("{n} near-identical copies across {m} sources = effectively one voice", { n: c.size, m: c.distinct_sources });
           const ex = (c.members || []).slice(0, 6).map((m) =>
             `<li><a href="/api/articles/${m.id}/view" target="_blank" rel="noopener">${esc(m.title || t("(untitled)"))}</a>`
             + ` <span class="muted">· ${esc(m.source || "")}</span></li>`).join("");
@@ -1111,7 +1111,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const n = document.querySelectorAll("#an-related .an-rel-pick:checked").length;
       const el = $("an-rel-selcount");
-      if (el) el.textContent = n ? t("{n} selected").replace("{n}", n) : "";
+      if (el) el.textContent = n ? _tfn("{n} selected", { n: n }) : "";
     }
     async function branchSelectedRelated() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -1449,7 +1449,7 @@
           const b = document.createElement("span");
           b.className = "pill"; b.style.marginInlineStart = "6px"; b.style.cursor = "default";
           b.textContent = "≈" + sz;
-          b.title = t(_AN_DUP_PILL).replace("{n}", sz);
+          b.title = _tfn(_AN_DUP_PILL, { n: sz });
           a.after(b);
           badges.push({ el: b, size: sz });
           flagged++;
@@ -1458,7 +1458,7 @@
         if (flagged) {
           note = document.createElement("div");
           note.className = "card-caveat"; note.style.marginTop = "6px";
-          note.textContent = t(_AN_DUP_NOTE).replace("{n}", flagged);
+          note.textContent = _tfn(_AN_DUP_NOTE, { n: flagged });
           host.appendChild(note);
         }
         // Retained so a language switch can repaint these IN PLACE. Both strings are
@@ -1755,11 +1755,11 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!_anDupBadges) return;
       (_anDupBadges.badges || []).forEach(({ el, size }) => {
-        if (el && el.isConnected) el.title = t(_AN_DUP_PILL).replace("{n}", size);
+        if (el && el.isConnected) el.title = _tfn(_AN_DUP_PILL, { n: size });
       });
       const note = _anDupBadges.note;
       if (note && note.isConnected && _anDupBadges.flagged) {
-        note.textContent = t(_AN_DUP_NOTE).replace("{n}", _anDupBadges.flagged);
+        note.textContent = _tfn(_AN_DUP_NOTE, { n: _anDupBadges.flagged });
       }
     }
     // Registered in app-boot's ONE `oo:langchange` listener (never a second listener:
@@ -2244,7 +2244,7 @@
         const label = k ? ooLangCell(k) : `<span class="muted">${esc(t("Language not recorded"))}</span>`;
         // A group of ONE read "spa 1 articles" (N14): a count of one takes the singular
         // key, the one form every locale has (there are no CLDR plural rules here).
-        const count = (n === 1 ? t("{n} article") : t("{n} articles")).replace("{n}", n);
+        const count = _tfn(n === 1 ? "{n} article" : "{n} articles", { n: n });
         // The list view's cards are not table rows, so its heading is not one either.
         if (cards) {
           return `<div class="an-lang-group"><b>${label}</b> <span class="muted">${esc(count)}</span></div>`
@@ -2330,7 +2330,7 @@
         if (a.top_keyword) {
           const tied = (a.top_keyword_tied_n || 1) > 1;
           const tip = tied
-            ? t("{n} keywords are tied at this count in this article — this is one of them, not a winner.").replace("{n}", a.top_keyword_tied_n)
+            ? _tfn("{n} keywords are tied at this count in this article — this is one of them, not a winner.", { n: a.top_keyword_tied_n })
             : t("This article's most-mentioned keyword, counted when it was indexed.");
           top = `<span title="${esc(tip)}">${esc(a.top_keyword)}`
             + ` <span class="muted">×${a.top_keyword_count}</span>`
@@ -3190,7 +3190,7 @@
     // "12 articles" as ONE keyed frame, the singular taking its own key -- not a count
     // welded to a translated plural noun (the same class as the label colons, N-5).
     function _synthCountLabel(t, n) {
-      return t(n === 1 ? "{n} article" : "{n} articles").replace("{n}", n);
+      return _tfn(n === 1 ? "{n} article" : "{n} articles", { n: n });
     }
     function _synthAsMarkdown() {
       const t = _synthT(); const r = _synthData; if (!r) return "";

@@ -2303,7 +2303,7 @@
         const cleared = measured === true;
         const on = cleared && !e.switched_off;
         const n = (e.n_cases == null) ? "?" : String(e.n_cases);
-        const numbers = t("n = {n} case(s)").replace("{n}", n)
+        const numbers = _tfn("n = {n} case(s)", { n: n })
           + ((e.checks && e.checks.length) ? " · " + e.checks.join("; ") : "");
         const why = cleared ? "" : " — " + (measured === false
           ? t("refused: the harness failed this language")

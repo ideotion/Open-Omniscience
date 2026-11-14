@@ -82,7 +82,7 @@ const sandbox = {
 };
 
 // Build the load tracker out of the real bodies.
-const NAMES = ["_noteServerBusy", "_loadFactor", "_noteLoadCadence", "_loadState", "_resetLoadState"];
+const NAMES = ["_tfn", "_noteServerBusy", "_loadFactor", "_noteLoadCadence", "_loadState", "_resetLoadState"];
 let src = "let _loadRefusals = []; let _loadBannerFactor = 0;\n" +
           "const _LOAD_WINDOW_MS = " + LOAD_WINDOW_MS + ";\n" +
           "const _LOAD_MAX_FACTOR = " + LOAD_MAX_FACTOR + ";\n";

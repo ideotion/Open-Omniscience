@@ -9,12 +9,12 @@ string the delivery introduces is keyed in all twelve locales.
 
 from __future__ import annotations
 
-import json
 import pathlib
 import re
 import subprocess
 
 from tests.js_source_helper import function_body
+from tests.locale_forms import load_locale
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _STATIC = _ROOT / "src" / "static"
@@ -71,7 +71,7 @@ def test_delivery_node_suite() -> None:
 def test_every_delivery_string_is_keyed_in_all_twelve_locales() -> None:
     missing: list[str] = []
     for path in sorted(_LOCALES.glob("*.json")):
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = load_locale(path)
         for s in _STRINGS:
             if s not in data:
                 missing.append(f"{path.name}: {s[:48]!r}")

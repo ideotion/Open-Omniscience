@@ -13,10 +13,11 @@ contract. The key itself stays in the tally JSON (``tests/test_stop_is_not_an_ou
 
 from __future__ import annotations
 
-import json
 import re
 import subprocess
 from pathlib import Path
+
+from tests.locale_forms import load_locale
 
 _ROOT = Path(__file__).resolve().parent.parent
 _LOCALES = _ROOT / "src" / "static" / "locales"
@@ -44,7 +45,7 @@ def test_every_string_is_keyed_in_all_twelve_locales_with_its_placeholders() -> 
     files = sorted(_LOCALES.glob("*.json"))
     assert len(files) == 12
     for path in files:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = load_locale(path)
         for key in _KEYS:
             assert data.get(key, "").strip(), f"{path.name} has no value for {key!r}"
             assert sorted(re.findall(r"\{(\w+)\}", data[key])) == sorted(re.findall(r"\{(\w+)\}", key)), (

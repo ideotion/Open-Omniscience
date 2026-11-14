@@ -229,6 +229,8 @@ async function t2() {
   await check("T-2 an attribute inside a data-i18n-dyn container is not cached or reverted", () => {
     const attrsDecl = (I18N.match(/const ATTRS = \[[^\]]*\];/) || ['const ATTRS = ["placeholder", "title", "aria-label"];'])[0];
     const body = "let map = {};\n" + attrsDecl + "\nconst origAttr = new WeakMap();\n"
+      // tr() reads a plural value's [other] form through pluralForms (2026-11-14).
+      + require("./i18n_engine_node.js").pluralBlock() + "\nfunction current() { return \"en\"; }\n"
       + extract(I18N, "tr") + extract(I18N, "doAttrs")
       + "return { doAttrs, setMap: (m) => { map = m; } };";
     const W = new Function(body)();

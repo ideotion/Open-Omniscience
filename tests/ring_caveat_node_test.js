@@ -59,7 +59,10 @@ function extract(name, decl, src) {
 }
 
 const SHOW = extract("showRingMap", "async function showRingMap(", INS);
-const TF_SRC = extract("tf", "function tf(", I18N);
+// tf() and the plural-form helpers it calls (2026-11-14): a translation may hold "[one]...[other]..." forms, chosen
+// with Intl.PluralRules for the language current() names.
+const PLURAL_SRC = require("./i18n_engine_node.js").pluralBlock();
+const TF_SRC = PLURAL_SRC + "\n" + extract("tf", "function tf(", I18N);
 const ESC = (s) => (s == null ? "" : String(s).replace(/[&<>"']/g,
   (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"}[c])));
 
@@ -67,7 +70,7 @@ const ESC = (s) => (s == null ? "" : String(s).replace(/[&<>"']/g,
 async function render(payload, code, opts) {
   opts = opts || {};
   const map = code === "en" ? {} : LOCALE(code);
-  const tf = new Function("map", TF_SRC + "; return tf;")(map);
+  const tf = new Function("map", "current", TF_SRC + "; return tf;")(map, () => code);
   const t = (s) => (map[s] == null ? s : map[s]);
   const els = { "sg-ringmap": { innerHTML: "" }, "sg-ringmap-detail": { innerHTML: "" } };
   const drawn = [];
@@ -86,9 +89,10 @@ const REPAINT = extract("repaintRingMapFromCache", "function repaintRingMapFromC
 // A reader's session: one set of elements and one _ringMapLast, so a language switch can repaint what is on screen.
 function session(code, apiFn, ooMapFn) {
   const map = {};
-  const load = (c) => { Object.keys(map).forEach((k) => delete map[k]); if (c !== "en") Object.assign(map, LOCALE(c)); };
+  let cur = code;
+  const load = (c) => { cur = c; Object.keys(map).forEach((k) => delete map[k]); if (c !== "en") Object.assign(map, LOCALE(c)); };
   load(code);
-  const tf = new Function("map", TF_SRC + "; return tf;")(map);
+  const tf = new Function("map", "current", TF_SRC + "; return tf;")(map, () => cur);
   const t = (s) => (map[s] == null ? s : map[s]);
   const els = { "sg-ringmap": { innerHTML: "", querySelector: () => null }, "sg-ringmap-detail": { innerHTML: "" } };
   const run = new Function("window", "OOI18N", "$", "esc", "api", "ooRegionName", "ooMap", "ooLabelHtml", "ooLangCell",

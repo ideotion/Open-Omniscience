@@ -7091,7 +7091,9 @@ def test_i18n_composite_strings_and_translatable_card_titles():
     app = app_js()
     # (a) the engine exposes tf(): template lookup + {named} interpolation, exported
     assert "function tf(s, vars)" in i18n
-    assert "map[s] == null ? s : map[s]" in i18n and "replace(/\\{(\\w+)\\}/g" in i18n
+    # an unknown template falls back to itself (since 2026-11-14 after a plural value's no-number
+    # form is looked back up to its key, so tf(t(KEY), vars) still chooses its plural form)
+    assert "let key = s, out = map[s];" in i18n and "else out = s;" in i18n and "replace(/\\{(\\w+)\\}/g" in i18n
     assert "t, tf," in i18n, "tf must be exported on OOI18N"
     # (b) the UI renders a card's title via cardTitle -> OOI18N.tf, English title as fallback
     ct = app[app.index("function cardTitle(") : app.index("function cardTitle(") + 400]
