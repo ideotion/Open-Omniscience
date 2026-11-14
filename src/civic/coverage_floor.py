@@ -44,6 +44,7 @@ from src.civic.elections import (
     ELECTIONS_CALENDAR,
     PROJECTED,
     date_confidence,
+    has_passed,
     missing_projection_fields,
     projection,
 )
@@ -140,7 +141,7 @@ def floor_countries() -> set[str]:
     return set(load_floor()["countries"])
 
 
-def floor_coverage(today: date | None = None) -> dict[str, Any]:
+def floor_coverage(today: date | None = None, events: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """What the shipped elections calendar covers of the ruled floor.
 
     Network-free and cheap (one config read, one catalog read), so it rides the
@@ -161,7 +162,7 @@ def floor_coverage(today: date | None = None) -> dict[str, Any]:
     with_date: set[str] = set()
     live: set[str] = set()
     dateless: dict[str, list[str]] = {}
-    for ev in load_events():
+    for ev in (load_events() if events is None else events):
         if str(ev.get("calendar") or "") != ELECTIONS_CALENDAR:
             continue
         cc = str(ev.get("country") or "").strip().lower()
@@ -178,6 +179,10 @@ def floor_coverage(today: date | None = None) -> dict[str, Any]:
         # apart: folding it into `covered` would let the floor be cleared by dates that
         # have already gone by.
         proj = projection(ev, today) if tier == PROJECTED else None
+        # The same holds for a STATED date that has gone by (a 2026 election read in 2027):
+        # the entry stays as the source gave it, but it no longer covers the country.
+        if has_passed(ev, today):
+            continue
         if proj is None or proj["status"] != "passed":
             live.add(cc)
 
@@ -197,10 +202,10 @@ def floor_coverage(today: date | None = None) -> dict[str, Any]:
             "regionally predominant language is one of the twelve UI languages "
             "(configs/language_countries.yml). A floor country counts as covered when the "
             "elections calendar holds an entry for it with a date-confidence tier "
-            "(scheduled, window, or a projection that has not yet passed). An entry that "
+            "(scheduled, window or projected) whose date has not yet passed. An entry that "
             "states no date and carries no sourced recurrence rule, and a country whose "
-            "only entry is an already-passed projection, are each reported separately -- "
-            "never as coverage."
+            "only dated entries have already passed (a stated date or a projection), are "
+            "each reported separately -- never as coverage."
         ),
         "caveat": (
             "The country list is drafted, not verified — no row has been checked against a "
@@ -213,6 +218,8 @@ def floor_coverage(today: date | None = None) -> dict[str, Any]:
         "covered_n": len(covered),
         # Floor countries whose ONLY election entry is a projection whose date has
         # already passed -- an investigative lead, not coverage.
+        # Kept under its historical name: it now holds every country whose only dated entries
+        # have gone by, a stated date or a projection alike (the method sentence says so).
         "only_passed_projection": only_passed,
         "only_passed_projection_n": len(only_passed),
         "present_but_dateless": [{"cc": cc, "missing_fields": dateless[cc]} for cc in present_dateless],

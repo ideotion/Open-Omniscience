@@ -341,8 +341,17 @@ def object_card(ref: str) -> dict | None:
     return out
 
 
-def geocode(q: str, limit: int = 5) -> dict:
-    """Locate an address in the countries read, or say it was not located. Never a guess."""
+#: The tags ``geocode(..., facts=True)`` hands back per answer, for a caller that must know WHAT the object is before placing it
+#: (the Wikipedia infobox addresses, R691: a dwelling is never placed).
+FACT_KEYS: tuple[str, ...] = (
+    "addr:housenumber", "building", "building:use", "amenity", "shop", "tourism", "leisure", "office", "healthcare",
+    "public_transport", "aeroway", "emergency", "religion", "wikidata", "wikipedia", "access",
+)
+
+
+def geocode(q: str, limit: int = 5, facts: bool = False) -> dict:
+    """Locate an address in the countries read, or say it was not located. Never a guess. ``facts=True`` adds each answer's
+    :data:`FACT_KEYS` tags (absent ones left out) under ``"facts"``; the default answer is unchanged."""
     from sqlalchemy import select, text
 
     from src.osm.lane_models import osm_objects_table
@@ -369,7 +378,7 @@ def geocode(q: str, limit: int = 5) -> dict:
             {"m": m, "n": int(limit), **sp},
         ).all()
         rows = {r.id: r for r in s.execute(
-            select(t.c.id, t.c.osm_type, t.c.osm_id, t.c.lat, t.c.lon, t.c.country_alpha3, _col("name"))
+            select(t.c.id, t.c.osm_type, t.c.osm_id, t.c.lat, t.c.lon, t.c.country_alpha3, *[_col(k) for k in FACT_KEYS], _col("name"))
             .where(t.c.id.in_([h[0] for h in hits]))
         )}
     results = []
@@ -377,6 +386,9 @@ def geocode(q: str, limit: int = 5) -> dict:
         r = rows.get(oid)
         if r is None or r.country_alpha3 != a3:
             continue
-        results.append({"address": address, "lat": r.lat, "lon": r.lon, "object": _object_ref(r.osm_type, r.osm_id),
-                        "name": r[-1], "country": r.country_alpha3})
+        one = {"address": address, "lat": r.lat, "lon": r.lon, "object": _object_ref(r.osm_type, r.osm_id),
+               "name": r[-1], "country": r.country_alpha3}
+        if facts:
+            one["facts"] = {k: v for k, v in zip(FACT_KEYS, r[6 : 6 + len(FACT_KEYS)], strict=True) if v not in (None, "")}
+        results.append(one)
     return {**base, "status": "located" if results else "not-located", "results": results, "total": int(total)}

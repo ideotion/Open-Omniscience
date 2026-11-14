@@ -37,8 +37,8 @@ function extractConst(name) {
 }
 
 const NAMES = ["ooLabelHtml", "_maintStateLabel", "_maintServerTextHtml", "_maintKeyedText", "_maintMethodHtml", "_maintNoteHtml", "_maintTallyLabel", "maintRunHtml", "maintTallyHtml", "maintSampleRowHtml", "maintSamplesHtml",
-  "maintRawIdsHtml", "maintFurnitureHtml", "maintStartUrl"];
-const src = "const window = {};\n" + extractConst("esc") + "\n" +
+  "maintRawIdsHtml", "maintFurnitureHtml", "maintStartUrl", "ooIsoDate", "maintPairButtonHtml", "maintPairsHtml"];
+const src = "const window = {}; const document = { documentElement: { dir: \"ltr\" } };\n" + extractConst("esc") + "\n" +
   "function fmtNum(v) { return String(v); }\n" +
   NAMES.map(extract).join("\n") + "\n" +
   "module.exports = {" + NAMES.join(", ") + "};";
@@ -178,6 +178,29 @@ assert.ok(visible(fu).includes("S: 10 of 40 articles read") && visible(fu).inclu
 assert.strictEqual((fu.match(/already stripped/g) || []).length, 1, "only the known line carries it");
 assert.ok(visible(R.maintFurnitureHtml({ source: { id: 5 }, sampled: 3, articles_in_source: 3, candidates: [] }, t, tf)).includes("No repeated line reaches the threshold."));
 
+// -- host pairs (R193; wired under R684) --------------------------------------------
+const mrow = { id: 3, title: "T", url: "https://example.net/a", source_id: 9, source_site: "example.com", article_site: "example.net" };
+const mb = R.maintPairButtonHtml(mrow, t);
+assert.ok(mb.includes('data-maint-pair="confirm"') && mb.includes('data-source="9"') && mb.includes('data-site="example.net"'), mb);
+assert.ok(visible(mb) === "Confirm site", mb);
+assert.ok(R.maintPairButtonHtml({ ...mrow, state: "confirmed" }, t).includes('data-maint-pair="withdraw"'));
+assert.strictEqual(R.maintPairButtonHtml({ ...mrow, source_id: null }, t), "", "no source number, no button");
+assert.strictEqual(R.maintPairButtonHtml({ ...mrow, article_site: null }, t), "", "an unreadable site gets no button");
+assert.strictEqual(R.maintPairButtonHtml({ ...mrow, article_site: "example.com" }, t), "", "the same site is not a pair");
+assert.ok(R.maintSampleRowHtml(mrow, t, tf).includes('data-maint-pair="confirm"'), "a mismatch sample carries the button");
+assert.ok(!R.maintSampleRowHtml({ id: 4, title: "T", url: "u" }, t, tf).includes("data-maint-pair"), "a non-host sample does not");
+const hp = R.maintPairsHtml({ confirmed: 1, rows: [{ source_id: 9, article_site: "example.net", confirmed_at: "2026-10-01T08:00:00", note: "partner" }] }, t, tf);
+noJunk(hp, "pairs");
+assert.ok(visible(hp).includes("1 confirmed") && visible(hp).includes("2026-10-01") && visible(hp).includes("partner"), visible(hp));
+// The site is checked by exact match on its own attribute (a substring test on a host name is what
+// CodeQL's URL-sanitisation rule flags, and an exact match is the stronger check anyway).
+assert.strictEqual((hp.match(/data-site="([^"]*)"/) || [])[1], "example.net", hp);
+assert.ok(hp.includes('data-maint-pair="withdraw"') && /class="card-caveat"[^>]*>A confirmed site is counted/.test(hp), hp);
+const p0 = R.maintPairsHtml({ confirmed: 0, rows: [] }, t, tf);
+assert.ok(visible(p0).includes("No site confirmed yet") && p0.includes('class="card-caveat"'), "the caveat stays when the list is empty");
+noJunk(R.maintPairsHtml({ rows: [{ source_id: 2, article_site: "x.org", confirmed_at: null, note: null }] }, t, tf), "pairs with gaps");
+assert.ok(!VERDICT.test(visible(hp)), hp);
+
 // -- every string field is escaped (the XSS fuzz) ----------------------------------
 const X = "<img src=x onerror=1>";
 const fuzz = [
@@ -188,6 +211,8 @@ const fuzz = [
   R.maintRawIdsHtml({ raw_id_sources: 1, articles_in_shown: 1, method: X, rows: [{ source_id: 1, name: X, domain: X, articles: 1 }] }, t, tf),
   R.maintFurnitureHtml({ source: { id: 1, name: X }, sampled: 1, articles_in_source: 1, method: X,
     candidates: [{ line: X, articles: 1, known: true }] }, t, tf),
+  R.maintPairsHtml({ confirmed: X, rows: [{ source_id: X, article_site: X, confirmed_at: X, note: X }] }, t, tf),
+  R.maintPairButtonHtml({ source_id: 3, source_site: "a", article_site: '"><img src=x onerror=1>' }, t),
 ];
 fuzz.forEach((h, i) => assert.ok(!h.includes("<img"), `renderer ${i} let markup through: ${h}`));
 

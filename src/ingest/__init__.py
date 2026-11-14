@@ -1873,8 +1873,10 @@ class EthicalFetcher:
         Returns a ``{"http":…, "https":…}`` dict whose SOCKS URL carries a
         per-host username so Tor's ``IsolateSOCKSAuth`` builds a dedicated circuit
         for this host. The page fetch and its robots.txt both route through this,
-        so a host's traffic shares one circuit and is unlinkable to other hosts'
-        circuits. ``None`` ONLY when there is no proxy at all.
+        so a host's traffic shares one circuit, separate from other hosts'
+        circuits. Separate circuits do not make the hosts' requests unlinkable:
+        the User-Agent and the timing still tie them together (R656). ``None``
+        ONLY when there is no proxy at all.
 
         WHENEVER A PROXY IS CONFIGURED THE MAPPING IS EXPLICIT, isolated or not
         (isolation disabled, or an HTTP proxy that cannot isolate, get the bare

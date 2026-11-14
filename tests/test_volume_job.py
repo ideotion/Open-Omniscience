@@ -256,8 +256,8 @@ def test_restore_reports_a_distinct_reindexing_phase(tmp_path, monkeypatch):
         reindex_progress_cb(10, 10)
         return {"committed": True}
 
-    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: True)
-    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
+    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0, **_kw: True)
+    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused, **_kw: None)
     _own_the_machine(monkeypatch, True)
     monkeypatch.setattr(merge_mod, "run_restore", fake_run_restore)
     monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: _staged())
@@ -297,11 +297,11 @@ def test_restore_pauses_collection_around_the_whole_operation_and_resumes(tmp_pa
 
     events: list[str] = []
 
-    def _fake_pause(timeout=10.0):
+    def _fake_pause(timeout=10.0, **_kw):
         events.append("pause")
         return True
 
-    def _fake_resume(was_paused):
+    def _fake_resume(was_paused, **_kw):
         assert was_paused is True
         events.append("resume")
 
@@ -337,11 +337,11 @@ def test_restore_resumes_collection_even_when_the_restore_itself_fails(tmp_path,
     events: list[str] = []
     monkeypatch.setattr(
         sched_mod, "pause_for_exclusive_operation",
-        lambda timeout=10.0: (events.append("pause"), True)[1],
+        lambda timeout=10.0, **_kw: (events.append("pause"), True)[1],
     )
     monkeypatch.setattr(
         sched_mod, "resume_after_exclusive_operation",
-        lambda was_paused: events.append("resume"),
+        lambda was_paused, **_kw: events.append("resume"),
     )
     monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: _staged())
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)
@@ -379,8 +379,8 @@ def test_an_artifact_carrying_large_files_places_them_after_the_merge_commits(
     staged = _staged(tmp_path / "staging")
     staged.file_members = [{"name": "blobs/wiki_dumps/x", "category": "wiki_dumps", "rel": "x"}]
 
-    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: True)
-    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
+    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0, **_kw: True)
+    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused, **_kw: None)
     monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: staged)
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda s: None)
     monkeypatch.setattr(
@@ -420,8 +420,8 @@ def test_a_failed_placement_never_costs_the_restore_that_already_committed(
 
     staged = _staged(tmp_path / "staging")
     staged.file_members = [{"name": "blobs/wiki_dumps/x", "category": "wiki_dumps", "rel": "x"}]
-    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: True)
-    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
+    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0, **_kw: True)
+    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused, **_kw: None)
     monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: staged)
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda s: None)
     monkeypatch.setattr(merge_mod, "run_restore", lambda *a, **k: {"committed": True})
@@ -450,8 +450,8 @@ def test_an_artifact_carrying_nothing_does_not_reach_the_placement(tmp_path, mon
     import src.backup.merge as merge_mod
     import src.scheduler.runner as sched_mod
 
-    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: True)
-    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
+    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0, **_kw: True)
+    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused, **_kw: None)
     monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: _staged(tmp_path))
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda s: None)
     monkeypatch.setattr(merge_mod, "run_restore", lambda *a, **k: {"committed": True})
@@ -499,7 +499,7 @@ def test_a_pause_hiccup_never_aborts_the_restore(tmp_path, monkeypatch):
         return {"committed": True}
 
     monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", _boom_pause)
-    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
+    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused, **_kw: None)
     _own_the_machine(monkeypatch, False)
     monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: _staged())
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)
@@ -556,8 +556,8 @@ def test_restore_passes_a_wide_reindex_commit_batch_only_when_it_owns_the_machin
     # The pause deliberately returns False in BOTH cases -- the fresh-install /
     # queued-item shape, where nothing was running to stop. Ownership is the fact
     # under test, and it must decide the knobs on its own.
-    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: False)
-    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
+    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0, **_kw: False)
+    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused, **_kw: None)
     _own_the_machine(monkeypatch, exclusive)
     monkeypatch.setattr(merge_mod, "run_restore", fake_run_restore)
     monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: _staged())

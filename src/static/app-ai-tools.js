@@ -1979,6 +1979,16 @@
             ? `<p><button class="btn" data-on-click="launchOllama(this)">${esc(t("Launch Ollama"))}</button>` +
               ` <span class="muted">${esc(t("starts the local Ollama service"))}</span></p>`
             : "") +
+          // FREE THE GPU / STOP (the routes had no button). Release works on any running daemon and stops nothing; Stop only
+          // on one this app started (can_stop is decided server-side). A summary or translation run in flight pauses first.
+          (oll.running
+            ? `<p><button class="tiny secondary" title="${esc(t("Ollama unloads its models and keeps running; the next request loads one again. A running summary or translation run pauses first."))}"` +
+              ` data-on-click="releaseOllama(this)">${esc(t("Free the GPU"))}</button>` +
+              (oll.can_stop
+                ? ` <button class="tiny secondary" title="${esc(t("Stops the Ollama this app started. A running summary or translation run pauses first."))}"` +
+                  ` data-on-click="stopOllama(this)">${esc(t("Stop Ollama"))}</button>`
+                : "") + `</p>`
+            : "") +
           (b.vllm_can_launch
             ? `<p class="hint">${esc(t("vLLM is installed but not running — use Start in the vLLM section below."))}</p>`
             : "") +
@@ -2041,6 +2051,27 @@
       loadAiBackendPanel();
       loadLlmHealth();
     }
+
+    // Free the GPU / Stop Ollama. The server pauses a running queued run after its article and acts then (R669);
+    // its reply says which happened.
+    async function _ollamaAct(btn, url, doneMsg) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (btn) btn.disabled = true;
+      try {
+        const r = await api(url, {method: "POST"});
+        if (r.deferred) toast(t("The running summary or translation run pauses first; the model is freed then. Resume it in the task manager."));
+        else if (r.reason && !r.stopped && !(r.released || []).length) toast(t(r.reason));
+        else toast(t(doneMsg));
+      } catch (e) {
+        toast(_failMsg("Ollama: {error}", e), "err");
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+      loadAiBackendPanel();
+      loadLlmHealth();
+    }
+    function releaseOllama(btn) { return _ollamaAct(btn, "/api/llm/ollama/release", "Ollama released the GPU."); }
+    function stopOllama(btn) { return _ollamaAct(btn, "/api/llm/ollama/stop", "Ollama stopped."); }
 
     async function setAiBackend(value) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -2117,7 +2148,15 @@
             notes +
             `</details>`
           : "";
-        box.innerHTML = `<p class="hint">${esc(parts.join(" · "))} &middot; ${esc(s.base_url || "")}</p>` + logBlock;
+        // R688: a server that answers but is neither vLLM nor a known relay gets the text, and the app cannot see where
+        // that server sends it. Said here, only when such a server is the one configured; a known relay is named as
+        // refused before the first generation is.
+        const kindNote = s.server_kind === "other"
+          ? `<p class="muted">${esc(t("The server at this address does not say it is vLLM. This app cannot see whether it sends your text to another computer."))}</p>`
+          : s.server_kind === "relay"
+            ? `<p class="muted">${esc(t("The server at the vLLM address lists its models as owned by OpenAI or LiteLLM, which is how a proxy to an online service describes itself, so it is refused: the text you give it could leave the machine. Point the vLLM address at a model running on this computer."))}</p>`
+            : "";
+        box.innerHTML = `<p class="hint">${esc(parts.join(" · "))} &middot; ${esc(s.base_url || "")}</p>` + kindNote + logBlock;
         if (!s.installed) {
           if (!installBox) return;
           if (!s.gpu || !s.gpu.available) {
@@ -2133,7 +2172,9 @@
               `<p class="muted">vLLM is not installed. This downloads ${esc(s.estimated_size_note || "several GB")} ` +
               `(vLLM + torch + the CUDA runtime) into a dedicated venv — never the app's own environment.</p>` +
               `<button data-on-click="installVllm(this)">Install vLLM (${esc(s.verified_version || "")})</button>` +
+              ` <span id="vllm-install-cost" class="muted"></span>` +
               `<div id="vllm-install-progress" class="hint" style="margin-top:6px"></div>`;
+            _vllmInstallCost();
           }
         } else {
           installBox.style.display = "none";
@@ -2152,6 +2193,31 @@
       } catch (e) {
         box.innerHTML = `<p class="muted">Could not read vLLM status.</p>`;
       }
+    }
+
+    // What the install would cost THIS machine, measured, beside the button BEFORE the click (#14e's spirit): one line,
+    // the details one hover away. Read-only and local (the preflight opens no connection).
+    async function _vllmInstallCost() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, o) => s.replace(/\{(\w+)\}/g, (m, k) => (o && o[k] != null) ? String(o[k]) : m));
+      const el = $("vllm-install-cost");
+      if (!el) return;
+      try {
+        const pf = await api("/api/llm/vllm/install/preflight");
+        el.textContent = vllmCostLine(pf, t, tf);
+        el.title = [].concat(pf.blocking || [], pf.warnings || [], pf.notes || []).map((w) => w.detail || w.check).join("\n\n");
+      } catch (e) { el.textContent = ""; }
+    }
+    /** The one cost line. Pure (preflight in, string out). A figure that was not measured is not shown. */
+    function vllmCostLine(pf, t, tf) {
+      const parts = [];
+      const d = (pf && pf.disk) || {}, r = (pf && pf.ram) || {};
+      if (d.measured) parts.push(tf("{free} GB free, needs {floor} GB", {free: d.free_gb, floor: d.floor_gb}));
+      if (r.measured) parts.push(tf("{ram} GB RAM", {ram: r.total_gb}));
+      const head = (pf && (pf.blocking || []).length) ? t("Cannot install here:")
+        : (pf && (pf.warnings || []).length) ? t("Low resources:") : "";
+      return (head ? head + " " : "") + parts.join(" · ");
     }
 
     // The install endpoint answers 409 with a machine-readable detail when the

@@ -125,7 +125,7 @@ def test_the_health_summary_counts_only_a_real_refusal_as_refused(monkeypatch, t
     activate_kill_switch()
     try:
         with TestClient(app, base_url="http://127.0.0.1") as c:
-            body = c.get(
+            body = c.post(
                 "/api/monitoring/health?limit=2",
                 headers={
                     "Sec-Fetch-Site": "same-origin",

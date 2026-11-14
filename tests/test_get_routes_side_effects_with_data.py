@@ -361,7 +361,6 @@ def _urls(ids: _Ids) -> dict[str, str]:
         "/api/entities/places/search": "/api/entities/places/search?q=paris",
         "/api/events/astronomy": "/api/events/astronomy?year=2026",
         "/api/events/astronomy/lunar-series": "/api/events/astronomy/lunar-series?start=2026-01-01&end=2026-03-01",
-        "/api/geo/downloads/size": "/api/geo/downloads/size?code=europe&consent=true",
         "/api/governments/aggregate/{code}": "/api/governments/aggregate/WLD",
         "/api/governments/group-aggregate": "/api/governments/group-aggregate?group=G7&indicator=NY.GDP.MKTP.CD",
         "/api/governments/map": "/api/governments/map?indicator=NY.GDP.MKTP.CD",
@@ -395,6 +394,8 @@ def _urls(ids: _Ids) -> dict[str, str]:
         "/api/sources/{source_id}/metadata": f"/api/sources/{ids.source}/metadata",
         "/api/sources/{source_id}/observed-ips": f"/api/sources/{ids.source}/observed-ips",
         "/api/sources/{source_id}/provenance": f"/api/sources/{ids.source}/provenance",
+        "/api/weather/anomaly/held": "/api/weather/anomaly/held?lat=48.85&lon=2.35&start_date=2023-05-01&end_date=2023-05-03",
+        "/api/weather/context/held": "/api/weather/context/held?lat=48.85&lon=2.35&start_date=2023-05-01&end_date=2023-05-03",
         "/api/wiki/lane/sections": "/api/wiki/lane/sections?external_id=enwiki:Paris",
         "/api/wiki/pages/{page_id}/compare": f"/api/wiki/pages/{p}/compare?from=t{ids.wrev_old}&to=t{ids.wrev_new}",
         "/api/wiki/pages/{page_id}/revisions": f"/api/wiki/pages/{p}/revisions",
@@ -469,7 +470,8 @@ def walk(corpus):
 
 #: Routes that, WITH the kill switch engaged (the walk engages it), refuse by name BEFORE their body: the status they must answer. A route here
 #: is a network read whose consent and kill switch the route itself checks (v0.6 C3), so reaching a 2xx would mean it had gone to the network.
-_REFUSED_BY_NAME_UNDER_THE_KILL_SWITCH = {"/api/geo/downloads/size": 409}
+#: Empty since R694: the one such route, /api/geo/downloads/size, is a POST and no longer in a GET walk.
+_REFUSED_BY_NAME_UNDER_THE_KILL_SWITCH: dict[str, int] = {}
 
 
 def test_every_listed_route_reaches_its_body(walk):

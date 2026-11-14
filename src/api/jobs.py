@@ -891,6 +891,46 @@ def jobs_ledger(limit: int = 200) -> dict:
 _OWN_ROW_KINDS = frozenset({"llm-bulk-queue"})
 
 
+#: The import re-index backlog read is linear in the pending articles (~100 ms at a million, backup_v2's measurement): the task
+#: manager polls every few seconds, so the count is read at most this often.
+_BACKLOG_TTL_S = 30.0
+_backlog_cache: dict = {"at": 0.0, "value": None}
+
+
+def _reindex_backlog_rows() -> list[dict]:
+    """Imported articles merged without keywords while nothing is finishing them: ONE waiting row with Resume, which starts
+    the same ``reindex-resume`` job as Settings > Backup. While that job runs it is its own row (with Cancel). Counts only."""
+    import time
+
+    from src.jobs.background import get_job as _get_bg_job
+
+    job = _get_bg_job("reindex-resume")
+    if job is None or job.status().get("state") == "running":
+        return []  # a failed run keeps this row too: its Resume is the retry while articles are still owed
+    now = time.monotonic()
+    if _backlog_cache["value"] is None or now - _backlog_cache["at"] > _BACKLOG_TTL_S:
+        try:
+            from src.backup.merge import reindex_backlog
+
+            _backlog_cache["value"] = reindex_backlog()
+        except Exception:  # noqa: BLE001 - the task manager never fails for a row; an unread backlog draws none
+            _backlog_cache["value"] = {"available": False}
+        _backlog_cache["at"] = now
+    bk = _backlog_cache["value"] or {}
+    n = int(bk.get("articles_pending") or 0) if bk.get("available") else 0
+    if n <= 0:
+        return []
+    return [{
+        "id": "reindex-backlog",
+        "kind": "reindex-backlog",
+        **_label_frame("Imported articles waiting for keywords ({n})", n=n),
+        "label": f"Imported articles waiting for keywords ({n})",
+        "state": "paused",
+        "progress": None,
+        "actions": ["resume"],
+    }]
+
+
 def _llm_queue_jobs() -> list[dict]:
     """The server-side bulk summarize/translate queue (R600's second PR): each run waiting its turn (Cancel), or the queue a
     restart paused (Resume / Cancel). The running run is the ``llm`` task row. Local work: a resume opens no connection."""
@@ -952,6 +992,25 @@ _DB_WRITER_KINDS = ("collect", "import", "reindex", "quarantine") + (
 )
 
 
+def _registry_writer_kinds() -> set[str]:
+    """Every registered background job kind flagged ``is_writer`` (R659: the arbitration list is derived, never only kept by hand)."""
+    from src.jobs.background import all_job_statuses
+
+    return {str(s["kind"]) for s in all_job_statuses() if s.get("is_writer")}
+
+
+def _import_refusal() -> str | None:
+    """The refusal a committing restore would raise now (R659), read without stopping anything; None when it would go ahead."""
+    try:
+        from src.backup.merge import _WRITER_JOBS_REFUSAL
+        from src.jobs.background import running_writer_jobs
+
+        running = running_writer_jobs(include_stoppable=False)
+    except Exception:  # noqa: BLE001 - the import's own check still refuses; the page then shows the server's sentence
+        return None
+    return _WRITER_JOBS_REFUSAL.format(jobs="; ".join(label for _kind, label in running)) if running else None
+
+
 @router.get("")
 def list_jobs() -> dict:
     """Every visible job, aggregated LIVE from the owning systems (no shadow
@@ -979,6 +1038,7 @@ def list_jobs() -> dict:
     jobs.extend(_background_jobs())
     jobs.extend(_task_jobs())
     jobs.extend(_llm_queue_jobs())
+    jobs.extend(_reindex_backlog_rows())
     f = _live_fetch()
     if f:
         jobs.append(f)
@@ -989,7 +1049,10 @@ def list_jobs() -> dict:
     # writer lock nor (usually) hosts. The arbitration ASK therefore fires
     # only for DB-WRITER collisions (collect/import kinds); bulk downloads
     # keep their own single-download, reorderable queue among themselves.
-    db_writers = [j for j in running if j["kind"] in _DB_WRITER_KINDS]
+    # ONE LIST (R659): the hand-kept kinds above (the owners that are not registry jobs) plus every registered job flagged
+    # ``is_writer``, read from the registry itself, so the ask and the restore's refusal name the same writers.
+    writer_kinds = set(_DB_WRITER_KINDS) | _registry_writer_kinds()
+    db_writers = [j for j in running if j["kind"] in writer_kinds]
     return {
         "jobs": jobs,
         "running": len(running),
@@ -997,6 +1060,10 @@ def list_jobs() -> dict:
         "network_busy": bool(running),
         "db_writers_busy": bool(db_writers),
         "busy_with": [f"{j['kind']}: {j['label']}" for j in db_writers],
+        # What a committing import would answer right now (R659): the refusal it would raise, or None. The import page reads it before it
+        # starts, so it never offers "Start anyway?" for an import the server is about to refuse. A job the restore stops for itself
+        # (``stops_for_restore``) is left out, because the import stops it rather than refusing.
+        "import_refused": _import_refusal(),
         "running_with": [f"{j['kind']}: {j['label']}" for j in running],
         "method": (
             "Aggregated live from the scheduler, the dump manager and the "
@@ -1189,6 +1256,18 @@ def resume_job(job_id: str) -> dict:
         if not get_queue().resume():
             raise HTTPException(status_code=404, detail="Nothing paused to resume.")
         return {"resumed": job_id, "detail": "Summary & translation queue resumed."}
+    if job_id == "reindex-backlog":
+        # Local work, no network. Refused while a restore or import holds the machine: what it wrote into the file about to
+        # be swapped would be discarded (the restore restarts the job itself when it ends).
+        from src.scheduler.runner import get_scheduler
+
+        if get_scheduler().holds_exclusive():
+            raise HTTPException(status_code=409, detail="An import or restore is using the machine; it finishes the re-index itself.")
+        from src.api.backup_v2 import reindex_backlog_resume
+
+        reindex_backlog_resume()
+        _backlog_cache["value"] = None
+        return {"resumed": job_id, "detail": "Re-indexing the imported articles."}
     if job_id.startswith("dump:"):
         from src.wiki.dumps import get_manager
 

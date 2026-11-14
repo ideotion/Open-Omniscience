@@ -49,6 +49,19 @@ its handle, whether or not it wrote, and a thread queued on the gate with a conn
 build's boundary check avoids on purpose (``rollup_serve._require_library_unchanged`` never waits for the window); it is not exercised here. The
 engine of ``read_snapshot`` is a second guarded engine (``guarded_creator`` + ``attach``): a rule keyed on a connection count must cover both.
 
+THE RULING (R660, 2026-11-13, OPEN_QUEUE item 18 / R338, R340): closed as this STATED LIMIT, with no build. ``connecting()`` does not
+refuse a thread that already holds a connection: the shapes above need a writer the gate does not see, and the shipped app has none that runs
+during a repair. So that a LATER such writer cannot arrive unseen, ``test_every_raw_write_lock_transaction_in_src_is_classified`` below pins
+every ``BEGIN IMMEDIATE`` / ``BEGIN EXCLUSIVE`` a statement in ``src/`` issues (the transaction the gate does not see, which is what holds
+SQLite's write lock outside it), file by file, each with the reason it cannot meet the repair's window. A new one fails that test until its
+row says why, or until item 18's refusal on the swap path is built.
+
+WHAT THAT GUARD DOES NOT SEE, stated so it is not read as more than it is: it matches the literal text ``BEGIN IMMEDIATE`` / ``BEGIN
+EXCLUSIVE`` only. An ungated writer that takes the write lock another way (a Core ``engine.begin()`` or ``exec_driver_sql`` write, a plain
+``BEGIN`` followed by a write, a raw ``sqlite3`` connection's implicit transaction) passes it, and so does a site that moves inside a file
+already pinned, since it counts per file. The limit itself is unchanged by that: it rests on the shipped app having no such writer during a
+repair, which this test checks only for its commonest spelling.
+
 No test here reads a clock for its verdict: the ORDER is asserted (the creator had not run for the second connection when the probe failed and the
 writer was inside the wait or queued on the gate; it had when the window was over), and the 0.5 s is the probe's own busy timeout, which the property does not
 depend on.
@@ -302,3 +315,48 @@ def test_a_thread_that_touches_its_connection_again_lets_go_and_the_probe_goes_t
     assert seen["invalidated"] is True
     assert moved == [False], "the writer's row was never committed, so the file did not move"
     assert world.untouched()
+
+
+#: R660: every raw write-lock transaction a statement in ``src/`` opens, by file (the count of statements), each with why it cannot hold
+#: SQLite's lock across the repair's window. Docstrings and comments are not counted; a string a statement uses is.
+_RAW_WRITE_LOCK_SITES: dict[str, tuple[int, str]] = {
+    "src/analytics/day_counts.py": (1, "install(): the trigger DDL, run by init_db's ensure_day_counts at launch, unlock and after a swap"),
+    "src/backup/country_migration.py": (6, "the app-stopped alpha-3 migration: it holds the file with locking_mode=EXCLUSIVE, the app cannot run"),
+    "src/backup/merge.py": (4, "the merge into the restore's disposable working copy, never the live file"),
+    "src/database/repair.py": (1, "the repair's own probe (_Probe.moved), the read this file tests"),
+    "src/database/source_identity.py": (3, "the source-identity DDL steps of init_db (launch, unlock, after a swap): named in this file's docstring"),
+    "src/monitoring/merge_diag.py": (1, "a diagnostic merge into a scratch database it creates"),
+}
+
+
+def _raw_write_lock_sites() -> dict[str, int]:
+    import ast
+    import re
+
+    root = Path(__file__).resolve().parents[1]
+    found: dict[str, int] = {}
+    for path in sorted((root / "src").rglob("*.py")):
+        tree = ast.parse(path.read_text("utf-8"))
+        docstrings = {id(n.value) for n in ast.walk(tree) if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant)}
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and id(node) not in docstrings
+                and re.search(r"BEGIN\s+(IMMEDIATE|EXCLUSIVE)", node.value, re.IGNORECASE)
+            ):
+                rel = path.relative_to(root).as_posix()
+                found[rel] = found.get(rel, 0) + 1
+    return found
+
+
+def test_every_raw_write_lock_transaction_in_src_is_classified() -> None:
+    """R660: the limit above holds only while no ungated writer can take SQLite's write lock during a repair. A new raw ``BEGIN IMMEDIATE``
+    or ``BEGIN EXCLUSIVE`` in ``src/`` is the commonest spelling of that kind of writer; it fails here until it is classified (or item 18's
+    refusal is built). Other spellings pass (the module docstring names them)."""
+    found = _raw_write_lock_sites()
+    pinned = {path: count for path, (count, _why) in _RAW_WRITE_LOCK_SITES.items()}
+    assert found == pinned, (
+        "a raw write-lock transaction appeared, moved or went away: classify it in _RAW_WRITE_LOCK_SITES with why it cannot hold SQLite's "
+        f"lock across the repair's window (R660; OPEN_QUEUE item 18). found={found}"
+    )

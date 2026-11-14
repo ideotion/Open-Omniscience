@@ -2301,6 +2301,34 @@ def test_ui_invariants():
         "the climate fetch passes the ONE consent popup before it asks the server (#33, #14)"
     )
     assert "consent: true" in _fetch_body, "the climate fetch says consent:true, the endpoint refuses without it (#14f)"
+    # 34. Simple mode (R682): ONE top-bar switch turns a task-first second interface on and off over
+    #     the same page; never-hidden surfaces stay visible in it, going online passes the full app's
+    #     own consent path, and its renderer is vendored locally. Behaviour: tests/test_simple_mode.py.
+    _index = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    _topbar = _index.split('<header class="topbar">', 1)[1].split("</header>", 1)[0]
+    assert 'id="ui-simple-toggle" role="switch"' in _topbar, "the simple-mode switch lives in the top bar (#34)"
+    assert '<script src="/static/simple/boot.js"></script>' in _index.split("</head>", 1)[0], (
+        "simple mode's flag is read in <head>, before first paint (#34)"
+    )
+    _simple_js = (_SRC / "static" / "simple" / "simple.js").read_text(encoding="utf-8")
+    assert "window.toggleNetwork()" in _simple_js, "simple mode goes online through the full app's ONE consent path (#34)"
+    for _opts in re.findall(r"""/api/system/network['"`]\s*,\s*\{([^}]*)\}""", _simple_js):
+        assert not re.search(r"\bmethod\b", _opts, re.I), (
+            "simple mode never sends its own request to /api/system/network: going online is toggleNetwork's (#34, #14)"
+        )
+    # Wherever a method key hides (a nested body, an options variable), simple mode's only write is adding a source.
+    assert len(re.findall(r"""\bmethod\s*:\s*["'`](?:get|post|put|patch|delete)\b""", _simple_js, re.I)) == len(
+        re.findall(r"""apiCall\(\s*["'`]/api/sources/\??["'`]\s*,\s*\{\s*method\s*:""", _simple_js)
+    ) == 1, "simple mode's one write is POST /api/sources/ (#34, #14)"
+    # 35. R684: every route no UI calls is listed with a reason, and the count of reader features
+    #     without a button only goes down. Behaviour: tests/test_routes_have_a_caller.py.
+    _ratchet = _ROOT / "tests" / "test_routes_have_a_caller.py"
+    assert _ratchet.exists() and "FEATURE_CEILING" in _ratchet.read_text(encoding="utf-8"), (
+        "the route-caller ratchet exists and holds a feature ceiling (CLAUDE.md #35, R684)"
+    )
+    assert (_ROOT / "configs" / "routes_without_ui.tsv").exists(), (
+        "routes no UI calls are listed with their reason (CLAUDE.md #35, R684)"
+    )
     # 8. external links ALWAYS confirmed via popup before opening (ruled
     #    2026-06-10) — delegated capture-phase guard in the UI.
     assert "_externalLinkGuard" in html, (
@@ -8333,7 +8361,9 @@ def test_docs_index_covers_live_docs():
 #: amendment is the growth the clause above calls normal.
 #: RAISED 2026-10-06: 792 -> 796, four lines amending protocol rule (5a)(b): a lesson and a shipped-log
 #: entry are each a NEW FILE (docs/ledger/lessons.d/, shipped_log.d/), never an append to the archives.
-_CLAUDE_MD_LINE_CEILING = 802
+#: RAISED 2026-11-13/14: 802 -> 817, UI invariants #34 (simple mode, R682, ten lines) and #35 (every route has
+#: a button or a listed reason, R684, five lines).
+_CLAUDE_MD_LINE_CEILING = 817
 
 
 def _claude_md_lines() -> int:

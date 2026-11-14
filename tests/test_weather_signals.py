@@ -164,29 +164,40 @@ class _StubFetcher:
         return _StubFetched()
 
 
-@pytest.mark.parametrize("cached_text", ["[1, 2]", "42", '"text"', "null", "{not json", ""])
-def test_a_cache_file_that_is_not_a_slice_is_a_miss_not_a_500(data_dir, cached_text):
-    """Valid JSON that is not an object used to raise TypeError out of the cache read (both weather routes answered 500)."""
-    from src.weather import openmeteo
+@pytest.fixture()
+def kv_box(monkeypatch):
+    """The encrypted key-value store as a dict: slices live there since R683, never in a file."""
+    box: dict = {}
+    monkeypatch.setattr("src.config.kv_store.kv_get_json", lambda k: box.get(k))
+    monkeypatch.setattr("src.config.kv_store.kv_set_json", lambda k, v: box.__setitem__(k, v))
+    return box
+
+
+@pytest.mark.parametrize("held_value", [[1, 2], 42, "text", None, {"ok": False}, {"ok": True, "daily": {}}])
+def test_a_held_row_that_is_not_a_slice_is_a_miss_not_a_500(data_dir, kv_box, held_value):
+    """A held row that is not a slice for this URL (not an object, not ok, no provenance naming the URL) is a
+    miss and is refetched, never a TypeError out of the read (both weather routes used to answer 500)."""
+    from src.weather import held, openmeteo
 
     start, end = date(2026, 1, 1), date(2026, 1, 1)
     url = openmeteo.build_archive_url(10.0, 20.0, start, end, ["temperature_2m_max"])
-    openmeteo.cache_path(url).write_text(cached_text, encoding="utf-8")
+    kv_box[held.slice_key(url)] = held_value
     fetcher = _StubFetcher()
     got = openmeteo.fetch_daily_slice(10.0, 20.0, start, end, ["temperature_2m_max"], fetcher=fetcher)
-    assert got["ok"] is True and got["cached"] is False
+    assert got["ok"] is True and got["cached"] is False and got["kept"] is True
     assert fetcher.calls == 1
-    # the bad file was replaced by the fetched slice, so the next read is a hit
+    # the bad row was replaced by the fetched slice, so the next read is a hit
     again = openmeteo.fetch_daily_slice(10.0, 20.0, start, end, ["temperature_2m_max"], fetcher=fetcher)
     assert again["cached"] is True and fetcher.calls == 1
+    assert not (data_dir / "weather_context").exists(), "no plaintext slice file"
 
 
-def test_a_cache_file_holding_a_slice_is_still_served(data_dir):
-    from src.weather import openmeteo
+def test_a_held_slice_is_still_served(data_dir, kv_box):
+    from src.weather import held, openmeteo
 
     start, end = date(2026, 1, 1), date(2026, 1, 1)
     url = openmeteo.build_archive_url(10.0, 20.0, start, end, ["temperature_2m_max"])
-    openmeteo.cache_path(url).write_text('{"ok": true, "daily": {"time": []}}', encoding="utf-8")
+    kv_box[held.slice_key(url)] = {"ok": True, "daily": {"time": []}, "provenance": {"requested_url": url}}
     fetcher = _StubFetcher()
     got = openmeteo.fetch_daily_slice(10.0, 20.0, start, end, ["temperature_2m_max"], label="x", fetcher=fetcher)
     assert got["cached"] is True and got["label"] == "x" and fetcher.calls == 0

@@ -247,6 +247,37 @@ def _cleanup(created: list[Path]) -> None:
             return
 
 
+def write_env_file(env: Path, body: str) -> None:
+    """Replace ``oo.env`` with ``body`` whole, or leave the old file whole; raises ``OSError``.
+
+    Through a temp file in the same directory, fsynced, then ``os.replace``: ``scripts/launch.sh``
+    SOURCES this file, so a crash mid-write must leave the previous choice intact rather than a
+    truncated file the next launch reads as "no data folder chosen" (and opens the default folder,
+    which looks to the person like an empty app). Every writer of ``oo.env`` goes through here:
+    ``persist`` below and ``data_volume.forget_volume_id`` (which wrote it in place until the
+    2026-11-13 audit recheck, P4).
+    """
+    fd, tmp_name = tempfile.mkstemp(prefix=".oo-env-", dir=str(env.parent))
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(body)
+            fh.flush()
+            os.fsync(fh.fileno())
+        # 0600, as install.sh records it. MEASURED redundant today and kept anyway,
+        # with the measurement written down so nobody re-finds it as a survivor and
+        # writes a vacuous test for it: `tempfile.mkstemp` already creates the file
+        # 0600 (verified: it returns 0o600), and `os.replace` preserves the source
+        # mode, so removing this line changes no outcome. It stays because it states
+        # OUR requirement rather than inheriting the stdlib's -- the day this stops
+        # going through mkstemp, the requirement is still here.
+        os.chmod(tmp, stat.S_IRUSR | stat.S_IWUSR)
+        os.replace(tmp, env)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def persist(raw: str) -> dict[str, Any]:
     """Record the choice in ``oo.env`` so the next launch uses it. Idempotent.
 
@@ -285,24 +316,9 @@ def persist(raw: str) -> dict[str, Any]:
     kept.append(f"export {ENV_ID}={volume_id}")
     body = "\n".join(kept) + "\n"
 
-    fd, tmp_name = tempfile.mkstemp(prefix=".oo-env-", dir=str(env.parent))
-    tmp = Path(tmp_name)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(body)
-            fh.flush()
-            os.fsync(fh.fileno())
-        # 0600, as install.sh records it. MEASURED redundant today and kept anyway,
-        # with the measurement written down so nobody re-finds it as a survivor and
-        # writes a vacuous test for it: `tempfile.mkstemp` already creates the file
-        # 0600 (verified: it returns 0o600), and `os.replace` preserves the source
-        # mode, so removing this line changes no outcome. It stays because it states
-        # OUR requirement rather than inheriting the stdlib's -- the day this stops
-        # going through mkstemp, the requirement is still here.
-        os.chmod(tmp, stat.S_IRUSR | stat.S_IWUSR)
-        os.replace(tmp, env)
+        write_env_file(env, body)
     except OSError as exc:
-        tmp.unlink(missing_ok=True)
         return {"saved": False, "reason": f"could not write {env}: {record_text(exc)}", **pre}
 
     return {

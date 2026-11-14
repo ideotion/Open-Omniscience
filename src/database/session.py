@@ -344,6 +344,12 @@ SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, futu
 # Back-compat alias: a lot of existing code does ``from ...models import Session``.
 Session = SessionLocal
 
+from src.database import after_shutdown as _after_shutdown  # noqa: E402
+
+# Every engine refuses a job the shutdown stopped waiting for (R689); idle cost: one dict read. Installed BEFORE the write gate's
+# listeners, so a refused commit is refused before the gate opens a commit segment it would never close.
+_after_shutdown.install()
+
 # The single-writer gate (keystone #1): serialise every write through one
 # in-process queue so two writers never collide on the SQLite write lock. Wired
 # via session events so ORM write paths need no call-site change; SQLite only

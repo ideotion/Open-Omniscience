@@ -887,9 +887,18 @@
       const curEmph = (cfg && cfg.language_equilibrium) || {};
       const covTags = (cov && cov.tags) || [];
       const byTotal = {}; covTags.forEach((x) => { byTotal[x.tag] = x.total || 0; });
-      let tags = covTags.map((x) => x.tag).filter((x) => x && x !== "(untagged)");
+      // A `via:<origin>` tag records WHICH LIST a source came from (src/catalog/
+      // provenance_scope.py), not what it writes about, so it is no theme: "via:curated" was
+      // the first "theme" a new reader was offered. The seed plan drops them from its theme
+      // view for the same reason (src/ingest/seed_plan.py). One exception: a via: tag an
+      // earlier config ALREADY filters on is shown, checked, like any other pick, so the
+      // filter stays visible and the reader can untick it; it is never kept out of sight.
+      let tags = covTags.map((x) => x.tag).filter((x) => x && x !== "(untagged)"
+        && (x.indexOf("via:") !== 0 || curTags.indexOf(x) >= 0));
       tags.sort((a, b) => (byTotal[b] || 0) - (byTotal[a] || 0));   // top themes by source count
-      tags = tags.slice(0, 16);
+      // The top 16, plus every tag the config already filters on even if it ranks lower: a
+      // chosen tag that is not drawn is missing from the picks and would be dropped on save.
+      tags = tags.slice(0, 16).concat(tags.slice(16).filter((x) => curTags.indexOf(x) >= 0));
       if (!tags.length) {
         box.innerHTML = `<div class="muted">${esc(_gwT("Themes will appear once your sources are set up. Your app collects from every source by default."))}</div>`;
       } else {
@@ -984,6 +993,11 @@
       if (typeof dlg.showModal === "function" && !dlg.open) dlg.showModal();
       else dlg.setAttribute("open", "");
       if (window.OOI18N && OOI18N.apply) OOI18N.apply(dlg);  // translate freshly-shown chrome
+      // A modal focuses its first focusable control, which here is the ✕: its "Close" bubble
+      // then opened over the guide's first line on every first run (lane N walk, 2026-11-13).
+      // Focus goes to the "what this app does" lines instead (tabindex -1), so a screen reader
+      // starts there and Tab then reaches the depth choice before Next.
+      { const intro = dlg.querySelector(".gw-intro"); if (intro && typeof intro.focus === "function") intro.focus(); }
       // Product feedback 2026-07-17: the network-status poll that decides whether to
       // show the airplane-mode coachmark runs independently of (and typically resolves
       // before) this wizard opening, so the coach could already be showing when the
@@ -1042,7 +1056,10 @@
           return;   // let the user retry or choose "Stay offline" instead of closing on failure
         }
         if (typeof _flashNet === "function") _flashNet(true);
-        toast(t("Back online — network requests allowed again."), "ok");
+        // The first-run reader is told WHERE the first result will appear (lane N): the
+        // collector starts by itself, so without this the guide closed on an empty Home
+        // with nothing saying what to do next. No time is promised: it depends on the network.
+        toast(t("Collecting now. The first articles appear in Feed as they arrive, then in Home and Explore."), "ok");
         // Once online the background collector runs continuously on its own (only
         // airplane mode stops it) — no manual seed/ingest step or progress card needed.
         closeGuide(true);
@@ -1565,7 +1582,10 @@
       try {
         const nm = await api("/api/system/network");
         _paintNetwork(nm.online);
-        if (nm.online) return true;
+        // Already online: no popup to show. A caller whose request names something personal (a place,
+        // R683) passes confirmIfOnline, and that plain confirmation is asked here, on the SAME read that
+        // decided there was no popup, so no state change between two reads can skip both.
+        if (nm.online) return opts.confirmIfOnline ? window.confirm(opts.confirmIfOnline) : true;
       } catch (_e) { /* fall through to consent — flipping online still asks */ }
       if (opts.skipDialog) return _postGoOnline();
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -1964,6 +1984,14 @@
       if (_nf) {
         return tf("The backup without newsletters was stopped: the clean copy of your corpus could not be made ({reason}). No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead.", { reason: iso(_nf[1]) });
       }
+      // backup/merge.py _WRITER_JOBS_REFUSAL (R659): a restore refused while a background job writes to the corpus. Whole message only;
+      // the jobs are the registry's own labels, each translated where the page has it, joined by "; ".
+      const _wj = /^a background job is writing to your corpus \((.+)\) — nothing was imported, and nothing was written to your corpus\. What it writes during an import would be lost when your corpus is switched\. Let it finish, or stop it if it can be stopped, then import again\.$/.exec(s.trim());
+      if (_wj) {
+        return tf("A background job is writing to your corpus ({jobs}). Nothing was imported and nothing in your corpus changed: what it writes during an import would be lost when your corpus is switched. Let it finish, or stop it if it can be stopped, then import again.", {
+          jobs: _wj[1].split("; ").map((x) => t(x)).join("; "),
+        });
+      }
       for (const [re, kind] of _OO_SPACE_RES) {
         const m = re.exec(s);
         if (!m) continue;
@@ -2165,9 +2193,23 @@
       if (phase === "memory-stop") return "The app is stopping itself because memory stayed exhausted";
       // Nor is the check after an unexpected stop: it is the app reading its own files, never a limit to override.
       if (phase === "paused-verifying") return "Paused: checking the data files after an unexpected stop";
+      // The memory guard's pause (runner.py): collection waits for memory to come back; its own Resume, not the override.
+      if (phase === "paused-low-memory") return "Paused: low memory";
       if (g && g.overridden) return null;
       return { "paused-wal-pinned": "Paused: the database log has grown too large",
                "paused-low-disk": "Paused: the data drive is nearly full" }[phase] || null;
+    }
+    // The low-memory pause's Resume: a retry, never an override -- the guard pauses again if memory is still low.
+    function _memResumeBtn(t) {
+      return `<button class="tiny secondary" title="${esc(t("Collection pauses again if memory is still low."))}" data-on-click="memoryGuardResume()">${esc(t("Resume"))}</button>`;
+    }
+    async function memoryGuardResume() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      try {
+        await api("/api/scheduler/memory-guard/resume", {method: "POST"});
+        toast(t("Resumed."));
+        if (typeof _pollVitals === "function") _pollVitals();
+      } catch (e) { toast(e.message, "err"); }
     }
     async function storageGuardResume() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
@@ -2232,7 +2274,7 @@
         nowHtml = row(esc(t9("Now collecting")), a.active
           ? `<span class="muted">${esc(t9(_phaseTxt || "Collecting…"))}</span>`
           : _pausedTxt
-            ? `<span class="pill warn">${esc(t9(_pausedTxt))}</span>`
+            ? `<span class="pill warn">${esc(t9(_pausedTxt))}</span>` + (a.phase === "paused-low-memory" ? " " + _memResumeBtn(t9) : "")
           : a.running
             ? `<span class="muted">${esc(t9("idle"))}</span>${mins != null ? ` · <span title="${esc(fmtDateTime(a.next_run))}">⏱ ${esc(tf("{n} min", {n: mins}))}</span>` : ""}`
             : `<span class="muted">${esc(t9("scheduler stopped"))}</span>`);
@@ -2568,7 +2610,7 @@
         // Local work the server lists actions for, drawn as listed (R600's second PR): the bulk
         // summary & translation queue (a waiting run's Cancel; the paused queue's Resume / Cancel)
         // and the Insights backlog drain (Cancel). Local model and DB work: a resume asks nothing.
-        if (j.kind === "llm-bulk-queue" || j.kind === "insights-backlog") {
+        if (j.kind === "llm-bulk-queue" || j.kind === "insights-backlog" || j.kind === "reindex-backlog") {
           const a = Array.isArray(j.actions) ? j.actions : [];
           if (a.includes("resume"))
             acts.push(`<button class="tiny secondary" data-on-click="jobResume(${esc(JSON.stringify(j.id))}, true)">${esc(t("Resume"))}</button>`);
@@ -2733,7 +2775,7 @@
       if (a.active) {
         stateHtml = `<span class="pill ok">${esc(t("running — collection in progress"))}</span>`;
       } else if (pausedTxt) {
-        stateHtml = `<span class="pill warn">${esc(t(pausedTxt))}</span>`;
+        stateHtml = `<span class="pill warn">${esc(t(pausedTxt))}</span>` + (a.phase === "paused-low-memory" ? " " + _memResumeBtn(t) : "");
       } else if (a.running) {
         stateHtml = `<span class="pill ok">${esc(t("running"))}</span>`;
       } else {

@@ -50,7 +50,8 @@ def cgroup_available_mb(root: str | None = None, proc_cgroup: str | None = None)
     head = reading.get("headroom_bytes")
     limit = reading.get("limit_bytes")
     source = reading.get("source")
-    out: dict[str, Any] = {"available_mb": None, "limit_mb": None, "source": source, "unreadable": bool(reading.get("unreadable"))}
+    out: dict[str, Any] = {"available_mb": None, "limit_mb": None, "min_limit_mb": None, "source": source,
+                           "unreadable": bool(reading.get("unreadable"))}
     if head is None or limit is None or source is None:
         return out
     # The reclaimable cache is added PER LEVEL and the tightest result wins: the level with the smallest raw headroom is not
@@ -59,8 +60,10 @@ def cgroup_available_mb(root: str | None = None, proc_cgroup: str | None = None)
     levels = reading.get("levels") or [{"source": source, "limit_bytes": limit, "used_bytes": max(0, limit - head),
                                          "path": reading.get("path") or "/"}]
     avail: int | None = None
+    min_limit: int | None = None
     for lvl in levels:
         l_limit, l_used = lvl["limit_bytes"], lvl["used_bytes"]
+        min_limit = l_limit if min_limit is None else min(min_limit, l_limit)
         inactive = _inactive_file_bytes(root or reader.CGROUP_ROOT, lvl["source"], lvl["path"])
         reclaim = min(inactive, l_used) if inactive is not None else 0
         room = max(0, l_limit - l_used + reclaim)  # usage can sit above the limit (v1, or briefly v2): never overstate
@@ -68,6 +71,9 @@ def cgroup_available_mb(root: str | None = None, proc_cgroup: str | None = None)
             avail, limit = room, l_limit
     out["available_mb"] = round((avail if avail is not None else head) / (1024 * 1024), 1)
     out["limit_mb"] = round(limit / (1024 * 1024), 1)
+    # The smallest limit at any level is the most memory this process can ever hold, the figure a "how much RAM" tier needs; the
+    # limit of the tightest-ROOM level above answers "how much is free now" and can be a larger one.
+    out["min_limit_mb"] = round((min_limit if min_limit is not None else limit) / (1024 * 1024), 1)
     return out
 
 
@@ -87,3 +93,55 @@ def smaller_available_mb(machine_mb: float | None, cgroup: dict[str, Any] | None
     if cg.get("unreadable"):
         return machine_mb, "machine (a cgroup limit could not be read)"
     return machine_mb, "machine"
+
+
+def smaller_total_mb(machine_mb: float | None, cgroup: dict[str, Any] | None = None) -> tuple[float | None, str]:
+    """The smaller of the machine's total memory and the tightest cgroup limit, and which one it was (names as
+    :func:`smaller_available_mb`)."""
+    try:
+        cg = cgroup if cgroup is not None else cgroup_available_mb()
+    except Exception:  # noqa: BLE001 - an unreadable cgroup is no figure, never a verdict of its own
+        return machine_mb, "machine"
+    lim = cg.get("min_limit_mb")
+    if lim is not None and (machine_mb is None or lim < machine_mb):
+        return lim, "cgroup limit"
+    if cg.get("unreadable"):
+        return machine_mb, "machine (a cgroup limit could not be read)"
+    return machine_mb, "machine"
+
+
+def machine_memory_mb() -> tuple[float | None, float | None]:
+    """``(total_mb, available_mb)`` as psutil reads them for the whole machine; either is None when it cannot be read."""
+    try:
+        import psutil
+
+        vm = psutil.virtual_memory()
+        return vm.total / (1024 * 1024), vm.available / (1024 * 1024)
+    except Exception:  # noqa: BLE001 - psutil is an optional extra
+        return None, None
+
+
+def effective_memory(
+    machine_total_mb: float | None = None,
+    machine_available_mb: float | None = None,
+    *,
+    cgroup: dict[str, Any] | None = None,
+    read_machine: bool = True,
+) -> dict[str, Any]:
+    """THE memory reading every memory verdict takes: the machine's figures bounded by the cgroup this process is in.
+
+    ``{"total_mb", "total_from", "available_mb", "available_from"}``; each ``*_from`` names the figure used, as
+    :func:`smaller_available_mb` does, so a verdict can say whether it judged by the cgroup limit or the machine. A value passed in
+    replaces the psutil reading of that figure (``read_machine=False`` reads neither). The cgroup is read once for both figures.
+    """
+    if read_machine and (machine_total_mb is None or machine_available_mb is None):
+        t, a = machine_memory_mb()
+        machine_total_mb = t if machine_total_mb is None else machine_total_mb
+        machine_available_mb = a if machine_available_mb is None else machine_available_mb
+    try:
+        cg = cgroup if cgroup is not None else cgroup_available_mb()
+    except Exception:  # noqa: BLE001 - an unreadable cgroup leaves the machine's figures
+        cg = {}
+    total, total_from = smaller_total_mb(machine_total_mb, cg)
+    avail, avail_from = smaller_available_mb(machine_available_mb, cg)
+    return {"total_mb": total, "total_from": total_from, "available_mb": avail, "available_from": avail_from}
