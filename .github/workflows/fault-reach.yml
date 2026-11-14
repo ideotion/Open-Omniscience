@@ -1,0 +1,53 @@
+# Fault-reach audit (OPEN_QUEUE item 30, R412: "the vacuous-fault audit as a weekly report job").
+#
+# Open Omniscience - Global Intelligence Platform for Investigative Journalism
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+#
+# Weekly, this runs scripts/fault_reach_audit.py: every test that installs a fault stub (a raising function, a .throw lambda, a Mock
+# with an exception side_effect) is run under tests/fault_reach.py, and a test whose fault never fires is compared with the reviewed
+# baseline tests/fault_reach_baseline.txt. A NEW one, or a baseline line gone stale, keeps ONE rolling issue (label "fault-reach")
+# open with the list; a clean week closes it. It never gates a PR: the hand reading is the expensive part, and a new fault test is
+# read once, here, not on every PR. The job goes red when the list is not empty, so the run itself also says so.
+name: Fault reach
+
+on:
+  schedule:
+    - cron: "30 6 * * 1"  # Mondays 06:30 UTC, after freshness.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: fault-reach
+  cancel-in-progress: false
+
+jobs:
+  fault-reach:
+    runs-on: ubuntu-latest
+    name: Fault-reach audit
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python 3.13
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Install (core + analysis + dev + segmentation + pdf + ocr + geo, as the test legs)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tesseract-ocr
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[analysis,dev,segmentation,pdf,ocr,geo]"
+      - name: Run the audit and keep the rolling issue in step
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/fault_reach_audit.py -n auto --issue --report "$RUNNER_TEMP/fault-reach-report.md"
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fault-reach-report
+          path: ${{ runner.temp }}/fault-reach-report.md
+          if-no-files-found: ignore
