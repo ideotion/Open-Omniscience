@@ -115,25 +115,37 @@ def run_concurrent(
     # DAEMON worker threads, not a ThreadPoolExecutor: ``concurrent.futures`` joins every executor worker at interpreter exit, so a
     # generation a stop abandoned (R689) kept the process alive after the shutdown until the model answered (vLLM's client allows
     # 180 s). The waiting here is the same: this call returns once every item has its result.
-    pending = list(enumerate(items))
+    pending = iter(list(enumerate(items)))
     lock = threading.Lock()
+    # A BaseException (KeyboardInterrupt, SystemExit, a GeneratorExit raised through) is not an item's failure: the pool raised it
+    # again from ``fut.result()``, so it is kept here and raised to the caller once the workers have ended, as before.
+    raised: list[BaseException] = []
 
     def _worker() -> None:
         while True:
             with lock:
-                if not pending:
+                if raised:
                     return
-                i, it = pending.pop(0)
+                nxt = next(pending, None)
+            if nxt is None:
+                return
+            i, it = nxt
             try:
                 out[i] = ConcurrentResult(ok=True, value=run(it))
             except Exception as exc:  # noqa: BLE001 - isolate per item, never abort the batch
                 out[i] = ConcurrentResult(ok=False, error=exc)
+            except BaseException as exc:  # noqa: BLE001 - kept and raised by the caller's thread below
+                with lock:
+                    raised.append(exc)
+                return
 
     threads = [threading.Thread(target=_worker, name=f"oo-llmbatch_{n}", daemon=True) for n in range(workers)]
     for t in threads:
         t.start()
     for t in threads:
         t.join()
+    if raised:
+        raise raised[0]
     return out
 
 

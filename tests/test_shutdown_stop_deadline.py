@@ -188,6 +188,30 @@ def test_a_resumed_run_counts_as_its_own_only_what_it_stored_before_the_stop(que
     assert [_summaries(a) for a in ids] == [1, 1, 1], "an article was stored twice or skipped"
 
 
+def test_a_stop_before_the_replay_ends_never_loses_the_runs_own_stored_count(queue, monkeypatch):
+    """Opus read: a resume zeroes ``stored`` and earns it back from the replayed lines, so a stop before they were all replayed
+    used to save the partial count, and the next resume put the run's own earlier work under skipped."""
+    fake = _SlowLlm(hang_on=3)
+    _use(monkeypatch, fake)
+    ids = _seed(3)
+    eid = queue.enqueue({"op": "summarize", "model": "m", "article_ids": ids, "skip_existing": False})["entry"]["id"]
+    try:
+        assert fake.started.wait(10)
+        assert lbq.KIND not in bg.stop_all_jobs(5.0)
+    finally:
+        fake.hold.set()
+    assert llm_api.wait_abandoned_generations(lambda: False)
+    with queue._lock:  # what a stop that landed before the first replayed line leaves: nothing replayed, all of it still owed
+        entry = {e["id"]: e for e in queue._entries}[eid]
+        assert entry["stored"] == 2, entry
+        entry["prior_stored"], entry["stored"] = 2, 0
+    assert queue.resume() and lbq._JOB.join(15)
+    final = {e["id"]: e for e in queue.snapshot()["entries"]}[eid]
+    assert final["state"] == "done", final
+    assert (final["stored"], final["skipped"]) == (3, 0), final
+    assert [_summaries(a) for a in ids] == [1, 1, 1]
+
+
 def test_a_stop_during_run_setup_pauses_the_run_before_any_selection_or_model_call(queue, monkeypatch):
     """The machine probe is the slow part of setup: the stop is looked at right after it, before the selection and the model."""
     fake = _FakeLlm()
@@ -199,6 +223,9 @@ def test_a_stop_during_run_setup_pauses_the_run_before_any_selection_or_model_ca
         return ("ollama", fake)
 
     monkeypatch.setattr("src.api.llm.get_llm_client_with_name", _slow_probe)
+    prepared: list[bool] = []
+    real_prepare = llm_api.prepare_bulk_run
+    monkeypatch.setattr(llm_api, "prepare_bulk_run", lambda *a, **k: prepared.append(True) or real_prepare(*a, **k))
     ids = _seed(2)
     eid = queue.enqueue({"op": "summarize", "model": "m", "article_ids": ids})["entry"]["id"]
     assert probing.wait(10)
@@ -206,7 +233,22 @@ def test_a_stop_during_run_setup_pauses_the_run_before_any_selection_or_model_ca
     assert lbq.KIND not in bg.stop_all_jobs(5.0)
     assert time.monotonic() - t0 < 2.5
     assert {e["id"]: e["state"] for e in queue.snapshot()["entries"]}[eid] == "paused"
+    assert prepared == [], "the selection ran after the stop"
     assert fake.calls == [] and [_summaries(a) for a in ids] == [0, 0]
+
+
+def test_prepare_bulk_run_looks_at_the_stop_before_it_registers_anything(monkeypatch):
+    """The second look, inside setup: after the selection and the model name, before a task row or the model is touched."""
+    from src.database.session import SessionLocal
+    from src.monitoring import tasks as _tasks
+
+    fake = _FakeLlm()
+    ids = _seed(1)
+    before = len(_tasks.snapshot())
+    req = llm_api.BulkLLMRequest(op="summarize", model="m", article_ids=ids, skip_existing=False)
+    with SessionLocal() as db, pytest.raises(llm_api.BulkRunStopped):
+        llm_api.prepare_bulk_run(req, db, ("ollama", fake), should_stop=lambda: True)
+    assert fake.calls == [] and len(_tasks.snapshot()) == before
 
 
 class _StoppingCtx:

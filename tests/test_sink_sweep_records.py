@@ -994,6 +994,8 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('run_concurrent', 'out.append(ConcurrentResult(ok=False, error=exc))'): 1,
         # an exception handed on in an object / a text already made by the caller from record_text; not made here
         ('run_concurrent._worker', 'out[i] = ConcurrentResult(ok=False, error=exc)'): 1,
+        # a BaseException kept as the object and raised again on the caller's thread, never made into a text
+        ('run_concurrent._worker', 'raised.append(exc)'): 1,
     },
     'src/llm/installer.py': {
         # failure_words returns "HTTP <status>" or the exception's class name and nothing of its text (tests/test_session_host_list.py pins it)

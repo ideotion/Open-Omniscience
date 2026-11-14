@@ -584,9 +584,11 @@ class LlmBulkQueue:
             # A resumed run counts from zero: the articles it stored before the stop come back as "done before the restart" and
             # are counted as stored, so the tally is the run's whole one. That set also holds a same-kind result another run wrote
             # during the pause (Lane E follow-up (b)), so at most as many as this run had counted stored before the stop are taken
-            # as its own; the rest count as skipped. (A hard stop that lost the last count leaves one of its own under skipped.)
-            credit = int(entry.get("stored") or 0) if since is not None else 0
-            entry.update(total=len(ids), done=0, stored=0, skipped=0, failed=0)
+            # as its own; the rest count as skipped. The credit not yet replayed is KEPT in the entry (``prior_stored``), so a stop
+            # that lands before the replay ends never loses it: the next resume credits what was replayed plus what was not.
+            # (Counts are saved every SAVE_EVERY_S, so a hard crash can leave up to that much of the run's own work under skipped.)
+            credit = int(entry.get("stored") or 0) + int(entry.get("prior_stored") or 0) if since is not None else 0
+            entry.update(total=len(ids), done=0, stored=0, skipped=0, failed=0, prior_stored=credit)
             stop_now = bool(entry.get("stopping"))
         if stop_now:
             _tasks.request_cancel(tok)  # Cancel pressed while the run was being prepared
@@ -606,6 +608,7 @@ class LlmBulkQueue:
                         if status == "skipped" and o.get("reason") == "done before the restart":
                             if credit > 0:
                                 credit -= 1
+                                entry["prior_stored"] = credit
                                 entry["stored"] = int(entry.get("stored") or 0) + 1
                             else:
                                 entry["skipped"] = int(entry.get("skipped") or 0) + 1
@@ -704,7 +707,12 @@ def _drain(ctx: JobContext) -> dict:
                 q._draining = True
         q._save()
         if again:
-            threading.Thread(target=q._start_after_previous, args=(stops0,), name="oo-llmbulk-kick", daemon=True).start()
+            try:
+                threading.Thread(target=q._start_after_previous, args=(stops0,), name="oo-llmbulk-kick", daemon=True).start()
+            except RuntimeError:  # no thread at interpreter teardown: the queue waits paused rather than marked as draining for good
+                with q._lock:
+                    q._draining = False
+                    q._paused = True
     else:
         with q._lock:
             q._resumed_while_draining = False
