@@ -67,6 +67,7 @@ _STACKERS = frozenset({"\u17d2", "\u1039"})
 _LEADING_VOWELS = frozenset(chr(c) for c in (*range(0x0E40, 0x0E45), *range(0x0EC0, 0x0EC5)))
 _TRAILING_VOWEL_LETTERS = frozenset({"\u0e30", "\u0e32", "\u0e45", "\u0eb0", "\u0eb2"})
 _ASAT = "\u103a"
+_DOT_BELOW = "\u1037"
 
 
 def _is_variation_selector(ch: str) -> bool:
@@ -205,13 +206,14 @@ def _on_syllable_edges(run: str, start: int, end: int) -> bool:
     nxt = run[end]
     if nxt in _TRAILING_VOWEL_LETTERS:
         return False
-    # A Burmese final: the next letter is closed by an asat among the marks that follow it (NFKC puts a dot below, U+1037,
-    # before the asat, so ပြည့် stores ည + ့ + ်).
+    # A Burmese final: the next letter is closed by an asat, directly or after a dot below (NFKC puts U+1037 before the asat, so
+    # ပြည့် stores ည + ့ + ်). Only the dot below is looked past: an asat after a vowel sign closes that VOWEL (ော်, ါ်), which
+    # belongs to the next syllable (နိုင်ငံ inside နိုင်ငံတော် ends on a syllable edge).
     k = end + 1
-    while k < len(run) and unicodedata.category(run[k])[0] == "M":
-        if run[k] == _ASAT:
-            return False
+    if k < len(run) and run[k] == _DOT_BELOW:
         k += 1
+    if k < len(run) and run[k] == _ASAT:
+        return False
     return not (unicodedata.category(nxt)[0] == "M" and not _is_variation_selector(nxt))
 
 

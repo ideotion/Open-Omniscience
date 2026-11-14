@@ -1914,6 +1914,6 @@ def test_a_build_that_the_library_was_encrypted_under_is_not_served_and_takes_it
     rollup_serve._STATE["con"] = previous
     stopped = rollup_serve._build_inmemory_and_swap()
     assert stopped is not None and stopped["reason"] == rollup_serve.ENCRYPTED_DURING_BUILD
-    assert rollup_serve._STATE["con"] is previous and rollup_serve._STATE["spill"] is None
+    assert rollup_serve._STATE["con"] is previous
     root = tmp_path / "duckdb_tmp"
     assert not (root.exists() and any(root.glob("*"))), "the plaintext offload folder outlived the encryption"

@@ -261,6 +261,10 @@ def test_a_substring_hit_never_cuts_a_syllable():
         assert label in text
         idx = tt.Index([_art(c=({lang: label}, {}))])
         assert tt.tag_text(text, lang, idx) == [], (lang, label, text)
+    # An asat after a vowel sign closes the vowel of the next syllable, not a final: these labels end on a syllable edge.
+    for label, text in (("နိုင်ငံ", "နိုင်ငံတော်"), ("ပြည်", "ပြည်ပေါ်")):
+        idx = tt.Index([_art(c=({"my": label}, {}))])
+        assert [t.tier for t in tt.tag_text(text, "my", idx)] == ["approx"], (label, text)
     # The stated limit: a final consonant written as a plain letter is not a mark, so a label that stops
     # before it (ច្បា inside ច្បាប់) still matches. Syllable edges are checked, word edges are not: ≈.
     idx = tt.Index([_art(c=({"km": "ច្បា"}, {}))])
