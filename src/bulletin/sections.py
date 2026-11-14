@@ -273,11 +273,16 @@ def by_topic_tag(session, period: Period) -> dict:
     tag at all, so the untagged share is reported — a topic table that quietly
     covers a tenth of the corpus while looking complete is worse than none.
     """
+    from src.analytics.quarantine_scope import not_quarantined
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import KeywordTag
 
     lo, hi = period.start, period.end
-    in_period = and_(KeywordMentionRead.observed_on >= lo, KeywordMentionRead.observed_on < hi)
+    in_period = and_(
+        KeywordMentionRead.observed_on >= lo,
+        KeywordMentionRead.observed_on < hi,
+        not_quarantined(KeywordMentionRead.article_id),  # R101
+    )
 
     try:
         rows = (

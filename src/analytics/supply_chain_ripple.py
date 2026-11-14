@@ -288,6 +288,10 @@ def find_supply_chain_ripples(
             KeywordMentionRead.observed_on >= cutoff,
             KeywordMentionRead.observed_on < hi,
             KeywordMentionRead.observed_on.isnot(None),
+            # The same two gates every series below is re-read through, so a
+            # topic carried by stand-in or quarantined pages cannot take a slot.
+            not_a_stand_in_article_id(KeywordMentionRead.article_id),
+            not_quarantined(KeywordMentionRead.article_id),  # R101
         )
         .group_by(KeywordMentionRead.keyword_id)
         .order_by(func.count(distinct(KeywordMentionRead.article_id)).desc())

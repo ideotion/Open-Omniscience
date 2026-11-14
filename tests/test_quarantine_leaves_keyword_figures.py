@@ -732,6 +732,35 @@ def test_the_bulletin_first_channel_is_never_a_quarantined_page(db):
     assert _first_seen() == (now - timedelta(days=2)).date().isoformat()
 
 
+def test_the_bulletin_topic_table_counts_no_quarantined_article(db):
+    from src.bulletin.period import Period
+    from src.bulletin.sections import by_topic_tag
+    from src.database.models import KeywordTag
+
+    now = datetime.now(UTC)
+    arts = [_add(db, n, when=now - timedelta(days=2)) for n in (0, 1)]
+    for a in arts:
+        index_article(db, a, extractor=BaselineExtractor())
+    kid = db.query(Keyword.id).filter(Keyword.normalized_term == WORD).scalar()
+    db.add(KeywordTag(keyword_id=kid, axis="topic", tag="science", source="user"))
+    db.commit()
+    today = now.date()
+    period = Period(cadence="weekly", start=today - timedelta(days=7), end=today + timedelta(days=1),
+                    baseline_start=today - timedelta(days=35))
+
+    def _read() -> tuple[int, int, int]:
+        out = by_topic_tag(db, period)
+        row = next(t for t in out["topics"] if t["topic"] == "science")
+        return row["articles"], out["mentions_total"], out["mentions_tagged"]
+
+    articles, total, tagged = _read()
+    assert articles == 2 and total > 0
+    _stamp(db, arts[0])
+    after = _read()
+    assert after[0] == 1
+    assert after[1] < total and after[2] < tagged
+
+
 # --------------------------------------------------------------------------- open-on-main row 47
 
 
