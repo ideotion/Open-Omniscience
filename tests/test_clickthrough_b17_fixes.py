@@ -77,6 +77,7 @@ _FRAMES = {
         "Restoring to {dest}",
         "Backing up to {dest}",
         "Importing {label}",
+        "Imported articles waiting for keywords ({n})",
         "Importing newsletters from {folder}",
         "Paused for a corpus import — importing newsletters from {folder}",
         "Downloading model {model}",

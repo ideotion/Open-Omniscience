@@ -694,13 +694,16 @@ def test_a_snapshot_dir_of_this_very_process_is_never_taken_at_once(tmp_path):
     assert sb.sweep_stale_backup_temps(root) == 0 and streaming.exists()
 
 
-def test_a_restore_staging_dir_is_still_judged_by_age_alone_not_by_a_marker(tmp_path):
-    """Widening the owner rule to a prefix whose owner writes no marker would change what the old sweep did: ``.restore-*`` keeps the
-    age rule even when a stray marker names a dead process."""
+def test_a_restore_staging_dir_is_judged_by_its_owner_and_without_a_marker_by_age(tmp_path):
+    """R686: a restore's ``.restore-*`` staging holds decrypted volumes and the plaintext corpus, and its owner now writes a marker,
+    so a dead owner's leftover goes at the next start, not a day later. A ``.restore-*`` dir with no marker (an import group's
+    working copy, a probe's staging) keeps the age rule, as before."""
     root = tmp_path / "data"
     root.mkdir()
-    young = _leftover(root, ".restore-young", {"pid": _dead_pid(), "started": 1.0})
-    assert sb.sweep_stale_backup_temps(root) == 0 and young.exists()
+    dead = _leftover(root, ".restore-young", {"pid": _dead_pid(), "started": 1.0})
+    unmarked = _leftover(root, ".restore-group-young", None)
+    assert sb.sweep_stale_backup_temps(root) == 1
+    assert not dead.exists() and unmarked.exists()
 
 
 def test_another_machines_marker_is_not_judged_by_a_pid_that_means_nothing_here(tmp_path):

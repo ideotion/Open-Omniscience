@@ -25,6 +25,8 @@ import json
 import re
 from pathlib import Path
 
+from tests.js_source_helper import function_body
+
 _ROOT = Path(__file__).resolve().parents[1]
 _STATIC = _ROOT / "src" / "static"
 _SIMPLE = _STATIC / "simple"
@@ -172,10 +174,10 @@ def test_strings_ship_in_twelve_languages():
 
 def test_details_and_marks_are_accessible():
     code = _read(_SIMPLE / "simple.js")
-    details = code.split("function Details(", 1)[1].split("\n  }\n", 1)[0]
+    details = function_body(code, "Details")
     assert 'type="button"' in details and "aria-expanded" in details and "aria-controls" in details
     assert "aria-label" in details and "Escape" in details
-    mark = code.split("function Mark(", 1)[1].split("\n  }\n", 1)[0]
+    mark = function_body(code, "Mark")
     assert 'class="s-sr"' in mark and "title=" in mark, "a mark carries words for screen readers and a hover"
     # The switch is a real switch.
     html = _read(_STATIC / "index.html")
@@ -200,7 +202,7 @@ def test_full_mode_is_untouched_when_the_switch_is_off():
 
 def test_glance_names_the_set_the_way_the_corpus_endpoints_read_it():
     code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
-    glance = code.split("function Glance(", 1)[1].split("\n  }\n", 1)[0]
+    glance = function_body(code, "Glance")
     # /api/insights/corpus-* read "article_ids"; "ids" would silently describe the whole corpus.
     assert 'set("article_ids"' in glance and 'set("ids"' not in glance
     assert "article_ids" in _read(_ROOT / "src" / "api" / "insights.py")
@@ -210,13 +212,13 @@ def test_skin_check_reads_the_gallery_key():
     code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
     gallery = _read(_STATIC / "guis" / "boot.js")
     assert 'UI_KEY = "oo.ui"' in gallery and ".gui" in gallery
-    has = code.split("function hasSkin(", 1)[1].split("\n  }\n", 1)[0]
+    has = function_body(code, "hasSkin")
     assert 'lsGet("oo.ui")' in has and ".gui" in has and "oo.ui.gui" not in has
 
 
 def test_going_online_reads_the_live_state_first():
     code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
-    fn = code.split("function goOnline(", 1)[1].split("\n  }\n", 1)[0]
+    fn = function_body(code, "goOnline")
     assert fn.index('"/api/system/network"') < fn.index("window.toggleNetwork()")
 
 
@@ -227,19 +229,30 @@ def test_only_named_deep_links_open_the_full_view():
     assert "location.search.length" not in boot
     code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
     for fn in ("enterSimple", "backToSimple"):
-        body = code.split("function " + fn + "(", 1)[1].split("\n  }\n", 1)[0]
+        body = function_body(code, fn)
         assert "clearDeepLink()" in body, fn
+
+
+def test_the_hidden_ai_pill_is_not_a_consent_surface():
+    # Simple mode hides #llm. That is safe only while the pill is a local status label and AI
+    # egress keeps its own dialog, which simple mode never hides.
+    html = _read(_STATIC / "index.html")
+    pill = re.search(r'<span id="llm"[^>]*>[^<]*</span>', html)
+    assert pill, "#llm changed shape: re-check whether simple mode may still hide it"
+    assert "consent" not in pill.group(0).lower() and "egress" not in pill.group(0).lower()
+    assert 'id="ai-egress-consent"' in html
+    assert "#ai-egress-consent" not in " ".join(_hidden_selectors(_css("simple.css")))
 
 
 def test_world_and_numbers_read_local_aggregates_only():
     code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
-    world = code.split("function World(", 1)[1].split("\n  }\n", 1)[0]
+    world = function_body(code, "World")
     assert '"/api/insights/map-coverage"' in world and "countries: [c.country]" in world
     # Q302: the code is what shows; the country's name rides in the hover and for screen readers.
     assert "title=${c.name" in world and '<b class="s-code">${c.country}</b>' in world
     # A country scope reaches both the list and the summary.
     assert 'p.set("countries"' in code and 'g.set("countries"' in code
-    nums = code.split("function Markets(", 1)[1].split("function Numbers(", 1)[0]
+    nums = function_body(code, "Markets") + function_body(code, "Climate")
     # Fetching a climate record or a price is an egress: Numbers only reads, and sends the
     # reader to the full view, where the consent gate lives (#14, #33).
     assert "fetch(" not in nums and "/fetch" not in nums and "ensureOnline" not in nums
@@ -248,10 +261,10 @@ def test_world_and_numbers_read_local_aggregates_only():
 
 def test_a_known_site_with_a_new_feed_is_still_added():
     code = _strip_js_comments(_read(_SIMPLE / "simple.js"))
-    add = code.split("function AddSource(", 1)[1].split("\n  }\n", 1)[0]
+    add = function_body(code, "AddSource")
     # The server keeps a second feed of a known domain as a sibling source, so the duplicate check
     # must compare the feed too, never the domain alone.
     assert 'String(x.rss_url || "") === feed' in add
     # An article set (ids) outranks a country scope, which never narrows a lead's own articles.
-    sp = code.split("function searchParams(", 1)[1].split("\n  }\n", 1)[0]
+    sp = function_body(code, "searchParams")
     assert '!(s.ids && s.ids.length)' in sp
