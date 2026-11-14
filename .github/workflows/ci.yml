@@ -70,7 +70,14 @@ jobs:
       - name: SAST (bandit, medium+ severity)
         run: |
           python -m pip install bandit==1.9.4  # pinned: unpinned SAST drift reddens PRs with no code change
-          bandit -r src/ -ll -q
+          # Bandit warns "nosec encountered (Bnnn), but no failed test" for a marker on an f-string line even when
+          # the marker does suppress an issue (one line per string part, about 435 of them). Only that warning class
+          # is held back, and counted; every other line and the exit code pass through unchanged (OPEN_QUEUE 24).
+          rc=0
+          bandit -r src/ -ll -q 2> "$RUNNER_TEMP/bandit.err" || rc=$?
+          grep -v -E 'WARNING[[:space:]]+nosec encountered \(B[0-9]+\), but no failed test on file ' "$RUNNER_TEMP/bandit.err" >&2 || true
+          echo "bandit: $(grep -c -E 'nosec encountered \(B[0-9]+\), but no failed test on file ' "$RUNNER_TEMP/bandit.err" || true) 'nosec encountered, but no failed test' warnings not shown"
+          exit "$rc"
       - name: Dependency audit (pip-audit)
         run: |
           python -m pip install pip-audit==2.10.1  # pinned (OO-D15-004): an unpinned audit tool can redden PRs through no code change, exactly like bandit/mypy
@@ -576,7 +583,14 @@ jobs:
       - name: SAST (bandit, medium+ severity)
         run: |
           python -m pip install bandit==1.9.4  # pinned: unpinned SAST drift reddens PRs with no code change
-          bandit -r src/ -ll -q
+          # Bandit warns "nosec encountered (Bnnn), but no failed test" for a marker on an f-string line even when
+          # the marker does suppress an issue (one line per string part, about 435 of them). Only that warning class
+          # is held back, and counted; every other line and the exit code pass through unchanged (OPEN_QUEUE 24).
+          rc=0
+          bandit -r src/ -ll -q 2> "$RUNNER_TEMP/bandit.err" || rc=$?
+          grep -v -E 'WARNING[[:space:]]+nosec encountered \(B[0-9]+\), but no failed test on file ' "$RUNNER_TEMP/bandit.err" >&2 || true
+          echo "bandit: $(grep -c -E 'nosec encountered \(B[0-9]+\), but no failed test on file ' "$RUNNER_TEMP/bandit.err" || true) 'nosec encountered, but no failed test' warnings not shown"
+          exit "$rc"
 
       - name: Dependency audit (pip-audit)
         run: |
