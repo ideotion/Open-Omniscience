@@ -226,7 +226,7 @@ async function run() {
       "var window = {OOI18N: this.I}; var OOI18N = this.I;",
       FMTNUM,
       line("let _bulExcludeSections"), line("let _bulExcludeStories"), line("let _bulFile"),
-      line("let _bulGate"), line("const _bulMsgs"), line("let _bulFullText"),
+      line("let _bulGate"), line("const _bulMsgs"), line("let _bulFullText"), line("let _bulNarrating"), line("let _bulStopAsked"),
       "const _BUL_CADENCE_LABEL = {};",
       ...["_bulT", "_bulTf", "_bulPaintMsg", "_bulUnit", "_bulStoryTermsHtml", "_bulFullTextHint", "_bulRender"].map((n) => extract(n, null, AGENDA)),
       "this.render = _bulRender; this.$ = $;",

@@ -87,7 +87,7 @@ const caveatVisible = () => /<p class="card-caveat"[^>]*>Coverage moving togethe
     {commodity: "<b>x</b>", keyword: "drought", correlation: -0.2, fdr_qvalue: 0.00001, article_ids: [8], n_articles: 1}]});
   await p;
   const h = host.innerHTML;
-  assert.ok(h.includes("+0.71") && h.includes("-0.20") && h.includes("0.012") && h.includes("&lt; 0.001") && h.includes("5 / 9"), h);
+  assert.ok(h.includes(">0.71<") && h.includes(">-0.20<") && h.includes("0.012") && h.includes("&lt; 0.001") && h.includes("5 / 9"), h);
   assert.ok(h.includes("Pairs tested: 40 · passed the correction: 11 · shown: 2"));
   assert.ok(!h.includes("<b>x</b>") && h.includes("&lt;b&gt;x&lt;/b&gt;"), "a label is escaped");
   assert.ok(h.includes('<td data-i18n-dyn>Gold</td>'), "corpus labels opt out of the key walker");

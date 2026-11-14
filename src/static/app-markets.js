@@ -539,7 +539,7 @@
         } else {
           const rows = items.map((it, i) =>
             `<tr><td data-i18n-dyn>${esc(it.commodity)}</td><td data-i18n-dyn>${esc(it.keyword)}</td>`
-            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${esc(ooLtrIsolate(it.correlation == null ? "—" : Number(it.correlation).toLocaleString("en", {minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero"})))}</td>`
+            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${esc(ooLtrIsolate(it.correlation == null ? "—" : fmtNum(it.correlation, 2)))}</td>`
             + `<td style="text-align:right;font-variant-numeric:tabular-nums">${esc(ooLtrIsolate(it.fdr_qvalue == null ? "—" : (it.fdr_qvalue < 0.001 ? "< 0.001" : fmtNum(it.fdr_qvalue, 3))))}</td>`
             + `<td style="text-align:right;font-variant-numeric:tabular-nums">${esc(String(it.distinct_sources_commodity || 0))} / ${esc(String(it.distinct_sources_keyword || 0))}</td>`
             + `<td><button class="ghost" data-on-click="mktRippleOpen(${i})" title="${esc(t("At most 300 articles. Where the two topics share none, these are the commodity's own articles in the window."))}">${esc(tf("Articles: {n}", {n: it.n_articles || 0}))}</button></td></tr>`).join("");

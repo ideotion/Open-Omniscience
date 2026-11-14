@@ -45,11 +45,11 @@ def test_the_archive_is_owner_only_from_its_first_byte(tmp_path):
 @posix_only
 def test_a_symlink_at_the_temp_name_is_refused_and_its_target_untouched(tmp_path):
     target = tmp_path / "victim.txt"
-    target.write_text("keep me")
+    target.write_text("keep me", encoding="utf-8")
     (tmp_path / (_NAME + ".oopart")).symlink_to(target)
     with pytest.raises(ValueError, match="in the way"):
         build_evidence_archive(_corpus(2), {"layer": "A"}, _P, tmp_path)
-    assert target.read_text() == "keep me"
+    assert target.read_text(encoding="utf-8") == "keep me"
     assert (tmp_path / (_NAME + ".oopart")).is_symlink(), "a link that is not ours is never removed either"
     assert not (tmp_path / _NAME).exists()
 
