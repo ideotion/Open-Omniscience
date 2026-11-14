@@ -20,6 +20,9 @@ import pytest
 
 from src.config import memory_budget as mb
 
+# A faked machine size means "a machine of this size", never bounded by the cgroup of the machine running the suite (R302).
+pytestmark = pytest.mark.usefixtures("no_cgroup_limit")
+
 
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
