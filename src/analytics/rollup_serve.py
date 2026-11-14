@@ -501,37 +501,48 @@ def _build_inmemory_and_swap() -> dict | None:
             con.close()
         _remove_spill(spill)
         return {"reason": ENCRYPTED_DURING_BUILD, "at": time.time()}
+    refused = False
     with _LOCK:
-        old = _STATE["con"]
-        _STATE["con"] = con
-        _STATE["persisted"] = False
-        _STATE["built_at"] = time.time()
-        _STATE["rows"] = int(rows)
-        _STATE["bind"] = built_bind
-        _STATE["token"] = token
-        _STATE["pending"] = False
-        _STATE["last_build"] = {
-            "at": time.time(), "build_s": round(time.monotonic() - build_started, 1),
-            "streamed_mentions": tally.get("streamed_mentions"), "keyword_daily_rows": int(rows),
-            "shards": tally.get("shards"), "shard_splits": tally.get("shard_splits"),
-            "predicted_peak_mib": tally.get("predicted_peak_mib"), "observed_mib": tally.get("observed_mib"),
-            "shard_checkpoints": tally.get("shard_checkpoints"), "shard_checkpoint_secs": tally.get("shard_checkpoint_secs"),
-            "shard_checkpoint_failures": tally.get("shard_checkpoint_failures"),
-            "shard_checkpoint_first_failure": tally.get("shard_checkpoint_first_failure"),
-            "duckdb_limit_mb": snap["duckdb_limit_mb"], "duckdb_threads": snap["duckdb_threads"],
-            "budget_total_mb": snap["total_mb"], "budget_read_at": snap["read_at"],
-            # what the finished rollup was asked before it was served, and what that cost (R157)
-            "serve_check": canary,
-            # whether the rollup was stored compressed before it was asked, and why not when it was not (R164)
-            "compact": compact,
-        }
-        old_spill, _STATE["spill"] = _STATE.get("spill"), spill or None
-        if old is not None:
-            try:
-                old.close()  # safe: serves hold _LOCK, so none is mid-query here
-            except Exception:  # noqa: BLE001
-                pass
-        _remove_spill(old_spill)  # the retired connection's folder, now that nothing uses it
+        # Again under the lock the encryption's close takes (open-on-main row 50): a build that passed the check above just
+        # before the library was encrypted would otherwise swap in, after that close, a connection whose folder holds plaintext.
+        if spill and _corpus_encrypted():
+            refused = True
+        else:
+            old = _STATE["con"]
+            _STATE["con"] = con
+            _STATE["persisted"] = False
+            _STATE["built_at"] = time.time()
+            _STATE["rows"] = int(rows)
+            _STATE["bind"] = built_bind
+            _STATE["token"] = token
+            _STATE["pending"] = False
+            _STATE["last_build"] = {
+                "at": time.time(), "build_s": round(time.monotonic() - build_started, 1),
+                "streamed_mentions": tally.get("streamed_mentions"), "keyword_daily_rows": int(rows),
+                "shards": tally.get("shards"), "shard_splits": tally.get("shard_splits"),
+                "predicted_peak_mib": tally.get("predicted_peak_mib"), "observed_mib": tally.get("observed_mib"),
+                "shard_checkpoints": tally.get("shard_checkpoints"), "shard_checkpoint_secs": tally.get("shard_checkpoint_secs"),
+                "shard_checkpoint_failures": tally.get("shard_checkpoint_failures"),
+                "shard_checkpoint_first_failure": tally.get("shard_checkpoint_first_failure"),
+                "duckdb_limit_mb": snap["duckdb_limit_mb"], "duckdb_threads": snap["duckdb_threads"],
+                "budget_total_mb": snap["total_mb"], "budget_read_at": snap["read_at"],
+                # what the finished rollup was asked before it was served, and what that cost (R157)
+                "serve_check": canary,
+                # whether the rollup was stored compressed before it was asked, and why not when it was not (R164)
+                "compact": compact,
+            }
+            old_spill, _STATE["spill"] = _STATE.get("spill"), spill or None
+            if old is not None:
+                try:
+                    old.close()  # safe: serves hold _LOCK, so none is mid-query here
+                except Exception:  # noqa: BLE001
+                    pass
+            _remove_spill(old_spill)  # the retired connection's folder, now that nothing uses it
+    if refused:
+        with contextlib.suppress(Exception):
+            con.close()
+        _remove_spill(spill)
+        return {"reason": ENCRYPTED_DURING_BUILD, "at": time.time()}
     _LOG.info("rollup serve: built in-memory keyword_daily (%s rows)", rows)
     return None
 
@@ -1103,6 +1114,55 @@ _SPILL_LOCK = threading.Lock()
 _SPILL_START_SLACK_S = 2.0
 
 
+#: Each offload folder holds this file, locked (``flock``) by the process that made it for as long as the folder is its own: the
+#: sweep's proof of life where there is one (POSIX). The lock goes with the process however it ends, so neither a reused pid
+#: nor a clock step can make a live folder look orphaned, or an orphan look live (open-on-main row 51).
+_OWNER_FILE = ".owner"
+#: The open, locked owner file of each folder this process made (folder path -> descriptor), closed by ``_remove_spill``.
+_SPILL_OWNERS: dict[str, int] = {}
+
+
+def _hold_owner_lock(folder) -> None:
+    """Lock ``folder``'s owner file for this process (POSIX; elsewhere a no-op). The file is locked under a temporary name
+    and only then renamed into place, so a sweep in another process never finds an owner file that is not yet locked."""
+    try:
+        import fcntl
+    except ImportError:
+        return
+    tmp = folder / (_OWNER_FILE + ".new")
+    fd = os.open(tmp, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        os.rename(tmp, folder / _OWNER_FILE)
+    except BaseException:
+        os.close(fd)
+        raise
+    _SPILL_OWNERS[str(folder)] = fd
+
+
+def _owner_alive(folder) -> bool | None:
+    """Whether a live process holds ``folder``'s owner lock: ``True``, ``False``, or ``None`` when the folder has no owner file
+    (made before the lock existed, or off POSIX) or the lock cannot be tried."""
+    try:
+        import fcntl
+    except ImportError:
+        return None
+    try:
+        fd = os.open(folder / _OWNER_FILE, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        return None
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        except OSError:
+            return None
+        return False
+    finally:
+        os.close(fd)
+
+
 def _folder_time(path) -> float:
     """When ``path`` was made, as well as the filesystem can say: its birth time where there is one, else the EARLIER of its
     change and modification times (entries added later only move those forward, which can only keep a folder, never drop one)."""
@@ -1116,9 +1176,11 @@ def _sweep_spill_folders(root) -> None:
     ``<pid>-<id>``; a folder of THIS pid is swept once, before this process has made any.
 
     A pid that is alive is not proof the folder is its own: the pid may have been reused by a later process (open-on-main
-    row 51), which would keep a plaintext folder a crashed build left behind for as long as that process lives. So a live
-    pid keeps its folder only while the folder is not older than the process; a folder made BEFORE the process started is
-    orphaned and goes. When the start time cannot be read the folder is KEPT (a live process may be using it) and reported."""
+    row 51), which would keep a plaintext folder a crashed build left behind for as long as that process lives. The owner
+    lock (:func:`_owner_alive`) decides where the folder has one. A folder without one keeps the pid rule, and a live pid
+    keeps its folder only while the folder is not older than the process (start times can move with a clock step on Linux,
+    which is why the lock comes first); a folder made BEFORE the process started is orphaned and goes. When the start time
+    cannot be read the folder is KEPT (a live process may be using it) and reported."""
     import shutil
 
     global _OWN_SPILL_SWEPT
@@ -1136,6 +1198,12 @@ def _sweep_spill_folders(root) -> None:
             if not _OWN_SPILL_SWEPT:
                 shutil.rmtree(child, ignore_errors=True)
             continue
+        alive = _owner_alive(child)
+        if alive is not None:  # the owner lock answers: held means a live owner, free means none, whatever the pid now is
+            if not alive:
+                shutil.rmtree(child, ignore_errors=True)
+            continue
+        # No owner file (a folder made before the lock existed, or off POSIX): the pid and its start time decide.
         if not psutil.pid_exists(pid):
             shutil.rmtree(child, ignore_errors=True)
             continue
@@ -1155,10 +1223,14 @@ def _sweep_spill_folders(root) -> None:
 
 
 def _remove_spill(path: str | None) -> None:
-    """Remove ONE connection's offload folder, after that connection is closed."""
+    """Remove ONE connection's offload folder, after that connection is closed, and let go of its owner lock."""
     if path:
         import shutil
 
+        fd = _SPILL_OWNERS.pop(str(path), None)
+        if fd is not None:
+            with contextlib.suppress(OSError):
+                os.close(fd)
         shutil.rmtree(path, ignore_errors=True)
 
 
@@ -1167,6 +1239,8 @@ def _spill_folder(*, make: bool) -> str:
     directory for one connection alone. Raises when the folder cannot be made; the two callers below turn that into
     "no offload". The sweep runs whether or not a folder is made: one a plaintext build left before the corpus was
     encrypted is exactly what must not stay."""
+    import shutil
+
     from src.paths import data_dir
 
     global _OWN_SPILL_SWEPT
@@ -1187,6 +1261,11 @@ def _spill_folder(*, make: bool) -> str:
                 os.chmod(root, 0o700)
         mine = root / f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
         mine.mkdir(mode=0o700)  # owner-only, like the data directory above it (defence in depth)
+        try:
+            _hold_owner_lock(mine)
+        except BaseException:
+            shutil.rmtree(mine, ignore_errors=True)  # a folder no lock vouches for is not handed out
+            raise
         return str(mine)
 
 

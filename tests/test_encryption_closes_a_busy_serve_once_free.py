@@ -62,16 +62,33 @@ def test_a_serve_in_use_is_closed_with_its_folder_once_it_is_free(served):
     assert map_serve._STATE["con"] is None and map_serve._STATE["spill"] is None
 
 
-def test_a_serve_swapped_in_while_busy_is_not_the_one_closed(served):
+def test_a_serve_swapped_in_while_busy_with_no_folder_is_not_closed(served):
     con, folder = served
     newer = _Con()
     map_serve._LOCK.acquire()
     try:
         release.close_serves_after_encryption()
-        map_serve._STATE["con"] = newer  # the build that held the lock swapped in its connection (and retired the old one itself)
+        map_serve._STATE["con"] = newer  # built after the encryption: no offload folder (the replacer retired the old one itself)
         map_serve._STATE["spill"] = None
     finally:
         map_serve._LOCK.release()
-    time.sleep(0.3)
+    assert _wait_for(lambda: not any(t.name.startswith("close-map_serve") for t in threading.enumerate()))
     assert not newer.closed and map_serve._STATE["con"] is newer, "the connection built after the encryption was closed"
-    assert not any(t.name.startswith("close-map_serve") for t in threading.enumerate())
+
+
+def test_a_serve_swapped_in_while_busy_with_a_plaintext_era_folder_is_closed_too(served, tmp_path):
+    """The lock holder was a build that passed its encryption check just before the encryption and swapped in: its folder was
+    made while the library was plaintext, so it goes with its connection."""
+    con, _folder = served
+    newer = _Con()
+    newer_folder = tmp_path / "duckdb_tmp" / "123-ffff0000"
+    newer_folder.mkdir()
+    map_serve._LOCK.acquire()
+    try:
+        release.close_serves_after_encryption()
+        map_serve._STATE["con"] = newer
+        map_serve._STATE["spill"] = str(newer_folder)
+    finally:
+        map_serve._LOCK.release()
+    assert _wait_for(lambda: newer.closed and not newer_folder.exists()), "a plaintext-era folder outlived the encryption"
+    assert map_serve._STATE["con"] is None and map_serve._STATE["spill"] is None

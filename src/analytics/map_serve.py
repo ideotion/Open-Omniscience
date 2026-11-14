@@ -179,6 +179,11 @@ def _build_and_swap() -> None:
                 _LOG.info("map serve: the library was encrypted during the build; not served, rebuilding without offload")
                 return
             with _LOCK:
+                if spill and rollup_serve._corpus_encrypted():
+                    # Again under the lock the encryption's close takes (open-on-main row 50): encrypted just after the check above.
+                    _STATE["pending"] = True
+                    _LOG.info("map serve: the library was encrypted during the build; not served, rebuilding without offload")
+                    return
                 old = _STATE["con"]
                 old_spill = _STATE.get("spill")
                 _STATE["con"] = con

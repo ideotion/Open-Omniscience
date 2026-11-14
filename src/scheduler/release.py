@@ -113,6 +113,16 @@ def _shrink_sqlite() -> dict[str, Any]:
     return out
 
 
+def _remove_spill(path: str) -> None:
+    """A serve's offload folder, removed after its connection is closed: through ``rollup_serve._remove_spill``, which also
+    lets go of the folder's owner lock (every folder is made there, so the module is loaded whenever one exists)."""
+    mod = sys.modules.get("src.analytics.rollup_serve")
+    if mod is not None:
+        mod._remove_spill(path)
+    else:
+        shutil.rmtree(path, ignore_errors=True)
+
+
 def _close_serves(*, wait: bool = True) -> dict[str, Any]:
     """Close the columnar serve connections and mark them not-built.
 
@@ -148,7 +158,7 @@ def _close_serves(*, wait: bool = True) -> dict[str, Any]:
             finally:
                 mod._LOCK.release()
             if spill:  # the closed connection's offload folder (after the close: DuckDB holds its files open until then)
-                shutil.rmtree(spill, ignore_errors=True)
+                _remove_spill(spill)
         except Exception as exc:  # noqa: BLE001
             out.setdefault("errors", {})[name] = type(exc).__name__
     out["ok"] = "errors" not in out
@@ -176,8 +186,9 @@ def close_serves_after_encryption() -> dict[str, Any]:
     Closing the serves removes their folders, and the next build sees the passphrase and offloads nothing. Never waits and never
     raises, like the cleared-key close. A serve in use at that moment (named in ``busy``) is closed as soon as it is free, by a
     thread that waits for its lock (named in ``deferred``): left to its next rebuild, its plaintext folder stayed on disk for as
-    long as nothing changed (open-on-main row 50). That close applies only to the connection that was serving at the encryption:
-    one a build swapped in meanwhile is the replacer's, and the replacer already removed the retired folder.
+    long as nothing changed (open-on-main row 50). That close takes the connection that was serving at the encryption, or an
+    in-memory one a build swapped in while it waited if that one has an offload folder (made before the encryption: a build
+    checks the encryption again under the swap lock, so none made after it is served with one).
     """
     serving: dict[str, Any] = {}
     for name in ("rollup_serve", "map_serve"):
@@ -207,15 +218,18 @@ def _close_when_free(name: str, target: Any) -> None:
             return
         spill = None
         with mod._LOCK:  # the query or refresh that held it has finished
-            if mod._STATE.get("con") is not target:
+            con = mod._STATE.get("con")
+            if con is None:
                 return
+            if con is not target and not (mod._STATE.get("spill") and not mod._STATE.get("persisted")):
+                return  # replaced by a connection with no plaintext-era folder: the replacer retired the old one's
             with suppress(Exception):
-                target.close()
+                con.close()
             mod._STATE["con"] = None
             mod._STATE["built_at"] = 0.0
             spill, mod._STATE["spill"] = mod._STATE.get("spill"), None
         if spill:  # after the close: DuckDB holds its files open until then
-            shutil.rmtree(spill, ignore_errors=True)
+            _remove_spill(spill)
         _LOG.info("encrypt in place: the %s serve that was in use is now closed with its offload folder", name)
     except Exception as exc:  # noqa: BLE001 - a background cleanup must never crash the app
         _LOG.warning("encrypt in place: could not close the %s serve once free (%s)", name, type(exc).__name__)

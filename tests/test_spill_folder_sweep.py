@@ -115,3 +115,89 @@ def test_an_existing_folder_root_is_tightened_to_owner_only(tmp_path, monkeypatc
         assert stat.S_IMODE(os.stat(folder).st_mode) == 0o700
     finally:
         rollup_serve._remove_spill(folder)
+
+
+@pytest.fixture
+def owner_holder(tmp_path):
+    """Another process that holds a folder's owner lock (as the app does for each folder it makes), until killed."""
+    fcntl = pytest.importorskip("fcntl")  # noqa: F841 - POSIX only
+    folder = tmp_path / "duckdb_tmp" / "held"
+    folder.mkdir(parents=True)
+    ready = tmp_path / "ready"
+    code = (
+        "import fcntl, os, sys, time; fd = os.open(sys.argv[1], os.O_CREAT | os.O_RDWR, 0o600); "
+        "fcntl.flock(fd, fcntl.LOCK_EX); open(sys.argv[2], 'w').close(); time.sleep(60)"
+    )
+    proc = subprocess.Popen([sys.executable, "-c", code, str(folder / rollup_serve._OWNER_FILE), str(ready)])
+    deadline = time.time() + 10
+    while not ready.exists() and time.time() < deadline:
+        time.sleep(0.02)
+    named = folder.with_name(f"{proc.pid}-abcd1234")
+    folder.rename(named)
+    try:
+        yield proc, named
+    finally:
+        proc.kill()
+        proc.wait()
+
+
+def test_a_held_owner_lock_keeps_the_folder_whatever_the_clock_says(root, owner_holder):
+    """The folder looks an hour older than its live owner (a clock step on a box with no hardware clock moves psutil's start
+    time): the lock it holds still proves it is in use."""
+    proc, folder = owner_holder
+    target = root / folder.name
+    folder.rename(target)
+    _aged(target, 3600)
+    rollup_serve._sweep_spill_folders(root)
+    assert target.exists(), "a live process's folder was removed on a timing guess"
+    proc.kill()
+    proc.wait()
+    rollup_serve._sweep_spill_folders(root)
+    assert not target.exists(), "an owner lock nobody holds left its folder behind"
+
+
+def test_a_free_owner_lock_under_a_live_reused_pid_goes(root, live_pid):
+    """The pid is alive, the folder is fresh by the clock, but nobody holds its lock: its owner is gone."""
+    pytest.importorskip("fcntl")
+    folder = root / f"{live_pid}-abcd1234"
+    folder.mkdir()
+    (folder / rollup_serve._OWNER_FILE).write_bytes(b"")
+    rollup_serve._sweep_spill_folders(root)
+    assert not folder.exists()
+
+
+def test_each_folder_is_handed_out_locked_and_let_go_on_removal(tmp_path, monkeypatch):
+    fcntl = pytest.importorskip("fcntl")
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(rollup_serve, "_OWN_SPILL_SWEPT", False)
+    folder = rollup_serve._persisted_spill_setting()
+    assert folder and folder in rollup_serve._SPILL_OWNERS
+    fd = os.open(os.path.join(folder, rollup_serve._OWNER_FILE), os.O_RDONLY)
+    try:
+        with pytest.raises(BlockingIOError):
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    finally:
+        os.close(fd)
+    assert not os.path.exists(os.path.join(folder, rollup_serve._OWNER_FILE + ".new"))
+    rollup_serve._remove_spill(folder)
+    assert folder not in rollup_serve._SPILL_OWNERS and not os.path.exists(folder)
+
+
+def test_closing_the_serves_lets_go_of_the_owner_lock(tmp_path, monkeypatch):
+    pytest.importorskip("fcntl")
+    from src.scheduler import release
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(rollup_serve, "_OWN_SPILL_SWEPT", False)
+    monkeypatch.setattr(rollup_serve, "_corpus_encrypted", lambda: False)
+    folder = rollup_serve._spill_setting()
+
+    class _Con:
+        def close(self):
+            pass
+
+    monkeypatch.setitem(rollup_serve._STATE, "con", _Con())
+    monkeypatch.setitem(rollup_serve._STATE, "spill", folder)
+    monkeypatch.delitem(sys.modules, "src.analytics.map_serve", raising=False)
+    release._close_serves(wait=False)
+    assert folder not in rollup_serve._SPILL_OWNERS and not os.path.exists(folder)

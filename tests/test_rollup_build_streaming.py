@@ -796,7 +796,7 @@ def test_the_sweep_runs_for_an_encrypted_corpus_too_and_a_reused_pids_leftovers_
     assert not stale_same_pid.exists(), "before this process has made a folder, its pid's folders are a dead process's"
     monkeypatch.setattr(rollup_serve, "_corpus_encrypted", lambda: False)
     mine = rollup_serve._spill_setting()
-    assert os.path.isdir(mine) and list(os.scandir(mine)) == []
+    assert os.path.isdir(mine) and [e.name for e in os.scandir(mine) if e.name != rollup_serve._OWNER_FILE] == []  # only its owner lock
     assert os.path.isdir(rollup_serve._spill_setting()) and os.path.isdir(mine), "once made, this pid's are live"
 
 
@@ -1910,6 +1910,23 @@ def test_a_build_that_the_library_was_encrypted_under_is_not_served_and_takes_it
     connection is not served (its folder holds plaintext derived data), the folder goes, and no hold is kept."""
     _seed(session, keywords=20, mentions_per=3)
     answers = iter([False])  # plaintext when the folder is chosen, encrypted from then on
+    monkeypatch.setattr(rollup_serve, "_corpus_encrypted", lambda: next(answers, True))
+    previous = object()
+    rollup_serve._STATE["con"] = previous
+    stopped = rollup_serve._build_inmemory_and_swap()
+    assert stopped is not None and stopped["reason"] == rollup_serve.ENCRYPTED_DURING_BUILD
+    assert rollup_serve._STATE["con"] is previous
+    root = tmp_path / "duckdb_tmp"
+    assert not (root.exists() and any(root.glob("*"))), "the plaintext offload folder outlived the encryption"
+
+
+def test_a_library_encrypted_between_the_last_check_and_the_swap_is_refused_under_the_swap_lock(
+        serve_env, session, monkeypatch, tmp_path):
+    """Open-on-main row 50: plaintext at the folder's choice AND at the check after the build, encrypted only by the time the
+    swap takes the lock (the encryption's close takes the same lock). The swap must see it there, or it serves a connection
+    whose folder holds plaintext after that close has run."""
+    _seed(session, keywords=20, mentions_per=3)
+    answers = iter([False, False])
     monkeypatch.setattr(rollup_serve, "_corpus_encrypted", lambda: next(answers, True))
     previous = object()
     rollup_serve._STATE["con"] = previous
