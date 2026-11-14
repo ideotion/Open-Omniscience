@@ -396,7 +396,7 @@ def test_a_machine_without_the_post_quantum_library_signs_nothing_and_writes_no_
         assert [e.seq for e in log.all_entries()] == [1, 2]
     monkeypatch.setattr(api, "_log", lambda: CustodyLog(db_path=db, signer=_signer(tmp_path, "k")))
     client = TestClient(app)
-    r = client.get("/api/custody/export", headers={"Sec-Fetch-Site": "same-origin"})
+    r = client.post("/api/custody/export")
     assert r.status_code == 503 and "post-quantum library is not installed" in r.json()["detail"]
     r = client.post("/api/custody/log", json={"item_id": "a:1", "item_hash": "a" * 64, "action": "ingest"},
                     headers={"Sec-Fetch-Site": "same-origin"})
