@@ -282,6 +282,12 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('_copy_and_swap', 'report["failure"] = f"{exc.where}: {exc.reason}"'): 2,
         ('_swap', 'raise Declined("writer-busy", str(busy)) from busy'): 2,
         ('_swap', 'if refusal.code == "saved-during-the-copy":'): 1,
+        # ``_fixed_failure`` rebuilds the error a failed repair raises from words of ours: it reads the class, ``SalvageFailed``'s own
+        # fixed fields and an int errno (its words come from ``os.strerror``), never the driver's text.
+        ('_fixed_failure', 'return salvage.SalvageFailed(exc.where, exc.reason)'): 2,
+        ('_fixed_failure', 'if isinstance(exc, OSError) and isinstance(exc.errno, int):'): 1,
+        ('_fixed_failure', 'return type(exc)(exc.errno, os.strerror(exc.errno))  # the system\'s own words for the number, never the text it came with'): 2,
+        ('run', 'replacement = _fixed_failure(exc, failure)'): 1,
     },
     'src/database/salvage.py': {
         ('Salvage._is_corrupt', 'return damage.corruption_of(exc) is not None'): 1,
