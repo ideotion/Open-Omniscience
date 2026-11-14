@@ -600,6 +600,15 @@
     // page, but it makes the helper untestable outside one and breaks the
     // moment this runs in a module scope. Same behaviour, no ambient
     // assumption.
+    // _tfn(): tf() for a template whose count chooses a plural form (2026-11-14). The same
+    // lookup as OOI18N.tf, reachable from any file (the older call sites define tf locally),
+    // with the same placeholder fallback when the engine is absent.
+    function _tfn(template, vars) {
+      const i18n = (typeof window !== "undefined" && window.OOI18N) || null;
+      if (i18n && i18n.tf) return i18n.tf(template, vars);
+      return String(template).replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null ? String(vars[k]) : m));
+    }
+
     function _failMsg(template, err) {
       const i18n = (typeof window !== "undefined" && window.OOI18N) || null;
       const F = (i18n && i18n.tf)
@@ -3210,8 +3219,8 @@
       _loadBannerFactor = factor;
       if (factor > 1) {
         toast(
-          t("The server is busy — refreshing every {s}s until it recovers.")
-            .replace("{s}", String(Math.round(intervalMs / 1000))),
+          _tfn("The server is busy — refreshing every {s}s until it recovers.",
+            { s: String(Math.round(intervalMs / 1000)) }),
           "warn");
       } else if (prev > 1) {
         toast(t("The server recovered — refreshing at the usual rate again."), "ok");

@@ -1298,8 +1298,8 @@
         if (!clusters.length) {
           // Honest empty state: state the gate (≥min_articles AND ≥min_sources).
           box.innerHTML = `<div class="muted">` + esc(
-            t("No convergences yet. A cluster needs at least {a} articles AND at least {s} sources sharing a place within the window.")
-              .replace("{a}", String(d.min_articles)).replace("{s}", String(d.min_sources))) + `</div>`;
+            _tfn("No convergences yet. A cluster needs at least {a} articles AND at least {s} sources sharing a place within the window.",
+              { a: String(d.min_articles), s: String(d.min_sources) })) + `</div>`;
           if (meth && d.caveat) meth.textContent = d.caveat;
           return;
         }
@@ -1317,8 +1317,8 @@
           // VISIBLE shared-origin warning when sources may echo one citation.
           const warn = (c.shared_origin_links > 0)
             ? `<div class="hint" style="color:var(--caveat);margin-top:2px">${esc(
-                t("⚠ {n} shared-origin links — sources may echo one citation, not independent confirmation.")
-                  .replace("{n}", String(c.shared_origin_links)))}</div>`
+                _tfn("⚠ {n} shared-origin links — sources may echo one citation, not independent confirmation.",
+                  { n: String(c.shared_origin_links) }))}</div>`
             : "";
           return `<div class="cs-row" style="display:block;padding:8px 0;border-bottom:1px solid var(--border)">
             <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">${head}${counts}</div>
@@ -1327,7 +1327,7 @@
         const total = d.clusters_total != null ? d.clusters_total : clusters.length;
         const more = (total > clusters.length)
           ? `<div class="muted" style="margin-top:8px">${esc(
-              t("Showing {n} of {t} clusters.").replace("{n}", String(clusters.length)).replace("{t}", String(total)))}</div>`
+              _tfn("Showing {n} of {t} clusters.", { n: String(clusters.length), t: String(total) }))}</div>`
           : "";
         box.innerHTML = rows + more;
         // Method + caveat VISIBLE by default (never behind a toggle).

@@ -26,6 +26,7 @@ import pytest
 
 from src.monitoring import activity_ledger as al
 from tests.js_source_helper import function_body, object_literal
+from tests.locale_forms import load_locale
 
 _ROOT = Path(__file__).resolve().parent.parent
 _RUNNER = _ROOT / "src" / "scheduler" / "runner.py"
@@ -336,7 +337,7 @@ def test_the_scheduler_hook_is_silent_and_skips_what_did_not_act(monkeypatch):
 
 def _locales():
     d = _ROOT / "src" / "static" / "locales"
-    return {p.stem: json.loads(p.read_text(encoding="utf-8")) for p in sorted(d.glob("*.json"))}
+    return {p.stem: load_locale(p) for p in sorted(d.glob("*.json"))}
 
 
 def _ledger_strings():

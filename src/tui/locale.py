@@ -30,10 +30,60 @@ from pathlib import Path
 LOCALES_DIR = Path(__file__).resolve().parents[1] / "static" / "locales"
 DEFAULT = "en"
 #: The line the log starts with when the chosen language is written right to left. English on purpose: it is what the panel can draw.
-RTL_NOTE = ("This terminal cannot draw {name} in its right-to-left order, so the panel is in English. "
-            "The browser UI is in {name}.")
+RTL_NOTE = (
+    "This terminal cannot draw {name} in its right-to-left order, so the panel is in English. "
+    "The browser UI is in {name}."
+)
 _CODE = re.compile(r"^[a-z]{2,3}$")
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
+_PLURAL_MARK = re.compile(r"\[(zero|one|two|few|many|other)\]")
+
+
+def _plural_forms(value: str) -> dict[str, str] | None:
+    """The forms of a plural value ("[one]...[few]...[other]..."), as the browser's i18n.js reads them; None for a plain value."""
+    if not value.startswith("["):
+        return None
+    parts = _PLURAL_MARK.split(value)
+    if parts[0] != "" or len(parts) < 3:
+        return None
+    forms = dict(zip(parts[1::2], parts[2::2], strict=True))
+    return forms if "other" in forms else None
+
+
+def plural_category(code: str, x: float) -> str:
+    """The CLDR plural category of ``x`` in language ``code``: the browser uses Intl.PluralRules, the terminal these rules
+    (cardinal, CLDR 44) for the twelve app languages. A fraction takes the language's fractional category."""
+    whole = float(x).is_integer()
+    i = int(abs(x)) if whole else None
+    if code == "ru":
+        if i is None:
+            return "other"
+        if i % 10 == 1 and i % 100 != 11:
+            return "one"
+        if 2 <= i % 10 <= 4 and not 12 <= i % 100 <= 14:
+            return "few"
+        return "many"
+    if code == "ar":
+        if i is None:
+            return "other"
+        if i == 0:
+            return "zero"
+        if i == 1:
+            return "one"
+        if i == 2:
+            return "two"
+        if 3 <= i % 100 <= 10:
+            return "few"
+        if 11 <= i % 100 <= 99:
+            return "many"
+        return "other"
+    if code in ("ja", "zh", "id"):
+        return "other"
+    if code in ("fr", "pt"):
+        return "one" if int(abs(x)) in (0, 1) else "other"
+    if code in ("hi", "bn"):
+        return "one" if int(abs(x)) == 0 or x == 1 else "other"
+    return "one" if x == 1 and whole else "other"
 
 
 def _code(raw: str | None) -> str | None:
@@ -66,15 +116,40 @@ class Translator:
 
     def __init__(self, code: str = DEFAULT, table: Mapping[str, object] | None = None) -> None:
         self.code = code
-        self._table = {k: v for k, v in (table or {}).items() if isinstance(v, str) and v and not k.startswith("_")}
+        self._table = {
+            k: v
+            for k, v in (table or {}).items()
+            if isinstance(v, str) and v and not k.startswith("_")
+        }
 
     def t(self, text: str) -> str:
-        return self._table.get(text, text)
+        value = self._table.get(text, text)
+        forms = _plural_forms(value)
+        return value if forms is None else forms["other"]
 
     def tf(self, text: str, **values: object) -> str:
         """``t`` then ``{name}`` filled from ``values``. A placeholder with no value is left as written, as in the browser's ``tf``;
         never ``str.format``, so a brace in a translation or in a value (a host name, a job label) cannot raise."""
-        return _PLACEHOLDER.sub(lambda m: str(values[m.group(1)]) if m.group(1) in values else m.group(0), self.t(text))
+        out = self._table.get(text, text)
+        forms = _plural_forms(out)
+        if forms is not None:
+            out = forms["other"]
+            name = (
+                "n"
+                if "n" in values
+                else "count"
+                if "count" in values
+                else next(iter(_PLACEHOLDER.findall(text)), None)
+            )
+            try:
+                x = float(str(values[name])) if name is not None and name in values else None
+            except (TypeError, ValueError):
+                x = None
+            if x is not None:
+                out = forms.get(plural_category(self.code, x), forms["other"])
+        return _PLACEHOLDER.sub(
+            lambda m: str(values[m.group(1)]) if m.group(1) in values else m.group(0), out
+        )
 
 
 def load(code: str | None) -> tuple[Translator, str | None]:
@@ -102,7 +177,9 @@ def terminal_code(env: Mapping[str, str] | None = None) -> str | None:
     return None
 
 
-def choose(reported: str | None, env: Mapping[str, str] | None = None) -> tuple[Translator, str | None]:
+def choose(
+    reported: str | None, env: Mapping[str, str] | None = None
+) -> tuple[Translator, str | None]:
     """The panel's language: ``OO_PANEL_LANG``, else what the browser reported, else the terminal's locale, else English. A code no
     locale file exists for is passed over, not shown as English while a later source names a language the panel has."""
     env = os.environ if env is None else env

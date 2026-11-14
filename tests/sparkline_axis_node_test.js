@@ -65,6 +65,7 @@ new Function(
   + extract("function _allInteger(") + "\n"
   + extract("function _axisNum(") + "\n"
   + extract("function _timeLabelFmt(") + "\n"
+  + extract("function _tfn(") + "\n"
   + extract("function _chartAria(") + "\n"
   + extract("function _chartSrTable(") + "\n"
   + extract("function dashChartSvg(") + "\n"

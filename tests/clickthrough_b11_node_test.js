@@ -55,9 +55,9 @@ function extractConst(name, src) {
 
 // The REAL engine's t() and tf() over one locale's map, plus current().
 function makeI18n(lang) {
-  const src = "var map = MAP;\n" + extract("t", I18N) + "\n" + extract("tf", I18N) + "\n" +
-    "return { t: t, tf: tf, current: function () { return LANG; } };";
-  return new Function("MAP", "LANG", src)(lang === "en" ? {} : LOCALE(lang), lang);
+  // With the plural-form helpers tf() calls (2026-11-14), from the same shipped file.
+  const e = require("./i18n_engine_node.js").engine(lang === "en" ? {} : LOCALE(lang), () => lang);
+  return { t: e.t, tf: e.tf, current: function () { return lang; } };
 }
 
 const HOST = { innerHTML: "" };
@@ -191,7 +191,9 @@ test("J-elapsed: no locale leaves an English fragment in the Elapsed value", () 
     const p = panel(lang, {});
     const v = rowValue(p.html, p.I.t("Elapsed"));
     const L = LOCALE(lang);
-    const want = L["{d} for the corpus"].replace("{d}", L["{n} s"].replace("{n}", "12.5"))
+    // "{n} s" may hold plural forms: the shipped engine picks 12.5's (2026-11-14).
+    const E = require("./i18n_engine_node.js").engine(L, () => lang);
+    const want = E.tf("{d} for the corpus", { d: E.tf("{n} s", { n: "12.5" }) })
       + " · " + L["not recorded for the files"];
     const escd = want.replace(/&/g, "&amp;").replace(/'/g, "&#39;");
     assert(v === escd, `${lang}: ${v} (want ${escd})`);

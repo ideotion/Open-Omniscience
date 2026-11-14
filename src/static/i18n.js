@@ -40,7 +40,8 @@
     if (!core) return s;
     const k = core.replace(/\s+/g, " ");   // normalise internal whitespace for matching
     if (map[k] == null) return s;
-    return lead + map[k] + trail;
+    const forms = pluralForms(map[k]);
+    return lead + (forms ? forms.other : map[k]) + trail;
   }
 
   function doText(n) {
@@ -166,7 +167,11 @@
 
   // t(): string-level lookup for JS-built text (confirm dialogs, toasts) that
   // the DOM observer cannot reach. Same fallback rule: unknown -> English.
-  function t(s) { return map[s] == null ? s : map[s]; }
+  function t(s) {
+    if (map[s] == null) return s;
+    const forms = pluralForms(map[s]);
+    return forms ? forms.other : map[s];
+  }
 
   // tf(): COMPOSITE / interpolated lookup. The KEY is a fixed TEMPLATE with
   // {named} placeholders (a keyable string), and the VALUES are DATA (counts,
@@ -179,9 +184,41 @@
   // matching var is LEFT VERBATIM (never blanked) so a template/vars mismatch is
   // visible, not silently dropped. Used by JS-built rows and by server-emitted card
   // titles ({title_i18n, title_vars}) whose data (the keyword term) must not translate.
+  // PLURAL FORMS (2026-11-14). A translation may hold one form per CLDR plural category,
+  // each opened by a marker: "[one]{n} источник[few]{n} источника[many]{n} источников
+  // [other]{n} источника". The KEY stays the one English template, so the locale files keep
+  // one key per string. The number that chooses is `n`, else `count`, else the key's FIRST
+  // placeholder, and the choice is the browser's own Intl.PluralRules for the app language
+  // (offline, no egress). t() has no number, so it returns the [other] form; a value without
+  // markers is unchanged, so every existing translation reads exactly as before.
+  const PLURAL_MARK = /\[(zero|one|two|few|many|other)\]/g;
+  function pluralForms(v) {
+    if (typeof v !== "string" || v.charAt(0) !== "[") return null;
+    const parts = v.split(PLURAL_MARK);
+    if (parts[0] !== "" || parts.length < 3) return null;
+    const forms = {};
+    for (let i = 1; i < parts.length; i += 2) forms[parts[i]] = parts[i + 1];
+    return forms.other == null ? null : forms;
+  }
+  function pluralPick(forms, key, vars) {
+    let name = null;
+    if (vars) {
+      if (vars.n != null) name = "n";
+      else if (vars.count != null) name = "count";
+      else { const m = /\{(\w+)\}/.exec(key); if (m) name = m[1]; }
+    }
+    // A count may arrive already written by fmtNum ("12\u202f345"): the grouping spaces go.
+    const x = name == null ? NaN : Number(String(vars[name]).replace(/[\s\u00a0\u202f]/g, ""));
+    if (!isFinite(x)) return forms.other;
+    let cat = "other";
+    try { cat = new Intl.PluralRules(current() || "en").select(x); } catch (e) { /* stays other */ }
+    return forms[cat] != null ? forms[cat] : forms.other;
+  }
   function tf(s, vars) {
     if (s == null) return s;
     let out = map[s] == null ? s : map[s];
+    const forms = pluralForms(out);
+    if (forms) out = pluralPick(forms, s, vars);
     if (vars) out = out.replace(/\{(\w+)\}/g, function (m, k) {
       return (vars[k] === undefined || vars[k] === null) ? m : String(vars[k]);
     });

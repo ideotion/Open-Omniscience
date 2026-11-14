@@ -20,6 +20,7 @@ import re
 from pathlib import Path
 
 from tests.js_source_helper import function_body, object_literal
+from tests.locale_forms import load_locale
 
 _STATIC = Path(__file__).resolve().parent.parent / "src" / "static"
 
@@ -104,7 +105,6 @@ def test_ring_two_folds_below_full_but_never_hides_a_changed_value():
 
 
 def test_every_depth_string_is_keyed_x12():
-    import json
 
     keys = [
         "Interface depth", "Essentials", "Standard", "Full", "Show more ({n})", "Show fewer",
@@ -113,7 +113,7 @@ def test_every_depth_string_is_keyed_x12():
         "Show the {n} tabs this depth does not pin", "Hide the tabs this depth does not pin",
     ]
     for p in sorted((_STATIC / "locales").glob("*.json")):
-        d = json.loads(p.read_text(encoding="utf-8"))
+        d = load_locale(p)
         for k in keys:
             assert d.get(k, "").strip(), f"{p.name} has no key {k!r}"
             assert sorted(re.findall(r"\{(\w+)\}", d[k])) == sorted(re.findall(r"\{(\w+)\}", k))

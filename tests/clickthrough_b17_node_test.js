@@ -77,17 +77,15 @@ const bare = (s) => String(s).replace(/[⁨⁩]/g, "").replace(/ /g, " ");
 
 // A fake i18n engine over a real locale: t()/tf() behave like src/static/i18n.js (an
 // unknown key renders its English). `lang` may be switched live, like OOI18N.setLang.
+const ENGINE = require("./i18n_engine_node.js").engine;
 function i18n(lang) {
   const I = {
     lang,
     map: lang === "en" ? {} : LOCALE(lang),
     set(code) { I.lang = code; I.map = code === "en" ? {} : LOCALE(code); },
-    t: (s) => (I.map[s] == null ? s : I.map[s]),
-    tf: (s, v) => {
-      let out = I.map[s] == null ? s : I.map[s];
-      if (v) out = out.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : String(v[k])));
-      return out;
-    },
+    // The shipped t()/tf(), plural forms included (2026-11-14), over the live map.
+    t: (s) => ENGINE(I.map, () => I.lang).t(s),
+    tf: (s, v) => ENGINE(I.map, () => I.lang).tf(s, v),
     current: () => I.lang,
   };
   return I;
@@ -255,10 +253,10 @@ async function run() {
   await test("T4: Russian and Arabic write a 'many' count as a label, right for every number", async () => {
     const ru = LOCALE("ru"), ar = LOCALE("ar");
     const r = reviewText("ru", 4, 1);
-    assert(r.indexOf(esc_(ru["{n} articles"].replace("{n}", "4"))) !== -1 && ru["{n} articles"] === "статей: {n}", r);
-    assert(r.indexOf(esc_(ru["{n} source"].replace("{n}", "1"))) !== -1, r);
+    assert(r.indexOf(esc_(ENGINE(ru, () => "ru").tf("{n} articles", { n: "4" }))) !== -1 && ru["{n} articles"] === "статей: {n}", r);
+    assert(r.indexOf(esc_(ENGINE(ru, () => "ru").tf("{n} source", { n: "1" }))) !== -1, r);  // plural forms (2026-11-14)
     const a = reviewText("ar", 4, 3);
-    assert(a.indexOf(esc_(ar["{n} sources"].replace("{n}", "3"))) !== -1 && /: \{n\}$/.test(ar["{n} sources"]), a);
+    assert(a.indexOf(esc_(ENGINE(ar, () => "ar").tf("{n} sources", { n: "3" }))) !== -1 && /: \{n\}$/.test(ar["{n} sources"]), a);
   });
 
   // ============== T5 / T7 / T11: the /tasks page ===================================== //
@@ -348,7 +346,7 @@ async function run() {
 
   await test("T7: a duration's unit is the locale's on /tasks, hours included", async () => {
     const ar = LOCALE("ar"), de = LOCALE("de");
-    assert(tm("ar").fmtDur(45) === "~" + ar["{n} s"].replace("{n}", "45"), tm("ar").fmtDur(45));
+    assert(tm("ar").fmtDur(45) === "~" + ENGINE(ar, () => "ar").tf("{n} s", { n: "45" }), tm("ar").fmtDur(45));
     assert(tm("de").fmtDur(600) === "~" + de["{n} min"].replace("{n}", "10"), tm("de").fmtDur(600));
     assert(tm("de").fmtDur(9000) === "~" + de["{n} h"].replace("{n}", "2.5"), tm("de").fmtDur(9000));
     assert(tm("en").fmtDur(9000) === "~2.5 h" && tm("en").fmtDur(45) === "~45 s", tm("en").fmtDur(9000));
@@ -362,8 +360,8 @@ async function run() {
   }
   await test("T7: ...and in the in-app window", async () => {
     const ar = LOCALE("ar");
-    assert(appDur("ar")(45) === "~" + ar["{n} s"].replace("{n}", "45"), appDur("ar")(45));
-    assert(appDur("ar")(600) === "~" + ar["{n} min"].replace("{n}", "10"), appDur("ar")(600));
+    assert(appDur("ar")(45) === "~" + ENGINE(ar, () => "ar").tf("{n} s", { n: "45" }), appDur("ar")(45));
+    assert(appDur("ar")(600) === "~" + ENGINE(ar, () => "ar").tf("{n} min", { n: "10" }), appDur("ar")(600));
     assert(appDur("en")(600) === "~10 min" && appDur("en")(null) === "—", appDur("en")(600));
   });
 

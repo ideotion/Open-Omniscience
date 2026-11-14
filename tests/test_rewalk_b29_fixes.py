@@ -28,13 +28,14 @@ import subprocess
 from pathlib import Path
 
 from tests.js_source_helper import event_listener_bodies, function_body, read_static, strip_comments
+from tests.locale_forms import load_locale
 
 _ROOT = Path(__file__).resolve().parent.parent
 _LOCALES = _ROOT / "src" / "static" / "locales"
 
 
 def _locales() -> dict[str, dict]:
-    out = {p.stem: json.loads(p.read_text(encoding="utf-8")) for p in _LOCALES.glob("*.json")}
+    out = {p.stem: load_locale(p) for p in _LOCALES.glob("*.json")}
     assert len(out) == 12, f"expected 12 locale files, found {len(out)}"
     return out
 
@@ -200,7 +201,7 @@ def test_the_glossary_guard_catches_a_second_term(tmp_path, monkeypatch):
     """A mutant, so the guard is known to bite: one lane value back to 'file'."""
     import scripts.i18n_report as rep
 
-    fr = json.loads((_LOCALES / "fr.json").read_text(encoding="utf-8"))
+    fr = load_locale(_LOCALES / "fr.json")
     fr["Lane"] = "File"
     fr["The lane's settings could not be read."] = "Les paramètres n'ont pas pu être lus."
     (tmp_path / "fr.json").write_text(json.dumps(fr, ensure_ascii=False), encoding="utf-8")

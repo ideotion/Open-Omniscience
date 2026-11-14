@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 
 from src.tui import panel as P
+from tests.locale_forms import load_locale
 from tests.os_scope import scope_os
 
 REPO = Path(__file__).resolve().parents[1]
@@ -956,7 +957,7 @@ def test_every_panel_string_is_a_key_in_all_twelve_locales_with_its_placeholders
     assert len(keys) > 60, "the AST walk found the panel's strings"
     assert len(CODES) == 12
     for code in CODES:
-        table = json.loads((LOCALES / f"{code}.json").read_text(encoding="utf-8"))
+        table = load_locale(LOCALES / f"{code}.json")
         missing = sorted(k for k in keys if k not in table)
         assert not missing, (code, missing[:5])
         for k in keys:
