@@ -1,4 +1,4 @@
-<!-- fr: AI-drafted translation of docs/USER_MANUAL.md (2026-11-13, R677), not yet reviewed by a native speaker; the English original is authoritative. Coverage: the whole document, 124 of 124 headings. Improve it with a pull request; corrections by native speakers are welcome. -->
+<!-- fr: Translation of docs/USER_MANUAL.md written by AI (2026-11-13, R677; native review dropped by R721, 2026-11-14); it may contain mistakes, and the English original is authoritative. Coverage: the whole document, 124 of 124 headings. Corrections are welcome as a pull request. -->
 
 # Open Omniscience — Manuel d'utilisation
 
