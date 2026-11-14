@@ -414,6 +414,21 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
         todo = first[:limit]
         if not todo:
             return {"recorded": 0, "already_present": 0, "article_gone": 0, "still_pending": 0}
+        if prefs is None:
+            # Only the actor name comes from here, so an unreadable setting (the settings
+            # live in the same database whose pool may be the problem) costs the name,
+            # never the entries.
+            try:
+                from src.custody.settings import load_settings
+
+                prefs = load_settings()
+            except Exception as exc:  # noqa: BLE001 - fall back to the pipeline's own actor name
+                log_failure(_LOG, "custody: settings unreadable during a drain", exc, level=logging.DEBUG)
+        if getattr(prefs, "store_unreadable", False):
+            # The log would be opened under guessed preferences (PQC off, local anchoring): the entries stay owed until
+            # the custody settings can be read again.
+            return {"recorded": 0, "already_present": 0, "article_gone": 0, "still_pending": len(first),
+                    "settings_unreadable": True}
         settled: list[dict[str, Any]] = []
         recorded = already = gone = refused = 0
         need = _ids_missing_columns(todo)
@@ -425,16 +440,6 @@ def drain(*, limit: int = 50, session_factory: Any = None, log_factory: Any = No
             except Exception as exc:  # noqa: BLE001 - those entries wait for the next drain
                 read, read_error = None, record_text(exc, typed=True, limit=200)
                 log_failure(_LOG, "custody: owed entries' columns could not be read yet", exc, level=logging.DEBUG)
-        if prefs is None:
-            # Only the actor name comes from here, so an unreadable setting (the settings
-            # live in the same database whose pool may be the problem) costs the name,
-            # never the entries.
-            try:
-                from src.custody.settings import load_settings
-
-                prefs = load_settings()
-            except Exception as exc:  # noqa: BLE001 - fall back to the pipeline's own actor name
-                log_failure(_LOG, "custody: settings unreadable during a drain", exc, level=logging.DEBUG)
         actor = getattr(prefs, "default_actor", None) or "ingest-pipeline"
         if log_factory is None:
             from src.custody.log import CustodyLog as log_factory

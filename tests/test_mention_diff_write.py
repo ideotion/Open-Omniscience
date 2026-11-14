@@ -240,7 +240,12 @@ def test_unchanged_rows_keep_id_and_created_at_changed_rows_keep_id_and_are_stam
 def test_a_change_in_any_denormalised_column_alone_is_a_change(column, change):
     """Same keywords, same counts: only an article-level fact the mention copies has moved."""
     s = _session()
-    a = _article(s, "a", language="en", country="fr")
+    # The language case starts from an UNKNOWN language: its keywords are created with no
+    # language, and a row with none takes a mention in any language, so the same rows stay
+    # and only the copied column moves. From a known language a change re-keys every term
+    # to the new language's own rows (R698), which is a different event, pinned in
+    # tests/test_keyword_language_keying.py.
+    a = _article(s, "a", language=None if column == "language" else "en", country="fr")
     ex = _Ex([_t("a", 2), _t("b")])
     index_article(s, a, extractor=ex, country="fr", city=None)
     s.commit()

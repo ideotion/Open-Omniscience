@@ -8,6 +8,8 @@
  * the first-launch step marked answers watched:true, and only then does it keep polling
  * (every 2 s, loopback, no database). The server owns the clock: the seconds shown are the
  * server's own count, so a slow tab never shows a deadline the server does not hold.
+ * The same first answer carries whether the data folder is shared with other files (R711); if it is, a notice says what an
+ * emergency wipe or a secure uninstall would and would not remove there.
  */
 (function () {
   "use strict";
@@ -129,10 +131,49 @@
     fetch(URL + "/close-now", { method: "POST" }).then(poll).catch(function () {});
   }
 
+  // R711: the data folder is shared with other files (a home folder, a drive root, a folder that also holds the operator's own files). Said at
+  // every start, on both pages, in a notice that stays until hidden for this page: an emergency wipe or a secure uninstall
+  // there removes only the app's own files, which the operator must know before they ever need one. Not modal: the app works.
+  var SCOPE_TEXT = {
+    home: "Your data folder is your home folder.",
+    above_home: "Your data folder contains your home folder.",
+    home_folder: "Your data folder is one of your own folders, such as Documents or Desktop.",
+    drive_root: "Your data folder is the root of a drive.",
+    mount_point: "Your data folder is the top of a mounted drive.",
+    shared_folder: "Your data folder also holds files this app did not write.",
+    unlistable: "The app cannot list your data folder."
+  };
+
+  function renderScope(sc) {
+    if (!sc || !sc.broad || document.getElementById("data-scope-notice")) return;
+    var n = el("div", "card-caveat data-scope-notice");
+    n.id = "data-scope-notice";
+    n.setAttribute("role", "status");
+    n.style.cssText =
+      "position:fixed;left:16px;right:16px;bottom:16px;z-index:50;max-width:44rem;margin:0 auto;padding:12px 14px;" +
+      "background:var(--panel,#1b1f24);color:var(--fg,#e8e6e3);border:1px solid var(--caveat,#eab44e);border-radius:8px;" +
+      "line-height:1.45;box-shadow:0 4px 16px rgba(0,0,0,.3)";
+    var head = el("p", "", tr(SCOPE_TEXT[sc.reason] || SCOPE_TEXT.shared_folder));
+    head.style.cssText = "margin:0 0 4px;font-weight:600;color:var(--caveat,#eab44e)";
+    n.appendChild(head);
+    var body = el("p", "", tr("An emergency wipe or a secure uninstall removes only this app’s own files there, and leaves the folder and everything else in it."));
+    body.style.margin = "0 0 4px";
+    n.appendChild(body);
+    var adv = el("p", "", tr("To keep the app’s data apart, quit the app, move its files into a folder of their own and point OO_DATA_DIR at it."));
+    adv.style.margin = "0 0 8px";
+    n.appendChild(adv);
+    var hide = el("button", "tiny secondary", tr("Hide"));
+    hide.type = "button";
+    hide.addEventListener("click", function () { n.remove(); });
+    n.appendChild(hide);
+    document.body.appendChild(n);
+  }
+
   function start() {
     fetch(URL, { cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (s) {
+        if (s) renderScope(s.data_folder_scope);
         if (!s || !s.watched) return;   // an install without a marked drive: nothing to watch
         render(s);
         timer = setInterval(poll, 2000);

@@ -627,9 +627,10 @@ def test_a_declined_build_removes_its_folder_and_a_swap_removes_the_retired_ones
     assert len(list(root.iterdir())) == 1
 
 
-def test_a_connection_without_a_spill_choice_keeps_duckdbs_own_default():
-    """Other callers of ``connect`` are unchanged by this work."""
-    assert "temp_directory" not in columnar._offline_config()
+def test_a_connection_without_a_spill_choice_offloads_nothing():
+    """A caller that names no folder gets NO offload: DuckDB's own default is ``./.tmp`` in the working directory,
+    in plaintext whatever the corpus's encryption (row 24, tests/test_columnar_spill_never_plaintext.py)."""
+    assert columnar._offline_config()["temp_directory"] == ""
     assert columnar._offline_config(spill="")["temp_directory"] == ""
 
 

@@ -480,7 +480,7 @@ Model lengkap, model ancaman, dan catatan privasi: [USER_MANUAL.md](USER_MANUAL.
   dikonfirmasi (galat jaringan, batas waktu habis, 5xx, atau 401/403 yang dibatasi), URL tersebut
   **tidak** diambil.
 - Jeda minimum per host diberlakukan (menghormati `Crawl-delay`).
-- Satu jalur pengambilan, User-Agent yang mengidentifikasi diri, hanya HTML untuk artikel — tanpa jalan pintas mentah.
+- Satu jalur pengambilan, User-Agent yang mengidentifikasi diri (dalam mode terlindungi, User-Agent generik, kecuali dalam permintaan API dan dump ke server Wikimedia), hanya HTML untuk artikel — tanpa jalan pintas mentah.
 - Ekstraksi menggunakan trafilatura; jika tidak ditemukan isi artikel yang sebenarnya, tidak ada yang disimpan
   (tidak ada baris karangan "No Title / No Content").
 - Setiap artikel yang disimpan membawa asal-usulnya: sumber, URL asli, URL kanonis,

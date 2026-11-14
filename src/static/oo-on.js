@@ -411,7 +411,7 @@
       "lunarTestTerm", "maintAction", "maintLoadFurniture", "maintStart", "mbAnchorGrade", "mbAnchorKind",
       "mbAnchorsLoad", "mbAnchorsSave", "mbBuildBatch", "mbRun", "memoryGuardResume", "migrateOllamaStore", "mmExpand", "mmLevel",
       "mmView", "ooBodyClass", "ooCloseDialog", "ooFolderPicker", "ooFolderPickerUse",
-      "ooMapCloseDetail", "ooOpenUrl", "ooPrevent", "ooPreventStop", "ooStop", "openAnalysisFor",
+      "ooMapCloseDetail", "ooOpenUrl", "ooPostSave", "ooPrevent", "ooPreventStop", "ooStop", "openAnalysisFor",
       "openAnalysisForIds", "openCardCorpus", "openCardCorpusQuery", "openChannelCorpus", "openConceptMap",
       "openConjunctionLensChannel", "openCorpus", "openDoc", "openDraft", "openGuide", "openIdxComparison",
       "openInsightsTrends", "openLinkPreview", "openOsmObjectCard", "openPalette", "openPlaceCard",
@@ -460,6 +460,8 @@
   const EVENT_ACTIONS = Object.create(null);
   for (const [type, names] of Object.entries(EVENT_ACTION_NAMES)) EVENT_ACTIONS[type] = new Set(names);
 
+  // The ooPostSave runs in flight, by URL.
+  const POST_SAVE_BUSY = new Set();
   // Small helpers for what inline handlers used to say in-line.
   const HELPERS = {
     ooPrevent(ev) { if (ev) ev.preventDefault(); },
@@ -483,6 +485,50 @@
       try { u = new URL(path, location.origin); } catch (e) { return; }
       if (u.origin !== location.origin) return;
       window.open(u.href, "_blank", "noopener");
+    },
+    // A same-origin POST whose answer is saved as a file (R694). The heavy diagnostics (benchmarks, self-tests) were GETs opened
+    // with ooOpenUrl, and any page the person visits can fire a GET; they are POSTs now, so the button posts and saves what comes
+    // back. Same path rule as ooOpenUrl. The name is the server's Content-Disposition filename when it sends one, else the
+    // route's last segment with .json.
+    async ooPostSave(path) {
+      if (typeof path !== "string" || !path.startsWith("/") || path.startsWith("//") || path.includes("\\")) return;
+      let u;
+      try { u = new URL(path, location.origin); } catch (e) { return; }
+      if (u.origin !== location.origin) return;
+      // Only the report routes: never a bare POST to a route that changes state (the scheduler, the network, a wipe).
+      if (!u.pathname.startsWith("/api/diagnostics/") && !u.pathname.startsWith("/api/signals/")) return;
+      const say = (m, kind) => { if (typeof window.toast === "function") window.toast(m, kind); };
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // A benchmark or model sweep runs for minutes with no tab to show it: say so, and never start the same run twice at once.
+      if (POST_SAVE_BUSY.has(u.href)) { say(t("Running…"), "ok"); return; }
+      POST_SAVE_BUSY.add(u.href);
+      say(t("Running…"), "ok");
+      try {
+        const res = await fetch(u.href, {method: "POST"});
+        if (!res.ok) {
+          let why = "";
+          try { const body = await res.json(); why = body && body.detail ? ": " + String(typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)) : ""; } catch (e) { why = ""; }
+          say(t("Failed") + " (" + res.status + ")" + why, "err");
+          return;
+        }
+        const cd = res.headers.get("Content-Disposition") || "";
+        const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
+        let fromHeader = "";
+        if (m) { try { fromHeader = decodeURIComponent(m[1]); } catch (e) { fromHeader = m[1]; } }
+        const name = fromHeader ? fromHeader : (u.pathname.split("/").filter(Boolean).pop() || "result") + ".json";
+        const blob = await res.blob();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      } catch (e) {
+        say(t("Failed") + ": " + String((e && e.message) || e), "err");
+      } finally {
+        POST_SAVE_BUSY.delete(u.href);
+      }
     },
   };
   for (const [k, f] of Object.entries(HELPERS)) ACTIONS[k] = f;

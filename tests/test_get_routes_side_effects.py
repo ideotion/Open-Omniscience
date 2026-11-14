@@ -75,8 +75,10 @@ from src.safety.file_lock import temp_name
 # went blind (a framework change in how the schema is built) and every assertion below would loop over nothing. The Core-only
 # install (no [analysis] extra) mounts 3 fewer GETs, because the commodity, statistical-analysis and article-similarity routes are
 # disabled there: 464, reproduced by blocking numpy/pandas/scipy/sklearn/statsmodels (R283: a floor states both install profiles).
-_OPERATIONS_FLOOR_FULL = 467
-_OPERATIONS_FLOOR_CORE_ONLY = 464
+# 2026-11-14 (R694, R278's proposals adopted): 6 egress/key-minting GETs and 21 heavy diagnostics GETs became POSTs, and the count
+# measured on that tree is the floor now: 461 full, 458 Core-only (the same 3 analysis routes apart).
+_OPERATIONS_FLOOR_FULL = 461
+_OPERATIONS_FLOOR_CORE_ONLY = 458
 
 
 def _analysis_extra_installed() -> bool:
@@ -137,9 +139,7 @@ _AMBIENT_THREAD = re.compile(r"AnyIO worker thread|oo-boot-sequence|oo-boot-slow
 
 # Route -> (files it may create or change, thread names it may start, reason). A route can appear only if the effect was
 # MEASURED on 2026-10-27; the reason says why it is acceptable or names the finding that routes it.
-_DIAG_THREADS = frozenset({"dbg:*", "all-diag-member"})
-# oo-llmbatch_N: llm.concurrency.run_concurrent (named since R324), reached by the three diagnostics GETs that run the local model
-_LLM_POOL_THREADS = _DIAG_THREADS | {"oo-llmbatch_*"}
+# The heavy diagnostics (/all, /debug-bundle, the llm thread-pool self-tests, recursive-loop) left this table when they became POSTs (R694).
 _ROUTES: dict[str, tuple[frozenset[str], frozenset[str], str]] = {
     "/api/custody/export": (
         frozenset({"custody_log.db", "custody_log.db-wal", "custody_log.db-shm", "custody_ed25519.pem"}), frozenset(),
@@ -151,22 +151,11 @@ _ROUTES: dict[str, tuple[frozenset[str], frozenset[str], str]] = {
     ),
     "/api/briefing": (frozenset(), frozenset({"oo-briefing-refresh"}), "starts the briefing refresh in a daemon thread: derived data, de-duplicated by its slot"),
     "/api/scheduler/activity": (frozenset(), frozenset({"oo-plan-preview"}), "computes the plan preview in a daemon thread: derived, cached by its key"),
-    "/api/diagnostics/all": (
-        frozenset({"keyword-coverage.json"}), _LLM_POOL_THREADS,
-        "FINDING F1 (routed to RC2, R278): collector threads and diagnostics files from one GET; #1526's cross-site guard now stops another site triggering it; a same-origin call still does",
-    ),
-    "/api/diagnostics/debug-bundle": (frozenset(), _DIAG_THREADS, "FINDING F1 (routed): the bundle's collectors, one thread each"),
     "/api/diagnostics/keyword-engine": (frozenset({"keyword-coverage.json"}), frozenset(), "writes the keyword coverage record it reports"),
-    "/api/diagnostics/llm-throughput-selftest": (
-        frozenset(), _LLM_POOL_THREADS, "FINDING F1 (routed): a thread pool against the local model, loopback only",
-    ),
-    "/api/diagnostics/recursive-loop": (
-        frozenset(), _LLM_POOL_THREADS, "FINDING F1 (routed): a thread pool against the local model, loopback only",
-    ),
 }
 # Routes allowed to attempt a LOOPBACK connect (the local model servers: Ollama 11434, vLLM 8001). Nothing else may open a socket,
 # and no route may reach a non-loopback address with the kill switch engaged.
-_LOOPBACK_ROUTES = re.compile(r"^/api/(llm/.*|diagnostics/(ai|all|debug-bundle|llm-bench|llm-throughput|llm-throughput-selftest|recursive-loop))$")
+_LOOPBACK_ROUTES = re.compile(r"^/api/(llm/.*|diagnostics/ai)$")  # the heavy model-driving diagnostics are POSTs since R694
 # A GET issues no write statement through the app's engine (INSERT, UPDATE, DELETE, REPLACE, CREATE, DROP, ALTER). Measured on
 # 2026-10-27: none does. (The custody log is a file of its own, written outside the engine, and is accounted for above.)
 _SQL_WRITES_ALLOWED: dict[str, frozenset[str]] = {}

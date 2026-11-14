@@ -562,8 +562,10 @@ class VolumeMonitor:
 
     def _close(self, why: str) -> None:
         self.phase, self.deadline = "closing", None
-        record_incident("shutdown", why=why)
-        self._exit()
+        try:
+            record_incident("shutdown", why=why)
+        finally:
+            self._exit()  # a broken incident log never keeps a half-alive app running
 
 
 def _activity() -> dict[str, Any]:
@@ -604,11 +606,47 @@ def _reap() -> None:
         pass
 
 
+#: The graceful stop's own wait for the background jobs (the lifespan's ``stop_all_jobs(5.0)`` in ``src/api/main.py``).
+_JOBS_STOP_DEADLINE_S = 5.0
+
+
+def _stop_jobs_before_restart() -> None:
+    """The graceful stop's job steps, before the execve that skips them (R689 follow-up (4)): every running background job is asked to
+    stop and waited for against ONE 5 s deadline, the database is closed to the ones still running, and the pool is disposed. Without it
+    the execve ended a job mid-unit and the next open rolled that unit back. Collection was paused when the reconnect window opened.
+    Never raises: the restart goes ahead whatever this found."""
+    try:
+        from src.database.after_shutdown import stop_jobs_and_close
+
+        left = stop_jobs_and_close(_JOBS_STOP_DEADLINE_S)
+        if left:
+            _LOG.warning("data drive restart: background jobs still running at the restart: %s", ", ".join(left))
+    except Exception as exc:  # noqa: BLE001 - the restart goes ahead
+        log_failure(_LOG, "data drive restart: could not stop the background jobs", exc, level=logging.WARNING)
+    try:
+        from src.database.session import dispose_engine
+
+        dispose_engine()
+    except Exception as exc:  # noqa: BLE001 - the restart goes ahead
+        log_failure(_LOG, "data drive restart: could not dispose the engine", exc, level=logging.DEBUG)
+
+
 def _restart_after_reconnect() -> None:
     def _go() -> None:
         time.sleep(1.5)   # let the overlay read "restarting" first
+        _stop_jobs_before_restart()
         _reap()
-        _restart_process()
+        try:
+            _restart_process()
+        except Exception as exc:  # noqa: BLE001 - a failed execve must not leave a half-alive app behind a page that never ends
+            # The jobs are refused and the engine disposed by now: say so loudly and shut down instead of running on like that.
+            try:
+                log_failure(_LOG, "data drive: the restart failed; shutting down instead", exc, level=logging.ERROR)
+                record_incident("restart_failed", error=type(exc).__name__)
+            except Exception:  # noqa: BLE001 - the shutdown below must happen whatever saying so did  # nosec B110
+                pass
+            with MONITOR._lock:
+                MONITOR._close("the restart after the drive came back failed")
 
     threading.Thread(target=_go, name="oo-data-volume-restart", daemon=True).start()
 

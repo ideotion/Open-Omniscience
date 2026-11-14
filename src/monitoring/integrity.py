@@ -574,6 +574,9 @@ def corpus_integrity(
                         "COALESCE(SUM(m.count),0) AS live_mentions, "
                         "COUNT(m.article_id) AS live_articles "
                         f"FROM {source_rows} k LEFT JOIN keyword_mentions_all m ON m.keyword_id = k.id "
+                        # R101: the counters leave a quarantined article out, so the truth they are checked against does too
+                        # (in the ON clause, so a keyword only quarantined articles mention still compares against 0).
+                        "AND m.article_id NOT IN (SELECT id FROM articles WHERE quarantined IS 1) "
                         "GROUP BY k.id"
                     )
                 ).fetchall()

@@ -179,6 +179,11 @@ class _Ctx:
     def stopping(self) -> bool:
         return self._stopping
 
+    @property
+    def yielding(self) -> bool:
+        # A committing restore's ask to step aside (R659): never asked here.
+        return False
+
     def set_progress(self, *, done=None, total=None, detail=None) -> None:
         self.progress.append({"done": done, "total": total, "detail": detail})
 
