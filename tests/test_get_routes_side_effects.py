@@ -151,7 +151,17 @@ _ROUTES: dict[str, tuple[frozenset[str], frozenset[str], str]] = {
     ),
     "/api/briefing": (frozenset(), frozenset({"oo-briefing-refresh"}), "starts the briefing refresh in a daemon thread: derived data, de-duplicated by its slot"),
     "/api/scheduler/activity": (frozenset(), frozenset({"oo-plan-preview"}), "computes the plan preview in a daemon thread: derived, cached by its key"),
-    "/api/diagnostics/keyword-engine": (frozenset({"keyword-coverage.json"}), frozenset(), "writes the keyword coverage record it reports"),
+    "/api/diagnostics/keyword-engine": (
+        frozenset({"keyword-coverage.json", "keyword-generic-terms.json"}), frozenset(),
+        "writes the keyword coverage record it reports, and K5's generic-term list date and size (R706)",
+    ),
+    "/api/diagnostics/dates": (
+        frozenset({"date-extraction-coverage.json"}), frozenset(),
+        "writes K7's whole-corpus date coverage record (R706); a filtered run writes nothing",
+    ),
+    "/api/diagnostics/source-audit": (
+        frozenset({"source-audit-status.json"}), frozenset(), "writes K8's status-count record (R706)",
+    ),
 }
 # Routes allowed to attempt a LOOPBACK connect (the local model servers: Ollama 11434, vLLM 8001). Nothing else may open a socket,
 # and no route may reach a non-loopback address with the kill switch engaged.

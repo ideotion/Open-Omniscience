@@ -59,6 +59,9 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
     # raises it unchanged, exactly as a direct call would; it reads no text, stores nothing and logs nothing
     "src/api/llm.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},
     "src/analytics/day_counts.py": {"session.info is kept as a name, a log call the scan cannot read": 1},  # the session's own info dict: one request's memo of the live per-day sums (R625)
+    # R695: ``_deadline_stopped(exc)`` answers whether a caught error is a statement deadline's stop: an isinstance test, then the
+    # driver text compared to the one fixed word ``interrupted``; it stores nothing and logs nothing, and the two callers only re-raise
+    "src/analytics/watches.py": {"the caught exception 'exc' is used outside a scrubbing call": 4},
     "src/analytics/rollup_serve.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},  # ``_library_replaced(exc)`` walks the exception's ``__cause__``/``__context__`` chain for the generation guard's class; it reads no text, stores nothing and logs nothing
     # RobotsUnavailable's own ``cause`` word, not an exception; and ``_carries_airplane_refusal(exc)`` (R620), which walks the exception's
     # ``__cause__``/``__context__``/``args``/``MaxRetryError.reason`` links for the guard's class: it reads no text, stores nothing and logs
