@@ -2271,7 +2271,12 @@
         const detail = (l) => esc(l) + fieldBits(l) + " (" + esc(g[l].reason || "") + ")";
         // Active languages show their reason too — that is what makes "cleared on 1
         // synthetic case — low statistical power" visible rather than implied.
-        let html = "<b>" + t("Active languages:") + "</b> "
+        // R704: the rates below belong to ONE model; name it beside them.
+        const first = keys.length ? g[keys[0]] : null;
+        let html = (first && first.measured_model)
+          ? "<b>" + esc(t("Measured on model:")) + "</b> " + esc(first.measured_model) + "<br>"
+          : "";
+        html += "<b>" + t("Active languages:") + "</b> "
           + (active.length ? active.map(detail).join("; ") : t("none yet — run the harness above"));
         if (disabled.length) {
           html += "<br><b>" + t("Disabled:") + "</b> " + disabled.map(detail).join("; ");
@@ -2305,9 +2310,13 @@
         const n = (e.n_cases == null) ? "?" : String(e.n_cases);
         const numbers = t("n = {n} case(s)").replace("{n}", n)
           + ((e.checks && e.checks.length) ? " · " + e.checks.join("; ") : "");
-        const why = cleared ? "" : " — " + (measured === false
-          ? t("refused: the harness failed this language")
-          : t("refused: never measured"));
+        // R704: numbers measured on ANOTHER model license nothing for this one, and
+        // the row says so rather than reading as "never measured" in general.
+        const why = cleared ? "" : " — " + (e.model_matches === false && e.measured_model
+          ? t("refused: measured on {model}, not on the model that would extract").replace("{model}", e.measured_model)
+          : measured === false
+            ? t("refused: the harness failed this language")
+            : t("refused: never measured"));
         return '<label class="row" style="gap:6px;align-items:center" title="' + esc(e.reason || "") + '">'
           + '<input type="checkbox" data-pe-lang="' + esc(l) + '"' + (on ? " checked" : "")
           + (cleared ? "" : " disabled") + "> <span>" + esc(name(l)) + " <span class=\"muted\">("

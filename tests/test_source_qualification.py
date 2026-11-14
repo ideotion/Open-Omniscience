@@ -17,6 +17,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -47,6 +48,17 @@ from src.database.models import (
 from src.ingest import activate_kill_switch, clear_kill_switch
 from src.scheduler.runner import select_sources
 from src.scheduler.settings import SchedulerSettings
+
+
+@pytest.fixture(autouse=True)
+def _a_machine_above_the_floor(monkeypatch):
+    """These tests judge sources against the WHOLE-corpus baseline. Which baseline a pass can afford is read live from this
+    machine's memory (``cohort_plan``), so on a loaded runner with under 1 GiB available the pass took the sampled baseline and
+    recorded ``CRITERIA_VERSION_SAMPLED``: two tests failed by load and not by the judging they are about (open-on-main row 55).
+    The floor and the sample have their own tests (test_qualification_below_floor.py, test_machine_floor.py); here the machine is
+    pinned above the floor."""
+    monkeypatch.setattr("src.config.machine_floor._mem_reading", lambda: {
+        "total_mb": 16384.0, "total_from": "machine", "available_mb": 8192.0, "available_from": "machine"})
 
 
 def _engine_session():
