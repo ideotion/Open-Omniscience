@@ -2450,6 +2450,8 @@
         "tries again each time it loads it.",
     };
 
+    const _CUSTODY_NO_KEY_TIP = "No signing key exists yet. The first custody entry creates it, encrypted under your passphrase when the app has one.";
+
     function renderCustodyStatus(s) {
       const id = s.signer || {};
       const trunc = (h) => h ? esc(h.slice(0, 16)) + "…" : "—";
@@ -2468,10 +2470,13 @@
       // it, and the database passphrase wraps the keys too. A value with no entry gets no hover.
       const keyTip = Object.prototype.hasOwnProperty.call(_KEY_PROTECTION_TIPS, s.key_protection)
         ? _KEY_PROTECTION_TIPS[s.key_protection] : "";
+      // Reading this status never makes a key (R694): before the first entry there is none, and the pill says so.
+      const keyPill = s.keys_created === false
+        ? `<span class="pill" title="${esc(_CUSTODY_NO_KEY_TIP)}">keys: none yet</span>`
+        : `<span class="pill ${s.key_protection==='aes256gcm-scrypt'?'ok':'warn'}"` +
+          (keyTip ? ` title="${esc(keyTip)}"` : "") + `>keys: ${esc(s.key_protection)}</span>`;
       $("custody-status").innerHTML =
-        `Signing: ${pqcPill} &nbsp; Timestamps: ${otsPill} &nbsp;` +
-        `<span class="pill ${s.key_protection==='aes256gcm-scrypt'?'ok':'warn'}"` +
-        (keyTip ? ` title="${esc(keyTip)}"` : "") + `>keys: ${esc(s.key_protection)}</span>` +
+        `Signing: ${pqcPill} &nbsp; Timestamps: ${otsPill} &nbsp;` + keyPill +
         `<div class="muted" style="font-size:12px;margin-top:4px">` +
         `Ed25519 pub ${trunc(id.ed25519_pub)}` +
         (id.ml_dsa_pub ? ` · ${esc(id.ml_dsa_variant)} pub ${trunc(id.ml_dsa_pub)}` : "") + `</div>`;
@@ -2644,7 +2649,7 @@
     async function exportCustody() {
       const id = $("cust-item").value.trim();
       try {
-        const bundle = await api("/api/custody/export" + (id ? "?item_id=" + encodeURIComponent(id) : ""));
+        const bundle = await api("/api/custody/export" + (id ? "?item_id=" + encodeURIComponent(id) : ""), {method: "POST"});
         const blob = new Blob([JSON.stringify(bundle, null, 2)], {type: "application/json"});
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);

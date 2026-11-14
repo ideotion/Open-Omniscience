@@ -581,14 +581,14 @@ down is a RECORD of that date and carries its own disposition table.)*
   and no `Referer` (legacy only). The known side-effect `GET`s are closed by one dependency,
   `refuse_cross_site_get` (`src/api/cross_site.py`: Host, then `Sec-Fetch-Site`, then `Origin` /
   `Referer` judged by the middleware's own `_foreign_origin`, so default ports are normalised):
-  the Thorough-build estimate (`/all-job/estimate`), the Field data sample walk (`/source-samples`), the custody export
-  (`/api/custody/export`, which can create the custody signing key), and the three downloads that append to the
+  the Thorough-build estimate (`/all-job/estimate`), the Field data sample walk (`/source-samples`), and the three downloads that append to the
   diagnostics run log (`/all-job/download`, `/all-job/volumes/{name}`, `/keywords/parts/{set_id}/{name}`),
   answer a foreign page 403 before their handler runs. The reads that reach the network and the annotation export are not
   `GET`s at all since R694 (R278's proposal adopted): `POST /api/hazards`, `POST /api/monitoring/health`,
   `POST /api/wiki/dumps/probe` and `/sizes`, `POST /api/geo/downloads/size` (which also refuses without `consent=true` (400)
-  and under the kill switch (409) before any socket is opened) and `POST /api/annotations/export` (signing the bundle creates
-  the annotation signing key the first time), and the heavy diagnostics: `performance`, the benchmarks, `llm-bench`,
+  and under the kill switch (409) before any socket is opened) and `POST /api/annotations/export` and `POST /api/custody/export` (signing the bundle creates
+  the signing key the first time; the custody reads, settings, an item's entries and verify, open only what exists and never
+  make a key or the log), and the heavy diagnostics: `performance`, the benchmarks, `llm-bench`,
   `llm-throughput`, `rollup-benchmark`, `/all`, `/debug-bundle`, `recursive-loop` and every self-test, `/api/signals/fdr-selftest`
   included (their buttons post and save the answer as a file). A `GET` there is answered 405 before any handler runs, and the `POST` sits
   behind layer 1 like every other state-changing route (`tests/test_get_cross_site_refusal.py::MOVED_TO_POST`).

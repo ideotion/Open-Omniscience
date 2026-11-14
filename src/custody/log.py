@@ -31,6 +31,7 @@ crypto already in the tree.
 from __future__ import annotations
 
 import json
+import os
 import threading
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -135,12 +136,20 @@ class CustodyLog:
         db_path: str | None = None,
         signer: HybridSigner | None = None,
         anchoring_mode: str | None = None,
+        *,
+        create: bool = True,
     ):
+        """``create=False`` opens an EXISTING log to read it (R694): a missing file raises FileNotFoundError before anything is
+        made, and the signer is built only if something asks for it, from the keys already on disk (never minted)."""
         if db_path is None:
             from src.paths import data_dir
 
             db_path = str(data_dir() / "custody_log.db")
+        if not create and not os.path.exists(db_path):
+            raise FileNotFoundError(db_path)
         self.db_path = db_path
+        self._create = create
+        self._use_pqc = True  # the preference is read below whenever the signer is not passed in
         # Honour the operator's GUI-configured preferences when not overridden.
         # The signer's PQC use and the default anchoring mode both come from the
         # persisted custody settings unless explicitly passed in (tests / callers).
@@ -148,11 +157,12 @@ class CustodyLog:
             from src.custody.settings import load_settings
 
             prefs = load_settings()
-            if signer is None:
+            self._use_pqc = prefs.pqc_enabled
+            if signer is None and create:
                 signer = HybridSigner(use_pqc=prefs.pqc_enabled)
             if anchoring_mode is None:
                 anchoring_mode = prefs.anchoring_mode
-        self.signer = signer
+        self._signer = signer
         self.anchoring_mode = anchoring_mode
         # The one connection factory: opens encrypted custody logs with THE
         # passphrase (D6 -- one secret covers both stores), plaintext ones as
@@ -186,6 +196,12 @@ class CustodyLog:
             pass
         with _APPEND_LOCK:
             self._init_db()
+
+    @property
+    def signer(self) -> HybridSigner:
+        if self._signer is None:  # only a reader (create=False) gets here; a missing key raises FileNotFoundError
+            self._signer = HybridSigner(use_pqc=self._use_pqc, create=False)
+        return self._signer
 
     def _init_db(self) -> None:
         self.conn.execute(

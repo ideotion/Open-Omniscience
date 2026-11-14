@@ -81,7 +81,7 @@ def test_export_then_offline_verify(client, tmp_path):
             "action": "ingest",
         },
     )
-    bundle = client.get("/api/custody/export").json()
+    bundle = client.post("/api/custody/export").json()
     assert bundle["entry_count"] == 1
 
     # Posted-bundle verify endpoint.
