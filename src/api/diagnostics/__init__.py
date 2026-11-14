@@ -444,6 +444,7 @@ from .country_form import country_form_status
 # One random article per source, zipped <= 4 MB (2026-11-08; kept for the Field data button, R664): the same slice position.
 from .source_samples import (
     SAMPLE_ZIP_MAX_BYTES,
+    _BATCH,
     _BODY_COLUMNS,
     _RESERVE_BYTES,
     _SECRETISH,
@@ -502,6 +503,7 @@ from .release_run import (
 __all__ = [
     "SAMPLE_ZIP_MAX_BYTES",
     "_BODY_COLUMNS",
+    "_BATCH",
     "_RESERVE_BYTES",
     "_SECRETISH",
     "_TEXT_MAX_CHARS",
