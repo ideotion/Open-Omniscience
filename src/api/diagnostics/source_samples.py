@@ -52,12 +52,14 @@ from src.database.session import get_db
 
 from ._base import router
 
-#: The cap on one zip. Margin below is held back for the central directory and the manifest. 2 MB, not 4: each part is
-#: sent back by hand through a chat upload, and a smaller part survives a slow connection (field report 2026-11-14).
-SAMPLE_ZIP_MAX_BYTES = 2 * 1000 * 1000
-_RESERVE_BYTES = 120 * 1000
-#: One article's text is cut here (and marked) so a single huge page can never push a zip past the cap.
-_TEXT_MAX_CHARS = 1_000_000
+#: The cap on one zip, the Field data button's FIELD_PART_BYTES. Each part is sent back by hand through a chat upload; on
+#: 2026-11-14 about half the parts would not upload, and every one that did was under 175 KB, so 400 KB (was 4 MB).
+#: Margin below is held back for the central directory and the compressed manifest (its rows are counted as written).
+SAMPLE_ZIP_MAX_BYTES = 400 * 1000
+_RESERVE_BYTES = 40 * 1000
+#: One article's text is cut here, in UTF-8 bytes (and marked), so a single huge page cannot push a zip past the cap: the
+#: first source of a part is always admitted, and its text compresses to well under this.
+_TEXT_MAX_BYTES = 200 * 1000
 #: Sources are read in batches of this many ids; one zip keeps reading batches until it is full or the set ends, so a long
 #: run of never-collected sources no longer makes a part of its own (the 2026-11-14 press made five such parts in a row).
 _BATCH = 5000
@@ -167,8 +169,10 @@ def build_sample_zip(
                         a["body_withheld"] = "a newsletter: its body stays on this machine (OO_QUALITY_INCLUDE_NEWSLETTER_TEXT)"
                         row["body_withheld"] = True
                     text = a.get("content")
-                    if isinstance(text, str) and len(text) > _TEXT_MAX_CHARS:
-                        a["content"] = text[:_TEXT_MAX_CHARS]
+                    raw = text.encode("utf-8") if isinstance(text, str) else b""
+                    if isinstance(text, str) and len(raw) > _TEXT_MAX_BYTES:
+                        # cut by UTF-8 bytes, not characters: 200k CJK characters are 600 KB (the 2026-11-14 read)
+                        a["content"] = raw[:_TEXT_MAX_BYTES].decode("utf-8", errors="ignore")
                         a["content_truncated_from_chars"] = len(text)
                         row["text_truncated"] = True
                     doc = {"source": _row_dict(src, shown), "article": a, "articles_in_source": n,
@@ -222,7 +226,7 @@ def source_samples(
     seed: int = Query(20261108),
     db: Session = Depends(get_db),
 ) -> Response:
-    """ONE zip (<= 2 MB) holding one randomly chosen article per source for the next run of sources
+    """ONE zip (<= 400 KB) holding one randomly chosen article per source for the next run of sources
     after ``after``; ``X-Source-Samples-Next`` carries the cursor for the next call (empty = done).
     Plain ``def`` -> threadpool. Read-only."""
     data, nxt, covered, total = build_sample_zip(

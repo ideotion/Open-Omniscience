@@ -83,6 +83,20 @@ def test_sources_and_articles_come_first_and_every_export_is_a_loopback_read():
     assert "finally" in run and "btn.disabled = false" in run
 
 
+def test_every_saved_file_is_cut_to_an_uploadable_size():
+    """2026-11-14: «create smaller files» -- about half the parts would not upload. Both kinds of export go through
+    one saver that cuts anything over FIELD_PART_BYTES into numbered pieces, and the server's sample cap matches it."""
+    js = _js()
+    m = re.search(r"const FIELD_PART_BYTES = (\d+) \* 1000;", js)
+    assert m and int(m.group(1)) * 1000 <= 500_000
+    run = function_body(js, "downloadFieldData")
+    assert run.count("_fieldSaveParts(await r.blob()") == 2 and "_fieldSave(await r.blob()" not in run
+    saver = function_body(js, "_fieldSaveParts")
+    assert "blob.slice(" in saver and "-part-" in saver and "-of-" in saver
+    from src.api.diagnostics.source_samples import SAMPLE_ZIP_MAX_BYTES
+    assert int(m.group(1)) * 1000 == SAMPLE_ZIP_MAX_BYTES
+
+
 def test_the_button_is_wired_through_the_one_dispatcher():
     on = (STATIC / "oo-on.js").read_text(encoding="utf-8")
     table = object_literal(on, "EVENT_ACTION_NAMES")

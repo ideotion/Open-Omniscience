@@ -1,4 +1,4 @@
-"""TEMPORARY diagnostic: one random article per source in zips of at most 2 MB (2026-11-08, 2 MB since 2026-11-14).
+"""TEMPORARY diagnostic: one random article per source in zips of at most 400 KB (2026-11-08; 400 KB since 2026-11-14).
 
 Delete with the diagnostic. Driven on an in-memory database through the builder itself; the
 route's wiring is pinned by test_diagnostics_package_split.
@@ -109,7 +109,7 @@ def test_a_long_run_of_never_collected_sources_does_not_make_parts_of_its_own(db
         db.add(Source(id=sid, name=f"S{sid}", domain=f"empty{sid}.example"))
     db.commit()
     _add(db, 12001, 2)
-    data, nxt, covered, total = build_sample_zip(db, after=0, seed=3, cap=2_000_000)
+    data, nxt, covered, total = build_sample_zip(db, after=0, seed=3, cap=400_000)
     assert (nxt, covered, total) == (None, 12001, 12001)
     assert _ids(data) == list(range(1, 12002))
     assert "samples/source-0012001.json" in _open(data).namelist()
@@ -171,3 +171,22 @@ def test_the_route_passes_the_switch_to_the_builder():
 
     src = _inspect.getsource(mod.source_samples)
     assert "include_newsletters=include_newsletter_text()" in src
+
+
+def test_one_huge_article_cannot_push_its_part_past_the_cap(db):
+    """The 2026-11-14 delta read: the first source of a part is always admitted, so its text is cut by UTF-8 bytes.
+    Random CJK text barely compresses, which is the worst case."""
+    import random
+
+    from src.api.diagnostics.source_samples import SAMPLE_ZIP_MAX_BYTES
+
+    rnd = random.Random(5)
+    db.add(Source(id=1, name="S1", domain="s1.example"))
+    db.flush()
+    db.add(Article(url="https://s1.example/a", canonical_url="https://s1.example/a", source_id=1, title="t",
+                   content="".join(chr(rnd.randrange(0x4E00, 0x9FFF)) for _ in range(1_000_000)), hash="9" * 64))
+    db.commit()
+    data, nxt, covered, _t = build_sample_zip(db, after=0, seed=1, cap=SAMPLE_ZIP_MAX_BYTES)
+    assert len(data) <= SAMPLE_ZIP_MAX_BYTES, len(data)
+    man = json.loads(_open(data).read("manifest.json"))
+    assert (nxt, covered) == (None, 1) and man["sources"][0]["text_truncated"] is True
