@@ -366,11 +366,16 @@ class CustodyLog:
         """Produce an offline-verifiable bundle of entries + the signer identity."""
         entries = self.entries_for(item_id) if item_id else self.all_entries()
         ident = self.signer.public_identity()
+        head = _bundle_head(item_id, entries)
         return {
             "log_version": LOG_VERSION,
             "item_id": item_id,
             "signer": ident.to_dict(),
             "entry_count": len(entries),
+            # Signed at export: how many entries this bundle holds and which one is last, so a bundle cut at its end
+            # (the one cut the chain links cannot show, since every remaining link still holds) is refused by name.
+            "head": head,
+            "head_signature": self.signer.sign(canonical_bytes(head)),
             "entries": [e.to_dict() for e in entries],
         }
 
@@ -393,11 +398,24 @@ class CustodyLog:
 # --------------------------------------------------------------------------- #
 
 
+def _bundle_head(item_id: str | None, entries: list[CustodyEntry]) -> dict:
+    """The part of an export its signer commits to: the bundle's scope, its size and its last entry."""
+    last = entries[-1] if entries else None
+    return {
+        "log_version": LOG_VERSION,
+        "item_id": item_id,
+        "entry_count": len(entries),
+        "last_seq": last.seq if last else None,
+        "last_entry_hash": last.entry_hash if last else None,
+    }
+
+
 def verify_entries(
     entries: Iterable[CustodyEntry],
     *,
     pinned: PublicIdentity | None = None,
     max_issues: int | None = None,
+    chained: bool = True,
 ) -> tuple[bool, list[str]]:
     """Re-validate custody entries: hashes, chain links, and signatures.
 
@@ -410,6 +428,10 @@ def verify_entries(
     import did, and ran a 7 GB machine out of memory, 2026-09-27). ``max_issues`` keeps
     the first N issues and ends the list with a count of the rest, so a chain broken
     near its start cannot grow a list as long as itself; ``ok`` still counts every one.
+
+    ``chained=False`` is for a ONE-ITEM export: its entries are a selection from the whole log, so their seqs skip and
+    their ``prev_entry_hash`` points at entries of other items. Each entry's hash, signature and timestamp proof are
+    still checked, and the seqs must rise; the links between them cannot be, and the caller says so.
     """
     issues: list[str] = []
     dropped = 0
@@ -423,10 +445,15 @@ def verify_entries(
 
     expected_prev = GENESIS_PREV
     expected_seq = 1
+    last_seq = 0
     for e in entries:
-        if e.seq != expected_seq:
+        if not chained:
+            if e.seq <= last_seq:
+                _issue(f"seq reorder at entry {e.seq} (after {last_seq})")
+            last_seq = e.seq
+        elif e.seq != expected_seq:
             _issue(f"seq gap/reorder at entry {e.seq} (expected {expected_seq})")
-        if e.prev_entry_hash != expected_prev:
+        if chained and e.prev_entry_hash != expected_prev:
             _issue(
                 f"broken chain at seq {e.seq}: prev_entry_hash does not match the "
                 "previous entry (an entry was altered, inserted, or removed)"
@@ -452,16 +479,47 @@ def verify_entries(
     return (not issues), issues
 
 
-def verify_export(bundle: dict, *, require_signer: bool = False) -> tuple[bool, list[str]]:
-    """Verify an exported custody bundle (offline, no DB).
+#: Said beside a one-item verdict, so "verified" is never read as the whole log's.
+ITEM_SCOPE_NOTE = (
+    "one item's entries: each entry's hash, signature and timestamp were checked and their order, but not the links "
+    "between them, which run through other items' entries"
+)
 
-    If ``require_signer`` is true, pin verification to the signer identity embedded
-    in the bundle -- i.e. require that all entries were signed by that identity.
-    (Pinning to a *bundle-embedded* key only proves internal consistency; to prove
-    provenance against a *known* signer, compare ``bundle['signer']`` to the
-    signer's independently-known public identity first.)
+
+def verify_export(bundle: dict, *, require_signer: bool = False) -> tuple[bool, list[str]]:
+    """Verify an exported custody bundle (offline, no DB). FAILS CLOSED.
+
+    Refused by name, before any entry is judged: a bundle with no entries; an entry that is not a whole record (a file
+    cut mid-record leaves one with fields missing); a bundle with no signed head (it cannot show that nothing was cut
+    from its end, since every remaining link still holds -- re-export it from the app); a head whose signature does not
+    verify; and a bundle whose entries do not match its head (fewer or more than it says, or a different last entry).
+    The head must be signed by the key that signed the entries, so cutting the log and rewriting the head needs that
+    key. What it cannot show: a log cut BEFORE it was exported (the head commits to what was exported, not to what the
+    store once held) -- the full log's chain shows a cut at its start or middle, and a one-item export shows neither.
+
+    A one-item bundle (``item_id`` set) is checked entry by entry (see ``verify_entries``' ``chained``).
+
+    If ``require_signer`` is true, pin verification to the signer identity embedded in the bundle -- i.e. require that
+    all entries and the head were signed by that identity. (Pinning to a *bundle-embedded* key only proves internal
+    consistency; to prove provenance against a *known* signer, compare ``bundle['signer']`` to the signer's
+    independently-known public identity first.)
     """
-    entries = [CustodyEntry.from_dict(d) for d in bundle.get("entries", [])]
+    if not isinstance(bundle, dict):
+        return False, ["not a custody bundle (not a JSON object)"]
+    raw = bundle.get("entries")
+    if not isinstance(raw, list) or not raw:
+        return False, ["empty log: the bundle holds no custody entries, so there is nothing to verify"]
+    entries: list[CustodyEntry] = []
+    for i, d in enumerate(raw, start=1):
+        try:
+            if not isinstance(d, dict):
+                raise TypeError("not an object")
+            entries.append(CustodyEntry.from_dict(d))
+        except (KeyError, TypeError, ValueError) as exc:
+            return False, [
+                f"entry {i} of {len(raw)} is not a whole record ({record_text(exc)}); "
+                "a log cut mid-record ends like this"
+            ]
     pinned = None
     if require_signer and bundle.get("signer"):
         s = bundle["signer"]
@@ -470,4 +528,31 @@ def verify_export(bundle: dict, *, require_signer: bool = False) -> tuple[bool, 
             ml_dsa_variant=s.get("ml_dsa_variant"),
             ml_dsa_pub=s.get("ml_dsa_pub"),
         )
-    return verify_entries(entries, pinned=pinned)
+    head, head_sig = bundle.get("head"), bundle.get("head_signature")
+    if not isinstance(head, dict) or not isinstance(head_sig, dict):
+        return False, [
+            "no signed head: this bundle cannot show that nothing was cut from its end "
+            "(exports before this check carried none; export it again from the app)"
+        ]
+    # The head must be signed by the key that signed the entries: a head re-signed with any other key would let whoever
+    # cut the log vouch for the cut. Pinned to the first entry's own keys when no signer is pinned.
+    first = entries[0].signature if isinstance(entries[0].signature, dict) else {}
+    head_pin = pinned or PublicIdentity(
+        ed25519_pub=(first.get("ed25519") or {}).get("pub", ""),
+        ml_dsa_variant=(first.get("ml_dsa") or {}).get("variant"),
+        ml_dsa_pub=(first.get("ml_dsa") or {}).get("pub"),
+    )
+    ok, reason = signing.verify(head_sig, canonical_bytes(head), pinned=head_pin)
+    if not ok:
+        return False, [f"head signature invalid: {reason}"]
+    item_id = bundle.get("item_id")
+    expected = _bundle_head(item_id, entries)
+    if head != expected:
+        if head.get("entry_count") != len(entries):
+            return False, [
+                f"truncated or padded: the signed head says {head.get('entry_count')} entries, the bundle holds {len(entries)}"
+            ]
+        return False, ["the bundle's entries do not match its signed head (a different last entry, scope or version)"]
+    if item_id and any(e.item_id != item_id for e in entries):
+        return False, [f"the bundle is for {item_id!r} but holds entries of other items"]
+    return verify_entries(entries, pinned=pinned, chained=not item_id)

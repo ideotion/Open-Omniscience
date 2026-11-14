@@ -497,7 +497,7 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   signer's key to prove *provenance*, not just integrity. Verification needs nothing
   but the bundle + key (no DB, no trust in this tool).
 - An append-only, hash-chained, **signed custody log** (`src/custody/`) records
-  ongoing actions on an item; verify offline with `scripts/verify_custody.py`.
+  ongoing actions on an item; verify offline with `scripts/verify_custody.py`, which fails closed on an empty bundle, a record cut short, and a bundle whose entries do not match the head its export signs (count and last entry, signed by the entries' own key), so a cut at the end is refused; it cannot see a cut made before export.
   Signatures are **hybrid Ed25519 + post-quantum ML-DSA** when the `pqc` extra is
   installed (honestly labelled `ed25519` otherwise; hybrid verification requires
   *both* components — never a silent downgrade). Independent time comes from

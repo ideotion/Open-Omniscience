@@ -1370,7 +1370,10 @@ While the switch is still engaged, writing owed entries ("Record them, marked la
 it; the entries stay owed. A gap check alone still answers, and its `drained` block
 reports `refused_offline`.
 
-Verify a bundle anywhere, without this app:
+Verify a bundle anywhere, without this app. The checker fails closed: it refuses by name a bundle with no
+entries, one cut mid-record, one whose entries do not match the signed head its export carries (so a bundle cut at
+its end is caught), and one with no signed head at all (exports made before 0.5.1 carry none: export again). A
+one-item bundle is checked entry by entry, and the result says the links between its entries were not checked.
 
 ```bash
 python scripts/verify_custody.py custody_bundle.json [--pin]

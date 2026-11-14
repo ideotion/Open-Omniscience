@@ -24,7 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.custody.log import verify_export  # noqa: E402
+from src.custody.log import ITEM_SCOPE_NOTE, verify_export  # noqa: E402
 
 
 def main(argv: list[str]) -> int:
@@ -36,7 +36,15 @@ def main(argv: list[str]) -> int:
         )
         return 2
 
-    bundle = json.loads(Path(args[0]).read_text())
+    try:
+        bundle = json.loads(Path(args[0]).read_text())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        # A file cut mid-record is not JSON at all: refused by name, never a traceback.
+        print(f"VERIFIED       : False\nISSUES:\n  - not a readable custody bundle ({type(exc).__name__}: {exc}); "
+              "a file cut mid-record reads like this")
+        return 1
+    if not isinstance(bundle, dict):
+        bundle = {"entries": bundle}
     ok, issues = verify_export(bundle, require_signer="--pin" in flags)
 
     signer = bundle.get("signer", {})
@@ -45,6 +53,7 @@ def main(argv: list[str]) -> int:
     print(f"entry_count    : {bundle.get('entry_count')}")
     print(f"signer ed25519 : {signer.get('ed25519_pub')}")
     print(f"signer ml-dsa  : {signer.get('ml_dsa_variant')} {signer.get('ml_dsa_pub')}")
+    print(f"scope          : {ITEM_SCOPE_NOTE if bundle.get('item_id') else 'the whole log, from its first entry'}")
     print(f"VERIFIED       : {ok}")
     if issues:
         print("ISSUES:")
