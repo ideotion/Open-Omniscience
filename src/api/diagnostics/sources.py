@@ -67,11 +67,14 @@ def source_quality(
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for name, data in files.items():
             z.writestr(name, data)
-    fname = f"oo-source-quality-{datetime.now().strftime('%Y%m%d-%H%M')}.zip"
+    from src.paths import instance_tag
+
+    inst = instance_tag()   # which data folder this came from, as a hash: the Field data button names its files with it
+    fname = f"oo-source-quality-{datetime.now().strftime('%Y%m%d-%H%M')}-{inst}.zip"
     return Response(
         content=buf.getvalue(),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers={"Content-Disposition": f'attachment; filename="{fname}"', "X-OO-Instance": inst},
     )
 
 

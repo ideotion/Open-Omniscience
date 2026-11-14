@@ -332,11 +332,13 @@ def build_field_cards_files(db: Session, *, now: datetime | None = None) -> dict
         and any(k in c["signal"] and c["signal"][k] is not None for k in ("lat", "lon", "latitude", "longitude"))
     )
     from src import __version__
+    from src.paths import instance_tag
 
     manifest = {
         "schema": FIELD_CARDS_SCHEMA,
         "generated_at": now.isoformat(timespec="seconds"),
         "app_version": __version__,
+        "instance": instance_tag(),   # which data folder this came from, as a hash (src/paths.py instance_tag)
         "files": {
             "feed.json": "the Home feed as served from the cache, every card, dismissed ones flagged, with the feed's own record",
             "cards.json": "per card: the app's own checks and the evidence it was built from",
@@ -411,9 +413,12 @@ def field_cards(db: Session = Depends(get_db)) -> Response:
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for name, data in files.items():
             z.writestr(name, data)
-    fname = f"oo-field-cards-{datetime.now().strftime('%Y%m%d-%H%M')}.zip"
+    from src.paths import instance_tag
+
+    inst = instance_tag()
+    fname = f"oo-field-cards-{datetime.now().strftime('%Y%m%d-%H%M')}-{inst}.zip"
     return Response(
         content=buf.getvalue(),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers={"Content-Disposition": f'attachment; filename="{fname}"', "X-OO-Instance": inst},
     )

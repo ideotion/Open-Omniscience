@@ -331,6 +331,11 @@ def test_the_cards_file_carries_every_card_its_evidence_and_a_manifest(db, tmp_p
     assert pc["newsletter_bodies"].startswith("withheld") and pc["dismissed_cards"] == 1
     assert letter["linked"].get("withheld"), "the layers read out of a newsletter body stay home too"
     assert files["selfcheck.jsonl"].strip()
+    from src.paths import data_dir, instance_tag
+
+    # several instances send files back together: the data folder is named by a hash, its path never leaves
+    assert man["instance"] == instance_tag() and len(man["instance"]) == 8
+    assert str(data_dir().resolve()) not in "".join(files.values())
 
 
 def test_the_cards_file_scrubs_a_held_passphrase(db, tmp_path, monkeypatch):
@@ -352,6 +357,9 @@ def test_the_route_is_a_post_and_answers_a_zip(db, tmp_path, monkeypatch):
     assert paths == {("/api/diagnostics/field-cards", ("POST",))}
     resp = field_cards.field_cards(db=db)
     assert resp.media_type == "application/zip"
+    from src.paths import instance_tag
+
+    assert resp.headers["X-OO-Instance"] == instance_tag() and instance_tag() in resp.headers["Content-Disposition"]
     with zipfile.ZipFile(io.BytesIO(resp.body)) as z:
         assert "manifest.json" in z.namelist()
 

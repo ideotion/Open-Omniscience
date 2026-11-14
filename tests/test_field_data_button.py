@@ -73,6 +73,9 @@ def test_sources_and_articles_come_first_and_every_export_is_a_loopback_read():
     ]
     # same-origin paths only: nothing the button saves goes online
     assert all(u.startswith("/api/") for u in urls)
+    # several instances send their files back together: every name carries the press time and the instance
+    names = re.findall(r'name: "([^"]+)"', exports)
+    assert len(names) == 3 and all(n.startswith("oo-field-{press}-") for n in names), names
     # the cards export reads article text, so it is a POST (R694)
     assert 'method: "POST", url: "/api/diagnostics/field-cards"' in exports
     run = function_body(js, "downloadFieldData")
@@ -95,6 +98,7 @@ def test_every_saved_file_is_cut_to_an_uploadable_size():
     assert "blob.slice(" in saver and "-part-" in saver and "-of-" in saver
     # one piece at a time (a tight loop of downloads loses some), numbers padded to the width of the count
     assert "await pause()" in saver and "String(n).length" in saver
+    assert run.count("named(ex.name, r)") == 2 and 'r.headers.get("X-OO-Instance")' in run
     from src.api.diagnostics.source_samples import SAMPLE_ZIP_MAX_BYTES
     assert int(m.group(1)) * 1000 == SAMPLE_ZIP_MAX_BYTES
 

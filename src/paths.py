@@ -119,6 +119,18 @@ def data_dir() -> Path:
     return chosen
 
 
+def instance_tag() -> str:
+    """Eight hex characters that tell this data folder's exports apart from another instance's, without naming the folder.
+
+    The Field data button puts it in every file name and manifest it saves (2026-11-14: the maintainer runs several
+    instances, each with its own ``OO_DATA_DIR`` and port, and sends their files back together). A hash of the folder's
+    resolved path: the same folder always gives the same tag, and the path itself (which can hold a user name) never
+    leaves the machine."""
+    import hashlib
+
+    return hashlib.sha256(str(data_dir().resolve()).encode("utf-8")).hexdigest()[:8]
+
+
 def diagnostics_dir() -> Path:
     """``<data dir>/diagnostics``, created if missing (the folder the reports and bundles are written to)."""
     d = data_dir() / "diagnostics"

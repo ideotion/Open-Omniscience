@@ -3138,11 +3138,11 @@
       // Sources and articles: the per-source quality bundle (counts, keyword fingerprints, a bounded
       // text sample; private newsletter bodies stay gated), then one stored article per source as
       // zips of at most 400 KB, walked by the server's cursor header.
-      {kind: "file", url: "/api/diagnostics/source-quality?download=1", name: "oo-field-source-quality.zip"},
-      {kind: "cursor", url: "/api/diagnostics/source-samples?after=", next: "X-Source-Samples-Next", name: "oo-field-source-samples-{n}.zip"},
+      {kind: "file", url: "/api/diagnostics/source-quality?download=1", name: "oo-field-{press}-source-quality.zip"},
+      {kind: "cursor", url: "/api/diagnostics/source-samples?after=", next: "X-Source-Samples-Next", name: "oo-field-{press}-source-samples-{n}.zip"},
       // Cards (Lane X, 2026-11-14): every Home card as served, its evidence and the card quality checks, one zip.
       // POST (R694): it reads article text. scripts/card_quality_report.py reads it back.
-      {kind: "file", method: "POST", url: "/api/diagnostics/field-cards", name: "oo-field-cards.zip"},
+      {kind: "file", method: "POST", url: "/api/diagnostics/field-cards", name: "oo-field-{press}-cards.zip"},
     ];
     // Every file the button saves is at most this size (maintainer 2026-11-14: «create smaller files», about half
     // the parts would not upload; every part that did was under 175 KB). A larger file is cut into numbered byte
@@ -3180,13 +3180,19 @@
       if (btn) btn.disabled = true;
       let files = 0;
       const pause = () => new Promise((res) => setTimeout(res, 400));   // let the browser take each download
+      // Every file of one press carries the press time and the instance (several instances, each with its own data folder,
+      // send their files back together): {press} = YYYYMMDD-HHMM-<the server's X-OO-Instance, a hash of its data folder>.
+      const d = new Date();
+      const p2 = (x) => String(x).padStart(2, "0");
+      const stamp = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}`;
+      const named = (tpl, r) => tpl.replace("{press}", `${stamp}-${r.headers.get("X-OO-Instance") || "p" + (location.port || "80")}`);
       try {
         for (const ex of FIELD_DATA_EXPORTS) {
           if (ex.kind === "file") {
             say(tf("Saving… {files} files so far.", {files}));
             const r = await fetch(ex.url, ex.method ? {method: ex.method} : undefined);
             if (!r.ok) throw new Error("HTTP " + r.status);
-            files += await _fieldSaveParts(await r.blob(), ex.name, pause);
+            files += await _fieldSaveParts(await r.blob(), named(ex.name, r), pause);
             await pause();
             continue;
           }
@@ -3196,7 +3202,7 @@
             const r = await fetch(ex.url + after);
             if (!r.ok) throw new Error("HTTP " + r.status);
             part += 1;
-            files += await _fieldSaveParts(await r.blob(), ex.name.replace("{n}", String(part).padStart(3, "0")), pause);
+            files += await _fieldSaveParts(await r.blob(), named(ex.name, r).replace("{n}", String(part).padStart(3, "0")), pause);
             const nxt = r.headers.get(ex.next);
             if (!nxt || !(Number(nxt) > after)) break;   // a cursor that does not advance can never loop
             after = Number(nxt);
