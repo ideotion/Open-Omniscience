@@ -452,3 +452,62 @@ def test_the_keyword_hover_stats_leave_a_quarantined_article_out(db):
     kw = _kw(db)
     stats = q.keyword_stats(db, WORD)
     assert (stats["mentions"], stats["articles"]) == _live_unquarantined(db, kw.id) == (kw.mention_count, kw.article_count)
+
+
+def test_the_vocabulary_growth_curve_leaves_a_quarantined_article_out(db):
+    from src.analytics.keyword_growth import keyword_growth_curve
+
+    arts = _corpus(db)
+    before = keyword_growth_curve(db)["totals"]
+    _stamp(db, arts[0])
+    after = keyword_growth_curve(db)["totals"]
+    assert after["articles"] == before["articles"] - 1
+    assert after["tokens"] < before["tokens"]
+
+
+def test_the_upgrade_heal_on_a_store_with_no_quarantined_article_only_writes_its_marker(db):
+    from src.analytics.corpus_epoch import get_corpus_epoch
+    from src.analytics.quarantine_transition import R101_TRANSITION_KEY, heal_r101_transition
+    from src.database.models import DerivedMeta
+
+    _corpus(db)
+    before = (_kw(db).mention_count, _kw(db).article_count)
+    epoch = get_corpus_epoch(db)
+    assert heal_r101_transition(db.get_bind()) == {"articles": 0}
+    kw = _kw(db)
+    assert (kw.mention_count, kw.article_count) == before
+    assert get_corpus_epoch(db) == epoch, "nothing to rebuild: the stores already agree"
+    assert db.get(DerivedMeta, R101_TRANSITION_KEY) is not None
+
+
+def test_a_crash_between_the_epoch_bump_and_the_subtraction_subtracts_exactly_once_on_the_next_boot(db, monkeypatch):
+    """The bump commits first; the subtraction and the marker commit together. A failure after the bump leaves no
+    marker and no subtraction, so the next boot does both, once."""
+    from src.analytics import store
+    from src.analytics.corpus_epoch import get_corpus_epoch
+    from src.analytics.quarantine_transition import R101_TRANSITION_KEY, heal_r101_transition
+    from src.database.models import DerivedMeta
+
+    arts = _corpus(db)
+    db.query(Article).filter(Article.id == arts[0].id).update({"quarantined": True}, synchronize_session=False)
+    db.commit()
+    epoch = get_corpus_epoch(db)
+    before = (_kw(db).mention_count, _kw(db).article_count)
+
+    def _boom(*a, **k):
+        raise RuntimeError("power cut")
+
+    with monkeypatch.context() as m:
+        m.setattr(store, "shift_keyword_counters_for_quarantine", _boom)
+        assert heal_r101_transition(db.get_bind()) == {"skipped": "error"}
+    kw = _kw(db)
+    assert (kw.mention_count, kw.article_count) == before, "nothing subtracted"
+    assert get_corpus_epoch(db) == epoch + 1, "the bump landed first"
+    assert db.get(DerivedMeta, R101_TRANSITION_KEY) is None
+
+    assert heal_r101_transition(db.get_bind())["articles"] == 1
+    kw = _kw(db)
+    assert (kw.mention_count, kw.article_count) == _live_unquarantined(db, kw.id)
+    assert heal_r101_transition(db.get_bind()) == {"skipped": "done"}
+    kw = _kw(db)
+    assert (kw.mention_count, kw.article_count) == _live_unquarantined(db, kw.id)
