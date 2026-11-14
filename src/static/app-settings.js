@@ -1456,10 +1456,12 @@
     }
 
     // ---- R702: rebuild at the current storage settings (main library only) ---- //
-    // The duration estimate is the project's own measurement (R702 bench, 2026-11-14): the copy at
-    // 16 KiB pages ran at about {lo}-{hi} s per GB of pages in use, the check after it included.
-    // The method rides in the hover; the figure is a range, never a countdown.
-    const REBUILD_LO_S_PER_GB = 8, REBUILD_HI_S_PER_GB = 25;
+    // The duration estimate is the project's own measurement (R702 bench, 2026-11-14). The copy alone:
+    // 7-8 s per GB with the file in the page cache and 12-13 s per GB from a cold cache (encrypted 4 KiB
+    // stores of 0.53 and 3.2 GB). The whole rebuild with its check (quick_check, a row count per table on
+    // both files) on a 0.88 GB store with the app's schema: 19 s, about 21 s per GB, warm. Hence a range
+    // of 15-35 s per GB: never a countdown.
+    const REBUILD_LO_S_PER_GB = 15, REBUILD_HI_S_PER_GB = 35;
     let _rebuildWired = false, _rebuildPoll = null, _rebuildSt = null;
     function _rbT() { return (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s); }
     function _rbTf(s, v) {
