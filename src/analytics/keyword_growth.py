@@ -38,6 +38,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from src.analytics.quarantine_scope import NOT_QUARANTINED_SQL
+
 # Cap the number of plotted points so the payload stays small regardless of how many
 # distinct article dates the corpus spans (the curve is sampled at even token strides).
 _MAX_POINTS = 120
@@ -84,8 +86,8 @@ def _rate_per_1k(d_vocab: int, d_tokens: int) -> float | None:
 
 
 #: R101: a quarantined article's mentions are not in any keyword figure, this curve included. Index-only
-#: (``idx_article_quarantined``), like :func:`src.analytics.quarantine_scope.not_quarantined`.
-_NOT_QUARANTINED = " AND article_id NOT IN (SELECT id FROM articles WHERE quarantined IS 1)"
+#: (``idx_article_quarantined``): it reads no article row, so the curve stays decrypt-free.
+_NOT_QUARANTINED = NOT_QUARANTINED_SQL
 
 
 def keyword_growth_curve(session: Session) -> dict[str, Any]:

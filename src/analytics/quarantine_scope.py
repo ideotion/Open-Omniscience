@@ -29,6 +29,10 @@ from sqlalchemy.orm import Session
 
 from src.database.models import Article
 
+#: The same condition as raw SQL, for the readers that write their statements as text (``article_id`` is the
+#: mention's column). Index-only: the subquery is answered from ``idx_article_quarantined`` alone, never an article row.
+NOT_QUARANTINED_SQL = " AND article_id NOT IN (SELECT id FROM articles WHERE quarantined IS 1)"
+
 
 def quarantined_ids_select():
     """``SELECT id FROM articles WHERE quarantined IS 1``: the subquery every filter here uses."""
