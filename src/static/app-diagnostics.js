@@ -3148,13 +3148,17 @@
     // the parts would not upload; every part that did was under 175 KB). A larger file is cut into numbered byte
     // pieces, name-part-001-of-003.zip and so on, which join back by plain concatenation in that order.
     const FIELD_PART_BYTES = 400 * 1000;
-    function _fieldSaveParts(blob, name) {
+    // Pieces are saved one at a time with a pause between them: a browser drops or prompts on downloads started in a
+    // tight loop, and a lost piece cannot be joined. The number is padded to the width of the count, so a glob sorts them.
+    async function _fieldSaveParts(blob, name, pause) {
       if (blob.size <= FIELD_PART_BYTES) { _fieldSave(blob, name); return 1; }
       const n = Math.ceil(blob.size / FIELD_PART_BYTES);
-      const pad = (k) => String(k).padStart(3, "0");
+      const width = Math.max(3, String(n).length);
+      const pad = (k) => String(k).padStart(width, "0");
       const stem = name.replace(/\.zip$/, "");
       for (let k = 0; k < n; k++) {
         _fieldSave(blob.slice(k * FIELD_PART_BYTES, (k + 1) * FIELD_PART_BYTES), `${stem}-part-${pad(k + 1)}-of-${pad(n)}.zip`);
+        if (k + 1 < n) await pause();
       }
       return n;
     }
@@ -3182,7 +3186,7 @@
             say(tf("Saving… {files} files so far.", {files}));
             const r = await fetch(ex.url, ex.method ? {method: ex.method} : undefined);
             if (!r.ok) throw new Error("HTTP " + r.status);
-            files += _fieldSaveParts(await r.blob(), ex.name);
+            files += await _fieldSaveParts(await r.blob(), ex.name, pause);
             await pause();
             continue;
           }
@@ -3192,7 +3196,7 @@
             const r = await fetch(ex.url + after);
             if (!r.ok) throw new Error("HTTP " + r.status);
             part += 1;
-            files += _fieldSaveParts(await r.blob(), ex.name.replace("{n}", String(part).padStart(3, "0")));
+            files += await _fieldSaveParts(await r.blob(), ex.name.replace("{n}", String(part).padStart(3, "0")), pause);
             const nxt = r.headers.get(ex.next);
             if (!nxt || !(Number(nxt) > after)) break;   // a cursor that does not advance can never loop
             after = Number(nxt);

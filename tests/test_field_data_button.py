@@ -90,9 +90,11 @@ def test_every_saved_file_is_cut_to_an_uploadable_size():
     m = re.search(r"const FIELD_PART_BYTES = (\d+) \* 1000;", js)
     assert m and int(m.group(1)) * 1000 <= 500_000
     run = function_body(js, "downloadFieldData")
-    assert run.count("_fieldSaveParts(await r.blob()") == 2 and "_fieldSave(await r.blob()" not in run
+    assert run.count("await _fieldSaveParts(await r.blob()") == 2 and "_fieldSave(await r.blob()" not in run
     saver = function_body(js, "_fieldSaveParts")
     assert "blob.slice(" in saver and "-part-" in saver and "-of-" in saver
+    # one piece at a time (a tight loop of downloads loses some), numbers padded to the width of the count
+    assert "await pause()" in saver and "String(n).length" in saver
     from src.api.diagnostics.source_samples import SAMPLE_ZIP_MAX_BYTES
     assert int(m.group(1)) * 1000 == SAMPLE_ZIP_MAX_BYTES
 
