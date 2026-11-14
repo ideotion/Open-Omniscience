@@ -191,7 +191,10 @@ assert.ok(R.maintSampleRowHtml(mrow, t, tf).includes('data-maint-pair="confirm"'
 assert.ok(!R.maintSampleRowHtml({ id: 4, title: "T", url: "u" }, t, tf).includes("data-maint-pair"), "a non-host sample does not");
 const hp = R.maintPairsHtml({ confirmed: 1, rows: [{ source_id: 9, article_site: "example.net", confirmed_at: "2026-10-01T08:00:00", note: "partner" }] }, t, tf);
 noJunk(hp, "pairs");
-assert.ok(visible(hp).includes("1 confirmed") && visible(hp).includes("example.net") && visible(hp).includes("2026-10-01") && visible(hp).includes("partner"), visible(hp));
+assert.ok(visible(hp).includes("1 confirmed") && visible(hp).includes("2026-10-01") && visible(hp).includes("partner"), visible(hp));
+// The site is checked by exact match on its own attribute (a substring test on a host name is what
+// CodeQL's URL-sanitisation rule flags, and an exact match is the stronger check anyway).
+assert.strictEqual((hp.match(/data-site="([^"]*)"/) || [])[1], "example.net", hp);
 assert.ok(hp.includes('data-maint-pair="withdraw"') && /class="card-caveat"[^>]*>A confirmed site is counted/.test(hp), hp);
 const p0 = R.maintPairsHtml({ confirmed: 0, rows: [] }, t, tf);
 assert.ok(visible(p0).includes("No site confirmed yet") && p0.includes('class="card-caveat"'), "the caveat stays when the list is empty");
