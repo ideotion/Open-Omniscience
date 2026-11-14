@@ -228,7 +228,9 @@
       else if (vars.count != null) name = "count";
       else { const m = /\{(\w+)\}/.exec(key); if (m) name = m[1]; }
     }
-    const x = name == null ? NaN : Number(String(vars[name]).replace(PLURAL_STRIP, ""));
+    // Only plain ASCII digits are a number here, exactly as in src/tui/locale.py: Number("") is 0.
+    const raw = name == null ? "" : String(vars[name]).replace(PLURAL_STRIP, "");
+    const x = /^[+-]?\d+(\.\d+)?$/.test(raw) ? Number(raw) : NaN;
     if (!isFinite(x)) return pluralFallback(forms);
     const cat = pluralCat(x);
     return forms[cat] != null ? forms[cat] : forms.other;
@@ -240,7 +242,11 @@
         const forms = pluralForms(map[k]);
         if (!forms) continue;
         const f = pluralFallback(forms);
-        if (map[f] == null && _plRev[f] == null) _plRev[f] = k;
+        if (map[f] != null) continue;
+        // Two keys whose no-number forms agree but whose other forms differ ("{n} article" and
+        // "{n} article(s)" in Arabic) leave the text ambiguous: it is looked up to neither.
+        if (_plRev[f] == null) _plRev[f] = k;
+        else if (_plRev[f] !== "" && map[_plRev[f]] !== map[k]) _plRev[f] = "";
       }
     }
     return _plRev;
@@ -251,7 +257,7 @@
     let key = s, out = map[s];
     if (out == null) {
       const back = pluralRev()[s];
-      if (back != null) { key = back; out = map[back]; } else out = s;
+      if (back) { key = back; out = map[back]; } else out = s;
     }
     const forms = pluralForms(out);
     if (forms) out = pluralPick(forms, key, vars);

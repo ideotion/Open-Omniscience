@@ -40,6 +40,8 @@ _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 _PLURAL_MARK = re.compile(r"\[(zero|one|two|few|many|other)\]")
 # Grouping spaces and the bidi isolates and marks a count may be wrapped in are not part of the number (as in i18n.js).
 _PLURAL_STRIP = re.compile(r"[\s\u00a0\u202f\u2066-\u2069\u200e\u200f\u061c]")
+# Only plain ASCII digits are a number here, exactly as in i18n.js (float() would also take "1_1" or "١").
+_PLURAL_NUMBER = re.compile(r"[+-]?[0-9]+(\.[0-9]+)?")
 
 
 def _plural_forms(value: str) -> dict[str, str] | None:
@@ -153,11 +155,12 @@ class Translator:
                 else next(iter(_PLACEHOLDER.findall(text)), None)
             )
             try:
-                x = (
-                    float(_PLURAL_STRIP.sub("", str(values[name])))
+                raw = (
+                    _PLURAL_STRIP.sub("", str(values[name]))
                     if name is not None and name in values
-                    else None
+                    else ""
                 )
+                x = float(raw) if _PLURAL_NUMBER.fullmatch(raw) else None
             except (TypeError, ValueError):
                 x = None
             if x is not None and math.isfinite(x):

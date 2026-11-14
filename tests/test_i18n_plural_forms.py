@@ -105,14 +105,19 @@ def test_terminal_translator_chooses_the_form():
         ru.tf("{n} sources", n="\u2068+21\u2069") == "\u2068+21\u2069 источник"
     )  # nor are bidi isolates
     assert ru.tf("{n} sources", n=float("inf")) == "inf источников"  # never a crash
+    assert (
+        ru.tf("{n} sources", n="1_1") == "1_1 источников"
+    )  # only plain ASCII digits are a number, as in i18n.js
+    assert ru.tf("{n} sources", n="") == " источников"
     plain = Translator("ru", {"{n} selected": "Выбрано: {n}"})
     assert plain.tf("{n} selected", n=5) == "Выбрано: 5"
 
 
 def test_no_converted_key_reaches_a_count_without_choosing_its_form():
     """A plural value read with t() and then given its number by ``.replace`` shows the no-number form for every
-    count ("1 статей"). Every count a converted key carries goes through tf() (or ``_tfn``), which chooses; tf(t(KEY))
-    also chooses, because tf() looks the no-number form back up to its key."""
+    count ("1 статей"), so a count a converted key carries goes through tf() (or ``_tfn``), which chooses; tf(t(KEY))
+    also chooses, because tf() looks the no-number form back up to its key. This scan catches the common shape, a
+    literal key in t(...).replace(; a key held in a constant or a result kept in a variable is not seen by it."""
     keys = {key for _lang, key, _value in _plural_values()}
     alt = "|".join(
         sorted(

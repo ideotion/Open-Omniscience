@@ -81,6 +81,17 @@ async function boot(lang, localeMap) {
     assert.strictEqual(ar.tf("{n} sources", { n: Number(k) }), arWant[k], "ar n=" + k);
   }
   assert.strictEqual(ar.t("{n} sources"), "{n} مصادر", "ar with no number: the form for 5 (the plural)");
+  assert.strictEqual(ar.tf("{n} sources", { n: "" }), " مصادر", "an empty count is no number, never 0");
+  assert.strictEqual(ar.tf("{n} sources", { n: "\u0661" }), "\u0661 مصادر", "only ASCII digits are a number, as in the terminal");
+
+  // Two keys whose no-number forms agree but whose other forms differ: tf(t(KEY)) cannot tell
+  // which key the text came from, so it chooses nothing rather than the wrong key's form.
+  const amb = await boot("ar", {
+    "{n} article": "[one]مقالة واحدة[few]{n} مقالات[other]{n} مقالة",
+    "{n} article(s)": "[one]مقال واحد[few]{n} مقالات[other]{n} مقال",
+  });
+  assert.strictEqual(amb.tf(amb.t("{n} article"), { n: 1 }), "1 مقالات", "an ambiguous no-number form is looked up to neither key");
+  assert.strictEqual(amb.tf("{n} article", { n: 1 }), "مقالة واحدة", "the key itself still chooses");
 
   // A value that merely starts with a bracket is not a plural value.
   const en = await boot("fr", { "[beta] {n} items": "[bêta] {n} éléments" });
