@@ -103,7 +103,7 @@ def test_a_bundle_without_a_signed_head_is_refused(bundle):
     b = copy.deepcopy(bundle[0])
     del b["head"], b["head_signature"]
     ok, issues = verify_export(b)
-    assert not ok and issues[0].startswith("no signed head")
+    assert not ok and issues[0].startswith("no signed head") and "export it again" in issues[0]
 
 
 def test_an_item_bundle_carrying_another_items_entry_is_refused(bundle):
@@ -139,3 +139,52 @@ def test_the_cli_refuses_a_file_cut_mid_record(bundle, tmp_path):
     whole.write_text(text)
     r = subprocess.run([sys.executable, str(ROOT / "scripts/verify_custody.py"), str(whole)], capture_output=True, text=True)
     assert r.returncode == 0 and "VERIFIED       : True" in r.stdout
+
+
+def test_a_one_item_bundle_with_a_middle_entry_re_signed_by_another_key_is_refused(bundle, tmp_path):
+    """Security read: a one-item bundle has no links, so a middle entry rewritten and re-signed must still fail."""
+    from hashlib import sha256
+
+    from src.custody.log import CustodyEntry, _entry_digest
+    from src.custody.signing import canonical_bytes
+
+    b = copy.deepcopy(bundle[1])
+    e = CustodyEntry.from_dict(b["entries"][1])
+    e.metadata = {"note": "rewritten"}
+    partial = {k: v for k, v in e.signable_core().items() if k != "timestamp"}
+    e.timestamp = {**e.timestamp, "digest": sha256(canonical_bytes(partial)).hexdigest()}
+    e.entry_hash = _entry_digest(e.signable_core())
+    atk = HybridSigner(ed25519_path=tmp_path / "atk.pem", mldsa_path=tmp_path / "atk.key")
+    e.signature = atk.sign(canonical_bytes(e.signable_core()))
+    b["entries"][1] = e.to_dict()
+    ok, issues = verify_export(b)
+    assert not ok and "more than one key" in issues[0]
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda b: b["entries"][0].__setitem__("signature", {"ed25519": "s"}),
+    lambda b: b["entries"][0].__setitem__("signature", "s"),
+    lambda b: b["entries"][-1].__setitem__("seq", "9"),
+    lambda b: b["entries"][-1].__setitem__("seq", True),
+    lambda b: b["entries"][-1].__setitem__("timestamp", "z"),
+    lambda b: b["entries"][-1].__setitem__("metadata", []),
+    lambda b: b.__setitem__("head_signature", {"ed25519": "s"}),
+    lambda b: b.__setitem__("head_signature", "s"),
+    lambda b: b.__setitem__("signer", "s"),
+])
+@pytest.mark.parametrize("which", [0, 1])
+def test_odd_shapes_are_refused_by_name_never_raised(bundle, mutate, which):
+    b = copy.deepcopy(bundle[which])
+    mutate(b)
+    ok, issues = verify_export(b, require_signer=True)
+    assert not ok and issues
+
+
+def test_a_refused_bundle_states_no_scope(bundle):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    with TestClient(app) as c:
+        r = c.post("/api/custody/verify", json={"bundle": {**bundle[1], "entries": []}})
+    assert r.json()["verified"] is False and r.json()["scope"] is None

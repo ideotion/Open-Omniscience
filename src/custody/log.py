@@ -481,23 +481,65 @@ def verify_entries(
 
 #: Said beside a one-item verdict, so "verified" is never read as the whole log's.
 ITEM_SCOPE_NOTE = (
-    "one item's entries: each entry's hash, signature and timestamp were checked and their order, but not the links "
-    "between them, which run through other items' entries"
+    "one item's entries: each entry's hash, signature and timestamp were checked, and that one key signed them all and "
+    "their order, but not the links between them, which run through other items' entries"
 )
+WHOLE_LOG_SCOPE = "the whole log, from its first entry to the last entry its signed head names"
+
+
+def _signature_shape_problem(sig: object) -> str | None:
+    """Why a signature dict cannot be read, or None: checked before anything indexes into it."""
+    if not isinstance(sig, dict):
+        return "its signature is not an object"
+    for part in ("ed25519", "ml_dsa"):
+        if part in sig and not isinstance(sig[part], dict):
+            return f"its signature's {part} part is not an object"
+    if not isinstance(sig.get("ed25519"), dict):
+        return "its signature has no ed25519 part"
+    return None
+
+
+def _entry_shape_problem(d: object) -> str | None:
+    """Why a raw entry is not a whole record, or None. A file cut mid-record leaves one like this."""
+    if not isinstance(d, dict):
+        return "it is not an object"
+    missing = [k for k in ("seq", "item_id", "item_hash", "action", "prev_entry_hash", "entry_hash", "signature",
+                           "timestamp") if k not in d]
+    if missing:
+        return "it has no " + ", ".join(missing)
+    if not isinstance(d["seq"], int) or isinstance(d["seq"], bool):
+        return "its seq is not a whole number"
+    for k in ("item_id", "item_hash", "action", "prev_entry_hash", "entry_hash"):
+        if not isinstance(d[k], str):
+            return f"its {k} is not text"
+    if not isinstance(d["timestamp"], dict):
+        return "its timestamp is not an object"
+    if not isinstance(d.get("metadata", {}), dict):
+        return "its metadata is not an object"
+    return _signature_shape_problem(d["signature"])
+
+
+def _ed25519_pub(sig: dict) -> str:
+    return str((sig.get("ed25519") or {}).get("pub") or "")
 
 
 def verify_export(bundle: dict, *, require_signer: bool = False) -> tuple[bool, list[str]]:
     """Verify an exported custody bundle (offline, no DB). FAILS CLOSED.
 
     Refused by name, before any entry is judged: a bundle with no entries; an entry that is not a whole record (a file
-    cut mid-record leaves one with fields missing); a bundle with no signed head (it cannot show that nothing was cut
-    from its end, since every remaining link still holds -- re-export it from the app); a head whose signature does not
-    verify; and a bundle whose entries do not match its head (fewer or more than it says, or a different last entry).
-    The head must be signed by the key that signed the entries, so cutting the log and rewriting the head needs that
-    key. What it cannot show: a log cut BEFORE it was exported (the head commits to what was exported, not to what the
-    store once held) -- the full log's chain shows a cut at its start or middle, and a one-item export shows neither.
+    cut mid-record leaves one with fields missing or of the wrong kind); a bundle with no signed head (it cannot show
+    that nothing was cut from its end, since every remaining link still holds -- the reason says to export it again);
+    a head whose signature does not verify or was made with another key; and a bundle whose entries do not match its
+    head (fewer or more than it says, or a different last entry).
 
-    A one-item bundle (``item_id`` set) is checked entry by entry (see ``verify_entries``' ``chained``).
+    WHICH KEY. The head's Ed25519 key must be the key of the entry it names last: in a whole log the chain carries every
+    earlier entry to that one, so cutting the log and rewriting the head needs that key. A one-item bundle has no
+    links, so there EVERY entry must carry that same Ed25519 key too. Only the Ed25519 half is compared, so a log whose
+    signer gained the post-quantum half later (hybrid entries after Ed25519 ones) still verifies; each signature is
+    still verified in full. A one-item log whose key changed between its entries is refused, by name.
+
+    What it cannot show: a log cut BEFORE it was exported (the head commits to what was exported, not to what the store
+    once held) -- the full log's chain shows a cut at its start or middle, and a one-item export shows neither.
 
     If ``require_signer`` is true, pin verification to the signer identity embedded in the bundle -- i.e. require that
     all entries and the head were signed by that identity. (Pinning to a *bundle-embedded* key only proves internal
@@ -511,41 +553,39 @@ def verify_export(bundle: dict, *, require_signer: bool = False) -> tuple[bool, 
         return False, ["empty log: the bundle holds no custody entries, so there is nothing to verify"]
     entries: list[CustodyEntry] = []
     for i, d in enumerate(raw, start=1):
-        try:
-            if not isinstance(d, dict):
-                raise TypeError("not an object")
-            entries.append(CustodyEntry.from_dict(d))
-        except (KeyError, TypeError, ValueError) as exc:
-            return False, [
-                f"entry {i} of {len(raw)} is not a whole record ({record_text(exc)}); "
-                "a log cut mid-record ends like this"
-            ]
+        problem = _entry_shape_problem(d)
+        if problem:
+            return False, [f"entry {i} of {len(raw)} is not a whole record ({problem}); a log cut mid-record ends like this"]
+        entries.append(CustodyEntry.from_dict(d))  # type: ignore[arg-type]  # shape checked just above
     pinned = None
-    if require_signer and bundle.get("signer"):
-        s = bundle["signer"]
+    if require_signer:
+        s = bundle.get("signer")
+        if not isinstance(s, dict) or not isinstance(s.get("ed25519_pub"), str):
+            return False, ["no signer identity in the bundle to pin to"]
         pinned = PublicIdentity(
             ed25519_pub=s["ed25519_pub"],
             ml_dsa_variant=s.get("ml_dsa_variant"),
             ml_dsa_pub=s.get("ml_dsa_pub"),
         )
     head, head_sig = bundle.get("head"), bundle.get("head_signature")
-    if not isinstance(head, dict) or not isinstance(head_sig, dict):
+    if not isinstance(head, dict) or head_sig is None:
         return False, [
-            "no signed head: this bundle cannot show that nothing was cut from its end "
-            "(exports before this check carried none; export it again from the app)"
+            "no signed head: this bundle cannot show that nothing was cut from its end. Exports made before this check "
+            "carried none: export it again from the app"
         ]
-    # The head must be signed by the key that signed the entries: a head re-signed with any other key would let whoever
-    # cut the log vouch for the cut. Pinned to the first entry's own keys when no signer is pinned.
-    first = entries[0].signature if isinstance(entries[0].signature, dict) else {}
-    head_pin = pinned or PublicIdentity(
-        ed25519_pub=(first.get("ed25519") or {}).get("pub", ""),
-        ml_dsa_variant=(first.get("ml_dsa") or {}).get("variant"),
-        ml_dsa_pub=(first.get("ml_dsa") or {}).get("pub"),
-    )
-    ok, reason = signing.verify(head_sig, canonical_bytes(head), pinned=head_pin)
+    problem = _signature_shape_problem(head_sig)
+    if problem:
+        return False, [f"head signature unreadable: {problem.replace('its signature', 'the head signature')}"]
+    item_id = bundle.get("item_id")
+    key = _ed25519_pub(entries[-1].signature)
+    if _ed25519_pub(head_sig) != key:
+        return False, ["head signature invalid: it was not made with the key of the entry it names last"]
+    if item_id and any(_ed25519_pub(e.signature) != key for e in entries):
+        return False, ["a one-item bundle signed by more than one key: without links between its entries, every entry "
+                       "must carry the key that signed its head"]
+    ok, reason = signing.verify(head_sig, canonical_bytes(head), pinned=pinned)
     if not ok:
         return False, [f"head signature invalid: {reason}"]
-    item_id = bundle.get("item_id")
     expected = _bundle_head(item_id, entries)
     if head != expected:
         if head.get("entry_count") != len(entries):

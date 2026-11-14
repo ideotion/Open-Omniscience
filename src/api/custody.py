@@ -16,7 +16,13 @@ from pydantic import BaseModel
 
 from src.api.cross_site import refuse_cross_site_get
 from src.custody.anchor import AnchorError, AnchorUnavailable, available_providers, get_provider
-from src.custody.log import ITEM_SCOPE_NOTE, CustodyAction, CustodyLog, verify_export
+from src.custody.log import (
+    ITEM_SCOPE_NOTE,
+    WHOLE_LOG_SCOPE,
+    CustodyAction,
+    CustodyLog,
+    verify_export,
+)
 from src.custody.settings import (
     VALID_ANCHORING,
     CustodySettingsError,
@@ -249,7 +255,7 @@ def verify_bundle(req: VerifyBundleRequest) -> dict:
     """Verify a posted custody bundle offline (no DB needed)."""
     ok, issues = verify_export(req.bundle, require_signer=req.require_signer)
     # What a "verified" covers, said with it: a one-item bundle's links run through entries it does not carry.
-    scope = ITEM_SCOPE_NOTE if req.bundle.get("item_id") else "the whole log, from its first entry"
+    scope = (ITEM_SCOPE_NOTE if req.bundle.get("item_id") else WHOLE_LOG_SCOPE) if ok else None
     return {"verified": ok, "issues": issues, "scope": scope}
 
 
