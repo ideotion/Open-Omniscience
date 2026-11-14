@@ -105,11 +105,15 @@ def judge(results: list[dict], root: Path = ROOT) -> Verdict:
     mock_sites: dict[tuple[str, str, int], set[str]] = defaultdict(set)
     mock_hits: set[tuple[str, str, int]] = set()
     for r in results:
-        hits.update((a, b, c, d) for a, b, c, d in r["hits"])
         ran.update(r["ran"])
+    # only a PASSING case's hits and mock sites count: a failing parametrized case could otherwise lend its hit to, or charge its
+    # mock to, the function its passing cases are judged under
+    for r in results:
+        hits.update((a, b, c, d) for a, b, c, d in r["hits"] if a in ran)
         for nodeid, f, ln, excs in r["mock_sites"]:
-            mock_sites[(nodeid, f, ln)].update(excs)
-        mock_hits.update((a, b, c) for a, b, c in r["mock_hits"])
+            if nodeid in ran:
+                mock_sites[(nodeid, f, ln)].update(excs)
+        mock_hits.update((a, b, c) for a, b, c in r["mock_hits"] if a in ran)
 
     fired_lines: dict[str, set[tuple[str, int, int]]] = defaultdict(set)
     for nodeid, f, code_line, ln in hits:
@@ -124,9 +128,11 @@ def judge(results: list[dict], root: Path = ROOT) -> Verdict:
             raise ValueError(f"fault-reach: the nodeid {key!r} names no test file: run from the repository root (its rootdir), not through a link")
         if rel not in static_cache:
             p = (root / rel).resolve()
+            if not p.is_file():
+                raise ValueError(f"fault-reach: the test file {rel!r} is not under {root}: run from the repository root (its rootdir), not through a link")
             try:
                 static_cache[rel] = {"abs": str(p), "installs": analyse(p).installs}
-            except (OSError, SyntaxError, UnicodeDecodeError):
+            except (SyntaxError, UnicodeDecodeError):
                 static_cache[rel] = {"abs": str(p), "installs": {}}
         info = static_cache[rel]
         for s in info["installs"].get(qual, []):
@@ -289,7 +295,11 @@ def main(argv: list[str] | None = None) -> int:
     if not results or rc not in (0, 1):
         print(f"fault-reach: pytest did not run cleanly (exit {rc}, {len(results)} result files)", file=sys.stderr)
         return 2
-    v = judge(results)
+    try:
+        v = judge(results)
+    except ValueError as e:
+        print(e, file=sys.stderr)
+        return 2
     if a.files:  # a partial run cannot call a baseline line for another file stale
         rels = {str(f.relative_to(ROOT)) for f in files}
         baseline = {k: r for k, r in baseline.items() if k.partition("::")[0] in rels}

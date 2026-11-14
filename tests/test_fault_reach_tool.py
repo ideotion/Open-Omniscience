@@ -225,6 +225,10 @@ def test_skips_inside_its_body():
 
 def test_fails_before_its_fault():
     assert guarded_call(boom, False) == "not ok"
+
+@pytest.mark.parametrize("use", [True, False])
+def test_only_a_failing_case_reaches_its_fault(use):
+    assert guarded_call(boom, use) == "ok"  # [True] reaches the fault, then fails: its hit must not clear [False]
 '''
 
 
@@ -239,7 +243,7 @@ def test_the_plugin_flags_exactly_the_tests_whose_fault_never_fired(tmp_path) ->
          "--rootdir", str(tmp_path), "--basetemp", str(tmp_path / "bt"), "tests/test_scratch.py"],
         cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
     )
-    assert p.returncode == 1 and "1 failed" in p.stdout, p.stdout + p.stderr  # test_fails_before_its_fault, on purpose
+    assert p.returncode == 1 and "2 failed" in p.stdout, p.stdout + p.stderr  # two scratch tests fail on purpose
     v = audit.judge(audit.load_results(out), root=tmp_path)
     assert sorted(v.flagged) == [
         "tests/test_scratch.py::TestOuter::TestInner::test_nested_class_never_reaches",
@@ -248,10 +252,13 @@ def test_the_plugin_flags_exactly_the_tests_whose_fault_never_fired(tmp_path) ->
         "tests/test_scratch.py::test_an_inline_lambda_on_a_continuation_line_never_called",
         "tests/test_scratch.py::test_mock_never_called",
         "tests/test_scratch.py::test_never_reaches_its_fault",
+        "tests/test_scratch.py::test_only_a_failing_case_reaches_its_fault",
     ]
     assert "tests/test_scratch.py::test_skipped" not in v.ran
     assert "tests/test_scratch.py::test_skips_inside_its_body" not in v.ran
     assert "tests/test_scratch.py::test_fails_before_its_fault" not in v.ran  # red already; it may have stopped before its fault
+    with pytest.raises(ValueError):  # a nodeid read against the wrong root is refused, never judged clean
+        audit.judge(audit.load_results(out), root=tmp_path / "tests")
     assert "tests/test_scratch.py::test_a_guard_at_zero_is_fine" not in v.installed
 
     baseline = {"tests/test_scratch.py::test_never_reaches_its_fault": "zero is right here",
