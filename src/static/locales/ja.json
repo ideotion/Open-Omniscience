@@ -1411,6 +1411,7 @@
   "Dated by when this machine found the gap, newest first.": "この端末が欠落を見つけた時刻で記録しています。新しい順です。",
   "Dates mentioned in this text": "この本文で言及された日付",
   "Dates mentioned in your articles' text (extracted, unconfirmed)": "記事本文に記載された日付（抽出、未確認）",
+  "Dates sent: {start} to {end}.": "送信する日付：{start}〜{end}。",
   "Day": "日",
   "Days": "日",
   "Days away": "あと何日",

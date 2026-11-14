@@ -63,6 +63,7 @@ const src =
   "function _omniCrossNote(c) { return c ? ' · CROSS(' + c.n + ')' : ''; }\n" +
   "function _fmtBytes(n) { return 'B(' + n + ')'; }\n" +
   extract("ooLabelText") + "\n" + extract("ooListJoin") + "\n" +
+  extract("fmtNum") + "\n" + extract("ooRoundPlace") + "\n" + extract("_claimRound1") + "\n" +
   extractConst("_CLAIM_JOIN_LABELS") + "\n" +
   extractConst("_CLAIM_DISCRIMINATORS") + "\n" +
   extractConst("_CLAIM_PROBLEMS") + "\n" + extract("_claimProblemText") + "\n" +
@@ -117,7 +118,7 @@ const WS = {
         window_start: "2025-08-30", window_end: "2026-08-31", window_narrowed: true, n_in_window: 1,
         article_ids: [11, 13], n_articles: 2, variables: ["precipitation_sum"],
         host: "archive-api.open-meteo.com",
-        request_url: "https://archive-api.open-meteo.com/v1/archive?latitude=46.0200&longitude=7.7500",
+        request_url: "https://archive-api.open-meteo.com/v1/archive?latitude=46.0000&longitude=7.8000",
         reveals: ["ip_address", "coordinates", "date_window"], cached: false },
       { kind: "weather", rule: "flood", rule_label: "Flood", place: "Switzerland", place_country: "ch",
         lat: 47.37, lon: 8.54, geocode: "country", coords_from: "catalog_cities",
@@ -223,11 +224,12 @@ assert.ok(cap.includes("CROSS(1)"), "the cross-language disclosure is shown");
 //    request is text, never a link; a held slice does not ask the host.
 const co = R.claimCorroborationHtml(WS, t, tf);
 const cov = visible(co);
-assert.ok(cov.includes("Asking archive-api.open-meteo.com tells it this machine's IP address, the point 46.02, 7.75 (for Zermatt) and the dates 2025-08-30 to 2026-08-31"), cov);
-// a country is sent as its stand-in city's point: the line names those coordinates, not "near Switzerland"
-assert.ok(cov.includes("the point 47.37, 8.54 (for Switzerland)"), cov);
+assert.ok(cov.includes("Asking archive-api.open-meteo.com tells it this machine's IP address, the point 46, 7.8 (for Zermatt) and the dates 2025-08-30 to 2026-08-31"), cov);
+// a country is sent as its stand-in city's point: the line names those coordinates, not "near Switzerland",
+// rounded to 0.1 degree as the server sends them (R683)
+assert.ok(cov.includes("the point 47.4, 8.5 (for Switzerland)"), cov);
 assert.ok(co.indexOf("claim-shadow") < co.indexOf("data-claim-wx=\"0\""), "the shadow line comes before the button");
-assert.ok(cov.includes("The exact request: https://archive-api.open-meteo.com/v1/archive?latitude=46.0200"), cov);
+assert.ok(cov.includes("The exact request: https://archive-api.open-meteo.com/v1/archive?latitude=46.0000"), cov);
 assert.ok(!/href="https?:/.test(co), "a request URL was drawn as a link");
 assert.ok(cov.includes("Ask archive-api.open-meteo.com"), cov);
 assert.ok(cov.includes("Show the slice held on this machine"), "a held slice must say so: " + cov);

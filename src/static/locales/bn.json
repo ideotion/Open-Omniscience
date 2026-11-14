@@ -1411,6 +1411,7 @@
   "Dated by when this machine found the gap, newest first.": "এই যন্ত্র যে মুহূর্তে ফাঁকটি পেয়েছে সেই অনুযায়ী তারিখ দেওয়া, নতুনটি আগে।",
   "Dates mentioned in this text": "এই পাঠ্যে উল্লিখিত তারিখ",
   "Dates mentioned in your articles' text (extracted, unconfirmed)": "আপনার নিবন্ধের লেখায় উল্লিখিত তারিখ (নিষ্কাশিত, অনিশ্চিত)",
+  "Dates sent: {start} to {end}.": "পাঠানো তারিখ: {start} থেকে {end}।",
   "Day": "দিন",
   "Days": "দিন",
   "Days away": "কত দিন বাকি",

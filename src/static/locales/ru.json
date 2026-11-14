@@ -1411,6 +1411,7 @@
   "Dated by when this machine found the gap, newest first.": "Даты указаны по моменту, когда этот компьютер обнаружил пробел, сначала новые.",
   "Dates mentioned in this text": "Даты, упомянутые в этом тексте",
   "Dates mentioned in your articles' text (extracted, unconfirmed)": "Даты, упомянутые в тексте ваших статей (извлечены, не подтверждены)",
+  "Dates sent: {start} to {end}.": "Отправляемые даты: с {start} по {end}.",
   "Day": "День",
   "Days": "Дни",
   "Days away": "Дней осталось",

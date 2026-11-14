@@ -72,8 +72,8 @@ def test_the_place_is_rounded_to_one_decimal_before_it_is_sent(fake_fetch):
     assert anomaly.place(-0.04, -0.04) == (0.0, 0.0) and str(anomaly.place(-0.04, 0)[0]) == "0.0"
     anomaly.fetch_anomalies(48.85661, 2.35222, *W, store=_Mem())
     assert {(c["lat"], c["lon"]) for c in fake_fetch} == {(48.9, 2.4)}
-    # Never through the loose JSON file cache.
-    assert all(c["use_file_cache"] is False for c in fake_fetch)
+    # The anomaly view keeps its slices itself, so the fetch keeps nothing of its own.
+    assert all(c["keep"] is False for c in fake_fetch)
 
 
 def test_a_second_window_for_the_same_place_fetches_only_the_window(fake_fetch):
@@ -144,7 +144,7 @@ def test_the_slice_fetch_writes_no_file_when_the_caller_keeps_it(tmp_path, monke
             return SimpleNamespace(content=body, final_url=url, status_code=200, fetched_at=datetime.now(UTC))
 
     out = openmeteo.fetch_daily_slice(1.0, 2.0, date(2023, 5, 1), date(2023, 5, 1), ["precipitation_sum"],
-                                      fetcher=F(), use_file_cache=False)
+                                      fetcher=F(), keep=False)
     assert out["ok"] is True
     assert not any(tmp_path.rglob("*")), "nothing written to disk"
 
@@ -229,10 +229,13 @@ def test_the_view_asks_consent_names_the_rounded_place_and_reads_held_first():
     from tests.js_source_helper import function_body
 
     body = function_body(js, "climatePlaceShow")
-    held_at, gate_at, post_at = (body.find(s) for s in ('"/api/weather/anomaly/held?', "ensureOnline(", '"/api/weather/anomaly", {method: "POST"'))
+    held_at, gate_at, post_at = (body.find(s) for s in ('"/api/weather/anomaly/held?', "!await ooAskToSendPlace(", '"/api/weather/anomaly", {method: "POST"'))
     assert -1 < held_at < gate_at < post_at, "held read first, then the ONE consent, then the request"
-    assert "consent: true" in body and "rounded to 0.1 degree" in body
-    assert "window.confirm(ask" in body and "ensureOnline(ask" in body, \
+    assert "consent: true" in body
+    # The shared helper (app-home.js, R683) names the rounded place and asks for every request.
+    ask = function_body((_ROOT / "src" / "static" / "app-home.js").read_text(encoding="utf-8"), "ooAskToSendPlace")
+    assert "rounded to 0.1 degree" in ask and "ooRoundPlace(" in ask
+    assert "confirmIfOnline:" in ask and "await ensureOnline(ask" in ask, \
         "asked for every request: a confirmation when already online, the consent popup otherwise"
     assert "climatePlaceRound(q.lat)" in body, "the browser rounds too, so the popup names what is sent"
     save = function_body(js, "_climatePlaceSave")
@@ -268,7 +271,7 @@ def test_a_failed_weather_fetch_names_no_place_in_its_note():
         def fetch(self, url, require_html=False):
             raise RuntimeError("request error for " + url + ": url: /v1/archive?" + url.split("?", 1)[1])
 
-    out = openmeteo.fetch_daily_slice(48.85661, 2.35222, *W, ["precipitation_sum"], fetcher=Boom(), use_file_cache=False)
+    out = openmeteo.fetch_daily_slice(48.85661, 2.35222, *W, ["precipitation_sum"], fetcher=Boom(), keep=False)
     assert out["ok"] is False
     assert "48.9" not in out["verdict_note"] and "latitude" not in out["verdict_note"], out["verdict_note"]
 
@@ -279,5 +282,7 @@ def test_the_question_says_the_browser_keeps_the_place_and_fails_closed():
 
     body = function_body(js, "climatePlaceShow")
     assert 'This browser also keeps the rounded place, unencrypted, to fill it in next time.' in body
-    assert "window.confirm(ask + " in body and "{shadow: kept}" in body
-    assert 'typeof ensureOnline !== "function" || !await ensureOnline(' in body, "no consent popup, nothing sent"
+    assert "!await ooAskToSendPlace(lat, lon, {shadow: " in body
+    ask = function_body((_ROOT / "src" / "static" / "app-home.js").read_text(encoding="utf-8"), "ooAskToSendPlace")
+    assert 'confirmIfOnline: shadow ? ask + "\\n\\n" + shadow : ask' in ask
+    assert 'if (typeof ensureOnline !== "function") return false;' in ask, "no consent popup, nothing sent"

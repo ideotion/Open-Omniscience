@@ -1411,6 +1411,7 @@
   "Dated by when this machine found the gap, newest first.": "Datiert nach dem Zeitpunkt, an dem dieser Rechner die Lücke bemerkt hat, neueste zuerst.",
   "Dates mentioned in this text": "In diesem Text erwähnte Daten",
   "Dates mentioned in your articles' text (extracted, unconfirmed)": "Im Text Ihrer Artikel erwähnte Daten (extrahiert, unbestätigt)",
+  "Dates sent: {start} to {end}.": "Gesendete Daten: {start} bis {end}.",
   "Day": "Tag",
   "Days": "Tage",
   "Days away": "Tage entfernt",

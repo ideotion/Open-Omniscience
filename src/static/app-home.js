@@ -2201,21 +2201,61 @@
     // ethical fetch path as everything else; failures render the honest
     // transport verdict, results render per-variable (one chart per unit —
     // mixed units on one axis would be a fabricated comparison).
+    // R675/R683: a place is personal, so EVERY weather fetch asks, naming the rounded place
+    // and the host it goes to. When the app is offline that is the ONE consent popup
+    // (invariant #14); when it is already online that popup would not open, so a plain
+    // confirmation naming the same things stands in for it. The rounding shown is the one
+    // the server applies (src/weather/openmeteo.py round_place). Shared by the Home card,
+    // the Claim Workspace and the Climate tab's "Your place".
+    const OO_WEATHER_HOST = "archive-api.open-meteo.com";
+    // The server's rounding, operation for operation (round_place in src/weather/openmeteo.py):
+    // floor(x*10 + 0.5)/10, so a tie such as 0.25 reads 0.3 on both sides.
+    function ooRoundPlace(v) {
+      const r = Math.floor(Number(v) * 10 + 0.5) / 10;
+      return Object.is(r, -0) ? 0 : r;
+    }
+    async function ooAskToSendPlace(lat, lon, opts) {
+      opts = opts || {};
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? v[k] : m)));
+      const r1 = (x) => fmtNum(ooRoundPlace(x), 1);
+      const ask = tf("Send the place {lat}, {lon} (rounded to 0.1 degree) and the dates to {host}",
+        {lat: r1(lat), lon: r1(lon), host: OO_WEATHER_HOST});
+      if (typeof ensureOnline !== "function") return false;  // fails closed: no popup, nothing sent
+      // Only these two options reach the popup (never skipDialog). ensureOnline asks the confirmation itself
+      // when it finds the app already online, on the one read that decided there was no popup.
+      const shadow = opts.shadow ? String(opts.shadow) : "";
+      return !!(await ensureOnline(ask, {shadow: shadow, confirmIfOnline: shadow ? ask + "\n\n" + shadow : ask}));
+    }
+
     async function cardWeatherFetch(id) {
       const c = _briefCards[id]; if (!c) return;
       const sig = c.signal || {};
       const box = document.getElementById("wx-" + id); if (!box) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      if (!await ensureOnline(t("Fetch weather context for one place and time window (Open-Meteo)"))) return;
+      const body = {
+        lat: sig.lat, lon: sig.lon,
+        start_date: sig.window_start, end_date: sig.window_end,
+        variables: String(sig.variables || "").split(",").filter(Boolean),
+        label: sig.rule_label || c.title
+      };
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? v[k] : m)));
       box.textContent = t("Loading…");
       try {
-        const body = {
-          lat: sig.lat, lon: sig.lon,
-          start_date: sig.window_start, end_date: sig.window_end,
-          variables: String(sig.variables || "").split(",").filter(Boolean),
-          label: sig.rule_label || c.title
-        };
-        const d = await api("/api/weather/context", {method: "POST", body: JSON.stringify(body)});
+        // A slice already held is read from this machine first: nothing is sent and nothing is asked,
+        // in airplane mode too (R683). Only a slice not held leads to the question.
+        const q = new URLSearchParams({lat: String(sig.lat), lon: String(sig.lon), start_date: body.start_date,
+          end_date: body.end_date, variables: body.variables.join(","), label: body.label || ""});
+        if (!body.variables.length) { q.delete("variables"); delete body.variables; }  // the route's default set, as before
+        const held = await api("/api/weather/context/held?" + q.toString());
+        if (held && held.held) { renderWeatherContext(box, held, sig); return; }
+        box.textContent = "";
+        // The place, the dates and the host are named before anything is sent.
+        if (!await ooAskToSendPlace(sig.lat, sig.lon,
+          {shadow: tf("Dates sent: {start} to {end}.", {start: body.start_date, end: body.end_date})})) return;
+        box.textContent = t("Loading…");
+        const d = await api("/api/weather/context", {method: "POST", body: JSON.stringify(Object.assign({}, body, {consent: true}))});
         renderWeatherContext(box, d, sig);
       } catch (e) {
         box.innerHTML = `<div class="note err">${esc(e.message)}</div>`;

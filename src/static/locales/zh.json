@@ -1411,6 +1411,7 @@
   "Dated by when this machine found the gap, newest first.": "按本机发现缺口的时间标注日期，最新的在前。",
   "Dates mentioned in this text": "本文中提及的日期",
   "Dates mentioned in your articles' text (extracted, unconfirmed)": "在您文章正文中提到的日期（已提取，未确认）",
+  "Dates sent: {start} to {end}.": "发送的日期：{start} 至 {end}。",
   "Day": "日",
   "Days": "日",
   "Days away": "距今天数",
