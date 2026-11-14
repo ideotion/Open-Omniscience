@@ -368,6 +368,17 @@ def all_job_statuses() -> list[dict]:
     return [j.status() for j in jobs]
 
 
+#: How many times :func:`stop_all_jobs` has begun (each is a shutdown). A deferred start (the summary queue's kick retry) notes it
+#: when it is scheduled and gives up when it moved, so it never starts a writer the shutdown's stop did not see (R689). A count,
+#: not a flag, so an app started again in the same process (the tests' lifespans) needs no reset.
+_STOP_ALL_SEQ = 0
+
+
+def stop_all_count() -> int:
+    """How many shutdowns have asked every job to stop so far."""
+    return _STOP_ALL_SEQ
+
+
 def stop_all_jobs(timeout: float) -> list[str]:
     """Ask every registered job that is running to stop, and wait for them all against ONE deadline (audit A-029).
 
@@ -379,6 +390,8 @@ def stop_all_jobs(timeout: float) -> list[str]:
 
     Returns the KINDS still running when the deadline passed (empty when every job ended), in registry order. Kinds only: a job's
     kwargs can carry a passphrase. Never raises: a shutdown step must not stop the steps after it."""
+    global _STOP_ALL_SEQ
+    _STOP_ALL_SEQ += 1
     try:
         with _REG_LOCK:
             jobs = list(_REGISTRY.values())
