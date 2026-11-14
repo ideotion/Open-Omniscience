@@ -50,7 +50,7 @@ def test_store_unreadable_is_never_saved(tmp_path, monkeypatch):
     path = tmp_path / "elsewhere.json"  # a redirected path is read and written as JSON, so the file can be inspected
     monkeypatch.setattr(settings, "_settings_path", lambda: path)
     save_settings({"auto_log_on_ingest": False})
-    assert "store_unreadable" not in json.loads(path.read_text())
+    assert "store_unreadable" not in json.loads(path.read_text(encoding="utf-8"))
     assert not load_settings().auto_log_on_ingest
 
 
