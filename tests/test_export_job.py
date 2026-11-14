@@ -1185,9 +1185,14 @@ def test_the_live_exports_folder_named_another_way_is_cancelled_through_the_job(
     dest = exp.status()["dest"]
     other = dest.upper()
     real_exists, real_same = os.path.exists, os.path.samefile
-    monkeypatch.setattr(ej.os.path, "exists", lambda p: real_exists(dest) if str(p) == other else real_exists(p))
-    monkeypatch.setattr(ej.os.path, "samefile",
-                        lambda a, b: str(a).lower() == str(b).lower() or real_same(a, b))
+    from tests.os_scope import scope_os_path
+
+    scope_os_path(
+        monkeypatch,
+        ej,
+        exists=lambda p: real_exists(dest) if str(p) == other else real_exists(p),
+        samefile=lambda a, b: str(a).lower() == str(b).lower() or real_same(a, b),
+    )
     assert ej._same_path(other, dest)
     exp.cancel(other)
     st = _wait(exp, ("paused", "cancelled", "failed", "done"))
