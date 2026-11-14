@@ -88,6 +88,29 @@ def close_for_jobs(threads: list[tuple[threading.Thread, str]] | None = None) ->
         _CLOSED = True
 
 
+def stop_jobs_and_close(timeout: float) -> list[str]:
+    """Ask every running background job to stop, wait for them against ONE deadline, then close the database to jobs whatever the
+    wait found (the lifespan's two steps, for the stops that do not run the lifespan: the panic wipe with ``timeout=0``, the
+    data-drive restart before its execve with the graceful stop's 5 s). Returns the kinds still running. Never raises."""
+    left: list[str] = []
+    try:
+        from src.jobs.background import stop_all_jobs
+
+        left = stop_all_jobs(timeout)
+    except Exception:  # noqa: BLE001 - a stop step never raises  # nosec B110
+        pass
+    finally:
+        threads: list[tuple[threading.Thread, str]] = []
+        try:
+            from src.jobs.background import running_job_threads
+
+            threads = running_job_threads()
+        except Exception:  # noqa: BLE001 - the close below runs without the names  # nosec B110
+            pass
+        close_for_jobs(threads)  # a lock and a few dict writes: every bgjob-* thread is refused even without the names
+    return left
+
+
 def clear() -> None:
     """Reopen the database to jobs and forget every refused thread (the app is starting)."""
     global _CLOSED

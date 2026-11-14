@@ -169,9 +169,17 @@ def test_no_graceful_stop_path_disposes_on_its_own():
     """Every graceful stop goes through the lifespan's one order. A disposal added back to a stop thread fails here."""
     for rel in ("src/safety/shutdown.py", "src/safety/uninstall.py"):
         assert "dispose_engine" not in (ROOT / rel).read_text(encoding="utf-8"), rel
-    for rel in ("src/scheduler/memstop.py", "src/safety/data_volume.py", "src/api/system.py"):
+    for rel in ("src/scheduler/memstop.py", "src/api/system.py"):
         src = (ROOT / rel).read_text(encoding="utf-8")
         assert "request_shutdown(" in src and "dispose_engine" not in src, rel
+    # The data-drive module's SHUTDOWN goes through request_shutdown and disposes nothing; only its restart, which skips the lifespan
+    # (an execve), runs the job steps and the disposal itself (R689 follow-up (4)).
+    import ast
+
+    dv = (ROOT / "src/safety/data_volume.py").read_text(encoding="utf-8")
+    funcs = {n.name: ast.get_source_segment(dv, n) or "" for n in ast.walk(ast.parse(dv)) if isinstance(n, ast.FunctionDef)}
+    assert "request_shutdown(" in funcs["_shut_down"] and "dispose_engine" not in funcs["_shut_down"]
+    assert [name for name, body in funcs.items() if "dispose_engine" in body] == ["_stop_jobs_before_restart"]
     main = (ROOT / "src/api/main.py").read_text(encoding="utf-8")
     i_stop, i_refuse, i_dispose = (
         main.index("jobs_left = stop_all_jobs("),
@@ -182,7 +190,8 @@ def test_no_graceful_stop_path_disposes_on_its_own():
 
 
 def test_the_panic_wipe_never_waits_on_a_job(monkeypatch, tmp_path):
-    """Deliberate: an emergency erase destroys the key at once, whatever is running."""
+    """Deliberate: an emergency erase destroys the key at once, whatever is running. Since R689 follow-up (1) it asks the jobs to stop
+    and refuses them first, with a ZERO wait, so none can recreate the store after the erase (tests/test_panic_and_restart_close_jobs.py)."""
     calls = []
     monkeypatch.setattr(bg, "stop_all_jobs", lambda *a, **k: calls.append(a) or [])
     from src.safety import crypto_erase
@@ -192,9 +201,9 @@ def test_the_panic_wipe_never_waits_on_a_job(monkeypatch, tmp_path):
         crypto_erase, "quick_crypto_erase", lambda **k: {"files_seen": 0, "files_wiped": 0}
     )
     panic_wipe(tmp_path, confirm=True)
-    assert calls == []
+    assert calls == [(0.0,)], "asked once, waited on for nothing"
     src = (ROOT / "src/safety/panic.py").read_text(encoding="utf-8")
-    assert "stop_all_jobs" not in src and "request_shutdown" not in src
+    assert "stop_jobs_and_close(0.0)" in src and "request_shutdown" not in src
 
 
 def test_a_refused_job_cannot_write_or_delete_settings_even_with_the_gate_off(

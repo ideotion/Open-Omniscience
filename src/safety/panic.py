@@ -32,6 +32,7 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
     from src.database.connect import invalidate_header_cache
     from src.safety.crypto_erase import quick_crypto_erase
 
+    _close_database_now()
     try:
         return quick_crypto_erase(confirm=True, data_dir=data_dir)
     finally:
@@ -52,3 +53,30 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
             from src.api import served_cache
 
             served_cache.invalidate()  # the served counts (and the status scans carried beside them) belong to the file that is gone
+
+
+def _close_database_now() -> None:
+    """Close the database to every writer before the wipe, waiting on NOTHING (R689 follow-up (1)): collection is held and told to
+    stop, every background job is asked to stop and refused from this instant (its next statement or commit raises), and the pool is
+    disposed. A wipe races a seizure, so no step joins a thread, and a step that fails never stops the wipe. Without this a job still
+    writing could open a fresh connection after the erase and recreate the store file under the data dir."""
+    try:
+        from src.scheduler.runner import pause_for_exclusive_operation
+
+        # The hold blocks "Run now"; the loop is signalled, never joined. It is never released, on purpose (R383's counted hold): the
+        # corpus is gone and the app must be restarted, so nothing may start collection on this process again.
+        pause_for_exclusive_operation(timeout=0.0)
+    except Exception:  # noqa: BLE001 - never stops the wipe  # nosec B110
+        pass
+    try:
+        from src.database.after_shutdown import stop_jobs_and_close
+
+        stop_jobs_and_close(0.0)
+    except Exception:  # noqa: BLE001 - never stops the wipe  # nosec B110
+        pass
+    try:
+        from src.database.session import dispose_engine
+
+        dispose_engine()
+    except Exception:  # noqa: BLE001 - never stops the wipe  # nosec B110
+        pass
