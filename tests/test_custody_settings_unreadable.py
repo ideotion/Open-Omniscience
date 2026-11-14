@@ -233,3 +233,26 @@ def test_a_batch_drops_a_log_that_opened_on_an_unreadable_store(article, monkeyp
     with CustodyLog(signer=__import__("src.custody.signing", fromlist=["x"]).HybridSigner(use_pqc=False),
                     anchoring_mode="local") as log:
         assert len(log.entries_for(f"article:{article.id}")) == 1
+
+
+def test_the_settings_panel_and_the_reconcile_result_say_what_could_not_be_read():
+    """Row 33: store_unreadable, a drain's settings_unreadable and its queue_read_error each reach the screen, x12."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    js = (root / "src" / "static" / "app-ai-tools.js").read_text(encoding="utf-8")
+    assert "s.store_unreadable ?" in js and "r.settings_unreadable" in js and "r.queue_read_error" in js
+    assert js.count("const notes = _custDrainNotes(d)") == 2  # the gap check and the record-gaps button both say it
+    keys = [
+        "The custody settings could not be read, so automatic logging is off and each new entry is queued until they can "
+        "be read. The switches below show the defaults, not your saved choice, and saving is refused until the settings "
+        "read again.",
+        "Nothing was recorded: the custody settings could not be read, so no entry is signed under guessed preferences. "
+        "The entries stay queued; try again once the settings can be read.",
+        "The queue of owed entries could not be read ({reason}), so the count of queued entries may be low.",
+    ]
+    for loc in sorted((root / "src" / "static" / "locales").glob("*.json")):
+        data = json.loads(loc.read_text(encoding="utf-8"))
+        for k in keys:
+            assert data.get(k), (loc.name, k[:40])
+            assert ("{reason}" in data[k]) == ("{reason}" in k), loc.name

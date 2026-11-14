@@ -2474,7 +2474,25 @@
         (keyTip ? ` title="${esc(keyTip)}"` : "") + `>keys: ${esc(s.key_protection)}</span>` +
         `<div class="muted" style="font-size:12px;margin-top:4px">` +
         `Ed25519 pub ${trunc(id.ed25519_pub)}` +
-        (id.ml_dsa_pub ? ` · ${esc(id.ml_dsa_variant)} pub ${trunc(id.ml_dsa_pub)}` : "") + `</div>`;
+        (id.ml_dsa_pub ? ` · ${esc(id.ml_dsa_variant)} pub ${trunc(id.ml_dsa_pub)}` : "") + `</div>` +
+        // An unreadable settings store is not an unset one: the switches below then show defaults, not the saved choice.
+        (s.store_unreadable ? `<div class="card-caveat" style="margin-top:4px">${esc(_custT(CUST_STORE_UNREADABLE))}</div>` : "");
+    }
+
+    const CUST_STORE_UNREADABLE = "The custody settings could not be read, so automatic logging is off and each new entry is queued " +
+      "until they can be read. The switches below show the defaults, not your saved choice, and saving is refused until the settings read again.";
+    const CUST_DRAIN_SETTINGS_UNREADABLE = "Nothing was recorded: the custody settings could not be read, so no entry is signed under " +
+      "guessed preferences. The entries stay queued; try again once the settings can be read.";
+    const CUST_DRAIN_QUEUE_UNREADABLE = "The queue of owed entries could not be read ({reason}), so the count of queued entries may be low.";
+    function _custT(s) { return (window.OOI18N && OOI18N.t) ? OOI18N.t(s) : s; }
+    // What a drain could not do, said beside its result: an unread queue or unreadable settings are not "nothing owed".
+    function _custDrainNotes(d) {
+      const runs = [d.drained, d.drained_after_queue].filter(Boolean);
+      const notes = [];
+      if (runs.some((r) => r.settings_unreadable)) notes.push(_custT(CUST_DRAIN_SETTINGS_UNREADABLE));
+      const qerr = runs.find((r) => r.queue_read_error);
+      if (qerr) notes.push(_qualTf(CUST_DRAIN_QUEUE_UNREADABLE, { reason: qerr.queue_read_error }));
+      return notes.join(" ");
     }
 
     // The server's LAST-KNOWN anchoring_mode, tracked so saveCustody() can tell a
@@ -2546,9 +2564,11 @@
           if (rec) rec.style.display = "none";
           return;
         }
+        const notes = _custDrainNotes(d);
         out.textContent = _qualTf("{n} stored articles since the log's first ingest entry have no ingest entry ({checked} checked).",
           { n: sc.missing || 0, checked: sc.checked || 0 })
-          + (sc.complete ? "" : " " + t("The scan stopped at its time budget; run it again to continue."));
+          + (sc.complete ? "" : " " + t("The scan stopped at its time budget; run it again to continue."))
+          + (notes ? " " + notes : "");
         if (rec) rec.style.display = sc.missing ? "" : "none";
       } catch (e) {
         out.textContent = _apiErrorMessage(e);
@@ -2562,7 +2582,8 @@
         // Both drains write owed entries marked late: the gaps a refused drain left queued are written by the FIRST one of the next
         // press (R618), so counting only the second said "Recorded 0" for entries it had just written.
         const n = ((d.drained || {}).recorded || 0) + ((d.drained_after_queue || {}).recorded || 0);
-        out.textContent = _qualTf("Recorded {n} entries, each marked late.", { n: n });
+        const notes = _custDrainNotes(d);
+        out.textContent = _qualTf("Recorded {n} entries, each marked late.", { n: n }) + (notes ? " " + notes : "");
         if (btn) btn.style.display = "none";
       } catch (e) {
         out.textContent = _apiErrorMessage(e);
