@@ -866,6 +866,16 @@ _REMOTE_RESOLVE_SOCKS_SCHEMES = frozenset({"socks5h", "socks4a"})
 #: allowlists (see ``EthicalFetcher._request_proxy_endpoints``).
 _SELECTABLE_PROXY_KEYS = frozenset({"http", "https", "all"})
 
+
+def _proxy_used_by(url: str, proxies: dict[str, str]) -> dict[str, str] | None:
+    """The one proxy ``requests`` sends a request for ``url`` through (``requests.utils.select_proxy``, the adapter's own choice), as a
+    mapping for ``connect_scope``, or ``None`` when it goes direct. Never raises: an unreadable URL or mapping allows no endpoint."""
+    try:
+        chosen = requests.utils.select_proxy(url, proxies)
+    except Exception:  # noqa: BLE001 - allows nothing: a proxied request refused, never a direct one let through
+        return None
+    return {"selected": chosen} if chosen else None
+
 #: The characters Python's ``urlsplit`` deletes wherever they stand (``urllib.parse._UNSAFE_URL_BYTES_TO_REMOVE``), mapped to a space, so a
 #: redirect's Location can be read with them still visible (R622). ``urljoin`` drops them on a same-scheme hop before anything else sees them.
 _URLSPLIT_DELETES_AS_SPACE = {ord("\t"): " ", ord("\r"): " ", ord("\n"): " "}
@@ -2009,7 +2019,15 @@ class EthicalFetcher:
                     if stream and self._real_session:
                         kwargs["stream"] = True
                     self._refuse_parser_mismatch(current)
-                    resp = self.session.get(current, **kwargs)
+                    # The ONE proxy this request goes through, in a scope of its own (follow-up to PR #1979): the scope above holds
+                    # every proxy the chain could use, so a proxy named by a hostname for ANOTHER scheme stood the check down for a
+                    # request that went direct, reopening the rebinding window this guard closes. ``select_proxy`` on this hop's
+                    # own merged mapping is what the adapter itself reads, so the two cannot disagree.
+                    with connect_scope(
+                        enabled=self._real_session,
+                        proxies=_proxy_used_by(current, self._request_proxy_endpoints(current, proxies)),
+                    ):
+                        resp = self.session.get(current, **kwargs)
                     status = resp.status_code
                     location = resp.headers.get("Location") if hasattr(resp, "headers") else None
                     if 300 <= status < 400 and location:
