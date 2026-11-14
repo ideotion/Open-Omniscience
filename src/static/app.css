@@ -435,6 +435,15 @@
       .subtab-strip > nav.tabs > button { flex:0 0 auto; white-space:nowrap; }
       .explore-filters > div { flex:1 1 100% !important; min-width:0 !important; }
       .explore-filters input { width:100%; }
+      /* The Explore results table was 422 px wide in a 316 px column (459 px right edge at 390):
+         below 600 px each result is a block, title and excerpt first, then source, date and
+         language on one line, then the actions, so nothing scrolls sideways or is clipped. */
+      #results, #results tbody { display:block; width:100%; }
+      #results tr:first-child:has(> th) { display:none; }
+      #results tr { display:flex; flex-wrap:wrap; gap:2px 10px; align-items:baseline;
+        padding:8px 0; border-bottom:1px solid var(--border); }
+      #results td { display:block; padding:0; border:0; min-width:0; overflow-wrap:anywhere; }
+      #results td:first-child, #results td:last-child, #results td[colspan] { flex:1 1 100%; }
     }
     .icon-btn { background:transparent; border:1px solid transparent; color:var(--muted);
       border-radius:9px; padding:7px; margin:0; cursor:pointer; display:inline-flex; }

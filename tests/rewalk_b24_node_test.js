@@ -492,7 +492,12 @@ GROUPS.n7 = () => {
   for (const [big, w] of [[false, 680], [true, 1100]]) {
     const html = mindmap(big, THREE);
     const svg = svgTag(html);
-    assert.ok(svg.includes(`min-width:${w}px`),
+    // The floor in px is at least the map's own width AND at least its viewBox width, so one
+    // viewBox unit is never drawn below one px (lane N round 2: the radial viewBox now grows
+    // to hold labels pushed out along their arm, so it can be wider than W).
+    const minW = Number((svg.match(/min-width:(\d+(?:\.\d+)?)px/) || [])[1]);
+    const vbW = Number(((svg.match(/viewBox="([^"]+)"/) || [])[1] || "").split(/\s+/)[2]);
+    assert.ok(minW >= w && minW >= vbW,
       `big=${big}: the map can be drawn below its own scale (labels of 5-7 px at 375 px): ${svg}`);
     assert.ok(/<div class="an-mm-box[^"]*" style="overflow:auto;max-width:100%/.test(html),
       `big=${big}: the map has no box of its own to scroll in`);

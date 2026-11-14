@@ -977,6 +977,16 @@
       if (isFinite(gapMs) && gapMs < 32 * 864e5) return iso.slice(0, 10);                 // YYYY-MM-DD: two points under a month apart can share one
       return _msLabel(ms, spanMs);
     }
+    // The start of the calendar unit _msLabel names for this span (UTC, as the label is):
+    // the nearest midnight for a day label, the nearest first of the month for a month label.
+    function _msTickSnap(ms, spanMs) {
+      const days = spanMs / 864e5;
+      if (!isFinite(ms) || !isFinite(days) || days <= 2) return ms;
+      if (days <= 92) return Math.round(ms / 864e5) * 864e5;
+      const d = new Date(ms), y = d.getUTCFullYear(), m = d.getUTCMonth();
+      const a = Date.UTC(y, m, 1), b = Date.UTC(y, m + 1, 1);
+      return (ms - a <= b - ms) ? a : b;
+    }
     function _msLabel(ms, spanMs) {
       const iso = new Date(ms).toISOString();
       const days = spanMs / 864e5;
@@ -1830,6 +1840,9 @@
     // covers the host that is not laid out yet (a hidden tab), which used to have a
     // one-shot observer of its own. A hidden host (width 0) keeps its drawing until it is
     // seen again.
+    // A chart fills its card: a 900 px cap left a dead strip on the right of a 1105 px card
+    // (the journalist walk 2026-09-30, 4h). The 1600 px cap (here and in ooChart) only stops a
+    // very wide screen stretching a short series into a ribbon; a caller that wants less passes maxWidth.
     function _ooChartWatch(el, drawnW) {
       if (typeof ResizeObserver !== "function") return;
       let timer = null;
@@ -1837,7 +1850,7 @@
         const w = el.clientWidth || (el.parentElement ? el.parentElement.clientWidth : 0);
         if (!w) return;
         const [series, o] = el._ooChartArgs || [[], {}];
-        const want = Math.max(120, Math.min(w, (o && o.maxWidth) || 900));
+        const want = Math.max(120, Math.min(w, (o && o.maxWidth) || 1600));
         if (drawnW && Math.abs(want - drawnW) < 4) return;
         clearTimeout(timer);
         timer = setTimeout(() => {
@@ -1862,7 +1875,7 @@
       // guessing a size that will overflow.
       const avail = el.clientWidth || (el.parentElement ? el.parentElement.clientWidth : 0);
       if (!avail) { _ooChartWatch(el, 0); return; }
-      const W = Math.max(120, Math.min(avail, opts.maxWidth || 900));
+      const W = Math.max(120, Math.min(avail, opts.maxWidth || 1600));
       const H = opts.height || 220, padL = 52, padR = 10, padT = 10, padB = 24;
       const wrap = document.createElement("div");
       const cv = document.createElement("canvas");
@@ -1925,6 +1938,7 @@
       const tMin = Math.min(...all.map(s => s.pts[0].t)), tMax = Math.max(...all.map(s => s.pts[s.pts.length - 1].t));
       const span0 = Math.max(tMax - tMin, 1);
       let t0 = tMin, t1 = tMax, pinned = null, pinnedS = null;
+      let hovP = null, hovS = null, hovRaf = 0;   // the point under the pointer, marked on the canvas
       const ctx = cv.getContext("2d"); ctx.scale(dpr, dpr);
       // The last stack `draw()` computed, so the hover can report a band's OWN value
       // rather than the cumulative height the reader is pointing at -- the cumulative
@@ -2145,7 +2159,13 @@
         const winFmt = (ms) => _msLabel(ms, Math.max(t1 - t0, 1));
         const seenT = new Set();
         for (let g = 0; g <= nTicks; g++) {
-          const ms = t0 + (t1 - t0) * g / nTicks;
+          // A label names a calendar unit (a day, a month), so it sits at the START of that
+          // unit, not at an even fraction of the window: an even fraction put "2026-08-03"
+          // a third of a day off its own midnight and spaced the labels 245, 135, 273 px
+          // apart (the journalist walk 2026-09-30, 4f). A boundary outside the window is
+          // not drawn; the minute-level labels of a short window keep the even spacing.
+          const ms = _msTickSnap(t0 + (t1 - t0) * g / nTicks, Math.max(t1 - t0, 1));
+          if (ms < t0 || ms > t1) continue;
           const lab = winFmt(ms);
           if (seenT.has(lab)) continue;
           seenT.add(lab);
@@ -2347,6 +2367,36 @@
           ctx.moveTo(xb, padT); ctx.lineTo(xb, H - padB);
           ctx.stroke();
         }
+        // THE HOVERED POINT IS MARKED WHERE THE POINTER IS (the journalist walk 2026-09-30, 4c):
+        // the exact reading lives in the line under the legend, so without a mark on the
+        // canvas the reader had to look away from the point to read it. A filled ring on the
+        // nearest real point plus its value beside it; the line below keeps the full reading
+        // (series, unit, date). Nothing is drawn between points: the mark sits on a measured one.
+        if (hovP && hovS && !(pinned && pinned === hovP)) {
+          const hBand = (stacked && hovS) ? stk.bands.find((b) => b.s.label === hovS.label) : null;
+          const hAt = hBand ? hBand.pts.find((q) => q.t === hovP.t) : null;
+          const hx = Xof(hovP.t), hy = hAt
+            ? Yof(vt(hAt.hi))
+            : Yof(vt(opts.indexed && hovS ? pv(hovS, hovP) : hovP.v));
+          if (isFinite(hx) && isFinite(hy) && hx >= padL - 1 && hx <= W - padR + 1) {
+            const hcol = hovS.color && hovS.color.startsWith("var(") ? cssVar(hovS.color.slice(4, -1)) : (hovS.color || cssVar("--accent"));
+            ctx.strokeStyle = cssVar("--muted"); ctx.globalAlpha = 0.5;
+            ctx.beginPath(); ctx.moveTo(hx, padT); ctx.lineTo(hx, H - padB); ctx.stroke(); ctx.globalAlpha = 1;
+            ctx.fillStyle = cssVar("--panel2"); ctx.strokeStyle = hcol; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(hx, hy, 4.5, 0, 7); ctx.fill(); ctx.stroke(); ctx.lineWidth = 1;
+            const lab = fmtV(hovP.v) + (hovS.unit ? " " + hovS.unit : "");
+            ctx.font = "bold 11px sans-serif";
+            const tw = ctx.measureText(lab).width;
+            const right = hx + 8 + tw + 6 <= W - padR;
+            const lx = right ? hx + 8 : hx - 8 - tw - 6;
+            const ly = Math.max(padT + 1, Math.min(hy - 20, H - padB - 18));
+            ctx.fillStyle = cssVar("--panel"); ctx.globalAlpha = 0.92;
+            ctx.fillRect(lx, ly, tw + 6, 16); ctx.globalAlpha = 1;
+            ctx.fillStyle = cssVar("--fg"); ctx.textAlign = "left";
+            ctx.fillText(lab, lx + 3, ly + 12);
+            ctx.font = "10px sans-serif";
+          }
+        }
         if (pinned) {
           // IN A STACK THE MARK GOES WHERE THE BAND WAS DRAWN. `pinned.v` is the series'
           // OWN value -- which is what the readout reports, and is correct there -- but
@@ -2441,6 +2491,7 @@
       const brushing = (ev) => canBrush && (brushMode || ev.shiftKey);
       cv.addEventListener("pointerdown", (ev) => {
         cv.setPointerCapture(ev.pointerId);
+        hovP = null; hovS = null;
         if (brushing(ev)) {
           bFrom = msAt(ev.clientX); bTo = bFrom;
           dragX = ev.clientX; dragT = null;   // dragT null is what marks this a brush
@@ -2490,6 +2541,12 @@
           }
           readout.textContent = `${b.s.label}: ${fmtV(b.p.v)}${b.s.unit ? " " + b.s.unit : ""}${ix}${st} \u00b7 ${fmtT(b.p.t)}`;
         }
+        // Mark the hovered point on the canvas, one redraw per animation frame at most.
+        const nb = b ? b.p : null;
+        if (nb !== hovP) {
+          hovP = nb; hovS = b ? b.s : null;
+          if (!hovRaf) hovRaf = requestAnimationFrame(() => { hovRaf = 0; draw(); });
+        }
       });
       cv.addEventListener("pointerup", (ev) => {
         const wasBrush = dragX != null && dragT == null && bFrom != null;
@@ -2511,6 +2568,7 @@
       });
       cv.addEventListener("dblclick", () => { t0 = tMin; t1 = tMax; pinned = null; pinnedS = null; draw(); });
       cv.addEventListener("pointerleave", () => {
+        if (hovP) { hovP = null; hovS = null; draw(); }
         if (!pinned && dragX == null && !emptyState && bFrom == null && !brushMode) readout.textContent = idleHint;
       });
       draw();
@@ -2772,7 +2830,7 @@
            <label>${esc(t("From"))} <input type="date" class="ts-from"></label>
            <label>${esc(t("To"))} <input type="date" class="ts-to"></label>
          </div>
-         <div class="ts-bar" tabindex="-1">
+         <div class="ts-bar" tabindex="-1" role="group" aria-label="${esc(t("Date range"))}">
            <div class="ts-track"></div><div class="ts-sel"></div>
            <div class="ts-handle ts-h-from" role="slider" tabindex="0"
                 aria-label="${esc(t("From"))}"></div>
