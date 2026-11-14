@@ -44,6 +44,12 @@ _ALLOWED: dict[tuple[str, str], str] = {
     ("api/main.py", "lifespan"): "the lifespan runs on the event loop, which uvicorn's signal capture covers (tests/test_event_loop_signal_exemption.py); its pre-yield work is the boot",
     ("backup/merge.py", "_fts_insert_suspended"): "works on a disposable working copy (its docstring), and a DROP TRIGGER that an interrupt strands is undone by the copy's rollback or its discard",
     ("backup/merge.py", "_step_watch"): "two nested function definitions: a def takes nothing",
+    ("backup/restore_marker.py", "restoring"): (
+        "the take is one counter increment under its lock, finished before the try (R712); only an asynchronous exception in the "
+        "instant between leaving the lock and entering the try could leave the count raised, which refuses exports until a "
+        "restart (fails closed: no restore overlaps an export), and every holder in the server process runs on a worker or request thread, which no "
+        "signal interrupts"
+    ),
     ("backup/runlog.py", "run"): "begin() writes a run row; an unfinished row is what the run journal reads as 'did not end', which is the truth after an interrupt",
     ("backup/runlog.py", "stage"): "a journal milestone line; an unfinished stage is what the journal shows after an interrupt",
     ("backup/timing.py", "stage"): "emits a 'begin' event to a callback; nothing is held",
