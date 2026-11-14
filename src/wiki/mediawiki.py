@@ -346,6 +346,12 @@ def parse_hot_pages(payload: dict) -> dict[int, dict]:
     source's own field names and a new prop needs no change here.
     """
     pages = (payload or {}).get("query", {}).get("pages", [])
+    # WAS EVERY REQUESTED PROP ANSWERED? Only when the API says ``batchcomplete`` and
+    # sends no ``continue``: a long page's full wikitext plus categories, images and
+    # extlinks at ``max`` can be cut, and a prop past the cut is ABSENT for want of an
+    # answer, not because the page lost it (the same trap ``parse_walk_batch`` guards).
+    # A caller that reads an absent prop as an answer must check this first.
+    props_complete = bool((payload or {}).get("batchcomplete")) and "continue" not in (payload or {})
     out: dict[int, dict] = {}
     for page in pages if isinstance(pages, list) else []:
         if not isinstance(page, dict):
@@ -358,6 +364,7 @@ def parse_hot_pages(payload: dict) -> dict[int, dict]:
             continue
         enriched = dict(page)
         enriched["missing"] = bool(page.get("missing"))
+        enriched["props_complete"] = props_complete
         revisions = page.get("revisions")
         if isinstance(revisions, list) and revisions:
             newest = revisions[0]

@@ -229,6 +229,10 @@ def facts_from_page(page: dict, *, wikitext: str | None = None) -> dict[str, Any
 #: Facts not listed here are never cleared: ``protection`` is always answered, ``length_bytes``
 #: always present, and the COUNTS (images, external links) are absent on a page with none,
 #: which would read as a zero rather than an absence -- a separate decision, not taken here.
+#: ``coordinates`` is requested without ``coprop``/``colimit``, so only the PRIMARY
+#: coordinate is asked: a page left with secondary coordinates only is cleared, by design
+#: (the map places a page at its primary coordinate). Clearing also requires a COMPLETE
+#: answer (``props_complete``); the batched HOT path never clears.
 _CLEARABLE_FROM_PROP: dict[str, str] = {
     "qid": "pageprops",
     "coordinates": "coordinates",

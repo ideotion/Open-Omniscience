@@ -221,6 +221,9 @@ class FixtureWikiClient:
                 # exists to preserve, so the fixture must not invent placeholders.
                 "length": len(text.encode("utf-8")),
                 "revisions": [{"revid": rev["revid"], "user": rev["user"]}],
+                # The fixture's answer is whole (``batchcomplete``, no ``continue``), as
+                # ``mediawiki.parse_hot_pages`` reports for a real one.
+                "props_complete": True,
             }
         return out
 

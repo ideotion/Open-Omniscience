@@ -366,15 +366,18 @@ class WikiStreamAdapter:
     def fetch_version(self, external_id: str) -> FetchedVersion | None:
         """The current wikitext of one page, or ``None`` when the wiki says it is gone."""
         ident = parse_external_id(external_id)
-        # What the request ASKED for: by id it is the HOT prop set (``fetch_current_text_by_id``
-        # goes through ``fetch_hot_pages`` without assessments); by title it is not known here,
-        # so nothing it lacks is read as an answer.
+        # What the request ASKED for AND GOT A WHOLE ANSWER TO: by id it is the HOT prop set
+        # (``fetch_current_text_by_id`` goes through ``fetch_hot_pages`` without assessments),
+        # but only when the answer was complete -- a ``continue`` leaves props unanswered, not
+        # absent. By title the props are not known here. Either way nothing missing is read as
+        # an answer unless both hold.
         requested: tuple[str, ...] = ()
         if ident.page_id is not None:
             data = self._client.fetch_current_text_by_id(ident.wiki, ident.page_id)
             from src.wiki.mediawiki import HOT_PROPS
 
-            requested = HOT_PROPS
+            if data and data.get("props_complete") is True:
+                requested = HOT_PROPS
         else:
             data = self._client.fetch_current_text(ident.wiki, ident.title)
         if not data or data.get("missing"):

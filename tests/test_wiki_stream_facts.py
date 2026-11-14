@@ -194,3 +194,43 @@ def test_the_title_path_never_clears(lane, monkeypatch):
     )
     v = adapter.fetch_version(f"{EDITION}:Some title")
     assert v is not None and v.facts_unanswered == ()
+
+
+def test_an_incomplete_answer_clears_nothing():
+    """Lane M's must-fix: a ``continue`` without ``batchcomplete`` leaves props UNANSWERED, not lost."""
+    from src.wiki.mediawiki import parse_hot_pages
+
+    page = {"pageid": 104, "title": "Fixture Delta", "revisions": [{"revid": 9, "slots": {"main": {"content": "text"}}}]}
+    cut = parse_hot_pages({"continue": {"clcontinue": "104|X", "continue": "||"}, "query": {"pages": [page]}})
+    whole = parse_hot_pages({"batchcomplete": True, "query": {"pages": [page]}})
+    assert cut[104]["props_complete"] is False
+    assert whole[104]["props_complete"] is True
+    assert parse_hot_pages({"query": {"pages": [page]}})[104]["props_complete"] is False, "neither is not complete"
+
+    class _Cut(_LostCoords):
+        def fetch_hot_pages(self, wiki, pageids, *, with_assessments=False):
+            pages = super().fetch_hot_pages(wiki, pageids, with_assessments=with_assessments)
+            return {pid: {**p, "props_complete": False} for pid, p in pages.items()}
+
+    v = WikiStreamAdapter(client=_Cut(), editions=(EDITION,)).fetch_version(external_id_for(EDITION, DELTA))
+    assert v is not None and v.facts_unanswered == (), "an answer cut short is a gap, never a loss"
+
+
+def test_a_failed_clear_rolls_the_version_back_with_it(lane, monkeypatch):
+    import src.wiki.pagefacts as pf
+
+    adapter = WikiStreamAdapter(client=_LostCoords(), editions=(EDITION,))
+    _drive(adapter)
+
+    def _boom(session, entity_id, names):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(pf, "clear_facts", _boom)
+    with lane_session("wiki") as session:
+        entity = VersionedEntity(external_id=external_id_for(EDITION, DELTA), title="Fixture Delta", language=EDITION)
+        session.add(entity)
+        session.flush()
+        result = run_feed_once(session, adapter, FEED, budget=ReadBudget(max_versions=5))
+        assert any("store" in e for e in result.errors)
+        assert session.query(VersionedRevision).filter(VersionedRevision.entity_id == entity.id).count() == 0
+        assert session.query(VersionedEntityFact).count() == 0
