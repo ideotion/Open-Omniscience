@@ -133,6 +133,16 @@ def test_the_default_location_is_the_app_s(home, monkeypatch):
     assert folder_scope(default)["broad"] is False
 
 
+def test_a_link_called_oos_data_is_judged_by_the_folder_it_leads_to(home, monkeypatch):
+    target = home / "proj"
+    target.mkdir()
+    (target / "thesis.docx").write_bytes(b"x")
+    link = home / "OOS data"
+    link.symlink_to(target)
+    monkeypatch.setenv("OO_DATA_DIR", str(link))
+    assert folder_scope(link)["reason"] == "shared_folder"
+
+
 def test_a_link_to_a_drive_root_is_a_drive_root(home, tmp_path):
     link = home / "oo"
     link.symlink_to(Path(tmp_path.anchor))
@@ -143,8 +153,10 @@ def test_the_shared_names_leave_the_common_ones_and_strip_the_app_s_endings():
     from src.safety.data_scope import owned_spec
 
     shared = owned_spec(shared=True)
-    for name in ("models", "cache", "keys", "runs.jsonl"):
+    for name in ("models", "cache", "keys", "runtime"):
         assert is_app_owned(name) and not is_app_owned(name, spec=shared), name
+    for name in ("annotations", "triage", "bulletin", "diagnostics", "bench", "runs.jsonl"):  # what the erase exists to destroy: never left
+        assert is_app_owned(name, spec=shared), name
     for name in ("app_settings.json.tmp", "briefing_draft.json.tmp.12.34", "session_history.jsonl.lock", "calendar_feed_imports.json.damaged",
                  ".oos-volume", ".oo_scrub", ".merge-probe-1"):
         assert is_app_owned(name, spec=shared), name

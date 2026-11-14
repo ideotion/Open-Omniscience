@@ -694,6 +694,9 @@ def test_an_erase_in_a_folder_the_app_does_not_own_removes_only_the_app_s_files(
     (keys / ".pending").mkdir()
     (keys / ".pending" / "staged.pem").write_bytes(b"STAGED" * 10)
     (keys / "id_ed25519").write_bytes(b"the operator's own ssh key")
+    (keys / "annotations_ed25519.pem").write_bytes(b"ANNOTATION SIGNER" * 10)
+    (home / "annotations").mkdir()
+    (home / "annotations" / "mine.json").write_text('{"note": "the source lives at"}', encoding="utf-8")
     (home / "app_settings.json").write_text("{}", encoding="utf-8")
     (home / "app_settings.json.tmp.123.456").write_text("{}", encoding="utf-8")
     (home / "session_history.jsonl.lock").write_bytes(b"")
@@ -714,7 +717,7 @@ def test_an_erase_in_a_folder_the_app_does_not_own_removes_only_the_app_s_files(
     assert report["scope"] == "app-only" and report["scope_reason"] == "home"
     assert home.is_dir() and report["removed"] is False
     for gone in ("open_omniscience.db", "custody_log.db", "app_settings.json", "app_settings.json.tmp.123.456",
-                 "session_history.jsonl.lock", "calendar_feed_imports.json", "wiki_dumps"):
+                 "session_history.jsonl.lock", "calendar_feed_imports.json", "wiki_dumps", "annotations"):
         assert not (home / gone).exists(), gone
     assert sorted(p.name for p in keys.iterdir()) == ["id_ed25519"]
     assert (keys / "id_ed25519").read_bytes() == b"the operator's own ssh key"
@@ -863,3 +866,25 @@ def test_the_uninstall_plan_reads_the_scope_and_hands_the_watcher_the_app_s_name
     uninstall._default_spawn({**plan, "venv": None}, 1)
     assert "open_omniscience.db" in spawned["payload"]["app_only"]["names"]
     assert set(spawned["payload"]["enc_names"]) >= {"wiki.db", "law.db", "osm.db"}
+
+
+def test_a_plaintext_database_step_one_could_not_unlink_is_rewritten_whole(tmp_path, monkeypatch):
+    """Only an ENCRYPTED store's database skips step 6's whole rewrite when its unlink failed (Windows, an open pool)."""
+    folder = tmp_path / "OOS data"
+    folder.mkdir()
+    main = folder / "open_omniscience.db"
+    _plain_sqlite(main)
+    kept = tmp_path / "kept"
+    os.link(main, kept)
+    real_unlink = Path.unlink
+    calls = []
+
+    def unlink(self, *a, **k):
+        if self.name == "open_omniscience.db" and not calls:
+            calls.append(self)
+            raise PermissionError("held open")
+        return real_unlink(self, *a, **k)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
+    assert calls and b"plaintext-row" not in kept.read_bytes()

@@ -66,10 +66,11 @@ APP_DIRS: frozenset[str] = frozenset({
 
 #: The app's names an operator's own entry can also carry. In a SHARED folder these are left and named in the report, never
 #: destroyed: the erase cannot tell the app's ``models`` folder from the operator's. (In a folder of the app's own, they go.)
-COMMON_NAMES: frozenset[str] = frozenset({
-    "annotations", "bench", "bulletin", "cache", "diagnostics", "keys", "leases", "models", "rings", "runtime", "triage",
-    "runs.jsonl", "update.lock", "volumes.json",
-})
+#: Only names whose app contents are re-downloadable or carry nothing about the corpus (model weights, compute caches,
+#: process leases, the runtime folder): the app's ``annotations`` (the operator's notes), ``triage`` (AI-run logs about corpus
+#: items), ``bench``, ``bulletin`` and ``diagnostics`` hold what the erase exists to destroy, so they always go; ``keys`` keeps
+#: the operator's files but loses every key of the app's (crypto_erase.py).
+COMMON_NAMES: frozenset[str] = frozenset({"cache", "keys", "leases", "models", "runtime"})
 
 #: Endings the app adds to one of its names: an atomic write's temp (``<name>.tmp`` and ``file_lock.temp_name``'s
 #: ``<name>.tmp.<pid>.<thread>``), a lock sidecar (``file_lock._SIDECAR``), a damaged or partial copy. Stripped before the
@@ -141,7 +142,11 @@ def chosen_by_app(base: Path) -> bool:
     ``OO_DATA_DIR``), which is a folder of the app's own name."""
     from src.safety.data_location import DATA_SUBDIR
 
-    if Path(base).name == DATA_SUBDIR:
+    try:
+        name = Path(os.path.realpath(base)).name  # a link called "OOS data" says nothing about the folder it leads to
+    except (OSError, ValueError):
+        return False
+    if name == DATA_SUBDIR:
         return True
     if os.getenv("OO_DATA_DIR"):
         return False

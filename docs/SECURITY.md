@@ -681,8 +681,13 @@ imply a protection we cannot deliver.
   There every step above still runs by name, and the rest reaches only the app's own entries (`src/safety/data_scope.py`:
   its file and folder names, its databases' side files, its copy and staging patterns, an atomic write's temp and a lock
   beside one of them; kept complete by a test over the names the code joins onto `data_dir()`). The app's COMMON names
-  (`models`, `cache`, `keys`, `diagnostics`...) are left there, because an operator's own folder may carry one; a `keys`
-  folder loses only the app's key files and its `.pending` folder. The folder is kept, and the report says
+  whose contents are re-downloadable or say nothing about the corpus (`models`, `cache`, `leases`, `runtime`) are left
+  there, because an operator's own folder may carry one (`annotations`, `triage`, `bench`, `bulletin` and `diagnostics`
+  always go); a
+  `keys` folder loses the app's key files, every file named like one of its key forms (`*_ed25519.pem`, `*_ml_dsa_65.key`)
+  and its `.pending` folder, and keeps the rest. Stated limit: the databases (the corpus, the custody log, the lane files
+  `wiki.db`, `law.db`, `osm.db`) are erased by name in either scope, so an operator's own file under one of those names in
+  that folder (which the app would have opened as its own) is erased too. The folder is kept, and the report says
   `scope: "app-only"` and names, without reading them, the entries left (`left_untouched`), the common names left
   (`left_common_names`) and any of the app's own a removal failed on (`not_removed`). A scope that cannot be read counts as
   shared. A secure uninstall's watcher applies the same names and writes only a count of what it left to its audit log. Such

@@ -100,8 +100,11 @@ wd = plan.get("wipe_data_dir")
 # matched against the folder's top level when the wipe runs, so a file the app wrote while it shut down is reached too, plus
 # the app's key files by path; everything else stays, and the audit log gives only its COUNT (the names are the operator's).
 only = plan.get("app_only")
-def linkish(p):   # a symlink, or a Windows junction (os.walk enters those)
-    try: return os.path.islink(p) or bool(getattr(os.path, "isjunction", lambda _p: False)(p))
+def linkish(p):   # a symlink, or a Windows junction (os.walk enters those); any reparse point on a Python without isjunction
+    try:
+        if os.path.islink(p): return True
+        if hasattr(os.path, "isjunction"): return os.path.isjunction(p)
+        return bool(getattr(os.lstat(p), "st_file_attributes", 0) & 0x400)
     except OSError: return True
 def ours(nm):
     for c in dict.fromkeys((nm, re.sub(only["strip"], "", nm))):
@@ -111,7 +114,11 @@ def roots():
     if not only: return [wd]
     try: tops = [os.path.join(wd, nm) for nm in sorted(os.listdir(wd)) if ours(nm)]
     except OSError: tops = []
-    return tops + [os.path.join(wd, k) for k in only.get("key_paths", []) if os.path.lexists(os.path.join(wd, k))]
+    keys = [os.path.join(wd, k) for k in only.get("key_paths", [])]
+    kd = os.path.join(wd, "keys")
+    try: keys += [os.path.join(kd, n) for n in os.listdir(kd) if n.endswith(tuple(only.get("key_suffixes", [])))]
+    except OSError: pass
+    return tops + [p for p in dict.fromkeys(keys) if os.path.lexists(p)]
 if wd and os.path.isdir(wd):
     seen = wiped = 0
     for top in roots():
@@ -309,11 +316,11 @@ def _app_only(scope: dict | None) -> dict | None:
     """The app's own names for the watcher when the data folder is broad (R711), else None (the folder is removed whole)."""
     if not scope or not scope.get("broad"):
         return None
-    from src.safety.crypto_erase import _KEY_FILES, _KEYS_PENDING, _OTHER_KEY_FILES
+    from src.safety.crypto_erase import _KEY_FILES, _KEYS_PENDING, _OTHER_KEY_FILES, KEY_FORM_SUFFIXES
     from src.safety.data_scope import owned_spec
 
     keys = [f"keys/{n}" for n in (*_KEY_FILES, *_OTHER_KEY_FILES, _KEYS_PENDING)]
-    return {**owned_spec(shared=True), "key_paths": keys, "reason": scope.get("reason")}
+    return {**owned_spec(shared=True), "key_paths": keys, "key_suffixes": list(KEY_FORM_SUFFIXES), "reason": scope.get("reason")}
 
 
 def _default_spawn(plan: dict, server_pid: int) -> None:

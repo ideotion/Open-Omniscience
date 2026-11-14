@@ -246,9 +246,11 @@ def _key_files_lock() -> contextlib.AbstractContextManager:
 
 
 #: The key files the app keeps beside the two named above: the evidence-signing key (src/reporting/evidence.py) and the
-#: private copies a key change stages in ``keys/.pending`` (src/custody/keyfile.py).
+#: private copies a key change stages in ``keys/.pending`` (src/custody/keyfile.py). In a shared folder every file whose name
+#: ends like one of the app's key forms goes too (the annotation signer, a key a restore placed: src/backup/merge.py _KEY_FORMS).
 _OTHER_KEY_FILES = ("evidence_ed25519.pem",)
 _KEYS_PENDING = ".pending"
+KEY_FORM_SUFFIXES = ("_ed25519.pem", "_ml_dsa_65.key")
 
 
 def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str], unlisted=None, *, shared: bool = False) -> tuple[int, int]:
@@ -266,7 +268,8 @@ def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str], unlis
         if s and overwritten:
             keys_destroyed.append(name)
     if shared:
-        for name in _OTHER_KEY_FILES:
+        others = [e.name for e in _listing(keys_dir) if e.name.endswith(KEY_FORM_SUFFIXES) and e.name not in _KEY_FILES]
+        for name in dict.fromkeys([*_OTHER_KEY_FILES, *others]):
             s, _overwritten, w = track(keys_dir / name)
             seen += s
             wiped += w
@@ -613,7 +616,8 @@ def quick_crypto_erase(
             if s and overwritten and p == db:
                 headers.append(db.name)
 
-    salt_gone = {db.absolute() for db in dbs if head_ok.get(db)}
+    # Only for a store known to be encrypted: a plaintext body has no salt to lose, and is rewritten whole by step 6.
+    salt_gone = {os.path.realpath(db) for db in dbs if head_ok.get(db)} if encrypted is True else set()
 
     # Close every lane pool now that its salt is gone, and before step 5 drops the passphrase. A pooled SQLCipher connection holds
     # a derived key in memory and an open handle on its file: measured without the close, a connection this process already had
@@ -753,9 +757,12 @@ def quick_crypto_erase(
             with contextlib.suppress(OSError):
                 p.unlink()
             continue
-        if p.absolute() in salt_gone:
-            # A database whose salt page step 1 destroyed but could not unlink (on Windows a pool still open holds it): its body
-            # is noise already, and rewriting it whole here would turn the erase into hours at corpus size.
+        if os.path.realpath(p) in salt_gone:
+            # A database of an encrypted store whose salt page step 1 destroyed but could not unlink (on Windows a pool still
+            # open holds it, and Windows keeps no descriptor for the late pass): its head is overwritten once more, for a
+            # commit that put page 1 back since, and its body, noise already, is not rewritten whole (hours at corpus size).
+            if not _overwrite(p, head_bytes=_SQLCIPHER_PAGE1):
+                overwrite_failures.append(str(p))
             with contextlib.suppress(OSError):
                 p.unlink()
             continue
