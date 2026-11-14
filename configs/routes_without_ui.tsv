@@ -24,9 +24,9 @@ POST	/api/backup/folder/restore	superseded			the unified Import queue restores l
 POST	/api/backup/folder/verify	feature	2	Settings > Backup (B)	verify a large-data folder backup against its manifest (the volumes backup has a Verify button, this one has none)
 POST	/api/backup/import-queue/clear	feature	3	Settings > Backup (B)	forget a finished import run so the dialog starts clean
 POST	/api/backup/legacy/restore	superseded			the unified Import queue restores legacy archives (/api/backup/import-queue/start, kind 'legacy')
-GET	/api/backup/reindex-backlog	feature	1	Settings > Backup (B)	imports merged but not re-indexed have NO keywords; the docstring says the app reports it but nobody can act
-POST	/api/backup/reindex-backlog/resume	feature	1	Settings > Backup (B)	finish the pending re-index as a visible job
-POST	/api/backup/reindex-backlog/resume/cancel	feature	1	Settings > Backup (B)	stop that job at the next batch
+GET	/api/backup/reindex-backlog	superseded			the backlog is read through GET /api/backup/reindex-backlog/resume/status (its 'backlog' key, Q204) and drawn as the task manager's waiting row (jobs.py _reindex_backlog_rows)
+POST	/api/backup/reindex-backlog/resume	superseded			the task manager's waiting row resumes it through POST /api/jobs/reindex-backlog/resume, which calls this handler and also refuses while an import or restore holds the machine
+POST	/api/backup/reindex-backlog/resume/cancel	superseded			the running job is the task manager's own row; its Cancel goes through POST /api/jobs/reindex-resume/cancel (the generic background-job cancel)
 GET	/api/backup/v2/batches	feature	2	Settings > Backup (B)	import history with counts and verification (ruled: history lives in Settings > Backup, Q222 = b)
 GET	/api/bulletin/editions/{filename}/ai-plan	feature	3	Agenda > Bulletin (O)	phase 2 plan of a bulletin edition (what a local model would do)
 POST	/api/bulletin/evidence/build	feature	2	Agenda > Bulletin (O)	write a period's evidence archive to a folder
@@ -139,10 +139,7 @@ GET	/api/keywords/phrases	superseded			legacy free-text keyword toolkit (/api/ke
 GET	/api/keywords/process	superseded			legacy free-text keyword toolkit (/api/keywords/*), superseded by the ingest index
 GET	/api/keywords/statistics	superseded			legacy free-text keyword toolkit (/api/keywords/*), superseded by the ingest index
 GET	/api/keywords/top	superseded			legacy free-text keyword toolkit (/api/keywords/*), superseded by the ingest index
-GET	/api/law/amendment-velocity	feature	2	Laws (K)	captured versions per jurisdiction per period
-GET	/api/law/documents/{document_id}/provision-timeline	feature	2	Laws (K)	which provisions of a law changed and when
-GET	/api/links/export.graphml	feature	2	Explore > Links (N)	download the citation graph (opens in Gephi)
-GET	/api/links/export.json	feature	2	Explore > Links (N)	download the citation graph as JSON
+GET	/api/law/documents/{document_id}/provision-timeline	internal		api	the JSON form of the law reader's Provisions fold, which /api/law/documents/{document_id}/view renders server-side from the same payload (PR #1959); kept for API callers
 GET	/api/links/stats	feature	3	Explore > Links (N)	corpus-wide link totals
 POST	/api/llm/bulk	superseded			the synchronous bulk summarize/translate; R600 PR2 (#1938) moved the UI to /api/llm/bulk/queue
 POST	/api/llm/generate	internal		api	single-shot generation for programmatic callers
@@ -159,9 +156,6 @@ GET	/api/newsletters/publisher-preview	feature	2	Settings > Import (N)	which pub
 GET	/api/osm/objects/{osm_type}/{osm_id}	unseen			called by openOsmObjectCard (app-analysis.js) as "/api/osm/objects/" + a joined ref; two parameters joined at run time are past the source reader
 GET	/api/osm/search	feature	2	Map (L)	'Places' facet (Q817): named places in the countries read
 GET	/api/personality/all	feature	3	Help or About (J)	credits view of the bundled catalogue
-DELETE	/api/quarantine/host-pairs	feature	2	Quarantine (O)	withdraw a confirmed host pair
-GET	/api/quarantine/host-pairs	feature	2	Quarantine (O)	list confirmed host pairs
-POST	/api/quarantine/host-pairs	feature	2	Quarantine (O)	'this source really publishes on that host': releases false quarantines
 POST	/api/safety/backup/encrypted	superseded			encrypted snapshot download; the Backup tab exports through /api/backup/v2
 GET	/api/scheduler/runs	feature	3	Task manager (O)	recent scheduler run reports
 POST	/api/search/index-job/{action}	superseded			the task manager pauses, resumes and cancels it through /api/jobs/{job_id}/... (job 'search-reindex')
