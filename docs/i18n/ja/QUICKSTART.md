@@ -432,7 +432,7 @@ curl 'http://127.0.0.1:8000/api/commodities/Nd/correlation?query=neodymium'
 相関分析は scipy（Pearson/Spearman）による実際の係数、p 値、n を返し、
 「相関 ≠ 因果」の注意書きを添えます。重なりが少なすぎる場合は → `insufficient_data` です。
 
-**監視。** `GET /api/monitoring/health` は（倫理的フェッチャーを通じて）実際の到達可能性を
+**監視。** `POST /api/monitoring/health` は（倫理的フェッチャーを通じて）実際の到達可能性を
 確認します。`GET /api/monitoring/anomalies` は記事数の急増を z スコアで
 検出します。**メール：** `POST /api/sources/{id}/ingest-email`
 （IMAP）はメッセージを同じ検索可能なコーパスに取り込みます。

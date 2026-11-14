@@ -435,7 +435,7 @@ curl 'http://127.0.0.1:8000/api/commodities/Nd/correlation?query=neodymium'
 Correlation, scipy (Pearson/Spearman) से एक वास्तविक coefficient + p-value + n लौटाता है,
 "सहसंबंध ≠ कार्य-कारण" (correlation ≠ causation) चेतावनी के साथ; बहुत कम overlap → `insufficient_data`।
 
-**निगरानी (Monitoring)।** `GET /api/monitoring/health` वास्तविक पहुँच-योग्यता
+**निगरानी (Monitoring)।** `POST /api/monitoring/health` वास्तविक पहुँच-योग्यता
 जाँच करता है (ethical fetcher के ज़रिए); `GET /api/monitoring/anomalies`
 z-score से लेखों की संख्या में अचानक उछाल को चिह्नित करता है। **Email:** `POST /api/sources/{id}/ingest-email`
 (IMAP) संदेशों को उसी खोजने-योग्य corpus में जोड़ देता है।

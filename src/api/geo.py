@@ -15,10 +15,9 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from src.api.cross_site import refuse_cross_site_get
 from src.monitoring.secret_scrub import http_detail, log_failure
 
 _LOG = logging.getLogger("api.geo")
@@ -95,7 +94,7 @@ def osm_download_start(payload: StartRegion) -> dict:
         raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
 
 
-@router.get("/downloads/size", dependencies=[Depends(refuse_cross_site_get)])
+@router.post("/downloads/size")
 def osm_download_size(
     code: str = Query(..., description="a catalogued download code"),
     consent: bool = Query(False, description="true only after the page's one online consent ran (ensureOnline)"),

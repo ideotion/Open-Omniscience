@@ -436,7 +436,7 @@ curl 'http://127.0.0.1:8000/api/commodities/Nd/correlation?query=neodymium'
 Die Korrelation liefert einen echten Koeffizienten + p-Wert + n aus scipy (Pearson/Spearman),
 mit dem Vorbehalt „Korrelation ≠ Kausalität“; zu wenig Überschneidung → `insufficient_data`.
 
-**Überwachung.** `GET /api/monitoring/health` führt echte Erreichbarkeitsprüfungen
+**Überwachung.** `POST /api/monitoring/health` führt echte Erreichbarkeitsprüfungen
 durch (über den ethischen Abrufer); `GET /api/monitoring/anomalies` markiert
 Ausschläge im Artikelvolumen per z-Wert. **E-Mail:** `POST /api/sources/{id}/ingest-email`
 (IMAP) führt Nachrichten in denselben durchsuchbaren Korpus ein.
