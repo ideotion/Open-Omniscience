@@ -2148,7 +2148,15 @@
             notes +
             `</details>`
           : "";
-        box.innerHTML = `<p class="hint">${esc(parts.join(" · "))} &middot; ${esc(s.base_url || "")}</p>` + logBlock;
+        // R688: a server that answers but is neither vLLM nor a known relay gets the text, and the app cannot see where
+        // that server sends it. Said here, only when such a server is the one configured; a known relay is named as
+        // refused before the first generation is.
+        const kindNote = s.server_kind === "other"
+          ? `<p class="muted">${esc(t("The server at this address does not say it is vLLM. This app cannot see whether it sends your text to another computer."))}</p>`
+          : s.server_kind === "relay"
+            ? `<p class="muted">${esc(t("The server at the vLLM address lists its models as owned by OpenAI or LiteLLM, which is how a proxy to an online service describes itself, so it is refused: the text you give it could leave the machine. Point the vLLM address at a model running on this computer."))}</p>`
+            : "";
+        box.innerHTML = `<p class="hint">${esc(parts.join(" · "))} &middot; ${esc(s.base_url || "")}</p>` + kindNote + logBlock;
         if (!s.installed) {
           if (!installBox) return;
           if (!s.gpu || !s.gpu.available) {
