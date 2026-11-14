@@ -1348,6 +1348,10 @@ def test_a_carried_top_keyword_never_holds_a_hidden_word(backup, tmp_path, monke
         row = con.execute(
             "SELECT top_keyword_id, top_keyword_count, top_keyword_tied_n FROM articles WHERE hash = 'h0001'"
         ).fetchone()
+        expected = con.execute(
+            "SELECT MIN(m.keyword_id) FROM keyword_mentions m JOIN articles a ON a.id = m.article_id"
+            " WHERE a.hash = 'h0001' AND m.count = ? AND m.keyword_id != ?", (top, hidden_id)
+        ).fetchone()[0]
         carried_hidden = con.execute(
             "SELECT m.count FROM keyword_mentions m JOIN articles a ON a.id = m.article_id"
             " WHERE a.hash = 'h0001' AND m.keyword_id = ?", (hidden_id,)
@@ -1355,5 +1359,5 @@ def test_a_carried_top_keyword_never_holds_a_hidden_word(backup, tmp_path, monke
     finally:
         con.close()
     assert row[0] != hidden_id, "the hidden word became the carried article's top keyword"
-    assert (row[1], row[2]) == (top, tied), row
+    assert row == (expected, top, tied), "the top is the lowest local id among the remaining words, as top_keyword_of"
     assert carried_hidden == (top + 5,), "the mention row itself is carried unchanged"
