@@ -706,7 +706,7 @@ jobs:
     if: github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'
     needs: [changes]
     runs-on: ubuntu-latest
-    name: PQC signing path (hybrid Ed25519 + ML-DSA), and the urllib3 log table on its floor release
+    name: PQC signing path (hybrid Ed25519 + ML-DSA)
     timeout-minutes: 20  # R475: a hung job holds a runner slot for the default six hours; the slowest measured run of this job is well under half of this
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -779,7 +779,7 @@ jobs:
     if: github.event_name != 'schedule' && needs.changes.outputs.docs_only != 'true'
     needs: [changes]
     runs-on: ubuntu-latest
-    name: Columnar store (DuckDB rollup + D1 persisted-httpfs, and the same files on DuckDB 1.x)
+    name: Columnar store (DuckDB rollup + D1 persisted-httpfs)
     timeout-minutes: 30  # R475: a hung job holds a runner slot for the default six hours; the slowest measured run of this job is well under half of this
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -861,7 +861,6 @@ jobs:
             tests/test_rollup_store_kind.py tests/test_serve_change_gate.py \
             tests/test_serve_out_of_memory_goes_live.py tests/test_top_terms_pre_aggregate.py \
             tests/test_wave7_poll_cache.py tests/test_external_freshness.py
-
 
   # ----------------------------------------------------------------------- #
   # PORTABILITY (macOS and Windows) RUNS WEEKLY + ON DEMAND, IN THREE SHARDS, NOT PER PUSH (R461, 2026-11-07). Windows came off the per-push path on

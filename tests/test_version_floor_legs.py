@@ -21,7 +21,7 @@ a test of their own (R412, the version-coupling bundle):
   first environment's.
 
 What it does not see. The behaviour test drives the response class through the ASGI interface, not the whole app with its middleware around it. The exposed-sites list is a grep for the literal ``http.disconnect``: a stub that builds the message type some other
-way, or that is written in a helper under another name, is not found. The 1.x job runs on whatever 1.x release pip resolves, not on the
+way, or that is written in a helper under another name, is not found. The 1.x environment runs on whatever 1.x release pip resolves, not on the
 floor (1.4.0), so a defect that exists only on 1.4 is still unseen; the registry says so.
 """
 
@@ -223,3 +223,25 @@ def test_the_count_ratcheted_dev_tools_are_pinned_to_one_release(tool):
     pins = re.findall(rf'^\s*"{tool}([<>=!~][^"]*)"', text, flags=re.MULTILINE)
     assert len(pins) == 1, f"pyproject.toml must name {tool} exactly once, found {pins}"
     assert re.fullmatch(r"==[0-9]+(\.[0-9]+)+", pins[0]), f"{tool} must be an exact == pin so its count ratchet is true by construction, found {pins[0]!r}"
+
+
+# ------------------------------------------------------------------------------------- the urllib3 floor run
+def test_the_urllib3_floor_run_installs_the_floor_in_its_own_venv_and_tests_there():
+    """The floor run lives in the ``crypto`` job's second environment since PR #1988 (it was the ``urllib3-floor`` job). A pytest step that
+    lost its ``activate`` line would run on the job's own interpreter, the newest urllib3, and pass while reading nothing on the floor."""
+    entry = next(a for a in R.load_registry() if a["id"] == "urllib3-log-shapes")
+    floor = str(entry["pin"]["floor"])
+    steps = _jobs()["crypto"]["steps"]
+    names = [str(s.get("name") or "") for s in steps]
+    install_name = "Install (core + dev), then force the urllib3 floor release"
+    assert names.count(install_name) == 1, f"the crypto job must install the urllib3 floor environment in one step named {install_name!r}"
+    at = names.index(install_name)
+    install = str(steps[at].get("run", ""))
+    assert 'python -m venv "$RUNNER_TEMP/urllib3-floor"' in install and '. "$RUNNER_TEMP/urllib3-floor/bin/activate"' in install
+    assert f'"urllib3=={floor}"' in install, f"the floor environment must force urllib3 {floor}, the registry's floor"
+    tests = [s for s in steps[at + 1:] if "-m pytest" in str(s.get("run", ""))]
+    assert tests and all('. "$RUNNER_TEMP/urllib3-floor/bin/activate"' in str(s["run"]) for s in tests), (
+        "every pytest step after the floor install must run in the floor venv"
+    )
+    assert any("tests/test_urllib3_log_withholds_the_path.py" in str(s["run"]) for s in tests), "the floor run must run the log-table test"
+    assert not any(s.get("continue-on-error") or s.get("if") for s in steps[at:]), "the floor steps are blocking, unconditional steps"
