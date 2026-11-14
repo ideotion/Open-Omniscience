@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-14,stats,Statistics directory shows its progress (Q1147),shipped (draft),PR #1969,src/static/app-map.js; tests/clickthrough_b30_node_test.js,"The producers coverage line adds one counts-only frame from /api/stats/agencies directory_progress: news page verified for N of M (about P planned). Method and caveat sit in the hover bubble, not as more visible text. x12 locales."

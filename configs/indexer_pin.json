@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "6611aad4bf34b1a1c57db036d0d7daf7a2591b81a6726ea8a18f103659430627",
+  "digest": "155d574c52ab53fb2af1af4f1152b808841e61ee56933330fa28f45ae149782a",
   "log": [
     {
       "version": 1,
@@ -43,6 +43,12 @@
       "digest": "6611aad4bf34b1a1c57db036d0d7daf7a2591b81a6726ea8a18f103659430627",
       "kind": "same",
       "note": "PR #1949 (audit P2/P8) replaced the quadratic comment, tag, style/script and e-mail regexes in extract.py, text_processor.py and markup_blocks.py with linear scans that are byte-identical to the old regexes (differential on every shipped HTML page, 300k seeded random documents incl. Unicode case folds, tests/test_html_strips_linear.py), so no row index_article writes can change"
+    },
+    {
+      "version": 1,
+      "digest": "155d574c52ab53fb2af1af4f1152b808841e61ee56933330fa28f45ae149782a",
+      "kind": "same",
+      "note": "Only a docstring in src/analytics/reindex_parallel.py changed (terminate_live_pools now describes the R689 shutdown order); no row index_article writes can change."
     }
   ]
 }
