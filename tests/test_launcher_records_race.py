@@ -588,21 +588,17 @@ _UNLOCKED_SAID = "launcher record: a row was appended without the lock: "
 _NOT_WRITTEN_SAID = "launcher record: a row could not be appended after 5 tries and was not written"
 
 
-def _function_body(text: str, name: str) -> str:
-    start = text.index(f"function {name}(")
-    nxt = text.find("\nfunction ", start + 1)
-    return text[start:nxt if nxt != -1 else len(text)]
-
-
 def test_every_write_around_the_lock_and_every_failed_trim_is_said():
+    from tests.js_source_helper import ps_function_body
+
     t = LAUNCH_PS1.read_text(encoding="utf-8")
-    body = _function_body(t, "Add-RowTrimmed")
+    body = ps_function_body(t, "Add-RowTrimmed")
     assert "return (Add-RowText" not in body, "Add-RowTrimmed appends outside the lock only through Add-RowUnlocked, which says so"
     assert body.count("Add-RowUnlocked $Path $text") == 4, "the four ways around the lock: no mutex, a wait that threw (twice), a fallback wait run out"
     assert _NOT_WRITTEN_SAID in body, "a row the launcher could not append is said, not dropped in silence"
-    unlocked = _function_body(t, "Add-RowUnlocked")
+    unlocked = ps_function_body(t, "Add-RowUnlocked")
     assert _UNLOCKED_SAID.rstrip(": ") in unlocked and _NOT_WRITTEN_SAID in unlocked
-    trim = _function_body(t, "Limit-Rows")
+    trim = ps_function_body(t, "Limit-Rows")
     assert "} catch { }\n    if (Test-Path -LiteralPath $tmp)" not in trim and "a trim failed and the file was left as it was" in trim
     assert "a deferred row was appended without the lock: no lock could be made" in t
     assert "a deferred row was appended without the lock: waiting for its lock failed" in t
