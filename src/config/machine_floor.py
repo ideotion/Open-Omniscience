@@ -77,18 +77,24 @@ _SCAN_HEADROOM_MB = 100.0
 """Interpreter, ORM and result-set overhead beyond the per-article term."""
 
 
-def _mem_readings() -> tuple[float | None, float | None]:
-    """(total_mb, available_mb) — either may be ``None`` when unreadable."""
-    try:
-        import psutil
+def _mem_reading() -> dict[str, Any]:
+    """The machine's total and available memory bounded by any cgroup limit (R302), with which figure each one is.
 
-        vm = psutil.virtual_memory()
-        return (
-            round(vm.total / (1024 * 1024), 1),
-            round(vm.available / (1024 * 1024), 1),
-        )
-    except Exception:  # noqa: BLE001 - psutil is an optional [analysis] extra
-        return (None, None)
+    ``{"total_mb", "total_from", "available_mb", "available_from"}``; either figure may be ``None`` when unreadable.
+    """
+    from src.config.cgroup_memory import effective_memory
+
+    got = effective_memory()
+    for key in ("total_mb", "available_mb"):
+        if got[key] is not None:
+            got[key] = round(got[key], 1)
+    return got
+
+
+def _mem_readings() -> tuple[float | None, float | None]:
+    """(total_mb, available_mb) — either may be ``None`` when unreadable. Bounded by any cgroup limit (see :func:`_mem_reading`)."""
+    got = _mem_reading()
+    return (got["total_mb"], got["available_mb"])
 
 
 def _override_requested() -> bool:
@@ -158,10 +164,15 @@ def machine_floor(
     against a machine this one is not.
     """
     read_total, read_avail = (None, None)
+    read_from: dict[str, Any] = {}
     if total_mb is None or available_mb is None:
-        read_total, read_avail = _mem_readings()
+        read_from = _mem_reading()
+        read_total, read_avail = read_from.get("total_mb"), read_from.get("available_mb")
     total = total_mb if total_mb is not None else read_total
     avail = available_mb if available_mb is not None else read_avail
+    # Which figure each one is: a value passed in is the caller's; a read one names the machine or the cgroup limit.
+    total_from = "given" if total_mb is not None else read_from.get("total_from", "machine")
+    available_from = "given" if available_mb is not None else read_from.get("available_from", "machine")
 
     overridden = _override_requested() if override is None else bool(override)
 
@@ -182,7 +193,8 @@ def machine_floor(
         # AVAILABLE is deliberately NOT adjusted. It is a live reading of free memory,
         # not a provisioned size -- there is no nominal "1 GB available" a machine was
         # built with, so rounding it toward a boundary would invent headroom.
-        nominal_total = nominal_ram_mb(total)
+        # A cgroup limit is a hard cap, never an under-reported hardware size: judged as it is (R302).
+        nominal_total = total if total_from == "cgroup limit" else nominal_ram_mb(total)
         low_total = nominal_total is not None and nominal_total < MIN_TOTAL_MB
         low_avail = avail is not None and avail < MIN_AVAILABLE_MB
         below = bool(low_total or low_avail)
@@ -219,7 +231,9 @@ def machine_floor(
         "overridden": overridden,
         "declines": declines,
         "total_mb": total,
+        "total_from": total_from,
         "available_mb": avail,
+        "available_from": available_from,
         "min_total_mb": MIN_TOTAL_MB,
         "min_available_mb": MIN_AVAILABLE_MB,
         "reason": reason,
@@ -227,7 +241,9 @@ def machine_floor(
         "reason_vars": reason_vars,
         "override_env": _OVERRIDE_ENV,
         "method": (
-            "psutil virtual_memory(); the floor is applied on EITHER the total or "
+            "psutil virtual_memory(), each figure bounded by the cgroup memory limit "
+            "this process runs under when that is smaller (total_from / "
+            "available_from say which); the floor is applied on EITHER the total or "
             "the available reading, and an unreadable machine is never refused"
         ),
         "caveat": (
