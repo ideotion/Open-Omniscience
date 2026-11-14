@@ -569,13 +569,9 @@ def find_buried_topics(
         article_ids = sorted(
             r[0]
             for r in session.query(KeywordMentionRead.article_id)
-            .filter(
-                KeywordMentionRead.keyword_id == t["kid"],
-                KeywordMentionRead.observed_on >= cutoff,
-                KeywordMentionRead.observed_on < hi,
-                not_a_stand_in_article_id(KeywordMentionRead.article_id),
-                not_quarantined(KeywordMentionRead.article_id),  # R101
-            )
+            # The same window a_t was counted over, so the drill lists exactly the
+            # articles the finding counted (row 49: it lacked the sourced gate).
+            .filter(KeywordMentionRead.keyword_id == t["kid"], *win)
             .distinct()
         )
         items.append(
