@@ -235,6 +235,7 @@ def remove_leftover_plaintext(out_dir: str | os.PathLike[str], names: list[str])
         can_scan_by_handle,
         leftover_plaintext,
         leftovers_in_handle,
+        looks_like_leftover,
         open_folder_handle,
     )
 
@@ -245,7 +246,9 @@ def remove_leftover_plaintext(out_dir: str | os.PathLike[str], names: list[str])
         try:
             dir_fd = open_folder_handle(out_dir)
         except OSError:
-            return {"removed": [], "failed": [n for n in dict.fromkeys(names) if n in set(leftover_plaintext(out_dir))]}
+            # The folder cannot be opened, so nothing can be checked or removed: every name shaped like a leftover
+            # copy is reported as not removed, never silently dropped, so the operator knows the copies may remain.
+            return {"removed": [], "failed": [n for n in dict.fromkeys(names) if looks_like_leftover(n)]}
         try:
             allowed = set(leftovers_in_handle(dir_fd))
             for name in [n for n in dict.fromkeys(names) if n in allowed]:

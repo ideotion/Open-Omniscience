@@ -477,3 +477,22 @@ def test_what_the_removal_checks_is_the_folder_it_removes_from(tmp_path, monkeyp
     assert remove_leftover_plaintext(out, [first + ".plain"]) == {"removed": [first + ".plain"], "failed": []}
     assert not (moved / (first + ".plain")).exists(), "the copy goes from the folder that was checked"
     assert (out / (first + ".plain")).exists(), "the folder swapped in afterwards is untouched"
+
+
+def test_a_folder_that_cannot_be_opened_names_the_copies_it_could_not_remove(tmp_path, monkeypatch):
+    """Second read of #1964: when the folder cannot be opened for removal, the copies asked for are reported as not
+    removed, never answered with an empty, silent result while the plaintext stays on disk."""
+    from src.backup import import_scan
+
+    if not getattr(import_scan, "can_scan_by_handle", lambda: True)():
+        pytest.skip("no folder handles on this platform")
+    out = _with_leftovers(tmp_path)
+    first = json.loads((out / MANIFEST_NAME).read_text(encoding="utf-8"))["volumes"][0]["name"]
+
+    def refuse(_d):
+        raise PermissionError("no entry")
+
+    monkeypatch.setattr(import_scan, "open_folder_handle", refuse)
+    got = remove_leftover_plaintext(out, [first + ".plain", "notes.txt", "../x.plain"])
+    assert got == {"removed": [], "failed": [first + ".plain"]}
+    assert (out / (first + ".plain")).exists()

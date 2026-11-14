@@ -253,6 +253,11 @@ LEFTOVER_PLAIN_SUFFIX = ".plain"
 #: The only volume names the oo-volumes-1 writer ever made (``vol-00001.ooenc`` ...), mirrored from src.backup.volumes so this
 #: module stays crypto-free. A leftover is only ever ``<one of these>.plain``.
 _V1_VOLUME_NAME = re.compile(r"\Avol-[0-9]{5,}\.ooenc\Z")
+
+
+def looks_like_leftover(name: str) -> bool:
+    """Whether ``name`` has the shape of a leftover copy (``vol-NNNNN.ooenc.plain``), without looking at any folder."""
+    return name.endswith(LEFTOVER_PLAIN_SUFFIX) and bool(_V1_VOLUME_NAME.match(name[: -len(LEFTOVER_PLAIN_SUFFIX)]))
 _V1_KIND = "oo-volumes-1"
 
 
