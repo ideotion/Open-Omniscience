@@ -1238,8 +1238,8 @@
         <span>Summit/meeting dates move each year — follow the official source for the exact date.</span>
         <span>Nothing here is fabricated.</span></p>
       <div class="row" style="margin-top:6px">
-        <div><label>View</label>
-          <nav class="tabs ag-views" id="agenda-views" style="position:static;padding:0;border:0;margin:0">
+        <div>
+          <nav class="tabs ag-views" id="agenda-views" aria-label="View" style="position:static;padding:0;border:0;margin:0">
             <button class="active" data-tab="month">Month</button>
             <button data-tab="week">Week</button>
             <button data-tab="trimester">Trimester</button>
@@ -1349,7 +1349,7 @@
       </div>
       <nav class="tabs" id="commodities-cats" style="margin-top:12px"></nav>
       <div id="mkt-viewtoggle" class="mkt-viewrow" style="margin-top:6px"></div>
-      <div id="mkt-dashboard" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:12px"></div>
+      <div id="mkt-dashboard" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:12px;margin-top:12px"></div>
       <div id="mkt-chart" style="margin-top:12px"></div>
       <!-- S5.1: USGS minerals SUPPLY (production / reserves / net-import-reliance) — the
            honest home for rare earths, which have no free spot-price source. Supply data,
@@ -1474,7 +1474,7 @@
           <button class="active" data-view="map" data-on-click="mmView('map')">Mind-map</button>
           <button data-view="cloud" data-on-click="mmView('cloud')">Word cloud</button>
         </div>
-        <div><label for="mm-window">Period</label><select id="mm-window" data-on-change="mmWindowChange()">
+        <div style="min-width:8.5em"><label for="mm-window">Period</label><select id="mm-window" data-on-change="mmWindowChange()">
           <option value="">all time</option><option value="7">last week</option>
           <option value="30">last month</option><option value="365">last year</option>
           <option value="custom">custom…</option></select></div>

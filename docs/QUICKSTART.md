@@ -378,11 +378,11 @@ cd $HOME\Open-Omniscience
 
 **In the UI:** **go online** once (the airplane-mode toggle → one consent popup) and
 **collection runs itself** in the background — stratified across languages and source
-tags, robots-respecting and rate-limited. Then **search from the omnibar** (top bar or
-Ctrl/⌘-K) — pressing Enter spawns an **analysis window** where you filter, read,
-run Boolean queries and **export** (CSV/JSON, methods appendix, signed evidence). You
-can still add a source and *Ingest* a single feed or URL manually from **Settings →
-Collect / Sources**.
+tags, robots-respecting and rate-limited. Then **search in Explore** (the sidebar tab; pressing
+Enter in the omnibar, top bar or Ctrl/⌘-K, opens Explore in a new browser tab) — the
+analysis of the matching articles appears under the results, where you filter, read, run Boolean queries and **export** (CSV/JSON, methods
+appendix, signed evidence). You can still add a source and *Ingest* a single feed or URL
+manually from **Settings → Advanced → Collection / Sources**.
 
 **Via the API:**
 ```bash
