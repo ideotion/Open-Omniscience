@@ -159,9 +159,6 @@ GET	/api/newsletters/publisher-preview	feature	2	Settings > Import (N)	which pub
 GET	/api/osm/objects/{osm_type}/{osm_id}	unseen			called by openOsmObjectCard (app-analysis.js) as "/api/osm/objects/" + a joined ref; two parameters joined at run time are past the source reader
 GET	/api/osm/search	feature	2	Map (L)	'Places' facet (Q817): named places in the countries read
 GET	/api/personality/all	feature	3	Help or About (J)	credits view of the bundled catalogue
-DELETE	/api/quarantine/host-pairs	feature	2	Quarantine (O)	withdraw a confirmed host pair
-GET	/api/quarantine/host-pairs	feature	2	Quarantine (O)	list confirmed host pairs
-POST	/api/quarantine/host-pairs	feature	2	Quarantine (O)	'this source really publishes on that host': releases false quarantines
 POST	/api/safety/backup/encrypted	superseded			encrypted snapshot download; the Backup tab exports through /api/backup/v2
 GET	/api/scheduler/runs	feature	3	Task manager (O)	recent scheduler run reports
 POST	/api/search/index-job/{action}	superseded			the task manager pauses, resumes and cancels it through /api/jobs/{job_id}/... (job 'search-reindex')
