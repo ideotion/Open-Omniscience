@@ -39,8 +39,9 @@ router = APIRouter(prefix="/api/custody", tags=["custody"])
 
 
 _PQC_UNAVAILABLE = ("post-quantum signing is on and this custody log's key has an ML-DSA half, but the post-quantum "
-                    "library is not installed here, so nothing was signed: install the 'pqc' extra, or turn post-quantum "
-                    "signing off in Settings, which the log then records")
+                    "library is not installed here, so nothing was signed: install the 'pqc' extra. Turning post-quantum "
+                    "signing off instead is recorded unendorsed, since the old post-quantum key cannot vouch for it "
+                    "without the library, and a pinned check then asks for that record to be accepted by name")
 _KEY_UNREADABLE = ("the custody signing key could not be read, so no bundle was signed: unlock the app with its "
                    "passphrase, or check the key folder")
 

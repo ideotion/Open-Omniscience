@@ -1489,7 +1489,8 @@ word, and a key change with no record at all, which is what a log written before
 re-created then (the log cannot be given the record afterwards); an exported bundle with such a change is refused. Since 0.5.1,
 changing only the post-quantum key writes a key-rotation record too, and every record names the whole previous key,
 its post-quantum half included. Turning post-quantum signing on is followed without being asked. Turning it off is
-endorsed by the old post-quantum key, which is still in the key folder, so it is followed too. A re-created post-quantum
+endorsed by the old post-quantum key, which is still in the key folder, so it is followed too, when the post-quantum
+library is installed (without it, the record is unendorsed). A re-created post-quantum
 key cannot be endorsed and is refused unless you pass `--accept-unendorsed-rotation`, because someone who could forge the
 Ed25519 key alone would write the same record. If post-quantum signing is on and this machine lacks the post-quantum
 library, nothing is signed until it is installed or the setting is turned off; entries on ingest wait meanwhile. A

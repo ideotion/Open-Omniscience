@@ -397,3 +397,157 @@ def test_an_endorsing_signer_never_creates_a_post_quantum_key(tmp_path):
     s = HybridSigner(ed25519_path=tmp_path / "k.pem", mldsa_path=tmp_path / "k.key", use_pqc=False)
     assert s.with_existing_post_quantum_key() is None
     assert not (tmp_path / "k.key").exists()
+
+
+# --- the final read's bypasses: the bundle's own evidence of the previous identity --------------------------------
+
+
+def _hybrid_log(tmp_path: Path) -> tuple[str, HybridSigner]:
+    db = str(tmp_path / "c.db")
+    real = _signer(tmp_path, "real")
+    with CustodyLog(db_path=db, signer=real) as log:
+        _record(log, 3)
+    return db, real
+
+
+def _append_forged_record(db: str, md: dict, record_signer: HybridSigner) -> None:
+    """Write a key-rotation record of the forger's making straight after the tail (they hold the database file)."""
+    from src.custody.log import _APPEND_LOCK
+
+    with CustodyLog(db_path=db, signer=record_signer) as log, _APPEND_LOCK:
+        prev = log._last()
+        log._insert(prev, ROTATION_ITEM, "f" * 64, CustodyAction.KEY_ROTATION.value, "custody",
+                    {**md, "previous_ed25519_pub": prev.signature["ed25519"]["pub"]}, None, local_only=True)
+
+
+@pqc
+def test_an_old_style_record_endorsed_by_the_ed25519_half_alone_is_refused(tmp_path):
+    """Opus read M1: no full record yet, an old-style rotation to the forger's Ed-only key, endorsed by the real
+    Ed25519 key with no ML-DSA half, while the entry before it shows the real ML-DSA key."""
+    from src.custody.log import rotation_payload
+
+    db, _real = _hybrid_log(tmp_path)
+    ed_only_real = _signer(tmp_path, "real", use_pqc=False)
+    forger = _signer(tmp_path, "forger", use_pqc=False)
+    with CustodyLog(db_path=db, signer=forger) as log:
+        prev = log._last()
+    ident = forger.public_identity().to_dict()
+    md = {**ident, "endorsement": ed_only_real.sign(canonical_bytes(rotation_payload(
+        prev.signature["ed25519"]["pub"], ident, prev.entry_hash))), "note": "x"}
+    _append_forged_record(db, md, forger)
+    with CustodyLog(db_path=db, signer=forger) as log:
+        _record(log, 1, 3)
+        bundle = log.export()
+    for pin in (False, True):
+        ok, issues = verify_export(bundle, require_signer=pin)
+        assert not ok and "carries an endorsement not made by the previous key" in issues[0]
+
+
+@pqc
+@pytest.mark.parametrize("new_ed", [False, True])
+def test_a_one_item_bundle_refuses_a_record_contradicting_its_earlier_entries(tmp_path, new_ed):
+    """Opus read M2 (same Ed25519 key, a forged "turned on" record with the forger's ML-DSA key) and M3 (a new Ed25519
+    key, endorsed by the Ed25519 half alone, the record claiming the previous identity had no ML-DSA key)."""
+    from src.custody.log import rotation_payload
+
+    db, _real = _hybrid_log(tmp_path)
+    forger = _signer(tmp_path, "forger" if new_ed else "real", ml="evil")
+    with CustodyLog(db_path=db, signer=forger) as log:
+        prev = log._last()
+    ident = forger.public_identity().to_dict()
+    md = {**ident, "previous_ml_dsa_variant": None, "previous_ml_dsa_pub": None, "endorsement": None, "note": "x"}
+    if new_ed:
+        md["endorsement"] = _signer(tmp_path, "real", use_pqc=False).sign(canonical_bytes(rotation_payload(
+            prev.signature["ed25519"]["pub"], ident, prev.entry_hash, (None, None))))
+    _append_forged_record(db, md, forger)
+    with CustodyLog(db_path=db, signer=forger) as log:
+        log.record("article:0", "c" * 64, CustodyAction.INGEST)
+        bundle, item = log.export(), log.export(item_id="article:0")
+    for b in (bundle, item):
+        for pin in (False, True):
+            ok, issues = verify_export(b, require_signer=pin)
+            assert not ok and "names a previous ML-DSA key" in issues[0], (b["item_id"], pin, issues)
+    assert "nearest earlier entry in this one-item bundle" in verify_export(item)[1][0]
+
+
+@pqc
+def test_a_record_with_nothing_before_it_in_the_bundle_says_its_previous_key_is_its_word(tmp_path):
+    db = str(tmp_path / "c.db")
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "k")) as log:
+        log.record("other:1", "a" * 64, CustodyAction.INGEST)
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "k", use_pqc=False)) as log:
+        log.record("a:1", "b" * 64, CustodyAction.INGEST)
+        item = log.export(item_id="a:1")
+    assert item["entries"][0]["item_id"] == ROTATION_ITEM
+    report = verify_export_report(item, require_signer=True)
+    assert report["verified"] and any("is its own word" in n for n in report["notes"])
+
+
+@pqc
+def test_turning_post_quantum_off_without_the_library_is_recorded_unendorsed(tmp_path, monkeypatch):
+    """Opus read S1: what the 503 offers as the other way out, said as it is."""
+    db = str(tmp_path / "c.db")
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "k")) as log:
+        _record(log, 2)
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", False)
+    with CustodyLog(db_path=db, signer=_signer(tmp_path, "k", use_pqc=False)) as log:
+        _record(log, 1, 2)
+        bundle = log.export()
+    md = _rotations(bundle)[0]["metadata"]
+    assert md["endorsement"] is None and md["note"] == ML_DSA_UNENDORSED_ROTATION_NOTE
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", True)
+    assert not verify_export(bundle, require_signer=True)[0]
+    assert verify_export(bundle, require_signer=True, accept_unendorsed_rotation=True)[0]
+
+
+def test_ingest_without_the_library_keeps_the_batch_log_owes_each_entry_and_logs_once(tmp_path, monkeypatch, caplog):
+    """Opus read S3: refused before anything is signed, so the batch keeps its log (no key derivation per article), the
+    entries are owed, and the flush logs one line."""
+    import uuid
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from src.custody import pending
+    from src.custody.settings import CustodySettings
+    from src.custody.signing import PostQuantumUnavailable
+    from src.database.models import Article, Base, Source
+    from src.ingest import pipeline
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    engine = create_engine("sqlite://", future=True, poolclass=StaticPool, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    src = Source(name="c", domain="c.example", rss_url="https://c.example/feed.xml", language="en")
+    s.add(src)
+    s.flush()
+    tag = uuid.uuid4().hex[:6]
+    article = Article(url=f"https://c.example/{tag}", canonical_url=f"https://c.example/{tag}", source_id=src.id,
+                      title="t", content="body", hash=f"hash-{tag}")
+    s.add(article)
+    s.commit()
+    monkeypatch.setattr("src.custody.settings.load_settings", lambda: CustodySettings(auto_log_on_ingest=True))
+
+    class _Refusing:
+        def record(self, *a, **k):
+            raise PostQuantumUnavailable("library missing")
+
+        def close(self):
+            pass
+
+    with caplog.at_level("WARNING"), pipeline._CustodyBatch() as batch:
+        monkeypatch.setattr(batch, "log", lambda prefs: _Refusing())
+        drops: list[int] = []
+        monkeypatch.setattr(batch, "drop", lambda: drops.append(1))
+        pipeline._maybe_record_custody(article, batch=batch)
+        pipeline._maybe_record_custody(article, batch=batch)
+        assert batch.pqc_unavailable == 2 and not drops
+        monkeypatch.undo()
+        monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    assert pending.pending_count() == 2
+    lines = [r for r in caplog.records if "custody" in r.getMessage()]
+    assert len(lines) == 1 and "post-quantum library is not installed" in lines[0].getMessage()
+    s.close()
