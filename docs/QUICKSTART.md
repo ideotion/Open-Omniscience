@@ -466,7 +466,7 @@ curl -X PUT http://127.0.0.1:8000/api/custody/settings \
 curl -X POST http://127.0.0.1:8000/api/custody/log -H 'Content-Type: application/json' \
   -d '{"item_id":"article:1","item_hash":"<sha256>","action":"ingest"}'
 curl 'http://127.0.0.1:8000/api/custody/export' > custody-bundle.json  # offline-verifiable
-python scripts/verify_custody.py custody-bundle.json                   # exit 0 = verified
+python scripts/verify_custody.py custody-bundle.json                   # exit 0 = verified (3 = older, weaker format)
 ```
 Full model, threat model, and privacy caveats: [USER_MANUAL.md](USER_MANUAL.md).
 

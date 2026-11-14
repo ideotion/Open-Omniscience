@@ -57,8 +57,9 @@ BUNDLE_FORMAT = 2
 LEGACY_FORMAT_NOTE = (
     "This bundle is in an older export format, which gives a weaker guarantee: its signed head commits "
     "only to how many entries it holds and to its last entry, not to each entry. In a one-item bundle, whose entries "
-    "are not linked to each other, an entry in the middle could be swapped for another entry signed by the same key "
-    "without this check seeing it. Export the bundle again from the app for the full check."
+    "are not linked to each other, any entry but the last could be swapped for another entry signed by the same key, "
+    "or one removed and another added in its place, without this check seeing it (a whole-log bundle's links still "
+    "cover each entry). Export the bundle again from the app for the full check."
 )
 
 # PROCESS-WIDE append lock (field report 2026-07-02: 34 `UNIQUE constraint failed:
@@ -818,7 +819,9 @@ def _sig_ed25519_pub(sig: dict) -> str:
 def verify_export(
     bundle: dict, *, require_signer: bool = False, accept_unendorsed_rotation: bool = False
 ) -> tuple[bool, list[str]]:
-    """``(ok, issues)`` of :func:`verify_export_report`."""
+    """``(ok, issues)`` of :func:`verify_export_report`. It DROPS the bundle format: a format-1 bundle answers
+    ``(True, [])`` like a format-2 one, so anything shown to a person uses :func:`verify_export_report` and its
+    ``format_note`` (R714)."""
     report = verify_export_report(
         bundle, require_signer=require_signer, accept_unendorsed_rotation=accept_unendorsed_rotation
     )
@@ -828,7 +831,9 @@ def verify_export(
 def verify_export_report(
     bundle: dict, *, require_signer: bool = False, accept_unendorsed_rotation: bool = False
 ) -> dict:
-    """``{"verified", "issues", "notes"}`` for an exported bundle; ``notes`` names every key rotation crossed."""
+    """``{"verified", "issues", "notes", "format", "format_note"}`` for an exported bundle; ``notes`` names every key
+    rotation crossed, and ``format``/``format_note`` say which bundle format the signed head is in and, for format 1,
+    what its weaker guarantee does not prove (R714). Show ``format_note`` wherever the verdict is shown."""
     notes: list[str] = []
     try:
         ok, issues = _verify_export(bundle, require_signer, accept_unendorsed_rotation, notes)
@@ -836,10 +841,11 @@ def verify_export_report(
         # A lone surrogate (JSON "\ud800") has no UTF-8 form, so no signature over it can exist.
         ok, issues = False, ["a text field holds a character with no UTF-8 form (a lone surrogate), so no signature covers it"]
     head = bundle.get("head") if isinstance(bundle, dict) else None
-    legacy = ok and isinstance(head, dict) and "bundle_format" not in head
+    fmt = head.get("bundle_format", 1) if ok and isinstance(head, dict) else None  # validated by _verify_export
+    legacy = fmt == 1
     # R714: an old-format bundle is never reported as equal to a new one -- ``format`` and ``format_note`` say so.
     return {"verified": ok, "issues": issues, "notes": notes if ok else [],
-            "format": (1 if legacy else BUNDLE_FORMAT) if ok else None,
+            "format": fmt,
             "format_note": LEGACY_FORMAT_NOTE if legacy else None}
 
 
@@ -851,8 +857,9 @@ def _verify_export(
     Refused by name, before any entry is judged: a bundle with no entries; an entry that is not a whole record (a file
     cut mid-record leaves one with fields missing or of the wrong kind); a bundle with no signed head (it cannot show
     that nothing was cut from its end, since every remaining link still holds -- the reason says to export it again);
-    a head whose signature does not verify or was made with another key; and a bundle whose entries do not match its
-    head (fewer or more than it says, or a different last entry).
+    a head whose signature does not verify or was made with another key; a head in an unknown bundle format; and a
+    bundle whose entries do not match its head (fewer or more than it says, a different last entry, or -- format 2,
+    R714 -- any entry swapped, reordered, added or removed, which the head's digest of every entry hash shows).
 
     WHICH KEY. The head must carry the Ed25519 key the bundle names as its signer, and so must every entry, except
     across a KEY-ROTATION record (``rotate_signing_key`` / the record written when a re-created key first signs): there
@@ -924,8 +931,10 @@ def _verify_export(
     if not ok:
         return False, [f"head signature invalid: {reason}"]
     fmt = head.get("bundle_format", 1)
-    if fmt not in (1, BUNDLE_FORMAT) or isinstance(fmt, bool):
+    if type(fmt) is not int or fmt not in (1, BUNDLE_FORMAT):
         return False, [f"unknown bundle format {fmt!r}: this checker reads formats 1 and {BUNDLE_FORMAT}"]
+    if fmt >= 2 and not isinstance(head.get("entries_digest"), str):
+        return False, ["the signed head names bundle format 2 but carries no digest of its entries"]
     expected = _bundle_head(item_id, entries, bundle_format=fmt)
     if head != expected:
         if head.get("entry_count") != len(entries):
@@ -935,7 +944,7 @@ def _verify_export(
         if fmt >= 2 and {k: v for k, v in head.items() if k != "entries_digest"} == {
                 k: v for k, v in expected.items() if k != "entries_digest"}:
             return False, ["the bundle's entries do not match the entry hashes its signed head commits to: an entry "
-                           "was swapped, added or removed"]
+                           "was swapped, reordered, added or removed"]
         return False, ["the bundle's entries do not match its signed head (a different last entry, scope or version)"]
     if item_id and any(e.item_id not in (item_id, ROTATION_ITEM) for e in entries):
         return False, [f"the bundle is for {item_id!r} but holds entries of other items"]

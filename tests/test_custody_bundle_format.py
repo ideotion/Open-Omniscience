@@ -9,6 +9,7 @@ is still read, but its verdict says it is the weaker, older format and what that
 from __future__ import annotations
 
 import copy
+import json
 import shutil
 import subprocess
 import sys
@@ -112,10 +113,45 @@ def test_the_cli_and_the_route_say_which_format(tmp_path):
     bundle, _other, signer = _forked_item_bundles(tmp_path)
     old = _as_format_1(bundle, signer)
     path = tmp_path / "old.json"
-    path.write_text(__import__("json").dumps(old), encoding="utf-8")
+    path.write_text(json.dumps(old), encoding="utf-8")
     out = subprocess.run([sys.executable, str(ROOT / "scripts" / "verify_custody.py"), str(path)],
                          capture_output=True, text=True, cwd=ROOT)
-    assert out.returncode == 0 and "older export format" in out.stdout and "weaker guarantee" in out.stdout
+    assert out.returncode == 3 and "older export format" in out.stdout and "weaker guarantee" in out.stdout
     assert "VERIFIED       : True (old format: weaker guarantee)" in out.stdout
     r = TestClient(app).post("/api/custody/verify", json={"bundle": old})
     assert r.json()["verified"] and r.json()["format"] == 1 and "weaker guarantee" in r.json()["format_note"]
+
+
+def test_a_format_2_head_that_differs_elsewhere_keeps_the_generic_message(tmp_path):
+    """The digest message is for a digest mismatch only: a different scope at the same count says so instead."""
+    bundle, _other, signer = _forked_item_bundles(tmp_path)
+    b = copy.deepcopy(bundle)
+    b["head"]["item_id"] = "article:other"
+    b["head_signature"] = signer.sign(canonical_bytes(b["head"]))
+    r = verify_export_report(b)
+    assert not r["verified"] and "a different last entry, scope or version" in r["issues"][0]
+
+
+def test_odd_format_values_and_a_head_with_no_digest_are_refused(tmp_path):
+    bundle, _other, signer = _forked_item_bundles(tmp_path)
+    for value in (True, 2.0, "2", [2], 0, None):
+        b = copy.deepcopy(bundle)
+        b["head"]["bundle_format"] = value
+        b["head_signature"] = signer.sign(canonical_bytes(b["head"]))
+        r = verify_export_report(b)
+        assert not r["verified"] and "unknown bundle format" in r["issues"][0], value
+    b = copy.deepcopy(bundle)
+    del b["head"]["entries_digest"]
+    b["head_signature"] = signer.sign(canonical_bytes(b["head"]))
+    r = verify_export_report(b)
+    assert not r["verified"] and "carries no digest" in r["issues"][0]
+
+
+def test_a_new_bundle_exits_0_and_a_tampered_one_exits_1(tmp_path):
+    bundle, other, _s = _forked_item_bundles(tmp_path)
+    for b, code in ((bundle, 0), (_swap_middle(bundle, other), 1)):
+        path = tmp_path / f"b{code}.json"
+        path.write_text(json.dumps(b), encoding="utf-8")
+        out = subprocess.run([sys.executable, str(ROOT / "scripts" / "verify_custody.py"), str(path)],
+                             capture_output=True, text=True, cwd=ROOT)
+        assert out.returncode == code, out.stdout

@@ -11,7 +11,14 @@ third party (court, editor, collaborator) can confirm a custody chain offline.
 
 Usage:
     python scripts/verify_custody.py custody_bundle.json [--pin] [--accept-unendorsed-rotation]
-Exit code 0 = verified, 1 = failed, 2 = bad arguments.
+Exit code 0 = verified, 1 = failed, 2 = bad arguments, 3 = verified in the older bundle format (weaker guarantee).
+
+Bundle formats (R714). The app writes bundle format 2: its signed head commits to every entry's hash, so an entry
+swapped, reordered, added or removed anywhere in the bundle is refused by name. A bundle from a development build
+before that change is format 1: its head commits only to its count and last entry. It still verifies, but exits 3
+and prints why it is weaker: in a one-item bundle (whose entries are not linked to each other) any entry but the last
+could have been swapped for another one signed by the same key. Export it again from the app for the full check. The
+format is read from the signed head; the bundle's top-level "bundle_format" is informational only.
 
 A change of signing key is followed through its key-rotation record: endorsed by the previous key, it passes and is
 named; unendorsed (the previous key was gone), it is refused unless --accept-unendorsed-rotation is given.
@@ -81,7 +88,9 @@ def main(argv: list[str]) -> int:
         print("ISSUES:")
         for i in issues:
             print(f"  - {i}")
-    return 0 if ok else 1
+    if not ok:
+        return 1
+    return 3 if report["format_note"] else 0  # R714: never the same answer for the weaker format
 
 
 if __name__ == "__main__":
